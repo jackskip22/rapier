@@ -1,0 +1,20 @@
+{
+  // Stage only public runtime assets. Wrangler runs this before every deploy.
+  "name": "rapier",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": true,
+  "build": {
+    // One artifact remains one artifact: no index.html copy. The root URL is served by
+    // _redirects (`/ /rapier.html 200`, an internal rewrite the platform documents for
+    // static assets) so `/` is the door and `/rapier.html` stays the artifact's name —
+    // same bytes at both, hash-verifiable at either.
+    "command": "set -eu; dest=.wrangler/rapier-assets; rm -rf \"$dest\"; mkdir -p \"$dest\"; cp rapier.html sw.js manifest.json icon-192.png icon-512.png demo.md _headers _redirects \"$dest/\""
+  },
+  "assets": {
+    "directory": ".wrangler/rapier-assets",
+    // "none" is load-bearing, not taste: the default auto-trailing-slash would 307
+    // /rapier.html to /rapier, bouncing the artifact's true address and breaking
+    // curl-and-hash provenance. Unknown paths 404 honestly (no SPA fallback).
+    "html_handling": "none"
+  }
+}
