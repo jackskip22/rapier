@@ -1,0 +1,9 @@
+{
+  "name": "rapier",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "assets": {
+    "directory": ".",
+    "html_handling": "none"
+  }
+}
