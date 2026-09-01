@@ -1,0 +1,15 @@
+# `tools` is deliberately absent from Permissions-Policy below: a feature no
+# header names keeps its default allowlist, and WebMCP's is already 'self'.
+# Naming it would change nothing here while putting the camera, geolocation and
+# microphone denials behind one more chance to mistype a structured field — a
+# Permissions-Policy that fails to parse is dropped whole, denials included.
+#
+# Origin-Agent-Cluster is not hardening. WebMCP rejects registerTool, getTools
+# and executeTool with SecurityError on any non-file scheme whose agent cluster
+# is not origin-keyed, and site-keyed is the default a site does not choose.
+/*
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), geolocation=(), microphone=()
+  Origin-Agent-Cluster: ?1
