@@ -97,7 +97,7 @@ over the person's UI.
 frontier whose expandable branches reach every deeper heading. `document.read_context`
 walks a section in anchored pages; every page carries a capability over exactly that
 page and a name for the next undisclosed seam. `document.find` returns bounded
-snippets. There is no bulk-body tool. On the bundled 8,851-byte demo, all 15
+snippets. There is no bulk-body tool. On the bundled 6,186-byte demo, all 15
 parser-recognised headings outside fences are reachable without disclosing a body;
 repeated reads can deliberately disclose additional exact pages over time.
 
@@ -111,7 +111,9 @@ and no timer approves; the block is delivered by their own scroll holding all of
 own hand in it, or their own `ALLOW THIS ONCE`, and an agent may wait for exactly that
 (`document.wait_for_user`, event `delivery`). ASK widens the trigger of the hold that
 already exists for kept law: one exact proposal in Compare, one decision, never a batch.
-`document.get_context` carries `posture` beside `law`, one word each.
+`document.get_context` carries `posture` beside `law`, one word each. A host that confirms
+every call the same way learns nothing from a tool's annotations; here the decision is
+taken per write, by the document's law and the person's posture, on the page.
 
 **One language on the wire.** Every door speaks the words `WILL-1.md` defines: `applied`,
 `refused` (the document's law, the person's decision, or this host's own state — `reason`
@@ -266,7 +268,7 @@ the shipped artifact rather than taking on trust.
 
 ## Evidence
 
-**Rapier 1.0.0 is a SIZE-2027-R9 source-qualified candidate.** The desktop, mobile and phone-preview suites (**302/0/0** each) and the WebMCP harness (**250 checks**) are executed against these exact bytes from the shipped extraction. Static release audit **125 / 125** after the receipt re-pin; the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6 — reproduce the current number directly: `node qualification/static-release-audit.js .`. Native WebMCP registration and four sample calls are observed on these exact bytes, recorded in the development tree (`docs/evidence/release/<sha12>/real-chrome/`), which is evidence rather than part of this published set; the full real-browser harness (**224/228**) and the scripted evals (**10/10**) are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
+**Rapier 1.0.0 is a SIZE-2027-R11 source-qualified candidate.** The desktop, mobile and phone-preview suites (**302/0/0** each) and the WebMCP harness (**258 checks**) are executed against these exact bytes from the shipped extraction. Static release audit **125 / 125** after the receipt re-pin; the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6 — reproduce the current number directly: `node qualification/static-release-audit.js .`. Native WebMCP registration and four sample calls are observed on these exact bytes, recorded in the development tree (`docs/evidence/release/<sha12>/real-chrome/`), which is evidence rather than part of this published set; the full real-browser harness (**224/228**) and the scripted evals (**10/10**) are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
 
 The qualification harness ships beside the source: the qualification-injected suite carried by `run-selftest2.js`, the WebMCP harness, the static release audit, and the real-agent route. They are there so the final submission can be judged from exact current bytes rather than inherited claims from pre-public development. `qualification/RECEIPT.json` binds the current source hash to the observed static result and keeps every unexecuted gate at `not_run` until it is actually observed on the same bytes.
 

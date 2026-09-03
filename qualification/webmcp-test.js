@@ -2895,6 +2895,141 @@ async function runHarness() {
     }
   }
 
+  /* THE PERSON'S LINE, WHEN NO CALL IS PARKED. A host cuts a parked call at about twenty-four
+     seconds, so a reply field live only while a wait was parked was a channel the person could
+     almost never reach: their line died with the call that was listening for it. The field is now
+     open whenever the agent's row is; a line spoken with nobody parked is held in session memory
+     against {authority, epoch} — never in the document, never in undo, never in recovery — and is
+     spent by the next message wait. Driven on its own page for the same reason the pages above
+     are: this witness ends by replacing the document, and no fixture the rest of the run stands
+     on may be the one replaced. */
+  log('### the person\u2019s line reaches the agent with no call parked');
+  const inboxPage = await side.newPage();
+  await inboxPage.goto(URL_BASE, { waitUntil: 'load', timeout: 60000 });
+  await inboxPage.waitForFunction(() => !!window.Rapier, null, { timeout: 30000 }).catch(() => {});
+  await discardDirtyConfirms(inboxPage);
+  await inboxPage.waitForTimeout(1800);
+  const inboxRow = () => inboxPage.evaluate(() => {
+    const el = id => document.getElementById(id);
+    return {
+      hidden: el('agent-row').hidden,
+      state: el('agent-row-state').textContent,
+      queued: el('agent-row-queued').hidden ? null : el('agent-row-queued').textContent,
+      placeholder: el('agent-row-note-input').placeholder,
+      disabled: el('agent-row-note-input').disabled,
+    };
+  });
+  /* The person's own gesture, through the form they actually use — not a call into the engine.
+     Sent on the Enter the field's own `enterkeyhint` advertises, which is the gesture on a phone
+     and needs no panel geometry to be reachable on a desktop. */
+  const inboxSpeak = async line => {
+    await inboxPage.fill('#agent-row-note-input', line);
+    await inboxPage.press('#agent-row-note-input', 'Enter');
+    await inboxPage.waitForTimeout(150);
+  };
+  const inboxBefore = await inboxRow();
+  await invoke(inboxPage, 'document.get_context', {});
+  await inboxPage.waitForTimeout(300);
+  /* The panel the circle carries is where the row and the field live; the person opens it the
+     one way there is to, and every gesture below is made inside it. */
+  await inboxPage.click('#scroll-fab');
+  await inboxPage.waitForTimeout(700);
+  const inboxOpen = await inboxRow();
+  check('the reply field is live whenever the agent row is, with no wait parked',
+    inboxBefore.hidden && inboxBefore.disabled && !inboxOpen.hidden && !inboxOpen.disabled &&
+    inboxOpen.placeholder === 'message your agent' && inboxOpen.queued === null,
+    JSON.stringify({ inboxBefore, inboxOpen }));
+
+  await inboxSpeak('make the intro half as long');
+  const inboxQueuedRow = await inboxRow();
+  const inboxQueued = (await invoke(inboxPage, 'document.get_context', {})).value;
+  check('a line spoken with nobody parked is queued, counted on the row, and read by get_context',
+    inboxQueuedRow.queued === '1 MESSAGE QUEUED' &&
+    inboxQueuedRow.placeholder === 'message queued for your agent' &&
+    inboxQueued.pendingMessages === 1 &&
+    inboxQueued.latestMessage.text === 'make the intro half as long' &&
+    typeof inboxQueued.latestMessage.id === 'string' &&
+    inboxQueued.latestMessage.id.length > 0 &&
+    Number.isSafeInteger(inboxQueued.latestMessage.createdAt),
+    JSON.stringify({ inboxQueuedRow, latest: inboxQueued.latestMessage }));
+  /* The same closure the undelivered count keeps, asserted where the two new fields appear: a
+     waiting line adds exactly those two facts to this read and nothing beside them. */
+  const inboxStray = Object.keys(inboxQueued).filter(key => !CONTEXT_FIELDS.has(key) &&
+    !WIRE_OWNED.includes(key) && key !== 'pendingMessages' && key !== 'latestMessage');
+  check('a waiting line adds those two facts to the read and no third',
+    inboxStray.length === 0, JSON.stringify(inboxStray));
+
+  /* Five is the whole depth: this is steering, not a mailbox. */
+  for (const line of ['second', 'third', 'fourth', 'fifth', 'sixth']) await inboxSpeak(line);
+  const inboxCapRow = await inboxRow();
+  const inboxToast = await inboxPage.evaluate(() =>
+    [...document.querySelectorAll('.toast__msg')].map(node => node.textContent));
+  const inboxCapped = (await invoke(inboxPage, 'document.get_context', {})).value;
+  check('the queue caps at five, the sixth line replaces the oldest, and the person is told so',
+    inboxCapRow.queued === '5 MESSAGES QUEUED' && inboxCapped.pendingMessages === 5 &&
+    inboxCapped.latestMessage.text === 'sixth' &&
+    inboxToast.some(text => /oldest message replaced/.test(text)),
+    JSON.stringify({ inboxCapRow, count: inboxCapped.pendingMessages, inboxToast }));
+
+  /* THE WAIT SPENDS WHAT IS ALREADY THERE. Measured on the wall clock outside the browser: a
+     question already answered must come back in the outcome a live reply returns, not after a
+     turn spent parked on it. */
+  const inboxSpentAt = Date.now();
+  const inboxSpent = (await invoke(inboxPage, 'document.wait_for_user',
+    { event: 'message', timeout_ms: 20000 })).value;
+  const inboxSpentMs = Date.now() - inboxSpentAt;
+  const inboxAfterSpend = (await invoke(inboxPage, 'document.get_context', {})).value;
+  check('a message wait takes the oldest queued line at once, and taking it removes it',
+    inboxSpent.outcome === 'message' && inboxSpent.text === 'second' && inboxSpentMs < 5000 &&
+    inboxAfterSpend.pendingMessages === 4 && inboxAfterSpend.latestMessage.text === 'sixth',
+    JSON.stringify({ inboxSpent, inboxSpentMs, count: inboxAfterSpend.pendingMessages }));
+
+  const inboxDrained = [];
+  for (let index = 0; index < 4; index++) {
+    inboxDrained.push((await invoke(inboxPage, 'document.wait_for_user',
+      { event: 'message', timeout_ms: 20000 })).value.text);
+  }
+  const inboxEmptied = (await invoke(inboxPage, 'document.get_context', {})).value;
+  const inboxEmptyRow = await inboxRow();
+  check('the queue drains oldest first and then reports absent, never a false zero',
+    JSON.stringify(inboxDrained) === JSON.stringify(['third', 'fourth', 'fifth', 'sixth']) &&
+    !('pendingMessages' in inboxEmptied) && !('latestMessage' in inboxEmptied) &&
+    inboxEmptyRow.queued === null && inboxEmptyRow.placeholder === 'message your agent',
+    JSON.stringify({ inboxDrained, emptied: inboxEmptied.pendingMessages, inboxEmptyRow }));
+
+  /* The path that already worked still works, unchanged: a parked listener owns the field, and
+     the line it takes is spent there rather than also left behind in the queue. */
+  const inboxParked = inboxPage.evaluate(() => window.__webmcp.call('document.wait_for_user',
+    { event: 'message', prompt: 'shorter, or sharper?', timeout_ms: 20000 }));
+  await inboxPage.waitForTimeout(500);
+  const inboxParkedRow = await inboxRow();
+  await inboxSpeak('sharper');
+  const inboxLive = unpack(await inboxParked).value;
+  const inboxAfterLive = (await invoke(inboxPage, 'document.get_context', {})).value;
+  check('a parked listener still takes the line, and a live reply is never also queued',
+    inboxParkedRow.state === 'WAITING FOR YOU' &&
+    inboxParkedRow.placeholder === 'shorter, or sharper?' && !inboxParkedRow.disabled &&
+    inboxLive.outcome === 'message' && inboxLive.text === 'sharper' &&
+    !('pendingMessages' in inboxAfterLive),
+    JSON.stringify({ inboxParkedRow, inboxLive }));
+
+  /* A REPLACED DOCUMENT IS A WORLD THE LINE WAS NEVER SPOKEN TO. The queue is bound to the epoch
+     it was spoken against, so the successor document inherits nothing — the same law the wait
+     slot, the agent's note and the connected window already keep. */
+  await inboxSpeak('a line for the document that is open now');
+  const inboxBeforeReplace = await inboxRow();
+  await openPayloadSafely(inboxPage,
+    { text: '# Another document\n\nA second world.\n', name: 'second.md' });
+  await inboxPage.waitForTimeout(1500);
+  const inboxReplaced = (await invoke(inboxPage, 'document.get_context', {})).value;
+  const inboxReplacedRow = await inboxRow();
+  check('replacing the document drops the queue with the epoch that held it',
+    inboxBeforeReplace.queued === '1 MESSAGE QUEUED' && inboxReplaced.filename === 'second.md' &&
+    !('pendingMessages' in inboxReplaced) && !('latestMessage' in inboxReplaced) &&
+    inboxReplacedRow.queued === null,
+    JSON.stringify({ inboxBeforeReplace, inboxReplacedRow, filename: inboxReplaced.filename }));
+  await inboxPage.close();
+
   /* THE FIELD'S HOSTS ARE NOT THE FIXTURE'S. Three things the WebMCP Challenge entries measured
      on real hosts, driven here against one deliberately hostile model context:
        - a member that is PRESENT AND THROWS (Career Compass found `requestUserInteraction` on

@@ -5113,8 +5113,8 @@ function _rapierQualificationSuiteSourceOwner() {
         return 'the page kept scrolling behind the sheet';
       }
       /* R6-P0-3 (LICENSES): renderLicenses() must fill only the four empty MIT placeholders —
-         the other five .license-text nodes carry their own notice and must never be
-         overwritten by a class-wide mutation. */
+         the other six .license-text nodes (Feather icons joined them in R11) carry their own
+         notice and must never be overwritten by a class-wide mutation. */
       var licensesOverlay = document.getElementById('licenses-overlay');
       var licensesOpener = document.querySelector('[data-action="licenses"]');
       licensesOpener.click();
@@ -5122,7 +5122,7 @@ function _rapierQualificationSuiteSourceOwner() {
       if (!licensesOverlay.classList.contains('open')) return 'the licenses sheet did not open from settings';
       var mitSlots = Array.from(document.querySelectorAll('.license-text[data-license="rapier-mit"]'));
       var ownSlots = Array.from(document.querySelectorAll('.license-text:not([data-license="rapier-mit"])'));
-      if (mitSlots.length !== 4 || ownSlots.length !== 5) {
+      if (mitSlots.length !== 4 || ownSlots.length !== 6) {
         return 'license node count drifted: mit=' + mitSlots.length + ' own=' + ownSlots.length;
       }
       if (mitSlots.some(function (node) { return node.textContent !== RAPIER_MIT_NOTICE; })) {
@@ -6599,14 +6599,23 @@ function _rapierQualificationSuiteSourceOwner() {
       }
       if (desktop) {
         if (stackStyle.position !== 'fixed') return 'desktop stack position=' + stackStyle.position;
-        /* A wrapping row: the expanded surface (order -1, full width) takes its own line above,
-           while the search verb shares the compact row instead of hanging below it as a
-           one-button orphan row that doubles the toolbar's height over the selection. */
+        /* One row, as on the phone (the founder's words 127): expanded, the strip does not stack a
+           second line above the selection; it scrolls sideways under the wheel with the edge fades,
+           and the secondary controls flatten into the same row. Collapsed, it stands whole. */
         var desktopSurface = getComputedStyle(surface);
-        if (desktopSurface.flexDirection !== 'row' || desktopSurface.flexWrap !== 'wrap') {
+        if (desktopSurface.flexDirection !== 'row' || desktopSurface.flexWrap !== 'nowrap') {
           return 'desktop surface layout=' + desktopSurface.flexDirection + '/' + desktopSurface.flexWrap;
         }
-        if (getComputedStyle(expanded).order !== '-1') return 'expanded controls are not above compact controls';
+        var wasExpanded = toolbar.dataset.expanded;
+        toolbar.dataset.expanded = 'true';
+        var expandedRow = getComputedStyle(expanded).display === 'contents' &&
+          /auto|scroll/.test(getComputedStyle(surface).overflowX);
+        toolbar.dataset.expanded = 'false';
+        var collapsedWhole = getComputedStyle(surface).overflowX === 'visible';
+        if (wasExpanded === undefined) delete toolbar.dataset.expanded;
+        else toolbar.dataset.expanded = wasExpanded;
+        if (!expandedRow) return 'desktop expanded strip is not one scrolling row';
+        if (!collapsedWhole) return 'desktop collapsed strip scrolls';
         if (getComputedStyle(desktopMore).display === 'none') return 'desktop expansion control hidden';
         if (getComputedStyle(searchCommands).display === 'none') return 'toolbar search control hidden on desktop';
         var previousExpanded = toolbar.dataset.expanded;
@@ -15886,13 +15895,17 @@ function _rapierQualificationSuiteSourceOwner() {
            invocation's own semantic target; a delivered handle or agent transaction bound to
            this document is what settles into AGENT once the call ends. compare.close above
            delivered no handle and minted no transaction — a bare structural call, same as a
-           bare get_context — so it earns no standing presence: no page-lifetime "has this
-           channel ever fired" flag stands in for a witness that does not exist. */
+           bare get_context — so it names no location. It is still a completed call bound to this
+           document, and that IS an agent: presence stands as CONNECTED for ten minutes after it,
+           because an agent works in turns and the seam between two of its own calls is not its
+           absence. No page-lifetime "has this channel ever fired" flag stands in for that — a
+           registration with no call behind it still earns nothing. */
         var bar = document.getElementById('agent-row');
         var word = function () { return document.getElementById('agent-row-state').textContent; };
         var under = function () { return document.getElementById('agent-row-under').textContent; };
-        if (!bar.hidden) {
-          return 'a call with no evidence to witness still painted presence=' + word();
+        if (bar.hidden || word() !== 'CONNECTED' || under() !== '') {
+          return 'a completed call left no standing presence=' +
+            (bar.hidden ? 'hidden' : word() + '/' + under());
         }
         var methodEntry = _rapierOutlineFromBlocks().filter(function (entry) {
           return entry.label === 'Method';
@@ -15977,6 +15990,9 @@ function _rapierQualificationSuiteSourceOwner() {
         var savedContexts = new Map(_rapierLiveContexts);
         _selftestResetHistory('qualification_agent_bar_without_evidence');
         _rapierLiveContexts.clear();
+        /* A completed call is now one of the evidence sources, so withdrawing "everything
+           witnessed" withdraws its window as well. */
+        _rapierAgentBar.connectedUntil = 0;
         _rapierAgentBarRender();
         var uninvoked = bar.hidden;
         /* Hidden must mean gone, not merely covered: the words a moment ago said "AGENT · Under
@@ -15994,6 +16010,7 @@ function _rapierQualificationSuiteSourceOwner() {
         }
         await restoreHost();
         restoreHost = null;
+        _rapierAgentBar.connectedUntil = 0;
         _rapierAgentBarRender();
         if (!(bar.hidden && getComputedStyle(bar).display === 'none')) {
           return 'the bar painted presence with no invocation running and nothing delivered';
@@ -16042,7 +16059,7 @@ function _rapierQualificationSuiteSourceOwner() {
           _rapierAgentBar.invocations.add(waitCall);
           _rapierAgentBar.running++;
           _rapierAgentBarRender();
-          waitShown = !bar.hidden && word() === 'WAITING' && !!replyLine &&
+          waitShown = !bar.hidden && word() === 'WAITING FOR YOU' && !!replyLine &&
             !document.getElementById('agent-row-note-input').disabled;
         } finally {
           _rapierAgentBar.invocations.delete(waitCall);
@@ -17646,7 +17663,7 @@ function _rapierQualificationSuiteSourceOwner() {
         }, function () { return 'rejected'; });
         if (!await _selftestWaitInstalled()) return 'the message listener never parked';
         var word = document.getElementById('agent-row-state').textContent;
-        if (word !== 'WAITING') return 'a parked listener read as ' + word;
+        if (word !== 'WAITING FOR YOU') return 'a parked listener read as ' + word;
         if (replyInput.disabled || replyInput.placeholder !== 'shorter, or sharper?') {
           return 'the parked listener did not enable its note line=' +
             replyInput.disabled + '/' + replyInput.placeholder;
@@ -17685,9 +17702,13 @@ function _rapierQualificationSuiteSourceOwner() {
           return 'the reply came back as ' + JSON.stringify(outcome).slice(0, 200);
         }
         /* Ephemeral by construction: the note reached the one waiting call and nothing else —
-           not the document, not any history, not a field left holding it. */
-        if (replyInput.value !== '' || !replyInput.disabled) {
-          return 'the note line outlived its listener';
+           not the document, not any history, not a field left holding it. The FIELD outlives the
+           listener on purpose: a host cuts a parked call at about twenty-four seconds, so a line
+           the person may speak only while one is parked is a line they can almost never speak.
+           Answering a live wait spends the line there and queues nothing. */
+        if (replyInput.value !== '' || replyInput.disabled ||
+            _rapierMessageQueueHere().length !== 0) {
+          return 'the answered note line did not come back clean';
         }
         if (_rapierGetCanonicalText() !== canonicalBefore) return 'a steering note reached the document';
         if (_rapierWaitRuntime.pending) return 'the resolved listener kept the slot';
@@ -17904,7 +17925,7 @@ function _rapierQualificationSuiteSourceOwner() {
       };
       try {
         if (!await _selftestWaitInstalled()) return 'the yield never installed';
-        if (!bar || bar.hidden || barWord() !== 'WAITING') {
+        if (!bar || bar.hidden || barWord() !== 'WAITING FOR YOU') {
           return 'the parked yield was invisible before the replacement=' +
             (bar && bar.hidden ? 'hidden' : barWord());
         }
@@ -21177,9 +21198,10 @@ function _rapierQualificationSuiteSourceOwner() {
         }
         _rapierAgentBarRender();
         var platformDelta = document.getElementById('agent-row-delta');
-        if (platformDelta.hidden || platformDelta.textContent !== String(platformOwed)) {
+        if (platformDelta.hidden ||
+            platformDelta.getAttribute('aria-label') !== 'changes not yet shown to you: ' + platformOwed) {
           return 'the row does not carry a platform-agent count=' + platformDelta.hidden + '/' +
-            platformDelta.textContent;
+            platformDelta.getAttribute('aria-label');
         }
         /* And the law that pays for it still holds: a document nobody else has touched runs no
            diff at all — no worker, no projection, nothing to spend. */
@@ -21371,7 +21393,7 @@ function _rapierQualificationSuiteSourceOwner() {
         /* THE LANGUAGE LAW, ON THE GLASS. The verb that opens the lens carries the number of
            changes not yet put in front of the person, and says exactly that and nothing about
            review. No second control anywhere states it. */
-        if (delta.textContent !== '1' ||
+        if (delta.textContent !== 'HIDE CHANGES' ||
             delta.getAttribute('aria-label') !== 'changes not yet shown to you: 1') {
           return 'the verb does not carry what is not yet shown=' + delta.textContent + '/' +
             delta.getAttribute('aria-label');
@@ -21453,8 +21475,10 @@ function _rapierQualificationSuiteSourceOwner() {
             _rapierSeenUndelivered();
         }
         if (_rapierSeenAwaiting()) return 'delivery left the change awaiting';
-        if (delta.textContent !== 'Δ' || delta.getAttribute('aria-label') !== 'changes since open') {
-          return 'nothing left to show still wears a number=' + delta.textContent;
+        if (delta.textContent !== 'HIDE CHANGES' ||
+            delta.getAttribute('aria-label') !== 'hide the changes since you last looked') {
+          return 'nothing left to show still wears a number=' + delta.textContent + '/' +
+            delta.getAttribute('aria-label');
         }
         /* The third witness. A trusted decision on a held edit is a look at the segments it
            decided, and it lands at once — no second in view required. */
@@ -21576,6 +21600,13 @@ function _rapierQualificationSuiteSourceOwner() {
           return 'the fade spent the note it may only put away';
         }
         _rapierAgentBar.invocations.delete(fadeCall);
+        _rapierAgentBarRender();
+        /* LANE SHELL item 2 moved what "the presence carrying it" is: one call settling is no
+           longer the agent leaving, so the note it bore stands as long as the agent does. */
+        if (_rapierAgentNoteText() !== 'a line the person has not read') {
+          return 'one call settling spent a note the connected agent still stands behind';
+        }
+        _rapierAgentBar.connectedUntil = 0;
         _rapierAgentBarRender();
         if (_rapierAgentNoteText() !== '') return 'the note outlived the presence carrying it';
         _rapierSinceOpenClose();

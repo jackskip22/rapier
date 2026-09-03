@@ -33,6 +33,13 @@ No account, no server, no telemetry.
 - Open a JavaScript file and the same tools gain a structural sense: an outline
   of declarations, search by syntax, and a receipt for every edit.
 
+**Where it runs.** Everywhere a browser runs, which is every device: the web app
+at the canonical URL, the installed app on a phone or a desktop, the free Windows
+app and the free Android app, a copy of `rapier.html` opened straight from a
+folder or a USB stick, an iframe inside your own app (below), and as a native
+Speedracer app running in your own Cloudflare account. One file, the same editor
+in each.
+
 ## Use Rapier in your own app
 
 **Drop-in.** Copy `rapier.html` into your repository, next to your Markdown or
@@ -142,9 +149,9 @@ registration, not by refusing the calls that reach it.
 
 ## Editions
 
-The web app, the installed app, the embedded editor, the Windows app and the
-Android app are free. No account, no subscription, no ads. This repository
-does not itself distribute the native Android or Windows builds.
+The web app, the installed app, the embedded editor, the Windows app, the
+Android app and the Speedracer app are free. No account, no subscription, no ads.
+This repository does not itself distribute the native Android or Windows builds.
 
 ## Launch surfaces
 
@@ -170,12 +177,12 @@ of two.
 
 ## Evidence
 
-**Evidence status: SIZE-2027-R9 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**302/0/0** each) and the WebMCP harness (**250 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
+**Evidence status: SIZE-2027-R11 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**302/0/0** each) and the WebMCP harness (**258 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
 Static release audit: **125/125** — reproduce it yourself with `node qualification/static-release-audit.js .`.
 The sealed receipt those numbers are pinned in is `qualification/RECEIPT.json`.
 The live origin, the K3 browser registry, and the manual-device gate are human gates, marked `not_run` on this candidate.
 **Origin surface not_run.**
-`demo.md` is 8,851 UTF-8 bytes with 15 source headings.
+`demo.md` is 6,186 UTF-8 bytes with 15 source headings.
 `WILL-1.md` and `VECTORS.md` are vendored from the canonical Will repository; Rapier itself remains AGPL-3.0, and its copies point home rather than claiming to be the executable suite of this tree.
 
 ## Licence

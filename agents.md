@@ -1,11 +1,18 @@
 # Rapier for agents
 
-Rapier is one self-contained HTML artifact and one operation kernel projected
-into its UI, WebMCP, and embed protocol. In a capable browser, work on the
-person's open document through the tools Rapier currently registers. Each
-description opens with the request that makes it the right call; registration
-narrows with document and comparison state, so never assume every tool below is
-live.
+Keep this open rather than working blind, because the document stays legible
+while you work it: every read is bounded to one passage, never the whole file;
+every edit spends a handle anchored to the exact bytes it named, so it lands
+where you meant or refuses instead of guessing; the person's law, their
+posture, and anything still owed to them are visible right on the page; and
+there is no chat to babysit — one line rides beside their fast-scroll circle,
+and the next line retires it, nothing queued and nothing to poll.
+
+Most requests take the same four calls: `document.get_context` to see where
+they are and what you may do now, `document.get_outline` or `document.find`
+to locate the passage, `document.read_context` to disclose it and mint a
+handle, and `document.apply_edits` to spend that handle. What follows covers
+this rhythm in full, plus comparison, undo and save.
 
 ## The working pattern
 
@@ -17,7 +24,9 @@ truthfully; it only takes the person's place.
 
 1. Call `document.get_context` when the request turns on the person's caret,
    selection or unsaved state. It names the focus passage, structural support,
-   and any document law — never the body.
+   any document law, and `posture` — `free`, `check` or `ask`, naming whether
+   a write of yours lands, must wait to be seen, or is held for their review —
+   never the body.
 2. Map with `document.get_outline` or search with `document.find`, then disclose
    only the needed passage with `document.read_context`. Past 4,096 blocks or
    65,536 tokens the document opens as source rather than rendered, but
@@ -42,8 +51,15 @@ you. A note is born only with a write that lands, so a refused, invalid or confl
 its note with it; it appears beside their fast-scroll circle, one line, cut off at the edge of its
 box, and they tap it to read the whole of it in the panel where your state, the section you are
 under and their reply field already are. A newer act retires the older's line, an act that says
-nothing says nothing, and nothing is queued or stored: this is not a chat. Say what you did to
-their document, or ask them the one thing you need answered.
+nothing says nothing, and nothing you say is queued or stored: this is not a chat. Say what you
+did to their document, or ask them the one thing you need answered. Their field is open whenever
+your row is, not only while you wait, so a line of theirs may already be there when you arrive:
+`document.get_context` carries `pendingMessages`, how many are waiting, and `latestMessage`, the
+newest of them as `id`, `text` and `createdAt`, and both are absent when none is waiting.
+`document.wait_for_user` in message mode takes the oldest waiting line first and returns it
+exactly as it returns a live reply, instead of waiting at all; taking it removes it, so call
+again until the count is gone. Their lines are held in this browser for this open document only,
+five at most and the newest replacing the oldest, and a document replaced or reloaded drops them.
 
 Handles are evidence of inspection, not permission over a wider document.
 Cheap reacquisition is better than broad durable permission: read again and

@@ -1028,19 +1028,23 @@ const A31_ACCEPTANCE = [
     },
   },
   {
-    id: 'A3.1-26', name: 'the acorn glyph is bound to a live structural invocation only',
+    id: 'A3.1-26', name: 'the acorn glyph is worn while an agent is present on a document with a structural sense',
     run() {
+      /* The founder's words 115: the acorn was never seen while it lived only for the milliseconds of
+         a structural call. It is worn for as long as an agent is present on a document whose
+         structural sense is live — the same fact get_context reports — and never on a document
+         without one. Invocation liveness still names the symbol being worked. */
       const render = functionSource('_rapierAgentBarRender');
       const active = functionSource('_rapierStructureActiveHere');
       const setLive = functionSource('_rapierStructureSetLive');
       const name = functionSource('_rapierAgentBarNameSymbol');
-      return a31Result(/word\s*===\s*['"]WORKING['"][\s\S]*_rapierStructureActiveHere\s*\(\s*executing\s*\)/.test(render) &&
+      return a31Result(/const acorn\s*=\s*!!word\s*&&\s*!!_rapierStructureFact\s*\(\s*\)/.test(render) &&
         /active\.invocationIds\s+instanceof\s+Set/.test(active) &&
         /_rapierStructuralIdentityCurrent\s*\(\s*identity\s*\)/.test(active) &&
         /active\.invocationIds\.has/.test(active) &&
         /_rapierAgentBarRender/.test(setLive) && /_rapierStructuralIdentityCurrent/.test(name) &&
         !/engineReady|StructureEngineReady/.test(render.slice(render.indexOf('const glyph'))),
-      'glyph visibility is not an invocation-and-identity fact');
+      'glyph visibility is not a presence-and-structure fact');
     },
   },
   {
@@ -4134,6 +4138,8 @@ const SIZE_LEDGER_HISTORY = Object.freeze([
   Object.freeze({ landing: 'SIZE-2027-R6', bytes: 3267121, deltaBytes: 19966 }),
   Object.freeze({ landing: 'SIZE-2027-R7', bytes: 2934277, deltaBytes: -332844 }),
   Object.freeze({ landing: 'SIZE-2027-R8', bytes: 2934224, deltaBytes: -53 }),
+  Object.freeze({ landing: 'SIZE-2027-R9', bytes: 2937322, deltaBytes: 3098 }),
+  Object.freeze({ landing: 'SIZE-2027-R10', bytes: 2937322, deltaBytes: 0 }),
 ]);
 const sizeLedger = receipt && receipt.sizeLedger;
 const sizeBaseline = sizeLedger && sizeLedger.baseline;
@@ -4170,8 +4176,8 @@ const boundaryShippedDelta = shippedBytes - boundaryStartBytes;
    sealed one, and growth names its displacement or its founder-visible justification. A landing
    that shrinks needs no words; one that grows carries `growth` in its ledger row — the sentence
    that says what the bytes bought — or the audit refuses it. The delta itself is always printed. */
-check('SIZE-2027-R9 is accounted against sealed SIZE-2027-R8',
-  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R9'
+check('SIZE-2027-R11 is accounted against sealed SIZE-2027-R10',
+  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R11'
     && lastSizeLanding.bytes === shippedBytes
     && lastSizeLanding.deltaBytes === boundaryShippedDelta
     && (shippedBytes < boundaryStartBytes
@@ -4631,6 +4637,18 @@ const POSTURE_RESULT_FIELDS = ['posture', 'changes_not_shown', 'yourChangesNotSh
    own data, so a field the guide teaches and no door takes fails the release. */
 const declaredInputFields = [...new Set(operations.flatMap(entry =>
   Object.keys((entry && entry.input && entry.input.properties) || {})))].sort();
+/* THE PERSON'S LINE, READ OUT OF THE DOOR THAT DECLARES IT. A line the person spoke with no call
+   parked is held in session memory and reported by one door, so the guide's right to name the two
+   fields is derived from that door's own declaration rather than blessed beside this line: the two
+   names are pinned here, but they are admitted only while `document.get_context` still declares
+   them, and the nested record's keys come from the declaration alone. A field the guide teaches and
+   this door does not declare fails the release, which is the same rule the input fields keep. */
+const messageResultFields = (() => {
+  const shape = ((operations.find(entry => entry && entry.name === 'document.get_context') || {})
+    .result || {}).properties || {};
+  return [...new Set(['pendingMessages', 'latestMessage'].filter(key => shape[key])
+    .concat(Object.keys((shape.latestMessage || {}).properties || {})))];
+})();
 const strayVocabulary = text => [...new Set([...String(text).matchAll(/`([^`\n]+)`/g)]
   .map(match => match[1]))].filter(word =>
   !WILL_RULES.includes(word) && !WILL_REVIEWS.includes(word)
@@ -4641,6 +4659,7 @@ const strayVocabulary = text => [...new Set([...String(text).matchAll(/`([^`\n]+
     && !POSTURE_WORDS.includes(word)
     && !POSTURE_RESULT_FIELDS.includes(word)
     && !declaredInputFields.includes(word)
+    && !messageResultFields.includes(word)
     && !webMcpToolNodes.has(word)
     && !word.startsWith('<!--')
     && !/^[A-Z_/]/.test(word));
@@ -4707,6 +4726,10 @@ check('the law refusal names one closed vocabulary everywhere it is spoken',
        a model as an option that does not exist. */
     && POSTURE_WORDS.length === 3
     && POSTURE_WORDS.every(word => agentsGuide.includes('`' + word + '`'))
+    /* The queued line is two fields and one record of three, and the guide teaches every one of
+       them: a field the door stops declaring, or one the guide stops naming, fails here. */
+    && messageResultFields.length === 5
+    && messageResultFields.every(word => agentsGuide.includes('`' + word + '`'))
     /* An honest default protects an ending nobody listed, and nothing at all against a listed
        one, so the map is pinned key for key rather than by its value set alone. */
     && willReviewEnd
@@ -4730,7 +4753,7 @@ check('the law refusal names one closed vocabulary everywhere it is spoken',
   JSON.stringify({ detailedRefusal, projectedDetail, applyWords, undoWords,
     descriptorLength: applyDescription.length, willReviewEnd, identityCommitCalls,
     strayInDescriptor: strayVocabulary(applyDescription),
-    strayInGuide: strayVocabulary(agentsGuide),
+    strayInGuide: strayVocabulary(agentsGuide), messageResultFields,
     guideNamesEveryWord: WILL_RULES.concat(WILL_REVIEWS)
       .filter(word => !agentsGuide.includes('`' + word + '`')) }));
 

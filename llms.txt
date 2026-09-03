@@ -21,6 +21,13 @@
 - [README](https://rapier.website/README.md): Product, security, network, deployment, and platform contract.
 - [Embed Rapier](https://rapier.website/README.md#use-rapier-in-your-own-app): The drop-in file, the iframe embed protocol, and the prompt for an "Open in Rapier" button.
 
+## Limits, stated
+
+- WebMCP is only present in browsers that ship it; without it, Rapier is the same editor and every tool line above is simply absent.
+- One tab edits a document at a time; another tab reads until the person takes editing there. There is no multi-person real-time editing.
+- No tool hands over a whole document: reads are the outline and bounded pages, and every edit needs a handle from a read.
+- The document's will governs Markdown; a DOCX copy carries it as hidden text, a PDF copy does not carry it.
+
 ## Evidence
 
 - [Release receipt](https://rapier.website/qualification/RECEIPT.json): Machine-readable identity and one honest status per release gate.
