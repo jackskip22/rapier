@@ -1,0 +1,121 @@
+name: Unzip
+
+on:
+  push:
+    paths:
+      - '*.[zZ][iI][pP]'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unzip-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unzip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Unzip
+        shell: bash
+        env:
+          ACTIONS_TOKEN: ${{ github.token }}
+          GH_CONFIG_DIR: ${{ runner.temp }}/gh
+        run: |
+          set -euo pipefail
+          trap 'rm -rf -- "$GH_CONFIG_DIR"' EXIT
+
+          archive_dir="$RUNNER_TEMP/unzip-archives"
+          updater="$RUNNER_TEMP/unzip.yml"
+          mkdir -p "$archive_dir"
+          cp -- .github/workflows/unzip.yml "$updater"
+
+          declare -a payloads=()
+
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            while IFS= read -r -d '' payload; do
+              payloads+=("$payload")
+            done < <(find . -maxdepth 1 -type f -iname '*.zip' -print0 | sort -z)
+
+            if (( ${#payloads[@]} == 0 )); then
+              echo 'No ZIP files found in the repository root.' >&2
+              exit 1
+            fi
+
+            echo "Manual run: found ${#payloads[@]} root ZIP file(s)."
+          else
+            mapfile -d '' changed < <(git diff-tree --root --no-commit-id --name-status -r -z HEAD)
+            if (( ${#changed[@]} != 2 )); then
+              echo 'Upload one new ZIP to the repository root by itself.' >&2
+              exit 1
+            fi
+
+            status=${changed[0]}
+            payload=${changed[1]}
+            if [[ "$status" != A || "$payload" == */* || "${payload,,}" != *.zip ]]; then
+              echo 'Upload one new ZIP to the repository root by itself.' >&2
+              exit 1
+            fi
+
+            payloads+=("$payload")
+          fi
+
+          declare -a archives=()
+          index=0
+          for payload in "${payloads[@]}"; do
+            (( index += 1 ))
+            archive="$archive_dir/$(printf '%04d.zip' "$index")"
+            cp -- "$payload" "$archive"
+            archives+=("$archive")
+
+            unzip -tq "$archive" >/dev/null
+
+            while IFS= read -r entry; do
+              path=${entry//\\//}
+              lower=${path,,}
+              if [[ "$path" == /* || "$path" =~ ^[A-Za-z]: || "/$path/" == *'/../'* || "/$lower/" == *'/.git/'* ]]; then
+                echo "Unsafe ZIP entry in $payload: $entry" >&2
+                exit 1
+              fi
+            done < <(unzip -Z1 "$archive")
+          done
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+
+          for archive in "${archives[@]}"; do
+            unzip -oq "$archive" -d .
+          done
+
+          if [[ -L .github || -L .github/workflows ]]; then
+            echo 'The ZIP cannot use a symlink for .github/workflows.' >&2
+            exit 1
+          fi
+          mkdir -p .github/workflows
+          cp -- "$updater" .github/workflows/unzip.yml
+
+          git add -A
+          git diff --cached --quiet && exit 0
+
+          workflow_changes=false
+          git diff --cached --quiet -- .github/workflows || workflow_changes=true
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Unzip codebase [skip ci]'
+
+          if [[ "$workflow_changes" == true ]]; then
+            gh auth login --hostname github.com --git-protocol https --web --insecure-storage --scopes workflow,offline_access
+            gh auth setup-git --hostname github.com
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          else
+            git push "https://x-access-token:${ACTIONS_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
+          fi
