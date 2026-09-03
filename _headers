@@ -7,9 +7,55 @@
 # Origin-Agent-Cluster is not hardening. WebMCP rejects registerTool, getTools
 # and executeTool with SecurityError on any non-file scheme whose agent cluster
 # is not origin-keyed, and site-keyed is the default a site does not choose.
+#
+# Origin-Trial token below: for https://rapier.website (isSubdomain true), feature WebMCP,
+# expires 2026-11-17 00:00 UTC; the origin trial spans Chrome 149-156, shipping unflagged at 157.
+# The same token rides in the head of rapier.html as a meta tag; the static audit pins the two
+# equal, so a renewal edits both.
+#
+# Content-Security-Policy: the browser-owned half of the content boundary. The sanitizer refuses
+# a hostile document's request; this refuses the request that gets past the sanitizer, and it is
+# the only owner that cannot be reasoned around. `default-src 'none'` means every fetch this
+# page does not name below is refused, so a directive absent here is a capability absent.
+#   script-src and style-src name no 'self': every byte this page executes and every rule it
+#     applies is inline, so a same-origin source would admit a file that does not exist.
+#     'unsafe-inline' is the application itself, the vendors at rest included — they execute by
+#     appending script elements carrying the text they inflated, which no nonce can reach. The
+#     two are named in one breath and do not fail alike, measured: without script's the page
+#     defines no library and renders nothing, while without style's it works and is unstyled.
+#     'unsafe-eval' is absent, and its absence is the point: it was here for one thing, the
+#     framework evaluator that compiled each markup directive with the Function constructor.
+#     The chrome is render functions now and the markup carries no directives, so nothing in
+#     this page builds code from a string. Restoring the allowance would mean something started
+#     to.
+#   worker-src 'self' blob: is the parse and structure Workers, both built from object URLs,
+#     plus the service worker a hosted install registers from this origin. Without blob:
+#     WYSIWYG never renders; without 'self' the install's own worker is refused.
+#   connect-src 'self' is the three fetch call sites, all same-origin: the optional Math and
+#     DOCX bundles, the AGPL source offer re-reading this page, and ?demo=1.
+#   img-src and media-src name https: because CONSENT IS A SURFACE. `Load remote content` is a
+#     person deciding that this document may reach the place it named, and a header cannot see
+#     a tap: strict img-src leaves the tap swapping the placeholder for a picture the browser
+#     then refuses, which is an affordance that lies. The pre-consent owner is the sanitizer,
+#     which asks the value of every attribute rather than a list of names, so this is not the
+#     directive standing between a hostile document and a stranger. data: is the inline raster
+#     the sanitizer admits; blob: is the image decoder loading a page-minted body.
+#   font-src data: is the two embedded subsets. Consent does not reach here: after a tap an
+#     off-origin @font-face or @import still does not load, because a stylesheet and a font are
+#     a larger capability than the picture the person was looking at.
+#   manifest-src 'self' is the PWA identity. It is the one directive below that no automated
+#     surface drives: a browser fetches the manifest during an installability check, which a
+#     headless run never performs, so it stands on the install path rather than on a witness.
+#   frame-ancestors is unrestricted because being framed is a product surface: ?embed=1 is
+#     authorised by an exact parent origin through a MessagePort handshake in the page, and a
+#     header restricting ancestors would silently delete the host-owned embed instead.
+#   base-uri and form-action are 'none' because this page has no base element and submits
+#     nowhere; both are the header-level owner of a document that tried to add one.
 /*
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors *
   Cache-Control: no-cache
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), geolocation=(), microphone=()
   Origin-Agent-Cluster: ?1
+  Origin-Trial: AtFuTRsj1SOJpqIO0IrTpfvZjWjm61v47tsWw+RpPlMP3J1ZpZr895WYl81B5uRkO6X9sjAtQN/yp0SrhKNZ9QkAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==

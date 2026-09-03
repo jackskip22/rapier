@@ -1,0 +1,13 @@
+.gradle/
+**/build/
+local.properties
+.wrangler/
+.DS_Store
+windows/packages/
+windows/.vs/
+*.vcxproj.user
+*.suo
+# Signing material never belongs in the public source mirror.
+*.p12
+*.jks
+*.keystore

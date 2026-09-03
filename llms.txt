@@ -1,0 +1,25 @@
+# Rapier
+
+> A self-contained Markdown, text, and code editor. One HTML artifact exposes
+> the same semantic operation kernel to its visible UI, WebMCP, and embed hosts.
+
+## Start
+
+- [Open Rapier](https://rapier.website/): The editor and live WebMCP surface in a capable browser.
+- [Artifact](https://rapier.website/rapier.html): The complete core editor; no build step, bundler, backend, or network fetch is needed to start and use it. Optional Math and DOCX export bundles are fetched only when requested.
+- [Working demo](https://rapier.website/?demo=1): Rapier opened on its included demonstration document.
+- [Agent guide](https://rapier.website/agents): Current tools, bounded editing workflow, and document-law conduct.
+
+## Will
+
+- [Will specification](https://rapier.website/WILL-1.md): Will lets a document carry its person's durable intent and the `edit`, `append`, or `keep` law for each governed region.
+- [Will vectors](https://rapier.website/VECTORS.md): Portable, machine-judgeable conformance cases.
+
+## Integration
+
+- [WebMCP record](https://rapier.website/WEBMCP-CHALLENGE.md): What the browser-agent projection adds and what remains in Rapier's pre-existing kernel.
+- [README](https://rapier.website/README.md): Product, security, network, deployment, and platform contract.
+
+## Evidence
+
+- [Release receipt](https://rapier.website/qualification/RECEIPT.json): Machine-readable identity and one honest status per release gate.
