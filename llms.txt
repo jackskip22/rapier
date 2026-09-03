@@ -19,6 +19,7 @@
 
 - [WebMCP record](https://rapier.website/WEBMCP-CHALLENGE.md): What the browser-agent projection adds and what remains in Rapier's pre-existing kernel.
 - [README](https://rapier.website/README.md): Product, security, network, deployment, and platform contract.
+- [Embed Rapier](https://rapier.website/README.md#use-rapier-in-your-own-app): The drop-in file, the iframe embed protocol, and the prompt for an "Open in Rapier" button.
 
 ## Evidence
 

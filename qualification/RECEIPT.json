@@ -1,0 +1,131 @@
+{
+  "release": "1.0.0",
+  "rapierHtmlSha256": "c0ef27cc184c5c7b9ef3b571116edec983cbded1622f05ad49e06caee4d25ca8",
+  "publicTreeFileCount": 27,
+  "publicTreeSha256": "52a183ec1d62268b302ace130f032962ef5b5b5b58f539e467905a808f7ba35c",
+  "status": "source-qualified",
+  "sizeLedger": {
+    "unit": "bytes",
+    "baseline": {
+      "name": "SIZE mandate",
+      "bytes": 3866496
+    },
+    "landings": [
+      {
+        "landing": "KERNEL-2",
+        "bytes": 4023351,
+        "deltaBytes": 156855
+      },
+      {
+        "landing": "A3",
+        "bytes": 4411195,
+        "deltaBytes": 387844
+      },
+      {
+        "landing": "K2.5",
+        "bytes": 4465748,
+        "deltaBytes": 54553
+      },
+      {
+        "landing": "A3.1",
+        "bytes": 4565586,
+        "deltaBytes": 99838
+      },
+      {
+        "landing": "Unified origin",
+        "bytes": 4565586,
+        "deltaBytes": 0
+      },
+      {
+        "landing": "S1 suite extraction",
+        "bytes": 3525362,
+        "deltaBytes": -1040224
+      },
+      {
+        "landing": "Will first-contact seam",
+        "bytes": 3530992,
+        "deltaBytes": 5630
+      },
+      {
+        "landing": "KERNEL-3",
+        "bytes": 3503865,
+        "deltaBytes": -27127
+      },
+      {
+        "landing": "BOUNDARY-1",
+        "bytes": 3485133,
+        "deltaBytes": -18732
+      },
+      {
+        "landing": "SIZE-2027",
+        "bytes": 3108009,
+        "deltaBytes": -377124
+      },
+      {
+        "landing": "SIZE-2027-R1",
+        "bytes": 3162127,
+        "deltaBytes": 54118,
+        "growth": "The Codex round: input admission at both doors, the capability-delivery finalizer, the boot latch's authority, the seen ledger's delivery, the agent shape (handle_scope, section_ref), the arrival watch, isError on refusal envelopes, the tools-registered line and the origin-trial meta — +54,118 B over sealed SIZE-2027; the displacements were R's one mint (−2 KB) and W4's descriptor prose (−677 B); the steel ceiling stays a standing deviation."
+      },
+      {
+        "landing": "SIZE-2027-R2",
+        "bytes": 3166923,
+        "deltaBytes": 4796,
+        "growth": "P-0: the refused projection's porthole paints its own window before any input (the blank source-only open, with its widened witness); P-1a: one block's live text read from the ledger's map instead of a document-wide attribute scan; packet 3B answered: the refused boot returns logical writer authority, the native intake and a staged read stop under the terminal fact, the launch generation deleted; the admissible-filename law declared once; the audit's Will-record check reads README."
+      },
+      {
+        "landing": "SIZE-2027-R3",
+        "bytes": 3233725,
+        "deltaBytes": 66802,
+        "growth": "The forge fold: the person's chain FREE · CHECK · ASK with the delivery wait and ASK's hold (+16.8 KB); the agent's note beside the circle (+9.8 KB); the outline on any document scanned in the Worker (+14.7 KB); render on approach for long documents (+8.2 KB); Will's words on every door with the fault list and the live-admission differential (+5.1 KB); the integrity memo, the overflow sweep, the ledger anchor and the once-per-frame drag (+7.1 KB); CHECK asking where it cannot see (+3.6 KB); call-local undo contexts (+1.5 KB); TAILS's one-owner cuts (+0.9 KB); F5's comment cut (−1.0 KB) — every byte an agent-experience gain the founder ruled in, against a steel ceiling that stands as a deviation."
+      },
+      {
+        "landing": "SIZE-2027-R4",
+        "bytes": 3235240,
+        "deltaBytes": 1515,
+        "growth": "The hilt's return folded: the marker seam names the touched region and its law; the kernel judges a marker line's version first and a missing law word as malformed, as the reference does, with two settling vectors re-vendored (94); heading slugs reserve the page's ids so no document heading shadows a control; the i cut to its three descriptions and the circle kept below the top bar (+1,515 B net, an honesty and a defect closed, against a ceiling that stands as a deviation)."
+      },
+      {
+        "landing": "SIZE-2027-R5",
+        "bytes": 3247155,
+        "deltaBytes": 11915,
+        "growth": "SIZE-2027-R5 grows 11,915 B over R4: CHECK's evidence unit (whole-segment held bands, lensless delivery, the proven zero), the wire owner on the serialized envelope, relocation that ranks its neighbourhood, the retraction under a kept law and placement on any handle, the find that does not wake the document, the hostile-network gate, the faults bound on the wire, the 96-vector Will corpus and its kernel totality"
+      },
+      {
+        "landing": "SIZE-2027-R6",
+        "bytes": 3267121,
+        "deltaBytes": 19966,
+        "growth": "SIZE-2027-R6 grows 19,966 B over R5: the other session's two sharpening waves (the agent path forcing no layout for a call that changes nothing, sixteen blocks per sanitizer call, the highlighter at first need, the host's cancel heard through one AbortController per invocation, the integrity hashes at half the cost), authority over one occurrence (relocation only by proof of the splice journal, +6,445 B), the act judged whole under Will (+1,793 B), the default wait, CHECK's unit per block; less one circle (−767 B) and the includeText door deleted."
+      },
+      {
+        "landing": "SIZE-2027-R7",
+        "bytes": 2929527,
+        "deltaBytes": -337594
+      }
+    ]
+  },
+  "gates": {
+    "desktopSuite": "302/0/0",
+    "mobileSuite": "302/0/0",
+    "previewSuite": "302/0/0",
+    "webmcpHarness": "246/246",
+    "k3Browser": "not_run",
+    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/c0ef27cc184c/real-chrome/)",
+    "originSurface": "not_run",
+    "staticAudit": "125/125",
+    "realAgentRoute": "model_chosen_script_hosted 58/60 sha256:2216f48917b0",
+    "manualDevice": "not_run",
+    "webmcpHarnessReal": "224/228 on the R4 bytes 6fba753d09bd",
+    "webmcpEvalsReal": "10/10 on the R4 bytes 6fba753d09bd"
+  },
+  "generatedAt": "2026-09-03T15:52:46.000Z",
+  "sizeCensus": {
+    "unit": "bytes",
+    "total": 2929527,
+    "steel": 2563259,
+    "payload": 366268,
+    "vendorSpans": 17,
+    "gzip9": 912075,
+    "tools": "steel/payload: sharpen-census/alpine-census.js (owned bytes vs RAPIER_VENDOR spans); wire: gzip -9 -c rapier.html | wc -c"
+  }
+}

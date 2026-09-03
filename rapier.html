@@ -16753,7 +16753,6 @@ function _rapierInitBlockInteractionRouter() {
 				_rapierRevealInteractiveEditGate(wrapper);
 			}
 			if (_rapierControlSelectionChanged(gesture)) {
-				_rapierRevealInteractiveEditGate(wrapper);
 				return;
 			}
 			if (selection && !selection.isCollapsed) {
@@ -20947,10 +20946,28 @@ function _rapierHasRenderedAnchor(root) {
 	return !!(root && root.querySelector && root.querySelector('[id]'));
 }
 
+/* A block virtualization sleeps replaces its wrapper's live children with a placeholder and
+	 keeps the real nodes on the wrapper (`_rapierDormant`); a heading inside a sleeping block is
+	 invisible to `querySelectorAll` even though the node — and any id already on it — still
+	 exists. Slug assignment must see those nodes too, or a jump-to target past the render window
+	 never gets an id and the link finds nothing on the tap that would first render it awake. */
+function _rapierDormantHeadings(root, selector) {
+	if (!root || !root.querySelectorAll) return [];
+	const found = [];
+	root.querySelectorAll('.block-wrapper--dormant').forEach(wrapper => {
+		(wrapper._rapierDormant || []).forEach(node => {
+			if (!node || node.nodeType !== 1) return;
+			if (node.matches?.(selector)) found.push(node);
+			if (node.querySelectorAll) found.push(...node.querySelectorAll(selector));
+		});
+	});
+	return found;
+}
+
 function _rapierAssignHeadingSlugs(root, selector = RAPIER_RENDERED_HEADING_SELECTOR, reserveExisting = true) {
 	if (!root || !root.querySelectorAll) return;
 	const used = Object.create(null);
-	const headings = Array.from(root.querySelectorAll(selector));
+	const headings = Array.from(root.querySelectorAll(selector)).concat(_rapierDormantHeadings(root, selector));
 	const headingSet = new Set(headings);
 	if (reserveExisting) (root.isConnected ? document : root).querySelectorAll('[id]').forEach(element => {
 		if (!headingSet.has(element) && element.id) used[element.id] = 1;
@@ -21721,6 +21738,24 @@ function _rapierCssEscape(value) {
 	return String(value).replace(/["\\]/g, '\\$&');
 }
 
+/* A jump target past the virtualization window is asleep (`_rapierWysiwygSleep` replaced its
+	 wrapper's children with a placeholder); its real nodes — and any id already on them — live on
+	 the wrapper's `_rapierDormant` list, invisible to `editor.querySelector`. Wake the wrapper
+	 that holds the id before giving up on it. */
+function _rapierWakeDormantIdTarget(editor, id) {
+	const escaped = _rapierCssEscape(id);
+	const wrappers = editor.querySelectorAll(':scope > .block-wrapper--dormant');
+	for (const wrapper of wrappers) {
+		const nodes = wrapper._rapierDormant;
+		if (!nodes) continue;
+		const hit = nodes.some(node => node.nodeType === 1 && (
+			node.matches?.('[id="' + escaped + '"],[name="' + escaped + '"]') ||
+			node.querySelector?.('[id="' + escaped + '"],[name="' + escaped + '"]')));
+		if (hit) { _rapierWysiwygWake(wrapper); return true; }
+	}
+	return false;
+}
+
 function _rapierJumpToHash(hash) {
 	const id = _rapierDecodeHash(hash);
 	if (!id) return false;
@@ -21728,6 +21763,10 @@ function _rapierJumpToHash(hash) {
 	if (!editor) return false;
 	let target = editor.querySelector('[id="' + _rapierCssEscape(id) + '"]');
 	if (!target) target = editor.querySelector('[name="' + _rapierCssEscape(id) + '"]');
+	if (!target && _rapierWakeDormantIdTarget(editor, id)) {
+		target = editor.querySelector('[id="' + _rapierCssEscape(id) + '"]');
+		if (!target) target = editor.querySelector('[name="' + _rapierCssEscape(id) + '"]');
+	}
 	if (!target) return false;
 	const travel = _rapierTravelBegin('document link');
 	const destination = _rapierTravelDestinationForElement(target);
@@ -21751,6 +21790,13 @@ document.addEventListener('click', e => {
 	if (!link) return;
 	e.preventDefault();
 	e.stopPropagation();
+	/* This capturing listener wins the hash-link tap before it ever reaches the block
+	   interaction router's own click handler, so the pencil law's reveal has to happen here too
+	   — otherwise a jump-to or footnote tap never shows the floating pencil at all. */
+	if (!rapier.access.readOnly) {
+		const wrapper = link.closest('.block-wrapper');
+		if (wrapper) _rapierRevealInteractiveEditGate(wrapper);
+	}
 	_rapierJumpToHash(link.getAttribute('href'));
 }, true);
 

@@ -245,6 +245,50 @@ A posture never grants what the document refuses: where the Will says `keep`, no
 all three. And the integer never means reviewed — it is what Rapier has not yet put in front of
 them.
 
+## Embedding Rapier
+
+A host puts rapier.html in an iframe two ways. Same-origin, embed=local: an
+ordinary Rapier, with its own file, save and recovery behavior, no protocol
+to speak. Cross-origin, host-owned, embed=1 with a parentOrigin naming the
+exact page that framed it: the host owns document identity, storage and the
+save decision; Rapier owns editing, dirty state and Compare. The two sides
+trade one message port, opened after the frame posts a ready message and the
+host answers naming a session and a document id. Four message types carry
+the whole exchange: load hands Rapier the document, with a read-only flag
+that is a floor — the reader's own stricter preference can still apply, but
+nothing loosens what the host declared; save-request hands the host the
+edited bytes; save-ack confirms with the new revision; save-nack with a
+conflict code tells Rapier the host's own copy moved and the write did not
+land.
+
+Inside a host-owned frame, `document.open_text` is withdrawn: only the host
+may load or replace its own document, never a tool call. Every other verb
+registers the same as at the top level once the frame connects and its
+document commits — `document.get_context`, `document.apply_edits`,
+`document.save` only while the host has said the document is writable, and
+the rest. A `document.save` call inside embed writes back to the host
+through the load/save exchange above; there is no second, agent-only save
+route.
+
+An agent the host itself drives — its own application code, wired to the
+protocol above — reaches the frame regardless of what the visiting browser
+can see. A browser's own agent is a separate question: it finds tools
+through the page's own modelContext object, and as of today an agent
+browser such as ChatGPT's in-app browser looks for that object on the top
+page it is showing a person, not inside a frame that page happens to have
+embedded — so embedding rapier.html does not, by itself, put Rapier's tools
+in front of a visiting browser agent. Same-origin embed=local frames, and a
+cross-origin embed=1 frame whose host has delegated the tools Permissions
+Policy feature on the frame tag, still carry Rapier's own registration
+exactly as the top-level editor does; whether a given browser's agent looks
+inside a frame at all is that browser's choice, not Rapier's.
+
+Dropped beside a person's own files with no query string at all, the same
+rapier.html is a complete offline viewer, editor and comparison tool for
+everything next to it — nothing to embed, nothing to wire up. For the exact
+message shapes and a working code example, see README.md, "Use Rapier in
+your own app".
+
 ## Ground truth
 
 - Artifact: [rapier.html](https://rapier.website/rapier.html)

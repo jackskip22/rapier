@@ -251,6 +251,9 @@ without adopting an editor SDK, agent SDK, account, backend, or persistence
 protocol. The existing host-owned Embed remains a separate authority boundary:
 its tools appear only after authenticated load, cross-origin registration is
 exposed only to the exact parent, and an agent cannot replace the host's document.
+`README.md`, "Use Rapier in your own app," spells out both doors, the host
+protocol's message shapes, and a prompt a site's own coding agent can use to
+wire an "Open in Rapier" button to them.
 
 **The window.** The challenge's submission period opens **2026-08-25**, and
 everything in this section is work added inside it. Rapier predates that date;
