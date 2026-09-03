@@ -1,8 +1,8 @@
 {
   "release": "1.0.0",
-  "rapierHtmlSha256": "4e0353493130d4d513b077349d23d0b31032f5c3d8a3e64b9f8564537a43375f",
+  "rapierHtmlSha256": "f3de830b5a52aa3b9edbc16e640c7888b1c948bfb9c2d6591d59c07c1253f912",
   "publicTreeFileCount": 27,
-  "publicTreeSha256": "3505306b8476c6e2d621635238e9201fb3f53922fd08b0a76df9e1d68a283f0a",
+  "publicTreeSha256": "4e0e00b62bd634c1279b3de9c5eda94447ac384e9ab68564e4f87aaa6a7c105a",
   "status": "source-qualified",
   "sizeLedger": {
     "unit": "bytes",
@@ -106,6 +106,12 @@
         "landing": "SIZE-2027-R8",
         "bytes": 2934224,
         "deltaBytes": -53
+      },
+      {
+        "landing": "SIZE-2027-R9",
+        "bytes": 2937322,
+        "deltaBytes": 3098,
+        "growth": "SIZE-2027-R9 ends 3,098 B over R8 — the phone preview made the phone under a mouse: the headings navigator reachable, the editing toolbar dragged and scrolled by pointer, the pencil law for every pointer on an interactive block; the earlier folds stand as SIZE-2027-R8's and R7's notes list them."
       }
     ]
   },
@@ -115,7 +121,7 @@
     "previewSuite": "302/0/0",
     "webmcpHarness": "250/250",
     "k3Browser": "not_run",
-    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/4e0353493130/real-chrome/)",
+    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/f3de830b5a52/real-chrome/)",
     "originSurface": "not_run",
     "staticAudit": "125/125",
     "realAgentRoute": "model_chosen_script_hosted 58/60 sha256:2216f48917b0",
@@ -123,14 +129,14 @@
     "webmcpHarnessReal": "224/228 on the R4 bytes 6fba753d09bd",
     "webmcpEvalsReal": "10/10 on the R4 bytes 6fba753d09bd"
   },
-  "generatedAt": "2026-09-03T16:44:30.000Z",
+  "generatedAt": "2026-09-03T17:50:53.000Z",
   "sizeCensus": {
     "unit": "bytes",
-    "total": 2934224,
-    "steel": 2567956,
+    "total": 2937322,
+    "steel": 2571054,
     "payload": 366268,
     "vendorSpans": 17,
-    "gzip9": 912959,
+    "gzip9": 914017,
     "tools": "steel/payload: sharpen-census/alpine-census.js (owned bytes vs RAPIER_VENDOR spans); wire: gzip -9 -c rapier.html | wc -c"
   }
 }

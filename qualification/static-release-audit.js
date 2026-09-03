@@ -4133,6 +4133,7 @@ const SIZE_LEDGER_HISTORY = Object.freeze([
   Object.freeze({ landing: 'SIZE-2027-R5', bytes: 3247155, deltaBytes: 11915 }),
   Object.freeze({ landing: 'SIZE-2027-R6', bytes: 3267121, deltaBytes: 19966 }),
   Object.freeze({ landing: 'SIZE-2027-R7', bytes: 2934277, deltaBytes: -332844 }),
+  Object.freeze({ landing: 'SIZE-2027-R8', bytes: 2934224, deltaBytes: -53 }),
 ]);
 const sizeLedger = receipt && receipt.sizeLedger;
 const sizeBaseline = sizeLedger && sizeLedger.baseline;
@@ -4169,8 +4170,8 @@ const boundaryShippedDelta = shippedBytes - boundaryStartBytes;
    sealed one, and growth names its displacement or its founder-visible justification. A landing
    that shrinks needs no words; one that grows carries `growth` in its ledger row — the sentence
    that says what the bytes bought — or the audit refuses it. The delta itself is always printed. */
-check('SIZE-2027-R8 is accounted against sealed SIZE-2027-R7',
-  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R8'
+check('SIZE-2027-R9 is accounted against sealed SIZE-2027-R8',
+  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R9'
     && lastSizeLanding.bytes === shippedBytes
     && lastSizeLanding.deltaBytes === boundaryShippedDelta
     && (shippedBytes < boundaryStartBytes

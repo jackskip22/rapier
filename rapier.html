@@ -3107,7 +3107,7 @@ body.rapier-boot-failed>.rapier-boot-failure{display:block}
 .rapier-boot-failure h1{margin:0 0 .6rem;font-size:1.1rem;font-weight:650}
 .rapier-boot-failure p{margin:0;color:var(--color-text-secondary,#999)}
 
-html.rapier-engine-modal-locked,html.rapier-engine-modal-locked body{overflow:hidden!important;overscroll-behavior:contain}
+html.rapier-engine-modal-locked{overflow:hidden!important;overscroll-behavior:contain}html.rapier-engine-modal-locked body{overflow:hidden;overscroll-behavior:contain}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 
 
@@ -3988,6 +3988,20 @@ body {
 	margin-inline: auto;
 
 	contain: layout paint;
+	/* The phone's screen edge is a hard crop for everything drawn inside it, the circle's overhang
+	   included, in every engine, not only where paint containment reaches fixed descendants. */
+	clip-path: inset(0);
+	/* PREVIEW LAW: the contained body is the phone's screen, never a scroll box. Under
+		 `hidden` a caret accommodation or a focus could scroll the 430px body sideways and
+		 shift the whole phone; `clip` leaves nothing to scroll. */
+	overflow: clip;
+}
+/* Inside the contained body every fixed overlay is positioned against the body, so a closed
+	 panel slid off to the right would widen the body's scrollable area. Paint containment on
+	 the overlay keeps its panel's off-screen rest position inside the overlay's own box. */
+:root.rapier-preview-phone[data-preview-viewport="wide"] .settings-overlay,
+:root.rapier-preview-phone[data-preview-viewport="column"] .settings-overlay {
+	contain: paint;
 }
 :root.rapier-preview-phone[data-preview-viewport="wide"],
 :root.rapier-preview-phone[data-preview-viewport="column"] {
@@ -4018,8 +4032,6 @@ body {
 }
 
 
-.settings-layout-group { display: none; }
-:root[data-preview-viewport="wide"] .settings-layout-group { display: block; }
 
 
 .top-bar {
@@ -4278,9 +4290,6 @@ html[data-headings="off"] .section-fold-btn { display: none !important; }
 @media print { .section-fold-btn { display: none !important; } }
 
 @media (hover:hover) and (pointer:fine) {
-	.section-fold-btn[data-tip]::after { left: auto; right: 4px; transform: translateY(3px); }
-	.section-fold-btn[data-tip]:hover::after,
-	.section-fold-btn[data-tip]:focus-visible::after { transform: translateY(0); }
 }
 
 
@@ -7438,15 +7447,6 @@ html[data-readonly="on"] .block-interactive-btn{display:none!important}
 		</div>
 
 		<div class="settings-panel__body">
-
-			<!-- Layout — offered only where the choice is real; see .settings-layout-group. -->
-			<div class="settings-layout-group">
-				<div class="settings-section__title">layout</div>
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-layout" data-switch="layout" role="group" aria-label="layout" style="width:100%;margin-bottom:var(--space-4)">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="phone" style="flex:1;width:auto">PHONE</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="window" style="flex:1;width:auto">WINDOW</button>
-				</div>
-			</div>
 
 			<!-- Stats LEFT + view-mode toggle RIGHT, top-aligned with WORDS row -->
 			<div class="settings-stats-row">
@@ -16786,6 +16786,14 @@ function _rapierInitBlockInteractionRouter() {
 			}
 		}
 
+		/* PENCIL LAW (the founder): on a block that carries controls, the first press — thumb, pen or
+		   mouse, the desktop app and the phone alike — raises the pencil and edits nothing; the pencil,
+		   or a second press on the text, opens the edit. A plain paragraph still opens on one press. */
+		if (!rapier.access.readOnly && wrapper.classList.contains('block-wrapper--interactive') &&
+				!wrapper.classList.contains('block-wrapper--show-editbtn')) {
+			_rapierRevealInteractiveEditGate(wrapper);
+			return;
+		}
 		const rawEditor = _blockUsesRawEditor(block.raw);
 		const liveRange = rawEditor ? null : _rapierCaretRangeFromPoint(event.clientX, event.clientY);
 		enterBlockEdit(block, wrapper, {
@@ -18024,6 +18032,61 @@ _rapierFormatToolbarFadeSurface?.addEventListener('scroll', () => {
 	_rapierSyncFormatToolbarEdgeFade(_rapierFormatToolbarFadeSurface);
 }, { passive: true });
 window.addEventListener('resize', () => _rapierSyncFormatToolbarEdgeFade(), { passive: true });
+
+/* The strip overflows by design; `touch-action:pan-x` hands the phone its pan, and no browser gives a
+	mouse one. This is that pan for every other pointer — same surface, same scrollLeft, same far controls.
+	A pan that moved swallows its own click so a drag never fires the button it started on. */
+const _RAPIER_FORMAT_TOOLBAR_PAN_SLOP = 3;
+const _rapierFormatToolbarPan = Object.seal({ pointerId: -1, startX: 0, startLeft: 0, moved: false });
+
+_rapierFormatToolbarFadeSurface?.addEventListener('pointerdown', event => {
+	if (event.pointerType === 'touch' || (event.button != null && event.button !== 0)) return;
+	const surface = _rapierFormatToolbarFadeSurface;
+	if (surface.scrollWidth - surface.clientWidth <= 0) return;
+	_rapierFormatToolbarPan.pointerId = event.pointerId;
+	_rapierFormatToolbarPan.startX = event.clientX;
+	_rapierFormatToolbarPan.startLeft = surface.scrollLeft;
+	_rapierFormatToolbarPan.moved = false;
+});
+
+_rapierFormatToolbarFadeSurface?.addEventListener('pointermove', event => {
+	if (event.pointerId !== _rapierFormatToolbarPan.pointerId) return;
+	const surface = _rapierFormatToolbarFadeSurface;
+	const dx = event.clientX - _rapierFormatToolbarPan.startX;
+	if (!_rapierFormatToolbarPan.moved) {
+		if (Math.abs(dx) < _RAPIER_FORMAT_TOOLBAR_PAN_SLOP) return;
+		_rapierFormatToolbarPan.moved = true;
+		try { surface.setPointerCapture(event.pointerId); } catch (_) {}
+	}
+	surface.scrollLeft = _rapierFormatToolbarPan.startLeft - dx;
+	event.preventDefault();
+});
+
+function _rapierFormatToolbarPanEnd(event) {
+	if (event.pointerId !== _rapierFormatToolbarPan.pointerId) return;
+	try { _rapierFormatToolbarFadeSurface.releasePointerCapture(event.pointerId); } catch (_) {}
+	_rapierFormatToolbarPan.pointerId = -1;
+	if (!_rapierFormatToolbarPan.moved) return;
+	_rapierFormatToolbarPan.moved = false;
+	const swallow = click => { click.stopPropagation(); click.preventDefault(); };
+	_rapierFormatToolbarFadeSurface.addEventListener('click', swallow, { capture: true, once: true });
+	setTimeout(() => _rapierFormatToolbarFadeSurface.removeEventListener('click', swallow, { capture: true }), 0);
+}
+_rapierFormatToolbarFadeSurface?.addEventListener('pointerup', _rapierFormatToolbarPanEnd);
+_rapierFormatToolbarFadeSurface?.addEventListener('pointercancel', _rapierFormatToolbarPanEnd);
+
+/* A wheel over the strip is horizontal intent whichever axis the device reports: trackpads send x, wheels only y. */
+_rapierFormatToolbarFadeSurface?.addEventListener('wheel', event => {
+	const surface = _rapierFormatToolbarFadeSurface;
+	const maximum = surface.scrollWidth - surface.clientWidth;
+	if (maximum <= 0) return;
+	const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+	if (!delta) return;
+	const next = Math.max(0, Math.min(maximum, surface.scrollLeft + delta));
+	if (next === surface.scrollLeft) return;
+	surface.scrollLeft = next;
+	event.preventDefault();
+});
 
 function _rapierToolbarRectSnapshot(rect) {
 	if (!rect) return null;
@@ -21094,7 +21157,6 @@ function _rapierSyncSectionFoldControl(wrapper, readDiv) {
 		wrapper.appendChild(button);
 	}
 	button.dataset.blockId = String(blockId);
-	button.dataset.tip = 'fold section \u00b7 hold for protection';
 	button.setAttribute('aria-expanded', folded ? 'false' : 'true');
 	const title = String(heading.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 100) || 'untitled heading';
 	button.setAttribute('aria-label',
@@ -35015,7 +35077,12 @@ function _bindScrollFab(fab, host, virtual) {
 		if (!updateFabPosition()) return;
 		fab.classList.add('visible');
 		clearTimeout(hideTimer);
-		if (!tracking && !fab.dataset.presence) hideTimer = setTimeout(() => fab.classList.remove('visible'), 900);
+		if (!tracking && !fab.dataset.presence) hideTimer = setTimeout(() => fab.classList.remove('visible'), _rapierFabDwell());
+	}
+	/* The circle rests 900 ms after a thumb's scroll, where the thumb already is. A wheel leaves
+	   the mouse wherever it was, so under a fine pointer the circle waits long enough to be reached. */
+	function _rapierFabDwell() {
+		return matchMedia('(hover: hover) and (pointer: fine)').matches ? 2400 : 900;
 	}
 
 	/* 2 scrollers, 1 circle: showFab reads active host itself → hidden-surface scroll self-corrects. Render-window/overflow-sweep = blocks-only housekeeping. */
@@ -35117,7 +35184,7 @@ function _bindScrollFab(fab, host, virtual) {
 			_rapierOpenDocumentNavigator(_rapierNavigatorKindForFab(), journey);
 		}
 		if (typeof virtual().end === 'function') virtual().end();
-		if (!fab.dataset.presence) hideTimer = setTimeout(() => fab.classList.remove('visible'), 900);
+		if (!fab.dataset.presence) hideTimer = setTimeout(() => fab.classList.remove('visible'), _rapierFabDwell());
 	}
 
 	fab.addEventListener('pointerup', e => finishPointer(e, false));
@@ -54278,14 +54345,6 @@ function _rapierUiSetPreference(field, raw) {
 		RapierPreferences.write('readOnly', raw === 'on');
 		return;
 	}
-	if (field === 'layout') {
-		const phone = raw === 'phone';
-		if (phone === document.documentElement.classList.contains('rapier-preview-phone')) return;
-		/* Presentation only: no reload, no reopen, no document touched, so the caret and the editor's scroll position are exactly where the person left them. */
-		_rapierApplyPreviewLayout(phone);
-		renderSettings();
-		return;
-	}
 	const spec = RapierStorage.preferences[field];
 	RapierPreferences.write(field, typeof spec.fallback === 'boolean' ? raw === 'true' : raw);
 }
@@ -54332,8 +54391,6 @@ function renderSettings() {
 	refs.settingsTitle.textContent = 'rapier V' + _rapierUi.version;
 	refs.settingsAttribution.hidden = !(_rapierEmbed.local || embedded);
 
-	renderSwitch(refs.layoutSwitch,
-		document.documentElement.classList.contains('rapier-preview-phone') ? 'phone' : 'window');
 	renderSwitch(refs.readOnlySwitch, locked ? 'on' : 'off');
 	refs.readOnlyOff.disabled = forced;
 	for (const field of ['theme', 'fontSize', 'showPlayButton', 'highlights', 'headings',
@@ -56282,7 +56339,7 @@ const _RAPIER_UI_REFS = Object.freeze({
 
 	settingsOverlay: 'settings-overlay', settingsPanel: 'settings-panel',
 	settingsTitle: 'settings-panel-title', settingsAttribution: 'settings-attribution',
-	layoutSwitch: 'switch-layout', readOnlySwitch: 'switch-read-only', readOnlyOff: 'switch-read-only-off',
+	readOnlySwitch: 'switch-read-only', readOnlyOff: 'switch-read-only-off',
 	themeSwitch: 'switch-theme', accentSwitch: 'accent-swatches', fontSizeSwitch: 'switch-font-size',
 	showPlayButtonSwitch: 'switch-read-aloud', highlightsSwitch: 'switch-highlights',
 	headingsSwitch: 'switch-headings', checkerSwitch: 'switch-checker', lineNumsSwitch: 'switch-line-numbers',
