@@ -15,8 +15,6 @@ or embed it in your app, and you have all of that for free.
 - **Open it** at [rapier.website](https://rapier.website) — nothing to install.
 - **Install it as an app.** Android: Chrome's ⋮ menu → Add to Home screen.
   Desktop: the install icon in the address bar.
-- **The Android app**, free.
-- **The Windows app** — one `.exe`, no installer.
 - **Or save `rapier.html`** anywhere — a disk, a USB stick, an email
   attachment — and open it. No host needed at all.
 
@@ -115,9 +113,10 @@ you, not somewhere else. It sees the document's shape first, and reads only
 the parts it asks for. Your hand always wins: an agent cannot overwrite what
 you are actively editing. A document can also carry its own word for what an
 agent may touch — `keep`, `append`, or `edit` — and every change an agent
-makes is yours to undo.
+makes is yours to undo. No tool can land a write the document holds on its
+own: it waits behind Compare until you decide.
 
-Try it: open [`?demo=1`](https://rapier.website/?demo=1) and read `demo.md`.
+Try it: open [`?demo=1&preview=phone`](https://rapier.website/?demo=1&preview=phone) — the demo document inside Rapier's real phone layout — and read `demo.md`.
 Sample prompts live there and in `qualification/AGENT-EVALS.md`. For agents:
 `agents.md`. For the challenge record: `WEBMCP-CHALLENGE.md` and
 `PUBLIC-SUBMISSION.md`.
@@ -144,7 +143,8 @@ registration, not by refusing the calls that reach it.
 ## Editions
 
 The web app, the installed app, the embedded editor, the Windows app and the
-Android app are free. No account, no subscription, no ads.
+Android app are free. No account, no subscription, no ads. This repository
+does not itself distribute the native Android or Windows builds.
 
 ## Launch surfaces
 
@@ -170,11 +170,11 @@ of two.
 
 ## Evidence
 
-**Evidence status: SIZE-2027-R7 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**302/0/0** each) and the WebMCP harness (**246 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
+**Evidence status: SIZE-2027-R8 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**302/0/0** each) and the WebMCP harness (**250 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
 Static release audit: **125/125** — reproduce it yourself with `node qualification/static-release-audit.js .`.
 The live origin, the K3 browser registry, and the manual-device gate are human gates, marked `not_run` on this candidate.
 **Origin surface not_run.**
-`demo.md` is 9,293 UTF-8 bytes with 15 source headings.
+`demo.md` is 8,851 UTF-8 bytes with 15 source headings.
 `WILL-1.md` and `VECTORS.md` are vendored from the canonical Will repository; Rapier itself remains AGPL-3.0, and its copies point home rather than claiming to be the executable suite of this tree.
 
 ## Licence

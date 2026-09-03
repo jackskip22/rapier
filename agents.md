@@ -9,6 +9,12 @@ live.
 
 ## The working pattern
 
+Work through the tools, never through the page. The editor's surface belongs to
+the person: do not click, type, scroll or select in it by automation. Every
+protection here — the posture, the document's law, single-use handles, the
+review — lives on the tool path, and a hand on the page bypasses none of it
+truthfully; it only takes the person's place.
+
 1. Call `document.get_context` when the request turns on the person's caret,
    selection or unsaved state. It names the focus passage, structural support,
    and any document law — never the body.
@@ -77,16 +83,26 @@ sit beside Will's three and are never a synonym for one of them:
 - `conflict` — the bytes you were shown have moved. `reason` names which fact changed:
   `cross_block_target_changed`, `cursor_boundary_changed`, `cursor_not_block_boundary`,
   `cursor_scope_changed`, `foreground_selection_active_on_target`, `target_changed`,
-  `undo_unavailable`, `view_changed`.
+  `undo_unavailable`, `view_changed`; on `document.save`, `external_file_changed` says the
+  authorized destination changed before Rapier wrote it, and `host_revision_conflict` says the
+  embedding host refused an older base revision.
 - `target_gone` — the target is no longer there. `reason` names what is gone: `block_removed`,
   `change_not_found`, `context_expired`, `context_missing`, `cursor_expired`,
   `document_replaced`, `focus_expired`, `outline_expired`, `surface_changed`,
   `surface_missing`.
 
-Every one of those four refusals also carries `isError` on the tool envelope. The
+Every one of those four refusals, and a `failed` save, also carries `isError` on the tool envelope. The
 WebMCP draft defines no such field; it is a conventional failure hint that evaluators
 read, and it is there because nothing outside this page reads the body. It is not a
 malfunction: branch on the body.
+
+Save receipts separate safe stopping from uncertain completion. A cancelled receipt with reason
+user_cancelled means the person cancelled and must not be retried around. An unacknowledged receipt
+with reason host_save_unacknowledged means Rapier sent the save request but received no durable host
+revision, while save_committed_acknowledgement_failed means local bytes were verified but the saved
+marker could not be committed; either may already have written, so ask before trying again. A failed
+receipt with reason save_verification_failed means readback did not match and Rapier made no second
+write.
 
 ## Current WebMCP vocabulary
 
@@ -295,4 +311,4 @@ your own app".
 - Will: [WILL-1.md](https://rapier.website/WILL-1.md)
 - Integration record: [WEBMCP-CHALLENGE.md](https://rapier.website/WEBMCP-CHALLENGE.md)
 - Release evidence: [qualification/RECEIPT.json](https://rapier.website/qualification/RECEIPT.json)
-- Working example: [open the demo](https://rapier.website/?demo=1)
+- Working example: [open the demo in the phone layout](https://rapier.website/?demo=1&preview=phone)

@@ -97,7 +97,7 @@ over the person's UI.
 frontier whose expandable branches reach every deeper heading. `document.read_context`
 walks a section in anchored pages; every page carries a capability over exactly that
 page and a name for the next undisclosed seam. `document.find` returns bounded
-snippets. There is no bulk-body tool. On the bundled 9,293-byte demo, all 15
+snippets. There is no bulk-body tool. On the bundled 8,851-byte demo, all 15
 parser-recognised headings outside fences are reachable without disclosing a body;
 repeated reads can deliberately disclose additional exact pages over time.
 
@@ -266,26 +266,16 @@ the shipped artifact rather than taking on trust.
 
 ## Evidence
 
-**Rapier 1.0.0 is a SIZE-2027-R7 source-qualified candidate.** The desktop, mobile and phone-preview suites (**302/0/0** each) and the WebMCP harness (**246 checks**) are executed against these exact bytes from the shipped extraction. Static release audit **125 / 125** after the receipt re-pin; the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6 — reproduce the current number directly: `node qualification/static-release-audit.js .`. Native WebMCP registration and four sample calls are observed on these exact bytes, recorded in the development tree (`docs/evidence/release/<sha12>/real-chrome/`), which is evidence rather than part of this published set; the full real-browser harness (**224/228**) and the scripted evals (**10/10**) are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
+**Rapier 1.0.0 is a SIZE-2027-R8 source-qualified candidate.** The desktop, mobile and phone-preview suites (**302/0/0** each) and the WebMCP harness (**250 checks**) are executed against these exact bytes from the shipped extraction. Static release audit **125 / 125** after the receipt re-pin; the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6 — reproduce the current number directly: `node qualification/static-release-audit.js .`. Native WebMCP registration and four sample calls are observed on these exact bytes, recorded in the development tree (`docs/evidence/release/<sha12>/real-chrome/`), which is evidence rather than part of this published set; the full real-browser harness (**224/228**) and the scripted evals (**10/10**) are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
 
 The qualification harness ships beside the source: the qualification-injected suite carried by `run-selftest2.js`, the WebMCP harness, the static release audit, and the real-agent route. They are there so the final submission can be judged from exact current bytes rather than inherited claims from pre-public development. `qualification/RECEIPT.json` binds the current source hash to the observed static result and keeps every unexecuted gate at `not_run` until it is actually observed on the same bytes.
 
 The WebMCP architecture itself is intentionally one projection over Rapier's existing semantic operation kernel. Visible controls, the Speedracer host projection, and browser-native WebMCP do not maintain separate editing implementations. WebMCP narrows what it exposes, carries its own agent actor, and receives only the bounded evidence/handles its tool call earned.
 
-## Where this runs — three distributions, one artifact
+## Where this runs — two distributions, one artifact
 
-The same canonical bytes ship into three deliberately different surfaces:
+The same canonical bytes ship into two deliberately different surfaces:
 
-- **Offline natives.** Android and Windows wrapper sources ship around the
-  same canonical bytes — static source, built nowhere in this release, with
-  the CI workflow build as the only witness. As written: Android's manifest
-  declares no `INTERNET` permission and configures its WebView with
-  `blockNetworkLoads = true`; Windows has no permission system to declare in
-  the first place, so its source instead installs a catch-all WebView2
-  resource filter written to answer every non-origin request with 404.
-  Neither native shell's source registers WebMCP — an outbound-content
-  boundary that is structural in the source, not yet a policy a running
-  binary has kept.
 - **The open web.** Any static host serves the one file. In a WebMCP-capable
   browser, the agent the person is already talking to gets a second,
   evidence-bound hand in the live document.

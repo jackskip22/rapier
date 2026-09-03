@@ -70,10 +70,10 @@ const cspDirectives = new Map((cspMatch ? cspMatch[1] : '').split(';')
   .map(part => part.trim()).filter(Boolean)
   .map(part => [part.split(/\s+/)[0].toLowerCase(), part.split(/\s+/).slice(1).join(' ')]));
 const CSP_EXPECTED = [
-  ['default-src', "'none'"], ['script-src', "'unsafe-inline'"],
+  ['default-src', "'none'"], ['script-src', "'unsafe-inline' blob:"],
   ['style-src', "'unsafe-inline'"], ['img-src', "'self' data: blob: https:"],
   ['media-src', "'self' https:"],
-  ['font-src', 'data:'], ['connect-src', "'self'"], ['worker-src', "'self' blob:"],
+  ['font-src', 'data:'], ['connect-src', "'self' https://cdn.jsdelivr.net"], ['worker-src', "'self' blob:"],
   ['manifest-src', "'self'"], ['base-uri', "'none'"], ['form-action', "'none'"],
   ['frame-ancestors', '*'],
 ];
@@ -2559,7 +2559,8 @@ const ORIGIN_SURFACE = Object.freeze([
   { role: 'integration record', route: '/WEBMCP-CHALLENGE.md', asset: 'WEBMCP-CHALLENGE.md', mapped: true },
   { role: 'release receipt', route: '/qualification/RECEIPT.json',
     asset: 'qualification/RECEIPT.json', mapped: true },
-  { role: 'working demo', route: '/?demo=1', asset: 'rapier.html', mapped: true },
+  /* The judge's door is the phone demo: the demo document inside Rapier's real phone layout. */
+  { role: 'working demo', route: '/?demo=1&preview=phone', asset: 'rapier.html', mapped: true },
 ]);
 const surfaceResolution = ORIGIN_SURFACE.map(entry => ({
   ...entry,
@@ -4131,6 +4132,7 @@ const SIZE_LEDGER_HISTORY = Object.freeze([
   Object.freeze({ landing: 'SIZE-2027-R4', bytes: 3235240, deltaBytes: 1515 }),
   Object.freeze({ landing: 'SIZE-2027-R5', bytes: 3247155, deltaBytes: 11915 }),
   Object.freeze({ landing: 'SIZE-2027-R6', bytes: 3267121, deltaBytes: 19966 }),
+  Object.freeze({ landing: 'SIZE-2027-R7', bytes: 2934277, deltaBytes: -332844 }),
 ]);
 const sizeLedger = receipt && receipt.sizeLedger;
 const sizeBaseline = sizeLedger && sizeLedger.baseline;
@@ -4167,8 +4169,8 @@ const boundaryShippedDelta = shippedBytes - boundaryStartBytes;
    sealed one, and growth names its displacement or its founder-visible justification. A landing
    that shrinks needs no words; one that grows carries `growth` in its ledger row — the sentence
    that says what the bytes bought — or the audit refuses it. The delta itself is always printed. */
-check('SIZE-2027-R7 is accounted against sealed SIZE-2027-R6',
-  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R7'
+check('SIZE-2027-R8 is accounted against sealed SIZE-2027-R7',
+  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R8'
     && lastSizeLanding.bytes === shippedBytes
     && lastSizeLanding.deltaBytes === boundaryShippedDelta
     && (shippedBytes < boundaryStartBytes
@@ -4743,6 +4745,7 @@ check('the law refusal names one closed vocabulary everywhere it is spoken',
 const WILL_OUTCOMES = ['applied', 'refused', 'invalid'];
 const HOST_OUTCOMES = ['conflict', 'target_gone'];
 const REFUSAL_WORDS = WILL_OUTCOMES.slice(1).concat(HOST_OUTCOMES).sort();
+const ERROR_WORDS = REFUSAL_WORDS.concat('failed').sort();
 const setWords = source => {
   const match = String(source).match(/new Set\(\[([^\]]*)\]\)/);
   return match ? match[1].split(',').map(word => word.trim().replace(/'/g, '')) : [];
@@ -4834,7 +4837,7 @@ check('no WebMCP projection rewrites an outcome its own operation computed',
 
 check('cut 1: one outcome family on every door, and never a second word for one fact',
   !html.includes("outcome: 'rejected'")
-    && JSON.stringify(envelopeArms) === JSON.stringify(REFUSAL_WORDS)
+    && JSON.stringify(envelopeArms) === JSON.stringify(ERROR_WORDS)
     && JSON.stringify(declaredRefusalWords) === JSON.stringify(REFUSAL_WORDS)
     && receiptFamilies.every(entry => entry.fallback && !entry.words.includes('rejected')
       && REFUSAL_WORDS.every(word => entry.words.includes(word)))

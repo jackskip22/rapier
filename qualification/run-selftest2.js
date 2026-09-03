@@ -1021,8 +1021,10 @@ function _rapierQualificationSuiteSourceOwner() {
         return lang !== '' && !window.hljs.getLanguage(lang);
       }).map(function (probe) { return probe + '→' + _langForExt(probe); });
       if (unbacked.length) return 'unbundled grammars promised: ' + unbacked.join(', ');
-      return RAPIER_ACCEPT_EXTS.indexOf('.md') === 0
-        ? true : 'accepted-extension list lost its Markdown lead';
+      return ['file-input', 'compare-file-input'].every(function (id) {
+        var input = document.getElementById(id);
+        return input && !input.hasAttribute('accept') && !input.accept;
+      }) ? true : 'document pickers still exclude extensionless files';
     }));
 
     results.push(_check('local UTF-8 and strict protocol admission boundaries', function () {
@@ -2804,23 +2806,93 @@ function _rapierQualificationSuiteSourceOwner() {
       }
     }));
 
-    results.push(_check('a host read-only document cannot be relaxed in the frame', function () {
+    results.push(await _checkAsync('a host read-only document cannot be relaxed in the frame', async function () {
+      var originalLoad = rapierLoad;
+      var originalDirty = _rapierIsDirty;
+      var originalMark = _markSavedGeneration;
+      var originalReadDraft = _rapierEmbedReadDraft;
+      var originalSettled = _rapierWithSettledExternalDocument;
       var saved = {
         host: rapier.access.hostReadOnly,
+        lease: rapier.access.leaseReadOnly,
         readOnly: rapier.access.readOnly,
         mode: rapier.view.mode,
+        preference: RapierPreferences.read('readOnly'),
+        loaded: _rapierEmbed.loaded,
+        loading: _rapierEmbed.loading,
+        pendingSave: _rapierEmbed.pendingSave,
+        pendingCloseId: _rapierEmbed.pendingCloseId,
+        loadToken: _rapierEmbed.loadToken,
+        embedReadOnly: _rapierEmbed.readOnly,
+        baseRevision: _rapierEmbed.baseRevision,
+        hostName: _rapierEmbed.hostName,
+        title: _rapierEmbed.title,
       };
       try {
-        rapier.access.hostReadOnly = true;
+        RapierPreferences.write('readOnly', false);
+        rapier.access.hostReadOnly = false;
+        rapier.access.leaseReadOnly = false;
+        rapierSetReadOnly(false);
+        _rapierEmbed.loaded = false;
+        _rapierEmbed.loading = false;
+        _rapierEmbed.pendingSave = null;
+        _rapierEmbed.pendingCloseId = null;
+        _rapierEmbedReadDraft = function () { return null; };
+        _rapierIsDirty = function () { return false; };
+        _rapierWithSettledExternalDocument = async function (read) {
+          return { settled: true, value: read() };
+        };
+        rapierLoad = async function () { return _rapierCaptureLoadCommitReceipt(); };
+        _markSavedGeneration = async function () { return true; };
+        var replies = [];
+        var respond = function (type, payload) { replies.push({ type: type, payload: payload }); };
+        await _rapierEmbedLoadRun({
+          baseRevision: 'selftest-host-floor-0',
+          payload: {
+            content: '# first host load', filename: 'host-floor.md',
+            revision: 'selftest-host-floor-1', readOnly: true,
+          },
+        }, respond);
+        if (!replies[0] || replies[0].type !== 'load-ack' || replies[0].payload.readOnly !== true) {
+          return 'the read-only host load did not commit=' + JSON.stringify(replies[0]);
+        }
         if (rapierSetReadOnly(false) !== true) return 'the host read-only floor was relaxed';
         if (!rapier.access.readOnly) return 'the engine left a host read-only document writable';
         if (document.documentElement.dataset.readonly !== 'on') return 'read-only DOM state did not follow the floor';
-        rapier.access.hostReadOnly = false;
-        return rapierSetReadOnly(false) === false ? true : 'read-only survived the floor being lifted';
+        await _rapierEmbedLoadRun({
+          baseRevision: 'selftest-host-floor-1',
+          payload: {
+            content: '# second host load', filename: 'host-floor.md',
+            revision: 'selftest-host-floor-2', readOnly: false,
+          },
+        }, respond);
+        if (!replies[1] || replies[1].type !== 'load-ack' || replies[1].payload.readOnly !== false) {
+          return 'the writable host reload did not commit=' + JSON.stringify(replies[1]);
+        }
+        return !rapier.access.hostReadOnly && !rapier.access.readOnly &&
+          document.documentElement.dataset.readonly === 'off'
+          ? true : 'read-only survived the writable host reload';
       } finally {
+        rapierLoad = originalLoad;
+        _rapierIsDirty = originalDirty;
+        _markSavedGeneration = originalMark;
+        _rapierEmbedReadDraft = originalReadDraft;
+        _rapierWithSettledExternalDocument = originalSettled;
+        _rapierEmbed.loaded = saved.loaded;
+        _rapierEmbed.loading = saved.loading;
+        _rapierEmbed.pendingSave = saved.pendingSave;
+        _rapierEmbed.pendingCloseId = saved.pendingCloseId;
+        _rapierEmbed.loadToken = saved.loadToken;
+        _rapierEmbed.readOnly = saved.embedReadOnly;
+        _rapierEmbed.baseRevision = saved.baseRevision;
+        _rapierEmbed.hostName = saved.hostName;
+        _rapierEmbed.title = saved.title;
         rapier.access.hostReadOnly = saved.host;
+        rapier.access.leaseReadOnly = saved.lease;
+        RapierPreferences.write('readOnly', saved.preference);
         rapierSetReadOnly(saved.readOnly);
         if (rapier.view.mode !== saved.mode) rapierSetMode(saved.mode);
+        _rapierEmbedNotify();
       }
     }));
 
@@ -15094,7 +15166,8 @@ function _rapierQualificationSuiteSourceOwner() {
            document. An operation that cannot reach the kernel cannot mutate through it. */
         var surface = [
           _rapierCompareAgentContext, _rapierCompareAgentFind, _rapierCompareAgentRead,
-          _rapierCompareAgentReveal, _rapierCompareAgentClose, _rapierCompareFirstChangedHit,
+          _rapierCompareAgentReveal, _rapierCompareAgentClose, _rapierCompareCallerMayClose,
+          _rapierCompareFirstChangedHit,
           _rapierCompareResolveChange, _rapierCompareReadResult, _rapierCompareAgentState,
           _rapierCompareChangeShape, _rapierCompareDiscloseRows, _rapierCompareHeadingAbove,
           _rapierCompareReadableChanges, _rapierCompareSettleScroll, _rapierCompareFocusChange,
@@ -15185,14 +15258,20 @@ function _rapierQualificationSuiteSourceOwner() {
           }
         }
 
+        /* WebMCP counts Unicode scalars at its narrower door; canonical callers retain the document ceiling. */
+        var astralLimit = '😀'.repeat(_RAPIER_WEBMCP_COMPARE_TEXT_LIMIT);
+        if (_rapierCompareAdmitAgentText(astralLimit, 'astral.md', _RAPIER_WEBMCP_COMPARE_TEXT_LIMIT) !== '' ||
+            _rapierCompareAdmitAgentText(astralLimit + '😀', 'astral.md', _RAPIER_WEBMCP_COMPARE_TEXT_LIMIT) !== 'text_too_large' ||
+            _rapierCompareAdmitAgentText('x'.repeat(_RAPIER_WEBMCP_COMPARE_TEXT_LIMIT + 1), 'canonical.md', Infinity) !== '') {
+          return 'comparison text ceilings drifted between WebMCP and canonical callers';
+        }
+
         /* Bounds first, because a refusal must leave the person exactly where they were. */
         var refusals = [
-          { input: { text: 'x'.repeat(_RAPIER_AGENT_COMPARE_TEXT_LIMIT + 1), name: 'oversized' },
-            reason: 'text_too_large' },
           { input: { text: '', name: 'empty' }, reason: 'text_invalid' },
           /* A name's DECLARED length is the door's, and this table reaches under both doors on
              purpose — so what is left here is what only this seam knows: emptiness, control
-             characters, an agent-only text ceiling smaller than the declared one, and bytes that
+             characters and bytes that
              are not text. The declared bound is witnessed where it now lives, in the harness. */
           { input: { text: 'body', name: 'a\nbroken\nlabel' }, reason: 'name_invalid' },
           { input: { text: 'a lone surrogate \ud800 here', name: 'not-text.md' }, reason: 'text_not_utf8_text' },
@@ -15232,6 +15311,34 @@ function _rapierQualificationSuiteSourceOwner() {
           return 'the surface did not describe the lead’s own text=' + JSON.stringify({
             status: state.status, lens: state.lens, changes: state.changeCount, after: state.afterName,
           });
+        }
+        var contextTool = RAPIER_WEBMCP_TOOLS.find(function (tool) {
+          return tool.operation === 'compare.get_context';
+        });
+        var projectedContext = contextTool && contextTool.result({ ...state, changes: [] });
+        if (!projectedContext || projectedContext.beforeName !== 'selftest-compare-text.md' ||
+            projectedContext.afterName !== 'alternative conclusion' || projectedContext.openedByYou) {
+          return 'compare context dropped the two text names=' + JSON.stringify(projectedContext);
+        }
+        var recoveryStates = ['error', 'too-complex', 'unrelated'];
+        for (var recoveryIndex = 0; recoveryIndex < recoveryStates.length; recoveryIndex++) {
+          var recovery = contextTool.result({
+            ...state, status: recoveryStates[recoveryIndex], changes: [], changeCount: 0,
+          });
+          if (!recovery.message || recovery.message.indexOf('compare.close') >= 0 ||
+              recovery.message.indexOf('Escape') < 0 || recovery.message.indexOf('document.compare') < 0 ||
+              !recovery.message.endsWith('.') || recovery.message.slice(0, -1).indexOf('. ') >= 0) {
+            return recoveryStates[recoveryIndex] + ' has no one-sentence person-owned recovery route=' +
+              JSON.stringify(recovery);
+          }
+        }
+        var platformScope = _rapierCompareRuntime.agentScope;
+        _rapierCompareRuntime.agentScope = _RAPIER_WEBMCP_SCOPE;
+        var ownedRecovery = contextTool.result({ ...state, status: 'error', changes: [], changeCount: 0 });
+        _rapierCompareRuntime.agentScope = platformScope;
+        if (!ownedRecovery.openedByYou || ownedRecovery.message.indexOf('compare.close') < 0 ||
+            ownedRecovery.message.indexOf('document.compare') < ownedRecovery.message.indexOf('compare.close')) {
+          return 'WebMCP-owned comparison has no close-then-retry route=' + JSON.stringify(ownedRecovery);
         }
         if (_rapierWebMcpAdmitted().some(function (tool) {
           return !tool.operation.startsWith('compare.');
@@ -15298,6 +15405,8 @@ function _rapierQualificationSuiteSourceOwner() {
       return _rapierWebMcpAdmitted().map(function (tool) { return tool.operation; }).sort().join(',');
     }
 
+    var _SELFTEST_WEBMCP_HUMAN_REVIEW_VOCABULARY = 'compare.find_change,'
+      + 'compare.get_context,compare.read_change,compare.reveal_change';
     var _SELFTEST_WEBMCP_REVIEW_VOCABULARY = 'compare.close,compare.find_change,'
       + 'compare.get_context,compare.read_change,compare.reveal_change';
 
@@ -15336,10 +15445,11 @@ function _rapierQualificationSuiteSourceOwner() {
           return 'the person’s comparison never settled';
         }
         var review = _selftestWebMcpVocabulary();
-        if (review !== _SELFTEST_WEBMCP_REVIEW_VOCABULARY) return 'Compare published ' + review;
-        /* Read-only narrows what may be done to the document, and the review vocabulary
-           reaches none of it. Narrowing here would strand a lead inside a comparison it is
-           allowed to put away. */
+        if (review !== _SELFTEST_WEBMCP_HUMAN_REVIEW_VOCABULARY) {
+          return 'a person-owned Compare published ' + review;
+        }
+        /* Read-only narrows what may be done to the document, and the person-owned review
+           vocabulary reaches none of it, so it remains unchanged. */
         rapierSetReadOnly(true);
         if (_selftestWebMcpVocabulary() !== review) {
           return 'read-only narrowed the review vocabulary to ' + _selftestWebMcpVocabulary();
@@ -15641,9 +15751,12 @@ function _rapierQualificationSuiteSourceOwner() {
         var readEntry = _rapierWebMcp.tools.get('document.find');
         var writeEntry = _rapierWebMcp.tools.get('document.apply_edits');
         if (!readEntry || !writeEntry) return 'the ordinary vocabulary was not published';
-        if (writeEntry.descriptor.requiresWritable !== true) {
-          return 'apply_edits stopped declaring that it requires write authority';
-        }
+        var writeEntries = RAPIER_WEBMCP_TOOLS.filter(function (descriptor) {
+          return descriptor.effect === 'write';
+        });
+        if (writeEntries.length !== 4 || writeEntries.some(function (descriptor) {
+          return 'requiresWritable' in descriptor;
+        })) return 'write authority no longer derives from effect alone';
         if (typeof readEntry.admissionGeneration !== 'number') {
           return 'a registration carries no admission generation=' + readEntry.admissionGeneration;
         }
@@ -20334,6 +20447,51 @@ function _rapierQualificationSuiteSourceOwner() {
       return _SELFTEST_WILL_GOVERNED;
     }
 
+    /* Compare closing is not the same fact as editing resuming. An outside tester found the
+	   document behaviorally locked after a decision: the root host said contenteditable, Compare
+	   was gone, and an ordinary click still left the caret in .block-read with no .block-edit to
+	   type into. Every ending of a held proposal proves the click that follows it promotes. */
+    async function _selftestEditResumesAfterDecision() {
+      var wasMode = String(rapier.view.mode || 'read');
+      rapierSetMode('edit');
+      await new Promise(function (resolve) { requestAnimationFrame(resolve); });
+      var host = document.getElementById('editor-blocks');
+      var wrapper = Array.prototype.find.call(
+        host.querySelectorAll(':scope > .block-wrapper'), function (candidate) {
+          var read = candidate.querySelector(':scope > .block-read');
+          return !!(read && read.querySelector('p') &&
+            read.getBoundingClientRect().height > 4 &&
+            !candidate.classList.contains('block-wrapper--editing'));
+        });
+      if (!wrapper) { rapierSetMode(wasMode); return 'no ordinary paragraph stood open to click'; }
+      var blockId = String(wrapper.dataset.blockId);
+      var read = wrapper.querySelector(':scope > .block-read');
+      var box = read.getBoundingClientRect();
+      var point = {
+        clientX: box.left + Math.min(12, box.width / 2),
+        clientY: box.top + box.height / 2,
+        bubbles: true, cancelable: true, composed: true,
+      };
+      read.dispatchEvent(new PointerEvent('pointerdown', point));
+      read.dispatchEvent(new PointerEvent('pointerup', point));
+      read.dispatchEvent(new MouseEvent('click', point));
+      await new Promise(function (resolve) { requestAnimationFrame(resolve); });
+      var editDiv = document.querySelector('.block-wrapper--editing .block-edit');
+      var selection = window.getSelection();
+      var owned = !!(editDiv && selection && selection.anchorNode &&
+        editDiv.contains(selection.anchorNode));
+      var promoted = editDiv ? String(editDiv.closest('.block-wrapper').dataset.blockId) : null;
+      /* The caret this witness places is the person's hand, and the person's hand wins over
+	   every later proposal in the case around it: put it down before handing the document back. */
+      rapierSetMode(wasMode);
+      try { window.getSelection().removeAllRanges(); } catch (_) {}
+      if (host.blur) host.blur();
+      await new Promise(function (resolve) { requestAnimationFrame(resolve); });
+      if (!editDiv) return 'the click after the decision never promoted a block';
+      if (promoted !== blockId) return 'the click promoted block ' + promoted + ', not ' + blockId;
+      return owned ? null : 'the promoted .block-edit did not own the selection';
+    }
+
     results.push(await _checkAsync('one held edit stays pending in exact human-owned Compare and ALLOW THIS ONCE continues that call, through the law\u2019s door and through ASK', async function () {
       var restoreAutosave = _selftestSuspendAutosave();
       var wasMode = String(rapier.view.mode || 'read');
@@ -20432,6 +20590,8 @@ function _rapierQualificationSuiteSourceOwner() {
         if (_rapierWillReviewSlot.pending || _rapierWillReviewSlot.settling || rapier.compare.active) {
           return 'authority survived the original call';
         }
+        var allowResumed = await _selftestEditResumesAfterDecision();
+        if (allowResumed) return 'after ALLOW THIS ONCE closed Compare, ' + allowResumed;
 
         /* THE SECOND DOOR INTO THE SAME HOLD. ASK widens what opens it and changes nothing
            inside it: this fixture carries no will at all, so the law says nothing and every
@@ -20535,6 +20695,8 @@ function _rapierQualificationSuiteSourceOwner() {
         if (kept.review !== 'declined' || kept.rule !== 'law_violated') {
           return 'a human refusal did not say so=' + JSON.stringify(kept);
         }
+        var keptResumed = await _selftestEditResumesAfterDecision();
+        if (keptResumed) return 'after KEEP HELD closed Compare, ' + keptResumed;
         var call2 = _selftestWillEdit('agent', _selftestWillHandle('the quoted sentence.'), 'changed twice', 'keep');
         if (!await _selftestWillReviewReady()) {
           _selftestWillReviewReset(); await call2;

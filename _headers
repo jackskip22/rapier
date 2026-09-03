@@ -17,8 +17,9 @@
 # a hostile document's request; this refuses the request that gets past the sanitizer, and it is
 # the only owner that cannot be reasoned around. `default-src 'none'` means every fetch this
 # page does not name below is refused, so a directive absent here is a capability absent.
-#   script-src and style-src name no 'self': every byte this page executes and every rule it
-#     applies is inline, so a same-origin source would admit a file that does not exist.
+#   script-src and style-src name no 'self': every application byte this page executes and every
+#     rule it applies is inline, so a same-origin source would admit a file that does not exist.
+#     script-src adds blob: only for the optional Math and DOCX bundles, after digest verification.
 #     'unsafe-inline' is the application itself, the vendors at rest included — they execute by
 #     appending script elements carrying the text they inflated, which no nonce can reach. The
 #     two are named in one breath and do not fail alike, measured: without script's the page
@@ -31,8 +32,8 @@
 #   worker-src 'self' blob: is the parse and structure Workers, both built from object URLs,
 #     plus the service worker a hosted install registers from this origin. Without blob:
 #     WYSIWYG never renders; without 'self' the install's own worker is refused.
-#   connect-src 'self' is the three fetch call sites, all same-origin: the optional Math and
-#     DOCX bundles, the AGPL source offer re-reading this page, and ?demo=1.
+#   connect-src 'self' https://cdn.jsdelivr.net is the three fetch call sites: Math and DOCX try
+#     the same origin before their exact jsDelivr URLs; the AGPL source offer and ?demo=1 stay local.
 #   img-src and media-src name https: because CONSENT IS A SURFACE. `Load remote content` is a
 #     person deciding that this document may reach the place it named, and a header cannot see
 #     a tap: strict img-src leaves the tap swapping the placeholder for a picture the browser
@@ -52,7 +53,7 @@
 #   base-uri and form-action are 'none' because this page has no base element and submits
 #     nowhere; both are the header-level owner of a document that tried to add one.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors *
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; font-src data:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors *
   Cache-Control: no-cache
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer

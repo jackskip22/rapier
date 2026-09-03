@@ -51,8 +51,8 @@ Most editors slow down as a document gets long. Rapier doesn't: it draws only wh
 
 **Run it properly.** It works as a plain web page, but it's better installed.
 
-- On a phone, the Android app is the best experience — real files, sharing, speech, recents.
-- Everywhere else, install it as a web app: the install icon in Chrome or Edge's address bar, or **⋮ → Add to Home screen** on Android Chrome.
+- On a phone, use **⋮ → Add to Home screen** in Android Chrome.
+- On desktop, use the install icon in Chrome or Edge's address bar.
 - Installed, it launches from the home screen, keeps its own storage, and runs offline.
 
 ## Two hands
@@ -137,9 +137,7 @@ Read-only mode, in Settings, blocks editing but leaves everything else — navig
 
 ## Editions
 
-The portable `rapier.html`, the hosted page, the installed web app, the Windows app, and authorised embeds are complete and free. So is the Android app — one optional US$5 Rapier Pro purchase there unlocks Compare past the first change, Complete Excerpt, PDF and DOCX export, and eight launcher colours. Paid once if you want it; no subscription, no account, and every other edition is already unlocked.
-
-Android and Windows wrap the same bytes in a native shell; the Windows edition is one executable, no installer.
+The portable `rapier.html`, the hosted page, the installed web app, and authorised embeds are complete and free. This repository does not distribute native Android or Windows builds.
 
 ## Keyboard
 

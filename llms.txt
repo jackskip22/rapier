@@ -7,7 +7,7 @@
 
 - [Open Rapier](https://rapier.website/): The editor and live WebMCP surface in a capable browser.
 - [Artifact](https://rapier.website/rapier.html): The complete core editor; no build step, bundler, backend, or network fetch is needed to start and use it. Optional Math and DOCX export bundles are fetched only when requested.
-- [Working demo](https://rapier.website/?demo=1): Rapier opened on its included demonstration document.
+- [Working demo](https://rapier.website/?demo=1&preview=phone): Rapier opened on its included demonstration document, in its real phone layout.
 - [Agent guide](https://rapier.website/agents): Current tools, bounded editing workflow, and document-law conduct.
 
 ## Will

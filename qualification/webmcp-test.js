@@ -1498,6 +1498,13 @@ async function runHarness() {
     /input\.query is longer than 4096 characters/.test(String(overBound.message || '')),
     JSON.stringify(overBound).slice(0, 200));
 
+  const emptyQuery = (await invoke(page, 'document.find', { query: '' })).value;
+  check('an explicit empty query is refused before it can mint or return a match',
+    emptyQuery.outcome === 'invalid' && emptyQuery.reason === 'invalid_query' &&
+      (emptyQuery.matches || []).length === 0 && emptyQuery.next_cursor == null &&
+      !Object.prototype.hasOwnProperty.call(emptyQuery, 'expires_in_ms'),
+    JSON.stringify(emptyQuery).slice(0, 240));
+
   check('one surface, one clock: every minted kind is inside the same life',
     minted.every(row => row[2] > 0 && row[2] <= 300000),
     JSON.stringify(minted.map(row => row[2])));
@@ -1514,6 +1521,40 @@ async function runHarness() {
   check('a result that hands over no name states no clock',
     !Object.prototype.hasOwnProperty.call(clockless, 'expires_in_ms'),
     JSON.stringify(clockless).slice(0, 200));
+
+  const changeSelectorSchemas = await page.evaluate(() => {
+    const operations = JSON.parse(document.querySelector(
+      'script[type="application/speedracer-app+json"]').textContent).operations;
+    return ['document.compare', 'document.undo_agent_change'].map(name => ({
+      name,
+      canonical: operations.find(operation => operation.name === name)
+        ?.input?.properties?.change_id?.minLength,
+      web: window.__webmcp.entry(name)?.inputSchema?.properties?.change_id?.minLength,
+    }));
+  });
+  const emptyUndoSelector = (await invoke(page,
+    'document.undo_agent_change', { change_id: '' })).value;
+  const emptyCompareSelector = (await invoke(page,
+    'document.compare', { change_id: '' })).value;
+  check('an explicit empty change_id is invalid at both operations while omission stays the latest selector',
+    changeSelectorSchemas.every(schema => schema.canonical === 1 && schema.web === 1) &&
+      [emptyUndoSelector, emptyCompareSelector].every(result =>
+        result.outcome === 'invalid' && result.reason === 'invalid_change_id') &&
+      await page.evaluate(() => window.__webmcp.names().includes('document.find')),
+    JSON.stringify({ changeSelectorSchemas, emptyUndoSelector, emptyCompareSelector }).slice(0, 500));
+
+  const contradictoryComparisons = [];
+  for (const input of [
+    { text: 'an alternative', change_id: 'no-such-change' },
+    { name: 'a name without alternative text' },
+  ]) {
+    contradictoryComparisons.push((await invoke(page, 'document.compare', input)).value);
+  }
+  check('contradictory compare selectors are invalid and never open the comparison surface',
+    contradictoryComparisons.every(result =>
+      result.outcome === 'invalid' && result.reason === 'conflicting_selectors') &&
+      await page.evaluate(() => window.__webmcp.names().includes('document.find')),
+    JSON.stringify(contradictoryComparisons).slice(0, 400));
 
   /* A REFUSAL THE ECOSYSTEM CAN SEE. Rapier's four arms live in the body and always have; nothing
      outside this page reads them. The evaluator every entrant runs — and a judge running smoke
@@ -2428,6 +2469,26 @@ async function runHarness() {
     check('a structural read never carries a code file\'s own bare data: URI whole',
       !JSON.stringify(unit).includes(PICTURE_PNG), JSON.stringify(unit).slice(0, 400));
   }
+  const emptyWithinSchema = await codePage.evaluate(() => {
+    const operation = JSON.parse(document.querySelector(
+      'script[type="application/speedracer-app+json"]').textContent).operations
+      .find(entry => entry.name === 'document.find');
+    return {
+      canonical: operation?.input?.properties?.within?.minLength,
+      web: window.__webmcp.entry('document.find')?.inputSchema?.properties?.within?.minLength,
+    };
+  });
+  const emptyWithin = (await invoke(codePage, 'document.find',
+    { query: 'notifyAll', kind: 'call', within: '' })).value;
+  /* The mint is observed where the agent would spend it, not in the engine's own map: a handle
+     an agent never receives is authority it never has. `rctx_` is the context prefix, so its
+     absence from the whole refusal is the proof that this door handed back nothing to spend. */
+  check('an explicit empty within is invalid and mints no authority over a global structural match',
+    emptyWithinSchema.canonical === 1 && emptyWithinSchema.web === 1 &&
+      emptyWithin.outcome === 'invalid' && emptyWithin.reason === 'invalid_within' &&
+      (emptyWithin.matches || []).length === 0 &&
+      !JSON.stringify(emptyWithin).includes('rctx_'),
+    JSON.stringify({ emptyWithinSchema, emptyWithin }).slice(0, 400));
   const structuralFind = (await invoke(codePage, 'document.find',
     { query: 'notifyAll', kind: 'call' })).value;
   check('find answers a syntactic kind on the code document',
