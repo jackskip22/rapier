@@ -1,8 +1,8 @@
 {
   "release": "1.0.0",
-  "rapierHtmlSha256": "95c56ee1e1904d9940283f85c6e7542da96f2806cb7736c20c3192eed68d8c8c",
+  "rapierHtmlSha256": "d7ddac5b96a7638fb26da460c7b247ddea0ff25edc571c992f5ccf9cd85faca1",
   "publicTreeFileCount": 27,
-  "publicTreeSha256": "f2cd1f420dbf6edebcce98d05944a2e122729eb18bfe0be108e7161bf9fbfff5",
+  "publicTreeSha256": "68ec1b6394b3a50a82c697d3bb570d2c40764630205bdbab762a5d23eb1d5895",
   "status": "source-qualified",
   "sizeLedger": {
     "unit": "bytes",
@@ -160,6 +160,18 @@
         "bytes": 3004886,
         "deltaBytes": 8673,
         "growth": "SIZE-2027-R17 ends 8,673 B over R16 — the decision stands beside the change: while the lens is drawn a flat line just above the first changed block reads APPLIED with KEEP CHANGE and UNDO, the same two acts the agent row offers, riding the scroller and gone with the lens; the source view keeps its own metric in the phone preview so a selection never paints a detached ghost; a reading lane's five findings on R16 folded and three suite cases added (census 305); the rename owns the keys until it resolves, a wait never outlives the host (twenty-second ceiling, said in the descriptor), the acorn is stamped at a structural call's start and end; the earlier folds stand as SIZE-2027-R16's, R15's, R14's, R13's and R12's notes list them."
+      },
+      {
+        "landing": "SIZE-2027-R18",
+        "bytes": 3005419,
+        "deltaBytes": 533,
+        "growth": "SIZE-2027-R18 ends 533 B over R17 — the public evidence sentences name the exact submitted bytes and no landing name (four files said an older landing's name on newer bytes; the development-history aside is gone from the public first-contact layer); four descriptors say what the doors do (the structural apply_edits names its grammar; undo says what a will allows; reveal consumes nothing; get_context's faults live under `law`); keyboard focus is visible on every control of the circle's popup and the change line; the message field's accessible name says message; the earlier folds stand as SIZE-2027-R17's, R16's, R15's, R14's, R13's and R12's notes list them."
+      },
+      {
+        "landing": "SIZE-2027-R19",
+        "bytes": 3006715,
+        "deltaBytes": 1296,
+        "growth": "SIZE-2027-R19 ends 1,296 B over R18 — a blur of the name field with no tap behind it is the editor stealing focus and the field is refocused (only a tap away, Enter or Escape resolve the rename), and a key that reaches the rename before the field has focus is the field's, so the first key after the tap is never the document's and never lost; the earlier folds stand as SIZE-2027-R18's, R17's, R16's, R15's, R14's and R13's notes list them."
       }
     ]
   },
@@ -169,7 +181,7 @@
     "previewSuite": "305/0/0",
     "webmcpHarness": "260/260",
     "k3Browser": "not_run",
-    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/95c56ee1e190/real-chrome/)",
+    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/d7ddac5b96a7/real-chrome/)",
     "originSurface": "not_run",
     "staticAudit": "125/125",
     "realAgentRoute": "model_chosen_script_hosted 58/60 sha256:2216f48917b0",
@@ -177,14 +189,14 @@
     "webmcpHarnessReal": "224/228 on the R4 bytes 6fba753d09bd",
     "webmcpEvalsReal": "10/10 on the R4 bytes 6fba753d09bd"
   },
-  "generatedAt": "2026-09-04T06:11:47.000Z",
+  "generatedAt": "2026-09-04T07:25:26.000Z",
   "sizeCensus": {
     "unit": "bytes",
-    "total": 3004886,
-    "steel": 2638618,
+    "total": 3006715,
+    "steel": 2640447,
     "payload": 366268,
     "vendorSpans": 17,
-    "gzip9": 935295,
+    "gzip9": 935860,
     "tools": "steel/payload: sharpen-census/alpine-census.js (owned bytes vs RAPIER_VENDOR spans); wire: gzip -9 -c rapier.html | wc -c"
   }
 }

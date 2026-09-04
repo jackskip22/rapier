@@ -177,7 +177,7 @@ of two.
 
 ## Evidence
 
-**Evidence status: SIZE-2027-R13 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**305/0/0** each) and the WebMCP harness (**260 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
+**Evidence status: SOURCE-QUALIFIED on the exact submitted bytes.** The desktop, mobile, and phone-preview suites (**305/0/0** each) and the WebMCP harness (**260 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
 Static release audit: **125/125** — reproduce it yourself with `node qualification/static-release-audit.js .`.
 The sealed receipt those numbers are pinned in is `qualification/RECEIPT.json`.
 The live origin, the K3 browser registry, and the manual-device gate are human gates, marked `not_run` on this candidate.

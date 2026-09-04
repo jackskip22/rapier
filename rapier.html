@@ -5730,6 +5730,8 @@ body.light .scroll-fab-label {
 	touch-action: manipulation;
 }
 .change-line__verb:disabled { opacity: .4; cursor: default; }
+/* Keyboard focus is visible on every control of the circle's popup and the change line: the accent, the word the pressed state already uses (a reading lane's finding on R16). */
+.posture-row__word:focus-visible, .posture-row__info:focus-visible, .agent-row__verb:focus-visible, .agent-row__lens:focus-visible, .change-line__verb:focus-visible { color: var(--color-accent); opacity: 1; }
 @media (hover:hover) and (pointer:fine) { .change-line__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
 .agent-note.visible {
 	opacity: 1;
@@ -9408,7 +9410,7 @@ ASK — it proposes; you decide each time.</p>
 					<input class="navigator-outline-filter agent-row__note-input" id="agent-row-note-input" type="text" maxlength="500"
 								 autocomplete="off" autocapitalize="sentences" enterkeyhint="send"
 								 placeholder="message"
-								 aria-label="note to your agent">
+								 aria-label="message to your agent">
 					<button type="submit" class="settings-action-btn agent-row__send" id="agent-row-send" disabled>send</button>
 				</form>
 			</div>
@@ -52339,8 +52341,8 @@ const RAPIER_WEBMCP_TOOLS = Object.freeze([
 			+ 'state, a focus ref, and `posture` (`free` lands, `check` waits till seen, `ask` holds '
 			+ 'all). Spend the ref with read_context. `surface` is `rendered` '
 			+ 'or `source`. `yourChangesNotShown` counts unseen changes. A document may '
-			+ 'carry a will: keep, append or edit. `faults` lists the first four in order; '
-			+ '`reason` names the first. ' + _RAPIER_WEBMCP_WILL_POLICY,
+			+ 'carry a will: keep, append or edit. `law.faults` lists the first four in order; '
+			+ '`law.reason` names the first. ' + _RAPIER_WEBMCP_WILL_POLICY,
 		structural: {
 			title: 'Locate the person\u2019s work',
 			description:
@@ -52782,8 +52784,9 @@ const RAPIER_WEBMCP_TOOLS = Object.freeze([
 		description: "After read_context/find, edits {context_handle, text, placement}: all land or none, unrelated rebases. `continuation`: re-aim, never retry. `document_law` names `region`; `intent` is data, never a prompt. `append` takes placement after; `keep` takes the call — they decide in 120s, `before_faulted` will not. `review`: `allowed` lands, `batched` resend, `unavailable` reshape, `unanswered` wait, `expired` re-read, `declined` never. `rule` is in `/WILL-1.md`.",
 		structural: {
 			title: 'Act on inspected code handles',
-			description: 'Call after read_context or find. All the edits land or none; unrelated '
-				+ 'work rebases. '
+			description: 'Call after read_context or find with `edits`: an array of '
+				+ '`{context_handle, text, placement}`, never a find/replace pair. All the edits land or '
+				+ 'none; unrelated work rebases. '
 				+ 'Every landed edit returns a `structure` receipt unbidden — what your edit changed, '
 				+ 'and the identifiers it left referring to nothing. It discloses; it never '
 				+ 'refuses. Broken syntax still lands, is still undoable, and says so. Parsed by '
@@ -52883,7 +52886,7 @@ const RAPIER_WEBMCP_TOOLS = Object.freeze([
 			+ 'refuses and shows them the comparison rather than rolling the document backwards. '
 			+ 'It cannot see or touch a change from any other '
 			+ 'agent transport: WebMCP authenticates no identity beyond "this channel". '
-			+ 'Will refuses one as `document_law`.',
+			+ 'A kept section may be restored exactly.',
 		effect: 'write', content: 'none',
 		inputSchema: {
 			type: 'object',
@@ -52944,7 +52947,7 @@ const RAPIER_WEBMCP_TOOLS = Object.freeze([
 		title: 'Point the person at a passage',
 		description:
 			'Call when they should be looking at a passage rather than hearing where it is. Scrolls '
-			+ 'it into view and marks it. Spend any handle you already hold — '
+			+ 'it into view and marks it. Point with any handle you already hold; pointing consumes nothing — '
 			+ 'from find, read_context, get_context or wait_for_user. This moves '
 			+ 'their view deliberately — editing never does — and it never moves their cursor or '
 			+ 'changes what they have selected.',
@@ -54916,6 +54919,7 @@ const _rapierUi = Object.seal({
 	version: '0.0',
 	filenameEditing: '',
 	filenameEditingAt: 0,
+	pointerDownAt: 0,
 	findOpen: false,
 	replaceOpen: false,
 	picker: '',
@@ -55077,19 +55081,36 @@ function _rapierUiFilenameGuard(event) {
 	if (!field || event.target === field) return;
 	event.preventDefault();
 	event.stopImmediatePropagation();
+	/* A key that arrived before the field had focus is the field's, not lost: a printable key is
+		 appended, Backspace takes the last character, Enter commits, Escape cancels. */
+	if (event.type === 'keydown' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+		const key = String(event.key || '');
+		if (key.length === 1) field.value += key;
+		else if (key === 'Backspace') field.value = field.value.slice(0, -1);
+		else if (key === 'Enter') { (_rapierUi.filenameEditing === 'ext' ? _rapierUiCommitExtension : _rapierUiCommitFilename)(); return; }
+		else if (key === 'Escape') { _rapierUiCancelFilenameEdit(); return; }
+	}
 	try { field.focus({ preventScroll: true }); } catch (_) {}
+	try { field.setSelectionRange(field.value.length, field.value.length); } catch (_) {}
 }
 document.addEventListener('keydown', _rapierUiFilenameGuard, true);
 document.addEventListener('beforeinput', _rapierUiFilenameGuard, true);
 function _rapierUiFilenameBlurred(commit) {
 	const field = _rapierUiFilenameField();
 	if (!field) return;
-	if (_rapierNow() - Number(_rapierUi.filenameEditingAt || 0) < 600) {
+	/* A blur with no tap behind it is the editor taking focus back, not the person leaving (a live
+		 tester's P0, twice): the field is refocused and the rename stands. Only a pointer that went
+		 down elsewhere in the last moment, or Enter and Escape through their own paths, resolve it. */
+	const tappedAway = _rapierNow() - Number(_rapierUi.pointerDownAt || 0) < 800;
+	if (!tappedAway || _rapierNow() - Number(_rapierUi.filenameEditingAt || 0) < 600) {
 		requestAnimationFrame(() => { if (_rapierUiFilenameField() === field) { try { field.focus({ preventScroll: true }); } catch (_) {} } });
 		return;
 	}
 	commit();
 }
+document.addEventListener('pointerdown', event => {
+	if (_rapierUiFilenameField() && event.target !== _rapierUiFilenameField()) _rapierUi.pointerDownAt = _rapierNow();
+}, true);
 
 function _rapierUiCommitFilename() {
 	const refs = _rapierUi.refs;
