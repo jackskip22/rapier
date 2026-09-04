@@ -1,20 +1,20 @@
 # Rapier 1.0.0 — source handoff
 
-**State:** SIZE-2027-R13 SOURCE-QUALIFIED. The desktop, mobile and phone-preview suites **302/0/0** each and the WebMCP harness **260 checks** are executed against these exact bytes from the shipped extraction. Static release audit **125/125** after the receipt re-pin (the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6; reproduce the current number directly: `node qualification/static-release-audit.js .`). Native WebMCP registration and four sample calls are observed on these exact bytes, in the development tree carried with the release zip, not the public repository (`docs/evidence/release/b196e95c8eff/real-chrome/`); the full real-browser harness **224/228** and the scripted evals **10/10** are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
+**State:** SIZE-2027-R13 SOURCE-QUALIFIED. The desktop, mobile and phone-preview suites **305/0/0** each and the WebMCP harness **260 checks** are executed against these exact bytes from the shipped extraction. Static release audit **125/125** after the receipt re-pin (the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6; reproduce the current number directly: `node qualification/static-release-audit.js .`). Native WebMCP registration and four sample calls are observed on these exact bytes, in the development tree carried with the release zip, not the public repository (`docs/evidence/release/95c56ee1e190/real-chrome/`); the full real-browser harness **224/228** and the scripted evals **10/10** are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
 
-`rapier.html` sha256: `b196e95c8eff8806cb82bb0176ec939db017a762574b714d945244d39473b9f1`
+`rapier.html` sha256: `95c56ee1e1904d9940283f85c6e7542da96f2806cb7736c20c3192eed68d8c8c`
 
 Rapier 1.0.0 is the first public identity after the pre-public version history was collapsed. The application engine shares contract lineage with Speedracer's embedded Rapier; the two trees synchronize by deliberate mirror tranches, and byte-level synchronization is claimed only when a mirror receipt says so. No compatibility or migration layer was added: the version reset changes release identity, not document semantics.
 
 The suite count fell 328 → 299 because ARMA-only contracts — monotonicity,
 heading-grammar, treaty-mutation — were deleted with the machinery they
-specified; it is deleted surface, not lost coverage. It later reached 302 —
+specified; it is deleted surface, not lost coverage. It later reached 305 —
 a caret with no geometry must read as absent rather than as a position at
 the top of the screen, or the reveal walks the document there — then held
 at 300 under a 300-case ceiling once two source-mode geometry cases were cut
 (`layers coincide`, `--source-line-h is whole px`) because three later
 gutter/wrap cases guard the same alignment with named bug rationale, and
-stands at 302 under a 302-case ceiling again since its two long-frozen
+stands at 305 under a 305-case ceiling again since its two long-frozen
 skips (`overlay .hljs-ln count = line count`, `porthole composed length
 matches`) each staged its own precondition and now run for real rather than
 skip. The census is exact in both directions; growth now displaces something weaker.

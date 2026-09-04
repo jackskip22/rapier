@@ -1039,7 +1039,7 @@ const A31_ACCEPTANCE = [
       const active = functionSource('_rapierStructureActiveHere');
       const setLive = functionSource('_rapierStructureSetLive');
       const name = functionSource('_rapierAgentBarNameSymbol');
-      return a31Result(/const acorn\s*=\s*!!_rapierStructureFact\s*\(\s*\)\s*&&\s*\(usingAcorn\s*\|\|\s*lingering\)/.test(render) &&
+      return a31Result(/const acorn\s*=\s*!!_rapierStructureDocKind\s*\(\s*\)\s*&&\s*\(usingAcorn\s*\|\|\s*lingering\)/.test(render) &&
         /invocation\.structural/.test(render) && /_RAPIER_ACORN_LINGER_MS/.test(render) &&
         /active\.invocationIds\s+instanceof\s+Set/.test(active) &&
         /_rapierStructuralIdentityCurrent\s*\(\s*identity\s*\)/.test(active) &&
@@ -4147,6 +4147,7 @@ const SIZE_LEDGER_HISTORY = Object.freeze([
   Object.freeze({ landing: 'SIZE-2027-R13', bytes: 2984525, deltaBytes: 356 }),
   Object.freeze({ landing: 'SIZE-2027-R14', bytes: 2986795, deltaBytes: 2270 }),
   Object.freeze({ landing: 'SIZE-2027-R15', bytes: 2988382, deltaBytes: 1587 }),
+  Object.freeze({ landing: 'SIZE-2027-R16', bytes: 2996213, deltaBytes: 7831 }),
 ]);
 const sizeLedger = receipt && receipt.sizeLedger;
 const sizeBaseline = sizeLedger && sizeLedger.baseline;
@@ -4183,8 +4184,8 @@ const boundaryShippedDelta = shippedBytes - boundaryStartBytes;
    sealed one, and growth names its displacement or its founder-visible justification. A landing
    that shrinks needs no words; one that grows carries `growth` in its ledger row — the sentence
    that says what the bytes bought — or the audit refuses it. The delta itself is always printed. */
-check('SIZE-2027-R16 is accounted against sealed SIZE-2027-R15',
-  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R16'
+check('SIZE-2027-R17 is accounted against sealed SIZE-2027-R16',
+  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R17'
     && lastSizeLanding.bytes === shippedBytes
     && lastSizeLanding.deltaBytes === boundaryShippedDelta
     && (shippedBytes < boundaryStartBytes
@@ -4213,8 +4214,8 @@ const primaryCensus = {
 };
 const censusDeclared = Number.isSafeInteger(primaryCensus.total)
   && Number.isSafeInteger(primaryCensus.skip) && Number.isSafeInteger(primaryCensus.ceiling);
-const censusPinned = primaryCensus.total === 302
-  && primaryCensus.skip === 0 && primaryCensus.ceiling === 302;
+const censusPinned = primaryCensus.total === 305
+  && primaryCensus.skip === 0 && primaryCensus.ceiling === 305;
 const censusEvaluator = primaryRunnerModule && primaryRunnerModule._evaluateCensus;
 const censusGateOwnsNumbers = typeof censusEvaluator === 'function'
   && censusEvaluator(primaryCensus.total, 0, primaryCensus.skip).length === 0

@@ -9164,6 +9164,101 @@ function _rapierQualificationSuiteSourceOwner() {
       }
     }));
 
+    /* THE HIGHLIGHT BECOMES THE TABLE (the founder's words 143). A highlight inside the block being
+       edited is the table's content: its words leave the paragraph and arrive in the header cell in
+       ONE transaction, what stood before and after it stays as its own paragraph, nothing leaves the
+       document that did not arrive in a cell, and one Undo puts the paragraph back byte for byte.
+       Driven the way a person drives it — a real Selection, the event the editor learns of it from,
+       and the shared command registry the toolbar's own table control reaches. */
+    results.push(await _checkAsync('the highlight becomes the table, and one Undo puts the paragraph back', async function () {
+      var restoreAutosave = _selftestSuspendAutosave();
+      var original = 'alpha beta gamma delta epsilon zeta';
+      try {
+        await rapierLoad(original, 'selftest-table-from-selection.md', {
+          restore: true, sameDocument: true, deferFlush: true,
+        });
+        rapierSetMode('edit');
+        _selftestResetHistory('qualification_table_from_selection');
+        if (_rapierSourceText() !== original) {
+          return 'the fixture did not load its own bytes=' + JSON.stringify(_rapierSourceText());
+        }
+        var block = rapier.document.blocks[0];
+        var wrapper = document.querySelector('[data-block-id="' + block.id + '"]');
+        var edit = enterBlockEdit(block, wrapper);
+        var textNode = null;
+        if (edit) {
+          var walker = document.createTreeWalker(edit, NodeFilter.SHOW_TEXT, null);
+          while (walker.nextNode()) {
+            if (String(walker.currentNode.data || '').indexOf('gamma delta') >= 0) {
+              textNode = walker.currentNode;
+              break;
+            }
+          }
+        }
+        if (!edit || !textNode) return 'the block-edit fixture never carried the words to highlight';
+        var offset = textNode.data.indexOf('gamma delta');
+        var selection = window.getSelection();
+        var range = document.createRange();
+        range.setStart(textNode, offset);
+        range.setEnd(textNode, offset + 'gamma delta'.length);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        /* The editor learns of a selection from the event the platform sends, and a command run
+           without the palette restores the range that event remembered — a selection nothing
+           announced would be a different act from the one a person performs. */
+        document.dispatchEvent(new Event('selectionchange'));
+        if (String(selection.toString()) !== 'gamma delta') {
+          return 'the fixture highlighted ' + JSON.stringify(String(selection.toString()));
+        }
+        if (rapierRunCommand('insert.table') !== true) {
+          return 'the shared registry refused insert.table on a live highlight';
+        }
+        var after = _rapierSourceText();
+        var blocks = rapier.document.blocks;
+        var raws = blocks.map(function (candidate) { return String(candidate.raw || ''); });
+        if (blocks.length !== 3) {
+          return 'the highlight did not cut the paragraph into three=' + JSON.stringify(raws);
+        }
+        var tableLines = raws[1].split('\n');
+        if (tableLines[0] !== '| gamma delta |') {
+          return 'the header cell is not the highlight=' + JSON.stringify(tableLines[0]);
+        }
+        if (!/^\|(?:\s*-{3,}\s*\|)+$/.test(tableLines[1] || '')) {
+          return 'the table has no delimiter row of its own=' + JSON.stringify(raws[1]);
+        }
+        /* What stood before and after the highlight stays as its own paragraph — not a cell, not a
+           second header, and not swept into the table's own bytes. */
+        if (raws[0] !== 'alpha beta' || raws[2] !== 'epsilon zeta') {
+          return 'the words beside the highlight did not stay their own paragraphs=' +
+            JSON.stringify([raws[0], raws[2]]);
+        }
+        if (/alpha|beta|epsilon|zeta/.test(raws[1])) {
+          return 'the table swallowed words that were never highlighted=' + JSON.stringify(raws[1]);
+        }
+        if (after.indexOf('| gamma delta |') < 0) {
+          return 'the document source carries no table=' + JSON.stringify(after);
+        }
+        /* Nothing leaves the document that did not arrive in a cell, and nothing arrives twice. */
+        var strays = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta'].filter(function (word) {
+          return after.split(word).length !== 2;
+        });
+        if (strays.length) return 'a word was lost or duplicated by the conversion=' + strays.join(',');
+        if (_selftestHistoryDepth() !== 1) {
+          return 'the conversion was not one transaction=' + _selftestHistoryDepth();
+        }
+        if (!await rapierUndo() || _rapierSourceText() !== original) {
+          return 'one Undo did not put the paragraph back=' + JSON.stringify(_rapierSourceText());
+        }
+        return rapier.document.blocks.length === 1
+          ? true
+          : 'Undo left ' + rapier.document.blocks.length + ' blocks where one paragraph stood';
+      } finally {
+        _leaveAllEditingBlocks();
+        _selftestResetHistory('qualification_table_from_selection_complete');
+        restoreAutosave();
+      }
+    }));
+
     results.push(await _checkAsync('definition insertion reserves at submit and is one guarded undo', async function () {
       var restoreAutosave = _selftestSuspendAutosave();
       try {
@@ -15504,6 +15599,68 @@ function _rapierQualificationSuiteSourceOwner() {
       }
     }));
 
+    /* THE DECLARATION IS THE DOCUMENT'S. `kind` and `within` are the structural half of find: a
+       Markdown document has no syntax to name one of, so its door declares neither and cannot offer
+       a model eight kinds it would then be refused for taking; every code document declares both,
+       parsed or not, because an unparsed language answers a kind with `unavailable`, which is an
+       honest answer rather than a missing argument. Read off the vocabulary actually admitted for
+       the document on the glass, which is the only face a model ever sees. */
+    results.push(await _checkAsync('find on a Markdown document declares neither kind nor within; a code document declares both', async function () {
+      var restoreAutosave = _selftestSuspendAutosave();
+      try {
+        if (rapier.compare.active) return 'skipped: a comparison was already open';
+        var findDoor = function () {
+          return _rapierWebMcpAdmitted().filter(function (tool) {
+            return tool.operation === 'document.find';
+          })[0] || null;
+        };
+        await rapierLoad('# Find\n\nwords a person can point at.\n', 'selftest-find-door.md', {
+          restore: true, sameDocument: true, deferFlush: true,
+        });
+        var markdownDoor = findDoor();
+        if (!markdownDoor) return 'skipped: no find was admitted on a Markdown document';
+        var markdownKeys = Object.keys(markdownDoor.inputSchema.properties).sort().join(',');
+        if (markdownKeys !== 'cursor,query') {
+          return 'a Markdown document declared more than query and cursor=' + markdownKeys;
+        }
+        /* `within` depends on a kind, so a door with no kind may carry no such dependency either. */
+        if (markdownDoor.inputSchema.dependentRequired) {
+          return 'the Markdown door kept a dependency on an argument it does not declare=' +
+            JSON.stringify(markdownDoor.inputSchema.dependentRequired);
+        }
+        await rapierLoad('export function twice(x) { return x * 2; }\n', 'selftest-find-door.js', {
+          restore: true, sameDocument: true, deferFlush: true,
+        });
+        var codeDoor = findDoor();
+        if (!codeDoor) return 'a code document was admitted no find at all';
+        var codeKeys = Object.keys(codeDoor.inputSchema.properties).sort().join(',');
+        if (codeKeys !== 'cursor,kind,query,within') {
+          return 'a code document did not declare kind and within=' + codeKeys;
+        }
+        if (JSON.stringify(codeDoor.inputSchema.dependentRequired || null) !==
+            JSON.stringify({ within: ['kind'] })) {
+          return 'the code door lost the dependency within has on kind=' +
+            JSON.stringify(codeDoor.inputSchema.dependentRequired);
+        }
+        /* The same verb, so the smaller declaration is a fact about the document rather than a
+           second tool wearing the same name. */
+        if (codeDoor.operation !== markdownDoor.operation) {
+          return 'the two doors are not the same verb=' + codeDoor.operation + '/' + markdownDoor.operation;
+        }
+        /* And the door follows the document back, so nothing here is a one-way narrowing. */
+        await rapierLoad('# Find\n\nback where the suite found it.\n', 'selftest-find-door.md', {
+          restore: true, sameDocument: true, deferFlush: true,
+        });
+        var again = findDoor();
+        var againKeys = again ? Object.keys(again.inputSchema.properties).sort().join(',') : 'none';
+        return againKeys === 'cursor,query'
+          ? true
+          : 'the Markdown declaration did not come back with the document=' + againKeys;
+      } finally {
+        restoreAutosave();
+      }
+    }));
+
     /* A stand-in for document.modelContext that keeps the one behaviour tool lifetime turns
        on: before Chrome 153, unregistering a tool cancels whatever it is executing. A host
        that merely forgot the tool would let a registration that retires itself mid-call look
@@ -16210,6 +16367,70 @@ function _rapierQualificationSuiteSourceOwner() {
       }
     }));
 
+    /* THE ACORN IS ACTIVITY, NOT A BADGE (the founder's words 142–143). It is worn for the whole of a
+       call that uses the document's structure, lingers a few seconds after so the person can read
+       that it was used, and is gone when that linger ends. A document that merely has a parser it
+       could use wears nothing — that was the badge, and a badge said nothing about what was
+       happening. The row says the same fact in plain words: what the hand is doing while the call
+       runs, and what Acorn just did while the mark lingers. */
+    results.push(await _checkAsync('the acorn is worn for a structural call, lingers, then goes', async function () {
+      var restoreAutosave = _selftestSuspendAutosave();
+      var call = null;
+      try {
+        await rapierLoad('export function twice(x) { return x * 2; }\nexport default twice;\n',
+          'selftest-acorn.js', { restore: true, sameDocument: true, deferFlush: true });
+        var glyph = document.getElementById('scroll-fab-acorn');
+        var under = function () { return document.getElementById('agent-row-under').textContent; };
+        if (!glyph) return 'the circle carries no acorn to wear';
+        if (!_rapierStructureFact()) {
+          return 'skipped: this browser has no structural sense for the acorn to report';
+        }
+        /* A linger still standing from an earlier case is that case's fact, not this one's. */
+        _rapierAgentBar.acornUntil = 0;
+        _rapierAgentBarRender();
+        if (!glyph.hidden) {
+          return 'an idle document wore the acorn as a badge for its own file extension';
+        }
+        call = {
+          id: 'acorn-x', operation: 'document.find', blocks: null, structural: true,
+          documentAuthority: String(rapier.identity.authority || ''),
+          documentEpoch: Number(rapier.identity.epoch || 0),
+        };
+        _rapierAgentBar.invocations.add(call);
+        /* The completed-call window is what holds the row up after the call itself is gone, so the
+           linger has a row to be read on rather than proving only that a hidden bar says nothing. */
+        _rapierAgentBarMarkConnected(call);
+        _rapierAgentBarRender();
+        if (glyph.hidden || glyph.dataset.active !== 'true') {
+          return 'a running structural call did not wear a live acorn=' +
+            (glyph.hidden ? 'hidden' : 'still/' + String(glyph.dataset.active));
+        }
+        if (under() !== 'Using Acorn · Searching') {
+          return 'the row did not say what the hand was doing=' + JSON.stringify(under());
+        }
+        _rapierAgentBar.invocations.delete(call);
+        _rapierAgentBarRender();
+        /* The call has ended, so the mark stops breathing — and it is still worn, because the person
+           has to be able to read that the parser was in play at all. */
+        if (glyph.hidden || glyph.dataset.active === 'true') {
+          return 'the acorn did not settle into its linger=' +
+            (glyph.hidden ? 'it went with the call' : 'it is still breathing');
+        }
+        if (under() !== 'Acorn searched the syntax') {
+          return 'the linger did not say what Acorn had just done=' + JSON.stringify(under());
+        }
+        _rapierAgentBar.acornUntil = 0;
+        _rapierAgentBarRender();
+        return glyph.hidden ? true : 'the acorn outlived the linger that was its whole warrant';
+      } finally {
+        if (call) _rapierAgentBar.invocations.delete(call);
+        _rapierAgentBar.acornUntil = 0;
+        _rapierAgentBar.connectedUntil = 0;
+        _rapierAgentBarRender();
+        restoreAutosave();
+      }
+    }));
+
     results.push(await _checkAsync('WebMCP registrations leave nothing behind across repeated instrument switches', async function () {
       var restoreAutosave = _selftestSuspendAutosave();
       var reviews = rapier.review.agent.slice();
@@ -16331,7 +16552,7 @@ function _rapierQualificationSuiteSourceOwner() {
         ['document.find', { query: 'x', cursor: [] }, 'invalid_arguments'],
         ['document.find', { query: 'x', cursor: 'rcur_16' }, 'invalid_cursor'],
         ['document.wait_for_user', { event: 'message', prompt: 'x'.repeat(241) }, 'invalid_arguments'],
-        ['document.wait_for_user', { event: 'message', timeout_ms: 300001 }, 'invalid_timeout'],
+        ['document.wait_for_user', { event: 'message', timeout_ms: 200001 }, 'invalid_timeout'],
         ['document.apply_edits', { edits: 'not-an-array' }, 'invalid_arguments'],
         ['document.compare', { text: {} }, 'invalid_arguments'],
         ['document.undo_agent_change', { change_id: {} }, 'invalid_arguments'],
@@ -17674,7 +17895,7 @@ function _rapierQualificationSuiteSourceOwner() {
            seam's: a listener in flight is WAITING with a live reply line, never WORKING. */
         var outcome = null;
         var pending = host.call('document.wait_for_user',
-          { event: 'message', prompt: 'shorter, or sharper?', timeout_ms: 300000 });
+          { event: 'message', prompt: 'shorter, or sharper?', timeout_ms: 20000 });
         settled = pending.then(function (raw) {
           outcome = JSON.parse(JSON.parse(raw).content[0].text);
           return 'resolved';
@@ -17706,7 +17927,7 @@ function _rapierQualificationSuiteSourceOwner() {
           return 'the row clipped the question instead of carrying it whole';
         }
         var refused = _rapierNormalizeWaitResult(await _rapierWaitForUser(
-          { event: 'edit', timeout_ms: 300000 },
+          { event: 'edit', timeout_ms: 20000 },
           _selftestWaitContext(second.signal, 'wait-concurrency-b')));
         if (refused.outcome !== 'refused' || refused.reason !== 'wait_already_pending') {
           return 'the second yield returned ' + refused.outcome + '/' + refused.reason;
@@ -17734,7 +17955,7 @@ function _rapierQualificationSuiteSourceOwner() {
           return 'the answered question left its words on the glass=' + waitSaid.textContent;
         }
         /* The freed slot is ordinary again: a fresh yield takes it, an abort releases it. */
-        var again = _rapierWaitForUser({ event: 'selection', timeout_ms: 300000 },
+        var again = _rapierWaitForUser({ event: 'selection', timeout_ms: 20000 },
           _selftestWaitContext(third.signal, 'wait-concurrency-a'));
         settled = again.then(function () { return 'resolved'; }, function () { return 'rejected'; });
         if (!await _selftestWaitInstalled()) return 'the selection yield never installed';
@@ -17772,7 +17993,7 @@ function _rapierQualificationSuiteSourceOwner() {
           var controller = new AbortController();
           patch(controller.signal);
           var pending = _rapierWaitForUser(
-            { event: index % 2 ? 'selection' : 'edit', timeout_ms: 300000 },
+            { event: index % 2 ? 'selection' : 'edit', timeout_ms: 20000 },
             _selftestWaitContext(controller.signal, 'wait-cancel-' + index));
           var reason = null;
           var settled = pending.then(
@@ -17831,7 +18052,7 @@ function _rapierQualificationSuiteSourceOwner() {
         var ta = document.getElementById('source-textarea');
         if (!ta) return 'skipped: the flat surface is unavailable';
         var baseRevision = Number(rapier.revision.settled || 0);
-        pending = _rapierWaitForUser({ event: 'edit', timeout_ms: 30000 },
+        pending = _rapierWaitForUser({ event: 'edit', timeout_ms: 20000 },
           _selftestWaitContext(controller.signal, 'wait-burst'));
         pending.then(function (value) { settled = value; }, function () { settled = null; });
         if (!await _selftestWaitInstalled()) return 'the yield never installed';
@@ -17933,7 +18154,7 @@ function _rapierQualificationSuiteSourceOwner() {
       var previousEpoch = Number(rapier.identity.epoch || 0);
       var replaced = null;
       var predecessorCall = null;
-      var pending = _rapierWaitForUser({ event: 'edit', timeout_ms: 300000 },
+      var pending = _rapierWaitForUser({ event: 'edit', timeout_ms: 20000 },
         _selftestWaitContext(controller.signal, 'wait-identity'));
       pending.then(function (value) { replaced = value; }, function () { replaced = null; });
       var bar = document.getElementById('agent-row');
@@ -22187,7 +22408,7 @@ function _rapierQualificationSuiteSourceOwner() {
 
         /* The wait parks on the ledger. A selection and a keystroke are the two events every
            other wait answers to, and neither of them is a delivery. */
-        var parked = _rapierWaitForUser({ event: 'delivery', timeout_ms: 30000 }, ctx);
+        var parked = _rapierWaitForUser({ event: 'delivery', timeout_ms: 20000 }, ctx);
         var woke = false;
         parked.then(function () { woke = true; }, function () { woke = true; });
         if (!await _selftestWaitUntil(function () { return !!_rapierWaitRuntime.pending; }, 2000)) {
@@ -22727,9 +22948,9 @@ function _qualificationTarget(raw) {
    Both now stage what they need and run for real — the total case count is unchanged at 302,
    only the 2 that were always dead weight became live witnesses, so the ceiling moves with
    them this once. */
-const EXPECTED_TOTAL = 302; // exact pass+fail census for this release.
+const EXPECTED_TOTAL = 305; // exact pass+fail census for this release.
 const EXPECTED_SKIP = 0;    // exact skip census for this release.
-const SUITE_CEILING = 302;  // EXPECTED_TOTAL may never exceed this.
+const SUITE_CEILING = 305;  // EXPECTED_TOTAL may never exceed this.
 
 /* Requests/errors admitted by exact name only — never by ignoring the whole category. Both
    are empty: nothing off-origin and nothing thrown is expected from this document today. */
