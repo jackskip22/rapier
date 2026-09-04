@@ -4,9 +4,9 @@ Current release: **1.0.0**
 
 Rapier is a Markdown, text and code editor for long documents on a phone. It
 is one HTML file. It runs on your device, on your files, with no account and
-no server, at any length. Your browser's agent can work in the same document
+no server, for long documents. Your browser's agent can work in the same document
 beside you, and your hand always wins. A document can carry its own word for
-what an agent may touch, and that word travels with it into Word and PDF.
+what an agent may touch, and that word travels with it into Word.
 Compare shows exactly what changed. Drop the file next to your own Markdown,
 or embed it in your app, and you have all of that for free.
 
@@ -33,7 +33,7 @@ No account, no server, no telemetry.
 - Open a JavaScript file and the same tools gain a structural sense: an outline
   of declarations, search by syntax, and a receipt for every edit.
 
-**Where it runs.** Everywhere a browser runs, which is every device: the web app
+**Where it runs.** Wherever a modern browser runs: the web app
 at the canonical URL, the installed app on a phone or a desktop, the free Windows
 app and the free Android app, a copy of `rapier.html` opened straight from a
 folder or a USB stick, an iframe inside your own app (below), and as a native

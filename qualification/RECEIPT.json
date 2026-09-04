@@ -1,8 +1,8 @@
 {
   "release": "1.0.0",
-  "rapierHtmlSha256": "1801de15aacc0feb8f34dbb0b07ad58bde62e76c820747b4e49d98add436908b",
+  "rapierHtmlSha256": "e25bb3cee4d1c93d1d7c2b8882dbe6342147d2db9d6b4be59e2f1b141b7d077d",
   "publicTreeFileCount": 27,
-  "publicTreeSha256": "49c6e97973180e04bcd59c4c49e6385915aaec4f16d733721cc4c63cbfc807da",
+  "publicTreeSha256": "b53850e9caa9a42a7dd23cfb2050ccd6b894c280952c4566a869157fb37a72c4",
   "status": "source-qualified",
   "sizeLedger": {
     "unit": "bytes",
@@ -136,6 +136,12 @@
         "bytes": 2984525,
         "deltaBytes": 356,
         "growth": "SIZE-2027-R13 ends 356 B over R12 — the agent's seat reads better: apply_edits names its shape in the sentence a model reads first, the three postures each say their consequence, wait_for_user names timeout_ms, compare names too-complex, open_text names unsaved_changes_kept, label is told apart from note, three save refusals name the next verb, agents.md defines rebased and yielded beside the other outcomes; consequentialHint derives from the one write undo cannot reach; the earlier folds stand as SIZE-2027-R12's, R11's, R10's, R9's and R8's notes list them."
+      },
+      {
+        "landing": "SIZE-2027-R14",
+        "bytes": 2986795,
+        "deltaBytes": 2270,
+        "growth": "SIZE-2027-R14 ends 2,270 B over R13 — the founder's words 136–138 and a live run from the agent's seat folded: the extension sits on the name's baseline by measurement rather than arithmetic, the preview caption says PHONE PREVIEW alone and its way-out link keeps its ground on hover, the agent's line carries the message without a label, the will explanation loses its closing line and keeps each law's word on one line, the Compare status is centred, presence lasts thirty minutes and a line being written holds the row, the acorn is worn whenever the structural sense is live, five recovery sentences name the recovering verb, the deploy staging fails closed; the earlier folds stand as SIZE-2027-R13's, R12's, R11's, R10's and R9's notes list them."
       }
     ]
   },
@@ -145,7 +151,7 @@
     "previewSuite": "302/0/0",
     "webmcpHarness": "258/258",
     "k3Browser": "not_run",
-    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/1801de15aacc/real-chrome/)",
+    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/e25bb3cee4d1/real-chrome/)",
     "originSurface": "not_run",
     "staticAudit": "125/125",
     "realAgentRoute": "model_chosen_script_hosted 58/60 sha256:2216f48917b0",
@@ -153,14 +159,14 @@
     "webmcpHarnessReal": "224/228 on the R4 bytes 6fba753d09bd",
     "webmcpEvalsReal": "10/10 on the R4 bytes 6fba753d09bd"
   },
-  "generatedAt": "2026-09-03T23:33:51.000Z",
+  "generatedAt": "2026-09-04T03:42:12.000Z",
   "sizeCensus": {
     "unit": "bytes",
-    "total": 2984525,
-    "steel": 2618257,
+    "total": 2986795,
+    "steel": 2620527,
     "payload": 366268,
     "vendorSpans": 17,
-    "gzip9": 929213,
+    "gzip9": 929971,
     "tools": "steel/payload: sharpen-census/alpine-census.js (owned bytes vs RAPIER_VENDOR spans); wire: gzip -9 -c rapier.html | wc -c"
   }
 }

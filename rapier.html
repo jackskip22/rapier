@@ -4054,7 +4054,7 @@ body {
 :root.rapier-preview-phone[data-preview-viewport="wide"]::after {
 	left: calc(50% + 271px);
 	text-align: left;
-	content: "PHONE PREVIEW\A Rapier's real phone layout.";
+	content: "PHONE PREVIEW";
 }
 /* The way out of the preview, opposite the caption to balance it (the founder's words 131–132): a
 	 real link, hung on the root beside the body, because in this layout the body is the phone and
@@ -4076,7 +4076,7 @@ body {
 }
 .preview-home__name { text-decoration: underline; text-underline-offset: .22em; }
 :root.rapier-preview-phone[data-preview-viewport="wide"] .preview-home:hover,
-:root.rapier-preview-phone[data-preview-viewport="wide"] .preview-home:focus-visible { color: var(--color-text); outline: none; }
+:root.rapier-preview-phone[data-preview-viewport="wide"] .preview-home:focus-visible { color: light-dark(#121212, #fafafa); outline: none; }
 
 
 
@@ -4517,7 +4517,8 @@ html[data-readonly="on"] .will-plate__words { display: none; }
 .will-popover { font-family: var(--font-sans); font-size: var(--text-sm); line-height: 1.45; cursor: default; }
 .will-popover p { margin: 0; }
 .will-popover__law { display: flex; align-items: baseline; gap: var(--space-2); }
-.will-popover__law b { font-weight: var(--fw-semibold); }
+.will-popover__law b { flex: 0 0 auto; white-space: nowrap; font-weight: var(--fw-semibold); }
+.will-popover__line { flex: 1 1 auto; min-width: 0; }
 .will-popover__glyph { flex: 0 0 auto; display: inline-flex; align-self: center; color: var(--color-text-subtle); }
 .will-popover__glyph svg { width: 14px; height: 14px; }
 .protection-toolbar { position: relative; }
@@ -5481,7 +5482,7 @@ html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack 
 	justify-content: flex-start;
 	gap: 0;
 	margin-left: 0;
-	padding: 2px 10px 0 3px;
+	padding: 2px 10px 0 1px;
 	overflow: visible;
 	border: none;
 	background: none;
@@ -5501,6 +5502,7 @@ html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack 
 	background: var(--color-surface-2);
 }
 .filename-ext-dot {
+	margin-right: -.2em;
 	color: var(--color-text-subtle);
 	font: var(--fw-regular) calc(var(--text-sm) * .8)/48px var(--font-mono);
 	user-select: none;
@@ -5685,7 +5687,7 @@ body.light .scroll-fab-label {
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 0;
 	opacity: .72;
 	font: var(--fw-semibold) 10px/1 var(--font-mono);
 	letter-spacing: .09em;
@@ -5719,11 +5721,9 @@ body.light .scroll-fab-label {
 	overflow: hidden;
 	display: flex;
 	/* The name and its extension share one baseline (the founder's law). Every box in this row is
-	   48px tall with a 48px line, so centring puts the name's baseline 24px + 7·(ascent − descent)
-	   from the top and the extension's, at 0.8 of the size, 24px + 5.6·(ascent − descent): one
-	   pixel higher in Geist Mono, whose ascent − descent is 0.714 em. The extension's 2px top
-	   padding is that pixel. Nothing here asks a browser to align flex baselines, which phones
-	   have answered differently from desktops; this is arithmetic on the font Rapier carries. */
+	   48px tall with a 48px line, centred; the residual between the two baselines is then MEASURED
+	   as rendered and the extension moved by it (renderFilenameExtBaseline) — arithmetic on one font
+	   and one engine answered differently under a host's fallback face, zoom or minimum type size. */
 	align-items: center;
 	gap: 0;
 }
@@ -5816,6 +5816,7 @@ html:not([data-compare="on"]) .compare-mode { display: none !important; }
 .compare-law-review__status {
 	margin: 0;
 	padding: var(--space-2) var(--space-3);
+	text-align: center;
 	color: var(--color-text);
 	font: var(--fw-semibold) var(--text-xs) var(--font-mono);
 	letter-spacing: .07em;
@@ -7597,7 +7598,7 @@ html[data-readonly="on"] .block-interactive-btn{display:none!important}
 <!-- The agent's note: one line beside the circle, tapped to open the panel it belongs to. It
 		 stands in the DOM from boot so what it says can be announced where it already was, and it is
 		 `hidden` with nothing to say — no tab stop and no name over an empty gutter. -->
-<button type="button" class="agent-note" id="agent-note" hidden aria-live="polite" aria-atomic="true"><span class="agent-note__who">your agent</span><span class="agent-note__said"></span></button>
+<button type="button" class="agent-note" id="agent-note" hidden aria-live="polite" aria-atomic="true"><span class="agent-note__who"></span><span class="agent-note__said"></span></button>
 
 <!-- ════════ -->
 <div class="settings-overlay" id="settings-overlay" inert aria-hidden="true">
@@ -9346,7 +9347,7 @@ ASK — it proposes; you decide each time.</p>
 				<form class="agent-row__note" id="agent-row-note">
 					<input class="navigator-outline-filter agent-row__note-input" id="agent-row-note-input" type="text" maxlength="500"
 								 autocomplete="off" autocapitalize="sentences" enterkeyhint="send"
-								 placeholder="message your agent"
+								 placeholder="message"
 								 aria-label="note to your agent">
 					<button type="submit" class="settings-action-btn agent-row__send" id="agent-row-send" disabled>send</button>
 				</form>
@@ -21655,7 +21656,6 @@ const _RAPIER_WILL_INFO = Object.freeze({
 		{ law: 'append', line: 'agents may add lines below what is here and never change what is here.' },
 		{ law: 'keep', line: 'agents may not change this section. If one tries, Rapier shows you what it wanted and you decide.' },
 	],
-	close: 'You edit everything yourself, always.',
 });
 
 function _rapierProtectionWord(law) {
@@ -22191,12 +22191,12 @@ function _rapierWillInfoToggle(anchor) {
 		const word = document.createElement('b');
 		word.textContent = _rapierProtectionWord(entry.law);
 		row.appendChild(word);
-		row.appendChild(document.createTextNode(' — ' + entry.line));
+		const line = document.createElement('span');
+		line.className = 'will-popover__line';
+		line.textContent = entry.line;
+		row.appendChild(line);
 		pop.appendChild(row);
 	});
-	const close = document.createElement('p');
-	close.textContent = _RAPIER_WILL_INFO.close;
-	pop.appendChild(close);
 	anchor.appendChild(pop);
 	return true;
 }
@@ -24360,7 +24360,11 @@ function updateFilenameDisplay() {
 	if (window.RapierPlatform && window.RapierPlatform.host.publishTitle) {
 		try { window.RapierPlatform.host.publishTitle(rapier.document.filename || 'Rapier'); } catch (_) {}
 	}
+	/* The document's identity moved, so what the circle wears for it (the acorn on a document with a
+		 structural sense) is re-read; the agent bar may not exist yet on the first boot render. */
+	try { _rapierAgentBarRenderSoon(); } catch (_) {}
 }
+
 
 /* ── Review evidence ────────
 	 A baseline is a revision the journal can still reach, not a copy of the document at that
@@ -49707,7 +49711,7 @@ function _rapierReadCursorStart(region, value) {
 	}
 	if (record.realm !== region.realm) return { outcome: 'target_gone', reason: 'surface_changed' };
 	if (record.ref !== region.ref || record.representation !== region.representation) {
-		return { outcome: 'invalid', reason: 'cursor_mismatch', message: 'cursor does not match this parent_ref; call get_outline again without a cursor to restart this scope.' };
+		return { outcome: 'invalid', reason: 'cursor_mismatch', message: 'cursor does not match this parent_ref; call read_context again without a cursor to restart this scope.' };
 	}
 	/* A seam alone can't prove what lies beyond it — the compact whole-region identity is what keeps unrelated edits legal; the cursor is disclosure continuity, not mutation authority. */
 	if (record.kind !== region.kind ||
@@ -50254,7 +50258,7 @@ function _rapierReadFocusContext(input) {
 	if (!_rapierNameIs('focus', ref)) return { outcome: 'invalid', reason: 'invalid_reference' };
 	_rapierPruneNames('focus');
 	const ticket = _rapierFocusTickets.get(ref);
-	if (!ticket) return { outcome: 'target_gone', reason: 'focus_expired', message: 'This focus ref\'s clock ran out; call find again for a fresh one, then read_context to spend it.', ref };
+	if (!ticket) return { outcome: 'target_gone', reason: 'focus_expired', message: 'This focus ref\'s clock ran out; call get_context again for a fresh focus ref, then read_context to spend it.', ref };
 	if (!_rapierIdentityIsCurrent(ticket)) {
 		return { outcome: 'target_gone', reason: 'document_replaced', ref };
 	}
@@ -51863,7 +51867,7 @@ function _rapierWebMcpEnvelope(shape) {
 		invalid_context: 'context_handle was not a string this door minted; call read_context or find again for one that is.',
 		invalid_cursor: 'cursor was not one this door returned; call again without a cursor to restart, or reuse the exact next_cursor value.',
 		invalid_placement: 'placement must be "replace", "before", or "after"; call apply_edits again with one of those.',
-		invalid_reference: 'This ref was not one get_outline or read_context minted; call one of those again for a valid ref.',
+		invalid_reference: 'This ref was not one get_outline, get_context or find minted; call one of those again for a valid ref.',
 		invalid_representation: 'representation must be "text" or "markdown"; call read_context again with one of those.',
 		invalid_text: 'text must be a string of at most 262,144 characters; call apply_edits again with valid replacement text.',
 		not_agent_opened: 'This comparison is not yours; tell them Escape closes it — until they do, the document tools stay unavailable to you.',
@@ -51871,8 +51875,8 @@ function _rapierWebMcpEnvelope(shape) {
 		surface_changed: 'The view switched between source and rendered since this was minted; call read_context or find again on the current surface.',
 		surface_missing: 'The block this ref named is not in the current view; call read_context or find again for a current one.',
 		target_changed: 'The bytes behind this handle changed before the edit landed; call read_context again and reapply on the fresh handle.',
-		tool_withdrawn: 'This Rapier tool retired under the current boundary; call get_context to see what is live now.',
-		view_changed: 'What the person is looking at changed before this could point at it; call reveal again on a current ref.',
+		tool_withdrawn: 'This Rapier tool retired under the current boundary; fetch the tool list again to see what is live now.',
+		view_changed: 'What the person is looking at changed before this could point at it; call read_context or find again for a fresh handle, then reveal it.',
 	};
 	const reason = shape && shape.reason;
 	const filled = reason && !shape.message && _RAPIER_REFUSAL_SENTENCES[reason]
@@ -53885,11 +53889,12 @@ const _rapierAgentBar = Object.seal({
 
 /* A COMPLETED CALL IS PROOF OF AN AGENT, AND THE QUIET AFTER IT IS NOT PROOF OF ITS ABSENCE. An
 	 agent works in turns: a call, a model's thinking, the next call. Ending presence in the seam
-	 between two of its own calls told the person the hand had gone when it had not. Ten minutes
-	 from the last completed invocation, renewed by every call. Registration alone still confers
+	 between two of its own calls told the person the hand had gone when it had not. Thirty minutes
+	 from the last completed invocation, renewed by every call and by every line the person sends
+	 it (a person writing to an agent is expecting one). Registration alone still confers
 	 nothing — a browser registers tools with no agent behind them — and the window is bound to the
 	 document the call was made against, so replacing or reloading the document ends it. */
-const _RAPIER_AGENT_CONNECTED_MS = 600000;
+const _RAPIER_AGENT_CONNECTED_MS = 1800000;
 
 function _rapierAgentBarMarkConnected(invocation) {
 	const bar = _rapierAgentBar;
@@ -54181,7 +54186,12 @@ function _rapierAgentBarRender() {
 		!(parked && invocation.operation === 'document.wait_for_user') &&
 		invocation.documentAuthority === authority && invocation.documentEpoch === epoch);
 	const connected = _rapierAgentConnected();
-	row.hidden = !(executing.length > 0 || parked !== null || target !== null || symbol !== '' || connected);
+	/* A LINE BEING WRITTEN HOLDS THE ROW. The window's end is a fact about the agent's calls, not a
+		 hand taking the field out from under the person mid-sentence (the founder's words 136; a
+		 tester lost their line to exactly that). While the field holds their text or their focus, the
+		 row stands; the draft is kept either way. */
+	const holding = !!note && !note.disabled && (note.value !== '' || document.activeElement === note);
+	row.hidden = !(executing.length > 0 || parked !== null || target !== null || symbol !== '' || connected || holding);
 	/* The since-open lens is its own fact (a real distance-from-open exists or not) — read regardless of whether this render also finds an agent presence to show. */
 	const delta = document.getElementById('agent-row-delta');
 	if (delta) {
@@ -54227,8 +54237,7 @@ function _rapierAgentBarRender() {
 	if (note) {
 		note.disabled = row.hidden;
 		note.placeholder = parkedNow ? (parked.prompt || 'reply')
-			: spoken.length ? 'message queued for your agent' : 'message your agent';
-		if (row.hidden) note.value = '';
+			: spoken.length ? 'message queued' : 'message';
 	}
 	if (send) send.disabled = row.hidden;
 	/* THE COUNT IS ON THE ROW, IN WORDS: what is held for the agent, said where the agent's own
@@ -54249,7 +54258,7 @@ function _rapierAgentBarRender() {
 		if (gone) { gone.textContent = ''; gone.hidden = true; }
 		if (lens) { lens.hidden = true; document.getElementById('agent-row-lens-status').textContent = ''; }
 		document.getElementById('agent-row-jump').hidden = true;
-		_rapierAgentPresence('', false);
+		_rapierAgentPresence('', !!_rapierStructureFact());
 		return;
 	}
 	const parkedMessage = parkedNow;
@@ -54277,10 +54286,10 @@ function _rapierAgentBarRender() {
 	/* One token for the attribute and the circle, the person's own words on the glass. */
 	document.getElementById('agent-row-state').textContent =
 		word === 'WAITING' ? 'WAITING FOR YOU' : word;
-	/* THE ACORN (the founder's words 115): worn while an agent is present on a document whose structural
-	   sense is live — the same fact get_context reports as `structure` — so the person can see the
-	   parser is in play; never on a document without one, never without a hand on it. */
-	const acorn = !!word && !!_rapierStructureFact();
+	/* THE ACORN (the founder's words 115, 129 and 136): worn whenever the document's structural sense
+	   is live — the same fact get_context reports as `structure` — so the person can see the parser
+	   is in play the moment a JavaScript file opens, agent or none; never on a document without one. */
+	const acorn = !!_rapierStructureFact();
 	/* "Under a heading" is where a Markdown reader is; "in a symbol" is where a code reader is. One resolver, two languages, and the row speaks whichever the document speaks. */
 	const where = parkedMessage ? ''
 		: (heading ? 'Under ' + heading : (symbol ? 'in ' + symbol : ''));
@@ -54396,6 +54405,11 @@ document.getElementById('agent-row-note')?.addEventListener('submit', event => {
 	/* The cap displacing a line is said once, where the person is looking, rather than left for
 		 them to infer from a count that did not move. */
 	if (_rapierMessageQueueAdd(text)) showToast('oldest message replaced', 'warning');
+	/* Speaking to the agent renews the connected window: the person is expecting a hand. */
+	_rapierAgentBarMarkConnected({
+		documentAuthority: String(rapier.identity.authority || ''),
+		documentEpoch: Number(rapier.identity.epoch || 0),
+	});
 	_rapierAgentBarRender();
 });
 
@@ -54727,7 +54741,32 @@ function renderFilename() {
 	/* The window's own title is the same projection of the same name. */
 	document.title = rapier.compare.active ? 'Rapier \u2014 compare'
 		: 'Rapier \u2014 ' + (embedded && _rapierEmbed.title ? _rapierEmbed.title : name);
+	renderFilenameExtBaseline();
 }
+
+/* THE EXTENSION SITS ON THE NAME'S BASELINE, MEASURED (the founder's words 136). Line-height
+	 arithmetic assumed one font and one engine, and a host with a fallback face, a zoom or its own
+	 minimum type size answered it differently every time. So the row is read as rendered: a
+	 zero-size inline probe on each text finds its baseline, and the extension is moved by the
+	 difference. Any font, any zoom, any engine: the same line. */
+function renderFilenameExtBaseline() {
+	const refs = _rapierUi.refs;
+	if (!refs || refs.filenameBtn.hidden || refs.filenameExtBtn.hidden) return;
+	refs.filenameExtBtn.style.transform = '';
+	const baseline = el => {
+		const probe = document.createElement('span');
+		probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+		el.appendChild(probe);
+		const top = probe.getBoundingClientRect().top;
+		probe.remove();
+		return top;
+	};
+	const delta = Math.round((baseline(refs.filenameBtn) - baseline(refs.filenameExtText)) * 4) / 4;
+	if (Math.abs(delta) >= 0.25) refs.filenameExtBtn.style.transform = 'translateY(' + delta + 'px)';
+}
+window.addEventListener('resize', renderFilenameExtBaseline, { passive: true });
+window.addEventListener('rapier:preview-layout', renderFilenameExtBaseline);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderFilenameExtBaseline, () => {});
 
 /* One split of the document's name into the two halves the chip edits separately. */
 function _rapierUiFilenameParts() {

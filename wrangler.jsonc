@@ -9,7 +9,7 @@
     // _redirects (`/ /rapier.html 200`, an internal rewrite the platform documents for
     // static assets) so `/` is the door and `/rapier.html` stays the artifact's name —
     // same bytes at both, hash-verifiable at either.
-    "command": "set -u; dest=.wrangler/rapier-assets; rm -rf \"$dest\"; mkdir -p \"$dest\"; cp rapier.html sw.js manifest.json icon-192.png icon-512.png demo.md _headers _redirects WILL-1.md VECTORS.md README.md WEBMCP-CHALLENGE.md llms.txt agents.md \"$dest/\"; mkdir -p \"$dest/qualification\"; cp qualification/RECEIPT.json \"$dest/qualification/\"; true"
+    "command": "set -eu; dest=.wrangler/rapier-assets; rm -rf \"$dest\"; mkdir -p \"$dest\"; cp rapier.html sw.js manifest.json icon-192.png icon-512.png demo.md _headers _redirects WILL-1.md VECTORS.md README.md WEBMCP-CHALLENGE.md llms.txt agents.md \"$dest/\"; mkdir -p \"$dest/qualification\"; cp qualification/RECEIPT.json \"$dest/qualification/\""
   },
   "assets": {
     "directory": ".wrangler/rapier-assets",

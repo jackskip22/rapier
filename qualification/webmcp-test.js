@@ -765,7 +765,7 @@ async function runHarness() {
     const born = await noteLine();
     check('an admitted write carries its note to the line beside the circle',
       (withNote.outcome === 'applied' || withNote.outcome === 'rebased') &&
-      !born.hidden && born.said === firstNote && born.who === 'your agent',
+      !born.hidden && born.said === firstNote && born.who === '',
       JSON.stringify({ withNote, born }).slice(0, 300));
     check('the line stands on the glass only while the circle it belongs to does',
       born.visible === born.circleOnScreen, JSON.stringify(born).slice(0, 200));
@@ -2937,7 +2937,7 @@ async function runHarness() {
   const inboxOpen = await inboxRow();
   check('the reply field is live whenever the agent row is, with no wait parked',
     inboxBefore.hidden && inboxBefore.disabled && !inboxOpen.hidden && !inboxOpen.disabled &&
-    inboxOpen.placeholder === 'message your agent' && inboxOpen.queued === null,
+    inboxOpen.placeholder === 'message' && inboxOpen.queued === null,
     JSON.stringify({ inboxBefore, inboxOpen }));
 
   await inboxSpeak('make the intro half as long');
@@ -2945,7 +2945,7 @@ async function runHarness() {
   const inboxQueued = (await invoke(inboxPage, 'document.get_context', {})).value;
   check('a line spoken with nobody parked is queued, counted on the row, and read by get_context',
     inboxQueuedRow.queued === '1 MESSAGE QUEUED' &&
-    inboxQueuedRow.placeholder === 'message queued for your agent' &&
+    inboxQueuedRow.placeholder === 'message queued' &&
     inboxQueued.pendingMessages === 1 &&
     inboxQueued.latestMessage.text === 'make the intro half as long' &&
     typeof inboxQueued.latestMessage.id === 'string' &&
@@ -2994,7 +2994,7 @@ async function runHarness() {
   check('the queue drains oldest first and then reports absent, never a false zero',
     JSON.stringify(inboxDrained) === JSON.stringify(['third', 'fourth', 'fifth', 'sixth']) &&
     !('pendingMessages' in inboxEmptied) && !('latestMessage' in inboxEmptied) &&
-    inboxEmptyRow.queued === null && inboxEmptyRow.placeholder === 'message your agent',
+    inboxEmptyRow.queued === null && inboxEmptyRow.placeholder === 'message',
     JSON.stringify({ inboxDrained, emptied: inboxEmptied.pendingMessages, inboxEmptyRow }));
 
   /* The path that already worked still works, unchanged: a parked listener owns the field, and
