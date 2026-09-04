@@ -1,8 +1,8 @@
 {
   "release": "1.0.0",
-  "rapierHtmlSha256": "e25bb3cee4d1c93d1d7c2b8882dbe6342147d2db9d6b4be59e2f1b141b7d077d",
+  "rapierHtmlSha256": "b196e95c8eff8806cb82bb0176ec939db017a762574b714d945244d39473b9f1",
   "publicTreeFileCount": 27,
-  "publicTreeSha256": "b53850e9caa9a42a7dd23cfb2050ccd6b894c280952c4566a869157fb37a72c4",
+  "publicTreeSha256": "54754fc36e6c9878b35a49b6e396a3ab49e622485d9582149e2b05cf7c5290eb",
   "status": "source-qualified",
   "sizeLedger": {
     "unit": "bytes",
@@ -142,6 +142,18 @@
         "bytes": 2986795,
         "deltaBytes": 2270,
         "growth": "SIZE-2027-R14 ends 2,270 B over R13 — the founder's words 136–138 and a live run from the agent's seat folded: the extension sits on the name's baseline by measurement rather than arithmetic, the preview caption says PHONE PREVIEW alone and its way-out link keeps its ground on hover, the agent's line carries the message without a label, the will explanation loses its closing line and keeps each law's word on one line, the Compare status is centred, presence lasts thirty minutes and a line being written holds the row, the acorn is worn whenever the structural sense is live, five recovery sentences name the recovering verb, the deploy staging fails closed; the earlier folds stand as SIZE-2027-R13's, R12's, R11's, R10's and R9's notes list them."
+      },
+      {
+        "landing": "SIZE-2027-R15",
+        "bytes": 2988382,
+        "deltaBytes": 1587,
+        "growth": "SIZE-2027-R15 ends 1,587 B over R14 — the declaration is the document's: a Markdown document's find offers query and cursor and every code document offers kind and within, so a model reading the door on the Markdown demo is no longer offered eight kinds it cannot use; where a structural match fell is the innermost declaration whose extent holds it, so a top-level export is the module's and not the last method's; the demo's prompts carry one that opens a JavaScript file and the line beside the circle is described as it is; the earlier folds stand as SIZE-2027-R14's, R13's, R12's, R11's and R10's notes list them."
+      },
+      {
+        "landing": "SIZE-2027-R16",
+        "bytes": 2996213,
+        "deltaBytes": 7831,
+        "growth": "SIZE-2027-R16 ends 7,831 B over R15 — the row says what the hand is doing while a call runs (Searching, Reading, Editing, in a person's verb, then the place) and the control that goes to a change names the heading it goes to; display words only, the wire untouched; the earlier folds stand as SIZE-2027-R15's, R14's, R13's, R12's and R11's notes list them."
       }
     ]
   },
@@ -149,9 +161,9 @@
     "desktopSuite": "302/0/0",
     "mobileSuite": "302/0/0",
     "previewSuite": "302/0/0",
-    "webmcpHarness": "258/258",
+    "webmcpHarness": "260/260",
     "k3Browser": "not_run",
-    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/e25bb3cee4d1/real-chrome/)",
+    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/b196e95c8eff/real-chrome/)",
     "originSurface": "not_run",
     "staticAudit": "125/125",
     "realAgentRoute": "model_chosen_script_hosted 58/60 sha256:2216f48917b0",
@@ -159,14 +171,14 @@
     "webmcpHarnessReal": "224/228 on the R4 bytes 6fba753d09bd",
     "webmcpEvalsReal": "10/10 on the R4 bytes 6fba753d09bd"
   },
-  "generatedAt": "2026-09-04T03:42:12.000Z",
+  "generatedAt": "2026-09-04T04:57:47.000Z",
   "sizeCensus": {
     "unit": "bytes",
-    "total": 2986795,
-    "steel": 2620527,
+    "total": 2996213,
+    "steel": 2629945,
     "payload": 366268,
     "vendorSpans": 17,
-    "gzip9": 929971,
+    "gzip9": 932883,
     "tools": "steel/payload: sharpen-census/alpine-census.js (owned bytes vs RAPIER_VENDOR spans); wire: gzip -9 -c rapier.html | wc -c"
   }
 }

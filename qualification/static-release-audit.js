@@ -1028,17 +1028,19 @@ const A31_ACCEPTANCE = [
     },
   },
   {
-    id: 'A3.1-26', name: 'the acorn glyph is worn while the document\'s structural sense is live',
+    id: 'A3.1-26', name: 'the acorn glyph is worn while a call is using the document\'s structure, and lingers after it',
     run() {
-      /* The founder's words 115, 129 and 136: the acorn was never seen while it lived only for the
-         milliseconds of a structural call, and a tester never saw it before the agent's first call.
-         It is worn whenever the document's structural sense is live — the same fact get_context
-         reports — and never on a document without one. Invocation liveness still names the symbol. */
+      /* The founder's words 115, 129 and 142: the acorn is activity, not a badge. It was never seen
+         while it lived only for the milliseconds of the worker's job, so it is worn for the whole of
+         a call that uses the structure (known at the call's start) and lingers a few seconds after,
+         never while idle, never on a document without a structural sense. Invocation liveness still
+         names the symbol. */
       const render = functionSource('_rapierAgentBarRender');
       const active = functionSource('_rapierStructureActiveHere');
       const setLive = functionSource('_rapierStructureSetLive');
       const name = functionSource('_rapierAgentBarNameSymbol');
-      return a31Result(/const acorn\s*=\s*!!_rapierStructureFact\s*\(\s*\)/.test(render) &&
+      return a31Result(/const acorn\s*=\s*!!_rapierStructureFact\s*\(\s*\)\s*&&\s*\(usingAcorn\s*\|\|\s*lingering\)/.test(render) &&
+        /invocation\.structural/.test(render) && /_RAPIER_ACORN_LINGER_MS/.test(render) &&
         /active\.invocationIds\s+instanceof\s+Set/.test(active) &&
         /_rapierStructuralIdentityCurrent\s*\(\s*identity\s*\)/.test(active) &&
         /active\.invocationIds\.has/.test(active) &&
@@ -4143,6 +4145,8 @@ const SIZE_LEDGER_HISTORY = Object.freeze([
   Object.freeze({ landing: 'SIZE-2027-R11', bytes: 2980671, deltaBytes: 43349 }),
   Object.freeze({ landing: 'SIZE-2027-R12', bytes: 2984169, deltaBytes: 3498 }),
   Object.freeze({ landing: 'SIZE-2027-R13', bytes: 2984525, deltaBytes: 356 }),
+  Object.freeze({ landing: 'SIZE-2027-R14', bytes: 2986795, deltaBytes: 2270 }),
+  Object.freeze({ landing: 'SIZE-2027-R15', bytes: 2988382, deltaBytes: 1587 }),
 ]);
 const sizeLedger = receipt && receipt.sizeLedger;
 const sizeBaseline = sizeLedger && sizeLedger.baseline;
@@ -4179,8 +4183,8 @@ const boundaryShippedDelta = shippedBytes - boundaryStartBytes;
    sealed one, and growth names its displacement or its founder-visible justification. A landing
    that shrinks needs no words; one that grows carries `growth` in its ledger row — the sentence
    that says what the bytes bought — or the audit refuses it. The delta itself is always printed. */
-check('SIZE-2027-R14 is accounted against sealed SIZE-2027-R13',
-  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R14'
+check('SIZE-2027-R16 is accounted against sealed SIZE-2027-R15',
+  lastSizeLanding && lastSizeLanding.landing === 'SIZE-2027-R16'
     && lastSizeLanding.bytes === shippedBytes
     && lastSizeLanding.deltaBytes === boundaryShippedDelta
     && (shippedBytes < boundaryStartBytes

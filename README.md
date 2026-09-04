@@ -177,12 +177,12 @@ of two.
 
 ## Evidence
 
-**Evidence status: SIZE-2027-R13 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**302/0/0** each) and the WebMCP harness (**258 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
+**Evidence status: SIZE-2027-R13 SOURCE-QUALIFIED.** The desktop, mobile, and phone-preview suites (**302/0/0** each) and the WebMCP harness (**260 checks**) run against these exact bytes, reproduced with `qualification/run-selftest2.js`, `run-selftest-preview.js`, and `webmcp-test.js`.
 Static release audit: **125/125** — reproduce it yourself with `node qualification/static-release-audit.js .`.
 The sealed receipt those numbers are pinned in is `qualification/RECEIPT.json`.
 The live origin, the K3 browser registry, and the manual-device gate are human gates, marked `not_run` on this candidate.
 **Origin surface not_run.**
-`demo.md` is 6,186 UTF-8 bytes with 15 source headings.
+`demo.md` is 6,494 UTF-8 bytes with 15 source headings.
 `WILL-1.md` and `VECTORS.md` are vendored from the canonical Will repository; Rapier itself remains AGPL-3.0, and its copies point home rather than claiming to be the executable suite of this tree.
 
 ## Licence

@@ -1466,29 +1466,23 @@ async function runHarness() {
   check('a query inside its bound in characters is not refused for its code units',
     astralFind.outcome === 'searched',
     JSON.stringify({ characters: [...astral].length, units: astral.length, astralFind }).slice(0, 220));
+  /* THE DECLARATION IS THE DOCUMENT'S. On a Markdown document find offers neither a kind nor a
+     within, and a model that sends one is refused as sending an undeclared field — the eight
+     syntactic kinds are the structural variant's to offer (measured on the code page below). */
   const findSchema = await page.evaluate(() => {
     const entry = window.__webmcp.entry('document.find');
     return entry ? entry.inputSchema : null;
   });
-  check('the schema declares that within is only legal beside a kind',
-    !!findSchema && !!findSchema.dependentRequired &&
-      JSON.stringify(findSchema.dependentRequired.within) === JSON.stringify(['kind']),
-    JSON.stringify(findSchema && findSchema.dependentRequired));
-  /* And the door EXECUTES that declaration, which is the half a schema alone never proves. The
-     handler used to answer this question too; with the door answering first, the handler's copy
-     was a second executor of one sentence and is gone. */
+  check('a Markdown document\'s find declares neither kind nor within',
+    !!findSchema && !findSchema.properties.kind && !findSchema.properties.within &&
+      !findSchema.dependentRequired,
+    JSON.stringify(findSchema && Object.keys(findSchema.properties)));
   const orphanWithin = (await invoke(page, 'document.find',
     { query: 'alpha', within: 'sec_nope' })).value;
-  check('a dependent field without the field it depends on is refused at the door, by name',
+  check('a within on a Markdown document is refused at the door as undeclared, by name',
     orphanWithin.reason === 'invalid_arguments' &&
-    /within needs .*kind/.test(String(orphanWithin.message || '')),
+    /within is not declared/.test(String(orphanWithin.message || '')),
     JSON.stringify(orphanWithin).slice(0, 200));
-  /* The positive half: beside its kind the same field is admitted, so the dependency refuses a
-     shape rather than a capability. */
-  const pairedWithin = (await invoke(page, 'document.find',
-    { query: 'alpha', kind: 'declaration', within: 'sec_nope' })).value;
-  check('the same field beside the one it depends on is admitted',
-    pairedWithin.reason !== 'invalid_arguments', JSON.stringify(pairedWithin).slice(0, 200));
   /* The other side of the unit question: one character past the declared bound, in the unit the
      declaration names, is refused — and refused at the door, which is now the only place that
      counts it. */
@@ -2284,7 +2278,9 @@ async function runHarness() {
      resolves to the canonical `offset` before any handler sees it. The other one differs the other
      way: the operation takes a field the tool does not offer, which admits nothing anywhere. */
   const PINNED_DIVERGENCE = [
-    { name: 'document.find', wireOnly: ['cursor'], hostOnly: ['limit', 'offset'] },
+    /* On the Markdown page the structural fields are the manifest's alone: the door declares only
+       what this document answers (the code page's find carries kind and within). */
+    { name: 'document.find', wireOnly: ['cursor'], hostOnly: ['kind', 'limit', 'offset', 'within'] },
     { name: 'document.compare', wireOnly: [], hostOnly: ['lens'] },
   ];
   const divergenceDrift = JSON.stringify(contracts.differ.slice().sort((a, b) =>
@@ -2469,6 +2465,27 @@ async function runHarness() {
     check('a structural read never carries a code file\'s own bare data: URI whole',
       !JSON.stringify(unit).includes(PICTURE_PNG), JSON.stringify(unit).slice(0, 400));
   }
+  /* The structural variant declares the dependency, and the door executes it — which is the half
+     a schema alone never proves. Beside its kind the same field is admitted, so the dependency
+     refuses a shape rather than a capability. */
+  const codeFindSchema = await codePage.evaluate(() => {
+    const entry = window.__webmcp.entry('document.find');
+    return entry ? entry.inputSchema : null;
+  });
+  check('the code document\'s find declares that within is only legal beside a kind',
+    !!codeFindSchema && !!codeFindSchema.properties.kind && !!codeFindSchema.dependentRequired &&
+      JSON.stringify(codeFindSchema.dependentRequired.within) === JSON.stringify(['kind']),
+    JSON.stringify(codeFindSchema && codeFindSchema.dependentRequired));
+  const orphanWithinCode = (await invoke(codePage, 'document.find',
+    { query: 'notifyAll', within: 'sec_nope' })).value;
+  check('a dependent field without the field it depends on is refused at the door, by name',
+    orphanWithinCode.reason === 'invalid_arguments' &&
+    /within needs .*kind/.test(String(orphanWithinCode.message || '')),
+    JSON.stringify(orphanWithinCode).slice(0, 200));
+  const pairedWithinCode = (await invoke(codePage, 'document.find',
+    { query: 'notifyAll', kind: 'declaration', within: 'sec_nope' })).value;
+  check('the same field beside the one it depends on is admitted',
+    pairedWithinCode.reason !== 'invalid_arguments', JSON.stringify(pairedWithinCode).slice(0, 200));
   const emptyWithinSchema = await codePage.evaluate(() => {
     const operation = JSON.parse(document.querySelector(
       'script[type="application/speedracer-app+json"]').textContent).operations

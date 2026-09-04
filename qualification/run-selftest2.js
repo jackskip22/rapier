@@ -15946,7 +15946,7 @@ function _rapierQualificationSuiteSourceOwner() {
           };
           _rapierAgentBar.invocations.add(globalCall);
           _rapierAgentBarRender();
-          if (word() !== 'WORKING' || under() !== '') {
+          if (word() !== 'WORKING' || under() !== 'Mapping') {
             return 'a global call was narrated under the stale record=' + word() + '/' + under();
           }
           _rapierAgentBar.invocations.delete(globalCall);
@@ -15956,7 +15956,7 @@ function _rapierQualificationSuiteSourceOwner() {
           };
           _rapierAgentBar.invocations.add(targeted);
           _rapierAgentBarRender();
-          if (word() !== 'WORKING' || under() !== 'Under Method') {
+          if (word() !== 'WORKING' || under() !== 'Editing under Method') {
             return 'a call spending its handles under Method was not named there=' + under();
           }
           _rapierAgentBar.invocations.delete(targeted);
@@ -16444,6 +16444,17 @@ function _rapierQualificationSuiteSourceOwner() {
       }).map(function (tool) { return tool.operation; });
       if (drift.length) {
         return 'a docKind variant changed more than its own words=' + drift.join(',');
+      }
+      /* The Markdown variant is the other direction: the same words, a smaller declaration — find on
+         a Markdown document offers neither kind nor within — and nothing else moves. */
+      var findTool = RAPIER_WEBMCP_TOOLS.filter(function (tool) { return tool.operation === 'document.find'; })[0];
+      var markdownFind = _rapierWebMcpDescriptorFor(findTool, false, true);
+      if (markdownFind === findTool || markdownFind.description !== findTool.description ||
+          markdownFind.title !== findTool.title || markdownFind.inputSchema.properties.kind ||
+          markdownFind.inputSchema.properties.within || markdownFind.inputSchema.dependentRequired ||
+          !findTool.inputSchema.properties.kind || _rapierWebMcpDescriptorFor(findTool, false, true) !== markdownFind ||
+          RAPIER_WEBMCP_TOOLS.filter(function (tool) { return tool.markdown; }).length !== 1) {
+        return 'the Markdown variant of find is not the same words over a smaller declaration';
       }
       /* Every result derived structurally carries its engine, so a version bump cannot pass
          as a routine dependency change with descriptors still promising the old one. */

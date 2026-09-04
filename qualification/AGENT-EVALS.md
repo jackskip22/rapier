@@ -19,7 +19,7 @@ the transcript.
 The bundled document opens with "Your agent, in this document" and carries
 Rapier's own welcome verbatim beneath it, wearing two genuine will pairs
 (the kept Statement, the append-only Notes). Its reproducible source
-measurements are 6,186 UTF-8 bytes, 6,141 Unicode code points, 1,127
+measurements are 6,494 UTF-8 bytes, 6,447 Unicode code points, 1,186
 non-whitespace source tokens, and 15 ATX source headings outside fences —
 the recipe is in `PUBLIC-SUBMISSION.md`. Do not call the token count
 “words” or the source heading count the renderer's count.

@@ -70,9 +70,9 @@ beneath it. Its exact source metrics:
 
 | Metric | Value | Definition |
 |---|---:|---|
-| UTF-8 bytes | 6,186 | `Buffer.byteLength(source)` |
-| Unicode code points | 6,141 | `[...source].length` |
-| source tokens | 1,127 | non-whitespace runs, `/\S+/gu` |
+| UTF-8 bytes | 6,494 | `Buffer.byteLength(source)` |
+| Unicode code points | 6,447 | `[...source].length` |
+| source tokens | 1,186 | non-whitespace runs, `/\S+/gu` |
 | source headings | 15 | ATX headings outside fenced code blocks |
 
 These are source measurements, not claims about natural-language words or the
@@ -112,12 +112,12 @@ NODE
 Expected output:
 
 ```text
-{ bytes: 6186, codePoints: 6141, sourceTokens: 1127, sourceHeadings: 15 }
+{ bytes: 6494, codePoints: 6447, sourceTokens: 1186, sourceHeadings: 15 }
 ```
 
 ## Evidence boundary
 
-**Rapier 1.0.0 is a SIZE-2027-R13 source-qualified candidate.** The desktop, mobile and phone-preview suites (**302/0/0** each) and the WebMCP harness (**258 checks**) are executed against these exact bytes from the shipped extraction. Static release audit **125 / 125** after the receipt re-pin; the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6 — reproduce the current number directly: `node qualification/static-release-audit.js .`. Native WebMCP registration and four sample calls are observed on these exact bytes (`docs/evidence/release/<sha12>/real-chrome/`, in the development tree, outside the allowlist above); the full real-browser harness (**224/228**) and the scripted evals (**10/10**) are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
+**Rapier 1.0.0 is a SIZE-2027-R13 source-qualified candidate.** The desktop, mobile and phone-preview suites (**302/0/0** each) and the WebMCP harness (**260 checks**) are executed against these exact bytes from the shipped extraction. Static release audit **125 / 125** after the receipt re-pin; the bound evidence snapshot this candidate shipped with predates that re-pin and shows 119/6 — reproduce the current number directly: `node qualification/static-release-audit.js .`. Native WebMCP registration and four sample calls are observed on these exact bytes (`docs/evidence/release/<sha12>/real-chrome/`, in the development tree, outside the allowlist above); the full real-browser harness (**224/228**) and the scripted evals (**10/10**) are supporting evidence from the older R4 bytes; a model-chosen, script-hosted route is supporting evidence from separate delegation bytes (58 of 60 runs, `docs/evidence/hilt-model/`, same development tree). The live origin, the K3 browser registry, and the manual-device gate remain human gates, NOT RUN on this candidate. **Origin surface not_run.**
 
 Rapier supports Chromium 123 or newer; its WebMCP tools currently require the challenge's Chrome 149+ test host. That is a source census, not a device gate: `docs/evidence/lane-z/chromium-census.mjs` (in the development tree, outside the allowlist above) reads `rapier.html` and `sw.js` — literal scripts, the inflated vendor spans, executable template substitutions and the jsdiff Blob-worker source — and reports the artifact parsing and booting at Chromium 80 and rendering at full authored fidelity at 123, binding each result to the exact bytes it read (`docs/evidence/lane-z/chromium-floor-master.json`). The mapped compatibility census places Rapier's functional floor at Chromium 108; WebMCP itself requires the supported trial browser. No browser below this container's Chromium was executed, and unresolved tokens the census could not classify are listed rather than assumed supported.
 

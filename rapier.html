@@ -5622,6 +5622,10 @@ html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack 
 	pointer-events: none;
 }
 .scroll-fab__acorn[hidden] { display: none; }
+/* While a call is using Acorn the mark breathes (the founder's words 143); the linger holds still. */
+@keyframes rapier-acorn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.scroll-fab__acorn[data-active="true"] { animation: rapier-acorn-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .scroll-fab__acorn[data-active="true"] { animation: none; } }
 .scroll-fab__acorn svg { display: block; width: 100%; height: 100%; }
 .scroll-fab-label {
 	position: fixed;
@@ -6244,10 +6248,11 @@ html:not([data-compare="on"]) .compare-mode { display: none !important; }
 	gap: var(--space-3);
 	margin: 0 0 var(--space-4);
 	padding: 0 0 var(--space-3);
-	border-bottom: 1px solid var(--color-border);
 }
-.posture-row__line { display: flex; align-items: center; gap: var(--space-2); }
-.posture-row__words { flex: 1 1 auto; min-width: 0; }
+/* The three words span the row; the i stands beneath them, at the right (the founder's words 143). */
+.posture-row__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.posture-row__words { flex: 1 1 100%; min-width: 0; }
+.posture-row__info { margin-left: auto; }
 .theme-switcher__btn.posture-row__word {
 	flex: 1 1 0;
 	min-width: var(--thumb-exclusion);
@@ -6287,7 +6292,6 @@ html:not([data-compare="on"]) .compare-mode { display: none !important; }
 	gap: var(--space-2);
 	margin: 0 0 var(--space-4);
 	padding: 0 0 var(--space-3);
-	border-bottom: 1px solid var(--color-border);
 }
 .agent-row[hidden] { display: none; }
 .agent-row__line {
@@ -6370,13 +6374,20 @@ html:not([data-compare="on"]) .compare-mode { display: none !important; }
 .agent-row__verb:disabled { opacity: .35; cursor: default; }
 .agent-row__note { display: flex; gap: var(--space-2); }
 .agent-row__note-input:disabled { opacity: .55; cursor: not-allowed; }
+/* Flat boxes, no hairlines: the field and the send are surfaces, not outlines (the founder's words 143). */
+.navigator-outline-filter.agent-row__note-input,
+.navigator-outline-filter.agent-row__note-input:focus,
+.navigator-outline-filter.agent-row__note-input:focus-visible {
+	border: 0;
+	background: var(--color-surface-2);
+}
 .settings-action-btn.agent-row__send {
 	flex: 0 0 auto;
 	width: auto;
 	height: 48px;
 	justify-content: center;
-	background: transparent;
-	border: 1px solid var(--color-border);
+	background: var(--color-surface-2);
+	border: 0;
 }
 .agent-row__said {
 	margin: 0;
@@ -31040,7 +31051,59 @@ function _rapierInsertionAnchorBlockId() {
 
 function rapierInsertBlock(type, options) {
 	if (_rapierUserMutationBlocked()) return;
+	if (type === 'table' && _rapierTableFromSelection()) return;
 	_insertBlockAfter(_rapierInsertionAnchorBlockId(), BLOCK_TEMPLATES[type] || '', options);
+}
+
+/* THE HIGHLIGHT BECOMES THE TABLE (the founder's words 143). A selection inside the block being
+	 edited is the table's content: each line a row, cells split on tabs, pipes or two-plus spaces,
+	 the first line the header. The highlighted words leave the paragraph and arrive in the table in
+	 one transaction, so one Undo puts them back; what stood before and after the highlight stays
+	 as its own paragraph. Nothing leaves the document that did not arrive in a cell. */
+function _rapierTableFromSelection() {
+	const editDiv = _rapierActiveEditDiv();
+	const selection = window.getSelection && window.getSelection();
+	if (!editDiv || !selection || !selection.rangeCount || selection.isCollapsed) return false;
+	const range = selection.getRangeAt(0);
+	if (!_rangePointInside(editDiv, range.startContainer) || !_rangePointInside(editDiv, range.endContainer)) return false;
+	const wrapper = editDiv.closest('.block-wrapper');
+	const blockId = wrapper && parseInt(wrapper.dataset.blockId, 10);
+	const block = Number.isFinite(blockId) ? rapier.document.blocks.find(candidate => candidate.id === blockId) : null;
+	if (!wrapper || !block) return false;
+	/* The same three pieces the checklist conversion cuts: what stands before the highlight, the
+		 highlight, what stands after — each read back as Markdown, so formatting outside the table
+		 survives exactly and nothing is lost to a string search. */
+	const prefixDiv = _cloneRangeTo(editDiv, range.startContainer, range.startOffset);
+	const selectedDiv = document.createElement('div');
+	selectedDiv.appendChild(range.cloneContents());
+	const suffixDiv = _cloneRangeFrom(editDiv, range.endContainer, range.endOffset);
+	const prefixRaw = _markdownFromEditHTML(prefixDiv.innerHTML);
+	const suffixRaw = _markdownFromEditHTML(suffixDiv.innerHTML);
+	const selectedText = String(selectedDiv.innerText || range.toString() || '');
+	const table = _rapierTableSource(selectedText);
+	if (!selectedText.trim()) return false;
+	const rawList = [prefixRaw, table, suffixRaw].filter(raw => raw && raw.trim());
+	return _replaceOneBlockWithRawSet(block, rawList, rawList.indexOf(table), 0);
+}
+
+/* Lines are rows; a tab, a pipe or two spaces divides cells; the first line is the header; a lone
+	 line gets one empty row beneath it so the table is a table. Pipes inside a cell are escaped. */
+function _rapierTableSource(text) {
+	const rows = String(text || '').split('\n').map(line => line.trim()).filter(Boolean)
+		.map(line => (line.includes('\t') ? line.split('\t')
+			: line.includes('|') ? line.replace(/^\||\|$/g, '').split('|')
+			: line.split(/\s{2,}/)).map(cell => cell.trim().replace(/\|/g, '\\|')));
+	if (!rows.length) return BLOCK_TEMPLATES.table;
+	const width = Math.max(1, ...rows.map(row => row.length));
+	const line = row => {
+		const cells = row.slice();
+		while (cells.length < width) cells.push('');
+		return '| ' + cells.join(' | ') + ' |';
+	};
+	const lines = [line(rows[0]), '|' + '---|'.repeat(width)];
+	for (const row of rows.slice(1)) lines.push(line(row));
+	if (rows.length === 1) lines.push(line([]));
+	return lines.join('\n');
 }
 
 const RAPIER_CALLOUT_TYPES = new Set([
@@ -44364,6 +44427,11 @@ function _rapierFindSections(result, analysis) {
 		let found = -1;
 		for (let index = 0; index < entries.length; index++) {
 			if ((blocks ? entries[index].blockIndex : entries[index].start) > at) break;
+			/* A heading owns everything until the next heading; a declaration owns only its own extent.
+				 A top-level `export default` after a class is the module's, not the last method's — so in
+				 the structural realm an entry whose extent ended before the match does not claim it. */
+			if (realm === 'structure' && Number(entries[index].extentEnd || entries[index].end) > 0 &&
+					at >= Number(entries[index].extentEnd || entries[index].end)) continue;
 			found = index;
 		}
 		if (found < 0) continue;
@@ -52472,7 +52540,12 @@ const RAPIER_WEBMCP_TOOLS = Object.freeze([
 				+ '`section_ref` reads the declaration it fell in. Parsed by '
 				+ RAPIER_STRUCTURE_ENGINE + '.',
 		},
+		markdown: { inputSchema: {"additionalProperties":false,"properties":{"cursor":{"description":"The next_cursor returned by the previous page.","maxLength":16,"type":"string"},"query":{"description":"Text to find.","maxLength":4096,"minLength":1,"type":"string"}},"required":["query"],"type":"object"} },
 		effect: 'read',
+		/* THE DECLARATION IS THE DOCUMENT'S. A code document, parsed or not, declares `kind` and `within`
+		   (an unparsed language answers a kind with `unavailable`, which is the honest answer); the Markdown
+		   variant below declares neither. A model reading the door on a Markdown demo used to be offered
+		   eight syntactic kinds the document could not answer, and was refused for taking the offer. */
 		inputSchema: {"additionalProperties":false,"properties":{"cursor":{"description":"The next_cursor returned by the previous page.","maxLength":16,"type":"string"},"kind":{"description":"Omit to search text. Name one to search syntax instead: every kind is a claim about the bytes, never about what runs.","enum":["declaration","reference","call","construct","write","member","import","export"],"type":"string"},"query":{"description":"Text to find, or the symbol name for a structural kind.","maxLength":4096,"minLength":1,"type":"string"},"within":{"description":"With a kind: a get_outline ref, to scope the search to that one declaration.","maxLength":128,"minLength":1,"type":"string"}},"required":["query"],"dependentRequired":{"within":["kind"]},"type":"object"},
 		/* offset mints capabilities only for this page — re-reading earlier pages would let duplicate handles evict authority before release. */
 		request: input => {
@@ -53076,14 +53149,26 @@ const RAPIER_WEBMCP_TOOLS = Object.freeze([
 
 /* One operation, one schema, docKind-truthful titles/descriptions only. Variant object minted once and reused (registration identity = object identity). */
 const _rapierWebMcpVariants = new Map();
-function _rapierWebMcpDescriptorFor(tool, structural) {
-	if (!structural || !tool.structural) return tool;
-	let variant = _rapierWebMcpVariants.get(tool.operation);
-	if (!variant) {
-		variant = Object.freeze({ ...tool, ...tool.structural, structural: null });
-		_rapierWebMcpVariants.set(tool.operation, variant);
+function _rapierWebMcpDescriptorFor(tool, structural, markdown) {
+	if (structural && tool.structural) {
+		let variant = _rapierWebMcpVariants.get(tool.operation);
+		if (!variant) {
+			variant = Object.freeze({ ...tool, ...tool.structural, structural: null });
+			_rapierWebMcpVariants.set(tool.operation, variant);
+		}
+		return variant;
 	}
-	return variant;
+	/* A Markdown document's declaration: the same words, a smaller door (find drops kind and within). */
+	if (markdown && tool.markdown) {
+		const key = tool.operation + ':markdown';
+		let variant = _rapierWebMcpVariants.get(key);
+		if (!variant) {
+			variant = Object.freeze({ ...tool, ...tool.markdown, markdown: null });
+			_rapierWebMcpVariants.set(key, variant);
+		}
+		return variant;
+	}
+	return tool;
 }
 
 /* One registration, one controller, owned per tool — a shared controller would let unregistering one tool cancel another's in-flight call. */
@@ -53169,7 +53254,7 @@ function _rapierWebMcpAdmitted() {
 				!(files && files.hasWritable && !files.hasWritable(rapier.identity.authority));
 		}
 		return true;
-	}).map(tool => _rapierWebMcpDescriptorFor(tool, structural));
+	}).map(tool => _rapierWebMcpDescriptorFor(tool, structural, markdown));
 }
 
 /* A recoverable refusal always leaves as a result (outcome field); anything else rejects — never let an agent retry past a malformed call or fault. */
@@ -53885,6 +53970,13 @@ async function _rapierShowChanges(ctx) {
 const _rapierAgentBar = Object.seal({
 	running: 0, invocations: new Set(), symbol: null, renderFrame: 0,
 	connectedUntil: 0, connectedAuthority: '', connectedEpoch: 0, connectedTimer: 0,
+	acornUntil: 0, acornLast: '', acornTimer: 0,
+});
+/* How long the acorn stays after the last structural call, so the person can read that it was used. */
+const _RAPIER_ACORN_LINGER_MS = 4000;
+const _RAPIER_ACORN_DONE = Object.freeze({
+	'document.get_outline': 'mapped the structure', 'document.find': 'searched the syntax',
+	'document.read_context': 'read a declaration', 'document.apply_edits': 'edited and re-parsed',
 });
 
 /* A COMPLETED CALL IS PROOF OF AN AGENT, AND THE QUIET AFTER IT IS NOT PROOF OF ITS ABSENCE. An
@@ -54058,6 +54150,16 @@ function _rapierAgentBarHandleBlock(handleId) {
 	return null;
 }
 
+/* WHICH CALLS USE ACORN. On a document with a structural sense, the map, a syntactic search, a
+	 declaration read and an edit (its receipt re-parses) go through the parser; a text search, a
+	 wait or a save do not. Known at the call's start, so the mark can be worn for the whole call. */
+function _rapierAgentBarInvocationStructural(operation, input) {
+	if (!_rapierStructureDocKind()) return false;
+	if (operation === 'document.find') return !!(input && typeof input.kind === 'string');
+	return operation === 'document.get_outline' || operation === 'document.read_context' ||
+		operation === 'document.apply_edits';
+}
+
 function _rapierAgentBarInvocationBlocks(operation, input) {
 	const request = input && typeof input === 'object' ? input : {};
 	if (operation === 'document.reveal' ||
@@ -54089,6 +54191,17 @@ function _rapierAgentBarInvocationBlocks(operation, input) {
 }
 
 /* A row claims a single location only with exactly one distinct resolvable heading across every executing invocation — else none. */
+/* What each running call is, said the way a person would say it over a shoulder. Keyed by the
+	 operation name the invocation already carries; never sent anywhere. */
+const _RAPIER_AGENT_DOING = Object.freeze({
+	'document.get_context': 'Looking', 'document.get_outline': 'Mapping', 'document.find': 'Searching',
+	'document.read_context': 'Reading', 'document.apply_edits': 'Editing', 'document.show_changes': 'Showing changes',
+	'document.undo_agent_change': 'Undoing a change', 'document.compare': 'Comparing', 'document.reveal': 'Pointing',
+	'document.save': 'Saving', 'document.open_text': 'Opening a file', 'document.wait_for_user': 'Waiting',
+	'compare.get_context': 'Comparing', 'compare.find_change': 'Comparing', 'compare.read_change': 'Comparing',
+	'compare.reveal_change': 'Comparing', 'compare.close': 'Closing the comparison',
+});
+
 function _rapierAgentBarActiveHeading(invocations) {
 	let heading = '';
 	for (const invocation of invocations) {
@@ -54129,11 +54242,11 @@ async function _rapierAgentBarJump() {
 }
 
 /* `settled` not `idle` — the circle knows only what the engine witnessed (a call ended, where), never a channel's connection mood. */
-function _rapierAgentPresence(word, acorn, location) {
+function _rapierAgentPresence(word, acorn, location, active) {
 	const state = word === 'WORKING' ? 'working' : (word ? 'settled' : '');
 	const witnessed = word ? String(word) + (location ? ' ' + location : '') : '';
 	/* Presence-owning surfaces re-asked only when the circle render actually changed — else same fact twice, refresh's forced-layout read skipped too. */
-	if (renderScrollFabPresence(state, witnessed, acorn)) _rapierRefreshScrollFabs();
+	if (renderScrollFabPresence(state, witnessed, acorn, active)) _rapierRefreshScrollFabs();
 	_rapierAgentPresenceLine(word);
 }
 
@@ -54258,7 +54371,7 @@ function _rapierAgentBarRender() {
 		if (gone) { gone.textContent = ''; gone.hidden = true; }
 		if (lens) { lens.hidden = true; document.getElementById('agent-row-lens-status').textContent = ''; }
 		document.getElementById('agent-row-jump').hidden = true;
-		_rapierAgentPresence('', !!_rapierStructureFact());
+		_rapierAgentPresence('', false);
 		return;
 	}
 	const parkedMessage = parkedNow;
@@ -54286,12 +54399,32 @@ function _rapierAgentBarRender() {
 	/* One token for the attribute and the circle, the person's own words on the glass. */
 	document.getElementById('agent-row-state').textContent =
 		word === 'WAITING' ? 'WAITING FOR YOU' : word;
-	/* THE ACORN (the founder's words 115, 129 and 136): worn whenever the document's structural sense
-	   is live — the same fact get_context reports as `structure` — so the person can see the parser
-	   is in play the moment a JavaScript file opens, agent or none; never on a document without one. */
-	const acorn = !!_rapierStructureFact();
+	/* THE ACORN IS ACTIVITY, NOT A BADGE (the founder's meaning, words 115, 129 and 142): worn while a
+	   call is using the document's structure — the map, a syntactic search, a declaration read, an
+	   edit's re-parse — for the whole of that call, then for a few seconds after so the person can
+	   read that it was used; never while idle, never on a document without a structural sense. */
+	const bar = _rapierAgentBar;
+	const usingAcorn = executing.some(invocation => invocation.structural) || _rapierStructureActiveHere(executing);
+	if (usingAcorn) {
+		bar.acornUntil = _rapierNow() + _RAPIER_ACORN_LINGER_MS;
+		bar.acornLast = (executing.find(invocation => invocation.structural) || {}).operation || bar.acornLast;
+		clearTimeout(bar.acornTimer);
+		/* The linger's own end is a render, not a guess a later unrelated render happens to make. */
+		bar.acornTimer = setTimeout(() => { bar.acornTimer = 0; _rapierAgentBarRender(); }, _RAPIER_ACORN_LINGER_MS + 60);
+	}
+	const lingering = !usingAcorn && _rapierNow() < bar.acornUntil;
+	const acorn = !!_rapierStructureFact() && (usingAcorn || lingering);
 	/* "Under a heading" is where a Markdown reader is; "in a symbol" is where a code reader is. One resolver, two languages, and the row speaks whichever the document speaks. */
+	/* WHILE A CALL RUNS THE ROW SAYS WHAT IT IS DOING, in a person's verb (the founder's words 141, from
+		 a field project whose row read "Searching institutions…" where Rapier's read only WORKING): the
+		 verb of the running operation, then the place. Display words only — the wire's closed vocabulary
+		 is untouched — and one verb per call, so two calls at once say Working. */
+	const doing = executing.length === 1 ? (_RAPIER_AGENT_DOING[executing[0].operation] || 'Working') : (executing.length ? 'Working' : '');
+	/* While Acorn is in play the row says so in plain words, and for the linger it says what Acorn
+		 just did — the mark on the circle translated for a person who never heard the parser's name. */
 	const where = parkedMessage ? ''
+		: doing ? (usingAcorn ? 'Using Acorn · ' : '') + doing + (heading ? ' under ' + heading : (symbol ? ' in ' + symbol : ''))
+		: lingering ? 'Acorn ' + (_RAPIER_ACORN_DONE[bar.acornLast] || 'used')
 		: (heading ? 'Under ' + heading : (symbol ? 'in ' + symbol : ''));
 	document.getElementById('agent-row-under').textContent = where;
 	/* The whole line is unclipped under the state that carries it — outside there's room for one line; the tap goes here to read the rest. One fact, read twice. */
@@ -54306,8 +54439,9 @@ function _rapierAgentBarRender() {
 	/* The person is taken to a change, or to the place a hand is waiting on them — never to an arrow. */
 	const toWait = !!(parked && parked.watch && parked.watch.markerAnchor);
 	jump.textContent = toWait ? 'GO TO AGENT' : 'GO TO CHANGE';
-	jump.setAttribute('aria-label', toWait ? 'go to where your agent is waiting' : 'go to the change');
-	_rapierAgentPresence(word, acorn, where);
+	jump.setAttribute('aria-label', toWait ? 'go to where your agent is waiting'
+		: (heading ? 'go to the change under ' + heading : 'go to the change'));
+	_rapierAgentPresence(word, acorn, where, usingAcorn);
 }
 
 /* Row drawn from posture alone — a different question from presence (what may happen vs who is here); reading presence here would double-observe one fact. */
@@ -54420,6 +54554,7 @@ async function _rapierAgentInvocationTracked(operation, input, run, invocationId
 		id: String(invocationId || crypto.randomUUID()),
 		operation,
 		blocks: _rapierAgentBarInvocationBlocks(operation, input),
+		structural: _rapierAgentBarInvocationStructural(operation, input),
 		documentAuthority: String(rapier.identity.authority || ''),
 		documentEpoch: Number(rapier.identity.epoch || 0),
 	};
@@ -54486,6 +54621,7 @@ async function _rapierWebMcpExecute(entry, input, signal) {
 		controller,
 		cancelRequested: false,
 		blocks: _rapierAgentBarInvocationBlocks(entry.name, input),
+		structural: _rapierAgentBarInvocationStructural(entry.name, input),
 		documentAuthority: String(rapier.identity.authority || ''),
 		documentEpoch: Number(rapier.identity.epoch || 0),
 	};
@@ -54665,7 +54801,7 @@ function renderScrollFabSuppressed() {
 	const fab = document.getElementById('scroll-fab');
 	if (fab && !fab.dataset.presence) fab.classList.remove('visible');
 }
-function renderScrollFabPresence(state, witnessed, acorn) {
+function renderScrollFabPresence(state, witnessed, acorn, active) {
 	const fab = document.getElementById('scroll-fab');
 	if (!fab) return false;
 	/* Resting half read back off the attribute rather than kept a second time in JS. */
@@ -54674,12 +54810,15 @@ function renderScrollFabPresence(state, witnessed, acorn) {
 	const glyph = document.getElementById('scroll-fab-acorn');
 	/* SAME FACT, NO WORK: unchanged presence/label/glyph reports no change so the caller skips its own forced-layout refresh too. */
 	if ((fab.dataset.presence || '') === state && fab.getAttribute('aria-label') === nextLabel &&
-			(!glyph || glyph.hidden === !acorn)) return false;
+			(!glyph || (glyph.hidden === !acorn && (glyph.dataset.active === 'true') === !!active))) return false;
 	if (state) fab.dataset.presence = state; else delete fab.dataset.presence;
 	if (state) fab.dataset.tip = 'Agent connected. Tap for status, messages and changes.';
 	else delete fab.dataset.tip;
 	fab.setAttribute('aria-label', nextLabel);
-	if (glyph) glyph.hidden = !acorn;
+	if (glyph) {
+		glyph.hidden = !acorn;
+		if (active) glyph.dataset.active = 'true'; else delete glyph.dataset.active;
+	}
 	return true;
 }
 

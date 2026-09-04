@@ -20,8 +20,12 @@ this page works whether it does or not.
   the change is **held** and shown to you first, and you allow it once or keep it
   held; choose `CHECK` and it lands, but the next waits until this one has held your view.
 - *Tell me in one line what you changed, without editing the document.* — it shows
-  beside the circle as `your agent` plus your **note**; tap it to open the panel and
+  beside the circle as your **note**; tap it to open the panel and
   jump to the change — never approval.
+- *Make a new file `demo.js` with one small function and a call to it, then map it and
+  find every call.* — it hands the editor a JavaScript file of its own (Rapier asks you
+  first if this one is unsaved). The circle wears an **acorn** while the file's structure
+  is live, and the same tools now search syntax, not text.
 
 ---
 
