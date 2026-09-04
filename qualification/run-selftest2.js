@@ -4094,11 +4094,14 @@ function _rapierQualificationSuiteSourceOwner() {
       var markedCodeSource = '==🟢`abc`== plus words';
       var markedCodeRoot = document.createElement('div');
       markedCodeRoot.innerHTML = md.renderInline(markedCodeSource);
+      /* Any selection highlights (the founder's words 133): an unrelated highlight beside a marked
+         code span, automatic link, sub- or superscript leaves that mark standing and lands its own. */
       var markedCodeWord = markedCodeRoot.textContent.indexOf('words');
-      if (markedCodeWord < 0 ||
-          _rapierPlanHighlight(markedCodeRoot, markedCodeWord, markedCodeWord + 5, 'red') !== null ||
+      var markedCodePlan = markedCodeWord < 0 ? null
+        : _rapierPlanHighlight(markedCodeRoot, markedCodeWord, markedCodeWord + 5, 'red');
+      if (!markedCodePlan || _markdownFromEditHTML(markedCodePlan) !== '==🟢`abc`== plus ==🔴words==' ||
           _markdownFromEditHTML(markedCodeRoot.innerHTML) !== markedCodeSource) {
-        return 'unrelated highlight could strip a marked code span';
+        return 'unrelated highlight beside a marked code span=' + JSON.stringify(markedCodePlan && _markdownFromEditHTML(markedCodePlan));
       }
       var plainCodeSource = '`abcdef` plus';
       var plainCodeRoot = document.createElement('div');
@@ -4111,27 +4114,31 @@ function _rapierQualificationSuiteSourceOwner() {
       var markedAutolinkRoot = document.createElement('div');
       markedAutolinkRoot.innerHTML = md.renderInline(markedAutolinkSource);
       var autolinkWord = markedAutolinkRoot.textContent.indexOf('words');
-      if (autolinkWord < 0 ||
-          _rapierPlanHighlight(markedAutolinkRoot, autolinkWord, autolinkWord + 5, 'red') !== null ||
+      var autolinkPlan = autolinkWord < 0 ? null
+        : _rapierPlanHighlight(markedAutolinkRoot, autolinkWord, autolinkWord + 5, 'red');
+      if (!autolinkPlan || _markdownFromEditHTML(autolinkPlan) !== '==🟢<https://example.com>== plus ==🔴words==' ||
           _markdownFromEditHTML(markedAutolinkRoot.innerHTML) !== markedAutolinkSource) {
-        return 'unrelated highlight could strip a marked automatic link';
+        return 'unrelated highlight beside a marked automatic link=' + JSON.stringify(autolinkPlan && _markdownFromEditHTML(autolinkPlan));
       }
       var markedSubSource = '==🟢~2~== plus words';
       var markedSubRoot = document.createElement('div');
       markedSubRoot.innerHTML = md.renderInline(markedSubSource);
       var subWord = markedSubRoot.textContent.indexOf('words');
-      if (subWord < 0 || _rapierPlanHighlight(markedSubRoot, subWord, subWord + 5, 'red') !== null ||
-          _rapierPlanHighlight(markedSubRoot, markedSubRoot.textContent.indexOf('2'), markedSubRoot.textContent.indexOf('2') + 1, 'red') !== null ||
+      var subPlan = subWord < 0 ? null : _rapierPlanHighlight(markedSubRoot, subWord, subWord + 5, 'red');
+      var subOnly = _rapierPlanHighlight(markedSubRoot, markedSubRoot.textContent.indexOf('2'), markedSubRoot.textContent.indexOf('2') + 1, 'red');
+      if (!subPlan || _markdownFromEditHTML(subPlan) !== '==🟢~2~== plus ==🔴words==' ||
+          !subOnly || _markdownFromEditHTML(subOnly) !== '==🔴~2~== plus words' ||
           _markdownFromEditHTML(markedSubRoot.innerHTML) !== markedSubSource) {
-        return 'subscript highlight did not fail closed';
+        return 'subscript highlights=' + JSON.stringify([subPlan && _markdownFromEditHTML(subPlan), subOnly && _markdownFromEditHTML(subOnly)]);
       }
       var markedSupSource = '==🟣^2^== plus words';
       var markedSupRoot = document.createElement('div');
       markedSupRoot.innerHTML = md.renderInline(markedSupSource);
       var supWord = markedSupRoot.textContent.indexOf('words');
-      if (supWord < 0 || _rapierPlanHighlight(markedSupRoot, supWord, supWord + 5, 'red') !== null ||
+      var supPlan = supWord < 0 ? null : _rapierPlanHighlight(markedSupRoot, supWord, supWord + 5, 'red');
+      if (!supPlan || _markdownFromEditHTML(supPlan) !== '==🟣^2^== plus ==🔴words==' ||
           _markdownFromEditHTML(markedSupRoot.innerHTML) !== markedSupSource) {
-        return 'unrelated highlight could strip a marked superscript';
+        return 'unrelated highlight beside a marked superscript=' + JSON.stringify(supPlan && _markdownFromEditHTML(supPlan));
       }
       var footnoteSource = '==🟢See[^n]== plus words\n\n[^n]: Note';
       var footnoteRoot = document.createElement('div');

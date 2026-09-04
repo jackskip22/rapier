@@ -1,8 +1,8 @@
 {
   "release": "1.0.0",
-  "rapierHtmlSha256": "33108cf10a4aa97719dfa882dbd061384d235e06e6e72a88ba39a93865b8377f",
+  "rapierHtmlSha256": "1801de15aacc0feb8f34dbb0b07ad58bde62e76c820747b4e49d98add436908b",
   "publicTreeFileCount": 27,
-  "publicTreeSha256": "bcbf49eded42c256314d1082c0db979248beb33f02c298536f4e5beed7ba99cd",
+  "publicTreeSha256": "49c6e97973180e04bcd59c4c49e6385915aaec4f16d733721cc4c63cbfc807da",
   "status": "source-qualified",
   "sizeLedger": {
     "unit": "bytes",
@@ -124,6 +124,18 @@
         "bytes": 2980671,
         "deltaBytes": 43349,
         "growth": "SIZE-2027-R11 ends 43,349 B over R10 — the collaboration shell made legible: a tab that boots hidden never takes editing away and the tab that lost it offers TAKE EDITING HERE; a connected agent stays CONNECTED between calls; the agent row speaks in words (SHOW 1 CHANGE, GO TO CHANGE); the CHECK lens says APPLIED and offers DONE and UNDO; the judge route opens clean over a pristine recovery draft; the earlier folds stand as SIZE-2027-R10's, R9's and R8's notes list them; R11 folds SHELL, DEMO, JOY, SWIPE and INBOX, and the founder's phone (words 101–125: the W, the will's one icon and its slide-out, the circle's composited growth, the file-name line, the lease and recovery cards, live notices, the fast-scroll foot, the welcome as a Markdown showcase)."
+      },
+      {
+        "landing": "SIZE-2027-R12",
+        "bytes": 2984169,
+        "deltaBytes": 3498,
+        "growth": "SIZE-2027-R12 ends 3,498 B over R11 — any selection highlights: a run that reaches into a code span, a soft break, a footnote mark or a sub- or superscript takes the whole atom instead of refusing, a mark may hold them, and the source planner reads a soft break as the newline it is; the earlier folds stand as SIZE-2027-R11's, R10's, R9's and R8's notes list them."
+      },
+      {
+        "landing": "SIZE-2027-R13",
+        "bytes": 2984525,
+        "deltaBytes": 356,
+        "growth": "SIZE-2027-R13 ends 356 B over R12 — the agent's seat reads better: apply_edits names its shape in the sentence a model reads first, the three postures each say their consequence, wait_for_user names timeout_ms, compare names too-complex, open_text names unsaved_changes_kept, label is told apart from note, three save refusals name the next verb, agents.md defines rebased and yielded beside the other outcomes; consequentialHint derives from the one write undo cannot reach; the earlier folds stand as SIZE-2027-R12's, R11's, R10's, R9's and R8's notes list them."
       }
     ]
   },
@@ -133,7 +145,7 @@
     "previewSuite": "302/0/0",
     "webmcpHarness": "258/258",
     "k3Browser": "not_run",
-    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/33108cf10a4a/real-chrome/)",
+    "webmcpNativeContract": "observed 2026-09-03: Chrome for Testing 152.0.7977.75 with --enable-blink-features=WebMCP; registration by document.modelContext; the descriptors held unchanged by the browser (nine at open on the R4 bytes; ten on these, the lens admitted from open); harness through the DevTools WebMCP domain 224/228 live ×3 on the R4 bytes 6fba753d09bd (the four non-passes are the platform's own); the agent evals 10/10 real on the same bytes; probe4 rerun on these exact bytes (docs/evidence/release/1801de15aacc/real-chrome/)",
     "originSurface": "not_run",
     "staticAudit": "125/125",
     "realAgentRoute": "model_chosen_script_hosted 58/60 sha256:2216f48917b0",
@@ -141,14 +153,14 @@
     "webmcpHarnessReal": "224/228 on the R4 bytes 6fba753d09bd",
     "webmcpEvalsReal": "10/10 on the R4 bytes 6fba753d09bd"
   },
-  "generatedAt": "2026-09-03T21:53:28.000Z",
+  "generatedAt": "2026-09-03T23:33:51.000Z",
   "sizeCensus": {
     "unit": "bytes",
-    "total": 2980671,
-    "steel": 2614403,
+    "total": 2984525,
+    "steel": 2618257,
     "payload": 366268,
     "vendorSpans": 17,
-    "gzip9": 928110,
+    "gzip9": 929213,
     "tools": "steel/payload: sharpen-census/alpine-census.js (owned bytes vs RAPIER_VENDOR spans); wire: gzip -9 -c rapier.html | wc -c"
   }
 }

@@ -38,8 +38,8 @@ truthfully; it only takes the person's place.
    at commit.
 4. Use `document.compare` when the person should inspect an alternative or one
    of your changes. While Compare is open, its tools replace the document tools.
-5. To take a change back, close Compare with `compare.close` and call
-   `document.undo_agent_change`. Never rebuild the earlier text with a second
+5. To take a change back, call `document.undo_agent_change` — closing Compare with
+   `compare.close` first only if you have one open on this change. Never rebuild the earlier text with a second
    `document.apply_edits`: that lands as a new change over whatever the person
    did in between, and gives up the one guarantee selective undo makes — that
    their later work survives, or the reversal refuses.
@@ -47,10 +47,10 @@ truthfully; it only takes the person's place.
 
 One line, for them. `document.apply_edits` takes an optional `note` and `document.wait_for_user`
 in message mode takes `prompt` — at most 240 characters each, written for the person and not for
-you. A note is born only with a write that lands, so a refused, invalid or conflicting call drops
-its note with it; it appears beside their fast-scroll circle, one line, cut off at the edge of its
-box, and they tap it to read the whole of it in the panel where your state, the section you are
-under and their reply field already are. A newer act retires the older's line, an act that says
+you. A note is born only with a write that lands; a refused, invalid or conflicting call drops it.
+It appears beside their fast-scroll circle, one line, cut off at the edge of its box; they tap it
+to read the whole of it in the panel where your state, the section you are under and their reply
+field already are. A newer act retires the older's line, an act that says
 nothing says nothing, and nothing you say is queued or stored: this is not a chat. Say what you
 did to their document, or ask them the one thing you need answered. Their field is open whenever
 your row is, not only while you wait, so a line of theirs may already be there when you arrive:
@@ -106,6 +106,11 @@ sit beside Will's three and are never a synonym for one of them:
   `change_not_found`, `context_expired`, `context_missing`, `cursor_expired`,
   `document_replaced`, `focus_expired`, `outline_expired`, `surface_changed`,
   `surface_missing`.
+- `rebased` — the act landed over work the person did in between: the same result `applied`
+  returns, settled against their update rather than the state you read.
+- `yielded` — a human edit moved the exact bytes before yours landed; `continuation` names the
+  text now at that spot and a fresh handle for it. Spend that handle to re-aim; never retry the
+  old one.
 
 Every one of those four refusals, and a `failed` save, also carries `isError` on the tool envelope. The
 WebMCP draft defines no such field; it is a conventional failure hint that evaluators
@@ -257,9 +262,9 @@ document that carries no Will, and `posture` is never absent.
   A call carrying more than one edit is refused `batched` without being shown, because one
   decision must never stand for the other places it did not show.
 
-**Where Rapier cannot count for you at all** — the projection cannot be drawn at all (a
-source-realm document, every code file, a Markdown file large enough that the projection refused
-it), a baseline was restored from disk, or the caller could not be named — `yourChangesNotShown` is absent, not zero,
+**Where Rapier cannot count for you at all** — the projection cannot be drawn (a source-realm
+document, a code file, a Markdown file too large for it), a baseline was restored from disk, or the
+caller could not be named — `yourChangesNotShown` is absent, not zero,
 and `check` does not refuse on that silence forever: it takes `ask`'s own hold instead. A single
 edit is held in Compare exactly as under `ask`, with the same `posture_ask`/`review` shape and the
 same one write per allowance; a call carrying more than one edit is refused `batched` unshown, just
