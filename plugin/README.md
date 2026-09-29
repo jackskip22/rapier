@@ -3,14 +3,13 @@
 [Rapier](https://rapier.website) is a document editor that is one offline page: writing, drawing, painting, pictures,
 Notes and the diff of a change, with no account and nothing sent until the person chooses it. It gives an assistant two things.
 
-**The file to hand a person.** `npx rapier-html@1.1.9 notes.md` makes one HTML file that is the whole editor with the
+**The file to hand a person.** `npx rapier-html@1.1.10 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it anywhere with one click, read it, edit it, draw and paint in it, review a proposed
 change as a diff (keep or drop each part), save it and send it back exactly. Paint keeps transparent edges;
 drawings stay editable and readable on light or dark paper.
 
 **The editor to work in beside them.** Through the MCP door (`https://mcp.rapier.website/mcp`, no account) an assistant
-reads a document by structure and changes exactly the passage it inspected, about 1.5 KB of context an edit however
-long the document, while the person sees every change land, keeps or drops each one, undoes an identified agent change without
+reads a document by structure and changes exactly the passage or drawing object it inspected, while the person sees every change land, keeps or drops each one, undoes an identified agent change without
 losing their own, draws diagrams by recipe and works with the notes they supply. Name diagram boxes and arrows;
 Rapier places the boxes and routes the connectors around them, with labels and arrowheads kept with their paths.
 
@@ -18,12 +17,16 @@ The documents are **Self-contained Markdown**, an open convention on CommonMark:
 placement, text colour, page breaks and editable SVG drawings travel inside one `.md` file that every Markdown app
 can read.
 
+Start with a useful result, then explore it together: rearrange an idea, annotate a plan, revise a paragraph,
+or type a question beside a diagram and send it with Ask about this. Ordinary edits stay document content;
+only an explicit send asks the assistant to respond. The host controls when it supplies context and runs a turn.
+
 ## The four skills
 
 | Skill | Use it when |
 |---|---|
 | `rapier-html` | the person wants a document they can keep editing, or a page with a diff to review |
-| `rapier-agent-door` | the person supplies a working document or asks for changes in Rapier |
+| `rapier-agent-door` | an explanation, plan, creative sketch or revision benefits from working on the same editable page |
 | `rapier-markdown` | a portable Markdown document needs pictures, layout or source-preserving delivery |
 | `embed-rapier` | a site or app wants the editor inside it, with its own storage |
 

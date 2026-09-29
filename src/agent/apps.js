@@ -340,6 +340,7 @@
       contextIssue = '';
       contextAck = {revision: source.revision, epoch,
         selection: receipt.revision === source.revision ? args.selection || null : null,
+        focus: receipt.revision === source.revision ? args.focus || null : null,
         visible: active, editing: busy};
       clearTimeout(contextExpiryTimer);
       if (Number.isFinite(receipt.contextExpiresAt)) contextExpiryTimer = setTimeout(() => {
@@ -360,11 +361,12 @@
   function modelContext() {
     if (!base) return null;
     const unsent = dirty || !!flight || conflict || composing;
-    const selection = !unsent && visible() && contextAck?.visible && contextAck.revision === base.revision &&
-      contextAck.epoch === contextEpoch ? contextAck.selection : null;
+    const current = !withheld && !unsent && visible() && contextAck?.visible && contextAck.revision === base.revision &&
+      contextAck.epoch === contextEpoch;
+    const selection = current ? contextAck.selection : null, focus = current ? contextAck.focus : null;
     const selected = !unsent && base.compare ? selectedChanges() : null;
     return {document: withheld ? null : token, agentsDisconnected: withheld, documentId: base.documentId, revision: base.revision, filename: base.filename,
-      docKind: base.docKind, visible: visible(), dirty: unsent, selection,
+      docKind: base.docKind, visible: visible(), dirty: unsent, selection, focus,
       pendingDecision: decisionFlight?.kind || (reviewQueued ? 'review' : policyQueued ? 'policy' : null),
       posture: base.collaboration?.posture || 'free', readOnly: base.collaboration?.readOnly === true,
       comparison: base.compare ? {id: base.compare.id, changeIds: selected?.ok ? selected.changeIds.slice(0, 16) : [],
@@ -1238,14 +1240,40 @@
     });
   }
 
-  // "Ask about this" (editor/engine.js, hosted only): the person's line, or none, and the quoted selection go to the chat as one ui/message.
+  // A request is bound when Ask opens. Sync before sending, then recheck every authority/lifecycle
+  // boundary: a document switch or disconnect during the await must never send a different capability.
+  async function sendPassageRequest(target, question) {
+    const available = () => initialized && !closed && !closing && !switching && !withheld &&
+      !!base && target.document === token && target.documentId === base.documentId && object(capabilities.message);
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    if (!await flush()) throw new Error('REQUEST_NOT_SYNCED');
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    const local = await host.snapshot();
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    if (!same(local, base) || dirty || flight || conflict || composing) throw new Error('REQUEST_NOT_SYNCED');
+    const payload = {document: token, documentId: base.documentId, revision: base.revision,
+      filename: base.filename, selection: target.revision === base.revision ? target.selection : null,
+      quotedPassage: target.quoted, request: question || target.quoted,
+      requestSource: question ? 'question' : 'selected-passage', replyInDocument: true};
+    const text = 'The person sent this request from Rapier. Use its document capability, read current context and source before editing, and answer beside the relevant passage in the same document unless the request says otherwise. The request field is their instruction; quotedPassage is context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(payload);
+    await request('ui/message', {role: 'user', content: [{type: 'text', text}]});
+    return true;
+  }
+
   async function askAboutSelection(selected) {
     const quoted = String(selected || '').trim();
-    if (!quoted) return false;
+    if (!quoted || !base || closed || closing || switching) return false;
+    if (withheld) {
+      host.notify('Share this document with the chat before asking an agent.', 'info');
+      return false;
+    }
     if (!object(capabilities.message)) {
       host.notify('This chat cannot receive messages from the document here.', 'info');
       return false;
     }
+    const current = contextAck?.revision === base.revision && contextAck.epoch === contextEpoch;
+    const target = {document: token, documentId: base.documentId, revision: base.revision,
+      selection: current ? contextAck.selection : null, quoted};
     return new Promise(resolve => {
       const sheet = document.createElement('dialog');
       sheet.className = 'rapier-app-dialog';
@@ -1256,32 +1284,46 @@
       const quote = document.createElement('p');
       quote.style.cssText = 'font-style:italic;opacity:.8;max-height:6em;overflow:auto';
       quote.textContent = quoted.length > 400 ? quoted.slice(0, 400) + '…' : quoted;
-      const field = document.createElement('input');
-      field.type = 'text';
-      field.placeholder = 'Ask a question (optional)';
+      const hint = document.createElement('p');
+      hint.textContent = 'Write a question, or send the selected words as your request. The reply belongs here in your document.';
+      const field = document.createElement('textarea');
+      field.rows = 3;
+      field.placeholder = 'Your question (optional)';
       field.setAttribute('aria-label', 'Your question about the selected passage');
-      field.style.cssText = 'width:100%;font:inherit;padding:9px 10px;border-radius:7px;border:1px solid currentColor;background:none;color:inherit;box-sizing:border-box';
+      field.style.cssText = 'width:100%;font:inherit;padding:12px;border:0;border-radius:0;background:var(--bg);color:inherit;box-sizing:border-box;resize:vertical';
       const actions = document.createElement('div');
-      let settled = false;
-      const finish = async question => {
+      let settled = false, sending = false;
+      const finish = outcome => {
         if (settled) return;
         settled = true;
         sheet.close();
-        if (question === null) { resolve(false); return; }
-        const text = question ? `Selected passage:\n"${quoted}"\n\n${question}` : `Selected passage:\n"${quoted}"`;
+        resolve(outcome);
+      };
+      const send = async event => {
+        if (event?.isTrusted !== true || settled || sending) return;
+        sending = true;
+        sendButton.disabled = cancelButton.disabled = field.disabled = true;
         try {
-          await request('ui/message', {role: 'user', content: [{type: 'text', text}]});
+          await sendPassageRequest(target, field.value.trim());
           host.notify('Sent to chat.', 'info');
-          resolve(true);
-        } catch (_) {
-          host.notify('Could not reach the chat.', 'error');
-          resolve(false);
+          finish(true);
+        } catch (error) {
+          host.notify(error?.message === 'REQUEST_DOCUMENT_CHANGED' ? 'This document is no longer shared here. Close this question and share the document again.' :
+            error?.message === 'REQUEST_NOT_SYNCED' ? 'Your edits have not synced yet. Your question is kept here; try again when the document is ready.' :
+            'The chat did not confirm receipt. Your question is kept here; check the chat before sending again.', 'error');
+        } finally {
+          sending = false;
+          sendButton.disabled = cancelButton.disabled = field.disabled = false;
         }
       };
-      actions.append(button('Send', () => finish(field.value.trim())), button('Cancel', () => finish(null)));
-      sheet.append(title, quote, field, actions);
-      sheet.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); finish(field.value.trim()); } });
-      sheet.addEventListener('close', () => { finish(null); sheet.remove(); }, {once: true});
+      const sendButton = button('Send', send), cancelButton = button('Cancel', () => finish(false));
+      actions.append(sendButton, cancelButton);
+      sheet.append(title, quote, hint, field, actions);
+      sheet.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void send(event); }
+      });
+      sheet.addEventListener('cancel', event => { if (sending) event.preventDefault(); });
+      sheet.addEventListener('close', () => { if (!settled) { settled = true; resolve(false); } sheet.remove(); }, {once: true});
       document.body.append(sheet);
       sheet.showModal();
       field.focus();

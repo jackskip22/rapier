@@ -1,10 +1,10 @@
 {
-  "release": "1.1.9",
+  "release": "1.1.10",
   "core": [
     {
       "name": "document.get_context",
       "title": "Locate the work",
-      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting or resuming. Read brief first when present: hidden assistant context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
+      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting, resuming, or resolving “this” in a request from the editor. Host context is a pointer; read current source before changing it. Read brief first when present: hidden assistant context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -1541,7 +1541,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use when they ask what you changed; showing is not their review.",
+      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use proactively after a meaningful revision when the difference helps the person evaluate it, or when asked what changed. This shows an applied change; it does not approve a proposal or count as human review.",
       "effect": "view",
       "inputSchema": {
         "type": "object",
@@ -2224,7 +2224,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Draws or edits SVG when the person wants a diagram or sketch. Supported Mermaid flowchart fences also draw offline in Rapier’s look, so use a fence or figures. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
+      "description": "Creates or edits an SVG drawing when relationships, branching or spatial arrangement make an explanation, plan or creative task clearer, even without an explicit diagram request. Use native figures for movable objects; supported Mermaid flowchart fences can be included with prose in rapier.open for one-call creation. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
       "effect": "write",
       "inputSchema": {
         "type": "object",
@@ -2241,7 +2241,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "The short grammar: a list of figures, each with kind."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit coordinates for automatic layout."
           },
           "direction": {
             "enum": [
@@ -2271,7 +2271,7 @@
                   "type": "object",
                   "additionalProperties": true
                 },
-                "description": "Shapes to replace, each by its id."
+                "description": "Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape."
               },
               "remove": {
                 "type": "array",
@@ -2770,7 +2770,7 @@
     {
       "name": "document.get_context",
       "title": "Locate the work",
-      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting or resuming. Read brief first when present: hidden assistant context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
+      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting, resuming, or resolving “this” in a request from the editor. Host context is a pointer; read current source before changing it. Read brief first when present: hidden assistant context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4514,7 +4514,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use when they ask what you changed; showing is not their review.",
+      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use proactively after a meaningful revision when the difference helps the person evaluate it, or when asked what changed. This shows an applied change; it does not approve a proposal or count as human review.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5405,7 +5405,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Draws or edits SVG when the person wants a diagram or sketch. Supported Mermaid flowchart fences also draw offline in Rapier’s look, so use a fence or figures. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
+      "description": "Creates or edits an SVG drawing when relationships, branching or spatial arrangement make an explanation, plan or creative task clearer, even without an explicit diagram request. Use native figures for movable objects; supported Mermaid flowchart fences can be included with prose in rapier.open for one-call creation. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5433,7 +5433,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "The short grammar: a list of figures, each with kind."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit coordinates for automatic layout."
           },
           "direction": {
             "enum": [
@@ -5463,7 +5463,7 @@
                   "type": "object",
                   "additionalProperties": true
                 },
-                "description": "Shapes to replace, each by its id."
+                "description": "Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape."
               },
               "remove": {
                 "type": "array",
@@ -6038,7 +6038,7 @@
     {
       "name": "rapier.open",
       "title": "Open Rapier",
-      "description": "Creates a workspace from text and shows its editor, or reopens one by its document capability. Use first over MCP, when the person shares a document or asks for one. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.",
+      "description": "Creates a workspace from text and shows its editor, or reopens one by its document capability. Use first over MCP when an editable explanation, visual walkthrough, substantial draft or plan, creative canvas, or reviewable revision helps the requested task, even without naming Rapier. Keep brief answers in chat and honour explicit format choices. Include prose and supported Mermaid flowcharts directly in text; reopen existing work with document alone. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -6142,13 +6142,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.9.html",
+          "resourceUri": "ui://rapier/editor-1.1.10.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.9.html"
+        "openai/outputTemplate": "ui://rapier/editor-1.1.10.html"
       }
     },
     {
