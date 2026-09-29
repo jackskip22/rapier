@@ -1580,11 +1580,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	white-space: normal;
 	text-align: center;
 }
-.theme-switcher--joined .theme-switcher__btn[data-sz][data-active] {
-	background: var(--color-accent);
-	color: var(--color-accent-foreground, #fff);
-	opacity: 1;
-}
+
 
 
 .settings-close-btn {

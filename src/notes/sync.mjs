@@ -25,6 +25,7 @@
 //   - Uploads are idempotent by hash. A duplicated PUT is a no-op. A timeout after a committed PUT
 //     is discovered on the next listing, never re-uploaded as a new version.
 
+import {admitPersonal, mergePersonal, personalAsset} from './personal.mjs';
 import {noteFileName, isNoteFile, emptyIndex} from './model.mjs';
 import {mergeText, mergeIndex, inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
 import {seal, open} from './vault.mjs';
@@ -86,7 +87,7 @@ export async function snapshotToken(snapshot) {
 	// Owner bookkeeping moves while upload intents/checkpoints land; the person's content does not.
 	const {ownerNotice, ...index} = snapshot.index || {};
 	return sha256Hex(te.encode(JSON.stringify(sortObject({deviceId: snapshot.deviceId, assets,
-		files: snapshot.files, index, forgotten: snapshot.forgotten || [], head: snapshot.head || null, pending: snapshot.pending || null}))));
+		files: snapshot.files, index, personal: snapshot.personal?.records || {}, forgotten: snapshot.forgotten || [], head: snapshot.head || null, pending: snapshot.pending || null}))));
 }
 
 export function mintDeviceId() {
@@ -110,7 +111,7 @@ export function encodeHead(head) {
 	for (const id of Object.keys(head.notes || {}).sort()) notes[id] = head.notes[id];
 	const tombstones = {};
 	for (const id of Object.keys(head.tombstones || {}).sort()) tombstones[id] = head.tombstones[id];
-	return te.encode(JSON.stringify({v: HEAD_VERSION, device: head.device, generation: head.generation ?? 0, previous: head.previous ?? null, seen: head.seen || [], notes, tombstones, assets: sortObject(head.assets || {}), assetTombstones: sortObject(head.assetTombstones || {}), assetRevivals: head.assetRevivals || [], ancestry: sortObject(head.ancestry || {}), metadata: head.metadata || portableIndex(null)}));
+	return te.encode(JSON.stringify({v: HEAD_VERSION, device: head.device, generation: head.generation ?? 0, previous: head.previous ?? null, seen: head.seen || [], notes, tombstones, assets: sortObject(head.assets || {}), assetTombstones: sortObject(head.assetTombstones || {}), assetRevivals: head.assetRevivals || [], ancestry: sortObject(head.ancestry || {}), metadata: head.metadata || portableIndex(null), personal: admitPersonal(head.personal || {})}));
 }
 function inspectHeadJSON(value, depth = 0) {
 	if (depth > 64) refuse('corrupt', 'head metadata nesting exceeds this reader’s budget; kept data was not truncated');
@@ -167,6 +168,7 @@ export function decodeHead(bytes) {
 	if (!record(raw.ancestry)) refuse('corrupt', 'the head has no authenticated causal graph');
 	for (const [object, parents] of Object.entries(raw.ancestry)) if (!HASH_RE.test(object) || !Array.isArray(parents) || parents.some(parent => !HASH_RE.test(parent) || parent === object)) refuse('corrupt', 'the head has an invalid causal graph');
 	if (!record(raw.metadata) || !Array.isArray(raw.metadata.sections) || !record(raw.metadata.collapsed)) refuse('corrupt', 'the head has no readable portable metadata');
+	raw.personal = admitPersonal(raw.personal || {});
 	return raw;
 }
 
@@ -348,7 +350,7 @@ function tombstoneWins(localRow, tombstones, liveVersions, parents) {
 	return true;
 }
 
-function headPayload(head) { return sortObject({notes: head.notes, tombstones: head.tombstones, assets: head.assets || {}, assetTombstones: head.assetTombstones || {}, assetRevivals: head.assetRevivals || [], metadata: head.metadata}); }
+function headPayload(head) { return sortObject({notes: head.notes, tombstones: head.tombstones, assets: head.assets || {}, assetTombstones: head.assetTombstones || {}, assetRevivals: head.assetRevivals || [], metadata: head.metadata, personal: head.personal || {}}); }
 function same(left, right) { return JSON.stringify(sortObject(left)) === JSON.stringify(sortObject(right)); }
 function uniqueConflicts(rows, active = null) {
 	const unique = [...new Map(rows.map(c => [JSON.stringify(sortObject(c)), c])).values()];
@@ -610,6 +612,11 @@ export async function plan(local, heads, capabilities) {
 	const previous = published?._key || ourHead._key || null;
 	const generation = (published?.generation || ourHead.generation || 0) + 1;
 	const head = {v: HEAD_VERSION, device: deviceId, generation, previous, seen: allHeads.map(head => head._key).filter(Boolean).sort(), notes: notesOut, tombstones: tombstonesOut, assets: assets.output, assetTombstones: assets.tombstones, assetRevivals: assets.assetRevivals, metadata};
+	head.personal = mergePersonal(ourHead.personal, ...allHeads.map(head => head.personal), local.personal?.records);
+	// The shelf is shared between collections; an encrypted address belongs to one vault.
+	// Only this collection's authenticated heads can carry an address into its next head.
+	const personalObjects = new Set([ourHead, ...allHeads].flatMap(head => Object.values(head.personal || {}).filter(row => row.value?.object).map(row => row.value.content + ':' + row.value.object)));
+	for (const [key, row] of Object.entries(head.personal)) if (personalAsset(key) && row.value?.object && !personalObjects.has(row.value.content + ':' + row.value.object)) row.value.object = null;
 	const deferredIds = new Set(), deferredFiles = new Set();
 	for (const [file, value] of Object.entries(local.files || {})) {
 		const text = typeof value === 'string' ? value : value.text;
@@ -704,6 +711,27 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		}
 		return rewritten;
 	}
+	const personal = {records: plan.head.personal || {}, blobs: {}};
+	for (const [key, row] of Object.entries(personal.records)) if (personalAsset(key) && row.value) {
+		const ref = row.value;
+		let value = snapshot.personal?.blobs?.[ref.content], plain = value && te.encode(JSON.stringify(value));
+		if (plain && await sha256Hex(plain) !== ref.content) refuse('content', 'a personal asset changed before sync');
+		if (!ref.object) {
+			if (!plain) refuse('incomplete', 'a personal font or brush is missing');
+			const {sealed, object} = await sealUpload({bytes: plain, content: ref.content}, vdk, store);
+			await putVerified(transport, objectKey(object), sealed);
+			if (store.rememberObject) await store.rememberObject(ref.content, object, sealed);
+			ref.object = object;
+		} else if (!plain) {
+			const got = await transport.get(objectKey(ref.object));
+			if (!got || await sha256Hex(got.bytes) !== ref.object) refuse('ciphertext', 'a personal asset did not match its encrypted address');
+			plain = await open(vdk, OBJECT_AAD, got.bytes);
+			if (plain.length > 4 * 1024 * 1024 || await sha256Hex(plain) !== ref.content) refuse('content', 'a personal asset did not match its content');
+			try { value = JSON.parse(td.decode(plain)); } catch { refuse('content', 'a personal asset is not readable'); }
+		}
+		personal.blobs[ref.content] = value;
+	}
+
 	const downloaded = new Map();
 	const objectCache = new Map();
 	const sealedUploads = [];
@@ -892,7 +920,8 @@ export async function execute(inputPlan, transport, store, options = {}) {
 			const verified = same(previous, plan.verified) ? snapshot.verified : await authenticateHeads(plan.verified, snapshot.deviceId, snapshot.head._key, vdk);
 			await store.observe([...new Set([...plan.observed, snapshot.head._key])].filter(Boolean), verified);
 		}
-		return {ok: true, caughtUp: true, downloaded: 0, uploaded: 0, conflicts: [], head: snapshot.head._key, skipped: plan.skipped, unchanged: true};
+		if (store.applyPersonal) await store.applyPersonal(personal, snapshot.personal);
+		return {ok: true, caughtUp: !snapshot.personal || same((await store.snapshot()).personal?.records || {}, personal.records), downloaded: 0, uploaded: 0, conflicts: [], head: snapshot.head._key, skipped: plan.skipped, unchanged: true};
 	}
 	// The exact encrypted head is journaled WITH the owner's data commit, before publication.
 	// A lost response/restart can resend these bytes, not mint a second sibling generation.
@@ -909,11 +938,11 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	const verified = structuredClone(plan.verified || {keys: [], digests: {}});
 	verified.keys = [...verified.keys.filter(old => parseHeadKey(old).device !== plan.head.device), key].sort();
 	verified.digests = Object.fromEntries(verified.keys.map(key => [key, parseHeadKey(key).hash]));
-	const next = {files, assets, index, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, forgotten, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
+	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, forgotten, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
 	await store.commit(next, {expected: plan.expected});
 	await resumePending(transport, store, {vdk});
 	const current = await store.snapshot();
-	const caughtUp = same(current.files, files) && same(portableIndex(current.index), portableIndex(index)) && same(current.index.notes, index.notes);
+	const caughtUp = (!current.personal || same(current.personal.records, personal.records)) && same(current.files, files) && same(portableIndex(current.index), portableIndex(index)) && same(current.index.notes, index.notes);
 	return {ok: true, caughtUp, downloaded: downloaded.size, uploaded: sealedUploads.length, conflicts: resolvedConflicts, head: key, skipped: plan.skipped};
 }
 
@@ -1063,7 +1092,7 @@ export async function synchronize(transport, store, {vdk} = {}) {
 // assertActive is a caller's cancellation fence (the web session's Lock). It runs after every
 // owner lease this adapter waited for and at each write-plan handoff, beside activeFolder's
 // identity fence, never in place of it. Work already handed to the owner keeps its own finish.
-export function createOwnerSyncStore({folder, deviceId, assertActive = () => {}}) {
+export function createOwnerSyncStore({folder, deviceId, personal = null, assertActive = () => {}}) {
 	if (!folder?.owner || !DEVICE_RE.test(deviceId) || typeof assertActive !== 'function') refuse('store', 'an admitted folder owner and install identity are required');
 	const objects = new Map(), byContent = new Map(), media = new Map();
 	let loaded = false, limit = Infinity, folderIdentity = null;
@@ -1118,11 +1147,12 @@ export function createOwnerSyncStore({folder, deviceId, assertActive = () => {}}
 		for (const [name, bytes] of current.bodies) files[name] = {text: td.decode(bytes)};
 		await loadObjects();
 		if (state.deviceId && state.deviceId !== deviceId) refuse('identity', 'this folder sync state belongs to a different install identity');
-		return {deviceId, files, assets, assetAliases: state.assetAliases || {}, index: current.index, forgotten: state.forgotten || [],
+		return {deviceId, files, assets, personal: personal ? await personal.snapshot() : undefined, assetAliases: state.assetAliases || {}, index: current.index, forgotten: state.forgotten || [],
 			verified: state.verified || null, head: state.head || null, pending: state.pending || null, observed: state.observed || [],
 			byContent: Object.fromEntries([...byContent].map(([content, hashes]) => [content, hashes.at(-1)]))};
 	}
 	return {
+		applyPersonal: personal ? (value, baseline) => personal.commit(value, baseline, assertActive) : null,
 		beginRun(capabilities = {}) { limit = capabilities.maxSingleUploadBytes ?? Infinity; media.clear(); },
 		snapshot: ({checkpointOnly = false} = {}) => withLease(checkpointOnly ? checkpoint : capture),
 		validate: expected => withLease(async lease => { if (await snapshotToken(await capture(lease, true)) !== expected) refuse('changed', 'the folder changed during sync; rebase its new work'); }),
@@ -1189,6 +1219,7 @@ export function createOwnerSyncStore({folder, deviceId, assertActive = () => {}}
 				const previous = await readSyncStateBytes(folder.store);
 				const state = {...previous.state, deviceId, assetAliases: next.assetAliases, verified: next.verified, head: next.head, pending: next.pending,
 					observed: [...(next.observed || []).filter(key => parseHeadKey(key).device !== deviceId), next.pending.key], forgotten: next.forgotten};
+				if (personal && next.personal) await personal.commit(next.personal, next.personalBase, assertActive);
 				writes.set(SYNC_STATE_FILE, await syncStateWrite(state, previous.bytes));
 				const result = await lease.transact(() => {
 					assertActive();

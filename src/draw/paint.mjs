@@ -1284,6 +1284,16 @@ const PAINT_BYTE_EDGE = new Float64Array(257), PAINT_BYTE_COARSE = new Uint8Arra
 function paintByte(v) { let k = PAINT_BYTE_COARSE[(v * 65536) | 0]; while (v >= PAINT_BYTE_EDGE[k + 1]) k++; return k; }
 
 // --- mypaint-tiled-surface.c + brushmodes.c: one flat premultiplied linear float RGBA surface ----
+// The bounded wet window carries functions as well as typed arrays. Keep immutable callbacks,
+// copy material state, and journal only touched raster tiles rather than copying the whole canvas.
+function copyPaintMaterial(value, seen = new Map()) {
+	if (!value || typeof value !== 'object') return value;
+	if (seen.has(value)) return seen.get(value);
+	if (ArrayBuffer.isView(value)) { const out = value.slice(); seen.set(value, out); return out; }
+	const out = Array.isArray(value) ? [] : {}; seen.set(value, out);
+	for (const key of Object.keys(value)) out[key] = copyPaintMaterial(value[key], seen);
+	return out;
+}
 export class PaintSurface {
 	constructor(width, height, {wet = {}} = {}) {
 		this.width = Math.max(1, Math.trunc(width)); this.height = Math.max(1, Math.trunc(height));
@@ -1320,7 +1330,46 @@ export class PaintSurface {
 		// flat and watery brushes shrank and paled at 2x: paint-look, R73).
 		this.scale = 1;
 	}
-	clear() { this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
+	beginStroke() {
+		if (this.strokeCheckpoint) throw new Error('A paint stroke is already open');
+		const material = {};
+		for (const key of Object.keys(this)) if (key.startsWith('wet') || ['opDefer', 'opOwed', 'hold', 'drawDab', 'body', 'bite'].includes(key)) material[key] = this[key];
+		const checkpoint = {data: this.data, volume: this.volume, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY, material: copyPaintMaterial(material), tiles: new Map()};
+		this.strokeCheckpoint = checkpoint;
+		return checkpoint;
+	}
+	_keepStrokePixels(x0, y0, x1, y1) {
+		const cp = this.strokeCheckpoint;
+		// After growth the old buffer is retained by the checkpoint and no longer changes.
+		if (!cp || cp.data !== this.data) return;
+		x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(this.width - 1, x1); y1 = Math.min(this.height - 1, y1);
+		for (let ty = Math.floor(y0 / 64); ty <= Math.floor(y1 / 64); ty++) for (let tx = Math.floor(x0 / 64); tx <= Math.floor(x1 / 64); tx++) {
+			const key = ty + ':' + tx; if (cp.tiles.has(key)) continue;
+			const x = tx * 64, y = ty * 64, w = Math.min(64, this.width - x), h = Math.min(64, this.height - y);
+			const pixels = new Float32Array(w * h * 4), volume = cp.volume && new Uint8Array(w * h);
+			for (let row = 0; row < h; row++) { const at = (y + row) * this.width + x; pixels.set(this.data.subarray(at * 4, (at + w) * 4), row * w * 4); if (volume) volume.set(this.volume.subarray(at, at + w), row * w); }
+			cp.tiles.set(key, {x, y, w, h, pixels, volume});
+		}
+	}
+	endStroke(checkpoint, cancel = false) {
+		if (!checkpoint || this.strokeCheckpoint !== checkpoint) return false;
+		this.strokeCheckpoint = null;
+		if (!cancel) return true;
+		for (const {x, y, w, h, pixels, volume} of checkpoint.tiles.values()) for (let row = 0; row < h; row++) {
+			const at = (y + row) * checkpoint.width + x;
+			checkpoint.data.set(pixels.subarray(row * w * 4, (row + 1) * w * 4), at * 4);
+			if (volume) checkpoint.volume.set(volume.subarray(row * w, (row + 1) * w), at);
+		}
+		this.data = checkpoint.data; this.volume = checkpoint.volume; this.width = checkpoint.width; this.height = checkpoint.height;
+		this.toothOX = checkpoint.toothOX; this.toothOY = checkpoint.toothOY; this.toothTiles = null; this.toothTilesW = 0;
+		delete this.drawDab; delete this.hold;
+		Object.assign(this, checkpoint.material);
+		this.boundsTiles.clear(); this._readout = null; this.sinceRead = null;
+		this._touch(0, 0, this.width - 1, this.height - 1);
+		return true;
+	}
+
+	clear() { this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
 	// R79: the wet state is a WINDOW over the stroke, on a COARSE grid, stepped AFTER the finger.
 	// A phone's live layer is 2.4 Mpx and the dense state is 128 bytes a pixel, and the reference
 	// step over that at every dab took seconds. So: the window opens around the first wet dab with
@@ -1418,6 +1467,7 @@ export class PaintSurface {
 	_wetCompose(rect, fine) {
 		const state = this.wetState, win = this.wetWindow, C = this.wetCell, P = state.pixels, B = state.base, RB = this.wetRasterBase, D = this.data, W = this.width, H = this.height, cw = win.cw, ch = win.ch, cover = this.wetCover;
 		const px0 = Math.max(0, rect.x0 - 1) * C, py0 = Math.max(0, rect.y0 - 1) * C, px1 = Math.min(win.w, (rect.x1 + 2) * C) - 1, py1 = Math.min(win.h, (rect.y1 + 2) * C) - 1;
+		this._keepStrokePixels(win.x0 + px0, win.y0 + py0, win.x0 + px1, win.y0 + py1);
 		// The cell's own coverage: the mean of the fine plane over it (0 where only flow reached). Only the
 		// rectangle's cells and a margin of two are ever written or read, so the plane is kept across
 		// calls: a fresh one per call was the whole window's worth of zeroed memory for every dab.
@@ -1892,6 +1942,7 @@ export class PaintSurface {
 		const x0 = Math.max(0, Math.floor(x - fringe)), y0 = Math.max(0, Math.floor(y - fringe));
 		const x1 = Math.min(this.width - 1, Math.floor(x + fringe)), y1 = Math.min(this.height - 1, Math.floor(y + fringe));
 		if (x1 < x0 || y1 < y0) return null;
+		this._keepStrokePixels(x0, y0, x1, y1);
 		const w = x1 - x0 + 1, h = y1 - y0 + 1;
 		if (this.mask.length < w * h) this.mask = new Float32Array(w * h);
 		const mask = this.mask, oneOverR2 = 1 / (radius * radius);
@@ -3203,6 +3254,7 @@ export class PaintSurface {
 	// Load straight 8-bit sRGB pixels (a decoded PNG) at an offset: how a saved paint layer is
 	// picked up again for more strokes.
 	fromRGBA8(pixels, width, height, x0 = 0, y0 = 0, linear = true) {
+		this._keepStrokePixels(x0, y0, x0 + width - 1, y0 + height - 1);
 		this.settleWet();
 		// Pixels arriving from outside already carry whatever relief they were shaded with, so the
 		// volume under them is dropped: their height is baked into their colour and shading them again

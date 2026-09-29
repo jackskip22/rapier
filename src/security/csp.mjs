@@ -18,8 +18,8 @@ const BASE = [
 ];
 
 const SURFACES = {
-	// dash.cloudflare.com and api.cloudflare.com join connect-src only once the sign-in is registered and verified (csp()
-	// below): the PKCE token exchange is a fetch at dash. Until then neither is reachable, so nothing can POST at either.
+	// Registration admits the two pinned OAuth/API origins, including the deliberate verification run.
+	// The session gate keeps ordinary sign-in off until that live run is recorded; native stays offline.
 	web: { 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN] },
 	native: { 'frame-ancestors': ["'none'"] },
 	// Embed law (docs/architecture.md): any HTTPS page may frame Rapier.

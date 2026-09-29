@@ -28,7 +28,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
     floats.length = 0;
   }
 
-  // Participation, not ownership (as browser.js wrapParticipant): unreadable blocks, lists, quotes and details float; tables, code, rules, figures, math clearTo.
+  // Plain inline text uses Pretext. Complex blocks keep their original controls through floats.
   function prepare(paragraph) {
     if (!/^(P|H[1-6])$/.test(paragraph.tagName) || !paragraph.textContent.trim() || paragraph.textContent.length > 8192 ||
         paragraph.querySelector('img,svg,math,br,input,button,iframe,canvas,.math-rendered')) return null;
@@ -189,7 +189,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   const imageOnly = geometry.imageOnly;
 
   function neighbourKind(element) {
-    if (element.tagName === 'P' && element.textContent.trim() && !element.querySelector('img')) return 'prose';
+    if (metadata.wrapTextBlock(element)) return 'prose';
     const image = element.tagName === 'P' ? element.querySelector('img') : null;
     if (image && imageOnly(element, image)) return 'picture';
     // An empty paragraph is transparent to the owner search, as in the editor (R75).
@@ -198,9 +198,21 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   }
 
   // Float fallback as the editor's floatAround.
-  const FLOAT_BLOCK = /^(P|H[1-6]|UL|OL|BLOCKQUOTE|DETAILS|DL)$/;
+  const FLOAT_BLOCK = /^(P|H[1-6]|UL|OL|BLOCKQUOTE|DETAILS|SUMMARY|DL)$/;
   function floatAround(element, width, height, top, obstacles) {
     if (!FLOAT_BLOCK.test(element.tagName) || element.querySelector('table, pre, figure, img, .math-rendered')) return false;
+    if (element.tagName === 'DETAILS' && !element.open) {
+      const summary = element.querySelector(':scope > summary');
+      if (!summary) return false;
+      const bounds = box(summary), outer = box(element), computed = css(summary);
+      const inset = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.borderLeftWidth) || 0);
+      const parentInset = (parseFloat(css(element).paddingLeft) || 0) + (parseFloat(css(element).borderLeftWidth) || 0);
+      const contentWidth = bounds.width - inset - (parseFloat(computed.paddingRight) || 0) - (parseFloat(computed.borderRightWidth) || 0);
+      return floatAround(summary, contentWidth, bounds.height, top + bounds.top - outer.top,
+        obstacles.map(obstacle => ({...obstacle, x: obstacle.x - bounds.left - inset + outer.left + parentInset})));
+    }
+    const computed = css(element);
+    top += (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.borderTopWidth) || 0);
     const bottom = top + height;
     const inside = obstacles.filter(obstacle => obstacle.y < bottom + 4096 && obstacle.y + obstacle.height > top &&
       obstacle.x < width && obstacle.x + obstacle.width > 0);
@@ -225,7 +237,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
     }
     // The block contains its floats and each float ends at the block's own content bottom, so
     // successive blocks' floats never stack side by side (the same bound the editor applies).
-    style(element, {display: 'flow-root'});
+    style(element, {display: computed.display.includes('list-item') ? 'flow-root list-item' : 'flow-root'});
     const contentBottom = () => {
       let first = element.firstChild;
       while (first && placed.some(([float]) => float === first)) first = first.nextSibling;
@@ -362,6 +374,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   observer?.observe(root);
   root.addEventListener('load', schedule, true);
   root.addEventListener('error', schedule, true);
+  root.addEventListener('toggle', schedule, true);
   view.addEventListener('resize', schedule);
   view.addEventListener('pageshow', schedule);
   view.addEventListener('beforeprint', beforePrint);
@@ -375,6 +388,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
     observer?.disconnect(); restore();
     root.removeEventListener('load', schedule, true);
     root.removeEventListener('error', schedule, true);
+    root.removeEventListener('toggle', schedule, true);
     view.removeEventListener('resize', schedule);
     view.removeEventListener('pageshow', schedule);
     view.removeEventListener('beforeprint', beforePrint);

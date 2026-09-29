@@ -50,11 +50,12 @@ function _rapierOpenInfoSheet(kind) {
         const S = globalThis.RapierNotesSyncSession, where = {url: location.href, native: ['android', 'windows'].includes(String(globalThis.RapierPlatform?.environment?.id || '').toLowerCase()), framed: window.top !== window};
         if (!S) return 'cloudflare sync did not load here.';
         if (where.native) return S.r2KeyAvailability(where).reason;
-        return S.r2KeyAvailability(where).ready || S.syncAvailability(where).ready ? 'sync with cloudflare, in the notes settings, stores an encrypted copy of your notes in your own r2 bucket, free: rapier never sees it.'
-          : 'sync with cloudflare works on https://rapier.website/ only; this copy cannot sync.';
+        if (S.syncAvailability(where).ready) return 'sign in with cloudflare from settings. rapier prepares private storage and encrypts your notes on this device.';
+        return S.r2KeyAvailability(where).ready ? 'cloudflare sign-in is not available yet. advanced setup can connect a storage key you already have.'
+          : 'cloudflare sync works on https://rapier.website/notes; this copy keeps notes on this device.';
       })(),
       'backup, in notes settings, saves one file, or numbered parts for a very large library. syncing and signing in are not backups.',
-      'the cloudflare sign-in grants access by account and permission group: every r2 bucket there. use a new cloudflare account for your notes alone.',
+      'cloudflare grants storage access across the account you choose. its free allowance and billing terms apply.',
       'rapier’s source is on github: read it to check that sync only ever touches your notes.',
       typeof _rapierNotesStorageSentence === 'function' ? _rapierNotesStorageSentence() : 'your notes are in this browser’s own storage.'],
     /* RAPIER_NOTES_END */

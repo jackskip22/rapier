@@ -353,7 +353,7 @@
 	line-height:var(--md-leading-tight);color:var(--md-heading-color);text-wrap:balance}
 .md-render h1{font-size:2.8rem;font-weight:700;
 	margin:var(--md-space-6) 0 var(--md-space-4);
-	padding-bottom:var(--md-space-3);border-bottom:1px solid var(--md-color-border)}
+	padding-bottom:var(--md-space-3)}
 .md-render h2{font-size:2.2rem;font-weight:600;margin:var(--md-space-6) 0 var(--md-space-3)}
 .md-render h3{font-size:1.7rem;font-weight:600;margin:var(--md-space-5) 0 var(--md-space-2)}
 .md-render h4{font-size:1.3rem;font-weight:500;margin:var(--md-space-4) 0 var(--md-space-2)}

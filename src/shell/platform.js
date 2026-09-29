@@ -174,7 +174,7 @@ const RapierStorage = Object.freeze({
 		lineNums:       Object.freeze({ key: 'rapier:preference:line-numbers',      fallback: 'auto', values: Object.freeze(['auto', 'off', 'selected', 'all']) }),
 		imageStorage:   Object.freeze({ key: 'rapier:preference:image-storage', fallback: 'jxl', values: Object.freeze(['jxl', 'original']) }),
 		wrap:           Object.freeze({ key: 'rapier:preference:wrap',              fallback: true }),
-		dim:            Object.freeze({ key: 'rapier:preference:dim',               fallback: 'off', values: Object.freeze(['off', '25', '50']) }),
+		dim:            Object.freeze({ key: 'rapier:preference:dim',               fallback: 'dim', values: Object.freeze(['dim', 'full']) }),
 		lineFit:        Object.freeze({ key: 'rapier:preference:line-fit',          fallback: 'truncate', values: Object.freeze(['truncate', 'resize']) }),
 		readOnly:       Object.freeze({ key: 'rapier:preference:read-only',         fallback: false }),
 		showPlayButton: Object.freeze({ key: 'rapier:preference:show-play-button',  fallback: false }),

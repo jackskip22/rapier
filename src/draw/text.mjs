@@ -321,7 +321,7 @@ function layoutText(shape, context = {}) {
 	// The step number: two Geist Mono figures above the words at the size of a caption, in the quiet ink, on the words' edge.
 	// Its block (the figures' cap height and a gap of half the words' size) is room the words give up, so the planner that
 	// sizes a box to its words sizes it for both.
-	const step = inside && Number.isInteger(shape.step) ? shape.step : 0, stepSize = step ? Math.round(size * .8) : 0;
+	const step = inside && Number.isInteger(shape.step) ? shape.step : 0, stepSize = step ? Math.round(size * 1.6) : 0;
 	const stepBlock = step ? Math.round(stepSize * .71 + size * .5) : 0;
 	const room = step ? 12 : 8, insetLeft = inside ? room + padLeft : 0, insetRight = inside ? room + padRight : 0, insetTop = inside ? room + padTop + stepBlock : 0, insetBottom = inside ? room + padBottom : 0;
 	const align = arrow ? 'middle' : shape.labelAlign || (standalone ? 'start' : 'middle'), alignFactor = align === 'start' ? 0 : align === 'end' ? 1 : .5;

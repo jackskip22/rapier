@@ -3,8 +3,8 @@
   "limits": {
     "mutableRoots": 110,
     "domSinks": 71,
-    "storageKeys": 9,
-    "remainderBytes": 96892
+    "storageKeys": 8,
+    "remainderBytes": 96520
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {

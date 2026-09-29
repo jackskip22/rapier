@@ -456,8 +456,10 @@ html[data-headings="off"] .section-fold-btn { display: none !important; }
 	-webkit-user-select: text;
 	transition: border-color var(--dur-micro) var(--ease-micro);
 }
+/* No hairlines anywhere (the founder, 29 September): a block under the pointer, like the block being edited below,
+   is said by a wash of the text colour, never by an outline. */
 @media (hover:hover) and (pointer:fine) {
-	.block-wrapper .block-read:hover { border-color: var(--color-border); }
+	.block-wrapper .block-read:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
 }
 
 
@@ -470,9 +472,17 @@ html[data-headings="off"] .section-fold-btn { display: none !important; }
 	color: var(--color-text);
 	caret-color: var(--color-accent-text);
 }
+/* The block being edited (the founder, 29 September): no hairline box cropped to the text; a solid wash of the
+   text colour at a tenth, black on light and white on dark, run out to the document's edges so it reads as a faint
+   highlight of the whole line. The text stays where it was: the wash takes the gutters in and pads them back. */
 .block-wrapper--editing .block-edit {
-	border-color: var(--color-border-focus);
+	border-color: transparent;
+	width: calc(100% + 2 * var(--editor-h-pad));
+	margin-inline: calc(0px - var(--editor-h-pad));
+	padding-inline: var(--editor-h-pad);
+	background: rgba(255, 255, 255, .1);
 }
+body.light .block-wrapper--editing .block-edit { background: rgba(0, 0, 0, .1); }
 .block-wrapper--editing {
 	content-visibility: visible !important;
 	contain: none !important;
@@ -1104,31 +1114,22 @@ html[data-linenumbers="on"] .source-mode--code .source-highlight code .tok-line 
 	background-size: 2px calc(100% - 1lh), 100% 100%;
 }
 
-html[data-checker="on"] .source-mode--code .source-highlight code .tok-line:nth-child(even) {
-
-	--gutter-bg: color-mix(in srgb, var(--color-text) 14%, transparent);
-}
-
-html[data-dim="25"] .source-mode--code .source-highlight code .tok-line {
-	--wrap-rail: color-mix(in srgb, var(--color-text) 22%, transparent);
-}
-html[data-dim="50"] .source-mode--code .source-highlight code .tok-line {
-	--wrap-rail: color-mix(in srgb, var(--color-text) 15%, transparent);
-}
-html[data-checker="on"][data-dim="25"] .source-mode--code .source-highlight code .tok-line:nth-child(even) {
-	--gutter-bg: color-mix(in srgb, var(--color-text) 10%, transparent);
-}
-html[data-checker="on"][data-dim="50"] .source-mode--code .source-highlight code .tok-line:nth-child(even) {
-	--gutter-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
-}
-html[data-checker="off"][data-dim="25"] .source-mode--code .source-highlight code .tok-line::before,
-html[data-checker="off"][data-dim="25"] #linenum-label {
-	opacity: 0.75;
-}
-html[data-checker="off"][data-dim="50"] .source-mode--code .source-highlight code .tok-line::before,
-html[data-checker="off"][data-dim="50"] #linenum-label {
-	opacity: 0.5;
-}
+/* The strip's contrast is explicit. Dim changes the cells, never the authored code. */
+html{--gutter-strength:50%}
+html[data-dim="full"]{--gutter-strength:100%}
+.source-mode--code{--gutter-ink:#fff;--gutter-paper:#000}
+body.light .source-mode--code{--gutter-ink:#000;--gutter-paper:#fff}
+html[data-checker="on"] .source-mode--code .source-highlight code .tok-line{
+	--gutter-bg:color-mix(in srgb,var(--gutter-paper) var(--gutter-strength),transparent);
+	--gutter-number:var(--gutter-ink)}
+html[data-checker="on"] .source-mode--code .source-highlight code .tok-line:nth-child(even){
+	--gutter-bg:color-mix(in srgb,var(--gutter-ink) var(--gutter-strength),transparent);
+	--gutter-number:var(--gutter-paper)}
+html[data-dim="full"] .source-mode--code .source-highlight code .tok-line{--wrap-rail:var(--gutter-ink)}
+html[data-checker="off"][data-dim="dim"] .source-mode--code .source-highlight code .tok-line::before,
+html[data-checker="off"][data-dim="dim"] #linenum-label{opacity:.5}
+html[data-checker="on"] #linenum-label{color:var(--gutter-ink)}
+html[data-checker="on"] #linenum-label[data-even="true"]{color:var(--gutter-paper)}
 
 html[data-linenums="all"] .source-mode--code .source-highlight code .tok-line::before {
 	content: attr(data-line);
@@ -1140,7 +1141,7 @@ html[data-linenums="all"] .source-mode--code .source-highlight code .tok-line::b
 	text-align: right;
 	font: var(--fw-medium) 0.72rem/1.05 var(--font-mono);
 	font-variant-numeric: tabular-nums;
-	color: var(--color-text);
+	color: var(--gutter-number,var(--color-text));
 	pointer-events: none;
 	overflow: hidden;
 	white-space: nowrap;

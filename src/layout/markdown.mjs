@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import {fields, parseLayout, formatLayout, validLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, wrapNeighbour, wrapColumnFloor} from '../spec/md-layout.mjs';
+import {fields, parseLayout, formatLayout, validLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, wrapTextBlock, wrapNeighbour, wrapColumnFloor} from '../spec/md-layout.mjs';
 
-export {parseLayout, formatLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, wrapNeighbour, wrapColumnFloor};
+export {parseLayout, formatLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, wrapTextBlock, wrapNeighbour, wrapColumnFloor};
 
 const installed = new WeakSet();
 const horizontal = /^[ \t]*$/;

@@ -1,3 +1,15 @@
+// Export dialect is a portable personal preference, owned with the export path.
+function _rapierPandocDialectEnabled() {
+	try { return localStorage.getItem('rapier:export.pandocDialect') === '1'; } catch (_) { return false; }
+}
+function _rapierSetPandocDialectEnabled(value) {
+	try {
+		if (typeof _rapierPersonal !== 'undefined') _rapierPersonal.rememberDrawing('exportDialect', value ? '1' : null);
+		if (value) localStorage.setItem('rapier:export.pandocDialect', '1');
+		else localStorage.removeItem('rapier:export.pandocDialect');
+	} catch (_) {   }
+}
+
 /* Shared pages are static views. The editable source rides inside them as plain Markdown:
 
      <script type="text/markdown" data-filename="notes.md" data-kind="markdown" data-sha256="…"
@@ -184,7 +196,7 @@ function _rapierSharedPageFallbackCss() {
 .rapier-page{display:flow-root}
 .rapier-page>:first-child{margin-top:0}
 .md-render h1{display:flow-root}
-.rapier-page>:is(ul,ol,dl,pre,blockquote,table,hr,figure,details,.callout,.table-scroll-wrap,.math-display-wrap){clear:both}
+.rapier-page>:is(pre,table,hr,figure,.table-scroll-wrap,.math-display-wrap){clear:both}
 `;
 }
 
@@ -200,11 +212,9 @@ function _rapierShareWrapPicture(element, image) {
 		children[0].tagName === 'A' && meaningful(children[0]).length === 1 && meaningful(children[0])[0] === image);
 }
 
-// Classifies a sibling for spec/md-layout.mjs's wrapNeighbour: a plain text paragraph is 'prose'
-// (a candidate owner), an image-only paragraph is 'picture' (skip past it), and anything else — a
-// heading, a list, a callout, a table, code or a rule — is a barrier that stops that direction.
+// The live editor, export and Share use the same eligible text blocks, including controls.
 function _rapierShareWrapKind(element) {
-	if (element.tagName === 'P' && element.textContent.trim() && !element.querySelector('img')) return 'prose';
+	if (globalThis.RapierMarkdownLayout.wrapTextBlock(element)) return 'prose';
 	const image = element.tagName === 'P' ? element.querySelector('img') : null;
 	if (image && _rapierShareWrapPicture(element, image)) return 'picture';
 	// An empty paragraph is transparent to the owner search (R75), as in the editor and the export.
@@ -239,8 +249,7 @@ function _rapierSharedPageLayout(root) {
 		if (layout?.wrap !== 'around' && layout?.wrap !== 'box') continue;
 		const paragraph = _rapierSharePictureParagraph(image);
 		if (!paragraph) continue;
-		// One wrap-owner rule (spec/md-layout.mjs): the prose right after, else right before,
-		// looking past other pictures, never across a heading, list, callout, table, code or rule.
+		// Prefer following text, then preceding text, looking past pictures and metadata.
 		const owner = globalThis.RapierMarkdownLayout.wrapNeighbour(paragraph, _rapierShareWrapKind);
 		if (owner) assignments.push({image, paragraph, layout, owner});
 	}
@@ -248,7 +257,7 @@ function _rapierSharedPageLayout(root) {
 	// headings carry on beside the picture across a heading or section boundary as though the blocks
 	// between were not there. So the picture paragraph is placed right before its owner's text (a
 	// float only reaches what follows it) and left in the page's own flow, uncontained; the blocks
-	// that never wrap -- lists, tables, code, quotes, callouts, rules -- clear it through the page
+	// that never wrap -- tables, code, figures and rules -- clear it through the page
 	// stylesheet instead, and a bordered h1 forms its own block so its rule does not run under the
 	// picture. Static CSS, no script: the no-script fallback only -- a reader with scripting off
 	// still gets a sensible nearest-side float; the inlined planner (same owner as standalone)

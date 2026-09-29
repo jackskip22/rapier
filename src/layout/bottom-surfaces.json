@@ -27,12 +27,12 @@
           },
           {
             "property": "left",
-            "value": "var(--space-4)",
+            "value": "0",
             "important": false
           },
           {
             "property": "right",
-            "value": "var(--space-4)",
+            "value": "0",
             "important": false
           }
         ]
@@ -217,6 +217,47 @@
       "interactive": true,
       "edge": "all",
       "reason": "Draw owns the stage and its controls; a document toast cannot take taps from the drawing."
+    },
+    {
+      "id": "draw-stage",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-stage",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(env(safe-area-inset-top,0px) + var(--draw-cell) + 2 * var(--space-1))",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The stage is the viewport under the head: it fills the surface to the bottom edge and the settings row floats over it, so folding the row never resizes the canvas (the founder, 29 September)."
     },
     {
       "id": "draw-menu",
@@ -779,17 +820,17 @@
           },
           {
             "property": "left",
-            "value": "var(--space-2)",
+            "value": "0",
             "important": false
           },
           {
             "property": "right",
-            "value": "var(--space-2)",
+            "value": "0",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "calc(var(--space-2) + env(safe-area-inset-bottom,0px))",
+            "value": "env(safe-area-inset-bottom,0px)",
             "important": false
           },
           {

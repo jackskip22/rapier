@@ -153,17 +153,79 @@ function showToast(msg, type = 'success', action = null) {
 	try { srAnnounce(type === 'error' ? 'Error: ' + msg : msg); } catch (_) {}
 }
 
+// Notice gestures are shared by ordinary messages, recovery and Notes. Actions keep their own
+// lifecycle: a swipe may dismiss an offer, never interrupt a write already in flight.
+function _rapierNoticeExit(element, direction, finish) {
+	element._rapierNoticeSwipe?.stop();
+	const sideways = direction?.x, lift = element._rapierNoticeSwipe?.lift || '0px', duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 180;
+	element.style.animation = 'none'; element.style.pointerEvents = 'none';
+	element.style.transition = 'transform ' + duration + 'ms var(--ease-out),opacity ' + duration + 'ms var(--ease-out)';
+	element.style.transform = sideways ? 'translate3d(' + (Math.sign(sideways) * (element.offsetWidth + 28)) + 'px,calc(0px - ' + lift + '),0)' : 'translate3d(0,' + (element.offsetHeight + 28) + 'px,0)';
+	element.style.opacity = '0';
+	return setTimeout(finish, duration ? duration + 12 : 0);
+}
+function _rapierNoticeSwipe(element, options) {
+	let drag = null, suppressUntil = 0, resetTimer = 0;
+	const stop = () => {
+		clearTimeout(resetTimer);
+		if (drag) { try { element.releasePointerCapture(drag.id); } catch (_) {} }
+		drag = null;
+	};
+	const reset = () => {
+		stop();
+		for (const key of ['transform', 'opacity', 'transition', 'pointer-events']) element.style.removeProperty(key);
+	};
+	element._rapierNoticeSwipe = { reset, stop, lift: options.lift, get holding() { return !!drag; } };
+	element.addEventListener('click', event => {
+		if (_rapierNow() < suppressUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+	}, true);
+	element.addEventListener('pointerdown', event => {
+		if (drag || event.isPrimary === false || event.button !== 0 || !options.ready()) return;
+		clearTimeout(resetTimer);
+		drag = {id:event.pointerId, x:event.clientX, y:event.clientY, time:_rapierNow(), axis:'', offset:0, button:!!event.target.closest('button,a,input,select,textarea,[role="button"]')};
+		options.hold?.(event);
+	});
+	element.addEventListener('pointermove', event => {
+		if (!drag || event.pointerId !== drag.id) return;
+		const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+		if (!drag.axis && Math.max(Math.abs(dx), Math.abs(dy)) >= 7) {
+			drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : dy > 0 ? 'y' : 'up';
+			try { element.setPointerCapture(event.pointerId); } catch (_) {}
+		}
+		if (!drag.axis) return;
+		event.preventDefault(); event.stopPropagation();
+		if (drag.axis === 'up') return;
+		drag.offset = drag.axis === 'x' ? dx : Math.max(0, dy);
+		element.style.animation = 'none'; element.style.transition = 'none';
+		element.style.transform = 'translate3d(' + (drag.axis === 'x' ? drag.offset : 0) + 'px,calc(' + (drag.axis === 'y' ? drag.offset : 0) + 'px - ' + (options.lift || '0px') + '),0)';
+		element.style.opacity = String(Math.max(0, 1 - Math.abs(drag.offset) / Math.max(116, element.offsetHeight)));
+	});
+	const end = event => {
+		if (!drag || event.pointerId !== drag.id) return;
+		const d = drag; drag = null;
+		try { element.releasePointerCapture(event.pointerId); } catch (_) {}
+		const distance = Math.abs(d.offset), elapsed = Math.max(1, _rapierNow() - d.time);
+		const tapped = options.tap && !d.axis && !d.button && elapsed < 450;
+		if (d.axis || tapped) { suppressUntil = _rapierNow() + 350; event.preventDefault(); event.stopPropagation(); }
+		const close = event.type === 'pointerup' && options.ready() && (tapped || (d.axis !== 'up' && (distance >= 42 || (distance >= 18 && distance / elapsed >= .58))));
+		if (close && options.dismiss(d.axis === 'x' ? {x:d.offset} : {y:d.offset || 1}) !== false) { options.release?.(true); return; }
+		if (d.axis) {
+			const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 180;
+			element.style.transition = 'transform ' + duration + 'ms var(--ease-out),opacity ' + duration + 'ms var(--ease-out)';
+			element.style.transform = 'translate3d(0,calc(0px - ' + (options.lift || '0px') + '),0)'; element.style.opacity = '1';
+			resetTimer = setTimeout(reset, duration ? duration + 12 : 0);
+		}
+		options.release?.(false);
+	};
+	element.addEventListener('pointerup', end);
+	element.addEventListener('pointercancel', end);
+}
+
 function _rapierMountToast(toast, lifetimeMs) {
 	const model = _rapierTransientModel();
 	const actionBtn = toast.querySelector('.toast__action');
 	const durationMs = actionBtn || !(lifetimeMs > 0) ? null : lifetimeMs;
 	let removed = false;
-	let pointerId = null;
-	let startX = 0;
-	let startY = 0;
-	let startTime = 0;
-	let axis = 'pending';
-	let offset = 0;
 	const life = {
 		state: model.life.createTransient({
 			id: 'toast-' + Math.round(_rapierNow()) + '-' + Math.random().toString(36).slice(2, 6),
@@ -174,7 +236,6 @@ function _rapierMountToast(toast, lifetimeMs) {
 	};
 	toast._rapierLife = life;
 
-	const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 	const clearTimer = () => { if (life.timer) clearTimeout(life.timer); life.timer = 0; };
 	const step = event => {
 		if (!life.state) return null;
@@ -200,91 +261,22 @@ function _rapierMountToast(toast, lifetimeMs) {
 		if (toast.parentNode) toast.parentNode.removeChild(toast);
 		try { _rapierScheduleToastLift(); } catch (_) {}
 	};
-	const dismiss = () => {
+	const dismiss = direction => {
 		if (removed) return;
-		if (life.state && life.state.phase === 'running') return;
+		if (life.state && life.state.phase === 'running') return false;
 		if (life.state && life.state.phase !== 'closed') {
 			const result = step({type: 'dismiss'});
-			if (result && result.error === 'action-in-flight') return;
+			if (result && result.error === 'action-in-flight') return false;
 		}
 		removed = true;
 		clearTimer();
-		toast.style.animation = 'none';
-		// A leaving toast slides DOWN, through the band it was lifted above -- the docked format
-		// toolbar on a phone -- for 180 ms. Nothing on it is tappable any more, so nothing on it may
-		// catch a finger meant for what is underneath (image-cache-authority-eviction, 23 September:
-		// a Draw tap landed on the Share notice's fading body one run in two, and the surface never opened).
-		toast.style.pointerEvents = 'none';
-		const duration = reducedMotion() ? 0 : 180;
-		toast.style.transition = 'transform ' + duration + 'ms var(--ease-micro),opacity ' + duration + 'ms var(--ease-micro)';
-		toast.style.transform = 'translate3d(0,' + (toast.offsetHeight + 28) + 'px,0)';
-		toast.style.opacity = '0';
-		setTimeout(finish, duration ? duration + 12 : 0);
+		_rapierNoticeExit(toast, direction, finish);
 	};
-	const settle = close => {
-		pointerId = null;
-		axis = 'pending';
-		if (close && life.state && life.state.phase === 'running') close = false;
-		if (close && life.state && life.state.phase !== 'closed') {
-			const result = step({type: 'dismiss'});
-			if (result && result.error === 'action-in-flight') close = false;
-		}
-		const duration = reducedMotion() ? 0 : 180;
-		toast.style.transition = 'transform ' + duration + 'ms var(--ease-micro),opacity ' + duration + 'ms var(--ease-micro)';
-		toast.style.transform = close ? 'translate3d(0,' + (toast.offsetHeight + 28) + 'px,0)' : 'translate3d(0,0,0)';
-		toast.style.opacity = close ? '0' : '1';
-		if (close) {
-			removed = true;
-			clearTimer();
-			toast.style.pointerEvents = 'none';
-			setTimeout(finish, duration ? duration + 12 : 0);
-		} else {
-			step({type: 'pause', paused: false});
-			setTimeout(() => {
-				if (removed) return;
-				toast.style.transition = '';
-				arm();
-			}, duration ? duration + 12 : 0);
-		}
-	};
-
-	toast.addEventListener('pointerdown', event => {
-		if (removed || event.isPrimary === false || (event.button != null && event.button !== 0)) return;
-		const target = event.target instanceof Element ? event.target : null;
-		if (target && target.closest('button,a,input,select,textarea')) return;
-		pause();
-		pointerId = event.pointerId;
-		startX = event.clientX;
-		startY = event.clientY;
-		startTime = _rapierNow();
-		axis = 'pending';
-		offset = 0;
-		toast.style.animation = 'none';
-		toast.style.transition = 'none';
-		try { toast.setPointerCapture(event.pointerId); } catch (_) {}
-	});
-	toast.addEventListener('pointermove', event => {
-		if (event.pointerId !== pointerId) return;
-		const dx = event.clientX - startX;
-		const dy = event.clientY - startY;
-		if (axis === 'pending' && Math.max(Math.abs(dx), Math.abs(dy)) >= 7) {
-			axis = Math.abs(dy) > Math.abs(dx) * 1.12 ? 'vertical' : 'horizontal';
-			if (axis !== 'vertical' || dy < 0) { settle(false); return; }
-		}
-		if (axis !== 'vertical') return;
-		event.preventDefault();
-		offset = Math.max(0, dy);
-		toast.style.transform = 'translate3d(0,' + offset + 'px,0)';
-		toast.style.opacity = String(Math.max(0, 1 - offset / 116));
-	});
-	toast.addEventListener('pointerup', event => {
-		if (event.pointerId !== pointerId) return;
-		const elapsed = Math.max(1, _rapierNow() - startTime);
-		const velocity = offset / elapsed;
-		settle(axis === 'vertical' && (offset >= 42 || (offset >= 18 && velocity >= .58)));
-	});
-	toast.addEventListener('pointercancel', event => {
-		if (event.pointerId === pointerId) settle(false);
+	_rapierNoticeSwipe(toast, {
+		ready: () => !removed && life.state?.phase !== 'running',
+		hold: pause,
+		release: closed => { if (!closed) { step({type:'pause', paused:false}); arm(); } },
+		dismiss,
 	});
 
 	toast._rapierArm = arm;
@@ -381,6 +373,7 @@ function applyTheme(value) {
 	document.body.classList.toggle('light', isLight);
 	document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
 	try { globalThis.RapierEmbeddedImages?.retheme?.(); } catch (_) {}
+	if (document.body.classList.contains('rapier-draw-open') && typeof _rapierDrawRenderAll === 'function') _rapierDrawRenderAll();
 	const themeMeta = document.querySelector('meta[name="theme-color"]');
 	if (themeMeta) themeMeta.setAttribute('content', isLight ? '#ffffff' : '#000000');
 	if (window.RapierPlatform && typeof window.RapierPlatform.host.publishTheme === 'function') {
@@ -388,53 +381,67 @@ function applyTheme(value) {
 	}
 }
 
-// The theme turn: a light or dark chosen by a finger comes across the page as light comes across paper,
-// from the finger's side of the switch (away from the choice it leaves, so the way there and the way back
-// are mirrors) to the far side, one soft front as wide as the page, the words holding still. A view
-// transition whose new view is masked by that front (rapier-app.css, --rapier-turn); the front sets off two
-// frames after the transition is ready, once the new theme's first frame is drawn, so a slow phone sees all of it.
-// Only this switch turns -- a system change, a preference arriving from elsewhere, a browser without view
-// transitions and reduced motion all change at once.
-function _rapierThemeFlood(control, event, value, change) {
+// Light settles into the ground, then the page and its controls. Snapshots keep the text still;
+// only opacity and a small exposure change move. A new touch ends the transition immediately.
+function _rapierThemeLight(value, change) {
+	const root = document.documentElement, previous = root._rapierThemeLight;
+	if (previous) { previous.apply(); previous.skip(); previous.clean(); }
 	const light = value === 'light' || (value === 'system' && matchMedia('(prefers-color-scheme: light)').matches);
 	if (light === document.body.classList.contains('light') || typeof document.startViewTransition !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return change();
-	const box = control.getBoundingClientRect(), was = control.parentElement.querySelector('[data-active]')?.getBoundingClientRect() || box;
-	const way = ((event?.clientX || box.left + box.width / 2) < was.left + was.width / 2 ? 90 : 270) + 'deg';
-	const root = document.documentElement, done = () => root.classList.remove('rapier-theme-flood');
-	root.classList.add('rapier-theme-flood');
-	let turn;
+	const names = [], animations = [];
+	const seen = element => element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
+	const page = ['.rapier-draw-surface', '.rapier-notes-surface', '#source-mode', '#editor-blocks'].map(selector => document.querySelector(selector)).find(seen);
+	const controls = [...document.querySelectorAll('.settings-overlay.open > .settings-panel')].filter(seen).at(-1);
+	for (const [element, name] of [[page, 'rapier-light-page'], [controls, 'rapier-light-controls']]) {
+		if (!element) continue;
+		names.push({element, name, before: element.style.viewTransitionName});
+		element.style.viewTransitionName = name;
+	}
+	root.classList.add('rapier-theme-light');
+	let changed = false, cleaned = false, transition;
+	const apply = () => { if (!changed) { changed = true; change(); } };
+	const skip = () => transition?.skipTransition();
+	const clean = () => {
+		if (cleaned) return;
+		cleaned = true;
+		removeEventListener('pointerdown', skip, true);
+		for (const animation of animations) animation.cancel();
+		for (const {element, before} of names) element.style.viewTransitionName = before;
+		root.classList.remove('rapier-theme-light');
+		if (root._rapierThemeLight?.clean === clean) root._rapierThemeLight = null;
+	};
+	root._rapierThemeLight = {apply, skip, clean};
 	try {
-		const flood = document.startViewTransition(change);
-		flood.ready.then(() => {
-			// The way rides on the animation, so the page's own style is never touched. Held at its start (a held
-			// animation keeps the transition open) until the new theme's first frame is drawn.
-			turn = root.animate({'--rapier-turn': ['0%', '200%'], '--rapier-turn-way': [way, way]}, {duration: 400, easing: 'cubic-bezier(.2,0,.2,1)', fill: 'forwards', pseudoElement: '::view-transition-new(root)'});
-			turn.pause();
-			requestAnimationFrame(() => requestAnimationFrame(() => turn.playState === 'paused' && turn.play()));
+		transition = document.startViewTransition(apply);
+		transition.ready.then(() => {
+			if (cleaned) return;
+			for (const [name, duration, delay] of [['root', 340, 0], ['rapier-light-page', 410, 25], ['rapier-light-controls', 360, 70]]) {
+				if (name !== 'root' && !names.some(row => row.name === name)) continue;
+				animations.push(root.animate([{opacity: 0, filter: light ? 'brightness(.97)' : 'brightness(1.08)'}, {opacity: 1, filter: 'brightness(1)'}],
+					{duration, delay, easing: 'cubic-bezier(.22,0,.18,1)', fill: 'both', pseudoElement: '::view-transition-new(' + name + ')'}));
+				animations.push(root.animate([{filter: 'brightness(1)'}, {filter: light ? 'brightness(1.04)' : 'brightness(.94)'}],
+					{duration, delay, easing: 'ease-out', fill: 'both', pseudoElement: '::view-transition-old(' + name + ')'}));
+			}
 		}, () => {});
-		// A finger that comes down while it runs ends it at once, so the page under the finger takes the touch (a
-		// view transition gives every touch to the root). A press that starts the next turn skips this one, and this
-		// one's ending leaves the next its class (only the theme turn starts a view transition in Rapier).
-		const skip = () => flood.skipTransition();
 		addEventListener('pointerdown', skip, true);
-		flood.finished.finally(() => { removeEventListener('pointerdown', skip, true); turn?.cancel(); if ((document.activeViewTransition || flood) === flood) done(); });
-	} catch (_) { done(); change(); }
+		transition.finished.then(clean, clean);
+	} catch (_) { clean(); apply(); }
 }
 
-// The dial (rapier-app.css): undo and redo are drawn as a turning arrow, so a tap that did something
-// turns it -- back for undo, on for redo -- and it springs home, the way a dial gives under a thumb;
-// a tap with nothing to do presses the arrow in and lets it go (the founder, 25 September 2026: "it
-// turns a little when it's successful and then it just sort of like shrinks in place when it's not
-// successful"; docs/intent.md law 12). `done` is the command's own answer, false or the promise of
-// false when it did nothing, so the arrow says what happened and never guesses ahead of it. Every
-// undo and redo in Rapier is this one dial: the editor's bar and the note's head (the same two
-// buttons), and Draw's head (draw/draw.js).
+// One dial owns every Undo and Redo. Explicit neutral endpoints keep focus and press styles out
+// of its motion. An older asynchronous answer cannot interrupt the newest tap's answer.
 function _rapierDialTurn(button, redo, done) {
 	const arrow = button?.querySelector('svg');
-	if (!arrow || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+	if (!arrow) return;
+	const sequence = button._rapierDialSequence = (button._rapierDialSequence || 0) + 1;
+	button._rapierDialAnimation?.cancel();
 	Promise.resolve(done).then(did => {
-		arrow.classList.remove('rapier-dial--back', 'rapier-dial--on', 'rapier-dial--stop'); void arrow.getBoundingClientRect();
-		arrow.classList.add(did === false ? 'rapier-dial--stop' : redo ? 'rapier-dial--on' : 'rapier-dial--back');
+		if (sequence !== button._rapierDialSequence || !arrow.isConnected || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		const frames = did === false
+			? [{transform: 'scale(1)'}, {transform: 'scale(.85)', offset: .5}, {transform: 'scale(1)'}]
+			: [{transform: 'rotate(0deg)'}, {transform: 'rotate(' + (redo ? 70 : -70) + 'deg)', offset: .35},
+				{transform: 'rotate(' + (redo ? -8 : 8) + 'deg)', offset: .7}, {transform: 'rotate(0deg)'}];
+		button._rapierDialAnimation = arrow.animate(frames, {duration: did === false ? 180 : 420, easing: 'cubic-bezier(.2,0,0,1)'});
 	}, () => {});
 }
 // And what the dial says, the same way wherever it stands (docs/intent.md law 47): its name and its tip
@@ -4196,91 +4203,75 @@ function rapierWelcomeMarkdown() {
 		"",
 		"![The rapier logo][rapier-logo] <!--md-layout:v1 width=14% wrap=around x=93%-->",
 		"",
-		"A writing app, a drawing board and a notebook in one free file. It works offline on a phone or a computer, needs no account and uploads nothing. It's free software (AGPL).",
+		"Write, draw, paint and keep your notes. Rapier is free and works offline.",
 		"",
-		"- **Documents, like Word:** headings, lists, tables, pictures the words wrap around. Open a Word file or a PDF; save as Word, PDF or a web page.",
-		"- **Drawing and painting:** sketch with a finger, turn a scribble into a clean shape, make a diagram, paint with real brushes and watercolour.",
-		"- **Notes:** cards you pin, colour and tick off, with reminders, voice recordings and files.",
-		"- **An AI helper, if you want one:** it edits beside you and draws diagrams for you, and you keep or drop every change.",
-		"",
-		"> [!TIP]",
-		"> **Tap any paragraph** to edit it. **Drag the circle** at the right edge to move through a long document, or **tap it** for the headings.",
-		"",
-		"Jump to:",
-		"- [Start here](#start-here)",
-		"- [Writing](#writing)",
-		"- [Pictures, drawing and paint](#pictures-drawing-and-paint)",
-		"- [Notes](#notes)",
-		"- [Tables](#tables)",
-		"- [Code](#code)",
-		"- [Opening and saving](#opening-and-saving)",
-		"- [Compare](#compare)",
-		"- [Agents](#agents)",
-		"- [Will](#will)",
-		"- [Where it runs](#where-it-runs)",
-		"- [Keyboard](#keyboard)",
-		"- [For developers and agents](#for-developers-and-agents)",
+		"This guide is yours to play with. Change a few words, tick a box or move a picture. **Undo** is there if you need it.",
 		"",
 		"## Start here",
 		"",
-		"1. **Tap this line** to edit it in place.",
-		"   1. The formatting bar comes up. Its **+** has every other command.",
-		"   2. You can also type Markdown.",
-		"   3. Tap outside the text when you're done.",
-		"2. **Tap a line in the list above** to go there. Tap beside the words to edit the list.",
-		"3. **Put the cursor in a list item** and tap **Nest** to indent it; **Resume** brings it back.",
-		"   - a list item",
-		"     - nested once",
-		"       - nested twice",
-		"4. **Tick a box.**",
-		"   - [x] open Rapier",
-		"   - [ ] edit this line",
-		"   - [ ] tick this box",
+		"**Tap a paragraph** to start writing. The formatting bar has the everyday tools; **+** has the rest. Tap outside the text when you're done.",
+		"",
+		"**Drag the circle** at the right edge to move through the page. Tap it to jump to a heading.",
+		"",
+		"- [x] Open Rapier",
+		"- [ ] Change these words",
+		"- [ ] Tick this box",
 		"",
 		"## Writing",
 		"",
-		"**Bold**, *italic*, ~~struck through~~, ++underlined++, `code`, ==highlighted==, ==🟢green==, ==🔴red==, ==🔵blue==, H~2~O and 1^st^. It's all plain Markdown, so other Markdown apps can open the file.",
+		"Try **bold**, *italic*, ~~strikethrough~~, ++underline++, `code` and ==highlighting==. Highlights come in ==🟢green==, ==🔴red== and ==🔵blue== too. You can write H~2~O and 1^st^, add a footnote[^1], or type Markdown as you go.",
 		"",
-		"> A quote.",
+		"> A good sentence is a place to begin.",
 		"",
-		"> [!NOTE]",
-		"> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show it as a quote.",
+		"> [!TIP]",
+		"> Put the cursor in a list item and tap **Nest** to indent it. **Resume** brings it back.",
 		"",
-		"Every heading is in the outline the circle opens.[^1]",
+		"1. A plan",
+		"   - A smaller step",
+		"     - And one small detail",
+		"2. Something to try next",
 		"",
 		"<details>",
-		"<summary>A section that opens and closes</summary>",
+		"<summary>There's more in here</summary>",
 		"",
-		"Tap its title to open or close it. **+** → **Expanding section** adds one.",
+		"An expanding section keeps a long page tidy. Tap the title to close it, or edit these words to make it your own. Add another with **+** → **Expanding section**.",
 		"",
 		"</details>",
 		"",
 		"## Pictures, drawing and paint",
 		"",
-		"Add a picture (PNG, JPEG, WebP or JPEG XL), then move and resize it by dragging. The words wrap around its shape, not its box. Pictures are stored inside this Markdown file; nothing is uploaded.",
+		"Add a picture, then drag to move or resize it. Words can wrap around its outline. Tap the picture for its controls: the **brush** opens Draw, and **T** changes its description.",
 		"",
-		"The brush on the formatting bar opens Draw. **SVG Brush** follows your pressure and speed, and a stroke that looks like a circle, box, line or arrow can become that shape with one tap. **SVG Pen** draws an even line. Choose **Select**, then tap a shape to move, resize, label or restyle it, or to bind an arrow to it. The drawing is saved in the file as SVG, and an agent can edit it later.",
+		"The same brush on the formatting bar starts a new drawing. Sketch with your finger, draw a diagram or paint with watercolour. **Select** lets you move, resize and restyle what you've made.",
 		"",
-		"![W][leaf-w] <!--md-layout:v1 width=15% wrap=around x=7.5%-->",
+		"**SVG Brush** follows your pressure and speed. A stroke that looks like a circle, box, line or arrow can become that shape with one tap. **SVG Pen (Testing)** draws an even line; **Raster Brush** opens the painting brushes.",
 		"",
-		"ith Draw's letter sets, a line can open in the capital of an old printed book, as this one does. Four sets are traced from the British Library's public scans; each letter is a drawing you can recolour and resize.",
+		"![W][leaf-w] <!--md-layout:v1 width=18% wrap=around x=9%-->",
 		"",
-		"**Raster Brush** uses MyPaint's brushes, run by Rapier's own engine, so a MyPaint preset behaves as its author tuned it. Watercolour keeps spreading after you lift your finger, then dries. A painting is one picture inside the drawing.",
+		"ith a decorative letter, an ordinary paragraph can feel like a page from an old book. Draw has four letter sets to choose from. This W is a drawing too: tap it, then the brush, to make it your own.",
+		"",
+		"Watercolour spreads after you lift your finger, then dries. Choose a different brush for a different feel, or bring in a MyPaint preset. Pictures and drawings stay inside your document.",
+		"",
+		"Draw an SVG line, choose **Select**, tap the line, then **Style → Look** to turn it into a spring, rope or tube. For when your meeting notes need more tension.",
+		"",
+		"![An editable spring made from a drawn line][draw-spring] <!--md-layout:v1 width=75%-->",
 		"",
 		"## Notes",
 		"",
-		"Open Notes from the three dots → **notes** → **OPEN**. Each note is an ordinary Markdown file, shown as a card you can pin, colour and sort into sections. A note can hold a checklist you tick from its card, a reminder, a voice recording or attached files. **IMPORT** brings in notes from other apps; **BACKUP** saves the whole notes folder as one zip.",
+		"Open **Notes** from the three dots. Pin a thought, colour a card, make a checklist or set a reminder. Notes can hold drawings, voice recordings and files too.",
 		"",
-		"> [!WARNING]",
-		"> In a browser, your notes live in its storage, which it can clear: back them up from the Notes settings, or sync with Cloudflare. The Android app keeps them on the device.",
+		"**Import** brings in notes from other apps. **Backup** saves your notes as a zip; Cloudflare sync keeps them in your own account.",
+		"",
+		"> [!TIP]",
+		"> Keep a backup of notes you care about. A browser can clear its stored data.",
 		"",
 		"## Tables",
 		"",
-		"| what | where |",
+		"| Make a little room for | What goes here |",
 		"|---|---|",
-		"| find and replace | the magnifier |",
-		"| every command | **+** on the formatting bar |",
-		"| Settings | the three dots |",
+		"| A plan | The next step |",
+		"| An idea | A few words |",
+		"| A list | Whatever you need |",
 		"",
 		"Tap a cell to edit it. Paste cells from a spreadsheet and the table grows to fit them.",
 		"",
@@ -4288,98 +4279,82 @@ function rapierWelcomeMarkdown() {
 		"",
 		"```js",
 		"export function twice(x) {",
-		"  return x + x; // highlighted offline, nothing fetched",
+		"  return x + x;",
 		"}",
 		"```",
 		"",
-		"Text and code files open in the source editor, where the circle takes you to a line or a declaration. The eye/code switch in Settings shows the Markdown behind this page.",
+		"Code is highlighted offline. Text and code files open in the source editor, where the circle takes you to a line or a declaration. The eye/code switch in Settings shows the Markdown behind this page.",
 		"",
 		"## Opening and saving",
 		"",
-		"Open a Word document or a TextPack and you get an editable Markdown copy with its pictures. A PDF comes in as its text or as pictures of its pages. In a browser, the first PDF asks to download a reader; on Android the phone reads the text itself.",
+		"Open Markdown, Word, text, code, TextPack or PDF files. Word documents become editable pages with their pictures; PDFs can come in as text or pictures of their pages.",
 		"",
-		"As you type, Rapier keeps a draft on this device, so a closed tab comes back. **Save** writes the file and, where it can, reads it back to check.",
+		"Rapier keeps a draft as you work. **Save** keeps a file you can take with you. Your Markdown stays readable in other apps.",
 		"",
-		"> [!WARNING]",
-		"> A draft is not a saved file. Save anything you'd hate to lose.",
+		"Under the three dots, **Copy**, **Share** and **Export** let you send your work as text, a web page, PDF or Word. A shared web page opens offline, and Rapier can open it again for editing.",
 		"",
-		"**Copy**, **Share** and **Export** (text, HTML, PDF, DOCX) are under the three dots. **Share** makes one web page with your document in it. It opens offline in any browser, and Rapier can open it again for editing. A **page break** (**+** → **Line**) starts a new page in PDF and Word; other Markdown apps don't show it.",
+		"Need a new printed page? **+** → **Line** adds a page break for PDF and Word.",
 		"",
 		"## Compare",
 		"",
-		"**Compare**, under the three dots, shows what changed between this document and another file, with the unchanged parts folded away:",
+		"Choose **Compare** under the three dots and open another version of your document. You'll see what changed, with the unchanged parts tucked away. Both files stay as they were.",
 		"",
 		"```diff",
-		"- take the rewrite on trust",
-		"+ read exactly what the rewrite changed",
+		"- A first thought.",
+		"+ A better way to say it.",
 		"```",
-		"",
-		"Neither file changes.",
 		"",
 		"## Agents",
 		"",
-		"An AI agent can work in this document with you. It reads the outline first, then only the parts it needs. It can't overwrite what you're editing, and its changes can be undone without touching yours. While it's connected, the circle says so; tap it for status, messages and changes.",
+		"Use Rapier with an AI agent to work on the same document. Ask for an explanation, a rewrite, a plan or a diagram. You can review its changes and undo them without losing your own work.",
 		"",
-		"**Ask it for a diagram.** A flowchart, the steps of a process, how the parts of a system fit together: it draws it here, laid out for you, with numbered steps and arrows that find their way around the boxes, in light and dark. Every box stays a shape you can move, relabel or recolour.",
+		"Try asking: **“Draw how this works, then leave room for my notes.”** The diagram stays editable: move a box, change a label or add your own drawing. Select a passage and use **Ask** to talk about that part.",
 		"",
-		"![A diagram an agent made here: ask, Rapier lays it out, keep it or drop it][agent-diagram] <!--md-layout:v1 width=100%-->",
-		"",
-		"## Will",
-		"",
-		"A will tells any agent editing this document what it may change in a section, what it may only add to, and what it must leave alone. Tap the icon above a section to change its will, or **W** on the formatting bar to add one. The next two sections have one each:",
-		"",
-		"<!-- will/1 keep: keep this exactly as I wrote it -->",
-		"",
-		"### Statement",
-		"",
-		"You edit everything, always. An agent working here obeys the will.",
-		"",
-		"<!-- /will -->",
-		"",
-		"<!-- will/1 append: add new notes at the bottom, one line each -->",
-		"",
-		"### Notes",
-		"",
-		"An agent may add lines here and cannot touch the ones already written. Ask one to rewrite the statement above: Rapier shows you its proposal and you decide.",
-		"",
-		"<!-- /will -->",
+		"![An editable diagram: ask, make it together, keep what works][agent-diagram] <!--md-layout:v1 width=100%-->",
 		"",
 		"## Where it runs",
 		"",
-		"In a browser, or installed from one (**⋮ → Add to Home screen** on Android, the install icon on desktop); as the Android and Windows apps; from a USB stick; inside your own app; or as a Speedracer app in your own Cloudflare account. It's the same file everywhere: `rapier.html`, under 2 MB.",
+		"Use Rapier in your browser, install it as an app, or keep `rapier.html` on a USB stick. The whole editor is one file, under 2 MB. No account is needed.",
 		"",
 		"## Keyboard",
 		"",
 		"Hold **Ctrl** (**Cmd** on a Mac), then:",
 		"",
-		"| key | action |",
+		"| Key | Action |",
 		"|---|---|",
-		"| `K` | every command |",
-		"| `F` | find and replace |",
-		"| `S` · `Shift S` | save · save as |",
-		"| `Z` · `Shift Z` | undo · redo |",
-		"| `B` · `I` · `U` | bold · italic · underline |",
+		"| `K` | Every command |",
+		"| `F` | Find and replace |",
+		"| `S` · `Shift S` | Save · Save as |",
+		"| `Z` · `Shift Z` | Undo · Redo |",
+		"| `B` · `I` · `U` | Bold · Italic · Underline |",
 		"| `,` | Settings |",
 		"",
-		"`Tab` and `Shift Tab` nest a list item, indent code, or step through a table. `Esc` closes whatever is open.",
+		"`Tab` and `Shift Tab` nest a list item, indent code or move through a table. `Esc` closes what's open.",
 		"",
 		"## For developers and agents",
 		"",
 		"```sh",
-		"npx rapier-html notes.md                  # the whole editor around notes.md, as one offline file",
-		"npx rapier-html notes.md --view draw      # the same, opened on Draw",
-		"npm install rapier-markdown-kit           # read and write Rapier's Markdown without the editor",
-		"npm install rapier-embed                  # put the editor inside your own site",
+		"npx rapier-html notes.md",
+		"npx rapier-html notes.md --view draw",
+		"npm install rapier-markdown-kit",
+		"npm install rapier-embed",
 		"```",
 		"",
-		"If you're an agent reading this: hand a person a page with `npx rapier-html` and they keep editing after the chat. With the tools in `llms.txt` and `agents.md`, or the door at `https://mcp.rapier.website/mcp`, you read outlines and passages, propose edits the person keeps or drops, and draw diagrams from boxes and arrows with `document.draw`: Rapier lays them out and styles them. Never write behind their back.",
+		"Give someone the whole editor around their document with `rapier-html`, read and write Markdown with the kit, or embed Rapier in your own app. The agent tools are described in `llms.txt` and `agents.md`; the hosted connection is `https://mcp.rapier.website/mcp`.",
 		"",
-		"[^1]: Footnotes work too. The arrow takes you back.",
+		"Rapier is free software under AGPL-3.0-only. The Markdown kit uses the MIT licence.",
 		"",
-		"[rapier-logo]: data:image/jxl;base64,/wr4BX6BBcWNCAgQAJEBWUDCAEmimIhjGMcBQEDJJEiQaFiLAlSZqPUOFgAIUjYlUZJyv1ec2LGTXM4Qtyp10Ocn2+z812UljamGIrcjHuVgQslrzGGnM9+M++GuGefz4PCq0e59Dno3msNxfE7GcSZe7XS3X6gZY4wtf4vasop1yVqrKMr1DAUUi83NBbVZy4KiXC5guSiKj15UWRRFWbwqg8pIOkgwtiCEZqoRGZFnCUEliKYGIYiIcMOpO06fOvXwh/7ojhsecAPvs4f/MWO3mvibN+jF5XL2drJkKRuP3HtvQuxwuXspRcmS8ZDVFzd2vrw11czD9aVnYtD7kjMPtS0lE4jtiWo8Su8lE4xlIfMYl5YIyNJtEsOXRUZM9l6NwbuMsPSuytBdRmR2r2JYdaKztMqoakZ4lj4xpgoR6n1iRIkYLb0yYBFB6q3yX7kRpcWz+N2LEaeNxO/NiNSW+NkWYlWtivfuBGvxxI/WjWgtmR+bCFcvmbfNiNeW+N46EatS+TZ1QrZk8bITsyqZr9NC0LZJQCFq5QZpMaK2TMIaYVsSFOJWStYIXCXrBG5JEoErOZErIWJXRK6c0BXB64Su83eWd77LmYXhbz9X+P3khZvOrnYGvObSzm7edmXPDL/x9Dof/Yo73XR0YsyT0xb287xijH9i7bnw9ulON5ZTgBjy5OG5sZtr5wG25cDbm++yBohRncSONh5hmZxvj9zxyDHEwE48qvD9mYsPIMLVjZcnNlREwBbja9tM5OpKJ2i7ga2cqQRtPzi6eY2odUh3SIiodVYvICKf1w4TI7bOz/WGZyLyfretMWK64xV87MuFiI/rW7afO0xV/FkPs9jPRxlz+9L5uH628v78rbdv6Tidz04hAOvqKu+LXYF4fdk9z59khdg8mPh4OMLr9fuubyA+rRXel4t4ve3ao0RoZsht558IUXPx+XC6EaPJ+OyXEaXis67LBK7StoXIvc8qgetbDkTu6q0rRO6xU0Tu06WNyD17O6F7WF8I3LI+EbnLcRG5K8cI3Xa6ELkr5wjd9lyIXB0ndpMTuZYJXUdErvH/1L/DBUedEU90fm5f6OITjHvs2oU9fu4uZ5ozoPi3xLhLvp1dvv5k7MANrC3s8XpC7MF0YJdXdqELscetsQsT+9yMPSixz8Vfnv7TX+Y4j3+exT7fxB50/vo4ichNJgJXlpzITeYEriw5kZtyIXCVk4jchIm4TWBO2CpDboStV5GduK1gyYnajCB3gtZnAclEzKbEy9wJWZ/FyyxitvKt5UbETryuiHi1LF7nRrhqEm+ziWhNifdTJ1pn571NhVC1yq8JJ1JTEr9OcuI0ZfGrmApxOok/bWoEqVU+y+ZGiFpiSJsaAWrGmEpTEdGZjGFtdic2cxLDiskKgWnVxNC5NsIyVTF6nt0JSavZGV7UWgrxOFXnIcqmXEQs5gnxKJWm3ApxOM04j1RpmkshBNM8OQ/Xrc7mErvecp2s8JAdyzXjIMTeTilbrkk4IwM=",
-		"[leaf-w]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjEyIC01IDI3NiAzMTAiIHdpZHRoPSIyNzYiIGhlaWdodD0iMzEwIiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6MzAwLCJoIjozMDB9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImMxIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoidGV4dCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjpudWxsLCJnZW9tIjp7ImN4IjoxNTAsImN5IjoxNTB9LCJpbmsiOiIjYjMyNjFlIiwibGFiZWwiOiJXIiwidGV4dFNpemUiOjIwMCwidGV4dEZvbnQiOiJsZXR0ZXJzOmxlYWYifV0sInZpZXciOnsieCI6MTIsInkiOi01LCJ3IjoyNzYsImgiOjMxMH19PC9tZXRhZGF0YT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDUwLjQgNDApIiBkPSJNNzgzIDc4Yy02LTEyIDAtMjgtNi00MC0xMCA4LTggMjQtMTcgMzQtNS0xMi0xLTI3LTYtMzktMTggNS0yIDM0LTIwIDQ1LTUtMTEgMC0yMi0zLTM0LTE3IDAtMjQgNzUtMTUgODcgMy0xIDQtMSA2LTMgOC0xMi00LTM0IDktNDEgMTAtNSAyNDgtOSAyNTMtNiA5IDUgOCAxOSA3IDI3LTIgMTktMTE1IDMzLTExNiAxMTcgNi0xIDExLTQgMTctOCAxNSAxMiA3MS0zNCA1Mi0zOS0xOC01LTI5IDktNDAgMTkgMTMtNTMgOTgtMjUgMzcgMTggMTMgMzEgNzggNTIgMjkgOTItNyA1LTIyIDE0LTIwIDIzIDYgNTIgMTAyIDEwOCA0IDIwMi0xMjggMTIzLTE2MC0xMjMtNzYtNjEtOSAxNy00OSAxMy0zNSA0NyA0MyAxMDEgMTQ3LTE0OS0xMS0xNDMtMTMgMS0xNSAyMy0xOCAzMy0xNCA0NC03MCAxNjYtNjMgMjA2IDkxLTYgMTQ5LTExOCAxMjUgNzYgMTQgMiAyOC00IDQyLTcgMTcyLTQwLTg5LTE0NCAyNi00NS01NCA1MC00NC0xMTQgMjktNDIgNTYgNTYtMjMgODUtNjAgMTAzIDIyIDIyIDEwNSAzNiA4MCA5NS0zIDYtNjYtOC04MS0yLTg3IDM3LTEzNyAxMzUtMjQ3IDgyLTEyIDE0LTEwIDMyLTI1IDQzLTE3LTE0LTExLTQyLTI0LTYxLTExLTE1LTM3LTE3LTQ5LTMyLTM1LTQ0LTIwLTk5LTM4LTE0OC04LTIzLTU4LTM0LTU4LTQxIDItMzIgNDAtMzEgNjEtMzQgMi0yNS0yMS0xMDItNDAtMTE3LTEyIDIyLTc3IDIyNi03MyAyNDAgMyA4IDYxIDEwIDc0IDIzIDMxIDMwIDMwIDc5IDYyIDEwNyAxNiAxNCA0MyAzIDU1IDE0LTc1IDY2LTk3LTEzOS0xNzAtMTIzLTY4IDE1LTYxIDE5Mi0xMDkgMTc3LTIxIDIwLTQzIDMyLTY2IDQ3IDI0IDcgMzQtMTIgNTQtMTYgNCA1IDYgOCA5IDE0IDc2LTIgNTItMTAwIDc4LTExMSAxOSAyNSAyNCA2MyA2OSA1NSAxLTE2LTQ2LTY5LTYtNzQgNTAgMTEwIDMxIDk5IDE1MCA2MCAzMyA0NC05NyAzNy0xMTggMzItNy0xLTEwLTEtMTUgMiAxNCAxNyA0MSAyMyA2MiAyOSAxNTggNDcgMjAyLTYzIDMxOC05OCAzMS05IDU3LTggODYgNiA2MSAzMSAyNCAxNDgtNDYgMTIzLTExNC00MCA4MS0zOCAxNC03MS01NS0yNy0xNjAgNjQtMjE4IDc0LTcyIDEzLTE0NCA2LTIwNy0zMi0xNS05LTI5LTI1LTQ2LTI5IDkgNjktMzYgOTAtNjYgMzItMTcgMC0zMiAxNS00OSAxOS02MyAxNS0xMDQtNy0xNTktMjQtMTMgMjQtMjggMzYtNTcgMzctMTA2IDYtNjYtMTE1LTgzLTE3NS01LTE5LTIxLTI1LTI3LTQwIDIxLTI1IDQ3IDAgNzAtMyA4LTI0LTItNTIgOC03OCAyMy02MyA4Ni0xMTQgNjMtMTg3LTQtMTMtMTgtMTktMjItMzEgNDEtNDUgNzYgNzIgNzggOTVsMSAxMSAxIDktMSA2IDAgMiAwIDMtMSA2Yy01IDQzLTIzIDg1LTUgMTI3IDUgOSAxNiAxNCAyNCA2IDEyLTEzLTE4LTQzLTUtNjAgMjMgMTQgNDUgNTcgNjYgNzcgNi0xNC0xMDUtMzk2LTEyNC00MjAtMTAgMjYtNiA1OC0xNyA4Mi0xMyAyNy03NiA5OC0xMDcgODMtMTItNy0yNS0yMC0yNC0zMyA4LTQgMzctMiAzOS0xNCAyLTE4LTMxLTI4LTMzLTQ3LTMtMjUgMzItMzQgMzYtNTQgMi0xMC0xMi0xNC0xNC0yMy0xMy01MSAyLTEzMiA1Ny0xNTEtNiA0OC03NCAxMjQtMjYgMTc3IDYzIDY5IDk5LTU3IDM2LTM4IDIgMTEgMTIgMTMgMTcgMjMtMjkgNDYtNzQtOTMtMTAtMTI5IDUgMjktMjQgNTctMTQgODkgMjEgNCAzNCA1IDU0IDE0LTMtMzgtMzAtMTMyLTU0LTE1NS0zNS0zMy0xMTYtMjEtOTgtODcgMzgtMiA3OSAxMCAxMTUgMiA1LTI1LTM5LTE2LTU1LTE2bC05IDE0Yy00NC0zLTczLTUyLTIwLTcwIDIyLTggNDggNDMgODQgMzYgNDItOCA4Ny00NiAxMzItNDQgMjcgMiA1NSA0OCA3MiA0NSA4NC0xNiAxMDgtNjAgMjEzLTQwIDU3IDEyIDk1IDcwIDEzMSA3NiA0IDE4LTYgMzkgMTAgNTIgOS01MiAxMi0xNDkgOTgtMTI1IDExIDMgMjMgMTkgMzUgMTggMTYtMyAyOC0yMyA0MC0yOSAxNi03IDEyMiAxNyAxMDkgMzgtOCAxNC01OC0xMy03NS0xMi00NCAzLTY0IDM2LTEwMCA1MXpNMTc1IDY5Yy00LTctNy0xMC0xNC0xMy0yNSAyNyAxMyAzOSAzNiAyNyAwLTEzLTMtMjYgNy0zMyA2IDkgNCAyMSA2IDMyIDIyIDMgNy0zMSAyMC00MiA1IDExLTIgMzMgNSA0MyAxIDAgMjkyIDM1IDIwMi01OC0xMCA0LTM4IDUyLTg2IDUyIDktMjAgMzctMjUgNTUtMzUtMjItMTYtNzggMzAtMTA3IDMwIDItMTEgMy0xNi01LTI0LTEyIDUtOSAxNy0xNSAyOC0xMS0xMiA0LTM1LTgtNDUtMzItMjgtODYgMTItOTYgMzh6TTQ2MCA3OWM1MS0xNSA2OC0zMiAxMjgtMjUtMTUtMzctMTM2LTMxLTEyOCAyNXpNNDc4IDgzYzMxIDE0IDczLTQgMTA2IDgtMzcgMjctMTYwIDExLTIwNCAxLTEgMTMgMTEgMTIgMjMgMTggNTAgMjYgNjUgNjggODEgMTE5IDI5IDk4IDE0MyA1MzcgMTc4IDU5MSAzNS0zOCAxNTctNDc5IDE4Mi01NjIgMTMtNDIgMTktODggNDUtMTIzIDEwLTEzIDQwLTI1IDQxLTM4LTI0LTUtMTAxLTktMTE5IDMgMTQgMTYgNDEgMTcgNDIgNDYgMSAyOC0xNDMgNDg4LTE1NCA0OTktMjYtMTUtMzktMTExLTUwLTE0Mi0yNC03MS0xMTgtMjk3LTk5LTM1OSA5LTMzIDUxLTUwIDc3LTU5LTQwLTE3LTExNy00Ni0xNDktMnpNNzA1IDE2NGM0LTE3IDctODAtMy05My0xNiAxNi0xNiA4MyAzIDkzek04NSAxMDNjMTggMTUgNDYgMjYgNjAgNDYgNzYgMTA5IDE0MyA0MTggMTg2IDU1OCAxMiAzOSAxNSA5MiAzNCAxMjYgMjItMzcgMTI2LTM4NyAxMTMtNDA2LTI2IDQxLTUwIDE5OS03NSAyMTYtOS05LTE1MS00NDYtMTUzLTQ3NC0xLTI5IDI3LTUwIDQ1LTY2LTgtNi0yMDAtNi0yMTAgMHpNNjAwIDE5NWMyMi0xNiA0NiA0IDY4IDEyIDMxLTQ2LTQ0LTEyMS05Ni00Ny0xNiAyMyAzOCAyMjYgNzQgMTI3IDQtMTIgMTEtMjIgNS0zNS0xMC0yMi00Ny0zOC01MS01N3pNNzA4IDM5NmMxMS03IDQyLTMyIDQ3LTQzIDEyLTI1LTI2LTU2LTktODkgMTYtMzMgODQtNjggNTktMTEyLTgtMTUtMjAtMjEtMzctMjMtOCAwLTE4LTktMjYtNS0zMSAxOC0zNiAxNDItMzQgMTcyIDMgMzItNyA2OCAwIDEwMHpNMjgyIDIyMmM4LTggMTYtNDUgMzQtMzggMTQgNS0yMCA1My0yMSA2OCAwIDM0IDI3IDEyMyA3MyAxMTAtOTQtMTA4IDM5LTEzOC02LTIxOS0yMi0zOS0xMTkgMTEtODAgNzl6TTM5MiAyOTNjNDUtMjkgNjYgNjIgMTEgODItMjQgOC00OC00LTY5IDEgNyAxOSA1MyAyNSA2OSA0NyAxMSAxNiAxMiA2Ny0xNiA1MSAxNi0zMi00LTc3LTQ1LTcwIDAgMTYgNDUgMTU5IDUyIDE2MyAyMy0zNCA2Ny0xODYgNjctMjI4LTEtNDQtMzYtMTYyLTc2LTE4My03IDEyIDMgMjYtMSA0Mi0xMSA0NC03MCA5MS0yNCAxMzggMTcgMTggNzMgMjUgNjYtMTUtNC0xOS0yOS0xMi0zNC0yOHpNODYzIDM2M2M2LTcgNy0xNSAxMi0yMyA1IDEzLTUgMjYgNiAzNSAxMy0xMCA5LTQwIDIzLTU0IDEzLTEzIDMzLTcgNDgtMjAgMjQtMjEgMjItMzYtMy01Ny02MS01My0xNjEgMTA2LTg2IDExOXpNNjc5IDQzNmMxNy0zNiAyOC0xMTYgOS0xNTEtMzAgMTAtMjUgMTI5LTkgMTUxek02MTggMzQyYy0yIDIzIDI4IDEzMyA0NyAxNDYgNC0xNC03LTE1Ni0xMi0xNjUtMTIgNS0yMyAxMy0zNSAxOXpNODk0IDM4MmM2IDIgOSAyIDE1IDAgMSA2IDEgMTEgMyAxNyA4IDAgOSAwIDE1LTUgMSAxMC0zIDIwIDAgMzBsMTIgMWMtNCAxMi04IDIyLTQgMzRsMTEgMWMtNiAxOS0xNSAzNy0xOSA1NyAzMS0xMiA1Ni01MiA0NS05MmwtNy0zYzItMTYgMTAtMzQtOS00MCAwLTEwIDItMTgtMy0yNi02IDEtNyAwLTEyIDUtOC00OS01NS0xOS00NyAyMXpNNTcgMzc5Yy00NCAyMyAxNyA5OCA2NCA2NCA3LTUgMTMtMTcgMTItMjctMS0yNS0zNCAyNS01NCAxMi0xNC05IDItNjEtMjItNDl6TTY4NSA1NTVjMTAtNiA2Mi0xNjEgNTktMTc2LTM1IDUtNzkgMTQ3LTU5IDE3NnpNNDMgNDkxYzMwIDI5IDQzLTYwIDAgMHpNMTU4IDQ5N2MwIDE4IDE1IDM0IDEzIDU1LTUgNzUtNjYgMTI2LTc4IDIwMS00IDI4IDQ2IDEwNSAzMyAxMTQtMjAtMTEtNDktMTAxLTg2LTc2IDkgNDgtMiAxODggNjkgMTg1IDEzIDAgMzEtMyA0MC0xMiAyMy0yNC00MS02My0yMy02OCAzNS0xMCA0NSA1NiA3OSA1Ni0yLTE3LTIxLTI2LTIyLTQ2IDAtMTcgNzcgMiA5NS0yOSAxOC0zMyAxOC0xMjktMzQtMTM3LTE2LTIgNCA2OC0yIDgxLTEzLTEwIDAtODEtNDQtNTgtMTIgNyAxOSAxMzMtMjAgNzktNTgtODAgNjUtMzEwLTIwLTM0NXpNODQ5IDU4NmMtMzAgMjAtMzkgNzAtNjYgOTcgNy0yMyAzNS00OCAzNC03Mi00MS00LTQ1IDE1LTY2IDQwbC01LTEzYy0xNCA1LTE3IDQ3LTE1IDYxIDIwIDMgMTktMjAgMzMtMjYtMyA5LTggMTctMTEgMjYgMjMgMjggMjAgMTMgNDYgMi0yIDctMyAxMi0yIDE5IDc3IDIzIDk0LTEwNyA1Mi0xMzR6TTUwMyA2MjRjNSA0IDcgNSAxNSA0bDkgMTNjMzgtMTEtMTYtNDUtMjQtMTd6TTg1MiA2MThjLTYgMjctMzEgNjQtNTIgODMgMy0yMCAzNy03NSA1Mi04M3pNNjk2IDgwMGMtMi0zMyA0OS00OSA1Ny03Ni00NC00OC04MiAxMTAtODUgMTM2IDI4IDAgNDItNDUgNjktMzgtNiAxNS0yNCAyNC0yOSAzOSA2LTEgMTEtMyAxNy02LTEgNSAwIDkgMSAxMyAyNS0yIDM4LTQgNjQtMTdsNCA3YzcxLTUgNzEtOTQgMTgyLTgyIDEtMTMtNi0yMy0xNS0zMy02NS03OC0xMDIgMTMtMTUyIDIyLTIyIDUtMS00NC00NS0yNi0yNiAxMC00MyA2My02OCA2MXpNMTgxIDczM2MtMTEgMTYtMTEgNDYtNSA2MyAxNi01IDE4LTUwIDUtNjN6TTU1OSA3NzNsMTIgM2MtMiAxMi03IDE4LTEgMjggNyAwIDEwLTIgMTctNy0zIDIwIDEgMzIgMjAgNDAgMy0xOS0xMS02Ny0yOC03NSAzLTEyIDQtMTctNC0yNy0xNCA3LTIwIDIzLTE2IDM4ek0zMDggODMzYy0yMiA1My0zNiA5OC0xMDcgNzgtMzMgNDMgMTg3IDg5IDEwNy03OHpNNzM0IDk1OGM1NiAxNiAxNTAtMTA0IDIwMS00MCAyNiAzMS0yMCAzNC0zNCA0OCAzOSAyOCA4Mi0zMyA2MC02OS00Mi03Mi0xOTAgMTctMjI3IDYxek00MTEgOTExYy01IDktOCAyMS0xMCAzMmw5IDZjMCA5LTEgMTYgMSAyNSAyOS00IDI0LTUzIDAtNjN6Ii8+PC9nPjwvZz48L3N2Zz4=",
-		"[agent-diagram]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjMwIDMwIDUwOCA2NDgiIHdpZHRoPSI1MDgiIGhlaWdodD0iNjQ4IiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6NTcwLCJoIjo3MTB9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImFzayIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6Mjg0LCJjeSI6ODMuNSwidyI6MTU0LCJoIjo4N30sInNlZWQiOjc4NDI0NTkzNSwiaW5rIjoiI2YwZjBmMCIsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiQXNrIHlvdXIgYWdlbnQgZm9yIGEgZGlhZ3JhbSIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6MTA0LCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6MX0seyJpZCI6ImxheSIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6Mjg0LCJjeSI6MjUwLjUsInciOjEyMSwiaCI6ODd9LCJzZWVkIjoxMjk5NjcyOTY0LCJpbmsiOiIjZjBmMGYwIiwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJSYXBpZXIgbGF5cyBpdCBvdXQiLCJ0ZXh0U2l6ZSI6MTQsImxhYmVsV2lkdGgiOjgwLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6Mn0seyJpZCI6ImtlZXAiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJkaWFtb25kIiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjI4NCwiY3kiOjQyOC41LCJ3IjoyMDAsImgiOjEwOX0sInNlZWQiOjEwNDQ1MzAxMDEsImluayI6IiNmMGYwZjAiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IktlZXAgaXQ/IiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjo3MiwidGV4dEJvbGQiOnRydWUsImxhYmVsSW4iOnRydWV9LHsiaWQiOiJ5b3VycyIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6OTYsImN5Ijo2MTUuNSwidyI6MTEyLCJoIjo4N30sInNlZWQiOjE2MzcxNzM3MDQsImluayI6IiMxMmE1OTQiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IllvdXJzIHRvIGVkaXQiLCJ0ZXh0U2l6ZSI6MTQsImxhYmVsV2lkdGgiOjcyLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6M30seyJpZCI6ImRyb3AiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJyZWN0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjQ3MiwiY3kiOjYxNS41LCJ3IjoxMTIsImgiOjEwNX0sInNlZWQiOjIxODI3MzgxMDEsImluayI6IiNmMGYwZjAiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IkdvbmUsIG5vdGhpbmcgY2hhbmdlZCIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6OTEsImxhYmVsQWxpZ24iOiJzdGFydCIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlLCJzdGVwIjo0fSx7ImlkIjoiZzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjoyODQsInkxIjoxMjcsIngyIjoyODQsInkyIjoyMDd9LCJzZWVkIjo1NTM2NDQyMTYsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJhc2siLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6ImxheSIsImF4IjowLjUsImF5IjowfX19LHsiaWQiOiJnMiIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6ImFycm93IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJhcnJvdyIsImdlb20iOnsieDEiOjI4NCwieTEiOjI5NCwieDIiOjI4NCwieTIiOjM3NH0sInNlZWQiOjM1MzY2NDU1NDMsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJsYXkiLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6ImtlZXAiLCJheCI6MC41LCJheSI6MH19fSx7ImlkIjoiZzMiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjoxODQsInkxIjo0MjguNSwieDIiOjk2LCJ5MiI6NTcyfSwic2VlZCI6MjYwMTczMjY2OSwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJLZWVwIiwidGV4dFNpemUiOjEwLCJsZXR0ZXJTcGFjaW5nIjowLjEyLCJsYWJlbFdpZHRoIjoxNjAsImxhYmVsUG9zIjowLjY2MjYzNDk4OTIwMDg2MzgsInRleHRGb250IjoibW9ubyIsInRleHRDYXNlIjoidXBwZXIiLCJyb3V0ZSI6ImF1dG8iLCJiaW5kIjp7InN0YXJ0Ijp7InRvIjoia2VlcCIsImF4IjowLCJheSI6MC41fSwiZW5kIjp7InRvIjoieW91cnMiLCJheCI6MC41LCJheSI6MH19fSx7ImlkIjoiZzQiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjozODQsInkxIjo0MjguNSwieDIiOjQ3MiwieTIiOjU2M30sInNlZWQiOjIzODk2MTA1NzAsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiRHJvcCIsInRleHRTaXplIjoxMCwibGV0dGVyU3BhY2luZyI6MC4xMiwibGFiZWxXaWR0aCI6MTYwLCJsYWJlbFBvcyI6MC42NjkyMTM0ODMxNDYwNjczLCJ0ZXh0Rm9udCI6Im1vbm8iLCJ0ZXh0Q2FzZSI6InVwcGVyIiwicm91dGUiOiJhdXRvIiwiYmluZCI6eyJzdGFydCI6eyJ0byI6ImtlZXAiLCJheCI6MSwiYXkiOjAuNX0sImVuZCI6eyJ0byI6ImRyb3AiLCJheCI6MC41LCJheSI6MH19fV0sInZpZXciOnsieCI6MzAsInkiOjMwLCJ3Ijo1MDgsImgiOjY0OH19PC9tZXRhZGF0YT48c3R5bGU+QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXtbZmlsbD0iIzEyMTIxMiJde2ZpbGw6I2ZhZmFmYX1bc3Ryb2tlPSIjMTIxMjEyIl17c3Ryb2tlOiNmYWZhZmF9W2ZpbGw9IiNmMGYwZjAiXXtmaWxsOiMxZDFkMWR9W2ZpbGw9IiMxMmE1OTQiXXtmaWxsOiMxMmE1OTR9W2ZpbGw9IiMwMDAwMDAiXXtmaWxsOiMwMDAwMDB9W2ZpbGw9IiM2NjY2NjYiXXtmaWxsOiM5OTk5OTl9fTwvc3R5bGU+PGcgZGF0YS1zaGFwZS1pZD0iYXNrIiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjIwNyIgeT0iNDAiIHdpZHRoPSIxNTQiIGhlaWdodD0iODciIGZpbGw9IiNmMGYwZjAiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik0yMjIgNjAuMDg4TDIyNS4wOCA1NC40NzhMMjI1Ljk2IDU0LjUyMkwyMjIuODggNjAuMTMyWk0yMjMuOTggNjEuMzg2UTIyMy4xMzMgNjEuMzg2IDIyMi41MDYgNjAuODkxUTIyMS44OSA2MC4zOTYgMjIxLjU2IDU5LjQ4M1EyMjEuMjMgNTguNTcgMjIxLjIzIDU3LjMxNlEyMjEuMjMgNTYuMDUxIDIyMS41NiA1NS4xMzhRMjIxLjg5IDU0LjIyNSAyMjIuNTA2IDUzLjczUTIyMy4xMzMgNTMuMjI0IDIyMy45OCA1My4yMjRRMjI0LjgzOCA1My4yMjQgMjI1LjQ1NCA1My43M1EyMjYuMDcgNTQuMjI1IDIyNi40IDU1LjEzOFEyMjYuNzMgNTYuMDUxIDIyNi43MyA1Ny4zMTZRMjI2LjczIDU4LjU3IDIyNi40IDU5LjQ4M1EyMjYuMDcgNjAuMzk2IDIyNS40NTQgNjAuODkxUTIyNC44MzggNjEuMzg2IDIyMy45OCA2MS4zODZaTTIyMy45OCA2MC40NjJRMjI0LjUzIDYwLjQ2MiAyMjQuOTI2IDYwLjA3N1EyMjUuMzExIDU5LjY5MiAyMjUuNTIgNTguOTg4UTIyNS43NCA1OC4yNzMgMjI1Ljc0IDU3LjMxNlEyMjUuNzQgNTYuMzM3IDIyNS41MiA1NS42MjJRMjI1LjMxMSA1NC45MTggMjI0LjkyNiA1NC41MzNRMjI0LjUzIDU0LjE0OCAyMjMuOTggNTQuMTQ4UTIyMy40NDEgNTQuMTQ4IDIyMy4wNDUgNTQuNTMzUTIyMi42NDkgNTQuOTE4IDIyMi40NCA1NS42MjJRMjIyLjIyIDU2LjMzNyAyMjIuMjIgNTcuMzE2UTIyMi4yMiA1OC4yNzMgMjIyLjQ0IDU4Ljk4OFEyMjIuNjQ5IDU5LjY5MiAyMjMuMDQ1IDYwLjA3N1EyMjMuNDQxIDYwLjQ2MiAyMjMuOTggNjAuNDYyWk0yMzAuNDA0IDYxLjIxTDIzMC40MDQgNTUuNDI0TDIyOC4zNTggNTUuNDI0TDIyOC4zNTggNTQuNjFMMjI5LjQxNCA1NC42MVEyMjkuODMyIDU0LjYxIDIzMC4wOTYgNTQuNDg5UTIzMC4zNDkgNTQuMzY4IDIzMC40NyA1NC4xMDRRMjMwLjU4IDUzLjg0IDIzMC41OCA1My40TDIzMS4zNSA1My40TDIzMS4zNSA2MS4yMVpNMjI3Ljk0IDYxLjIxTDIyNy45NCA2MC4yODZMMjMzLjIyIDYwLjI4NkwyMzMuMjIgNjEuMjFaIiBmaWxsPSIjNjY2NjY2Ii8+PHRleHQgeD0iMjIwLjY4IiB5PSI4Ni4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjEwMS4zMzgiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+QXNrIHlvdXIgYWdlbnQ8L3RleHQ+PHRleHQgeD0iMjIwLjY4IiB5PSIxMDQuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI5MC41NjMiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+Zm9yIGEgZGlhZ3JhbTwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0ibGF5IiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjIyMy41IiB5PSIyMDciIHdpZHRoPSIxMjEiIGhlaWdodD0iODciIGZpbGw9IiNmMGYwZjAiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik0yMzguNSAyMjcuMDg4TDI0MS41OCAyMjEuNDc4TDI0Mi40NiAyMjEuNTIyTDIzOS4zOCAyMjcuMTMyWk0yNDAuNDggMjI4LjM4NlEyMzkuNjMzIDIyOC4zODYgMjM5LjAwNiAyMjcuODkxUTIzOC4zOSAyMjcuMzk2IDIzOC4wNiAyMjYuNDgzUTIzNy43MyAyMjUuNTcgMjM3LjczIDIyNC4zMTZRMjM3LjczIDIyMy4wNTEgMjM4LjA2IDIyMi4xMzhRMjM4LjM5IDIyMS4yMjUgMjM5LjAwNiAyMjAuNzNRMjM5LjYzMyAyMjAuMjI0IDI0MC40OCAyMjAuMjI0UTI0MS4zMzggMjIwLjIyNCAyNDEuOTU0IDIyMC43M1EyNDIuNTcgMjIxLjIyNSAyNDIuOSAyMjIuMTM4UTI0My4yMyAyMjMuMDUxIDI0My4yMyAyMjQuMzE2UTI0My4yMyAyMjUuNTcgMjQyLjkgMjI2LjQ4M1EyNDIuNTcgMjI3LjM5NiAyNDEuOTU0IDIyNy44OTFRMjQxLjMzOCAyMjguMzg2IDI0MC40OCAyMjguMzg2Wk0yNDAuNDggMjI3LjQ2MlEyNDEuMDMgMjI3LjQ2MiAyNDEuNDI2IDIyNy4wNzdRMjQxLjgxMSAyMjYuNjkyIDI0Mi4wMiAyMjUuOTg4UTI0Mi4yNCAyMjUuMjczIDI0Mi4yNCAyMjQuMzE2UTI0Mi4yNCAyMjMuMzM3IDI0Mi4wMiAyMjIuNjIyUTI0MS44MTEgMjIxLjkxOCAyNDEuNDI2IDIyMS41MzNRMjQxLjAzIDIyMS4xNDggMjQwLjQ4IDIyMS4xNDhRMjM5Ljk0MSAyMjEuMTQ4IDIzOS41NDUgMjIxLjUzM1EyMzkuMTQ5IDIyMS45MTggMjM4Ljk0IDIyMi42MjJRMjM4LjcyIDIyMy4zMzcgMjM4LjcyIDIyNC4zMTZRMjM4LjcyIDIyNS4yNzMgMjM4Ljk0IDIyNS45ODhRMjM5LjE0OSAyMjYuNjkyIDIzOS41NDUgMjI3LjA3N1EyMzkuOTQxIDIyNy40NjIgMjQwLjQ4IDIyNy40NjJaTTI0NC4zMyAyMjguMjFRMjQ0LjMzIDIyNy4zODUgMjQ0LjU5NCAyMjYuNzE0UTI0NC44NDcgMjI2LjA1NCAyNDUuNDk2IDIyNS40NDlRMjQ2LjE1NiAyMjQuODQ0IDI0Ny4zMjIgMjI0LjIyOFEyNDcuODYxIDIyMy45NDIgMjQ4LjE5MSAyMjMuN1EyNDguNTIxIDIyMy40NTggMjQ4LjY3NSAyMjMuMTgzUTI0OC44MjkgMjIyLjkwOCAyNDguODI5IDIyMi41MTJRMjQ4LjgyOSAyMjIuMTA1IDI0OC42NTMgMjIxLjgwOFEyNDguNDc3IDIyMS41IDI0OC4xMzYgMjIxLjMyNFEyNDcuNzg0IDIyMS4xNDggMjQ3LjI2NyAyMjEuMTQ4UTI0Ni40NDIgMjIxLjE0OCAyNDUuOTU4IDIyMS41NzdRMjQ1LjQ4NSAyMjIuMDA2IDI0NS4zNjQgMjIyLjc5OEwyNDQuMzc0IDIyMi43MzJRMjQ0LjUwNiAyMjEuNTg4IDI0NS4yNTQgMjIwLjkwNlEyNDYuMDAyIDIyMC4yMjQgMjQ3LjI2NyAyMjAuMjI0UTI0OC4wNyAyMjAuMjI0IDI0OC42NDIgMjIwLjUxUTI0OS4yMTQgMjIwLjc5NiAyNDkuNTIyIDIyMS4zMDJRMjQ5LjgxOSAyMjEuODE5IDI0OS44MTkgMjIyLjQ5UTI0OS44MTkgMjIzLjA4NCAyNDkuNjIxIDIyMy41MjRRMjQ5LjQyMyAyMjMuOTUzIDI0OC45NSAyMjQuMzI3UTI0OC40ODggMjI0LjcwMSAyNDcuNjc0IDIyNS4xM1EyNDYuOTcgMjI1LjUwNCAyNDYuNDg2IDIyNS44ODlRMjQ2LjAxMyAyMjYuMjc0IDI0NS43NiAyMjYuNjI2UTI0NS41MTggMjI2Ljk4OSAyNDUuNDk2IDIyNy4yODZMMjQ5LjgzIDIyNy4yODZMMjQ5LjgzIDIyOC4yMVoiIGZpbGw9IiM2NjY2NjYiLz48dGV4dCB4PSIyMzcuMTgiIHk9IjI1My4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjQzLjA5OCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5SYXBpZXI8L3RleHQ+PHRleHQgeD0iMjM3LjE4IiB5PSIyNzEuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI2OC40MzIiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+bGF5cyBpdCBvdXQ8L3RleHQ+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImtlZXAiIGRhdGEtYnJ1c2g9ImluayI+PHBvbHlnb24gcG9pbnRzPSIyODQsMzc0IDM4NCw0MjguNSAyODQsNDgzIDE4NCw0MjguNSIgZmlsbD0iI2YwZjBmMCIgc3Ryb2tlPSJub25lIi8+PHRleHQgeD0iMjU2LjE5IiB5PSI0MzIuNyIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI1NS42MTkiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+S2VlcCBpdD88L3RleHQ+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9InlvdXJzIiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjQwIiB5PSI1NzIiIHdpZHRoPSIxMTIiIGhlaWdodD0iODciIGZpbGw9IiMxMmE1OTQiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik01NSA1OTIuMDg4TDU4LjA4IDU4Ni40NzhMNTguOTYgNTg2LjUyMkw1NS44OCA1OTIuMTMyWk01Ni45OCA1OTMuMzg2UTU2LjEzMyA1OTMuMzg2IDU1LjUwNiA1OTIuODkxUTU0Ljg5IDU5Mi4zOTYgNTQuNTYgNTkxLjQ4M1E1NC4yMyA1OTAuNTcgNTQuMjMgNTg5LjMxNlE1NC4yMyA1ODguMDUxIDU0LjU2IDU4Ny4xMzhRNTQuODkgNTg2LjIyNSA1NS41MDYgNTg1LjczUTU2LjEzMyA1ODUuMjI0IDU2Ljk4IDU4NS4yMjRRNTcuODM4IDU4NS4yMjQgNTguNDU0IDU4NS43M1E1OS4wNyA1ODYuMjI1IDU5LjQgNTg3LjEzOFE1OS43MyA1ODguMDUxIDU5LjczIDU4OS4zMTZRNTkuNzMgNTkwLjU3IDU5LjQgNTkxLjQ4M1E1OS4wNyA1OTIuMzk2IDU4LjQ1NCA1OTIuODkxUTU3LjgzOCA1OTMuMzg2IDU2Ljk4IDU5My4zODZaTTU2Ljk4IDU5Mi40NjJRNTcuNTMgNTkyLjQ2MiA1Ny45MjYgNTkyLjA3N1E1OC4zMTEgNTkxLjY5MiA1OC41MiA1OTAuOTg4UTU4Ljc0IDU5MC4yNzMgNTguNzQgNTg5LjMxNlE1OC43NCA1ODguMzM3IDU4LjUyIDU4Ny42MjJRNTguMzExIDU4Ni45MTggNTcuOTI2IDU4Ni41MzNRNTcuNTMgNTg2LjE0OCA1Ni45OCA1ODYuMTQ4UTU2LjQ0MSA1ODYuMTQ4IDU2LjA0NSA1ODYuNTMzUTU1LjY0OSA1ODYuOTE4IDU1LjQ0IDU4Ny42MjJRNTUuMjIgNTg4LjMzNyA1NS4yMiA1ODkuMzE2UTU1LjIyIDU5MC4yNzMgNTUuNDQgNTkwLjk4OFE1NS42NDkgNTkxLjY5MiA1Ni4wNDUgNTkyLjA3N1E1Ni40NDEgNTkyLjQ2MiA1Ni45OCA1OTIuNDYyWk02My41MTQgNTkzLjM4NlE2Mi4yNDkgNTkzLjM4NiA2MS41NjcgNTkyLjc3UTYwLjg4NSA1OTIuMTY1IDYwLjgzIDU5MS4xOTdMNjEuODA5IDU5MS4xMzFRNjEuODc1IDU5MS44NDYgNjIuMzQ4IDU5Mi4xNTRRNjIuODEgNTkyLjQ2MiA2My41MTQgNTkyLjQ2MlE2My45ODcgNTkyLjQ2MiA2NC40MDUgNTkyLjMzUTY0LjgyMyA1OTIuMTg3IDY1LjA3NiA1OTEuODY4UTY1LjM0IDU5MS41NiA2NS4zNCA1OTEuMDMyUTY1LjM0IDU5MC41MTUgNjUuMTA5IDU5MC4xNzRRNjQuODc4IDU4OS44NDQgNjQuNDgyIDU4OS42OVE2NC4wNzUgNTg5LjUyNSA2My41NjkgNTg5LjUyNUw2Mi45NTMgNTg5LjUyNUw2Mi45NTMgNTg4LjYwMUw2My41NjkgNTg4LjYwMVE2My45NzYgNTg4LjYwMSA2NC4zMTcgNTg4LjQ4UTY0LjY1OCA1ODguMzU5IDY0Ljg1NiA1ODguMDg0UTY1LjA2NSA1ODcuODIgNjUuMDY1IDU4Ny4zOFE2NS4wNjUgNTg2Ljc3NSA2NC42OCA1ODYuNDU2UTY0LjI5NSA1ODYuMTQ4IDYzLjU2OSA1ODYuMTQ4UTYyLjgzMiA1ODYuMTQ4IDYyLjQ1OCA1ODYuNDQ1UTYyLjA3MyA1ODYuNzQyIDYxLjk5NiA1ODcuMjU5TDYxLjAwNiA1ODcuMTkzUTYxLjExNiA1ODYuMzEzIDYxLjc3NiA1ODUuNzc0UTYyLjQzNiA1ODUuMjI0IDYzLjU2OSA1ODUuMjI0UTY0LjMyOCA1ODUuMjI0IDY0Ljg4OSA1ODUuNDg4UTY1LjQ1IDU4NS43NDEgNjUuNzU4IDU4Ni4yMTRRNjYuMDU1IDU4Ni42ODcgNjYuMDU1IDU4Ny4zMzZRNjYuMDU1IDU4OC4wNjIgNjUuNjA0IDU4OC41MDJRNjUuMTQyIDU4OC45NTMgNjQuMjUxIDU4OS4xMThMNjQuMjUxIDU4OC45MlE2NS4yMDggNTg5LjAzIDY1Ljc2OSA1ODkuNjAyUTY2LjMzIDU5MC4xNzQgNjYuMzMgNTkxLjAzMlE2Ni4zMyA1OTEuNzggNjUuOTY3IDU5Mi4zMDhRNjUuNjA0IDU5Mi44MzYgNjQuOTY2IDU5My4xMTFRNjQuMzI4IDU5My4zODYgNjMuNTE0IDU5My4zODZaIiBmaWxsPSIjMDAwMDAwIi8+PHRleHQgeD0iNTMuNjgiIHk9IjYxOC4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMwMDAwMDAiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjM5LjAyMSIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5Zb3VyczwvdGV4dD48dGV4dCB4PSI1My42OCIgeT0iNjM2LjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNDMuOTcxIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPnRvIGVkaXQ8L3RleHQ+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImRyb3AiIGRhdGEtYnJ1c2g9ImluayI+PHJlY3QgeD0iNDE2IiB5PSI1NjMiIHdpZHRoPSIxMTIiIGhlaWdodD0iMTA1IiBmaWxsPSIjZjBmMGYwIiBzdHJva2U9Im5vbmUiLz48cGF0aCBkPSJNNDMxIDU4My4wODhMNDM0LjA4IDU3Ny40NzhMNDM0Ljk2IDU3Ny41MjJMNDMxLjg4IDU4My4xMzJaTTQzMi45OCA1ODQuMzg2UTQzMi4xMzMgNTg0LjM4NiA0MzEuNTA2IDU4My44OTFRNDMwLjg5IDU4My4zOTYgNDMwLjU2IDU4Mi40ODNRNDMwLjIzIDU4MS41NyA0MzAuMjMgNTgwLjMxNlE0MzAuMjMgNTc5LjA1MSA0MzAuNTYgNTc4LjEzOFE0MzAuODkgNTc3LjIyNSA0MzEuNTA2IDU3Ni43M1E0MzIuMTMzIDU3Ni4yMjQgNDMyLjk4IDU3Ni4yMjRRNDMzLjgzOCA1NzYuMjI0IDQzNC40NTQgNTc2LjczUTQzNS4wNyA1NzcuMjI1IDQzNS40IDU3OC4xMzhRNDM1LjczIDU3OS4wNTEgNDM1LjczIDU4MC4zMTZRNDM1LjczIDU4MS41NyA0MzUuNCA1ODIuNDgzUTQzNS4wNyA1ODMuMzk2IDQzNC40NTQgNTgzLjg5MVE0MzMuODM4IDU4NC4zODYgNDMyLjk4IDU4NC4zODZaTTQzMi45OCA1ODMuNDYyUTQzMy41MyA1ODMuNDYyIDQzMy45MjYgNTgzLjA3N1E0MzQuMzExIDU4Mi42OTIgNDM0LjUyIDU4MS45ODhRNDM0Ljc0IDU4MS4yNzMgNDM0Ljc0IDU4MC4zMTZRNDM0Ljc0IDU3OS4zMzcgNDM0LjUyIDU3OC42MjJRNDM0LjMxMSA1NzcuOTE4IDQzMy45MjYgNTc3LjUzM1E0MzMuNTMgNTc3LjE0OCA0MzIuOTggNTc3LjE0OFE0MzIuNDQxIDU3Ny4xNDggNDMyLjA0NSA1NzcuNTMzUTQzMS42NDkgNTc3LjkxOCA0MzEuNDQgNTc4LjYyMlE0MzEuMjIgNTc5LjMzNyA0MzEuMjIgNTgwLjMxNlE0MzEuMjIgNTgxLjI3MyA0MzEuNDQgNTgxLjk4OFE0MzEuNjQ5IDU4Mi42OTIgNDMyLjA0NSA1ODMuMDc3UTQzMi40NDEgNTgzLjQ2MiA0MzIuOTggNTgzLjQ2MlpNNDQwLjU0OCA1ODQuMjFMNDQwLjU0OCA1ODIuNTE2TDQzNi43MiA1ODIuNTE2TDQzNi43MiA1ODEuNjU4TDQ0MC40ODIgNTc2LjRMNDQxLjQ5NCA1NzYuNEw0NDEuNDk0IDU4MS41OTJMNDQyLjQ0IDU4MS41OTJMNDQyLjQ0IDU4Mi41MTZMNDQxLjQ5NCA1ODIuNTE2TDQ0MS40OTQgNTg0LjIxWk00MzcuNjg4IDU4MS41OTJMNDQwLjU0OCA1ODEuNTkyTDQ0MC41NDggNTc3LjcyWiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjQyOS42OCIgeT0iNjA5LjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMzcuMjc0IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPkdvbmUsPC90ZXh0Pjx0ZXh0IHg9IjQyOS42OCIgeT0iNjI3LjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNDkuMjEzIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPm5vdGhpbmc8L3RleHQ+PHRleHQgeD0iNDI5LjY4IiB5PSI2NDUuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI1NS4wMzciIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+Y2hhbmdlZDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzEiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTI4NCAxMjdMMjg0IDE5MyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjI3OSwxOTMgMjg0LDIwNyAyODksMTkzIiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzIiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTI4NCAyOTRMMjg0IDM2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjI3OSwzNjAgMjg0LDM3NCAyODksMzYwIiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzMiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTE4NCA0MjguNUwxMjAuOSA0MjguNUw5NiA0MjguNUw5NiA0NzcuMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iMTM2LjYiLz48cGF0aCBkPSJNOTYgNTEwLjdMOTYgNTU4IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI0Ny4zIi8+PHBvbHlnb24gcG9pbnRzPSI5MSw1NTggOTYsNTcyIDEwMSw1NTgiIGZpbGw9IiMxMjEyMTIiIHN0cm9rZT0ibm9uZSIvPjx0ZXh0IHg9IjgxLjYiIHk9IjQ5Ni45IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgbGV0dGVyLXNwYWNpbmc9IjAuMTJlbSIgdGV4dExlbmd0aD0iMjguOCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5LRUVQPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJnNCIgZGF0YS1icnVzaD0iaW5rIj48cGF0aCBkPSJNMzg0IDQyOC41TDQ0Ny4xIDQyOC41TDQ3MiA0MjguNUw0NzIgNDcyLjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHBhdGhMZW5ndGg9IjEzMi4xIi8+PHBhdGggZD0iTTQ3MiA1MDYuMkw0NzIgNTQ5IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI0Mi44Ii8+PHBvbHlnb24gcG9pbnRzPSI0NjcsNTQ5IDQ3Miw1NjMgNDc3LDU0OSIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PHRleHQgeD0iNDU3LjYiIHk9IjQ5Mi40IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgbGV0dGVyLXNwYWNpbmc9IjAuMTJlbSIgdGV4dExlbmd0aD0iMjguOCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5EUk9QPC90ZXh0PjwvZz48L3N2Zz4=",
-	].join("\n");
+		"[^1]: Footnotes work too. Tap the arrow to return.",
+		"",
+		"## Will",
+		"",
+		"Working with an agent? **Will** lets you mark a section it may edit, only add to, or leave alone. Select the section and tap **W** on the formatting bar. You can always edit it yourself.",
+		"",
+		"[draw-spring]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjEgMyAzNDAgNTgiIHdpZHRoPSIzNDAiIGhlaWdodD0iNTgiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozNDIsImgiOjY0fSwic3Ryb2tlcyI6W3sicHRzIjpbWzI0LDMyLDBdLFszOCwzMy44LDE4XSxbNTIsMzUuNCwzNl0sWzY2LDM2LjcsNTRdLFs4MCwzNy42LDcyXSxbOTQsMzgsOTBdLFsxMDgsMzcuOCwxMDhdLFsxMjIsMzcuMiwxMjZdLFsxMzYsMzYuMSwxNDRdLFsxNTAsMzQuNiwxNjJdLFsxNjQsMzIuOCwxODBdLFsxNzgsMzEuMSwxOThdLFsxOTIsMjkuMywyMTZdLFsyMDYsMjcuOSwyMzRdLFsyMjAsMjYuOCwyNTJdLFsyMzQsMjYuMSwyNzBdLFsyNDgsMjYsMjg4XSxbMjYyLDI2LjQsMzA2XSxbMjc2LDI3LjQsMzI0XSxbMjkwLDI4LjcsMzQyXSxbMzA0LDMwLjMsMzYwXSxbMzE4LDMyLjEsMzc4XV19XSwic2hhcGVzIjpbeyJpZCI6InNwcmluZyIsInN0cm9rZSI6MCwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoic3ByaW5nIiwic3R5bGUiOm51bGwsImdlb20iOm51bGwsIm5pYiI6OX1dLCJ0b29sIjoic2VsZWN0IiwidmlldyI6eyJ4IjoxLCJ5IjozLCJ3IjozNDAsImgiOjU4fX08L21ldGFkYXRhPjxzdHlsZT5AbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOmRhcmspe1tzdHJva2U9IiMxMjEyMTIiXXtzdHJva2U6I2ZhZmFmYX19PC9zdHlsZT48ZyBkYXRhLXNoYXBlLWlkPSJzcHJpbmciIGRhdGEtYnJ1c2g9InNwcmluZyI+PHBhdGggZD0iTTI0IDMyIEwyNS41NiAzNy4xNCBMMjcuNDIgMzkuOTcgTDI5LjczIDM5LjI5IEwzMi40MyAzNS41NCBMMzUuMjggMzAuNjUgTDM3LjkzIDI3LjA3IEw0MC4xNiAyNi42IEw0Mi4wMSAyOS42MSBMNDMuNjQgMzQuOCBMNDUuMjggMzkuODMgTDQ3LjIgNDIuNDIgTDQ5LjU0IDQxLjQ3IEw1Mi4yMiAzNy41MyBMNTQuOTEgMzIuNTYgTDU3LjQ1IDI5LjA1IEw1OS42OSAyOC43NiBMNjEuNjEgMzEuOTQgTDYzLjMzIDM3LjE2IEw2NS4xNiA0Mi4wNiBMNjcuMjkgNDQuMzUgTDY5LjYgNDMuMDUgTDcyLjA4IDM4Ljg1IEw3NC42MSAzMy44MyBMNzcuMDMgMzAuNDIgTDc5LjE5IDMwLjMxIEw4MS4xNCAzMy41OSBMODMuMTYgMzguNzUgTDg1LjIzIDQzLjQxIEw4Ny4zNyA0NS4zOCBMODkuNjIgNDMuNzYgTDkxLjk2IDM5LjM1IEw5NC4yMiAzNC4yNiBMOTYuMyAzMC44NiBMOTguNSAzMC44MyBMMTAwLjc1IDM0LjE3IEwxMDMuMDMgMzkuMjggTDEwNS4zIDQzLjczIEwxMDcuNiA0NS4zNyBMMTA5Ljg0IDQzLjM4IEwxMTEuODYgMzguNyBMMTEzLjg0IDMzLjUxIEwxMTUuOTEgMzAuMjMgTDExOC4xMiAzMC4zOCBMMTIwLjQ1IDMzLjg0IEwxMjIuOTQgMzguODkgTDEyNS40OSA0My4wNSBMMTI3LjggNDQuMzIgTDEyOS44MyA0Mi4wMiBMMTMxLjY2IDM3LjE1IEwxMzMuNDYgMzEuOTUgTDEzNS4zMiAyOC44MSBMMTM3LjQ2IDI5LjA3IEwxNDAuMDUgMzIuNTUgTDE0Mi43OSAzNy40OSBMMTQ1LjQzIDQxLjQzIEwxNDcuNzUgNDIuNCBMMTQ5LjcyIDM5LjgyIEwxNTEuMzcgMzQuNzggTDE1Mi45MiAyOS41NyBMMTU0Ljc1IDI2LjUzIEwxNTcuMDMgMjYuOTcgTDE1OS43MSAzMC41NSBMMTYyLjU2IDM1LjQ0IEwxNjUuMjQgMzkuMTkgTDE2Ny41MyAzOS44OSBMMTY5LjQgMzcuMDggTDE3MSAzMS45NSBMMTcyLjYgMjYuODIgTDE3NC40NyAyNC4wMSBMMTc2Ljc2IDI0LjcxIEwxNzkuNDQgMjguNDYgTDE4Mi4yOSAzMy4zNSBMMTg0Ljk3IDM2LjkzIEwxODcuMjUgMzcuMzcgTDE4OS4wOCAzNC4zMyBMMTkwLjYzIDI5LjEyIEwxOTIuMyAyNC4wOCBMMTk0LjMgMjEuNTEgTDE5Ni42MiAyMi41IEwxOTkuMjMgMjYuNDcgTDIwMS45NCAzMS40MiBMMjA0LjUgMzQuOTEgTDIwNi42NiAzNS4xOSBMMjA4LjU1IDMyLjA1IEwyMTAuMzUgMjYuODUgTDIxMi4xOCAyMS45OCBMMjE0LjIxIDE5LjY4IEwyMTYuNTIgMjAuOTUgTDIxOS4wNyAyNS4xMSBMMjIxLjU4IDMwLjE1IEwyMjMuOTQgMzMuNTkgTDIyNi4xNSAzMy43MiBMMjI4LjE5IDMwLjQzIEwyMzAuMTQgMjUuMjMgTDIzMi4xNCAyMC41MyBMMjM0LjQyIDE4LjUzIEwyMzYuNzUgMjAuMTkgTDIzOC45OSAyNC42NSBMMjQxLjIzIDI5Ljc4IEwyNDMuNDUgMzMuMTQgTDI0NS42NiAzMy4xMiBMMjQ3Ljc4IDI5LjczIEwyNTAuMDUgMjQuNjUgTDI1Mi4zOCAyMC4yNCBMMjU0LjYzIDE4LjYyIEwyNTYuNzggMjAuNTkgTDI1OC44NSAyNS4yNSBMMjYwLjg2IDMwLjQxIEwyNjIuNzggMzMuNjkgTDI2NC45MiAzMy42IEwyNjcuMzcgMzAuMjEgTDI2OS45NCAyNS4yIEwyNzIuNDUgMjEuMDMgTDI3NC43NiAxOS43NCBMMjc2Ljg2IDIyLjA0IEwyNzguNjcgMjYuOTQgTDI4MC4zOSAzMi4xNiBMMjgyLjMxIDM1LjM0IEwyODQuNTUgMzUuMDUgTDI4Ny4wOSAzMS41NCBMMjg5Ljc4IDI2LjU3IEwyOTIuNDYgMjIuNjMgTDI5NC44IDIxLjY4IEwyOTYuNzIgMjQuMjcgTDI5OC4zNiAyOS4zIEwyOTkuOTkgMzQuNDkgTDMwMS44NCAzNy41IEwzMDQuMDcgMzcuMDMgTDMwNi43MiAzMy40NSBMMzA5LjU3IDI4LjU2IEwzMTIuMjcgMjQuODEgTDMxNC41OCAyNC4xMyBMMzE2LjQ0IDI2Ljk2IEwzMTggMzIuMSAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvZz48L3N2Zz4=",
+		"[rapier-logo]: data:image/jxl;base64,/wr4BX6BBcWNCAgQAHgJWUCoAEmimIhjGMcBQEDJJEiQaFnLAjy5F/VxJtghJgHANu3f17alSqptCuWkaYNef9Gm07elXDbkgwaFMocwJEhKYo6TyX6w3sdbs+7b4fjQ6My9h7mN5riuz8m67saHk5nxHTVrjHEs6koX/ZLuLoqyn6GAorm8bKjLaguKsm2gbYridZoqi6IoC2VRWckECcYRhDBsDSIr8iwhqATR1CIEEZFv/9N9Sf7KWX7HrDNq4k/+bcXGTQor3R8vOX7NbqwqRj0d7tnqGea6nf5E95X5OM92R6NDyTN9Zs81jPMlYug/E7s5Pl4bHXQ5QOgyG24Lwzx7vsBlDXw83CQGCL1aJgba8BW6s+XHRMNECqFjiz6K4+fC5gCCulrD95mKGUFhneFbU43myk6L0noDJlKYUVofLHI4htZamBpMCFpriW5AI2+xcKbHxfN5PnBDI9sdi9Hj1HAHz37diPAcr6kvhfMs/DmHizDOSfqsXz3P8eLMY/no8RqPxfNqcSjgHI3y6MwOhPttLctZruhmMMJzSHAfbxuvQD/N4nh0m7iv25tEQ090WVe+oqLGCq8hv6Cjk+HVbkNLhVfZd0JxZapb0dw2URTX1gQ0N3o0guamcmjudeuC5haPo7ohvqK4Ln5Gc9e0oLmRFKq75B2aGymhusvNobmSRncni+aaE6prETTX8G/qN9iQtPSY8Xxe3mhzhn5Te1dGvNSksFg6FH4Xod/1dJwhj18NA1hBbGXE54wwglNgyGeG0ArCiJuFIZwYc2MYQRHGXPjL0/d+mzRf/+UijHkVI2j57zcC",
+		"[leaf-w]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQ5IDM4IDIwMyAyMDQiIHdpZHRoPSIyMDMiIGhlaWdodD0iMjA0IiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6MzAwLCJoIjozMDB9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImMxIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoidGV4dCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjpudWxsLCJnZW9tIjp7ImN4IjoxNTAsImN5IjoxNTB9LCJpbmsiOiIjYjMyNjFlIiwibGFiZWwiOiJXIiwidGV4dFNpemUiOjIwMCwidGV4dEZvbnQiOiJsZXR0ZXJzOmxlYWYifV0sInZpZXciOnsieCI6NDksInkiOjM4LCJ3IjoyMDMsImgiOjIwNH19PC9tZXRhZGF0YT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDUwLjQgNDApIiBkPSJNNzgzIDc4Yy02LTEyIDAtMjgtNi00MC0xMCA4LTggMjQtMTcgMzQtNS0xMi0xLTI3LTYtMzktMTggNS0yIDM0LTIwIDQ1LTUtMTEgMC0yMi0zLTM0LTE3IDAtMjQgNzUtMTUgODcgMy0xIDQtMSA2LTMgOC0xMi00LTM0IDktNDEgMTAtNSAyNDgtOSAyNTMtNiA5IDUgOCAxOSA3IDI3LTIgMTktMTE1IDMzLTExNiAxMTcgNi0xIDExLTQgMTctOCAxNSAxMiA3MS0zNCA1Mi0zOS0xOC01LTI5IDktNDAgMTkgMTMtNTMgOTgtMjUgMzcgMTggMTMgMzEgNzggNTIgMjkgOTItNyA1LTIyIDE0LTIwIDIzIDYgNTIgMTAyIDEwOCA0IDIwMi0xMjggMTIzLTE2MC0xMjMtNzYtNjEtOSAxNy00OSAxMy0zNSA0NyA0MyAxMDEgMTQ3LTE0OS0xMS0xNDMtMTMgMS0xNSAyMy0xOCAzMy0xNCA0NC03MCAxNjYtNjMgMjA2IDkxLTYgMTQ5LTExOCAxMjUgNzYgMTQgMiAyOC00IDQyLTcgMTcyLTQwLTg5LTE0NCAyNi00NS01NCA1MC00NC0xMTQgMjktNDIgNTYgNTYtMjMgODUtNjAgMTAzIDIyIDIyIDEwNSAzNiA4MCA5NS0zIDYtNjYtOC04MS0yLTg3IDM3LTEzNyAxMzUtMjQ3IDgyLTEyIDE0LTEwIDMyLTI1IDQzLTE3LTE0LTExLTQyLTI0LTYxLTExLTE1LTM3LTE3LTQ5LTMyLTM1LTQ0LTIwLTk5LTM4LTE0OC04LTIzLTU4LTM0LTU4LTQxIDItMzIgNDAtMzEgNjEtMzQgMi0yNS0yMS0xMDItNDAtMTE3LTEyIDIyLTc3IDIyNi03MyAyNDAgMyA4IDYxIDEwIDc0IDIzIDMxIDMwIDMwIDc5IDYyIDEwNyAxNiAxNCA0MyAzIDU1IDE0LTc1IDY2LTk3LTEzOS0xNzAtMTIzLTY4IDE1LTYxIDE5Mi0xMDkgMTc3LTIxIDIwLTQzIDMyLTY2IDQ3IDI0IDcgMzQtMTIgNTQtMTYgNCA1IDYgOCA5IDE0IDc2LTIgNTItMTAwIDc4LTExMSAxOSAyNSAyNCA2MyA2OSA1NSAxLTE2LTQ2LTY5LTYtNzQgNTAgMTEwIDMxIDk5IDE1MCA2MCAzMyA0NC05NyAzNy0xMTggMzItNy0xLTEwLTEtMTUgMiAxNCAxNyA0MSAyMyA2MiAyOSAxNTggNDcgMjAyLTYzIDMxOC05OCAzMS05IDU3LTggODYgNiA2MSAzMSAyNCAxNDgtNDYgMTIzLTExNC00MCA4MS0zOCAxNC03MS01NS0yNy0xNjAgNjQtMjE4IDc0LTcyIDEzLTE0NCA2LTIwNy0zMi0xNS05LTI5LTI1LTQ2LTI5IDkgNjktMzYgOTAtNjYgMzItMTcgMC0zMiAxNS00OSAxOS02MyAxNS0xMDQtNy0xNTktMjQtMTMgMjQtMjggMzYtNTcgMzctMTA2IDYtNjYtMTE1LTgzLTE3NS01LTE5LTIxLTI1LTI3LTQwIDIxLTI1IDQ3IDAgNzAtMyA4LTI0LTItNTIgOC03OCAyMy02MyA4Ni0xMTQgNjMtMTg3LTQtMTMtMTgtMTktMjItMzEgNDEtNDUgNzYgNzIgNzggOTVsMSAxMSAxIDktMSA2IDAgMiAwIDMtMSA2Yy01IDQzLTIzIDg1LTUgMTI3IDUgOSAxNiAxNCAyNCA2IDEyLTEzLTE4LTQzLTUtNjAgMjMgMTQgNDUgNTcgNjYgNzcgNi0xNC0xMDUtMzk2LTEyNC00MjAtMTAgMjYtNiA1OC0xNyA4Mi0xMyAyNy03NiA5OC0xMDcgODMtMTItNy0yNS0yMC0yNC0zMyA4LTQgMzctMiAzOS0xNCAyLTE4LTMxLTI4LTMzLTQ3LTMtMjUgMzItMzQgMzYtNTQgMi0xMC0xMi0xNC0xNC0yMy0xMy01MSAyLTEzMiA1Ny0xNTEtNiA0OC03NCAxMjQtMjYgMTc3IDYzIDY5IDk5LTU3IDM2LTM4IDIgMTEgMTIgMTMgMTcgMjMtMjkgNDYtNzQtOTMtMTAtMTI5IDUgMjktMjQgNTctMTQgODkgMjEgNCAzNCA1IDU0IDE0LTMtMzgtMzAtMTMyLTU0LTE1NS0zNS0zMy0xMTYtMjEtOTgtODcgMzgtMiA3OSAxMCAxMTUgMiA1LTI1LTM5LTE2LTU1LTE2bC05IDE0Yy00NC0zLTczLTUyLTIwLTcwIDIyLTggNDggNDMgODQgMzYgNDItOCA4Ny00NiAxMzItNDQgMjcgMiA1NSA0OCA3MiA0NSA4NC0xNiAxMDgtNjAgMjEzLTQwIDU3IDEyIDk1IDcwIDEzMSA3NiA0IDE4LTYgMzkgMTAgNTIgOS01MiAxMi0xNDkgOTgtMTI1IDExIDMgMjMgMTkgMzUgMTggMTYtMyAyOC0yMyA0MC0yOSAxNi03IDEyMiAxNyAxMDkgMzgtOCAxNC01OC0xMy03NS0xMi00NCAzLTY0IDM2LTEwMCA1MXpNMTc1IDY5Yy00LTctNy0xMC0xNC0xMy0yNSAyNyAxMyAzOSAzNiAyNyAwLTEzLTMtMjYgNy0zMyA2IDkgNCAyMSA2IDMyIDIyIDMgNy0zMSAyMC00MiA1IDExLTIgMzMgNSA0MyAxIDAgMjkyIDM1IDIwMi01OC0xMCA0LTM4IDUyLTg2IDUyIDktMjAgMzctMjUgNTUtMzUtMjItMTYtNzggMzAtMTA3IDMwIDItMTEgMy0xNi01LTI0LTEyIDUtOSAxNy0xNSAyOC0xMS0xMiA0LTM1LTgtNDUtMzItMjgtODYgMTItOTYgMzh6TTQ2MCA3OWM1MS0xNSA2OC0zMiAxMjgtMjUtMTUtMzctMTM2LTMxLTEyOCAyNXpNNDc4IDgzYzMxIDE0IDczLTQgMTA2IDgtMzcgMjctMTYwIDExLTIwNCAxLTEgMTMgMTEgMTIgMjMgMTggNTAgMjYgNjUgNjggODEgMTE5IDI5IDk4IDE0MyA1MzcgMTc4IDU5MSAzNS0zOCAxNTctNDc5IDE4Mi01NjIgMTMtNDIgMTktODggNDUtMTIzIDEwLTEzIDQwLTI1IDQxLTM4LTI0LTUtMTAxLTktMTE5IDMgMTQgMTYgNDEgMTcgNDIgNDYgMSAyOC0xNDMgNDg4LTE1NCA0OTktMjYtMTUtMzktMTExLTUwLTE0Mi0yNC03MS0xMTgtMjk3LTk5LTM1OSA5LTMzIDUxLTUwIDc3LTU5LTQwLTE3LTExNy00Ni0xNDktMnpNNzA1IDE2NGM0LTE3IDctODAtMy05My0xNiAxNi0xNiA4MyAzIDkzek04NSAxMDNjMTggMTUgNDYgMjYgNjAgNDYgNzYgMTA5IDE0MyA0MTggMTg2IDU1OCAxMiAzOSAxNSA5MiAzNCAxMjYgMjItMzcgMTI2LTM4NyAxMTMtNDA2LTI2IDQxLTUwIDE5OS03NSAyMTYtOS05LTE1MS00NDYtMTUzLTQ3NC0xLTI5IDI3LTUwIDQ1LTY2LTgtNi0yMDAtNi0yMTAgMHpNNjAwIDE5NWMyMi0xNiA0NiA0IDY4IDEyIDMxLTQ2LTQ0LTEyMS05Ni00Ny0xNiAyMyAzOCAyMjYgNzQgMTI3IDQtMTIgMTEtMjIgNS0zNS0xMC0yMi00Ny0zOC01MS01N3pNNzA4IDM5NmMxMS03IDQyLTMyIDQ3LTQzIDEyLTI1LTI2LTU2LTktODkgMTYtMzMgODQtNjggNTktMTEyLTgtMTUtMjAtMjEtMzctMjMtOCAwLTE4LTktMjYtNS0zMSAxOC0zNiAxNDItMzQgMTcyIDMgMzItNyA2OCAwIDEwMHpNMjgyIDIyMmM4LTggMTYtNDUgMzQtMzggMTQgNS0yMCA1My0yMSA2OCAwIDM0IDI3IDEyMyA3MyAxMTAtOTQtMTA4IDM5LTEzOC02LTIxOS0yMi0zOS0xMTkgMTEtODAgNzl6TTM5MiAyOTNjNDUtMjkgNjYgNjIgMTEgODItMjQgOC00OC00LTY5IDEgNyAxOSA1MyAyNSA2OSA0NyAxMSAxNiAxMiA2Ny0xNiA1MSAxNi0zMi00LTc3LTQ1LTcwIDAgMTYgNDUgMTU5IDUyIDE2MyAyMy0zNCA2Ny0xODYgNjctMjI4LTEtNDQtMzYtMTYyLTc2LTE4My03IDEyIDMgMjYtMSA0Mi0xMSA0NC03MCA5MS0yNCAxMzggMTcgMTggNzMgMjUgNjYtMTUtNC0xOS0yOS0xMi0zNC0yOHpNODYzIDM2M2M2LTcgNy0xNSAxMi0yMyA1IDEzLTUgMjYgNiAzNSAxMy0xMCA5LTQwIDIzLTU0IDEzLTEzIDMzLTcgNDgtMjAgMjQtMjEgMjItMzYtMy01Ny02MS01My0xNjEgMTA2LTg2IDExOXpNNjc5IDQzNmMxNy0zNiAyOC0xMTYgOS0xNTEtMzAgMTAtMjUgMTI5LTkgMTUxek02MTggMzQyYy0yIDIzIDI4IDEzMyA0NyAxNDYgNC0xNC03LTE1Ni0xMi0xNjUtMTIgNS0yMyAxMy0zNSAxOXpNODk0IDM4MmM2IDIgOSAyIDE1IDAgMSA2IDEgMTEgMyAxNyA4IDAgOSAwIDE1LTUgMSAxMC0zIDIwIDAgMzBsMTIgMWMtNCAxMi04IDIyLTQgMzRsMTEgMWMtNiAxOS0xNSAzNy0xOSA1NyAzMS0xMiA1Ni01MiA0NS05MmwtNy0zYzItMTYgMTAtMzQtOS00MCAwLTEwIDItMTgtMy0yNi02IDEtNyAwLTEyIDUtOC00OS01NS0xOS00NyAyMXpNNTcgMzc5Yy00NCAyMyAxNyA5OCA2NCA2NCA3LTUgMTMtMTcgMTItMjctMS0yNS0zNCAyNS01NCAxMi0xNC05IDItNjEtMjItNDl6TTY4NSA1NTVjMTAtNiA2Mi0xNjEgNTktMTc2LTM1IDUtNzkgMTQ3LTU5IDE3NnpNNDMgNDkxYzMwIDI5IDQzLTYwIDAgMHpNMTU4IDQ5N2MwIDE4IDE1IDM0IDEzIDU1LTUgNzUtNjYgMTI2LTc4IDIwMS00IDI4IDQ2IDEwNSAzMyAxMTQtMjAtMTEtNDktMTAxLTg2LTc2IDkgNDgtMiAxODggNjkgMTg1IDEzIDAgMzEtMyA0MC0xMiAyMy0yNC00MS02My0yMy02OCAzNS0xMCA0NSA1NiA3OSA1Ni0yLTE3LTIxLTI2LTIyLTQ2IDAtMTcgNzcgMiA5NS0yOSAxOC0zMyAxOC0xMjktMzQtMTM3LTE2LTIgNCA2OC0yIDgxLTEzLTEwIDAtODEtNDQtNTgtMTIgNyAxOSAxMzMtMjAgNzktNTgtODAgNjUtMzEwLTIwLTM0NXpNODQ5IDU4NmMtMzAgMjAtMzkgNzAtNjYgOTcgNy0yMyAzNS00OCAzNC03Mi00MS00LTQ1IDE1LTY2IDQwbC01LTEzYy0xNCA1LTE3IDQ3LTE1IDYxIDIwIDMgMTktMjAgMzMtMjYtMyA5LTggMTctMTEgMjYgMjMgMjggMjAgMTMgNDYgMi0yIDctMyAxMi0yIDE5IDc3IDIzIDk0LTEwNyA1Mi0xMzR6TTUwMyA2MjRjNSA0IDcgNSAxNSA0bDkgMTNjMzgtMTEtMTYtNDUtMjQtMTd6TTg1MiA2MThjLTYgMjctMzEgNjQtNTIgODMgMy0yMCAzNy03NSA1Mi04M3pNNjk2IDgwMGMtMi0zMyA0OS00OSA1Ny03Ni00NC00OC04MiAxMTAtODUgMTM2IDI4IDAgNDItNDUgNjktMzgtNiAxNS0yNCAyNC0yOSAzOSA2LTEgMTEtMyAxNy02LTEgNSAwIDkgMSAxMyAyNS0yIDM4LTQgNjQtMTdsNCA3YzcxLTUgNzEtOTQgMTgyLTgyIDEtMTMtNi0yMy0xNS0zMy02NS03OC0xMDIgMTMtMTUyIDIyLTIyIDUtMS00NC00NS0yNi0yNiAxMC00MyA2My02OCA2MXpNMTgxIDczM2MtMTEgMTYtMTEgNDYtNSA2MyAxNi01IDE4LTUwIDUtNjN6TTU1OSA3NzNsMTIgM2MtMiAxMi03IDE4LTEgMjggNyAwIDEwLTIgMTctNy0zIDIwIDEgMzIgMjAgNDAgMy0xOS0xMS02Ny0yOC03NSAzLTEyIDQtMTctNC0yNy0xNCA3LTIwIDIzLTE2IDM4ek0zMDggODMzYy0yMiA1My0zNiA5OC0xMDcgNzgtMzMgNDMgMTg3IDg5IDEwNy03OHpNNzM0IDk1OGM1NiAxNiAxNTAtMTA0IDIwMS00MCAyNiAzMS0yMCAzNC0zNCA0OCAzOSAyOCA4Mi0zMyA2MC02OS00Mi03Mi0xOTAgMTctMjI3IDYxek00MTEgOTExYy01IDktOCAyMS0xMCAzMmw5IDZjMCA5LTEgMTYgMSAyNSAyOS00IDI0LTUzIDAtNjN6Ii8+PC9nPjwvZz48L3N2Zz4=",
+		"[agent-diagram]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjMwIDMwIDUwOCA2NzIiIHdpZHRoPSI1MDgiIGhlaWdodD0iNjcyIiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6NTcwLCJoIjo3MzR9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImFzayIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6Mjg0LCJjeSI6ODcuNSwidyI6MTU0LCJoIjo5NX0sInNlZWQiOjc4NDI0NTkzNSwiaW5rIjoiI2YwZjBmMCIsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiQXNrIHlvdXIgYWdlbnQgZm9yIGEgZGlhZ3JhbSIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6MTA0LCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6MX0seyJpZCI6ImxheSIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6Mjg0LCJjeSI6MjYyLjUsInciOjEyMSwiaCI6OTV9LCJzZWVkIjoxMjk5NjcyOTY0LCJpbmsiOiIjZjBmMGYwIiwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJSYXBpZXIgbGF5cyBpdCBvdXQiLCJ0ZXh0U2l6ZSI6MTQsImxhYmVsV2lkdGgiOjgwLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6Mn0seyJpZCI6ImtlZXAiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJkaWFtb25kIiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjI4NCwiY3kiOjQ0NC41LCJ3IjoyMDAsImgiOjEwOX0sInNlZWQiOjEwNDQ1MzAxMDEsImluayI6IiNmMGYwZjAiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IktlZXAgaXQ/IiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjo3MiwidGV4dEJvbGQiOnRydWUsImxhYmVsSW4iOnRydWV9LHsiaWQiOiJ5b3VycyIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6OTYsImN5Ijo2MzUuNSwidyI6MTEyLCJoIjo5NX0sInNlZWQiOjE2MzcxNzM3MDQsImluayI6IiMxMmE1OTQiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IllvdXJzIHRvIGVkaXQiLCJ0ZXh0U2l6ZSI6MTQsImxhYmVsV2lkdGgiOjcyLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6M30seyJpZCI6ImRyb3AiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJyZWN0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjQ3MiwiY3kiOjYzNS41LCJ3IjoxMTIsImgiOjExM30sInNlZWQiOjIxODI3MzgxMDEsImluayI6IiNmMGYwZjAiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IkdvbmUsIG5vdGhpbmcgY2hhbmdlZCIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6OTEsImxhYmVsQWxpZ24iOiJzdGFydCIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlLCJzdGVwIjo0fSx7ImlkIjoiZzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjoyODQsInkxIjoxMzUsIngyIjoyODQsInkyIjoyMTV9LCJzZWVkIjo1NTM2NDQyMTYsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJhc2siLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6ImxheSIsImF4IjowLjUsImF5IjowfX19LHsiaWQiOiJnMiIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6ImFycm93IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJhcnJvdyIsImdlb20iOnsieDEiOjI4NCwieTEiOjMxMCwieDIiOjI4NCwieTIiOjM5MH0sInNlZWQiOjM1MzY2NDU1NDMsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJsYXkiLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6ImtlZXAiLCJheCI6MC41LCJheSI6MH19fSx7ImlkIjoiZzMiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjoxODQsInkxIjo0NDQuNSwieDIiOjk2LCJ5MiI6NTg4fSwic2VlZCI6MjYwMTczMjY2OSwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJLZWVwIiwidGV4dFNpemUiOjEwLCJsZXR0ZXJTcGFjaW5nIjowLjEyLCJsYWJlbFdpZHRoIjoxNjAsImxhYmVsUG9zIjowLjY2MjYzNDk4OTIwMDg2MzgsInRleHRGb250IjoibW9ubyIsInRleHRDYXNlIjoidXBwZXIiLCJyb3V0ZSI6ImF1dG8iLCJiaW5kIjp7InN0YXJ0Ijp7InRvIjoia2VlcCIsImF4IjowLCJheSI6MC41fSwiZW5kIjp7InRvIjoieW91cnMiLCJheCI6MC41LCJheSI6MH19fSx7ImlkIjoiZzQiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjozODQsInkxIjo0NDQuNSwieDIiOjQ3MiwieTIiOjU3OX0sInNlZWQiOjIzODk2MTA1NzAsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiRHJvcCIsInRleHRTaXplIjoxMCwibGV0dGVyU3BhY2luZyI6MC4xMiwibGFiZWxXaWR0aCI6MTYwLCJsYWJlbFBvcyI6MC42NjkyMTM0ODMxNDYwNjczLCJ0ZXh0Rm9udCI6Im1vbm8iLCJ0ZXh0Q2FzZSI6InVwcGVyIiwicm91dGUiOiJhdXRvIiwiYmluZCI6eyJzdGFydCI6eyJ0byI6ImtlZXAiLCJheCI6MSwiYXkiOjAuNX0sImVuZCI6eyJ0byI6ImRyb3AiLCJheCI6MC41LCJheSI6MH19fV0sInZpZXciOnsieCI6MzAsInkiOjMwLCJ3Ijo1MDgsImgiOjY3Mn19PC9tZXRhZGF0YT48c3R5bGU+QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXtbZmlsbD0iIzEyMTIxMiJde2ZpbGw6I2ZhZmFmYX1bc3Ryb2tlPSIjMTIxMjEyIl17c3Ryb2tlOiNmYWZhZmF9W2ZpbGw9IiNmMGYwZjAiXXtmaWxsOiMxZDFkMWR9W2ZpbGw9IiMxMmE1OTQiXXtmaWxsOiMxMmE1OTR9W2ZpbGw9IiMwMDAwMDAiXXtmaWxsOiMwMDAwMDB9W2ZpbGw9IiM2NjY2NjYiXXtmaWxsOiM5OTk5OTl9fTwvc3R5bGU+PGcgZGF0YS1zaGFwZS1pZD0iYXNrIiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjIwNyIgeT0iNDAiIHdpZHRoPSIxNTQiIGhlaWdodD0iOTUiIGZpbGw9IiNmMGYwZjAiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik0yMjMuMzIgNjYuNzc2TDIyOS40OCA1NS41NTZMMjMxLjI0IDU1LjY0NEwyMjUuMDggNjYuODY0Wk0yMjcuMjggNjkuMzcyUTIyNS41ODYgNjkuMzcyIDIyNC4zMzIgNjguMzgyUTIyMy4xIDY3LjM5MiAyMjIuNDQgNjUuNTY2UTIyMS43OCA2My43NCAyMjEuNzggNjEuMjMyUTIyMS43OCA1OC43MDIgMjIyLjQ0IDU2Ljg3NlEyMjMuMSA1NS4wNSAyMjQuMzMyIDU0LjA2UTIyNS41ODYgNTMuMDQ4IDIyNy4yOCA1My4wNDhRMjI4Ljk5NiA1My4wNDggMjMwLjIyOCA1NC4wNlEyMzEuNDYgNTUuMDUgMjMyLjEyIDU2Ljg3NlEyMzIuNzggNTguNzAyIDIzMi43OCA2MS4yMzJRMjMyLjc4IDYzLjc0IDIzMi4xMiA2NS41NjZRMjMxLjQ2IDY3LjM5MiAyMzAuMjI4IDY4LjM4MlEyMjguOTk2IDY5LjM3MiAyMjcuMjggNjkuMzcyWk0yMjcuMjggNjcuNTI0UTIyOC4zOCA2Ny41MjQgMjI5LjE3MiA2Ni43NTRRMjI5Ljk0MiA2NS45ODQgMjMwLjM2IDY0LjU3NlEyMzAuOCA2My4xNDYgMjMwLjggNjEuMjMyUTIzMC44IDU5LjI3NCAyMzAuMzYgNTcuODQ0UTIyOS45NDIgNTYuNDM2IDIyOS4xNzIgNTUuNjY2UTIyOC4zOCA1NC44OTYgMjI3LjI4IDU0Ljg5NlEyMjYuMjAyIDU0Ljg5NiAyMjUuNDEgNTUuNjY2UTIyNC42MTggNTYuNDM2IDIyNC4yIDU3Ljg0NFEyMjMuNzYgNTkuMjc0IDIyMy43NiA2MS4yMzJRMjIzLjc2IDYzLjE0NiAyMjQuMiA2NC41NzZRMjI0LjYxOCA2NS45ODQgMjI1LjQxIDY2Ljc1NFEyMjYuMjAyIDY3LjUyNCAyMjcuMjggNjcuNTI0Wk0yNDAuMTI4IDY5LjAyTDI0MC4xMjggNTcuNDQ4TDIzNi4wMzYgNTcuNDQ4TDIzNi4wMzYgNTUuODJMMjM4LjE0OCA1NS44MlEyMzguOTg0IDU1LjgyIDIzOS41MTIgNTUuNTc4UTI0MC4wMTggNTUuMzM2IDI0MC4yNiA1NC44MDhRMjQwLjQ4IDU0LjI4IDI0MC40OCA1My40TDI0Mi4wMiA1My40TDI0Mi4wMiA2OS4wMlpNMjM1LjIgNjkuMDJMMjM1LjIgNjcuMTcyTDI0NS43NiA2Ny4xNzJMMjQ1Ljc2IDY5LjAyWiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjIyMC42OCIgeT0iOTQuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSIxMDEuMzM4IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPkFzayB5b3VyIGFnZW50PC90ZXh0Pjx0ZXh0IHg9IjIyMC42OCIgeT0iMTEyLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iOTAuNTYzIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPmZvciBhIGRpYWdyYW08L3RleHQ+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImxheSIgZGF0YS1icnVzaD0iaW5rIj48cmVjdCB4PSIyMjMuNSIgeT0iMjE1IiB3aWR0aD0iMTIxIiBoZWlnaHQ9Ijk1IiBmaWxsPSIjZjBmMGYwIiBzdHJva2U9Im5vbmUiLz48cGF0aCBkPSJNMjM5LjgyIDI0MS43NzZMMjQ1Ljk4IDIzMC41NTZMMjQ3Ljc0IDIzMC42NDRMMjQxLjU4IDI0MS44NjRaTTI0My43OCAyNDQuMzcyUTI0Mi4wODYgMjQ0LjM3MiAyNDAuODMyIDI0My4zODJRMjM5LjYgMjQyLjM5MiAyMzguOTQgMjQwLjU2NlEyMzguMjggMjM4Ljc0IDIzOC4yOCAyMzYuMjMyUTIzOC4yOCAyMzMuNzAyIDIzOC45NCAyMzEuODc2UTIzOS42IDIzMC4wNSAyNDAuODMyIDIyOS4wNlEyNDIuMDg2IDIyOC4wNDggMjQzLjc4IDIyOC4wNDhRMjQ1LjQ5NiAyMjguMDQ4IDI0Ni43MjggMjI5LjA2UTI0Ny45NiAyMzAuMDUgMjQ4LjYyIDIzMS44NzZRMjQ5LjI4IDIzMy43MDIgMjQ5LjI4IDIzNi4yMzJRMjQ5LjI4IDIzOC43NCAyNDguNjIgMjQwLjU2NlEyNDcuOTYgMjQyLjM5MiAyNDYuNzI4IDI0My4zODJRMjQ1LjQ5NiAyNDQuMzcyIDI0My43OCAyNDQuMzcyWk0yNDMuNzggMjQyLjUyNFEyNDQuODggMjQyLjUyNCAyNDUuNjcyIDI0MS43NTRRMjQ2LjQ0MiAyNDAuOTg0IDI0Ni44NiAyMzkuNTc2UTI0Ny4zIDIzOC4xNDYgMjQ3LjMgMjM2LjIzMlEyNDcuMyAyMzQuMjc0IDI0Ni44NiAyMzIuODQ0UTI0Ni40NDIgMjMxLjQzNiAyNDUuNjcyIDIzMC42NjZRMjQ0Ljg4IDIyOS44OTYgMjQzLjc4IDIyOS44OTZRMjQyLjcwMiAyMjkuODk2IDI0MS45MSAyMzAuNjY2UTI0MS4xMTggMjMxLjQzNiAyNDAuNyAyMzIuODQ0UTI0MC4yNiAyMzQuMjc0IDI0MC4yNiAyMzYuMjMyUTI0MC4yNiAyMzguMTQ2IDI0MC43IDIzOS41NzZRMjQxLjExOCAyNDAuOTg0IDI0MS45MSAyNDEuNzU0UTI0Mi43MDIgMjQyLjUyNCAyNDMuNzggMjQyLjUyNFpNMjUxLjQ4IDI0NC4wMlEyNTEuNDggMjQyLjM3IDI1Mi4wMDggMjQxLjAyOFEyNTIuNTE0IDIzOS43MDggMjUzLjgxMiAyMzguNDk4UTI1NS4xMzIgMjM3LjI4OCAyNTcuNDY0IDIzNi4wNTZRMjU4LjU0MiAyMzUuNDg0IDI1OS4yMDIgMjM1UTI1OS44NjIgMjM0LjUxNiAyNjAuMTcgMjMzLjk2NlEyNjAuNDc4IDIzMy40MTYgMjYwLjQ3OCAyMzIuNjI0UTI2MC40NzggMjMxLjgxIDI2MC4xMjYgMjMxLjIxNlEyNTkuNzc0IDIzMC42IDI1OS4wOTIgMjMwLjI0OFEyNTguMzg4IDIyOS44OTYgMjU3LjM1NCAyMjkuODk2UTI1NS43MDQgMjI5Ljg5NiAyNTQuNzM2IDIzMC43NTRRMjUzLjc5IDIzMS42MTIgMjUzLjU0OCAyMzMuMTk2TDI1MS41NjggMjMzLjA2NFEyNTEuODMyIDIzMC43NzYgMjUzLjMyOCAyMjkuNDEyUTI1NC44MjQgMjI4LjA0OCAyNTcuMzU0IDIyOC4wNDhRMjU4Ljk2IDIyOC4wNDggMjYwLjEwNCAyMjguNjJRMjYxLjI0OCAyMjkuMTkyIDI2MS44NjQgMjMwLjIwNFEyNjIuNDU4IDIzMS4yMzggMjYyLjQ1OCAyMzIuNThRMjYyLjQ1OCAyMzMuNzY4IDI2Mi4wNjIgMjM0LjY0OFEyNjEuNjY2IDIzNS41MDYgMjYwLjcyIDIzNi4yNTRRMjU5Ljc5NiAyMzcuMDAyIDI1OC4xNjggMjM3Ljg2UTI1Ni43NiAyMzguNjA4IDI1NS43OTIgMjM5LjM3OFEyNTQuODQ2IDI0MC4xNDggMjU0LjM0IDI0MC44NTJRMjUzLjg1NiAyNDEuNTc4IDI1My44MTIgMjQyLjE3MkwyNjIuNDggMjQyLjE3MkwyNjIuNDggMjQ0LjAyWiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjIzNy4xOCIgeT0iMjY5LjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNDMuMDk4IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPlJhcGllcjwvdGV4dD48dGV4dCB4PSIyMzcuMTgiIHk9IjI4Ny4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjY4LjQzMiIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5sYXlzIGl0IG91dDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0ia2VlcCIgZGF0YS1icnVzaD0iaW5rIj48cG9seWdvbiBwb2ludHM9IjI4NCwzOTAgMzg0LDQ0NC41IDI4NCw0OTkgMTg0LDQ0NC41IiBmaWxsPSIjZjBmMGYwIiBzdHJva2U9Im5vbmUiLz48dGV4dCB4PSIyNTYuMTkiIHk9IjQ0OC43IiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjU1LjYxOSIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5LZWVwIGl0PzwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0ieW91cnMiIGRhdGEtYnJ1c2g9ImluayI+PHJlY3QgeD0iNDAiIHk9IjU4OCIgd2lkdGg9IjExMiIgaGVpZ2h0PSI5NSIgZmlsbD0iIzEyYTU5NCIgc3Ryb2tlPSJub25lIi8+PHBhdGggZD0iTTU2LjMyIDYxNC43NzZMNjIuNDggNjAzLjU1Nkw2NC4yNCA2MDMuNjQ0TDU4LjA4IDYxNC44NjRaTTYwLjI4IDYxNy4zNzJRNTguNTg2IDYxNy4zNzIgNTcuMzMyIDYxNi4zODJRNTYuMSA2MTUuMzkyIDU1LjQ0IDYxMy41NjZRNTQuNzggNjExLjc0IDU0Ljc4IDYwOS4yMzJRNTQuNzggNjA2LjcwMiA1NS40NCA2MDQuODc2UTU2LjEgNjAzLjA1IDU3LjMzMiA2MDIuMDZRNTguNTg2IDYwMS4wNDggNjAuMjggNjAxLjA0OFE2MS45OTYgNjAxLjA0OCA2My4yMjggNjAyLjA2UTY0LjQ2IDYwMy4wNSA2NS4xMiA2MDQuODc2UTY1Ljc4IDYwNi43MDIgNjUuNzggNjA5LjIzMlE2NS43OCA2MTEuNzQgNjUuMTIgNjEzLjU2NlE2NC40NiA2MTUuMzkyIDYzLjIyOCA2MTYuMzgyUTYxLjk5NiA2MTcuMzcyIDYwLjI4IDYxNy4zNzJaTTYwLjI4IDYxNS41MjRRNjEuMzggNjE1LjUyNCA2Mi4xNzIgNjE0Ljc1NFE2Mi45NDIgNjEzLjk4NCA2My4zNiA2MTIuNTc2UTYzLjggNjExLjE0NiA2My44IDYwOS4yMzJRNjMuOCA2MDcuMjc0IDYzLjM2IDYwNS44NDRRNjIuOTQyIDYwNC40MzYgNjIuMTcyIDYwMy42NjZRNjEuMzggNjAyLjg5NiA2MC4yOCA2MDIuODk2UTU5LjIwMiA2MDIuODk2IDU4LjQxIDYwMy42NjZRNTcuNjE4IDYwNC40MzYgNTcuMiA2MDUuODQ0UTU2Ljc2IDYwNy4yNzQgNTYuNzYgNjA5LjIzMlE1Ni43NiA2MTEuMTQ2IDU3LjIgNjEyLjU3NlE1Ny42MTggNjEzLjk4NCA1OC40MSA2MTQuNzU0UTU5LjIwMiA2MTUuNTI0IDYwLjI4IDYxNS41MjRaTTczLjM0OCA2MTcuMzcyUTcwLjgxOCA2MTcuMzcyIDY5LjQ1NCA2MTYuMTRRNjguMDkgNjE0LjkzIDY3Ljk4IDYxMi45OTRMNjkuOTM4IDYxMi44NjJRNzAuMDcgNjE0LjI5MiA3MS4wMTYgNjE0LjkwOFE3MS45NCA2MTUuNTI0IDczLjM0OCA2MTUuNTI0UTc0LjI5NCA2MTUuNTI0IDc1LjEzIDYxNS4yNlE3NS45NjYgNjE0Ljk3NCA3Ni40NzIgNjE0LjMzNlE3NyA2MTMuNzIgNzcgNjEyLjY2NFE3NyA2MTEuNjMgNzYuNTM4IDYxMC45NDhRNzYuMDc2IDYxMC4yODggNzUuMjg0IDYwOS45OFE3NC40NyA2MDkuNjUgNzMuNDU4IDYwOS42NUw3Mi4yMjYgNjA5LjY1TDcyLjIyNiA2MDcuODAyTDczLjQ1OCA2MDcuODAyUTc0LjI3MiA2MDcuODAyIDc0Ljk1NCA2MDcuNTZRNzUuNjM2IDYwNy4zMTggNzYuMDMyIDYwNi43NjhRNzYuNDUgNjA2LjI0IDc2LjQ1IDYwNS4zNlE3Ni40NSA2MDQuMTUgNzUuNjggNjAzLjUxMlE3NC45MSA2MDIuODk2IDczLjQ1OCA2MDIuODk2UTcxLjk4NCA2MDIuODk2IDcxLjIzNiA2MDMuNDlRNzAuNDY2IDYwNC4wODQgNzAuMzEyIDYwNS4xMThMNjguMzMyIDYwNC45ODZRNjguNTUyIDYwMy4yMjYgNjkuODcyIDYwMi4xNDhRNzEuMTkyIDYwMS4wNDggNzMuNDU4IDYwMS4wNDhRNzQuOTc2IDYwMS4wNDggNzYuMDk4IDYwMS41NzZRNzcuMjIgNjAyLjA4MiA3Ny44MzYgNjAzLjAyOFE3OC40MyA2MDMuOTc0IDc4LjQzIDYwNS4yNzJRNzguNDMgNjA2LjcyNCA3Ny41MjggNjA3LjYwNFE3Ni42MDQgNjA4LjUwNiA3NC44MjIgNjA4LjgzNkw3NC44MjIgNjA4LjQ0UTc2LjczNiA2MDguNjYgNzcuODU4IDYwOS44MDRRNzguOTggNjEwLjk0OCA3OC45OCA2MTIuNjY0UTc4Ljk4IDYxNC4xNiA3OC4yNTQgNjE1LjIxNlE3Ny41MjggNjE2LjI3MiA3Ni4yNTIgNjE2LjgyMlE3NC45NzYgNjE3LjM3MiA3My4zNDggNjE3LjM3MloiIGZpbGw9IiMwMDAwMDAiLz48dGV4dCB4PSI1My42OCIgeT0iNjQyLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMzkuMDIxIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPllvdXJzPC90ZXh0Pjx0ZXh0IHg9IjUzLjY4IiB5PSI2NjAuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMDAwMDAwIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI0My45NzEiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+dG8gZWRpdDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZHJvcCIgZGF0YS1icnVzaD0iaW5rIj48cmVjdCB4PSI0MTYiIHk9IjU3OSIgd2lkdGg9IjExMiIgaGVpZ2h0PSIxMTMiIGZpbGw9IiNmMGYwZjAiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik00MzIuMzIgNjA1Ljc3Nkw0MzguNDggNTk0LjU1Nkw0NDAuMjQgNTk0LjY0NEw0MzQuMDggNjA1Ljg2NFpNNDM2LjI4IDYwOC4zNzJRNDM0LjU4NiA2MDguMzcyIDQzMy4zMzIgNjA3LjM4MlE0MzIuMSA2MDYuMzkyIDQzMS40NCA2MDQuNTY2UTQzMC43OCA2MDIuNzQgNDMwLjc4IDYwMC4yMzJRNDMwLjc4IDU5Ny43MDIgNDMxLjQ0IDU5NS44NzZRNDMyLjEgNTk0LjA1IDQzMy4zMzIgNTkzLjA2UTQzNC41ODYgNTkyLjA0OCA0MzYuMjggNTkyLjA0OFE0MzcuOTk2IDU5Mi4wNDggNDM5LjIyOCA1OTMuMDZRNDQwLjQ2IDU5NC4wNSA0NDEuMTIgNTk1Ljg3NlE0NDEuNzggNTk3LjcwMiA0NDEuNzggNjAwLjIzMlE0NDEuNzggNjAyLjc0IDQ0MS4xMiA2MDQuNTY2UTQ0MC40NiA2MDYuMzkyIDQzOS4yMjggNjA3LjM4MlE0MzcuOTk2IDYwOC4zNzIgNDM2LjI4IDYwOC4zNzJaTTQzNi4yOCA2MDYuNTI0UTQzNy4zOCA2MDYuNTI0IDQzOC4xNzIgNjA1Ljc1NFE0MzguOTQyIDYwNC45ODQgNDM5LjM2IDYwMy41NzZRNDM5LjggNjAyLjE0NiA0MzkuOCA2MDAuMjMyUTQzOS44IDU5OC4yNzQgNDM5LjM2IDU5Ni44NDRRNDM4Ljk0MiA1OTUuNDM2IDQzOC4xNzIgNTk0LjY2NlE0MzcuMzggNTkzLjg5NiA0MzYuMjggNTkzLjg5NlE0MzUuMjAyIDU5My44OTYgNDM0LjQxIDU5NC42NjZRNDMzLjYxOCA1OTUuNDM2IDQzMy4yIDU5Ni44NDRRNDMyLjc2IDU5OC4yNzQgNDMyLjc2IDYwMC4yMzJRNDMyLjc2IDYwMi4xNDYgNDMzLjIgNjAzLjU3NlE0MzMuNjE4IDYwNC45ODQgNDM0LjQxIDYwNS43NTRRNDM1LjIwMiA2MDYuNTI0IDQzNi4yOCA2MDYuNTI0Wk00NTEuNDE2IDYwOC4wMkw0NTEuNDE2IDYwNC42MzJMNDQzLjc2IDYwNC42MzJMNDQzLjc2IDYwMi45MTZMNDUxLjI4NCA1OTIuNEw0NTMuMzA4IDU5Mi40TDQ1My4zMDggNjAyLjc4NEw0NTUuMiA2MDIuNzg0TDQ1NS4yIDYwNC42MzJMNDUzLjMwOCA2MDQuNjMyTDQ1My4zMDggNjA4LjAyWk00NDUuNjk2IDYwMi43ODRMNDUxLjQxNiA2MDIuNzg0TDQ1MS40MTYgNTk1LjA0WiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjQyOS42OCIgeT0iNjMzLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMzcuMjc0IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPkdvbmUsPC90ZXh0Pjx0ZXh0IHg9IjQyOS42OCIgeT0iNjUxLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNDkuMjEzIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPm5vdGhpbmc8L3RleHQ+PHRleHQgeD0iNDI5LjY4IiB5PSI2NjkuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI1NS4wMzciIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+Y2hhbmdlZDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzEiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTI4NCAxMzVMMjg0IDIwMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjI3OSwyMDEgMjg0LDIxNSAyODksMjAxIiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzIiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTI4NCAzMTBMMjg0IDM3NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjI3OSwzNzYgMjg0LDM5MCAyODksMzc2IiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzMiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTE4NCA0NDQuNUwxMjAuOSA0NDQuNUw5NiA0NDQuNUw5NiA0OTMuMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iMTM2LjYiLz48cGF0aCBkPSJNOTYgNTI2LjdMOTYgNTc0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI0Ny4zIi8+PHBvbHlnb24gcG9pbnRzPSI5MSw1NzQgOTYsNTg4IDEwMSw1NzQiIGZpbGw9IiMxMjEyMTIiIHN0cm9rZT0ibm9uZSIvPjx0ZXh0IHg9IjgxLjYiIHk9IjUxMi45IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgbGV0dGVyLXNwYWNpbmc9IjAuMTJlbSIgdGV4dExlbmd0aD0iMjguOCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5LRUVQPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJnNCIgZGF0YS1icnVzaD0iaW5rIj48cGF0aCBkPSJNMzg0IDQ0NC41TDQ0Ny4xIDQ0NC41TDQ3MiA0NDQuNUw0NzIgNDg4LjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHBhdGhMZW5ndGg9IjEzMi4xIi8+PHBhdGggZD0iTTQ3MiA1MjIuMkw0NzIgNTY1IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI0Mi44Ii8+PHBvbHlnb24gcG9pbnRzPSI0NjcsNTY1IDQ3Miw1NzkgNDc3LDU2NSIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PHRleHQgeD0iNDU3LjYiIHk9IjUwOC40IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgbGV0dGVyLXNwYWNpbmc9IjAuMTJlbSIgdGV4dExlbmd0aD0iMjguOCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5EUk9QPC90ZXh0PjwvZz48L3N2Zz4=",
+	].join('\n');
 }
 
 const EXT_TO_LANG = {
@@ -21298,15 +21273,6 @@ function _rapierPandocDialectExportText(source) {
 	}
 	return out + _rapierPandocDialectRewriteProse(body.slice(cursor));
 }
-function _rapierPandocDialectEnabled() {
-	try { return localStorage.getItem('rapier:export.pandocDialect') === '1'; } catch (_) { return false; }
-}
-function _rapierSetPandocDialectEnabled(value) {
-	try {
-		if (value) localStorage.setItem('rapier:export.pandocDialect', '1');
-		else localStorage.removeItem('rapier:export.pandocDialect');
-	} catch (_) {   }
-}
 
 // A copy is a destination, not the file (Weapon-R69 §17.4): the Markdown handed to a clipboard
 // carries each JPEG XL picture as the portable picture every destination shows (the same PNG or
@@ -25737,18 +25703,18 @@ function _rapierEnsureImageUi() {
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="smaller" aria-label="make image smaller">−</button>' +
 			'<button type="button" class="rapier-image-tools__btn rapier-image-tools__size" data-image-act="size" aria-label="set image width">AUTO</button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="larger" aria-label="make image larger">+</button>' +
-			'<button type="button" class="rapier-image-tools__btn" data-image-act="edit" aria-label="edit image">' +
-				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>' +
-			'<button type="button" class="rapier-image-tools__btn rapier-image-tools__draw" data-image-act="draw" aria-label="edit drawing" hidden>' +
-				// F75-7: a paintbrush, not a pen -- handle, a small rotated-square ferrule, and a
-				// flared bristle wedge touching the paper, same stroke style as its neighbours.
-				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4 13 11"/><rect x="10.5" y="8.5" width="4" height="4" transform="rotate(45 12.5 10.5)"/><path d="M11.5 13.5 5 20 9 14.5Z"/></svg></button>' +
+			'<button type="button" class="rapier-image-tools__btn" data-image-act="edit" aria-label="image description and format" title="Image description and format">' +
+				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + _RAPIER_COMMAND_ICONS.type + '</svg></button>' +
+			'<button type="button" class="rapier-image-tools__btn rapier-image-tools__draw" data-image-act="draw" aria-label="edit drawing" hidden></button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="download" aria-label="download image">' +
 				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="delete" aria-label="delete image">' +
 				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>' +
 			'<button type="button" class="rapier-image-tools__btn" data-image-act="close" aria-label="close image tools">' +
 				'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button>';
+		// Draw has one glyph: the Tabler brush on the floating formatting bar.
+		const brush = document.querySelector('[data-command="insert.draw"] svg');
+		if (brush) bar.querySelector('[data-image-act="draw"]').append(brush.cloneNode(true));
 		bar.addEventListener('click', event => {
 			const action = event.target.closest?.('[data-image-act]')?.dataset.imageAct;
 			if (!action) return;
@@ -25996,8 +25962,8 @@ function _rapierEditSelectedImage() {
     ];
     if (current === 'webp') formats.push({value: 'webp', label: 'WebP', detail: 'As embedded now'});
     _openFieldDialog({
-        title: 'image',
-        fields: [{label: 'alt text', placeholder: 'describes the image', value: alt}].concat(convertible ? [
+        title: 'image description',
+        fields: [{label: 'description (alt text)', placeholder: 'what the picture shows', value: alt}].concat(convertible ? [
             {label: 'Picture format', type: 'choice', advanced: true, value: current, options: formats, description: _rapierPictureFormatNote()},
         ] : []),
         secondaryActions: [{label: 'replace image', onSelect(values) {
@@ -28370,8 +28336,12 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true } = {}) {
 	let newBlocks = [], caretBlockId, caretCharOffset;
 
 	if (!prefixRaw && !suffixRaw) {
-		newBlocks       = [];
-		caretBlockId    = null;
+		// Everything selected goes, and the person is left in a fresh paragraph where it stood, as any editor
+		// leaves them, so the words typed next have a place (the founder, 29 September: select all, delete, type
+		// at the top; the typed words used to open a block above the whole, undeleted document).
+		const b = { id: startBlock.id, raw: '', rendered: '<br>', dirty: false, type: 'paragraph', order: startBlock.order, leading: startBlock.leading };
+		newBlocks       = [b];
+		caretBlockId    = b.id;
 		caretCharOffset = 0;
 	} else if (!prefixRaw) {
 		const b = { id: endBlock.id, raw: suffixRaw, rendered: renderBlock(suffixRaw), dirty: false, type: endBlock.type, order: endBlock.order, leading: startBlock.leading };
@@ -28401,7 +28371,7 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true } = {}) {
 	rapier.document.blocks.splice(startIndex, replaceCount, ...newBlocks);
 	_reassignOrderForRange(startIndex, newBlocks.length);
 	const referenceIndexChanged = rebuildReferenceIndex(rapier.document.blocks);
-	newBlocks.forEach(block => { block.rendered = renderBlock(block.raw); });
+	newBlocks.forEach(block => { block.rendered = block.raw ? renderBlock(block.raw) : '<br>'; });
 
 	if (pushHistory) {
 		const blocksAfter = newBlocks.map(_rapierHistoryBlock);
@@ -33842,10 +33812,6 @@ function _rapierCrossBlockReplace(type, text) {
 	const range = _rapierCrossBlockRange();
 	if (!range) return false;
 
-	if (_rapierSelectionEscapesOpenBlock()) {
-		if (!rapier.composition.block) _rapierCollapseSelectionEscapedOpenBlock();
-		return false;
-	}
 	if (type === 'historyUndo') { rapierUndo(); return true; }
 	if (type === 'historyRedo') { rapierRedo(); return true; }
 	const destructive = type.startsWith('delete') || type === 'insertText' ||
@@ -33907,10 +33873,11 @@ document.addEventListener('beforeinput', e => {
 			_rapierHostNativeField(e.target)) return;
 	if (!_rapierCrossBlockRange()) return;
 
-	if (_rapierSelectionEscapesOpenBlock()) {
-		if (!e.isComposing && !rapier.composition.block) _rapierCollapseSelectionEscapedOpenBlock();
-		return;
-	}
+	// A selection that reaches past the block being typed in (Select all, a drag) is the person's whole selection,
+	// theirs to delete or type over as in any editor. It used to be collapsed here and the keystroke dropped without
+	// a word, so Select all then Backspace deleted nothing and the words typed next opened a block above the whole
+	// document (the founder, 29 September: "the full welcome.md with my changes at the top"). The open block's
+	// typing is checkpointed by the cross-block splice before it reads the blocks.
 	const type = e.inputType || '';
 	if (type === 'historyUndo' || type === 'historyRedo') { e.preventDefault(); _rapierCrossBlockReplace(type, ''); return; }
 	const destructive = type.startsWith('delete') || type === 'insertText' ||
@@ -37827,6 +37794,7 @@ function _rapierGutterUpdateLabel() {
 
 	const full = String(absLine + 1);
 	label.dataset.full = full;
+	label.dataset.even = String((absLine + 1) % 2 === 0);
 	const fit = document.documentElement.dataset.linefit === 'resize' ? 'resize' : 'truncate';
 	label.style.fontSize = '';
 	label.style.lineHeight = '';
@@ -43804,6 +43772,7 @@ function renderViewToggle() {
 			control.setAttribute('aria-disabled', 'true');
 		} else control.removeAttribute('aria-disabled');
 	}
+	_rapierSwitchSlide(refs.viewSource.parentElement);
 	globalThis.RapierSourceAssets?.refresh();
 }
 
@@ -44057,13 +44026,90 @@ function dismissTransientSurfaces(restoreFocus) {
 	}
 }
 
-function renderSwitch(group, value) {
-	const current = String(value);
-	for (const button of group.querySelectorAll('[data-value]')) {
-		const active = button.dataset.value === current;
-		if (active) button.dataset.active = 'true'; else delete button.dataset.active;
-		button.setAttribute('aria-pressed', active ? 'true' : 'false');
+// Settings share one selection rule and one clipped foreground. The duplicate is inert ink,
+// never a second control; only its clip moves, so the label changes colour exactly at the edge.
+function _rapierSwitchValue(control) {
+	const group = control.closest('.theme-switcher');
+	if (!group || group.dataset.switchLabel) return control.dataset.value;
+	const buttons = [...group.children].filter(el => el.matches('button') && !el.disabled && !el.hidden);
+	if (control.hasAttribute('data-active') && buttons.length > 1) return buttons[(buttons.indexOf(control) + 1) % buttons.length].dataset.value;
+	return control.dataset.value;
+}
+function _rapierSwitchTap(group) {
+	if (!group || group._rapierSwitchTap) return;
+	group._rapierSwitchTap = true;
+	group.addEventListener('click', event => {
+		if (event.defaultPrevented || event.target.closest('button')) return;
+		const buttons = [...group.children].filter(el => el.matches('button') && !el.disabled && !el.hidden);
+		if (!buttons.length) return;
+		// The padding and gaps are part of the switch too. Two choices always flip; a longer
+		// row chooses the nearest option, whose normal action advances if it is already selected.
+		const distance = button => { const box = button.getBoundingClientRect(); return Math.abs(event.clientX - (box.left + box.width / 2)); };
+		const control = buttons.length <= 2 ? buttons.find(button => button.hasAttribute('data-active')) || buttons[0]
+			: buttons.reduce((a, b) => distance(a) <= distance(b) ? a : b);
+		control.click();
+	});
+}
+function _rapierSwitchSlide(group) {
+	if (!group?.classList.contains('theme-switcher') || group.dataset.switchLabel) return;
+	_rapierSwitchTap(group);
+	const buttons = [...group.children].filter(el => el.matches('button'));
+	if (buttons.length < 2) return;
+	let state = group._rapierSwitch;
+	if (!state) {
+		group.querySelector('.theme-switcher__selection')?.remove();
+		const ink = document.createElement('span');
+		ink.className = 'theme-switcher__selection'; ink.setAttribute('aria-hidden', 'true'); ink.inert = true;
+		for (const button of buttons) {
+			const copy = document.createElement('span');
+			copy.className = button.className; copy.style.cssText = button.style.cssText;
+			if (button.dataset.sz) copy.dataset.sz = button.dataset.sz;
+			for (const node of button.childNodes) copy.appendChild(node.cloneNode(true));
+			ink.appendChild(copy);
+		}
+		group.appendChild(ink);
+		state = group._rapierSwitch = { ink, positioned: false, layout: null };
+		state.layout = (animate = false) => {
+			const chosen = buttons.find(button => button.hasAttribute('data-active'));
+			if (!chosen || !group.clientWidth || !group.clientHeight) { state.positioned = false; return; }
+			const clip = 'inset(' + chosen.offsetTop + 'px ' + Math.max(0, group.clientWidth - chosen.offsetLeft - chosen.offsetWidth) + 'px ' + Math.max(0, group.clientHeight - chosen.offsetTop - chosen.offsetHeight) + 'px ' + chosen.offsetLeft + 'px)';
+			if (ink.style.clipPath === clip && state.positioned) return;
+			if (!animate || !state.positioned) ink.style.transition = 'none';
+			ink.style.clipPath = clip;
+			group.classList.add('theme-switcher--sliding');
+			if (!animate || !state.positioned) { ink.getBoundingClientRect(); ink.style.transition = ''; }
+			state.positioned = true;
+		};
+		const root = document.documentElement;
+		if (!root._rapierSwitchObserver && typeof ResizeObserver === 'function') root._rapierSwitchObserver = new ResizeObserver(entries => {
+			for (const {target} of entries) {
+				if (!target.isConnected) root._rapierSwitchObserver.unobserve(target);
+				else target._rapierSwitch?.layout();
+			}
+		});
+		root._rapierSwitchObserver?.observe(group);
 	}
+	state.layout(true);
+}
+function renderSwitch(group, value) {
+	if (!group) return;
+	_rapierSwitchTap(group);
+	const current = String(value);
+	if (group.dataset.switchLabel) {
+		const button = group.querySelector('button'), on = current === group.dataset.on;
+		button.textContent = group.dataset.switchLabel + ': ' + (on ? 'On' : 'Off');
+		button.dataset.value = on ? group.dataset.off : group.dataset.on;
+		button.toggleAttribute('data-active', on);
+		button.setAttribute('role', 'switch'); button.setAttribute('aria-checked', String(on));
+		button.removeAttribute('aria-pressed');
+		return;
+	}
+	for (const button of group.querySelectorAll('button[data-value]')) {
+		const active = button.dataset.value === current;
+		button.toggleAttribute('data-active', active);
+		button.setAttribute('aria-pressed', String(active));
+	}
+	_rapierSwitchSlide(group);
 }
 
 function _rapierUiForcedReadOnly() {
@@ -45446,13 +45492,8 @@ const _rapierUiRestore = {
 	remaining: 10000,
 	deadline: 0,
 	clockTimer: 0,
-	pointerId: null,
-	captureTarget: null,
-	startX: 0, startY: 0, startTime: 0,
-	axis: 'pending',
-	offset: 0, opacity: 1, transitionMs: 0,
+	get pointerHeld() { return !!_rapierUi.refs?.restoreCard?._rapierNoticeSwipe?.holding; },
 	settleTimer: 0,
-	suppressClickUntil: 0,
 	focusHeld: false,
 	lease: false,
 
@@ -45492,7 +45533,7 @@ const _rapierUiRestore = {
 	},
 
 	startClock() {
-		if (!this.visible || this.clockTimer || this.focusHeld ||
+		if (!this.visible || this.clockTimer || this.focusHeld || this.pointerHeld ||
 				document.visibilityState === 'hidden') return;
 		if (document.getElementById('toast-root')?.dataset.rapierTransientState === 'waiting') return;
 		this.deadline = _rapierNow() + Math.max(0, this.remaining);
@@ -45522,169 +45563,38 @@ const _rapierUiRestore = {
 	focusOut() {
 		requestAnimationFrame(() => {
 			this.focusHeld = _rapierUi.refs.restoreCard.contains(document.activeElement);
-			if (!this.focusHeld && this.pointerId == null) this.startClock();
+			if (!this.focusHeld && !this.pointerHeld) this.startClock();
 		});
 	},
 
 	openDelta(event) {
-		if (!this.canSeeDelta() || _rapierNow() < this.suppressClickUntil) return;
+		if (!this.canSeeDelta()) return;
 		rapierOpenSeenDelta({ trusted: !!(event && event.isTrusted) });
 		this.dismiss();
 		if (event && event.currentTarget && event.currentTarget.blur) event.currentTarget.blur();
 	},
 	resume(event) {
-		if (!this.canResume() || _rapierNow() < this.suppressClickUntil) return;
+		if (!this.canResume()) return;
 		rapierResumeRestorePosition(this.notice.resumePosition);
 		this.dismiss();
 		if (event && event.currentTarget && event.currentTarget.blur) event.currentTarget.blur();
 	},
 
-	dismiss() {
-		if (!this.visible || this.lease) {
-			this.clearClock();
-			this.visible = false;
-			this.notice = null;
-			this.focusHeld = false;
-			this.resetGesture();
-			renderRestore();
-			return;
-		}
+	dismiss(direction) {
+		if (this.lease) return false;
 		this.pauseClock();
-		const card = _rapierUi.refs.restoreCard;
-		const height = Math.max(66, card.offsetHeight || (this.canResume() ? 114 : 66));
-		this.transitionMs = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 180;
-		this.offset = height + 28;
-		this.opacity = 0;
-		this.renderPresentation(this.offset, this.opacity, this.transitionMs);
 		clearTimeout(this.settleTimer);
-		this.settleTimer = setTimeout(() => {
-			this.visible = false;
-			this.notice = null;
-			this.focusHeld = false;
-			this.resetGesture();
-			if (this.lease) this.renderPresentationReset(true);
-			renderRestore();
-		}, this.transitionMs ? this.transitionMs + 12 : 0);
-	},
-
-	renderPresentation(offset, opacity, transitionMs) {
-		const card = _rapierUi.refs.restoreCard;
-		const y = Math.max(0, Number(offset) || 0);
-		const alpha = Math.max(0, Math.min(1, Number(opacity)));
-		const duration = Math.max(0, Number(transitionMs) || 0);
-
-		card.style.animation = 'none';
-		card.style.transition = duration > 0
-			? 'transform ' + duration + 'ms var(--ease-micro),opacity ' + duration + 'ms var(--ease-micro)'
-			: 'none';
-		card.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0)';
-		card.style.opacity = String(alpha.toFixed(3));
+		this.settleTimer = _rapierNoticeExit(_rapierUi.refs.restoreCard, direction, () => {
+			this.visible = false; this.notice = null; this.focusHeld = false;
+			this.resetGesture(); renderRestore();
+		});
 	},
 	renderPresentationReset(resetEntryAnimation) {
 		const card = _rapierUi.refs.restoreCard;
-		card.style.removeProperty('transform');
-		card.style.removeProperty('opacity');
-		card.style.removeProperty('transition');
+		card._rapierNoticeSwipe?.reset();
 		if (resetEntryAnimation) card.style.removeProperty('animation');
 	},
-
-	pointerStart(event) {
-		if (this.lease) return;
-		if (!this.visible || event.isPrimary === false ||
-				(event.button != null && event.button !== 0)) return;
-		const target = event.target instanceof Element ? event.target : null;
-		if (target && target.closest('.restore-notice__close')) return;
-		clearTimeout(this.settleTimer);
-		this.pauseClock();
-		this.pointerId = event.pointerId;
-		this.captureTarget = event.currentTarget;
-		this.startX = event.clientX;
-		this.startY = event.clientY;
-		this.startTime = _rapierNow();
-		this.axis = 'pending';
-		this.offset = 0;
-		this.opacity = 1;
-		this.transitionMs = 0;
-		this.renderPresentation(0, 1, 0);
-		try { event.currentTarget.setPointerCapture(event.pointerId); } catch (_) {}
-	},
-	pointerMove(event) {
-		if (event.pointerId !== this.pointerId) return;
-		const dx = event.clientX - this.startX;
-		const dy = event.clientY - this.startY;
-		if (this.axis === 'pending' && Math.max(Math.abs(dx), Math.abs(dy)) >= 7) {
-			this.axis = Math.abs(dy) > Math.abs(dx) * 1.12 ? 'vertical' : 'horizontal';
-			if (this.axis !== 'vertical' || dy < 0) { this.pointerCancel(event); return; }
-		}
-		if (this.axis !== 'vertical') return;
-		if (event.cancelable) event.preventDefault();
-		this.offset = Math.max(0, dy);
-		const span = Math.max(116, _rapierUi.refs.restoreCard.offsetHeight || 116);
-		this.opacity = Math.max(0, 1 - this.offset / span);
-		this.renderPresentation(this.offset, this.opacity, 0);
-	},
-	pointerEnd(event) {
-		if (event.pointerId !== this.pointerId) return;
-		const elapsed = Math.max(1, _rapierNow() - this.startTime);
-		const velocity = this.offset / elapsed;
-
-		const target = event.target instanceof Element ? event.target : null;
-		const tapped = this.axis === 'pending' && this.offset < 7 && elapsed < 450 &&
-			!(target && target.closest('button,a,input,select,textarea,[role="button"]'));
-		const close = tapped || (this.axis === 'vertical' &&
-			(this.offset >= 52 || (this.offset >= 22 && velocity >= .58)));
-		this.suppressClickUntil = this.offset >= 7 || tapped ? _rapierNow() + 320 : 0;
-		this.settleGesture(close);
-	},
-	pointerCancel(event) {
-		if (this.pointerId == null) return;
-		if (event && event.pointerId != null && event.pointerId !== this.pointerId) return;
-		this.settleGesture(false);
-	},
-	settleGesture(close) {
-		const pointerId = this.pointerId;
-		try {
-			if (this.captureTarget && pointerId != null && this.captureTarget.hasPointerCapture(pointerId)) {
-				this.captureTarget.releasePointerCapture(pointerId);
-			}
-		} catch (_) {}
-		this.captureTarget = null;
-		this.pointerId = null;
-		this.axis = 'pending';
-		this.transitionMs = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 180;
-		const height = Math.max(94, _rapierUi.refs.restoreCard.offsetHeight || 94);
-		this.offset = close ? height + 18 : 0;
-		this.opacity = close ? 0 : 1;
-		this.renderPresentation(this.offset, this.opacity, this.transitionMs);
-		clearTimeout(this.settleTimer);
-		this.settleTimer = setTimeout(() => {
-			if (close) {
-				this.visible = false;
-				this.notice = null;
-				this.focusHeld = false;
-				this.resetGesture();
-				if (this.lease) this.renderPresentationReset(true);
-				renderRestore();
-			} else {
-				this.transitionMs = 0;
-				this.renderPresentationReset(false);
-				this.startClock();
-			}
-		}, this.transitionMs ? this.transitionMs + 12 : 0);
-	},
 	resetGesture() {
-		const pointerId = this.pointerId;
-		try {
-			if (this.captureTarget && pointerId != null && this.captureTarget.hasPointerCapture(pointerId)) {
-				this.captureTarget.releasePointerCapture(pointerId);
-			}
-		} catch (_) {}
-		this.captureTarget = null;
-		this.pointerId = null;
-		this.axis = 'pending';
-		this.offset = 0;
-		this.opacity = 1;
-		this.transitionMs = 0;
 		this.renderPresentationReset(false);
 	},
 };
@@ -46464,8 +46374,8 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	undo: control => _rapierDialTurn(control, false, rapierUndo()),
 	redo: control => _rapierDialTurn(control, true, rapierRedo()),
 	'read-aloud': () => rapierReadAloud(),
-	'source-view': () => _rapierUiRequestSourceView(),
-	'wysiwyg-view': () => _rapierUiRequestWysiwygView(),
+	'source-view': control => control.closest('.theme-switcher') && control.hasAttribute('data-active') ? _rapierUiRequestWysiwygView() : _rapierUiRequestSourceView(),
+	'wysiwyg-view': control => control.closest('.theme-switcher') && control.hasAttribute('data-active') ? _rapierUiRequestSourceView() : _rapierUiRequestWysiwygView(),
 	rename: () => _rapierUiEditFilename('base'),
 	'change-extension': () => _rapierUiEditFilename('ext'),
 
@@ -46506,16 +46416,16 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	settings: () => _rapierUiSetSettingsOpen(true),
 	'settings-close': () => _rapierUiSetSettingsOpen(false, 'dismiss'),
 	switch: (control, event) => {
-		const field = control.closest('[data-switch]').dataset.switch;
+		const field = control.closest('[data-switch]').dataset.switch, value = _rapierSwitchValue(control);
 		if (globalThis.RAPIER_APPS_HOST === true && field === 'readOnly') {
-			globalThis.RapierAgentBrowser?.setPolicy({readOnly: control.dataset.value === 'on'}, event);
+			globalThis.RapierAgentBrowser?.setPolicy({readOnly: value === 'on'}, event);
 		} else {
-			const change = () => _rapierUiSetPreference(field, control.dataset.value);
+			const change = () => _rapierUiSetPreference(field, value);
 			// The person's own theme, chosen in an embedded frame, takes over from the host's (item 8).
 			if (field === 'theme') {
 				const hosted = !!_rapierEmbed.theme;
 				_rapierEmbed.theme = '';
-				_rapierThemeFlood(control, event, control.dataset.value, hosted ? () => { change(); applyTheme(RapierPreferences.read('theme')); } : change);
+				_rapierThemeLight(value, hosted ? () => { change(); applyTheme(RapierPreferences.read('theme')); } : change);
 			} else change();
 		}
 	},
@@ -46687,7 +46597,7 @@ const _RAPIER_UI_REFS = Object.freeze({
 
 	settingsOverlay: 'settings-overlay', settingsPanel: 'settings-panel',
 	settingsTitle: 'settings-panel-title', settingsAttribution: 'settings-attribution',
-	readOnlySwitch: 'switch-read-only', readOnlyOff: 'switch-read-only-off',
+	readOnlySwitch: 'switch-read-only',
 	themeSwitch: 'switch-theme', accentSwitch: 'accent-swatches', fontSizeSwitch: 'switch-font-size',
 	showPlayButtonSwitch: 'switch-read-aloud', highlightsSwitch: 'switch-highlights',
 	headingsSwitch: 'switch-headings', layoutSwitch: 'switch-layout', checkerSwitch: 'switch-checker', lineNumsSwitch: 'switch-line-numbers',
@@ -46880,20 +46790,19 @@ function _rapierUiMount() {
 		rapierGoToLine(refs.gotoInput.value);
 	});
 
-	for (const [name, handler] of [
-		['pointerdown', event => _rapierUiRestore.pointerStart(event)],
-		['pointermove', event => _rapierUiRestore.pointerMove(event)],
-		['pointerup', event => _rapierUiRestore.pointerEnd(event)],
-		['pointercancel', event => _rapierUiRestore.pointerCancel(event)],
-		['focusin', () => _rapierUiRestore.focusIn()],
-		['focusout', () => _rapierUiRestore.focusOut()],
-	]) {
-		refs.restoreCard.addEventListener(name, handler);
-	}
+	_rapierNoticeSwipe(refs.restoreCard, {
+		ready: () => _rapierUiRestore.visible && !_rapierUiRestore.lease,
+		tap: true,
+		hold: () => _rapierUiRestore.pauseClock(),
+		release: closed => { if (!closed) _rapierUiRestore.startClock(); },
+		dismiss: direction => _rapierUiRestore.dismiss(direction),
+	});
+	refs.restoreCard.addEventListener('focusin', () => _rapierUiRestore.focusIn());
+	refs.restoreCard.addEventListener('focusout', () => _rapierUiRestore.focusOut());
 	document.addEventListener('visibilitychange', () => {
 		if (!_rapierUiRestore.visible) return;
 		if (document.visibilityState === 'hidden') _rapierUiRestore.pauseClock();
-		else if (!_rapierUiRestore.focusHeld && _rapierUiRestore.pointerId == null) {
+		else if (!_rapierUiRestore.focusHeld && !_rapierUiRestore.pointerHeld) {
 			_rapierUiRestore.startClock();
 		}
 	}, { passive: true });

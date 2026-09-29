@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-const {_rapierDrawRouteChanges,_rapierDrawRestorePaint,_rapierDrawTextLayout,_rapierDrawShapeContours,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawEscapeAttr,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawApplyShapesPatch,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,RAPIER_DRAW_RASTER_MAX,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawShapeBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawDashActive,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,restoreLetters} = globalThis.RapierDrawCore;
+const {_rapierDrawRouteChanges,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawRestorePaint,_rapierDrawTextLayout,_rapierDrawShapeContours,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawEscapeAttr,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawApplyShapesPatch,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,RAPIER_DRAW_RASTER_MAX,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawShapeBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawDashActive,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,restoreLetters} = globalThis.RapierDrawCore;
 const {_rapierDrawTranslateGeom,_rapierDrawTranslateShape,_rapierDrawReleaseBindings,_rapierDrawRotatePt,_rapierDrawResizeShape,_rapierDrawResizeShapeLocal,_rapierDrawRotateShape,_rapierDrawBindAnchorFor,_rapierDrawPruneUnusedStrokes,anchorResize:_rapierDrawAnchorResize,anchorResizeLocal:_rapierDrawAnchorResizeLocal,selectionFrame:_rapierDrawSelectionFrame,editDrawing:_rapierDrawEdit,selectionIds:_rapierDrawGroupSelection,snapMove:_rapierDrawSnapMove,snapResize:_rapierDrawSnapResize} = globalThis.RapierDrawEdit;
 
 const RAPIER_DRAW_INK_LABEL = Object.freeze({ green: 'Green', red: 'Red', blue: 'Blue', gold: 'Gold', purple: 'Purple' });
@@ -52,7 +52,7 @@ const RAPIER_DRAW_STROKE_CHANNELS = [[3, RAPIER_DRAW_STROKE_PRESSURE_WEIGHT], [2
 const RAPIER_DRAW_STROKE_PRESSURE_KEEP = 0.12;
 
 // A canvas a Notes door opens is a sketch, a quick note: it keeps Notes' own hand, apart from the
-// editor's Draw -- the mark-making tool last used there and its width, the SVG Pen at a felt-tip
+// editor's Draw -- the mark-making tool last used there and its width, the SVG Brush at a felt-tip
 // width (a 3.6 px line) until the person picks another. Select, Eraser, Shape and Text are
 // reached for inside a drawing, never the way one starts, so they are not remembered.
 // The width a fresh canvas starts at where none is remembered is a third over what it was, 5 in a
@@ -67,7 +67,7 @@ const RAPIER_DRAW_MEMORY = {
 	nib: ['rapier:draw.nib', RAPIER_DRAW_FRESH_NIB, _rapierDrawNibLevel],
 	shapeKind: ['rapier:draw.shapekind', 'rect', value => RAPIER_DRAW_SHAPE_KINDS.some(row => row[0] === value) ? value : 'rect'],
 	eraseSoftness: ['rapier:draw.eraseSoftness', 0, value => { const n = Number(value); return Number.isFinite(n) ? _rapierDrawClamp(Math.round(n), 0, 100) : 0; }],
-	notesTool: ['rapier:notes.draw.tool', 'pen', value => RAPIER_DRAW_NOTES_TOOLS.includes(value) ? value : 'pen'],
+	notesTool: ['rapier:notes.draw.tool', 'brush', value => RAPIER_DRAW_NOTES_TOOLS.includes(value) ? value : 'brush'],
 	notesNib: ['rapier:notes.draw.nib', RAPIER_DRAW_NOTES_NIB, _rapierDrawNibLevel],
 };
 function _rapierDrawRemembered(key) {
@@ -77,6 +77,7 @@ function _rapierDrawRemembered(key) {
 }
 function _rapierDrawRemember(key, value) {
 	try { localStorage.setItem(RAPIER_DRAW_MEMORY[key][0], String(value)); } catch (_) {}
+	_rapierPersonal.rememberDrawing(key, String(value));
 }
 
 const RAPIER_DRAW_HIT_SLOP_PX = 16;
@@ -85,9 +86,6 @@ const RAPIER_DRAW_HIT_SLOP_PX = 16;
 // for every pointer type until the touch-session signal below could tell them apart.
 const RAPIER_DRAW_HIT_SLOP_COARSE_PX = 22;
 const RAPIER_DRAW_MOVE_THRESHOLD_PX = 8;
-const RAPIER_DRAW_PINCH_MIN_SCALE = 0.25;
-const RAPIER_DRAW_PINCH_MAX_SCALE = 4;
-const RAPIER_DRAW_PINCH_MIN_SPAN_PX = 20;
 const RAPIER_DRAW_DOUBLE_TAP_DIST_PX = 24;
 const RAPIER_DRAW_DOUBLE_TAP_DIST_TOUCH_PX = 40;
 // Select's touch hold toggles membership in the current selection.
@@ -836,6 +834,13 @@ function _rapierDrawSnapshot(snapshot = _rapierDrawHistoryRecipe(), amend = fals
 function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 	const state = _rapierDrawState;
 	if (!before || before.delta) return before;
+	// The paper follows the change being sealed (every gesture, patch and text edit passes here): a growth that
+	// moved the shapes left or down moved the window with them, is written on this step so Undo gives it back,
+	// and is shown again. A growth that cannot be measured never stops the seal.
+	try {
+		const grown = _rapierDrawGrowCanvasToContent();
+		if (grown && (grown.dx || grown.dy)) { before.shift = { dx: (before.shift?.dx || 0) + grown.dx, dy: (before.shift?.dy || 0) + grown.dy }; _rapierDrawRenderShapes(); }
+	} catch (_) {}
 	const prior = { ...before.recipe, fonts: before.fonts };
 	const entry = _rapierDrawHistoryDelta(prior, state.recipe);
 	entry.selection = (before.selection || []).slice();
@@ -877,11 +882,14 @@ function _rapierDrawPatchShapeNodes(ids) {
 	for (const id of _rapierDrawRouteChanges(state.recipe, ids, !!state.gesture)) patch.add(id);
 	for (const shape of state.recipe.shapes) {
 		if (!patch.has(shape.id)) continue;
-		const next = _rapierDrawParseSvgNode(_rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(shape, state.recipe)));
+		const html = _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(shape, state.recipe));
+		_rapierDrawNoteColours(html);
+		const next = _rapierDrawParseSvgNode(html);
 		if (!next) continue;
 		const existing = host.querySelector('[data-shape-id="' + shape.id + '"]');
 		if (existing) existing.replaceWith(next); else host.appendChild(next);
 	}
+	_rapierDrawDarkStyleSync();
 	_rapierDrawMarkSelection();
 }
 function _rapierDrawAdoptShapeNodes() {
@@ -892,8 +900,10 @@ function _rapierDrawAdoptShapeNodes() {
 		const id = node.getAttribute('data-shape-id');
 		if (id) previous.set(id, node);
 	}
+	state.darkUsed = new Set(); state.darkCurrentColor = false; state.darkPaint = false;
 	for (const shape of state.recipe.shapes) {
 		const html = _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(shape, state.recipe));
+		_rapierDrawNoteColours(html);
 		let node = previous.get(shape.id);
 		if (!node || node.outerHTML !== html) {
 			const fresh = _rapierDrawParseSvgNode(html);
@@ -905,6 +915,7 @@ function _rapierDrawAdoptShapeNodes() {
 		previous.delete(shape.id);
 	}
 	for (const leftover of previous.values()) leftover.remove();
+	_rapierDrawDarkStyleSync();
 	_rapierDrawSyncFonts();
 	_rapierDrawMarkSelection();
 }
@@ -912,15 +923,17 @@ function _rapierDrawAdoptShapeNodes() {
 function _rapierDrawRenderShapes(onlyIds) {
 	const state = _rapierDrawState;
 	if (!state.svg) return;
+	let refused = null;
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			if (onlyIds?.length && !attempt) _rapierDrawPatchShapeNodes(onlyIds);
 			else _rapierDrawAdoptShapeNodes();
 			state.renderEdit = null;
+			if (refused) showToast(refused.code === 'drawing_route_blocked' ? 'That move blocks a connector. Your diagram was kept.' : refused.message, 'error');
 			return;
 		} catch (error) {
 			if (!['drawing_work_limit', 'drawing_geometry_limit', 'drawing_route_blocked'].includes(error.code)) throw error;
-			showToast(error.code === 'drawing_route_blocked' ? 'No clear route. Move an obstacle or choose another route.' : error.code === 'drawing_geometry_limit' ? 'This would place the drawing outside its limits. Use a smaller move or size.' : 'Drawing is too detailed at this size. Reduce its size or detail.', 'error');
+			refused = error;
 			if (!attempt && state.gesture?.before) _rapierDrawEndGesture(true);
 			else {
 				const prior = !attempt && state.renderEdit;
@@ -964,6 +977,18 @@ function _rapierDrawGrowCanvas(minX, minY, maxX, maxY) {
 	_rapierDrawApplyView();
 	return { dx, dy };
 }
+// The paper holds everything on it (the founder, 29 September: the canvas "is not expanding automatically
+// properly to capture new content ... It's everything"): after every committed change the canvas grows to the
+// scene's painted bounds with a margin, the same growth a stroke past the edge makes, so a box dragged off the
+// paper, a lowered diagram or a word typed at its edge is never left off it. It never shrinks; Undo takes a
+// growth back with the step that made it (_rapierDrawCommand records the shift on that step).
+const RAPIER_DRAW_PAPER_MARGIN = 24;
+function _rapierDrawGrowCanvasToContent(recipe = _rapierDrawState.recipe) {
+	const box = recipe && _rapierDrawUnionView(recipe);
+	if (!box) return null;
+	const m = RAPIER_DRAW_PAPER_MARGIN;
+	return _rapierDrawGrowCanvas(box.minX - m, box.minY - m, box.maxX + m, box.maxY + m);
+}
 // A growth that moved every shape moved the window with them, and the history snapshot was taken
 // BEFORE it: undoing puts the shapes back at their old coordinates, so the window has to give the
 // shift back or everything the person kept slides across the glass at the moment they asked for one
@@ -982,11 +1007,10 @@ function _rapierDrawRecordShift(dx, dy) {
 // #btn-redo), cloned when the surface is built -- the element, its class, glyph and size, styled by the
 // same rules (rapier-app.css .icon-btn, .rapier-dial), turned by the same dial (_rapierDialTurn) and
 // saying their state through the same function (_rapierDialSay). Only the act they call is Draw's. The
-// arrow's motion class is the editor's of the moment, so it is left behind.
+// per-button animation is owned by the live DOM and is not copied.
 function _rapierDrawDialButton(act) {
 	const button = document.getElementById('btn-' + act).cloneNode(true);
 	button.removeAttribute('id'); button.removeAttribute('data-action'); button.dataset.drawAct = act;
-	button.querySelector('svg').removeAttribute('class');
 	return button;
 }
 // What they say, as the editor's say it (editor/engine.js renderHistory): a step of Draw's has no name, so
@@ -1647,7 +1671,7 @@ function _rapierDrawPlaceTextInput() {
 	const bounds = layout.bounds, viewport = window.visualViewport, left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
 	const right = left + (viewport?.width || innerWidth), bottom = top + (viewport?.height || innerHeight);
 	const a = mapLocal(bounds.minX, bounds.minY), z = mapLocal(bounds.maxX, bounds.maxY);
-	const controls = edit.controls, controlsWidth = Math.min(controls.offsetWidth || 220, Math.max(80, right - left - 16));
+	const controls = edit.controls, controlsWidth = Math.min(360, Math.max(80, right - left - 16));
 	controls.style.width = controlsWidth + 'px';
 	const controlsHeight = controls.offsetHeight || 96, below = bottom - 8 - z[1] >= controlsHeight;
 	const controlsTop = below ? z[1] + 6 : Math.max(top + 8, a[1] - controlsHeight - 6);
@@ -1662,17 +1686,17 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 	// Structure: `root` is a full-viewport, pointer-events:none frame so it never intercepts drawing-
 	// surface touches of its own; `box` is the exact glyph-aligned overlay (rotated, sized and
 	// positioned by _rapierDrawPlaceTextInput above) holding only the textarea; `controls` is one
-	// 44px-tall floating row (size, alignment, cancel, set) that does NOT share the glyph box's tight
-	// size, so a one-character label doesn't have to carry 44px touch targets glued to its own edge.
+	// Controls sit apart from the glyph box: alignment/actions above size, so even a one-character
+	// label can be edited without packing every control into its own tight width.
 	const root = document.createElement('div'), box = document.createElement('div'), input = document.createElement('textarea');
-	const controls = document.createElement('div'), styleRow = document.createElement('div'), actions = document.createElement('div');
+	const controls = document.createElement('div'), styleRow = document.createElement('div'), actions = document.createElement('div'), sizeRow = document.createElement('div');
 	root.className = 'rapier-draw-text-editor'; box.className = 'rapier-draw-text-box'; input.className = 'rapier-draw-label-input';
-	controls.className = 'rapier-draw-text-controls'; styleRow.className = 'rapier-draw-text-style'; actions.className = 'rapier-draw-text-actions';
+	controls.className = 'rapier-draw-text-controls'; styleRow.className = 'rapier-draw-text-style'; actions.className = 'rapier-draw-text-actions'; sizeRow.className = 'rapier-draw-text-size-row';
 	input.value = options.initial ?? shape.label ?? ''; input.spellcheck = true;
 	input.setAttribute('aria-label', shape.recognized === 'text' ? 'Drawing text' : 'Shape label');
 	actions.innerHTML = '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-text-cancel aria-label="cancel">' + RAPIER_DRAW_ICONS.close + '</button>' +
 		'<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-chip--go" data-text-done aria-label="set text">' + RAPIER_DRAW_ICONS.check + '</button>';
-	box.append(input); controls.append(styleRow, actions); root.append(box, controls); state.surface.append(root);
+	box.append(input); controls.append(styleRow, sizeRow); root.append(box, controls); state.surface.append(root);
 	const edit = state.textEdit = { id: shape.id, session: state.session, before, selection, panel: root, box, input, controls, composing: false };
 	state.labelInput = input; _rapierDrawSetSelection([shape.id]); state.menu.hidden = true;
 	// Shared by typing and by a live style change (Size/Align below): builds a candidate recipe,
@@ -1705,9 +1729,10 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 		const align = live.labelAlign || (isText ? 'start' : 'middle');
 		// R85c: the size while typing is the same seek slider as everywhere else in Draw, with its
 		// number beside it; the size lands on release (a change), the word moves with the finger.
-		styleRow.innerHTML = '<input class="rapier-draw-text-size" type="range" data-text-size min="' + RAPIER_DRAW_TEXT_SIZE_MIN + '" max="' + Math.max(RAPIER_DRAW_TEXT_SIZE_MAX, size) + '" step="1" value="' + size + '" aria-label="Text size"><output class="rapier-draw-nib-word" data-text-size-word>' + size + '</output>' +
-			[['start', 'align-left', 'Left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (align === id) + '">' + RAPIER_DRAW_ICONS[icon] + '</button>').join('');
-		_rapierDrawSeekWrap(styleRow.querySelector('[data-text-size]'));
+		styleRow.innerHTML = [['start', 'align-left', 'Left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (align === id) + '">' + RAPIER_DRAW_ICONS[icon] + '</button>').join('');
+		styleRow.append(actions);
+		sizeRow.innerHTML = '<input class="rapier-draw-text-size" type="range" data-text-size min="' + RAPIER_DRAW_TEXT_SIZE_MIN + '" max="' + Math.max(RAPIER_DRAW_TEXT_SIZE_MAX, Math.ceil(size)) + '" step="1" value="' + size + '" aria-label="Text size"><output class="rapier-draw-nib-word" data-text-size-word>' + Math.round(size) + '</output>';
+		_rapierDrawSeekWrap(sizeRow.querySelector('[data-text-size]'));
 	};
 	const applyStyle = (key, value) => {
 		const ok = applyChange(changed => { changed[key] = value; });
@@ -1782,8 +1807,8 @@ function _rapierDrawEditLabelInPlace(shape, options = {}) {
 		const alignBtn = evt.target.closest('[data-text-align]');
 		if (alignBtn) applyStyle('labelAlign', alignBtn.dataset.textAlign);
 	});
-	styleRow.addEventListener('change', evt => { if (evt.target.matches('[data-text-size]')) applyStyle('textSize', Number(evt.target.value)); });
-	styleRow.addEventListener('input', evt => { if (evt.target.matches('[data-text-size]')) { const out = styleRow.querySelector('[data-text-size-word]'); if (out) out.textContent = String(Math.round(Number(evt.target.value))); } });
+	sizeRow.addEventListener('change', evt => { if (evt.target.matches('[data-text-size]')) applyStyle('textSize', Number(evt.target.value)); });
+	sizeRow.addEventListener('input', evt => { if (evt.target.matches('[data-text-size]')) { const out = sizeRow.querySelector('[data-text-size-word]'); if (out) out.textContent = String(Math.round(Number(evt.target.value))); } });
 	renderStyleRow(); update();
 	if (options.at) {
 		const offset = _rapierDrawClamp(_rapierDrawOffsetForPoint(_rapierDrawTextLayout(shape, state.recipe), options.at[0], options.at[1]), 0, input.value.length);
@@ -1810,7 +1835,7 @@ function _rapierDrawCreateText(a, b = a, initial = '') {
 	if (state.ink) shape.ink = state.ink;
 	let base = state.recipe;
 	if (textStyle.textFont && !['sans', 'serif', 'mono'].includes(textStyle.textFont) && !_rapierDrawLetterFont(textStyle.textFont) && !base.fonts?.some(font => font.id === textStyle.textFont)) {
-		const draft = state.textFontDrafts?.get(textStyle.textFont);
+		const draft = _rapierDrawAvailableFonts().find(font => font.id === textStyle.textFont);
 		if (!draft) { showToast('That custom font is no longer available', 'error'); return; }
 		try { base = { ...base, fonts: globalThis.RapierDrawFonts.admitFonts([...(base.fonts || []), draft]) }; }
 		catch (error) { showToast(String(error.message || error), 'error'); return; }
@@ -1838,6 +1863,7 @@ function _rapierDrawFontFacesClear() {
 }
 function _rapierDrawAvailableFonts() {
 	const state = _rapierDrawState, out = new Map();
+	for (const font of _rapierPersonal.fonts()) out.set(font.id, font);
 	for (const font of state.recipe?.fonts || []) out.set(font.id, font);
 	for (const font of state.textFontDrafts?.values() || []) if (!out.has(font.id)) out.set(font.id, font);
 	return [...out.values()];
@@ -1879,8 +1905,10 @@ async function _rapierDrawUploadFont(file, target = 'selection') {
 		if (!state.open || state.session !== session || state.fontUpload !== upload || state.finishing || state.textEdit) return;
 		const saved = state.recipe.fonts || [], drafts = [...(state.textFontDrafts?.values() || [])], existing = saved.find(item => item.id === font.id) || drafts.find(item => item.id === font.id);
 		if (existing && existing.data !== font.data) throw new Error('The new font conflicts with a font already in the drawing. Choose a different font.');
-		const admitted = fonts.admitFonts([...saved, ...drafts.filter(item => !saved.some(savedFont => savedFont.id === item.id)), ...(existing ? [] : [font])]);
+		const admitted = fonts.admitFonts([font]);
 		const admittedFont = admitted.find(item => item.id === font.id) || existing || font;
+		await _rapierPersonal.addFont(admittedFont);
+		if (!state.open || state.session !== session || state.fontUpload !== upload || state.finishing || state.textEdit) return;
 		if (target === 'default') {
 			state.textFontDrafts ||= new Map();
 			if (!saved.some(item => item.id === font.id)) state.textFontDrafts.set(font.id, admittedFont);
@@ -1900,12 +1928,12 @@ async function _rapierDrawUploadFont(file, target = 'selection') {
 }
 
 const RAPIER_DRAW_TOOLS = ['select', 'brush', 'pen', 'paint', 'shape', 'text', 'erase'];
-const RAPIER_DRAW_TOOL_MENU = ['brush', 'paint', 'pen', 'erase', 'shape', 'text', 'image', 'select'];
-// The current tool is a single, centred name in the head. The menu carries the full vocabulary;
+const RAPIER_DRAW_TOOL_MENU = ['brush', 'paint', 'erase', 'shape', 'text', 'image', 'select', 'pen'];
+// The current tool anchors the head's left edge. The menu carries the full vocabulary;
 // only Raster Brush is shortened in the head because the founder deliberately asked for RASTER.
-const RAPIER_DRAW_TOOL_WORDS = { select: 'Select', brush: 'SVG Brush', pen: 'SVG Pen', paint: 'Raster Brush', shape: 'Shape', text: 'Text', erase: 'Eraser', image: 'Image' };
+const RAPIER_DRAW_TOOL_WORDS = { select: 'Select', brush: 'SVG Brush', pen: 'SVG Pen (Testing)', paint: 'Raster Brush', shape: 'Shape', text: 'Text', erase: 'Eraser', image: 'Image' };
 const RAPIER_DRAW_TOOL_SHORT = { select: 'Select', brush: 'SVG Brush', pen: 'SVG Pen', paint: 'Raster', shape: 'Shape', text: 'Text', erase: 'Eraser' };
-// The empty canvas says what the tool in hand will actually do. A new drawing opens in Paint, a new
+// The empty canvas says what the tool in hand will actually do. A new drawing opens in SVG Brush, a new
 // drawing in a note on Notes' own last tool, and a drawing opened again on the tool it was last
 // edited with (_rapierDrawOpenSurface), so each tool keeps its own words: "Tap to paint" / "Try blending
 // colours" -- R86g law 8's words -- belong to Paint alone, since a vector tool's first stroke lays no
@@ -1947,6 +1975,10 @@ const RAPIER_DRAW_ICONS = {
 	get close() { return _rapierDrawSourceGlyph('#btn-embed-close'); },
 	get chevron() { return _rapierDrawSourceGlyph('#settings-open-chevron'); },
 	get clear() { return _rapierDrawSourceGlyph('notes:trash'); },
+	// The canvas is a paper's frame (the founder, 29 September: a perfect square with square corners, a fifth bigger
+	// than the rounded one, and inside it a smaller square a frame's gap in, its stroke marginally thinner); the
+	// control fills both with the current paper colour.
+	canvas: RAPIER_DRAW_ICON_WRAP('<rect x="1.2" y="1.2" width="21.6" height="21.6"></rect><rect x="5.6" y="5.6" width="12.8" height="12.8"></rect>'),
 	select: RAPIER_DRAW_ICON_WRAP('<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3.2 2.6"></rect>'),
 	// The brush is the editor's own DRAW button's (the floating toolbar); Paint's is that brush with its drops.
 	get brush() { return _rapierDrawSourceGlyph('[data-command="insert.draw"]'); },
@@ -1965,7 +1997,7 @@ const RAPIER_DRAW_ICONS = {
 	get trash() { return _rapierDrawSourceGlyph('notes:trash'); },
 	bigger: RAPIER_DRAW_ICON_WRAP('<polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>'),
 	smaller: RAPIER_DRAW_ICON_WRAP('<polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line>'),
-	turn: RAPIER_DRAW_ICON_WRAP('<path d="M19.95 11a8 8 0 1 0-.5 4"></path><path d="M20 4v5h-5"></path>'),
+	get turn() { return RAPIER_DRAW_ICON_WRAP(globalThis.RapierImageFlow.rotateGlyph); },
 	get lock() { return _rapierDrawSourceGlyph('will:keep'); },
 	unlock: RAPIER_DRAW_ICON_WRAP('<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>'),
 	get bold() { return _rapierDrawSourceGlyph('command:bold'); },
@@ -2008,7 +2040,7 @@ const RAPIER_DRAW_ICONS = {
 const RAPIER_DRAW_TOOL_SAYS = {
 	select: 'Select tool: tap a shape to choose it, drag empty space to choose several.',
 	brush: 'Brush: pressure and speed shape the stroke; a circle or box you draw can become a clean shape with one tap.',
-	pen: 'Pen: a clean line of one width, with a smoothing control.',
+	pen: 'SVG Pen (Testing): a clean line of one width, with a smoothing control.',
 	paint: 'Paint: MyPaint brushes on a paint layer inside the drawing; pressure, speed and direction shape the stroke.',
 	shape: 'Shape tool: drag out the shape you picked.',
 	text: 'Text tool: tap for growing text, or drag to set its wrapping width.',
@@ -2029,7 +2061,7 @@ const RAPIER_DRAW_TOOL_SETTINGS = Object.freeze({
 	// And then tools, set and the chevron." Each list is its row, in order (_rapierDrawUpdatePenBtn).
 	paint: ['paintBrushes', 'nib', 'dip', 'ink', 'paintTools', 'paintSet'],
 	shape: ['ink', 'nib', 'kinds', 'options'],
-	text: ['ink', 'textSize', 'textFont', 'textSpacing', 'textStyle', 'textAlign', 'textEffect'],
+	text: ['ink', 'textSize', 'textFont', 'textSpacing', 'textStyle', 'textAlign'],
 	erase: ['nib', 'eraseEdge'],
 });
 function _rapierDrawSetToolMenu(open) {
@@ -2041,7 +2073,7 @@ function _rapierDrawSetToolMenu(open) {
 	menu.hidden = !state.toolMenuOpen;
 	if (inside) trigger.focus({ preventScroll: true });
 	trigger.setAttribute('aria-expanded', String(state.toolMenuOpen));
-	if (state.toolMenuOpen) { const row = menu.querySelector('[data-draw-act="canvas"]'); if (row) { row.classList.toggle('rapier-draw-tool-menu-item--canvas-white', !!state.paper); row.querySelector('span:last-child').textContent = state.paper ? 'Canvas: white' : 'Canvas: black'; row.setAttribute('aria-label', state.paper ? 'canvas white; press for black' : 'canvas black; press for white'); } }
+
 	// R85b: the per-shape menu is a FIXED overlay above the whole surface (z 901) and the chooser
 	// hangs off the head inside it (z 8), so with a shape selected the menu sat on top of the tool
 	// list and ate the taps for whichever tools it covered -- the person tapped TEXT and stayed on
@@ -2075,17 +2107,16 @@ function _rapierDrawSetSettingsCollapsed(collapsed) {
 	const state = _rapierDrawState, settings = state.surface?.querySelector('.rapier-draw-settings');
 	if (!settings) return;
 	const btn = settings.querySelector('[data-draw-act="settingsCollapse"]');
-	// The fold moves nothing by its layout (docs/paint-tools.md, "Draw's moments"): the row gives its height back, or
-	// takes it, at once, and the chevron and the drawing glide from where they stood, a FLIP of transform alone -- one
-	// layout on the tap, where a height eased over the fold laid out the surface and resized the canvas in every frame.
-	const places = () => ({ chevron: btn?.getBoundingClientRect().left ?? 0, drawing: state.svgRoot?.getScreenCTM()?.f ?? 0 });
-	const before = !!collapsed !== !!state.settingsCollapsed && state.open && !_rapierDrawStill() ? places() : null;
+	// The fold moves nothing (docs/paint-tools.md, "Draw's moments"): the row floats over the stage, which is the
+	// viewport and never resizes for it (rapier-draw.css .rapier-draw-stage), so the drawing stays exactly where it
+	// was; only the chevron crosses to its other edge, a FLIP of transform alone -- one layout on the tap.
+	const place = () => btn?.getBoundingClientRect().left ?? 0;
+	const before = !!collapsed !== !!state.settingsCollapsed && state.open && !_rapierDrawStill() ? place() : null;
 	state.settingsCollapsed = !!collapsed;
 	settings.classList.toggle('rapier-draw-settings--collapsed', state.settingsCollapsed);
-	if (before) {
-		const after = places(), turn = state.settingsCollapsed ? [0, 180] : [180, 0];
-		_rapierDrawPlay(btn, 'foldChevron', Math.round(before.chevron - after.chevron), turn[0], turn[1]);
-		if (Math.abs(before.drawing - after.drawing) >= 1) _rapierDrawPlay(state.svgRoot, 'foldDrawing', Math.round(before.drawing - after.drawing));
+	if (before !== null) {
+		const turn = state.settingsCollapsed ? [0, 180] : [180, 0];
+		_rapierDrawPlay(btn, 'foldChevron', Math.round(before - place()), turn[0], turn[1]);
 	}
 	btn?.setAttribute('aria-label', state.settingsCollapsed ? 'Show tool controls' : 'Hide tool controls');
 	btn?.setAttribute('aria-expanded', String(!state.settingsCollapsed));
@@ -2778,12 +2809,12 @@ const RAPIER_DRAW_TEXT_FIGURES = { oldstyle: 'Old style', lining: 'Lining', tabu
 function _rapierDrawEffectGlyph() {
 	return _rapierDrawGlyph({ id: 'effect-sample', recognized: 'text', stroke: null, brush: 'ink', asDrawn: false, style: null, label: 'P', textSize: 34, textFont: 'serif', textBold: true, labelAlign: 'middle', textEffect: 'pressed', geom: { cx: 20, cy: 20 } });
 }
-// Draw's factory letter sets (draw/letters.mjs's catalogue): ornamental capitals a text can be set in. A chip is its set's
-// name until the set is here, then also a live sample, the first letter of its name drawn by the same writer as the canvas.
-function _rapierDrawLetterSets() { return globalThis.RapierDrawLetters?.LETTER_SETS || []; }
+// The page carries one capital per set for discovery; using the alphabet still loads its pinned set.
+function _rapierDrawLetterSets() { const sets = globalThis.RapierDrawLetters?.LETTER_SETS || []; return ['field', 'leaf', 'arabesque', 'relief'].map(id => sets.find(set => set.id === id)).filter(Boolean); }
 function _rapierDrawLetterFont(id) { return /^letters:/.test(id) && _rapierDrawLetterSets().some(set => 'letters:' + set.id === id); }
 function _rapierDrawLetterGlyph(set) {
-	return set && globalThis.RapierDrawLetters.letterSetHeld(set.id) ? _rapierDrawGlyph({ id: 'letter-sample', recognized: 'text', stroke: null, brush: 'ink', asDrawn: false, style: null, label: set.name[0], textSize: 30, textFont: 'letters:' + set.id, labelAlign: 'middle', geom: { cx: 20, cy: 20 } }) : '';
+	const sample = set && globalThis.RapierDrawLetters.LETTER_PREVIEWS[set.id];
+	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
 // No set rides in the page: each comes through the plug-in door (shell/plugin-loader.js RapierPluginLoader.files), one file
 // pinned by the catalogue's length and SHA-384 -- the app's own copy where the app keeps the plug-ins (Android's Play pack,
@@ -2893,18 +2924,23 @@ function _rapierDrawTextSpacingWord(value) {
 	const n = Math.round(Number(value) * 100);
 	return n === 0 ? 'Normal' : (n > 0 ? '+' : '') + n + '%';
 }
+// Both text entry points use the same font shelf. A drawing still embeds only the fonts it uses.
+function _rapierDrawFontControls(style, selection = false, effects = true) {
+	const fonts = _rapierDrawAvailableFonts(), chosen = style.textFont || 'sans', sets = _rapierDrawLetterSets();
+	const attr = id => selection ? 'data-draw-menu-act="property" data-draw-property="textFont" data-draw-value="' + _rapierDrawEscapeAttr(id) + '"' : 'data-draw-text-font="' + _rapierDrawEscapeAttr(id) + '"';
+	const fontButton = (id, word) => '<button type="button" class="rapier-draw-chip rapier-draw-font-choice" ' + attr(id) + ' aria-pressed="' + (id === chosen) + '" style="font-family:' + _rapierDrawEscapeAttr(globalThis.RapierDrawFonts.fontFamily(id, fonts)) + '">' + _rapierDrawEscapeAttr(word) + '</button>';
+	const add = '<button type="button" class="rapier-draw-chip rapier-draw-font-add" ' + (selection ? 'data-draw-menu-act="font-upload"' : 'data-draw-act="fontUpload"') + '>' + RAPIER_DRAW_ICONS.upload + '<span>Add</span></button>';
+	return '<div class="rapier-draw-font-controls"><div class="rapier-draw-font-grid">' + [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']].map(([id, word]) => fontButton(id, word)).join('') +
+		(fonts.length ? '<details class="rapier-draw-my-fonts"><summary class="rapier-draw-chip"' + (fonts.some(font => font.id === chosen) ? ' aria-current="true"' : '') + '>My Fonts<span class="rapier-draw-font-chevron">' + RAPIER_DRAW_ICONS.chevron + '</span></summary><div class="rapier-draw-font-menu">' + fonts.map(font => fontButton(font.id, font.name)).join('') + add + '</div></details>' : add) + '</div>' +
+		(sets.length ? '<div class="rapier-draw-letters" role="group" aria-label="Letter sets"><span class="rapier-draw-chip-head">Letter sets</span>' + sets.map(set => '<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-letter" ' + attr('letters:' + set.id) + ' aria-label="' + _rapierDrawEscapeAttr(set.name) + '" aria-pressed="' + ('letters:' + set.id === chosen) + '">' + _rapierDrawLetterGlyph(set) + '<span class="rapier-draw-chip-name">' + _rapierDrawEscapeAttr(set.name) + '</span></button>').join('') + '</div>' : '') +
+		(effects ? '<div class="rapier-draw-effects" role="group" aria-label="Effects"><span class="rapier-draw-chip-head">Effects</span><button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" ' + (selection ? 'data-draw-menu-act="property" data-draw-property="textEffect" data-draw-value="' + (style.textEffect === 'pressed' ? '' : 'pressed') + '"' : 'data-draw-text-effect="pressed"') + ' aria-label="Pressed" aria-pressed="' + (style.textEffect === 'pressed') + '">' + _rapierDrawEffectGlyph() + '<span class="rapier-draw-chip-name">Pressed</span></button></div>' : '') + '</div>';
+}
 function _rapierDrawRenderTextFontPanel() {
 	const state = _rapierDrawState, panel = state.surface?.querySelector('[data-draw-panel="textFont"]');
 	if (!panel) return;
-	const style = _rapierDrawTextDefaults(), builtins = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], available = _rapierDrawAvailableFonts();
+	const style = _rapierDrawTextDefaults(), available = _rapierDrawAvailableFonts();
 	if (!['sans', 'serif', 'mono'].includes(style.textFont) && !available.some(font => font.id === style.textFont) && !_rapierDrawLetterFont(style.textFont)) style.textFont = 'sans';
-	const sets = _rapierDrawLetterSets();
-	panel.innerHTML = [...builtins, ...available.map(font => [font.id, font.name])].map(([id, word]) =>
-		'<button type="button" class="rapier-draw-chip rapier-draw-text-choice" data-draw-text-font="' + _rapierDrawEscapeAttr(id) + '" aria-pressed="' + (id === style.textFont) + '">' + _rapierDrawEscapeAttr(word) + '</button>').join('') +
-		'<button type="button" class="rapier-draw-chip rapier-draw-chip--icon rapier-draw-font-add" data-draw-act="fontUpload" aria-label="Add font">' + RAPIER_DRAW_ICONS.upload + '<span class="rapier-draw-chip-name">Add</span></button>' +
-		_rapierDrawFiguresRow(style.textFont, available, style.textFigures, id => '<button type="button" class="rapier-draw-chip rapier-draw-text-choice" data-draw-text-figures="' + id + '" aria-pressed="' + (id === style.textFigures) + '">' + (id ? RAPIER_DRAW_TEXT_FIGURES[id] : 'Default') + '</button>') +
-		(sets.length ? '<span class="rapier-draw-letters" role="group" aria-label="Letters"><span class="rapier-draw-chip-head">Letters</span>' + sets.map(set =>
-			'<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-letter" data-draw-text-font="letters:' + set.id + '" aria-label="' + _rapierDrawEscapeAttr(set.name) + '" aria-pressed="' + ('letters:' + set.id === style.textFont) + '">' + _rapierDrawLetterGlyph(set) + '<span class="rapier-draw-chip-name">' + _rapierDrawEscapeAttr(set.name) + '</span></button>').join('') + '</span>' : '');
+	panel.innerHTML = _rapierDrawFontControls(style) + _rapierDrawFiguresRow(style.textFont, available, style.textFigures, id => '<button type="button" class="rapier-draw-chip rapier-draw-text-choice" data-draw-text-figures="' + id + '" aria-pressed="' + (id === style.textFigures) + '">' + (id ? RAPIER_DRAW_TEXT_FIGURES[id] : 'Default') + '</button>');
 }
 // The figure styles a font carries (an uploaded font's own substitution features; a built-in family
 // promises none), as one row under the fonts. A font without them shows no row.
@@ -2938,7 +2974,7 @@ function _rapierDrawSyncTextPanels() {
 // command, one Undo), and the next text takes the same; with none it is the next text's alone.
 function _rapierDrawEffectTargets() { return _rapierDrawSelectedShapes().filter(shape => shape.recognized === 'text' && !shape.locked); }
 function _rapierDrawSyncTextEffect() {
-	const state = _rapierDrawState, panel = state.surface?.querySelector('[data-draw-panel="textEffect"]');
+	const state = _rapierDrawState, panel = state.surface?.querySelector('[data-draw-panel="textFont"]');
 	if (!panel) return;
 	const targets = _rapierDrawEffectTargets(), style = _rapierDrawTextDefaults();
 	for (const button of panel.querySelectorAll('[data-draw-text-effect]')) {
@@ -2957,8 +2993,6 @@ function _rapierDrawToggleTextEffect(id) {
 	style.textEffect = on ? id : '';
 	if (targets.length) _rapierDrawCommand(() => { for (const shape of _rapierDrawEffectTargets()) { if (on) shape.textEffect = id; else delete shape.textEffect; } });
 	_rapierDrawSyncTextEffect();
-	const sample = state.surface?.querySelector('[data-draw-text-effect="' + id + '"] .rapier-draw-glyph');
-	_rapierDrawPlay(sample, on ? 'press' : 'lift');
 	return state;
 }
 function _rapierDrawSetTextDefault(key, value, asked = false) {
@@ -3020,11 +3054,34 @@ function _rapierDrawDisplayInk(hex) {
 	const low = hex.toLowerCase();
 	return low === _rapierDrawShapeInk({}) ? _rapierDrawPaperInk() || _rapierDeriveDarkColor(low) : _rapierDeriveDarkColor(low);
 }
+// A shape's markup keeps its light attributes on every paper: on dark paper the canvas's own style (below) turns
+// them, so a diagram's grey boxes, quiet numbers and accent read on black as the page shows them.
 function _rapierDrawDisplayMarkup(html) {
 	if (typeof _rapierPaintShowable === 'function') html = _rapierPaintShowable(html);
-	if (!html || !_rapierDrawDarkPaper() || typeof _rapierDeriveDarkColor !== 'function') return html;
-	const ink = _rapierDrawShapeInk({}), paper = _rapierDrawPaperInk();
-	return html.replace(/\b(fill|stroke|color|stop-color)="(#[0-9a-fA-F]{6})"/g, (match, attr, hex) => { const low = hex.toLowerCase(); return attr + '="' + (low === ink && paper ? paper : _rapierDeriveDarkColor(low)) + '"'; });
+	return html;
+}
+// ---- The live canvas on dark paper wears the file's own dark rules ----------------------------------------
+// The file carries its dark presentation as media-gated rules (core.mjs _rapierDrawDiagramDark: the approved
+// diagram pairs, the words' contrast on a solid box, author colours, paint's filter). On dark paper the canvas wears
+// the same rules, unconditional and scoped to itself, so what you draw is what the page shows (the founder, 29
+// September, on the canvas toggle: "they become invisible and the style's all fucked up"). The colours are noted as
+// each shape's markup is made, keyed the way the rules read them; the light attributes stay in the markup.
+function _rapierDrawNoteColours(html) {
+	const state = _rapierDrawState;
+	if (!state.darkUsed) state.darkUsed = new Set();
+	let grew = false;
+	for (const entry of _rapierDrawUsedColours(html)) if (!state.darkUsed.has(entry)) { state.darkUsed.add(entry); grew = true; }
+	if (!state.darkCurrentColor && html.includes('currentColor')) { state.darkCurrentColor = true; grew = true; }
+	if (!state.darkPaint && html.includes('data-rapier-paint=')) { state.darkPaint = true; grew = true; }
+	return grew;
+}
+function _rapierDrawDarkStyleSync() {
+	const state = _rapierDrawState, style = state.svgRoot?.querySelector('.rapier-draw-dark');
+	if (!style) return;
+	if (!_rapierDrawDarkPaper() || !state.recipe) { if (style.textContent) style.textContent = ''; return; }
+	const rules = _rapierDrawDarkRules(state.darkUsed || new Set(), state.recipe, { currentColor: !!state.darkCurrentColor, paint: !!state.darkPaint });
+	const text = rules.map(rule => '.rapier-draw-canvas ' + rule).join('');
+	if (style.textContent !== text) style.textContent = text;
 }
 // R85c. The CANVAS is lit by the paper (dark until a painting puts white paper under everything);
 // the CHROME around it is lit by the THEME alone. The two rules above serve the canvas. A sample
@@ -3125,6 +3182,7 @@ function _rapierDrawRememberInk(value) {
 	rows.length = Math.min(rows.length, RAPIER_DRAW_RECENT_MAX);
 	_rapierDrawState.recentInks = rows;
 	try { localStorage.setItem(RAPIER_DRAW_RECENT_KEY, JSON.stringify(rows)); } catch (_) {}
+	_rapierPersonal.rememberDrawing('recentInks', JSON.stringify(rows));
 }
 function _rapierDrawPalette(ink, scope) {
 	// Under Raster Brush the tool's own default is the accent (R85), so the first swatch after the
@@ -3366,7 +3424,7 @@ function _rapierDrawUpdateMenu() {
 				// Brushes: a stroke painted as drawn takes the ink brushes (the real brush, spring,
 				// rope, tube, ray, light); a recognised figure takes the brushes for its kind, and
 				// every kind can go back to a freehand brush look. All shown as themselves.
-				const brushes = paintsInk ? _rapierDrawBrushesFor('ink') : editable ? _rapierDrawBrushesFor(shape.recognized) : [];
+				const brushes = paintsInk ? _rapierDrawBrushesFor('ink') : editable ? _rapierDrawBrushesFor(shape.recognized, shape.stroke != null) : [];
 				if (brushes.length > 1) html += '<span class="rapier-draw-menu-row rapier-draw-glyph-row">' + brushes.map(id => _rapierDrawGlyphChip('brush', _rapierDrawBrushGlyph(paintsInk ? 'ink' : shape.recognized, id, shape), RAPIER_DRAW_BRUSH_LABEL[id], id, brush === id)).join('') + '</span>';
 				if (editable && brush === 'ink') {
 					const styles = arrow ? [['plain', 'Line'], ['arrow', 'Arrow'], ['dimension', 'Dimension']] : shape.recognized === 'arc' ? [] : [['outline', 'Outline'], ['hatch', 'Hatch'], ['stipple', 'Stipple'], ['solid', 'Solid']];
@@ -3389,8 +3447,7 @@ function _rapierDrawUpdateMenu() {
 			if (!group) html += _rapierDrawIconChip('label', 'type', shape.label ? 'Edit text' : 'Add text');
 			const size = shape.textSize || (text ? 24 : 14);
 			html += _rapierDrawSeekControl('textSize', 'Size', RAPIER_DRAW_TEXT_SIZE_MIN, Math.max(RAPIER_DRAW_TEXT_SIZE_MAX, size), 1, size) +
-				_rapierDrawChoiceControl('textFont', 'Font', [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ...(state.recipe.fonts || []).map(font => [font.id, font.name])], shape.textFont || 'sans') + _rapierDrawIconChip('font-upload', 'upload', 'Add font') +
-				(_rapierDrawLetterSets().length ? _rapierDrawChoiceControl('textFont', 'Letters', _rapierDrawLetterSets().map(set => ['letters:' + set.id, set.name]), shape.textFont || 'sans', id => _rapierDrawLetterGlyph(_rapierDrawLetterSets().find(set => 'letters:' + set.id === id))) : '');
+				_rapierDrawFontControls(shape, true, shapes.every(item => item.recognized === 'text'));
 			html += '<span class="rapier-draw-menu-row">' + [['textBold', 'bold', 'Bold'], ['textItalic', 'italic', 'Italic'], ['textUnderline', 'underline', 'Underline']].map(([id, icon, word]) => _rapierDrawIconChip('text-toggle', icon, word, id, !!shape[id], pressed(shape[id]))).join('') +
 				'<span class="rapier-draw-menu-gap"></span>' + [['start', 'align-left', 'Align left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Align right']].map(([id, icon, word]) => _rapierDrawIconChip('text-align', icon, word, id, (shape.labelAlign || (text ? 'start' : 'middle')) === id, pressed((shape.labelAlign || (text ? 'start' : 'middle')) === id))).join('') + '</span>';
 			if (!group && !text && !arrow && shape.recognized !== 'arc') {
@@ -3407,9 +3464,6 @@ function _rapierDrawUpdateMenu() {
 				_rapierDrawChoiceControl('textKern', 'Kerning', [['on', 'On'], ['off', 'Off']], shape.textKern === false ? 'off' : 'on');
 			const figures = _rapierDrawFontFigures(shape.textFont || 'sans', state.recipe.fonts);
 			if (figures.length) html += _rapierDrawChoiceControl('textFigures', 'Figures', [['', 'Default'], ...figures.map(id => [id, RAPIER_DRAW_TEXT_FIGURES[id]])], shape.textFigures || '');
-			// The one effect (the founder: "focus on just this one specific effect"), on a text of its own.
-			if (shapes.every(item => item.recognized === 'text')) html += '<span class="rapier-draw-menu-row rapier-draw-glyph-row" data-draw-property-row="textEffect" role="group" aria-label="Effect"><span class="rapier-draw-chip-head">Effect</span>' +
-				_rapierDrawGlyphChip('property', _rapierDrawEffectGlyph(), 'Pressed', shape.textEffect === 'pressed' ? '' : 'pressed', shape.textEffect === 'pressed', ' data-draw-property="textEffect" style="flex:none"') + '</span>';
 		} else if (pane === 'path' && arrow) {
 			html += _rapierDrawChoiceControl('route', 'Route', [['straight', 'Straight'], ['curved', 'Curved'], ['elbow', 'Elbow'], ['auto', 'Avoid shapes']], shape.route || 'straight', id => id === 'auto' ? '' : _rapierDrawKindGlyph('arrow', { route: id, bend: id === 'curved' ? 8 : undefined }));
 			const heads = [['none', 'None'], ['arrow', 'Open arrow'], ['triangle', 'Triangle'], ['dot', 'Dot'], ['diamond', 'Diamond'], ['bar', 'Bar']];
@@ -3488,11 +3542,29 @@ function _rapierDrawViewBase() {
 	const canvas = state.recipe?.canvas;
 	return (state.viewBase = canvas ? { w: canvas.w, h: canvas.h } : { w: 1, h: 1 });
 }
-// The window is re-measured against the canvas only where a canvas is genuinely new to the person:
-// the drawing opening, and a still-empty canvas taking the stage's size after a real rotation.
-function _rapierDrawViewBaseReset() {
-	const canvas = _rapierDrawState.recipe?.canvas;
-	if (canvas) _rapierDrawState.viewBase = { w: canvas.w, h: canvas.h };
+// The window is re-measured only where a canvas is genuinely new to the person: the drawing opening, and a
+// still-empty canvas taking the stage's size after a real rotation. The window at zoom 1 is the whole stage in
+// canvas units, at the scale that fits the paper into the band under the settings row (state.viewInset, the
+// row's height, measured at open) and centred there. The stage is the viewport and the row floats over it (the
+// founder, 29 September: "your viewport is locked to a particular position in the canvas, and then the UI is
+// locked to your viewport. The canvas is not locked to the UI"), so folding the row moves nothing: it only
+// uncovers the band above the paper.
+function _rapierDrawViewBaseReset(rect = _rapierDrawState.svgRoot?.getBoundingClientRect()) {
+	const state = _rapierDrawState, canvas = state.recipe?.canvas;
+	if (!canvas) return;
+	const W = Math.max(1, rect?.width || canvas.w), H = Math.max(1, rect?.height || canvas.h), inset = Math.min(state.viewInset || 0, H / 2);
+	const scale = Math.max(1e-6, Math.min(W / canvas.w, (H - inset) / canvas.h));
+	state.viewBase = { w: W / scale, h: H / scale };
+	const v = _rapierDrawView();
+	v.k = 1;
+	v.x = (canvas.w - state.viewBase.w) / 2;
+	v.y = -(inset + (H - inset - canvas.h * scale) / 2) / scale;
+}
+// The settings row's height while it is shown: the band the opening view keeps clear of the paper.
+function _rapierDrawSettingsInset() {
+	const state = _rapierDrawState, row = state.surface?.querySelector('.rapier-draw-settings');
+	if (row && !state.settingsCollapsed) return Math.max(0, Math.round(row.getBoundingClientRect().height));
+	return state.viewInset || 0;
 }
 function _rapierDrawApplyView() {
 	const state = _rapierDrawState, recipe = state.recipe, svg = state.svgRoot;
@@ -3505,6 +3577,8 @@ function _rapierDrawApplyView() {
 	v.y = Math.min(Math.max(v.y, -slackY), recipe.canvas.h + slackY - h);
 	const box = _rapierDrawFmt(v.x) + ' ' + _rapierDrawFmt(v.y) + ' ' + _rapierDrawFmt(w) + ' ' + _rapierDrawFmt(h);
 	if (svg.getAttribute('viewBox') !== box) svg.setAttribute('viewBox', box);
+	const paper = svg.querySelector('.rapier-draw-paper');
+	if (paper) { paper.setAttribute('width', recipe.canvas.w); paper.setAttribute('height', recipe.canvas.h); }
 	// The paint overlay is a raster positioned over the stage, not an SVG child, so it is placed again
 	// against the new window or it would sit still while everything under it moved.
 	if (typeof _rapierPaintPlaceLive === 'function') _rapierPaintPlaceLive();
@@ -3557,6 +3631,7 @@ function _rapierDrawPaintLive() {
 	if (tool === 'shape') {
 		const kind = _rapierDrawShapeKind(), geom = _rapierDrawShapeFromDrag(kind, pts[0], pts.at(-1));
 		state.preview.innerHTML = geom ? _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup({ id: 'preview', recognized: kind, geom, stroke: null, brush: 'ink', style: _rapierDrawDefaultStyle(kind), ink: state.ink, nib: state.nib }, state.recipe)) : '';
+		if (geom && _rapierDrawNoteColours(state.preview.innerHTML)) _rapierDrawDarkStyleSync();
 		return;
 	}
 	let d;
@@ -3786,9 +3861,9 @@ function _rapierDrawUpdateHandles() {
 		}
 		state.handles.push({ ...handle, screen: [x, y] });
 		// R21: text's own width handles read as a distinct pill, not the ordinary square corner marker.
-		const variant = handle.id === 'bend' || handle.id === 'rotate' || handle.id === 'label' ? ' rapier-draw-handle--round' : textHandles && (handle.id === 'e' || handle.id === 'w') ? ' rapier-draw-handle--pill' : '';
+		const variant = handle.id === 'rotate' ? ' rapier-draw-handle--rotate' : handle.id === 'bend' || handle.id === 'label' ? ' rapier-draw-handle--round' : textHandles && (handle.id === 'e' || handle.id === 'w') ? ' rapier-draw-handle--pill' : '';
 		const cursorDir = _rapierDrawResizeCursorDir(handle.id, theta), cursorAttr = cursorDir ? ' data-draw-cursor="' + cursorDir + '"' : '';
-		html += '<button type="button" class="rapier-draw-handle' + variant + '" data-draw-handle="' + handle.id + '"' + cursorAttr + ' aria-label="' + handle.label + '" style="left:' + x + 'px;top:' + y + 'px"><span></span></button>';
+		html += '<button type="button" class="rapier-draw-handle' + variant + '" data-draw-handle="' + handle.id + '"' + cursorAttr + ' aria-label="' + handle.label + '" style="left:' + x + 'px;top:' + y + 'px">' + (handle.id === 'rotate' ? RAPIER_DRAW_ICONS.turn : '<span></span>') + '</button>';
 	}
 	layer.innerHTML = html;
 }
@@ -3941,50 +4016,23 @@ function _rapierDrawApplyHandle(point, evt = {}, commit = false) {
 }
 function _rapierDrawTryBeginPinch(evt) {
 	const state = _rapierDrawState, gesture = state.gesture;
-	if (evt.pointerType === 'mouse' || state.secondPointerId != null || !gesture || !state.pointerPos || gesture.kind === 'handle' || gesture.kind === 'marquee') return;
-	// S7: a pen-owned gesture is not a pinch; a palm (any non-pen) cannot hijack it.
-	if (gesture.pointerType === 'pen' && evt.pointerType !== 'pen') return;
-	// R82: two fingers ZOOM THE CANVAS, under every tool. They used to scale the SELECTION, which
-	// meant that with nothing selected -- the whole time you are painting or drawing -- a pinch did
-	// nothing whatever, and a paint gesture refused a second finger outright. Selection scaling stays
-	// where it belongs: on Select, with something actually selected, reached by its own handles or by
-	// pinching it directly. Everything else is the camera.
-	const selectionPinch = _rapierDrawTool() === 'select' && _rapierDrawSelection().length && gesture.kind !== 'paint';
-	if (!selectionPinch) {
-		// Whatever this hand had started -- a stroke, a paint dab -- is given up for the zoom, with
-		// no ink kept: a person who puts a second finger down is navigating, not drawing.
-		// A paint gesture already under way keeps whatever it laid, exactly as a lost pointer does:
-		// the pixels are committed rather than thrown away, and the zoom takes over from there.
-		if (gesture.kind === 'paint') { if (gesture.paint?.pending) gesture.paint.discarded = true; else _rapierPaintCommit(); }
-		state.stroke = null; _rapierDrawClearLivePaint(); clearTimeout(gesture.holdTimer);
-		state.secondPointerId = evt.pointerId; state.secondPointerScreen = [evt.clientX, evt.clientY]; state.secondPointerPos = _rapierDrawSurfacePoint(evt);
-		try { state.svgRoot.setPointerCapture(evt.pointerId); } catch (_) {}
-		gesture.kind = 'zoom';
-		_rapierDrawHidePressRing();
-		const v = _rapierDrawView();
-		gesture.zoom = { first: state.pointerScreen.slice(), second: state.secondPointerScreen.slice(), view: { x: v.x, y: v.y, k: v.k } };
-		_rapierDrawResetStrokeBuffer(); evt.preventDefault();
-		return;
+	if (evt.pointerType !== 'touch' || state.secondPointerId != null || !gesture || !state.pointerScreen || evt.pointerId === state.pointerId) return;
+	// Two touches are always navigation, including over selected objects and their handles.
+	if (gesture.kind === 'paint') _rapierPaintReleaseStroke(gesture, true);
+	else if (gesture.before) {
+		state.recipe = _rapierDrawRestoreRecipe(gesture.before);
+		state.undoStack = gesture.beforeUndo; state.redoStack = gesture.beforeRedo;
 	}
-	// K4: a second finger during an uncommitted finger stroke cancels that stroke (no ink) and
-	// pinches the selection captured at pointer-down -- never a camera. An empty restored
-	// selection cancels and returns.
-	if (gesture.kind === 'stroke' && gesture.pointerType !== 'pen' && ['brush', 'pen', 'shape', 'erase'].includes(gesture.tool)) {
-		state.stroke = null; _rapierDrawClearLivePaint(); clearTimeout(gesture.holdTimer);
-		_rapierDrawSetSelection(gesture.selection);
-		if (!gesture.selection.length) { gesture.kind = 'cancelled'; _rapierDrawRenderAll(); return; }
-	}
-	if (!_rapierDrawSelection().length) return;
 	clearTimeout(gesture.holdTimer);
-	state.secondPointerId = evt.pointerId; state.secondPointerPos = _rapierDrawSurfacePoint(evt);
+	_rapierDrawSetSelection(gesture.selection || []);
+	state.stroke = null; state.renderEdit = null; state.lastTap = null; state.guides = [];
+	_rapierDrawEndMarquee(); _rapierDrawClearLivePaint(); _rapierDrawHidePressRing(); _rapierDrawResetStrokeBuffer();
+	state.secondPointerId = evt.pointerId; state.secondPointerScreen = [evt.clientX, evt.clientY]; state.secondPointerPos = _rapierDrawSurfacePoint(evt);
 	try { state.svgRoot.setPointerCapture(evt.pointerId); } catch (_) {}
-	gesture.kind = 'pinch';
-	// A second finger landing mid-press means the gesture is a pinch now, not a grab -- the ring's
-	// job (showing what a one-finger press is about to move) no longer applies.
-	_rapierDrawHidePressRing();
-	gesture.pinch = { first: state.pointerPos.slice(), second: state.secondPointerPos.slice() };
-	if (gesture.changed) { gesture.source = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe()); gesture.box = _rapierDrawSelectionBox(); }
-	_rapierDrawResetStrokeBuffer(); _rapierDrawClearLivePaint(); evt.preventDefault();
+	const view = _rapierDrawView();
+	state.gesture = {kind: 'zoom', tool: gesture.tool, selection: gesture.selection || [], dragged: true, zoom: {first: state.pointerScreen.slice(), second: state.secondPointerScreen.slice(), view: {...view}}};
+	_rapierDrawRenderAll(); _rapierPaintShowLive(true); _rapierDrawPaintGuides();
+	evt.preventDefault();
 }
 // Two fingers, in screen pixels: the span between them sets the zoom, their midpoint sets the pan,
 // and the canvas point that sat under that midpoint when the fingers landed stays under it -- which
@@ -4016,25 +4064,6 @@ function _rapierDrawApplyZoom(geom) {
 	_rapierDrawApplyView();
 	_rapierDrawUpdateHandles();
 }
-function _rapierDrawApplyPinch() {
-	const state = _rapierDrawState, gesture = state.gesture, start = gesture.pinch, a = state.pointerPos, b = state.secondPointerPos;
-	const span = Math.max(_rapierDrawDist(start.first, start.second), RAPIER_DRAW_PINCH_MIN_SPAN_PX / gesture.scale);
-	if (!gesture.changed && Math.max(_rapierDrawDist(a, start.first), _rapierDrawDist(b, start.second)) * gesture.scale <= RAPIER_DRAW_MOVE_THRESHOLD_PX) return;
-	_rapierDrawStartTransform();
-	const scale = _rapierDrawClamp(_rapierDrawDist(a, b) / span, RAPIER_DRAW_PINCH_MIN_SCALE, RAPIER_DRAW_PINCH_MAX_SCALE);
-	const angle = Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(start.second[1] - start.first[1], start.second[0] - start.first[0]);
-	const dx = (a[0] + b[0] - start.first[0] - start.second[0]) / 2, dy = (a[1] + b[1] - start.first[1] - start.second[1]) / 2;
-	const box = gesture.box, cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
-	const next = { minX: cx + (box.minX - cx) * scale + dx, maxX: cx + (box.maxX - cx) * scale + dx, minY: cy + (box.minY - cy) * scale + dy, maxY: cy + (box.maxY - cy) * scale + dy };
-	const shapes = _rapierDrawRestoreTransformShapes();
-	for (const shape of shapes) {
-		_rapierDrawResizeShape(shape, state.recipe, box, next); globalThis.RapierDrawEdit._rapierDrawFitText(shape, state.recipe);
-		_rapierDrawReleaseBindings(shape, gesture.ids);
-	}
-	_rapierDrawAnchorResize(state.recipe, gesture.ids, next, { x: .5, y: .5 });
-	for (const shape of shapes) _rapierDrawRotateShape(shape, state.recipe, cx + dx, cy + dy, angle);
-	_rapierDrawRenderShapes(gesture.ids);
-}
 function _rapierDrawEndGesture(cancel = false) {
 	const state = _rapierDrawState, gesture = state.gesture, pointers = [state.pointerId, state.secondPointerId];
 	if (gesture) {
@@ -4046,6 +4075,7 @@ function _rapierDrawEndGesture(cancel = false) {
 		// person no longer means (a tool switch, Undo/Redo or a lost pointer all cancel this way).
 		if (gesture.kind === 'paint' && cancel) {
 			state.gesture = null; state.pointerId = null; state.pointerPos = null;
+			_rapierPaintReleaseStroke(gesture);
 			if (gesture.paint?.pending) gesture.paint.discarded = true; else _rapierPaintCommit();
 		}
 		if (cancel) { if (gesture.before) state.recipe = _rapierDrawRestoreRecipe(gesture.before); _rapierDrawSetSelection(gesture.selection); }
@@ -4058,7 +4088,7 @@ function _rapierDrawEndGesture(cancel = false) {
 	_rapierDrawEndMarquee(); _rapierDrawClearLivePaint(); _rapierDrawHidePressRing();
 	for (const id of pointers) if (id != null) try { state.svgRoot.releasePointerCapture(id); } catch (_) {}
 }
-function _rapierDrawCancelGesture() { if (_rapierDrawState.gesture) { _rapierDrawEndGesture(true); _rapierDrawRenderAll(); } }
+function _rapierDrawCancelGesture() { _rapierDrawState.canvasTouches?.clear(); if (_rapierDrawState.gesture) { _rapierDrawEndGesture(true); _rapierDrawRenderAll(); } }
 function _rapierDrawGuard(action) {
 	return (...args) => {
 		const state = _rapierDrawState, gesture = state.gesture, undo = state.undoStack, top = undo.at(-1), redo = state.redoStack;
@@ -4083,11 +4113,18 @@ function _rapierDrawCommand(change, snapshot = true, menu = true) {
 	try {
 		change();
 		_rapierDrawRerouteBoundArrows(state.recipe);
+		// The paper follows the change (above): a growth that moved every shape left or down moved the window
+		// with them, and that shift is written on this step so Undo gives it back with the shapes.
+		const grown = _rapierDrawGrowCanvasToContent(state.recipe);
 		const admitted = _rapierDrawAdmitRecipe(state.recipe, true);
 		if (!admitted) throw new Error('Drawing change exceeds its limits');
 		const markup = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(admitted, false, true));
 		state.recipe = admitted;
-		if (snapshot && !_rapierDrawSameRecipe(before)) { _rapierDrawSnapshot(before); _rapierDrawSealHistory(); state.sweepBase = before; }
+		if (snapshot && !_rapierDrawSameRecipe(before)) {
+			_rapierDrawSnapshot(before);
+			if (grown && (grown.dx || grown.dy)) { const entry = state.undoStack.at(-1); entry.shift = { dx: (entry.shift?.dx || 0) + grown.dx, dy: (entry.shift?.dy || 0) + grown.dy }; }
+			_rapierDrawSealHistory(); state.sweepBase = before;
+		}
 		else if (!snapshot && state.sweepBase && state.undoStack.length) {
 			// A continuing sweep (a colour or slider drag) is one history step: its sealed delta is
 			// recomputed from the sweep's own base to the recipe as it now stands, so Undo returns to
@@ -4131,7 +4168,7 @@ function _rapierDrawOnPointerDown(evt) {
 	if (state.replay) _rapierDrawReplayEnd();
 	if (state.finishing || !_rapierDrawFinishText()) return;
 	if (state.pointerId != null) {
-		if (state.gesture?.pointerType === 'pen' && evt.pointerType !== 'pen') return;
+		if (state.gesture?.pointerType === 'pen' && evt.pointerType === 'touch') return;
 		_rapierDrawTryBeginPinch(evt); return;
 	}
 	state.settingEdit = null;
@@ -4200,7 +4237,6 @@ function _rapierDrawOnPointerMove(evt, commit = false) {
 	if (evt.pointerId === state.pointerId) { state.pointerPos = point; state.pointerScreen = [evt.clientX, evt.clientY]; }
 	else { state.secondPointerPos = point; state.secondPointerScreen = [evt.clientX, evt.clientY]; }
 	if (gesture.kind === 'zoom') { _rapierDrawApplyZoom(geom); return; }
-	if (gesture.kind === 'pinch') { _rapierDrawApplyPinch(); return; }
 	if (gesture.kind === 'paint') { if (!commit) _rapierPaintMove(events, gesture); return; }
 	const travel = _rapierDrawDist(point, gesture.origin) * gesture.scale;
 	if (travel > RAPIER_DRAW_MOVE_THRESHOLD_PX) { clearTimeout(gesture.holdTimer); gesture.dragged = true; }
@@ -4296,14 +4332,15 @@ function _rapierDrawOnPointerUp(evt) {
 	// `else` path does that any more), and a labelless geo shape or a bare arrow shaft does nothing
 	// on double-tap -- falling through to the ordinary single-tap reselect below, same as any other
 	// non-double tap on that shape.
+	if (!gesture.dragged && gesture.handle?.id === 'label') { _rapierDrawEditLabelInPlace(_rapierDrawSelectedShapes()[0], {at: gesture.origin}); return; }
 	if (double && gesture.tool === 'select' && !gesture.handle && gesture.downId) {
 		const shape = _rapierDrawShapeById(gesture.downId);
 		if (shape && (shape.recognized === 'text' || shape.label)) { _rapierDrawEditLabelInPlace(shape, { at: gesture.origin }); state.lastTap = null; return; }
 	}
-	if (kind === 'zoom' || kind === 'marquee' || kind === 'pinch' || kind === 'hold' || kind === 'handle' || kind === 'cancelled') { _rapierDrawRenderAll(); return; }
+	if (kind === 'zoom' || kind === 'marquee' || kind === 'hold' || kind === 'handle' || kind === 'cancelled') { _rapierDrawRenderAll(); return; }
 	if (kind === 'move') {
 		if (gesture.add) _rapierDrawSetSelection(_rapierDrawToggleSelection(gesture.selection, gesture.downId));
-		else if (gesture.selection.length === 1 && gesture.selection[0] === gesture.downId) {
+		else if (gesture.downId && !gesture.dragged) {
 			const shape = _rapierDrawShapeById(gesture.downId), label = _rapierDrawLabelBox(shape, state.recipe), p = gesture.origin;
 			if (label && p[0] >= label.minX && p[0] <= label.maxX && p[1] >= label.minY && p[1] <= label.maxY) { _rapierDrawEditLabelInPlace(shape, { at: p }); return; }
 		}
@@ -4426,6 +4463,12 @@ function _rapierDrawSetProperty(key, value, asked = false) {
 	if (key === 'transparency') { _rapierDrawSetFade(value, true); state.fadeEdit = false; state.sweepBase = null; _rapierDrawUpdateMenu(); return; }
 	if (key === 'align') { if (value) _rapierDrawEditSelection({ type: 'align', alignment: value }); return; }
 	_rapierDrawCommand(() => {
+		if (key === 'textFont' && !['sans', 'serif', 'mono'].includes(value) && !_rapierDrawLetterFont(value) && !state.recipe.fonts?.some(font => font.id === value)) {
+			const font = _rapierDrawAvailableFonts().find(font => font.id === value);
+			if (!font) throw new Error('That custom font is no longer available.');
+			state.recipe.fonts = globalThis.RapierDrawFonts.admitFonts([...(state.recipe.fonts || []), font]);
+		}
+
 		for (const shape of _rapierDrawSelectedShapes()) {
 			if (['textSize', 'lineHeight', 'letterSpacing', 'wordSpacing', 'labelPos'].includes(key)) shape[key] = Number(value);
 			else if (['textCase', 'textFigures', 'textEffect'].includes(key)) { if (key === 'textEffect' && shape.recognized !== 'text') continue; if (value) shape[key] = value; else delete shape[key]; }
@@ -4695,9 +4738,9 @@ function _rapierDrawBuildSurface() {
 	surface.setAttribute('role', 'dialog'); surface.setAttribute('aria-label', 'Draw'); surface.setAttribute('aria-modal', 'true');
 	surface.innerHTML = '<div class="rapier-draw-toolbar">' +
 		'<div class="rapier-draw-head">' +
-		'<button type="button" class="rapier-draw-current-tool" data-draw-act="toolMenu" aria-haspopup="menu" aria-expanded="false"></button>' +
-		// Law 48: the head's end runs from the tool box to the bar's end, and CLEAR stands centred in what DONE
-		// leaves of it (rapier-draw.css .rapier-draw-head-end).
+		// The tool box, the canvas frame, then Undo and Redo (appended below), evenly spaced (the founder, 29 September).
+		'<span class="rapier-draw-head-start"><button type="button" class="rapier-draw-current-tool" data-draw-act="toolMenu" aria-haspopup="menu" aria-expanded="false"></button>' +
+		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon rapier-draw-canvas-toggle" data-draw-act="canvas" aria-label="Canvas colour">' + RAPIER_DRAW_ICONS.canvas + '</button></span>' +
 		'<span class="rapier-draw-head-end"><span class="rapier-draw-head-clear">' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--clear" data-draw-act="clear">Clear</button></span>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done" data-draw-act="done">Done</button>' +
@@ -4705,9 +4748,6 @@ function _rapierDrawBuildSurface() {
 		'<div class="rapier-draw-tool-menu" role="menu" aria-label="Drawing tools" hidden>' + RAPIER_DRAW_TOOL_MENU.map(name => name === 'image'
 			? '<button type="button" class="rapier-draw-tool-menu-item" role="menuitem" data-draw-act="image" aria-label="' + RAPIER_DRAW_TOOL_SAYS.image + '">' + RAPIER_DRAW_ICONS.image + '<span>Image</span></button>'
 			: '<button type="button" class="rapier-draw-tool-menu-item" role="menuitemradio" data-draw-act="tool" data-draw-tool="' + name + '" aria-pressed="false" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>').join('') +
-			// R86g (docs/intent.md "R86g laws" 5): the canvas colour toggle, a global control kept at the
-			// foot of the chooser the way the image upload is; the word says what a press will do.
-			'<button type="button" class="rapier-draw-tool-menu-item rapier-draw-tool-menu-item--canvas" role="menuitem" data-draw-act="canvas" aria-label="canvas colour"><span class="rapier-draw-canvas-swatch" aria-hidden="true"></span><span>Canvas</span></button>' +
 			'</div></div>' +
 		'<div class="rapier-draw-settings" role="toolbar" aria-label="Tool settings"><div class="rapier-draw-settings-controls">' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="ink" data-draw-act="ink" aria-label="colour" data-tip="colour" aria-expanded="false"><span class="rapier-draw-ink-dot"></span><span class="rapier-draw-btn-name">colour</span></button>' +
@@ -4727,7 +4767,6 @@ function _rapierDrawBuildSurface() {
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="textStyle" data-draw-act="textStyle" aria-label="text style" data-tip="style" aria-expanded="false">' + RAPIER_DRAW_ICONS.bold + '<span class="rapier-draw-btn-name">style</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="textAlign" data-draw-act="textAlign" aria-label="text alignment" data-tip="align" aria-expanded="false">' + RAPIER_DRAW_ICONS['align-left'] + '<span class="rapier-draw-btn-name">align</span></button>' +
 		// The founder (docs/intent.md, "The pressed letter"): one EFFECTS button under Type, opening a full row of effects.
-		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="textEffect" data-draw-act="textEffect" aria-label="text effects" data-tip="effects" aria-expanded="false">' + RAPIER_DRAW_ICONS.effects + '<span class="rapier-draw-btn-name">effects</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="eraseEdge" data-draw-act="eraseEdge" aria-label="eraser edge softness, for painted marks" data-tip="edge (paint)" aria-expanded="false">' + RAPIER_DRAW_ICONS.smooth + '<span class="rapier-draw-btn-name">edge</span></button>' +
 		'</div><button type="button" class="rapier-draw-settings-collapse" data-draw-act="settingsCollapse" aria-label="Hide tool controls" aria-expanded="true">' + RAPIER_DRAW_ICONS.chevron + '</button></div>' +
 		// Every secondary panel lives in one zero-height layer under the settings row and FLOATS over
@@ -4771,24 +4810,27 @@ function _rapierDrawBuildSurface() {
 		'<span class="rapier-draw-text-cases" role="group" aria-label="Case">' + RAPIER_DRAW_TEXT_CASES.map(([id, face, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-text-case' + (id === 'small' ? ' rapier-draw-text-case--small' : '') + '" data-draw-text-case="' + id + '" aria-label="' + word + '" aria-pressed="' + !id + '">' + face + '</button>').join('') + '</span></div>' +
 		'<div class="rapier-draw-text-panel" data-draw-panel="textAlign" hidden role="group" aria-label="Text alignment">' +
 		[['start', 'align-left', 'Left'], ['middle', 'align-center', 'Centre'], ['end', 'align-right', 'Right']].map(([id, icon, word]) => '<button type="button" class="rapier-draw-chip rapier-draw-chip--icon" data-draw-text-align="' + id + '" aria-label="' + word + '" aria-pressed="' + (id === 'start') + '">' + RAPIER_DRAW_ICONS[icon] + '<span class="rapier-draw-chip-name">' + word + '</span></button>').join('') + '</div>' +
-		// One effect now, at the left; the rest of the row is empty on purpose (the founder: "that also communicates to
-		// the user that there's more to come"). The chip carries a live sample, the P pressed as the text will be.
-		'<div class="rapier-draw-text-panel rapier-draw-effects" data-draw-panel="textEffect" hidden role="group" aria-label="Effects">' +
-		'<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" data-draw-text-effect="pressed" aria-label="Pressed" aria-pressed="false">' + _rapierDrawEffectGlyph() + '<span class="rapier-draw-chip-name">Pressed</span></button></div>' +
 		'<div class="rapier-draw-smooth rapier-draw-erase-edge" data-draw-panel="eraseEdge" hidden><label class="rapier-draw-smooth-label" for="rapier-draw-erase-edge-input">Edge</label>' +
 		'<input id="rapier-draw-erase-edge-input" class="rapier-draw-nib-range" type="range" min="0" max="100" step="1" value="0" aria-describedby="rapier-draw-erase-edge-word">' +
 		'<span class="rapier-draw-edge-sample" aria-hidden="true"></span><output id="rapier-draw-erase-edge-word" class="rapier-draw-nib-word" for="rapier-draw-erase-edge-input">Hard</output></div></div>' +
-		'<div class="rapier-draw-stage"><svg class="rapier-draw-canvas" xmlns="http://www.w3.org/2000/svg"><path class="rapier-draw-replay-lead" d=""/><g class="rapier-draw-shapes"></g><g class="rapier-draw-preview"></g><g class="rapier-draw-guides"></g><path class="rapier-draw-press-ring" d=""/><path class="rapier-draw-scribble" d=""/><path class="rapier-draw-live" d=""/><rect class="rapier-draw-marquee" hidden/><g class="rapier-draw-replay-nib" aria-hidden="true"></g></svg>' +
+		'<div class="rapier-draw-stage"><svg class="rapier-draw-canvas" xmlns="http://www.w3.org/2000/svg"><defs>' + RAPIER_DRAW_PAINT_INK_FILTER + '</defs><style class="rapier-draw-dark"></style><rect class="rapier-draw-paper" x="0" y="0"/><path class="rapier-draw-replay-lead" d=""/><g class="rapier-draw-shapes"></g><g class="rapier-draw-preview"></g><g class="rapier-draw-guides"></g><path class="rapier-draw-press-ring" d=""/><path class="rapier-draw-scribble" d=""/><path class="rapier-draw-live" d=""/><rect class="rapier-draw-marquee" hidden/><g class="rapier-draw-replay-nib" aria-hidden="true"></g></svg>' +
 		'<span class="rapier-draw-nib-tag" aria-hidden="true" hidden></span>' +
 		'<div class="rapier-draw-replay-bar" hidden>' +
 		'<button type="button" class="rapier-draw-replay-btn" data-draw-replay="faster">Faster</button>' +
 		'<button type="button" class="rapier-draw-replay-btn" data-draw-replay="skip">Skip</button></div>' +
 		'<div class="rapier-draw-hint" aria-hidden="true">Tap to paint<span class="rapier-draw-hint-sub">Try blending colours</span></div></div><div class="rapier-draw-handles"></div><div class="rapier-draw-menu" hidden></div><input class="rapier-draw-font-input" type="file" accept=".ttf,.otf,font/ttf,font/otf" hidden><input class="rapier-draw-brush-input" type="file" accept=".myb,application/json" hidden><input class="rapier-draw-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/jxl,.jxl" multiple hidden>';
-	surface.querySelector('.rapier-draw-head').prepend(_rapierDrawDialButton('undo'), _rapierDrawDialButton('redo'));
+	surface.querySelector('.rapier-draw-head-start').append(_rapierDrawDialButton('undo'), _rapierDrawDialButton('redo'));
 	document.body.appendChild(surface);
 	for (const input of surface.querySelectorAll('input[type="range"]')) _rapierDrawSeekWrap(input);
 	_rapierDrawGuardRowSwipes(surface);
 	const state = _rapierDrawState;
+	// Dismissing the chooser owns this tap; it must not leave an accidental mark underneath.
+	surface.addEventListener('pointerdown', event => {
+		for (const menu of surface.querySelectorAll('.rapier-draw-my-fonts[open]')) if (!menu.contains(event.target)) menu.open = false;
+		if (!state.toolMenuOpen || event.target.closest('.rapier-draw-tool-menu,[data-draw-act="toolMenu"]')) return;
+		_rapierDrawSetToolMenu(false);
+		if (event.target.closest('.rapier-draw-stage')) { event.preventDefault(); event.stopPropagation(); }
+	}, true);
 	state.surface = surface; state.svgRoot = surface.querySelector('.rapier-draw-canvas'); state.svg = surface.querySelector('.rapier-draw-shapes');
 	state.live = surface.querySelector('.rapier-draw-live'); state.preview = surface.querySelector('.rapier-draw-preview'); state.marqueeEl = surface.querySelector('.rapier-draw-marquee');
 	state.pressRingEl = surface.querySelector('.rapier-draw-press-ring'); state.scribbleEl = surface.querySelector('.rapier-draw-scribble');
@@ -4841,6 +4883,31 @@ function _rapierDrawBuildSurface() {
 			};
 		},
 	});
+	// Capture touches across the canvas, handles and native label editor before an individual
+	// tool can claim them. One palm beside a pen is ignored; two actual touches take the camera.
+	const canvasTouches = state.canvasTouches = new Map();
+	surface.addEventListener('pointerdown', _rapierDrawGuard(evt => {
+		if (evt.pointerType !== 'touch' || !evt.target.closest('.rapier-draw-stage,.rapier-draw-handle,.rapier-draw-text-box')) return;
+		canvasTouches.set(evt.pointerId, {id: evt.pointerId, screen: [evt.clientX, evt.clientY]});
+		if (canvasTouches.size < 2 || state.gesture?.kind === 'zoom' || state.finishing) return;
+		if (!_rapierDrawFinishText()) return;
+		state.dropper?.close(false);
+		const first = [...canvasTouches.values()].find(touch => touch.id !== evt.pointerId);
+		const oldPointer = state.pointerId;
+		state.pointerId = first.id; state.pointerScreen = first.screen;
+		state.pointerPos = _rapierDrawSurfacePoint({clientX: first.screen[0], clientY: first.screen[1]});
+		state.gesture ||= {kind: 'hold', tool: _rapierDrawTool(), selection: _rapierDrawSelection(), pointerType: 'touch'};
+		if (oldPointer != null && oldPointer !== first.id) try { state.svgRoot.releasePointerCapture(oldPointer); } catch (_) {}
+		try { state.svgRoot.setPointerCapture(first.id); } catch (_) {}
+		_rapierDrawTryBeginPinch(evt);
+		evt.stopImmediatePropagation();
+	}), true);
+	surface.addEventListener('pointermove', evt => {
+		if (canvasTouches.has(evt.pointerId)) canvasTouches.get(evt.pointerId).screen = [evt.clientX, evt.clientY];
+	}, true);
+	for (const type of ['pointerup', 'pointercancel']) surface.addEventListener(type, evt => { canvasTouches.delete(evt.pointerId); }, true);
+	surface.addEventListener('lostpointercapture', evt => { if (!state.open) canvasTouches.clear(); }, true);
+
 	for (const target of [state.svgRoot, state.handlesLayer]) for (const [event, handler] of [['pointerdown', _rapierDrawOnPointerDown], ['pointermove', _rapierDrawOnPointerMove], ['pointerup', _rapierDrawOnPointerUp], ['pointercancel', _rapierDrawOnPointerCancel], ['lostpointercapture', _rapierDrawOnPointerCancel]]) target.addEventListener(event, _rapierDrawGuard(handler));
 	// A click is the echo of the release that set echoTap when no press came between them (every press clears it), it is
 	// that pointer's own (where the browser names the pointer) and it lands where the release did. Not a clock: a loaded
@@ -4895,14 +4962,14 @@ function _rapierDrawBuildSurface() {
 		if (act !== 'toolMenu' && act !== 'image') _rapierDrawSetToolMenu(false);
 		if (act === 'toolMenu') { _rapierDrawSetToolMenu(!state.toolMenuOpen); return; }
 		if (act === 'undo' || act === 'redo') _rapierDialTurn(button, act === 'redo', _rapierDrawUndo(act === 'redo') !== false);
-		else if (act === 'options' || ['textSize', 'textFont', 'textSpacing', 'textStyle', 'textAlign', 'textEffect', 'eraseEdge'].includes(act)) togglePanel(button, act);
+		else if (act === 'options' || ['textSize', 'textFont', 'textSpacing', 'textStyle', 'textAlign', 'eraseEdge'].includes(act)) togglePanel(button, act);
 		else if (['snap', 'repeat', 'proportions', 'center'].includes(act)) { const key = act === 'center' ? 'resizeFromCenter' : act; state[key] = !state[key]; button.setAttribute('aria-pressed', String(state[key])); button.setAttribute('aria-checked', String(state[key])); _rapierDrawUpdateMenu(); }
 		else if (act === 'unlockAll') _rapierDrawEditSelection({ type: 'unlockAll' });
 		else if (act === 'tool') _rapierDrawSetTool(button.dataset.drawTool);
 		else if (act === 'canvas') {
 			// The choice is the drawing's own (recipe.paper, undoable like any edit) and beats the
 			// automatic white a painting brings; the paper follows at once.
-			const next = state.paper ? 'black' : 'white';
+			const next = _rapierDrawDarkPaper() ? 'white' : 'black';
 			_rapierDrawCommand(() => { state.recipe.paper = next; });
 			_rapierPaintSyncPaper();
 		}
@@ -4958,6 +5025,8 @@ function _rapierDrawBuildSurface() {
 		['[data-draw-panel="textAlign"]', 'labelAlign', target => target.dataset.drawTextAlign],
 	]) _rapierDrawBindTap(surface.querySelector(selector), evt => {
 		if (selector === '[data-draw-panel="textFont"]' && evt.target.closest('[data-draw-act="fontUpload"]')) { void toolbar(evt); return; }
+		const effect = evt.target.closest('[data-draw-text-effect]');
+		if (effect && !state.finishing) { _rapierDrawToggleTextEffect(effect.dataset.drawTextEffect); return; }
 		const figures = evt.target.closest('[data-draw-text-figures]');
 		if (figures && !state.finishing) { _rapierDrawSetTextDefault('textFigures', figures.dataset.drawTextFigures); return; }
 		const target = evt.target.closest('[data-draw-text-font],[data-draw-text-align]');
@@ -4970,10 +5039,6 @@ function _rapierDrawBuildSurface() {
 		if (!target || state.finishing) return;
 		const key = target.dataset.drawTextStyle, style = _rapierDrawTextDefaults();
 		_rapierDrawSetTextDefault(key, !style[key]);
-	});
-	_rapierDrawBindTap(surface.querySelector('[data-draw-panel="textEffect"]'), evt => {
-		const target = evt.target.closest('[data-draw-text-effect]');
-		if (target && !state.finishing) _rapierDrawToggleTextEffect(target.dataset.drawTextEffect);
 	});
 	_rapierDrawBindTap(surface.querySelector('.rapier-draw-colours'), _rapierDrawMenuAction);
 	_rapierDrawBindTap(state.menu, _rapierDrawGuard(_rapierDrawMenuAction));
@@ -5028,7 +5093,8 @@ function _rapierDrawBuildSurface() {
 		// opened with, close without writing when it does not. No confirmation popup either way.
 		if (evt.key === 'Escape') {
 			evt.preventDefault();
-			if (state.gesture) _rapierDrawCancelGesture();
+			if (state.toolMenuOpen) _rapierDrawSetToolMenu(false);
+			else if (state.gesture) _rapierDrawCancelGesture();
 			else if (_rapierDrawSelection().length) { _rapierDrawSetSelection([]); _rapierDrawRenderAll(); }
 			else _rapierDrawHandleBack();
 			return;
@@ -5101,7 +5167,7 @@ function _rapierDrawOpenSurface(options) {
 	// backup), so somebody halfway through a vector figure is not dragged into Paint every time they
 	// come back; a drawing saved before this law carried no tool and still opens in Select (law 4).
 	// A new drawing in a note opens on Notes' own last tool (RAPIER_DRAW_NOTES_TOOLS, above).
-	state.tool = state.editing ? (RAPIER_DRAW_TOOLS.includes(recipe.tool) ? recipe.tool : 'select') : state.notes ? _rapierDrawRemembered('notesTool') : 'paint';
+	state.tool = state.editing ? (RAPIER_DRAW_TOOLS.includes(recipe.tool) ? recipe.tool : 'select') : state.notes ? _rapierDrawRemembered('notesTool') : 'brush';
 	state.pen = state.tool === 'pen';
 	// A canvas a Notes door opened shows no note title (docs/intent.md law 13, the founder: "We don't need to
 	// display the note title. The user already knows they're in a note."); the note's name is the canvas's
@@ -5148,14 +5214,19 @@ function _rapierDrawOpenSurface(options) {
 	requestAnimationFrame(() => {
 		if (!state.open || state.session !== session) return;
 		const rect = state.svgRoot.getBoundingClientRect();
-		if (!opts.recipe) recipe.canvas = { w: Math.max(1, Math.round(rect.width)), h: Math.max(1, Math.round(rect.height)) };
+		// A new canvas is the stage less the settings row's band, so it opens whole and clear of the row.
+		state.viewInset = _rapierDrawSettingsInset();
+		if (!opts.recipe) recipe.canvas = { w: Math.max(1, Math.round(rect.width)), h: Math.max(1, Math.round(rect.height - state.viewInset)) };
 		state.canvasFollowsStage = !opts.recipe;
 		// The canvas is decided once, here: later chrome (keyboard, a toolbar row, the URL bar)
 		// must never resize it, only a real window-size change (device rotated) may.
 		state.openWindow = { w: innerWidth, h: innerHeight };
+		// A drawing that arrives with work off its paper (a box dragged past the edge before the paper
+		// followed content) takes its paper first, so the opening view shows all of it.
+		if (opts.recipe) _rapierDrawGrowCanvasToContent();
 		state.view = { x: 0, y: 0, k: 1 };
 		// The zoom is 1 against THIS canvas: a drawing opens showing the whole of its own paper.
-		_rapierDrawViewBaseReset();
+		_rapierDrawViewBaseReset(rect);
 		_rapierDrawApplyView();
 		_rapierDrawRenderAll();
 		// Taken once the canvas is settled (post-measurement for a brand-new drawing, so its own
@@ -5196,7 +5267,6 @@ const RAPIER_DRAW_MOMENTS = Object.freeze({
 	breathe: [[{ opacity: .5 }, { opacity: 1 }], 260, 'ease-out'],
 	// The fold: the chevron crosses to its other edge turning, and the drawing glides to where the row's height put it.
 	foldChevron: [(dx, from, to) => [{ transform: 'translateX(' + dx + 'px) rotate(' + from + 'deg)' }, { transform: 'rotate(' + to + 'deg)' }], 200, 'cubic-bezier(.2,.7,.2,1)'],
-	foldDrawing: [dy => [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], 200, 'cubic-bezier(.2,.7,.2,1)'],
 });
 const _rapierDrawPlaying = new WeakMap();
 function _rapierDrawPlay(el, name, ...args) {
@@ -5238,12 +5308,12 @@ function _rapierDrawFollowStage() {
 	// should never move... it moves when the keyboard comes up").
 	if (innerWidth === state.openWindow.w && innerHeight === state.openWindow.h) return;
 	state.openWindow = { w: innerWidth, h: innerHeight };
-	const rect = state.svgRoot.getBoundingClientRect(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+	const rect = state.svgRoot.getBoundingClientRect(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height - (state.viewInset || 0)));
 	if (w === recipe.canvas.w && h === recipe.canvas.h) return;
 	recipe.canvas = { w, h };
 	// A still-empty canvas taking the stage's size after a real rotation is a new canvas to the
 	// person, so the window is measured against it again. A canvas GROWN under a stroke is not.
-	_rapierDrawViewBaseReset();
+	_rapierDrawViewBaseReset(rect);
 	_rapierDrawApplyView();
 	// R84. This is THE line that cleared the founder's canvas, and it was deliberate code. The stage
 	// rect changing is a VIEW event -- a zoom, a rotation, a keyboard opening -- and it used to

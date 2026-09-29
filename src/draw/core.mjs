@@ -246,10 +246,15 @@ function _rapierDrawOnInk(fill) {
 const RAPIER_DRAW_PAINT_INK_FILTER = '<filter id="rapier-paint-ink" color-interpolation-filters="sRGB">' +
 	'<feColorMatrix type="matrix" values="-1 0 0 0 1 0 -1 0 0 1 0 0 -1 0 1 0 0 0 1 0"/>' +
 	'<feColorMatrix type="hueRotate" values="180"/></filter>';
-// One compact dark presentation, containing only paints this drawing actually uses. Light SVG attributes, the
-// recipe and raster payloads stay untouched. The approved diagram pairs win over the ordinary colour derivation.
-function _rapierDrawDiagramDark(body, recipe) {
-	const used = new Set([...body.matchAll(/\b(fill|stroke|color|stop-color)="(#[0-9a-f]{6})"/g)].map(m => m[1] + m[2]));
+// The colours a scene's markup uses, keyed attribute+hex, the way the dark presentation's rules read them.
+function _rapierDrawUsedColours(body) {
+	return new Set([...body.matchAll(/\b(fill|stroke|color|stop-color)="(#[0-9a-f]{6})"/g)].map(m => m[1] + m[2]));
+}
+// The dark presentation's rules, one list for the file (media-gated by _rapierDrawDiagramDark below) and for the
+// live canvas on dark paper (draw.js _rapierDrawDarkStyleSync, scoped to the canvas and unconditional), so what
+// you draw on black is what the page and the Share page show. Light SVG attributes, the recipe and raster payloads
+// stay untouched; the approved diagram pairs win over the ordinary colour derivation.
+function _rapierDrawDarkRules(used, recipe, { currentColor = false, paint = false } = {}) {
 	const pairs = Object.entries(RAPIER_DRAW_DIAGRAM), rules = [];
 	const look = pairs.some(([role, [light]]) => role !== 'ink' && (used.has('fill' + light) || used.has('stroke' + light)));
 	const turned = new Map(look ? pairs.map(([, pair]) => pair) : [RAPIER_DRAW_DIAGRAM.ink]);
@@ -260,7 +265,7 @@ function _rapierDrawDiagramDark(body, recipe) {
 		const attr = entry.slice(0, -7), hex = entry.slice(-7), dark = turn(hex);
 		if (!named.has(entry) && dark !== hex) rules.push('[' + attr + '="' + hex + '"]{' + attr + ':' + dark + '}');
 	}
-	if (body.includes('currentColor')) rules.push('[color="' + RAPIER_DRAW_INK + '"]{color:' + turn(RAPIER_DRAW_INK) + '}');
+	if (currentColor) rules.push('[color="' + RAPIER_DRAW_INK + '"]{color:' + turn(RAPIER_DRAW_INK) + '}');
 	for (const shape of recipe.shapes) {
 		if (shape.authorStyle) continue;
 		if (!shape.label || !shape.labelIn || shape.style !== 'solid' || shape.recognized === 'text' || shape.brush && shape.brush !== 'ink') continue;
@@ -279,8 +284,13 @@ function _rapierDrawDiagramDark(body, recipe) {
 		if (ink) rules.push(scope + ' [data-author-label] [fill]{fill:' + ink + '}');
 		if (fill && !a.stroke) rules.push(scope + ' > [data-box-mark]{stroke:' + ink + '}');
 	}
-	const paint = body.includes('data-rapier-paint=');
 	if (paint) rules.push('[data-rapier-paint]{filter:url(#rapier-paint-ink)}');
+	return rules;
+}
+// One compact dark presentation in the file, containing only paints this drawing actually uses.
+function _rapierDrawDiagramDark(body, recipe) {
+	const paint = body.includes('data-rapier-paint=');
+	const rules = _rapierDrawDarkRules(_rapierDrawUsedColours(body), recipe, { currentColor: body.includes('currentColor'), paint });
 	return (rules.length ? '<style>@media (prefers-color-scheme:dark){' + rules.join('') + '}</style>' : '') + (paint ? '<defs>' + RAPIER_DRAW_PAINT_INK_FILTER + '</defs>' : '');
 }
 
@@ -329,7 +339,9 @@ function _rapierDrawShapeInk(shape) {
 	return RAPIER_DRAW_INK_NAMES[ink] || ink || RAPIER_DRAW_INK;
 }
 
-function _rapierDrawBrushesFor(kind) {
+function _rapierDrawBrushesFor(kind, hasStroke = false) {
+	// Recognition never removes the looks available on the person's retained freehand stroke.
+	if (hasStroke && !['ink', 'line', 'arrow'].includes(kind)) return [...new Set([..._rapierDrawBrushesFor(kind), ...RAPIER_DRAW_INK_LOOK_BRUSHES])];
 	// Every figure can also wear the freehand brush look ('brush'); the Physico brushes are by kind.
 	// Sketch / hatched are the rough.js look: every figure, and as-drawn strokes (outline only).
 	const sketch = ['sketch', 'hatched'];
@@ -1019,17 +1031,35 @@ function _rapierDrawPenPathD(pts, smooth, last, size) {
 	if (!pts || pts.length < 2) return '';
 
 	const pressured = _rapierDrawStrokeHasPressure(pts);
-	const input = pressured ? pts.map(p => [p[0], p[1], p[3]]) : pts.map(p => [p[0], p[1]]);
 	const nib = size || RAPIER_DRAW_PEN_SIZE;
 	// A dot (a stroke shorter than its own nib) takes no taper: the tapers would eat the whole of
 	// it and leave nothing on the paper; it is a round dab of the nib's width instead.
 	let length = 0;
 	for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
 	const taper = length < nib ? 0 : nib * RAPIER_DRAW_PEN_TAPER;
+	// Compaction changes the distance between retained samples, not the hand's speed. The
+	// freehand library's distance-per-sample simulation therefore thinned every frozen chunk.
+	// Use the captured clock for velocity and time-based pressure settling; retain the library's
+	// simulation only for generated geometry, which has no capture clock. Source samples stay exact.
+	const clocked = pts.at(-1)[2] > pts[0][2] && pts.every((p, i) => Number.isFinite(p[2]) && (!i || p[2] >= pts[i - 1][2]));
+	let pressure = .5;
+	const input = pts.map((p, i) => {
+		if (pressured) return [p[0], p[1], p[3]];
+		if (!clocked || length < nib) return [p[0], p[1]];
+		if (i) {
+			const previous = pts[i - 1], dt = p[2] - previous[2];
+			if (dt > 0) {
+				const speed = Math.hypot(p[0] - previous[0], p[1] - previous[1]) / dt;
+				const target = 1 - Math.min(1, speed * (1000 / 60) / nib);
+				pressure += (target - pressure) * -Math.expm1(-dt / 45);
+			}
+		}
+		return [p[0], p[1], pressure];
+	});
 	let outline;
 	try {
 		outline = getStroke(input, { ...RAPIER_DRAW_PEN_OPTIONS, size: nib,
-			simulatePressure: !pressured && length >= nib, last: !!last,
+			simulatePressure: !pressured && !clocked && length >= nib, last: !!last,
 
 			start: { taper, cap: true },
 			end: { taper, cap: true } });
@@ -2006,6 +2036,9 @@ function _rapierDrawRouteChanges(recipe, ids, live = false) {
 		_rapierDrawPlaceConnectorLabels(edges, recipe, [], null, null);
 		return edges.map(s => s.id);
 	}
+	// Fixed captions are only a drag optimisation. If they block a local repair, let the
+	// canonical solver move every caption before refusing an otherwise valid scene.
+	try {
 	const changed = new Set(ids), targets = _rapierDrawRouteTargets(recipe);
 	const boxes = before.boxes.filter(b => changed.has(b.id)).concat(targets.filter(t => changed.has(t.target.id)).map(t => t.box));
 	const intersects = (a, b, pad = 32) => a.minX <= b.maxX + pad && a.maxX >= b.minX - pad && a.minY <= b.maxY + pad && a.maxY >= b.minY - pad;
@@ -2032,6 +2065,13 @@ function _rapierDrawRouteChanges(recipe, ids, live = false) {
 	const saved = {key: _rapierDrawRouteKey(recipe), fonts: recipe.fonts, live: true, boxes: targets.filter(t => !t.target.id.startsWith('label:')).map(({target, box}) => ({id: target.id, ...box})), paths: new Map([...paths].map(([edge, points]) => [edge.id, points]))};
 	_RAPIER_DRAW_AUTO_ROUTES.set(recipe, saved);
 	return edges.filter(e => paths.get(e) !== before.paths.get(e.id) || e.label && (e.labelPos !== labels.get(e.id)[0] || e.labelBeside !== labels.get(e.id)[1])).map(e => e.id);
+	} catch (error) {
+		if (error.code !== 'drawing_route_blocked') throw error;
+		_RAPIER_DRAW_AUTO_ROUTES.delete(recipe);
+		_rapierDrawOrthogonalRoute(edges[0], recipe);
+		_rapierDrawPlaceConnectorLabels(edges, recipe, [], null, null);
+		return edges.map(edge => edge.id);
+	}
 }
 
 function _rapierDrawRouteBlocked() { throw Object.assign(new RangeError('There is no clear route between these endpoints'), { code: 'drawing_route_blocked' }); }
@@ -2475,6 +2515,11 @@ function _rapierDrawShapeMarkup(shape, recipe) {
 		// through to plain ink while `shape.brush` still (truthfully, uselessly) named the material.
 		// One capability rule, read here alone: only a brush that actually owns an 'ink'-kind
 		// renderer asks for the ink interpretation.
+		else if (!paintsInk && RAPIER_DRAW_INK_LOOK_BRUSHES.has(shape.brush)) {
+			// Cleaning the recognized figure keeps its chosen material and the original stroke.
+			const points = _rapierDrawShapePolyline({ ...shape, brush: 'ink' }, recipe);
+			if (points?.length > 1) brushed = _rapierDrawBrushMarkup({ ...shape, recognized: 'ink', stroke: 0, geom: null }, { ...recipe, strokes: [{pts: points}] });
+		}
 		else brushed = _rapierDrawBrushMarkup(paintsInk && RAPIER_DRAW_INK_LOOK_BRUSHES.has(shape.brush) ? { ...shape, recognized: 'ink' } : shape, recipe);
 	}
 	if (brushed != null) {
@@ -3584,7 +3629,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		const line = kind === 'line' || kind === 'arrow';
 		const styles = _rapierDrawStylesFor(kind);
 		const shape = { id, stroke, recognized: kind, asDrawn: stroke !== null && (kind === 'ink' || raw.asDrawn === true),
-			brush: _rapierDrawBrushesFor(kind).includes(raw.brush === 'pen' ? 'brush' : raw.brush) ? (raw.brush === 'pen' ? 'brush' : raw.brush) : 'ink', style: styles.includes(raw.style) ? raw.style : _rapierDrawDefaultStyle(kind), geom };
+			brush: _rapierDrawBrushesFor(kind, stroke !== null).includes(raw.brush === 'pen' ? 'brush' : raw.brush) ? (raw.brush === 'pen' ? 'brush' : raw.brush) : 'ink', style: styles.includes(raw.style) ? raw.style : _rapierDrawDefaultStyle(kind), geom };
 		const traits = _rapierDrawFigureTraits(raw, kind);
 		if (!traits || traits.authorStyle?.fill && shape.style !== 'solid') return null;
 		Object.assign(shape, traits);
@@ -3807,4 +3852,4 @@ function _rapierDrawShapeContours(shape, recipe) {
 	return path?.length ? [path, ...marks.map(points => points.map(p => p.concat(0)))] : [];
 }
 
-export {RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawRouteChanges,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestorePaint,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots,restoreLetters};
+export {RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestorePaint,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots,restoreLetters};

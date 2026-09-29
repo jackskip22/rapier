@@ -2,6 +2,7 @@ const _rapierImageFlow = (() => {
   'use strict';
   const geometry = globalThis.RapierImageLayout, pretext = globalThis.RapierPretext;
   const metadata = globalThis.RapierMarkdownLayout;
+  const rotateGlyph = '<path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/>';
   const host = document.getElementById('editor-blocks');
   const projections = new Map(), ownedStyles = new Map(), endpoints = new WeakMap(), floats = new Map(), floatsRight = new Map();
   let cache = new WeakMap(), sourceCache = new WeakMap(), shapeProfiles = new WeakMap();
@@ -55,7 +56,7 @@ const _rapierImageFlow = (() => {
 
   function watch() {
     observer?.observe(host, {childList: true, subtree: true, characterData: true,
-      attributes: true, attributeFilter: ['class', 'hidden', 'data-section-hidden', 'data-folded',
+      attributes: true, attributeFilter: ['class', 'hidden', 'open', 'data-section-hidden', 'data-folded',
         'data-rapier-image-layout', 'data-md-image-width', 'data-rapier-image-size', 'width', 'src']});
   }
 
@@ -147,6 +148,7 @@ const _rapierImageFlow = (() => {
   // `place`: 'keep', 'before' or 'between' for _splitBlockAtCaret. `range` is the caret.
   function splitPlan(wrapper, range) {
     const paragraph = prose(wrapper);
+    if (paragraph?.tagName !== 'P') return null;
     if (!paragraph || !range || !lastPictures.length) return null;
     const box = ownerBoxes.get(wrapper);
     if (!box) return null;
@@ -320,7 +322,7 @@ const _rapierImageFlow = (() => {
   }
 
   function unproject(wrapper) {
-    if (!wrapper || ![...projections.values()].some(row => row.wrapper === wrapper)) return false;
+    if (!hasFlow(wrapper)) return false;
     const selection = window.getSelection();
     let start = null, end = null;
     if (selection?.rangeCount) {
@@ -335,13 +337,28 @@ const _rapierImageFlow = (() => {
   }
 
   function editSource(wrapper) {
-    for (const [paragraph, record] of projections) {
-      if (record.wrapper !== wrapper || paragraph.dataset.rapierFlow !== 'true') continue;
-      const clone = paragraph.cloneNode(false);
-      clone.append(...record.original.map(node => node.cloneNode(true)));
-      return clone;
+    if (!hasFlow(wrapper)) return null;
+    const surface = wrapper.querySelector(':scope > .block-edit');
+    if (surface?.children.length !== 1) return null;
+    const root = surface.firstElementChild, clone = root.cloneNode(true);
+    const nodes = [root, ...root.querySelectorAll('*')], copies = [clone, ...clone.querySelectorAll('*')];
+    const generated = new Set([...floats.values(), ...floatsRight.values()]);
+    // Serialization sees authored nodes/styles, never the live wrapping furniture. A clone
+    // keeps the checkbox state and disclosure body without disturbing a caret or composition.
+    for (let index = 0; index < nodes.length; index++) {
+      const node = nodes[index], copy = copies[index], record = projections.get(node);
+      if (generated.has(node)) { copy.remove(); continue; }
+      if (record && node.dataset.rapierFlow === 'true') {
+        copy.replaceChildren(...record.original.map(child => child.cloneNode(true)));
+        delete copy.dataset.rapierFlow;
+      }
+      for (const [name, state] of ownedStyles.get(node) || []) {
+        if (node.style.getPropertyValue(name) !== state.applied) continue;
+        if (state.value) copy.style.setProperty(name, state.value, state.priority);
+        else copy.style.removeProperty(name);
+      }
     }
-    return null;
+    return clone;
   }
 
   function livePoint(wrapper, node, offset) {
@@ -411,7 +428,7 @@ const _rapierImageFlow = (() => {
   }
 
   function activation(wrapper, value) {
-    if (![...projections.values()].some(row => row.wrapper === wrapper)) return value;
+    if (!hasFlow(wrapper)) return value;
     const viewport = _rapierCaptureEditorViewport(null, false);
     const options = {...(value || {})};
     const range = options.liveRange || (Number.isFinite(options.clientX) && Number.isFinite(options.clientY)
@@ -608,7 +625,21 @@ const _rapierImageFlow = (() => {
   }
 
   function floatAround(paragraph, natural, top, obstacles) {
-    const width = natural.width, bottom = top + natural.height;
+    // A closed details only lays out its summary. Keep the live disclosure and its body intact.
+    if (paragraph.tagName === 'DETAILS' && !paragraph.open) {
+      const summary = paragraph.querySelector(':scope > summary');
+      if (!summary) return null;
+      const bounds = rect(summary);
+      const height = floatAround(summary, bounds, top + bounds.top - natural.top,
+        obstacles.map(obstacle => ({...obstacle, x: obstacle.x - bounds.left + natural.left})));
+      return height == null ? null : rect(paragraph).height;
+    }
+    const computed = getComputedStyle(paragraph);
+    const left = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.borderLeftWidth) || 0);
+    const right = (parseFloat(computed.paddingRight) || 0) + (parseFloat(computed.borderRightWidth) || 0);
+    top += (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.borderTopWidth) || 0);
+    const width = natural.width - left - right, bottom = top + natural.height;
+    obstacles = obstacles.map(obstacle => ({...obstacle, x: obstacle.x - left}));
     const inside = obstacles.filter(obstacle => obstacle.y < bottom + 4096 && obstacle.y + obstacle.height > top &&
       obstacle.x < width && obstacle.x + obstacle.width > 0);
     if (!inside.length) return null;
@@ -634,7 +665,7 @@ const _rapierImageFlow = (() => {
       if (paragraph.firstChild !== box) paragraph.prepend(box);
     }
     // flow-root and float bottoms bound to content: floats never stack across blocks. Settles in a pass or two.
-    style(paragraph, {display: 'flow-root'});
+    style(paragraph, {display: computed.display.includes('list-item') ? 'flow-root list-item' : 'flow-root'});
     const contentBottom = () => {
       const range = document.createRange();
       let first = paragraph.firstChild;
@@ -718,19 +749,24 @@ const _rapierImageFlow = (() => {
       wrapper?._rapierDormant?.find(node => node.classList?.contains('block-read'));
   }
 
+  function hasFlow(wrapper) {
+    return !!wrapper && ([...projections.values()].some(row => row.wrapper === wrapper) ||
+      [...floats.keys(), ...floatsRight.keys()].some(element => wrapper.contains(element)));
+  }
+
+  function textOf(surface) {
+    return surface?.children.length === 1 ? metadata.wrapTextBlock(surface.firstElementChild) : null;
+  }
+
   function editProse(wrapper) {
     if (!wrapper?.classList.contains('block-wrapper--editing') || wrapper.classList.contains('block-wrapper--source-edit')) return null;
-    const edit = wrapper.querySelector(':scope > .block-edit');
-    const paragraph = edit?.children.length === 1 && edit.firstElementChild.tagName === 'P' ? edit.firstElementChild : null;
-    return paragraph?.textContent.trim() && !paragraph.querySelector('img') ? paragraph : null;
+    return textOf(wrapper.querySelector(':scope > .block-edit'));
   }
 
   function prose(wrapper) {
     if (!wrapper || wrapper.hidden || wrapper.classList.contains('block-wrapper--metadata')) return null;
     if (wrapper.classList.contains('block-wrapper--editing')) return editProse(wrapper);
-    const read = readOf(wrapper);
-    const paragraph = read?.children.length === 1 && read.firstElementChild.tagName === 'P' ? read.firstElementChild : null;
-    return paragraph?.textContent.trim() && !paragraph.querySelector('img') ? paragraph : null;
+    return textOf(readOf(wrapper));
   }
 
   function pictureOnly(wrapper) {
@@ -739,7 +775,8 @@ const _rapierImageFlow = (() => {
     return !!paragraph && !paragraph.textContent.trim() && paragraph.querySelectorAll('img').length === 1;
   }
 
-  // Wrap law: ownership is paragraph-only; participation is any prose or heading in the band. Lists, quotes and details flow through a float.
+  // Text blocks can own a picture in read and edit mode. Complex blocks retain their live
+  // controls through native shape floats; only plain inline runs use Pretext projections.
   // Tables, code, rules, math and figures push below.
   const WRAP_PARTICIPANT_TAG = /^(P|H[1-6])$/;
   const wrapParticipant = element => element && WRAP_PARTICIPANT_TAG.test(element.tagName) ? element : null;
@@ -827,12 +864,10 @@ const _rapierImageFlow = (() => {
       // F75-12: Plain reads every layout as empty (_rapierPlainLayout); the source is untouched.
       const layout = standalone && image && !_rapierPlainLayout() ? source.occurrence.layout : null;
       const editable = wrapper.classList.contains('block-wrapper--editing');
-      const children = read && [...read.children];
-      const paragraph = editable ? editProse(wrapper) : children?.length === 1 ? wrapParticipant(children[0]) : null;
-      const editChildren = editable ? [...(wrapper.querySelector(':scope > .block-edit')?.children || [])] : null;
-      const flowing = paragraph ? null : editable ? (editChildren?.length === 1 ? flowBlock(editChildren[0]) : null)
-        : children?.length === 1 ? flowBlock(children[0]) : null;
       const padTarget = editable ? wrapper.querySelector(':scope > .block-edit') : read;
+      const content = !wrapper.classList.contains('block-wrapper--source-edit') &&
+        padTarget?.children.length === 1 ? padTarget.firstElementChild : null;
+      const paragraph = wrapParticipant(content), flowing = paragraph ? null : flowBlock(content);
       const imageBounds = image && rect(image);
       const naturalWidth = Number(image?.getAttribute('data-rapier-natural-width')) || image?.naturalWidth;
       const naturalHeight = Number(image?.getAttribute('data-rapier-natural-height')) || image?.naturalHeight;
@@ -1017,7 +1052,7 @@ const _rapierImageFlow = (() => {
       if (row.editable || !positioned(layout) || !(row.naturalWidth > 0 && row.naturalHeight > 0 && row.imageBounds.width > 0)) continue;
       const owner = active ? moving.owner : wrapOwner(row.wrapper);
       const target = byWrapper.get(owner);
-      if (!target?.paragraph || !prose(owner)) continue;
+      if (!(target?.paragraph || target?.flowing) || !prose(owner)) continue;
       const values = anchors.get(owner) || [];
       values.push({row, layout, active}); anchors.set(owner, values); placed.add(row);
       style(owner, {'content-visibility': 'visible', contain: 'none'});
@@ -1042,9 +1077,9 @@ const _rapierImageFlow = (() => {
     for (const row of measured) {
       let top = row.top + shift;
       if (placed.has(row) && row.standalone) continue;
-      const natural = row.paragraphBounds;
-      const owner = prose(row.wrapper) && {wrapper: row.wrapper, left: natural.left - area.left, width: natural.width,
-        top: top + natural.top - row.bounds.top, height: natural.height, em: parseFloat(getComputedStyle(row.paragraph).fontSize) || 16};
+      const natural = row.paragraphBounds || row.flowingBounds;
+      const owner = natural && prose(row.wrapper) && ownerBox(row.wrapper, row.paragraph || row.flowing, natural,
+        natural.left - area.left, top + natural.top - row.bounds.top);
       if (owner) ownerBoxes.set(row.wrapper, owner);
       const own = anchors.get(row.wrapper) || [];
       if (moving && moving.originalOwnerId !== moving.owner?.dataset.blockId) {
@@ -1435,7 +1470,7 @@ const _rapierImageFlow = (() => {
       rotateGrip = document.createElement('button'); rotateGrip.type = 'button';
       rotateGrip.className = 'rapier-image-rotate';
       rotateGrip.setAttribute('aria-label', 'Rotate picture');
-      rotateGrip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>';
+      rotateGrip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + rotateGlyph + '</svg>';
       rotateGrip.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); });
       document.body.append(rotateGrip);
     }
@@ -1555,9 +1590,15 @@ const _rapierImageFlow = (() => {
     if (!paragraph) return null;
 
     const bounds = rect(paragraph), area = rect(host);
-    return {wrapper, left: known?.left ?? bounds.left - area.left, width: known?.width ?? bounds.width,
-      top: known?.top ?? bounds.top - area.top + host.scrollTop, height: known?.height ?? bounds.height,
-      em: parseFloat(getComputedStyle(paragraph).fontSize) || 16};
+    return known || ownerBox(wrapper, paragraph, bounds, bounds.left - area.left, bounds.top - area.top + host.scrollTop);
+  }
+
+  function ownerBox(wrapper, element, bounds, left, top) {
+    const computed = getComputedStyle(element);
+    const inset = side => (parseFloat(computed['padding' + side]) || 0) + (parseFloat(computed['border' + side + 'Width']) || 0);
+    return {wrapper, left: left + inset('Left'), top: top + inset('Top'),
+      width: Math.max(0, bounds.width - inset('Left') - inset('Right')),
+      height: Math.max(0, bounds.height - inset('Top') - inset('Bottom')), em: parseFloat(computed.fontSize) || 16};
   }
 
   function activateMove() {
@@ -1906,8 +1947,7 @@ const _rapierImageFlow = (() => {
       return true;
     }
     if (!wrapOwner(selected?.closest('.block-wrapper'))) {
-      // Warn only when no prose paragraph is near: a heading or list can join a wrap but never own it.
-      if (!mountedWrappers().some(prose)) showToast('There is no prose nearby to wrap the image against', 'info');
+      if (!mountedWrappers().some(prose)) showToast('There is no text nearby to wrap the image around', 'info');
       return false;
     }
     const {align, ...layout} = occurrence.layout;
@@ -2093,7 +2133,7 @@ const _rapierImageFlow = (() => {
     return committed;
   }
 
-  if (!host || !geometry || !metadata) return Object.freeze({schedule() {}, close() {}, select() {}, restore() {},
+  if (!host || !geometry || !metadata) return Object.freeze({rotateGlyph, schedule() {}, close() {}, select() {}, restore() {},
     restoreSelection() {}, invalidate() {}, sourcePoint() {}, mappedPoint: (node, offset) => ({node, offset}),
     textOffset: () => undefined, activation: (_wrapper, value) => value, heldWrappers: () => [], setWrapShape() { return false; },
     status: () => ({moving: false, projections: 0, images: 0})});
@@ -2751,7 +2791,7 @@ const _rapierImageFlow = (() => {
   window.addEventListener('pagehide', cancel);
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
   schedule();
-  return Object.freeze({schedule, layoutNow, select, close, activation, restoreSelection, restore, heldWrappers, mappedPoint, sourcePoint, textOffset, invalidate, pinSettled,
+  return Object.freeze({rotateGlyph, schedule, layoutNow, select, close, activation, restoreSelection, restore, heldWrappers, mappedPoint, sourcePoint, textOffset, invalidate, pinSettled,
     remove, armSettle, settleNow, unproject, editSource, livePoint, setWrapShape, splitPlan, behindPictureAt,
     status: () => ({moving: !!moving && !moving.committing, committing: !!moving?.committing, settling: !!settle || !!moving?.committing || performance.now() - settledAt < 400, projections: projections.size, images: lastObstacles.length, rotatePerf: {...rotatePerf}})});
 })();

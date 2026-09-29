@@ -473,16 +473,27 @@
 
 			<!-- Read only — a persisted preference; the engine owns enforcement. -->
 			<div class="settings-section__title">read only</div>
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-only" data-switch="readOnly" role="group" aria-label="read only" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" id="switch-read-only-off"
-								data-action="switch" data-value="off"
-								style="flex:1;width:auto">OFF</button>
-				<button type="button" class="theme-switcher__btn onoff-btn"
-								data-action="switch" data-value="on"
-								style="flex:1;width:auto">ON</button>
+			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-only" data-switch="readOnly" data-switch-label="Read only" data-off="off" data-on="on" role="group" aria-label="read only" style="width:100%;margin-bottom:var(--space-4)">
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="on" style="flex:1;width:auto">Read only: Off</button>
 			</div>
 
 
+
+			<!-- RAPIER_NOTES_BEGIN -->
+			<div id="settings-notes-section">
+				<div class="navigator-title-row" style="margin-bottom:var(--space-2)">
+					<div class="settings-section__title" style="margin:0;padding:0">notes</div>
+					<button type="button" class="settings-info-btn settings-info-btn--hang" id="notes-info" data-action="information" data-value="notes" aria-label="about notes" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+				</div>
+				<div class="settings-action-row">
+					<button type="button" class="settings-action-btn" id="notes-open-btn" data-action="notes-open" hidden>open</button>
+				</div>
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-notes-start" data-switch="notesStart" data-switch-label="Start in Notes" data-off="editor" data-on="notes" role="group" aria-label="start in" style="width:100%" hidden>
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="notes" style="flex:1;width:auto">Start in Notes: Off</button>
+			</div>
+				<button type="button" class="settings-action-btn rapier-notes-sync rapier-cloudflare" id="notes-sync-btn" data-action="notes-sync" hidden>SIGN IN WITH CLOUDFLARE</button>
+			</div>
+			<!-- RAPIER_NOTES_END -->
 
 			<div id="settings-windows-section" hidden>
 				<div class="settings-section__title">windows</div>
@@ -548,9 +559,8 @@
 
 			<!-- Read-aloud visibility toggle. -->
 			<div class="settings-section__title">read aloud</div>
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-aloud" data-switch="showPlayButton" role="group" aria-label="read aloud button" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="false" style="flex:1;width:auto">OFF</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">ON</button>
+			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-aloud" data-switch="showPlayButton" data-switch-label="Read aloud" data-off="false" data-on="true" role="group" aria-label="read aloud button" style="width:100%;margin-bottom:var(--space-4)">
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">Read aloud: Off</button>
 			</div>
 
 			<!-- Highlights — three-state syntax-highlight palette. -->
@@ -596,10 +606,9 @@
 						<div class="lines-toggle-group" style="margin-bottom:var(--space-4)">
 
 				<!-- Checkerboard strip: OFF | CHECKERBOARD (default). -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-checker" data-switch="checker" role="group" aria-label="checkerboard lines" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="false" style="flex:1;width:auto">OFF</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">CHECKERBOARD</button>
-				</div>
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-checker" data-switch="checker" data-switch-label="Checkerboard" data-off="false" data-on="true" role="group" aria-label="checkerboard lines" style="width:100%">
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">Checkerboard: Off</button>
+			</div>
 
 				<!-- Line numbers: AUTO (default) | OFF | SELECTED | ALL NUMBERS. -->
 				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-line-numbers" data-switch="lineNums" role="group" aria-label="line numbers" style="width:100%">
@@ -610,16 +619,14 @@
 				</div>
 
 				<!-- Wrapping: OFF | WRAPPING (default). -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-wrap" data-switch="wrap" role="group" aria-label="line wrapping" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="false" style="flex:1;width:auto">OFF</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">WRAPPING</button>
-				</div>
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-wrap" data-switch="wrap" data-switch-label="Wrapping" data-off="false" data-on="true" role="group" aria-label="line wrapping" style="width:100%">
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">Wrapping: Off</button>
+			</div>
 
-				<!-- Dimming: OFF | 25% DIM | 50% DIM. -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-dim" data-switch="dim" role="group" aria-label="line dimming" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">OFF</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="25" style="flex:1;width:auto">25% DIM</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="50" style="flex:1;width:auto">50% DIM</button>
+				<!-- Dim is the default; 100% uses opaque black and white cells. -->
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-dim" data-switch="dim" role="group" aria-label="line contrast" style="width:100%">
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="dim" style="flex:1;width:auto">DIM</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="full" style="flex:1;width:auto">100%</button>
 				</div>
 
 				<!-- Line number fit: TRUNCATE (default) | RESIZE. -->
@@ -633,28 +640,7 @@
 				</div>
 			</div>
 
-			<!-- RAPIER_NOTES_BEGIN -->
-			<!-- Law 53 (the founder, 26 September 2026): "currently we have notes as a collapsing title. Just
-					 get rid of it, make it permanently expanded. Keep the title, just it doesn't need a plus and
-					 minus ... get rid of all the options underneath the notes title in the main Rapier settings
-					 panel, except for Open and the Start in Notes toggle." The title and its information circle,
-					 the way layout carries its own; under them OPEN, then, after a visible gap (B7's: the door
-					 and the preference read as two things), the START IN NOTES toggle. Import, backup, the sync
-					 and the notes-app role live in the Notes settings panel (notes/notes.js). -->
-			<div id="settings-notes-section">
-				<div class="navigator-title-row" style="margin-bottom:var(--space-2)">
-					<div class="settings-section__title" style="margin:0;padding:0">notes</div>
-					<button type="button" class="settings-info-btn settings-info-btn--hang" id="notes-info" data-action="information" data-value="notes" aria-label="about notes" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
-				</div>
-				<div class="settings-action-row" style="margin-bottom:var(--space-6)">
-					<button type="button" class="settings-action-btn" id="notes-open-btn" data-action="notes-open" hidden>open</button>
-				</div>
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-notes-start" data-switch="notesStart" role="group" aria-label="start in" style="width:100%;margin-bottom:var(--space-4)" hidden>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="editor" style="flex:1;width:auto">OFF</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="notes" style="flex:1;width:auto">START IN NOTES</button>
-				</div>
-			</div>
-			<!-- RAPIER_NOTES_END -->
+
 
 			<!-- Native Android launcher icon colour — collapsed and context-free by design. -->
 			<div class="settings-disclosure-shell" id="settings-icon-section" hidden>

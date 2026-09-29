@@ -26,7 +26,7 @@ const RAPIER_NOTES_DOOR_AT_BIRTH = (() => { try {
 const RAPIER_NOTES_DIR = 'notes', RAPIER_NOTES_HOLD_MS = 500, RAPIER_NOTES_HOLD_SLOP = 8, RAPIER_NOTES_MOVED_PX = 8, RAPIER_NOTES_DWELL_MS = 120, RAPIER_NOTES_AUTOSAVE_MS = 700, RAPIER_NOTES_REMIND_MS = 30000;
 const _rapierNotes = {
 	surface: null, scroll: null, grids: {}, windows: {}, sheet: null, open: false,
-	index: null, texts: new Map(), titles: new Map(), hold: new Set(), sizes: new Map(), readFailed: new Map(), reading: null, reads: null, loadGen: 0, popup: null, sheetSwiped: false, snackSwiped: false, fabDrag: null,
+	index: null, texts: new Map(), titles: new Map(), hold: new Set(), sizes: new Map(), readFailed: new Map(), reading: null, reads: null, loadGen: 0, popup: null, sheetSwiped: false, fabDrag: null,
 	query: '', current: null, currentProof: null, savedGen: -1, savingGen: -1, savingText: null, autosave: 0, asciiNames: null, drag: null, selected: new Set(), snack: null, loading: null, persistAsked: false, persistReported: false, storageKnown: null, audioBytes: null, capturing: null, renderAfterDrag: false, saveFailed: false, attempted: new Map(), sheetFocus: false, sheetOpener: null, sheetMode: 'actions', importsOpen: null, importUndoReview: null, importUndoBusy: false, historyRows: null, historyOne: null, pastBytes: null, pastVersions: 0, untitled: new Set(), renaming: null, swallowClick: 0, unfolded: new Set(), thumbs: new Map(), thumbNames: null, thumbQueue: [], thumbBusy: false, remindTimer: 0, remindQueue: [], mode: false, compose: false, opened: new Set(), retaking: null, readerSaid: false, captureToken: null, capturePreparing: false, captured: new Set(), captureChain: Promise.resolve(), unlocking: null, remindSyncedKey: undefined, remindChain: Promise.resolve(),
 	// The Title field (task #369): the empty paragraph standing for it (`slot`), the empty paragraph this
 	// shell last made for a field (`fresh`), the two rows a note without a title or a body shows.
@@ -650,6 +650,7 @@ function _rapierNotesTake(snapshot) {
 	const state = _rapierNotes;
 	state.indexBase = snapshot.index; state.index = _rapierNotesCopyIndex(snapshot.index);
 	_rapierNotesRemindSync();
+	if (typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.changed();
 	// Persistence is asked for after the first write is in the folder (docs/notes-architecture.md):
 	// a browser asked with a real write behind the question answers it better.
 	if (!state.persistAsked) { state.persistAsked = true; void _rapierNotesStorageAnswer(true); }
@@ -1447,24 +1448,21 @@ function _rapierNotesBackupWhen(at) {
 	return day + ', ' + _rapierNotesClockWords(at);
 }
 function _rapierNotesSyncBox() {
-	const b = _rapierNotesEl('button', 'settings-action-btn rapier-notes-sync'); b.type = 'button'; b.dataset.notesAct = 'sync';
+	const b = _rapierNotesEl('button', 'settings-action-btn rapier-notes-sync rapier-cloudflare'); b.type = 'button'; b.dataset.notesAct = 'sync';
 	_rapierNotesSyncBoxWear(b);
 	return b;
 }
-// Worn in place, whenever the sync changes (notes/sync-ui.js calls it): RAPIER SYNC in the app; SYNC WITH
-// CLOUDFLARE until a vault is connected here; then the chosen box's look (the theme selector's own inverted
-// box, rapier-notes.css) with its small line -- the last backup's date and time, or, honestly, none yet.
-function _rapierNotesSyncBoxWear(b = _rapierNotes.settingsEl?.querySelector('.rapier-notes-sync')) {
-	if (!b) return;
+// Both settings panels wear the same live status and last verified backup time.
+function _rapierNotesSyncBoxWear(b) {
+	if (!b) { for (const button of document.querySelectorAll('.rapier-notes-sync')) _rapierNotesSyncBoxWear(button); return; }
 	const facts = _rapierNotesSyncFacts();
-	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync' : !facts.connected ? 'sync with cloudflare' : facts.at ? 'backed up to cloudflare' : 'connected to cloudflare'));
+	b.classList.toggle('rapier-cloudflare', !facts.app);
+	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync' : !facts.connected ? 'sign in with cloudflare' : facts.at ? 'backed up to cloudflare' : 'connected to cloudflare'));
 	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : 'not backed up yet'));
 	if (facts.connected) b.dataset.active = 'true'; else delete b.dataset.active;
 }
-// The press, and the warning's own sync answer (_rapierNotesCacheWarning): the app's companion door in the
-// app; offline, the words and nothing else; online, the door the main panel's sign-in row opened before law
-// 53 (editor/engine.js _rapierCfToggle: the sync sheet, notes/sync-ui.js, whose gate says what this copy can
-// do). Opening the sheet sends no request, so being offline is known here or not at all.
+// Both boxes and the storage warning enter here. Native opens its companion; the website starts
+// the registered OAuth flow through the shared sheet, after local work is safely flushed.
 function _rapierNotesSyncPress() {
 	if (_rapierNotesIsApp()) { if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen(); return; }
 	if (navigator.onLine === false) { showToast('This device is not connected to the internet.', 'info'); return; }
@@ -1496,13 +1494,14 @@ function _rapierNotesSettingsPaint() {
 	const toggle = (label, values, chosen, act, key, small) => {
 		const box = _rapierNotesEl('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff' + (small ? ' rapier-notes-switch--four' : '') + ' rapier-notes-switch');
 		box.setAttribute('role', 'group'); box.setAttribute('aria-label', label);
-		for (const [value, word] of values) {
+		const single = values.length === 2 && values[0][1].toLowerCase() === 'off';
+		if (single) { box.dataset.switchLabel = label; box.dataset.off = values[0][0]; box.dataset.on = values[1][0]; }
+		for (const [value, word] of single ? [values[1]] : values) {
 			const b = _rapierNotesEl('button', 'theme-switcher__btn onoff-btn', word);
-			b.type = 'button'; b.dataset.notesAct = act; b.dataset[key] = value;
-			b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(value === chosen));
-			if (value === chosen) b.dataset.active = 'true';
+			b.type = 'button'; b.dataset.notesAct = act; b.dataset.value = value;
 			box.appendChild(b);
 		}
+		renderSwitch(box, chosen);
 		return box;
 	};
 	const action = (word, act, data = {}) => {
@@ -4403,36 +4402,23 @@ function _rapierNotesSnack(message, undo) {
 	state.snack = {el, undo, message, transient, kind: 'undo'};
 	requestAnimationFrame(() => { el.classList.add('rapier-notes-snack--open'); _rapierNotesSnackPlace(); });
 }
-// R86o: an Undo snack has no timer any more (the notice model's law, docs/transient-reachability.md:
-// an actionable notice does not expire), so it needs an answer that is not Undo -- the sheet's own
-// gesture. A swipe past 40 px dismisses it; a shorter travel snaps back; the tap that would
-// follow a swipe is swallowed, so a finger that slid off Undo does not undo. A reminder's snack keeps
-// its two answers, OPEN and DONE, and is not swiped away: a reminder waits to be answered rather
-// than vanishing unread.
-// R87j: the notice is a bar at the foot, not a sheet on an edge, and a bar is flicked away the way
-// every other notification bar is -- sideways as readily as down. The handler read clientY alone,
-// so a sideways finger moved nothing and dismissed nothing; it now reads both and the notice leaves
-// left, right or down. Upward is still not a dismissal (a bar does not leave into the cards), so the
-// vertical travel stays clamped at zero and only the horizontal one is signed.
+// The same swipe as the editor's notices. Dismissal leaves the note and any due reminder intact.
 function _rapierNotesSnackSwipe(el) {
-	const state = _rapierNotes; let drag = null;
-	el.addEventListener('pointerdown', evt => { if (evt.pointerType === 'mouse' && evt.button !== 0) return; drag = { id: evt.pointerId, x: evt.clientX, y: evt.clientY, dx: 0, dy: 0, moving: false }; });
-	el.addEventListener('pointermove', evt => {
-		if (!drag || drag.id !== evt.pointerId) return;
-		const dx = evt.clientX - drag.x, dy = evt.clientY - drag.y;
-		if (!drag.moving) { if (Math.max(Math.abs(dx), dy) < 10) return; drag.moving = true; try { el.setPointerCapture(evt.pointerId); } catch (_) {} el.style.transition = 'none'; }
-		drag.dx = dx; drag.dy = Math.max(0, dy);
-		el.style.transform = 'translate(' + drag.dx + 'px, calc(' + drag.dy + 'px - var(--rapier-notes-snack-lift, 0px)))';
+	const state = _rapierNotes;
+	_rapierNoticeSwipe(el, {
+		ready: () => state.snack?.el === el && state.snack.transient?.phase !== 'running',
+		lift: 'var(--rapier-notes-snack-lift, 0px)',
+		dismiss: direction => {
+			const snack = state.snack, life = _rapierNotesNoticeModel().life;
+			if (snack?.el !== el) return false;
+			if (snack.transient && life) {
+				const result = life.stepTransient(snack.transient, {type:'dismiss', nowMs:performance.now()});
+				if (result.error) return false;
+				snack.transient = result.state;
+			}
+			_rapierNoticeExit(el, direction, () => { if (state.snack?.el === el) _rapierNotesSnackHide(); else el.remove(); });
+		},
 	});
-	const end = evt => {
-		if (!drag || drag.id !== evt.pointerId) return;
-		const d = drag; drag = null; if (!d.moving) return;
-		el.style.transition = ''; el.style.transform = '';
-		try { el.releasePointerCapture(evt.pointerId); } catch (_) {}
-		state.snackSwiped = true; setTimeout(() => { state.snackSwiped = false; }, 350);
-		if ((d.dy > 40 || Math.abs(d.dx) > 40) && state.snack?.el === el) _rapierNotesSnackHide();
-	};
-	el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
 }
 function _rapierNotesSnackHide() {
 	const state = _rapierNotes, snack = state.snack; if (!snack) return;
@@ -4505,7 +4491,7 @@ function _rapierNotesSnackPlace() {
 }
 async function _rapierNotesSnackActivate(act) {
 	const state = _rapierNotes, snack = state.snack, model = _rapierNotesNoticeModel();
-	if (!snack || state.snackSwiped) return;
+	if (!snack) return;
 	_rapierNotesSnackPlace();
 	const btn = snack.el?.querySelector('[data-notes-act="' + act + '"]');
 	if (btn) {
@@ -4584,6 +4570,7 @@ function _rapierNotesRemindSnack(file) {
 	state.surface.appendChild(el);
 	const transient = model.life ? model.life.createTransient({id: 'notes-remind-' + file, durationMs: null}) : null;
 	state.snack = { el, kind: 'remind', file, transient };
+	_rapierNotesSnackSwipe(el);
 	requestAnimationFrame(() => { el.classList.add('rapier-notes-snack--open'); _rapierNotesSnackPlace(); });
 }
 // A witness seam (notes-remind-due): forces one poll at once, without a real 30 s wait.
@@ -7193,10 +7180,10 @@ function _rapierNotesBind(surface, search) {
 		// it -- the panel stays open with the new state worn, exactly as the main panel's switches do.
 		// 'title' is gone with the fourth sort, and the whole-folder read it alone needed goes with
 		// it: custom, created and modified are all answerable from the index.
-		if (act === 'sort') { _rapierNotesSetPref('notesSort', el.dataset.notesSort); _rapierNotesSettingsPaint(); _rapierNotesRender(); return; }
+		if (act === 'sort') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesSort', value); renderSwitch(el.parentElement, value); _rapierNotesRender(); return; }
 		// Skills moved here out of the main panel (the founder, 21 September evening). The section
 		// appears and goes on the cards, so the surface is redrawn with the preference.
-		if (act === 'skills') { _rapierNotesSetPref('notesSkills', el.dataset.notesSkills === 'true'); _rapierNotesSettingsPaint(); _rapierNotesRender(); return; }
+		if (act === 'skills') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesSkills', value === 'true'); renderSwitch(el.parentElement, value); _rapierNotesRender(); return; }
 		// Law 8's colour mode: the bar alone or the whole page. The icon turns in place, so its band grows
 		// or shrinks rather than being redrawn; the settings panel stands over the cards, so a note open
 		// under them wears the new mode the next time it comes in (the head is painted for it now).
@@ -7213,7 +7200,7 @@ function _rapierNotesBind(surface, search) {
 		// Empty the bin is delete-forever over everything in it -- same act, same confirm, same
 		// "there is no undo after this", rather than a quieter second way to destroy the same files.
 		if (act === 'bin-empty') { void _rapierNotesBinRun('delete-forever', _rapierNotesBinFiles()); return; }
-		if (act === 'layout') { _rapierNotesSetPref('notesLayout', el.dataset.notesLayout); _rapierNotesLayout(); _rapierNotesSettingsPaint(); _rapierNotesRender(); return; }
+		if (act === 'layout') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesLayout', value); renderSwitch(el.parentElement, value); _rapierNotesLayout(); _rapierNotesRender(); return; }
 		if (act === 'section-add-menu') { _rapierNotesSettingsOpen(false); void _rapierNotesSectionFromMenu(); return; }
 		if (act === 'section' && el.classList.contains('rapier-notes-section-head')) {
 			// In the Sections mode a tap on one of the person's own heads opens that section's face --
@@ -8215,7 +8202,7 @@ function _rapierNotesPaintSwitches() {
 	for (const [id, field] of [['switch-notes-start', 'notesStart']]) {
 		const group = document.getElementById(id); if (!group) continue;
 		let value; try { value = String(RapierPreferences.read(field)); } catch (_) { continue; }
-		for (const button of group.querySelectorAll('[data-value]')) { const on = button.dataset.value === value; if (on) button.dataset.active = 'true'; else delete button.dataset.active; button.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+		renderSwitch(group, value);
 	}
 }
 // R86i law 3: the Notes settings panel's row asks the role once, never nagged (RapierPlatform.host is
@@ -8227,8 +8214,9 @@ async function _rapierNotesRequestRole() {
 	} catch (error) { showToast('The notes app request could not be sent: ' + String(error?.message || error), 'error'); }
 }
 function _rapierNotesInstall() {
-	for (const id of ['notes-open-btn', 'switch-notes-start']) { const el = document.getElementById(id); if (el) el.hidden = false; }
+	for (const id of ['notes-open-btn', 'switch-notes-start', 'notes-sync-btn']) { const el = document.getElementById(id); if (el) el.hidden = false; }
 	_rapierNotesPaintSwitches();
+	_rapierNotesSyncBoxWear();
 	// notesSkills' control moved into the Notes settings panel and paints itself there;
 	// notesLockScreen is gone with its toggle. Subscribing to a field with no spec threw, and the
 	// outer catch swallowed it silently, once per install.
@@ -8248,6 +8236,7 @@ function _rapierNotesInstall() {
 		if (evt.target.closest?.('[data-action="notes-import-close"]')) { _rapierNotesImportClose(); return; }
 		// Law 55: the scrim round the Import sheet puts it away, as the house's other sheets' scrims do.
 		if (evt.target?.id === 'notes-import-overlay') { _rapierNotesImportClose(); return; }
+		if (evt.target.closest?.('[data-action="notes-sync"]')) { _rapierNotesSyncPress(); return; }
 		if (evt.target.closest?.('[data-action="notes-backup"]')) { void _rapierNotesBackup(); return; }
 		if (!evt.target.closest?.('[data-action="notes-open"]')) return;
 		try { const overlay = _rapierUi?.refs?.settingsOverlay; if (overlay && typeof closeDialog === 'function') closeDialog(overlay); } catch (_) {}

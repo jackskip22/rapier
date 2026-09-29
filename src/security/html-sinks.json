@@ -33,9 +33,9 @@
         "reason": "state.svg.innerHTML = markup where markup = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(candidate,false)), the drawing engine's own escaped/geometry SVG serialization."
       },
       "renderStyleRow": {
-        "count": 1,
+        "count": 2,
         "kind": "static-template",
-        "reason": "styleRow.innerHTML is built from a fixed size list (numeric) and a fixed [id,label] alignment array; no document/user text is interpolated."
+        "reason": "Alignment/action markup uses the fixed icon table; the separate size row interpolates admitted numeric size/range values. User text remains textarea.value."
       },
       "_rapierDrawUpdatePenBtn": {
         "count": 2,

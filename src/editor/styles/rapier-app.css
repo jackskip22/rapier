@@ -181,7 +181,7 @@ select{
 
 
 .theme-switcher{
-	display:inline-flex;align-items:center;
+	position:relative;display:inline-flex;align-items:center;
 	background:var(--color-surface-2);
 	border-radius:0;
 	padding:5px;gap:5px;flex-shrink:0}
@@ -199,12 +199,21 @@ select{
 .theme-switcher__btn[data-active]{
 	background:var(--color-text);
 	color:var(--color-bg)}
-.theme-switcher__btn:not([data-active]){opacity:.8}
+.theme-switcher__btn:not([data-active]){opacity:1}
 @media (hover:hover) and (pointer:fine){.theme-switcher__btn:hover:not([data-active]){opacity:.85}}
 .theme-switcher__btn:not([data-theme-val]):not([data-sz]){pointer-events:auto}
 .theme-switcher__btn[disabled]{
 	opacity:.25;pointer-events:none;cursor:not-allowed}
 .theme-switcher__btn[disabled][data-active]{opacity:.7}
+
+/* Stationary labels, one moving selection edge. Its inverse text has exactly the same flex
+   geometry as the live controls, including differently sized options. */
+.theme-switcher__selection{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;box-sizing:border-box;padding:inherit;gap:inherit;background:var(--color-text);pointer-events:none;clip-path:inset(0 100% 0 0);transition:clip-path 230ms var(--ease-out)}
+.theme-switcher.theme-switcher--sliding>.theme-switcher__btn{background:transparent;color:var(--color-text);opacity:1;transition:none}
+.theme-switcher.theme-switcher--sliding .theme-switcher__selection>.theme-switcher__btn{background:transparent;color:var(--color-bg);opacity:1;transition:none;pointer-events:none}
+.theme-switcher[data-switch-label]>.theme-switcher__btn{width:100%;transition:background-color 160ms var(--ease-out),color 160ms var(--ease-out)}
+.theme-switcher__btn:focus-visible svg{transform:none}
+@media(prefers-reduced-motion:reduce){.theme-switcher__selection,.theme-switcher[data-switch-label]>.theme-switcher__btn{transition:none}}
 
 
 
@@ -221,8 +230,8 @@ select{
 .toast-container{
 	position:fixed;
 	bottom:calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + var(--rapier-toast-lift, 0px));
-	left:var(--space-4);
-	right:var(--space-4);
+	left:0;
+	right:0;
 	/* Below every sheet (200): a sheet owns the screen while it is up, and a notice under it is
 		 visibly under it rather than an inert card a finger falls through (the founder's words 125). */
 	z-index:160;display:flex;flex-direction:column;align-items:stretch;gap:var(--space-2);
@@ -245,25 +254,16 @@ select{
 .toast{
 	display:flex;align-items:center;gap:var(--space-2);
 	padding:0 0 0 16px;
-	background:var(--color-accent);
-	color:var(--color-accent-foreground,#fff);
-	border:none;border-radius:0;box-shadow:none;
-	font:var(--fw-medium) var(--text-sm) var(--font-mono);
-	letter-spacing:var(--track-caps);text-transform:uppercase;line-height:1.2;
-	min-height:48px;min-width:200px;max-width:min(380px, 100%);
-	align-self:flex-end}
+	min-height:48px;min-width:0;width:100%;box-sizing:border-box;
+	align-self:stretch}
 .toast .toast__msg{
 	flex:1;min-width:0;
 	/* Toasts wrap: a message is read whole on a phone, never cut to an ellipsis. */
 	white-space:normal;overflow-wrap:anywhere;
 	padding:12px 0;
 	color:inherit}
-.toast--success{background:var(--color-success);color:#000}
-.toast--error{background:var(--color-error);color:var(--color-error-foreground);letter-spacing:normal;text-transform:none;line-height:1.5}
-.toast--error .toast__msg{white-space:normal;overflow-wrap:anywhere;padding:12px 0}
-.toast--error .toast__close{align-self:flex-start}
-.toast--warning{background:var(--color-warning);color:#000}
 .toast__close{
+	align-self:flex-start;
 	display:inline-flex;align-items:center;justify-content:center;
 	background:none;border:none;border-radius:0;
 	width:48px;height:48px;padding:0;margin:0;
@@ -289,15 +289,18 @@ html[data-pasting="on"] body::after{
 	letter-spacing:var(--track-caps);text-transform:uppercase}
 
 
+.toast,.restore-notice,.rapier-notes-snack{
+	background:rgb(0 0 0 / .5);color:#fff;border:0;border-radius:0;box-shadow:none;
+	font:var(--fw-medium) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
+}
+body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack{background:rgb(255 255 255 / .5);color:#000}
+@media(prefers-reduced-motion:reduce){.toast,.restore-notice{animation:none}}
+
 .restore-notice{
 	display:flex;flex-direction:column;align-items:stretch;
-	background:rgb(0 0 0 / .75);color:#fff;
-	border:none;border-radius:0;box-shadow:none;
 	min-height:66px;width:auto;max-width:none;align-self:stretch;
-	font:var(--fw-medium) var(--text-sm) var(--font-mono);
-	letter-spacing:var(--track-caps);text-transform:uppercase;
 }
-body.light .restore-notice{background:rgb(255 255 255 / .75);color:#000}
+
 /* The lease card is not a notice that expires: nothing on it counts down and nothing pushes it away. */
 .restore-notice[data-lease="true"] .restore-notice__timer,
 .restore-notice[data-lease="true"] .restore-notice__close{display:none}
@@ -659,38 +662,17 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 	cursor: pointer;
 }
 
-/* The theme turn (editor/engine.js _rapierThemeFlood): the new view shows through a soft front as wide as
-   the page, from --rapier-turn-way's side (the finger's) to the far side, as --rapier-turn runs 0% to 200%; at
-   0% it is not shown at all, so the old view stands until the front sets off. Both are the animation's own,
-   set on the new view alone, so nothing else restyles while it runs. The browser's own cross-fade is
-   off while it runs, and so is the root group's own resize (it stands still: a no-op on the main thread for a
-   quarter second). The paper the front brings is already settled: nothing under it eases to its new colours
-   on its own (the rule names the elements that carry a colour transition, so the class restyles those alone,
-   not the whole document). */
-@property --rapier-turn{syntax:'<percentage>';inherits:false;initial-value:0%}
-@property --rapier-turn-way{syntax:'<angle>';inherits:false;initial-value:0deg}
-html.rapier-theme-flood::view-transition-old(root),html.rapier-theme-flood::view-transition-new(root){animation:none;mix-blend-mode:normal}
-html.rapier-theme-flood::view-transition-new(root){mask:linear-gradient(var(--rapier-turn-way),#000 calc(var(--rapier-turn) - 100%),transparent var(--rapier-turn))}
-html.rapier-theme-flood::view-transition-group(root){animation:none}
-html.rapier-theme-flood :is(button,input,textarea,select,.block-read,.recent-drawer__item,.swatch-wrap,.scroll-fab){transition:none!important}
+/* Each light layer holds still while the shared theme owner changes its exposure. */
+html.rapier-theme-light::view-transition-old(*),html.rapier-theme-light::view-transition-new(*){animation:none;mix-blend-mode:normal}
+html.rapier-theme-light::view-transition-group(*){animation:none}
+html.rapier-theme-light :is(button,input,textarea,select,.block-read,.recent-drawer__item,.swatch-wrap,.scroll-fab){transition:none!important}
 
-/* The dial (editor/engine.js _rapierDialTurn), every undo and redo in Rapier: a tap that did
-   something turns the arrow back for undo, on for redo, a quarter of the way, and it springs home
-   past centre and settles; a tap with nothing to do presses the arrow in and lets it go. One button
-   (docs/intent.md law 47: "It's literally an undo and a redo button, and it should be absolutely
-   identical absolutely everywhere"): the editor's bar, the note's head (the same two) and Draw's head
-   (the same two, cloned: draw/draw.js _rapierDrawDialButton) wear .icon-btn.rapier-dial, and these
-   rules, keyed on the class and never on the editor's ids, are the whole of its look: the button
-   gives under a finger, a pointer never grounds it, and "nothing to do" is said (aria-disabled,
-   _rapierDialSay), never drawn. */
-.rapier-dial:active{transform:scale(.86)}
+/* The dial alone owns its transform, in every surface. Focus remains visible through the stroke. */
+.icon-btn.rapier-dial{transition:none}
+.rapier-dial svg{transform-origin:center;transform-box:view-box}
+.rapier-dial:focus-visible svg{transform:none;stroke-width:3}
+@media (max-width:359px){.icon-btn.rapier-dial{width:44px}}
 @media (hover:hover) and (pointer:fine){.rapier-dial:hover{background:none}}
-svg.rapier-dial--back{animation:rapier-dial-back 420ms cubic-bezier(.2,0,0,1)}
-svg.rapier-dial--on{animation:rapier-dial-on 420ms cubic-bezier(.2,0,0,1)}
-svg.rapier-dial--stop{animation:rapier-dial-stop 180ms cubic-bezier(.2,0,0,1)}
-@keyframes rapier-dial-back{35%{transform:rotate(-70deg)}70%{transform:rotate(8deg)}}
-@keyframes rapier-dial-on{35%{transform:rotate(70deg)}70%{transform:rotate(-8deg)}}
-@keyframes rapier-dial-stop{50%{transform:scale(.85)}}
 
 /* The app theme owns its documents; the MIT reference sheet needs no app tokens. */
 .md-render{

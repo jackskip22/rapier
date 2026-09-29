@@ -116,13 +116,14 @@ intrinsic width constrained to the content box. A wrapped image without `x`
 starts at the left edge. Renderers clamp the displayed rectangle to the
 available width without rewriting source.
 
-One neighbouring text paragraph anchors the image: the one right after it in
-the same container, else the one right before, skipping past other image
-paragraphs and empty paragraphs (a blank line a person has just opened is not
-a barrier; once it holds words it is the neighbour) but never past a heading,
-a list, a callout, a table, code or a rule. `y` is an inset from that paragraph's content top; absence means zero. A
-renderer clamps the requested top to the paragraph's unwrapped content height
-before converting to pixels. Crossing into another paragraph changes the
+One neighbouring text block anchors the image: the one right after it in
+the same container, else the one right before, skipping other image
+paragraphs and empty paragraphs. Paragraphs, headings, lists, quotes/callouts,
+definition lists and expanding sections can anchor a picture, including text
+with links and checkboxes. Tables, code, figures, mathematics and rules remain
+barriers. `y` is an inset from the text block's content top; absence means zero.
+A renderer clamps the requested top to the block's unwrapped content height
+before converting to pixels. Crossing into another text block changes the
 anchor and rebases the inset. An image with no eligible neighbour either way
 stays in normal flow. There are no page coordinates or saved line fragments.
 

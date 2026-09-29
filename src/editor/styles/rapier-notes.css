@@ -312,7 +312,7 @@ body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border
 .rapier-notes-recording-play:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
 .rapier-notes-recording-time{font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 /* the snackbar after an archive or a delete, or a due reminder (OPEN/DONE in place of UNDO): one line, six seconds except a reminder, which waits to be answered */
-.rapier-notes-snack{touch-action:none;position:absolute;left:var(--space-2);right:var(--space-2);bottom:calc(var(--space-2) + env(safe-area-inset-bottom,0px));z-index:6;display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-3);background:var(--color-icon);color:var(--color-bg);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;transform:translateY(calc(100% + var(--space-3)));transition:transform 180ms var(--ease-out)}
+.rapier-notes-snack{touch-action:none;position:absolute;left:0;right:0;bottom:env(safe-area-inset-bottom,0px);z-index:6;display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-4);min-height:48px;transform:translateY(calc(100% + var(--space-3)));transition:transform 180ms var(--ease-out)}
 .rapier-notes-snack--open{transform:translateY(calc(0px - var(--rapier-notes-snack-lift, 0px)))}
 .rapier-notes-snack[data-rapier-transient-state="waiting"]{visibility:hidden}
 .rapier-notes-snack span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;white-space:normal}
@@ -819,13 +819,13 @@ body.light .rapier-recording-live{--color-text:#000000}
    and each theme button are one box. */
 .rapier-notes-settings-first .rapier-notes-theme{flex:1 1 auto;min-width:0}
 .rapier-notes-settings-first .rapier-notes-theme .theme-switcher__btn{min-width:0}
-/* Law 54: the sync box under the first row, a row of the panel in the house's button style. Connected, its
-   small line stands inside it -- the last backup's date and time in the same Geist Mono capitals, a size
-   down -- and it wears the chosen box's own look (rapier-app.css .theme-switcher__btn[data-active]: the
-   text colour as the ground and the page colour as the ink, so white in the dark and black in the light,
-   the panel's pure pair). */
-.rapier-notes-settings-overlay .rapier-notes-sync{height:auto;min-height:48px;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding-top:var(--space-2);padding-bottom:var(--space-2);text-align:left}
-.rapier-notes-settings-overlay .rapier-notes-sync[data-active]{background:var(--color-text);color:var(--color-bg)}
+/* The same square orange box in both settings panels; the verified backup time stays inside it. */
+.rapier-notes-sync{height:auto;min-height:48px;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding-top:var(--space-2);padding-bottom:var(--space-2);text-align:left}
+#settings-notes-section{margin-top:var(--space-6);margin-bottom:var(--space-6)}
+#settings-notes-section .settings-action-row{margin-bottom:0}
+#settings-notes-section .rapier-notes-sync{width:100%}
+.settings-action-btn.rapier-cloudflare,.export-choice.rapier-cloudflare{background:#f38020;color:#171717}
+.rapier-cloudflare .export-choice__description{color:inherit}
 .rapier-notes-sync__when{font-size:var(--text-2xs);line-height:1.3}
 /* Law 55 (the founder, 26 September 2026: "Once you scroll down inside that box, you can no longer scroll
    up again or get out of the box"). The centred sheets' `pan-down` (rapier-source.css) lets a finger begin

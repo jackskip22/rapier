@@ -388,9 +388,11 @@ function _rapierPaintOwnBrushes() {
 	return rows;
 }
 function _rapierPaintStoreOwn(rows) {
+	const before = _rapierPaintOwnBrushes();
 	try { localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(rows.map(row => ({ id: row.id, name: row.name, notes: row.notes, myb: row.myb })))); }
 	catch (_) { showToast('The brush changes could not be saved. Your saved brushes were kept.', 'error'); return false; }
 	_rapierDrawState.paintOwn = rows;
+	void _rapierPersonal.brushes(rows, before).catch(error => showToast(String(error.message || error), 'error'));
 	return true;
 }
 // Every brush the strip can show: Rapier's own finger set first (RAPIER_PAINT_PINNED), then the rest
@@ -414,6 +416,7 @@ function _rapierPaintSetStrength(value) {
 	const v = value === 'light' ? 'light' : 'firm';
 	_rapierDrawState.paintStrength = v;
 	try { localStorage.setItem(RAPIER_PAINT_STRENGTH_KEY, v); } catch (_) {}
+	_rapierPersonal.rememberDrawing('paintStrength', v);
 	_rapierPaintDipSyncPanel();
 	_rapierPaintUpdateStrip();
 }
@@ -471,6 +474,7 @@ function _rapierPaintSetBrush(id) {
 	// the person's own and a pick never touches it.
 	_rapierDrawState.paintSize = _rapierPaintSizeFor(id);
 	try { localStorage.setItem(RAPIER_PAINT_BRUSH_KEY, id); } catch (_) {}
+	_rapierPersonal.rememberDrawing('paintBrush', id);
 	_rapierDrawState.paintPicked = id;
 	_rapierPaintUpdateStrip();
 }
@@ -499,7 +503,7 @@ function _rapierPaintSetSize(value) {
 	const n = _rapierDrawClamp(Math.round(Number(value)), 0, 100);
 	if (!Number.isFinite(n)) return;
 	_rapierDrawState.paintSize = n;
-	try { const sizes = _rapierPaintSizesRead(); sizes[_rapierDrawState.paintBrush] = n; localStorage.setItem(RAPIER_PAINT_SIZES_KEY, JSON.stringify(sizes)); } catch (_) {}
+	try { const sizes = _rapierPaintSizesRead(); sizes[_rapierDrawState.paintBrush] = n; localStorage.setItem(RAPIER_PAINT_SIZES_KEY, JSON.stringify(sizes)); _rapierPersonal.rememberDrawing('paintSizes', JSON.stringify(sizes)); } catch (_) {}
 }
 function _rapierPaintSizeWord(size = _rapierPaintSize()) { return Math.round(Math.exp((size - 50) / 50 * Math.log(8)) * 100) + '%'; }
 
@@ -612,6 +616,7 @@ function _rapierPaintSetDip(id, load, water) {
 	const l = _rapierDrawClamp(load, 0, 1), w = _rapierDrawClamp(water, 0, 1);
 	if (l >= RAPIER_PAINT_DIP_FULL && w <= 0.005) delete map[id]; else map[id] = [l, w];
 	try { localStorage.setItem(RAPIER_PAINT_DIP_KEY, JSON.stringify(map)); } catch (_) {}
+	_rapierPersonal.rememberDrawing('paintDips', JSON.stringify(map));
 	// A dip is a different brush: the live layer's cached one, and every tile keyed by it, are stale.
 	const layer = _rapierPaintLayer(); if (layer) { layer.brush = null; layer.brushId = null; }
 }
@@ -2002,6 +2007,8 @@ function _rapierPaintFitsFinger(id) {
 }
 function _rapierPaintSetFitsFinger(id, on) {
 	try { if (on) localStorage.removeItem(RAPIER_PAINT_FIT_KEY + id); else localStorage.setItem(RAPIER_PAINT_FIT_KEY + id, 'off'); } catch (_) {}
+	try { const fits = JSON.parse(_rapierPersonal.values('drawing/').paintFits || '{}'); fits[id] = !!on; _rapierPersonal.rememberDrawing('paintFits', JSON.stringify(fits)); } catch (_) {}
+
 	_rapierDrawGlyphCache.clear(); _rapierPaintGlyphCache.clear();
 	const layer = _rapierPaintLayer(); if (layer) { layer.brush = null; layer.brushId = null; }
 	_rapierPaintUpdateStrip();
@@ -2181,8 +2188,43 @@ function _rapierPaintAdmitSettings(erasing) {
 // entirely from the gesture's own admitted `settings` and `geom` (never read fresh here): the fast
 // synchronous path (a fresh blank layer, or a layer already picked up) and the queued path (P02,
 // below) both land here once a live surface is ready.
+// A second finger abandons only the live stroke. Older wet paint, layer growth and history
+// return to their exact pre-stroke state; no encode of the abandoned pixels may arrive later.
+function _rapierPaintStrokeCheckpoint(gesture, layer) {
+	const state = _rapierDrawState;
+	_rapierPaintFlushRevision(layer);
+	const props = {};
+	for (const key of ['id', 'raster', 'geom', 'origin', 'frame', 'retire', 'checkpoint', 'pendingOverflow', 'setPending', 'paintVersion', 'joinsStroke']) props[key] = _rapierDrawHistoryCopy(layer[key]);
+	gesture.paintRollback = {layer, props, pixels: layer.surface.beginStroke(), recipe: _rapierDrawHistoryRecipe(), undo: state.undoStack.slice(), redo: state.redoStack.slice(), view: {..._rapierDrawView()}};
+}
+function _rapierPaintReleaseStroke(gesture, cancel = false) {
+	const saved = gesture.paintRollback, state = _rapierDrawState;
+	if (gesture.paint?.pending) gesture.paint.discarded = true;
+	if (!saved) return;
+	delete gesture.paintRollback;
+	if (!cancel) { saved.layer.surface.endStroke(saved.pixels); return; }
+	const layers = new Set([saved.layer, state.paintLayer].filter(Boolean));
+	for (const layer of layers) {
+		for (const key of ['raf', 'holdRaf', 'dryRaf']) { if (layer[key]) cancelAnimationFrame(layer[key]); layer[key] = 0; }
+		for (const job of layer.revisions || []) { clearTimeout(job.timer); job.resolve(); }
+		layer.revisions = []; layer.pendingCommit = null;
+		if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
+		layer.mount?.remove();
+	}
+	state.paintSetting = false;
+	const layer = saved.layer;
+	layer.surface.endStroke(saved.pixels, true);
+	Object.assign(layer, saved.props);
+	state.paintLayer = layer; state.recipe = _rapierDrawRestoreRecipe(saved.recipe);
+	state.undoStack = saved.undo; state.redoStack = saved.redo; state.view = saved.view;
+	layer.canvas.width = layer.surface.width; layer.canvas.height = layer.surface.height;
+	layer.mount = _rapierPaintMountLive(layer.canvas, layer.id);
+	_rapierPaintPlaceLive(); _rapierPaintScheduleBlit();
+	if (layer.surface.wetState) _rapierPaintScheduleDry(layer);
+}
 function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	let layer = _rapierDrawState.paintLayer;
+	_rapierPaintStrokeCheckpoint(gesture, layer);
 	// The warm view is spent the instant a real gesture takes it: from here it is an ordinary layer.
 	delete layer.warmView;
 	const id = settings.brushId, brush = _rapierPaintBrushFor(layer, id);
@@ -2683,6 +2725,7 @@ function _rapierPaintEnd(evt, gesture) {
 	paint.tail.forEach((s, i) => _rapierPaintSample(paint, layer, s,
 		i === 0 && !paint.drained ? 1 : _rapierPaintSmooth(_rapierDrawClamp((end - s.at) / span, 0, 1))));
 	paint.tail.length = 0;
+	_rapierPaintReleaseStroke(gesture);
 	// The layer the stroke ENDS on: draining the tail may have flipped the sheet at the cap.
 	const ended = _rapierPaintLayer() || layer;
 	// A completed wet stroke changes the picture before its later drying commit.
@@ -2921,7 +2964,15 @@ function _rapierPaintSyncPaper() {
 	// Black is black in either theme: the light theme's own background is white, so a chosen black canvas
 	// that fell back to it never changed (the founder: "never changes when you're on raster painting").
 	const black = !paper && choice === 'black';
-	surface.querySelector('.rapier-draw-stage').style.backgroundColor = paper ? '#fff' : black ? '#000' : 'var(--color-bg)';
+	surface.querySelector('.rapier-draw-stage').style.backgroundColor = 'color-mix(in srgb,var(--draw-paper) 86%,var(--draw-paper-ink))';
+	const dark = !paper && (black || !document.body.classList.contains('light'));
+	surface.style.setProperty('--draw-paper', paper ? '#fff' : black ? '#000' : 'var(--color-bg)');
+	surface.style.setProperty('--draw-paper-ink', paper ? '#000' : black ? '#fff' : 'var(--color-text)');
+	const toggle = surface.querySelector('[data-draw-act="canvas"]');
+	if (toggle) {
+		toggle.setAttribute('aria-label', 'Canvas: ' + (dark ? 'black; change to white' : 'white; change to black'));
+		toggle.setAttribute('aria-pressed', String(dark));
+	}
 	_rapierPaintWarmTarget();
 	if (paper === !!state.paper && black === !!state.paperBlack) return;
 	state.paper = paper; state.paperBlack = black;

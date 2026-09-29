@@ -130,7 +130,7 @@ function transformShape(shape, recipe, matrix, preserveGrow = true) {
 		}
 	}
 	geomOK(geom);
-	if (shape.recognized !== recognized && shape.brush && !_rapierDrawBrushesFor(recognized).includes(shape.brush)) shape.brush = 'ink';
+	if (shape.recognized !== recognized && shape.brush && !_rapierDrawBrushesFor(recognized, shape.stroke != null).includes(shape.brush)) shape.brush = 'ink';
 	shape.geom = geom; shape.recognized = recognized;
 	if (points) stroke.pts = points;
 	if (bend != null) { shape.bend = bend; shape.curveT = curveT; }
@@ -474,7 +474,7 @@ function applyOperations(input, operations) {
 				_rapierDrawReleaseAuthorPaint(shape, operation);
 				if (brush !== undefined) {
 					const want = brush === 'pen' ? 'brush' : brush;
-					if (typeof want !== 'string' || !_rapierDrawBrushesFor(shape.recognized).includes(want)) fail('drawing_look_invalid');
+					if (typeof want !== 'string' || !_rapierDrawBrushesFor(shape.recognized, shape.stroke != null).includes(want)) fail('drawing_look_invalid');
 					shape.brush = want;
 				}
 				if (style !== undefined) {

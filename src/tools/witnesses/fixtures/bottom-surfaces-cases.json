@@ -38,12 +38,12 @@
           },
           {
             "property": "left",
-            "value": "var(--space-4)",
+            "value": "0",
             "important": false
           },
           {
             "property": "right",
-            "value": "var(--space-4)",
+            "value": "0",
             "important": false
           }
         ]
@@ -262,6 +262,53 @@
         "attributes": {
           "aria-hidden": "false"
         }
+      }
+    },
+    {
+      "id": "draw-stage",
+      "selector": ".rapier-draw-stage",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(env(safe-area-inset-top,0px) + var(--draw-cell) + 2 * var(--space-1))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-stage",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "noControl": true
       }
     },
     {
@@ -965,17 +1012,17 @@
           },
           {
             "property": "left",
-            "value": "var(--space-2)",
+            "value": "0",
             "important": false
           },
           {
             "property": "right",
-            "value": "var(--space-2)",
+            "value": "0",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "calc(var(--space-2) + env(safe-area-inset-bottom,0px))",
+            "value": "env(safe-area-inset-bottom,0px)",
             "important": false
           },
           {

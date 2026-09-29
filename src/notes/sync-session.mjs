@@ -4,6 +4,8 @@ import {CLOUDFLARE_SYNC, SYNC_UNAVAILABLE, SYNC_CONSENT, syncAvailability, r2Key
 import {createVerifier, challengeFor, authorizeUrl, readRedirect, createOAuthClient} from './cloudflare-oauth.mjs';
 import {createVault, unlockVault, unlockVaultWithRecovery, vaultId, headerObject, headerDigest, decodeHeader, HEADER_MAX_BYTES, seal, open, decodeRecovery} from './vault.mjs';
 import {createR2Transport} from './transport-r2.mjs';
+import {createCloudflareSetup, storageDashboard} from './cloudflare-setup.mjs';
+export {storageDashboard};
 import {createS3Transport} from './transport-s3.mjs';
 import {synchronize, createOwnerSyncStore, putVerified, contentHash} from './sync.mjs';
 import {readSyncState, updateSyncState} from './sync-state.mjs';
@@ -16,6 +18,16 @@ const te = new TextEncoder();
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const PENDING_MS = 10 * 60 * 1000;
+// The deliberate verification door must survive Cloudflare's exact redirect, which has no hash.
+// Only this tab's fresh, matching PKCE state can restore it; ordinary visitors remain gated.
+export function verificationReturn(url, proof, search, config = CLOUDFLARE_SYNC, now = Date.now()) {
+	try {
+		const pending = JSON.parse(proof), callback = new URL(url), params = new URLSearchParams(search);
+		return pending.verification === true && pending.clientId === config.clientId && pending.redirectUri === config.redirectUri &&
+			callback.origin + callback.pathname === config.redirectUri && pending.at <= now && now - pending.at <= PENDING_MS &&
+			params.getAll('state').length === 1 && params.get('state') === pending.state && typeof pending.state === 'string' && pending.state.length >= 16;
+	} catch { return false; }
+}
 const MAX_CODE_BYTES = 24 * 1024;
 const LOCATOR = /^([a-f0-9]{32}):([a-z0-9][a-z0-9-]{1,61}[a-z0-9]):(default|eu|us|fedramp|fedramp-high):([a-f0-9]{32}):([a-f0-9]{64})$/;
 const b64 = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -94,7 +106,7 @@ async function checkedRecord(record) {
 }
 
 export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendingKey = 'rapier:cloudflare:pending',
-	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', now = Date.now, onChange = () => {}} = {}) {
+	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, now = Date.now, onChange = () => {}} = {}) {
 	if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
 	// A private copy prevents a caller mutating registration or host facts after admission.
 	config = Object.freeze({...config, scopes: Object.freeze([...(config.scopes || [])])});
@@ -104,6 +116,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	const oauth = () => createOAuthClient({fetch: fetchFn, clientId: config.clientId, redirectUri: config.redirectUri});
 	let grant = null, key = null, connection = null, work = null, epoch = 0, revoking = null, locking = null;
 	let staged = null;
+	let accounts = null, storage = null;
 	let stage = 'signed-out', notice = '', needsRevoke = false, backedUpAt = null, rejoinRequired = false;
 	const transports = new Set(), credentials = new Map();
 	const status = () => Object.freeze({stage, mode, authorized: mode === 'r2-key' ? !!key && !!connection?.credential : !!grant && !needsRevoke, unlocked: !!key,
@@ -168,6 +181,14 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	async function withTransport(target, ticket, fn, pair = null) {
 		const tr = await transport(target, ticket, pair);
 		try { return await fn(tr); } finally { tr.pause(); transports.delete(tr); }
+	}
+	async function withSetup(ticket, fn) {
+		if (mode !== 'oauth') throw fail('config', 'automatic setup uses cloudflare sign-in.');
+		const token = await authority(ticket); active(ticket);
+		const setup = createCloudflareSetup({fetch: fetchFn, token});
+		transports.add(setup);
+		try { const result = await fn(setup); active(ticket); return result; }
+		finally { setup.pause(); transports.delete(setup); }
 	}
 	async function readLocal() {
 		const snapshot = await folder.read();
@@ -253,6 +274,16 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 
 	return Object.freeze({
 		status, confirmRecovery, leave,
+		cloudflareAccounts() { return run(async ticket => {
+			accounts = await withSetup(ticket, setup => setup.accounts());
+			return accounts.map(account => ({...account}));
+		}); },
+		cloudflareStorage(accountId) { return run(async ticket => {
+			if (!accounts?.some(account => account.id === accountId)) throw fail('account', 'choose one of your cloudflare accounts.');
+			storage = null;
+			storage = await withSetup(ticket, setup => setup.storage(accountId));
+			return {...storage, vaults: storage.vaults.map(target => ({address: connectionCode(target)}))};
+		}); },
 		async inspect() { await readLocal(); if (mode === 'r2-key' && !work && !key) stage = connection?.credential ? 'locked' : 'signed-out'; return status(); },
 		prepare({passphrase} = {}) { return run(async ticket => {
 			if (mode !== 'r2-key') throw fail('config', 'the recovery check belongs to bucket key setup.');
@@ -274,7 +305,8 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			const challenge = await challengeFor(verifier, bytes => crypto.subtle.digest('SHA-256', bytes));
 			active(ticket);
 			const url = authorizeUrl({...config, state, challenge});
-			const proof = JSON.stringify({verifier, state, at: now(), redirectUri: config.redirectUri, clientId: config.clientId});
+			const proof = JSON.stringify({verifier, state, at: now(), redirectUri: config.redirectUri, clientId: config.clientId,
+				verification: !config.browserRoundTripVerified && new URL(environment.url).hash === '#sync-verify'});
 			try { pendingStorage.setItem(pendingKey, proof); if (pendingStorage.getItem(pendingKey) !== proof) throw new Error(); }
 			catch { throw fail('storage', 'this page cannot keep a sign-in: stay here and back up your notes.'); }
 			announce('signing-in'); return url;
@@ -289,11 +321,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			remember(await oauth().exchange({code, verifier: pending.verifier}));
 			active(ticket); checkScopes();
 			await readLocal(); active(ticket);
-			announce('locked', 'signed in. unlock your vault to sync; signing in is not a backup.');
+			announce('locked');
 			return status();
 		}); },
 		create({accountId, bucket, jurisdiction = 'default', accessKeyId, secretAccessKey, passphrase, recoveryCode} = {}) { return run(async ticket => {
 			if (mode === 'oauth') await authority(ticket);
+			if (mode === 'oauth' && !accountId && !bucket && storage) ({accountId, bucket, jurisdiction} = storage);
 			const local = await readLocal(); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again, or leave it before starting a new vault.');
 			if (connection) throw fail('connection', 'this folder already has a vault: unlock it instead.');
@@ -303,7 +336,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					confirmRecovery(recoveryCode);
 					made = staged;
 				} else {
-					if (mode === 'r2-key' && (typeof passphrase !== 'string' || [...passphrase].length < 16)) throw fail('passphrase', 'use at least 16 characters for your sync passphrase.');
+					if (typeof passphrase !== 'string' || [...passphrase].length < 16) throw fail('passphrase', 'use at least 16 characters for your sync passphrase.');
 					made = await createVault(passphrase);
 				}
 				active(ticket);
@@ -407,7 +440,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					await putVerified(tr, 'keys/' + connection.target.headerHash, connection.bytes); active(ticket);
 					// The adapter asks after every owner lease it waited for and at each write-plan handoff,
 					// so a Lock that lands while this sync is queued refuses the unhanded work.
-					const store = createOwnerSyncStore({folder, deviceId: local.deviceId || folder.deviceId,
+					const store = createOwnerSyncStore({folder, personal, deviceId: local.deviceId || folder.deviceId,
 						assertActive: () => active(ticket)});
 					return synchronize(tr, store, {vdk: held});
 				});
@@ -415,12 +448,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				// Kept in the folder's own sync state, beside the checkpoint it dates. A record that fails
 				// leaves the last time that was kept: it can understate the backup, never claim one.
 				try {
-					if (!result.skipped?.length) {
+					if (result.caughtUp !== false && !result.skipped?.length) {
 						await updateSyncState(folder, current => current.head && !(current.backedUpAt >= since) ? {...current, backedUpAt: since} : null);
 						backedUpAt = Math.max(backedUpAt || 0, since);
 					}
 				} catch {}
-				announce('ready', result.skipped?.length ? 'Too large to sync: ' + result.skipped.join(', ') + '; these files and their linked notes stay here while the rest syncs.' : (result.caughtUp || result.unchanged) ? 'sync complete. back up too: sync is not a backup.' : 'changes synced. edits made since go with the next sync.');
+				announce('ready', result.skipped?.length ? 'Too large to sync: ' + result.skipped.join(', ') + '; these files and their linked notes stay here while the rest syncs.' : (result.caughtUp !== false && (result.caughtUp || result.unchanged)) ? 'sync complete. back up too: sync is not a backup.' : 'changes synced. edits made since go with the next sync.');
 				return result;
 			} catch (error) { if (ticket === epoch) announce('ready', 'sync did not finish. your notes, and what waits to upload, are kept.'); throw error; }
 		}); },
@@ -491,7 +524,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					announce('revocation-pending', 'sync stopped, but cloudflare has not confirmed revocation. retry here, or revoke rapier in cloudflare before you close this page.');
 					throw fail('revoke', notice);
 				}
-				grant = null; needsRevoke = false;
+				grant = null; accounts = null; storage = null; needsRevoke = false;
 				announce('signed-out', 'signed out, and cloudflare confirmed revocation. your notes and the vault stay.');
 				return {revoked: true};
 			})().finally(() => { revoking = null; onChange(status()); });
