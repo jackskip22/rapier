@@ -170,8 +170,10 @@ In ChatGPT, add the same door as a connector (Settings →
 Connectors → Create, the URL above, no authentication). `rapier.open` opens the editor in the chat, and every other
 tool works headless.
 
-- **What the skills send.** Nothing. A skill is text the agent reads; the pages it makes and the editor it
-  embeds run where you put them, offline.
+- **What the skills run.** Skills are instructions for the assistant. In a host with file and command
+  tools, the optional helpers download pinned Rapier packages from npm and run in that host's environment.
+  Those helpers read the files chosen for the task and write local output; they do not upload documents.
+  The resulting editor page works offline.
 - **What the connector sends.** The document you share with the agent, to the Rapier worker at that
   address, held for the agent's workspace in Cloudflare and gone after thirty days idle. No account, no name,
   no telemetry; the workspace is reached only by the capability `rapier.open` returned, which the editor can
@@ -182,8 +184,8 @@ tool works headless.
 In the public repository the plugin is the `plugin/` folder (the manifest, the door, the four skills, this
 section as its README and the licence), which is what the Claude directory reads and scans; the repository's
 own `.claude-plugin/marketplace.json` points at it, and `jackskip22/rapier-plugins` carries the same plugin beside
-the three npm packages. What the plugin runs: nothing on your machine; the skills are instructions, the connector
-is a remote server. What it sends: only what the privacy page says, one page of few words with the terms on it,
+the three npm packages. The hosted connector runs remotely; optional file helpers run in the assistant's
+file and command environment. The data handling and terms are on one short page,
 [rapier.website/privacy](https://rapier.website/privacy), which is the page itself opened at that address (the
 About section's PRIVACY button shows the same words).
 
