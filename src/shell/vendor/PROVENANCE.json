@@ -1,0 +1,120 @@
+{
+  "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS) into the text/rapier-vendor elements of rapier.html. Each file is the published build of its package at the named version, byte for byte as it was first vendored; the build refuses a file whose bytes or SHA-256 differ from this record. The path is the file inside the published package as far as the vendoring record names it; the digests here are the identities the packed spans have carried since R77.",
+  "movedFrom": "Until R87P these bytes lived only as the packed groups inside rapier.html and every build re-read its own output to pack them again.",
+  "files": {
+    "dompurify-3.4.13.dist.purify.min.js": {
+      "package": "dompurify",
+      "version": "3.4.13",
+      "path": "dist/purify.min.js",
+      "license": "Apache-2.0 OR MPL-2.0 (the notice is the file's own first comment)",
+      "bytes": 29435,
+      "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+    },
+    "turndown-7.2.4.lib.turndown.browser.umd.js": {
+      "package": "turndown",
+      "version": "7.2.4",
+      "path": "lib/turndown.browser.umd.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 26946,
+      "sha256": "cdf933e0a2085df3c64d6c763331f04345f6c3b25746216e8f1426c9c5253045"
+    },
+    "markdown-it-15.0.0.umd.min.js": {
+      "package": "markdown-it",
+      "version": "15.0.0",
+      "path": "dist/markdown-it.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt; linkify-it inside it)",
+      "bytes": 114128,
+      "sha256": "8d0f6aca8f4de3321b6d07e03286176c59ec19b7b84abb6eb31f0fa795e83abc"
+    },
+    "markdown-it-task-lists-2.1.1.min.js": {
+      "package": "markdown-it-task-lists",
+      "version": "2.1.1",
+      "path": "dist/markdown-it-task-lists.min.js",
+      "license": "ISC (agent/vendor/NOTICE.txt)",
+      "bytes": 2702,
+      "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+    },
+    "markdown-it-footnote-4.0.0.min.js": {
+      "package": "markdown-it-footnote",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-footnote.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 5624,
+      "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+    },
+    "markdown-it-mark-4.0.0.min.js": {
+      "package": "markdown-it-mark",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-mark.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 1621,
+      "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+    },
+    "markdown-it-sub-2.0.0.min.js": {
+      "package": "markdown-it-sub",
+      "version": "2.0.0",
+      "path": "dist/markdown-it-sub.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 967,
+      "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+    },
+    "markdown-it-sup-2.0.0.min.js": {
+      "package": "markdown-it-sup",
+      "version": "2.0.0",
+      "path": "dist/markdown-it-sup.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 965,
+      "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+    },
+    "markdown-it-emoji-3.1.0-light.min.js": {
+      "package": "markdown-it-emoji",
+      "version": "3.1.0",
+      "path": "dist/markdown-it-emoji-light.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 6394,
+      "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+    },
+    "markdown-it-abbr-2.0.0.min.js": {
+      "package": "markdown-it-abbr",
+      "version": "2.0.0",
+      "path": "dist/markdown-it-abbr.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 2419,
+      "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+    },
+    "markdown-it-ins-4.0.0.min.js": {
+      "package": "markdown-it-ins",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-ins.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 1601,
+      "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+    },
+    "markdown-it-deflist-4.0.0.min.js": {
+      "package": "markdown-it-deflist",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-deflist.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 2376,
+      "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+    },
+    "gpu-lexer-0.0.1.js": {
+      "package": "gpu-lexer",
+      "version": "0.0.1",
+      "author": "Vercel Labs",
+      "path": "the package's published ES module, as the file's own first comment describes it (the R61 tree carried it as editor/vendor/gpu-lexer.js, byte-identical)",
+      "license": "MIT (declared by the package, which ships no LICENSE file; agent/vendor/NOTICE.txt carries the standard MIT text)",
+      "note": "The upstream module's trailing `export{UB as highlight}` is replaced by `globalThis.RapierGpuLexer = Object.freeze({highlight:UB})` so the file runs as a classic script like every other vendor library here; the file's own first comment says so. Nothing else differs. Recovered on 23 September 2026 from the R61 working project (inbound/grok-size-r87p/), after an R70 size pass had removed it without the founder.",
+      "bytes": 59967,
+      "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+    },
+    "acorn-8.18.0.dist.acorn.js": {
+      "package": "acorn",
+      "version": "8.18.0",
+      "path": "dist/acorn.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 245232,
+      "sha256": "fc3ed7b81e58464715d0291402892f22c3d86ea75302645a330390f85d8015c9"
+    }
+  }
+}

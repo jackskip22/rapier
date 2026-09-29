@@ -1,0 +1,27 @@
+/* Geoffrey's information sheet; Rapier supplies its theme, safe insets and modal stack. */
+.settings-info-btn,.info-action-overlay{--control-target:48px;--top:max(env(safe-area-inset-top,0px),var(--native-inset-top,0px));--bottom:max(env(safe-area-inset-bottom,0px),var(--native-inset-bottom,0px));}
+.settings-info-btn{display:grid;place-items:center;background:transparent;color:var(--color-text);cursor:pointer;width:var(--control-target);height:var(--control-target);margin:0;}
+.settings-info-btn .icon,.info-action-overlay .icon{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.settings-info-btn .icon{width:18px;height:18px;}
+.posture-row .settings-info-btn{margin-left:auto;}
+/* R86z, the founder: the circle hangs off the top right of the title's last letter, connected to it -- a 3.5rem title's x-height ends about .52em down, and the circle's 18px glyph sits above that line, touching the letter's edge. The 48px target is kept by the control's own box; only the glyph is small. */
+.settings-info-btn--hang{width:40px;height:40px;align-self:flex-start;margin:-.22em 0 0 -6px;flex:none;}
+.settings-info-btn--hang .icon{width:18px;height:18px;}
+#share-overlay .navigator-title-row .settings-info-btn--hang{margin-right:0;}
+.info-action-overlay{position:fixed;inset:0 0 var(--bottom) 0;z-index:2100;display:flex;align-items:flex-end;background:rgba(0,0,0,.46);color:#fff;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--dur-enter) var(--ease-out),visibility 0s linear var(--dur-enter);}
+.info-action-overlay.open{opacity:1;visibility:visible;pointer-events:auto;transition-delay:0s;}
+.info-action-sheet{width:100%;max-height:calc(100dvh - var(--top) - 12px);overflow:auto;background:var(--color-surface);color:var(--color-text);padding:8px 20px 22px;transform:translate3d(0,100%,0);transition:transform var(--dur-enter) var(--ease-out);will-change:transform;overscroll-behavior:contain;touch-action:pan-y;}
+.info-action-overlay.open .info-action-sheet{transform:translate3d(0,0,0);}
+.info-action-overlay .track-action-head{min-height:58px;display:flex;align-items:center;gap:12px;touch-action:pan-down;}
+.info-action-overlay .track-action-copy{min-width:0;flex:1;}
+.info-action-overlay .track-action-title{font:620 20px/1.15 var(--font-sans);letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.info-action-overlay .icon-button{width:var(--control-target);height:var(--control-target);display:grid;place-items:center;color:var(--color-text);cursor:pointer;flex:none;}
+.info-action-body{margin:8px 0 2px;color:var(--color-text);font:var(--fw-regular) var(--text-sm)/1.55 var(--font-sans);}
+.info-action-body p+p{margin-top:12px;}
+body:not(.light) .info-action-body{color:#fff;}
+body.light .info-action-body{color:#000;}
+.info-action-overlay .close-button,.info-action-overlay .close-button:hover,.info-action-overlay .close-button:active,.info-action-overlay .close-button:focus,.info-action-overlay .close-button:focus-visible{appearance:none!important;-webkit-tap-highlight-color:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;}
+.info-action-overlay .close-button::before,.info-action-overlay .close-button::after{display:none!important;}
+.info-action-overlay .close-button:focus-visible .icon{stroke-width:2.4;}
+@media(min-width:760px){.info-action-sheet{max-width:560px;margin:0 auto;}}
+@media(prefers-reduced-motion:reduce){.info-action-overlay,.info-action-sheet{transition:none!important;}}

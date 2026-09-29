@@ -1,0 +1,44 @@
+{
+  "fonttools": "4.65.0",
+  "instancing": "fontTools.varLib.instancer.instantiateVariableFont(font, {\"wght\": (400, 700)}): the variable font kept variable, its weight axis restricted to the range Rapier uses (400 regular to 700 bold; 650 and 500 lie inside). The originals, full axis, are the .woff2 files beside this record.",
+  "fonts": {
+    "Geist": {
+      "original": {
+        "file": "Geist.original.woff2",
+        "bytes": 40996,
+        "sha256": "a3c3af324e09dad3b55f1d082aa16a35f0cbf5a5b7ebf01b2f91a3c966ce4ab3",
+        "axes": {
+          "wght": [
+            100.0,
+            400.0,
+            900.0
+          ]
+        }
+      },
+      "instanced": {
+        "file": "Geist.wght400-700.woff2",
+        "bytes": 29896,
+        "sha256": "6e3a140e3812161e292fbe42a1fc90533b2407b699c65abc7a098b0979df4e82"
+      }
+    },
+    "Geist Mono": {
+      "original": {
+        "file": "GeistMono.original.woff2",
+        "bytes": 45272,
+        "sha256": "cc7a1bb39d3d071dd52ca55c79d4f29a5e1ebfa09e9d6c8bd8ec188948e24841",
+        "axes": {
+          "wght": [
+            100.0,
+            400.0,
+            900.0
+          ]
+        }
+      },
+      "instanced": {
+        "file": "GeistMono.wght400-700.woff2",
+        "bytes": 33492,
+        "sha256": "f6bf8e09d57605526b93e48996bff6e98d41515db5d9b761b3e5789560e79198"
+      }
+    }
+  }
+}

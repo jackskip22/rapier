@@ -2,11 +2,8 @@
   "name": "rapier",
   "compatibility_date": "2026-08-08",
   "workers_dev": true,
-  "build": {
-    "command": "node src/tools/stage-web.mjs --public"
-  },
   "assets": {
-    "directory": ".wrangler/rapier-assets",
+    "directory": ".",
     "html_handling": "none"
   }
 }

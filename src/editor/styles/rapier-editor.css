@@ -1,0 +1,1399 @@
+
+
+button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+button:focus:not(:focus-visible), [role="button"]:focus:not(:focus-visible) { outline: none; box-shadow: none; }
+
+.block-wrapper--interactive .block-read { cursor: text; }
+.block-wrapper--interactive .block-read a[href],
+.block-wrapper--interactive .block-read summary,
+.block-wrapper--interactive .block-read input,
+.block-wrapper--interactive .block-read button,
+.block-wrapper--interactive .block-read img { cursor: pointer; }
+.rapier-native-flowchart [data-shape-id][role="button"]{cursor:text}
+.rapier-diagram-label{position:absolute;box-sizing:border-box;display:block;margin:0;padding:0;border:0;border-radius:0;outline:1px solid var(--color-accent);outline-offset:4px;background:transparent;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:normal;z-index:1;min-height:0;min-width:0}
+
+
+html {
+	height: 100%;
+	overflow: hidden;
+}
+body {
+	height: 100dvh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+
+.top-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-2);
+	height: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)));
+	padding-top: var(--native-inset-top, env(safe-area-inset-top, 0px));
+	padding-left: var(--editor-h-pad);
+	padding-right: var(--editor-h-pad);
+	background: var(--color-bg);
+	flex-shrink: 0;
+	z-index: 20;
+	position: sticky;
+	top: 0;
+}
+
+.top-bar__left {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	flex: 1 1 auto;
+	overflow: hidden;
+}
+
+.top-bar__actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+#btn-undo { margin-right: -2px; }
+/* At 320 px the bar's four 48 px boxes and its gutters left the name 44 px of the 59 "welcome" needs, so the
+   founder saw "welc… .MD" (open-work item 11). Under 360 px the boxes narrow to 44 px, still a finger's target
+   (the icon is 24), and the name has its room; the page's gutter and the name's place at it do not move. */
+@media (max-width: 359px) { .top-bar__actions .icon-btn { width: 44px; } }
+
+
+.filename-btn {
+	flex: 0 1 auto;
+	width: auto;
+	max-width: 100%;
+	min-width: 0;
+	height: 48px;
+	min-height: 48px;
+	display: block;
+	padding: 0;
+	overflow: hidden;
+	border: none;
+	background: none;
+	color: var(--color-text);
+	font: var(--fw-regular) var(--text-sm)/48px var(--font-mono);
+	text-align: left;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+@media (hover:hover) and (pointer:fine){
+	.filename-btn:hover,.filename-ext-btn:hover{color:var(--color-text);background:var(--color-surface-2)}
+}
+.filename-dirty {
+	display: block;
+	width: auto;
+	height: 48px;
+	margin: 0;
+	padding: 0;
+	color: var(--color-text);
+	font: var(--fw-medium) var(--text-sm)/48px var(--font-mono);
+	text-align: center;
+	user-select: none;
+	pointer-events: none;
+}
+.filename-input {
+	flex: 1 1 auto;
+	width: 200px; max-width: 260px;
+	min-width: 0;
+	font: var(--fw-regular) var(--text-sm) var(--font-mono);
+	background: var(--color-surface-2);
+	border: none;
+	color: var(--color-text);
+	padding: var(--space-1) var(--space-2);
+	height: 48px;
+}
+
+
+.find-bar,
+.replace-bar {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	height: var(--find-bar-h);
+	padding: 0 var(--editor-h-pad);
+	background: var(--color-icon);
+	flex-shrink: 0;
+}
+
+.find-bar .find-input,
+.replace-bar .replace-input {
+	flex: 1;
+	min-width: 0;
+	background: var(--color-icon);
+	border: none;
+	color: var(--color-bg);
+	-webkit-text-fill-color: var(--color-bg);
+	caret-color: var(--color-bg);
+	font: var(--fw-regular) 1.1rem var(--font-sans);
+	padding: 0 var(--space-1);
+	appearance: none;
+	outline: none;
+}
+.find-bar .find-input::placeholder,
+.replace-bar .replace-input::placeholder {
+	color: color-mix(in srgb, var(--color-bg) 40%, transparent);
+	-webkit-text-fill-color: color-mix(in srgb, var(--color-bg) 40%, transparent);
+}
+.find-count {
+	font: 500 1.25rem var(--font-mono);
+	color: color-mix(in srgb, var(--color-bg) 45%, transparent);
+	flex-shrink: 0;
+	text-align: right;
+}
+
+.find-count__cur { color: var(--color-bg); }
+.find-count__sep { color: color-mix(in srgb, var(--color-bg) 60%, transparent); }
+.find-count__tot { color: color-mix(in srgb, var(--color-bg) 60%, transparent); }
+/* The 32px visual slot is the Find/Replace composition; the target under it is the whole
+	 height of the bar, which costs the composition nothing and doubles what a finger can hit. */
+.find-bar .icon-btn {
+	width: 32px; height: var(--find-bar-h);
+	border: none; background: none;
+	/* Dimmed as a whole, never through a translucent stroke: an arrow is two strokes that overlap
+		 at the tip, and a translucent colour paints the overlap twice. */
+	color: var(--color-bg);
+	opacity: .45;
+	flex-shrink: 0;
+}
+
+.find-bar .icon-btn:active{color:var(--color-bg);opacity:1;background:none}
+@media (hover:hover) and (pointer:fine){.find-bar .icon-btn:hover{color:var(--color-bg);opacity:1;background:none}}
+
+.replace-all-btn {
+	min-width: 94px;
+	height: var(--find-bar-h);
+	padding: 0 var(--space-2);
+	border: 0;
+	background: transparent;
+	color: var(--color-bg);
+	font: var(--fw-medium) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.replace-all-btn:active{opacity:.65}
+@media (hover:hover) and (pointer:fine){.replace-all-btn:hover{opacity:.65}}
+.replace-all-btn:disabled { opacity: .35; cursor: default; }
+
+
+::highlight(rapier-find-all)     { background: rgba(255,255,0,0.25); }
+::highlight(rapier-find-current),
+::highlight(rapier-read-word)    { background: var(--color-accent); color: var(--color-accent-foreground); }
+
+
+.rapier-find-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 19;
+	pointer-events: none;
+	overflow: hidden;
+}
+.rapier-find-current-mark {
+	position: fixed;
+	pointer-events: none;
+	background: color-mix(in srgb, var(--color-accent) 46%, transparent);
+	box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+.block-wrapper.rapier-find-current-fallback {
+	background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+
+.rapier-frontmatter {
+	flex: none;
+	margin-inline: var(--editor-h-pad);
+	background: var(--color-surface);
+	color: var(--color-text);
+}
+.rapier-frontmatter > summary,
+.rapier-frontmatter > button {
+	box-sizing: border-box;
+	min-height: 44px;
+	padding: 0 var(--space-3);
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	font: var(--fw-medium) var(--text-sm)/1.4 var(--font-mono);
+	/* --track-caps, not --track-caps-ui: this disclosure sits in the document's own body, and the
+	   wider tracking is the settings panel's alone (rapier-app.css says so where both are defined).
+	   typography-caps-tracking measures every uppercase element on the page against the editorial
+	   law and caught this one at .055 of its size where the law is .04. */
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.rapier-frontmatter > summary { display: flex; align-items: center; justify-content: space-between; list-style: none; }
+.rapier-frontmatter > summary::-webkit-details-marker { display: none; }
+.rapier-frontmatter > summary::after { content: 'Show'; }
+.rapier-frontmatter[open] > summary::after { content: 'Hide'; }
+.rapier-frontmatter > pre {
+	max-height: min(24vh, 12rem);
+	overflow: auto;
+	overscroll-behavior: contain;
+	margin: 0;
+	padding: var(--space-2) var(--space-3);
+	font: var(--text-sm)/1.5 var(--font-mono);
+	white-space: pre;
+}
+.rapier-frontmatter > :focus-visible { outline: 0; background: var(--color-surface-hover); }
+body.rapier-notes-open .rapier-frontmatter { display: none; }
+
+.editor-area {
+	flex: 1;
+	text-wrap: wrap; /* greedy prose, balanced headings (spec/markdown-style.css): layout/browser.js plans both */
+	overflow-y: auto;
+	overflow-x: hidden;
+	overscroll-behavior-y: contain;
+	padding: var(--space-8) var(--editor-h-pad)
+		calc(var(--space-8) + var(--rapier-keyboard-space, 0px) + var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
+	margin-block-end: var(--rapier-keyboard-occlusion, 0px);
+	scroll-padding-block: var(--space-8) calc(var(--space-8) + var(--rapier-keyboard-space, 0px) + 24px);
+
+	max-width: 100%;
+	position: relative;
+
+	scrollbar-width: none;
+}
+.editor-area::-webkit-scrollbar,
+.block-wrapper--source-edit .block-edit::-webkit-scrollbar,
+.block-wrapper--math-source .block-edit::-webkit-scrollbar,
+.source-stack .source-textarea::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+	display: none;
+}
+
+
+#editor-blocks {
+	overflow-anchor: none;
+	outline: none;
+	caret-color: transparent;
+}
+/* The length a viewport restore needs while freshly written wrappers still stand as placeholders (_rapierHoldEditorExtent). */
+#editor-blocks::after { content: ''; display: block; height: var(--rapier-extent-hold, 0px); }
+#editor-blocks.editor-area--read .block-edit { caret-color: transparent; }
+
+
+.block-wrapper {
+	position: relative;
+	margin: 0 0 var(--space-2);
+}
+.block-wrapper--heading > .block-read { padding-inline-end: 0; }
+.section-fold-btn {
+	position: absolute;
+	z-index: 2;
+
+	inset-block-start: 5px;
+	inset-inline-end: calc(0px - var(--editor-h-pad));
+	width: 48px;
+	height: 56px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	border: 0;
+	outline: 0;
+	box-shadow: none;
+	background: transparent;
+	color: var(--color-text-muted);
+	opacity: .37;
+	cursor: pointer;
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+.section-fold-btn:focus,
+.section-fold-btn:focus-visible,
+.section-fold-btn:active { outline: 0; box-shadow: none; background: transparent; }
+/* Focus is the icon heavier and the tint full, as every icon control's (rapier-app.css). */
+.section-fold-btn:focus-visible { opacity: 1; color: var(--color-text); }
+.section-fold-btn:focus-visible svg { stroke-width: 3; }
+@media (hover:hover) and (pointer:fine) {
+	.section-fold-btn:hover { opacity: .64; color: var(--color-text); }
+}
+.block-wrapper[data-folded="true"] > .section-fold-btn { opacity: .64; color: var(--color-text); }
+.section-fold-btn svg {
+	width: 18px;
+	height: 18px;
+	transition: transform var(--dur-micro) var(--ease-micro);
+}
+
+.block-wrapper[data-folded="true"] > .section-fold-btn svg { transform: rotate(90deg); }
+.block-wrapper--editing > .section-fold-btn,
+html[data-headings="off"] .section-fold-btn { display: none !important; }
+@media (hover:none), (pointer:coarse) { .section-fold-btn { opacity: .37; } }
+@media print { .section-fold-btn { display: none !important; } }
+
+@media (hover:hover) and (pointer:fine) {
+}
+
+
+.will-plate {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-2);
+	margin-block: var(--space-3);
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	padding: var(--space-2) var(--space-3);
+	font: var(--fw-regular) var(--text-xs)/1.4 var(--font-mono);
+	color: var(--color-text-muted);
+}
+
+.will-plate[data-will-plate="open"] {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	width: auto;
+	/* A tappable symbol in the document's own flow: the target reaches the floor by growing into
+		 the line's leading, so the text it sits in does not move. */
+	min-width: 48px;
+	min-height: 48px;
+	justify-content: center;
+	margin-block: calc(var(--space-2) - 10px);
+	border: none;
+	background: var(--color-surface);
+	padding: 13px var(--space-2);
+	position: relative;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+	.will-plate[data-will-plate="open"]:hover { background: var(--color-surface-2); }
+}
+.will-plate[data-will-plate="open"]:focus-visible {
+	background: var(--color-surface-2);
+	outline: none;
+}
+
+.will-plate[data-will-plate="open"].will-plate--fault {
+	display: flex;
+	width: 100%;
+	flex-wrap: wrap;
+	border: 1px solid var(--color-error);
+	background: var(--color-error-muted);
+}
+.will-controls__choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-1); }
+.will-controls__choice {
+	position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+	gap: var(--space-1); min-height: 64px; padding: var(--space-2);
+	background: var(--color-surface-2); color: var(--color-text-muted); cursor: pointer;
+	font: var(--fw-regular) var(--text-sm) var(--font-mono); white-space: nowrap;
+}
+.will-controls__choice input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.will-controls__choice:has(input:checked) { background: var(--color-text); color: var(--color-bg); }
+.will-controls__choice:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.will-controls__choice svg { width: 16px; height: 16px; }
+.will-controls__words { display: flex; flex-direction: column; gap: var(--space-2); }
+.will-controls__words[hidden] { display: none; }
+.will-controls[aria-busy="true"] { cursor: progress; }
+.will-plate__law {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1em;
+	font-weight: var(--fw-semibold);
+	color: var(--color-text-subtle);
+}
+.will-plate__law svg { width: 14px; height: 14px; }
+
+.will-plate__sr {
+	position: absolute;
+	width: 1px; height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+.will-plate__word {
+	flex: 0 0 auto;
+	font-weight: var(--fw-semibold);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+	color: var(--color-text-subtle);
+}
+.will-plate__intent { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.will-plate__alarm { color: var(--color-error); }
+.will-plate__alarm[hidden] ,
+.will-plate--close:not(.will-plate--fault) ,
+#editor-blocks > .block-wrapper:not(.block-wrapper--editing):has(.will-plate--close:not(.will-plate--fault)) {
+	display: none;
+}
+.will-plate--fault {
+	border-color: var(--color-error);
+	background: var(--color-error-muted);
+}
+@media print {
+	.will-plate { background: none; break-inside: avoid; }
+}
+
+
+.block-wrapper .block-read,
+.block-wrapper .block-edit {
+	box-sizing: border-box;
+	width: 100%;
+	padding: var(--space-1) 0;
+	min-height: 1.75em;
+	border: 1px solid transparent;
+}
+
+
+.block-wrapper .block-read {
+	cursor: text;
+	user-select: text;
+	-webkit-user-select: text;
+	transition: border-color var(--dur-micro) var(--ease-micro);
+}
+@media (hover:hover) and (pointer:fine) {
+	.block-wrapper .block-read:hover { border-color: var(--color-border); }
+}
+
+
+.block-wrapper--editing .block-read {
+	display: none;
+}
+.block-wrapper .block-edit {
+	display: none;
+	outline: none;
+	color: var(--color-text);
+	caret-color: var(--color-accent-text);
+}
+.block-wrapper--editing .block-edit {
+	border-color: var(--color-border-focus);
+}
+.block-wrapper--editing {
+	content-visibility: visible !important;
+	contain: none !important;
+}
+.block-wrapper--editing .block-edit {
+	display: block;
+	visibility: visible;
+	opacity: 1;
+	user-select: text;
+	-webkit-user-select: text;
+}
+.block-wrapper--source-edit .block-edit,
+pre.block-source-only {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	tab-size: 2;
+	font-family: var(--font-mono);
+	font-size: var(--text-sm);
+	line-height: 1.35;
+}
+pre.block-source-only { margin: 0; background: none; padding: 0; }
+.block-wrapper--source-edit .block-edit,
+.block-wrapper--math-source .block-edit {
+	overflow-y: auto;
+	overscroll-behavior-y: auto;
+	scrollbar-width: none;
+}
+.block-wrapper--editing .block-edit .task-list-item input[type="checkbox"] {
+	pointer-events: none;
+}
+
+.block-wrapper--math-source .block-edit {
+	font: var(--fw-regular) var(--text-sm) var(--font-mono);
+	white-space: pre-wrap;
+}
+
+
+.format-toolbar-stack {
+	position: fixed;
+	z-index: 60;
+	inset-inline: 0;
+	bottom: var(--native-inset-bottom, env(safe-area-inset-bottom, 0px));
+	width: auto;
+	display: flex;
+	flex-direction: column-reverse;
+	pointer-events: none;
+	min-width: 0;
+}
+.format-toolbar {
+	display: none;
+	position: relative;
+	width: 100%;
+	min-width: 0;
+	background: var(--format-toolbar-bg);
+	border: 0;
+	box-shadow: none;
+	overflow: hidden;
+	pointer-events: auto;
+}
+
+
+.format-toolbar.visible {
+	display: block;
+}
+.format-toolbar__scroll {
+	--format-toolbar-left-edge-alpha: 1;
+	--format-toolbar-right-edge-alpha: 1;
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	flex-wrap: nowrap;
+	gap: 0;
+	width: 100%;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	/* The editor pans and flings the strip itself from pointer events (engine.js, the format toolbar
+		 pan): no platform scroll gesture ever starts here, so a phone's keyboard stays. */
+	touch-action: none;
+	scrollbar-width: none;
+	padding: 0;
+}
+/* The strip's edges fade wherever it scrolls — on touch always, on the desktop once it is expanded
+	 into one long row (the founder's words 127); the alphas are 1 where there is nothing to scroll.
+	 The plus holds the strip's last 48 px and never scrolls, so the right fade ends where the plus
+	 begins: the door to everything else is drawn at full strength, not through the fog. */
+.format-toolbar__scroll {
+	-webkit-mask-image: linear-gradient(to right,
+		rgba(0,0,0,var(--format-toolbar-left-edge-alpha)) 0,
+		#000 56px,
+		#000 calc(100% - 104px),
+		rgba(0,0,0,var(--format-toolbar-right-edge-alpha)) calc(100% - 48px),
+		#000 calc(100% - 48px),
+		#000 100%);
+	mask-image: linear-gradient(to right,
+		rgba(0,0,0,var(--format-toolbar-left-edge-alpha)) 0,
+		#000 56px,
+		#000 calc(100% - 104px),
+		rgba(0,0,0,var(--format-toolbar-right-edge-alpha)) calc(100% - 48px),
+		#000 calc(100% - 48px),
+		#000 100%);
+	-webkit-mask-size: 100% 100%;
+	mask-size: 100% 100%;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+}
+.format-toolbar__compact,
+.format-toolbar__expanded { display: contents; }
+.fmt-btn--search { display: inline-flex !important; order: 999; }
+.fmt-btn--will { display: inline-flex !important; }
+.fmt-btn--expand { display: none !important; }
+.fmt-btn--expand svg { transition: transform var(--dur-micro) var(--ease-micro); }
+.format-toolbar[data-expanded="true"] .fmt-btn--expand svg { transform: rotate(180deg); }
+.fmt-btn--mobile-secondary { display: inline-flex !important; }
+.format-toolbar__scroll::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}
+.format-toolbar__scroll .fmt-btn {
+	flex: 0 0 48px;
+}
+.format-toolbar__scroll .fmt-btn--sm {
+	flex-basis: 48px;
+}
+
+
+@media (min-width: 900px) {
+	html[data-format-toolbar-mode="desktop"] { --editor-h-pad: clamp(24px, 3vw, 56px); }
+
+	html[data-format-toolbar-mode="desktop"] #editor-blocks > .block-wrapper {
+		max-width: 1080px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	html[data-format-toolbar-mode="desktop"] .empty-doc-prompt {
+		left: max(var(--editor-h-pad), calc((100vw - 1080px) / 2));
+	}
+
+	html[data-format-toolbar-mode="desktop"] .format-toolbar-stack {
+		position: fixed;
+		z-index: 90;
+		inset: auto;
+		top: 0;
+		left: 0;
+		width: max-content;
+		max-width: calc(100vw - 24px);
+		max-height: calc(100dvh - 24px);
+		transform: none;
+		flex-direction: column-reverse;
+		background: transparent;
+		border: 0;
+		overflow-y: visible;
+		overscroll-behavior: contain;
+		scrollbar-width: none;
+	}
+	html[data-format-toolbar-mode="desktop"] .format-toolbar-stack::-webkit-scrollbar { display: none; }
+	html[data-format-toolbar-mode="desktop"] .format-toolbar,
+	html[data-format-toolbar-mode="desktop"] .heading-picker,
+	html[data-format-toolbar-mode="desktop"] .color-picker,
+	html[data-format-toolbar-mode="desktop"] .highlight-picker,
+	html[data-format-toolbar-mode="desktop"] .hr-style-picker { background: var(--format-toolbar-bg); }
+	html[data-format-toolbar-mode="desktop"] .format-toolbar {
+		width: auto;
+		max-width: calc(100vw - 24px);
+		overflow: visible;
+	}
+	/* One row on the desktop as on the phone: expanded, the strip scrolls sideways under the wheel
+		 instead of stacking a second row (the founder's words 127). */
+	html[data-format-toolbar-mode="desktop"] .format-toolbar__scroll {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: nowrap;
+		align-items: center;
+		width: max-content;
+		max-width: calc(100vw - 24px);
+		overflow-x: auto;
+		overflow-y: hidden;
+		padding: 0;
+	}
+	html[data-format-toolbar-mode="desktop"] .format-toolbar__compact {
+		display: flex;
+		align-items: center;
+		flex-wrap: nowrap;
+	}
+	/* Collapsed, the compact row stands whole and scrolls nowhere. */
+	html[data-format-toolbar-mode="desktop"] .format-toolbar:not([data-expanded="true"]) .format-toolbar__scroll { overflow: visible; }
+	html[data-format-toolbar-mode="desktop"] .format-toolbar__expanded { display: none; }
+	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-expanded="true"] .format-toolbar__expanded { display: contents; }
+
+	html[data-format-toolbar-mode="desktop"] .fmt-btn--mobile-secondary,
+	html[data-format-toolbar-mode="desktop"] .fmt-btn--desktop-secondary { display: none !important; }
+	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-expanded="true"] .fmt-btn--mobile-secondary,
+	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-expanded="true"] .fmt-btn--desktop-secondary { display: inline-flex !important; }
+	html[data-format-toolbar-mode="desktop"] .fmt-btn--search { display: inline-flex !important; order: 3; }
+	html[data-format-toolbar-mode="desktop"] .fmt-btn--will { display: inline-flex !important; }
+	html[data-format-toolbar-mode="desktop"] .fmt-btn--expand { display: inline-flex !important; order: 1; }
+	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-excerpt-only="true"] .fmt-btn--expand { display: none !important; }
+	html[data-format-toolbar-mode="desktop"] .heading-picker,
+	html[data-format-toolbar-mode="desktop"] .color-picker,
+	html[data-format-toolbar-mode="desktop"] .highlight-picker,
+	html[data-format-toolbar-mode="desktop"] .hr-style-picker {
+		width: 100%;
+		min-width: 100%;
+	}
+	html[data-format-toolbar-mode="desktop"] .format-toolbar .fmt-btn {
+		width: 44px;
+		height: 46px;
+	}
+	html[data-format-toolbar-mode="desktop"] .format-toolbar__scroll .fmt-btn,
+	html[data-format-toolbar-mode="desktop"] .format-toolbar__scroll .fmt-btn--sm { flex-basis: 44px; }
+	html[data-format-toolbar-mode="desktop"] .heading-picker .fmt-btn,
+	html[data-format-toolbar-mode="desktop"] .color-picker .fmt-btn,
+	html[data-format-toolbar-mode="desktop"] .highlight-picker .fmt-btn,
+	html[data-format-toolbar-mode="desktop"] .hr-style-picker .fmt-btn { height: 44px; }
+}
+
+
+.empty-doc-prompt {
+	position: absolute;
+	top: var(--space-4);
+	left: var(--editor-h-pad);
+	transform: none;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: var(--space-3);
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.3s var(--ease-out);
+}
+.empty-doc-prompt.visible { opacity: 1; pointer-events: auto; }
+.empty-doc-btn {
+	width: 48px; height: 48px;
+	border-radius: 0;
+	border: 1px solid var(--color-text-subtle);
+	background: none;
+	color: var(--color-text-subtle);
+	display: flex; align-items: center; justify-content: center;
+	cursor: pointer;
+	touch-action: manipulation;
+
+}
+@media (hover:hover) and (pointer:fine){.empty-doc-btn:hover{border-color:var(--color-text);color:var(--color-text)}}
+.empty-doc-label {
+	font: var(--fw-regular) var(--text-sm) var(--font-sans);
+	color: var(--color-text-subtle);
+	text-align: left;
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+	font-size: var(--text-xs);
+}
+.fmt-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 54px; height: 54px;
+	background: transparent;
+	border: 1px solid transparent;
+	color: var(--color-text-muted);
+	font: var(--fw-medium) var(--text-base) var(--font-sans);
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.format-toolbar .fmt-btn {
+	width: 48px;
+	height: 52px;
+	border: 0;
+	color: var(--color-icon);
+	opacity: 1;
+	font-size: 1.3rem;
+	line-height: 1;
+}
+.heading-picker .fmt-btn,
+.color-picker .fmt-btn,
+.highlight-picker .fmt-btn,
+.hr-style-picker .fmt-btn {
+	height: 50px;
+	border: 0;
+	color: var(--color-icon);
+	opacity: 1;
+	font-size: 1.3rem;
+	line-height: 1;
+}
+.format-toolbar .fmt-btn svg,
+.heading-picker .fmt-btn svg,
+.highlight-picker .fmt-btn svg,
+.hr-style-picker .fmt-btn svg {
+	width: 28px;
+	height: 28px;
+}
+.format-toolbar .fmt-btn--plus svg {
+	width: 32px;
+	height: 32px;
+}
+/* The plus is the door to everything else: it stays at the strip's right edge while the strip scrolls. */
+.format-toolbar .fmt-btn--plus {
+	position: sticky;
+	right: 0;
+	flex: 0 0 auto;
+	/* The strip's own glass over the page colour: the buttons scrolling beneath the plus never show through it. */
+	background: linear-gradient(var(--format-toolbar-bg), var(--format-toolbar-bg)), var(--color-bg);
+	box-shadow: -10px 0 10px -6px var(--format-toolbar-bg);
+}
+.fmt-btn--list-depth {
+	width: 48px !important;
+	min-width: 48px;
+	padding: 0;
+	color: var(--color-icon);
+}
+.fmt-btn--list-depth[hidden] { display: none !important; }
+
+.fmt-btn[data-active],
+.fmt-btn[data-active]:active {
+	color: var(--color-accent-text);
+	background: transparent;
+	border-color: transparent;
+	box-shadow: none;
+}
+.fmt-btn--sm {
+	width: 48px;
+	font: var(--fw-semibold) 1.15rem/1 var(--font-mono);
+	letter-spacing: -0.02em;
+}
+.format-toolbar .fmt-btn--complete-excerpt {
+	width: auto;
+	min-width: 154px;
+	padding-inline: 16px;
+	font: var(--fw-semibold) 0.72rem/1 var(--font-mono);
+	letter-spacing: var(--track-caps-ui);
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.fmt-btn--complete-excerpt[hidden] ,.format-toolbar[data-excerpt-only="true"] .fmt-btn:not(.fmt-btn--complete-excerpt) { display: none !important; }
+
+
+.heading-picker,
+.color-picker,
+.highlight-picker,
+.hr-style-picker {
+	position: relative;
+	flex: 0 0 auto;
+	display: none;
+	align-items: center;
+	justify-content: space-evenly;
+	flex-wrap: nowrap;
+	gap: 0;
+	background: var(--format-toolbar-bg);
+	border: 0;
+	box-shadow: none;
+	padding: 0;
+	width: 100%;
+	pointer-events: auto;
+}
+.heading-picker.visible,
+.color-picker.visible,
+.highlight-picker.visible,
+.hr-style-picker.visible {
+	display: flex;
+}
+.heading-picker .fmt-btn--sm,
+.color-picker .fmt-btn,
+.highlight-picker .fmt-btn,
+.hr-style-picker .fmt-btn {
+	flex: 1 1 0;
+	width: auto;
+	min-width: 0;
+}
+.fmt-btn[data-cmd="text-style"][aria-expanded="true"],
+.fmt-btn[data-cmd="color-picker"][aria-expanded="true"],
+.fmt-btn[data-cmd="highlight-picker"][aria-expanded="true"],
+.fmt-btn[data-cmd="hr-picker"][aria-expanded="true"] {
+	color: var(--color-accent-text);
+}
+.highlight-picker .fmt-btn { position:relative; }
+.highlight-swatch {
+	width:22px;
+	height:12px;
+	border-radius:0;
+	background:color-mix(in srgb, var(--highlight-swatch) 44%, transparent);
+	border-bottom:3px solid var(--highlight-swatch);
+}
+.highlight-swatch--default{--highlight-swatch:var(--color-accent)}
+.highlight-swatch--green{--highlight-swatch:#35c57a}
+.highlight-swatch--red{--highlight-swatch:#f05a62}
+.highlight-swatch--blue{--highlight-swatch:#4f91f7}
+.highlight-swatch--yellow{--highlight-swatch:#e6b91e}
+.highlight-swatch--purple{--highlight-swatch:#9b6dea}
+.highlight-swatch--remove{
+	--highlight-swatch:var(--color-text-muted);
+	background:transparent;
+}
+.highlight-swatch--remove::after{
+	content:"";
+	position:absolute;
+	width:25px;
+	height:1px;
+	background:currentColor;
+	transform:rotate(-28deg);
+}
+.color-picker .fmt-btn { position:relative; }
+/* Opaque fill, not highlight's translucent wash — this is foreground text, not a background. */
+.color-swatch{
+	position:relative;
+	width:20px;
+	height:20px;
+	border-radius:50%;
+	background:var(--color-swatch);
+}
+.color-swatch--green{--color-swatch:#1c7547}
+.color-swatch--red{--color-swatch:#b32034}
+.color-swatch--blue{--color-swatch:#175dc4}
+.color-swatch--gold{--color-swatch:#865818}
+.color-swatch--purple{--color-swatch:#7924d7}
+.color-swatch--remove{
+	--color-swatch:transparent;
+	border:1.5px solid var(--color-text-muted);
+}
+.color-swatch--remove::after{
+	content:"";
+	position:absolute;
+	top:50%;
+	left:50%;
+	width:25px;
+	height:1px;
+	background:currentColor;
+	transform:translate(-50%,-50%) rotate(-28deg);
+}
+/* The platform's own <input type="color">, styled down to the same swatch circle — no library.
+	 The label is the button-sized flex item; the input inside keeps the swatch's own 20 px, where a
+	 stretched input would paint the platform's colour well across the whole slot. */
+.color-picker__custom-host{cursor:pointer}
+.color-picker__custom{
+	appearance:none;
+	flex:0 0 auto;
+	width:20px;
+	height:20px;
+	padding:0;
+	border:1.5px solid var(--color-border);
+	border-radius:50%;
+	background:conic-gradient(from 90deg,#e33 0deg,#ea4 60deg,#ee3 90deg,#3a3 150deg,#3ae 210deg,#33e 270deg,#a3e 330deg,#e33 360deg);
+	cursor:pointer;
+}
+.color-picker__custom::-webkit-color-swatch-wrapper{padding:0;border-radius:50%;overflow:hidden}
+.color-picker__custom::-webkit-color-swatch{border:0;border-radius:50%}
+.color-picker__custom::-moz-color-swatch{border:0;border-radius:50%}
+@media (forced-colors: active) {
+	.color-swatch{forced-color-adjust:none}
+}
+@media (forced-colors: active) {
+	.md-render mark { background:Mark; color:MarkText; }
+	.md-render mark[data-rapier-highlight]{
+		text-decoration-line:underline;
+		text-underline-offset:.18em;
+	}
+	.md-render mark[data-rapier-highlight="green"]{text-decoration-style:solid}
+	.md-render mark[data-rapier-highlight="red"]{text-decoration-style:double}
+	.md-render mark[data-rapier-highlight="blue"]{text-decoration-style:dashed}
+	.md-render mark[data-rapier-highlight="yellow"]{text-decoration-style:dotted}
+	.md-render mark[data-rapier-highlight="purple"]{text-decoration-style:wavy}
+	.highlight-swatch{forced-color-adjust:none}
+}
+
+
+.editor-area--source {
+	padding: 0;
+	overflow: hidden;
+}
+.source-textarea {
+	display: block;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	max-height: none;
+	resize: none;
+	padding: 0 var(--editor-h-pad)
+		calc(var(--space-8) + var(--rapier-keyboard-space, 0px) + var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
+	scroll-padding-block-end: calc(var(--space-8) + var(--rapier-keyboard-space, 0px) + 24px);
+	background: var(--color-bg);
+	color: var(--color-text);
+	font: var(--fw-regular) var(--text-sm)/1.6 var(--font-mono);
+	border: none;
+	outline: none;
+	appearance: none;
+	caret-color: var(--color-accent-text);
+}
+.source-textarea.rapier-check-emphasis::selection {
+	background: color-mix(in srgb, var(--color-error) 72%, transparent);
+	color: var(--color-text);
+}
+
+
+.source-metrics {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: normal;
+	tab-size: 2;
+	font-family: var(--font-mono);
+	font-size: var(--text-sm);
+
+	--source-line-h: 22px;
+	line-height: 1.6;
+	letter-spacing: 0;
+
+	text-rendering: optimizeSpeed;
+	font-kerning: none;
+	font-variant-ligatures: none;
+	font-feature-settings: normal;
+	font-optical-sizing: none;
+	font-synthesis: none;
+}
+
+
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-textarea,
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-highlight,
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-highlight code,
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-highlight code .tok-line {
+	white-space: pre !important;
+	overflow-wrap: normal !important;
+	word-break: normal !important;
+}
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-stack .source-textarea {
+	overflow-x: auto !important;
+}
+
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-highlight code .rapier-slab,
+html[data-wrap="off"] #source-mode:not(.source-mode--prose) .source-highlight code .tok-line {
+	width: max-content;
+	min-width: 100%;
+}
+
+
+.source-stack {
+	display: block;
+	position: relative;
+	height: 100%;
+	min-height: 100%;
+	overflow: hidden;
+
+	contain: layout paint style;
+}
+.source-stack > * {
+	position: absolute;
+	inset: 0;
+	margin: 0;
+	padding: 0 var(--editor-h-pad) var(--space-8);
+	background: transparent;
+	border: none;
+}
+.source-stack .source-textarea {
+	height: 100%;
+	min-height: 100%;
+	overflow: auto;
+	overflow-x: hidden;
+	background: var(--color-bg);
+	scrollbar-width: none;
+
+	overflow-anchor: none;
+}
+.source-highlight {
+	display: block;
+	visibility: hidden;
+	pointer-events: none;
+	color: var(--color-text);
+	overflow: hidden;
+
+}
+.source-highlight, .source-highlight code {
+	background: transparent !important;
+	border: none;
+	margin: 0;
+
+}
+.source-highlight code {
+
+	padding: 0;
+	display: block;
+	min-height: 100%;
+
+	overflow-anchor: none;
+	font: inherit;
+	white-space: inherit;
+	overflow-wrap: inherit;
+	word-break: inherit;
+	tab-size: inherit;
+}
+
+.source-highlight code .tok-line {
+	display: block;
+	min-height: 1.6em;
+	font: inherit;
+	white-space: inherit;
+	overflow-wrap: inherit;
+	word-break: inherit;
+	contain: layout style paint;
+
+}
+
+.source-highlight code .rapier-slab {
+	display: block;
+	contain: layout style paint;
+}
+
+
+html[data-linenumbers="on"] .source-mode--code .source-highlight {
+
+	padding-left: 0;
+}
+html[data-linenumbers="on"] .source-mode--code .source-highlight code .tok-line {
+
+	padding-left: calc(var(--editor-h-pad) + 32px);
+}
+
+.source-mode--code .source-highlight code .tok-line {
+	--gutter-bg: transparent;
+	--wrap-rail: color-mix(in srgb, var(--color-text) 30%, transparent);
+	background-image:
+		linear-gradient(var(--wrap-rail), var(--wrap-rail)),
+		linear-gradient(
+			to right,
+			var(--gutter-bg) 0,
+			var(--gutter-bg) calc(var(--editor-h-pad) + 20px),
+			transparent calc(var(--editor-h-pad) + 20px)
+		);
+	background-repeat: no-repeat;
+
+	background-position: calc(var(--editor-h-pad) + 25px) 1lh, 0 0;
+	background-size: 2px calc(100% - 1lh), 100% 100%;
+}
+
+html[data-checker="on"] .source-mode--code .source-highlight code .tok-line:nth-child(even) {
+
+	--gutter-bg: color-mix(in srgb, var(--color-text) 14%, transparent);
+}
+
+html[data-dim="25"] .source-mode--code .source-highlight code .tok-line {
+	--wrap-rail: color-mix(in srgb, var(--color-text) 22%, transparent);
+}
+html[data-dim="50"] .source-mode--code .source-highlight code .tok-line {
+	--wrap-rail: color-mix(in srgb, var(--color-text) 15%, transparent);
+}
+html[data-checker="on"][data-dim="25"] .source-mode--code .source-highlight code .tok-line:nth-child(even) {
+	--gutter-bg: color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+html[data-checker="on"][data-dim="50"] .source-mode--code .source-highlight code .tok-line:nth-child(even) {
+	--gutter-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+html[data-checker="off"][data-dim="25"] .source-mode--code .source-highlight code .tok-line::before,
+html[data-checker="off"][data-dim="25"] #linenum-label {
+	opacity: 0.75;
+}
+html[data-checker="off"][data-dim="50"] .source-mode--code .source-highlight code .tok-line::before,
+html[data-checker="off"][data-dim="50"] #linenum-label {
+	opacity: 0.5;
+}
+
+html[data-linenums="all"] .source-mode--code .source-highlight code .tok-line::before {
+	content: attr(data-line);
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: calc(var(--editor-h-pad) + 20px);
+	padding: 2px 3px;
+	text-align: right;
+	font: var(--fw-medium) 0.72rem/1.05 var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	color: var(--color-text);
+	pointer-events: none;
+	overflow: hidden;
+	white-space: nowrap;
+}
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line::before,
+html[data-linefit="resize"] #linenum-label {
+	white-space: nowrap;
+	word-break: normal;
+}
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line[data-digits="5"]::before { font-size: 0.61rem; }
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line[data-digits="6"]::before { font-size: 0.52rem; }
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line[data-digits="7"]::before { font-size: 0.45rem; }
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line[data-digits="8"]::before,
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line[data-digits="9"]::before,
+html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-highlight code .tok-line[data-digits="10"]::before { font-size: 0.39rem; }
+
+
+.source-mode--prose .source-textarea,
+.source-mode--prose .source-highlight {
+	font-family: var(--font-sans);
+	font-size: 1.05rem;
+	line-height: 1.7;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+
+.source-mode--code .source-highlight {
+	display: block;
+	visibility: visible;
+	z-index: 1;
+}
+.source-mode--code .source-highlight code,
+.source-mode--code .source-highlight code *:not(.tok-line) {
+
+	background: transparent !important;
+	-webkit-text-fill-color: currentColor;
+}
+.source-mode--code .source-textarea {
+	z-index: 2;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	background: transparent;
+	caret-color: var(--color-accent-text);
+}
+.source-mode--code .source-textarea::selection {
+	background: color-mix(in srgb, var(--color-accent) 48%, transparent);
+	color: var(--color-text);
+	-webkit-text-fill-color: var(--color-text);
+}
+.source-mode--code .source-textarea::-moz-selection {
+	background: color-mix(in srgb, var(--color-accent) 48%, transparent);
+	color: var(--color-text);
+}
+
+
+#source-mode[data-plaincode="on"] .source-highlight {
+	display: none;
+	visibility: hidden;
+}
+#source-mode[data-plaincode="on"] .source-textarea {
+	color: var(--color-text);
+	-webkit-text-fill-color: var(--color-text);
+	background: var(--color-bg);
+}
+#source-mode[data-plaincode="on"] .source-textarea::selection {
+	color: var(--color-text);
+	-webkit-text-fill-color: var(--color-text);
+}
+
+/* Delight: the ink tick. A box ticked by a person (never one that renders ticked) is inked: it gives a
+   little under the finger as it opens at the corner, and the tick is drawn the way a hand makes
+   it, the short stroke down and the long one out through the gap (the tick climbs left to right,
+   so one sweep of the clip draws it in order). 300 ms, over before the eye asks what happened.
+   The class is the engine's (_rapierInkTick), set on the one box that was just ticked; nothing
+   rendered, reloaded or exported ever carries it. None under reduced motion. */
+.md-render .task-list-item input.rapier-ink::before{animation:rapier-ink-press 200ms cubic-bezier(.3,0,.2,1) both}
+.md-render .task-list-item input.rapier-ink::after{animation:rapier-ink-mark 240ms cubic-bezier(.35,0,.15,1) 60ms both}
+@keyframes rapier-ink-press{40%{transform:scale(.86)}}
+@keyframes rapier-ink-mark{0%{clip-path:inset(-10% 64% -10% -10%)}100%{clip-path:inset(-10% -10% -10% -10%)}}
+@media (prefers-reduced-motion:reduce){.md-render .task-list-item input.rapier-ink::before,.md-render .task-list-item input.rapier-ink::after{animation:none}}
+
+/* Delight: the arrival mark (engine.js _rapierArrive). A jump to a heading lands instantly; the heading
+   it landed on is underlined in the accent colour -- the words' own underline, so it runs exactly as
+   long as they do, across every line -- which breathes twice, gently, and is gone. */
+.md-render .rapier-arrived{text-decoration-line:underline;text-decoration-color:transparent;text-decoration-thickness:max(2px,.07em);text-underline-offset:.16em;animation:rapier-arrive 1800ms ease-in-out both}
+@keyframes rapier-arrive{
+	0%{text-decoration-color:transparent}
+	14%{text-decoration-color:var(--color-accent)}
+	34%{text-decoration-color:color-mix(in srgb,var(--color-accent) 35%,transparent)}
+	54%{text-decoration-color:var(--color-accent)}
+	74%{text-decoration-color:color-mix(in srgb,var(--color-accent) 35%,transparent)}
+	100%{text-decoration-color:transparent}}
+
+/* Editor-only controls and block lifecycle; document paint lives in spec/markdown-style.css. */
+/* F75-12: Plain (rung 0) renders every existing align= fact as absent -- the same left/default
+   alignment any Markdown editor that has never read the comment shows. The source byte stays; only
+   this rule's higher specificity (html[data-layout="plain"] ...) wins the cascade over the
+   unscoped rule above, which still owns Rapier's own layout. One owner: html[data-layout], set by
+   renderLineFurniture() from the RapierStorage.preferences.layout preference. */
+html[data-layout="plain"] [data-md-align]{text-align:inherit!important}
+html[data-layout="plain"] .md-render p[data-md-align="center"]>img,
+html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;margin-right:0}
+.block-wrapper--diagram-source {
+	display: flex;
+	flex-direction: column;
+}
+.diagram-live-preview {
+	order: 2;
+	margin-top: .6em;
+	max-width: 100%;
+	overflow: auto;
+}
+.rapier-remote-image {
+	display: inline-flex;
+	align-items: baseline;
+	gap: .5em;
+	max-width: 100%;
+	padding: .25em .55em;
+	border: 1px dashed rgba(128,128,128,0.55);
+	font-size: 0.92em;
+	vertical-align: baseline;
+}
+.rapier-remote-image__alt { opacity: .82; overflow-wrap: anywhere; }
+.rapier-remote-image__origin {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.88em;
+	opacity: .68;
+	overflow-wrap: anywhere;
+}
+.rapier-remote-image__allow {
+	font: inherit;
+	color: inherit;
+	background: rgba(128,128,128,0.16);
+	border: 0;
+	/* It authorises a fetch no one can take back, so it is a control at the floor, not a word. */
+	display: inline-flex;
+	align-items: center;
+	min-height: 48px;
+	padding: 0 .75em;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.block-wrapper:has(+ .block-wrapper > .block-read > ul.rapier-jump-list:first-child) > .block-read > p.rapier-jump-label-candidate{
+	margin:0 0 .5rem;
+	font:var(--fw-semibold) .72rem/1.4 var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform:uppercase;
+	color:var(--color-text);
+}
+.md-render p.rapier-jump-label-candidate strong{font:inherit}
+/* Selected: the picture's own law made visible where the tap landed; the tools take the bottom edge. */
+.md-render [data-md-break].rapier-page-break--selected{opacity:1;border-top-color:var(--color-accent)}
+.md-render [data-md-break].rapier-page-break--selected::after{color:var(--color-accent)}
+.rapier-break-tools__label{
+	display:inline-flex;align-items:center;padding:0 16px;color:var(--color-text);
+	font:var(--fw-medium) var(--text-xs)/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
+}
+/* A table caption (proposal 3): `.rapier-table-caption` is the definitive class
+	 _rapierMarkTableCaptions (editor/engine.js) settles once against the whole-document export DOM,
+	 so it styles unconditionally wherever this stylesheet is embedded (the standalone/publishing web
+	 page export, the PDF/print artifact). The live editor renders each block independently and can
+	 only mark a *candidate* on the block's own raw text (_rapierMarkTableCaptionCandidate); the
+	 adjacent-sibling rule below settles the real "is it truly right after a table" question against
+	 the live .block-wrapper DOM, reactively, with no bookkeeping kept in sync on insert/delete/reorder. */
+.block-wrapper--table + .block-wrapper .block-read > p.rapier-table-caption-candidate {
+	margin-top: calc(-1 * var(--space-4));
+	font-style: italic;
+	font-size: var(--text-sm);
+	color: var(--color-text-secondary);
+}
+#editor-blocks.editor-area--virtualized > .block-wrapper:not(.block-wrapper--editing){
+	content-visibility:auto;
+	/* The ledger's height is a block's whole occupancy, gap included, and the box carries the gap as
+		 its own margin: the placeholder box is that number less one gap (as the dormant rule below), or
+		 every wrapper not yet rendered stands 8 px taller than it will, and a viewport restore measured
+		 against such neighbours lands a line off and corrects a frame later — a bounce on every tap. */
+	contain-intrinsic-size:auto calc(var(--rapier-intrinsic-height,80px) - var(--space-2));
+}
+#editor-blocks.editor-area--virtualized > .block-wrapper.block-wrapper--selection-live{
+	content-visibility:visible!important;
+}
+/* A wrapper holding a picture is never contained: the flow lays its words out around the picture
+	 uncontained, and a wrapper measured contained first (its margins uncollapsed) put every viewport
+	 restore a line off for one frame — a 16 px bounce on each − and + tap, and a tap landing in that
+	 frame read as a swipe. The same box from the first paint on, so the restore lands once. */
+#editor-blocks.editor-area--virtualized > .block-wrapper.block-wrapper--image{
+	content-visibility:visible;contain:none;
+}
+/* A block that has given its subtree back stands as its own placeholder: the ledger's height,
+	 the document's own ink at a whisper, faded out at the foot so a partly-seen one blends into
+	 the page instead of ending on a cut line. Paint only — a placeholder costs no nodes. */
+#editor-blocks.editor-area--virtualized > .block-wrapper--dormant{
+	/* The ledger's height is a block's whole occupancy, gap included; the box carries the gap as
+		 its own margin, so the box is that number less one gap. Charging the gap twice walks the
+		 document's foot away from the ledger's by one gap per sleeping block. */
+	height:calc(var(--rapier-intrinsic-height,80px) - var(--space-2));
+	overflow:hidden;
+	background-image:
+		linear-gradient(to bottom,transparent 0,transparent calc(100% - 2.1em),var(--color-bg) 100%),
+		linear-gradient(to right,transparent 0,transparent 74%,var(--color-bg) 97%),
+		repeating-linear-gradient(to bottom,
+			color-mix(in srgb,var(--color-text) 9%,transparent) 0 .58em,
+			transparent .58em 1.62em);
+	background-position:0 0,0 0,0 .5em;
+}
+/* The fade fills backwards only and the woke mark leaves with it (engine: animationend): an
+	 opacity animation still in effect makes the read surface a stacking context, and a wrapped
+	 picture's z-index then counts inside its own read div — painted in tree order under the
+	 next woken paragraph, unreachable to a tap. */
+#editor-blocks.editor-area--virtualized > .block-wrapper--woke > .block-read{
+	animation:rapier-block-wake var(--dur-enter) var(--ease-out) backwards;
+}
+@keyframes rapier-block-wake{from{opacity:0}to{opacity:1}}
+@media print{
+	#editor-blocks > .block-wrapper{content-visibility:visible!important;contain:none!important}
+}
+.rapier-image-tools{
+	position:fixed;z-index:62;inset-inline:0;
+	bottom:var(--native-inset-bottom,env(safe-area-inset-bottom,0px));
+	min-height:56px;display:flex;align-items:stretch;justify-content:center;
+	background:var(--format-toolbar-bg);border:0;box-shadow:none;
+	animation:rapier-command-overlay-in var(--dur-enter) var(--ease-out) both;
+}
+.rapier-image-tools[hidden]{display:none!important}
+.rapier-image-tools__btn{
+	min-width:56px;height:56px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;
+	border:0;border-radius:0;background:transparent;color:var(--color-icon);cursor:pointer;
+	font:var(--fw-medium) var(--text-xs)/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
+	-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.rapier-image-tools__btn svg{width:20px;height:20px;pointer-events:none}
+.rapier-image-tools__btn:focus,
+.rapier-image-tools__btn:focus-visible,
+.rapier-image-tools__btn:active{
+	outline:0;box-shadow:none;background:transparent;
+}
+@media (hover:hover) and (pointer:fine){.rapier-image-tools__btn:hover{background:var(--color-surface-2)}}
+.rapier-image-tools__size{min-width:72px;color:var(--color-text)}
+/* The preview is a dialog, so its visibility is the dialog owner's `open` like every other
+	 modal surface — one writer, and "is it up?" has one answer in the DOM. */
+.rapier-image-lightbox{
+	position:fixed;z-index:900;inset:0;display:none;place-items:center;
+	padding:64px var(--space-4);background:color-mix(in srgb,var(--color-bg) 96%,transparent);
+	overscroll-behavior:contain;touch-action:pan-x pan-y;
+}
+.rapier-image-lightbox.open{display:grid}
+.rapier-image-lightbox img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border:0}
+.rapier-image-lightbox__close{
+	position:absolute;top:calc(var(--native-inset-top,env(safe-area-inset-top,0px)) + 8px);right:8px;
+	width:48px;height:48px;display:grid;place-items:center;border:0;background:transparent;color:var(--color-icon);
+	cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.rapier-image-lightbox__close:focus,
+.rapier-image-lightbox__close:focus-visible{outline:0;box-shadow:none}
+.rapier-image-lightbox__close svg{width:24px;height:24px}

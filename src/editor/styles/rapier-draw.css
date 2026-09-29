@@ -1,0 +1,475 @@
+/* Draw chrome follows the editor's existing flat language: one quiet head, one contextual row,
+   square 44px touch targets, Geist Mono captions, and no decorative outlines. The contextual row
+   is a fixed grid rather than a horizontal scroller: every active control shares the available
+   width, while the final 44px belongs to the collapse chevron. */
+/* R85: while Draw is open the viewport declines the browser's own overscroll affordances (Android
+   Chrome's swipe navigation and pull-to-refresh read the root's value). A long sideways pull across
+   a row at its scroll start is otherwise "go back", mid-drawing. In the harness's desktop Chromium
+   this rule alone did NOT stop it (nor did the row's overscroll-behavior-x:contain); what did is
+   draw/draw.js _rapierDrawGuardRowSwipes refusing the touch. Kept for the browsers that read it. */
+html:has(body.rapier-draw-open){overscroll-behavior:none}
+.rapier-draw-surface{position:fixed;inset:0;z-index:900;display:flex;flex-direction:column;background:var(--color-bg);touch-action:none;overflow:hidden;--draw-cell:44px;--draw-gap:var(--space-1);--draw-tool-w:72px}
+.rapier-draw-surface[hidden],.rapier-draw-surface [hidden]{display:none!important}
+/* The site's /draw door (docs/intent.md law 42; draw/draw.js RAPIER_DRAW_DOOR_AT_BIRTH): until the canvas is
+   up nothing of the editor is painted, as Notes' start does (rapier-notes.css html.rapier-notes-start). */
+html.rapier-draw-start body>*:not(.rapier-draw-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
+/* A canvas a Notes door opened comes up over the note (or over the plate Notes grows from the + bar's
+   DRAW) and leaves over the note or the cards, on one short fade at the house ease (draw/draw.js
+   RAPIER_DRAW_FADE_MS, _rapierDrawLeave); closed, it lets a finger through to what is under it. */
+.rapier-draw-surface--notes{transition:opacity 200ms var(--ease-out)}
+@starting-style{.rapier-draw-surface--notes{opacity:0}}
+.rapier-draw-surface--leave{opacity:0}
+.rapier-draw-surface--closed{pointer-events:none}
+@media(prefers-reduced-motion:reduce){.rapier-draw-surface--notes{transition:none}}
+.rapier-draw-toolbar{position:relative;flex:none;padding:calc(env(safe-area-inset-top,0px) + var(--space-1)) var(--space-2) var(--space-1);background:var(--color-surface-2)}
+.rapier-draw-head{position:relative;flex:none;display:flex;align-items:center;gap:var(--draw-gap);height:var(--draw-cell)}
+/* Law 47: the head opens with the editor's own undo and redo (draw/draw.js _rapierDrawDialButton), styled by
+   the editor's one rule set (rapier-app.css .icon-btn, .rapier-dial) and nothing here; the head only stands
+   the two together, as the editor's bar does (rapier-editor.css #btn-undo), its gap taken out between them. */
+.rapier-draw-head>.rapier-dial:first-child{margin-right:calc(-1 * var(--draw-gap))}
+/* Law 48 (the founder, 26 September 2026, of CLEAR standing under the tool box at 320 px: "arrange Clear such that
+   it is automatically centered in between the toolbox and the done button"): the head's end runs from the tool box's
+   right edge -- the head's centre and half the box -- to the bar's end, DONE last in it and CLEAR centred in what
+   DONE leaves, at every width and whatever DONE's word measures, nothing measured in script. Where that room is
+   narrower than CLEAR, CLEAR is no wider than its room, so its padding gives way first; then its type, which never
+   outgrows the room either: the word is 3.2em of Geist Mono and its tracking, and 3.8 leaves it .3em each side.
+   The gap before DONE is the gap before Close (a failure shows it), not a gap in CLEAR's room. */
+.rapier-draw-head-end{flex:0 0 calc(50% - var(--draw-tool-w) / 2);min-width:0;margin-left:auto;display:flex;align-items:center;gap:var(--draw-gap)}
+.rapier-draw-head-clear{flex:1 1 0;min-width:0;margin-right:calc(-1 * var(--draw-gap));display:flex;justify-content:center;container-type:inline-size}
+.rapier-draw-btn,.rapier-draw-chip{appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:var(--color-surface-2);color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;white-space:nowrap;cursor:pointer;touch-action:manipulation;transition:background var(--dur-micro) var(--ease-micro),opacity var(--dur-micro) var(--ease-micro)}
+.rapier-draw-btn--icon{width:var(--draw-cell);min-width:var(--draw-cell);height:var(--draw-cell);min-height:var(--draw-cell);padding:0;background:transparent;color:var(--color-icon)}
+.rapier-draw-btn--icon svg{width:24px;height:24px;display:block}
+.rapier-draw-btn--quiet,.rapier-draw-chip{background:transparent}
+.rapier-draw-chip{color:var(--color-text-secondary)}
+.rapier-draw-btn--stowed{display:none}
+.rapier-draw-btn--clear{min-width:0;max-width:100%;padding:0 var(--space-2);background:transparent;color:var(--color-text);font-size:min(var(--text-sm),100cqi / 3.8)}
+/* Law 14 (the founder, 25 September 2026: "the done button, it needs to move over to the right slightly, so
+   there's an even space top and bottom and to the right"): DONE stands as far from the bar's right edge as
+   from its top and bottom. The head keeps the toolbar's even sides, so the tool stays on the page's centre
+   line, and DONE alone reaches into the right one. */
+.rapier-draw-btn--done{min-width:0;padding:0 var(--space-3);margin-right:calc(var(--space-1) - var(--space-2));background:var(--color-accent);color:var(--color-accent-foreground)}
+.rapier-draw-btn:disabled,.rapier-draw-chip:disabled{opacity:.5;cursor:default}
+.rapier-draw-btn:active,.rapier-draw-btn:focus-visible,.rapier-draw-chip:active,.rapier-draw-chip:focus-visible{background:var(--color-surface-hover)}
+.rapier-draw-btn--clear:active,.rapier-draw-btn--clear:focus-visible{background:transparent;opacity:.65}
+.rapier-draw-btn--done:active,.rapier-draw-btn--done:focus-visible{background:var(--color-accent);opacity:.85}
+.rapier-draw-chip--active,.rapier-draw-chip--active:active,.rapier-draw-chip--active:focus-visible{background:var(--color-surface-hover);color:var(--color-text)}
+.rapier-draw-chip--delete{color:var(--color-error)}
+@media(hover:hover) and (pointer:fine){.rapier-draw-btn:hover,.rapier-draw-chip:hover{background:var(--color-surface-hover)}.rapier-draw-btn--clear:hover{background:transparent;opacity:.65}.rapier-draw-btn--done:hover{background:var(--color-accent);opacity:.85}}
+/* The selected tool owns the physical centre of the head, independent of the asymmetric controls
+   on either side. Its compact caption is the only deliberate abbreviation: Raster Brush -> Raster.
+   R86g (docs/intent.md "R86g laws" 1): the cell is the main view's pressed search (#btn-find
+   [data-active]: the icon colour as the ground, the ground colour as the ink), and it reaches down
+   through the head's padding to join the tool's own row below, which is the same inverted bar. Law 14
+   (the founder: "it needs to be extended higher, so there's no gap at the top of the page"): it reaches up
+   through the bar's top padding too, to the top of the bar -- the page's top, or the edge of a system
+   inset the bar starts under, as the main view's pressed search does. */
+.rapier-draw-current-tool{appearance:none;position:absolute;left:50%;top:calc(-1 * var(--space-1));transform:translateX(-50%);box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;width:var(--draw-tool-w);height:calc(var(--draw-cell) + 2 * var(--space-1));padding:var(--space-1) 0;border:0;border-radius:0;background:var(--color-icon);color:var(--color-bg);cursor:pointer;touch-action:manipulation}
+.rapier-draw-current-tool svg{display:block;width:20px;height:20px}
+.rapier-draw-current-tool span{display:block;max-width:70px;overflow:hidden;text-overflow:ellipsis;font:var(--fw-medium) 9px var(--font-mono);line-height:1;letter-spacing:var(--track-caps-ui);text-transform:uppercase;white-space:nowrap}
+.rapier-draw-current-tool[aria-expanded="true"]{background:var(--color-icon)}
+.rapier-draw-current-tool:active{background:var(--color-icon);opacity:.85}
+.rapier-draw-current-tool:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+/* Tool chooser: one filled flat panel below the centred indicator, full names beside the same
+   icons used everywhere else in Draw. */
+.rapier-draw-tool-menu{position:absolute;z-index:8;top:100%;left:50%;translate:-50% 0;box-sizing:border-box;width:min(224px,calc(100vw - 32px));padding:var(--space-1);background:var(--color-surface-2)}
+.rapier-draw-tool-menu-item{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:var(--space-3);width:100%;height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:transparent;color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;text-align:left;cursor:pointer;touch-action:manipulation}
+.rapier-draw-tool-menu-item svg{width:22px;height:22px;flex:none;color:var(--color-icon)}
+.rapier-draw-tool-menu-item span{flex:1 1 auto}
+/* The canvas colour row (R86g law 5): last, set apart by a rule, its swatch the paper's current colour. */
+.rapier-draw-tool-menu-item--canvas{margin-top:var(--space-1);border-top:1px solid var(--color-line)}
+/* A square the icons' size, so CANVAS's word stands in the column the tools' words stand in (the item's span rule
+   below would otherwise stretch it into a bar and push the word out of line). */
+.rapier-draw-tool-menu-item .rapier-draw-canvas-swatch{flex:none;width:22px;height:22px;box-sizing:border-box;border:1px solid var(--color-line);background:#000}
+.rapier-draw-tool-menu-item--canvas-white .rapier-draw-canvas-swatch{background:#fff}
+.rapier-draw-tool-menu-item[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-tool-menu-item[aria-pressed="true"] svg{color:var(--color-bg)}
+.rapier-draw-tool-menu-item:active,.rapier-draw-tool-menu-item:focus-visible{background:var(--color-surface-hover)}
+.rapier-draw-tool-menu-item[aria-pressed="true"]:active,.rapier-draw-tool-menu-item[aria-pressed="true"]:focus-visible{background:var(--color-icon);opacity:.85}
+@media(hover:hover) and (pointer:fine){.rapier-draw-tool-menu-item:hover{background:var(--color-surface-hover)}.rapier-draw-tool-menu-item[aria-pressed="true"]:hover{background:var(--color-icon);opacity:.85}}
+/* The per-tool row is never horizontally scrollable. Controls expand evenly to the exact width
+   available before the right-anchored chevron. On collapse the row itself gives its height back to
+   the canvas at once; the chevron travels to the left edge, turns clockwise and becomes deliberately
+   quiet, and the drawing glides to its new place, both by transform (draw.js _rapierDrawSetSettingsCollapsed).
+   The row stands over the stage, so a drawing gliding up under a row coming back passes beneath it. */
+.rapier-draw-settings{position:relative;z-index:1;flex:none;box-sizing:border-box;height:calc(var(--draw-cell) + 2 * var(--space-1));min-height:calc(var(--draw-cell) + 2 * var(--space-1));padding:var(--space-1);background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-settings-controls{--draw-caption:min(9px,2.25vw);display:grid;grid-template-columns:repeat(var(--draw-settings-count,1),minmax(0,1fr));align-items:stretch;gap:0;width:calc(100% - var(--draw-cell) - var(--space-1));height:var(--draw-cell);overflow:hidden;transition:opacity 120ms var(--ease-micro),transform 180ms var(--ease-micro)}
+/* One caption line: the existing 20px glyph + 1px gap + caption group defines its bottom
+   inset. Align labels there, including the 22px colour dot's label, without changing the row. */
+.rapier-draw-settings .rapier-draw-btn--icon{flex-direction:column;justify-content:flex-end;gap:1px;width:100%;min-width:0;max-width:none;height:var(--draw-cell);min-height:var(--draw-cell);padding:0 0 calc((var(--draw-cell) - 21px - var(--draw-caption)) / 2);color:var(--color-bg)}
+.rapier-draw-settings .rapier-draw-btn,.rapier-draw-settings .rapier-draw-chip{color:var(--color-bg)}
+.rapier-draw-settings .rapier-draw-btn:active,.rapier-draw-settings .rapier-draw-btn:focus-visible,.rapier-draw-settings .rapier-draw-chip:active,.rapier-draw-settings .rapier-draw-chip:focus-visible{background:color-mix(in srgb,var(--color-bg) 18%,transparent)}
+.rapier-draw-settings .rapier-draw-btn--icon svg{width:20px;height:20px;display:block;margin:0 auto}
+/* Law 49 (the founder, 26 September 2026, of the COLOUR dot nearly unseen on its row -- the default #121212 on the
+   black row in the light theme, and its mirror, the paper's white ink on the white row in the dark -- "Let's make it
+   visible then, right? Pretty obvious answer."): the dot wears a 1.5 px ring in the row's own ink at full strength,
+   which always stands out from the row's ground, whatever the dot's colour and on paper or not (so this outranks the
+   paper's white ring below, which is the shape menu's). It is drawn inside the dot's 22 px, so the control keeps its
+   footprint and its word keeps its space (outside, the ring touched COLOUR's caps); it takes the place of the base
+   rule's faint inner ring, which the dots with no ring of their own keep. */
+.rapier-draw-settings [data-draw-act="ink"] .rapier-draw-ink-dot{margin:0 auto;box-shadow:inset 0 0 0 1.5px var(--color-bg)}
+/* On the white paper a painting brings, the inverted bar would merge with the canvas: a hairline. */
+.rapier-draw-surface--paper .rapier-draw-settings{box-shadow:0 1px 0 #d4d4d4}
+/* Law 15 (the founder, 25 September 2026: "rather than highlighting that with a box around it, a gray box around
+   it ... change it so that the icon and the text highlights in the user's accent color. That's all that should
+   change."): the chosen control wears no box; its icon and word take the accent. */
+.rapier-draw-settings .rapier-draw-btn--icon[aria-expanded="true"]{color:var(--color-accent)}
+.rapier-draw-settings-collapse{appearance:none;position:absolute;z-index:5;top:var(--space-1);left:calc(100% - var(--draw-cell) - var(--space-1));display:flex;align-items:center;justify-content:center;width:var(--draw-cell);height:var(--draw-cell);padding:0;border:0;border-radius:0;background:transparent;color:var(--color-bg);cursor:pointer;touch-action:manipulation;opacity:1;transform:rotate(0deg);transform-origin:center;transition:opacity 180ms var(--ease-micro),background var(--dur-micro) var(--ease-micro)}
+.rapier-draw-settings-collapse svg{width:22px;height:22px;display:block}
+.rapier-draw-settings-collapse:active,.rapier-draw-settings-collapse:focus-visible{background:var(--color-surface-hover)}
+.rapier-draw-settings--collapsed{height:0;min-height:0;padding:0;background:transparent;pointer-events:none}
+.rapier-draw-settings--collapsed .rapier-draw-settings-controls{opacity:0;transform:translateX(-12px);visibility:hidden;pointer-events:none}
+.rapier-draw-settings--collapsed .rapier-draw-settings-collapse{top:var(--space-1);left:var(--space-1);opacity:.5;background:var(--color-surface-2);transform:rotate(180deg);pointer-events:auto}
+.rapier-draw-settings--collapsed .rapier-draw-settings-collapse:active,.rapier-draw-settings--collapsed .rapier-draw-settings-collapse:focus-visible{opacity:.85;background:var(--color-surface-2)}
+@media(hover:hover) and (pointer:fine){.rapier-draw-settings-collapse:hover{background:var(--color-surface-hover)}}
+/* Law 15 (the founder: "There's seven icons in that row. If they were evenly spaced, then it should be that the
+   middle icon is dead center with that top tool icon"): in the Raster row (draw/draw.js marks it) the chevron's
+   cell is one more even column of the row, and the chevron stands in its middle, so the controls' fourth is on
+   the page's centre line under the tool. --draw-settings-count is set on the row, where both read it. */
+.rapier-draw-settings--even .rapier-draw-settings-controls{width:calc(100% * var(--draw-settings-count) / (var(--draw-settings-count) + 1))}
+.rapier-draw-settings--even:not(.rapier-draw-settings--collapsed) .rapier-draw-settings-collapse{left:calc(var(--space-1) + (100% - 2 * var(--space-1)) * (var(--draw-settings-count) + .5) / (var(--draw-settings-count) + 1) - var(--draw-cell) / 2)}
+@media(prefers-reduced-motion:reduce){.rapier-draw-settings,.rapier-draw-settings-controls,.rapier-draw-settings-collapse{transition:none}}
+.rapier-draw-btn-name{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--fw-medium) 9px var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;line-height:1;padding:0 1px}
+/* Six Paint controls share a 390px phone: the name shrinks with the viewport before it is ever cut (BRUSHES read as BRUSH… at 9px). */
+.rapier-draw-settings-controls .rapier-draw-btn-name{font-size:var(--draw-caption);padding:0}
+/* Secondary panels float over the top of the stage from one zero-height layer, so opening one never moves the canvas. */
+.rapier-draw-panels{position:relative;z-index:6;flex:none;height:0;overflow:visible}
+.rapier-draw-panels>*{position:absolute;top:0;left:0;right:0;box-sizing:border-box}
+/* Draw's moments (docs/paint-tools.md): a strip, the pad or the tool box comes down from the bar it hangs from, from its
+   first frame (@starting-style), on the compositor; it leaves at once, so the canvas is the finger's the moment it closes. */
+.rapier-draw-panels>*,.rapier-draw-tool-menu{transition:opacity 150ms var(--ease-out),transform 200ms var(--ease-out)}
+@starting-style{.rapier-draw-panels>*,.rapier-draw-tool-menu{opacity:0;transform:translateY(-8px)}}
+/* A control in the row gives under the finger, its glyph pressed in as the undo dial's is; its word stands still. */
+.rapier-draw-settings .rapier-draw-btn--icon>svg,.rapier-draw-settings .rapier-draw-btn--icon>.rapier-draw-ink-dot,.rapier-draw-brushes .rapier-draw-chip>:first-child{transition:transform 120ms var(--ease-micro)}
+.rapier-draw-settings .rapier-draw-btn--icon:active>svg,.rapier-draw-settings .rapier-draw-btn--icon:active>.rapier-draw-ink-dot{transform:scale(.86)}
+.rapier-draw-brushes .rapier-draw-chip:active>:first-child{transform:scale(.9)}
+@media(prefers-reduced-motion:reduce){.rapier-draw-panels>*,.rapier-draw-tool-menu,.rapier-draw-settings .rapier-draw-btn--icon>svg,.rapier-draw-settings .rapier-draw-btn--icon>.rapier-draw-ink-dot,.rapier-draw-brushes .rapier-draw-chip>:first-child{transition:none}}
+.rapier-draw-stage{position:relative;flex:1 1 0;min-height:0}
+.rapier-draw-canvas{width:100%;height:100%;display:block;touch-action:none;color:var(--color-text)}
+/* The live path paints whenever d is nonempty; do not add a second display/visibility switch here. */
+.rapier-draw-live{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:.85;pointer-events:none}
+.rapier-draw-preview{pointer-events:none}
+.rapier-draw-live--pen{fill:currentColor;stroke:none;opacity:.9}
+.rapier-draw-live--erase{fill:none;stroke:currentColor;stroke-width:18;opacity:.28}
+.rapier-draw-shapes g{cursor:pointer}
+.rapier-draw-marquee{fill:var(--color-accent);fill-opacity:.5;stroke:none;pointer-events:none}
+/* Press ring (2.1): the hit shape's own painted outline, thicker, in the existing accent --
+   d="" paints nothing, same convention as .rapier-draw-live above. Opacity-only so a fade can run;
+   [hidden]'s display:none (see .rapier-draw-surface [hidden] above) would kill the transition. */
+.rapier-draw-press-ring{fill:none;stroke:var(--color-accent);stroke-linecap:round;stroke-linejoin:round;opacity:.9;pointer-events:none;transition:opacity 160ms linear}
+.rapier-draw-press-ring--out{opacity:0}
+@media(prefers-reduced-motion:reduce){.rapier-draw-press-ring{transition:none}}
+/* Scribble select on touch (2.2): a translucent live path tracing the finger while a touch marquee
+   is active -- the mouse's rectangular .rapier-draw-marquee above is untouched. */
+.rapier-draw-scribble{fill:none;stroke:var(--color-accent);stroke-opacity:.5;stroke-width:14;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+/* The agent's replay (docs/briefs/agent-on-the-canvas.md). The lead line sits UNDER the shapes, so
+   the real mark lands on top of it when the stroke finishes; the nib sits over everything, because
+   it is the tool in the hand. Both are stroke/transform only -- no per-frame layout at any speed --
+   and both are empty (d="" paints nothing, the same convention as .rapier-draw-live above) the rest
+   of the time, because the nib exists only while the replay runs. */
+.rapier-draw-replay-lead{fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.9;pointer-events:none}
+.rapier-draw-replay-nib{pointer-events:none}
+.rapier-draw-nib path{stroke-width:1.4px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.rapier-draw-nib-ring{fill:none;stroke-width:1px;stroke-opacity:.35;vector-effect:non-scaling-stroke}
+/* The name tag: plain type on a plain pill, nothing else on it. A name a caller supplies is not an
+   identity check, so this must never read as a badge -- no tick, no logo, no verified anything.
+   R86g law 2: it reacts to the GROUND it is on, not to the theme alone. The stage's ground is
+   --color-bg until a painting puts white paper under everything (.rapier-draw-surface--paper, the
+   same fact _rapierDrawDarkPaper reads), so the pill is the paper's own opposite either way. */
+.rapier-draw-nib-tag{position:absolute;left:0;top:0;z-index:7;pointer-events:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 90%,transparent);color:var(--color-bg);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);line-height:1.25;transition:opacity 120ms linear}
+.rapier-draw-surface--paper .rapier-draw-nib-tag{background:rgba(17,19,22,.9);color:#fff}
+.rapier-draw-nib-tag--quiet{opacity:.6}
+/* Skip and fast forward, both asked for by name. They sit over the canvas, out of the artwork's
+   way, and they are the only thing on the stage a tap does not read as "jump to the end". Same
+   ground rule as the tag above. */
+.rapier-draw-replay-bar{position:absolute;right:var(--space-2);bottom:var(--space-2);z-index:8;display:flex;gap:var(--space-1)}
+.rapier-draw-replay-btn{appearance:none;border:0;padding:var(--space-1) var(--space-3);border-radius:999px;background:color-mix(in srgb,var(--color-text) 82%,transparent);color:var(--color-bg);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;cursor:pointer;min-height:32px}
+.rapier-draw-surface--paper .rapier-draw-replay-btn{background:rgba(17,19,22,.82);color:#fff}
+.rapier-draw-replay-btn[aria-disabled="true"]{opacity:.45}
+@media(prefers-reduced-motion:reduce){.rapier-draw-nib-tag{transition:none}}
+.rapier-draw-hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-1);padding:0 var(--space-6);text-align:center;pointer-events:none;font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-muted)}
+.rapier-draw-hint-sub{font-size:var(--text-xs);color:var(--color-text-muted)}
+#rapier-draw-surface:has(.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""])) .rapier-draw-hint{display:none}
+/* R86g law 4: the floating selection toolbar's ground is half its usual paint (color-mix over
+   opacity, so the icons drawn on top of it stay at full strength) -- the theme's own --color-bg,
+   which is pure black in dark and pure white in light, so each theme's rectangle reads as itself
+   at half weight rather than a third, unrelated surface tone. */
+.rapier-draw-menu{position:fixed;box-sizing:border-box;display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-2);border:0;background:color-mix(in srgb,var(--color-bg) 50%,transparent);box-shadow:none;z-index:901;max-width:min(96vw,26rem);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+/* Style open: a sheet at the foot of the screen, full width, never clipped beside the shape. */
+.rapier-draw-menu--sheet{left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;transform:none;max-height:min(58vh,440px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + var(--space-2));box-shadow:0 -1px 0 var(--color-surface-hover)}
+.rapier-draw-menu-row{display:flex;align-items:center;gap:var(--space-1);flex-wrap:wrap;width:100%}
+.rapier-draw-menu-count{padding:var(--space-2);font:var(--fw-medium) var(--text-sm) var(--font-mono);color:var(--color-text-secondary)}
+.rapier-draw-smooth{flex:none;display:flex;align-items:center;gap:var(--space-2);padding:0 var(--space-3);background:var(--color-surface-2)}
+.rapier-draw-smooth-label{font:var(--fw-medium) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text-secondary);white-space:nowrap}
+.rapier-draw-smooth-word,.rapier-draw-nib-word{min-width:4.5em;font:var(--fw-medium) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text);text-align:right;white-space:nowrap}
+.rapier-draw-seek{position:relative;flex:1 1 auto;min-width:0;height:48px;display:flex;align-items:center;--seek-frac:0;--seek:calc(22px + (100% - 44px) * var(--seek-frac));--seek-join:14px}
+.rapier-draw-seek-track{position:absolute;inset:0;pointer-events:none}
+.rapier-draw-seek-track::before,.rapier-draw-seek-track::after{content:"";position:absolute;top:50%;height:2px;transform:translateY(-50%)}
+.rapier-draw-seek-track::before{left:0;width:max(0px,calc(var(--seek) - var(--seek-join)));background:var(--color-text)}
+.rapier-draw-seek-track::after{left:min(100%,calc(var(--seek) + var(--seek-join)));right:0;background:color-mix(in srgb,var(--color-text) 28%,transparent)}
+.rapier-draw-seek-head{position:absolute;left:var(--seek);top:50%;width:32px;height:32px;transform:translate(-50%,-50%);fill:none;stroke:var(--color-text);stroke-width:1.5;pointer-events:none;transition:fill 70ms linear}
+.rapier-draw-seek--active .rapier-draw-seek-head{fill:var(--color-text)}
+.rapier-draw-seek input[type="range"]{position:absolute;inset:0;appearance:none;width:100%;height:48px;margin:0;background:transparent;cursor:pointer;touch-action:none}
+.rapier-draw-seek input[type="range"]::-webkit-slider-runnable-track{height:48px;background:transparent}
+.rapier-draw-seek input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:44px;height:48px;margin:0;border:0;border-radius:0;background:transparent}
+.rapier-draw-seek input[type="range"]::-moz-range-track{height:48px;background:transparent;border:0}
+.rapier-draw-seek input[type="range"]::-moz-range-thumb{width:44px;height:48px;border:0;border-radius:0;background:transparent}
+.rapier-draw-seek input[type="range"]:focus-visible{outline:0}
+@media(prefers-reduced-motion:reduce){.rapier-draw-seek-head{transition:none}}
+/* The Dip: a sample of the mark this dip gives, the pad that sets it, and what it is in words. */
+.rapier-draw-btn--dip svg{width:26px;height:26px}
+.rapier-draw-dip{flex:none;display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-2) var(--space-3) var(--space-3);background:var(--color-surface-2)}
+.rapier-draw-dip-firmness{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:44px;color:var(--color-text-secondary);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
+.rapier-draw-dip-firmness-choices{display:flex;align-items:center;gap:var(--space-1)}
+.rapier-draw-dip-firmness .rapier-draw-chip[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-dip-sample{display:block;width:100%;height:auto;background:var(--color-bg);-webkit-user-drag:none;user-select:none}
+.rapier-draw-dip-pad{position:relative;width:100%;height:116px;touch-action:none;cursor:pointer;user-select:none}
+.rapier-draw-dip-pad:focus-visible{outline:0}
+.rapier-draw-dip-field{position:absolute;inset:0;display:block;width:100%;height:100%}
+.rapier-draw-dip-pad{--dip-knob:26px}
+/* The knob rides a track the pad's size, carried by a transform (paint-tool.js _rapierPaintDipSyncPanel; the track's
+   own percentages are the pad's): a drag moves it on the compositor, never laying the panel out. Held, the knob swells
+   under the finger; a tap glides it to the finger, a drag carries it at once, and let go it settles. */
+.rapier-draw-dip-track{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;transition:transform 140ms var(--ease-out)}
+.rapier-draw-dip-pad--moving .rapier-draw-dip-track{transition:none}
+.rapier-draw-dip-knob{position:absolute;left:0;top:0;width:var(--dip-knob);height:var(--dip-knob);background:var(--color-bg);transition:transform 220ms cubic-bezier(.3,1.5,.5,1)}
+.rapier-draw-dip-knob::after{content:"";position:absolute;inset:6px;background:var(--rapier-dip-ink,var(--color-text))}
+.rapier-draw-dip-pad--held .rapier-draw-dip-knob{transform:scale(1.3)}
+.rapier-draw-dip-pad:focus-visible .rapier-draw-dip-knob{background:var(--color-text)}
+@media(prefers-reduced-motion:reduce){.rapier-draw-dip-track,.rapier-draw-dip-knob{transition:none}}
+.rapier-draw-dip-edge{position:absolute;font:var(--fw-medium) 10px var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;color:var(--color-text-secondary);pointer-events:none}
+/* The pad's two words stand clear of the knob's corners: a knob at the top of the load (the default, never runs out)
+   sat on PAINT, and one at full water on WATER. */
+.rapier-draw-dip-edge--load{top:6px;left:8px;margin-left:var(--dip-knob)}
+.rapier-draw-dip-edge--water{right:8px;bottom:6px;margin-right:var(--dip-knob)}
+.rapier-draw-dip-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:36px}
+.rapier-draw-dip-word{font:var(--fw-medium) var(--text-sm) var(--font-mono);text-transform:uppercase;color:var(--color-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rapier-draw-dip-actions{display:flex;align-items:center;gap:var(--space-1)}
+.rapier-draw-dip-redip{min-width:0;min-height:36px;padding:0 var(--space-3)}
+.rapier-draw-ink-dot{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--color-text-muted);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--color-text) 45%,transparent)}
+/* COLOUR's wash (draw.js _rapierDrawUpdateInkBtn): the old colour stands under the new one, which spreads from the dot's
+   middle inside its ring (draw.js RAPIER_DRAW_MOMENTS.wash plays the scale). */
+.rapier-draw-ink-dot--wash{position:relative;background:var(--rapier-ink-was)!important}
+.rapier-draw-ink-dot--wash::after{content:"";position:absolute;left:1.5px;top:1.5px;width:calc(100% - 3px);height:calc(100% - 3px);border-radius:50%;background:var(--rapier-ink-now);transform:scale(0)}
+/* Icon chips (menu) and glyph chips (the engine's own drawings of kinds, brushes, fills, dashes). */
+.rapier-draw-chip--icon,/* R83: a preset chip carries its art AND its name. A thumb-sized mark is not a memory, and the
+   founder could not tell one brush from another. Stacked, so the row stays one thumb tall. */
+.rapier-draw-chip--glyph{width:44px;min-width:44px;padding:0;color:var(--color-icon)}
+/* The name must not cost the canvas. The strip's height is the stage's height, and a new
+   drawing's canvas IS the stage (the founder: "the canvas should never move"), so a taller row
+   would push the paper every time Paint was chosen. Art and name fit the same 44px thumb. */
+.rapier-draw-chip--paint{flex-direction:column;justify-content:center;gap:1px;width:60px;min-width:60px;height:44px;min-height:44px;padding:0}
+/* The icon chips in the brush strip stack their word too, in the 44px the strip already has. */
+.rapier-draw-chip--icon{flex-direction:column;justify-content:center;gap:1px;width:44px;min-width:44px;height:44px;min-height:44px}
+.rapier-draw-chip--icon svg{width:20px;height:20px}
+/* Law 50 (the founder, 26 September 2026: "We can have an adaptive layout. We're on the web, bro."): a chip's word is
+   never cut -- no ellipsis, no clip; the chip takes the width its word needs (the strips, below). */
+.rapier-draw-chip-name{display:block;white-space:nowrap;font:var(--fw-medium) 9px var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;line-height:1;padding:0 2px}
+/* A tool is DRAWN, not sampled: Water, Smudge and the blenders have no mark of their own, and their
+   sample was whatever scratch colour the sampler happened to lay -- the founder's "blue and yellow
+   square" that nobody could read. */
+.rapier-draw-glyph--tool{display:flex;align-items:center;justify-content:center;width:32px;height:22px}
+.rapier-draw-glyph--tool svg{width:20px;height:20px}
+/* The section words. A flat box and a gap, never a rule: "We don't use hairlines. We don't use
+   outlines. We just have flat boxes." */
+.rapier-draw-chip-head{display:flex;align-items:center;flex:none;align-self:stretch;margin:0 var(--space-1) 0 var(--space-2);padding:0 var(--space-2);background:var(--color-surface-2);color:var(--color-text-secondary);font:var(--fw-medium) var(--text-2xs,10px) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;white-space:nowrap}
+.rapier-draw-chip-head:first-child{margin-left:0}
+/* R84: the strip scrolls, and a heading flush against its start gets its first letters shaved off
+   by the scroller's own edge ("PAINT" arriving as "INT"). A heading keeps its own leading space. */
+.rapier-draw-chip-head:first-child{padding-left:var(--space-2);margin-left:var(--space-1)}
+.rapier-draw-chip--icon svg,.rapier-draw-chip--glyph svg{width:22px;height:22px;display:block;margin:auto}
+.rapier-draw-chip--paint .rapier-draw-glyph--paint{width:54px;height:22px;object-fit:cover}
+.rapier-draw-chip--glyph svg.rapier-draw-glyph{width:32px;height:32px}
+.rapier-draw-chip--icon[aria-pressed="true"],.rapier-draw-chip--icon.rapier-draw-chip--active,.rapier-draw-chip--icon.rapier-draw-chip--active:active,.rapier-draw-chip--icon.rapier-draw-chip--active:focus-visible,/* A brush tile is an opaque white card, so the icon row's own white selection fill would vanish
+   behind it; the accent is the one flat ground that reads against both the strip and the tile. */
+.rapier-draw-chip--glyph[aria-pressed="true"],.rapier-draw-chip--glyph.rapier-draw-chip--active{background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-chip--delete.rapier-draw-chip--icon{color:var(--color-error)}
+.rapier-draw-menu-gap{flex:none;width:var(--space-3)}
+.rapier-draw-glyph-row{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.rapier-draw-glyph-row::-webkit-scrollbar{display:none}
+.rapier-draw-tabs{border-bottom:1px solid var(--color-surface-hover);gap:0}
+.rapier-draw-tabs .rapier-draw-chip{flex:1 1 0;min-width:0;padding:0 var(--space-2);border-bottom:2px solid transparent}
+.rapier-draw-tabs .rapier-draw-chip--active{background:transparent;border-bottom-color:var(--color-icon)}
+.rapier-draw-pane{padding-top:var(--space-1)}
+.rapier-draw-colours{flex:none;padding:0 var(--space-3) var(--space-1);background:var(--color-surface-2)}
+/* R84: the colour row SCROLLS sideways, it does not wrap. The founder: "you can swipe, horizontal
+   scroll to view more colours." A memory of ten plus the named inks is more than a phone's width,
+   and a second line would push the canvas down every time the row opened. */
+.rapier-draw-palette{display:flex;align-items:center;flex-wrap:nowrap;gap:var(--space-1);width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
+.rapier-draw-palette::-webkit-scrollbar{display:none}
+.rapier-draw-palette>*{flex:none}
+.rapier-draw-swatch,.rapier-draw-colour-custom{appearance:none;display:flex;align-items:center;justify-content:center;position:relative;box-sizing:border-box;width:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer;touch-action:manipulation}
+/* Every swatch keeps the ink dot's faint ring, so a black Default on a dark panel is still a swatch and not a gap. */
+.rapier-draw-swatch>span{width:24px;height:24px;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(128,128,128,.35)}
+.rapier-draw-swatch[aria-pressed="true"],.rapier-draw-swatch:focus-visible{background:var(--color-surface-hover)}
+.rapier-draw-colour-custom:before{content:'';width:26px;height:26px;border-radius:50%;background:conic-gradient(#df3340,#e6bb38,#28a36d,#2996d1,#8b55dc,#df3340)}
+.rapier-draw-colour-custom input{position:absolute;inset:0;width:44px;height:44px;opacity:0;cursor:pointer}
+.rapier-draw-colour-custom:focus-within{background:var(--color-surface-hover)}
+/* Eleven shapes fit comfortably as a wrapped secondary panel. The primary contextual row remains
+   one fixed, non-scrolling line regardless of how many kinds exist. */
+.rapier-draw-kinds{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:0;padding:var(--space-1) var(--space-2);background:var(--color-surface-2)}
+.rapier-draw-kinds .rapier-draw-chip--glyph{flex:none}
+.rapier-draw-handles{position:fixed;inset:0;pointer-events:none}
+.rapier-draw-selection-box{position:fixed;box-sizing:border-box;border:1px dashed var(--color-accent);pointer-events:none}
+/* Ghost, not smaller handles (2.15): a hairline outline of the pre-drag box, shown only while a
+   resize/rotate handle is actively held (see _rapierDrawUpdateHandles) -- deliberately thinner and
+   quieter than the live .rapier-draw-selection-box above so it never reads as the current state. */
+.rapier-draw-handle-ghost{position:fixed;box-sizing:border-box;border:1px solid var(--color-text-muted);opacity:.6;pointer-events:none}
+.rapier-draw-handle{position:fixed;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);appearance:none;width:44px;height:44px;padding:0;border:0;background:transparent;pointer-events:auto;touch-action:none;cursor:move}
+.rapier-draw-handle>span{display:block;width:9px;height:9px;background:var(--color-text);box-shadow:0 0 0 1px var(--color-bg);pointer-events:none}
+/* R86g (docs/intent.md "R86g laws" 2): a mark takes its ink from the paper under it, not from the
+   theme -- on the white paper a painting brings, the handles are dark in dark mode too (the founder's
+   screenshot: light grey handles, borderline invisible, on white). */
+.rapier-draw-surface--paper .rapier-draw-handle>span{background:#111;box-shadow:0 0 0 1px #fff}
+.rapier-draw-surface--paper .rapier-draw-handle-ghost{border-color:#666}
+.rapier-draw-handle--round>span{border-radius:50%}
+.rapier-draw-handle--pill>span{width:6px;height:20px;border-radius:3px}
+.rapier-draw-handle:focus-visible>span{background:var(--color-accent);width:12px;height:12px}
+/* The label editor is two independent floating pieces sharing one non-interactive full-viewport
+   frame: `.rapier-draw-text-box` sits exactly on the shape's own glyphs (sized/rotated to
+   layoutText's own line plan by _rapierDrawPlaceTextInput, draw.js) and holds nothing but the real
+   `<textarea>` that owns IME/selection/caret; `.rapier-draw-text-controls` is a separate touch-
+   sized panel (Size/Align, Cancel/Set text) that never shares the glyph box's own tight geometry. */
+.rapier-draw-text-editor{position:fixed;inset:0;z-index:902;pointer-events:none}
+.rapier-draw-text-box{position:absolute;box-sizing:border-box;pointer-events:auto;transform-origin:0 0;touch-action:pan-x pan-y}
+/* Real text stays transparent -- the live SVG underneath (kept in sync on every keystroke and
+   style change) is the honest glyph source; the caret and the selection highlight are the whole
+   affordance, with no box drawn around the words. */
+/* overflow-wrap/word-break reset to 'normal': a textarea's UA stylesheet default (break-word)
+   breaks mid-word once a line is full, but layoutText's own wrapText (draw/text.mjs) never splits
+   a cluster run -- it widens the line for an unbreakable word instead (draw-text-rules.md 2.2.4).
+   Left at the default, this is exactly the kind of silent mismatch the honest overlay exists to
+   remove: no visible symptom until a run of everyday-length words lands near the wrap width. */
+.rapier-draw-label-input{display:block;box-sizing:border-box;resize:none;margin:0;padding:0;border:0;background:transparent;color:transparent;caret-color:var(--color-accent);outline:none;overflow:hidden;letter-spacing:0;transform-origin:0 0;overflow-wrap:normal;word-break:normal;text-wrap:wrap}
+.rapier-draw-label-input::selection{background:var(--color-accent);color:transparent}
+.rapier-draw-label-input[wrap="off"]{white-space:pre}
+/* The app-wide textarea:focus fill (rapier-app.css) outranks the class above and would paint an
+   opaque panel over the very glyphs this overlay exists to show. */
+.rapier-draw-label-input:focus{background:transparent}
+.rapier-draw-text-controls{position:fixed;z-index:902;display:flex;align-items:center;gap:var(--space-1);background:var(--color-surface-2);padding:var(--space-1);box-sizing:border-box;max-width:calc(100vw - 16px);pointer-events:auto;touch-action:pan-y}
+.rapier-draw-text-style{display:flex;align-items:center;gap:var(--space-1);min-width:0}
+.rapier-draw-text-actions{margin-left:auto}
+.rapier-draw-chip--go{background:var(--color-accent);color:var(--color-accent-foreground)}
+.rapier-draw-text-size{appearance:auto;box-sizing:border-box;min-width:44px;min-height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:var(--color-surface-hover);color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono)}
+.rapier-draw-text-actions{display:flex;gap:var(--space-1)}
+.rapier-draw-control{display:flex;align-items:center;gap:var(--space-2);font:var(--fw-medium) var(--text-sm) var(--font-mono);color:var(--color-text-secondary);min-width:0}
+.rapier-draw-control select{appearance:auto;box-sizing:border-box;min-width:44px;max-width:180px;min-height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:var(--color-surface-hover);color:var(--color-text);font:inherit;touch-action:manipulation}
+.rapier-draw-text-panel{flex:none;display:flex;align-items:center;gap:var(--space-1);padding:var(--space-1) var(--space-2);background:var(--color-surface-2)}
+.rapier-draw-text-panel .rapier-draw-chip{flex:1 1 0;min-width:0}
+.rapier-draw-text-panel .rapier-draw-chip[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-text-choice{padding:0 var(--space-2)}
+/* The case chips show themselves in the case they give. */
+.rapier-draw-text-cases{flex:4 1 0;display:flex;gap:var(--space-1);min-width:0}
+.rapier-draw-text-panel .rapier-draw-text-case{text-transform:none;letter-spacing:0;font-size:var(--text-base,15px);padding:0}
+.rapier-draw-text-case--small{font-variant-caps:small-caps}
+/* The figure styles an uploaded font carries, a row under the fonts. */
+.rapier-draw-figures{flex:1 0 100%;display:flex;align-items:center;gap:0}
+.rapier-draw-font-panel .rapier-draw-figures .rapier-draw-chip{flex:1 1 0;min-width:fit-content;justify-content:center}
+/* EFFECTS: a full row, its one chip at the left, the rest of the row left empty on purpose. */
+.rapier-draw-effects{justify-content:flex-start;min-height:60px}
+.rapier-draw-text-panel .rapier-draw-effect{flex:none;width:auto;min-width:76px;height:52px;padding:0 var(--space-2)}
+.rapier-draw-effect svg.rapier-draw-glyph{width:36px;height:36px}
+/* Law 50, and a font's name with it (the family is the person's own, from the file they added, but a cut word is a
+   cut word): two to a row, and a name that needs more than half the row takes the row, whole; one longer than the
+   row breaks at its own spaces, never inside a word and never under an ellipsis. */
+.rapier-draw-font-panel{display:flex;flex-wrap:wrap;gap:0}
+.rapier-draw-font-panel .rapier-draw-chip{flex:0 1 50%;min-width:fit-content;justify-content:flex-start}
+.rapier-draw-font-panel .rapier-draw-text-choice{text-align:left;white-space:normal}
+.rapier-draw-font-panel .rapier-draw-font-add{flex:none;justify-content:center;gap:var(--space-2)}
+.rapier-draw-font-panel .rapier-draw-font-add svg{width:20px;height:20px;flex:none}
+/* Letters: the factory letter sets, a row of live samples under the fonts, one each. */
+.rapier-draw-letters{flex:1 0 100%;display:flex;flex-wrap:wrap;align-items:stretch;gap:0}
+.rapier-draw-letters .rapier-draw-chip-head{flex:1 0 100%;margin:0;min-height:24px}
+.rapier-draw-font-panel .rapier-draw-letter{flex:1 1 0;min-width:fit-content;height:auto;min-height:64px;flex-direction:column;justify-content:center;gap:2px;padding:var(--space-1)}
+.rapier-draw-letter svg.rapier-draw-glyph{width:36px;height:36px;flex:none}
+.rapier-draw-text-spacing{flex:none;display:flex;flex-direction:column;gap:0;padding:var(--space-1) var(--space-3);background:var(--color-surface-2)}
+.rapier-draw-metric{display:grid;grid-template-columns:minmax(92px,auto) minmax(0,1fr) minmax(62px,auto);align-items:center;gap:var(--space-2);min-height:44px;color:var(--color-text-secondary);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
+.rapier-draw-metric output{color:var(--color-text);text-align:right;white-space:nowrap}
+.rapier-draw-metric .rapier-draw-seek{width:100%}
+.rapier-draw-options{flex:none;display:flex;flex-direction:column;padding:0 var(--space-3) var(--space-1);gap:0;background:var(--color-surface-2)}
+.rapier-draw-option{appearance:none;display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:transparent;color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;text-align:left;cursor:pointer;touch-action:manipulation}
+.rapier-draw-option svg{width:22px;height:22px;flex:none;color:var(--color-icon)}
+.rapier-draw-option>span:first-of-type{flex:1 1 auto}
+.rapier-draw-switch{flex:none;position:relative;width:36px;height:20px;background:var(--color-surface-hover);transition:background var(--dur-micro) var(--ease-micro)}
+.rapier-draw-switch::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--color-text-muted);transition:transform var(--dur-micro) var(--ease-micro),background var(--dur-micro) var(--ease-micro)}
+.rapier-draw-option[aria-checked="true"] .rapier-draw-switch{background:var(--color-accent)}
+.rapier-draw-option[aria-checked="true"] .rapier-draw-switch::after{transform:translateX(16px);background:var(--color-accent-foreground)}
+@media(hover:hover) and (pointer:fine){.rapier-draw-option:hover{background:var(--color-surface-hover)}}
+/* The eraser's edge as it is set (draw.js _rapierDrawSyncEraseEdge): a dab in the text's ink, hard to soft. */
+.rapier-draw-edge-sample{flex:none;width:28px;height:28px;border-radius:50%;background:radial-gradient(closest-side,var(--color-text) calc((1 - var(--rapier-erase-edge,0)) * 100% - 1px),transparent 100%)}
+.rapier-draw-guides{stroke:var(--color-accent);fill:none;stroke-width:1;stroke-dasharray:3 4;pointer-events:none}
+.rapier-draw-guide-mark{stroke-dasharray:none;stroke-width:1.5}
+.rapier-draw-guide-gap{stroke:var(--color-success);stroke-dasharray:none;stroke-width:1.5}
+/* Rotation-aware resize cursors (R5/R14): mouse only -- a coarse/touch pointer has no cursor to
+   steer, so data-draw-cursor is left inert there rather than fought with !important. */
+@media(pointer:fine){
+.rapier-draw-handle[data-draw-cursor="ns"]{cursor:ns-resize}
+.rapier-draw-handle[data-draw-cursor="ew"]{cursor:ew-resize}
+.rapier-draw-handle[data-draw-cursor="nesw"]{cursor:nesw-resize}
+.rapier-draw-handle[data-draw-cursor="nwse"]{cursor:nwse-resize}
+}
+/* The bar's own cell size already shrinks with --draw-cell (surface rule, top of file) below
+   340px; it never drops to fewer, wider columns the way the toolbar's tool count could imply. */
+/* Paint: the brush strip (each preset paints its own sample) and the live layer overlay. The
+   canvas is transparent -- pixels carry their own alpha and the stage keeps the theme's surface --
+   so a sample tile sits on that surface too. The committed <image> hides while its overlay is live. */
+.rapier-draw-surface--paper .rapier-draw-stage{background:#fff}
+.rapier-draw-surface--black .rapier-draw-stage{background:#000;--color-text:#fafafa;--color-text-muted:#878787}
+.rapier-draw-surface--paper .rapier-draw-canvas{color:#121212}
+.rapier-draw-surface--paper .rapier-draw-hint,.rapier-draw-surface--paper .rapier-draw-hint-sub{color:#8a8a8a}
+.rapier-draw-surface--paper .rapier-draw-marquee{fill:#2c70d9}
+.rapier-draw-surface--paper .rapier-draw-scribble,.rapier-draw-surface--paper .rapier-draw-press-ring,.rapier-draw-surface--paper .rapier-draw-guides{stroke:#2c70d9}
+/* Law 16 (the founder, 25 September 2026: "that inverted box ... It needs to be taller. It needs to be full height,
+   top and bottom, and properly join up to the black bar above it"): the strip has no padding above or below its
+   chips and every chip stands its whole height, so the chosen one's box meets the bar the strip hangs from. */
+.rapier-draw-brushes{flex:none;min-width:0;display:flex;flex-wrap:nowrap;align-items:stretch;gap:0;min-height:52px;padding:0 var(--space-2);box-sizing:border-box;background:var(--color-surface-2);overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
+.rapier-draw-brushes>.rapier-draw-chip{height:auto}
+.rapier-draw-brushes::-webkit-scrollbar{display:none}
+/* Law 50 (the founder, 26 September 2026, over DISSOLVE, WET FLAT and POSTERIZE cut to five letters when the nine
+   tools shared a 390 px strip: "maybe fix it rather than asking me, like, Hey, do you want to just leave these words
+   cut off?"; docs/intent.md: "A chip takes the width its word needs; the strip scrolls or the chips spread, never an
+   ellipsis"): a chip is as wide as its word needs and never narrower than its floor, the chips share out any room the
+   strip has left, and where there is none the strip scrolls, as BRUSH's always has. A brush chip is a thumb and a
+   word, at least 76 px (its painted sample); a tool chip is a mark and a word, at least a thumb, with a little air
+   either side of its word so the chosen one's box never hugs it. */
+.rapier-draw-brushes .rapier-draw-chip--glyph{flex:1 0 auto;width:auto;min-width:76px}
+.rapier-draw-brushes[data-draw-panel="paintTools"] .rapier-draw-chip--glyph{min-width:44px;padding:0 var(--space-1)}
+.rapier-draw-chip--glyph img.rapier-draw-glyph--paint{width:48px;height:30px;display:block;margin:auto;background:#fff}
+.rapier-draw-brushes .rapier-draw-chip--icon{flex:none}
+.rapier-draw-chip--own:not([aria-pressed="true"]){background:color-mix(in srgb,var(--color-accent) 22%,transparent)}
+.rapier-draw-paint-live{position:absolute;left:0;top:0;pointer-events:none;image-rendering:auto}
+/* SET's sheet (paint-tool.js _rapierPaintSettle): the paper's own colour over the picture just set, laid down and gone. */
+.rapier-draw-sheet{position:absolute;z-index:3;pointer-events:none;background:var(--color-bg);opacity:0}
+.rapier-draw-surface--paper .rapier-draw-sheet{background:#fff}
+.rapier-draw-shapes g[data-paint-live]{visibility:hidden}
+body.rapier-draw-open{overflow:hidden}
+body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
+
+/* R84: the colour dropper and the memory of colours already used, both on the colour row (the
+   founder's R80 design, written down then and built now). */
+.rapier-draw-swatch--dropper{color:var(--color-icon)}
+.rapier-draw-swatch--dropper svg{width:20px;height:20px;display:block;margin:auto}
+.rapier-draw-swatch--recent span{box-shadow:inset 0 0 0 1px rgba(128,128,128,.35)}
+/* The dropper's own session: the row goes away so the whole drawing is visible, a swatch rides
+   ABOVE the finger (a finger hides what it points at) and one bar holds the value and Done. */
+.rapier-draw-dropper{position:absolute;inset:0;z-index:4;pointer-events:none}
+.rapier-draw-dropper-swatch{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:var(--color-surface-2);box-shadow:0 0 0 3px var(--color-bg)}
+.rapier-draw-dropper-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2);background:var(--color-surface-2);pointer-events:auto}
+.rapier-draw-dropper-say{flex:1;font:var(--fw-medium) var(--text-2xs,10px) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;color:var(--color-text-secondary)}
+/* Law 9 (the afternoon list): sampled, the bar's main word is the hex in the bar's own button type, beside a flat chip of
+   the colour, and the word is the copy; it takes the hint's place at the left, Done staying at the right. Copied, its
+   glyph is the editor's check for a moment; refused, the hint beside it says so (a page notice waits while Draw is up). */
+.rapier-draw-dropper-hex{margin-right:auto;gap:var(--space-2);padding:0 var(--space-3) 0 var(--space-2)}
+.rapier-draw-dropper-chip{flex:none;width:20px;height:20px}
+.rapier-draw-dropper-glyph{display:flex}
+.rapier-draw-dropper-glyph--done,.rapier-draw-dropper-hex[data-copied="yes"] .rapier-draw-dropper-glyph{display:none}
+.rapier-draw-dropper-hex[data-copied="yes"] .rapier-draw-dropper-glyph--done{display:flex}
+.rapier-draw-dropper-hex svg{flex:none;width:18px;height:18px}
+/* R85c: over paper the ink dot shows the ink as it will land -- on white -- so a black ink on the
+   dark chrome reads as a black dot on paper, not an empty ring. */
+.rapier-draw-surface--paper .rapier-draw-ink-dot{box-shadow:0 0 0 2px #fff,inset 0 0 0 1.5px color-mix(in srgb,var(--color-text) 45%,transparent)}
+/* R85c: numeric properties in the style sheet and the size while typing are seek sliders. */
+.rapier-draw-control--seek{flex:1 1 100%;min-width:0}
+.rapier-draw-control--seek .rapier-draw-seek{flex:1 1 auto;min-width:96px}
+.rapier-draw-control--seek output{min-width:3.5em;text-align:right}
+.rapier-draw-text-style .rapier-draw-seek{height:44px;flex:1 1 120px;min-width:120px}
+.rapier-draw-text-style output{min-width:2.5em;text-align:right;font:var(--fw-medium) var(--text-sm) var(--font-mono);color:var(--color-text-secondary)}

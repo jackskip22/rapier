@@ -1,0 +1,7 @@
+# Deploy the finished page and its optional installation companions only.
+/*
+!/rapier.html
+!/sw.js
+!/manifest.json
+!/icon-192.png
+!/icon-512.png

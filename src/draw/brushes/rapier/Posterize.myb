@@ -1,0 +1,55 @@
+{
+  "comment": "MyPaint brush file",
+  "version": 3,
+  "description": "Posterize",
+  "notes": "Candidate TOOL, operator `posterize` (rapier_op 8). Reduces colour to bands using only colours already under the stroke. Light retains more levels; Firm uses fewer. Preserves alpha and edges; never reads the swatch. Not admitted to the strip pending the lead's row decision.\n\nAuthor: Rapier\nLicense: AGPL-3.0-only",
+  "settings": {
+    "rapier_op": {
+      "base_value": 8,
+      "inputs": {}
+    },
+    "opaque": {
+      "base_value": 1,
+      "inputs": {}
+    },
+    "opaque_linearize": {
+      "base_value": 0,
+      "inputs": {}
+    },
+    "radius_logarithmic": {
+      "base_value": 3.2,
+      "inputs": {}
+    },
+    "hardness": {
+      "base_value": 0.9,
+      "inputs": {}
+    },
+    "anti_aliasing": {
+      "base_value": 1,
+      "inputs": {}
+    },
+    "dabs_per_actual_radius": {
+      "base_value": 3,
+      "inputs": {}
+    },
+    "paint_mode": {
+      "base_value": 0,
+      "inputs": {}
+    },
+    "opaque_multiply": {
+      "base_value": 0,
+      "inputs": {
+        "pressure": [
+          [
+            0,
+            0.05
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      }
+    }
+  }
+}

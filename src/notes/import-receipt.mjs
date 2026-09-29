@@ -1,0 +1,425 @@
+// Plans are not saves. Only body read-back plus the committed identity can enter `written`.
+import {exactBytes, sha256 as digestBytes, sha256State} from './integrity.mjs';
+import {isNoteFile, projectCard} from './model.mjs';
+import {finishImportCharacters} from './import-characters.mjs';
+import {missingRecordingPaths} from './import-attachments.mjs';
+import {resolveAssetPath} from './links.mjs';
+const copy = value => JSON.parse(JSON.stringify(value));
+const list = value => Array.isArray(value) ? value : [];
+const bytesOf = value => exactBytes(value ?? '');
+const sha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+export const IMPORT_RECEIPT_LIMIT = 5;
+const metadata = rows => list(rows).map(row => {
+	const out = {};
+	for (const key of ['rootId', 'inputId', 'name', 'byteLength', 'status', 'why', 'code', 'attachment', 'files']) if (row?.[key] !== undefined) out[key] = copy(row[key]);
+	if (row?.bytes instanceof Uint8Array || typeof row?.text === 'string') {
+		if (!(row.bytes instanceof Uint8Array) && typeof row.text === 'string' && !row.text.isWellFormed()) {
+			out.utf16Length = row.text.length;
+			out.why = (out.why ? out.why + '; ' : '') + 'source contains unpaired Unicode surrogates; no exact UTF-8 byte length exists';
+		} else out.byteLength ??= bytesOf(row.bytes ?? row.text).length;
+		out.retainedIn = 'source input';
+	}
+	return out;
+});
+
+// A source field no Rapier setting holds is named once per import, not on every note: the record
+// lives in the synced, backed-up sidecar and every folder transaction reads and writes it whole. One
+// row per source (`subject`), one field per source key, each distinct value kept once: `notes[i]`
+// lists the indexes, into this record's `notes`, of the notes that carried `values[i]`, so a
+// stylesheet a thousand pages share is one value. The importer's per-note rows are the plan's.
+const fieldRow = row => row?.code === 'source_metadata' && object(row.fields);
+function unappliedFields(notes) {
+	const subjects = new Map();
+	notes.forEach((note, index) => {
+		for (const row of list(note.warnings).filter(fieldRow)) {
+			const subject = typeof row.subject === 'string' && row.subject ? row.subject : 'Source fields';
+			if (!subjects.has(subject)) subjects.set(subject, new Map());
+			const fields = subjects.get(subject);
+			for (const [key, value] of Object.entries(row.fields)) {
+				const id = JSON.stringify(value);
+				if (id === undefined) continue;
+				if (!fields.has(key)) fields.set(key, {key, label: typeof row.labels?.[key] === 'string' && row.labels[key] ? row.labels[key] : key, values: [], notes: [], ids: new Map()});
+				const field = fields.get(key);
+				if (!field.ids.has(id)) { field.ids.set(id, field.values.length); field.values.push(JSON.parse(id)); field.notes.push([]); }
+				const carried = field.notes[field.ids.get(id)];
+				if (carried.at(-1) !== index) carried.push(index);
+			}
+		}
+	});
+	return [...subjects].map(([subject, fields]) => ({subject, fields: [...fields.values()].map(({key, label, values, notes}) => ({key, label, values, notes}))}));
+}
+
+// Repeated explanations live once in the record; the plan still has its per-note rows for the
+// shell. Note indexes refer to the record's immutable plan, not just its completed writes. A
+// Standard Notes non-note item belongs to its export, not to an invented note: a source may have
+// zero notes. Only the importer's already-sanitized uuid/type/name descriptor is retained here.
+const databaseRow = row => row?.code === 'database_properties';
+const warningSource = row => JSON.stringify([row.rootId ?? '', row.sourceName ?? '']);
+function warningSourceNotes(notes) {
+	const sources = new Map();
+	notes.forEach((note, index) => { const key = warningSource(note); if (!sources.has(key)) sources.set(key, []); sources.get(key).push(index); });
+	return sources;
+}
+function foldedImportWarnings(result) {
+	const out = [], groups = new Map(), notes = list(result.notes), sources = new Map(), sourceNotes = warningSourceNotes(notes);
+	let items;
+	for (const row of list(result.warnings)) {
+		if (row?.code !== 'source_item' || !object(row.item) || typeof row.sourceName !== 'string') { out.push(copy(row)); continue; }
+		if (!items) { items = {code: 'source_item', sources: []}; out.push(items); }
+		const key = warningSource(row);
+		if (!sources.has(key)) {
+			const source = {rootId: row.rootId ?? '', sourceName: row.sourceName, notes: [...(sourceNotes.get(key) || [])], items: [], counts: []};
+			sources.set(key, {source, ids: new Map()}); items.sources.push(source);
+		}
+		const {source, ids} = sources.get(key), id = JSON.stringify(row.item);
+		if (!ids.has(id)) { ids.set(id, source.items.length); source.items.push(JSON.parse(id)); source.counts.push(0); }
+		source.counts[ids.get(id)]++;
+	}
+	notes.forEach((note, index) => {
+		for (const row of list(note.warnings).filter(databaseRow)) {
+			// Identical prose folds; a different explanation or value is never silently replaced.
+			const key = JSON.stringify(row);
+			if (!groups.has(key)) { const group = {...copy(row), notes: []}; groups.set(key, group); out.push(group); }
+			const carried = groups.get(key).notes;
+			if (carried.at(-1) !== index) carried.push(index);
+		}
+	});
+	return out;
+}
+function groupedWarningProblem(receipt) {
+	const indexes = (value, nonempty) => Array.isArray(value) && (!nonempty || value.length) && value.every((n, i) => Number.isSafeInteger(n) && n >= 0 && n < receipt.notes.length && (!i || n > value[i - 1]));
+	let sourceNotes, itemGroup = false;
+	for (const row of list(receipt.warnings)) {
+		if (databaseRow(row) && row.notes !== undefined && !indexes(row.notes, true)) return true;
+		if (row?.code !== 'source_item' || row.sources === undefined) continue;
+		if (itemGroup || !Array.isArray(row.sources) || !row.sources.length) return true;
+		itemGroup = true; sourceNotes ||= warningSourceNotes(receipt.notes);
+		const seen = new Set();
+		for (const source of row.sources) {
+			if (!object(source) || typeof source.rootId !== 'string' || typeof source.sourceName !== 'string' || !indexes(source.notes, false)
+				|| !Array.isArray(source.items) || !source.items.length || !Array.isArray(source.counts) || source.counts.length !== source.items.length
+				|| source.counts.some(n => !Number.isSafeInteger(n) || n < 1) || source.items.some(item => !object(item))) return true;
+			const key = warningSource(source);
+			if (seen.has(key) || JSON.stringify(source.notes) !== JSON.stringify(sourceNotes.get(key) || [])
+				|| new Set(source.items.map(item => JSON.stringify(item))).size !== source.items.length) return true;
+			seen.add(key);
+		}
+	}
+	return false;
+}
+
+export function createImportReceipt(result, {stamp = null, id = null} = {}) {
+	const out = {version: 1, id, stamp, status: 'planned', picked: metadata(result.picked),
+		accounting: metadata(result.accounting), refused: metadata(result.skipped), sources: copy(result.sources ?? {}),
+		notes: list(result.notes).map(note => ({rootId: note.rootId ?? '', sourceName: note.sourceName ?? note.sourcePath ?? '', file: note.file,
+			title: typeof note.text === 'string' ? projectCard('', note.text).title : '',
+			warnings: copy(list(note.warnings).filter(row => !fieldRow(row) && !databaseRow(row))), unresolvedLinks: copy(list(note.unresolvedLinks)),
+			unresolvedPictures: copy(list(note.unresolvedPictures))})),
+		plannedFiles: list(result.notes).map(note => note.file), written: [], sections: []};
+	const unapplied = unappliedFields(list(result.notes));
+	if (unapplied.length) out.unapplied = unapplied;
+	const warnings = foldedImportWarnings(result);
+	if (warnings.length) out.warnings = warnings;
+	if (result.backups) out.backups = list(result.backups).map(({rootId, verification, fileMap, identityMap}) => copy({rootId, verification, fileMap, identityMap}));
+	return finishImportCharacters(out);
+}
+
+// This target is a transaction plan, not evidence: only the folder owner's verified commit may
+// publish it. Its journal keeps the body and target together through a closed tab or failed write.
+export async function prepareImportWrite(receipt, note, {entry = note.entry, created = true, digest = digestBytes} = {}) {
+	return recordWrite(receipt, note, {bytes: bytesOf(note.bytes ?? note.text), entry, created}, {digest});
+}
+
+export async function verifyImportWrite(receipt, note, observed, {digest = digestBytes} = {}) {
+	return recordWrite(receipt, note, observed, {digest});
+}
+
+async function recordWrite(receipt, note, observed, {digest}) {
+	if (!['planned', 'writing'].includes(receipt.status) || !receipt.plannedFiles.includes(note.file)) throw new Error('note is not pending in this import');
+	if (receipt.written.some(row => row.file === note.file)) throw new Error('note was already recorded');
+	const expected = bytesOf(note.bytes ?? note.text), actual = observed?.bytes;
+	if (!(actual instanceof Uint8Array) || actual.length !== expected.length || actual.some((byte, i) => byte !== expected[i])) throw new Error('import read-back differs: ' + note.file);
+	if (!observed?.entry || typeof observed.entry !== 'object') throw new Error('import read-back has no sidecar entry');
+	const id = observed.entry.id ?? null;
+	if (id !== null && (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id))) throw new Error('import read-back has an invalid note identity');
+	if (note.entry?.id && note.entry.id !== id) throw new Error('import read-back has a different identity');
+	if (typeof digest !== 'function') throw new Error('import verification needs SHA-256');
+	const hash = await digest(actual);
+	if (!sha256(hash)) throw new Error('invalid SHA-256 result');
+	const out = copy(receipt);
+	out.status = 'writing';
+	out.written.push({file: note.file, id, digest: hash, byteLength: actual.length, created: observed.created === true,
+		trashed: observed.entry.trashed === true, trashedAt: observed.entry.trashedAt ?? null, entry: copy(observed.entry)});
+	return out;
+}
+
+export function finishImportReceipt(receipt, {status, why, sections = []} = {}) {
+	if (!['complete', 'cancelled', 'failed'].includes(status)) throw new Error('invalid import outcome');
+	if (status === 'complete' && receipt.written.length !== receipt.plannedFiles.length) throw new Error('import still has unwritten notes');
+	const out = copy(receipt);
+	out.status = status;
+	out.sections = copy(sections);
+	if (why) out.why = String(why);
+	return finishImportCharacters(out);
+}
+
+export function appendImportReceipt(index, receipt) {
+	if (!Number.isSafeInteger(receipt.stamp) || receipt.stamp < 0 || typeof receipt.id !== 'string' || !receipt.id) throw new Error('durable import receipt needs an id and stamp');
+	const imports = list(index.imports).filter(row => row?.id !== receipt.id).slice(-(IMPORT_RECEIPT_LIMIT - 1));
+	return {...index, imports: [...copy(imports), copy(receipt)]};
+}
+
+// The import door's source keys, in the shell's existing words; never infer an app from a path.
+export const IMPORT_SOURCE_WORDS = Object.freeze({rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes'});
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const get = (rows, key) => rows instanceof Map ? rows.get(key) : object(rows) && own(rows, key) ? rows[key] : undefined;
+const pairs = rows => rows instanceof Map ? [...rows] : object(rows) ? Object.entries(rows) : [];
+const identity = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value.slice(value.lastIndexOf(':') + 1)));
+const noteFile = value => isNoteFile(value) && value.isWellFormed() && !/[\u0000-\u001f\u007f]/.test(value);
+const count = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+const closed = status => ['complete', 'cancelled', 'failed'].includes(status);
+
+// Archive paths and host errors are not names the person picked. Display text is never authority.
+function words(value) {
+	if (typeof value !== 'string') return '';
+	return value.toWellFormed().replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
+		.split(/\s+/u).filter(Boolean).map(word => /[/\\]|%2f|%5c|^[a-z]:/i.test(word) ? 'a source file' : word).join(' ');
+}
+function pickedName(row, i) {
+	const name = typeof row?.name === 'string' ? row.name.split(/[/\\]/).pop() : '';
+	return words(name) || 'picked input ' + (i + 1);
+}
+function titledNote(note, ordinal) {
+	const name = words(note?.title);
+	return name ? '“' + name + '”' : 'note ' + ordinal;
+}
+function noteName(receipt, file) {
+	const at = list(receipt?.notes).findIndex(note => note?.file === file);
+	return titledNote(receipt?.notes?.[at], list(receipt?.plannedFiles).indexOf(file) + 1 || 1);
+}
+function inputName(receipt, row, i) {
+	const picked = list(receipt.picked), at = picked.findIndex(one => one?.name === row?.name && (!row?.rootId || one?.rootId === row.rootId));
+	if (at >= 0) return '“' + pickedName(picked[at], at) + '”';
+	const root = picked.findIndex(one => row?.rootId && one?.rootId === row.rootId);
+	return 'input ' + (i + 1) + (root < 0 ? '' : ' in “' + pickedName(picked[root], root) + '”');
+}
+function receiptProblem(receipt) {
+	if (!object(receipt) || receipt.version !== 1 || !['planned', 'writing', 'complete', 'cancelled', 'failed'].includes(receipt.status)
+		|| !['notes', 'written', 'plannedFiles', 'sections', 'picked', 'refused', 'accounting'].every(key => Array.isArray(receipt[key]))) return 'this import record is incomplete';
+	const planned = new Set(), written = new Set(), ids = new Set();
+	for (const file of receipt.plannedFiles) { if (!noteFile(file) || planned.has(file)) return 'this import record is incomplete'; planned.add(file); }
+	const described = new Set();
+	for (const note of receipt.notes) {
+		if (!object(note) || !planned.has(note.file) || described.has(note.file) || !['warnings', 'unresolvedLinks', 'unresolvedPictures'].every(key => Array.isArray(note[key]))) return 'this import record is incomplete';
+		described.add(note.file);
+	}
+	if (described.size !== planned.size) return 'this import record is incomplete';
+	// Each unapplied value names the notes that carried it; a row that does not add up is not a record.
+	if (receipt.unapplied !== undefined) {
+		if (!Array.isArray(receipt.unapplied)) return 'this import record is incomplete';
+		for (const row of receipt.unapplied) {
+			if (!object(row) || typeof row.subject !== 'string' || !row.subject || !Array.isArray(row.fields) || !row.fields.length) return 'this import record is incomplete';
+			for (const field of row.fields) {
+				if (!object(field) || typeof field.key !== 'string' || !field.key || typeof field.label !== 'string' || !field.label
+					|| !Array.isArray(field.values) || !Array.isArray(field.notes) || !field.values.length || field.values.length !== field.notes.length) return 'this import record is incomplete';
+				for (const carried of field.notes) if (!Array.isArray(carried) || !carried.length
+					|| carried.some((index, i) => !Number.isSafeInteger(index) || index < 0 || index >= receipt.notes.length || i && index <= carried[i - 1])) return 'this import record is incomplete';
+			}
+		}
+	}
+	if (groupedWarningProblem(receipt)) return 'this import record is incomplete';
+	for (const row of receipt.written) {
+		if (!object(row) || !planned.has(row.file) || written.has(row.file) || typeof row.created !== 'boolean'
+			|| !sha256(row.digest) || !Number.isSafeInteger(row.byteLength) || row.byteLength < 0) return 'this import record is incomplete';
+		written.add(row.file);
+		if (row.id != null) { if (!identity(row.id) || ids.has(row.id)) return 'this import record is incomplete'; ids.add(row.id); }
+		if (typeof row.trashed !== 'boolean' || !Object.hasOwn(row, 'trashedAt') || row.trashedAt !== null && (!Number.isSafeInteger(row.trashedAt) || row.trashedAt < 0)) return 'this import record is incomplete';
+	}
+	if (receipt.undo !== undefined) {
+		const undo = receipt.undo, accounted = new Set();
+		if (!object(undo) || undo.kind !== 'import-undo' || !Number.isSafeInteger(undo.stamp) || undo.stamp < 0 || !Array.isArray(undo.requested) || !Array.isArray(undo.kept)) return 'this import record is incomplete';
+		for (const file of undo.requested) { if (!written.has(file) || accounted.has(file)) return 'this import record is incomplete'; accounted.add(file); }
+		for (const row of undo.kept) { if (!object(row) || !written.has(row.file) || accounted.has(row.file) || typeof row.why !== 'string' || !row.why) return 'this import record is incomplete'; accounted.add(row.file); }
+		if (accounted.size !== written.size) return 'this import record is incomplete';
+	}
+	if (receipt.status === 'complete' && written.size !== planned.size) return 'this import record is incomplete';
+	if (receipt.sections.some(section => typeof section !== 'string' || !section)) return 'this import record is incomplete';
+	return null;
+}
+export function importUndoReadiness(receipt) {
+	const problem = receiptProblem(receipt);
+	if (problem) return problem;
+	if (receipt.undo) return 'this import was already undone';
+	if (!closed(receipt.status)) return 'this import has not finished';
+	if (!receipt.written.length) return 'there are no imported notes to undo';
+	return null;
+}
+function writeProblem(row, now, current) {
+	if (!row.created) return 'was not created by this import';
+	if (!identity(row.id)) return 'has no verified identity';
+	if (!sha256(row.digest)) return 'has no removal proof';
+	const names = current.get(row.id) || [];
+	if (names.length > 1) return 'has more than one current identity match';
+	if (names.length === 1 && names[0] !== row.file) return 'was renamed since this import';
+	if (!now || now.exists === false) return 'is no longer in this folder';
+	if (now.id !== row.id) return 'is no longer the same note';
+	if (now.trashed === true && row.trashed !== true) return 'was moved to trash since this import';
+	if ((row.trashed === true) !== (now.trashed === true) || (now.trashedAt ?? null) !== (row.trashedAt ?? null)) return 'has a different trash state since this import';
+	if (!sha256(now.digest)) return 'could not be read exactly';
+	if (now.digest !== row.digest || now.byteLength !== undefined && now.byteLength !== row.byteLength) return 'changed since this import';
+	return null;
+}
+function identities(current) {
+	const out = new Map();
+	for (const [file, entry] of pairs(current)) if (typeof entry?.id === 'string') {
+		if (!out.has(entry.id)) out.set(entry.id, []);
+		out.get(entry.id).push(file);
+	}
+	return out;
+}
+
+// Byte/identity candidates only. The full plan also checks metadata and the confirmation selection.
+export function eligibleImportUndo(receipt, current) {
+	if (importUndoReadiness(receipt)) return [];
+	const ids = identities(current);
+	return receipt.written.filter(row => !writeProblem(row, get(current, row.file), ids)).map(row => row.file);
+}
+
+function whenWords(stamp, now) {
+	if (!Number.isSafeInteger(stamp) || stamp < 0 || stamp > 8640000000000000) return 'time not recorded';
+	if (Number.isSafeInteger(now) && now >= stamp) {
+		const seconds = Math.floor((now - stamp) / 1000);
+		if (!seconds) return 'just now';
+		for (const [unit, scale] of [['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]]) if (seconds >= scale) return count(Math.floor(seconds / scale), unit) + ' ago';
+	}
+	return new Date(stamp).toISOString().replace('T', ' ').replace('.000Z', 'Z').replace('Z', ' utc');
+}
+function fact(row, fallback) {
+	return words(row?.message || row?.why || row?.reason).toLowerCase() || fallback;
+}
+function warningFact(row) {
+	if (databaseRow(row) && Array.isArray(row.notes)) return count(row.notes.length, 'note') + ': ' + fact(row, '').replace('in this note', 'in each note');
+	if (row?.code === 'source_item' && Array.isArray(row.sources)) {
+		const total = row.sources.reduce((sum, source) => sum + source.counts.reduce((a, b) => a + b, 0), 0);
+		return count(total, 'standard notes item') + (total === 1 ? ' was not imported because it is not a note. Its name stays' : ' were not imported because they are not notes. Their names stay').toLowerCase() + ' in this import record; keys and file contents stay in the original export.';
+	}
+	const known = {picture_missing: 'picture not brought in: not among the picked files', picture_ambiguous: 'picture not brought in: more than one picked file matches',
+		picture_external: 'picture stays as an external link; no file was fetched',
+		audio_missing: 'recording not brought in: its file is missing'};
+	return known[row?.code] || fact(row, 'the importer recorded a warning without a reason');
+}
+// One line a source: each field once, with how many notes carried it. The values stay off the sheet;
+// the line says where they are.
+function unappliedFact(row) {
+	const carried = new Map();
+	for (const field of row.fields) {
+		if (!carried.has(field.label)) carried.set(field.label, new Set());
+		for (const notes of field.notes) for (const index of notes) carried.get(field.label).add(index);
+	}
+	return words(row.subject + ' not applied: ' + [...carried].map(([label, notes]) => label + ' (' + count(notes.size, 'note') + ')').join(', ')
+		+ '. Their values stay in the original export and in this import record.').toLowerCase();
+}
+
+export function describeImportReceipt(receipt, {now} = {}) {
+	const when = whenWords(receipt?.stamp, now), problem = receiptProblem(receipt);
+	if (problem) return {when, title: problem, lines: ['the imported notes cannot be checked from this record'], undo: {eligible: false, why: problem}};
+	const n = receipt.written.length, total = receipt.plannedFiles.length, stopped = closed(receipt.status);
+	const title = stopped ? (n < total ? n + ' of ' + count(total, 'note') + ' imported' : count(n, 'note') + ' imported') : count(n, 'note') + ' written; import not finished';
+	const sources = object(receipt.sources) ? Object.keys(receipt.sources).filter(key => Number.isSafeInteger(receipt.sources[key]) && receipt.sources[key] >= 0) : [];
+	const named = sources.filter(key => own(IMPORT_SOURCE_WORDS, key)).map(key => IMPORT_SOURCE_WORDS[key]);
+	if (named.length < sources.length) named.push('another source');
+	const skipped = list(receipt.refused), lines = [(named.length ? 'from ' + named.join(', ') : 'source app not recorded') + (skipped.length ? ' · ' + count(skipped.length, 'input') + ' skipped' : '')];
+	if (receipt.status === 'failed') lines.push('import stopped' + (receipt.why ? ': ' + words(receipt.why).toLowerCase() : ''));
+	if (receipt.status === 'cancelled') lines.push('import cancelled' + (receipt.why ? ': ' + words(receipt.why).toLowerCase() : ''));
+	if (stopped && n < total) lines.push(count(total - n, 'note') + ' not recorded as written');
+	for (const [i, row] of skipped.entries()) lines.push(inputName(receipt, row, i) + ' skipped: ' + fact(row, 'the importer did not record a reason'));
+	for (const row of list(receipt.warnings)) lines.push(warningFact(row));
+	for (const row of list(receipt.unapplied)) lines.push(unappliedFact(row));
+	const written = new Set(receipt.written.map(row => row.file)), ordinals = new Map(receipt.plannedFiles.map((file, i) => [file, i + 1]));
+	for (const note of receipt.notes) {
+		const name = titledNote(note, ordinals.get(note.file)) + (written.has(note.file) ? '' : ' (not recorded as written)'), warnings = list(note.warnings);
+		const pictureWarnings = new Set(warnings.map(row => JSON.stringify([row?.code, row?.dest])));
+		for (const row of warnings) lines.push(name + ': ' + warningFact(row));
+		for (const row of list(note?.unresolvedPictures)) {
+			if (pictureWarnings.has(JSON.stringify(['picture_' + row?.reason, row?.dest]))) continue;
+			lines.push(name + ': ' + warningFact({code: 'picture_' + row?.reason, reason: row?.reason ? 'picture not brought in: ' + row.reason : 'picture not brought in: no reason recorded'}));
+		}
+		const recordings = missingRecordingPaths(note);
+		for (const row of list(note?.unresolvedLinks)) {
+			if (recordings.has(resolveAssetPath(note.sourceName, row?.dest).path)) continue;
+			lines.push(name + ': link left unchanged: ' + fact(row, 'no matching note was recorded'));
+		}
+	}
+	if (receipt.undo) lines.push('undo recorded: ' + count(receipt.undo.requested.length, 'note') + ' selected for removal; ' + count(receipt.undo.kept.length, 'note') + ' kept at confirmation');
+	const why = importUndoReadiness(receipt);
+	return {when, title, lines, undo: {eligible: why === null, why: why || 'the notes will be checked before undo'}};
+}
+
+// Receipt entries are exact JSON metadata proofs, not just identities. Object key order is not
+// an edit; every value (including a pin, colour, category or future field) is.
+function sameValue(a, b) {
+	if (a === b) return true;
+	return a !== null && b !== null && typeof a === 'object' && typeof b === 'object'
+		&& Array.isArray(a) === Array.isArray(b) && Object.keys(a).length === Object.keys(b).length
+		&& Object.keys(a).every(key => own(b, key) && sameValue(a[key], b[key]));
+}
+
+// A changed row is kept, not a veto on the other imported rows. `files` can only narrow a
+// confirmation; a note shown as kept can never re-enter that confirmation if its bytes revert.
+// `keep` protects live work the shell has not saved yet. Neither option grants removal authority.
+export function planImportUndo(receipt, index, texts, {files, keep = []} = {}) {
+	const refuse = why => ({remove: [], kept: [], entries: [], sections: [], refuse: why});
+	const readiness = importUndoReadiness(receipt);
+	if (readiness) return refuse(readiness);
+	if (!object(index) || index.version !== 1 || !object(index.notes) || !Array.isArray(index.sections) || !(texts instanceof Map || object(texts))
+		|| Object.entries(index.notes).some(([file, entry]) => !noteFile(file) || !object(entry) || entry.trashed !== undefined && typeof entry.trashed !== 'boolean')
+		|| index.sections.some(section => !object(section) || typeof section.name !== 'string' || !section.name)
+		|| new Set(index.sections.map(section => section.name.toLowerCase())).size !== index.sections.length
+		|| index.transaction || Object.keys(index.deletions || {}).length) return refuse('the folder must be read and recovered before undo');
+	if (pairs(texts).some(([file]) => !own(index.notes, file))) return refuse('the folder changed; read it again before undo');
+	const current = new Map(Object.entries(index.notes).map(([file, entry]) => [file, {...entry}]));
+	for (const row of receipt.written) {
+		const entry = current.get(row.file);
+		if (!entry) continue;
+		const value = get(texts, row.file);
+		entry.exists = value != null;
+		delete entry.digest; delete entry.byteLength;
+		if (value != null) try {
+			const bytes = exactBytes(value), hash = sha256State(); hash.update(bytes);
+			entry.digest = hash.finish(); entry.byteLength = bytes.length;
+		} catch (_) { /* Unreadable bytes never become deletion authority. */ }
+	}
+	const ids = identities(current), selected = files === undefined ? null : new Set(files), protectedFiles = new Set(keep), remove = [], kept = [];
+	for (const row of receipt.written) {
+		let why = protectedFiles.has(row.file) ? 'is open with work to keep' : writeProblem(row, current.get(row.file), ids);
+		if (!why && (!object(row.entry) || row.entry.id !== row.id)) why = 'has no verified metadata';
+		if (!why && !sameValue(row.entry, index.notes[row.file])) why = 'has different metadata since this import';
+		if (!why && selected && !selected.has(row.file)) why = 'was not selected in this confirmation';
+		if (why) kept.push({file: row.file, why}); else remove.push(row.file);
+	}
+	const removing = new Set(remove);
+	try {
+		// A section name is not proof of its unchanged metadata. No section, media, history or
+		// thumbnail is collected here; other notes may still use them.
+		return {remove, kept, entries: copy(Object.entries(index.notes).filter(([file]) => !removing.has(file))), sections: copy(index.sections), refuse: null};
+	} catch (_) { return refuse('the folder record could not be copied; nothing will be removed'); }
+}
+
+// The receipt records the requested inverse, not an assertion that every removal happened:
+// owner recovery may keep a late foreign edit. Its exact result comes from the committed listing.
+export function recordImportUndo(receipt, plan, {stamp} = {}) {
+	const why = importUndoReadiness(receipt);
+	if (why || plan.refuse) throw new Error(why || plan.refuse);
+	if (!Number.isSafeInteger(stamp) || stamp < 0) throw new Error('import undo needs a valid time');
+	const out = {...copy(receipt), undo: {kind: 'import-undo', stamp, requested: plan.remove.slice(), kept: copy(plan.kept)}};
+	const problem = receiptProblem(out);
+	if (problem) throw new Error(problem);
+	return out;
+}
+
+// Names used in the Undo face follow the same picked-title privacy rule as the receipt face.
+export function importUndoRows(receipt, plan) {
+	return [...plan.remove.map(file => ({file, name: noteName(receipt, file), action: 'remove', why: 'is unchanged since this import'})),
+		...plan.kept.map(row => ({file: row.file, name: noteName(receipt, row.file), action: 'keep', why: row.why}))];
+}

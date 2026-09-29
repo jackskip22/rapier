@@ -1,0 +1,66 @@
+/* R86f to-do rows (docs/notes-architecture.md, "The to-do interface"): Rapier's tokens, 44px targets, the document's body font. */
+
+/* The renderer's bullet is switched off; a hidden-boxes list keeps its dot. */
+li.rapier-todo-item{display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--space-1);list-style:none;min-height:48px}
+li.rapier-todo-item>ul,li.rapier-todo-item>ol{flex:0 0 calc(100% - 2em);margin-inline-start:2em;margin-block:0}
+li.rapier-todo-item::before{content:none!important}
+/* Decorated rows align both controls with the FIRST text line, even when the words wrap.
+   Each control keeps its hit area; symmetric margins make its flow height one inherited line.
+   A 48px minimum row prevents neighbouring checkbox targets from sharing that space. */
+/* Boxes 50% bigger: scale --md-task-box (spec/markdown-style.css), never the 48px input (tools/witnesses/notes-checklist-centres.mjs). */
+/* Left margin = paint inset plus row gap. At 390x844: handle 29-73, box 73-97.3, text 113. */
+.md-render li.rapier-todo-item input[type="checkbox"]{--md-task-box:clamp(21px,1.38em,36px);left:0;flex:none;margin:calc(.5lh - 24px) 0 calc(.5lh - 24px) calc(-1 * var(--space-1) - (48px - var(--md-task-box)) / 2)}
+/* The content sheet resets a first child's top margin. This scoped rule wins that reset for
+   the handle, and inherits the note's line-height rather than the button's user-agent font. */
+.md-render li.rapier-todo-item>.rapier-todo-handle{font:inherit;margin-top:calc(.5lh - 22px);margin-bottom:calc(.5lh - 22px)}
+/* The empty-label span (notes/todo.js _rapierTodoEnsureLabel): pre-wrap keeps its space so the caret lands after the box. */
+/* It grows only as the row's last child: an Enter-cloned empty span pushed the word to the right edge. */
+.md-render li.rapier-todo-item>.rapier-todo-label{flex:0 1 auto;min-width:0;white-space:pre-wrap}
+.md-render li.rapier-todo-item>.rapier-todo-label:last-child{flex:1 1 auto}
+.rapier-todo-handle{position:relative;z-index:1}
+.rapier-todo-handle{appearance:none;box-sizing:border-box;flex:none;width:44px;height:44px;margin:0 0 0 calc(-1 * var(--space-2));padding:0;border:0;background:transparent;color:var(--color-text-muted);display:inline-flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none}
+.rapier-todo-handle:active{cursor:grabbing}
+.rapier-todo-handle:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-todo-handle svg{width:22px;height:22px}
+.rapier-todo-handle svg circle{fill:currentColor}
+/* The dragged row follows the finger; its siblings make room by sliding, both without the layout
+   transition that a normal re-render would use. */
+li.rapier-todo-item.rapier-todo-dragging{position:relative;z-index:2;box-shadow:0 4px 16px rgba(0,0,0,.18);background:var(--color-surface);transition:none!important}
+li.rapier-todo-item.rapier-todo-shift{transition:transform 120ms var(--ease-out)}
+
+/* "+ LIST ITEM" appends an empty task line and puts the caret in it (notes/todo.js _rapierTodoAddItem). */
+/* A child of the block wrapper, not .block-read (see notes/todo.js); reproduces .block-read's 1px border. */
+/* THE GRID: plus and handles share the 44px cell from the list's indent; the word starts where the boxes do. At 390x844: cells x 29, boxes x 73. */
+.rapier-todo-add-row{--rapier-todo-grid:calc(var(--space-5) - var(--space-2));margin:var(--space-1) 0 var(--space-3);border-inline:1px solid transparent}
+.rapier-todo-add{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:0;width:100%;min-height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--color-text-muted);font:var(--text-base) var(--font-sans);text-align:left;cursor:pointer;touch-action:manipulation}
+.rapier-todo-add:focus-visible{color:var(--color-text-secondary)}
+@media (hover:hover) and (pointer:fine){.rapier-todo-add:hover{color:var(--color-text-secondary)}}
+.rapier-todo-add:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+/* Plus centred in the handles' cell; the word's left edge on the boxes' left edge. */
+.rapier-todo-add-plus{flex:none;width:44px;margin-left:var(--rapier-todo-grid);text-align:center;font:var(--fw-medium) 1.5rem/1 var(--font-sans)}
+.rapier-todo-add-word{font:var(--fw-medium) var(--text-xs)/1 var(--font-mono);text-transform:uppercase;letter-spacing:var(--track-caps)}
+
+/* No focus hairline around a tick-box list in Notes: the colour goes, the 1px stays so nothing reflows. */
+body.rapier-notes-mode #editor-blocks>.block-wrapper:has(ul.contains-task-list)>.block-read,
+body.rapier-notes-mode #editor-blocks>.block-wrapper:has(ul.contains-task-list)>.block-edit{border-color:transparent}
+
+/* DOM keeps file order (taps map by it); CSS order gathers ticked items under the chevron. Closed by default, in-session memory. */
+ul.rapier-todo-list,ol.rapier-todo-list{display:flex;flex-direction:column}
+li.rapier-todo-ticked-row{order:1;display:block;list-style:none;margin:0;padding:0}
+li.rapier-todo-ticked-row::before{content:none!important}
+li.rapier-todo-item.rapier-todo-done{order:2;opacity:.62}
+.rapier-todo-list--closed>li.rapier-todo-done:not(.rapier-todo-branch-open){display:none}
+li.rapier-todo-branch-open{order:0!important}
+.rapier-todo-ticked{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:var(--space-2);width:100%;min-height:44px;padding:0 var(--space-1);border:0;border-radius:0;background:transparent;color:var(--color-text-muted);font:var(--text-sm) var(--font-sans);text-align:left;cursor:pointer;touch-action:manipulation}
+.rapier-todo-ticked:focus-visible{color:var(--color-text-secondary)}
+@media (hover:hover) and (pointer:fine){.rapier-todo-ticked:hover{color:var(--color-text-secondary)}}
+.rapier-todo-ticked:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-todo-ticked svg{flex:none;width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform 160ms var(--ease-micro)}
+.rapier-todo-ticked--closed svg{transform:rotate(-90deg)}
+
+@media(prefers-reduced-motion:reduce){.rapier-todo-ticked svg,li.rapier-todo-item.rapier-todo-shift{transition:none}}
+
+/* The ink tick (engine.js _rapierInkTick): the row stays while it inks, then shuts. None under reduced motion. */
+ul.rapier-todo-list>li.rapier-todo-done.rapier-inking,ol.rapier-todo-list>li.rapier-todo-done.rapier-inking{display:flex;order:0;animation:rapier-todo-settle 240ms linear 120ms both}
+li.rapier-todo-done.rapier-ink-leaving{overflow:hidden;min-height:0;height:0!important;margin-block:0;padding-block:0;opacity:0;transition:opacity 100ms linear,height 220ms cubic-bezier(.3,0,0,1) 60ms,margin 220ms cubic-bezier(.3,0,0,1) 60ms,padding 220ms cubic-bezier(.3,0,0,1) 60ms}
+@keyframes rapier-todo-settle{from{opacity:1}}

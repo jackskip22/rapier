@@ -1,0 +1,28 @@
+{
+  "name": "rapier",
+  "displayName": "Rapier",
+  "version": "1.1.9+skills.c404883f4f469a1f7b8ab73619de8da3f985d0f69b1574588e8ae2e9bc40a224",
+  "description": "Make a working document the person can keep editing after the chat, improve a Rapier document through narrow reviewable changes, or check and deliver it with exact source. Rapier carries the editor, Markdown, pictures and editable drawings in an offline page with no account, an inspectable diff and an optional return address. Its shared-document tools read by structure and edit inspected passages under the person's Will and review policy. Use when an editable deliverable, an existing Rapier document or an app embedding the editor is wanted. Sentence rewrites, summaries and replies requested only in the conversation stay there.",
+  "author": {
+    "name": "Jack Skipworth",
+    "url": "https://rapier.website"
+  },
+  "homepage": "https://rapier.website/agents",
+  "repository": "https://github.com/jackskip22/rapier",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "markdown",
+    "editor",
+    "documents",
+    "writing",
+    "drawing",
+    "diagrams",
+    "notes",
+    "offline",
+    "review",
+    "diff",
+    "embed",
+    "mcp",
+    "self-contained markdown"
+  ]
+}

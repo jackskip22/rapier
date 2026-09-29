@@ -1,0 +1,15 @@
+Pretext 0.0.9
+Copyright (c) 2026 Pretext contributors
+https://github.com/chenglou/pretext
+MIT license: see LICENSE.
+
+Vendored from the user-supplied pretext-main source snapshot.
+SOURCE.json records every original and generated module hash.
+Node's built-in TypeScript transform generated these ESM modules;
+the upstream runtime implementation is unchanged.
+
+Upstream README credits Sebastian Markbage's text-layout research:
+canvas measureText for shaping, bidi from pdf.js, and streaming line breaking.
+Upstream src/bidi.ts identifies its simplified bidi metadata helper as
+forked from pdf.js through Sebastian's text-layout. This provenance applies
+to the generated bidi.js module as well.

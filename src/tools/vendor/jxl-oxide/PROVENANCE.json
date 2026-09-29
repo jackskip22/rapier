@@ -1,0 +1,54 @@
+{
+  "package": "jxl-oxide-wasm",
+  "version": "0.12.6",
+  "source": "https://github.com/tirr-c/jxl-oxide/tree/0.12.6",
+  "tarball": "https://registry.npmjs.org/jxl-oxide-wasm/-/jxl-oxide-wasm-0.12.6.tgz",
+  "tarballIntegrity": "sha512-nZlPNSJidFAjkTqNcxxqdac/DxY0oNqr/Q98xOb3UutQyvopHjyubnW7KCjvwFuAr3Lew6xRe+7/zZ8tkbFxug==",
+  "tarballSha256": "bc70f9371c51c1f5fd5d47700d52f6a25665f8c00ff3a181f461cf6ba27e1760",
+  "publishedOn": "2026-05-29",
+  "retrievedOn": "2026-09-08",
+  "license": "MIT OR Apache-2.0",
+  "files": {
+    "LICENSE-APACHE": {
+      "bytes": 9723,
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "gzip9Bytes": 3554
+    },
+    "LICENSE-MIT": {
+      "bytes": 1023,
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "gzip9Bytes": 619
+    },
+    "jxl_oxide_wasm.js": {
+      "bytes": 19323,
+      "sha256": "d9a314abc55d167e94e2d995ce6ab5276f86ef9de41f06df11fef3acf55ff6b7",
+      "gzip9Bytes": 4042
+    },
+    "package.json": {
+      "bytes": 983,
+      "sha256": "a9c683448e059a5fdfba66d5fbefc4d4ec9382d40b2e3794196c61fe6a239e22",
+      "gzip9Bytes": 440
+    },
+    "README.md": {
+      "bytes": 408,
+      "sha256": "b6cb75f53746d049e4a1acf7791f744e75fcda984d50e29cbf992335d509bff7",
+      "gzip9Bytes": 261
+    },
+    "jxl_oxide_wasm_bg.wasm.d.ts": {
+      "bytes": 2687,
+      "sha256": "b3e50f28472d3666b1aa7086683bab33b5f2c326b6691c837b10f9e5a3f76fa4",
+      "gzip9Bytes": 481
+    },
+    "jxl_oxide_wasm.d.ts": {
+      "bytes": 5103,
+      "sha256": "15fc323617538cf2f25c7f8877ccd01b4de2cdf03a8cf0d2d9e8d04f96222c50",
+      "gzip9Bytes": 1244
+    },
+    "jxl_oxide_wasm_bg.wasm": {
+      "bytes": 1698491,
+      "sha256": "3336f3abd4a04fccc437e7a84f12d4b63c12f302044110867f99be14c4c75a69",
+      "gzip9Bytes": 604416
+    }
+  },
+  "vendorModifications": "None. These are the original npm release files. Rapier build wrapper changes and memory-limit patching, if applied, affect only assembled copies."
+}

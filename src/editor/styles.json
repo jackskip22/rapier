@@ -1,0 +1,42 @@
+[
+  {
+    "id": "rapier-font-style",
+    "path": "shell/fonts/fonts.css"
+  },
+  {
+    "id": "rapier-content-style",
+    "path": "spec/markdown-style.css"
+  },
+  {
+    "id": "rapier-app-style",
+    "path": "editor/styles/rapier-app.css"
+  },
+  {
+    "id": "rapier-editor-style",
+    "path": "editor/styles/rapier-editor.css"
+  },
+  {
+    "id": "rapier-highlight-style",
+    "path": "editor/styles/rapier-highlight.css"
+  },
+  {
+    "id": "rapier-source-style",
+    "path": "editor/styles/rapier-source.css"
+  },
+  {
+    "id": "rapier-info-style",
+    "path": "editor/styles/rapier-info.css"
+  },
+  {
+    "id": "rapier-draw-style",
+    "path": "editor/styles/rapier-draw.css"
+  },
+  {
+    "id": "rapier-notes-style",
+    "path": "editor/styles/rapier-notes.css"
+  },
+  {
+    "id": "rapier-todo-style",
+    "path": "notes/rapier-todo.css"
+  }
+]

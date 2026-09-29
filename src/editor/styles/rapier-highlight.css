@@ -1,0 +1,68 @@
+/* One owner of code colour. The CPU reading (editor/code-tokens.mjs) and the GPU lexer
+   (shell/vendor/gpu-lexer-0.0.1.js) emit the same nine token types -- plain comment string number
+   keyword type function constant operator -- as `tok-<type>` spans inside a code element marked
+   `tok`; the source view's rows are `tok-line`. `plain` has no span, and `operator` keeps the text
+   colour, as the operator class had under both themes before. Every colour below is the one the
+   equivalent highlight.js class had, class for class, in both themes: comment (and quote), string,
+   number, keyword, constant (literal), type and function (title, class and built-in). */
+.tok, .source-highlight code { color: var(--color-text); background: transparent; }
+
+/* Measured, not assumed (docs/architecture.md keeps this instrument honest): the transparent
+   .source-highlight overlay sits exactly over the live textarea, so a token's box must match the
+   textarea's own glyph geometry there or the overlay's colour drifts off the real caret/selection.
+   Direct measurement of Rapier's own two source fonts settled which properties actually move:
+   Geist Mono (.source-mode--code -- markdown source AND real code files) has identical advance
+   width at every weight and style tested (400/600/700 roman and italic all measured equal), so
+   the Accent/Standard themes' bold keywords and italic comments never drift there and keep the
+   founder's look exactly as designed, untouched below. Geist Sans (.source-mode--prose -- plain
+   text files only) does NOT: its real bold face measured ~7% wider than regular over a short run
+   (its italic face, by contrast, measured identical width to roman -- so italic needs no
+   correction anywhere). Only font-weight, only in .source-mode--prose, is therefore ever forced
+   back to the textarea's own weight; colour and every other property stay exactly as themed. */
+.source-mode--prose .source-highlight code,
+.source-mode--prose .source-highlight code * {
+	font-weight: inherit !important;
+}
+
+/* Accent: the theme's own tokens, so light and dark follow without a rule of their own. */
+html[data-highlights="accent"] .tok-comment { color: var(--color-text-subtle); font-style: italic; }
+html[data-highlights="accent"] .tok-keyword,
+html[data-highlights="accent"] .tok-constant,
+html[data-highlights="accent"] .tok-type,
+html[data-highlights="accent"] .tok-function { color: var(--color-accent-text); font-weight: 600; }
+html[data-highlights="accent"] .tok-string { color: var(--color-text-secondary); }
+html[data-highlights="accent"] .tok-number { color: var(--color-text); }
+
+/* Standard: One Dark on dark paper, One Light on light. The palette is two rules of custom
+   properties, so a page written for the system theme (which has no body.light to switch) retints
+   under a light system setting from the one body.light rule _rapierArtifactStyles lifts into a
+   media query. */
+html[data-highlights="standard"] {
+	--tok-comment: #7a7a7a; --tok-keyword: #c678dd; --tok-string: #98c379; --tok-number: #d19a66; --tok-type: #61afef;
+}
+html[data-highlights="standard"] body.light {
+	--tok-comment: #6a737d; --tok-keyword: #a626a4; --tok-string: #50a14f; --tok-number: #986801; --tok-type: #4078f2;
+}
+html[data-highlights="standard"] .tok-comment { color: var(--tok-comment); font-style: italic; }
+html[data-highlights="standard"] .tok-keyword,
+html[data-highlights="standard"] .tok-constant { color: var(--tok-keyword); font-weight: 600; }
+html[data-highlights="standard"] .tok-string { color: var(--tok-string); }
+html[data-highlights="standard"] .tok-number { color: var(--tok-number); }
+html[data-highlights="standard"] .tok-type,
+html[data-highlights="standard"] .tok-function { color: var(--tok-type); font-weight: 600; }
+
+/* Off: every token in the text colour; the source rows keep their place. */
+html[data-highlights="off"] .tok,
+html[data-highlights="off"] .source-highlight code,
+html[data-highlights="off"] .tok *:not(.tok-line),
+html[data-highlights="off"] .source-highlight code *:not(.tok-line) {
+	color: var(--color-text) !important;
+	font-weight: inherit !important;
+	font-style: inherit !important;
+	background: transparent !important;
+}
+html[data-highlights="off"] .source-highlight code .tok-line {
+	color: var(--color-text) !important;
+	font-weight: inherit !important;
+	font-style: inherit !important;
+}

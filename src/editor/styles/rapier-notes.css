@@ -1,0 +1,1006 @@
+/* R86 Notes: the card surface over the notes folder (docs/notes-cards.md). Rapier's own tokens,
+   Geoffrey's words-in-caps mono chrome, nothing invented. Two lighting rules as in Draw: the chrome
+   by the theme; a card's colour the theme's own mate of a pair, pale under dark words in the light
+   and deep under white words in the dark, so the theme's text reads on every card. */
+/* START IN NOTES (Lane X's X12): the html class notes/notes.js sets at its evaluation keeps the
+   editor's chrome unpainted until Notes is up, so the first thing seen is Notes' own ground (the
+   surface's --notes-page, spelled out here because the variable lives on the surface). The toasts and
+   the confirm stay: the cache warning is asked over this ground. */
+html.rapier-notes-start body{background:#191919}
+html.rapier-notes-start body.light{background:#dddbd7}
+html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
+.rapier-notes-surface{position:fixed;inset:0;z-index:880;display:flex;flex-direction:column;background:var(--notes-page);color:var(--color-text);overflow:hidden;--notes-gap:8px;--notes-cols:2}
+.rapier-notes-surface{transition:opacity 150ms linear}
+.rapier-notes-surface--closing{opacity:0}
+@starting-style{.rapier-notes-surface--in{opacity:0}}
+.rapier-notes-surface--closing{pointer-events:none}
+/* the head is the surface's own background, never a grey band (R86i, the founder: "the top bar in
+   notes must not be grey either"); only the section labels are grey */
+.rapier-notes-head{flex:none;display:flex;align-items:center;gap:var(--space-1);height:44px;padding:0 var(--space-2);background:transparent}
+.rapier-notes-btn{appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:transparent;color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;white-space:nowrap;cursor:pointer;touch-action:manipulation}
+.rapier-notes-btn--accent{background:var(--color-accent);color:var(--color-accent-foreground)}
+.rapier-notes-btn[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-notes-btn:focus-visible svg{stroke-width:3;transform:scale(.85)}
+.rapier-notes-btn svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rapier-notes-wordmark{appearance:none;flex:0 1 auto;min-width:0;min-height:44px;margin:0;padding:0;border:0;border-radius:0;background:transparent;font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:.02em;color:var(--color-text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rapier-notes-back{padding:0 var(--space-2) 0 var(--space-1)}
+.rapier-notes-back svg{width:26px;height:26px}
+.rapier-notes-btn[data-active]{background:var(--color-icon);color:var(--color-bg);height:44px}
+.rapier-notes-find{flex:none;height:var(--find-bar-h);min-height:0}
+.rapier-notes-find[hidden]{display:none}
+.rapier-notes-search{flex:1 1 auto;min-width:0;min-height:44px;height:calc(1.5em + 8px);padding:0 var(--space-2);border:0;border-radius:0;background:var(--color-surface-hover);color:var(--color-text);font:var(--text-sm) var(--font-mono)}
+/* the main view's find bar carries no cancel glyph (its input is plain text); this one matches it */
+.rapier-notes-search::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+/* The founder, 25 September 2026, night: "rapier should not be showing system scroll indicator at the
+   same time as rapier scroll indicator. always hide" (docs/intent.md law 26). The circle is the cards'
+   one indicator; the browser's own bar never stands beside it. */
+/* The founder, 26 September 2026 (docs/intent.md law 37): the cards' margins are the cards' gap -- the
+   scroller's side padding is --notes-gap, the same 8 px that stands between two cards of a row. */
+.rapier-notes-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:0 var(--notes-gap) calc(var(--notes-foot) + var(--space-2));scrollbar-width:none}
+.rapier-notes-scroll::-webkit-scrollbar{display:none;width:0;height:0}
+.rapier-notes-scroll{padding-top:calc(var(--space-2) + var(--notes-bar-room,0px))}
+/* The foot of the cards. The founder, 23 September 2026: "at the very bottom, the nav buttons are
+   white on Android. We could put a white gradient at the bottom ... fading from white to 0%
+   transparency at the very bottom of the screen ... sort of over the top of the notes." The app's own
+   ground -- white in the light, black in the dark, the colour the system bars take (theme-color) --
+   solid under the system bar and fading out 32px above it: over the cards, under every sheet, the
+   snackbar and the circle, never in a finger's way. The list's own foot room lets the last card
+   scroll clear of it. */
+.rapier-notes-surface{--notes-foot:calc(var(--native-inset-bottom,env(safe-area-inset-bottom,0px)) + 32px)}
+.rapier-notes-surface::after{content:'';position:absolute;left:0;right:0;bottom:0;z-index:5;height:var(--notes-foot);background-image:linear-gradient(to top,var(--color-bg) calc(var(--notes-foot) - 32px),transparent);pointer-events:none}
+/* The travel the overlaying search / plus bars need. A list shorter than the screen cannot be
+   scrolled at all, so the offset that is supposed to cancel the bar's padding clamps to zero and
+   the room becomes a shove -- see _rapierNotesBarRoom, which measures how much travel is missing
+   and gives this element exactly that. Zero high the rest of the time. */
+.rapier-notes-scroll__room{height:var(--notes-scroll-room,0px);pointer-events:none}
+/* the circle: the main view's fast-scroll indicator, permanent here, a plus cut out of it (the
+   founder: the background shows through the plus); it overhangs the right edge as the main one does */
+.rapier-notes-fab{position:absolute;right:-9px;top:60px;z-index:8;width:60px;height:60px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--color-accent);opacity:.5;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent}
+.rapier-notes-fab svg{display:block;width:60px;height:60px;fill:currentColor}
+.rapier-notes-fab--tracking,.rapier-notes-fab:focus-visible{opacity:.82}
+.rapier-notes-fab:focus-visible{outline:none;opacity:1}
+/* the sheet's scrim: Geoffrey's own (.track-action-overlay, background:var(--color-scrim), which
+   Rapier already carries at the same bytes in both themes), fading in over --dur-enter on
+   --ease-out exactly as Geoffrey's does */
+/* The toasts while the cards are up (notes/notes.js _rapierNotesToastHome moves the toast root into
+   this surface): above the cards, the foot and the snack, under the scrim (9) and the sheets (10). */
+.rapier-notes-surface>#toast-root{z-index:8}
+.rapier-notes-popup{position:absolute;inset:0;z-index:9;opacity:0;background:var(--color-scrim);transition:opacity var(--dur-enter) var(--ease-out)}
+.rapier-notes-popup--up{opacity:1}
+.rapier-notes-popup[hidden]{display:none}
+.rapier-notes-popup-title{padding:var(--space-2) var(--space-3) var(--space-1);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-secondary)}
+/* The founder's §6: four doors on ONE line, evenly split, and MUTED -- they were in the person's
+   own accent, "and it is garish". Geoffrey's sheet language is grey: its row ground, --color-surface-2,
+   with the text colour on it. */
+.rapier-notes-add{appearance:none;display:flex;align-items:center;justify-content:center;min-width:0;min-height:48px;padding:0 var(--space-1);border:0;border-radius:0;background:var(--color-surface-2);color:var(--color-text);font:var(--fw-medium) 11px/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+@media (hover:hover) and (pointer:fine){.rapier-notes-add:hover{background:var(--color-surface-hover)}}
+.rapier-notes-add[disabled]{opacity:.32;cursor:default}
+.rapier-notes-card p{display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
+.rapier-notes-section{position:relative;margin-top:0}
+.rapier-notes-section:not([hidden])~.rapier-notes-section{margin-top:var(--space-4)}
+.rapier-notes-section[hidden]{display:none}
+/* The founder's §10 gave the head the plus and the minus; the founder, 24 September, gave it its
+   shape: "get rid of the number of notes contained within each category that lives on the left of
+   it, and on the right of each title, we currently have the plus and minus symbol. I want you to
+   move that to be above instead. So keep everything perfectly central, stack that plus minus symbol
+   central above the title of the category, just right above it on the line above, and slightly
+   increase the gaps between sections as well ... you could double the gap." Two centred lines --
+   the sign, then the name -- on the head's own midline, which is the card grid's (the head and the
+   grid share the scroller's padding box); no count; the gap above a section doubled (8 to 16). The
+   founder, 26 September (law 38: "reduce the gap above PINNED, move notes up closer to nav bar"): that
+   gap is between sections -- the first visible one keeps none above it -- and Pinned's head, the word
+   alone, is no taller than its word: one small gap under the scroller's padding, its cards one gap
+   under the word (in reorder mode it keeps the rows' height, so the list of movable rows is even). */
+.rapier-notes-section-head{appearance:none;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;width:100%;min-height:44px;padding:var(--space-1) var(--space-2);border:0;border-radius:0;background:transparent;color:var(--color-text-secondary);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;text-align:center;cursor:pointer;touch-action:manipulation}
+.rapier-notes-section-head .rapier-notes-section-word{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Pinned's head is the word alone and no control (notes.js _rapierNotesSectionEl): nothing to press. */
+div.rapier-notes-section-head{cursor:default;min-height:0;padding:var(--space-1) var(--space-2) var(--notes-gap)}
+/* the plus and the minus, as the settings panel already does them: one glyph box, the two signs
+   crossfading in it (editor/styles/rapier-source.css .settings-disclosure-title__glyph) */
+.rapier-notes-section-glyph{display:grid;flex:none;width:1em;height:1em;font:var(--fw-regular) 1.2em/1 var(--font-sans);letter-spacing:0}
+.rapier-notes-section-glyph::before,.rapier-notes-section-glyph::after{grid-area:1/1;display:grid;place-items:center;transition:opacity 110ms ease-out}
+.rapier-notes-section-glyph::before{content:"+";opacity:0}
+.rapier-notes-section-glyph::after{content:"\2212";opacity:1}
+.rapier-notes-section--closed .rapier-notes-section-glyph::before{opacity:1}
+.rapier-notes-section--closed .rapier-notes-section-glyph::after{opacity:0}
+/* R86i law 10: the section a dragged card would land in says so, in the house worn mark on its own
+   word -- no new chrome, nothing drawn on the grid */
+.rapier-notes-section-word{padding:0 4px}
+.rapier-notes-section--over .rapier-notes-section-word{background:var(--color-icon);color:var(--color-bg)}
+/* #409: a section is earned, not tripped (notes/notes.js _rapierNotesDragSection). While the carried
+   card waits the 400 ms over it, the same worn mark fills the word from the left -- the word drawn
+   again in the mark's ink over the mark, revealed as the mark grows, so what is covered reads
+   inverted and nothing else is drawn; pulled away, the fill goes with the class. Full, it is the
+   solid mark above. Under reduced motion the class is never set: the mark is placed at once. */
+.rapier-notes-section-word{position:relative}
+.rapier-notes-section-word::after{content:attr(data-word);position:absolute;left:0;top:0;width:100%;height:100%;box-sizing:border-box;padding:0 4px;background:var(--color-icon);color:var(--color-bg);clip-path:inset(0 100% 0 0);pointer-events:none}
+.rapier-notes-section--taking .rapier-notes-section-word::after{clip-path:inset(0 0 0 0);transition:clip-path 400ms linear}
+/* Trash's own promise, under its title, in the head's own secondary colour -- a sentence, not shouted caps */
+.rapier-notes-grid{position:relative;min-height:0}
+.rapier-notes-section--closed .rapier-notes-grid{display:none}
+.rapier-notes-empty{padding:var(--space-2) 0;color:var(--color-text-muted);font:var(--text-sm) var(--font-mono)}
+.rapier-notes-card-unread{color:var(--color-text-secondary);font:var(--text-sm) var(--font-mono)}
+/* The card's ground is its colour's mate for the theme, or the surface's card ground when it has none
+   (white on the light page, black on the dark one: a flat box, marked by its fill -- no hairline,
+   tools/check-flat-surfaces.mjs). Every word on it is the text colour itself -- the "+ N checked
+   items" foot, a link's domain and an unread card's reason included: pure black on a pale mate,
+   pure white on a deep one. The founder, 24 September 2026, on a lane's "near-black" words: "pure
+   black text is all we ever use. the whole point is contrast." Never the app's fixed grey, which
+   is lost on a deep ground (#a1a1a1 on the deep teal is 2.9:1), and never a mix. */
+.rapier-notes-card{--notes-card-bg:var(--notes-tint,var(--color-surface-2));--color-text-secondary:var(--color-text);position:absolute;top:0;left:0;box-sizing:border-box;width:var(--notes-card-w,calc((100% - var(--notes-gap)) / 2));padding:var(--space-3);background:var(--notes-card-bg);color:var(--color-text);cursor:pointer;user-select:none;-webkit-user-select:none;transform:translate3d(var(--x,0px),var(--y,0px),0);transition:transform var(--notes-spring-ms,200ms) var(--notes-spring,var(--ease-out)),box-shadow 120ms linear;touch-action:pan-y;outline:0}
+/* the ring is the card's own text colour, which reads on every ground; the accent can be the card's own hue. A selected card
+   wears this outline and nothing else (the founder, 25 September 2026: "they already have an outline drawn around them when
+   you select them, and that's all they need" -- the disc that stood at its top-left corner is gone). */
+.rapier-notes-card:focus-visible,.rapier-notes-card--selected{box-shadow:inset 0 0 0 2px var(--color-text)}
+/* R86z, the founder: the held card grows a little in the hand and the finger carries that card itself; while it is carried its transform is the finger's (no transition), and on the drop the same transition the other cards ride takes it into its slot. It keeps its own ground -- its colour is what the finger is carrying -- and casts no shadow: the founder, 25 September 2026, "get rid of the drop shadow that is cast when you are moving a note around" (docs/intent.md "The afternoon list", law 5). */
+.rapier-notes-card--held,.rapier-notes-card--dragging{z-index:20;transform:translate3d(var(--x,0px),var(--y,0px),0) scale(1.05)}
+.rapier-notes-card--held{transition:transform 160ms var(--ease-out),box-shadow 160ms linear}
+.rapier-notes-card--dragging{transition:none}
+.rapier-notes-card[data-notes-settling]{z-index:20}
+/* The lift (docs/notes-cards.md §20; notes/notes.js _rapierNotesLiftGrow / _rapierNotesLiftBack): a layer
+   over the whole screen holding the page's own ground (which dissolves what is leaving), the plate (the
+   card's colour, a box that only transforms, from the card's box to the bar's or the whole screen and
+   back) and the card's words on the plate (riding its corner, cut off by its foot). Every part moves by
+   transform and opacity alone, as Web Animations on one clock, so the compositor runs it while the note
+   loads. It takes the taps while a note opens (a second card cannot be tapped under it), none once the
+   note is coming in or on the way back (a finger on a card as the plate lands reaches the card). */
+.rapier-notes-lift{position:fixed;inset:0;z-index:895;overflow:hidden;pointer-events:auto}
+.rapier-notes-lift--past{pointer-events:none}
+/* the page's ground: the inner layer rises over what is leaving, the outer gives way to what arrives --
+   one fade each (notes/notes.js _rapierNotesLiftLayers) */
+.rapier-notes-lift-page{position:absolute;inset:0}
+.rapier-notes-lift-page>div{height:100%;background:var(--color-bg);opacity:0}
+.rapier-notes-lift-ground{position:absolute;inset:0;transform-origin:0 0;background:var(--color-surface-2)}
+.rapier-notes-lift-clip{position:absolute;left:0;top:0;overflow:hidden}
+.rapier-notes-lift .rapier-notes-card{position:static;width:var(--lift-face-w,100%);transform:none;transition:none;box-shadow:none;background:transparent;cursor:default;z-index:auto}
+.rapier-notes-lift-face{color:var(--color-text)}
+/* the card is the plate while the lift runs: its own slot stands empty until the plate lands --
+   transparent, never hidden, so a finger on it as the plate lands still opens it */
+.rapier-notes-card--lifted{opacity:0}
+/* The founder, 25 September 2026, night (docs/intent.md law 35): "a bit of space below the title of note
+   before body text below" -- 8 px under the title, where it was 4. */
+.rapier-notes-card h3{margin:0 0 var(--space-2);font:var(--fw-semibold,600) var(--text-base) var(--font-sans);line-height:1.25;word-break:break-word}
+.rapier-notes-card p{margin:0;font:var(--text-sm) var(--font-sans);line-height:1.35;word-break:break-word}
+.rapier-notes-card p+p{margin-top:2px}
+/* R86i law 3: the note rendered in the card -- the document's own HTML, sized for a card, clamped, the cut faded into the card's ground; nothing in it is a control except the boxes. */
+.rapier-notes-card-body{position:relative;max-height:240px;overflow:hidden;font:var(--text-sm) var(--font-sans);line-height:1.35;color:var(--color-text);word-break:break-word}
+.rapier-notes-card-body--clamped::after{content:"";position:absolute;left:0;right:0;bottom:0;height:32px;background:linear-gradient(to bottom,transparent,var(--notes-card-bg));pointer-events:none}
+.rapier-notes-card-body>*{margin:0 0 4px}.rapier-notes-card-body>:last-child{margin-bottom:0}
+.rapier-notes-card-body h1,.rapier-notes-card-body h2,.rapier-notes-card-body h3,.rapier-notes-card-body h4,.rapier-notes-card-body h5,.rapier-notes-card-body h6{font:var(--fw-semibold,600) var(--text-base) var(--font-sans);line-height:1.25}
+.rapier-notes-card-body p{margin:0 0 4px;font:inherit;line-height:inherit;color:inherit;display:block;-webkit-line-clamp:unset}
+/* The shell clears every list's markers (rapier-app.css) and only .md-render draws its own, so a
+   card's list kept its indent and lost its bullets, and a numbered list its numbers. */
+.rapier-notes-card-body ul,.rapier-notes-card-body ol{padding-inline-start:18px;list-style:disc}.rapier-notes-card-body ol{list-style:decimal}.rapier-notes-card-body ul ul{list-style:circle}.rapier-notes-card-body li{margin:0 0 2px}
+.rapier-notes-card-body li.rapier-notes-check{list-style:none;margin:0;margin-inline-start:-18px}
+.rapier-notes-card-body img,.rapier-notes-card-body svg,.rapier-notes-card-body video{display:block;max-width:100%;height:auto;margin:4px 0;border-radius:0}
+.rapier-notes-card-body pre,.rapier-notes-card-body code{font:var(--text-xs) var(--font-mono)}.rapier-notes-card-body pre{overflow:hidden;white-space:pre-wrap;padding:4px 6px;background:color-mix(in srgb,var(--color-text) 8%,transparent)}
+.rapier-notes-card-body a{color:inherit;text-decoration:underline;pointer-events:none}
+.rapier-notes-card-body blockquote{margin:0 0 4px;padding-inline-start:8px;border-inline-start:2px solid color-mix(in srgb,var(--color-text) 40%,transparent)}
+.rapier-notes-card-body table{border-collapse:collapse;font-size:var(--text-xs)}.rapier-notes-card-body td,.rapier-notes-card-body th{padding:1px 4px;border:1px solid color-mix(in srgb,var(--color-text) 25%,transparent)}
+.rapier-notes-card-body hr{margin:4px 0;border:0;border-top:1px solid color-mix(in srgb,var(--color-text) 25%,transparent)}
+.rapier-notes-card-body input[type=checkbox]{margin:0 4px 0 0}
+.rapier-notes-card-body li.rapier-notes-check--folded{display:none}
+/* "+ N checked items" is a row like the items above it: its words on the boxes' edge, the card's own
+   12px under them (it was a 44px box with its words in the middle, which left a finger's width of
+   empty card under every list). No negative foot: the body's content would outgrow its box, and the
+   card's clamp (notes/notes.js, scrollHeight against clientHeight) would fade the words out. */
+.rapier-notes-fold{appearance:none;display:block;min-width:44px;margin:0;padding:4.5px 0 0;border:0;background:transparent;color:var(--color-text-secondary);font:var(--text-xs)/1.35 var(--font-mono);letter-spacing:.02em;cursor:pointer;text-align:left}
+/* The card body clips at the fold's own line: the focus underline rides the baseline so all 3px of it show. */
+.rapier-notes-fold:focus-visible{text-underline-offset:0}
+.rapier-notes-card-link{margin-top:2px;color:var(--color-text-secondary);font:var(--text-xs) var(--font-mono);letter-spacing:.02em}
+/* R86i law 11: the pictures a note opens with, edge to edge above the title, each at its own proportions, nothing cut; rows justified to the card's width (the flex-grow and the aspect ratio are the picture's own, set by the shell). */
+.rapier-notes-card .rapier-notes-card-cover{display:block;margin:calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) var(--space-2);-webkit-line-clamp:unset;line-height:0}
+/* A card that is only its pictures ends at the picture, as Keep's does: no body under the cover means
+   no room kept for one (the cover's margin and the card's padding made a 20 px strip, Lane X's X19). */
+.rapier-notes-card--picture{padding-bottom:0}.rapier-notes-card--picture .rapier-notes-card-cover{margin-bottom:0}
+.rapier-notes-collage{display:flex;flex-direction:column;gap:2px}
+.rapier-notes-collage-row{display:flex;gap:2px;align-items:flex-start;overflow:hidden}
+/* No `object-fit:cover` here, and the reason is worth keeping: it was never doing anything in the
+   case it was written for, and in the other case it broke the law above. _rapierNotesCollageShape
+   gives a tile whose natural size is known BOTH a flex-grow of w/h and an `aspect-ratio` of w/h,
+   so the box is already the picture's own shape and there is nothing to cover to. When the natural
+   size is NOT known yet -- before the decode, or if the picture never reports one -- that function
+   falls back to `flex-grow:1` with no aspect ratio, the box takes whatever shape the row gives it,
+   and cover then CUTS the picture. That is the only state in which this rule ever had an effect,
+   and it is the state law 11 forbids. So the tile shows its whole self while it is still an
+   unknown, and snaps to its own proportions the moment _rapierNotesCollageLoaded re-shapes it. */
+.rapier-notes-collage-row img{flex:1 1 0;min-width:0;width:auto;height:auto;max-width:none;object-fit:contain;margin:0;border-radius:0}
+.rapier-notes-card-cover img{display:block;margin:0;border-radius:0}
+.rapier-notes-card p.rapier-notes-card-cover img{width:100%;max-width:none;height:auto}
+/* The founder's §9: the same collage INSIDE the open note. A run of picture blocks is laid out
+   where it stands -- the blocks are the person's own and are never moved -- so each one floats to
+   the share of the row its picture's shape earns it (notes/notes.js _rapierNotesPicLay writes the
+   width), the first of every row clears the row above, and the block after the run stands below
+   the floats rather than beside the last of them. A float changes nothing for any other block:
+   the note's words keep the flow they always had. */
+body.rapier-notes-mode #editor-blocks>.block-wrapper.rapier-notes-pic{float:left;margin-top:0;margin-bottom:2px}
+body.rapier-notes-mode #editor-blocks>.block-wrapper.rapier-notes-pic-row{clear:left}
+body.rapier-notes-mode #editor-blocks>.block-wrapper.rapier-notes-pic-last{margin-bottom:var(--space-2)}
+body.rapier-notes-mode #editor-blocks>.block-wrapper.rapier-notes-pic-after{clear:both}
+/* the tile is the picture and nothing else: no reading padding, no line box under it */
+/* the read box's own 1 px hover border would be taken off every tile's width equally and off no
+   tile's height, so a row's pictures would stop sharing one height; a tile has no border */
+body.rapier-notes-mode .rapier-notes-pic>.block-read{padding:0;min-height:0;line-height:0;border-width:0}
+body.rapier-notes-mode .rapier-notes-pic>.block-read>p{margin:0;line-height:0}
+/* a tile is as wide as its row gives it: a drawing in a row keeps no legible floor of its own (spec/markdown-style.css) */
+body.rapier-notes-mode .rapier-notes-pic img{display:block;width:100%;min-width:0;max-width:none;height:auto;margin:0;border-radius:0}
+/* #editor-blocks already carries an ::after for the extent hold; in Notes it contains the floats too */
+body.rapier-notes-mode #editor-blocks::after{clear:both}
+/* The Title field (task #369). The founder, 23 September 2026: "we also need to make sure users
+   understand there even is a title input field that's separate to the body". While a note is open,
+   its title -- the first line of words when it is a level-one heading, the model's one rule -- wears
+   the card's own big title (.rapier-notes-card--title h3 below: 600, 1.75rem, a tight line) in the
+   ink itself, with no rule under it, no fold control (a title is not a section) and no edge while it
+   is written in (the founder on the list's edge, 21 September: "It's ugly... They shouldn't even know
+   that it exists inside of a block"). An empty field says what it is for in the placeholder colour
+   every input uses: Title, and Note under it. Each word is `content`: drawn, never a byte in the
+   file, never found by Find, never copied. The rows are the fields a note without a title or a body
+   still shows (notes/notes.js _rapierNotesHeadLay); a tap on one opens that field. */
+/* a row is a block's own box (its padding, its 1px edge, its least height), so a field that turns
+   into a block when it is tapped does not move the words under it */
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot{appearance:none;display:block;clear:both;box-sizing:border-box;width:100%;min-height:1.75em;margin:0 0 var(--space-2);padding:calc(var(--space-1) + 1px) 1px;border:0;border-radius:0;background:none;color:var(--color-text-subtle);font:var(--fw-regular) 1.1rem/1.75 var(--font-sans);text-align:start;cursor:text;-webkit-user-select:none;user-select:none}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-slot--title){margin-bottom:var(--space-3)}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-title>:is(.block-read,.block-edit),
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title{font:var(--fw-semibold,600) 1.75rem/1.12 var(--font-sans);letter-spacing:-.02em;border-color:transparent}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-title :is(h1,p){margin:0;padding:0;border:0;font:inherit;letter-spacing:inherit}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-title>.section-fold-btn,body.rapier-notes-mode #empty-doc-prompt{display:none}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-title.block-wrapper--empty>.block-edit::before,
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--title::before{content:'Title'}
+body.rapier-notes-mode #editor-blocks>.rapier-notes-note.block-wrapper--editing.block-wrapper--empty>.block-edit::before,
+body.rapier-notes-mode #editor-blocks>.rapier-notes-note.block-wrapper--empty:not(.block-wrapper--editing)>.block-read::before,
+body.rapier-notes-mode #editor-blocks>.rapier-notes-slot--note::before{content:'Note'}
+body.rapier-notes-mode #editor-blocks>:is(.rapier-notes-title,.rapier-notes-note)>:is(.block-read,.block-edit)::before{position:absolute;color:var(--color-text-subtle);pointer-events:none}
+/* A block being edited in a note wears no edge: the editor's 1 px focus border (rapier-editor.css) keeps
+   its width, so nothing moves, and loses its colour -- Notes' surfaces are flat (Lane Z's find). */
+body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border-color:transparent}
+/* The card's check rows. The founder, 23 September 2026, with Keep's yellow list card: "It should
+   only ever be squares for the checkboxes, and, like, the alignment isn't proper there." The painted
+   box is a 14px square on the content edge the title starts from, its centre on the centre of the
+   words' first line (his fifth report of the 21st: "every checkbox is vertically misaligned from its
+   own text"); the words follow 8px after it; a row is its line and 9px, so a list reads as
+   Keep's does (it was a 12px rounded square 16px in from the title's edge, the words 50px in, the
+   rows 46px apart). Every box stays a control (R86e) with a 44px-wide target the height of its own
+   row: the side margins take the overhang out of the flow, and the rows touch without overlapping,
+   so a finger on one box never reaches its neighbour's. */
+.rapier-notes-check{display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--space-2);margin:0;padding:4.5px 0;font:var(--text-sm) var(--font-sans);line-height:1.35}
+.rapier-notes-check>ul,.rapier-notes-check>ol{flex:0 0 calc(100% - 1.5em);margin-inline-start:1.5em;margin-block:0}
+.rapier-notes-check--done{text-decoration:line-through}
+.rapier-notes-check--done:has(ul,ol){text-decoration:none}
+.rapier-notes-check-box{position:relative;flex:none;width:44px;height:calc(1lh + 9px);margin:-4.5px -15px;padding:0;box-sizing:border-box;border:0;border-radius:0;background:none;color:inherit;cursor:pointer;font:inherit}
+/* The box and its tick are Feather's square and check-square with square corners, as in a note, and
+   the very glyphs a note's task list wears (spec/markdown-style.css names them once, --md-glyph-task-*): the 14px box is units 3-21 of Feather's 24-unit grid, so the grid is 18.67px
+   drawn 2.33px up and left of the box, and a ticked box opens at its corner for the tick. */
+.rapier-notes-check-box::before,.rapier-notes-check-box[aria-pressed="true"]::after{content:'';position:absolute;left:calc(15px - 14px / 6);top:50%;width:calc(14px * 4 / 3);height:calc(14px * 4 / 3);margin-top:calc(-14px * 2 / 3);background:currentColor;-webkit-mask:var(--md-glyph-task-box) center/100% 100% no-repeat;mask:var(--md-glyph-task-box) center/100% 100% no-repeat}
+.rapier-notes-check-box:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.rapier-notes-check-box[aria-pressed="true"]::before{-webkit-mask-image:var(--md-glyph-task-open);mask-image:var(--md-glyph-task-open)}
+.rapier-notes-check-box[aria-pressed="true"]::after{-webkit-mask-image:var(--md-glyph-task-tick);mask-image:var(--md-glyph-task-tick)}
+.rapier-notes-card--pending::after{content:'';position:absolute;left:var(--px,50%);top:var(--py,50%);width:0;height:0;box-sizing:border-box;border:2px solid var(--color-accent);border-radius:50%;transform:translate(-50%,-50%);opacity:.9;pointer-events:none;animation:rapier-notes-press 500ms linear forwards}
+@keyframes rapier-notes-press{to{width:56px;height:56px}}
+/* a pinned card's own pin: the same fill, by the same law (§13, "that's actually what Google Keep
+   does as well") -- the shape filled pure white or pure black, never the person's accent */
+/* on the content edge, centred on the title's first line (it stood 4px out from the edge and 6px
+   above the title's line), 8px clear of the words */
+.rapier-notes-mark{position:absolute;top:var(--space-2);right:var(--space-2);width:16px;height:16px;stroke:var(--color-icon);fill:var(--color-icon);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rapier-notes-card--pinned h3{padding-inline-end:24px}
+/* The founder, 23 September 2026, from Keep's "Pack for trip": "if a note only had a title and no
+   body, the card view renders the title really big, love that, we need that." The card's own title,
+   its family and weight, at 28px on a tight line; the pin stays on its first line. */
+.rapier-notes-card--title h3{margin:0;font-size:1.75rem;line-height:1.12;letter-spacing:-.02em}
+/* A note that is only a link is the link and its domain (R86i law 8), not a headline: the address
+   in the body's own size and weight, broken where it must be, the domain under it. */
+.rapier-notes-card--link h3{font:var(--text-sm)/1.35 var(--font-sans);overflow-wrap:anywhere}
+.rapier-notes-snippet{margin-top:var(--space-1);font:var(--text-sm) var(--font-sans)}
+/* a search's match, wherever it is marked: in the snippet, or in the card's own title */
+.rapier-notes-snippet mark,.rapier-notes-card h3 mark{background:color-mix(in srgb,var(--color-accent) 35%,transparent);color:inherit}
+/* Text in pictures: a hit the words of a picture hold wears the picture's own glyph before its snippet, and the note opened
+   from that search marks the found words over the picture, in the same mark, where the reader saw them (notes/ocr.js). */
+.rapier-notes-snippet--picture svg{width:14px;height:14px;margin-right:4px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rapier-ocr-marked{position:relative}
+.rapier-ocr-marks{position:absolute;pointer-events:none}
+.rapier-ocr-mark{position:absolute;top:0;left:0;width:100%;height:100%;background:color-mix(in srgb,var(--color-accent) 35%,transparent)}
+/* the reminder chip (R86h): a small bell and the model's own words, "(missed)" included */
+.rapier-notes-remind{display:flex;align-items:center;gap:4px;margin-top:var(--space-1);font:var(--text-sm) var(--font-sans)}
+.rapier-notes-remind svg{flex:none;width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* M3 on a card: one row for each recording the note carries, under the body -- its ▶ and the duration in the note's player's own words. The card is a preview, not the note's player: no bar, no waveform; the ▶ plays and pauses the recording where it is, and a tap anywhere else is the card's and opens the note. */
+.rapier-notes-recording{display:flex;align-items:center;gap:0;margin-top:var(--space-1);border-radius:0;font:var(--text-sm) var(--font-sans)}
+.rapier-notes-recording+.rapier-notes-recording{margin-top:0}
+/* The ▶ is the row's one control (notes/recorder.js _rapierRecorderCardButton): a 44 px reach, its
+   glyph standing where the card's words start. */
+.rapier-notes-recording-play{flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;margin-left:-14px;padding:0;border:0;border-radius:0;background:none;color:inherit;cursor:pointer}
+.rapier-notes-recording-play svg{width:16px;height:16px;stroke:none;fill:currentColor}
+.rapier-notes-recording-play:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-notes-recording-time{font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* the snackbar after an archive or a delete, or a due reminder (OPEN/DONE in place of UNDO): one line, six seconds except a reminder, which waits to be answered */
+.rapier-notes-snack{touch-action:none;position:absolute;left:var(--space-2);right:var(--space-2);bottom:calc(var(--space-2) + env(safe-area-inset-bottom,0px));z-index:6;display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-3);background:var(--color-icon);color:var(--color-bg);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;transform:translateY(calc(100% + var(--space-3)));transition:transform 180ms var(--ease-out)}
+.rapier-notes-snack--open{transform:translateY(calc(0px - var(--rapier-notes-snack-lift, 0px)))}
+.rapier-notes-snack[data-rapier-transient-state="waiting"]{visibility:hidden}
+.rapier-notes-snack span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;white-space:normal}
+.rapier-notes-snack .rapier-notes-btn{flex:none;color:inherit}
+/* The colour sheet (the afternoon list, law 7; the founder, 25 September 2026: "two rows of five,
+   symmetrical, big stacked circles ... as big as possible. That's our visual flair"): five equal
+   columns across the sheet's own width inside its padding, one 12 px gutter across and down, each
+   circle as wide as its column -- 60.4 px at 390, 46.4 at 320, 68.4 at 430 -- and a wide screen
+   stops the row at 440 px, centred. A swatch is the card's own ground in this theme, so what is
+   picked is what the card wears; no colour, whose card ground is the sheet's own and would not
+   show, is a row's ground struck through in the ink. The chosen one wears the ink tick, scaled with
+   the circle, and no ring: a fill and a mark, never a line drawn round it. */
+.rapier-notes-swatches{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;width:100%;max-width:440px;align-self:center}
+.rapier-notes-swatch{appearance:none;position:relative;width:100%;aspect-ratio:1;padding:0;border:0;border-radius:50%;background:var(--notes-tint,transparent);cursor:pointer;touch-action:manipulation}
+.rapier-notes-swatch--none{background:var(--notes-row)}
+.rapier-notes-swatch--none::before{content:'';position:absolute;left:50%;top:50%;width:72%;height:2px;background:var(--color-text);transform:translate(-50%,-50%) rotate(-45deg)}
+.rapier-notes-swatch[aria-checked="true"]::before{content:none}
+.rapier-notes-swatch[aria-checked="true"]::after{content:'';position:absolute;left:50%;top:44%;width:30%;height:15%;border-left:3px solid var(--color-text);border-bottom:3px solid var(--color-text);transform:translate(-50%,-50%) rotate(-45deg)}
+/* the sheet's labels */
+.rapier-notes-chips{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:var(--space-1);padding:0 var(--space-1)}
+.rapier-notes-chip{appearance:none;display:inline-flex;align-items:center;gap:4px;min-height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:color-mix(in srgb,var(--color-text) 10%,transparent);color:var(--color-text);font:var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+.rapier-notes-chip--worn{background:var(--color-icon);color:var(--color-bg)}
+.rapier-notes-chip svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.rapier-notes-label-form{flex:1 1 100%;display:flex;gap:var(--space-1);padding:0 var(--space-1)}
+.rapier-notes-label-form .rapier-notes-search{height:44px}
+/* the Remind face's own labels: the sheet's language is caps mono, and these are of the sheet */
+.rapier-notes-remind-label{padding:var(--space-2) var(--space-3) 0;font:var(--fw-medium) 11px/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-secondary)}
+/* The founder's §14, the date picker Notes draws for itself (notes/notes.js
+   _rapierNotesRemindPicker). Geoffrey's own numbers throughout: the ground of a row (--notes-row, so
+   the days, steps and chips stand off the sheet as its rows do; on surface-2 they were white on the
+   white sheet), no radius anywhere, 44 px targets, caps mono at 11px on --track-caps -- and the §13
+   fill for what is chosen, pure white in the dark and pure black in the light, never the accent. */
+.rapier-notes-cal{display:flex;flex-direction:column;gap:6px}
+.rapier-notes-cal-head{display:flex;align-items:center;gap:var(--space-1);min-height:44px}
+.rapier-notes-cal-title{flex:1 1 auto;text-align:center;font:var(--fw-medium) 11px/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text)}
+.rapier-notes-cal-step{appearance:none;flex:none;width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:0;background:var(--notes-row);color:var(--color-text);cursor:pointer;touch-action:manipulation}
+.rapier-notes-cal-step svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rapier-notes-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.rapier-notes-cal-name{display:grid;place-items:center;height:22px;font:var(--fw-medium) 10px/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--color-text-muted)}
+.rapier-notes-cal-day{appearance:none;display:grid;place-items:center;min-height:40px;border:0;border-radius:0;background:var(--notes-row);color:var(--color-text);font:var(--fw-medium) 12px/1 var(--font-mono);letter-spacing:.02em;cursor:pointer;touch-action:manipulation}
+.rapier-notes-cal-day--out{background:transparent}
+.rapier-notes-cal-day[disabled]{opacity:.32;cursor:default}
+/* today is a darker box with its number in bold, never a ring (Y5: a 1 px inset ring is a hairline
+   the flat-surfaces gate cannot see); the day the person has chosen FILLS (§13) */
+.rapier-notes-cal-day--today{background:color-mix(in srgb,var(--color-text) 24%,var(--color-surface));font-weight:var(--fw-bold,700)}
+.rapier-notes-cal-day--on{background:var(--color-icon);color:var(--color-bg)}
+/* The time (the afternoon list, law 6): a clear gap under the month, TIME in the sheet's own caps label,
+   and one box -- the browser's own time field, on the phone the system's clock -- dressed as a row of
+   the sheet: its ground, its height and its word's size (law 25), 14 px in, caps mono, the pure ink,
+   nothing drawn round it. Focused, it takes the hover's step toward the ink. Its colour scheme is the
+   theme's (body.light), so what the browser draws inside it is drawn for the ground it stands on. */
+.rapier-notes-cal-time{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.rapier-notes-cal-clock{appearance:none;-webkit-appearance:none;box-sizing:border-box;display:block;width:100%;min-width:0;height:56px;margin:0;padding:0 14px;border:0;border-radius:0;background:var(--notes-row);color:var(--color-text);font:var(--fw-medium) 22px/56px var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;text-align:start;cursor:pointer;touch-action:manipulation}
+.rapier-notes-cal-clock:focus{outline:0;background:color-mix(in srgb,var(--color-text) 16%,var(--color-surface))}
+.rapier-notes-sheet .rapier-notes-cal-set{justify-content:center;margin-top:2px}
+
+/* A version's own change, shown before a person puts it back: the note's own words, one line per
+   line, with what would come in and what would go marked by their ground rather than by a sign. */
+.rapier-notes-diff-line{padding:1px var(--space-2);font:var(--text-xs) var(--font-mono);white-space:pre-wrap;word-break:break-word;color:var(--color-text)}
+.rapier-notes-diff-line[data-notes-diff="add"]{background:color-mix(in srgb,var(--color-accent) 18%,transparent)}
+.rapier-notes-diff-line[data-notes-diff="cut"]{background:color-mix(in srgb,var(--color-text) 12%,transparent);text-decoration:line-through}/* the action sheet a held-then-lifted card opens */
+/* GEOFFREY'S BOTTOM SHEET, by its own numbers (handover/reference/geoffrey.html,
+   .track-action-overlay / .track-action-sheet / .track-action-list / .track-action-button, read
+   after the light-and-dark overrides that are the live ones). The founder, 22 September: "In
+   Rapier, we use the Jeffrey UI ... The bottom sheets in there are perfect. The style is perfect."
+   Square corners -- Geoffrey writes NO radius anywhere on the sheet -- the surface ground, 8px of
+   air above the rows and 20px at the sides and below, a 6px gap between rows, and NO drag handle:
+   the founder's §4, "looks absolutely terrible. We don't do that in our design language, and it
+   should never have been added." The sheet rides in and out on transform alone, 250ms on
+   --ease-out (Geoffrey's --dur-enter and its own easing, which are already Rapier's tokens to the
+   byte), and the gesture that dismisses it is Geoffrey's, ported in notes/notes.js
+   (_rapierNotesSheetSwipe: 7px to start, 88px or 42px above 0.52px/ms to commit, 170ms out,
+   150ms back). Geoffrey's max-height is the viewport less its top bar and 12px; Notes' sheet is
+   inside its own surface, so the same sentence reads in per cent of that surface. */
+.rapier-notes-sheet{position:absolute;left:0;right:0;bottom:0;z-index:10;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 44px - 12px);overflow:auto;overscroll-behavior:contain;padding:var(--space-2) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom,0px));background:var(--color-surface);color:var(--color-text);transform:translate3d(0,100%,0);visibility:hidden;transition:transform var(--dur-enter) var(--ease-out),visibility 0s linear var(--dur-enter);will-change:transform;touch-action:pan-y}
+/* Down, the sheet is hidden for real once its slide has run (a visibility that turns after the
+   transform's own duration), never a box waiting below the fold to be painted where it is not: an
+   empty closed sheet once showed as a 28 px white band at the foot of the cards, its transform
+   saying it had gone while its box had not moved (Lane X's X21, seen once). Up, it is visible at
+   once and slides. */
+.rapier-notes-sheet--open{transform:translate3d(0,0,0);visibility:visible;transition-delay:0s}
+/* Geoffrey's row: min-height 48, padding 0 14, a row's ground (--notes-row, set with the Notes palette
+   at the foot of this file: Geoffrey's surface-2 step, off the sheet's own ground), the icon 21px at the LEFT with
+   15px between it and the word, the word in all-caps mono. Geoffrey tracks its own rows at .08em;
+   Rapier's typographic law (docs/intent.md, witness typography-caps-tracking) keeps ONE owner for
+   caps tracking and refuses a literal at or above .06em in a stylesheet, so the row takes
+   --track-caps. That is the one number here that is Rapier's rather than Geoffrey's, and it is
+   Rapier's because the founder wrote that law too.
+   And then the size (the founder, 25 September 2026, night, law 25: "make the text significantly
+   bigger, the options like delete, duplicate ... like, double that size", and the icons "a bit
+   bigger", in every sheet alike): the word is 22px where it was 11, on a line of 1.15 for a row that
+   wraps, the icon 26px where it was 21, 16px from the word, and the row 56px where it was 48 so the
+   larger word keeps its air. A sheet taller than the screen scrolls inside itself (its max-height).
+   At this size a long row wraps, and it wraps pretty: never one word left alone on its last line, so
+   "8:00" keeps its "am" and SET's time stays whole. */
+.rapier-notes-sheet .rapier-notes-btn{justify-content:flex-start;gap:16px;min-height:56px;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-wrap:pretty;text-align:start;padding:0 14px;background:var(--notes-row);color:var(--color-text);font:var(--fw-medium) 22px/1.15 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
+.rapier-notes-sheet .rapier-notes-btn svg{flex:none;width:26px;height:26px;color:var(--color-text)}
+/* a further step toward the ink, so the hover lifts off the row in both themes */
+@media (hover:hover) and (pointer:fine){.rapier-notes-sheet .rapier-notes-btn:hover{background:color-mix(in srgb,var(--color-text) 16%,var(--color-surface))}}
+/* the section face's rows (the afternoon list): the house rows, and the section the selection is in
+   FILLED with the ink, its word and folder in the ground (§13), never the accent; after the hover so
+   the fill stays under a pointer */
+.rapier-notes-section-rows{display:flex;flex-direction:column;gap:6px}
+.rapier-notes-sheet .rapier-notes-btn[aria-checked="true"]{background:var(--color-icon);color:var(--color-bg)}
+.rapier-notes-sheet .rapier-notes-btn[aria-checked="true"] svg{color:var(--color-bg)}
+.rapier-notes-sheet .rapier-notes-btn--accent{justify-content:center;background:var(--color-accent);color:var(--color-accent-foreground)}
+/* Geoffrey dims a row it cannot offer to .32 */
+.rapier-notes-sheet .rapier-notes-btn[disabled]{opacity:.32;cursor:default}
+/* the sheet now carries its own 20px side inset (Geoffrey's), so nothing inside it insets again */
+.rapier-notes-sheet .rapier-notes-popup-title{padding:var(--space-2) 14px var(--space-1)}
+.rapier-notes-sheet .rapier-notes-label-form{padding:var(--space-2) 0}
+/* A field on a sheet wears the row tint (Y4: the section face's New section field had the sheet's own
+   ground under it and no box of its own). */
+.rapier-notes-sheet .rapier-notes-search{background:var(--notes-row)}
+/* a sheet row may wrap its words; the field's own Add may not, or it reads AD above D; and the field
+   is as tall as the rows beside and above it */
+.rapier-notes-sheet .rapier-notes-label-form .rapier-notes-btn{flex:none;justify-content:center;white-space:nowrap;overflow-wrap:normal}
+.rapier-notes-sheet .rapier-notes-label-form .rapier-notes-search{height:56px;font-size:22px}
+.rapier-notes-sheet .rapier-notes-chips,.rapier-notes-sheet .rapier-notes-swatches{padding:var(--space-1) 0}
+.rapier-notes-sheet .rapier-notes-remind-label{padding:var(--space-2) 0 0}
+.rapier-notes-sheet .rapier-notes-diff-line{padding:1px 0}
+.rapier-notes-sheet .rapier-notes-conn-none{padding:var(--space-1) 0 var(--space-2)}
+.rapier-notes-sheet .rapier-notes-import-lines{padding:var(--space-1) 0 var(--space-2) var(--space-5)}
+.rapier-notes-sheet .rapier-notes-import-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:56px;padding:var(--space-2) 14px;text-align:left}
+.rapier-notes-sheet .rapier-notes-import-row[aria-expanded="true"]{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+.rapier-notes-import-title{font:var(--text-base) var(--font-sans);color:var(--color-text)}
+.rapier-notes-import-when{font:var(--text-sm) var(--font-sans);color:var(--color-text-secondary)}
+.rapier-notes-import-lines{margin:0;padding:var(--space-1) var(--space-4) var(--space-2) var(--space-6);font:var(--text-sm) var(--font-sans);color:var(--color-text-secondary)}
+.rapier-notes-import-lines li{margin:0 0 var(--space-1)}
+/* Geoffrey's .track-action-head (min-height 58, the copy flexed to fill) and .track-action-title
+   (620 20px/1.15 sans, -.035em, the text colour, clipped with an ellipsis). No face of the house
+   sheet carries a title (the afternoon list, law 2); this is the heading the recording and file
+   dialogs keep over what they hold (notes/recorder.js, notes/attachments.js). */
+.rapier-notes-sheet-name{flex:none;display:flex;align-items:center;min-height:58px;padding:0;font:620 20px/1.15 var(--font-sans);letter-spacing:-.035em;color:var(--color-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The nine note colours, a pair each; grey left the palette (the founder, 24 September 2026).
+   "Light coloured cards only for light mode, dark mode gets rich colours with white text";
+   "a little more intense ... not ... so washed out" (23 September); the teal "properly
+   distinguished from green" (24 September). The pairs are the founder's own verdict of the 24th,
+   night, colour by colour over Astra's T5 and the pairs before it: red, purple and blue as he
+   chose them (blue is T5's), orange "deeper and slightly darker ... more complex", yellow's deep
+   mate an amber (a dark yellow under pure white ink can only be an olive, a mustard or an amber:
+   Keep's answer too), green "darker ... towards the yellow spectrum so it's further from teal",
+   teal "towards the green spectrum ... easier to distinguish from blue", pink "natural and less
+   saturated ... a little darker in dark mode", brown "slightly less saturated". Then, seeing them:
+   "now orange looks like brown in dark mode, that's not the orange I wanted. yellow also still
+   looks yucky in dark mode. but the rest are pretty good" -- under pure white ink at 7:1 a dark
+   orange is brownish and a dark yellow an amber, so he was shown both hues on the real cards at
+   five contrast rungs each and chose: "i like yellow 3.5 and orange 4.6" (#b47e00 at 3.544303:1,
+   #c35400 at 4.576609:1; the other seven deep mates hold 7.395490:1 or better). Later that night
+   he named two more himself: "please make dark teal this colour: #0a534a and adjust light theme
+   to match the hue" and "make green darker in the dark theme, more like a dark natural leafy
+   green"; then, seeing them: "I was wrong again on teal ... needs to shift a little towards green
+   spectrum from where it is now because now it looks too much like light blue in light mode ...
+   green can also change to Green E to be richer". So teal is six degrees toward green from his
+   hex at its lightness and chroma (#115346; the pale keeps the old pale's lightness and chroma at
+   that hue, #a2f0dc), and green is E off the ladder of dark greens rendered beside his teal on the
+   real cards (#234814; tools/witnesses/_use-colour-ladder.mjs, RAPIER_USE_LADDER=green). His fourth word:
+   "let's try making dark pink into #8e3563 and changing light pink to match and change dark purple
+   to #330033 and light to match" -- both deep mates his hex, both pale mates the old pales' lightness
+   and chroma at his hues. His purple is a magenta, 23 degrees from his pink, so those two pale mates
+   sat 0.038 apart in OKLab; shown a ladder of pale purples beside the pale pink
+   (RAPIER_USE_LADDER=purple, the light theme) he kept the purple's hue exactly -- "I just love that
+   precise dark purple" -- and moved the pink instead: "make the light pink even lighter. light pink
+   can become extra pale pink", so the pale pink is #ffdbea (L 0.93, C 0.044 at his pink's hue). His
+   sixth word: "make purple even a little bit darker in light mode, just for slightly more contrast with
+   the pink. keep exact same dark mode purple colour unchanged. and change the dark blue to #030284
+   lovely royal hue": the pale purple is #e9b5e6 (L 0.835, C 0.088 at his purple's hue, 0.103 from the
+   pale pink), the deep blue his #030284 (OKLCH L 0.28, C 0.19, hue 265; white ink 15.6:1). Opaque fills on
+   --notes-page, not alpha over white: pure black ink in the light, pure white in the dark,
+   secondary words too. Measured from the hex: pale minimum contrast 11.890087:1 (floor 11.8),
+   C 0.036964-0.122; deep minimum contrast 3.544303:1 (floor 3.5), OKLCH L 0.225302-0.631330 (band
+   0.22-0.64). Closest Delta E OK: light red/orange 0.061089549, dark green/teal 0.067389696
+   (floors 0.061 / 0.067). Green/teal: light 0.079345514 / 41.003 degrees, dark 0.067389696 /
+   38.236 degrees; teal at H 176.479 / 176.186, 69 and 89 degrees from blue. The theme picks the
+   mate. The sidecar keeps the names (notes/model.mjs NOTE_COLOURS); WidgetColours
+   (android/app/src/main/java/app/rapier/WidgetModel.kt) paints these exact hex pairs. Re-measure
+   with node tools/probes/notes-colour-pairs.mjs (source numbers, not a witness for the look). */
+.rapier-notes-tint-red{--notes-pale:#ff6d68;--notes-deep:#811c24}
+.rapier-notes-tint-orange{--notes-pale:#ff8f4b;--notes-deep:#a72906}
+.rapier-notes-tint-yellow{--notes-pale:#ffef62;--notes-deep:#b47e00}
+.rapier-notes-tint-green{--notes-pale:#5eac56;--notes-deep:#002104}
+/* law 40 (the founder, 26 September): "change dark teal to #0c534d" -- his own hex (L 0.40, C 0.066, hue 186; white ink 8.9:1) */
+.rapier-notes-tint-teal{--notes-pale:#3ddabb;--notes-deep:#0c534d}
+.rapier-notes-tint-blue{--notes-pale:#00a2e2;--notes-deep:#011f67}
+/* law 43 (the founder, 26 September): "adjust light purple only to #d485fc, dark purple should stay exactly the same" */
+.rapier-notes-tint-purple{--notes-pale:#d485fc;--notes-deep:#330033}
+.rapier-notes-tint-pink{--notes-pale:#ffcee3;--notes-deep:#8e3563}
+.rapier-notes-tint-brown{--notes-pale:#c9b49b;--notes-deep:#4f3626}
+[class*="rapier-notes-tint-"]{--notes-tint:var(--notes-deep)}
+body.light [class*="rapier-notes-tint-"]{--notes-tint:var(--notes-pale)}
+@media(min-width:600px){.rapier-notes-surface{--notes-cols:3}.rapier-notes-card{width:var(--notes-card-w,calc((100% - 2 * var(--notes-gap)) / 3))}}
+/* A wide screen gets more columns, not wider cards: Keep's grid keeps a card near 240 px however
+   wide the window (Lane X's X20: at 1280 three columns made 413 px cards with large empty areas).
+   The window model bounds columns at eight; the shell reads --notes-cols and sets each card's width. */
+@media(min-width:900px){.rapier-notes-surface{--notes-cols:4}.rapier-notes-card{width:var(--notes-card-w,calc((100% - 3 * var(--notes-gap)) / 4))}}
+@media(min-width:1200px){.rapier-notes-surface{--notes-cols:5}.rapier-notes-card{width:var(--notes-card-w,calc((100% - 4 * var(--notes-gap)) / 5))}}
+@media(min-width:1500px){.rapier-notes-surface{--notes-cols:6}.rapier-notes-card{width:var(--notes-card-w,calc((100% - 5 * var(--notes-gap)) / 6))}}
+@media(prefers-reduced-motion:reduce){.rapier-notes-card,.rapier-notes-card--held,.rapier-notes-sheet,.rapier-notes-snack,.rapier-notes-surface,.rapier-notes-popup,.rapier-notes-section-glyph::before,.rapier-notes-section-glyph::after{transition:none}.rapier-notes-card--pending::after{animation:none;width:56px;height:56px}}
+body.rapier-notes-open{overflow:hidden}
+/* a question asked from inside Notes (delete forever, unsaved changes) is the editor's own dialog: above the surface, or it is asked unseen */
+body.rapier-notes-open .settings-overlay.restore-modal-overlay{z-index:950}
+
+/* ---- R86i: a note is composed INSIDE Notes ----------------------------------------------------
+   The one editor, the one toolbar, undo and redo where they always are -- and Notes' own chrome
+   over the app's head while a note is open: a plain left arrow back at the left, the note's own
+   pin, remind, archive and kebab at the right. The document's filename control, its find and its
+   settings kebab are not offered here, so the kebab in the top right is the NOTE's (notes/notes.js
+   shows and answers them; the editor's own behaviour is untouched). */
+body.rapier-notes-mode .filename-btn,
+body.rapier-notes-mode .filename-input,
+body.rapier-notes-mode .filename-tail,
+body.rapier-notes-mode #btn-find,
+body.rapier-notes-mode #btn-read-aloud,
+body.rapier-notes-mode #btn-overflow{display:none}
+/* The open note's bar. The founder, 24 September 2026: "once you tap on a coloured note, its colour
+   should apply to the nav bar inside the note at the top, while the regular rapier editor remains
+   below basically. this is actually better than Keep because Keep uses the colour as the text
+   background even once you tap to open the note whereas it's much more reader friendly to have
+   contrast proper and just apply colour in bar at top, we can animate that and perhaps even use a
+   gradient." The bar wears the note's mate for the theme (the pairs above; the shell puts the tint
+   class on the bar while a coloured note is open), its icons the pure ink they always are. The colour
+   arrives by the lift (docs/notes-cards.md §20) and changes at once, never on a transition: at the
+   frame the lift lands the plate is gone and the bar must already be its colour. The founder, 24
+   September, on the veil that fell from the bar's foot: "I changed my mind on the gradient ... get rid
+   of the gradient, have it just be a solid bar at the top. Perfect, same size as the nav bar." So the
+   bar, and only the bar, is solid; the editor keeps its ground from the bar's foot down. */
+body.rapier-notes-mode .top-bar.top-bar--notes-colour{background:var(--notes-tint)}
+/* While the lift runs the plate is the bar's colour and the copies above it are its controls, so the
+   bar itself wears the page's ground and shows no control -- transparent, never hidden: a control keeps
+   its place and its tap (notes/notes.js _rapierNotesLiftGrow / _rapierNotesLiftBack). */
+body.rapier-notes-mode .top-bar.top-bar--notes-lifting{background:var(--color-bg)}
+.top-bar.top-bar--notes-lifting .icon-btn{opacity:0}
+/* The whole page (docs/intent.md law 8; docs/notes-cards.md §22; notes/notes.js _rapierNotesGroundPaint):
+   with the colour mode on the whole page, an open coloured note's ground is its colour -- one layer under
+   the whole screen, under the bar and the editor, which stand clear over it (the bar lifting too: the lift
+   gives way to this ground). The editor wears the tint's tokens: its own ground is the colour, so a fill
+   the page's ground is drawn in (a numbered list's disc, a page break's word) cuts out of the colour; every
+   word is the pure ink the cards use, never the app's softer text colour; a link and the caret are the ink
+   too, since the person's accent can be the note's own hue; a placeholder is the ink half-strength. Code
+   keeps the app's own neutral box, so its colours read as they were made to. */
+.rapier-notes-ground{position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--notes-tint)}
+body.rapier-notes-mode.rapier-notes-paged .top-bar{background:transparent}
+body.rapier-notes-mode #editor-blocks[class*="rapier-notes-tint-"]{--color-bg:var(--notes-tint);--color-text:#ffffff;--color-text-secondary:var(--color-text);--color-text-muted:var(--color-text);--color-text-subtle:color-mix(in srgb,var(--color-text) 55%,transparent);--color-accent-text:var(--color-text);--color-border:color-mix(in srgb,var(--color-text) 28%,var(--notes-tint));--color-border-focus:color-mix(in srgb,var(--color-text) 45%,var(--notes-tint))}
+body.light.rapier-notes-mode #editor-blocks[class*="rapier-notes-tint-"]{--color-text:#000000}
+/* A control's copy through the lift: its glyph, standing where the glyph stands, above the lift, in its
+   own ink and fill (set by the script from the control); the control under it is kept transparent. */
+.rapier-notes-lift-glide{position:fixed;z-index:897;box-sizing:border-box;margin:0;border:0;background:transparent;pointer-events:none}
+.rapier-notes-lift-glide svg{display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rapier-notes-glided{opacity:0!important}
+/* The founder, 24 September evening: "the undo buttons being exactly where they are on the main Rapier
+   screen". So the bar's buttons keep the editor's own width and gap in Notes (the 44 px override is
+   gone): undo and redo do not move, the plus stands where find stands, the kebab where settings does.
+   The left is the arrow, then the pin (and the bell, app only), with the actions set's own 2 px gap. */
+body.rapier-notes-mode .filename-normal{gap:2px}
+body.rapier-notes-mode #btn-notes-back .icon{width:28px;height:28px}
+/* The founder, 25 September 2026, night: "inside a note, the plus button, make it bigger" (docs/intent.md
+   law 22). The glyph is 32 px where the other head glyphs are 24; the button keeps its 48 px box. */
+body.rapier-notes-mode #btn-notes-plus svg{width:32px;height:32px}
+/* The founder's §13, and Geoffrey's and Keep's own way with a worn control: it fills its own
+   SHAPE, pure white in the dark and pure black in the light (--color-icon) -- "not an accent
+   tint", and not a grey block either. The bell fills while its face is up (the date picker lives
+   inside that face) and while a reminder is set; the pin fills while the note is pinned. */
+body.rapier-notes-mode #btn-notes-pin[data-active],
+body.rapier-notes-mode #btn-notes-remind[data-active],
+body.rapier-notes-mode #btn-notes-remind[data-notes-filled]{background:transparent;color:var(--color-icon)}
+body.rapier-notes-mode #btn-notes-pin[data-active] svg,
+body.rapier-notes-mode #btn-notes-remind[data-active] svg,
+body.rapier-notes-mode #btn-notes-remind[data-notes-filled] svg{fill:currentColor}
+/* the note's own sheet, up from the foot OVER the open note: the surface is the scrim, and the one
+   sheet with the one set of acts is all of it that shows. Geoffrey's own scrim
+   (.track-action-overlay, var(--color-scrim)); Rapier already carries that token at Geoffrey's
+   exact bytes in both themes. */
+/* Two classes, not one. Written as a single `--over` class this rule lost, silently, to a second
+   `.rapier-notes-surface{background:var(--notes-page)}` further down -- equal specificity, later
+   in the file, so source order decided it and the scrim never painted. Grok photographed the
+   result at R87N: the surface behind a raised sheet was rgb(25,25,25), the page's own grey, so a
+   sheet looked like a full-screen mode instead of a thing standing over Notes. The child-hiding
+   rule below kept working, which is why only the sheet showed and the missing dim read as
+   intentional. `.rapier-notes-surface.rapier-notes-surface--over` cannot be beaten by source
+   order, and the page colour has one owner now, the surface's first rule
+   (tools/probes/notes-sheet-background-owner.mjs reads this cascade). */
+.rapier-notes-surface.rapier-notes-surface--over{background:var(--color-scrim)}
+.rapier-notes-surface--over>:not(.rapier-notes-sheet){display:none}
+
+/* ---- R86i: the library -- the search field's chips, selection mode's bar, the note picker and the
+   Connections sheet (docs/intent.md "R86i laws" 8; notes/library.js). House chrome only: the mono
+   caps chip, the surface's own background, the text colour; nothing grey but the section labels. */
+/* The founder, 24 September evening: the filters "need to be joined to that search field ... no gap
+   between them ... the same color as the search bar" (in the light they stood white under the black
+   bar, "in the dark theme"). So the block is the bar's own ground and ink, joined under it, its chips
+   the ink a seventh into that ground and inverted when worn. */
+.rapier-notes-filters{flex:none;display:flex;flex-direction:column;gap:var(--space-1);padding:var(--space-1);background:var(--color-icon);color:var(--color-bg)}
+.rapier-notes-filters .rapier-notes-chip{background:color-mix(in srgb,var(--color-bg) 14%,transparent);color:var(--color-bg)}
+.rapier-notes-filters .rapier-notes-chip--worn{background:var(--color-bg);color:var(--color-icon)}
+.rapier-notes-filters[hidden]{display:none}
+.rapier-notes-filter-row{display:flex;align-items:center;gap:var(--space-1);overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.rapier-notes-filter-row::-webkit-scrollbar{display:none;width:0;height:0}
+.rapier-notes-filter-row .rapier-notes-chip{flex:none}
+/* "the gray color should be removed, and that will leave us with nine colors ... make those nine colors
+   full width ... automatically resize ... rather than horizontally scrolling": nine equal cells across
+   the row, the disc and its ring sized to the cell so a narrow phone shrinks them rather than scrolls. */
+.rapier-notes-filter-row--colours{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:0;overflow:visible}
+/* a colour is its own word: a swatch in a 44 px target, ringed in the text colour while it is on */
+.rapier-notes-swatch-chip{position:relative;flex:none;width:100%;min-width:0;min-height:44px;padding:0;background:transparent}
+.rapier-notes-swatch-chip::before{content:'';position:absolute;left:50%;top:50%;width:min(26px,62%);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:var(--notes-tint,transparent)}
+.rapier-notes-swatch-chip.rapier-notes-chip--worn,.rapier-notes-filters .rapier-notes-swatch-chip.rapier-notes-chip--worn{background:transparent;color:inherit}
+.rapier-notes-swatch-chip[aria-pressed="true"]::after{content:'';position:absolute;left:50%;top:50%;width:min(36px,90%);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;box-shadow:inset 0 0 0 2px var(--color-bg)}
+/* the selection bar sits OVER the head's own row, so the head keeps its height and its order */
+/* The founder, three times in his own words: "the top bar in notes must not be grey either"
+   (docs/intent.md), "never a grey band" (docs/notes-cards.md), "the surface's own background,
+   never a grey band" (docs/notes-library-lane-brief-r86i.md). This bar painted var(--color-bg)
+   -- the APP's background -- and that was the surface's background too until the Notes surface
+   was given its own page colour (--notes-page, #191919 dark and #e9e7e2 light). This rule was
+   not moved with it, so selecting a card laid a pitch-black band across a #191919 page and, in
+   light, a pure-white band across a warm off-white one. The surface's own colour, with the
+   app's as the fallback for anywhere this bar is used outside it. */
+.rapier-notes-selbar{position:absolute;left:0;right:0;top:0;z-index:7;display:flex;align-items:center;gap:var(--space-1);height:44px;padding:0 var(--space-2);background:var(--notes-page,var(--color-bg));color:var(--color-text)}
+.rapier-notes-selbar[hidden]{display:none}
+.rapier-notes-selcount{flex:1 1 auto;min-width:0;padding:0 var(--space-1);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps-ui);color:var(--color-text)}
+.rapier-notes-selbar .rapier-notes-btn{min-width:40px;padding:0 var(--space-2)}
+/* the selection bar's own pin and bell obey §13 too: the shape fills, never the accent */
+.rapier-notes-selbar .rapier-notes-btn[aria-pressed="true"],.rapier-notes-selbar .rapier-notes-btn[data-active],
+.rapier-notes-surface--remind .rapier-notes-selbar [data-notes-act="remind-face"]{background:transparent;color:var(--color-icon)}
+.rapier-notes-selbar .rapier-notes-btn[aria-pressed="true"] svg,.rapier-notes-selbar .rapier-notes-btn[data-active] svg,
+.rapier-notes-surface--remind .rapier-notes-selbar [data-notes-act="remind-face"] svg{fill:currentColor}
+/* the note picker: a small list under the caret in the house panel, never a modal */
+.rapier-notes-picker{position:fixed;z-index:1900;min-width:200px;max-width:min(320px,calc(100vw - 16px));max-height:min(46vh,240px);overflow-y:auto;overscroll-behavior:contain;background:var(--color-surface);color:var(--color-text);box-shadow:0 12px 32px rgba(0,0,0,.35)}
+.rapier-notes-picker[hidden]{display:none}
+.rapier-notes-picker-row{appearance:none;display:flex;align-items:center;width:100%;min-height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:transparent;color:inherit;font:var(--text-sm) var(--font-sans);text-align:left;cursor:pointer}
+.rapier-notes-picker-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rapier-notes-picker-row[aria-selected="true"]{background:var(--color-surface-hover)}
+/* The alias that found the note, under its title (docs/notes-frontmatter.md, "Alias picker"). */
+.rapier-notes-picker-row:has(.rapier-notes-picker-alias){flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding-block:var(--space-1)}
+.rapier-notes-picker-alias{max-width:100%;color:var(--color-text-muted);font:var(--text-xs) var(--font-mono)}
+.rapier-notes-picker-empty{padding:var(--space-2) var(--space-3);color:var(--color-text-muted);font:var(--text-xs) var(--font-mono)}
+/* Connections: the module's three lists as sheet rows, with "link it" beside a mention */
+.rapier-notes-conn-row{display:flex;align-items:center;gap:var(--space-1)}
+.rapier-notes-conn-row .rapier-notes-btn:first-child{flex:1 1 auto;min-width:0}
+.rapier-notes-conn-row .rapier-notes-btn--accent{flex:none;min-height:40px;margin-right:var(--space-3);justify-content:center;text-transform:uppercase;letter-spacing:var(--track-caps-ui);font:var(--fw-medium) var(--text-sm) var(--font-mono)}
+.rapier-notes-conn-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rapier-notes-conn-none{padding:var(--space-1) var(--space-4) var(--space-2);color:var(--color-text-secondary);font:var(--text-sm) var(--font-sans)}
+
+.rapier-recording-sheet{box-sizing:border-box;position:fixed;inset:auto 0 0;width:100%;max-width:540px;max-height:90dvh;margin:0 auto;padding:20px 16px max(20px,env(safe-area-inset-bottom));border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);overflow:auto}
+/* The recording sheet is a real <dialog>.showModal(), so this ::backdrop is what stands between
+   it and the app. It asked for var(--color-bg) -- the PAGE colour -- at .75, which is wrong twice
+   over. `::backdrop` only began inheriting from its originating element in Chrome 122; in every
+   engine before that it inherits from nothing, and Rapier's tokens live on `body`/`body.light`,
+   so `var(--color-bg)` was invalid at computed-value time and the background fell back to
+   transparent: the sheet stood over an UNDIMMED app. And where it does now resolve, the page
+   colour is not a scrim -- in the light theme a 75% white wash that bleaches the app instead of
+   dimming it. Every other scrim in Rapier is var(--color-scrim) (.rapier-notes-popup,
+   .rapier-notes-surface--over); so is this one, with the token's own value written out as the
+   fallback so the dim does not depend on inheritance at all. (.rapier-notes-surface--over was
+   itself dead when this was written, for an unrelated reason -- see its own note above.) The
+   scrim carries its own alpha,
+   which is why the opacity goes: over a 0.8 scrim it would have dimmed the dim. */
+.rapier-recording-sheet::backdrop{background:var(--color-scrim,rgba(12,12,12,0.8))}
+body.light .rapier-recording-sheet::backdrop{background:var(--color-scrim,rgba(246,246,243,0.6))}
+.rapier-recording-sheet .rapier-notes-sheet-name{white-space:normal}
+/* The recorder (notes/recorder.js _rapierRecorderRender): one frame for every phase -- the name, a
+   stage, the one big button, a row of small ones, a caption -- each slot a fixed height, so the
+   sheet never jumps as recording becomes stopping becomes review. The words are the pure pair. The
+   small row stands the thumb-exclusion radius below the big button: DISCARD lives there. */
+.rapier-recording-live{--color-text:#ffffff;display:flex;flex-direction:column}
+body.light .rapier-recording-live{--color-text:#000000}
+.rapier-recording-live[open]{animation:rapier-recording-rise 240ms var(--ease-out)}
+@keyframes rapier-recording-rise{from{transform:translate3d(0,100%,0)}}
+@media (prefers-reduced-motion:reduce){.rapier-recording-live[open]{animation:none}}
+.rapier-recording-name{display:flex;align-items:center;height:56px;font:620 20px/1.15 var(--font-sans);letter-spacing:-.035em}
+.rapier-recording-name--clock{font:var(--fw-medium) 40px/1 var(--font-mono);letter-spacing:0;font-variant-numeric:tabular-nums}
+.rapier-recording-state{margin-left:var(--space-4);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase}
+.rapier-recording-stage{display:flex;align-items:center;height:64px;margin-bottom:var(--space-3)}
+.rapier-recording-said{font:var(--text-base)/1.4 var(--font-sans)}
+/* The level: flat bars in the accent, scaled from the middle by notes/recorder.js; at rest (the
+   microphone not yet recording) they lie at the floor, quieter. */
+.rapier-recording-meter{display:flex;align-items:center;gap:3px;width:100%;height:48px}
+.rapier-recording-meter>span{flex:1 1 0;height:100%;background:var(--color-accent);transform:scaleY(.06)}
+.rapier-recording-meter--rest>span{opacity:.4}
+/* One player (notes/recorder.js _rapierRecorderView), the review's and the note row's: a filled play
+   or pause glyph, a flat bar -- the heard part in the accent, a square thumb, a 44 px reach -- and
+   the time. The bar's heard part is --played, painted by the player. */
+.rapier-recording-player{display:flex;align-items:center;gap:var(--space-2);width:100%;min-width:0}
+.rapier-recording-play.rapier-notes-btn{flex:none;width:44px;min-width:44px;padding:0;margin-left:-10px}
+.rapier-recording-play svg{width:24px;height:24px;fill:currentColor;stroke:none}
+.rapier-recording-bar{--played:0%;flex:1 1 auto;min-width:0;height:44px;margin:0;padding:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer;touch-action:pan-y}
+.rapier-recording-bar::-webkit-slider-runnable-track{height:4px;background:linear-gradient(to right,var(--color-accent) var(--played),color-mix(in srgb,var(--color-text) 28%,transparent) var(--played))}
+.rapier-recording-bar::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border:0;border-radius:0;background:var(--color-accent)}
+.rapier-recording-bar::-moz-range-track{height:4px;background:color-mix(in srgb,var(--color-text) 28%,transparent)}
+.rapier-recording-bar::-moz-range-progress{height:4px;background:var(--color-accent)}
+.rapier-recording-bar::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:0;background:var(--color-accent)}
+.rapier-recording-bar:focus-visible::-webkit-slider-thumb{transform:scale(1.4)}
+.rapier-recording-bar:focus-visible::-moz-range-thumb{transform:scale(1.4)}
+.rapier-recording-bar:disabled{cursor:default;opacity:.4}
+.rapier-recording-player .rapier-recording-time{flex:none}
+.rapier-recording-live .rapier-recording-primary{width:100%;min-height:72px;background:var(--color-text);color:var(--color-bg)}
+.rapier-recording-live .rapier-notes-btn:disabled{opacity:.32;cursor:default}
+.rapier-recording-acts{display:flex;justify-content:space-between;margin:var(--thumb-exclusion) calc(-1 * var(--space-3)) 0}
+.rapier-recording-caption{min-height:4.5em;margin-top:var(--space-5);font:var(--text-sm)/1.5 var(--font-sans)}
+.rapier-recording-hint{font:var(--text-sm) var(--font-sans);line-height:1.5}
+/* Each offer is a flat box on the sheet, the ground of a row one step off the sheet toward its ink
+   (the sheet is the page's own ground, outside the Notes surface's --notes-row): never a line between
+   them (the founder: "We don't use hairlines. We don't use outlines. We just have flat boxes."). */
+.rapier-recording-offer{margin:12px 0;padding:12px 14px;background:color-mix(in srgb,var(--color-text) 10%,var(--color-bg))}
+.rapier-recording-offer-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+/* The note's row (notes/recorder.js _rapierRecorderScan): one flat box -- the player, and under it
+   SAVE, TRANSCRIBE and, at the far end, DELETE. It is a control, not words: no text selection. */
+.rapier-recording-row{display:flex;flex-direction:column;width:100%;max-width:100%;margin:var(--space-1) 0;padding:0 var(--space-2) var(--space-1) var(--space-3);box-sizing:border-box;background:var(--color-surface-2);color:var(--color-text);white-space:normal;-webkit-user-select:none;user-select:none}
+.rapier-recording-row-acts{display:flex;align-items:center;gap:var(--space-1);margin-left:calc(-1 * var(--space-3))}
+.rapier-recording-row-acts .rapier-notes-btn{padding:0 var(--space-3)}
+.rapier-recording-row-acts [data-recording-act="delete"]{margin-left:auto}
+.rapier-recording-time{font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.block-read a.rapier-recording-link{display:none}
+
+.rapier-recording-words{box-sizing:border-box;width:100%;min-height:132px;padding:12px;background:var(--color-bg);color:var(--color-text);border:0;font:inherit;resize:vertical}
+
+/* ==== R87: the main screen's chrome, the founder's 21 September list ============================
+   Nothing below invents a look. The settings panel's every rule is the MAIN panel's, from
+   editor/styles/rapier-source.css -- this file only says where Notes' own copy of it stands and
+   holds the two numbers that a four-across toggle in a 360px panel needs. */
+
+/* 1. THE NAV BAR. "rapier on the left, search and kebab on the right and + dead center."
+   Dead centre is the SCREEN's midline, not the midpoint of whatever is left between the wordmark
+   and the search, so the plus comes out of the row's flow and stands on that line. The wordmark is
+   given room to its right so a long one never runs under it. */
+.rapier-notes-head{position:relative}
+/* The founder, 21 September evening -> later that night: the plus was put on the screen's midline,
+   and he moved it again -- "move the plus icon to the Right... it'll be a nice arrangement of three
+   buttons on the right-hand side... evenly spaced." So it is an ordinary member of the row again,
+   ahead of search, and the three share one gap rather than one of them being placed by hand. */
+/* The founder, 24 September 2026: "the plus icon at the top, which is next to the search icon. The
+   plus icon needs to move to the left slightly. Then those three icons will look more evenly spaced."
+   Slightly was 4px; that evening, "it just needs to move slightly to the left. Ever so slightly", so it
+   is 6: the plus's ink runs edge to edge where the search and the kebab keep to the middle of theirs,
+   so the row reads even with one gap that much wider (measured: ink gaps 31 and 28 px). */
+.rapier-notes-plus{height:44px;padding:0;width:44px;min-width:44px;margin-right:2px}
+/* The founder, 21 September evening: "if you press on the title nav bar in the main view, anywhere
+   that's outside of the buttons, you get sent back to the main Rapier... Nothing should happen."
+   The wordmark used to be flex:1 1 auto with padding-right:calc(50% - 44px), so its BUTTON ran from
+   the arrow to the search icon, passing under the absolutely-positioned plus -- padding is inside a
+   hit box. It is now sized to its own words, and the room beside it is held by a spacer that is not
+   a control. Only the arrow and the word go back. */
+.rapier-notes-head__gap{flex:1 1 auto;min-width:0;height:44px;pointer-events:none}
+.rapier-notes-plus svg{width:26px;height:26px}
+
+/* 2. THE TWO BARS UNDER IT. The founder: "when you press the search icon in the main notes screen,
+   that shouldn't push down the notes, the notes should stay where they are and search popup appears
+   on top just like in main rapier your document should always stay where it is." So the find bar,
+   its filters and the plus's own bar are taken out of the column's flow and laid OVER the scroller,
+   joined to the head above them. The scroller keeps its own height, so not one card moves. */
+.rapier-notes-find,.rapier-notes-addsbar,.rapier-notes-filters{position:absolute;left:0;right:0;z-index:6}
+/* Reorder is a MODE, not a pop-up over the cards: its bar takes its own row in the column, because
+   the section headings it asks you to drag must all be reachable under it. */
+.rapier-notes-reorderbar{flex:none}
+.rapier-notes-find,.rapier-notes-addsbar{top:44px}
+.rapier-notes-filters{top:calc(44px + var(--find-bar-h))}
+.rapier-notes-addsbar[hidden],.rapier-notes-reorderbar[hidden]{display:none}
+/* The plus's bar carries the four doors rather than a field: "evenly spaced in 4." The founder, 24
+   September evening: "divide that bar evenly in four and put boxes around those options in the exact
+   same style as we use for the slide up panels ... flat gray boxes ... an icon for each of them to the
+   left ... leave the font size the same". So each door is a flat box of the bar's own ink a seventh
+   into its ground (the sheet rows' one step, --notes-row, on this inverted ground), its glyph at the
+   left of its word, the four sharing the bar's width with the sheets' own 4 px between them. */
+.rapier-notes-addsbar{gap:var(--space-1);padding:var(--space-1)}
+.rapier-notes-addsbar .rapier-notes-add{flex:1 1 0;min-width:0;min-height:calc(var(--find-bar-h) - 2 * var(--space-1));gap:6px;background:color-mix(in srgb,var(--color-bg) 14%,transparent);color:var(--color-bg)}
+.rapier-notes-addsbar .rapier-notes-add svg{flex:none;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (hover:hover) and (pointer:fine){.rapier-notes-addsbar .rapier-notes-add:hover{background:color-mix(in srgb,var(--color-bg) 24%,transparent)}}
+.rapier-notes-addsbar .rapier-notes-add:focus-visible{outline:none;background:color-mix(in srgb,var(--color-bg) 30%,transparent)}
+/* Reorder says so on the same joined bar, and offers the one way out of the mode. */
+.rapier-notes-reorderbar{justify-content:space-between}
+.rapier-notes-reorderbar__word{color:var(--color-bg);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
+.rapier-notes-reorderbar__done{flex:none;min-height:44px;padding:0 var(--space-3);background:var(--color-bg);color:var(--color-text)}
+/* The search's filter chips: "spread the four filter options out evenly horizontally not clustered
+   left like right now." The four kinds take a quarter of the row each; the person's own sections,
+   which may be many, keep their own scrolling row underneath. */
+.rapier-notes-filter-row--kinds{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-1);overflow:visible}
+.rapier-notes-filter-row--kinds .rapier-notes-chip{flex:none;width:100%;justify-content:center;padding:0 var(--space-1);font-size:var(--text-xs);letter-spacing:var(--track-caps)}
+
+/* 3. THE FAST-SCROLL TOGGLE. The plus is out of the ring (the nav bar adds now) and the circle is
+   the plain accent disc .scroll-fab is, appearing on a scroll and going again on the same dwell. */
+/* Hidden by visibility, not pointer-events, and the visibility turns only when the fade has run: a
+   tap on the circle while it is still fading is the circle's, never the card under it (Lane X, 24
+   September: the fading circle let a tap through and opened ARCHIVED). Gone, it takes no taps. */
+.rapier-notes-fab{background:var(--color-accent);opacity:0;visibility:hidden;transition:opacity var(--dur-micro,120ms) var(--ease-micro,ease),visibility 0s linear var(--dur-micro,120ms)}
+.rapier-notes-fab--visible{opacity:.5;visibility:visible;transition-delay:0s}
+.rapier-notes-fab--tracking,.rapier-notes-fab--visible:focus-visible{opacity:.82}
+.rapier-notes-fab[aria-expanded="true"]{opacity:.82;pointer-events:auto}
+
+/* 4. THE KEBAB'S SETTINGS PANEL, sliding from the right. The overlay lives inside the Notes
+   surface, which is its own stacking context, so it only needs to stand above the sheet (10) and
+   the circle (8) -- .settings-overlay's own z-index does that already. The panel, its header, its
+   titles and every control in it are the main panel's own classes and therefore its own rules. */
+.rapier-notes-settings-overlay{z-index:30}
+/* A four-across toggle in a 360px panel: the same joined box, one type size down so the longest
+   word ("TITLE A-Z") fits its quarter without wrapping or clipping. */
+.rapier-notes-switch{width:100%;margin-bottom:var(--space-4)}
+.rapier-notes-switch .onoff-btn{flex:1 1 0;width:auto;min-width:0}
+.rapier-notes-switch--four .onoff-btn{font-size:11px;letter-spacing:.02em;padding:0 2px;white-space:nowrap}
+/* The first row (docs/intent.md law 8; docs/notes-cards.md §22): the main panel's own first row
+   (.settings-stats-row) with its theme selector, cloned from #switch-theme, standing where the main
+   panel's view toggle stands and taking the rest of the row, as the main panel's selector takes its
+   whole row; and at the left, where the main panel keeps its counts, the colour-mode icon, a button
+   the size of one of the selector's: the row's width, less its gap and the selector's own 5 px
+   padding and two 5 px gaps (rapier-app.css .theme-switcher), shared four ways, so the icon's button
+   and each theme button are one box. */
+.rapier-notes-settings-first .rapier-notes-theme{flex:1 1 auto;min-width:0}
+.rapier-notes-settings-first .rapier-notes-theme .theme-switcher__btn{min-width:0}
+/* Law 54: the sync box under the first row, a row of the panel in the house's button style. Connected, its
+   small line stands inside it -- the last backup's date and time in the same Geist Mono capitals, a size
+   down -- and it wears the chosen box's own look (rapier-app.css .theme-switcher__btn[data-active]: the
+   text colour as the ground and the page colour as the ink, so white in the dark and black in the light,
+   the panel's pure pair). */
+.rapier-notes-settings-overlay .rapier-notes-sync{height:auto;min-height:48px;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding-top:var(--space-2);padding-bottom:var(--space-2);text-align:left}
+.rapier-notes-settings-overlay .rapier-notes-sync[data-active]{background:var(--color-text);color:var(--color-bg)}
+.rapier-notes-sync__when{font-size:var(--text-2xs);line-height:1.3}
+/* Law 55 (the founder, 26 September 2026: "Once you scroll down inside that box, you can no longer scroll
+   up again or get out of the box"). The centred sheets' `pan-down` (rapier-source.css) lets a finger begin
+   only by reading on, leaving the downward finger to the sheet gesture that dismisses a sheet from its top
+   -- but Notes' two centred sheets, Import and the sync sheet, have no such gesture (the editor admits only
+   its own surfaces to it), so once scrolled nothing took the downward finger at all: the list could not go
+   back up, and the close glyph at its top stayed out of reach. Their lists pan both ways. */
+#notes-import-overlay .settings-panel,#notes-import-overlay .settings-panel *,
+#notes-sync-overlay .settings-panel,#notes-sync-overlay .settings-panel *{touch-action:pan-y!important}
+/* The icon: an upright hollow rectangle in the theme's pure ink with the person's accent in its top
+   band -- the bar alone, a seventh of the rectangle's inside (4 px of 28; the founder: "the upper maybe
+   10 to 20 percent") -- grown to fill it for the whole page, the palette over it in the same ink. The
+   band is a box of its own, laid a pixel under the outline all round so no seam can open at the edge,
+   and scaled from the rectangle's top: a transform, so the compositor runs the growth and its return,
+   on the lift's curve, and a second press midway turns it back from where it stands. */
+.rapier-notes-colour-mode{flex:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:calc((100% - var(--space-4) - 20px) / 4);height:48px;padding:0;border:0;background:transparent;color:var(--color-icon);cursor:pointer;touch-action:manipulation}
+.rapier-notes-colour-mode__page{position:relative;display:block;width:24px;height:32px}
+.rapier-notes-colour-mode__fill{position:absolute;left:1px;top:1px;width:22px;height:30px;background:var(--color-accent);transform:scaleY(.16667);transform-origin:50% 0;transition:transform 280ms cubic-bezier(.4,0,.2,1)}
+.rapier-notes-colour-mode[aria-pressed="true"] .rapier-notes-colour-mode__fill{transform:none}
+.rapier-notes-colour-mode__edge,.rapier-notes-colour-mode__palette{position:absolute;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rapier-notes-colour-mode__edge{left:0;top:0;width:24px;height:32px;stroke-linecap:square;stroke-linejoin:miter}
+.rapier-notes-colour-mode__palette{left:4px;top:8px;width:16px;height:16px}
+.rapier-notes-colour-mode:focus-visible .rapier-notes-colour-mode__page{transform:scale(.85)}
+@media (hover:hover) and (pointer:fine){.rapier-notes-colour-mode:hover{opacity:.85}}
+@media (prefers-reduced-motion:reduce){.rapier-notes-colour-mode__fill{transition:none}}
+/* The jump panel the circle grows out of stands above the settings panel's resting place. */
+.rapier-notes-jump-overlay{z-index:31}
+.rapier-notes-jump-overlay .navigator-outline__item{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)}
+/* Law 39 (the founder, 26 September 2026): the arrow asks before it leaves. The question is the jump panel's
+   own shape grown out of the arrow (notes.js _rapierNotesAskOpen), set top left under the bar, its one row
+   the question itself in lowercase Geist Mono. */
+.rapier-notes-ask-overlay{align-items:flex-start;justify-content:flex-start;padding:calc(44px + var(--space-2)) var(--space-2) var(--space-2)}
+.rapier-notes-ask-overlay .settings-panel.navigator-panel{width:auto;max-width:calc(100% - var(--space-4))}
+.rapier-notes-jump-overlay .navigator-outline__item.rapier-notes-ask{font:var(--fw-medium) var(--text-sm) var(--font-mono);white-space:normal}
+
+/* 5. REORDER. Every section is its heading and nothing else, so the list is a plain vertical drag:
+   the handle comes in at the right of the heading, the held heading rides the finger and the rest
+   step out of its way. Pinned shows no handle, because Pinned cannot be picked up. */
+.rapier-notes-section-grip{display:none;position:absolute;right:var(--space-2);top:50%;margin-top:-9px;align-items:center;justify-content:center;width:18px;height:18px;color:var(--color-text)}
+/* two bars, drawn: no svg may stand in a section head (R86f law 10, which the chevron's removal set) */
+.rapier-notes-section-grip::before{content:'';width:18px;height:2px;background:currentColor;box-shadow:0 6px 0 0 currentColor;transform:translateY(-3px)}
+.rapier-notes-surface--reorder .rapier-notes-section-head{min-height:44px;padding:var(--space-1) var(--space-2);background:var(--color-surface-2);touch-action:none;transition:transform 160ms var(--ease-out)}
+.rapier-notes-surface--reorder .rapier-notes-section-head .rapier-notes-section-grip{display:inline-flex}
+.rapier-notes-surface--reorder .rapier-notes-section-head--fixed .rapier-notes-section-grip{visibility:hidden}
+.rapier-notes-surface--reorder .rapier-notes-section-head--fixed{opacity:.6}
+.rapier-notes-section-head--held{position:relative;z-index:12;transition:none;background:var(--color-surface-hover)}
+/* Lane X's X11: every section is folded in the Sections mode, so each head wore a "+" that read as
+   "add"; the fold sign has no meaning there and is not drawn. */
+.rapier-notes-surface--reorder .rapier-notes-section-glyph{display:none}
+@media(prefers-reduced-motion:reduce){.rapier-notes-surface--reorder .rapier-notes-section-head{transition:none}}
+/* Notes' own chrome draws its glyphs with notes/notes.js's bare icon builder, which sets no paint:
+   inside a main-panel control that leaves an unpainted shape, so the two glyphs Notes places in a
+   main-panel box are painted here exactly the way editor/ui.html paints its own. */
+.rapier-notes-settings-overlay .settings-close-btn svg,
+.rapier-notes-jump-overlay .navigator-close svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* The Recycle Bin (R87i). The founder: Trash is not a category -- it is a place you go sometimes.
+   The panel is the notes settings panel's own shape; only the list inside it is new. */
+.rapier-notes-settings-foot{margin-top:var(--space-5)}
+.rapier-notes-bin-note{margin:0 0 var(--space-4);color:var(--color-text-subtle);font:var(--text-sm)/1.5 var(--font-mono)}
+.rapier-notes-bin-list{display:flex;flex-direction:column;margin-top:var(--space-4)}
+.rapier-notes-bin-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:48px;padding:var(--space-2) 0;border:0;background:transparent;color:var(--color-text);font:var(--text-base) var(--font-sans);text-align:left;cursor:pointer;touch-action:manipulation}
+.rapier-notes-bin-tick{position:relative;flex:none;width:20px;height:20px;border:2px solid var(--color-text);border-radius:2px}
+/* Picked, the box fills with the ink and a tick in the panel's own ground says so (Lane X's X20: a
+   picked row was a solid black square with nothing in it). */
+.rapier-notes-bin-row[data-picked] .rapier-notes-bin-tick{background:var(--color-text)}
+.rapier-notes-bin-row[data-picked] .rapier-notes-bin-tick::after{content:'';position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid var(--color-surface);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.rapier-notes-bin-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── The Notes surface's own palette (the founder, 21 September, late) ──────────────────────────
+   "let's change the background color to gray... basically the default gray color of the cards right
+   now, it should be almost that color but a bit lighter. And then the cards themselves, I want you
+   to change them to be pitch black... maximum text contrast... The text should always be pure white
+   on pure black. And then for light mode... just a darker version of that exact same off-white
+   color... obviously the cards, the default color should be pure white with pure black text."
+
+   Done by REDEFINING the app's own tokens inside the surface rather than by rewriting the card
+   rule: --color-surface-2 is the ground of a card with no colour, --color-text the words on every
+   card (a coloured card's ground is its colour's mate for the theme, chosen so these same words
+   read on it). One rule, and nothing about colour is written twice.
+
+   Dark: the cards' old grey was #121212, so the page takes #191919 -- that colour a bit lighter --
+   and the cards take pure black. Light: the page was #e9e7e2, a darker cousin of the app's own
+   #f7f6f3 off-white, and on 23 September the founder asked for it "slightly darker. Not too much,
+   but a bit. Maybe you could say 5% darker": each channel times 0.95, #dddbd7 (relative luminance
+   0.800 to 0.709), which also stands a white card further off its page. The cards take pure white.
+
+   --notes-row is the ground of a row on a sheet, Geoffrey's row: one step off the sheet toward its
+   ink, as the app's own --color-surface-2 stands off its --color-surface. Those two tokens mean
+   the CARDS in here (surface-2 an uncoloured card's ground), and the sheets live in this surface:
+   a row that took surface-2 was pure white on the white sheet in the light and black under the
+   sheet's #0a0a0a in the dark. Lane W's report, task #373: "In light mode, the colour sheet's BACK
+   row has no visible background". The ink a tenth into the sheet's own ground reads in both themes
+   by construction, and it is the ground the sheet's chips already wear. A fill, never a line (the
+   founder: "We don't use hairlines. We don't use outlines. We just have flat boxes."). */
+/* The lift carries a card's words out of the surface (docs/notes-cards.md §20), so it takes the same
+   tokens: the words keep the cards' own pure ink on the way, never the app's softer text colour. */
+.rapier-notes-surface{
+	--notes-page:#191919;
+	--color-surface-2:#000000;
+	--color-surface:#0a0a0a;
+	--color-text:#ffffff;
+	--notes-row:color-mix(in srgb,var(--color-text) 10%,var(--color-surface));
+}
+body.light .rapier-notes-surface{
+	--notes-page:#dddbd7;
+	--color-surface-2:#ffffff;
+	--color-surface:#ffffff;
+	--color-text:#000000;
+}
+/* The lift is a layer of its own outside the surface, so it takes the ink and the two grounds again;
+   the page ground (--notes-page) is declared on the surface alone, the one owner the colour probe
+   (tools/probes/notes-colour-pairs.mjs) reads, and the lift's page layer uses --color-bg instead. */
+.rapier-notes-lift{
+	--color-surface-2:#000000;
+	--color-surface:#0a0a0a;
+	--color-text:#ffffff;
+	--notes-row:color-mix(in srgb,var(--color-text) 10%,var(--color-surface));
+}
+body.light .rapier-notes-lift{
+	--color-surface-2:#ffffff;
+	--color-surface:#ffffff;
+	--color-text:#000000;
+}
+/* The panels Notes raises are the app's own chrome, not the cards: they keep the app's palette
+   rather than inheriting the page's grey, or a settings panel would change colour with it. The
+   app's two grounds are taken where body.light sets them; `initial` here made the token invalid
+   instead, and every toggle track and row in the notes settings panel and the bin lost its ground. */
+body{--rapier-app-surface:var(--color-surface);--rapier-app-surface-2:var(--color-surface-2)}
+.rapier-notes-settings-overlay,.rapier-notes-jump-overlay{--color-surface:var(--rapier-app-surface);--color-surface-2:var(--rapier-app-surface-2)}
+/* Q5: file controls decorate ordinary Markdown links; no card chrome or hidden binary. */
+.rapier-attachment-link{display:none!important}
+.rapier-attachment-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;width:100%;padding:12px 0;box-sizing:border-box;font-size:14px;line-height:1.4}
+.rapier-attachment-details{display:flex;flex-direction:column;flex:1 1 150px;min-width:0}
+.rapier-attachment-name{font-weight:600;overflow-wrap:anywhere}
+.rapier-attachment-meta{font-size:12px;opacity:.7;overflow-wrap:anywhere}
+.rapier-attachment-row .rapier-notes-btn{flex:0 0 auto;min-height:44px;padding:8px}
+/* Saved files' Recordings (notes/attachments.js _rapierAttachmentsRecordingRow): the heading, the
+   player on its own line, and DELETE FOREVER apart at the far end. */
+.rapier-attachment-heading{margin-top:var(--space-5);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
+.rapier-attachment-row .rapier-recording-player .rapier-notes-btn{padding:0}
+.rapier-attachment-row .rapier-attachment-apart{margin-left:auto}
+.rapier-attachment-sheet::backdrop{background:var(--color-scrim,rgba(12,12,12,.8))}
+.rapier-attachment-sheet .rapier-notes-sheet-name{white-space:normal;overflow-wrap:anywhere}
+.rapier-attachment-sheet button:focus-visible,.rapier-attachment-row button:focus-visible{outline:2px solid var(--color-text);outline-offset:2px}
+
+/* Q6: the encrypted source surface has no ordinary Notes card/cache ownership. */
+/* Delight: the ink tick (notes/notes.js _rapierNotesInk, and the engine's _rapierInkTick for the note
+   itself). A box ticked on a card gives under the finger as it opens at the corner and the tick is
+   drawn out through it; the words are struck as it lands; a row that folds into "+ N checked items" then shuts where it stands
+   and the cards below ride the spring up. None under reduced motion. */
+.rapier-notes-check--inking .rapier-notes-check-box::before{animation:rapier-notes-give 200ms cubic-bezier(.3,0,.2,1) both}
+.rapier-notes-check--inking .rapier-notes-check-box::after{animation:rapier-notes-tick 240ms cubic-bezier(.35,0,.15,1) 60ms both}
+.rapier-notes-check--inking{animation:rapier-notes-strike 220ms linear 100ms both}
+.rapier-notes-check--leaving{overflow:hidden;height:0!important;padding-block:0;opacity:0;transition:opacity 100ms linear,height 220ms cubic-bezier(.3,0,0,1) 60ms,padding 220ms cubic-bezier(.3,0,0,1) 60ms}
+@keyframes rapier-notes-give{40%{transform:scale(.84)}}
+@keyframes rapier-notes-tick{0%{clip-path:inset(-10% 64% -10% -10%)}100%{clip-path:inset(-10% -10% -10% -10%)}}
+@keyframes rapier-notes-strike{from{text-decoration-color:transparent}}
+@media (prefers-reduced-motion:reduce){.rapier-notes-check--inking,.rapier-notes-check--inking .rapier-notes-check-box::before,.rapier-notes-check--inking .rapier-notes-check-box::after{animation:none}.rapier-notes-check--leaving{transition:none}}
+/* Delight: the colour wash (notes/notes.js _rapierNotesWash). The card's old ground lies over its new
+   one, under its words, with a hole in the middle that grows to the far corners: the new colour
+   spreads through the card the way ink spreads through paper. */
+@property --rapier-notes-wash{syntax:'<percentage>';inherits:false;initial-value:0%}
+.rapier-notes-card--wash::before{content:'';position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1;pointer-events:none;background:var(--notes-wash-from);-webkit-mask:radial-gradient(circle at 50% 50%,transparent var(--rapier-notes-wash),#000 calc(var(--rapier-notes-wash) + 6%));mask:radial-gradient(circle at 50% 50%,transparent var(--rapier-notes-wash),#000 calc(var(--rapier-notes-wash) + 6%));animation:rapier-notes-wash 520ms cubic-bezier(.3,0,.15,1) forwards}
+@keyframes rapier-notes-wash{to{--rapier-notes-wash:100%}}
+/* A selected or focused card's ring is an inset shadow painted with its ground; the wash stays inside it. */
+.rapier-notes-card--wash:is(.rapier-notes-card--selected,:focus-visible)::before{top:2px;left:2px;width:calc(100% - 4px);height:calc(100% - 4px)}
+@media (prefers-reduced-motion:reduce){.rapier-notes-card--wash::before{animation:none;display:none}}
+/* Delight: the plus that opens the adding bar turns a quarter of a quarter into a cross while the bar
+   is open, so the same button plainly says it will close what it opened. */
+.rapier-notes-plus svg{transition:transform 260ms cubic-bezier(.3,1.35,.5,1)}
+.rapier-notes-plus[aria-expanded="true"] svg{transform:rotate(45deg)}
+@media (prefers-reduced-motion:reduce){.rapier-notes-plus svg{transition:none}}
+/* The pin's flight (notes/notes.js _rapierNotesPinFlight): the flying pin and its ghosts are drawn as the
+   card's own pin mark is, filled in the icon colour; the puff where it lands is a small filled disc. */
+.rapier-notes-pin-flight{position:absolute;top:0;left:0;z-index:5;pointer-events:none;color:var(--color-icon);will-change:transform}
+.rapier-notes-pin-flight svg{display:block;width:100%;height:100%;stroke:currentColor;fill:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.rapier-notes-pin-puff{position:absolute;top:0;left:0;z-index:4;width:22px;height:22px;border-radius:50%;background:var(--color-icon);pointer-events:none}
