@@ -1,0 +1,15 @@
+{
+  "name": "rapier",
+  "owner": {
+    "name": "Jack Skipworth",
+    "url": "https://rapier.website"
+  },
+  "description": "Rapier, the offline document editor, as a Claude plugin: four skills and the MCP door.",
+  "plugins": [
+    {
+      "name": "rapier",
+      "source": "./plugin",
+      "description": "The document editor an agent hands a person and works in beside them: one offline page that is the whole editor with the document inside (write, draw, paint, notes, the diff of a change; no account), the agent door for exact edits at about 1.5 KB of context each under the person's review, and Self-contained Markdown, the open convention that carries pictures, layout and colour in one .md file."
+    }
+  ]
+}

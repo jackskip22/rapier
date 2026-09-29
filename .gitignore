@@ -1,13 +1,7 @@
-.gradle/
-**/build/
-local.properties
+# Build output and staging; the committed rapier.html is the release.
 .wrangler/
-.DS_Store
-windows/packages/
-windows/.vs/
-*.vcxproj.user
-*.suo
-# Signing material never belongs in the public source mirror.
-*.p12
-*.jks
-*.keystore
+node_modules/
+src/dist/
+src/node_modules/
+src/AGENT-TOOLS.json
+src/rapier-document.html
