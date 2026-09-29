@@ -90,8 +90,7 @@ const RAPIER_DRAW_PINCH_MAX_SCALE = 4;
 const RAPIER_DRAW_PINCH_MIN_SPAN_PX = 20;
 const RAPIER_DRAW_DOUBLE_TAP_DIST_PX = 24;
 const RAPIER_DRAW_DOUBLE_TAP_DIST_TOUCH_PX = 40;
-// Shared long-press timing for every touch hold gesture below (multi-select toggle, cancel a
-// pending shape/stroke, the Brush/Pen marquee escape hatch) -- one number, one felt rhythm.
+// Select's touch hold toggles membership in the current selection.
 const RAPIER_DRAW_HOLD_MS = 260;
 // Below this on-screen box size (in both dimensions) the full handle set would overlap itself;
 // collapse to one draggable corner instead (resize-rules.md R19's tiny-shape collapse stage).
@@ -855,7 +854,7 @@ function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 
 function _rapierDrawMarkSelection() {
 	if (!_rapierDrawState.svg) return;
-	const chosen = new Set(_rapierDrawSelection());
+	const chosen = new Set(_rapierDrawTool() === 'select' ? _rapierDrawSelection() : []);
 	for (const g of _rapierDrawState.svg.children) {
 		if (chosen.has(g.getAttribute('data-shape-id'))) g.setAttribute('data-selected', ''); else g.removeAttribute('data-selected');
 	}
@@ -1033,7 +1032,7 @@ function _rapierDrawUndo(redo = false) {
 	state.nib = _rapierDrawNibLevel(state.recipe.nib ?? RAPIER_DRAW_NIB_DEFAULT);
 	state.smooth = _rapierDrawSmoothLevel(state.recipe.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT);
 	const live = new Set(state.recipe.shapes.map(shape => shape.id)), ids = prior.delta ? (redo ? prior.redoSelection : prior.selection) : prior.selection;
-	_rapierDrawSetSelection((ids || []).filter(id => live.has(id))); _rapierDrawRenderAll();
+	_rapierDrawSetSelection(state.tool === 'select' ? (ids || []).filter(id => live.has(id)) : []); _rapierDrawRenderAll();
 	if (typeof _rapierPaintSyncPaper === 'function') _rapierPaintSyncPaper();
 	state.fontReady = _rapierDrawLoadFonts(state.recipe, state.session); state.fontReady.catch(error => showToast(String(error.message || error), 'error'));
 	// R87g: an agent's patch is already in the document when the surface shows it. Surface-only Undo
@@ -2187,20 +2186,14 @@ async function _rapierDrawSetTool(name) {
 	const state = _rapierDrawState, session = state.session, pending = _rapierPaintPendingStroke();
 	if (pending) { await pending; if (!state.open || state.session !== session) return; }
 	_rapierDrawCancelGesture();
-	// Choosing a tool drops the selection, and the canvas must say so at once: the rings, handles
-	// and menu go with it (a paste leaves everything selected; a tool tap must not leave the paint
-	// behind while the state says nothing is chosen -- Escape and Delete would then act on nothing).
-	// One exception (Astra-R74 P04): switching TO Paint with exactly one unlocked painting already
-	// selected keeps that selection -- it is the explicit target Blend, Dissolve and the rest work on,
-	// "no layer manager: selecting a painted object and using Paint's contextual tools is the surface".
-	const keepSelection = name === 'paint' && !!_rapierDrawSelectedPaint();
-	if (!keepSelection && _rapierDrawSelection().length) { _rapierDrawSetSelection([]); _rapierDrawMarkSelection(); _rapierDrawUpdateMenu(); }
 	// The settlement law (Astra-R75 P02, R85b): a tool change never drops a live layer still holding
 	// pixels the working budget refused -- it keeps them, the same as Done does.
 	try { _rapierPaintSettleOverflow(); _rapierPaintCloseLayer(); }
 	catch (error) { showToast('The painting could not be kept. The tool was not changed: ' + String(error?.message || error), 'error'); return; }
 	_rapierDrawState.tool = name;
 	_rapierDrawState.pen = name === 'pen';
+	// Select owns object manipulation. Paint keeps its chosen layer separately in paintChosenId.
+	_rapierDrawSetSelection([]); _rapierDrawMarkSelection(); _rapierDrawUpdateMenu();
 	if (state.notes && RAPIER_DRAW_NOTES_TOOLS.includes(name)) _rapierDrawRemember('notesTool', name);
 	_rapierDrawSetHint();
 	_rapierDrawFollowToolInk(name);
@@ -2515,14 +2508,11 @@ function _rapierDrawCommitStroke(points, options = {}) {
 	const state = _rapierDrawState;
 	const penMode = !!_rapierDrawState.pen;
 	const smoothLevel = _rapierDrawSmoothLevel(_rapierDrawState.smooth);
-	// Brush's own recognizer call is untouched byte-for-byte: a stroke too short to read anything
-	// into (_rapierDrawRecognize returns null) still commits nothing, exactly as before. Pen never
-	// vanishes a stroke this way -- it keeps the line either way, so a null read falls back to ink.
+	// Recognition offers a shape; failing to recognise one must never discard the person's ink.
 	let recognized;
 	if (options.dot) recognized = { kind: 'ink' };
 	else if (penMode) recognized = smoothLevel === 0 ? { kind: 'ink' } : (_rapierDrawRecognize(points) || { kind: 'ink' });
-	else recognized = _rapierDrawRecognize(points);
-	if (!recognized) return;
+	else recognized = _rapierDrawRecognize(points) || { kind: 'ink' };
 
 	if ((recognized.kind === 'line' || recognized.kind === 'arrow') && recognized.geom) _rapierDrawSnapLineGeom(recognized.geom);
 
@@ -3339,7 +3329,7 @@ function _rapierDrawChoiceControl(name, word, entries, value, glyph) {
 function _rapierDrawUpdateMenu() {
 	const state = _rapierDrawState, menu = state.menu, shapes = _rapierDrawSelectedShapes(), shape = shapes.at(-1);
 	if (!menu) return;
-	if (!shape || state.textEdit || state.gesture?.changed || state.marquee) { menu.hidden = true; menu.classList.remove('rapier-draw-menu--sheet'); if (!shape) menu.innerHTML = ''; return; }
+	if (_rapierDrawTool() !== 'select' || !shape || state.textEdit || state.gesture?.changed || state.marquee) { menu.hidden = true; menu.classList.remove('rapier-draw-menu--sheet'); if (!shape) menu.innerHTML = ''; return; }
 	const pane = state.menuPane, group = shapes.length > 1, brush = shape.brush || 'ink', locked = _rapierDrawSelectionLocked(shapes);
 	const text = shape.recognized === 'text', paint = shape.recognized === 'paint', arrow = !group && ['line', 'arrow'].includes(shape.recognized);
 	const stroke = _rapierDrawShapeStroke(shape, state.recipe), paintsInk = _rapierDrawShapePaintsInk(shape, state.recipe);
@@ -3727,7 +3717,7 @@ function _rapierDrawUpdateHandles() {
 	const state = _rapierDrawState, layer = state.handlesLayer;
 	if (!layer) return;
 	const svgRect = state.svgRoot.getBoundingClientRect(), vb = state.svgRoot.viewBox.baseVal, gesture = state.gesture;
-	const frame = state.open ? _rapierDrawSelectionFrame(state.recipe, _rapierDrawSelection()) : null;
+	const frame = state.open && _rapierDrawTool() === 'select' ? _rapierDrawSelectionFrame(state.recipe, _rapierDrawSelection()) : null;
 	const box = frame?.box, theta = frame?.theta || 0, pivot = frame?.pivot;
 	if (!box || !state.open || state.textEdit) { layer.innerHTML = ''; state.handles = []; return; }
 	// `mapLocal` treats a box-local point as if it were already a page point -- valid because local
@@ -4151,12 +4141,8 @@ function _rapierDrawOnPointerDown(evt) {
 	// S6: the hardware eraser belongs to this gesture, not the chosen tool. Ending/cancelling the
 	// gesture restores the choice without a tool switch (which could discard a queued paint stroke).
 	const scale = _rapierDrawViewTransform(svgRect, state.svgRoot.viewBox.baseVal).scale, tool = eraser ? 'erase' : _rapierDrawTool();
-	// R77 (F77-2, the brush's grain): under the Paint tool a selected painting's handles never take
-	// the touch. The selection is kept there only to choose WHICH painting the stroke lands on
-	// (Astra-R75 P04); resizing and rotating are Select's. At three brush units per drawing unit a
-	// one-stroke painting is small enough that its finger-sized handle areas cover its whole box, so
-	// without this every stroke on a freshly chosen small painting resized it instead of painting.
-	const handle = !eraser && tool !== 'paint' && evt.target.closest('[data-draw-handle]') ? (state.handles || []).reduce((best, next) => !best || _rapierDrawDist(next.screen, [evt.clientX, evt.clientY]) < _rapierDrawDist(best.screen, [evt.clientX, evt.clientY]) ? next : best, null) : null;
+	// Handles and object hits never steal a mark from a drawing tool, including over existing ink.
+	const handle = tool === 'select' && evt.target.closest('[data-draw-handle]') ? (state.handles || []).reduce((best, next) => !best || _rapierDrawDist(next.screen, [evt.clientX, evt.clientY]) < _rapierDrawDist(best.screen, [evt.clientX, evt.clientY]) ? next : best, null) : null;
 	const hit = handle ? null : _rapierDrawHitShape(point, _rapierDrawHitSlop() / scale), selection = _rapierDrawSelection();
 	// Hit order rank 2: an already-sole-selected arrow/line's own rendered label outranks its
 	// shaft -- grab the label directly rather than starting a whole-shape move underneath it.
@@ -4198,20 +4184,6 @@ function _rapierDrawOnPointerDown(evt) {
 	else if (!handle && tool === 'erase' && hit && _rapierDrawShapeById(hit)?.recognized === 'paint' && typeof _rapierPaintTarget === 'function' && _rapierPaintTarget()) {
 		gesture.kind = 'paint'; gesture.eraseInk = true;
 	}
-	else if (!handle && ['brush', 'pen'].includes(tool) && selection.includes(hit) && !_rapierDrawShapeById(hit)?.locked) gesture.kind = 'move';
-	else if (!handle && touch && ['shape', 'brush', 'pen'].includes(tool)) _rapierDrawArmHold(gesture, () => {
-		_rapierDrawResetStrokeBuffer(); _rapierDrawClearLivePaint();
-		if (!hit && ['brush', 'pen'].includes(tool)) {
-			// B12/B13: a resting long-press over empty canvas while a drawing tool is active is read as
-			// "let me select something" rather than "leave a stray dot" -- it opens a one-off marquee
-			// without leaving the tool, using the exact same marquee mechanism Select uses.
-			gesture.kind = 'marquee'; _rapierDrawBeginMarquee(gesture.origin); _rapierDrawPaintMarquee(); state.menu.hidden = true;
-		} else {
-			// A9: a resting long-press before any real movement discards the pending shape/stroke.
-			gesture.kind = 'cancelled';
-		}
-		_rapierDrawRenderAll();
-	});
 	try { state.svgRoot.setPointerCapture(evt.pointerId); } catch (_) {}
 	if (gesture.kind === 'paint') { _rapierPaintBegin(evt, gesture); return; }
 	if (gesture.kind === 'stroke') _rapierDrawPaintLive();
@@ -4342,12 +4314,9 @@ function _rapierDrawOnPointerUp(evt) {
 	if (gesture.tool === 'shape') { _rapierDrawCommitShapeDrag(pts, gesture.dragged, gesture); return; }
 	if (gesture.tool === 'text') { _rapierDrawCreateText(gesture.origin, pts.at(-1) || gesture.origin); return; }
 	if (_rapierDrawPerimeter(pts, false) * gesture.scale < 6) {
-		// A tap with Brush or Pen on empty paper, nothing selected, is a dot (an i's dot, a full
-		// stop, a bullet): the smallest stroke, painted as drawn. A tap on a shape still selects it,
-		// and a tap on empty paper with a selection still clears it; a resting press is cancelled
-		// before it gets here (A9).
-		if (!gesture.downId && !selected.length && ['brush', 'pen'].includes(gesture.tool) && kind === 'stroke') { _rapierDrawCommitDot(pts[0] || [...gesture.origin, 0, 0.5]); return; }
-		_rapierDrawSetSelection(gesture.downId ? [gesture.downId] : []); _rapierDrawRenderAll(); return;
+		// A tap is ink even when it lands on another stroke.
+		if (['brush', 'pen'].includes(gesture.tool) && kind === 'stroke') _rapierDrawCommitDot(pts[0] || [...gesture.origin, 0, 0.5]);
+		return;
 	}
 	if (pts.length >= 2) _rapierDrawCommitStroke(pts);
 }
@@ -4692,23 +4661,26 @@ async function _rapierDrawImportImages(files) {
 		if (!incoming) throw new Error('These images are too large to place in one drawing.');
 		// IMAGE is deliberately not a persistent tool: a successful pick enters Select and leaves the
 		// inserted pictures selected so the next finger gesture can move or resize them immediately.
-		_rapierDrawSetTool('select');
-		if (!state.open || state.session !== session || state.finishing) return;
+		await _rapierDrawSetTool('select');
+		if (!state.open || state.session !== session || state.finishing || _rapierDrawTool() !== 'select') return;
 		_rapierDrawPasteRecipe(incoming);
 	} catch (error) {
 		if (state.open && state.session === session) showToast('Image could not be added: ' + String(error?.message || error), 'error');
 	} finally { if (state.session === session) state.imageImporting = false; }
 }
-function _rapierDrawPasteEvent(evt) {
+async function _rapierDrawPasteEvent(evt) {
 	evt.stopPropagation();
 	if (evt.target.closest('input,textarea,select') || !evt.clipboardData || _rapierDrawState.finishing) return;
 	const data = evt.clipboardData.getData(RAPIER_DRAW_CLIPBOARD), plain = evt.clipboardData.getData('text/plain');
 	if (!data && !plain) return;
 	evt.preventDefault();
+	const state = _rapierDrawState, session = state.session;
 	try {
 		if (Math.max(data.length, plain.length) > 16 * 1024 * 1024) throw new Error('Clipboard drawing is too large');
 		const recipe = data ? _rapierDrawAdmitRecipe(JSON.parse(data)) : _rapierDrawReadSVGRecipe(plain);
 		if (data && !recipe) throw new Error('Clipboard drawing could not be read');
+		await _rapierDrawSetTool('select');
+		if (!state.open || state.session !== session || state.finishing || _rapierDrawTool() !== 'select') return;
 		if (recipe) _rapierDrawPasteRecipe(recipe);
 		else {
 			if (plain.length > RAPIER_DRAW_LABEL_MAX) throw new Error('Drawing text is limited to ' + RAPIER_DRAW_LABEL_MAX + ' characters');
@@ -5040,7 +5012,7 @@ function _rapierDrawBuildSurface() {
 	// `change` applies the colour as well: a platform colour dialog may commit without ever firing `input`.
 	surface.addEventListener('change', evt => { const scope = evt.target.dataset.drawColour; if (scope) { _rapierDrawSetColour(scope, evt.target.value, true); _rapierDrawRememberInk(evt.target.value); state.colourEdit = false; state.sweepBase = null; _rapierDrawUpdateInkBtn(); _rapierDrawUpdateMenu(); _rapierDrawRefreshColourRow(); } });
 	surface.addEventListener('contextmenu', evt => { if (!evt.target.closest('input,textarea,select')) evt.preventDefault(); });
-	surface.addEventListener('keydown', evt => {
+	surface.addEventListener('keydown', async evt => {
 		evt.stopPropagation();
 		if (evt.defaultPrevented || evt.isComposing || evt.keyCode === 229) return;
 		if (_rapierTrapModalTab(evt, surface)) return;
@@ -5065,7 +5037,14 @@ function _rapierDrawBuildSurface() {
 		// A toolbar control owns its native activation. Handles still own canvas movement.
 		if (evt.target.closest('button,a[href],[role="button"]') && !evt.target.closest('[data-draw-handle]')) return;
 		if ((evt.ctrlKey || evt.metaKey) && ['z', 'y'].includes(evt.key.toLowerCase())) { evt.preventDefault(); _rapierDrawUndo(evt.shiftKey || evt.key.toLowerCase() === 'y'); return; }
-		if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'a') { evt.preventDefault(); _rapierDrawSetSelection(_rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id))); _rapierDrawRenderAll(); return; }
+		if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'a') {
+			evt.preventDefault();
+			const session = state.session;
+			await _rapierDrawSetTool('select');
+			if (!state.open || state.session !== session || _rapierDrawTool() !== 'select') return;
+			_rapierDrawSetSelection(_rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id))); _rapierDrawRenderAll(); return;
+		}
+		if (_rapierDrawTool() !== 'select') return;
 		if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'd') { evt.preventDefault(); _rapierDrawEditSelection({ type: 'duplicate' }); return; }
 		if (evt.key === 'Enter' && _rapierDrawSelection().length === 1) { evt.preventDefault(); _rapierDrawEditLabelInPlace(_rapierDrawSelectedShapes()[0]); return; }
 		if (!_rapierDrawSelection().length) {

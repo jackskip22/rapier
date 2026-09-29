@@ -2522,16 +2522,6 @@ const _rapierImageFlow = (() => {
         return;
       }
     }
-    // A tap on a drawing in a note opens Draw (notes.js _rapierNotesDrawTap); a hold takes it; the click after is swallowed.
-    const drawing = !handle && event.target !== selected && typeof _rapierNotesDrawsAt === 'function' ? event.target?.closest?.('[data-rapier-markdown-image]') : null;
-    if (drawing && _rapierNotesDrawsAt(drawing)) {
-      hold = {pointerId: event.pointerId, x: event.clientX, y: event.clientY, behind: drawing, timer: setTimeout(() => {
-        if (!hold || hold.pointerId !== event.pointerId) return;
-        const held = hold; hold = null;
-        takeBehind(held, event);
-      }, HOLD_TO_MOVE)};
-      return;
-    }
     if (!resizeGrips.includes(handle) && event.target !== selected) return;
     const kind = handle ? 'resize' : 'move';
     if (event.target === selected && event.pointerType !== 'touch' && document.activeElement !== host && document.activeElement !== selected)

@@ -738,12 +738,11 @@ function initMarkdownIt() {
 	md.renderer.rules.rapier_break = () =>
 		'<div class="rapier-page-break" data-md-break="page" contenteditable="false" role="separator" aria-label="Page break"></div>\n';
 
-	// A document's raw HTML carries no hook of Rapier's chrome: a block of it goes through the sanitizer's raw profile; an
-	// inline tag is one open tag in CommonMark's own grammar (its attributes exactly `\s+name(=value)?`, or the tag would not
-	// be a tag), so its data-*, its `for` and an id the chrome owns are taken off here. Rapier's own markup keeps its data-*.
+	// Raw HTML carries no editor hooks. Keep its fragment boundaries until the complete Markdown
+	// markup reaches DOMPurify: sanitizing each HTML token closes containers before their body.
 	// The harness runs this installer alone for the parser's acceptance; without the page's sanitizer the tokens pass.
 	const inPage = typeof sanitizeRapierHtml === 'function' && typeof _rapierChromeOwnsId === 'function';
-	const rawHook = /\s+(data-[^\s=/>]*|for|id)(?=\s*=|[\s/>])(?:\s*=\s*("[^"]*"|'[^']*'|[^"'=<>`\s]+))?/gi;
+	const rawAttribute = /\s+([A-Za-z_:][A-Za-z0-9_.:-]*)(?:\s*=\s*("[^"]*"|'[^']*'|[^"'=<>`\s]+))?/g;
 	// The id is read as HTML reads it: a numeric character reference (`&#115;ource-textarea` is `source-textarea`,
 	// `&#x73;` the same) and the named references that spell a character an id can hold are decoded before the
 	// chrome's ids are asked; every other name stays literal (no named reference spells a letter, a digit or a
@@ -760,12 +759,12 @@ function initMarkdownIt() {
 		});
 	if (inPage) {
 		_rapierChromeOwnsId('');
-		md.renderer.rules.html_block = (tokens, idx) => sanitizeRapierHtml(tokens[idx].content, 'raw') + '\n';
-		md.renderer.rules.html_inline = (tokens, idx) => {
-			const tag = tokens[idx].content;
-			return /^<[A-Za-z]/.test(tag) ? tag.replace(rawHook, (whole, name, value) =>
-				name.toLowerCase() === 'id' && !_rapierChromeOwnsId(attributeText(value)) ? whole : '') : tag;
-		};
+		const cleanTag = tag => /^<[A-Za-z]/.test(tag) ? tag.replace(rawAttribute, (whole, name, value) => {
+			const key = name.toLowerCase();
+			return key.startsWith('data-') || key === 'for' || key === 'id' && _rapierChromeOwnsId(attributeText(value)) ? '' : whole;
+		}) : tag;
+		md.renderer.rules.html_inline = (tokens, idx) => cleanTag(tokens[idx].content);
+		md.renderer.rules.html_block = (tokens, idx) => _rapierRawHtmlFragment(tokens[idx].content, cleanTag, md) + '\n';
 	}
 
 	const _ulOpenDefault = md.renderer.rules.bullet_list_open
@@ -1826,6 +1825,22 @@ function _rapierScheduleOverflowSweep() {
 	});
 }
 
+// CommonMark's HTML tokenizer owns tag boundaries, including quoted attributes and comments.
+// Malformed tags stay inert text instead of gaining editor hooks through browser HTML repair.
+function _rapierRawHtmlFragment(source, rewrite, parser) {
+	const state = new parser.inline.State(source, parser, {}, []);
+	const htmlRule = parser.inline.ruler.__rules__.find(rule => rule.name === 'html_inline').fn;
+	let out = '';
+	while (state.pos < state.posMax) {
+		const at = state.src.indexOf('<', state.pos);
+		if (at < 0) { out += state.src.slice(state.pos); break; }
+		out += state.src.slice(state.pos, at); state.pos = at;
+		if (htmlRule(state, false)) out += rewrite(state.tokens.pop().content);
+		else { out += '&lt;'; state.pos++; }
+	}
+	return out;
+}
+
 function _mergeDetailsBlocks(blocks, markdown) {
 	const source = String(markdown || '');
 	const out = [];
@@ -1833,15 +1848,21 @@ function _mergeDetailsBlocks(blocks, markdown) {
 	while (i < blocks.length) {
 		const b = blocks[i];
 		const raw = b.raw || '';
-		if (/^<details[\s>]/i.test(raw.trimStart()) && !raw.includes('</details>')) {
+		if (b.type === 'html_block' && /^<details[\s>]/i.test(raw.trimStart())) {
 			let combined = raw;
-			let j = i + 1;
+			let j = i, depth = 0;
 			let sourceEnd = Number(b._sourceEnd);
-			while (j < blocks.length && !combined.includes('</details>')) {
-				combined += '\n\n' + (blocks[j].raw || '');
-				if (Number.isFinite(Number(blocks[j]._sourceEnd))) sourceEnd = Number(blocks[j]._sourceEnd);
+			do {
+				const next = blocks[j];
+				if (j > i) combined += '\n\n' + (next.raw || '');
+				if (Number.isFinite(Number(next._sourceEnd))) sourceEnd = Number(next._sourceEnd);
+				if (next.type === 'html_block') _rapierRawHtmlFragment(next.raw, tag => {
+					if (/^<details[\s>]/i.test(tag)) depth++;
+					else if (/^<\/details\s*>$/i.test(tag)) depth--;
+					return tag;
+				}, md);
 				j++;
-			}
+			} while (depth > 0 && j < blocks.length);
 			const sourceStart = Number(b._sourceStart);
 			if (Number.isFinite(sourceStart) && Number.isFinite(sourceEnd) && sourceEnd >= sourceStart) {
 				combined = source.slice(sourceStart, sourceEnd);
@@ -4238,7 +4259,7 @@ function rapierWelcomeMarkdown() {
 		"",
 		"Add a picture (PNG, JPEG, WebP or JPEG XL), then move and resize it by dragging. The words wrap around its shape, not its box. Pictures are stored inside this Markdown file; nothing is uploaded.",
 		"",
-		"The brush on the formatting bar opens Draw. **SVG Brush** follows your pressure and speed, and a stroke that looks like a circle, box, line or arrow can become that shape with one tap. **SVG Pen** draws an even line. Tap a shape to move, resize, label or restyle it, or to bind an arrow to it. The drawing is saved in the file as SVG, and an agent can edit it later.",
+		"The brush on the formatting bar opens Draw. **SVG Brush** follows your pressure and speed, and a stroke that looks like a circle, box, line or arrow can become that shape with one tap. **SVG Pen** draws an even line. Choose **Select**, then tap a shape to move, resize, label or restyle it, or to bind an arrow to it. The drawing is saved in the file as SVG, and an agent can edit it later.",
 		"",
 		"![W][leaf-w] <!--md-layout:v1 width=15% wrap=around x=7.5%-->",
 		"",
@@ -6239,9 +6260,19 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 	const htmlComment = /<!--[\s\S]*?-->/;
 	const htmlTag = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^>]*)?>/;
 	const entity = /&(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);/i;
-	const details = /^<details>\s*<summary>[^<]*<\/summary>([\s\S]*)<\/details>$/i.exec(trimmed);
-	const supportedDetails = !!details &&
-		!htmlComment.test(details[1]) && !htmlTag.test(details[1]) && !entity.test(details[1]);
+	// A live block can contain prose beside a section, or nested sections. Strip only balanced
+	// supported wrappers for this decision; other HTML still keeps its exact-source editor.
+	const stack = [];
+	let hasDetails = false, balancedDetails = true;
+	const detailsBody = md && /<details>/i.test(value) ? _rapierRawHtmlFragment(value, tag => {
+		if (/^<details>$/i.test(tag)) { hasDetails = true; stack.push('details'); return ''; }
+		if (/^<summary>$/i.test(tag) && stack.at(-1) === 'details') { stack.push('summary'); return ''; }
+		const close = /^<\/(details|summary)>$/i.exec(tag);
+		if (close) { if (stack.pop() !== close[1].toLowerCase()) balancedDetails = false; return ''; }
+		return tag;
+	}, md) : value;
+	const supportedDetails = hasDetails && balancedDetails && !stack.length &&
+		!htmlComment.test(detailsBody) && !htmlTag.test(detailsBody) && !entity.test(detailsBody);
 	if (!supportedDetails && htmlComment.test(value)) return 'html-comment';
 	if (!supportedDetails && htmlTag.test(value)) return 'raw-html';
 	if (!supportedDetails && entity.test(value)) return 'html-entity';
@@ -7239,12 +7270,6 @@ function _rapierInitBlockInteractionRouter() {
 				if (editSelection && !editSelection.isCollapsed) {
 					try { editSelection.removeAllRanges(); } catch (_) {}
 				}
-				// A drawing inside a note opens in Draw on one tap (notes/notes.js _rapierNotesDrawTap).
-				if (typeof _rapierNotesDrawTap === 'function' && _rapierNotesDrawTap(editBlock, editImage)) return;
-				if (typeof _rapierDrawImageIsOurs === 'function' && _rapierImageRuntime.image !== editImage && _rapierDrawImageIsOurs(editImage)) {
-					if (_rapierSelectImage(editBlock, editImage)) _rapierEditDrawing();
-					return;
-				}
 				_rapierSelectImage(editBlock, editImage);
 				return;
 			}
@@ -7345,12 +7370,6 @@ function _rapierInitBlockInteractionRouter() {
 					const read = wrapper.isConnected ? wrapper.querySelector(':scope > .block-read') : null;
 					target = imageControl.isConnected ? imageControl
 						: (read && ordinal >= 0 ? read.querySelectorAll('[data-rapier-markdown-image]')[ordinal] || null : null);
-				}
-				// A drawing inside a note opens in Draw on one tap (notes/notes.js _rapierNotesDrawTap).
-				if (target && typeof _rapierNotesDrawTap === 'function' && _rapierNotesDrawTap(block, target)) return;
-				if (target && typeof _rapierDrawImageIsOurs === 'function' && _rapierImageRuntime.image !== target && _rapierDrawImageIsOurs(target)) {
-					if (_rapierSelectImage(block, target)) _rapierEditDrawing();
-					return;
 				}
 				if (target) _rapierSelectImage(block, target);
 				return;

@@ -6940,18 +6940,6 @@ function _rapierNotesInANote() {
 	const state = _rapierNotes, name = String(rapier.document.filename || '');
 	return !!state.mode && !!state.current && (name === state.current || name === state.renameWanted);
 }
-// One tap on a drawing inside a note opens it in Draw for more ink (docs/notes-cards.md, "Drawing in
-// a note"); the engine's tap asks here first. A hold takes it instead, with its toolbar -- download,
-// size, delete -- and the move, as a tap takes any other picture (layout/browser.js, the drawing
-// hold). A picture Draw did not make, or a drawing already taken, is the editor's.
-function _rapierNotesDrawsAt(image) {
-	return !!image?.isConnected && _rapierNotesInANote() && typeof _rapierDrawImageIsOurs === 'function' && _rapierDrawImageIsOurs(image);
-}
-function _rapierNotesDrawTap(block, image) {
-	if (!_rapierNotesDrawsAt(image) || _rapierImageRuntime.image === image || typeof _rapierEditDrawing !== 'function') return false;
-	if (_rapierSelectImage(block, image)) _rapierEditDrawing();
-	return true;
-}
 // The + bar's canvas closed with nothing kept -- Back or DONE on a canvas never drawn on -- leaves
 // nothing behind: the empty note made for it goes without a word, since the person never saw it,
 // and the cards come back under the canvas, which then leaves over them (draw/draw.js
