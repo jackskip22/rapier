@@ -1,0 +1,789 @@
+/* SPDX-License-Identifier: MIT
+ * Self-contained Markdown reference style. See docs/markdown-standard.md, "Reference style".
+ * Root defaults also expose the palette to an optional page frame and the shared task glyphs
+ * to Notes. Visual rules stay inside .md-render; this sheet loads no fonts or network resources.
+ */
+:root,.md-render{
+	--md-font-mono:'Geist Mono',monospace;
+	--md-font-sans:'Geist',system-ui,sans-serif;
+	--md-text-sm:0.875rem;
+	--md-color-text:light-dark(#121212,#fafafa);
+	--md-fw-medium:500;
+	--md-color-bg:light-dark(#ffffff,#000000);
+	--md-text-xs:0.75rem;
+	--md-color-inset:light-dark(#f2f1ef,#1d1d1d);
+	--md-color-surface:light-dark(#f7f6f3,#0d0d0d);
+	--md-text-base:1rem;
+	--md-fw-semibold:600;
+	--md-fw-regular:400;
+	--md-leading-tight:1.2;
+	--md-space-6:24px;
+	--md-space-4:16px;
+	--md-space-3:12px;
+	--md-color-border:light-dark(#dbdad7,#1c1c1c);
+	--md-space-5:20px;
+	--md-space-2:8px;
+	--md-space-1:4px;
+	--md-color-line:light-dark(#000000,#ffffff);
+	--md-color-accent-text:light-dark(color-mix(in srgb,var(--md-color-accent) 50%,#000000),color-mix(in srgb,var(--md-color-accent) 80%,#ffffff));
+	--md-track-caps:.035em;
+	--md-color-surface-2:light-dark(#f1f0ee,#121212);
+	--md-color-border-focus:light-dark(#c4c2bc,#2a2a2a);
+	--md-color-text-secondary:light-dark(#444444,#a1a1a1);
+	--md-color-text-muted:light-dark(#606060,#878787);
+	--md-color-success:light-dark(#1a9148,#45d483);
+	--md-color-warning:light-dark(#d97706,#f5a623);
+	--md-color-error:light-dark(#c00,#ec5156);
+	--md-space-8:32px;
+	--md-space-7:28px;
+	--md-color-accent:#12A594;
+	--md-color-text-subtle:light-dark(#636363,#858585);
+	--md-heading-color:var(--md-color-text);
+	--md-heading-muted-color:var(--md-color-text-secondary);
+	--md-callout-note:light-dark(#0969da,#4493f8);
+	--md-callout-important:light-dark(#8250df,#ab7df8);
+	--md-callout-color:var(--md-callout-note);
+	--md-diagram-colour:var(--md-diagram-c1);
+	--md-diagram-on-colour:light-dark(#000000,#ffffff);
+	--md-color:currentColor;
+	--md-color-dark:var(--md-color);
+	--md-highlight-color:var(--md-color-accent);
+	--md-image-width:100%;
+	--md-drawing-width:0px;
+	--md-task-box:clamp(14px,.92em,24px);
+	--md-jump-gap:.9rem;
+	--md-jump-marker-inline-start:-1.18rem;
+	--md-jump-marker-center:1em;
+	--md-diagram-ink:light-dark(#121212,#fafafa);
+	--md-diagram-box:light-dark(#f0f0f0,#1d1d1d);
+	--md-diagram-accent:light-dark(#12a594,#12a594);
+	--md-diagram-on-accent:light-dark(#000000,#000000);
+	--md-diagram-step:light-dark(#666666,#999999);
+	--md-diagram-stroke:2px;
+	--md-diagram-hairline:1px;
+	--md-diagram-caption-size:10px;
+	--md-diagram-caption-track:.12em;
+	--md-diagram-title-track:.16em;
+	--md-diagram-step-scale:.8;
+	--md-diagram-node-fill:var(--md-diagram-box);
+	--md-diagram-inner-line:color-mix(in srgb,var(--md-color-text) 12%,var(--md-color-bg));
+	--md-diagram-node-line:color-mix(in srgb,var(--md-color-text) 20%,var(--md-color-bg));
+	--md-diagram-line:var(--md-diagram-ink);
+	--md-diagram-quiet:color-mix(in srgb,var(--md-color-text) 60%,var(--md-color-bg));
+	--md-diagram-arrow:var(--md-diagram-ink);
+	--md-diagram-c1:light-dark(#00a2e2,#011f67);
+	--md-diagram-c2:light-dark(#ff8f4b,#a72906);
+	--md-diagram-c3:light-dark(#3ddabb,#0c534d);
+	--md-diagram-c4:light-dark(#ffcee3,#8e3563);
+	--md-diagram-c5:light-dark(#ffef62,#b47e00);
+	--md-diagram-c6:light-dark(#ff6d68,#811c24);
+	--md-diagram-c7:light-dark(#5eac56,#002104);
+	--md-diagram-c8:light-dark(#d485fc,#330033);
+	--md-diagram-c9:light-dark(#c9b49b,#4f3626);
+}
+.md-render{color-scheme:light}
+/* Geist and Geist Mono both have a 530/1000 x-height. Preserve their size and match a
+   system fallback's x-height; the host's installed face still determines glyph widths. */
+@media(prefers-color-scheme:dark){.md-render:where(:not([data-md-theme="light"])){color-scheme:dark}}
+.md-render[data-md-theme="dark"]{color-scheme:dark}
+.md-render[data-md-theme="light"]{color-scheme:light;--md-heading-color:#000000;--md-heading-muted-color:#000000}
+/* The app and saved page already use border-box. Keep the portable document independent
+   of its host's reset without changing margins or padding owned by that host. */
+:where(.md-render,.md-render *,.md-render ::before,.md-render ::after){box-sizing:border-box}
+
+:where(.md-render) [data-md-align="left"]{text-align:left!important}
+:where(.md-render) [data-md-align="center"]{text-align:center!important}
+:where(.md-render) [data-md-align="right"]{text-align:right!important}
+:where(.md-render) [data-md-align="justify"]{text-align:justify!important}
+.md-render p[data-md-align="center"]>img{margin-inline:auto}
+.md-render p[data-md-align="right"]>img{margin-left:auto;margin-right:0}
+:where(.md-render) p[data-md-layout-tight]{margin-block:0!important}
+:where(.md-render) .rapier-image-asset-record{display:none!important}
+
+
+:where(.md-render) .math-placeholder {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.92em;
+	background: rgba(128,128,128,0.14);
+	padding: 0 .3em;
+	border-radius: 0;
+	opacity: .78;
+	cursor: help;
+}
+:where(.md-render) .math-display-wrap > .math-placeholder { display: inline-block; padding: .3em .6em; }
+
+/* The figure is the scroll surface, not the box inside it: the overflow affordance the engine
+   wraps every wide block in (`rapier-hscroll--diagram`) measures this element, so a diagram that
+   runs past the column reads as a wide table does -- it scrolls, under the same fading edge. */
+:where(.md-render) .diagram-block {
+	position: relative;
+	margin: 1em 0;
+	max-width: 100%;
+	overflow: auto;
+}
+:where(.md-render) .diagram-block .diagram-source {
+	font-family: var(--md-font-mono);
+	font-size: 0.92em;
+	background: rgba(128,128,128,0.14);
+	padding: .6em .8em;
+	overflow: auto;
+	margin: 0;
+	white-space: pre-wrap;
+}
+:where(.md-render) .diagram-block[data-diagram-state="ready"] .diagram-source {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+:where(.md-render) .diagram-block .diagram-cache {
+	max-width: 100%;
+}
+/* ---------------------------------------------------------------------------------------------
+   What a diagram is drawn with. Mermaid packs its own light theme into a <style> inside every
+   drawing it makes, scoped to that drawing's own id -- `#rapier-dN .node rect` -- so on dark
+   paper a diagram arrived as a strip of white cards holding black type, and a state diagram's
+   transitions were drawn in #000 on #000: a state machine with no visible transitions. Rapier
+   repaints them from the theme's own tokens instead of configuring a second Mermaid theme
+   beside it. The theme stays the one owner of colour, and a theme change carries every diagram
+   already on the page, because nothing has to be drawn again.
+
+   Materialization resolves the sanitized generator rules to inline presentation declarations.
+   Generator defaults yield to this palette; authored style/classDef fills and strokes carry
+   a light-dark pair above it, keeping their light colour and the shared dark derivation.
+   The same class reaches rendered blocks and source previews: the owner
+   marks each admitted drawing `rapier-diagram`, which remains stable when export namespaces
+   local SVG IDs and references. */
+:where(.md-render) svg.rapier-native-flowchart{display:block;margin-inline:auto;height:auto}
+:where(.md-render) svg.rapier-diagram{
+	display:block;margin-inline:auto;height:auto;
+	font-family:var(--md-font-sans)!important;
+	font-size:var(--md-text-sm)!important;
+	fill:var(--md-color-text)!important;
+}
+:where(.md-render) svg.rapier-diagram text,:where(.md-render) svg.rapier-diagram tspan,:where(.md-render) svg.rapier-diagram .nodeLabel,:where(.md-render) svg.rapier-diagram .messageText,:where(.md-render) svg.rapier-diagram text.actor>tspan,:where(.md-render) svg.rapier-diagram .noteText>tspan,:where(.md-render) svg.rapier-diagram .loopText>tspan,:where(.md-render) svg.rapier-diagram .labelText>tspan{
+	font-family:var(--md-font-sans)!important;fill:var(--md-color-text)!important;
+}
+/* Rapier's diagram look, one for a figure an agent lays out in Draw and for the drawing Mermaid makes from the
+   author's source (Draw writes the same pairs into its SVG; _diagram-cells holds the two copies equal). Swiss
+   editorial after the mid-century magazines: nearly monochrome, a box or a decision a flat field of one grey with no
+   outline, the words the page's own type in its ink; the one accent is spent sparingly, on meaning only -- the outcome
+   (a round node, where a flow ends) under black words. It keeps the corner the source asked for: a stadium, a diamond and
+   a parallelogram are what the author wrote; the roundings Mermaid adds to a plain box, an actor, a note and a
+   cluster are not, and Rapier's boxes are square. An author's own style or classDef fill and stroke stay above all
+   of it (they are materialised inline, and an inline declaration outranks this sheet). */
+:where(.md-render) svg.rapier-diagram .node :is(rect,circle,ellipse,polygon,path){
+	fill:var(--md-diagram-box)!important;stroke:none!important;
+}
+:where(.md-render) svg.rapier-diagram[aria-roledescription^="flowchart"] .node:has(>circle) :is(circle,path){fill:var(--md-diagram-accent)!important}
+:where(.md-render) svg.rapier-diagram[aria-roledescription^="flowchart"] .node:has(>circle) :is(text,tspan){fill:var(--md-diagram-on-accent)!important}
+:where(.md-render) svg.rapier-diagram g.classGroup rect,:where(.md-render) svg.rapier-diagram .actor,:where(.md-render) svg.rapier-diagram .labelBox,:where(.md-render) svg.rapier-diagram .activation0,:where(.md-render) svg.rapier-diagram .activation1,:where(.md-render) svg.rapier-diagram .activation2{
+	fill:var(--md-diagram-node-fill)!important;stroke:var(--md-diagram-node-line)!important;stroke-width:var(--md-diagram-hairline)!important;
+}
+/* A group (a subgraph, a composite state) is a typographic band, not a frame: its title in the caption's spaced
+   mono capitals above its members, the paper left open around them. */
+:where(.md-render) svg.rapier-diagram :is(.cluster,.statediagram-cluster) rect{fill:none!important;stroke:none!important}
+:where(.md-render) svg.rapier-diagram :is(.cluster-label,.cluster .label) :is(text,tspan){
+	font-family:var(--md-font-mono)!important;font-size:var(--md-diagram-caption-size)!important;text-transform:uppercase;letter-spacing:var(--md-diagram-title-track)!important;
+}
+:where(.md-render) svg.rapier-diagram .classTitle,:where(.md-render) svg.rapier-diagram text.actor>tspan{font-weight:var(--md-fw-medium)!important}
+:where(.md-render) svg.rapier-diagram :is(.nodeLabel,.node text,.node tspan){font-weight:var(--md-fw-semibold)!important}
+:where(.md-render) svg.rapier-diagram rect.basic,:where(.md-render) svg.rapier-diagram rect.title-state,:where(.md-render) svg.rapier-diagram rect.outer,:where(.md-render) svg.rapier-diagram .actor,:where(.md-render) svg.rapier-diagram .note,:where(.md-render) svg.rapier-diagram .labelBox,:where(.md-render) svg.rapier-diagram .cluster rect,:where(.md-render) svg.rapier-diagram .statediagram-cluster rect{rx:0!important;ry:0!important}
+/* The line between two boxes is mid-ladder and one hairline weight everywhere: it is the road,
+   not the destination. A lifeline and a divider are neither -- they are a box's own rule down
+   or across the page -- and drop to the faintest step there is. */
+:where(.md-render) svg.rapier-diagram .edgePath .path,:where(.md-render) svg.rapier-diagram .flowchart-link,:where(.md-render) svg.rapier-diagram .relation,:where(.md-render) svg.rapier-diagram .transition,:where(.md-render) svg.rapier-diagram .messageLine0,:where(.md-render) svg.rapier-diagram .messageLine1,:where(.md-render) svg.rapier-diagram .er.relationshipLine,:where(.md-render) svg.rapier-diagram g.stateGroup line{
+	stroke:var(--md-diagram-line)!important;stroke-width:var(--md-diagram-stroke)!important;fill:none!important;
+}
+/* `line[id^="actor"]` is the lifeline. It is not `.actor-line`: Mermaid writes the actor's own
+   WIDTH into that element's class attribute (`class="200"`), so the class it documents matches
+   nothing, and the lifeline fell through to Mermaid's bare `#rapier-dN line` rule and came out a
+   2px near-white rail down the page -- the brightest thing in a sequence diagram, for a line that
+   only says "this actor is still here". The id is what the element actually carries. */
+:where(.md-render) svg.rapier-diagram .actor-line,:where(.md-render) svg.rapier-diagram .loopLine,:where(.md-render) svg.rapier-diagram .divider,:where(.md-render) svg.rapier-diagram g.classGroup line,:where(.md-render) svg.rapier-diagram .statediagram-state .divider{
+	stroke:var(--md-diagram-inner-line)!important;stroke-width:1px!important;
+}
+/* One stroke weight for every connector, in the ink, and its head a solid closed triangle of the same ink with no
+   outline of its own, so its point is the stroke's and not a rounded burr. Mermaid marks some of these `!important`
+   under the drawing's id, which nothing here could outrank -- but the shape inside a marker declares no fill of its
+   own, so a declaration on the shape itself wins over anything it would otherwise inherit. What is hollow stays
+   hollow: a hollow triangle is inheritance and a filled one is not. */
+:where(.md-render) svg.rapier-diagram marker path,:where(.md-render) svg.rapier-diagram .marker{
+	fill:var(--md-diagram-arrow)!important;stroke:none!important;
+}
+:where(.md-render) svg.rapier-diagram marker path[fill="none"],:where(.md-render) svg.rapier-diagram .marker.extension path,:where(.md-render) svg.rapier-diagram .marker.aggregation path,:where(.md-render) svg.rapier-diagram .marker.lollipop path{
+	fill:var(--md-color-bg)!important;stroke:var(--md-diagram-arrow)!important;stroke-width:var(--md-diagram-hairline)!important;
+}
+:where(.md-render) svg.rapier-diagram marker circle{fill:var(--md-color-bg)!important;stroke:var(--md-diagram-arrow)!important}
+/* A label on a line sits in a gap it cuts in that line, on the page's own paper -- not in the
+   translucent grey sticker Mermaid lays over the line and its arrow head. */
+:where(.md-render) svg.rapier-diagram .edgeLabel rect,:where(.md-render) svg.rapier-diagram .labelBkg,:where(.md-render) svg.rapier-diagram .er.relationshipLabelBox,:where(.md-render) svg.rapier-diagram .er.relationshipLabelBox rect,:where(.md-render) svg.rapier-diagram .stateLabel .box,:where(.md-render) svg.rapier-diagram .classLabel .box{
+	fill:var(--md-color-bg)!important;stroke:none!important;opacity:1!important;
+}
+:where(.md-render) svg.rapier-diagram .edgeLabel text,:where(.md-render) svg.rapier-diagram .edgeLabel tspan,:where(.md-render) svg.rapier-diagram .er.relationshipLabel,:where(.md-render) svg.rapier-diagram .classLabel .label,:where(.md-render) svg.rapier-diagram .edgeTerminals{
+	fill:var(--md-diagram-quiet)!important;font-size:var(--md-text-xs)!important;
+}
+/* A connector's caption is set as the magazines set one: small spaced mono capitals in the ink, in the gap it
+   knocks out of its line. The label room measures it as it is drawn, capitals and tracking included. */
+:where(.md-render) svg.rapier-diagram .edgeLabel :is(text,tspan){
+	fill:var(--md-diagram-ink)!important;font-family:var(--md-font-mono)!important;font-size:var(--md-diagram-caption-size)!important;
+	text-transform:uppercase;letter-spacing:var(--md-diagram-caption-track)!important;
+}
+/* A note is an aside and takes the inset the rest of Rapier's asides take. ER reads as a table:
+   a headed box over rows that alternate by one step of the same surface, ruled between rows by
+   the faintest line so the rows read as one block rather than as a grid of little boxes. */
+:where(.md-render) svg.rapier-diagram .note,:where(.md-render) svg.rapier-diagram .statediagram-note rect{
+	fill:var(--md-color-inset)!important;stroke:var(--md-diagram-node-line)!important;
+}
+:where(.md-render) svg.rapier-diagram .er.entityBox{fill:var(--md-color-surface)!important;stroke:var(--md-diagram-node-line)!important}
+:where(.md-render) svg.rapier-diagram .er.attributeBoxOdd{fill:var(--md-color-bg)!important;stroke:var(--md-diagram-inner-line)!important}
+:where(.md-render) svg.rapier-diagram .er.attributeBoxEven{fill:var(--md-diagram-node-fill)!important;stroke:var(--md-diagram-inner-line)!important}
+/* An entity's name and its rows wear the same class in Mermaid's output and are told apart only
+   by the id it gives each cell (`...-attr-2-name`), so that is what tells them apart here: the
+   name is type, the cells are data. */
+:where(.md-render) svg.rapier-diagram .er.entityLabel[id*="-attr-"]{fill:var(--md-diagram-quiet)!important}
+:where(.md-render) svg.rapier-diagram .er.entityLabel:not([id*="-attr-"]){font-weight:var(--md-fw-medium)!important}
+/* A state machine starts on a filled dot and ends on a ringed one; both are ink on paper. */
+:where(.md-render) svg.rapier-diagram circle.state-start,:where(.md-render) svg.rapier-diagram .node .fork-join,:where(.md-render) svg.rapier-diagram .end-state-inner{fill:var(--md-color-text)!important;stroke:var(--md-color-text)!important}
+:where(.md-render) svg.rapier-diagram circle.state-end{fill:var(--md-color-bg)!important;stroke:var(--md-color-text)!important}
+/* The kinds that are colour by nature -- a pie's slices, a mindmap's branches, a timeline's periods,
+   a git graph's branches, a gantt chart's bars -- are drawn in the nine colours of the document, the
+   founder's own pairs (rapier-notes.css, "The nine note colours"; docs/intent.md, "The nine colours"),
+   the mate the theme gives a note card: the pale under pure black ink on light paper, the deep under
+   pure white ink on dark. Mermaid's own greys were a light-paper drawing: on dark paper a mindmap and
+   a timeline became white cards under the page's white type, words nobody could read. The hex is
+   copied here because a written page carries this sheet and not the Notes sheet; mermaid-sanitised
+   holds the two copies equal, pair for pair. The order keeps neighbours apart: blue, orange, teal,
+   pink, yellow, red, green, purple, brown. */
+:where(.md-render) svg.rapier-diagram{
+	font-variant-numeric:tabular-nums;
+}
+/* One colour per branch, per section, per slice, in that order; the tenth wraps to the first. Mermaid's
+   own first colour is `section--1` (a timeline's first period; a mindmap's root, which is ink here, so a
+   mindmap's branches begin at the second), and a git graph counts its branches from 0. A shape takes the
+   colour, its words the ink that colour is paired with, its edge the colour itself. */
+:where(.md-render) svg.rapier-diagram :is(.section--1,.section-8,.section-edge--1,.section-edge-8,.commit0,.branch0,.label0,.arrow0){--md-diagram-colour:var(--md-diagram-c1)}
+:where(.md-render) svg.rapier-diagram :is(.section-0,.section-9,.section-edge-0,.section-edge-9,.commit1,.branch1,.label1,.arrow1){--md-diagram-colour:var(--md-diagram-c2)}
+:where(.md-render) svg.rapier-diagram :is(.section-1,.section-10,.section-edge-1,.section-edge-10,.commit2,.branch2,.label2,.arrow2){--md-diagram-colour:var(--md-diagram-c3)}
+:where(.md-render) svg.rapier-diagram :is(.section-2,.section-edge-2,.commit3,.branch3,.label3,.arrow3){--md-diagram-colour:var(--md-diagram-c4)}
+:where(.md-render) svg.rapier-diagram :is(.section-3,.section-edge-3,.commit4,.branch4,.label4,.arrow4){--md-diagram-colour:var(--md-diagram-c5)}
+:where(.md-render) svg.rapier-diagram :is(.section-4,.section-edge-4,.commit5,.branch5,.label5,.arrow5){--md-diagram-colour:var(--md-diagram-c6)}
+:where(.md-render) svg.rapier-diagram :is(.section-5,.section-edge-5,.commit6,.branch6,.label6,.arrow6){--md-diagram-colour:var(--md-diagram-c7)}
+:where(.md-render) svg.rapier-diagram :is(.section-6,.section-edge-6,.commit7,.branch7,.label7,.arrow7){--md-diagram-colour:var(--md-diagram-c8)}
+:where(.md-render) svg.rapier-diagram :is(.section-7,.section-edge-7){--md-diagram-colour:var(--md-diagram-c9)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+1),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+1){--md-diagram-colour:var(--md-diagram-c1)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+2),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+2){--md-diagram-colour:var(--md-diagram-c2)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+3),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+3){--md-diagram-colour:var(--md-diagram-c3)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+4),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+4){--md-diagram-colour:var(--md-diagram-c4)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+5),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+5){--md-diagram-colour:var(--md-diagram-c5)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+6),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+6){--md-diagram-colour:var(--md-diagram-c6)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+7),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+7){--md-diagram-colour:var(--md-diagram-c7)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n+8),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n+8){--md-diagram-colour:var(--md-diagram-c8)}
+:where(.md-render) svg.rapier-diagram .pieCircle:nth-of-type(9n),:where(.md-render) svg.rapier-diagram .legend:nth-of-type(9n){--md-diagram-colour:var(--md-diagram-c9)}
+/* Mindmap and timeline: the node is the colour, its words the colour's ink, the branch to it the
+   colour. The root is the page's own ink with the paper for its words, the one dark stone in the
+   middle; a timeline's event keeps no brightening filter (Mermaid lifts it 20%, off the pair). */
+:where(.md-render) svg.rapier-diagram :is(.section--1,.section-0,.section-1,.section-2,.section-3,.section-4,.section-5,.section-6,.section-7,.section-8,.section-9,.section-10) :is(rect,path,circle,polygon,ellipse){
+	fill:var(--md-diagram-colour)!important;stroke:var(--md-diagram-colour)!important;stroke-width:1px!important;
+}
+:where(.md-render) svg.rapier-diagram :is(.section--1,.section-0,.section-1,.section-2,.section-3,.section-4,.section-5,.section-6,.section-7,.section-8,.section-9,.section-10) :is(text,tspan){fill:var(--md-diagram-on-colour)!important}
+:where(.md-render) svg.rapier-diagram :is(.section--1,.section-0,.section-1,.section-2,.section-3,.section-4,.section-5,.section-6,.section-7,.section-8,.section-9,.section-10) line{stroke:var(--md-diagram-colour)!important;stroke-width:1px!important}
+:where(.md-render) svg.rapier-diagram :is(.section-edge--1,.section-edge-0,.section-edge-1,.section-edge-2,.section-edge-3,.section-edge-4,.section-edge-5,.section-edge-6,.section-edge-7,.section-edge-8,.section-edge-9,.section-edge-10){stroke:var(--md-diagram-colour)!important}
+:where(.md-render) svg.rapier-diagram .section-root :is(rect,path,circle,polygon,ellipse){fill:var(--md-color-text)!important;stroke:var(--md-color-text)!important}
+:where(.md-render) svg.rapier-diagram .section-root :is(text,tspan){fill:var(--md-color-bg)!important}
+:where(.md-render) svg.rapier-diagram .eventWrapper{filter:none!important}
+:where(.md-render) svg.rapier-diagram .lineWrapper line{stroke:var(--md-diagram-line)!important;stroke-width:1px!important}
+/* Pie: each slice its colour, cut from the next by a hairline of paper; its share in the colour's
+   ink; the legend's swatch the same colour. Mermaid draws the slices at 70% over a black rim. */
+:where(.md-render) svg.rapier-diagram .pieCircle{fill:var(--md-diagram-colour)!important;stroke:var(--md-color-bg)!important;stroke-width:2px!important;opacity:1!important}
+:where(.md-render) svg.rapier-diagram .pieOuterCircle{fill:none!important;stroke:none!important}
+:where(.md-render) svg.rapier-diagram .legend rect{fill:var(--md-diagram-colour)!important;stroke:var(--md-diagram-colour)!important}
+:where(.md-render) svg.rapier-diagram text.slice{fill:var(--md-diagram-on-colour)!important;font-size:var(--md-text-sm)!important;font-weight:var(--md-fw-medium)!important}
+/* A drawing's title is set as the page sets a small heading; Mermaid's timeline writes its title as a bare
+   <text> at 4ex bold, its pie at 25px and its gantt chart at 18px. */
+:where(.md-render) svg.rapier-diagram :is(.pieTitleText,.titleText),:where(.md-render) svg.rapier-diagram[aria-roledescription="timeline"]>text{
+	fill:var(--md-color-text)!important;font-size:var(--md-text-base)!important;font-weight:var(--md-fw-semibold)!important}
+/* Git graph: a branch is one colour -- its line, its commits, its merge arrows, its name's tab. */
+:where(.md-render) svg.rapier-diagram :is(.commit0,.commit1,.commit2,.commit3,.commit4,.commit5,.commit6,.commit7){fill:var(--md-diagram-colour)!important;stroke:var(--md-diagram-colour)!important}
+:where(.md-render) svg.rapier-diagram :is(.branch0,.branch1,.branch2,.branch3,.branch4,.branch5,.branch6,.branch7,.arrow0,.arrow1,.arrow2,.arrow3,.arrow4,.arrow5,.arrow6,.arrow7){stroke:var(--md-diagram-colour)!important;stroke-width:2px!important}
+:where(.md-render) svg.rapier-diagram :is(.label0,.label1,.label2,.label3,.label4,.label5,.label6,.label7){fill:var(--md-diagram-colour)!important;stroke:none!important}
+:where(.md-render) svg.rapier-diagram .branchLabel :is(text,tspan){fill:var(--md-diagram-on-colour)!important}
+:where(.md-render) svg.rapier-diagram :is(.commit-merge,.commit-reverse,.commit-highlight-inner){fill:var(--md-color-bg)!important}
+:where(.md-render) svg.rapier-diagram .commit-label-bkg{fill:var(--md-color-bg)!important;opacity:1!important}
+:where(.md-render) svg.rapier-diagram :is(.commit-label,.tag-label){fill:var(--md-diagram-quiet)!important;font-size:var(--md-text-xs)!important}
+:where(.md-render) svg.rapier-diagram :is(.tag-label-bkg,.tag-hole){fill:var(--md-diagram-node-fill)!important;stroke:var(--md-diagram-node-line)!important}
+/* Gantt: bands of the page's own ladder behind the rows, a plan's bar in the first colour, the one
+   under way in the third, the critical path in red, the done ones sunk to the quiet step; the grid
+   the faintest line and its dates the quiet ink, figures tabular so a column of dates lines up. */
+:where(.md-render) svg.rapier-diagram :is(.section0,.section2){fill:var(--md-diagram-node-fill)!important;opacity:1!important}
+:where(.md-render) svg.rapier-diagram :is(.section1,.section3){fill:var(--md-color-bg)!important;opacity:1!important}
+:where(.md-render) svg.rapier-diagram :is(.task0,.task1,.task2,.task3,.task){fill:var(--md-diagram-c1)!important;stroke:var(--md-diagram-c1)!important}
+:where(.md-render) svg.rapier-diagram :is(.active0,.active1,.active2,.active3){fill:var(--md-diagram-c3)!important;stroke:var(--md-diagram-c3)!important}
+:where(.md-render) svg.rapier-diagram :is(.done0,.done1,.done2,.done3){fill:var(--md-diagram-node-line)!important;stroke:var(--md-diagram-node-line)!important}
+:where(.md-render) svg.rapier-diagram :is(.crit0,.crit1,.crit2,.crit3,.activeCrit0,.activeCrit1,.activeCrit2,.activeCrit3,.doneCrit0,.doneCrit1,.doneCrit2,.doneCrit3){fill:var(--md-diagram-c6)!important;stroke:var(--md-diagram-c6)!important}
+:where(.md-render) svg.rapier-diagram .taskText{fill:var(--md-diagram-on-colour)!important}
+:where(.md-render) svg.rapier-diagram :is(.taskTextOutsideRight,.taskTextOutsideLeft,.sectionTitle){fill:var(--md-color-text)!important}
+:where(.md-render) svg.rapier-diagram .grid .tick line{stroke:var(--md-diagram-inner-line)!important;opacity:1!important}
+:where(.md-render) svg.rapier-diagram .grid path{stroke:none!important}
+:where(.md-render) svg.rapier-diagram .grid .tick text{fill:var(--md-diagram-quiet)!important;font-size:var(--md-text-xs)!important}
+:where(.md-render) svg.rapier-diagram .today{stroke:var(--md-diagram-c6)!important}
+/* Paper cannot be scrolled sideways, so on paper a diagram, and a wide drawing, go back to fitting the page. */
+@media print{
+	:where(.md-render) .diagram-block{overflow:visible!important}
+	:where(.md-render) svg.rapier-diagram,:where(.md-render) svg.rapier-native-flowchart{width:auto!important;max-width:100%!important}
+	.md-render img[data-md-drawing]{min-width:0!important}
+	.md-render :has(>img[data-md-drawing],>a>img[data-md-drawing]){overflow:visible!important}
+}
+:where(.md-render) .diagram-reason {
+	margin: .4em 0 0;
+	font-size: 0.88em;
+	opacity: .78;
+}
+
+.md-render{
+	font:var(--md-fw-regular) 1.1rem/1.75 var(--md-font-sans);color:var(--md-color-text);text-align:start}
+.md-render>:first-child,.md-render :is(blockquote,li,td,th,dd,.callout,details)>:first-child{margin-top:0}
+.md-render h1,.md-render h2,.md-render h3,.md-render h4,.md-render h5,.md-render h6{
+	font-family:var(--md-font-sans);letter-spacing:-0.01em;
+	line-height:var(--md-leading-tight);color:var(--md-heading-color);text-wrap:balance}
+.md-render h1{font-size:2.8rem;font-weight:700;
+	margin:var(--md-space-6) 0 var(--md-space-4);
+	padding-bottom:var(--md-space-3);border-bottom:1px solid var(--md-color-border)}
+.md-render h2{font-size:2.2rem;font-weight:600;margin:var(--md-space-6) 0 var(--md-space-3)}
+.md-render h3{font-size:1.7rem;font-weight:600;margin:var(--md-space-5) 0 var(--md-space-2)}
+.md-render h4{font-size:1.3rem;font-weight:500;margin:var(--md-space-4) 0 var(--md-space-2)}
+/* h5/h6 complete the six-level hierarchy: modest but owned (explicit size/weight/colour), never
+   the browser default. Size stays strictly monotonic below h4; h6 firms up weight and dims colour
+   since its size alone reads weakly small next to body text. */
+.md-render h5{font-size:1.1rem;font-weight:600;margin:var(--md-space-4) 0 var(--md-space-2)}
+.md-render h6{font-size:0.95rem;font-weight:600;margin:var(--md-space-3) 0 var(--md-space-2);color:var(--md-heading-muted-color)}
+.md-render p{margin:0 0 var(--md-space-4)}
+.md-render ul,.md-render ol{margin:0 0 var(--md-space-4);padding-inline-start:var(--md-space-5)}
+.md-render ul{list-style:none}
+.md-render ul>li{position:relative}
+
+.md-render ul>li::before{
+	content:'';position:absolute;inset-inline-start:calc(-1*var(--md-space-4));top:.66em;
+	width:7px;height:7px;border-radius:50%;background:currentColor}
+.md-render ul ul>li::before{
+	box-sizing:border-box;background:transparent;border:2px solid currentColor}
+.md-render ul ul ul>li::before{
+	width:5px;height:5px;top:.72em;border:0;background:currentColor}
+.md-render li.task-list-item::before{content:none}
+/* A ticked box is content, not editor chrome. These rules used to live in the source stylesheet,
+   which the shell loads and an exported page does not -- so an exported document showed the
+   browser's own native checkbox where Rapier draws its square and its mark, which is exactly what
+   an export is supposed not to do. Every selector is .md-render-scoped and every value comes from
+   this sheet's own defaults, so their home is here, in the sheet a written page
+   carries. */
+.md-render .task-list-item {
+	list-style: none;
+	padding-left: 0;
+	position: relative;
+}
+
+.md-render .task-list-item input[type="checkbox"] {
+	--md-task-box: clamp(14px, .92em, 24px);
+	/* A form control does not inherit colour on its own; the shell's own app sheet gives it one
+	   (`input,textarea,select{...color:inherit}`) and an exported page does not carry that sheet, so
+	   it says so here. The drawn box names its own colours, so this changes no pixel today -- it
+	   stops the two surfaces disagreeing about a property, which is how the next rule that does
+	   depend on it would go wrong quietly. */
+	color: inherit;
+	position: relative;
+	left: calc(-1 * var(--md-space-5) - 16px);
+	margin: -16px calc(var(--md-space-1) - 16px) -16px 0;
+	width: 48px; height: 48px;
+	font: inherit;
+	-webkit-appearance: none; appearance: none;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	cursor: pointer;
+	display: inline-block;
+	vertical-align: -3px;
+	touch-action: manipulation;
+}
+/* The box and its tick are Feather's square and check-square (the founder, 24 September 2026:
+   "copy that style exactly except with squared corners"): drawn on Feather's 24-unit grid with its
+   2-unit stroke, the box's corners mitred square, and a ticked box opens at its top right where
+   the tick breaks out through it. The grid is a third wider than the box itself (the box is units
+   3 to 21), so the painted square keeps exactly the place and size --rapier-task-box gave it; the
+   ink is --color-line through a mask, so the theme recolours it and an export needs nothing more
+   than the data: images its policy already admits. The three glyphs are written here once, and a Notes
+   card's check rows read these same three (rapier-notes.css; docs/intent.md "The afternoon list", law 3:
+   one SVG per icon across Rapier). */
+:root,.md-render {
+	--md-glyph-task-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Cpath d='M3 3h18v18H3z'/%3E%3C/svg%3E");
+	--md-glyph-task-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M21 12v9H3V3h13'/%3E%3C/svg%3E");
+	--md-glyph-task-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 11 12 14 22 4'/%3E%3C/svg%3E");
+}
+.md-render .task-list-item input[type="checkbox"]::before,.md-render .task-list-item input[type="checkbox"]:checked::after {
+	content: '';
+	position: absolute;
+	left: calc((48px - var(--md-task-box)) / 2 - var(--md-task-box) / 6);
+	top: calc((48px - var(--md-task-box)) / 2 - var(--md-task-box) / 6);
+	width: calc(var(--md-task-box) * 4 / 3); height: calc(var(--md-task-box) * 4 / 3);
+	background: var(--md-color-line);
+	-webkit-mask: var(--md-glyph-task-box) center / 100% 100% no-repeat;
+	mask: var(--md-glyph-task-box) center / 100% 100% no-repeat;
+}
+.md-render .task-list-item input[type="checkbox"]:checked::before {
+	-webkit-mask-image: var(--md-glyph-task-open);
+	mask-image: var(--md-glyph-task-open);
+}
+.md-render .task-list-item input[type="checkbox"]:checked::after {
+	-webkit-mask-image: var(--md-glyph-task-tick);
+	mask-image: var(--md-glyph-task-tick);
+}
+
+.md-render ol{
+	list-style:none;
+	padding-inline-start:2.75rem;
+	margin:0 0 var(--md-space-4);
+	counter-reset:rapier-ol;
+}
+.md-render ol>li{
+	position:relative;
+	counter-increment:rapier-ol;
+	min-height:2rem;
+	padding-top:0.15rem;
+}
+.md-render ol>li::before{
+	content:counter(rapier-ol);
+	position:absolute;
+	inset-inline-start:-2.75rem; top:0;
+	width:2rem; height:2rem;
+	display:flex; align-items:center; justify-content:center;
+	border:2px solid var(--md-color-line);
+	border-radius:999px;
+	background:var(--md-color-bg);
+	color:var(--md-color-line);
+	font:var(--md-fw-medium) 0.95rem/1 var(--md-font-sans);
+	font-variant-numeric:tabular-nums;
+	box-sizing:border-box;
+	z-index:1;
+}
+.md-render ol>li:not(:last-child)::after{
+	content:'';
+	position:absolute;
+
+	inset-inline-start:calc(-1.75rem - 1.5px);
+	top:2.2rem;
+	bottom:-0.4rem;
+	border-inline-start:3px dotted var(--md-color-line);
+	z-index:0;
+}
+.md-render li{margin:0 0 var(--md-space-3)}
+.md-render li>ul,.md-render li>ol{margin:var(--md-space-2) 0 0}
+.md-render a{color:var(--md-color-accent-text);text-decoration:underline;text-underline-offset:2px}
+/* The house focus (rapier-app.css) in the document and on the exported page: the underline thickens, no ring. */
+.md-render a:focus-visible,.md-render ul.rapier-jump-list>li>a:focus-visible,.md-render .footnote-ref a:focus-visible,.md-render summary:focus-visible{outline:none;text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
+
+.md-render .rapier-jump-label{
+	margin:0 0 .5rem;
+	font:var(--md-fw-semibold) .72rem/1.4 var(--md-font-mono);
+	letter-spacing:var(--md-track-caps);
+	text-transform:uppercase;
+	color:var(--md-color-text);
+}
+.md-render .rapier-jump-label strong{font:inherit}
+.md-render ul.rapier-jump-list{
+	--md-jump-gap:.9rem;
+	--md-jump-marker-inline-start:-1.18rem;
+	--md-jump-marker-center:1em;
+	list-style:none;
+	padding-inline-start:1.85rem;
+	margin:0 0 var(--md-space-5);
+}
+.md-render ul.rapier-jump-list>li{
+	position:relative;
+	margin:0 0 var(--md-jump-gap);
+	padding:.18rem 0 .18rem .15rem;
+}
+.md-render ul.rapier-jump-list>li:last-child{margin-bottom:0}
+.md-render ul.rapier-jump-list>li::before{
+	content:'';
+	position:absolute;
+	inset-inline-start:var(--md-jump-marker-inline-start);
+	top:calc(var(--md-jump-marker-center) - 5px);
+	width:10px;height:10px;
+	box-sizing:border-box;
+	border:2px solid var(--md-color-accent-text);
+	background:var(--md-color-bg);
+	border-radius:50%;
+	z-index:1;
+}
+.md-render ul.rapier-jump-list>li:not(:last-child)::after{
+	content:'';
+	position:absolute;
+	inset-inline-start:calc(var(--md-jump-marker-inline-start) + 4px);
+	top:var(--md-jump-marker-center);
+	bottom:calc(0px - var(--md-jump-gap) - var(--md-jump-marker-center));
+	border-inline-start:2px dotted color-mix(in srgb,var(--md-color-accent-text) 42%,transparent);
+	z-index:0;
+}
+.md-render ul.rapier-jump-list>li>a{
+	color:var(--md-color-text);
+	font-weight:var(--md-fw-medium);
+	text-decoration-line:underline;
+	text-decoration-color:color-mix(in srgb,var(--md-color-accent-text) 74%,transparent);
+	text-decoration-thickness:1px;
+	text-underline-offset:3px;
+}
+@media (hover:hover) and (pointer:fine){
+	.md-render ul.rapier-jump-list>li>a:hover{color:var(--md-color-accent-text)}
+}
+.md-render strong{font-weight:var(--md-fw-semibold)}
+.md-render em{font-style:italic}
+.md-render code{font-family:var(--md-font-mono);font-size:0.85em;
+	background:var(--md-color-inset);border:1px solid var(--md-color-border);padding:1px 5px}
+.md-render pre{margin:0 0 var(--md-space-4);padding:var(--md-space-3) var(--md-space-4);
+	background:var(--md-color-surface-2);border:1px solid var(--md-color-border);overflow-x:auto}
+.md-render pre code{background:none;border:none;padding:0;font-size:0.8125rem;line-height:1.6}
+.md-render .math-display-wrap{
+	display:block;
+	max-width:100%;
+	margin:0 0 var(--md-space-4);
+	overflow-x:auto;
+	overflow-y:hidden;
+	-webkit-overflow-scrolling:touch;
+	text-align:center;
+}
+.md-render .math-display-wrap>math{
+	display:inline-block;
+	width:auto;
+	max-width:none;
+	min-width:max-content;
+	margin:0;
+	overflow:visible;
+	text-align:initial;
+	vertical-align:middle;
+}
+.md-render p>.math-display-wrap{margin:var(--md-space-2) 0 var(--md-space-4)}
+.md-render math[display="block"]{font-size:1.12em}
+.md-render math:not([display="block"]){font-size:1em}
+.md-render blockquote{margin:0 0 var(--md-space-4);
+	padding-block:var(--md-space-1);padding-inline-start:var(--md-space-4);padding-inline-end:0;
+	border-inline-start:2px solid var(--md-color-border-focus);color:var(--md-color-text-secondary)}
+.md-render blockquote blockquote{
+	margin:var(--md-space-3) 0 var(--md-space-2);padding-inline-start:var(--md-space-3);
+	border-inline-start-color:color-mix(in srgb,var(--md-color-border-focus) 70%,var(--md-color-text-muted));
+	color:color-mix(in srgb,var(--md-color-text-secondary) 84%,var(--md-color-text-muted))
+}
+.md-render blockquote blockquote blockquote{
+	border-inline-start-width:1px;color:var(--md-color-text-muted)
+}
+.md-render blockquote.callout{
+	--md-callout-color:var(--md-callout-note);
+	padding:var(--md-space-2) var(--md-space-4);border:0;border-inline-start:4px solid var(--md-callout-color);
+	background:none;color:var(--md-color-text);border-radius:0
+}
+.md-render blockquote.callout-tip{--md-callout-color:var(--md-color-success)}
+.md-render blockquote.callout-important{--md-callout-color:var(--md-callout-important)}
+.md-render blockquote.callout-warning{--md-callout-color:var(--md-color-warning)}
+.md-render blockquote.callout-caution,.md-render blockquote.callout-danger{--md-callout-color:var(--md-color-error)}
+.md-render .callout__label{
+	display:flex;align-items:center;gap:.5em;margin:0 0 var(--md-space-2);
+	font-family:var(--md-font-sans);font-size:1em;font-weight:var(--md-fw-semibold);line-height:inherit;
+	color:var(--md-callout-color)
+}
+.md-render .callout__label>svg{flex:none;width:1em;height:1em}
+.md-render blockquote.callout>:last-child{margin-bottom:0}
+@media print{.md-render{--md-callout-note:#0969da;--md-callout-important:#8250df}}
+
+.md-render details { border: 1px solid var(--md-color-border); border-radius: 0; padding: var(--md-space-2) var(--md-space-4); margin: 0 0 var(--md-space-4); }
+.md-render details[open] { padding-bottom: var(--md-space-3); }
+/* A section with nothing typed into it yet has no paragraph to tap: without this, the only body
+   space below the summary is the plain padding-bottom above (12px), too thin a margin for a real
+   touch to land in rather than snap back onto the summary control next to it -- the one-tap law
+   promises a way in, so an empty body keeps a genuine touch-target's worth of its own room. */
+.md-render details[open]:not(:has(> :not(summary))) { padding-bottom: var(--md-space-8); }
+.md-render summary { cursor: pointer; font-weight: var(--md-fw-medium); color: var(--md-color-text); user-select: none; padding: var(--md-space-1) 0; }
+@media (hover:hover) and (pointer:fine){.md-render summary:hover{color:var(--md-color-accent-text)}}
+.md-render details > *:not(summary):last-child { margin-bottom: 0; }
+
+.md-render hr{
+	position:relative;
+	border:none;
+	height:0;
+	background:transparent;
+	color:var(--md-color-line);
+	opacity:1;
+	margin:var(--md-space-7) 0;
+	overflow:visible;
+}
+.md-render hr[data-hr-style="dash"]{
+	border-top:2px solid var(--md-color-line);
+}
+.md-render hr[data-hr-style="stars"]{
+	height:18px;
+	margin:var(--md-space-8) 0;
+}
+.md-render hr[data-hr-style="stars"]::before{
+	content:"";
+	position:absolute;
+	left:50%;
+	top:50%;
+	width:7.5rem;
+	height:2px;
+	transform:translate(-50%,-50%);
+	background:linear-gradient(to right,
+		var(--md-color-line) 0 22%, transparent 22% 39%,
+		var(--md-color-line) 39% 61%, transparent 61% 78%,
+		var(--md-color-line) 78% 100%);
+}
+.md-render hr[data-hr-style="underscore"]{
+	height:8px;
+	border-top:2px solid var(--md-color-line);
+	border-bottom:2px solid var(--md-color-line);
+}
+
+/* Page break: unobtrusive by design, the same weight as .section-fold-btn (rapier-editor.css) --
+	 muted colour and .37 opacity, never the stronger --color-line the horizontal-rule variants use.
+	 Invisible on paper: this sheet's print rule zeros this out and applies the actual break instead. */
+.md-render [data-md-break]{
+	position:relative;
+	height:0;
+	border:none;
+	border-top:1px dashed var(--md-color-text-muted);
+	margin:var(--md-space-7) 0;
+	opacity:.37;
+}
+.md-render [data-md-break]::after{
+	content:"page";
+	position:absolute;
+	right:0;
+	top:0;
+	transform:translateY(-50%);
+	background:var(--md-color-bg);
+	padding:0 var(--md-space-2);
+	font-size:var(--md-text-xs);
+	letter-spacing:.02em;
+	color:var(--md-color-text-muted);
+}
+
+.md-render table{
+	width:100%;
+	border-collapse:collapse;
+	margin:0 0 var(--md-space-5);
+	font-size:var(--md-text-sm);
+	border:2px solid var(--md-color-line);
+}
+.md-render th,.md-render td{
+	border:1px solid color-mix(in srgb, var(--md-color-line) 74%, transparent);
+	padding:var(--md-space-2) var(--md-space-3);
+	text-align:left;
+}
+.md-render thead th{
+	border-bottom:2px solid var(--md-color-line);
+}
+.md-render th{
+	font-weight:var(--md-fw-semibold);
+	color:var(--md-color-line);
+}
+/* A table caption (proposal 3): `.rapier-table-caption` is the definitive class
+	 _rapierMarkTableCaptions (editor/engine.js) settles once against the whole-document export DOM,
+	 so it styles unconditionally wherever this stylesheet is embedded (the standalone/publishing web
+	 page export, the PDF/print artifact). The live editor renders each block independently and can
+	 only mark a *candidate* on the block's own raw text (_rapierMarkTableCaptionCandidate); the
+	 adjacent-sibling rule below settles the real "is it truly right after a table" question against
+	 the live .block-wrapper DOM, reactively, with no bookkeeping kept in sync on insert/delete/reorder. */
+:where(.md-render) .rapier-table-caption {
+	margin-top: calc(-1 * var(--md-space-4));
+	font-style: italic;
+	font-size: var(--md-text-sm);
+	color: var(--md-color-text-secondary);
+}
+.md-render img{
+	max-width:100%;height:auto;
+	border:0;
+	vertical-align:middle;
+}
+.md-render img[data-rapier-image-size]{width:min(var(--md-image-width),100%);height:auto}
+/* A drawing (an SVG picture, as every Draw drawing is) shown at its own size carries that size, and shrinks to the column only
+   while its words stay legible: at 12/14 of it, Draw's default words (14 px) are 12 px, the smallest text a phone reads
+   (measured on a 390 px phone, the lane drawing-dark-wide). There it stops, and its block scrolls sideways, as a wide diagram
+   does; a drawing that fits, or shrinks less than that, is drawn as it always was. */
+.md-render img[data-md-drawing]{min-width:calc(var(--md-drawing-width) * 12 / 14)}
+.md-render :has(>img[data-md-drawing],>a>img[data-md-drawing]){overflow-x:auto}
+.md-render img:is([data-rapier-asset],[data-rapier-image-url]):not([data-rapier-asset-state="ready"]){background:color-mix(in srgb,var(--md-color-text) 5%,transparent)}
+
+.md-render dl{margin:0 0 var(--md-space-4)}
+.md-render dt{font-weight:var(--md-fw-semibold);margin:var(--md-space-2) 0 0}
+.md-render dt:first-child{margin-top:0}
+.md-render dd{margin:var(--md-space-1) 0 0;padding-inline-start:var(--md-space-4);color:var(--md-color-text-secondary)}
+
+.md-render mark{
+	--md-highlight-color:var(--md-color-accent);
+	background:color-mix(in srgb, var(--md-highlight-color) 32%, transparent);
+	color:var(--md-color-text);
+	padding:0;
+	-webkit-box-decoration-break:clone;
+	box-decoration-break:clone;
+	-webkit-print-color-adjust:exact;
+	print-color-adjust:exact;
+}
+.md-render mark[data-rapier-highlight="green"]{--md-highlight-color:#35c57a}
+.md-render mark[data-rapier-highlight="red"]{--md-highlight-color:#f05a62}
+.md-render mark[data-rapier-highlight="blue"]{--md-highlight-color:#4f91f7}
+.md-render mark[data-rapier-highlight="yellow"]{--md-highlight-color:#e6b91e}
+.md-render mark[data-rapier-highlight="purple"]{--md-highlight-color:#9b6dea}
+/* Text colour: the canonical (light) hex and its OKLCH-derived dark pair both ship as inline
+	 custom properties on the run itself (editor/engine.js, §b) — this just picks between them the
+	 same way as the document palette: the document colour scheme chooses the matching value. The five named swatches also carry a literal,
+	 pre-computed --md-color-dark here, so the common case survives even a round-trip that kept
+	 data-md-color but dropped style, exactly like highlight's own swatch constants. */
+.md-render [data-md-color]{--md-color-dark:var(--md-color);color:light-dark(var(--md-color),var(--md-color-dark))}
+.md-render [data-md-color="#1c7547"]{--md-color-dark:#70c390}
+.md-render [data-md-color="#b32034"]{--md-color-dark:#ff8385}
+.md-render [data-md-color="#175dc4"]{--md-color-dark:#7bafff}
+.md-render [data-md-color="#865818"]{--md-color-dark:#d6a367}
+.md-render [data-md-color="#7924d7"]{--md-color-dark:#ba97ff}
+.md-render abbr[title]{text-decoration:underline dotted;text-decoration-color:var(--md-color-text-muted);text-underline-offset:2px;cursor:help}
+.md-render ins{text-decoration:underline;color:var(--md-color-success)}
+/* The document owns its selection accent, including on an exported page. */
+.md-render ::selection{background:color-mix(in srgb,var(--md-color-accent) 48%,transparent)}
+.md-render del,.md-render s{color:var(--md-color-text-muted);text-decoration:line-through}
+
+.md-render .footnotes-sep{display:none}
+.md-render .footnotes{margin:var(--md-space-7) 0 0;padding-top:var(--md-space-3);border-top:1px solid var(--md-color-border);font-size:var(--md-text-sm);color:var(--md-color-text-secondary)}
+.md-render .footnotes-list{list-style:decimal;padding-inline-start:var(--md-space-5);margin:0;counter-reset:none}
+.md-render .footnotes-list>li{padding-top:0;min-height:0}
+.md-render .footnotes-list>li::before,.md-render .footnotes-list>li::after{content:none}
+.md-render .footnote-ref a{
+	color:var(--md-color-accent-text);font-weight:var(--md-fw-semibold);
+	text-decoration:underline;text-decoration-thickness:1px;
+	text-underline-offset:2px;text-decoration-skip-ink:auto}
+.md-render .footnote-backref{
+	margin-inline-start:var(--md-space-1);color:var(--md-color-accent-text);
+	text-decoration:underline;text-underline-offset:2px;position:relative}
+/* The arrow is a glyph 9 px wide at the end of a line; a finger that lands beside it means it. An
+   invisible reach around the glyph, nothing drawn. */
+.md-render .footnote-backref::after{content:'';position:absolute;inset:-12px}
+
+
+
+/* A shared page marks a long code block at export time; its note and its print rule travel with it.
+   These live here rather than in share.js's own fallback, where they were first written, because
+   this is the sheet every written page carries -- G3 reached the same conclusion independently, and
+   the content sheet is where a look belongs. */
+.md-render pre[data-rapier-code-lines]{position:relative;max-height:33em;overflow:auto;padding-top:28px}
+.md-render .rapier-code-lines-note{position:absolute;top:6px;right:10px;font:.7rem/1 var(--md-font-sans);color:var(--md-color-text-muted);background:var(--md-color-inset);padding:.15em .5em;pointer-events:none}
+@media print{
+	.md-render pre[data-rapier-code-lines]{max-height:none!important;overflow:visible!important;padding-top:12px!important}
+	.md-render .rapier-code-lines-note{display:none!important}
+}
+
+/* Overflow belongs to the document; the surrounding page owns its measure and padding. */
+.md-render .table-scroll-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.md-render .table-scroll-wrap table{min-width:100%}
+@media print{
+  .md-render [data-md-break]{border:0!important;height:0!important;margin:0!important;break-before:page;page-break-before:always}
+  .md-render [data-md-break]::after{content:none!important}
+}

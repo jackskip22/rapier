@@ -27,20 +27,13 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'c0c6fecdaec608df5d8a46186c19d3f39249590ca2ca331f13e970b1834be5a7';
+const SHELL_RELEASE_SHA256 = 'f963ea095177076f26025485b716ad08645826ffebe3e0b6eb25bc6732628371';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
-/* Demonstration material, not product. A shell member is mandatory — its absence
-   fails the install and takes the whole offline editor with it — and an ordinary
-   Rapier has no business depending on a fixture it never opens. It is cached on
-   first use instead, in its own store, so `?demo=1` still works offline for
-   anyone who has actually been there. */
-const DEMO_PAGE_URL = new URL('./demo.md', self.location).href;
-const FIXTURE_CACHE = `rapier-fixture:${CACHE_SCOPE}`;
 
 /* Share payloads are one-shot, scope-qualified, bounded, and short-lived. */
 const SHARE_CACHE = `rapier-share:${CACHE_SCOPE}:v1`;
@@ -48,6 +41,9 @@ const MAX_SHARED_BYTES = 25 * 1024 * 1024;
 const MAX_SHARED_REQUEST_BYTES = MAX_SHARED_BYTES + 1024 * 1024;
 const MAX_SHARED_FILENAME_BYTES = 255;
 const MAX_PENDING_SHARES = 4;
+/* A navigation is network-first, but not for ever (open-work item 12): past this wait with the
+   release's own verified copy at hand, the copy is served and the network's late answer dropped. */
+const NAVIGATION_WAIT_MS = 3000;
 const MAX_SHARE_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_SHARE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
@@ -69,14 +65,12 @@ self.addEventListener('install', event => {
     if (releaseDigest !== SHELL_RELEASE_SHA256) {
       throw new Error('shell bytes do not match this service worker release');
     }
-    /* Own generation, own cache, named before any byte was fetched: a predecessor
-       still serving compiled a different SHELL_RELEASE_SHA256 and so owns a
-       different name, never this one. A retry after a failed put simply retries
-       the same open-and-put against the same name. */
-    if (!(await caches.has(SHELL_GENERATION))) {
-      const cache = await caches.open(SHELL_GENERATION);
-      await Promise.all(members.map(member => cache.put(member.request, member.response)));
-    }
+    /* Own generation, own verified bytes. Opening a cache creates its name before
+       its puts finish, so existence alone never proves that a failed install left
+       every member behind. Each install fills the generation with the same verified
+       bytes before it can activate; retrying cannot bless an incomplete shell. */
+    const cache = await caches.open(SHELL_GENERATION);
+    await Promise.all(members.map(member => cache.put(member.request, member.response)));
     await self.skipWaiting();
   })());
 });
@@ -94,10 +88,6 @@ self.addEventListener('activate', event => {
     const keys = await caches.keys();
     const superseded = keys.filter(key => key.startsWith(SHELL_CACHE_PREFIX) && key !== SHELL_GENERATION);
     await Promise.all(superseded.map(key => caches.delete(key)));
-    /* A fixture is not part of the hashed shell, so nothing rotates it when the
-       build changes. Retiring it with the generation it was fetched beside is
-       what keeps a stale one from outliving the Rapier that opened it. */
-    if (superseded.length) await caches.delete(FIXTURE_CACHE);
     await pruneShareCache(await caches.open(SHARE_CACHE));
     await self.clients.claim();
   })());
@@ -131,22 +121,28 @@ self.addEventListener('fetch', event => {
        worker's own release from one edge and a newer build's bytes from another.
        Writing it back here would let unverified bytes into a cache whose name
        promises exactly what install hashed. */
-    event.respondWith(networkResponse.then(async response => {
-      if (response && response.ok) return response;
-      return (await cachedNavigationResponse(req)) || response;
-    }, async () => {
-      return (await cachedNavigationResponse(req)) || new Response(
+    event.respondWith((async () => {
+      const outcome = networkResponse.then(response => ({ response }), error => ({ error }));
+      /* A network that never answers (a captive portal, one bar of signal) must not hold the
+         installed app at a blank page: after the wait the verified copy is served when there is
+         one. With no copy the network is all there is, and the wait goes on. */
+      const first = await Promise.race([outcome, new Promise(resolve => setTimeout(() => resolve(null), NAVIGATION_WAIT_MS))]);
+      if (!first) {
+        const copy = await cachedNavigationResponse(req);
+        if (copy) return copy;
+      }
+      const settled = first || await outcome;
+      if (settled.response && settled.response.ok) return settled.response;
+      return (await cachedNavigationResponse(req)) || settled.response || new Response(
         'Rapier is unavailable offline.',
         {
           status: 503,
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         }
       );
-    }));
+    })());
     return;
   }
-
-  if (req.url === DEMO_PAGE_URL) { event.respondWith(fixtureResponse(req)); return; }
 
   // Shell cache first; all other GETs pass through uncached.
   event.respondWith(
@@ -164,29 +160,15 @@ async function cachedNavigationResponse(request) {
   const requested = new URL(request.url);
   const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
+  /* And the doors the page names itself by (docs/intent.md laws 41 and 42; repo/_redirects): while Notes
+     or Draw is up the address reads notes or draw under the root, so a reload there offline is a reload
+     of Rapier, with the trailing slash the door mark allows (shell/platform.js _rapierDoorPathMark). */
+  const door = requested.pathname.startsWith(root.pathname) &&
+    /^(?:notes|draw|privacy)\/?$/.test(requested.pathname.slice(root.pathname.length));
   if (requested.origin !== root.origin ||
-      (requested.pathname !== root.pathname && requested.pathname !== page.pathname)) return null;
+      (requested.pathname !== root.pathname && requested.pathname !== page.pathname && !door)) return null;
   const cache = await shellCache();
   return (await cache.match(request)) || cache.match(SHELL_PAGE_URL);
-}
-
-/* Cache-on-first-use, and never fail the request because storing failed: the
-   fixture is worth having offline but is worth nothing at the cost of not
-   opening at all. Same admission the shell members get, so a host that serves
-   `.md` as something else is refused rather than stored. */
-async function fixtureResponse(request) {
-  try {
-    const cache = await caches.open(FIXTURE_CACHE);
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    const response = await fetch(request);
-    if (isCacheableShellMember(request, response)) {
-      try { await cache.put(request, response.clone()); } catch (_) {}
-    }
-    return response;
-  } catch (_) {
-    return fetch(request);
-  }
 }
 
 let shellCachePromise = null;
@@ -222,9 +204,6 @@ function isCacheableShellMember(request, response) {
   }
   const contentType = (response.headers.get('Content-Type') || '').trim();
   if (request.url === SHELL_PAGE_URL) return /^text\/html(?:;|$)/i.test(contentType);
-  /* Static hosts disagree about `.md`, and a type this worker refuses would fail
-     the whole install and take the offline shell with it. */
-  if (request.url === DEMO_PAGE_URL) return /^text\/(?:markdown|plain)(?:;|$)/i.test(contentType);
   if (request.url.endsWith('/manifest.json')) {
     return /^(?:application\/(?:manifest\+json|json)|text\/json)(?:;|$)/i.test(contentType);
   }

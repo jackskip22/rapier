@@ -1,33 +1,11 @@
 # Rapier
 
-> A self-contained Markdown, text, and code editor. One HTML artifact exposes
-> the same semantic operation kernel to its visible UI, WebMCP, and embed hosts.
+> The document editor an agent hands a person and works in beside them: one offline page, exact source, every change the person's to keep or drop.
 
-## Start
-
-- [Open Rapier](https://rapier.website/): The editor and live WebMCP surface in a capable browser.
-- [Artifact](https://rapier.website/rapier.html): The complete core editor; no build step, bundler, backend, or network fetch is needed to start and use it. Optional Math and DOCX export bundles are fetched only when requested.
-- [Working demo](https://rapier.website/?demo=1&preview=phone): Rapier opened on its included demonstration document, in its real phone layout.
-- [Agent guide](https://rapier.website/agents): Current tools, bounded editing workflow, and document-law conduct.
-
-## Will
-
-- [Will specification](https://rapier.website/WILL-1.md): Will lets a document carry its person's durable intent and the `edit`, `append`, or `keep` law for each governed region.
-- [Will vectors](https://rapier.website/VECTORS.md): Portable, machine-judgeable conformance cases.
-
-## Integration
-
-- [WebMCP record](https://rapier.website/WEBMCP-CHALLENGE.md): What the browser-agent projection adds and what remains in Rapier's pre-existing kernel.
-- [README](https://rapier.website/README.md): Product, security, network, deployment, and platform contract.
-- [Embed Rapier](https://rapier.website/README.md#use-rapier-in-your-own-app): The drop-in file, the iframe embed protocol, and the prompt for an "Open in Rapier" button.
-
-## Limits, stated
-
-- WebMCP is only present in browsers that ship it; without it, Rapier is the same editor and every tool line above is simply absent.
-- One tab edits a document at a time; another tab reads until the person takes editing there. There is no multi-person real-time editing.
-- No tool hands over a whole document: reads are the outline and bounded pages, and every edit needs a handle from a read.
-- The document's will governs Markdown; a DOCX copy carries it as hidden text, a PDF copy does not carry it.
-
-## Evidence
-
-- [Release receipt](https://rapier.website/qualification/RECEIPT.json): Machine-readable identity and one honest status per release gate.
+- [Agent guide](agents.md): read, edit, propose, compare, undo and draw; hand a person the editor with their document inside (`npx rapier-html notes.md`).
+- Draw a person a diagram: `document.draw` takes named boxes and arrows (no coordinates) and lays out a flowchart, a process or an architecture in Rapier's own look, numbered steps and captions, light and dark, every box still editable. Supported Mermaid flowchart fences also draw offline in Rapier's look, so an agent can write a fence or use figures.
+- Close the page loop: `document.create_return` gives `rapier-html --return` a one-use address. The person edits offline and presses Send back; `document.wait_for_user` receives the receipt and `document.read_context` reads the returned copy without replacing the workspace's current work.
+- [Tool catalog](AGENT-TOOLS.json): schemas and effects.
+- [Self-contained Markdown](markdown-standard.md): the open convention on CommonMark that carries pictures, layout and colour in one .md file.
+- [Will/1](will.md): optional; what an agent may edit, only append to, or keep.
+- [Build receipt](BUILD.json): this build's identity and checked scope.

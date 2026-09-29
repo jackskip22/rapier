@@ -2,7 +2,7 @@
   "id": "./rapier.html",
   "name": "Rapier",
   "short_name": "Rapier",
-  "description": "A fast, offline Markdown, text, and code editor. Single file. No server or login.",
+  "description": "Write, draw, paint and keep notes in one offline app. No account or telemetry.",
   "start_url": "./rapier.html",
   "scope": "./",
   "display": "standalone",
@@ -159,6 +159,15 @@
     {
       "action": "./rapier.html",
       "accept": {
+        "application/pdf": [
+          ".pdf"
+        ],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+          ".docx"
+        ],
+        "application/zip": [
+          ".textpack"
+        ],
         "text/markdown": [
           ".md",
           ".markdown",
