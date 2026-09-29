@@ -30415,7 +30415,14 @@ function _rapierCommandListItem() {
 }
 
 function _rapierAskChatSelectionText() {
-	const ranges = _rapierCommandRuntime.palette?.capture?.fallback?.ranges;
+	const capture = _rapierCommandRuntime.palette?.capture;
+	if (_rapierFlatSurface()) {
+		const target = capture?.stable ? _rapierResolveStableTargetRecord(capture.stable) : _rapierCurrentSelectionTarget();
+		if (target?.kind !== 'document-range' || capture?.stable &&
+				!['applied', 'rebased'].includes(target.outcome)) return '';
+		return _rapierFlatValue().slice(target.start, target.end);
+	}
+	const ranges = capture?.fallback?.ranges;
 	if (Array.isArray(ranges) && ranges.length) {
 		try {
 			const text = ranges.map(range => range.toString()).join('');
@@ -31223,7 +31230,7 @@ function rapierRunCommand(commandId) {
 	} else if (command.mutates || command.section) {
 		_rapierRestoreToolbarSelection();
 	}
-	if ((command.mutates || command.section) && hadStableTarget && !restored) {
+	if ((command.mutates || command.section || command.askChat) && hadStableTarget && !restored) {
 		showToast('The cursor moved; run the command again', 'error');
 		return false;
 	}

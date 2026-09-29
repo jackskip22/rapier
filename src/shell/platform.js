@@ -178,7 +178,7 @@ const RapierStorage = Object.freeze({
 		lineFit:        Object.freeze({ key: 'rapier:preference:line-fit',          fallback: 'truncate', values: Object.freeze(['truncate', 'resize']) }),
 		readOnly:       Object.freeze({ key: 'rapier:preference:read-only',         fallback: false }),
 		showPlayButton: Object.freeze({ key: 'rapier:preference:show-play-button',  fallback: false }),
-		highlights:     Object.freeze({ key: 'rapier:preference:highlights',        fallback: 'accent', values: Object.freeze(['accent', 'standard', 'off']) }),
+		highlights:     Object.freeze({ key: 'rapier:preference:highlights',        fallback: 'standard', values: Object.freeze(['standard', 'accent', 'off']) }),
 		highlightColor: Object.freeze({ key: 'rapier:preference:highlight-color',  fallback: 'default', values: Object.freeze(['default', 'green', 'red', 'blue', 'yellow', 'purple']) }),
 		headings:       Object.freeze({ key: 'rapier:preference:headings',          fallback: 'expanded', values: Object.freeze(['off', 'collapsed', 'expanded']) }),
 		// An app preference, never a document fact.
@@ -2840,9 +2840,8 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		};
 	}
 
-	// The plug-ins on Android (RapierPluginPack.kt): the page names a resource id, the app asks Google Play for its one pack
-	// (the app holds no INTERNET; Play downloads), and the bytes are read from the page's own origin at /plugins/<id>, where
-	// the app serves the pack's file. The loader holds every byte to its pin (shell/plugin-loader.js).
+	// Native plug-ins: Android serves its Play pack and Windows its executable resources from
+	// the same local route. The loader holds either host's bytes to the same pins.
 	function _nativeResourceRead(id) {
 		return fetch('/plugins/' + encodeURIComponent(String(id || '')), { cache: 'no-store', credentials: 'omit' }).then(function (response) {
 			return response.ok ? response.blob().then(function (blob) { return { content: blob }; }) : null;
@@ -3088,7 +3087,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				} : null;
 			},
 			get resourceRemove() {
-				return _nativeCapability('resources') ? function (id) { return _nativeHostCall('resources.remove', { id: String(id || '') }, 120000); } : null;
+				return _nativeCapability('resourceRemove') ? function (id) { return _nativeHostCall('resources.remove', { id: String(id || '') }, 120000); } : null;
 			},
 			get installationSupported() { return _nativeCapability('installation'); },
 			installationState: function () {

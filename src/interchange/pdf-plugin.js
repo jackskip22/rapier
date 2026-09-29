@@ -12,11 +12,11 @@ globalThis.RapierPdfPlugin = (() => {
   const base = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + version + '/';
   const decoder = new TextDecoder('utf-8', {fatal: true});
   const sessions = new Set();
-  let files = null, api = null, persistent = false, lastError = '';
+  let files = null, api = null, persistent = false, bundled = false, lastError = '';
   let checking = null, installing = null, loading = null, removing = null;
   const abortError = () => new DOMException('PDF reader download cancelled.', 'AbortError');
   const state = () => ({version, downloadBytes, installed: !!files, loaded: !!api,
-    persistent, downloading: !!installing, error: lastError});
+    persistent, deletable: !bundled, downloading: !!installing, error: lastError});
 
   // A set is admitted whole: every SHA-384 recomputed from bytes in hand, the root over path, length and digest in manifest order must match. Nothing stored or run before.
   async function admitted(files) {
@@ -42,6 +42,20 @@ globalThis.RapierPdfPlugin = (() => {
     if (checking) return checking;
     checking = (async () => {
       try {
+        const resources = globalThis.RapierPlatform?.resources;
+        const status = typeof resources?.status === 'function' && typeof resources?.read === 'function'
+          ? await resources.status('rapier-pdf').catch(() => null) : null;
+        if (status?.status === 'ready') {
+          const held = Object.create(null);
+          for (const [path] of manifest) {
+            const value = await resources.read('rapier-pdf-' + path.replaceAll('/', '-'));
+            held[path] = await RapierBundleIO.resourceBytes(value, 'PDF reader resource');
+          }
+          // Native bytes take exactly the same whole-set admission as downloaded bytes.
+          files = await verified({version, files: held});
+          bundled = true; persistent = true;
+          return true;
+        }
         files = await verified(await cache.get(key));
         persistent = !!files;
         return !!files;
@@ -218,6 +232,7 @@ globalThis.RapierPdfPlugin = (() => {
   }
 
   function forget() {
+    if (bundled) return Promise.reject(new Error('The PDF reader is included in this app.'));
     if (removing) return removing;
     if (sessions.size || installing || loading || checking)
       return Promise.reject(new Error('Finish PDF import before removing its plugin.'));

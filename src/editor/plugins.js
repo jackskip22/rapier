@@ -19,7 +19,7 @@ const RAPIER_PLUGIN_DELETE = Object.freeze({
 		held: () => _rapierProviders.mermaid?.status === 'ready' && _rapierProviders.mermaid.deletable,
 		async forget() { await _rapierProviders.mermaid.forget(); _rapierUiDiagram.dismissed = true; if (typeof rerenderDiagramBlocks === 'function') rerenderDiagramBlocks(); }},
 	pdf: {name: 'PDF import', what: 'the PDF reader', after: 'Importing a PDF asks to download it again.',
-		held: () => !!globalThis.RapierPdfPlugin?.state().installed,
+		held: () => { const state = globalThis.RapierPdfPlugin?.state(); return !!state?.installed && state.deletable; },
 		async forget() { await globalThis.RapierPdfPlugin.forget(); if (typeof _rapierPdfSettingsRefresh === 'function') _rapierPdfSettingsRefresh(); }},
 	ocr: {name: 'text in pictures', what: 'the text reader and every word it read in your pictures', after: 'Search stops finding the words in pictures.',
 		held: () => _rapierProviders.ocr?.status === 'ready' && _rapierProviders.ocr.deletable,
