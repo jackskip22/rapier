@@ -1,5 +1,5 @@
 {
-  "release": "1.1.22",
+  "release": "1.1.23",
   "core": [
     {
       "name": "document.get_context",
@@ -6183,13 +6183,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.22.html",
+          "resourceUri": "ui://rapier/editor-1.1.23.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.22.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.23.html",
         "openai/ui": {
           "entrypoints": [
             {

@@ -7265,7 +7265,13 @@ function _rapierInitBlockInteractionRouter() {
 	}, true);
 
 	host.addEventListener('pointermove', event => _rapierProtectionPressMove(event));
-	host.addEventListener('pointerup', () => _rapierProtectionPressCancel());
+	// Where the finger came up. A tap the browser adjusts to a nearby element (Chrome moves it to the element it retargets to)
+	// arrives as a click a few pixels from where it went down, and the click's own point read as a drag past five pixels: a tap at
+	// the start of a word in a code block, 57 px down and 52 px in the click, opened nothing.
+	host.addEventListener('pointerup', event => {
+		host._rapierLift = { x: event.clientX, y: event.clientY, at: _rapierNow() };
+		_rapierProtectionPressCancel();
+	});
 	host.addEventListener('pointercancel', () => _rapierProtectionPressCancel());
 	host.addEventListener('contextmenu', event => {
 		const foldButton = event.target?.closest?.('.section-fold-btn');
@@ -7327,8 +7333,10 @@ function _rapierInitBlockInteractionRouter() {
 		const block = _rapierBoundBlock(wrapper);
 		const gap = host._rapierGapPress;
 		host._rapierGapPress = null;
+		const lift = host._rapierLift && _rapierNow() - host._rapierLift.at < 1000 ? host._rapierLift : null;
+		const upX = lift ? lift.x : event.clientX, upY = lift ? lift.y : event.clientY;
 		if (!readDiv && gap && gap.near.wrapper.isConnected) {
-			const gdx = event.clientX - gap.x, gdy = event.clientY - gap.y;
+			const gdx = upX - gap.x, gdy = upY - gap.y;
 			if (gdx * gdx + gdy * gdy > 25 || Math.abs(host.scrollTop - gap.scrollTop) > 1) return;
 			const live = window.getSelection && window.getSelection();
 			if (live && !live.isCollapsed && live.rangeCount && _rangeIntersectsEditor(live.getRangeAt(0))) return;
@@ -7360,8 +7368,8 @@ function _rapierInitBlockInteractionRouter() {
 			_readSeekToPoint(event.clientX, event.clientY);
 			return;
 		}
-		const dx = event.clientX - Number(wrapper._rapierPointerDownX || event.clientX);
-		const dy = event.clientY - Number(wrapper._rapierPointerDownY || event.clientY);
+		const dx = upX - Number(wrapper._rapierPointerDownX || upX);
+		const dy = upY - Number(wrapper._rapierPointerDownY || upY);
 		const tapStartScroll = Number(wrapper._rapierEditTap?.scrollTop);
 
 		const rejectedByMotion = dx * dx + dy * dy > 25 ||
@@ -7538,7 +7546,7 @@ function _rapierInitBlockInteractionRouter() {
 
 	host.addEventListener('keydown', event => {
 		const open = _activeBlockEditContext();
-		if (open && globalThis.RapierTables?.key(open.editDiv, event)) return;
+		if (open && (globalThis.RapierTables?.key(open.editDiv, event) || _rapierTableVerticalStep(open, event))) return;
 		if (!open && event.target === host && (event.key === 'Enter' || event.key === ' ')) {
 			event.preventDefault();
 			const first = [...host.children].find(node => node.classList?.contains('block-wrapper') &&
@@ -7583,11 +7591,11 @@ function _rapierInitBlockInteractionRouter() {
 			return;
 		}
 		const active = _activeBlockEditContext();
-		if (active && event.target === host &&
+		if (active && (event.target === host || event.target === active.editDiv) && !event.defaultPrevented &&
 				/^(?:ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End|PageUp|PageDown)$/.test(event.key)) {
 			_rapierCheckpointEdit(active.editDiv);
-			const key = event.key;
-			setTimeout(() => _rapierFollowEscapedCaret(active, key), 0);
+			const key = event.key, before = _rapierCaretBeforeArrow(active.editDiv, event);
+			setTimeout(() => _rapierFollowEscapedCaret(active, key, before), 0);
 		}
 	});
 }
@@ -8890,12 +8898,12 @@ async function _rapierTraverseHistory(redo, context = null) {
 		}
 		if (editingBefore != null) {
 
-			const pendingReopen = { target, splices, caretBefore };
+			const pendingReopen = { target, splices, caretBefore, redo };
 			rapier.view.pendingHistoryReopen = pendingReopen;
 			setTimeout(() => {
 				if (rapier.view.pendingHistoryReopen !== pendingReopen) return;
 				rapier.view.pendingHistoryReopen = null;
-				_rapierReopenAfterHistory(target, splices, caretBefore);
+				_rapierReopenAfterHistory(target, splices, caretBefore, redo);
 			}, 0);
 		}
 		return true;
@@ -8946,7 +8954,19 @@ function _rapierRenderedOffsetForRawOffset(readDiv, raw, target) {
 	return rendered;
 }
 
-function _rapierReopenAfterHistory(target, splices, caretBefore = null) {
+// Where the caret goes when Undo takes back, or Redo does again, the step just committed: remembered against the step, so the
+// person's caret comes back where the act began (the start of the item a Backspace took the marker from) and not where the end
+// of a diff of the source happens to fall. `before` and `after` are {blockId, offset} in the edit surface's own text offsets.
+// Read by _rapierReopenAfterHistory; a step with none is placed as it always was.
+function _rapierRememberHistoryCaret(before, after) {
+	const record = rapier.undo.branch[rapier.undo.cursor - 1], edit = rapier.view.sharedEditDiv;
+	if (!record || !record.transaction || !edit || !before) return;
+	const hints = edit._rapierHistoryCarets || (edit._rapierHistoryCarets = new Map());
+	hints.set(record.transaction.id, { before, after });
+	if (hints.size > 64) hints.delete(hints.keys().next().value);
+}
+
+function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = false) {
 	if (rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown' || rapier.access.readOnly ||
 			_rapierMutationBarrierActive() || _activeBlockEditContext()) return false;
 
@@ -8971,6 +8991,12 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null) {
 			(!_blockUsesRawEditor(candidate.raw) || candidate.id === caretBefore?.blockId) ? wrapper : null;
 	};
 	let wrapper = reopenable(block);
+	// The step's own caret, when it remembered one: the block the act began or ended in, at the offset it left the caret at.
+	const remembered = rapier.view.sharedEditDiv?._rapierHistoryCarets?.get(target.transaction && target.transaction.id);
+	const wanted = remembered && (redo ? remembered.after : remembered.before);
+	const wantedBlock = wanted && rapier.document.blocks.find(candidate => candidate.id === wanted.blockId);
+	const wantedWrapper = wantedBlock ? reopenable(wantedBlock) : null;
+	if (wantedWrapper) { block = wantedBlock; wrapper = wantedWrapper; location = null; }
 	// The step's own block cannot take a caret (a Will marker, a picture): the person's block takes it back.
 	if (!wrapper && caretBefore) {
 		block = rapier.document.blocks.find(candidate => candidate.id === caretBefore.blockId) || null;
@@ -8982,13 +9008,14 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null) {
 	// bytes, so its caret is the raw offset; a fence edits as its own code and maps like any other block.
 	const rawEditor = _blockUsesRawEditor(block.raw);
 	const readDiv = wrapper.querySelector(':scope > .block-read');
-	let charOffset = location?.block !== block ? Infinity
+	let charOffset = wantedWrapper ? wanted.offset : location?.block !== block ? Infinity
 		: rawEditor ? location.offset
 		: _rapierRenderedOffsetForRawOffset(readDiv, String(block.raw || ''), location.offset);
 	// Undo of a line that made its own block (_maybeAutoConvert): the caret goes back after the
 	// characters as typed, where the next word goes, not before the escape the literal carries.
 	const typed = rapier.view.sharedEditDiv && rapier.view.sharedEditDiv._rapierTypedLiteral;
-	if (typed && typed.blockId === block.id && typed.raw === String(block.raw || '')) charOffset = typed.caret;
+	if (wantedWrapper) { /* the step's own caret stands */ }
+	else if (typed && typed.blockId === block.id && typed.raw === String(block.raw || '')) charOffset = typed.caret;
 	// The step changed the block's decoration and not its words: the caret stays where the person had it.
 	else if (caretBefore && caretBefore.blockId === block.id && !rawEditor && readDiv &&
 			String(readDiv.textContent || '').replace(/\s+/g, ' ').trim() === caretBefore.words) charOffset = caretBefore.offset;
@@ -9004,14 +9031,152 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null) {
 	return true;
 }
 
-function _rapierFollowEscapedCaret(context, key) {
+// The caret as a plain arrow key finds it, kept for the follower that runs after the browser's own move: where it stood (the
+// point and its line) and the x a vertical run of keys keeps. A run of Up and Down presses keeps the column the run began at
+// through a shorter line, as Word and Docs do: the caret's x is remembered when it is put down at the end of a hop or a
+// move, and stands while the caret is where it was put. null for Shift, Ctrl, Alt or Meta, or a selection: the browser's alone.
+function _rapierCaretBeforeArrow(editDiv, event) {
+	if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || !/^Arrow(?:Up|Down|Left|Right)$/.test(event.key)) return null;
+	const selection = window.getSelection();
+	if (!selection?.rangeCount || !selection.isCollapsed || !editDiv.contains(selection.anchorNode)) return null;
+	const range = selection.getRangeAt(0), rect = _rapierCaretClientRect(range), stored = editDiv._rapierVerticalGoal;
+	return {
+		node: range.startContainer, offset: range.startOffset, top: rect ? rect.top : null,
+		goal: rect ? (stored && Math.abs(stored.left - rect.left) < 2 ? stored.x : rect.left) : stored ? stored.x : null,
+	};
+}
+
+// Up and Down inside a table go to the cell above or below in the same column, as they do in Word and Docs. The browser walks
+// the cells in the order the markup holds them (a cell, the next cell of its row, then the row below), so Down in a header cell
+// landed in the header cell beside it. Past the last row (Down) or before the first (Up) the caret goes on into the
+// neighbouring block. Shift, Ctrl, Alt and Meta keep the browser's own.
+function _rapierTableVerticalStep(context, event) {
+	if (event.defaultPrevented || event.isComposing || !/^Arrow(?:Up|Down)$/.test(event.key)) return false;
+	const before = _rapierCaretBeforeArrow(context.editDiv, event);
+	const cell = before && _nodeAsElement(before.node)?.closest('th,td');
+	const table = cell && context.editDiv.contains(cell) ? cell.closest('table') : null;
+	if (!table) return false;
+	event.preventDefault();
+	const rows = Array.from(table.querySelectorAll('tr')), row = cell.closest('tr');
+	const cellsOf = each => Array.from(each.children).filter(node => /^(?:TH|TD)$/.test(node.tagName));
+	const target = rows[rows.indexOf(row) + (event.key === 'ArrowDown' ? 1 : -1)];
+	if (!target) { _rapierHopToNeighbour(context, event.key, before); return true; }
+	const cells = cellsOf(target), next = cells[Math.min(cellsOf(row).indexOf(cell), cells.length - 1)];
+	if (!next) return true;
+	const box = next.getBoundingClientRect();
+	const range = before.goal == null ? null : _rapierCaretRangeFromPoint(
+		Math.min(Math.max(before.goal, box.left + 1), Math.max(box.left + 1, box.right - 1)), box.top + box.height / 2);
+	const selection = window.getSelection();
+	if (range && next.contains(range.startContainer)) { selection.removeAllRanges(); selection.addRange(range); }
+	else _setCursorCharOffset(next, 0);
+	const rect = selection.rangeCount ? _rapierCaretClientRect(selection.getRangeAt(0)) : null;
+	context.editDiv._rapierVerticalGoal = rect && before.goal != null ? { x: before.goal, left: rect.left } : null;
+	return true;
+}
+
+// Where the first (atStart) or last line of a block's words stands on screen, at `goalX` or the nearest text to it: the point
+// a caret is put at when an arrow key hops into the block. Empty of words: null.
+function _rapierEdgeLinePoint(readDiv, atStart, goalX) {
+	const walker = document.createTreeWalker(readDiv, NodeFilter.SHOW_TEXT);
+	const texts = [];
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) if (/\S/.test(node.data)) texts.push(node);
+	if (!texts.length || !Number.isFinite(goalX)) return null;
+	if (!atStart) texts.reverse();
+	let line = null;
+	const found = [];
+	for (const node of texts) {
+		const range = document.createRange();
+		range.selectNodeContents(node);
+		const rects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0);
+		if (!rects.length) continue;
+		const own = rects[atStart ? 0 : rects.length - 1];
+		if (line == null) line = own.top;
+		else if (Math.abs(own.top - line) > 3) break;
+		found.push(...rects.filter(rect => Math.abs(rect.top - line) <= 3));
+	}
+	if (!found.length) return null;
+	const gap = rect => goalX < rect.left ? rect.left - goalX : goalX > rect.right ? goalX - rect.right : 0;
+	const best = found.reduce((keep, rect) => gap(rect) < gap(keep) ? rect : keep);
+	return { x: Math.min(Math.max(goalX, best.left + 1), Math.max(best.left + 1, best.right - 1)), y: best.top + best.height / 2, top: best.top };
+}
+
+// Whether a caret whose line stands at `top` is on the first (Up) or last (Down) line of the open block's words. A block with no
+// words has one line. The hop over a block boundary is the last line's alone: a press that did nothing mid-block (the caret
+// standing at a wrap, say) must not carry the caret out of the block.
+function _rapierCaretOnEdgeLine(editDiv, top, down) {
+	const edge = _rapierEdgeLinePoint(editDiv, !down, 0);
+	return !edge || top == null || Math.abs(edge.top - top) <= Math.max(6, Math.abs(edge.y - edge.top));
+}
+
+// Opens `block` with the caret on its first (atStart) or last line at `goalX`: the arrow key's hop over a block boundary. Any
+// block that holds words takes it -- a paragraph, a list, a quote, a code block, a table (the cell under the x), a raw block
+// (the nearest place in its source) -- entered as a tap at that point enters it. Without an x, or a block that is not laid
+// out, the start or the end.
+function _rapierEnterBlockAtEdge(block, wrapper, atStart, goalX) {
+	const host = _editorHostEl();
+	if (wrapper._rapierUnrendered) _rapierHydrateBlockEl(wrapper, true);
+	const readDiv = wrapper.querySelector(':scope > .block-read');
+	const point = readDiv && readDiv.getClientRects().length && !wrapper.classList.contains('block-wrapper--dormant')
+		? _rapierEdgeLinePoint(readDiv, atStart, goalX) : null;
+	if (!point) return _enterBlockEditAtOffset(block.id, atStart ? 0 : Infinity);
+	const rawEditor = _blockUsesRawEditor(block.raw);
+	const liveRange = rawEditor ? null : _rapierCaretRangeFromPoint(point.x, point.y);
+	return enterBlockEdit(block, wrapper, {
+		liveRange: liveRange && readDiv.contains(liveRange.startContainer) ? liveRange : null,
+		tableCell: _rapierTableCellActivation(readDiv, document.elementFromPoint(point.x, point.y), point.x, point.y),
+		// The start or the end where the point cannot be used (a first line just below the screen has no caret position yet).
+		charOffset: rawEditor ? _rapierRenderedCharOffsetFromPoint(readDiv, point.x, point.y) : atStart ? 0 : Infinity,
+		clientX: point.x, clientY: point.y, preserveScroll: true, scrollTop: host ? host.scrollTop : 0,
+	});
+}
+
+// The arrow key could not go on inside the open block, and the browser cannot place a caret in the next one (a code block, a
+// table, a raw block: it left the caret against the edge, and every further press did nothing, so the caret could never pass
+// them). The next block that holds words takes the caret; a rule, a picture and a hidden line are passed over, and at the
+// document's first or last block the caret stays.
+function _rapierHopToNeighbour(context, key, before) {
+	const down = key === 'ArrowDown' || key === 'ArrowRight';
+	const blocks = rapier.document.blocks;
+	for (let index = blocks.findIndex(candidate => candidate.id === context.block.id) + (down ? 1 : -1);
+			index >= 0 && index < blocks.length; index += down ? 1 : -1) {
+		const block = blocks[index];
+		const wrapper = document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + block.id + '"]');
+		if (!wrapper || wrapper.hidden || wrapper.classList.contains('block-wrapper--metadata') ||
+				_rapierWholeBlock(block) || _rapierIsRuleBlock(block)) continue;
+		const vertical = key === 'ArrowUp' || key === 'ArrowDown';
+		const editDiv = _rapierEnterBlockAtEdge(block, wrapper, down, vertical ? before.goal : NaN);
+		const rect = editDiv && vertical && window.getSelection().rangeCount ? _rapierCaretClientRect(window.getSelection().getRangeAt(0)) : null;
+		if (editDiv) editDiv._rapierVerticalGoal = vertical && before.goal != null && rect ? { x: before.goal, left: rect.left } : null;
+		return !!editDiv;
+	}
+	return false;
+}
+
+function _rapierFollowEscapedCaret(context, key, before = null) {
 	const host = _editorHostEl();
 	const current = _activeBlockEditContext();
-	if (!host || !current || current.editDiv !== context.editDiv || document.activeElement !== host) return;
+	if (!host || !current || current.editDiv !== context.editDiv ||
+			(document.activeElement !== host && document.activeElement !== context.editDiv)) return;
 	const selection = window.getSelection();
 	if (!selection?.rangeCount || !selection.isCollapsed) return;
 	const node = selection.anchorNode;
-	if (!node || context.editDiv.contains(node)) return;
+	if (!node) return;
+	const vertical = key === 'ArrowUp' || key === 'ArrowDown';
+	if (context.editDiv.contains(node)) {
+		// The caret stayed in the open block. A press that moved it to another line is the browser's own, and the column
+		// it keeps is remembered; one that could not (Down on the last line, Up on the first, Left or Right at the block's
+		// edge) goes on into the neighbouring block.
+		if (!before) return;
+		const range = selection.getRangeAt(0), rect = _rapierCaretClientRect(range);
+		const measured = !!rect && before.top != null, unmoved = node === before.node && selection.anchorOffset === before.offset;
+		if (vertical && measured && Math.abs(rect.top - before.top) > 4) {
+			context.editDiv._rapierVerticalGoal = before.goal == null ? null : { x: before.goal, left: rect.left };
+		} else if (vertical ? (measured || unmoved) && _rapierCaretOnEdgeLine(context.editDiv, before.top, key === 'ArrowDown') :
+				unmoved && _rapierCaretAtSurfaceEdge(context.editDiv, range, key === 'ArrowLeft' ? 'backward' : 'forward')) {
+			_rapierHopToNeighbour(context, key, before);
+		}
+		return;
+	}
 	const element = node.nodeType === 1 ? node : node.parentElement;
 	const wrapper = element?.closest?.('#editor-blocks > .block-wrapper');
 	const readDiv = wrapper && wrapper !== context.wrapper ? wrapper.querySelector(':scope > .block-read') : null;
@@ -9021,10 +9186,18 @@ function _rapierFollowEscapedCaret(context, key) {
 			!/^\s*(?:```|~~~|<)/.test(String(block.raw || ''))) {
 		const range = selection.getRangeAt(0).cloneRange();
 		const rect = _rapierCaretClientRect(range) || range.getBoundingClientRect();
+		// Up and Down keep the column the run began at, not the x this landing happened to give.
+		if (vertical && before && before.goal != null) {
+			const editDiv = _rapierEnterBlockAtEdge(block, wrapper, key === 'ArrowDown', before.goal);
+			const landed = editDiv && window.getSelection().rangeCount ? _rapierCaretClientRect(window.getSelection().getRangeAt(0)) : null;
+			if (editDiv) editDiv._rapierVerticalGoal = landed ? { x: before.goal, left: landed.left } : null;
+			return;
+		}
 		enterBlockEdit(block, wrapper, { liveRange: range, clientX: rect ? rect.left : 0, clientY: rect ? rect.top + rect.height / 2 : 0,
 			preserveScroll: true, scrollTop: host.scrollTop });
 		return;
 	}
+	if (before && /^Arrow/.test(key) && _rapierHopToNeighbour(context, key, before)) return;
 	const edge = document.createRange();
 	edge.selectNodeContents(context.editDiv);
 	edge.collapse(key === 'ArrowUp' || key === 'ArrowLeft' || key === 'Home' || key === 'PageUp');
@@ -9105,7 +9278,7 @@ function _rapierRouteStrayEditingKey(event) {
 
 		const pendingReopen = rapier.view.pendingHistoryReopen;
 		rapier.view.pendingHistoryReopen = null;
-		_rapierReopenAfterHistory(pendingReopen.target, pendingReopen.splices, pendingReopen.caretBefore);
+		_rapierReopenAfterHistory(pendingReopen.target, pendingReopen.splices, pendingReopen.caretBefore, pendingReopen.redo);
 		open = _activeBlockEditContext();
 	}
 	const target = event.target, host = _editorHostEl();
@@ -10700,7 +10873,7 @@ function _replaceOneBlockWithRawSet(block, rawList, caretTargetIndex, caretOffse
 	const blocksAfter = newBlocks.map(_rapierHistoryBlock);
 	rapier.document.blocks.splice(blockIndex, 1, ...newBlocks);
 	_reassignOrderForRange(blockIndex, newBlocks.length);
-	_rapierCommitBlockRange(blockIndex, blocksBefore, blocksAfter);
+	const committed = _rapierCommitBlockRange(blockIndex, blocksBefore, blocksAfter);
 	newBlocks.forEach(b => rapier.autosave.dirty.add(b.id));
 	_bumpDocGeneration();
 	_rapierArmAutosave();
@@ -10712,6 +10885,7 @@ function _replaceOneBlockWithRawSet(block, rawList, caretTargetIndex, caretOffse
 	const targetIndex = Number.isFinite(caretTargetIndex)
 		? Math.max(0, Math.min(caretTargetIndex, newBlocks.length - 1))
 		: Math.min(1, newBlocks.length - 1);
+	if (options.caretBefore && committed) _rapierRememberHistoryCaret(options.caretBefore, { blockId: newBlocks[targetIndex].id, offset: caretOffset ?? Infinity });
 	_enterBlockEditAtOffset(newBlocks[targetIndex].id, caretOffset ?? Infinity);
 	return true;
 }
@@ -10912,6 +11086,15 @@ function rapierListDepth(direction, options) {
 	const viewport = _rapierCaptureEditorViewport();
 
 	_rapierCheckpointEdit(editDiv);
+	// The person's caret or selection goes with the item: the item's own text nodes move, they are not rewritten, so the same
+	// points still stand after it (a live Range would have been reset to the old list the moment the item left it). Only the
+	// Backspace that takes an empty item out a level asks for the start, and an item with no such point takes the end.
+	const kept = selection && selection.rangeCount && !(options && options.atStart) ? (range => ({
+		start: [range.startContainer, range.startOffset], end: [range.endContainer, range.endOffset],
+	}))(selection.getRangeAt(0)) : null;
+	// The step's Undo puts the caret back where the key found it, and its Redo where the move left it.
+	const stepBlock = _activeBlockEditContext()?.block.id, stepSteps = rapier.undo.cursor;
+	const stepFrom = selection && selection.rangeCount ? _rapierStructuralOffsetForRangePoint(editDiv, selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset) : null;
 	const moved = Number(direction) < 0
 		? _rapierOutdentListItem(li)
 		: _rapierIndentListItem(li);
@@ -10920,9 +11103,22 @@ function rapierListDepth(direction, options) {
 		return false;
 	}
 
-	_rapierPlaceCaretInListItem(li, !(options && options.atStart));
+	if (kept && li.contains(kept.start[0]) && li.contains(kept.end[0])) {
+		try {
+			const restored = document.createRange();
+			restored.setStart(...kept.start);
+			restored.setEnd(...kept.end);
+			selection.removeAllRanges();
+			selection.addRange(restored);
+		} catch (_) { _rapierPlaceCaretInListItem(li, true); }
+	} else _rapierPlaceCaretInListItem(li, !(options && options.atStart));
 	_markEditDivDirty(editDiv);
 	_rapierCheckpointEdit(editDiv);
+	if (stepBlock != null && stepFrom != null && rapier.undo.cursor > stepSteps && selection.rangeCount) {
+		const now = selection.getRangeAt(0);
+		_rapierRememberHistoryCaret({ blockId: stepBlock, offset: stepFrom },
+			{ blockId: stepBlock, offset: _rapierStructuralOffsetForRangePoint(editDiv, now.startContainer, now.startOffset) });
+	}
 	_rapierUpdateListToolbarContext(window.getSelection && window.getSelection(), editDiv);
 	requestAnimationFrame(refreshFormatToolbar);
 	_rapierRestoreEditorViewport(viewport);
@@ -15648,10 +15844,22 @@ function _rapierApplyExactCut() {
 	const start = _rapierStructuralOffsetForRangePoint(live, range.startContainer, range.startOffset);
 	const end = _rapierStructuralOffsetForRangePoint(live, range.endContainer, range.endOffset);
 	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > text.length || start >= end) return false;
-	const next = _rapierPlanExactCut(beforeRaw, text, start, end, pictures);
+	const blank = at => text[at] === ' ' || text[at] === '\t', edge = at => at < 0 || at >= text.length || text[at] === '\n';
+	let next = _rapierPlanExactCut(beforeRaw, text, start, end, pictures), from = start;
+	if (next == null) {
+		// A cut that leaves white space at the edge of a line (the last words of a line, the first, a whole line's words but for the
+		// space beside them) does not prove: the renderer drops that space, so the words after are not the words before with the
+		// selection removed, and the person was told "Copied, not cut" for the commonest cut there is. The space nobody can see goes
+		// with the words, as it does in Word; a cut that leaves no such space, or that still does not prove, is refused as before.
+		let low = start, high = end;
+		if (edge(end) && !edge(start - 1)) while (low > 0 && blank(low - 1)) low--;
+		else if (edge(start - 1) && !edge(end)) while (high < text.length && blank(high)) high++;
+		if (low !== start || high !== end) { next = _rapierPlanExactCut(beforeRaw, text, low, high, pictures); from = low; }
+	}
 	if (next == null || !_rapierApplyRawRange(state, [next], { keepEditing: true })) return false;
 	const surface = _liveBlockEl(wrapper);
-	const point = surface ? _rapierPointForTextOffset(surface, start, true) : null;
+	// The caret stays with the words it followed: after the last words of a line it is not carried on to the line below.
+	const point = surface ? _rapierPointForTextOffset(surface, from, !(edge(end) && !edge(start - 1))) : null;
 	if (point) {
 		try {
 			const caret = document.createRange();
@@ -15685,7 +15893,7 @@ function _rapierCutInBlock(range, wrapper) {
 // matched against the text in order, so a literal `_` or `*` stays a character; what does not
 // match is a token (_rapierZeroWidthTokenAt's width, else one character). Null when the text is not
 // reached exactly.
-function _rapierCutSourceMap(source, text, atoms = []) {
+function _rapierCutSourceMap(source, text, atoms = [], structural = false) {
 	const from = [], to = [], bounds = new Set([0, source.length]);
 	const whole = [
 		/!\[[^\]\n]*\](?:\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"\n]*")?\)|\[[^\]\n]*\])/y,
@@ -15708,6 +15916,14 @@ function _rapierCutSourceMap(source, text, atoms = []) {
 			continue;
 		}
 		if (t < text.length && (source[at] === text[t] || (source[at] === '\u2060' && text[t] === '\n'))) { from.push(at); to.push(at + 1); at++; t++; continue; }
+		// Second pass only: the renderer puts newlines between a list item's words and the list nested in it, and after that list,
+		// that the source never wrote (it has one newline, an indent and a marker). Each maps to no source at all, so every other
+		// character keeps its own place; a newline the source can still supply after its zero-width tokens is left to match it.
+		if (structural && t < text.length && text[t] === '\n' && source[at] !== '\n' && source[at] !== '\u2060') {
+			let ahead = at, skip;
+			while (ahead < source.length && (skip = _rapierZeroWidthTokenAt(source, ahead))) ahead += skip;
+			if (source[ahead] !== '\n') { from.push(at); to.push(at); t++; continue; }
+		}
 		token(_rapierZeroWidthTokenAt(source, at) || 1);
 	}
 	return t === text.length && from.length === text.length ? { from, to, bounds } : null;
@@ -15756,17 +15972,22 @@ function _rapierCutProves(before, after, start, end, pictures) {
 function _rapierPlanExactCut(raw, text, start, end, pictures = 0) {
 	const source = String(raw || ''), before = _rapierCutSemantics(source);
 	if (!before || before.text !== text) return null;
-	const map = _rapierCutSourceMap(source, text, before.formulas);
+	const map = _rapierCutSourceMap(source, text, before.formulas) || _rapierCutSourceMap(source, text, before.formulas, true);
 	if (!map) return null;
-	const offsets = at => {
+	// A cut that begins where a line begins takes the words and not the line's own marker (a list's, a quote's, a heading's): the
+	// shortest source that proves the words is the one that drops the marker, and the item became a line of the one above it, the
+	// heading a paragraph. Its candidates begin after the marker; every other boundary is as it was.
+	const marker = /^(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|#{1,6}[ \t]+)?/;
+	const offsets = (at, opening) => {
 		const lo = at > 0 ? map.to[at - 1] : 0, hi = at < map.from.length ? map.from[at] : source.length;
-		return Array.from(new Set([lo, hi, ...Array.from(map.bounds).filter(p => p > lo && p < hi)])).sort((a, b) => a - b);
+		const floor = opening && (at === 0 || text[at - 1] === '\n') ? Math.min(hi, lo + marker.exec(source.slice(lo))[0].length) : lo;
+		return Array.from(new Set([floor, hi, ...Array.from(map.bounds).filter(p => p > lo && p < hi && p >= floor)])).sort((a, b) => a - b);
 	};
 	const visible = new Set();
 	map.from.forEach((p, i) => { for (let q = p; q < map.to[i]; q++) visible.add(q); });
 	const pairs = { ']': '[', '</': '<' };
 	const candidates = new Set();
-	for (const s of offsets(start)) for (const e of offsets(end)) {
+	for (const s of offsets(start, true)) for (const e of offsets(end, false)) {
 		if (e < s) continue;
 		const tokens = [];
 		for (let p = s; p < e; p++) {
@@ -29112,8 +29333,12 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true } = {}) {
 		const bp = { id: startBlock.id, raw: prefixRaw, rendered: renderBlock(prefixRaw), dirty: false, type: startBlock.type, order: startBlock.order, leading: startBlock.leading };
 		const bs = { id: endBlock.id,   raw: suffixRaw, rendered: renderBlock(suffixRaw), dirty: false, type: endBlock.type, order: endBlock.order };
 		newBlocks       = [bp, bs];
-		caretBlockId    = bp.id;
-		caretCharOffset = prefixDiv.textContent.length;
+		// A rule holds no caret (its "words" are the three characters of its own markup): a selection that began at its very end,
+		// Shift+Left one press past the words below it, leaves the caret where those words now begin. A letter typed there went into
+		// the rule and turned it into a line of text.
+		const ruleFirst = _rapierIsRuleBlock(bp);
+		caretBlockId    = ruleFirst ? bs.id : bp.id;
+		caretCharOffset = ruleFirst ? 0 : prefixDiv.textContent.length;
 	}
 
 	const replaceCount    = endIndex - startIndex + 1;
@@ -34552,6 +34777,29 @@ function _rapierPasteTypedLines(e) {
 document.addEventListener('beforeinput', _rapierEnterBeforeInput, true);
 document.addEventListener('beforeinput', _rapierPasteTypedLines, true);
 
+// A selection that runs from inside the open block to the very start of the next one (a triple click on a paragraph makes it, so does
+// Shift+Right past a paragraph's last word) holds the open block's words and the break after them; the break is not the selection's,
+// and _rapierCrossBlockRange does not count the next block in. Whatever edits the selection takes it clamped to the block: left as it
+// is, the browser's own edit reaches over the block's edge, moves the next block's words into this block's page and the source keeps
+// both (the words twice, the next block's colour written into them as a comment). Every door calls this before it reads the selection:
+// a key, and an insertText, an Enter or a delete that no key came before (a soft keyboard's, an IME's).
+function _rapierClampTouchingSelection() {
+	const sel = window.getSelection && window.getSelection();
+	const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+	if (!range || range.collapsed || !_rangeIntersectsEditor(range)) return null;
+	const startWrapper = _blockWrapperOf(range.startContainer), endWrapper = _blockWrapperOf(range.endContainer);
+	const context = _activeBlockEditContext();
+	if (!startWrapper || !endWrapper || startWrapper === endWrapper || !context || context.wrapper !== startWrapper) return null;
+	try {
+		const clamped = range.cloneRange();
+		clamped.setEnd(context.editDiv, context.editDiv.childNodes.length);
+		if (clamped.collapsed) return null;
+		sel.removeAllRanges();
+		sel.addRange(clamped);
+		return sel.rangeCount ? sel.getRangeAt(0) : null;
+	} catch (_) { return null; }
+}
+
 function _rapierCrossBlockRange() {
 	const sel = window.getSelection && window.getSelection();
 	if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
@@ -34625,10 +34873,15 @@ function _rapierOpenSameBlockSelection(range) {
 	return editDiv;
 }
 
-document.addEventListener('beforeinput', e => {
+function _rapierCrossBlockBeforeInput(e) {
 	if (e.defaultPrevented || rapier.access.readOnly || rapier.document.docKind !== 'markdown' ||
 			_rapierHostNativeField(e.target)) return;
-	if (!_rapierCrossBlockRange()) return;
+	if (!_rapierCrossBlockRange()) {
+		// The browser runs the edit on the selection as it stands after this listener; its target ranges, read before it, are
+		// the wider ones (_rapierGuardBeforeInput takes the flag as the answer to them).
+		if (/^(?:insert|delete)/.test(e.inputType || '') && _rapierClampTouchingSelection()) e._rapierClamped = true;
+		return;
+	}
 
 	// A selection that reaches past the block being typed in (Select all, a drag) is the person's whole selection,
 	// theirs to delete or type over as in any editor. It used to be collapsed here and the keystroke dropped without
@@ -34642,18 +34895,22 @@ document.addEventListener('beforeinput', e => {
 		type === 'insertParagraph' || type === 'insertLineBreak';
 	if (!destructive) return;
 	e.preventDefault();
+	// The delete of a selection across blocks is done here, and the caret it leaves may stand at a block's start: the listener that
+	// takes a key at a block's edge (_rapierBoundaryDeleteInput) must not read that caret as a second press.
+	e._rapierCrossBlockDone = true;
 
 	const composing = e.isComposing || type === 'insertCompositionText' ||
 		rapier.composition.block || rapier.composition.source;
 	_rapierCrossBlockReplace(type, !composing && typeof e.data === 'string' ? e.data : '');
-}, true);
+}
+document.addEventListener('beforeinput', _rapierCrossBlockBeforeInput, true);
 
 // Native fields and modal surfaces own input even when a stale document selection remains behind them.
 function _rapierHostNativeField(target) {
 	return !!target?.closest?.('input,textarea,select,button,[aria-modal="true"],dialog[open]');
 }
 
-document.addEventListener('beforeinput', e => {
+function _rapierGuardBeforeInput(e) {
 	if (_rapierTransactionRuntime.formatting) return;
 	if (_rapierHostNativeField(e.target)) return;
 	const host = _editorHostEl();
@@ -34685,11 +34942,46 @@ document.addEventListener('beforeinput', e => {
 	}
 
 	if (touchesEditor && rapier.access.readOnly) { e.preventDefault(); return; }
+	// A delete whose target range starts or ends outside the open block is the browser reaching over the block's edge: the
+	// neighbour's markup would merge into this page while the source keeps both. Never let it (the joins and refusals at an
+	// edge are _rapierHandleBlockBoundaryDelete's, run by the listener that follows).
+	if (insideEdit && /^delete/.test(e.inputType || '') && !e._rapierClamped && ranges.some(r => !nodeInEdit(r.startContainer) || !nodeInEdit(r.endContainer))) {
+		e.preventDefault();
+		return;
+	}
 	if (!touchesEditor || insideEdit) return;
 	e.preventDefault();
-}, true);
+}
+document.addEventListener('beforeinput', _rapierGuardBeforeInput, true);
 
-document.addEventListener('keydown', e => {
+// A selection edge that only touches a table cell (the end at the very start of a cell's words, the start at the very end of one)
+// holds nothing of that cell, and the browser clears every cell a selection touches: the cell beside the last selected one lost
+// its words, and a selection that ran on to the edge of the last cell removed the whole table. The edge steps back to the last
+// cell that holds something; a selection that would be left holding nothing is left as it is.
+function _rapierTrimTableCellEdges(sel, range) {
+	const cellOf = node => { const el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node); return el && el.closest ? el.closest('td, th') : null; };
+	const first = cellOf(range.startContainer), last = cellOf(range.endContainer);
+	if (!first || !last || first === last || first.closest('table') !== last.closest('table')) return range;
+	const cells = Array.from(first.closest('table').querySelectorAll('td, th'));
+	const empty = (fromNode, fromOffset, toNode, toOffset) => {
+		const probe = document.createRange();
+		try { probe.setStart(fromNode, fromOffset); probe.setEnd(toNode, toOffset); } catch (_) { return false; }
+		return !probe.toString() && !probe.cloneContents().querySelector('img');
+	};
+	const trimmed = range.cloneRange();
+	if (empty(last, 0, range.endContainer, range.endOffset) && cells.indexOf(last) > 0) {
+		const before = cells[cells.indexOf(last) - 1];
+		trimmed.setEnd(before, before.childNodes.length);
+	}
+	if (empty(range.startContainer, range.startOffset, first, first.childNodes.length) && cells.indexOf(first) < cells.length - 1) {
+		trimmed.setStart(cells[cells.indexOf(first) + 1], 0);
+	}
+	if (trimmed.collapsed || trimmed.compareBoundaryPoints(Range.START_TO_START, range) === 0 && trimmed.compareBoundaryPoints(Range.END_TO_END, range) === 0) return range;
+	try { sel.removeAllRanges(); sel.addRange(trimmed); } catch (_) { return range; }
+	return sel.rangeCount ? sel.getRangeAt(0) : range;
+}
+
+function _rapierGuardEditingKey(e) {
 	if (e.defaultPrevented || e.isComposing || rapier.composition.block) return;
 	if (e.ctrlKey || e.metaKey || e.altKey) return;
 	if (_rapierHostNativeField(e.target)) return;
@@ -34706,6 +34998,13 @@ document.addEventListener('keydown', e => {
 
 	if (range && !range.collapsed && selectionInHost && _rangeSelectedWrappers(range).length >= 2) {
 		if (e.key === 'Enter') return;
+		// A letter typed over a selection that starts or ends in a table or a rule has no stable target to be pasted over: the paste
+		// door refused it, with a paste's own toast, and the letter was lost. The selection goes first, as Backspace takes it, and the
+		// letter is typed where it stood (a selection that starts inside a table's cell leaves the caret in no cell: still the paste door's).
+		if (e.key.length === 1 && !_rapierCurrentSelectionTarget() && !_blockWrapperOf(range.startContainer)?.classList.contains('block-wrapper--table')) {
+			_rapierCrossBlockReplace('deleteContentBackward', '');
+			return;
+		}
 		const outside = document.activeElement !== host && !host.contains(document.activeElement);
 		if (!outside) return;
 
@@ -34716,25 +35015,11 @@ document.addEventListener('keydown', e => {
 		return;
 	}
 
-	if (range && !range.collapsed && selectionInHost && e.key.length === 1) {
-		const startWrapper = _blockWrapperOf(range.startContainer);
-		const endWrapper = _blockWrapperOf(range.endContainer);
-		if (startWrapper && endWrapper && startWrapper !== endWrapper) {
-			const context = _activeBlockEditContext();
-			if (context && context.wrapper === startWrapper) {
-				try {
-					const clamped = range.cloneRange();
-					clamped.setEnd(context.editDiv, context.editDiv.childNodes.length);
-					if (!clamped.collapsed) {
-						sel.removeAllRanges();
-						sel.addRange(clamped);
-						range = sel.getRangeAt(0);
-					}
-				} catch (_) {}
-			}
-		}
-	}
+	// Every key that acts on the selection takes it clamped to the open block (_rapierClampTouchingSelection): Backspace, Delete and Enter
+	// used to be dropped without a word after a triple click, the selection ending outside the open block.
+	if (range && !range.collapsed && selectionInHost && (e.key.length === 1 || /^(?:Backspace|Delete|Enter)$/.test(e.key))) range = _rapierClampTouchingSelection() || range;
 
+	if (range && !range.collapsed && selectionInHost && _nodeInsideActiveEdit(range.startContainer) && _nodeInsideActiveEdit(range.endContainer)) range = _rapierTrimTableCellEdges(sel, range);
 	if (range && !range.collapsed && selectionInHost && !_nodeInsideActiveEdit(range.startContainer)) {
 		if (_rapierOpenSameBlockSelection(range)) return;
 	}
@@ -34754,7 +35039,8 @@ document.addEventListener('keydown', e => {
 			e.preventDefault();
 		}
 	}
-}, true);
+}
+document.addEventListener('keydown', _rapierGuardEditingKey, true);
 
 // A block that is one quote with no words in it (empty lines only): Enter leaves it, as it leaves an empty list item's list.
 function _rapierQuoteIsEmpty(editDiv, quoteEl) {
@@ -34795,6 +35081,8 @@ function _rapierHandleEnter(opts) {
 
 	const sel = window.getSelection && window.getSelection();
 	if (!sel || !sel.rangeCount) return false;
+	// Enter from a soft keyboard or an IME (no key before it) takes a selection that ends at the next block's start clamped too.
+	_rapierClampTouchingSelection();
 	let range = sel.getRangeAt(0);
 
 	let startEl = range.startContainer.nodeType === Node.TEXT_NODE
@@ -35142,32 +35430,52 @@ function _rapierHandleEmptyBlockBackspace() {
 	return true;
 }
 
-function _rapierCaretAtEditBoundary(editDiv, range, direction) {
-	if (!editDiv || !range || !range.collapsed) return false;
-	if (!_nodeInside(editDiv, range.startContainer) || !_nodeInside(editDiv, range.endContainer)) return false;
-
+// Nothing the person can see or delete stands between the caret and the scope's start (backward) or end (forward): only
+// structure (list, quote, code and paragraph boxes), the editor's zero-width spacers, a task's checkbox and the placeholder
+// line break that gives an empty line its height. `scope` is the whole edit surface, or one list item for "the start of the
+// item's words". At the surface's edge the browser's own delete reaches into the neighbouring block's markup and leaves the
+// page and the source disagreeing (a paragraph twice, a line gone), so the engine owns the key there and nothing falls
+// through to the browser (_rapierHandleBlockBoundaryDelete). The probe's own markup cannot answer this: a range from the
+// surface's start to a caret inside a list, quote or code clones the list, quote and code around it, which is why the
+// earlier test read every caret in one as never at an edge.
+function _rapierCaretAtSurfaceEdge(scope, range, direction) {
+	if (!scope || !range || !range.collapsed || !_nodeInside(scope, range.startContainer)) return false;
 	const probe = document.createRange();
 	try {
 		if (direction === 'backward') {
-			probe.setStart(editDiv, 0);
+			probe.setStart(scope, 0);
 			probe.setEnd(range.startContainer, range.startOffset);
 		} else {
 			probe.setStart(range.endContainer, range.endOffset);
-			probe.setEnd(editDiv, editDiv.childNodes.length);
+			probe.setEnd(scope, scope.childNodes.length);
 		}
 	} catch (_) { return false; }
+	if (probe.collapsed) return true;
+	// Words: a code block's own newlines and spaces are its content; anywhere else white space is the markup's. The one newline that
+	// ends a code block's surface holds its last line open and is not content: the caret at the end of the last line is at the end.
+	const text = probe.toString();
+	const inCode = !!_nodeAsElement(range.startContainer)?.closest('pre');
+	if (inCode ? /[^\u200b\ufeff]/.test(direction === 'forward' ? text.replace(/\n[\u200b\ufeff]*$/, '') : text) : /[^\s\u200b\ufeff]/.test(text)) return false;
+	// Things that are not words but are the person's: a picture, a formula, a rule, a control, a line break with a line after it.
+	const atoms = scope.querySelectorAll('img,svg,math,video,audio,canvas,iframe,object,embed,hr,table,' +
+		'input:not([type="checkbox"]),.math-rendered,[data-math-src],[contenteditable="false"]:not(input),br');
+	for (const atom of atoms) {
+		if (atom.contains(range.startContainer) || !probe.intersectsNode(atom)) continue;
+		if (atom.tagName !== 'BR' || _rapierLineBreakHoldsALine(atom, scope)) return false;
+	}
+	return true;
+}
 
-	const holder = document.createElement('div');
-	holder.appendChild(probe.cloneContents());
-	const text = (holder.textContent || '')
-		.replace(/\u200b/g, '')
-		.replace(/[\r\n\t]/g, '');
-	if (text.length) return false;
-
-	return !holder.querySelector(
-		'br,img,svg,math,video,audio,canvas,iframe,object,embed,input,hr,' +
-		'table,pre,blockquote,ul,ol,details,.math-rendered,[data-math-src]'
-	);
+// A line break separates lines when something follows it in its own block; the last one only holds an empty line open, and a
+// nested list after it is its own lines.
+function _rapierLineBreakHoldsALine(br, scope) {
+	for (let node = br; node && node !== scope; node = node.parentNode) {
+		for (let next = node.nextSibling; next; next = next.nextSibling) {
+			if (next.nodeType === Node.TEXT_NODE ? /[^\s\u200b\ufeff]/.test(next.data) : !/^(?:UL|OL)$/.test(next.nodeName)) return true;
+		}
+		if (/^(?:P|LI|H[1-6]|DIV|BLOCKQUOTE|PRE|TD|TH|SUMMARY|DD|DT)$/.test(node.parentNode?.nodeName || '')) break;
+	}
+	return false;
 }
 
 function _rapierMergeableSurface(block, wrapper, liveEditDiv) {
@@ -35235,7 +35543,12 @@ function _rapierMergeBoundaryPair(leftBlock, leftWrapper, leftEditDiv,
 
 	const mergedRaw = _markdownFromEditHTML(mergedRoot.outerHTML);
 	if (!mergedRaw) return false;
+	return _rapierCommitMergedPair(leftBlock, rightBlock, mergedRaw, leftSurface.textLength, activeContext);
+}
 
+// Two neighbouring blocks become the one block `mergedRaw` (the upper one's id and kind), as one Undo step, and the caret stands
+// `caretOffset` characters into it, where the words joined.
+function _rapierCommitMergedPair(leftBlock, rightBlock, mergedRaw, caretOffset, activeContext) {
 	const startIndex = rapier.document.blocks.findIndex(b => b.id === leftBlock.id);
 	if (startIndex === -1 || rapier.document.blocks[startIndex + 1]?.id !== rightBlock.id) return false;
 
@@ -35259,66 +35572,80 @@ function _rapierMergeBoundaryPair(leftBlock, leftWrapper, leftEditDiv,
 	_bumpDocGeneration();
 	_rapierArmAutosave();
 
-	_rapierCommitBlockRange(startIndex, blocksBefore, blocksAfter);
+	const committed = _rapierCommitBlockRange(startIndex, blocksBefore, blocksAfter);
 	_spliceBlockDOM(startIndex, 2, [mergedBlock]);
 	_rapierSyncMarkdownSourceFromBlocks();
 	_notifyHistoryState();
 	updateStats();
 
-	_enterBlockEditAtOffset(mergedBlock.id, leftSurface.textLength);
+	// A Delete at the first block's end: Undo gives the caret back there, not at the start of the block below that the source's own
+	// diff points at (and, in a list, not somewhere inside an item). A Backspace at the second block's start is placed as it was.
+	if (committed && activeContext?.block?.id === leftBlock.id) _rapierRememberHistoryCaret({ blockId: leftBlock.id, offset: caretOffset }, { blockId: mergedBlock.id, offset: caretOffset });
+	_enterBlockEditAtOffset(mergedBlock.id, caretOffset);
 	return true;
 }
 
-// Backspace at the very start of a list's own first item, with nothing above to merge into,
-// lifts that item's marker the way Word's oldest list habit does: the item's words become a
-// plain paragraph, caret at their own start; any items after it keep their own exact markers,
-// untouched, as their own list block right below. Not a list (or an empty item, nothing to lift)
-// returns false and the caller's existing "do nothing" stands.
-function _rapierLiftListItemMarkerAtStart(block) {
+// Backspace at the start of a paragraph or heading right below a list or a quote, and Delete at the end of a list or a quote with a
+// paragraph or heading right below: the words join the last line of the list or quote, as a paragraph's words join the one above
+// in Word, and the caret stands where they joined. The key was owned and did nothing here, and the words could not be taken back
+// into the list any way but cut and paste. A last line that is not plain words (a fence, a table, a tag) is left as it is.
+function _rapierJoinIntoContainer(container, paragraph, paragraphWrapper, paragraphEditDiv, activeContext) {
+	if (_rapierWholeBlock(container) || _rapierWholeBlock(paragraph)) return false;
+	const raw = String(container.raw || ''), lines = raw.split('\n'), last = lines[lines.length - 1];
+	const list = !!_rapierListItemSpans(raw)[0]?.marker, quote = lines.every(line => /^ {0,3}>/.test(line));
+	if (!(list || quote) || !last.trim() || /^[ \t>]*(?:`{3,}|~{3,}|\||<)/.test(last)) return false;
+	const surface = _rapierMergeableSurface(paragraph, paragraphWrapper, paragraphEditDiv);
+	const words = surface ? _markdownFromEditHTML('<p>' + surface.innerHTML + '</p>') : '';
+	const probe = words.trim() ? _rapierRenderedMarkProbe(raw, 'bold') : null;
+	if (!probe) return false;
+	const [first, ...rest] = words.split('\n');
+	const merged = [...lines.slice(0, -1), last + first, ...rest.map(line => quote ? '> ' + line : line)].join('\n');
+	return _rapierCommitMergedPair(container, paragraph, merged, probe.text.replace(/\s+$/, '').length, activeContext);
+}
+
+// Backspace at the start of a list item's words takes the marker first, as it does in Word and Docs: the words stay where they
+// are. A top-level item leaves its list: its own words are a paragraph between the items above and the items below, each side
+// keeping its own exact markers and numbers, and the caret is at the paragraph's start. An item's nested list follows the
+// paragraph as a list of its own (a paragraph cannot hold one). Not a list, or an item with no words of its own, returns
+// false and nothing changes.
+function _rapierLeaveListAtItem(block, index, caretBefore = null) {
 	const raw = String(block.raw || '');
-	if (!/^(?:[-*+]\s+|\d+[.)]\s+)/.test(raw.trim())) return false;
 	const items = _rapierListItemSpans(raw);
-	if (!items.length) return false;
-	const first = items[0];
-	const firstRaw = [first.firstLineRest, ...first.continuationLines.map(line => _rapierReindentListLine(line, -first.oldPrefixWidth))].join('\n');
-	if (!firstRaw.trim()) return false;
-	const rawLines = raw.split('\n');
-	const restRaw = rawLines.slice(1 + first.continuationLines.length).join('\n');
-	const rawList = restRaw.trim() ? [firstRaw, restRaw] : [firstRaw];
-	return _replaceOneBlockWithRawSet(block, rawList, 0, 0);
+	if (!items.length || !items[0].marker || index < 0 || index >= items.length) return false;
+	const item = items[index];
+	const span = candidate => 1 + candidate.continuationLines.length;
+	const before = items.slice(0, index).reduce((count, candidate) => count + span(candidate), 0);
+	const lines = raw.split('\n');
+	const body = item.continuationLines.map(line => _rapierReindentListLine(line, -item.oldPrefixWidth));
+	const nestedAt = body.findIndex(line => /^ *(?:[-*+]|\d+[.)])\s/.test(line));
+	const own = [item.firstLineRest, ...(nestedAt < 0 ? body : body.slice(0, nestedAt))].join('\n');
+	if (!own.trim()) return false;
+	const rawList = [lines.slice(0, before).join('\n'), ...own.split(/\n[ \t]*\n+/),
+		nestedAt < 0 ? '' : body.slice(nestedAt).join('\n'), lines.slice(before + span(item)).join('\n')].filter(text => text.trim());
+	return _replaceOneBlockWithRawSet(block, rawList, before ? 1 : 0, 0, { caretBefore });
 }
 
-// _rapierCaretAtEditBoundary's own probe always reads a caret anywhere inside a <ul>/<ol> as
-// "not at the boundary" (its probe starts at the editDiv itself, so it always crosses the list
-// element on its way in) -- true for every list caret, not only a later item's, so it cannot
-// tell this one case apart. This checks the same "nothing before the caret" question but starts
-// the probe at the first item itself, which only a caret genuinely at that item's own start
-// leaves empty.
-function _rapierCaretAtFirstListItemStart(editDiv, range) {
-	if (!editDiv || !range || !range.collapsed) return false;
-	if (!_nodeInside(editDiv, range.startContainer)) return false;
-	const list = editDiv.firstElementChild;
-	if (!list || !/^(?:UL|OL)$/.test(list.tagName) || list.previousSibling) return false;
-	const li = list.firstElementChild;
-	if (!li || li.tagName !== 'LI' || !_nodeInside(li, range.startContainer)) return false;
-	const probe = document.createRange();
-	try { probe.setStart(li, 0); probe.setEnd(range.startContainer, range.startOffset); }
-	catch (_) { return false; }
-	const holder = document.createElement('div');
-	holder.appendChild(probe.cloneContents());
-	// A checklist item's own checkbox control sits before its words in the DOM but is the marker,
-	// not a word -- the same reason Backspace here should lift it exactly as a plain bullet's; the
-	// one space the renderer leaves between the checkbox and the words is that same marker's own
-	// gap, not something the person typed, so it is trimmed away with it.
-	holder.querySelectorAll('input[type="checkbox"]').forEach(el => el.remove());
-	const text = (holder.textContent || '').replace(/​/g, '').replace(/[\r\n\t]/g, '').trim();
-	if (text.length) return false;
-	return !holder.querySelector(
-		'br,img,svg,math,video,audio,canvas,iframe,object,embed,input,hr,' +
-		'table,pre,blockquote,ul,ol,details,.math-rendered,[data-math-src]'
-	);
+// Backspace at the start of a quote takes the `>` first, the words staying where they are; a quote of several paragraphs keeps
+// the rest as a quote below. A callout, or a quote that is not plain quoted lines, is left as it is.
+function _rapierUnquoteAtStart(block, caretBefore = null) {
+	const lines = String(block.raw || '').split('\n');
+	const marker = /^ {0,3}>[ \t]?/;
+	if (!lines.length || !lines.every(line => marker.test(line)) || /^ {0,3}>[ \t]*\[!\w+\]/.test(lines[0])) return false;
+	const inner = lines.map(line => line.replace(marker, ''));
+	const gap = inner.findIndex(line => !line.trim());
+	const head = (gap < 0 ? inner : inner.slice(0, gap)).join('\n');
+	if (!head.trim()) return false;
+	return _replaceOneBlockWithRawSet(block, [head, gap < 0 ? '' : lines.slice(gap + 1).join('\n')].filter(text => text.trim()), 0, 0, { caretBefore });
 }
 
+function _rapierIsRuleBlock(block) {
+	return /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(String(block && block.raw || '').trim());
+}
+
+// Backspace and Delete at a block's edge. The engine owns the key there and the browser never edits across it (its delete
+// would merge the neighbour's markup into this block's page while the source kept both). True when the key was owned: every
+// decision below acts, or refuses, or does nothing, and none falls through. False only when the caret is not at an edge (the
+// browser edits inside the block), or the key is not this function's (a selection, a read-only page, no block open).
 function _rapierHandleBlockBoundaryDelete(direction) {
 	if (rapier.access.readOnly) return false;
 	const context = _activeBlockEditContext();
@@ -35328,96 +35655,104 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 	if (!sel || !sel.rangeCount) return false;
 	const range = sel.getRangeAt(0);
 	if (!range.collapsed || !_nodeInside(context.editDiv, range.startContainer)) return false;
+	// A delete is an input that is not a typed character, and such an input ends the typing state that Enter and the marks' keys leave
+	// (docs/formatting-algebra.md section 8). The browser's own delete ended it by the input event it made; a key taken here makes none, so
+	// a key that changes nothing (Delete at the end of the last block) would hand the state to the next letter. The one key that goes on
+	// carrying it is Backspace in an empty list item, which does what Enter does there, and Enter's split carries the state to the new
+	// paragraph (_splitBlockAtCaret): that branch runs before the state is ended.
+	const endTypingState = () => { if (context.editDiv._rapierTypingMarks) { context.editDiv._rapierTypingMarks = null; requestAnimationFrame(refreshFormatToolbar); } };
+	const { editDiv, wrapper, block } = context;
+	const backward = direction === 'backward';
+	// Where the caret stands, for the step's Undo to put it back (the start of the item, of the quote).
+	const here = () => ({ blockId: block.id, offset: _rapierStructuralOffsetForRangePoint(editDiv, range.startContainer, range.startOffset) });
 
-	if (direction === 'backward' && _rapierEditBlockIsEmpty(context.editDiv, context.wrapper)) {
-		return _rapierHandleEmptyBlockBackspace();
-	}
-
-	// Backspace in an empty list item does what Enter there does, as Docs and Word do: a nested
-	// item moves out a level, a top-level one becomes the paragraph after the list's items above
-	// it. Merged into the item above, as the browser left it, the item's line was simply gone.
-	if (direction === 'backward') {
-		const startEl = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
-		const li = _listItemAtCaret(context.editDiv, range, startEl);
-		if (li && context.editDiv.contains(li) && _isEmptyListItem(li)) {
-			if (_rapierCanOutdentListItem(li)) rapierListDepth(-1, { atStart: true });
-			else _splitBlockAtCaret(context.editDiv, context.wrapper, context.block, range, { emptyLi: li });
-			return true;
+	if (backward) {
+		const li = _listItemAtCaret(editDiv, range, _nodeAsElement(range.startContainer));
+		if (li && editDiv.contains(li)) {
+			// Backspace in an empty list item does what Enter there does, as Docs and Word do: a nested item moves out a
+			// level, a top-level one becomes the paragraph after the list's items above it. Merged into the item above, as
+			// the browser left it, the item's line was simply gone.
+			if (_isEmptyListItem(li)) {
+				if (_rapierCanOutdentListItem(li)) rapierListDepth(-1, { atStart: true });
+				else _splitBlockAtCaret(editDiv, wrapper, block, range, { emptyLi: li });
+				return true;
+			}
+			// At the start of an item's words the marker goes first: a nested item moves out a level, a top-level one
+			// leaves the list. The next Backspace joins the paragraph it became to the block above.
+			if (_rapierCaretAtSurfaceEdge(li, range, 'backward')) {
+				endTypingState();
+				if (_rapierCanOutdentListItem(li)) rapierListDepth(-1, { atStart: true });
+				else {
+					_rapierCommitLiveBoundaryBlock(context);
+					_rapierLeaveListAtItem(block, _rapierOutermostListItemIndexForRange(range), here());
+				}
+				return true;
+			}
 		}
 	}
 
-	// A list's own first item, caret at its very start, with nothing above to merge into: lift
-	// the marker. Checked ahead of the general boundary gate below, which reads a caret anywhere
-	// inside a <ul>/<ol> as never at the boundary (see _rapierCaretAtFirstListItemStart's own
-	// comment) and so could never reach this case on its own.
-	if (direction === 'backward') {
-		const liftIndex = rapier.document.blocks.findIndex(b => b.id === context.block.id);
-		if (liftIndex <= 0 && _rapierCaretAtFirstListItemStart(context.editDiv, range)) {
-			return _rapierLiftListItemMarkerAtStart(context.block);
-		}
-	}
+	endTypingState();
+	if (!_rapierCaretAtSurfaceEdge(editDiv, range, direction)) return false;
 
-	// An empty block is at both of its boundaries: the line break that holds its line open is no word after the caret. Left to the
-	// browser, Delete in a blank line pulled the next block's words into it and left that block in the document as well.
-	if (!_rapierEditBlockIsEmpty(context.editDiv, context.wrapper) && !_rapierCaretAtEditBoundary(context.editDiv, range, direction)) return false;
+	const blocks = rapier.document.blocks;
+	const blockIndex = blocks.findIndex(b => b.id === block.id);
+	if (blockIndex === -1) return true;
+	const neighbour = blocks[blockIndex + (backward ? -1 : 1)] || null;
 
-	const blockIndex = rapier.document.blocks.findIndex(b => b.id === context.block.id);
-	if (blockIndex === -1) return false;
-
-	if (direction === 'backward') {
-		if (blockIndex <= 0) return false;
-		const previousBlock = rapier.document.blocks[blockIndex - 1];
-		const previousWrapper = document.querySelector('[data-block-id="' + previousBlock.id + '"]');
-		if (!previousWrapper) return false;
-
-		if (_rapierRawIsBlank(previousBlock.raw)) {
-			_rapierCommitLiveBoundaryBlock(context);
-			const snapshot = _removeBlockById(previousBlock.id);
-			if (!_rapierPushDeletedBlock(snapshot)) return false;
-			_enterBlockEditAtOffset(context.block.id, 0);
-			return true;
-		}
-
-		_rapierCommitLiveBoundaryBlock(context);
-
-		_rapierMergeBoundaryPair(
-			previousBlock, previousWrapper, null,
-			context.block, context.wrapper, context.editDiv,
-			context
-		);
-		return true;
-	}
-
-	if (blockIndex >= rapier.document.blocks.length - 1) return false;
-	const nextBlock = rapier.document.blocks[blockIndex + 1];
-	const nextWrapper = document.querySelector('[data-block-id="' + nextBlock.id + '"]');
-	if (!nextWrapper) return false;
-
-	if (_rapierEditBlockIsEmpty(context.editDiv, context.wrapper)) {
-		context.editDiv._rapierSkipBlurCommit = true;
+	if (_rapierEditBlockIsEmpty(editDiv, wrapper)) {
+		// An empty block, a blank line (`&nbsp;`) included, is at both of its edges (the line break that holds its line open is no
+		// word after the caret, _rapierCaretAtSurfaceEdge): either key removes it, and the caret goes to the block above (Backspace)
+		// or to the start of the block below (Delete). Left to the browser, Delete pulled the next block's words into it and left
+		// that block in the document as well.
+		if (backward) { _rapierHandleEmptyBlockBackspace(); return true; }
+		if (!neighbour) return true;
+		editDiv._rapierSkipBlurCommit = true;
 		hideFormatToolbar();
-		const nextId = nextBlock.id;
-		const snapshot = _removeBlockById(context.block.id);
-		if (!_rapierPushDeletedBlock(snapshot)) return false;
-		_enterBlockEditAtOffset(nextId, 0);
+		const snapshot = _removeBlockById(block.id);
+		if (_rapierPushDeletedBlock(snapshot)) _enterBlockEditAtOffset(neighbour.id, 0);
 		return true;
 	}
 
-	if (_rapierRawIsBlank(nextBlock.raw)) {
+	// A quote's `>` goes first, as a list's marker does.
+	if (backward && _nodeAsElement(range.startContainer)?.closest('blockquote')) {
 		_rapierCommitLiveBoundaryBlock(context);
-		const snapshot = _removeBlockById(nextBlock.id);
-		if (!_rapierPushDeletedBlock(snapshot)) return false;
-		_enterBlockEditAtOffset(context.block.id, Infinity);
+		_rapierUnquoteAtStart(block, here());
 		return true;
 	}
 
-	_rapierCommitLiveBoundaryBlock(context);
+	if (!neighbour) return true;
+	const neighbourWrapper = document.querySelector('[data-block-id="' + neighbour.id + '"]');
+	if (!neighbourWrapper) return true;
 
-	_rapierMergeBoundaryPair(
-		context.block, context.wrapper, context.editDiv,
-		nextBlock, nextWrapper, null,
-		context
-	);
+	if (_rapierRawIsBlank(neighbour.raw) || _rapierIsRuleBlock(neighbour)) {
+		// An empty block or a blank line (`&nbsp;`, the paragraph Enter leaves), or a rule (nothing to join to it), between this one
+		// and the edge is what the key removes.
+		_rapierCommitLiveBoundaryBlock(context);
+		if (_rapierPushDeletedBlock(_removeBlockById(neighbour.id))) _enterBlockEditAtOffset(block.id, backward ? 0 : Infinity);
+		return true;
+	}
+
+	// Two paragraphs, or a heading and a paragraph, join with the upper one's kind; a paragraph or heading and the list or quote
+	// above it (or below the caret in one) join into its last line. Where the words cannot join -- a code block or a table on
+	// either side, a list below the caret -- the caret goes on into the neighbour (its last place for Backspace, its first for
+	// Delete), as an arrow key carries it, and the next press takes its own characters; before this the key did nothing and
+	// nothing said why. A picture on either side is left as it is, and nothing here edits across the edge.
+	if (!_rapierWholeBlock(neighbour)) {
+		let joined = false;
+		if (_rapierMergeableSurface(neighbour, neighbourWrapper, null)) {
+			_rapierCommitLiveBoundaryBlock(context);
+			joined = backward ? _rapierMergeBoundaryPair(neighbour, neighbourWrapper, null, block, wrapper, editDiv, context)
+				: _rapierMergeBoundaryPair(block, wrapper, editDiv, neighbour, neighbourWrapper, null, context);
+			if (!joined && !backward) joined = _rapierJoinIntoContainer(block, neighbour, neighbourWrapper, null, context);
+		} else if (backward) {
+			_rapierCommitLiveBoundaryBlock(context);
+			joined = _rapierJoinIntoContainer(neighbour, block, wrapper, editDiv, context);
+		}
+		if (!joined && !neighbourWrapper.hidden && !neighbourWrapper.classList.contains('block-wrapper--metadata')) {
+			_rapierCommitLiveBoundaryBlock(context);
+			_rapierEnterBlockAtEdge(neighbour, neighbourWrapper, !backward, backward ? 1e9 : 0);
+		}
+	}
 	return true;
 }
 
@@ -35436,9 +35771,12 @@ document.addEventListener('keydown', e => {
 	}
 }, true);
 
-document.addEventListener('beforeinput', e => {
-	if ((e.inputType !== 'deleteContentBackward' && e.inputType !== 'deleteContentForward') ||
-			rapier.composition.block) return;
+// The keys that arrive without a plain Backspace or Delete keydown -- a soft keyboard's, and the chords Ctrl+Backspace,
+// Ctrl+Delete and Cmd+Backspace (deleteWord*, deleteSoftLine*, deleteHardLine*) -- at a block's edge: the same owner, so
+// a word delete at a paragraph's start joins it to the one above as Backspace does and never reaches over the edge itself.
+function _rapierBoundaryDeleteInput(e) {
+	const kind = /^delete(?:Content|Word|SoftLine|HardLine)(Backward|Forward)$/.exec(String(e.inputType || ''));
+	if (!kind || e._rapierCrossBlockDone || rapier.composition.block) return;
 	if (rapier.input.boundaryDeleteHandledUntil &&
 			_rapierNow() < rapier.input.boundaryDeleteHandledUntil &&
 			rapier.input.boundaryDeleteInputType === e.inputType) {
@@ -35448,9 +35786,10 @@ document.addEventListener('beforeinput', e => {
 		return;
 	}
 	const touchesEditor = _rapierEnterTouchesEditor(e);
-	const direction = e.inputType === 'deleteContentBackward' ? 'backward' : 'forward';
+	const direction = kind[1] === 'Backward' ? 'backward' : 'forward';
 	if (touchesEditor && _rapierHandleBlockBoundaryDelete(direction)) e.preventDefault();
-}, true);
+}
+document.addEventListener('beforeinput', _rapierBoundaryDeleteInput, true);
 
 function _rapierHandleMathIslandKeydown(e) {
 	if (rapier.access.readOnly || e.defaultPrevented || !_rapierEnterTouchesEditor(e)) return false;
@@ -36687,6 +37026,43 @@ function _rapierPasteCaretInCode(editDiv, range) {
 // A caret in a code block's words, or in a fence's body in a block edited as its source, takes what the
 // decision gives inside code -- the characters as copied -- where it stands, as Enter there takes a raw
 // line break: one history step, the caret after them.
+// Words pasted into a list item or a quote go into that item's words at the caret, as typing them would. The block-level plan
+// splits the block at the caret and stands the pasted paragraph between the halves, so a word pasted into a bullet broke the
+// list in two (a paragraph, then a second list of what was left of the item). Lines pasted into a list item are its items, as in
+// Word and Docs: the first joins the words before the caret, each next line is a new item (the line break is an Enter), and
+// what followed the caret ends the last. Inline Markdown in the words reads as it does in a paragraph, and every other line of
+// the block keeps its bytes. Anything else -- block syntax, a second line pasted into a quote -- is the plan's.
+function _rapierPasteLineIntoContainer(editDiv, payload) {
+	const selection = window.getSelection && window.getSelection();
+	const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+	const context = _activeBlockEditContext();
+	if (!range || !context || context.editDiv !== editDiv || !_nodeInside(editDiv, range.startContainer) ||
+			!_nodeInside(editDiv, range.endContainer) || _blockUsesRawEditor(context.block.raw) ||
+			!/^ {0,3}(?:[-*+]\s|\d+[.)]\s|>)/.test(String(context.block.raw || '')) || _rapierPasteCaretInCode(editDiv, range)) return false;
+	const content = _rapierResolvePastePayload(payload);
+	const text = content ? String(content.markdown || '').replace(/\r\n?/g, '\n') : '';
+	const lines = text.split('\n').map(line => line.replace(/\s+$/, '')).filter(line => line.trim());
+	const inItem = !!_listItemAtCaret(editDiv, range, _nodeAsElement(range.startContainer));
+	if (!lines.length || lines.length > 200 || (lines.length > 1 && !inItem) ||
+			lines.some(line => line.length > 4000 || !_isRawInlineSafe(line))) return false;
+	const references = _rapierBuildReferenceIndex(rapier.document.blocks);
+	const words = lines.map(line => {
+		const paragraph = /^\s*<p\b[^>]*>([\s\S]*)<\/p>\s*$/.exec(renderBlock(line, references));
+		return paragraph && !/<(?:p|ul|ol|li|pre|table|blockquote|h[1-6]|div|hr|img|iframe|svg)\b/i.test(paragraph[1]) ? paragraph[1] : null;
+	});
+	if (words.some(part => part == null)) return false;
+	_rapierCheckpointEdit(editDiv);
+	words.forEach((part, index) => {
+		if (index) _rapierHandleEnter({});
+		_rangeInsertHTML(part);
+		// The new item's placeholder line break held its empty line open; with words in it, it would be written as a hard break.
+		const item = _nodeAsElement(selection.anchorNode)?.closest('li'), last = item && item.lastChild;
+		if (last && last.nodeName === 'BR' && item.textContent.trim() && !(last.previousSibling && last.previousSibling.nodeName === 'BR')) last.remove();
+	});
+	_rapierCheckpointEdit(editDiv);
+	return true;
+}
+
 function _rapierPasteIntoCode(editDiv, payload) {
 	const selection = window.getSelection && window.getSelection();
 	const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
@@ -36844,6 +37220,7 @@ function _rapierHandlePaste(event) {
 	const inlineWhitespace = _rapierInlineWhitespacePayload(payload);
 	if (!crossBlock && inlineWhitespace && _rapierPasteInlineWhitespace(activeEdit, inlineWhitespace)) return true;
 	if (!crossBlock && _rapierPasteIntoCode(activeEdit, payload)) return true;
+	if (!crossBlock && _rapierPasteLineIntoContainer(activeEdit, payload)) return true;
 
 	const stableTarget = _rapierCurrentSelectionTarget();
 	const record = _rapierCaptureStableTargetRecord(stableTarget);
