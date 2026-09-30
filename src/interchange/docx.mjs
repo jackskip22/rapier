@@ -730,7 +730,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
       return fail('DOCX picture conversion did not return embedded image bytes.', 'docx_image_conversion');
     imageResults.push({reference, url});
   }
-  for (const table of rawTables) html = html.replaceAll(table.placeholder, '<p>' + sourceToken(docxPortableHtml(table.html, new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url])))) + '</p>');
+  for (const table of rawTables) html = html.replaceAll(table.placeholder, () => '<p>' + sourceToken(docxPortableHtml(table.html, new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url])))) + '</p>');
   html = html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
   return {html, warnings: [...warnings], stats};

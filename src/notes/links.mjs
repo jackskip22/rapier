@@ -70,6 +70,13 @@ export function linkMask(text) {
 	return m;
 }
 
+// Reuse the admitted HTML walk: a tag spelled inside a fence or comment is document text.
+export function hasHtmlTag(text, name) {
+	linkMask(text);
+	for (const tag of maskedHtml.values()) if (!tag.closing && tag.name === name) return true;
+	return false;
+}
+
 const HTML_TAG_HEAD = /<\/?([A-Za-z][A-Za-z0-9-]*)(?=[\t\n\f\r />])/y;
 const HTML_ATTR = /[^\t\n\f\r "'=<>/]+/y;
 const HTML_SPACE = /[\t\n\f\r ]/;

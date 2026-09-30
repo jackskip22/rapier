@@ -301,18 +301,25 @@ export function enforceWill(beforeText, afterText, splices, { docKind = 'markdow
   // A faulted Will keeps the whole document; the refusal names the faults (mode and line), so the agent knows the marker to
   // mend or to ask the person about, instead of reading a bare rule (the lane of 26 September, walked as the agent).
   if (before.faults.length) return { law: 'keep', rule: 'before_faulted', faults: willFaults(before) };
-  if (after.faults.length) return { law: 'keep', rule: 'result_faulted', faults: willFaults(after) };
-  if (!restores) {
-    for (let index = 0; index < splices.length; index++) {
-      const verdict = regionVerdict(before, splices[index]);
-      if (verdict && !(verdict.law === 'keep' && verdict.rule === 'law_violated' &&
-          verdict.region === reviewedRegion && splices.length === 1)) return { ...verdict, editIndex: index };
+  // Marker custody precedes the resulting parse. Execution order is right to left; a refusal names
+  // the first affected region in the document, retaining the original splice index for the caller.
+  let touched = null;
+  if (!restores) for (let index = 0; index < splices.length; index++) {
+    const row = splices[index], marker = willTouchesMarker(before, row.pos, row.pos + row.removed.length);
+    if (marker && (!touched || (marker.index ?? Infinity) < (touched.region ?? Infinity))) {
+      touched = { law: marker.law, rule: 'marker_span_touched', editIndex: index,
+        ...(safeInt(marker.index) ? { region: marker.index } : {}) };
     }
   }
+  if (touched) return touched;
+  if (after.faults.length) return { law: 'keep', rule: 'result_faulted', faults: willFaults(after) };
   if (before.markers.length !== after.markers.length || before.markers.some((marker, index) =>
-      marker.kind !== after.markers[index].kind || marker.content !== after.markers[index].content)) {
+      marker.kind !== after.markers[index].kind || beforeText.slice(marker.start, marker.end) !==
+        afterText.slice(after.markers[index].start, after.markers[index].end))) {
     return { law: 'keep', rule: 'marker_sequence_mismatch' };
   }
+  // Body laws judge the whole act. Individual splices can cancel without changing any governed
+  // byte; marker custody above remains strict even when marker bytes are written back identically.
   for (let index = 0; index < before.regions.length; index++) {
     const region = before.regions[index];
     const was = beforeText.slice(region.start, region.end);

@@ -22,10 +22,8 @@ function _rapierSetPandocDialectEnabled(value) {
    data URL the page shows is rewritten, at that destination only (never anywhere else the same
    bytes might appear: code, prose, links), to a fragment `#id` naming the <img id="…"> that holds
    the bytes; the ids the writer used are declared in data-images so a reader resolves exactly those
-   and no ordinary `#fragment` link. The carried form is always the bare `#id` -- when the original
-   destination was itself delimited (`![x](<data:…>)`), the writer replaces the whole delimited unit,
-   `<…>` included, never just the bytes inside it, so a reader only ever has one destination shape to
-   recognise. A reference definition (`[label]: #id`) is a second, narrower case: its destination alone
+   and no ordinary `#fragment` link. Only destination bytes are replaced; authored `<…>` delimiters stay encoded around
+   the fragment and are restored with the source. A reference definition (`[label]: #id`) is a second, narrower case: its destination alone
    cannot tell a rewritten picture definition from an ordinary link definition someone wrote by hand
    whose target happens to equal a picture id (`[nav]: #pic`), so data-image-definitions separately
    lists which definitions the writer actually rewrote, by their normalized reference label (the same
@@ -37,8 +35,8 @@ function _rapierSetPandocDialectEnabled(value) {
    entity-encoded so any Markdown survives inside a script element, bijectively: `&` becomes `&amp;`, `<` becomes `&lt;`, authored `#` becomes `&#35;` and CR becomes
    `&#13;`. Only structural image substitutions write raw `#id`. Decode CR before resolving
    those image destinations, then `&#35;`, `&lt;` and `&amp;` after resolution. data-sha256 is the SHA-256 of the
-   resolved document -- the portable source a reader reconstructs, always with bare `#id` shorthand
-   resolved back to bytes, never the working file's own delimiter choices. Nothing here is private to
+   resolved document, including its leading BOM and delimiter choices. Compatibility conversion
+   changes only the picture destination bytes the person requested. Nothing here is private to
    Rapier: any tool can read it or write it (markdown-standard.md, "The document as a web page"). */
 const _RAPIER_SHARED_SOURCE_TYPE = 'text/markdown';
 const _RAPIER_SHARED_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,120}$/;
@@ -62,9 +60,7 @@ const _rapierSharedDecode = text => text.replace(/&#35;/g, '#').replace(/&#13;/g
 // destination the page shows becomes `#id` into that <img>. Structural only: images/interchange.js's
 // destination scanner names the exact source ranges of used image destinations, so the same bytes
 // in a code block, a sentence or an ordinary link are never touched. The `#id` swap always replaces
-// the destination's outer span (row.outerStart/outerEnd), delimiters included, so a delimited
-// destination (`<data:…>`) comes out as the same bare `#id` an ordinary one would -- one carried
-// shape, not two. Returns the resolved document (what a reader recovers, and what is hashed), the
+// destination span (row.start/end), leaving authored angle delimiters encoded around it. Returns the resolved document (what a reader recovers, and what is hashed), the
 // encoded carried text, the ids used, and the normalized labels of the reference definitions among them.
 function _rapierSharedSourceForms(source, root, substitutions) {
 	const assets = globalThis.RapierImageAssets;
@@ -94,12 +90,8 @@ function _rapierSharedSourceForms(source, root, substitutions) {
 		}
 		if (!used.includes(id)) used.push(id);
 		if (row.reference && !definitions.includes(row.reference)) definitions.push(row.reference);
-		// The reader can only ever recover bytes, never a delimiter choice -- resolving `#id` gives
-		// back img.src verbatim, `<…>` or not. So the hashed/portable form drops the same `<…>` here,
-		// over the row's outer span, or a delimited destination would hash one way and reconstruct
-		// another.
-		resolved = resolved.slice(0, row.outerStart) + shownUrl + resolved.slice(row.outerEnd);
-		carrierEdits.push({start: row.outerStart, end: row.outerEnd, text: '#' + id});
+		resolved = resolved.slice(0, row.start) + shownUrl + resolved.slice(row.end);
+		carrierEdits.push({start: row.start, end: row.end, text: '#' + id});
 	}
 	let carried = '', cursor = source.length;
 	for (const edit of carrierEdits) {
@@ -111,7 +103,8 @@ function _rapierSharedSourceForms(source, root, substitutions) {
 }
 
 async function _rapierSharedSourceCarrier(context, root) {
-	const forms = _rapierSharedSourceForms(context.canonical, root, context.imageSubstitutions);
+	const source = (context.metadata.bom ? '\uFEFF' : '') + context.canonical;
+	const forms = _rapierSharedSourceForms(source, root, context.imageSubstitutions);
 	const esc = escapeRapierHtmlText;
 	return '<script type="' + _RAPIER_SHARED_SOURCE_TYPE + '" data-filename="' + esc(context.metadata.filename) +
 		'" data-kind="' + esc(context.metadata.docKind) + '" data-sha256="' + await _rapierSharedSourceHash(forms.resolved) +
@@ -135,8 +128,10 @@ function _rapierSharedResolve(text, ids, images, definitions) {
 		if (typeof found !== 'string' || !/^data:image\/(?:png|jpeg|webp|svg\+xml|jxl);base64,[A-Za-z0-9+/]+={0,2}$/i.test(found)) { broken = true; return null; }
 		return found;
 	};
-	const inline = new RegExp('(!\\[(?:\\\\.|[^\\]\\\\])*\\]\\([ \\t]*)#' + id + '(?=[ \\t]*\\)|[ \\t]+["\'(])', 'g');
-	const definition = new RegExp('(^ {0,3}\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*)#' + id + '(?=[ \\t]*$|[ \\t]+["\'(])', 'gm');
+	// Authored # characters were encoded. A raw id after ]( can only be a structural
+	// substitution; matching its destination lets nested alt brackets survive unchanged.
+	const inline = new RegExp('(\\]\\([ \\t\\r\\n]*(?:&lt;)?)#' + id + '(?=>?[ \\t\\r\\n]*\\)|>?[ \\t\\r\\n]+["\'(])', 'g');
+	const definition = new RegExp('(^ {0,3}\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*(?:(?:\\r\\n|\\r|\\n)[ \\t]*)?(?:&lt;)?)#' + id + '(?=>?[ \\t]*$|>?[ \\t]+["\'(])', 'gm');
 	const swapInline = (match, lead, value) => { const found = src(value); return found == null ? match : lead + found; };
 	const swapDefinition = (match, lead, label, value) => {
 		if (definitions && !definitions.has(md.utils.normalizeReference(_rapierSharedDecode(label)))) return match;
@@ -176,8 +171,9 @@ async function _rapierReadSharedDocument(text, filename) {
 	const resolved = _rapierSharedResolve(source, ids, images, definitions);
 	source = _rapierSharedDecode(resolved.text);
 	if (resolved.broken || source.length > RapierTextCodec.maxDocumentBytes || await _rapierSharedSourceHash(source) !== sha256) return invalid();
-	if (RapierTextCodec.normalizeDocument(source) !== source) return invalid();
-	return {source, filename: name, kind};
+	const bom = source.charCodeAt(0) === 0xFEFF;
+	if (RapierTextCodec.normalizeDocument(source) !== (bom ? source.slice(1) : source)) return invalid();
+	return {source, filename: name, kind, bom};
 }
 
 // Rapier's own stylesheet does the look -- the shared page is the same document the standalone

@@ -193,13 +193,14 @@ export function layoutTargets(source, parser, env = {}) {
   return targets.sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
-/** All selected prose changes are returned together; the caller owns the one transaction. */
+/** All selected prose changes are returned together; the caller owns the one transaction. `patch` is one object of fields for every
+ * target, or a function (target, source) giving each target its own: a caller whose answer depends on the paragraph (Left, which
+ * writes nothing on a left-to-right one) resolves it there. */
 export function editLayout(source, parser, range, patch, env = {}) {
   if (typeof source !== 'string' || !range || !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) ||
       range.start < 0 || range.end < range.start || range.end > source.length) return {edits: [], targets: [], reason: 'invalid_layout_range'};
-  if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).some(key => !fields.has(key))) {
-    return {edits: [], targets: [], reason: 'invalid_layout_patch'};
-  }
+  const wellFormed = change => !!change && typeof change === 'object' && !Array.isArray(change) && Object.keys(change).every(key => fields.has(key));
+  if (typeof patch !== 'function' && !wellFormed(patch)) return {edits: [], targets: [], reason: 'invalid_layout_patch'};
   const targets = layoutTargets(source, parser, env).filter(target => range.start === range.end ?
     target.start <= range.start && range.start <= target.end : target.start < range.end && target.end > range.start);
   if (!targets.length) return {edits: [], targets, reason: 'no_layout_target'};
@@ -207,10 +208,11 @@ export function editLayout(source, parser, range, patch, env = {}) {
   if (blocked) return {edits: [], targets, reason: blocked.reason || 'unmapped_layout_tail'};
   const edits = [];
   for (const target of targets) {
-    const value = {...target.layout};
-    for (const key of Object.keys(patch)) {
-      if (patch[key] == null) delete value[key];
-      else value[key] = patch[key];
+    const value = {...target.layout}, change = typeof patch === 'function' ? patch(target, source) : patch;
+    if (!wellFormed(change)) return {edits: [], targets, reason: 'invalid_layout_patch'};
+    for (const key of Object.keys(change)) {
+      if (change[key] == null) delete value[key];
+      else value[key] = change[key];
     }
     if (!validTargetLayout(value, target.imageOnly)) {
       return {edits: [], targets, reason: 'invalid_layout_patch'};

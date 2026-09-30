@@ -125,10 +125,31 @@ function _rapierAlignEmptyLine(wrapper, align) {
   return true;
 }
 
+// The direction a layout target's words read in: the first strong letter of its visible text, as the page draws the paragraph (dir=auto).
+function _rapierTargetDirection(source, target) {
+  try {
+    const words = [];
+    const walk = tokens => tokens.forEach(token => {
+      if (token.type === 'text' || token.type === 'code_inline') words.push(token.content);
+      if (token.children) walk(token.children);
+    });
+    walk(md.parse(String(source).slice(target.start, target.end), {}));
+    return _rapierFirstStrongDir(words.join(' '));
+  } catch (_) { return 'ltr'; }
+}
+
+// What Left writes for one paragraph: left is the default alignment of a left-to-right paragraph, so Left there takes the marker's
+// alignment off (Word's Left writes nothing); on a right-to-left paragraph left is a side that means something, and it is written.
+// The lead's ruling of 30 September. `text` is the source that `target` ranges over (editLayout in layout/markdown.mjs hands both).
+function _rapierLeftAlignPatch(target, text) {
+  return {align: _rapierTargetDirection(text, target) === 'rtl' ? 'left' : null, wrap: null, x: null, y: null};
+}
+
 async function rapierAlign(align) {
   if (_rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown' ||
       !['left', 'center', 'right', 'justify'].includes(align)) return false;
   const layout = globalThis.RapierMarkdownLayout;
+  const patch = align === 'left' ? _rapierLeftAlignPatch : {align, wrap: null, x: null, y: null};
   _rapierRestoreToolbarSelection();
   _rapierCheckpointPendingTyping();
   if (rapier.view.mode === 'source') {
@@ -139,7 +160,7 @@ async function rapierAlign(align) {
     const opening = _rapierSplitOpeningFrontmatter(source), offset = opening.bodyOffset;
     if (range.start < offset) { showToast('Choose document text below its metadata', 'info'); return false; }
     const plan = layout.editLayout(opening.body, md, {start: range.start - offset, end: range.end - offset},
-      {align, wrap: null, x: null, y: null}, globalThis.RapierImageAssets.imageEnvironment(source));
+      patch, globalThis.RapierImageAssets.imageEnvironment(source));
     if (plan.reason) { showToast('This layout cannot be changed without altering its source', 'info'); return false; }
     for (const edit of plan.edits) { edit.start += offset; edit.end += offset; }
     const map = point => plan.edits.reduce((at, edit) => at + (edit.end <= point ? edit.text.length - (edit.end - edit.start) : 0), point);
@@ -149,7 +170,10 @@ async function rapierAlign(align) {
   }
   const selection = window.getSelection();
   const context = _rapierSelectionContext(selection);
-  let wrappers = context && _rapierSelectionActionable(context) ? context.wrappers : [];
+  // Across blocks the two ends decide, as they do for the format bar: a block between them that cannot be aligned (a picture, a rule, a page
+  // break, a diagram, an expanding section, a footnote, raw HTML) is passed over, quietly, and the paragraphs around it are aligned (every
+  // block having to be one that can be aligned, the press did nothing at all).
+  let wrappers = context && _rapierSelectionActionableForFormat(context) ? context.wrappers : [];
   let range = context?.range || null;
   const image = _rapierImageRuntime.image;
   if (image?.isConnected) {
@@ -165,6 +189,7 @@ async function rapierAlign(align) {
   for (let index = 0; index < wrappers.length; index++) {
     const wrapper = wrappers[index], block = _rapierBoundBlock(wrapper);
     const raw = String(block.raw || '');
+    if (wrappers.length > 1 && !_rapierSelectionWrapperActionable(wrapper)) { next.push(raw); continue; }
     let start = 0, end = raw.length;
     if (range) {
       const span = {start: 0, end: raw.length};
@@ -178,7 +203,7 @@ async function rapierAlign(align) {
         start = targets[0].start; end = targets[0].end;
       }
     }
-    const plan = layout.editLayout(raw, md, {start, end}, {align, wrap: null, x: null, y: null}, _rapierMarkdownEnvironment());
+    const plan = layout.editLayout(raw, md, {start, end}, patch, _rapierMarkdownEnvironment());
     if (plan.reason === 'no_layout_target') { next.push(raw); continue; }
     if (plan.reason) { showToast('This layout cannot be changed without altering its source', 'info'); return false; }
     let value = raw;

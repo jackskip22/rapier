@@ -41,8 +41,8 @@ if (ids.length) {
 		const found = src(value);
 		return found == null ? all : lead + found;
 	};
-	md = md.replace(new RegExp('(!\\[(?:\\\\.|[^\\]\\\\])*\\]\\([ \\t]*)#' + id + '(?=[ \\t]*\\)|[ \\t]+["\'(])', 'g'), swapInline);
-	md = md.replace(new RegExp('(^ {0,3}\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*)#' + id + '(?=[ \\t]*$|[ \\t]+["\'(])', 'gm'), swapDefinition);
+	md = md.replace(new RegExp('(\\]\\([ \\t\\r\\n]*(?:&lt;)?)#' + id + '(?=>?[ \\t\\r\\n]*\\)|>?[ \\t\\r\\n]+["\'(])', 'g'), swapInline);
+	md = md.replace(new RegExp('(^ {0,3}\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*(?:(?:\\r\\n|\\r|\\n)[ \\t]*)?(?:&lt;)?)#' + id + '(?=>?[ \\t]*$|>?[ \\t]+["\'(])', 'gm'), swapDefinition);
 	if (broken) fail('ambiguous <img id> in this page (duplicate ids); cannot recover Markdown safely');
 }
 md = decode(md);

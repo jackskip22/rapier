@@ -5,8 +5,8 @@ import {parseFrontMatter, tagsOf} from './frontmatter.mjs';
 import {cardHead, sectionOf} from './model.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
-import {scanLinks, linkMask, headingAnchors, isLineStart, asMap} from './links.mjs';
-import {documentAssets, IMAGE_LIMITS} from '../spec/md-assets.mjs';
+import {scanLinks, linkMask, hasHtmlTag, headingAnchors, isLineStart, asMap} from './links.mjs';
+import {documentAssets, IMAGE_LIMITS, markdownParser} from '../spec/md-assets.mjs';
 import {libraryReadRow} from './library-reads.mjs';
 
 const BYTE_PAYLOAD_STUB = 'A'.repeat(128);
@@ -255,19 +255,18 @@ function projectBody(text, mask, links, from = 0) {
 	return body.replace(/[A-Za-z0-9+/]{65,}={0,2}/g, ASSET_TOKEN);
 }
 
-function countTasks(text, mask) {
-	let open = 0, done = 0, i = 0;
+function countTasks(text) {
+	let open = 0, done = 0;
 	if (text.indexOf('[ ]') < 0 && text.indexOf('[x]') < 0 && text.indexOf('[X]') < 0) return {open, done};
-	if (text[0] === '\uFEFF') i = 1;
-	while (i < text.length) {
-		if (!isLineStart(text, i)) { i++; continue; }
-		const end = lineEnd(text, i);
-		if (!mask[i]) {
-			const line = text.slice(i, end).replace(/\r$/, '');
-			const m = /^\s*[-*]\s+\[( |x|X)\]/.exec(line);
-			if (m) { if (m[1] === ' ') open++; else done++; }
-		}
-		i = end + 1;
+	// The shared block grammar decides whether a marker is a list item: paragraph
+	// continuations and indented code inside quotes must never invent tasks.
+	const parser = markdownParser(), tokens = [];
+	const body = parseFrontMatter(text).body.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/\0/g, '\ufffd');
+	parser.block.parse(body, parser, {}, tokens);
+	for (let i = 2; i < tokens.length; i++) {
+		if (tokens[i].type !== 'inline' || tokens[i - 1].type !== 'paragraph_open' || tokens[i - 2].type !== 'list_item_open') continue;
+		const m = /^\[( |x|X)\](?=[ \t]|$)/.exec(tokens[i].content);
+		if (m) { if (m[1] === ' ') open++; else done++; }
 	}
 	return {open, done};
 }
@@ -295,7 +294,7 @@ export function projectText(text, entry = {}) {
 		tagList.push(t.replace(/^#/, ''));
 	}
 	const body = projectBody(s, mask, links, restAt);
-	const tasks = countTasks(s, mask);
+	const tasks = countTasks(s);
 	let hasPicture = false, hasDrawing = false, hasLink = false;
 	for (const L of links) {
 		const d = (L.dest || '').split('?')[0].split('#')[0];
@@ -309,7 +308,7 @@ export function projectText(text, entry = {}) {
 		if ((L.kind === 'inline' || L.kind === 'reference' || L.kind === 'html') && !L.image && !bang && !raster && !svg && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(dest)) hasLink = true;
 	}
 	if (body.includes(ASSET_TOKEN) && !hasDrawing) hasPicture = true;
-	if (/<svg[\s>]/i.test(rest)) hasDrawing = true;
+	if (hasHtmlTag(s, 'svg')) hasDrawing = true;
 	// The line-ending cache earns its place during this projection, not after the note is released.
 	crText = null;
 	// Presence is sparse: ordinary notes keep their existing projection bytes. Both readers
@@ -653,8 +652,9 @@ export function parseQuery(q) {
 function parseDay(s) {
 	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').trim());
 	if (!m) return null;
-	const t = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
-	return Number.isFinite(t) ? t : null;
+	const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]), date = new Date(0);
+	date.setFullYear(year, month - 1, day); date.setHours(0, 0, 0, 0);
+	return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date.getTime() : null;
 }
 
 function inSection(proj, file, sidx, want) {

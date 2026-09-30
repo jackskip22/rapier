@@ -6,45 +6,29 @@ One UTF-8 `.md` file holds the document and every image. CommonMark is the
 foundation; GFM may add tables, tasks and strikethrough. Images use ordinary
 CommonMark reference definitions with Base64 data URLs. This standard's own
 visual extension is the optional `md-layout:v1` comment; everything else
-Rapier's parser admits beyond this document — established extensions, read
-syntax and the project's own invisible conventions — is classified in the
+Rapier's parser admits beyond this document (established extensions, read
+syntax and the project's own invisible conventions) is classified in the
 [Markdown profile](markdown-profile.md).
 
 The source owns content, reading order and visual intent. The renderer supplies
 typography and responsive geometry. There is no required application, account,
-service or rendering engine. The layout comment is a small convention on top
-of CommonMark, not an addition to its grammar.
+service or rendering engine.
 
 Three layers, each complete without the next. **The core** is CommonMark and GFM
 as written: what every Markdown reader shows. **The conventions** are this
 document's: the layout comment, text colour, the page break and the picture
 appendix, each an HTML comment or an ordinary reference that other readers
 ignore. **Will** is not part of this standard: [Will/1](will.md) is a separate
-standard, optional, with its own version, for a person's instruction to an
-agent about what may change; a reader of this document need not read it, and a
-document with no Will is complete. **The style pack** is the same kind of companion:
-one stylesheet, MIT, shipped with the kit and carried by the exported page, that
-draws a document the way Rapier draws it (the lists, the tables, the pictures and
-their layouts, colour, highlights, diagrams and math); optional, and a document
-rendered without it is complete. The standard itself stays as broadly agreeable and
-simple as it can be.
+optional standard, with its own version, for a person's instruction to an agent
+about what may change; a document with no Will is complete. **The style pack**
+is a companion too: one stylesheet, MIT, shipped with the kit and carried by the
+exported page, that draws a document the way Rapier draws it (the lists, the
+tables, the pictures and their layouts, colour, highlights, diagrams and math);
+a document rendered without it is complete.
 
 ## Measured against the specification
 
-| Measurement (2026-09-18) | Result and disposition |
-| --- | --- |
-| CommonMark 0.31.2; supplied 652 examples, 26 sections | **648/652 (99.39%)**; ratchet 648. Parser output, not a claim of complete CommonMark conformance. |
-| GFM; supplied cmark-gfm `spec.txt` snapshot, CommonMark 0.29 base; no upstream commit/tag recorded; 672 examples, 30 sections | **650/672 (96.73%)**; ratchet 650. Its 24 extension-section examples: **17/24**. |
-| Comparator and fixture identity | Specification's own `normalize.py` behavior ported to Node, plus its runner's CRLF conversion; **zero additional HTML equivalences**. Original fixture files are SHA-256-pinned in `_markdown-standard-lib.mjs`. GFM visible tab markers are decoded in both fixture fields as upstream does; the two `disabled` task-list examples are nevertheless tested. |
-| Attribution: CommonMark | Conforms 648; identical-to-bare divergence 4; ours (bare conforms) **0**; both diverge differently 0. Bare uses the same `RAPIER_MARKDOWN_SPEC.options`, including `linkify: true`. |
-| Attribution: GFM | Conforms 650; identical-to-bare divergence 18; ours (bare conforms) **0**; both diverge differently **4**. Bare conforms on 644 rows. |
-| Every ours row | **None** in either supplied corpus; no own-rule failure removed, carried or hidden. This comparison does not absolve options shared with the bare parser. |
-| GFM 279 and 280: both diverge differently | **Deliberate / founder's call**: interactive task controls and styling classes retained, rather than replacing them with disabled bare specification markup. Bare markdown-it renders literal task markers. |
-| GFM 625 and 626: both diverge differently | **Carried**: fuzzy-link activation exposes upstream URL-boundary differences; bare markdown-it does not link these URLs. Not classified as an identical upstream failure. |
-| GFM 491: identical-to-bare divergence before this measurement's fix | **Fixed** in shared renderer: `~~text~~` emits `del`, retaining `s_open`/`s_close` source tokens and authored raw `s` HTML. GFM improves from 649/672 to 650/672; CommonMark remains 648/652. |
-| GFM Tabs and nested strong emphasis | Ten apparent Tabs failures were fixture-decoding errors, not specification changes. All nine nested-strong differences also exist against CommonMark 0.29: GFM snapshot dialect differences, not a 0.29-to-0.31.2 regression. None is silently exempted. |
-| Unedited editor source-model round trip | **1,324 identical; 0 documented-normalization; 0 FAIL**; bytes and raw rendered HTML both equal. Additionally, all 672 literal, undecoded GFM fixture sources are byte-identical and render-identical. Node block split/finalize/rejoin; no browser interaction claim. |
-| Reproduce and inspect every section / failing example | Both comparisons are checks in Rapier's own release run over the public CommonMark and GFM example corpora; the numbers above are their most recent result. |
+On 18 September 2026 Rapier's parser passed 648 of 652 CommonMark 0.31.2 examples (99.39%) and 650 of 672 GFM examples (96.73%; 17 of the 24 extension-section examples), and the editor's source model round-tripped all 1,324 specification sources byte for byte with no normalization. This is parser output, not a claim of complete CommonMark conformance. The deliberate difference is interactive task-list controls (GFM examples 279 and 280).
 
 ## Layout
 
@@ -83,31 +67,25 @@ Following prose can flow above, beside and below the picture.
 | `wrap` | `around`, `box`, `behind`, `front` | Neighboring text may flow around the image silhouette (`around`) or its tight, angle-tilted bounding box (`box`); or the image may leave the flow entirely, positioned like a wrapped image but painted under (`behind`) or over (`front`) the words, which lay out as though it were absent. |
 | `x` | Decimal percentage from `0%` to `100%` | Image's requested horizontal center within the content box; requires `width` or `wrap`. |
 | `y` | Finite decimal followed by `em`, optionally negative (never below `-50em`; zero is written unsigned and omitted) | Wrapped image's requested top inset within its anchor paragraph, measured in that paragraph's font size; a negative value lifts the picture above the paragraph's first line. |
-| `rotate` | Integer or one-decimal-place decimal followed by `deg`, greater than `-180` and at most `180` | Image's clockwise turn in degrees about its own centre; omitted when `0`. Valid alongside any placement — inline, any `wrap`, or `align` — and on its own. |
-| `opacity` | Whole percentage from `5%` to `100%` | Image's fade: the whole picture is drawn at this opacity over whatever lies beneath it, as a layer's opacity is; omitted at `100%`. The picture's own bytes, and its own transparent parts, never change. Valid alongside any placement and on its own. |
+| `rotate` | Integer or one-decimal-place decimal followed by `deg`, greater than `-180` and at most `180` | Image's clockwise turn in degrees about its own centre; omitted when `0`. Valid alongside any placement (inline, any `wrap`, or `align`) and on its own. |
+| `opacity` | Whole percentage from `5%` to `100%` | Image's fade: the whole picture is drawn at this opacity over whatever lies beneath it; omitted at `100%`. The picture's own bytes, and its own transparent parts, never change. Valid alongside any placement and on its own. |
 
 Text uses only `align`. Images have exactly three modes: normal flow with optional
 `width` and either `align` or `x`; wrapped flow with `wrap=around` or `wrap=box` and optional
 `width`, `x` and `y`, where neighboring text reflows around the image; and out-of-flow placement
-with `wrap=behind` or `wrap=front` and the same optional `width`, `x` and `y`, where the image is
-positioned exactly as a wrapped image is but neighboring text ignores it entirely and the image is
-painted under or over the words instead. Normal-flow `x` requires `width`; `y` always requires a
-`wrap` value. `align` cannot coexist with `wrap` or `x`. A normal-flow horizontal position does
-not change the image's source order or reserve floating space beside it. `rotate` and `opacity`
-are independent of every other field and every mode; neither requires or excludes `width`, `wrap`,
-`x`, `y` or `align`. A fade never changes the flow: `wrap=around` follows the picture's own
-silhouette at any `opacity`, and a reader that does not know `opacity` treats the whole comment as
-invalid, the standard's ordinary degrade.
+with `wrap=behind` or `wrap=front` and the same optional `width`, `x` and `y`, where neighboring
+text ignores the image and it is painted under or over the words. Normal-flow `x` requires `width`;
+`y` always requires a `wrap` value. `align` cannot coexist with `wrap` or `x`. A normal-flow
+horizontal position does not change the image's source order or reserve floating space beside it.
+`rotate` and `opacity` are independent of every other field and every mode; neither requires or
+excludes `width`, `wrap`, `x`, `y` or `align`. A fade never changes the flow: `wrap=around` follows
+the picture's own silhouette at any `opacity`.
 
 An image that cannot turn its own bytes losslessly (any raster, or a foreign SVG the writer did
-not itself compose) carries its turn as `rotate` instead: the picture's reserved space becomes its
-turned bounding box — `w·|cos|+h·|sin|` wide, `w·|sin|+h·|cos|` tall for a `w`×`h` picture rotated
-`rotate` degrees — centred where the unturned picture's centre was, so text or a following block
-never overlaps the turned corners. An editable drawing (an SVG a compliant editor wrote and can
-still edit) instead turns its own geometry and writes no `rotate`: the same picture, one owner for
-its angle. A reader that does not know `rotate` treats the whole comment as invalid, the same as
-any other unrecognised field, and shows the picture inline and upright, at its own natural size —
-the standard's ordinary degrade for an unrecognised layout marker.
+not itself compose) carries its turn as `rotate`: the picture's reserved space becomes its
+turned bounding box, `w·|cos|+h·|sin|` wide and `w·|sin|+h·|cos|` tall for a `w`×`h` picture rotated
+`rotate` degrees, centred where the unturned picture's centre was. An editable drawing (an SVG a compliant editor wrote and can
+still edit) instead turns its own geometry and writes no `rotate`.
 
 Absent alignment means natural/default alignment, including the Unicode first-strong writing
 direction of the block (HTML `dir=auto` semantics on the rendered projection; source stays
@@ -130,9 +108,8 @@ stays in normal flow. There are no page coordinates or saved line fragments.
 Wrapping permits text above, on either available side and below the image,
 while preserving source reading order. A renderer may derive a silhouette from
 image alpha or an editable drawing's geometry, retaining separate horizontal
-runs where gaps exist. A rectangle remains a valid conservative fallback. `wrap=box`
-asks explicitly for that tight rectangle instead of the silhouette; for a rotated
-drawing the rectangle tilts with it. Beside the anchor, every prose paragraph
+runs where gaps exist. A rectangle remains a valid conservative fallback; for a rotated
+drawing the `box` rectangle tilts with it. Beside the anchor, every prose paragraph
 and heading the image reaches flows around it, and a list, a quote or a
 details block shortens its own lines beside it while staying intact as a
 structure; a table, code, a rule, a figure or mathematics stays whole below or
@@ -143,9 +120,7 @@ without rewriting source.
 `wrap=behind` and `wrap=front` opt out of this reflow entirely: the anchor paragraph and every
 block after it lay out exactly as though the image were absent, positioned the same way a wrapped
 image is (`x`, `y`, `width`) but never adjusting a line. `behind` paints the image under the words
-and never dims it; `front` paints it over them. A renderer that does not recognize `behind` or
-`front` treats the whole comment as invalid, the same as any other unrecognized value, and shows
-the image inline.
+and never dims it; `front` paints it over them.
 
 ### Attachment and writing
 
@@ -167,7 +142,9 @@ Image fields require a paragraph containing one image, optionally enclosed by
 one link, plus whitespace and its marker.
 
 Unknown versions or keys, repeated keys, invalid values, invalid attachment
-and multiple layout-family comments in one block are inert and preserved.
+and multiple layout-family comments in one block are inert and preserved. A reader
+that does not know a field or value treats the whole comment as invalid and shows the
+picture inline and upright, at its own natural size.
 Writers emit one marker, lowercase keys, one ASCII space between fields, and
 key order `align width wrap x y rotate opacity`. Remove insignificant decimal trailing zeroes
 and omit `y=0em`, `rotate=0deg` and `opacity=100%`; remove the marker when no fields remain. Only an intentional edit changes
@@ -178,17 +155,16 @@ source; opening, rendering and viewport resizing never normalize it.
 The first three rungs are portable conformance statements: a reader claiming one shows exactly
 its stated behavior. Rung 3 names the kit's implementation profile.
 
-**Rung 0 — any CommonMark reader.** Every layout comment is an ordinary HTML comment; CommonMark
+**Rung 0: any CommonMark reader.** Every layout comment is an ordinary HTML comment; CommonMark
 already shows nothing for one. A picture shows inline, upright and solid, at the reader's own default width.
-`align`, `x`, `y`, `wrap`, `rotate` and `opacity` are all invisible. This rung costs nothing: it is what an
-unaware reader already does.
+`align`, `x`, `y`, `wrap`, `rotate` and `opacity` are all invisible.
 
-**Rung 1 — position and size.** `align` sets text alignment. `width` and `x` size and place a
-picture in normal flow (§"For image layout" above), and `opacity` fades it with CSS `opacity`. `rotate` alone, with no `wrap`, changes nothing
-at this rung beyond upright display — a raster's turn is a layout fact, not a pixel change, so a
+**Rung 1: position and size.** `align` sets text alignment. `width` and `x` size and place a
+picture in normal flow (see "For image layout" above), and `opacity` fades it with CSS `opacity`. `rotate` alone, with no `wrap`, changes nothing
+at this rung beyond upright display: a raster's turn is a layout fact, not a pixel change, so a
 reader that stops here shows it unturned, the same degrade as an unrecognized field.
 
-**Rung 2 — placement in ordinary CSS.** Each `wrap` value has one conforming rendering:
+**Rung 2: placement in ordinary CSS.** Each `wrap` value has one conforming rendering:
 
 | `wrap` | Conforming CSS |
 | --- | --- |
@@ -202,18 +178,16 @@ operation: it never feeds back into layout or into what `shape-outside` samples 
 CSS Shapes, "relation to box model and float behavior"). A reader that turns the picture but leaves
 its `shape-outside`/float rectangle unrotated is not conforming at this rung: text would wrap to the
 *unturned* shape while the picture displays turned. A conforming rung-2 reader instead computes the
-*turned* shape and supplies that directly — `shape-outside: polygon(...)` built from the rotated
-bounding box's own corners (`w·|cos|+h·|sin|` wide, `w·|sin|+h·|cos|` tall, as above), or the same
+*turned* shape and supplies that directly: `shape-outside: polygon(...)` built from the rotated
+bounding box's own corners (the size given above), or the same
 turned rectangle as a plain float with no shape for `wrap=box`. What a rung-2 reader does not get:
 words on both sides of one picture, words inside a picture's own unfilled interior, or line-exact
-agreement with Rapier — the placement is the standard; the exact line is not.
+agreement with Rapier. The placement is the standard; the exact line is not.
 
-**Rung 3 — the same lines Rapier shows.** The drop-in module (the `rapier-markdown-kit` package, [standard-adoption](standard-adoption.md),
+**Rung 3: the same lines Rapier shows.** The drop-in module (the `rapier-markdown-kit` package, [standard-adoption](standard-adoption.md),
 "The drop-in module") plans lines exactly as Rapier's own live view and styled export do, up to font
-metrics: a different font wraps differently everywhere, and the module is deterministic given its
-measurer. This is the only rung that reproduces both-sides wrapping and an interior wrap.
-This is a kit implementation profile; exact line breaks are not an independent reader's
-conformance requirement. Rungs 0–2 define portable rendering support.
+metrics; the module is deterministic given its measurer. This is the only rung that reproduces both-sides wrapping and an interior wrap.
+Exact line breaks are not an independent reader's conformance requirement.
 
 ## Embedded images
 
@@ -238,7 +212,7 @@ choice below is for rasters, photographs, paintings and pasted pictures:
 | JPEG XL (default) | `data:image/jxl;base64,<payload>` |
 | Original PNG, JPEG or WebP | `data:image/png;base64,<payload>`, `data:image/jpeg;base64,<payload>` or `data:image/webp;base64,<payload>` |
 
-The codec changes; the Markdown mechanism does not. There is no custom image
+There is no custom image
 URI, payload comment or document-specific binary encoding. Dimensions come
 from the image, not a second metadata header.
 
@@ -256,9 +230,7 @@ remain ordinary Markdown too.
 
 ## Will, a separate standard
 
-[Will/1](will.md) is its own standard: whole marker lines that carry the person's
-instruction to an agent about what may change. It is optional and independent of
-this document. Where both appear in one file each keeps its own recognition
+[Will/1](will.md) is a separate, optional standard. Where both appear in one file each keeps its own recognition
 rules (layout through Markdown tokens; Will as marker lines at column zero, even
 in code fences), neither grants the other anything, and Save keeps the one source.
 What each export keeps of the layout is in `standard-adoption.md`; of Will, in [Will/1](will.md), "Conversion".
@@ -273,8 +245,7 @@ Buy <!--c green-->mushrooms<!--/c--> today, or <!--c #35c57a-->minty<!--/c--> on
 
 The opener carries one value: one of the picker’s five names (green, red, blue, gold, purple) or
 exactly one lowercase six-digit hex, the colour as chosen for a light page; the closer is
-`<!--/c-->`. A reader on a dark page derives its own lighter tone from the same value, so one hex serves both.
-Pairs do not nest or escape their enclosing inline container; a second opener before the first closer, or a
+`<!--/c-->`. A reader on a dark page derives its own lighter tone from the same value. Pairs do not nest or escape their enclosing inline container; a second opener before the first closer, or a
 closer without an opener, stays ordinary comment text and shows nothing. A run may begin at the
 first character of a paragraph; a renderer that follows CommonMark's HTML-block rule then shows
 that line's words plain (a comment is invisible in HTML) and loses only that line's inline
@@ -292,11 +263,11 @@ A paragraph immediately after a table that begins `Table: ` (or a bare `: `) is 
 Table: quarterly figures, by region.
 ```
 
-Never required: an ordinary paragraph that starts with the word "Table" and no colon, even directly after a table, stays an ordinary paragraph. Recognition is a rendering fact only — the paragraph's own bytes never change, it opens for editing with one tap like any other paragraph, and other readers show it as the plain paragraph it is. Rapier draws it tucked under the table in a smaller italic; the shared page, PDF and Word carry the same look. A bare `: caption` line directly after an ordinary paragraph is claimed by the definition-list convention instead; after a table, which is never a definition term, it is unambiguous.
+Never required: an ordinary paragraph that starts with the word "Table" and no colon, even directly after a table, stays an ordinary paragraph. Recognition is a rendering fact only: the paragraph's own bytes never change, and other readers show it as the plain paragraph it is. A bare `: caption` line directly after an ordinary paragraph is claimed by the definition-list convention instead; after a table it is a caption.
 
 ## Page break
 
-A page break is one marker on its own line, blank lines on both sides — the same whole-line discipline a will uses:
+A page break is one marker on its own line, blank lines on both sides, the same whole-line discipline a will uses:
 
 ```md
 The last paragraph of a chapter.
@@ -306,7 +277,11 @@ The last paragraph of a chapter.
 The first paragraph of the next.
 ```
 
-Every other reader treats the line as an invisible comment and shows the two paragraphs as they are. Rapier draws a thin dashed rule with a small "page" word; a tap selects it like a picture (it never opens an editor) and Backspace or Delete removes it whole, with undo. A PDF breaks the page there, and a Word export carries a real page-break-before paragraph. The plus list's Line family inserts one.
+Every other reader treats the line as an invisible comment and shows the two paragraphs as they are. A PDF breaks the page there, and a Word export carries a real page-break-before paragraph.
+
+## Blank lines
+
+Markdown reads any run of blank lines as one separator, so an empty paragraph a person leaves on purpose (the line Enter makes with nothing on it) is one line holding only `&nbsp;`, the form every CommonMark reader draws as an empty paragraph too; the blank line that only separates two blocks writes nothing, and a document of one empty paragraph is an empty file.
 
 ## Reference style
 
@@ -325,19 +300,17 @@ Markdown nor downloads a renderer, font or picture.
 
 The root is `.md-render`. With no `data-md-theme`, it follows `prefers-color-scheme`; `light` and
 `dark` select a theme explicitly. The sheet defines every custom property it reads, all named
-`--md-*`, on `:root` and `.md-render`; an element may override its own local effect. No application theme block is
-required. A host may override those properties after the sheet. Geist and Geist Mono are the named
+`--md-*`, on `:root` and `.md-render`; an element may override its own local effect. A host may override those properties after the sheet. Geist and Geist Mono are the named
 faces, with system fallbacks adjusted to their x-height; the host supplies a face if it wants the
 same glyphs. The host owns the page frame and available width; equal font metrics and content width
 are necessary for equal line breaks. Headings balance their lines (`text-wrap: balance`); paragraphs keep the
 browser's greedy breaks.
 
-The sheet spaces a page the way a Word document reads: one line, `--md-line` (1.75rem, 1.6 lines of the
-1.1rem body, `--md-text-body`), is the unit of the vertical rhythm. Body text sits on that line; a heading's
+The unit of the vertical rhythm is one line, `--md-line` (1.75rem, 1.6 lines of the
+1.1rem body, `--md-text-body`). Body text sits on that line; a heading's
 box is the whole or half lines its size fills (h1 at 2.4 x the body on two lines, h2 and h3 on one and a
 half, h4 to h6 on one); every block ends one line below its last line and a heading half a line below; list
-items are a quarter line apart. No block sets a top margin, so blocks whose margins collapse (a plain page)
-and blocks wrapped one by one (an editor) space alike, and the space before any block is the line its
+items are a quarter line apart. No block sets a top margin: the space before any block is the line its
 predecessor leaves. A host that sets `--md-line` and `--md-text-body` together rescales the whole rhythm.
 
 | Content | HTML the renderer supplies |
@@ -372,7 +345,7 @@ when `x` is present, the clamped left margin; with `opacity` under `100%`, the C
 image. An Obsidian pixel-width picture uses `data-rapier-image-size` with `--md-image-width:Npx`;
 the sheet constrains it to its container. A drawing (an SVG picture) shown at its own size or at full column width carries
 `data-md-drawing` and `--md-drawing-width:Npx`, its own width: the sheet lets it shrink to its
-container only down to 12/14 of that width, where 14 px words are still 12 px, and past that its
+container only down to 12/14 of that width, and past that its
 parent scrolls sideways; on paper it fits the page. Explicit pixel sizes and smaller layout widths keep the chosen size.
 
 Rapier's layout projector receives the encoded marker in `data-md-layout` on the paragraph and
@@ -380,9 +353,8 @@ Rapier's layout projector receives the encoded marker in `data-md-layout` on the
 `parseLayoutAttribute` reads it). `data-md-layout-tight` retains the zero block margin of a tight
 list paragraph. `wrap`, `y` and `rotate` are geometry for the renderer to project, not CSS attribute
 values the sheet can interpret. The projector owns the derived positions, margins, transforms,
-stacking and line boxes; a rotated image reserves its turned bounds. Merely setting those attributes
-does not produce wrapping. The conformance rungs above define a CSS placement renderer and the
-kit's line planner separately; the style pack needs neither to style an ordinary document.
+stacking and line boxes; a rotated image reserves its turned bounds. The style pack needs neither
+a CSS placement renderer nor the kit's line planner to style an ordinary document.
 
 ### Using markdown-it and the kit
 
@@ -395,9 +367,7 @@ and no renderer API. Task-list and footnote plugins emit the corresponding class
 for callouts, highlights, diagrams or mathematics emits their listed wrappers. A host rendering
 untrusted source applies its own HTML sanitization policy before displaying it.
 
-Class and attribute names in this contract remain the names Rapier emits in this release. The next
-naming step, after 28 September 2026, is to give the remaining `rapier-*` presentation hooks `md-*`
-names in one change with their producers and readers.
+Class and attribute names in this contract are the names Rapier emits in this release. After 28 September 2026 the remaining `rapier-*` presentation hooks get `md-*` names in one change with their producers and readers.
 
 ## The document as a web page
 
@@ -414,17 +384,17 @@ A Markdown document can travel as one ordinary HTML file that opens in any brows
 </script>
 ```
 
-The page's own `<img>` elements are the picture store. Each Markdown image destination that is a data URL the page shows (an inline image's destination or an image reference definition's destination, and only those: the same bytes in a code block, a sentence or an ordinary link are never touched) is replaced, over its *whole* span, by a fragment, `#id`, naming the `<img id="…">` that holds those bytes; `data-images` lists every id used that way. "Whole span" matters when the source itself delimited the destination with `<…>` (`![x](<data:…>)`, `[label]: <data:…>`): the writer replaces the delimiters too, never just the bytes inside them, so the carried form is always the bare `#id` shorthand — one shape, not two, for every reader to recognise. Ids match `[A-Za-z0-9][A-Za-z0-9._:-]{0,120}`: a definition's own label when it fits, otherwise `image-N`.
+The page's own `<img>` elements are the picture store. Each Markdown image destination that is a data URL the page shows (an inline image's destination or an image reference definition's destination, and only those: the same bytes in a code block, a sentence or an ordinary link are never touched) is replaced over its destination span by a fragment, `#id`, naming the `<img id="…">` that holds those bytes; `data-images` lists every id used that way. When the source delimits a destination with `<…>` (`![x](<data:…>)`, `[label]: <data:…>`), the writer keeps those authored delimiters: the carried destination is `&lt;#id>`, and resolving the id restores the exact original spelling. Nested brackets in an inline picture description do not change its destination. Ids match `[A-Za-z0-9][A-Za-z0-9._:-]{0,120}`: a definition's own label when it fits, otherwise `image-N`.
 
-A reference definition (`[label]: #id`) needs a second check an inline image's destination does not: its destination alone cannot say whether the writer rewrote it, because an ordinary hand-written definition can target a fragment that happens to equal a picture id (`[nav]: #pic`) beside the real rewritten picture definition (`[pic]: #pic`). `data-image-definitions` lists the normalized reference label — markdown-it's `normalizeReference`: trim, collapse internal whitespace, case-fold — of every reference definition the writer actually rewrote, each percent-encoded (unreserved characters and `%XX`, so the list stays one space-separated token run regardless of what the label itself contains). **A reference definition line resolves only because the writer declared that exact Markdown reference definition as an image definition here — never merely because its destination resembles a picture id.** An inline image destination needs no separate label declaration: only a destination the writer structurally substituted carries raw `#id`; every authored `#` elsewhere, including image-looking examples inside code, is carried as `&#35;` until after resolution. Two `<img id="…">` elements sharing one id are ambiguous and refuse the whole page rather than silently choosing one. A page carries the attribute whenever the writer rewrote a definition, and a definition line resolves only when declared; there is no older page to infer for (Rapier's readers, its own included, are strict).
+A reference definition (`[label]: #id`) needs a second check an inline image's destination does not: its destination alone cannot say whether the writer rewrote it, because a hand-written definition can target a fragment that equals a picture id (`[nav]: #pic`) beside the real rewritten definition (`[pic]: #pic`). `data-image-definitions` lists the normalized reference label (markdown-it's `normalizeReference`: trim, collapse internal whitespace, case-fold) of every reference definition the writer actually rewrote, each percent-encoded (unreserved characters and `%XX`, so the list stays one space-separated token run whatever the label contains). **A reference definition line resolves only because the writer declared that exact Markdown reference definition as an image definition here, never merely because its destination resembles a picture id.** An inline image destination needs no separate label declaration: only a destination the writer structurally substituted carries raw `#id`; every authored `#` elsewhere, including image-looking examples inside code, is carried as `&#35;` until after resolution. Two `<img id="…">` elements sharing one id are ambiguous and refuse the whole page rather than silently choosing one. A page carries `data-image-definitions` whenever the writer rewrote a definition, and a definition line resolves only when declared.
 
-The writer entity-encodes each untouched Markdown segment in this order: `&` → `&amp;`, `<` → `&lt;`, authored `#` → `&#35;`, and carriage return (CR) → `&#13;`. It writes raw `#id` only at a structurally recognized picture destination it substitutes. This keeps literal picture examples in code distinct from substitutions and preserves CR/CRLF through HTML input newline preprocessing. The reader first restores `&#13;` to CR for reference-line recognition; it resolves the declared raw `#id` destinations, decoding a reference label before comparing it with `data-image-definitions`; only then it restores `&#35;` → `#`, `&#13;` → CR, `&lt;` → `<`, and `&amp;` → `&`, in that order. Original entity-looking text stays literal because ampersands decode last. One newline is added after the opening tag and one before the closing tag. `data-sha256` is the SHA-256 of the resolved document — the portable source a reader reconstructs, always with `#id` resolved back to an `<img>`'s `src` verbatim, never a delimiter re-added — so a page whose pictures or text were changed is refused rather than half-recovered, and so a document that used `<…>`-delimited destinations hashes to its bare-destination portable form, not to the working file's own byte-for-byte spelling. A page carries JPEG XL pictures as they are (every current browser opens them, and they are far smaller); with the Share sheet's image compatibility switch on, each is carried as the portable picture the page then shows (PNG, or JPEG for an opaque photograph when smaller), which needs a browser that decodes JPEG XL. Either way the working file on the device keeps its own codec. Picture bytes are never duplicated between the page and the carried Markdown; a picture shown twice on the page is, as in any HTML, present twice. The page admits only its own scripts under one nonce -- the inlined line planner, so a wrapped picture sits where it does in the editor, and the code lexer when a code block needs colouring -- and `text/markdown` is not a script type any browser executes; a reader with scripting off still sees the picture on its nearest side. The page also declares `referrer` `no-referrer`, so following a link from it never tells the destination where the page lives. The rendered page is display, not proof: the digest covers the carried Markdown, not the HTML around it, so a page whose visible words were edited while its carrier was left alone still recovers the authentic document. A reader who needs the authentic words opens the page in Rapier or runs a reference reader; what the browser shows is the author's rendering as it was received.
+The writer entity-encodes each untouched Markdown segment in this order: `&` → `&amp;`, `<` → `&lt;`, authored `#` → `&#35;`, and carriage return (CR) → `&#13;`. It writes raw `#id` only at a structurally recognized picture destination it substitutes. This keeps literal picture examples in code distinct from substitutions and preserves CR/CRLF through HTML input newline preprocessing. The reader first restores `&#13;` to CR for reference-line recognition; it resolves the declared raw `#id` destinations, decoding a reference label before comparing it with `data-image-definitions`; only then it restores `&#35;` → `#`, `&#13;` → CR, `&lt;` → `<`, and `&amp;` → `&`, in that order. Original entity-looking text stays literal because ampersands decode last. One newline is added after the opening tag and one before the closing tag. `data-sha256` is the SHA-256 of the resolved document — the portable source a reader reconstructs, with `#id` resolved back to an `<img>`'s `src` verbatim and the authored delimiters retained — so a page whose pictures or text were changed is refused rather than half-recovered. A leading UTF-8 BOM is included in the carrier and digest, and is restored as file metadata when opened. With image compatibility off, the recovered source is the original file byte for byte. A page carries JPEG XL pictures as they are (every current browser opens them, and they are far smaller); with the Share sheet's image compatibility switch on, each is carried as the portable picture the page then shows (PNG, or JPEG for an opaque photograph when smaller), which needs a browser that decodes JPEG XL. Either way the working file on the device keeps its own codec. Picture bytes are never duplicated between the page and the carried Markdown; a picture shown twice on the page is, as in any HTML, present twice. The page admits only its own scripts under one nonce -- the inlined line planner, so a wrapped picture sits where it does in the editor, and the code lexer when a code block needs colouring -- and `text/markdown` is not a script type any browser executes; a reader with scripting off still sees the picture on its nearest side. The page also declares `referrer` `no-referrer`, so following a link from it never tells the destination where the page lives. The rendered page is display, not proof: the digest covers the carried Markdown, not the HTML around it, so a page whose visible words were edited while its carrier was left alone still recovers the authentic document. A reader who needs the authentic words opens the page in Rapier or runs a reference reader; what the browser shows is the author's rendering as it was received.
 
-Any tool can read a shared page with a string scan and no browser, and any tool can write one. Nothing about the form is particular to Rapier. Two public reference readers do that scan, beside the source: `tools/read-shared-page.mjs` (Node) and `tools/read-shared-page.py` (Python 3), each a small standalone script: restore CR, resolve only the raw ids in `data-images` against the page's own `<img id src>` (refusing a duplicate id rather than picking one), resolve a reference definition additionally only when its normalized label is declared in `data-image-definitions`, decode the remaining entities, verify `data-sha256`, write the `.md` bytes without newline translation. They are how the form is a standard rather than a feature of one editor.
+Any tool can read a shared page with a string scan and no browser, and any tool can write one. Two public reference readers do that scan, beside the source: `tools/read-shared-page.mjs` (Node) and `tools/read-shared-page.py` (Python 3), each a small standalone script: restore CR, resolve only the raw ids in `data-images` against the page's own `<img id src>` (refusing a duplicate id rather than picking one), resolve a reference definition additionally only when its normalized label is declared in `data-image-definitions`, decode the remaining entities, verify `data-sha256`, write the `.md` bytes without newline translation.
 
 ## Exporting for Pandoc or Quarto
 
-Rapier's Markdown is CommonMark plus a few invisible comment conventions (colour, page breaks) that read as nothing on any other reader. Pandoc and Quarto carry some of the same ideas in their own syntax. An opt-in, one-way row on the copy sheet — "export for pandoc/quarto", off by default, under "copy markdown" — rewrites the copied text only: a colour run becomes a bracketed span with an inline colour style (`[words]{style="color: #rrggbb;"}`), a highlight becomes a `.mark` span (`[words]{.mark}`), and a page break becomes a bare `\newpage`. Fenced and inline code are left as they are. The document's own file is never touched, and Rapier does not read the Pandoc forms back as colour or highlight.
+An opt-in, one-way toggle on the copy sheet, "export for pandoc/quarto" (off by default, under "copy markdown"), rewrites the copied text only: a colour run becomes a bracketed span with an inline colour style (`[words]{style="color: #rrggbb;"}`), a highlight becomes a `.mark` span (`[words]{.mark}`), and a page break becomes a bare `\newpage`. Fenced and inline code are left as they are. The document's own file is never touched, and Rapier does not read the Pandoc forms back as colour or highlight.
 
 ## Preservation and display
 
@@ -438,25 +408,22 @@ source, never shown as characters.
 
 Reference definitions stay out of the reading view through normal CommonMark
 behavior. An unaware renderer can ignore the layout comments and resolve the
-images without any Rapier-specific image parser. Display still depends on the
-host allowing data images and supporting the chosen codec. JPEG XL support
-evolves independently in browsers, Markdown renderers and their image filters;
-CommonMark syntax alone does not guarantee display on every host. PNG, JPEG and
-WebP provide broader codec support within the same one-file mechanism.
+images without any Rapier-specific image parser. Display depends on the host
+allowing data images and supporting the chosen codec; CommonMark syntax alone
+does not guarantee it. PNG, JPEG and WebP have broader codec support within the
+same one-file mechanism.
 
 Stripping comments loses optional layout, not image bytes. A processor that
 removes data URLs or reference definitions can still lose images. A damaged or
 unsupported image retains its source and description without preventing the
 rest of the document from being read.
 
-This preservation law is checked mechanically, not only asserted here. A check in
-Rapier's own release run opens tiny real files in CommonMark/GFM, Bear,
+Preservation is checked mechanically. Rapier's release run opens tiny real files in CommonMark/GFM, Bear,
 Obsidian, Pandoc-copy and RTL styles (plus CRLF, a UTF-8 BOM, trailing-whitespace
 hard breaks and a missing final newline) through the real Open door, makes one
 unrelated edit, saves through the real Save door, and compares the saved bytes
-against the original file with only that edit applied. Any Save-side rewrite
-that is not named by a sentence in this document or in markdown-profile.md fails
-the corpus outright rather than being accepted as an unremarkable difference.
+against the original file with only that edit applied. A Save-side rewrite
+that is not named by a sentence in this document or in markdown-profile.md fails.
 
 The [layout reference](repo/spec/md-layout.mjs), the [text-colour/page-break
 reference](repo/spec/md-marks.mjs) and the [reference style](repo/spec/markdown-style.css) are licensed MIT (`LICENSE-MIT` is the enumerated statement). Application behavior and

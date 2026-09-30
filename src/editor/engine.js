@@ -3576,6 +3576,15 @@ function _rapierBlockSeparator() {
 	return newline + newline;
 }
 
+// A blank line is an empty paragraph a person made and left (Enter pressed with nothing on the line): one line of the source,
+// `&nbsp;`, the one form every Markdown reader also draws as an empty paragraph (docs/markdown-standard.md, "Blank lines"). The
+// blank between two blocks is only their separator and writes nothing. `count` is how many blocks the document holds once the
+// paragraph exists: a document of one empty paragraph is an empty file, and a note's own empty Title and Note fields
+// (notes/notes.js) are its editor's, so neither writes the entity. The lead's ruling of 30 September, reversible by the founder.
+function _rapierBlankLineRaw(raw) { return String(raw == null ? '' : raw).trim() === '&nbsp;'; }
+function _rapierRawIsBlank(raw) { const text = String(raw == null ? '' : raw).trim(); return !text || text === '&nbsp;'; }
+function _rapierEmptyParagraphRaw(count) { return count > 1 && !_rapierNotesOwnTheDocument() ? '&nbsp;' : ''; }
+
 function _reassignOrderForRange(startIndex, count) {
 	if (count <= 0) return;
 	const before = rapier.document.blocks[startIndex - 1];
@@ -6181,6 +6190,8 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 	}
 	const trimmed = value.trim();
 	if (!trimmed) return '';
+	// A blank line (`&nbsp;` alone) is an empty paragraph, edited as one, not as the entity's own Markdown.
+	if (trimmed === '&nbsp;') return '';
 	if (_rapierIsDiagramFence(value)) return 'diagram-fence';
 
 	let sourceTokens;
@@ -7835,6 +7846,7 @@ function _rapierReviewCleanClone(node) {
 
 function _rapierLiveEditRaw(editDiv, wrapper) {
 	if (!editDiv || !wrapper) return '';
+	const blankEntered = !!editDiv._rapierBlankLine;
 	if (editDiv.querySelector('.rapier-review-change, .rapier-review-stale')) editDiv = _rapierReviewCleanClone(editDiv);
 	const block = _rapierBoundBlock(wrapper);
 	const before = block ? String(block.raw || '') : '';
@@ -7872,6 +7884,9 @@ function _rapierLiveEditRaw(editDiv, wrapper) {
 		const liveTrailing = /[^\S\n]+$/.exec((surface.textContent || '').replace(/\u00a0/g, ' '));
 		if (liveTrailing && edited && !/[^\S\n]$/.test(edited) && !/-->$/.test(edited) && !/\n(?:`{3,}|~{3,})[^\n]*$/.test(edited)) edited += liveTrailing[0];
 	}
+	// A blank line with no words on its surface is still the blank line (its entity), not nothing: nothing would take the
+	// paragraph away when it is left. That holds for words typed into it and taken out again, in the same visit.
+	if (!String(edited).trim() && (_rapierBlankLineRaw(before) || blankEntered)) return _rapierBlankLineRaw(before) ? before : _rapierEmptyParagraphRaw(rapier.document.blocks.length);
 	return _rapierReconcileMarkdownEditRaw(before, edited);
 }
 
@@ -8111,6 +8126,16 @@ function _rapierPrepareSemanticEditProjection(editDiv) {
 	});
 }
 
+// A blank line's edit surface is one empty line: the entity its source is written with is not a character to type after, so the
+// caret stands on nothing and the words typed next are the paragraph's own. The read projection it may have adopted is its
+// paragraph of one no-break space, which the read surface is rebuilt from when the line is left.
+function _rapierBlankLineSurface(editDiv) {
+	const line = document.createElement('p');
+	line.appendChild(document.createElement('br'));
+	editDiv.replaceChildren(line);
+	editDiv._rapierAdoptedReadProjection = false;
+}
+
 function _rapierEnsureEditLineBox(editDiv) {
 	if (!editDiv || String(editDiv.textContent || '').length ||
 			editDiv.querySelector('br, img, hr, table, input, svg, video, iframe, math, .math-rendered')) return;
@@ -8284,6 +8309,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 				'<p>' + escapeRapierHtmlText(block.raw || '') + '</p>';
 			editDiv._rapierAdoptedReadProjection = false;
 		}
+		if (_rapierBlankLineRaw(block.raw)) _rapierBlankLineSurface(editDiv);
 
 		editDiv._rapierDetailsOpen = Array.from(editDiv.querySelectorAll('details'), details => details.open);
 		editDiv.querySelectorAll('details').forEach(details => {
@@ -8317,6 +8343,8 @@ function enterBlockEdit(block, wrapper, activation = null) {
 	// A mark pressed at a caret is this block's typing state: the shared edit surface enters the next block with none
 	// (a press left behind in another block, or across the source view, must not toggle the next press off).
 	editDiv._rapierTypingMarks = null;
+	// A blank line entered stays one when words typed into it are taken out again (_rapierLiveEditRaw).
+	editDiv._rapierBlankLine = _rapierBlankLineRaw(block.raw);
 	_rapierRecordEditOpening(editDiv, wrapper);
 	return editDiv;
 }
@@ -9362,6 +9390,7 @@ function _writeBlockDOM(wrapper, block, opts) {
 		editDiv.innerHTML = html;
 
 		editDiv.querySelectorAll('details').forEach(details => { details.open = true; });
+		if (_rapierBlankLineRaw(block.raw)) _rapierBlankLineSurface(editDiv);
 	}
 	wrapper._rapierBlockRaw = block.raw;
 	if (opts && opts.exitEditing) {
@@ -10945,7 +10974,10 @@ function _rapierSingleBlockFormatState() {
 // command says why.
 function _rapierApplyExactBlock(cmd, state) {
 	if (!state || state.wrappers.length !== 1 || !_rapierInlineFormatSafe(state)) return null;
-	const raw = String(state.blocksBefore[0].raw || ''), trimmed = raw.trim();
+	// A blank line (`&nbsp;`) is an empty line here: the kind asked for is written empty, and a kind taken off an empty
+	// line is the blank line again, never nothing (an empty block is not written).
+	const blank = _rapierBlankLineRaw(state.blocksBefore[0].raw);
+	const raw = blank ? '' : String(state.blocksBefore[0].raw || ''), trimmed = raw.trim();
 	let next = null;
 	if (/^(h[1-6]|p|quote)$/.test(cmd)) {
 		// The parser, not a hand-rolled prefix regex, says whether this block is a heading and what
@@ -11002,6 +11034,7 @@ function _rapierApplyExactBlock(cmd, state) {
 		} else next = items.map((item, index) => _rapierRenderListItem(item, cmd === 'ol' ? `${index + 1}. ` : '- ')).join('\n');
 	} else return null;
 	if (next === raw) return true;
+	if (!next) next = _rapierEmptyParagraphRaw(rapier.document.blocks.length);
 	return _rapierApplyRawRange(state, [next], { keepEditing: true });
 }
 
@@ -11979,7 +12012,8 @@ function _rapierCommitInlineFormat(state) {
 
 function _rapierSimpleBlockBody(raw) {
 	let value = String(raw || '').trim();
-	if (!value) return '';
+	// A blank line has no words: its body is the empty one.
+	if (!value || value === '&nbsp;') return '';
 	if (/^(?:`{3,}|~{3,}|\|\s*[^\n]*\||!\[[^\]]*\]\(|(?:[-*_]\s*){3,}$)/.test(value)) return null;
 	if (/^(?:\s*[-*+]\s+|\s*\d+[.)]\s+)/m.test(value)) return null;
 	value = value.replace(/^#{1,6}\s+/, '');
@@ -12024,7 +12058,7 @@ function _rapierApplyCrossBlockStyle(cmd, state) {
 		if (cmd === 'p' || allAtLevel) return body;
 		if (level) return '#'.repeat(level) + ' ' + body.replace(/[ \t]*\n+[ \t]*/g, ' ');
 		return body;
-	});
+	}).map(raw => raw || _rapierEmptyParagraphRaw(rapier.document.blocks.length));
 	return _rapierApplyRawRange(state, nextRaw);
 }
 
@@ -13068,6 +13102,14 @@ function _rapierApplyExactMark(cmd, state) {
 	for (let index = 0; index < segments.length; index++) {
 		const segment = segments[index], before = String(state.blocksBefore[index].raw || '');
 		if (segment.start >= segment.end) { nextRaw.push(before); continue; }
+		if (segment.cells) {
+			const table = _rapierPlanTableCells(before, segment.cells, (cell, words, start, end) => {
+				const plan = cmd === 'clear' ? _rapierPlanExactClear(cell, words, start, end) : _rapierPlanExactMark(cell, words, cmd, start, end);
+				return plan == null && cmd !== 'clear' ? _rapierPlanSegmentedMark(cell, cmd, start, end) : plan;
+			});
+			nextRaw.push(table == null ? before : table);
+			continue;
+		}
 		let planned = cmd === 'clear'
 			? _rapierPlanExactClear(before, segment.selected, segment.start, segment.end)
 			: _rapierPlanExactMark(before, segment.selected, cmd, segment.start, segment.end);
@@ -13249,6 +13291,52 @@ function _rapierPlanTypedPaint(raw, anchor, end, kind, value) {
 		if (source != null && a < b) source = _rapierPlanExactSourceHighlight(source, words(a, b), run.color, a, b);
 	}
 	return source;
+}
+// The typing state at the end of a line, as Enter carries it to the next (docs/formatting-algebra.md section 8): the marks the words
+// typed at this caret would take. Read off the elements around the caret (the surface's own strong, em, ins, del, mark, colour and
+// code), with the presses made at this caret and not yet typed laid over them (a mark pressed off there is not carried).
+function _rapierMarksLiveAtCaret(editDiv, range) {
+	const marks = {};
+	if (!editDiv || !range || !range.collapsed) return marks;
+	let node = range.startContainer;
+	if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+	for (; node && node !== editDiv && editDiv.contains(node); node = node.parentElement) {
+		const tag = node.tagName ? node.tagName.toLowerCase() : '', typing = _rapierTypingStyle(node);
+		if (typing.bold || tag === 'strong' || tag === 'b') marks.bold = true;
+		if (typing.italic || tag === 'em' || tag === 'i') marks.italic = true;
+		if (typing.strikethrough || tag === 's' || tag === 'del' || tag === 'strike') marks.strikethrough = true;
+		if (typing.underline || tag === 'u' || tag === 'ins') marks.underline = true;
+		if (tag === 'code') marks.code = true;
+		if (tag === 'mark' || typing.highlight) marks.highlight = typing.highlight || _rapierHighlightColor(node.getAttribute('data-rapier-highlight')) || 'default';
+		if (typing.color || (tag === 'span' && node.hasAttribute('data-md-color'))) {
+			const hex = typing.color || String(node.getAttribute('data-md-color') || '').toLowerCase();
+			if (/^#[0-9a-f]{6}$/.test(hex)) marks.color = hex;
+		}
+	}
+	const pending = editDiv._rapierTypingMarks;
+	if (pending && pending.root && pending.root.contains(range.startContainer) &&
+			_rapierStructuralOffsetForRangePoint(pending.root, range.startContainer, range.startOffset) === pending.caret) {
+		for (const [mark, on] of Object.entries(pending.marks)) {
+			if (mark === 'highlight' || mark === 'color') { if (on === 'none') delete marks[mark]; else marks[mark] = on; }
+			else if (on) marks[mark] = true;
+			else delete marks[mark];
+		}
+	}
+	return marks;
+}
+// The marks live at the end of the old line become the new line's typing state: as if each had been pressed at its empty caret. It holds
+// only while the caret stands there and only for typed characters (_rapierKeepTypingMarks), so the first input that is not a typed
+// character, or the caret leaving the line, ends it. Code and another mark refuse each other, so code alone is carried when both are live.
+function _rapierCarryTypingMarks(editDiv, live) {
+	const marks = live && live.code ? { code: true } : Object.assign({}, live);
+	const selection = window.getSelection && window.getSelection();
+	if (!editDiv || !Object.keys(marks).length || !selection || !selection.rangeCount || !selection.isCollapsed) return false;
+	const range = selection.getRangeAt(0);
+	if (!editDiv.contains(range.startContainer)) return false;
+	const at = _rapierStructuralOffsetForRangePoint(editDiv, range.startContainer, range.startOffset);
+	editDiv._rapierTypingMarks = { root: editDiv, at, caret: at, marks };
+	requestAnimationFrame(refreshFormatToolbar);
+	return true;
 }
 // Before each input: the state holds only while the caret is where the press or the last typed
 // character left it, and only for typed characters.
@@ -13448,18 +13536,117 @@ function _rapierApplyExactBlockClear(state) {
 	return _rapierApplyRawRange(state, [raw], { keepEditing: true });
 }
 
+// Whether a block can take an inline mark at all: the words of a paragraph, a heading, a list item, a quote, a callout's body. A fence
+// keeps its characters as typed, a picture and a display math block have no words to mark (a math plug-in not installed draws the
+// source as words, so the block is known by its source), an expanding section is HTML, a rule and a page break are not text, and a
+// block edited as Markdown (raw HTML, a definition, an entity) keeps its bytes; a table takes marks cell by cell, planned on its own.
+function _rapierBlockCarriesMarks(wrapper) {
+	const live = wrapper && _liveBlockEl(wrapper), block = wrapper && _rapierBoundBlock(wrapper);
+	if (!live || !block || !_rapierInlineFormatSafe({ wrappers: [wrapper] })) return false;
+	if (/^\s*\$\$[\s\S]*\$\$\s*$/.test(String(block.raw || '')) || /^\s*<details[\s>]/i.test(String(block.raw || ''))) return false;
+	// A callout's label draws its own icon: that is not a picture in the block's words.
+	return !Array.from(live.querySelectorAll('pre, img, video, audio, iframe, svg, hr, [data-rapier-markdown-image], .math-display-wrap')).some(node => !node.closest('.callout__label'));
+}
+
+// Whether a mark, a highlight, a colour or Clear formatting has anywhere to land in the selection's blocks: in one block, that block
+// must take it; across several, at least one must (the others are passed over, _rapierHighlightSegments).
+function _rapierFormatCanTake(state) {
+	if (!state) return false;
+	const table = wrapper => wrapper.classList.contains('block-wrapper--table');
+	if (state.wrappers.length < 2) return _rapierInlineFormatSafe(state) || table(state.wrappers[0]);
+	return state.wrappers.some(wrapper => _rapierBlockCarriesMarks(wrapper) || table(wrapper));
+}
+
+// The table cells a selection covers, each with where the selection starts and ends in its words: what a table's marks are planned
+// from (_rapierPlanTableCells). A cell cut by the selection's edge is cut there; the cells between are whole.
+function _rapierTableSelectedCells(live, range) {
+	const cells = [], table = live.querySelector('table');
+	if (!table) return cells;
+	Array.from(table.querySelectorAll('tr')).forEach((tr, row) => {
+		Array.from(tr.children).filter(node => /^(?:TH|TD)$/.test(node.tagName)).forEach((cell, col) => {
+			if (!range.intersectsNode(cell)) return;
+			const text = String(cell.textContent || '');
+			let start = _nodeInside(cell, range.startContainer) ? _rapierStructuralOffsetForRangePoint(cell, range.startContainer, range.startOffset) : 0;
+			let end = _nodeInside(cell, range.endContainer) ? _rapierStructuralOffsetForRangePoint(cell, range.endContainer, range.endOffset) : text.length;
+			start = Math.max(0, Math.min(start, text.length));
+			end = Math.max(start, Math.min(end, text.length));
+			while (start < end && /\s/.test(text.charAt(start))) start++;
+			while (end > start && /\s/.test(text.charAt(end - 1))) end--;
+			if (start < end) cells.push({ row, col, start, end, selected: text.slice(start, end) });
+		});
+	});
+	return cells;
+}
+
+// A GFM row's cells as spans of the line, trimmed: where each cell's own Markdown lies in it, read as _tableSplitRow splits the row (at
+// every pipe that is not escaped), so one cell can be rewritten with the row's spacing and every other cell left as written.
+function _rapierTableCellSpans(line) {
+	const text = String(line || ''), lead = text.length - text.trimStart().length, value = text.trim(), spans = [];
+	let from = 0;
+	for (let index = 0; index <= value.length; index++) {
+		if (index < value.length && value.charAt(index) === '\\') { index++; continue; }
+		if (index === value.length || value.charAt(index) === '|') { spans.push([from, index]); from = index + 1; }
+	}
+	const cells = spans.map(([a, b]) => {
+		while (a < b && /\s/.test(value.charAt(a))) a++;
+		while (b > a && /\s/.test(value.charAt(b - 1))) b--;
+		return [a + lead, b + lead];
+	});
+	if (cells.length && cells[0][0] === cells[0][1]) cells.shift();
+	if (cells.length > 1 && cells[cells.length - 1][0] === cells[cells.length - 1][1]) cells.pop();
+	return cells;
+}
+
+// A table's marks are planned cell by cell: each selected cell's own Markdown goes through the planner the paragraphs use (`plan(raw,
+// words, start, end)`: its new Markdown, or null when it cannot prove one) and only that cell's bytes are replaced in its row. A cell the
+// planner cannot prove is left as it is. Null when no cell changed.
+function _rapierPlanTableCells(raw, cells, plan) {
+	const source = String(raw || ''), info = _tableInfo(source), lines = source.split('\n');
+	if (info.sepIdx < 0) return null;
+	const rowAt = [info.rowIdxs.find(index => index < info.sepIdx), ...info.dataIdxs];
+	let changed = false;
+	// The last cells of a row first, so the spans of the cells before them stay where they were measured.
+	for (const cell of cells.slice().sort((a, b) => b.row - a.row || b.col - a.col)) {
+		const at = rowAt[cell.row];
+		if (!Number.isInteger(at) || at >= lines.length) continue;
+		const line = lines[at], spans = _rapierTableCellSpans(line), own = _tableSplitRow(line);
+		if (!own || !spans[cell.col] || own.length !== spans.length) continue;
+		const planned = plan(own[cell.col], cell.selected, cell.start, cell.end);
+		if (planned == null || planned === own[cell.col]) continue;
+		lines[at] = line.slice(0, spans[cell.col][0]) + _tableEscapeCell(planned) + line.slice(spans[cell.col][1]);
+		changed = true;
+	}
+	return changed ? lines.join('\n') : null;
+}
+
+// The selection cut to each block's own words: where the selection starts and ends in it, as offsets of its surface. Across blocks
+// (the lead's ruling of 30 September, reversible by the founder's word; Word bolds every run of text it can and says nothing) a block
+// that cannot carry a mark has no words here: it is passed over, quietly, and stays as it is.
 function _rapierHighlightSegments(state) {
 	const segments = [];
+	const across = state.wrappers.length > 1;
 	for (let index = 0; index < state.wrappers.length; index++) {
 		const wrapper = state.wrappers[index];
 		const live = _liveBlockEl(wrapper);
 		if (!live) return null;
+		if (wrapper.classList.contains('block-wrapper--table')) {
+			const cells = _rapierTableSelectedCells(live, state.range.cloneRange());
+			segments.push({ wrapper, live, text: '', start: 0, end: cells.length ? 1 : 0, selected: '', cells });
+			continue;
+		}
+		if (across && !_rapierBlockCarriesMarks(wrapper)) { segments.push({ wrapper, live, text: '', start: 0, end: 0, selected: '' }); continue; }
 		const range = _rapierSnapRangeToAtoms(state.range.cloneRange(), live);
 		const text = String(live.textContent || '');
 		let start = _nodeInside(live, range.startContainer)
 			? _rapierStructuralOffsetForRangePoint(live, range.startContainer, range.startOffset) : 0;
 		let end = _nodeInside(live, range.endContainer)
 			? _rapierStructuralOffsetForRangePoint(live, range.endContainer, range.endOffset) : text.length;
+		// A callout's label is drawn, not written: the words a mark can take start after it.
+		const label = live.querySelector('.callout__label');
+		if (label && label.parentNode) {
+			start = Math.max(start, _rapierStructuralOffsetForRangePoint(live, label.parentNode, Array.prototype.indexOf.call(label.parentNode.childNodes, label) + 1));
+			if (text.charAt(start) === '\u2060') start++;
+		}
 		start = Math.max(0, Math.min(start, text.length));
 		end = Math.max(start, Math.min(end, text.length));
 		while (start < end && /\s/.test(text.charAt(start))) start++;
@@ -13470,7 +13657,7 @@ function _rapierHighlightSegments(state) {
 		const clip = range.cloneRange();
 		if (!_nodeInside(live, range.startContainer)) clip.setStart(live, 0);
 		if (!_nodeInside(live, range.endContainer)) clip.setEnd(live, live.childNodes.length);
-		try { if (clip.cloneContents().querySelector('img,svg')) return null; } catch (_) { return null; }
+		try { if (Array.from(clip.cloneContents().querySelectorAll('img,svg')).some(node => !node.closest('.callout__label'))) return null; } catch (_) { return null; }
 		segments.push({ wrapper, live, text, start, end, selected: text.slice(start, end) });
 	}
 	return segments;
@@ -13479,7 +13666,7 @@ function _rapierHighlightSegments(state) {
 function _rapierSelectionBookmark(state, segments) {
 	if (!state || !state.range) return null;
 	if (segments) {
-		const active = segments.filter(segment => segment.start < segment.end);
+		const active = segments.filter(segment => segment.start < segment.end && !segment.cells);
 		if (active.length) {
 			const first = active[0], last = active[active.length - 1];
 			return {
@@ -13658,7 +13845,7 @@ function rapierHighlight(requestedColor) {
 
 	const state = _rapierFormatSelectionState({ checkpoint: false });
 	if (!state) { hideFormatToolbar(); return false; }
-	if (!_rapierInlineFormatSafe(state)) {
+	if (!_rapierFormatCanTake(state)) {
 		showToast('highlight these blocks one at a time', 'error');
 		return false;
 	}
@@ -13675,6 +13862,7 @@ function rapierHighlight(requestedColor) {
 		let domPlanSafe = true;
 		for (const segment of segments) {
 			if (segment.start >= segment.end) continue;
+			if (segment.cells) { domPlanSafe = false; break; }
 			const html = _rapierPlanHighlight(segment.live, segment.start, segment.end, color);
 			if (html == null) { domPlanSafe = false; break; }
 			plans.push({ live: segment.live, html });
@@ -13700,6 +13888,11 @@ function rapierHighlight(requestedColor) {
 		const segment = segments[index];
 		const before = String(state.blocksBefore[index].raw || '');
 		if (segment.start >= segment.end) { nextRaw.push(before); continue; }
+		if (segment.cells) {
+			const table = _rapierPlanTableCells(before, segment.cells, (cell, words, start, end) => _rapierPlanExactSourceHighlight(cell, words, color, start, end));
+			nextRaw.push(table == null ? before : table);
+			continue;
+		}
 		const planned = _rapierPlanExactSourceHighlight(before, segment.selected, color, segment.start, segment.end);
 		if (planned == null) {
 			showToast('a highlight can’t start or end with a space or =, or contain ==', 'error');
@@ -13891,7 +14084,7 @@ function rapierApplyColor(requestedHex) {
 
 	const state = _rapierFormatSelectionState({ checkpoint: false });
 	if (!state) { hideFormatToolbar(); return false; }
-	if (!_rapierInlineFormatSafe(state)) {
+	if (!_rapierFormatCanTake(state)) {
 		showToast('colour these blocks one at a time', 'error');
 		return false;
 	}
@@ -13907,6 +14100,11 @@ function rapierApplyColor(requestedHex) {
 		const segment = segments[index];
 		const before = String(state.blocksBefore[index].raw || '');
 		if (segment.start >= segment.end) { nextRaw.push(before); continue; }
+		if (segment.cells) {
+			const table = _rapierPlanTableCells(before, segment.cells, (cell, words, start, end) => _rapierPlanExactSourceColor(cell, words, hex, start, end));
+			nextRaw.push(table == null ? before : table);
+			continue;
+		}
 		const planned = _rapierPlanExactSourceColor(before, segment.selected, hex, segment.start, segment.end);
 		if (planned == null) {
 			showToast('this selection cannot be coloured without changing its Markdown', 'error');
@@ -14001,7 +14199,7 @@ function rapierFmt(cmd, value) {
 		return _rapierApplyCrossBlockList(cmd, state);
 	}
 
-	if (inline && state && !_rapierInlineFormatSafe(state)) {
+	if (inline && state && !_rapierFormatCanTake(state)) {
 		showToast('format these blocks one at a time', 'error');
 		return false;
 	}
@@ -17919,7 +18117,7 @@ function updateStats() {
 			for (let at = raw.indexOf('\n'); at >= 0; at = raw.indexOf('\n', at + 1)) breaks++;
 			entry = {
 				raw,
-				words: trimmed ? trimmed.split(/\s+/).length : 0,
+				words: trimmed && !_rapierBlankLineRaw(trimmed) ? trimmed.split(/\s+/).length : 0,
 				chars: raw.length,
 				newlines: breaks,
 			};
@@ -19319,7 +19517,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			const source = await _rapierReadSharedDocument(payload.text, payload.name);
 			if (source) {
 				window.RapierPlatform?.files?.clearIntake?.(payload);
-				payload = {text: source.source, name: source.filename, transient: true};
+				payload = {text: source.source, name: source.filename, bom: source.bom, transient: true};
 				opts = {...opts, documentKind: source.kind};
 			}
 		} catch (error) {
@@ -20858,6 +21056,8 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 	// of the CSS-only projection, so the one existing layout representation reaches the writer.
 	const keepLayoutData = !!opts.keepLayoutData;
 	const root = semanticRoot.cloneNode(true), nativeElements = new Set();
+	// A source soft break is a reading space, never the editor's invisible token.
+	_rapierResolveSoftBreakTokens(root);
 	if (opts.keepDiagrams) for (const figure of root.querySelectorAll('.diagram-block[data-diagram-native]')) {
 		const svg = figure.querySelector('.diagram-cache > svg.rapier-native-flowchart');
 		if (figure.getAttribute('data-diagram-state') === 'ready' && svg) {
@@ -25141,6 +25341,7 @@ function rapierInsertBlock(type, options) {
 	if (type === 'table' && _rapierTableFromSelection()) return;
 	if (type === 'details' && _rapierDetailsFromSelection()) return;
 	if (type === 'code' && _rapierCodeFromSelection()) return;
+	if (type === 'code' && _rapierCodeFromLine()) return;
 
 	const selectWord = type === 'checklist' ? 'task' : type === 'code' ? 'code here' : null;
 
@@ -25166,7 +25367,7 @@ function _rapierInsertAtCaret(raw, options) {
 	const block = wrapper ? _rapierBoundBlock(wrapper) : null;
 	if (!wrapper || !block || wrapper.classList.contains('block-wrapper--source-edit') || wrapper.classList.contains('block-wrapper--table')) return false;
 	if (editDiv.querySelector('table, pre, img, video, audio')) return false;
-	const empty = !String(block.raw || '').trim();
+	const empty = _rapierRawIsBlank(block.raw);
 	// A collapsed caret splits where the picture owner's source planner proves the cut, at the
 	// caret's word's end, never inside the word (the picture doors' own law). A serialized half
 	// respells what it carries (a reference link comes back inline) and its length is no source
@@ -25192,6 +25393,29 @@ function _rapierInsertAtCaret(raw, options) {
 		if (el && _rapierBoundBlock(el) === placed) enterBlockEdit(placed, el, options && options.selectWord ? { selectWord: options.selectWord } : null);
 	});
 	return true;
+}
+
+// The caret in a line of words, nothing selected: the line becomes the code block holding its words, as Heading turns the line (the
+// lead's ruling of 30 September, reversible by the founder's word), not a new block below it. A blank line keeps the empty fence the
+// insert makes; a block that is not one line of words (a list, a table, a fence, a picture, a callout, the source editor) is the
+// insert's, as before. The words are what the person reads, as a selection's are, and the caret stays where it stood in them.
+function _rapierCodeFromLine() {
+	const editDiv = _rapierActiveEditDiv();
+	const selection = window.getSelection && window.getSelection();
+	if (!editDiv || !selection || !selection.rangeCount || !selection.isCollapsed) return false;
+	const range = selection.getRangeAt(0);
+	if (!_rangePointInside(editDiv, range.startContainer)) return false;
+	const wrapper = editDiv.closest('.block-wrapper');
+	const block = wrapper ? _rapierBoundBlock(wrapper) : null;
+	if (!wrapper || !block || wrapper.classList.contains('block-wrapper--source-edit') || wrapper.classList.contains('block-wrapper--table')) return false;
+	if (editDiv.querySelector('table, pre, img, video, audio, ul, ol, details, hr, math, .math-rendered, .callout__label')) return false;
+	_rapierCheckpointEdit(editDiv);
+	const shown = String(editDiv.innerText || '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' '), words = shown.trim();
+	if (!words) return false;
+	const lead = shown.length - shown.replace(/^\s+/, '').length;
+	const before = _textWithBrLineBreaks(_cloneRangeTo(editDiv, range.startContainer, range.startOffset)).replace(/\u00a0/g, ' ').length;
+	const fence = globalThis.RapierMarkdownSpec.safeCodeFence(words);
+	return _replaceOneBlockWithRawSet(block, [fence + '\n' + words + '\n' + fence], 0, Math.max(0, Math.min(words.length, before - lead)));
 }
 
 // A selection inside one block fenced as code in place: the marked words become the fence's own
@@ -26594,7 +26818,7 @@ function _rapierImageCaretTarget(range, wrapper) {
 	if (wrapper.classList.contains('block-wrapper--source-edit') || wrapper.classList.contains('block-wrapper--table')) return null;
 	if (!_nodeInside(editDiv, range.startContainer)) return null;
 	if (editDiv.querySelector('table, pre, img, video, audio')) return null;
-	if (!String(block.raw || '').trim()) return null;
+	if (_rapierRawIsBlank(block.raw)) return null;
 	// Settle pending typing before source evidence is read, through its one checkpoint owner: the
 	// words become their own record and the surface is re-baselined, so the burst's own checkpoint
 	// cannot splice the same words in a second time. Insertion stays one later transaction and Undo
@@ -34291,6 +34515,13 @@ document.addEventListener('keydown', e => {
 	}
 }, true);
 
+// A block that is one quote with no words in it (empty lines only): Enter leaves it, as it leaves an empty list item's list.
+function _rapierQuoteIsEmpty(editDiv, quoteEl) {
+	if (!editDiv || !quoteEl || !editDiv.contains(quoteEl)) return false;
+	if (editDiv.querySelector('img, video, audio, iframe, input, table, pre, hr, li, svg, math, .math-rendered')) return false;
+	return !String(editDiv.textContent || '').replace(/[\u00a0\u200b]/g, '').trim();
+}
+
 function _rapierQuoteCaretOnEmptyLastLine(quoteEl, range) {
 	const node = range.startContainer, offset = range.startOffset;
 	const tail = document.createRange();
@@ -34426,6 +34657,10 @@ function _rapierHandleEnter(opts) {
 	const quoteEl = startEl && startEl.closest && startEl.closest('blockquote');
 	if (quoteEl && editDiv.contains(quoteEl)) {
 
+		if (range.collapsed && _rapierQuoteIsEmpty(editDiv, quoteEl)) {
+			_splitBlockAtCaret(editDiv, wrapper, block, range, { emptyQuote: true });
+			return true;
+		}
 		if (range.collapsed && _rapierQuoteCaretOnEmptyLastLine(quoteEl, range)) {
 			_splitBlockAtCaret(editDiv, wrapper, block, range);
 			return true;
@@ -34519,6 +34754,8 @@ function _taskCheckboxForEdit(checked) {
 }
 
 function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
+	// The typing state at the end of this item, carried to the new one below when the new one starts empty.
+	const carry = _rapierMarksLiveAtCaret(editDiv, range);
 	const isTask = !!li.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]');
 	const newLi = document.createElement('li');
 	if (li.classList.contains('task-list-item')) newLi.className = li.className;
@@ -34547,7 +34784,11 @@ function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
 	if (nested && !ownText) newLi.insertBefore(document.createElement('br'), nested);
 	if (!newLi.textContent.replace(/\u00A0/g, '').trim() && !nested) newLi.appendChild(document.createElement('br'));
 
-	li.parentNode.insertBefore(newLi, li.nextSibling);
+	// The rendered list holds a line break between its items (the renderer's own text node): the new item stands after one too, so the
+	// surface's text offsets are the source's and a mark pressed at the new item's caret is planned where the words are typed.
+	const gap = document.createTextNode('\n');
+	li.parentNode.insertBefore(gap, li.nextSibling);
+	li.parentNode.insertBefore(newLi, gap.nextSibling);
 	const caret = document.createRange();
 	if (isTask || nested) {
 		let textNode = Array.from(newLi.childNodes).find(n => n.nodeType === Node.TEXT_NODE && n.textContent.length && (!nested || n.compareDocumentPosition(nested) & Node.DOCUMENT_POSITION_FOLLOWING));
@@ -34567,6 +34808,7 @@ function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
 	_markEditDivDirty(editDiv);
 	_rapierScheduleEditCheckpoint(editDiv);
 	updateStats();
+	if (!nested && !newLi.textContent.replace(/\u00A0/g, '').trim()) _rapierCarryTypingMarks(editDiv, carry);
 }
 
 function _rapierEnterTouchesEditor(e) {
@@ -34688,7 +34930,7 @@ function _rapierCaretAtEditBoundary(editDiv, range, direction) {
 }
 
 function _rapierMergeableSurface(block, wrapper, liveEditDiv) {
-	if (!block || !wrapper || !String(block.raw || '').trim()) return null;
+	if (!block || !wrapper || _rapierRawIsBlank(block.raw)) return null;
 	if (_blockUsesRawEditor(block.raw)) return null;
 
 	const holder = document.createElement('div');
@@ -34874,7 +35116,9 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 		}
 	}
 
-	if (!_rapierCaretAtEditBoundary(context.editDiv, range, direction)) return false;
+	// An empty block is at both of its boundaries: the line break that holds its line open is no word after the caret. Left to the
+	// browser, Delete in a blank line pulled the next block's words into it and left that block in the document as well.
+	if (!_rapierEditBlockIsEmpty(context.editDiv, context.wrapper) && !_rapierCaretAtEditBoundary(context.editDiv, range, direction)) return false;
 
 	const blockIndex = rapier.document.blocks.findIndex(b => b.id === context.block.id);
 	if (blockIndex === -1) return false;
@@ -34885,7 +35129,7 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 		const previousWrapper = document.querySelector('[data-block-id="' + previousBlock.id + '"]');
 		if (!previousWrapper) return false;
 
-		if (!String(previousBlock.raw || '').trim()) {
+		if (_rapierRawIsBlank(previousBlock.raw)) {
 			_rapierCommitLiveBoundaryBlock(context);
 			const snapshot = _removeBlockById(previousBlock.id);
 			if (!_rapierPushDeletedBlock(snapshot)) return false;
@@ -34918,7 +35162,7 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 		return true;
 	}
 
-	if (!String(nextBlock.raw || '').trim()) {
+	if (_rapierRawIsBlank(nextBlock.raw)) {
 		_rapierCommitLiveBoundaryBlock(context);
 		const snapshot = _removeBlockById(nextBlock.id);
 		if (!_rapierPushDeletedBlock(snapshot)) return false;
@@ -35165,11 +35409,18 @@ function _commitLiveBlockBeforeStructure(block, wrapper, editDiv) {
 function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 	opts = opts || {};
 	const emptyLi = opts.emptyLi || null;
+	// A quote with no words is left as an empty list item leaves its list: the block itself is the empty paragraph (opts.emptyQuote).
+	const emptyQuote = !!opts.emptyQuote, leaves = !!emptyLi || emptyQuote;
 	const blockIndex = rapier.document.blocks.findIndex(b => b.id === block.id);
 	if (blockIndex === -1) return;
+	// The typing state Enter carries (docs/formatting-algebra.md section 8): the marks live at the caret, read before anything moves.
+	const carry = _rapierMarksLiveAtCaret(editDiv, range);
 
 	let prefixDiv, suffixDiv;
-	if (emptyLi && emptyLi.parentNode) {
+	if (emptyQuote) {
+		prefixDiv = document.createElement('div');
+		suffixDiv = document.createElement('div');
+	} else if (emptyLi && emptyLi.parentNode) {
 		const parent = emptyLi.parentNode;
 		const idx = Array.prototype.indexOf.call(parent.childNodes, emptyLi);
 		prefixDiv = _cloneRangeTo(editDiv, parent, idx);
@@ -35189,36 +35440,40 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 	// The half after the caret of an empty heading is the plain line below it, as it is at the end of a heading: the empty
 	// heading marker (`##`) does not carry over into it, or the words typed next would be a heading.
 	const suffixWords = _markdownFromEditHTML(suffixDiv.innerHTML), suffixRaw = /^#{1,6}[ \t]*$/.test(suffixWords) ? '' : suffixWords;
-	if (!emptyLi && _rapierTableFromTypedRow(block, wrapper, editDiv, prefixRaw, suffixRaw)) return;
+	if (!leaves && _rapierTableFromTypedRow(block, wrapper, editDiv, prefixRaw, suffixRaw)) return;
 	// The split law (sedfred, R86v; layout/browser.js splitPlan): a wrapped picture placed in this
 	// paragraph stays where it is on the page, with whichever half its top sits in. Read from the
 	// live layout before anything moves; applied below inside this same one block-range commit.
-	const flowPlan = !emptyLi ? globalThis.RapierImageFlow?.splitPlan?.(wrapper, range) : null;
+	const flowPlan = !leaves ? globalThis.RapierImageFlow?.splitPlan?.(wrapper, range) : null;
 
 	// A list's own trailing empty item does not round-trip through render-then-reconvert (an
 	// empty <li> carries no marker back out), which would otherwise register here as a phantom
 	// live edit and cost Undo a second press for a key the person only used to leave the list.
 	// The newBlocks below are built straight from the live DOM either way, so this commit has
 	// nothing of the person's to lose by being skipped for that one case.
-	if (!emptyLi && opts.prefixRaw == null) _commitLiveBlockBeforeStructure(block, wrapper, editDiv);
+	if (!leaves && opts.prefixRaw == null) _commitLiveBlockBeforeStructure(block, wrapper, editDiv);
 
 	const blocksBefore = [_rapierHistoryBlock(block)];
 
+	// A half with no words is a blank line, a paragraph of its own that the source holds as `&nbsp;` (the lead's ruling of 30
+	// September), so the blank lines Enter makes are there after a reload and in every export, as they are on the page.
+	// The list's first item leaving it (or a quote with no words): the block itself is that empty paragraph (a second, empty
+	// block beside it would be a blank line nobody asked for).
+	const firstItemLeaves = leaves && !String(prefixRaw || '').trim();
+	const blocksAfterCount = rapier.document.blocks.length - 1 + (leaves ? (firstItemLeaves ? 1 : 2) + (suffixRaw ? 1 : 0) : 2);
 	const makeBlock = (raw, preferredId) => {
 		const id      = preferredId != null ? preferredId : _nextBlockId();
 		const keepsIdentity = preferredId === block.id;
 		// The halves come off the editing surface in LF: laid back onto the file's own endings.
-		const trimmed = _rapierReconcileMarkdownEditRaw(keepsIdentity ? block.raw : '', (raw || '').trim(), block.raw);
+		const trimmed = _rapierReconcileMarkdownEditRaw(keepsIdentity ? block.raw : '', (raw || '').trim(), block.raw)
+			|| _rapierEmptyParagraphRaw(blocksAfterCount);
 		const order   = keepsIdentity ? block.order : undefined;
 		const leading = keepsIdentity ? block.leading : undefined;
 		return { id, raw: trimmed, rendered: renderBlock(trimmed), dirty: false, type: undefined, order, leading };
 	};
 
 	const newBlocks = [makeBlock(prefixRaw, block.id)];
-	// The list's first item leaving it: the block itself is that empty paragraph (a second, empty
-	// block beside it would be a blank line nobody asked for).
-	const firstItemLeaves = !!emptyLi && !String(prefixRaw || '').trim();
-	if (emptyLi) {
+	if (leaves) {
 		if (!firstItemLeaves) newBlocks.push(makeBlock('', undefined));
 		if (suffixRaw) newBlocks.push(makeBlock(suffixRaw, undefined));
 	} else {
@@ -35265,7 +35520,9 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 	updateStats();
 	assignHeadingSlugs();
 
-	_enterBlockEditAtOffset(caretBlockId, 0);
+	const seated = _enterBlockEditAtOffset(caretBlockId, 0);
+	// The new line has no words of its own: the marks live at the end of the old one are the state the words typed next take.
+	if (seated && _rapierRawIsBlank(rapier.document.blocks.find(candidate => candidate.id === caretBlockId)?.raw)) _rapierCarryTypingMarks(seated, carry);
 }
 
 document.addEventListener('drop', e => {
