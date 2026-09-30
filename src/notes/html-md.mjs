@@ -10,6 +10,9 @@ import {RAPIER_HIGHLIGHT_COLORS, safeCodeFence} from '../agent/markdown-spec.mjs
 // Words are escaped as every importer escapes them, and the extended marks' characters (= + ~ ^) as
 // the paste door's Turndown writes them (spec/html-reading.mjs): escaped where they could make a mark.
 const escapeInline = text => markRuns(literalInline(text));
+// HTML collapses ASCII whitespace only. NBSP, narrow NBSP and Unicode separators are authored text.
+const htmlSpace = text => text.replace(/[ \t\r\n\f]+/g, ' ');
+const trimHtmlSpace = text => text.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
 
 const VOID = new Set('area base br col embed hr img input link meta param source track wbr'.split(' '));
 const RAW_TEXT = new Set(['script', 'style']);
@@ -231,7 +234,7 @@ const MARK_OPEN = {'**': 'strong_open', '*': 'em_open', '++': 'ins_open', '~~': 
 // What a neighbour writes on the side facing a mark's delimiter, '' when it writes nothing there:
 // its own text, a line break, a delimiter or bracket of its own (punctuation), a block's edge.
 function edge(node, side) {
-	if (typeof node === 'string') { const text = node.replace(/\s+/g, ' '); return side < 0 ? text.slice(-1) : text.slice(0, 1); }
+	if (typeof node === 'string') { const text = htmlSpace(node); return side < 0 ? text.slice(-1) : text.slice(0, 1); }
 	if (node.literal || BLOCK.has(node.tag) || node.tag === 'li') return ' ';
 	if (node.tag === 'br') return ' '; // a hard break writes spaces, then a new line
 	if ((INLINE.has(node.tag) && !(node.tag === 'a' && !attrText(node, 'href'))) || textColorOf(node) || highlightOf(node)) return '.';
@@ -311,7 +314,7 @@ function insideMark(node) { for (let at = node.parent; at; at = at.parent) if (a
 function highlighted(node, text, colour) {
 	const core = text.trim();
 	if (!core) return text;
-	const visible = textOf(node).replace(/\s+/g, ' ');
+	const visible = htmlSpace(textOf(node));
 	const run = highlightRun(core, visible, colour, RAPIER_HIGHLIGHT_COLORS) ?? '<mark>' + core + '</mark>';
 	return text.slice(0, text.indexOf(core)) + run + text.slice(text.indexOf(core) + core.length);
 }
@@ -346,7 +349,7 @@ function inlineText(children) {
 	const queue = (children || []).slice();
 	while (queue.length) {
 		const node = queue.shift();
-		if (typeof node === 'string') { out += escapeInline(node.replace(/\s+/g, ' ')); continue; }
+		if (typeof node === 'string') { out += escapeInline(htmlSpace(node)); continue; }
 		const tag = node.tag;
 		if (node.literal) { out += renderLiteral(node); continue; }
 		if (INLINE.has(tag)) { out += renderInline(node); continue; }
@@ -415,7 +418,7 @@ function gfmTable(node) {
 	const rows = []; rowsOf(node, rows);
 	const grid = rows.map(tr => (tr.children || []).filter(c => c && typeof c === 'object' && (c.tag === 'td' || c.tag === 'th')));
 	if (!grid.length || !grid[0].length) return null;
-	const cellWords = c => cellBreaks(inlineText(c.children || [])).trim();
+	const cellWords = c => trimHtmlSpace(cellBreaks(inlineText(c.children || [])));
 	const regular = !outsideCells(node) && grid.every(r => r.length === grid[0].length) && grid.every(r => r.every(c => !hasBlock(c) && !c.attrs.rowspan && !c.attrs.colspan));
 	if (regular) {
 		const line = r => '| ' + r.map(c => cellWords(c).replace(/\|/g, '\\|')).join(' | ') + ' |';
@@ -432,9 +435,9 @@ function renderDl(node) {
 	const groups = []; let terms = [];
 	for (const child of node.children || []) {
 		if (typeof child === 'string') continue;
-		if (child.tag === 'dt') { const term = inlineText(child.children || []).trim(); if (term) terms.push(term); continue; }
+		if (child.tag === 'dt') { const term = trimHtmlSpace(inlineText(child.children || [])); if (term) terms.push(term); continue; }
 		if (child.tag !== 'dd') continue;
-		const body = blockWalk(child.children || []).join('\n\n').trim();
+		const body = trimHtmlSpace(blockWalk(child.children || []).join('\n\n'));
 		const head = terms.length ? terms.join('\n') + '\n' : '';
 		const definition = body.split('\n').map((line, i) => (i === 0 ? ': ' : '  ') + line).join('\n');
 		groups.push(head + definition); terms = [];
@@ -444,8 +447,8 @@ function renderDl(node) {
 }
 function renderDetails(node) {
 	const summaryNode = (node.children || []).find(c => typeof c !== 'string' && c.tag === 'summary');
-	const summaryText = escapeHtmlText((summaryNode ? textOf(summaryNode) : 'details').trim().replace(/\s+/g, ' ')) || 'details';
-	const body = blockWalk((node.children || []).filter(c => c !== summaryNode)).join('\n\n').trim();
+	const summaryText = escapeHtmlText(trimHtmlSpace(htmlSpace(summaryNode ? textOf(summaryNode) : 'details'))) || 'details';
+	const body = trimHtmlSpace(blockWalk((node.children || []).filter(c => c !== summaryNode)).join('\n\n'));
 	return '<details>\n<summary>' + summaryText + '</summary>\n\n' + (body ? body + '\n\n' : '') + '</details>';
 }
 
@@ -455,19 +458,19 @@ function blockWalk(nodes) {
 	let para = [];
 	const flush = () => {
 		// A <br> with nothing on one side is dropped, never an orphan '\'.
-		const text = para.join('').replace(/ *(?:  \n)/g, HARD_BREAK + '\n').replace(/^(?:  \n)+|(?:  \n)+$/g, '').trim();
+		const text = trimHtmlSpace(para.join('').replace(/ *(?:  \n)/g, HARD_BREAK + '\n').replace(/^(?:  \n)+|(?:  \n)+$/g, ''));
 		if (text) blocks.push(text.split('\n').map(protectStart).join('\n'));
 		para = [];
 	};
 	const queue = (nodes || []).slice();
 	while (queue.length) {
 		const node = queue.shift();
-		if (typeof node === 'string') { para.push(escapeInline(node.replace(/\s+/g, ' '))); continue; }
+		if (typeof node === 'string') { para.push(escapeInline(htmlSpace(node))); continue; }
 		const tag = node.tag;
 		if (node.literal) { flush(); blocks.push(renderLiteral(node)); continue; }
 		if (tag === 'br') { para.push(HARD_BREAK + '\n'); continue; }
 		if (tag === 'hr') { flush(); blocks.push(THEMATIC_BREAK); continue; }
-		if (/^h[1-6]$/.test(tag)) { flush(); const s = inlineText(node.children).trim(); if (s) blocks.push('#'.repeat(+tag[1]) + ' ' + s); continue; }
+		if (/^h[1-6]$/.test(tag)) { flush(); const s = trimHtmlSpace(inlineText(node.children)); if (s) blocks.push('#'.repeat(+tag[1]) + ' ' + s); continue; }
 		if (tag === 'p' || tag === 'div') { flush(); blocks.push(...blockWalk(node.children || [])); continue; }
 		if (tag === 'blockquote') { flush(); const inner = blockWalk(node.children || []).join('\n\n'); if (inner) blocks.push(inner.split('\n').map(l => '> ' + l).join('\n')); continue; }
 		if (tag === 'pre') { flush(); blocks.push(renderPre(node)); continue; }

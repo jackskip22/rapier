@@ -1,5 +1,6 @@
 // Simplenote's source/notes.json is authoritative over its text twins.
 // Exporter field provenance: fixtures/notes-import-x8/sources.json. Pure projection; no I/O.
+import {scanLinks} from './links.mjs';
 import {noteFileName, orderAfter} from './model.mjs';
 import {importTags, literalBlock, importMetadata, importDate, importTrash, readJsonInputs as unwrap} from './import.mjs';
 import {reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
@@ -26,7 +27,16 @@ function noteText(data) {
 	// markdown is per-note in Simplenote; absent is treated as false (plain text), the safer
 	// default -- escaping a Markdown note over-protects it, but skipping the escape on a plain one
 	// lets a person's own "* " or "#" be misread as syntax it was never meant to be.
-	const text = data.markdown === true ? raw : literalBlock(raw);
+	let text = raw;
+	if (data.markdown !== true) {
+		// Simplenote's own note links work even with Markdown disabled. Escape the prose,
+		// preserving only those actual parsed native links for the shared import link owner.
+		let at = 0; text = '';
+		for (const link of scanLinks(raw).filter(link => !link.image && /^simplenote:\/\/note\/[^/?#]+$/.test(link.dest))) {
+			text += literalBlock(raw.slice(at, link.start)) + raw.slice(link.start, link.end); at = link.end;
+		}
+		text += literalBlock(raw.slice(at));
+	}
 	return text + (text.endsWith('\n') ? '' : '\n');
 }
 
@@ -75,7 +85,7 @@ export async function importSimplenote(entries, options) {
 		const created = importDate(data.creationDate, Date.parse(data.creationDate), warnings, 'Simplenote creation date');
 		// A Simplenote tag is in the export's JSON, never in the note: it is written into the note's
 		// own metadata block, whole, while the capped names above still settle the category.
-		built.push({file, text: importTags(text, data.tags, warnings, id), entry, sourceName: input.name, rootId: input.rootId ?? '', sourceItem: id, warnings, created: Number.isFinite(created) ? created : -Infinity});
+		built.push({file, text: importTags(text, data.tags, warnings, id), entry, sourceName: input.name, rootId: input.rootId ?? '', sourceItem: id, sourceAliases: typeof data.id === 'string' && data.id ? ['simplenote://note/' + encodeURIComponent(data.id)] : [], warnings, created: Number.isFinite(created) ? created : -Infinity});
 	}
 
 	if (sources.length) {

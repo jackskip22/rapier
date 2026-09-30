@@ -205,3 +205,101 @@ export function listIsLoose(node) {
 	const items = listTag(list) === 'LI' ? [list] : listElements(list).filter(child => listTag(child) === 'LI');
 	return items.some(item => listElements(item).filter(child => LIST_BLOCKS.has(listTag(child))).length > 1);
 }
+
+// A list from Word. Word puts a list on the clipboard as ordinary paragraphs: the paragraph's style names its
+// level (`mso-list:l0 level2 lfo1`) and its bullet or number is the text of a span whose style is `mso-list:Ignore`,
+// at the paragraph's start. The paste's sanitizer empties a style of every property the browser does not know, so
+// it carries both (editor/engine.js, the paste hook of _rapierInstallSanitizeHooks) for the conversion that reads
+// them (_rapierPasteWordLists), which writes what a person would have: one list nested by level, an ordered item
+// numbered as Word numbered it, the marker and Word's spacing after it gone. Notes import does not read it yet: it
+// keeps a Word export's markup as literal source.
+
+// The level of a list paragraph, 1 and up. A style without `mso-list` is no list paragraph's; `Ignore` marks the
+// span that holds a marker and `none` a paragraph taken out of its list: 0 for all three.
+export function wordListLevel(style) {
+	const found = /(?:^|;)\s*mso-list\s*:\s*([^;]*)/i.exec(String(style || ''));
+	const value = found ? found[1].trim() : '';
+	if (!value || /^(?:ignore|none)$/i.test(value)) return 0;
+	const level = /\blevel\s*(\d+)\b/i.exec(value);
+	return level ? Math.min(Math.max(Number(level[1]), 1), 64) : 1;
+}
+
+// Whether a style is the one of the span that holds a list paragraph's marker.
+export function wordListIsMarker(style) {
+	return /(?:^|;)\s*mso-list\s*:\s*ignore\b/i.test(String(style || ''));
+}
+
+// What a marker's text says, its spacing and any direction marks dropped. A bullet has no letter or digit in it (a
+// dot, a bullet sign, a section sign, the private glyphs of Symbol and Wingdings), is empty (a picture bullet), or is
+// one letter alone (Courier's `o`, Wingdings' `l` `n` `v`: letters of a symbol font). An ordered item is digits (`1.`
+// `1)` `(1)`, and Word's `1.1.`, whose own number is the last), letters or roman numerals (`a.` `(iv)` `I.`), each with
+// its dot or bracket; a bracket, `)`, is the list's delimiter. Anything else (`Step 1:`, `Article I.`) is words Word
+// generated, and stays words: `text`. `readings` are the numbers a marker can be, by alphabet: `i.` is roman 1 or the
+// ninth letter.
+const WORD_ROMAN = /^m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$/;
+const WORD_ROMAN_VALUES = {i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000};
+export function wordListMarker(text) {
+	const marker = String(text == null ? '' : text).replace(/[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim();
+	if (!/[\p{L}\p{N}]/u.test(marker)) return {kind: 'bullet'};
+	const found = /^\(?(\d{1,9}(?:\.\d{1,9})*|[A-Za-z]+)([.)]?)$/.exec(marker);
+	const digits = !!found && /^\d/.test(found[1]);
+	if (!found || !digits && !found[2]) return Array.from(marker).length === 1 ? {kind: 'bullet'} : {kind: 'text', text: marker};
+	const delimiter = found[2] === ')' ? ')' : '.';
+	if (digits) return {kind: 'ordered', delimiter, readings: {decimal: Number(found[1].split('.').pop())}};
+	const lower = found[1].toLowerCase(), readings = {};
+	if (found[1] !== lower && found[1] !== found[1].toUpperCase()) return {kind: 'text', text: marker};
+	if (WORD_ROMAN.test(lower)) readings.roman = Array.from(lower).reduce((sum, letter, at, all) => {
+		const value = WORD_ROMAN_VALUES[letter], next = WORD_ROMAN_VALUES[all[at + 1]] || 0;
+		return sum + (value < next ? -value : value);
+	}, 0);
+	// Word counts past z by doubling: aa, bb, cc.
+	if (/^(.)\1*$/.test(lower)) readings.alpha = (lower.length - 1) * 26 + lower.charCodeAt(0) - 96;
+	return readings.roman || readings.alpha ? {kind: 'ordered', delimiter, readings} : {kind: 'text', text: marker};
+}
+
+// The number an ordered list starts at: what its markers read as in the one alphabet that counts them one by one
+// (decimal, roman or letters), the smaller start where two do (`i.` alone is 1; with `j.` after it, the ninth letter).
+function wordListStart(markers) {
+	let best = null;
+	for (const alphabet of ['decimal', 'roman', 'alpha']) {
+		const values = markers.map(marker => marker.readings[alphabet]);
+		if (values[0] == null) continue;
+		const rank = [values.every((value, at) => value === values[0] + at) ? 0 : 1, values[0]];
+		if (!best || rank[0] < best[0] || rank[0] === best[0] && rank[1] < best[1]) best = rank;
+	}
+	return best ? best[1] : 1;
+}
+
+// The lists of a run of list paragraphs. `items` are `{level, marker}` in the order they stand (`marker` as
+// wordListMarker read it). The answer is the top lists: a list is `{ordered, items}` (an ordered one also its
+// `delimiter` and the `start` its first marker gives), each of its items `{item, lists}`, the place of the paragraph
+// in `items` and the lists inside it. A deeper level opens a list inside the item above; a shallower one returns to
+// the list it left; a level Word skipped (1, then 3) is one deeper only; a run that begins below level 1 has that
+// level for its top; a change between bullets and numbers at one level is a new list beside the last.
+export function wordListTree(items) {
+	const roots = [], stack = [];
+	const open = (siblings, marker) => {
+		const list = marker.kind === 'ordered' ? {ordered: true, delimiter: marker.delimiter, start: 1, items: [], markers: []}
+			: {ordered: false, items: []};
+		siblings.push(list);
+		return list;
+	};
+	items.forEach(({level, marker}, item) => {
+		while (stack.length > 1 && level <= stack[stack.length - 2].level) stack.pop();
+		let top = stack[stack.length - 1];
+		if (!top || level > top.level) {
+			const siblings = top ? top.list.items[top.list.items.length - 1].lists : roots;
+			stack.push(top = {level, siblings, list: open(siblings, marker)});
+		} else if (top.list.ordered !== (marker.kind === 'ordered')) {
+			stack[stack.length - 1] = top = {level: top.level, siblings: top.siblings, list: open(top.siblings, marker)};
+		}
+		top.list.items.push({item, lists: []});
+		if (top.list.ordered) top.list.markers.push(marker);
+	});
+	const finish = list => {
+		if (list.ordered) { list.start = wordListStart(list.markers); delete list.markers; }
+		for (const {lists} of list.items) lists.forEach(finish);
+	};
+	roots.forEach(finish);
+	return roots;
+}

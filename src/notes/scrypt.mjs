@@ -31,7 +31,9 @@ export async function scrypt(passphrase,salt,{N=32768,r=8}={}) {
  const bytes=new Uint8Array(await pbkdf(salt,128*r*8)), view=new DataView(bytes.buffer);
  let x=new Uint32Array(words),y=new Uint32Array(words);
  const memory=new Uint32Array(N*words),block=new Uint32Array(16),scratch=new Uint32Array(16);
- const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
+ // A task turn releases the page without chaining 64 background-throttled timers.
+ const channel=typeof MessageChannel==='function'?new MessageChannel():null;
+ const pause=()=>globalThis.scheduler?.yield ? scheduler.yield() : channel ? new Promise(resolve=>{channel.port1.onmessage=resolve;channel.port2.postMessage(0);}) : new Promise(resolve=>setTimeout(resolve,0));
  try {
   for(let i=0;i<words;i++) x[i]=view.getUint32(i*4,true);
   for(let phase=0;phase<2;phase++) for(let i=0;i<N;i++) {
@@ -42,5 +44,5 @@ export async function scrypt(passphrase,salt,{N=32768,r=8}={}) {
   }
   for(let i=0;i<words;i++) view.setUint32(i*4,x[i],true);
   return new Uint8Array(await pbkdf(bytes,256));
- } finally {bytes.fill(0);x.fill(0);y.fill(0);memory.fill(0);block.fill(0);scratch.fill(0);}
+ } finally {channel?.port1.close();channel?.port2.close();bytes.fill(0);x.fill(0);y.fill(0);memory.fill(0);block.fill(0);scratch.fill(0);}
 }

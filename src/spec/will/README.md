@@ -2,9 +2,7 @@
 
 A person's word to whatever agent edits their document next, carried inside the document itself.
 
-A document is worked on by two hands: the person who holds it and a software agent beside them. The agent is
-transient; the person's wishes must travel with the document or they govern nothing. Will is how they travel:
-the person marks a region of their document `edit`, `append` or `keep`, with a line of their own words if they
+The person marks a region of their document `edit`, `append` or `keep`, with a line of their own words if they
 like, and their editor writes it invisibly into the document's own text. Whoever receives the text receives the
 will with it. No registry, no sidecar, no account.
 

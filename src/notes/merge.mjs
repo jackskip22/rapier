@@ -54,12 +54,17 @@ function textEnvelopeAt(text, start = 0) {
 	return {kind: 'text', id: header.id, start, end, block, variants};
 }
 
-export function inspectTextConflicts(text) {
+export function inspectTextConflicts(text, {nested = false} = {}) {
 	canonicalNote(text);
 	const out = []; let at = 0;
 	for (const unit of textUnits(text)) {
 		const found = textEnvelopeAt(unit);
-		if (found && found.end === unit.length) out.push({...found, start: at, end: at + unit.length});
+		if (found && found.end === unit.length) {
+			out.push({...found, start: at, end: at + unit.length});
+			// Nested offsets belong to their alternative's source; custody callers use
+			// the exact block bytes. Ordinary fenced examples remain opaque at every level.
+			if (nested) for (const variant of found.variants) out.push(...inspectTextConflicts(variant.text, {nested}));
+		}
 		at += unit.length;
 	}
 	return out;
@@ -69,7 +74,7 @@ export function mapTextConflictVariants(text, mapper) {
 	const conflicts = inspectTextConflicts(text); let out = '', at = 0;
 	for (const block of conflicts) {
 		out += text.slice(at, block.start) + textEnvelope(block.id, block.variants.map(variant => ({
-			device: variant.device, text: canonicalNote(mapper(variant.text, variant.device)),
+			device: variant.device, text: canonicalNote(mapper(mapTextConflictVariants(variant.text, mapper), variant.device)),
 		})));
 		at = block.end;
 	}

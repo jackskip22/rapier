@@ -8,18 +8,19 @@
 // must inspect every note AND the retained past of every surviving note to prove the recording is
 // unreachable (Astra R87j N02), so it also reads those notes' manifests and the history objects
 // their events name, deduplicated by content hash. Capture reads each captured
-// file; readFile reads just its target. Import Undo reads only receipt filenames; its explicit
-// history rows carry the removed originals for the shell to record after commit. Other transaction
-// results carry a listing, not a body cache.
+// file; readFile reads just its target. Import Undo reads receipt notes and surviving references,
+// then removes only unchanged, proved import-owned history/media. Deliberate Undo adds no new
+// history for those removed arrivals. Other transaction results carry a listing, not a body cache.
 import {createOwner, OWNER_JOURNAL_FILE} from './owner.mjs';
 import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, encodeSyncState} from './sync-state.mjs';
 import {createRecordings} from './recording.mjs';
 import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf} from './attachments.mjs';
 import {exactBytes, sha256, storedFileDigest, checkByteAbort} from './integrity.mjs';
-import {NOTES_INDEX_FILE, isNoteFile, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, serializeIndex, addSection} from './model.mjs';
+import {NOTES_INDEX_FILE, isNoteFile, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, serializeIndex, addSection, setCollapsed} from './model.mjs';
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
-import {importUndoReadiness, planImportUndo, recordImportUndo} from './import-receipt.mjs';
+import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
+import {importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
 import {manifestName, parseManifest, materialize} from './history.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
@@ -69,18 +70,45 @@ export async function planFolderRename({index, files, bodies}, {file, id, expect
 	if (!bodies.has(file) || index.notes[file]?.id !== id || await digest(bodies.get(file)) !== expectedDigest) throw fail('changed', 'The note changed before it could be renamed. Its words and name were kept.');
 	if (wanted === file) return {index, file, patched: 0, dropped: 0};
 	const names = files;
-	const destination = isNoteFile(wanted) && !names.some(name => name.normalize('NFC').toLowerCase() === wanted.normalize('NFC').toLowerCase()) && !(ascii && /[^\x00-\x7f]/.test(wanted)) ? wanted : noteFileName(wanted.replace(/\.md$/i, ''), names, {ascii});
+	const destination = isNoteFile(wanted) && !names.some(name => name !== file && name.normalize('NFC').toLowerCase() === wanted.normalize('NFC').toLowerCase()) && !(ascii && /[^\x00-\x7f]/.test(wanted)) ? wanted : noteFileName(wanted.replace(/\.md$/i, ''), names, {ascii});
 	if (destination === file) return {index, file, patched: 0, dropped: 0};
 	const texts = new Map();
 	for (const [name, bytes] of bodies) try { texts.set(name, decode(bytes)); } catch (_) { dropped++; }
+	const variantPatches = new Map();
+	for (const [name, text] of texts) {
+		const changed = mapTextConflictVariants(text, variant => {
+			const source = new Map([[name, variant]]), links = buildLinkIndex(source);
+			links.files = new Set(files); resolveLinkIndex(links);
+			return renameLinks(links, source, file, destination)[0]?.text ?? variant;
+		});
+		if (changed === text) continue;
+		texts.set(name, changed); variantPatches.set(name, {file: name, text: changed});
+		// An unresolved choice keeps its custody while its links follow a rename.
+		// Rebind only a descriptor that already proves the exact old alternatives.
+		const before = inspectTextConflicts(text, {nested: true}), after = inspectTextConflicts(changed, {nested: true});
+		for (let i = 0; i < before.length; i++) {
+			const blockHash = await sha256(exactBytes(before[i].block));
+			const variants = await Promise.all(before[i].variants.map(async value => ({device: value.device, content: await sha256(exactBytes(value.text))})));
+			for (const record of index.conflicts || []) if (record.path?.[0] === 'notes' && record.path[1] === index.notes[name]?.id && record.path[2] === 'text' && record.blockHash === blockHash &&
+				Array.isArray(record.variants) && record.variants.length === variants.length && record.variants.every((value, i) => value.device === variants[i].device && value.content === variants[i].content)) {
+				record.blockHash = await sha256(exactBytes(after[i].block));
+				record.variants = await Promise.all(after[i].variants.map(async value => ({device: value.device, content: await sha256(exactBytes(value.text))})));
+			}
+		}
+	}
 	// Unread names can still make a case-folded path ambiguous or shadow an alias.
 	// Resolve the selected texts against the full listing, without loading its bodies.
 	const links = buildLinkIndex(texts); links.files = new Set(files); resolveLinkIndex(links);
 	// The words land under the new name first, then every note that links to the old one is
 	// rewritten; a linking note that changed under its patch is kept as it is and reported.
-	const patches = renameLinks(links, texts, file, destination), body = bodies.get(file), writes = [{file: destination, bytes: body, createOnly: true}];
+	const patches = [...new Map([...variantPatches, ...renameLinks(links, texts, file, destination).map(patch => [patch.file, patch])]).values()];
+	// The source moves too: its self-links belong in the verified destination bytes, not
+	// in a second write to the old name that the same transaction is about to remove.
+	const self = patches.find(patch => patch.file === file), body = self ? exactBytes(self.text) : bodies.get(file);
+	const caseOnly = destination.normalize('NFC').toLowerCase() === file.normalize('NFC').toLowerCase();
+	const writes = [{file: destination, bytes: body, createOnly: true, ...(caseOnly ? {caseSource: file} : {})}];
 	for (const patch of patches) {
-		if (patch.file === file) { dropped++; continue; }
+		if (patch.file === file) continue;
 		const bytes = exactBytes(patch.text); writes.push({file: patch.file, bytes, expectedDigest: await sha256(bodies.get(patch.file)), requires: destination});
 		index.notes[patch.file].revision = 'sha256:' + await sha256(bytes); index.notes[patch.file].modified = now;
 	}
@@ -472,6 +500,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	}, {bodies: before.files}));
 	const importBatch = build => owned(async (lease, before) => {
 		const result = await build({index: copy(before.index), files: before.files.slice(), bodies: before.bodies, audioNames: await store.list('audio'), attachmentNames: await store.list('attachments'), ascii: store.ascii});
+		// An exact repeated export is a read, including the generation and durable receipt.
+		if ((result.alreadyImported || result.repeatConflict) && !result.notes?.length && !result.attachments?.length && !result.audio?.length && !result.backupFiles?.length && !result.sections?.length && !result.index) return {...before, result};
 		const names = new Set(before.files.map(n => n.toLowerCase())), writes = new Map();
 		for (const note of result.notes) {
 			if (!isNoteFile(note.file) || names.has(note.file.toLowerCase())) throw fail('collision', 'An import name is occupied. The import was not renamed behind its links.');
@@ -483,9 +513,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		// Publish objects first under this same lease, then their Markdown links. A failed
 		// later import keeps earlier copies in Saved files, never half-owned by a note.
 		const attachmentMap = new Map();
+		result.createdFiles = [];
 		for (const row of result.attachments || []) {
 			const kept = await keepAttachment(lease, row.name, row.bytes);
 			attachmentMap.set(row.name, kept.name);
+			result.createdFiles.push({file: 'attachments/' + kept.name, bytes: row.bytes});
 		}
 		for (const note of result.notes) if (!note.exactBackup) note.text = rewriteAttachmentNames(note.text, attachmentMap);
 		const audioMap = new Map(), takenAudio = await store.list('audio');
@@ -508,9 +540,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				if (!note.exactBackup) note.text = rewriteRecordingNames(note.text, audioMap);
 				if (!note.exactBackup || !writes.has(note.file)) writes.set(note.file, {file: note.file, bytes: note.exactBackup && note.bytes ? note.bytes : exactBytes(note.text), createOnly: true});
 			}
+			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));
 			return {kind: 'import', index, writes: [...writes.values()]};
 		});
+		for (const row of writes.values()) if (/^audio\//.test(row.file) && !(snapshot.dropped || []).includes(row.file)) result.createdFiles.push({file: row.file, bytes: row.bytes});
+		result.createdSections = snapshot.index.sections.filter(section => !before.index.sections.some(old => old.name === section.name));
 		return {...snapshot, result};
 	});
 	const restoreSnapshot = async entries => {
@@ -559,6 +594,50 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			} finally { await lease.release(); }
 		});
 	};
+	// Undo removes only proved import-owned history. Manifests settle before their objects and
+	// media: a late-kept manifest must still be able to own every byte it names.
+	const finishImportUndo = async (lease, before, record) => {
+		if (record.undo.cleanup || !record.createdFiles?.length && !record.createdSections?.length && !record.createdHistory?.length) return before;
+		const matches = async row => { const bytes = await store.read(row.file); return bytes != null && bytes.length === row.byteLength && await digest(bytes) === row.digest; };
+		if (!record.undo.historyCleanup && record.createdHistory?.some(row => row.file.startsWith('history/manifests/'))) {
+			const ids = new Set(record.written.filter(row => record.undo.requested.includes(row.file)).map(row => row.id)), live = new Set(Object.values(before.index.notes).map(row => row.id)), removes = [], kept = [];
+			for (const row of record.createdHistory.filter(row => row.file.startsWith('history/manifests/'))) {
+				const id = row.file.slice('history/manifests/'.length, -5).replace('!', ':');
+				if (!ids.has(id) || live.has(id) || !await matches(row)) kept.push(row.file);
+				else removes.push({file: row.file, expectedDigest: row.digest});
+			}
+			before = await lease.transact(({index}) => {
+				index.imports = index.imports.map(row => row.id === record.id ? {...row, undo: {...row.undo, historyCleanup: {requested: removes.map(row => row.file), kept}}} : row);
+				return {kind: 'import-undo-history', index, removes};
+			});
+			record = before.index.imports.find(row => row.id === record.id);
+		}
+		const refs = record.createdFiles?.length ? await scanReferences(before) : null, removes = [], kept = [], shared = new Set();
+		for (const leaf of await store.list('history/manifests')) {
+			const bytes = await store.read('history/manifests/' + leaf);
+			if (bytes == null) throw fail('changed', 'Retained history changed during import undo. Its files were kept.');
+			let manifest;
+			try { manifest = parseManifest(bytes, {noteId: leaf.replace(/\.json$/, '').replace('!', ':'), now: clock()}); }
+			catch (_) { throw fail('unreadable', 'Retained history could not be verified during import undo. Its files were kept.'); }
+			for (const [hash, object] of Object.entries(manifest.objects)) { shared.add(hash); for (const blob of object.blobs) shared.add(blob.hash); }
+		}
+		for (const row of [...(record.createdFiles || []), ...(record.createdHistory || []).filter(row => !row.file.startsWith('history/manifests/'))]) {
+			let why = !await matches(row) ? 'is absent or changed since this import' : '';
+			if (!why && row.file.startsWith('history/')) { if (shared.has(row.file.split('/').at(-1))) why = 'is retained by note history'; }
+			else if (!why) {
+				const slash = row.file.indexOf('/'), kind = row.file.startsWith('audio/') ? 'recordings' : 'attachments', uses = refs[kind].get(row.file.slice(slash + 1));
+				why = uses?.history.length ? 'is retained by note history' : uses?.live.length || uses?.trash.length ? 'is used by a remaining note' : '';
+			}
+			if (why) kept.push({file: row.file, why}); else removes.push({file: row.file, expectedDigest: row.digest});
+		}
+		return lease.transact(async ({index}) => {
+			const sections = importUndoSections(record, index), removedSections = index.sections.filter(row => !sections.includes(row)).map(row => row.name);
+			index.sections = sections;
+			index.imports = index.imports.map(row => row.id === record.id ? {...row, undo: {...row.undo, cleanup: {requested: removes.map(row => row.file), kept, sections: removedSections}}} : row);
+			for (const row of removes) if (/^(?:attachments|audio)\//.test(row.file)) index = await forgetMedia(index, row.file, row.expectedDigest);
+			return {kind: 'import-undo-files', index, removes};
+		});
+	};
 	// The stored receipt is authority, never the caller's copy or a list of filenames from the UI.
 	// Reuse the owner's journal, not Trash's separate tombstone/thumbnail collection protocol.
 	const importUndo = (receipt, {files, keep = []}, commit) => {
@@ -572,27 +651,32 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				return row;
 			};
 			let record = recorded(before.index);
-			if (record.undo) return {...before, receipt: copy(record), plan: planImportUndo(record, before.index, new Map()), result: {removed: [], kept: copy(record.undo.kept), alreadyUndone: true}, history: []};
+			if (record.undo) {
+				const snapshot = commit ? await finishImportUndo(lease, before, record) : before;
+				return {...snapshot, receipt: copy(snapshot.index.imports.find(row => row.id === id)), plan: planImportUndo(record, before.index, new Map()), result: {removed: [], kept: copy(record.undo.kept), alreadyUndone: true}, history: []};
+			}
 			const listed = new Set(before.files), names = record.written.map(row => row.file).filter(file => listed.has(file));
 			if (!commit) {
 				const snapshot = await lease.read({bodies: names}); record = recorded(snapshot.index);
 				return {...snapshot, receipt: copy(record), plan: planImportUndo(record, snapshot.index, snapshot.bodies, options)};
 			}
 			let plan, history;
-			const snapshot = await lease.transact(({index, bodies}) => {
+			let snapshot = await lease.transact(({index, bodies}) => {
 				record = recorded(index);
 				plan = planImportUndo(record, index, bodies, options);
 				if (plan.refuse) throw fail('import-undo', plan.refuse);
 				const proofs = new Map(record.written.map(row => [row.file, row]));
-				history = plan.remove.map(file => ({file, entry: copy(index.notes[file]), bytes: bodies.get(file), reason: 'import-undo'}));
+				history = []; // Explicit Undo discards unchanged arrivals; it creates no new retained version.
 				index.notes = Object.fromEntries(plan.entries);
 				index.imports = index.imports.map(row => row.id === id ? recordImportUndo(record, plan, {stamp: clock()}) : row);
 				return {kind: 'import-undo', index, removes: plan.remove.map(file => ({file, expectedDigest: proofs.get(file).digest}))};
 			}, {bodies: names});
 			const present = new Set(snapshot.files), removed = plan.remove.filter(file => !present.has(file)), deleted = new Set(removed), kept = [...plan.kept,
 				...plan.remove.filter(file => present.has(file)).map(file => ({file, why: 'changed while undo was being committed; its current words were kept'}))];
+			history = history.filter(row => deleted.has(row.file));
+			snapshot = await finishImportUndo(lease, snapshot, snapshot.index.imports.find(row => row.id === id), history);
 			return {...snapshot, receipt: copy(snapshot.index.imports.find(row => row.id === id)), plan,
-				result: {removed, kept, alreadyUndone: false}, history: history.filter(row => deleted.has(row.file))};
+				result: {removed, kept, alreadyUndone: false}, history};
 		});
 	};
 	const previewImportUndo = (receipt, options = {}) => importUndo(receipt, options, false);

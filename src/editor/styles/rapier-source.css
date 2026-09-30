@@ -1997,8 +1997,7 @@ button.settings-text-action:disabled { opacity: .6; cursor: wait; }
 	animation:rapier-command-sheet-in var(--dur-enter) var(--ease-out) both
 }
 
-html[data-format-toolbar-mode="desktop"] .command-palette__overlay{justify-content:center}
-html[data-format-toolbar-mode="desktop"] .command-palette{width:min(34rem,100%)}
+@media (min-width: 900px){.command-palette__overlay{justify-content:center}.command-palette{width:min(34rem,100%)}}
 .command-palette__header{display:flex;align-items:center;gap:8px;padding:10px 12px 8px;touch-action:pan-down}
 .command-palette__search-wrap{
 	min-width:0;flex:1;display:flex;align-items:center;gap:9px;padding:0 12px;

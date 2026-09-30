@@ -1002,7 +1002,7 @@ export function importLinkPatches(notes, fileMap) {
 				if (!link.image) unresolved.push({dest: link.dest, anchor: link.anchor, reason: 'attachment', start: link.start, end: link.end});
 				continue;
 			}
-			const targets = resolved.file ? records.filter(r => (r.sourceName || r.sourcePath) === resolved.file) : [];
+			const targets = aliasHits.length ? aliasHits : resolved.file ? records.filter(r => (r.sourceName || r.sourcePath) === resolved.file) : [];
 			if (resolved.unresolved || targets.length !== 1) {
 				unresolved.push({dest: link.dest, anchor: link.anchor, reason: resolved.unresolved || 'ambiguous', start: link.start, end: link.end});
 				continue;

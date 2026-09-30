@@ -57,11 +57,12 @@ const RAPIER_DRAW_STROKE_PRESSURE_KEEP = 0.12;
 // reached for inside a drawing, never the way one starts, so they are not remembered.
 // The width a fresh canvas starts at where none is remembered is a third over what it was, 5 in a
 // note (was 4) and 12 in the editor's Draw (was 9): the founder, 25 September 2026, "just make the
-// default size for the SVG brush a bit bigger" (docs/intent.md law 17). The width is one per drawing,
-// so the SVG Pen's starts wider with it. RAPIER_DRAW_NIB_DEFAULT (9, draw/core.mjs) stays the unit
-// every width is drawn by: a stroke keeps its own nib, so nothing drawn before changes.
+// default size for the SVG brush a bit bigger" (docs/intent.md law 17). The pen's width is one for the
+// SVG Brush and the SVG Pen alike, so the Pen's starts wider with it. RAPIER_DRAW_NIB_DEFAULT (9, draw/core.mjs)
+// stays the unit every width is drawn by: a stroke keeps its own nib, so nothing drawn before changes, and
+// the Width control with nothing selected sets only the pen (_rapierDrawSetSetting).
 const RAPIER_DRAW_NOTES_TOOLS = ['pen', 'brush', 'paint'], RAPIER_DRAW_NOTES_NIB = 5, RAPIER_DRAW_FRESH_NIB = 12;
-// Device preferences share IO; OpenSurface decides when recipe-owned values take precedence.
+// Device preferences share IO: they are the pen a drawing opens with (_rapierDrawOpenSurface); a recipe's own values are what its shapes carry.
 const RAPIER_DRAW_MEMORY = {
 	smooth: ['rapier:draw.smooth', RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawSmoothLevel],
 	nib: ['rapier:draw.nib', RAPIER_DRAW_FRESH_NIB, _rapierDrawNibLevel],
@@ -944,8 +945,6 @@ function _rapierDrawRenderShapes(onlyIds) {
 				if (!prior) throw error;
 				state.recipe = _rapierDrawRestoreRecipe(prior.snapshot); state.undoStack = prior.undo; state.redoStack = prior.redo;
 				state.settingEdit = null;
-				state.nib = _rapierDrawNibLevel(state.recipe.nib ?? RAPIER_DRAW_NIB_DEFAULT);
-				state.smooth = _rapierDrawSmoothLevel(state.recipe.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT);
 				_rapierDrawSetSelection([]);
 			}
 		}
@@ -1060,8 +1059,6 @@ function _rapierDrawUndo(redo = false) {
 	// The window follows the shapes, both ways: the same shift the growth added is taken off going
 	// back and put on again going forward, so the drawing never moves on the screen for either.
 	if (prior.shift) { const v = _rapierDrawView(), s = redo ? 1 : -1; v.x += s * prior.shift.dx; v.y += s * prior.shift.dy; }
-	state.nib = _rapierDrawNibLevel(state.recipe.nib ?? RAPIER_DRAW_NIB_DEFAULT);
-	state.smooth = _rapierDrawSmoothLevel(state.recipe.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT);
 	const live = new Set(state.recipe.shapes.map(shape => shape.id)), ids = prior.delta ? (redo ? prior.redoSelection : prior.selection) : prior.selection;
 	_rapierDrawSetSelection(state.tool === 'select' ? (ids || []).filter(id => live.has(id)) : []); _rapierDrawRenderAll();
 	if (typeof _rapierPaintSyncPaper === 'function') _rapierPaintSyncPaper();
@@ -2708,15 +2705,17 @@ function _rapierDrawSyncSetting(which) {
 		row.querySelector('label').textContent = 'Size · Brush';
 		return;
 	}
-	const shapes = _rapierDrawSelectedShapes(), normalize = which === 'nib' ? _rapierDrawNibLevel : _rapierDrawSmoothLevel;
-	const level = normalize(shapes[0]?.[which] ?? _rapierDrawState.recipe?.[which] ?? _rapierDrawState[which]);
-	const mixed = shapes.some(shape => normalize(shape[which] ?? _rapierDrawState.recipe?.[which] ?? _rapierDrawState[which]) !== level);
+	// With shapes selected the row reads and sets theirs; with none it is the pen's own, what the next mark takes.
+	const state = _rapierDrawState, shapes = _rapierDrawSelectedShapes(), normalize = which === 'nib' ? _rapierDrawNibLevel : _rapierDrawSmoothLevel;
+	const shown = shape => normalize(shape[which] ?? state.recipe?.[which] ?? state[which]);
+	const level = shapes.length ? shown(shapes[0]) : normalize(state[which]);
+	const mixed = shapes.some(shape => shown(shape) !== level);
 	const input = row.querySelector('input'), word = row.querySelector('output');
 	if (which === 'nib') { input.min = String(RAPIER_DRAW_NIB_MIN); input.max = String(RAPIER_DRAW_NIB_MAX); }
-	input.value = String(level);
+	input.value = String(level); _rapierDrawSeekSync(input);
 	word.textContent = mixed ? 'Mixed' : which === 'nib' ? String(level) : _rapierDrawSmoothWord(level);
 	input.setAttribute('aria-valuetext', word.textContent);
-	row.querySelector('label').textContent = (which === 'nib' ? 'Width' : 'Smooth') + (shapes.length ? ' · ' + (shapes.length === 1 ? 'Shape' : shapes.length) : ' · All');
+	row.querySelector('label').textContent = (which === 'nib' ? 'Width' : 'Smooth') + (shapes.length ? ' · ' + (shapes.length === 1 ? 'Shape' : shapes.length) : '');
 }
 // Geoffrey's seek control, the one slider design in Draw (the founder: the now-playing playback
 // indicator, "a white line with a hollow circle overlayed cutting out of it and when you tap the
@@ -2786,23 +2785,26 @@ function _rapierDrawSeekSync(input) {
 }
 function _rapierDrawSyncNibRow() { _rapierDrawSyncSetting('nib'); }
 function _rapierDrawSyncSmoothRow() { _rapierDrawSyncSetting('smooth'); }
+// The Width and Smooth rows have two scopes and nothing between them (the founder, 30 September 2026: "You should only
+// be changing existing lines using the select tool"). With shapes selected the row sets those shapes' own value, one
+// Undo step for a drag. With nothing selected it sets the pen -- what the next mark takes, as the colour beside it does --
+// and touches nothing drawn: every stroke keeps the width and smoothing it was drawn with, and the recipe and the history
+// are exactly as they were, so there is nothing for Undo to take back. The pen is the person's (a remembered preference,
+// _rapierDrawOpenSurface): a selection edit leaves it alone too.
 function _rapierDrawSetSetting(which, value) {
 	if (which === 'nib' && _rapierDrawTool() === 'paint') { _rapierPaintSetSize(value); _rapierDrawSyncSetting('nib'); return; }
 	const n = (which === 'nib' ? _rapierDrawNibLevel : _rapierDrawSmoothLevel)(value);
 	const state = _rapierDrawState, recipe = state.recipe, shapes = _rapierDrawSelectedShapes();
-	const ids = new Set(_rapierDrawGroupSelection(recipe, (shapes.length ? shapes : recipe.shapes).map(shape => shape.id)));
-	const changed = recipe.shapes.some(shape => ids.has(shape.id) && (shape[which] ?? recipe[which] ?? state[which]) !== n) || !shapes.length && recipe[which] !== n;
+	if (!shapes.length) {
+		if (state[which] !== n) { state[which] = n; _rapierDrawRemember(which === 'nib' && state.notes ? 'notesNib' : which, n); }
+		_rapierDrawSyncSetting(which);
+		return;
+	}
+	const ids = new Set(_rapierDrawGroupSelection(recipe, shapes.map(shape => shape.id)));
+	const changed = recipe.shapes.some(shape => ids.has(shape.id) && (shape[which] ?? recipe[which] ?? state[which]) !== n);
 	if (!changed) { _rapierDrawSyncSetting(which); return; }
 	const edit = state.settingEdit;
-	if (_rapierDrawCommand(() => {
-		const recipe = state.recipe;
-		if (shapes.length) { for (const shape of recipe.shapes) if (ids.has(shape.id)) shape[which] = n; }
-		else { for (const shape of recipe.shapes) { if (!ids.has(shape.id)) shape[which] = shape[which] ?? recipe[which] ?? state[which]; else delete shape[which]; } recipe[which] = n; }
-	}, !edit?.changed, false)) {
-		if (edit) edit.changed = true;
-		state[which] = n;
-		if (!shapes.length) _rapierDrawRemember(which === 'nib' && state.notes ? 'notesNib' : which, n);
-	}
+	if (_rapierDrawCommand(() => { for (const shape of state.recipe.shapes) if (ids.has(shape.id)) shape[which] = n; }, !edit?.changed, false) && edit) edit.changed = true;
 	_rapierDrawSyncSetting(which);
 }
 
@@ -3487,11 +3489,17 @@ function _rapierDrawUpdateMenu() {
 		}
 		html += '</span>';
 	}
-	// A press re-renders the menu under the focus: the same control, or the pane's tab it opened, takes it back.
-	const had = menu.contains(document.activeElement) ? document.activeElement.dataset.drawMenuAct : '', value = had ? document.activeElement.dataset.drawValue || '' : '';
-	menu.innerHTML = html; menu.hidden = false; menu.classList.toggle('rapier-draw-menu--sheet', sheet);
-	if (had) (menu.querySelector('[data-draw-menu-act="' + had + '"][data-draw-value="' + CSS.escape(value) + '"]') || menu.querySelector('[data-draw-menu-act="' + had + '"]'))?.focus({ preventScroll: true });
-	for (const input of menu.querySelectorAll('input[type="range"]')) _rapierDrawSeekWrap(input); _rapierDrawPlaceMenu(_rapierDrawSelectionScreenBox());
+	// The menu is written only when what it says has changed. A press is a button going down and up, and a tap counts only if
+	// it is the same node at both ends (_rapierDrawBindTap): a slider losing focus to that very press re-rendered the menu
+	// between them, so with a mouse the first click on the menu after the Width slider was lost.
+	if (menu.hidden || state.menuHtml !== html) {
+		// A press re-renders the menu under the focus: the same control, or the pane's tab it opened, takes it back.
+		const had = menu.contains(document.activeElement) ? document.activeElement.dataset.drawMenuAct : '', value = had ? document.activeElement.dataset.drawValue || '' : '';
+		menu.innerHTML = html; menu.hidden = false; menu.classList.toggle('rapier-draw-menu--sheet', sheet); state.menuHtml = html;
+		if (had) (menu.querySelector('[data-draw-menu-act="' + had + '"][data-draw-value="' + CSS.escape(value) + '"]') || menu.querySelector('[data-draw-menu-act="' + had + '"]'))?.focus({ preventScroll: true });
+		for (const input of menu.querySelectorAll('input[type="range"]')) _rapierDrawSeekWrap(input);
+	}
+	_rapierDrawPlaceMenu(_rapierDrawSelectionScreenBox());
 }
 function _rapierDrawPlaceMenu(box) {
 	const state = _rapierDrawState, menu = state.menu;
@@ -4169,6 +4177,10 @@ function _rapierDrawOnPointerDown(evt) {
 	// ZA3 F3: the colour sampler owns the canvas while it is open -- a drag meant to sample must
 	// never also move or delete the selected painting, or begin a stroke of its own.
 	if (state.dropper) return;
+	// A press on the canvas is the canvas taking the focus. The press keeps the pointer from the page (preventDefault above stops the
+	// mouse events that would move the focus), so the focus stayed on the toolbar button or slider last used, and the keyboard -- Delete,
+	// the arrows, Ctrl+D, Enter, a letter to begin a text -- was ignored (a button owns its own keys). A handle keeps its own focus.
+	if (state.surface && document.activeElement !== state.surface && !document.activeElement?.closest?.('textarea') && !evt.target.closest?.('[data-draw-handle]')) state.surface.focus({ preventScroll: true });
 	// Nobody is ever trapped watching an animation, and nobody waits to start their own stroke: a
 	// tap anywhere on the canvas jumps the agent's replay to its end, and a finger that carries on
 	// into a stroke has already ended it by the time the stroke begins. Their hand wins, always.
@@ -4617,6 +4629,10 @@ function _rapierDrawPasteRecipe(incoming) {
 	for (const shape of incoming.shapes) {
 		_rapierDrawTranslateShape(shape, incoming, dx, dy);
 		shape.id = ids.get(shape.id); delete shape.locked;
+		// A shape without a width or smoothing of its own is drawn with its drawing's: pasted, it keeps the ones it was drawn with, not the destination's.
+		const nib = _rapierDrawShapeNib(shape, incoming), smooth = _rapierDrawSmoothLevel(shape.smooth ?? incoming.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT);
+		if (shape.nib == null && nib !== state.recipe.nib) shape.nib = nib;
+		if (shape.smooth == null && smooth !== state.recipe.smooth) shape.smooth = smooth;
 		if (shape.group) {
 			if (!groups.has(shape.group)) { let id; do { id = 'g' + _rapierDrawNextId(); } while (used.has(id)); used.add(id); groups.set(shape.group, id); }
 			shape.group = groups.get(shape.group);
@@ -5101,6 +5117,20 @@ function _rapierDrawBuildSurface() {
 		// ZA3 F3: the sampler owns the keyboard while it is open -- every key but its own Escape is
 		// left alone, and Escape dismisses only the sampler, never the drawing underneath it.
 		if (state.dropper) { if (evt.key === 'Escape') { evt.preventDefault(); state.dropper.close(false); } return; }
+		// Undo, Redo and Select all are Draw's wherever the focus is but in the words being typed: a click on a toolbar button or a drag
+		// on a slider leaves the focus there, and Ctrl+Z did nothing (a button owns its Enter and Space, a slider its arrows; neither owns the chord).
+		if ((evt.ctrlKey || evt.metaKey) && !state.finishing && !evt.target.closest('textarea') && ['z', 'y'].includes(evt.key.toLowerCase())) { evt.preventDefault(); _rapierDrawUndo(evt.shiftKey || evt.key.toLowerCase() === 'y'); return; }
+		if ((evt.ctrlKey || evt.metaKey) && !state.finishing && !evt.target.closest('textarea') && evt.key.toLowerCase() === 'a') {
+			evt.preventDefault();
+			const session = state.session;
+			await _rapierDrawSetTool('select');
+			if (!state.open || state.session !== session || _rapierDrawTool() !== 'select') return;
+			// The tool switch can hide the very button that had the focus, and the keys after this chord (Delete, the arrows) need a focus to reach.
+			if (!surface.contains(document.activeElement)) surface.focus({ preventScroll: true });
+			_rapierDrawSetSelection(_rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id))); _rapierDrawRenderAll(); return;
+		}
+		// Delete and Backspace belong to no button and no slider: with a selection they remove it wherever the focus is but in the words being typed.
+		if ((evt.key === 'Delete' || evt.key === 'Backspace') && !state.finishing && !evt.target.closest('textarea,select') && _rapierDrawTool() === 'select' && _rapierDrawSelection().length && !_rapierDrawSelectionLocked()) { evt.preventDefault(); _rapierDrawEditSelection({ type: 'delete' }); return; }
 		// Choice buttons keep native Enter/Space and arrow-key scrolling; canvas shortcuts must
 		// not open a label editor or move the drawing while a property control owns focus.
 		if (evt.target.closest('input,textarea,select,[data-draw-menu-act="property"]') || state.finishing) return;
@@ -5119,14 +5149,6 @@ function _rapierDrawBuildSurface() {
 		if (evt.target.closest('.rapier-draw-dip-pad')) return;
 		// A toolbar control owns its native activation. Handles still own canvas movement.
 		if (evt.target.closest('button,a[href],[role="button"]') && !evt.target.closest('[data-draw-handle]')) return;
-		if ((evt.ctrlKey || evt.metaKey) && ['z', 'y'].includes(evt.key.toLowerCase())) { evt.preventDefault(); _rapierDrawUndo(evt.shiftKey || evt.key.toLowerCase() === 'y'); return; }
-		if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'a') {
-			evt.preventDefault();
-			const session = state.session;
-			await _rapierDrawSetTool('select');
-			if (!state.open || state.session !== session || _rapierDrawTool() !== 'select') return;
-			_rapierDrawSetSelection(_rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id))); _rapierDrawRenderAll(); return;
-		}
 		if (_rapierDrawTool() !== 'select') return;
 		if ((evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'd') { evt.preventDefault(); _rapierDrawEditSelection({ type: 'duplicate' }); return; }
 		if (evt.key === 'Enter' && _rapierDrawSelection().length === 1) { evt.preventDefault(); _rapierDrawEditLabelInPlace(_rapierDrawSelectedShapes()[0]); return; }
@@ -5174,9 +5196,13 @@ function _rapierDrawOpenSurface(options) {
 	if (state.backupTimer) { clearTimeout(state.backupTimer); state.backupTimer = 0; }
 	state.backupDirty = false;
 	state.seq = recipe.shapes.reduce((max, shape) => { const n = /^s\d+$/.test(shape.id) ? Number(shape.id.slice(1)) : 0; return Number.isSafeInteger(n) && n < Number.MAX_SAFE_INTEGER - 4096 ? Math.max(max, n) : max; }, 0);
-	state.smooth = _rapierDrawSmoothLevel(recipe.smooth ?? (opts.recipe ? RAPIER_DRAW_SMOOTH_DEFAULT : _rapierDrawRemembered('smooth')));
-	state.nib = _rapierDrawNibLevel(recipe.nib ?? (opts.recipe ? RAPIER_DRAW_NIB_DEFAULT : _rapierDrawRemembered(opts.notes ? 'notesNib' : 'nib')));
-	recipe.smooth = state.smooth; recipe.nib = state.nib;
+	// The pen -- the width and smoothing the next mark takes -- is the person's, remembered on this device (or the note's own in
+	// Notes), and a drawing opens with it whichever drawing it is: what a stroke was drawn with is its own (`shape.nib`,
+	// `shape.smooth`), never the pen's, so nothing already drawn follows it. The recipe's own `nib` and `smooth` are what a
+	// shape that carries none is drawn with (a fresh canvas records the pen's; a recipe written without them keeps the defaults it was drawn at).
+	state.smooth = _rapierDrawSmoothLevel(_rapierDrawRemembered('smooth'));
+	state.nib = _rapierDrawNibLevel(_rapierDrawRemembered(opts.notes ? 'notesNib' : 'nib'));
+	recipe.smooth ??= opts.recipe ? RAPIER_DRAW_SMOOTH_DEFAULT : state.smooth; recipe.nib ??= opts.recipe ? RAPIER_DRAW_NIB_DEFAULT : state.nib;
 	state.editing = opts.editing || null; state.insertTarget = opts.target || null; state.notes = opts.notes || null;
 	// A29 item 12 (open-work.md "R86s, closed", item 1): a NEW drawing opens in Paint -- the thing the
 	// product is for, under the words the founder wrote for it (law 8). Re-opening an EXISTING

@@ -381,6 +381,12 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 						stages.add(row.stage);
 						if (exact.phase === 'ready') await stagedBytes(row);
 						writes.push(row);
+					} else if (row.caseSource !== undefined) {
+						fileName(row.caseSource);
+						if (journal.kind !== 'rename' || !isNoteFile(row.file) || row.caseSource === row.file || row.caseSource.normalize('NFC').toLowerCase() !== row.file.normalize('NFC').toLowerCase() ||
+							!/^[a-f0-9]{64}$/.test(row.digest) || row.stage !== '.rapier-rename-stage-' + row.digest + '.tmp' || row.before !== null || row.data !== undefined || !Number.isSafeInteger(row.size) || row.size < 0 || !/^[a-f0-9]{64}$/.test(row.sourceDigest))
+							throw fail('corrupt', 'The staged case-only rename is unreadable; its bytes were kept.');
+						writes.push({...row, bytes: await stagedBytes(row)});
 					} else if (syncStateFile(row.file)) {
 						if (!/^\.rapier-sync-stage-[a-f0-9]{64}\.tmp$/.test(row.stage) || row.data !== undefined || !Number.isSafeInteger(row.size) || row.size < 0)
 							throw fail('corrupt', 'The staged sync checkpoint is unreadable; no local work was replaced.');
@@ -422,6 +428,10 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				}
 				for (const row of journal.removes) { fileName(row.file); if (seen.has(row.file) || isNoteFile(row.file) && own(journal.after.notes, row.file) || !/^[0-9a-f]{64}$/.test(row.digest)) throw fail('corrupt', 'The pending removal is not readable.'); seen.add(row.file); }
 				const byFile = new Map(writes.map(row => [row.file, row]));
+				const caseMoves = writes.filter(row => row.caseSource !== undefined);
+				for (const row of caseMoves) if (!journal.removes.some(remove => remove.file === row.caseSource && remove.digest === row.sourceDigest && remove.requires === row.file) ||
+					index.notes[row.caseSource]?.id !== journal.after.notes[row.file]?.id || typeof index.notes[row.caseSource]?.id !== 'string')
+					throw fail('corrupt', 'The staged rename does not prove the original note identity.');
 				for (const row of [...writes, ...journal.removes]) if (row.requires !== undefined &&
 					(!byFile.has(row.requires) || byFile.get(row.requires).requires !== undefined || row.requires === row.file)) throw fail('corrupt', 'A pending file operation has no independent prerequisite write.');
 				// drop replaces entries; retain only written entries for a possible kept copy. The
@@ -454,12 +464,33 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					return false;
 				};
 				for (const row of writes) {
+					if (row.caseSource !== undefined) continue;
 					const digest = await digestOf(await readBytes(row.file));
 					if (digest !== row.before && digest !== row.digest) drop(row.file, digest);
 				}
-				for (const row of journal.removes) { const digest = await removalDigest(row.file); if (digest != null && digest !== row.digest) drop(row.file, digest); }
+				for (const row of journal.removes) { if (caseMoves.some(move => move.caseSource === row.file)) continue; const digest = await removalDigest(row.file); if (digest != null && digest !== row.digest) drop(row.file, digest); }
+				for (const row of caseMoves) {
+					// A case-insensitive store cannot hold both spellings. The verified stage is
+					// custody before removing the old path; the same journal finishes the hop.
+					const aliases = (await store.list()).filter(name => name.normalize('NFC').toLowerCase() === row.file.normalize('NFC').toLowerCase());
+					if (aliases.length > 1 || aliases.length === 1 && ![row.caseSource, row.file].includes(aliases[0])) throw fail('changed', 'The rename destination changed. Its bytes and the staged note were kept.');
+					if (aliases[0] === row.file) {
+						if (await digestOf(await readBytes(row.file)) !== row.digest) throw fail('changed', 'The rename destination changed. Its bytes and the staged note were kept.');
+						continue;
+					}
+					// Never remove a source unless the independent stage still proves all bytes.
+					const stage = await readBytes(row.stage);
+					if (await digestOf(stage) !== row.digest) throw fail('corrupt', 'The staged note could not be verified. The original note was kept.');
+					if (aliases[0] === row.caseSource) {
+						if (await digestOf(await readBytes(row.caseSource)) !== row.sourceDigest) throw fail('changed', 'The rename source changed. Its bytes and the staged note were kept.');
+						await store.remove(row.caseSource);
+						if ((await store.list()).some(name => name.normalize('NFC').toLowerCase() === row.file.normalize('NFC').toLowerCase())) throw fail('changed', 'The rename source could not be removed. The staged note was kept.');
+					}
+					if (await readBytes(row.file) !== null) throw fail('changed', 'The rename destination arrived during its move. Both copies were kept.');
+					await writeVerified(row.file, stage, row.digest);
+				}
 				for (const row of writes) {
-					if (syncStateFile(row.file)) continue; // Checkpoint follows every admitted write AND removal.
+					if (syncStateFile(row.file) || row.caseSource !== undefined) continue; // Checkpoint follows every admitted write AND removal.
 					if (dropped.includes(row.file) || !await ready(row)) continue;
 					const digest = await digestOf(await readBytes(row.file));
 					if (digest !== row.digest) {
@@ -493,6 +524,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					return exactIndexAfter;
 				}
 				for (const row of journal.removes) {
+					if (caseMoves.some(move => move.caseSource === row.file)) continue;
 					if (dropped.includes(row.file) || !await ready(row)) continue;
 					const digest = await removalDigest(row.file);
 					if (digest != null && digest !== row.digest) { drop(row.file, digest); continue; }
@@ -560,6 +592,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				index = fixed.index;
 				const published = await publish(index, [...[...journal.writes, ...journal.removes].map(row => row.file), ...kept.map(row => row.name), ...fixed.added, ...fixed.dropped], journal.kind || 'recovery', !!ours, journal);
 				index = published.index; dirty = published.notice; lastDropped = dropped; lastKept = kept;
+				for (const row of caseMoves) try { const bytes = await readBytes(row.stage); if (bytes && await digestOf(bytes) === row.digest) await store.remove(row.stage); } catch (_) {}
 				for (const row of writes.filter(row => syncStateFile(row.file))) for (const stage of new Set([row.stage, row.priorStage].filter(Boolean))) {
 					// Staging is inert and excluded from backups. Cleanup cannot undo a saved commit.
 					try { const bytes = await readBytes(stage); if (bytes && await digestOf(bytes) === stage.slice('.rapier-sync-stage-'.length, -4)) await store.remove(stage); } catch (_) {}
@@ -623,17 +656,28 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				fileName(row.file, restoring); if (seen.has(row.file)) throw fail('plan', 'A transaction names one file twice.'); seen.add(row.file);
 				if (restoring && store.ascii && /[^\x00-\x7f]/.test(row.file)) throw fail('name', 'This folder cannot keep the exact backup filename: ' + row.file + '. Nothing was restored.');
 				const createOnly = restoring || row.createOnly || plan.kind === 'import' && row.replace !== true;
+				const caseSource = row.caseSource, caseMove = caseSource !== undefined;
+				if (caseMove && (plan.kind !== 'rename' || !isNoteFile(row.file) || !isNoteFile(caseSource) || caseSource === row.file ||
+					caseSource.normalize('NFC').toLowerCase() !== row.file.normalize('NFC').toLowerCase() || !present.has(caseSource) || present.has(row.file)))
+					throw fail('plan', 'A case-only rename needs the exact original spelling and a free destination.');
 				if (createOnly && present.has(row.file)) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
 				const bytes = restoring ? null : exactBytes(row.bytes ?? row.text), previous = await readBytes(row.file);
 				// The listing rules out existing notes without reading them. A fresh read also
 				// catches an unlisted arrival or media collision, and supplies the journal proof.
-				if (createOnly && previous != null) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
+				if (createOnly && previous != null && !caseMove) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
 				const previousDigest = await digestOf(previous);
 				if (row.expectedDigest !== undefined && row.expectedDigest !== previousDigest) throw fail('changed', 'The note changed since this edit was prepared.');
 				if (restoring) {
 					if (!Number.isSafeInteger(row.size) || row.size < 0 || !/^[0-9a-f]{64}$/.test(row.digest) || typeof row.read !== 'function' || row.requires !== undefined) throw fail('plan', 'Exact restore needs a verified source for each whole file.');
 					writes.push({file: row.file, size: row.size, digest: row.digest, before: null});
 					sources.set(row.file, row.read);
+				} else if (caseMove) {
+					const sourceDigest = await digestOf(await readBytes(caseSource)), removal = (plan.removes || []).find(remove => remove.file === caseSource);
+					if (sourceDigest === null || previousDigest !== null && previousDigest !== sourceDigest || removal?.expectedDigest !== sourceDigest || removal.requires !== row.file || before.index.notes[caseSource]?.id !== after.notes[row.file]?.id)
+						throw fail('changed', 'The case-only rename no longer proves its source. Both copies were kept.');
+					const digest = await sha256(bytes), stage = '.rapier-rename-stage-' + digest + '.tmp';
+					await writeVerified(stage, bytes, digest);
+					writes.push({file: row.file, caseSource, sourceDigest, stage, size: bytes.length, digest, before: null});
 				} else if (syncStateFile(row.file)) {
 					const digest = await sha256(bytes), stage = '.rapier-sync-stage-' + digest + '.tmp';
 					// The checkpoint stays out of notes.json even while a transaction is pending.

@@ -92,7 +92,10 @@ const _rapierNotesSyncUi = (() => {
 	}
 	function close() {
 		view++;
-		if (setup || !status().hasConnection || mode() === 'r2-key' && !status().credentialStored) void session?.cancelSetup?.();
+		if (setup || !status().hasConnection || mode() === 'r2-key' && !status().credentialStored) {
+			void session?.cancelSetup?.().then(state => { if (state.revocationPending) showToast(state.notice, 'error'); })
+				.catch(error => showToast(String(error?.message || error), 'error'));
+		}
 		visible = false; recovery = null; conflicts = null; setup = null; joinCode = ''; replacing = false; message = '';
 		clearBody(); if (overlay) closeDialog(overlay); wearBox();
 	}

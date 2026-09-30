@@ -26,7 +26,7 @@ import {readImportText, reportCharacterChange, finishImportCharacters, literalIm
 // across "prefix" (ustar) and "name" and rejoined with a slash.
 function readTar(bytes) {
 	bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-	const dec = new TextDecoder(), out = [];
+	const dec = new TextDecoder(), out = [], names = new Set();
 	const str = (off, len, warnings) => { let end = off; while (end < off + len && bytes[end] !== 0) end++; const part = bytes.subarray(off, end); return warnings ? readImportText({bytes: part}, warnings, 'JEX member name') : dec.decode(part); };
 	const octal = (off, len) => {
 		const s = str(off, len).trim();
@@ -46,6 +46,12 @@ function readTar(bytes) {
 		const characterWarnings = [], name = str(off, 100, characterWarnings), prefix = str(off + 345, 155, characterWarnings);
 		const size = octal(off + 124, 12), typeflag = String.fromCharCode(bytes[off + 156] || 0);
 		const full = prefix ? prefix + '/' + name : name;
+		// A JEX is a flat collection of exported records and resources, never a filesystem
+		// command. Reject the whole container before any earlier member can become a plan.
+		if (!full || /[\0\r\n]/.test(full) || /^(?:[\\/]|[a-z]:)/i.test(full) || full.replace(/\\/g, '/').split('/').includes('..')) throw new Error('unsafe JEX member path: ' + full);
+		if (!['0', '\0', '5'].includes(typeflag)) throw new Error('unsupported JEX member type: ' + full);
+		if (names.has(full)) throw new Error('duplicate JEX member path: ' + full);
+		names.add(full);
 		off += 512;
 		if (size > bytes.length - off) throw new Error('truncated TAR payload: ' + full);
 		if (full && !full.endsWith('/') && (typeflag === '0' || typeflag === '\0' || typeflag === '')) out.push({name: full, bytes: bytes.slice(off, off + size), characterWarnings});

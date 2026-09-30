@@ -1,12 +1,15 @@
 // Plans are not saves. Only body read-back plus the committed identity can enter `written`.
 import {exactBytes, sha256 as digestBytes, sha256State} from './integrity.mjs';
-import {isNoteFile, projectCard} from './model.mjs';
+import {isNoteFile, isAttachmentName, projectCard} from './model.mjs';
+import {validRecordingName} from './audio.mjs';
 import {finishImportCharacters} from './import-characters.mjs';
 import {missingRecordingPaths} from './import-attachments.mjs';
 import {resolveAssetPath} from './links.mjs';
 const copy = value => JSON.parse(JSON.stringify(value));
 const list = value => Array.isArray(value) ? value : [];
 const bytesOf = value => exactBytes(value ?? '');
+const historyFile = value => typeof value === 'string' && /^history\/(?:manifests\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}![1-9][0-9]*\.json|(?:texts|blobs)\/[a-f0-9]{64})$/.test(value);
+const importedFile = value => typeof value === 'string' && (value.startsWith('attachments/') && isAttachmentName(value.slice(12)) || value.startsWith('audio/') && validRecordingName(value.slice(6)));
 const sha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export const IMPORT_RECEIPT_LIMIT = 5;
 const metadata = rows => list(rows).map(row => {
@@ -115,7 +118,7 @@ export function createImportReceipt(result, {stamp = null, id = null} = {}) {
 			title: typeof note.text === 'string' ? projectCard('', note.text).title : '',
 			warnings: copy(list(note.warnings).filter(row => !fieldRow(row) && !databaseRow(row))), unresolvedLinks: copy(list(note.unresolvedLinks)),
 			unresolvedPictures: copy(list(note.unresolvedPictures))})),
-		plannedFiles: list(result.notes).map(note => note.file), written: [], sections: []};
+		plannedFiles: list(result.notes).map(note => note.file), written: [], sections: [], createdFiles: [], createdHistory: [], createdSections: []};
 	const unapplied = unappliedFields(list(result.notes));
 	if (unapplied.length) out.unapplied = unapplied;
 	const warnings = foldedImportWarnings(result);
@@ -132,6 +135,36 @@ export async function prepareImportWrite(receipt, note, {entry = note.entry, cre
 
 export async function verifyImportWrite(receipt, note, observed, {digest = digestBytes} = {}) {
 	return recordWrite(receipt, note, observed, {digest});
+}
+
+// File creation is proved separately from note publication. A filename in the plan is never
+// permission to collect it: only a read-back of the newly created bytes earns this inverse.
+export async function verifyImportFile(receipt, file, expected, actual) {
+	if (!['planned', 'writing'].includes(receipt.status) || !importedFile(file)) throw new Error('invalid imported file proof');
+	const wanted = bytesOf(expected), got = bytesOf(actual);
+	if (wanted.length !== got.length || wanted.some((byte, i) => byte !== got[i])) throw new Error('import file read-back differs: ' + file);
+	if (list(receipt.createdFiles).some(row => row.file === file)) throw new Error('import file was already recorded');
+	return {...copy(receipt), createdFiles: [...copy(list(receipt.createdFiles)), {file, byteLength: got.length, digest: await digestBytes(got)}]};
+}
+
+// The arrival writer supplies only paths that were absent under its history lease. The receipt
+// keeps their read-back proof; an existing immutable shared object earns no deletion authority.
+export async function verifyImportHistory(receipt, rows) {
+	const out = copy(receipt), found = new Set(list(out.createdHistory).map(row => row.file));
+	out.createdHistory ||= [];
+	for (const row of rows) {
+		if (!['planned', 'writing'].includes(out.status) || !historyFile(row.file) || found.has(row.file)) throw new Error('invalid imported history proof');
+		const bytes = bytesOf(row.bytes), actual = bytesOf(row.actual);
+		if (bytes.length !== actual.length || bytes.some((byte, i) => byte !== actual[i])) throw new Error('import history read-back differs: ' + row.file);
+		out.createdHistory.push({file: row.file, byteLength: actual.length, digest: await digestBytes(actual)}); found.add(row.file);
+	}
+	return out;
+}
+
+export function recordImportSections(receipt, sections) {
+	const found = new Map(list(receipt.createdSections).map(row => [row.name, row]));
+	for (const section of sections) if (!found.has(section.name)) found.set(section.name, copy(section));
+	return {...copy(receipt), createdSections: [...found.values()]};
 }
 
 async function recordWrite(receipt, note, observed, {digest}) {
@@ -229,6 +262,25 @@ function receiptProblem(receipt) {
 		}
 	}
 	if (groupedWarningProblem(receipt)) return 'this import record is incomplete';
+	if (receipt.createdFiles !== undefined) {
+		if (!Array.isArray(receipt.createdFiles)) return 'this import record is incomplete';
+		const names = new Set();
+		for (const row of receipt.createdFiles) {
+			if (!object(row) || !importedFile(row.file) || names.has(row.file)
+				|| !sha256(row.digest) || !Number.isSafeInteger(row.byteLength) || row.byteLength < 0) return 'this import record is incomplete';
+			names.add(row.file);
+		}
+	}
+	if (receipt.createdHistory !== undefined) {
+		if (!Array.isArray(receipt.createdHistory)) return 'this import record is incomplete';
+		const seen = new Set();
+		for (const row of receipt.createdHistory) {
+			if (!object(row) || !historyFile(row.file) || seen.has(row.file) || !sha256(row.digest) || !Number.isSafeInteger(row.byteLength) || row.byteLength < 0) return 'this import record is incomplete';
+			seen.add(row.file);
+		}
+	}
+	if (receipt.createdSections !== undefined && (!Array.isArray(receipt.createdSections) || receipt.createdSections.some(row => !object(row) || typeof row.name !== 'string' || !row.name)
+		|| new Set(receipt.createdSections.map(row => row.name)).size !== receipt.createdSections.length)) return 'this import record is incomplete';
 	for (const row of receipt.written) {
 		if (!object(row) || !planned.has(row.file) || written.has(row.file) || typeof row.created !== 'boolean'
 			|| !sha256(row.digest) || !Number.isSafeInteger(row.byteLength) || row.byteLength < 0) return 'this import record is incomplete';
@@ -242,6 +294,17 @@ function receiptProblem(receipt) {
 		for (const file of undo.requested) { if (!written.has(file) || accounted.has(file)) return 'this import record is incomplete'; accounted.add(file); }
 		for (const row of undo.kept) { if (!object(row) || !written.has(row.file) || accounted.has(row.file) || typeof row.why !== 'string' || !row.why) return 'this import record is incomplete'; accounted.add(row.file); }
 		if (accounted.size !== written.size) return 'this import record is incomplete';
+		if (undo.historyCleanup !== undefined) {
+			const cleanup = undo.historyCleanup, files = new Set(list(receipt.createdHistory).filter(row => row.file.startsWith('history/manifests/')).map(row => row.file));
+			if (!object(cleanup) || !Array.isArray(cleanup.requested) || !Array.isArray(cleanup.kept) || [...cleanup.requested, ...cleanup.kept].some(file => !files.has(file)) || new Set([...cleanup.requested, ...cleanup.kept]).size !== files.size) return 'this import record is incomplete';
+		}
+		if (undo.cleanup !== undefined) {
+			const cleanup = undo.cleanup, files = new Set([...list(receipt.createdFiles), ...list(receipt.createdHistory)].filter(row => !row.file.startsWith('history/manifests/')).map(row => row.file)), named = new Set();
+			if (!object(cleanup) || !Array.isArray(cleanup.requested) || !Array.isArray(cleanup.kept) || !Array.isArray(cleanup.sections) || cleanup.sections.some(name => !list(receipt.createdSections).some(row => row.name === name))) return 'this import record is incomplete';
+			for (const file of cleanup.requested) { if (!files.has(file) || named.has(file)) return 'this import record is incomplete'; named.add(file); }
+			for (const row of cleanup.kept) { if (!object(row) || !files.has(row.file) || named.has(row.file) || typeof row.why !== 'string' || !row.why) return 'this import record is incomplete'; named.add(row.file); }
+			if (named.size !== files.size) return 'this import record is incomplete';
+		}
 	}
 	if (receipt.status === 'complete' && written.size !== planned.size) return 'this import record is incomplete';
 	if (receipt.sections.some(section => typeof section !== 'string' || !section)) return 'this import record is incomplete';
@@ -416,6 +479,14 @@ export function recordImportUndo(receipt, plan, {stamp} = {}) {
 	const problem = receiptProblem(out);
 	if (problem) throw new Error(problem);
 	return out;
+}
+
+// Cleanup runs after guarded note removal, so a late-kept note still owns its section and files.
+// Only exact section metadata from the creating transaction is eligible; another note's category
+// or a user's section edit wins. Media references are checked by the folder, under its lease.
+export function importUndoSections(receipt, index) {
+	const candidates = list(receipt.createdSections), categories = new Set(Object.values(index.notes).map(entry => entry.category));
+	return index.sections.filter(section => !candidates.some(row => row.name === section.name && sameValue(row, section)) || categories.has(section.name));
 }
 
 // Names used in the Undo face follow the same picked-title privacy rule as the receipt face.

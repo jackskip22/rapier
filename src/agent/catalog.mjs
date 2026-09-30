@@ -134,7 +134,7 @@ const editorKey = string(512, 'The editor key from the Apps UI resource, held by
 const revision = integer(0, Number.MAX_SAFE_INTEGER);
 const sourceRange = {...object({start: integer(0, MAX_TEXT_BYTES), end: integer(0, MAX_TEXT_BYTES)}, ['start', 'end']), type: ['object', 'null']};
 export const HOST_TOOLS = Object.freeze([
-  tool('rapier.open', 'Open Rapier', 'Creates a workspace from text and shows its editor, or reopens one by its document capability. Use first over MCP when an editable explanation, visual walkthrough, substantial draft or plan, creative canvas, or reviewable revision helps the requested task, even without naming Rapier. Keep brief answers in chat and honour explicit format choices. Include prose and supported Mermaid flowcharts directly in text; reopen existing work with document alone. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.', 'create', object({document, text: string(MAX_TEXT_BYTES, 'Create: the document\'s text.'), filename: string(256, 'Its name; the extension sets the kind.'), docKind: kinds, createToken: string(128, 'A secret you generate for a retryable create: 22 or more random url-safe characters.')})),
+  tool('rapier.open', 'Rapier editor', 'Creates a workspace from text and shows its editor, or reopens one by its document capability. Use first over MCP when an editable explanation, visual walkthrough, substantial draft or plan, creative canvas, or reviewable revision helps the requested task, even without naming Rapier. Keep brief answers in chat and honour explicit format choices. Include prose and supported Mermaid flowcharts directly in text; reopen existing work with document alone. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.', 'create', object({document, text: string(MAX_TEXT_BYTES, 'Create: the document\'s text.'), filename: string(256, 'Its name; the extension sets the kind.'), docKind: kinds, createToken: string(128, 'A secret you generate for a retryable create: 22 or more random url-safe characters.')})),
   {...tool('document.sync', 'Refresh the editor', 'Returns this editor\'s workspace snapshot, or unchanged while afterRevision and afterVersion still hold.', 'read', object({document, editorKey, afterRevision: integer(0, Number.MAX_SAFE_INTEGER), afterVersion: integer(0, Number.MAX_SAFE_INTEGER)}, ['document', 'editorKey'])), visibility: ['app']},
   {...tool('document.commit', 'Save the person’s edits', 'Commits the editor\'s exact text against its last acknowledged revision. A conflict keeps the server\'s revision.', 'write', object({document, editorKey, expectedRevision: integer(0, Number.MAX_SAFE_INTEGER), text, filename: string(256), docKind: kinds, commitId: string(128)}, ['document', 'editorKey', 'expectedRevision', 'text', 'commitId'])), visibility: ['app']},
   {...tool('document.compare_decide', 'Decide a comparison', 'Applies the person\'s decision to this exact comparison and workspace version.', 'destructive', object({document, editorKey, expectedRevision: integer(0, Number.MAX_SAFE_INTEGER), expectedVersion: integer(0, Number.MAX_SAFE_INTEGER), compareId: ref, action: {type: 'string', enum: ['accept', 'reject', 'close']}, changeIds: ids, decisionId: string(128)}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'compareId', 'action', 'decisionId'])), visibility: ['app']},
@@ -154,20 +154,29 @@ export function annotations(effect, host = 'mcp', name = '') {
   return {readOnlyHint: effect === 'read', destructiveHint: ['write', 'durable', 'destructive'].includes(effect) || name === 'document.compare', idempotentHint: effect === 'read', openWorldHint: false};
 }
 
-// The one MCP descriptor projection (R71-A07). Without `uiResource`, rapier.open carries no _meta.ui resourceUri/visibility; with it, both.
+// The mark a host shows beside Rapier (the ChatGPT extensions' icon guidelines: an SVG, monochrome in currentColor, 20 px, 1.33 px strokes):
+// the typewriter r of icon-192.png. The same list serves as the server's icons and rapier.open's.
+export const MARK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.33" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 6h3v8M5.5 14h6M8.5 9.5C8.5 7.3 10 6 12.3 6h2.2v1.5"/></svg>';
+export const ICONS = Object.freeze([{src: 'data:image/svg+xml;base64,' + btoa(MARK), mimeType: 'image/svg+xml', sizes: ['any']}]);
+
+// The one MCP descriptor projection (R71-A07). Without `uiResource`, rapier.open carries no _meta.ui resourceUri/visibility; with it, both,
+// and the host's two static entrypoints (openai/mcp-extensions, "MCP App Entrypoints"): Rapier in the sidebar and as a tab in every thread,
+// each opening the editor on a blank workspace, since a create takes {}. A file entrypoint (.md files on the desktop host) waits on the app's
+// host-file reads and writes (docs/open-work.md, section 9).
 // tools/build.mjs calls this for the public manifest and proves agreement with the worker. Every document tool takes its capability and operation name.
 export function mcpDescriptors({ uiResource } = {}) {
   return [...TOOLS.map(entry => ({...entry, inputSchema: object({document, operation_id: operationId, ...entry.inputSchema.properties}, ['document', 'operation_id', ...entry.inputSchema.required])})), ...HOST_TOOLS].map(entry => {
     const {effect, visibility, ...descriptor} = entry;
     // UI access matches the standard visibility (model + app by default). The editor still proves its authority with its key.
     // Completion says a reply arrived, never that a refused edit was applied or an unverified save succeeded.
-    const base = {...descriptor, annotations: annotations(effect, 'mcp', entry.name), securitySchemes: [{type: 'noauth'}], _meta: {
+    const base = {...descriptor, ...(entry.name === 'rapier.open' ? {icons: ICONS} : {}), annotations: annotations(effect, 'mcp', entry.name), securitySchemes: [{type: 'noauth'}], _meta: {
       ...(visibility ? {ui: {visibility}} : {}), 'openai/widgetAccessible': (visibility || ['model', 'app']).includes('app'),
       'openai/toolInvocation/invoking': entry.name === 'rapier.open' ? 'Opening Rapier.' : 'Working in Rapier.',
       'openai/toolInvocation/invoked': 'Rapier has replied.',
     }};
     if (entry.name !== 'rapier.open' || !uiResource) return base;
-    return {...base, _meta: {...base._meta, ui: {...base._meta?.ui, resourceUri: uiResource, visibility: ['model', 'app']}, 'openai/outputTemplate': uiResource}};
+    return {...base, _meta: {...base._meta, ui: {...base._meta?.ui, resourceUri: uiResource, visibility: ['model', 'app']}, 'openai/outputTemplate': uiResource,
+      'openai/ui': {entrypoints: [{type: 'global'}, {type: 'thread'}]}}};
   });
 }
 

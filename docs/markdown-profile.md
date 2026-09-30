@@ -111,7 +111,7 @@ classified from the same table when they appear.
 
 ## DOCX export (`interchange/docx.mjs` `writeDocx`)
 
-The writer is the inverse of the DOCX import. A JPEG XL picture arrives as the portable picture the
+The writer and importer preserve the supported data described below. A JPEG XL picture arrives as the portable picture the
 export already made of it (PNG, or JPEG for an opaque photograph when smaller); WebP and SVG pictures
 and drawings are rasterised to PNG in the package (picture format law: exports convert on their own). Drawings use PNG, not EMF:
 phone-first Word on Android, iOS and the web opens PNG; EMF is Windows-centric and heavier to
@@ -119,15 +119,15 @@ write. Math is TeX source with its `$`/`$$` delimiters — Word shows the source
 recovers the math. Live Export `.docx` uses `interchange/docx.mjs` `writeDocx` through
 `_rapierConvertPortableHtmlToDocx`. No plug-in.
 
-Round-trip through DOCX is exact for the constructs below except these lossy rows (same table
-shape as above):
+The supported Markdown data round-trips through DOCX with these representation changes (same table
+shape as above). This is not a claim that arbitrary Word documents or their layout round-trip:
 
 | Syntax | Status | Authored via | Exact round-trip | Save emits | Degrades to |
 | --- | --- | --- | --- | --- | --- |
-| Callouts `> [!NOTE]` | established extension (GitHub Alerts/Obsidian) | Insert ▸ Note/Tip/Important/Warning/Caution | no, through DOCX | n/a — export | a labelled one-cell Word table with `[!TYPE]` in bold; re-import is a pipe table, not a GitHub alert |
+| Callouts `> [!NOTE]` | established extension (GitHub Alerts/Obsidian) | Insert ▸ Note/Tip/Important/Warning/Caution | no, through DOCX | n/a — export | a labelled one-cell Word table with `[!TYPE]` in bold; re-import is an ordinary HTML table, not a GitHub alert |
 | Drawings (SVG recipe) | CommonMark SVG image | Draw | no, through DOCX | n/a — export | PNG raster in `word/media` (`DOCX_EXPORT.drawingCodec = png`); re-import is a JPEG XL picture, not an editable drawing |
 | JPEG XL picture bytes | CommonMark data URL | Insert picture | no, codec bytes | n/a — export | PNG, or JPEG for an opaque photograph when smaller (picture format law); re-import re-encodes JPEG XL |
-| Footnote labels `[^1]` | established extension (PHP Markdown Extra) | Insert Footnote | no, labels only | n/a — export | note text kept; import assigns `docx-fn-N` labels |
+| Footnote labels `[^1]` | established extension (PHP Markdown Extra) | Insert Footnote | no, labels only | n/a — export | note blocks, links and pictures kept; import assigns `docx-fn-N` labels |
 | Image `wrap`/`x`/`y` | authored convention (`spec/md-layout.mjs`) | Drag/resize | no, through DOCX | n/a — export | inline DrawingML with `wp:extent` from `width`; Rapier's silhouette wrap is not a Word wrap |
 
 Headings 1–6, bold/italic/underline/strikethrough, links, coloured runs, highlights, nested
@@ -135,3 +135,27 @@ ordered and bullet lists, task lists (`[ ]`/`[x]` prefixes), tables with `Table:
 breaks (`w:br w:type="page"`), and math TeX source do round-trip through this writer and
 `readDocx`.
 
+
+The `docx-corpus` retained row also covers non-breaking and narrow non-breaking spaces, interior
+BOM characters and native tabs; repeated header rows, horizontal and vertical spans, multiple
+paragraphs and nested tables; rich footnote blocks and their own image/link relationships. Simple
+headed tables use GFM. Tables that need spans, multiple blocks or no header use ordinary HTML,
+with inline embedded picture URLs. Temporary import source tokens are verified and removed before
+that HTML is saved. All sixteen Word highlight names survive as the five existing highlight
+conventions or ordinary `<mark style="background-color:…">` HTML. Theme run colours are resolved to
+explicit RGB, including tint/shade luminance adjustments; theme identity itself is not retained.
+
+Word's current text is a defined projection: inserted and moved-to text is retained; deleted and
+moved-from text, change authors/dates and comments are not imported. The warnings disclose those
+omissions. Body text and referenced footnotes are checked separately in XML order; this does not
+claim preservation of the omitted review history or comment text. The original Word file is retained
+as an attachment on the Notes import path.
+
+Outside this profile: Word's review and comment workflows, named styles, themes and font schemes, custom tab
+stops, section and page geometry, conditional table styling, and anchored picture positioning and wrapping.
+Markdown has no shared model for them. A tab character is kept even when its tab stops are not; footnote labels
+can change while their content and paragraph boundaries stay intact.
+
+Picture bytes are checked exact through the importer's callback and the writer, and converted bytes are checked
+to reach ordinary HTML tables. That check does not prove the browser's codec conversion, Word's rendering or a
+phone's display; the JPEG XL conversion policy is the codec-byte exception above.

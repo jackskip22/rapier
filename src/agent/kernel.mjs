@@ -49,8 +49,10 @@ function pointedKind(text, start, end, images) {
 function paragraphBreakAround(source, position) {
   const before = source.slice(0, position), after = source.slice(position);
   const eol = /\r\n|\r|\n/.exec(source)?.[0] || '\n';
-  const prefix = before && !/(?:\r\n|\r(?!\n)|\n){2}$/.test(before) ? (/[\r\n]$/.test(before) ? eol : eol + eol) : '';
-  const suffix = after && !/^(?:\r\n|\r(?!\n)|\n){2}/.test(after) ? (/^[\r\n]/.test(after) ? eol : eol + eol) : '';
+  // A new LF after an existing CR (or a new CR before an existing LF) joins one CRLF. Supply the
+  // second logical break without changing the existing source units at either insertion seam.
+  const prefix = before && !/(?:\r\n|\r(?!\n)|\n){2}$/.test(before) ? (/[\r\n]$/.test(before) && !(before.endsWith('\r') && eol === '\n') ? eol : eol + eol) : '';
+  const suffix = after && !/^(?:\r\n|\r(?!\n)|\n){2}/.test(after) ? (/^[\r\n]/.test(after) && !(after.startsWith('\n') && eol === '\r') ? eol : eol + eol) : '';
   return { prefix, suffix };
 }
 function lineEndingAt(source, end) {
@@ -2055,19 +2057,39 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   function inverse(entry) {
     const later = since(entry.revision);
     if (!later) return failure('history_unavailable', 'conflict');
-    const operations = [];
-    // Collapsed deletions restore at one point in reverse source-splice order.
-    for (let index = entry.splices.length - 1; index >= 0; index--) {
-      const row = entry.splices[index];
-      let range = { start: row.pos, end: row.pos + row.inserted.length };
-      range = transportInterval(range.start, range.end, entry.splices.slice(index + 1));
-      if (!range) return failure('change_not_invertible', 'conflict');
-      for (const laterEntry of later) {
+    const reverse = splices => {
+      const rows = [];
+      // Collapsed deletions restore at one point in reverse source-splice order.
+      for (let index = splices.length - 1; index >= 0; index--) {
+        const row = splices[index];
+        const range = transportInterval(row.pos, row.pos + row.inserted.length, splices.slice(index + 1));
+        if (!range) return null;
+        rows.push({ pos: range.start, removed: row.inserted, inserted: row.removed });
+      }
+      return rows.sort((a, b) => b.pos - a.pos);
+    };
+    // An edit followed by its exact Undo is neutral, including nested undone pairs. Keep the journal and
+    // handle invalidation intact; only inverse transport can cross these proven cancellations. A claimed
+    // sourceTransactionId alone is not proof: every inverse row, unit and coordinate must agree.
+    const remaining = [];
+    for (const row of later) {
+      const prior = remaining.at(-1), reversed = prior && row.sourceTransactionId === prior.id && reverse(prior.splices);
+      if (reversed && reversed.length === row.splices.length && reversed.every((undo, index) => {
+        const actual = row.splices[index];
+        return undo.pos === actual.pos && undo.removed === actual.removed && undo.inserted === actual.inserted;
+      })) remaining.pop();
+      else remaining.push(row);
+    }
+    const operations = reverse(entry.splices);
+    if (!operations) return failure('change_not_invertible', 'conflict');
+    for (const row of operations) {
+      let range = { start: row.pos, end: row.pos + row.removed.length };
+      for (const laterEntry of remaining) {
         range = transportInterval(range.start, range.end, laterEntry.splices);
         if (!range) return failure('change_interleaved', 'conflict');
       }
-      if (state.text.slice(range.start, range.end) !== row.inserted) return failure('change_interleaved', 'conflict');
-      operations.push({ pos: range.start, removed: row.inserted, inserted: row.removed });
+      if (state.text.slice(range.start, range.end) !== row.removed) return failure('change_interleaved', 'conflict');
+      row.pos = range.start;
     }
     operations.sort((a, b) => b.pos - a.pos);
     for (let index = 1; index < operations.length; index++) {
@@ -2344,7 +2366,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       } else if (splice.removed || splice.inserted || filename !== state.filename || kind !== state.docKind) {
         appendCommit(input.text, splice.removed || splice.inserted ? [splice] : [], who, 'document.open_text', { revision });
       }
-      state.filename = filename; state.docKind = kind; state.handles = {}; state.refs = {}; state.cursors = {}; outlineCache = null;
+      state.filename = filename; state.docKind = kind; state.handles = {}; state.refs = {}; state.cursors = {}; state.compare = null; outlineCache = null;
       return { outcome: 'applied', filename, docKind: kind };
     }
     const result = await commit(splices, who, context, 'document.open_text', {
@@ -2354,7 +2376,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (result.outcome === 'unchanged' && (state.filename !== filename || state.docKind !== kind)) {
         appendCommit(state.text, [], who, 'document.open_text'); result.outcome = 'applied';
       }
-      state.filename = filename; state.docKind = kind; state.handles = {}; state.refs = {}; state.cursors = {}; outlineCache = null;
+      state.filename = filename; state.docKind = kind; state.handles = {}; state.refs = {}; state.cursors = {}; state.compare = null; outlineCache = null;
     }
     return { ...result, filename, docKind: kind };
   }

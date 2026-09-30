@@ -15,12 +15,13 @@
 // directly confirmed here -- @standardnotes/domain-core, where ContentType.TYPES is defined, is a
 // separate package this pass did not fetch; docs/import-json.md says so.
 import {noteFileName, orderAfter} from './model.mjs';
-import {importTags, literalInline, literalBlock, importMetadata, importDate, importTrash, readJsonInputs as unwrap} from './import.mjs';
+import {importTags, literalInline, literalBlock, literalDestination, importMetadata, importDate, importTrash, readJsonInputs as unwrap} from './import.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
 import {reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
 
 // Plain-text content is escaped; Markdown and Super content keep their actual marks.
 const APP_DOMAIN = 'org.standardnotes.sn';
+const trimTitleSpace = text => text.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
 
 // What Standard Notes writes for "nothing set" carries nothing and is not kept (standardnotes/app
 // 000d2d7). A false switch whose off state is the note Rapier makes: an item not deleted
@@ -178,7 +179,7 @@ export async function importStandardNotes(entries, options) {
 				built.push({...kept, sourceName: source.name, rootId: source.rootId ?? '', sourceItem: label, created: -Infinity}); return;
 			}
 			const content = it.content && typeof it.content === 'object' ? it.content : {};
-			const title = typeof content.title === 'string' ? content.title.trim() : '';
+			const title = typeof content.title === 'string' ? trimTitleSpace(content.title) : '';
 			const raw = typeof content.text === 'string' ? content.text : '';
 			if (!title && !raw.trim()) { skipped.push({name: label, why: 'empty note'}); return; }
 			const warnings = [...(source.characterWarnings || [])];
@@ -191,7 +192,7 @@ export async function importStandardNotes(entries, options) {
 			importMetadata(content.appData?.[APP_DOMAIN], ['pinned','archived'], warnings, 'Standard Notes fields', {at: 'content.appData.' + APP_DOMAIN, labels: SN_LABELS,
 				unset: (key, value) => SN_APP_OFF.has(key) && value === false || key === 'client_updated_at' && Date.parse(value) === modified});
 			importMetadata(content.appData, [APP_DOMAIN], warnings, 'Standard Notes extension data', {at: 'content.appData'});
-			reportCharacterChange(content.title, title.replace(/\s+/g, ' '), warnings, 'Standard Notes title');
+			reportCharacterChange(content.title, title.replace(/[ \t\r\n\f]+/g, ' '), warnings, 'Standard Notes title');
 			let body;
 			if (content.noteType === 'super') {
 				let doc = null; try { doc = JSON.parse(raw); } catch (_) { /* falls through to plain-text below */ }
@@ -206,9 +207,17 @@ export async function importStandardNotes(entries, options) {
 			const blocks = [];
 			// The note's own title field is its level-one heading, the title the card and the open note's
 			// Title field read (task #369, docs/notes-cards.md §16), its characters literal.
-			if (title) blocks.push('# ' + literalInline(title.replace(/\s+/g, ' ')).replace(/(\s+#+)$/, m => m.replace('#', '\\#')));
+			if (title) blocks.push('# ' + literalInline(title.replace(/[ \t\r\n\f]+/g, ' ')).replace(/(\s+#+)$/, m => m.replace('#', '\\#')));
 			if (body) blocks.push(body);
-			const joined = blocks.join('\n\n'), text = joined + (joined.endsWith('\n') ? '' : '\n');
+			const joined = blocks.join('\n\n');
+			let text = joined + (joined.endsWith('\n') ? '' : '\n');
+			// Linking-menu relationships are exported by UUID, not by title. Ordinary links
+			// carry them into Markdown; the shared final map binds only a unique same-root UUID.
+			for (const ref of Array.isArray(content.references) ? content.references : []) if (ref?.content_type === 'Note' && typeof ref.uuid === 'string') {
+				const targets = items.filter(item => item?.content_type === 'Note' && item.uuid === ref.uuid);
+				const name = targets.length === 1 && typeof targets[0].content?.title === 'string' ? targets[0].content.title : ref.uuid;
+				text += '\n[' + literalInline(name) + '](' + literalDestination('standardnotes://note/' + ref.uuid) + ')\n';
+			}
 			if (text === '\n') { skipped.push({name: label, why: 'empty note'}); return; }
 			const file = noteFileName(text, pool); pool.push(file);
 			const appData = content.appData && content.appData[APP_DOMAIN];
@@ -219,7 +228,7 @@ export async function importStandardNotes(entries, options) {
 			if (Number.isFinite(modified)) entry.modified = modified;
 			// A tag is its own item in the backup, never part of the note's text: the names both
 			// directions agree on are written into the note's own metadata block, in that same order.
-			built.push({file, text: importTags(text, tags, warnings, label), entry, sourceName: source.name, rootId: source.rootId ?? '', sourceItem: label, warnings, created: Number.isFinite(created) ? created : -Infinity});
+			built.push({file, text: importTags(text, tags, warnings, label), entry, sourceName: source.name, rootId: source.rootId ?? '', sourceItem: label, sourceAliases: typeof it.uuid === 'string' ? ['standardnotes://note/' + it.uuid] : [], warnings, created: Number.isFinite(created) ? created : -Infinity});
 		} catch (_) { skipped.push({name: typeof it.uuid === 'string' ? it.uuid : 'items[' + i + ']', why: 'could not be read'}); }
 	});
 

@@ -623,95 +623,20 @@ pre.block-source-only { margin: 0; background: none; padding: 0; }
 }
 
 
+/* A wide page reads as a page: side padding and a centred column, whatever the pointer (the one toolbar is the
+   phone's on every viewport, the founder's word of 30 September; the desktop toolbar rules that stood here are gone). */
 @media (min-width: 900px) {
-	html[data-format-toolbar-mode="desktop"] { --editor-h-pad: clamp(24px, 3vw, 56px); }
+	html { --editor-h-pad: clamp(24px, 3vw, 56px); }
 
-	html[data-format-toolbar-mode="desktop"] #editor-blocks > .block-wrapper {
+	#editor-blocks > .block-wrapper {
 		max-width: 1080px;
 		margin-left: auto;
 		margin-right: auto;
 	}
 
-	html[data-format-toolbar-mode="desktop"] .empty-doc-prompt {
+	.empty-doc-prompt {
 		left: max(var(--editor-h-pad), calc((100vw - 1080px) / 2));
 	}
-
-	html[data-format-toolbar-mode="desktop"] .format-toolbar-stack {
-		position: fixed;
-		z-index: 90;
-		inset: auto;
-		top: 0;
-		left: 0;
-		width: max-content;
-		max-width: calc(100vw - 24px);
-		max-height: calc(100dvh - 24px);
-		transform: none;
-		flex-direction: column-reverse;
-		background: transparent;
-		border: 0;
-		overflow-y: visible;
-		overscroll-behavior: contain;
-		scrollbar-width: none;
-	}
-	html[data-format-toolbar-mode="desktop"] .format-toolbar-stack::-webkit-scrollbar { display: none; }
-	html[data-format-toolbar-mode="desktop"] .format-toolbar,
-	html[data-format-toolbar-mode="desktop"] .heading-picker,
-	html[data-format-toolbar-mode="desktop"] .color-picker,
-	html[data-format-toolbar-mode="desktop"] .highlight-picker,
-	html[data-format-toolbar-mode="desktop"] .hr-style-picker { background: var(--format-toolbar-bg); }
-	html[data-format-toolbar-mode="desktop"] .format-toolbar {
-		width: auto;
-		max-width: calc(100vw - 24px);
-		overflow: visible;
-	}
-	/* One row on the desktop as on the phone: expanded, the strip scrolls sideways under the wheel
-		 instead of stacking a second row (the founder's words 127). */
-	html[data-format-toolbar-mode="desktop"] .format-toolbar__scroll {
-		display: flex;
-		flex-direction: row;
-		flex-wrap: nowrap;
-		align-items: center;
-		width: max-content;
-		max-width: calc(100vw - 24px);
-		overflow-x: auto;
-		overflow-y: hidden;
-		padding: 0;
-	}
-	html[data-format-toolbar-mode="desktop"] .format-toolbar__compact {
-		display: flex;
-		align-items: center;
-		flex-wrap: nowrap;
-	}
-	/* Collapsed, the compact row stands whole and scrolls nowhere. */
-	html[data-format-toolbar-mode="desktop"] .format-toolbar:not([data-expanded="true"]) .format-toolbar__scroll { overflow: visible; }
-	html[data-format-toolbar-mode="desktop"] .format-toolbar__expanded { display: none; }
-	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-expanded="true"] .format-toolbar__expanded { display: contents; }
-
-	html[data-format-toolbar-mode="desktop"] .fmt-btn--mobile-secondary,
-	html[data-format-toolbar-mode="desktop"] .fmt-btn--desktop-secondary { display: none !important; }
-	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-expanded="true"] .fmt-btn--mobile-secondary,
-	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-expanded="true"] .fmt-btn--desktop-secondary { display: inline-flex !important; }
-	html[data-format-toolbar-mode="desktop"] .fmt-btn--search { display: inline-flex !important; order: 3; }
-	html[data-format-toolbar-mode="desktop"] .fmt-btn--will { display: inline-flex !important; }
-	html[data-format-toolbar-mode="desktop"] .fmt-btn--expand { display: inline-flex !important; order: 1; }
-	html[data-format-toolbar-mode="desktop"] .format-toolbar[data-excerpt-only="true"] .fmt-btn--expand { display: none !important; }
-	html[data-format-toolbar-mode="desktop"] .heading-picker,
-	html[data-format-toolbar-mode="desktop"] .color-picker,
-	html[data-format-toolbar-mode="desktop"] .highlight-picker,
-	html[data-format-toolbar-mode="desktop"] .hr-style-picker {
-		width: 100%;
-		min-width: 100%;
-	}
-	html[data-format-toolbar-mode="desktop"] .format-toolbar .fmt-btn {
-		width: 44px;
-		height: 46px;
-	}
-	html[data-format-toolbar-mode="desktop"] .format-toolbar__scroll .fmt-btn,
-	html[data-format-toolbar-mode="desktop"] .format-toolbar__scroll .fmt-btn--sm { flex-basis: 44px; }
-	html[data-format-toolbar-mode="desktop"] .heading-picker .fmt-btn,
-	html[data-format-toolbar-mode="desktop"] .color-picker .fmt-btn,
-	html[data-format-toolbar-mode="desktop"] .highlight-picker .fmt-btn,
-	html[data-format-toolbar-mode="desktop"] .hr-style-picker .fmt-btn { height: 44px; }
 }
 
 

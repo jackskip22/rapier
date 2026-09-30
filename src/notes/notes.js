@@ -3660,12 +3660,21 @@ async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', re
 			try { manifest = H.parseManifest(held, {noteId: id, now: Date.now()}); }
 			catch (error) { throw Object.assign(new Error('this note\'s history could not be read, so this save was not recorded in it'), {cause: error}); }
 		}
+		const createdFiles = [];
 		const result = await H.recordVersion(manifest, {file, text, entry, reason, now: Date.now(), ...(restoredFrom === undefined ? {} : {restoredFrom})});
-		for (const write of result.writes) if (write.immutable) await _rapierNotesStore.writeHistory(write.name, write.bytes, {immutable: true});
+		for (const write of result.writes) if (write.immutable) {
+			const absent = held == null && await _rapierNotesStore.readHistory(write.name) == null;
+			await _rapierNotesStore.writeHistory(write.name, write.bytes, {immutable: true});
+			if (absent) createdFiles.push({file: 'history/' + write.name, bytes: write.bytes, actual: await _rapierNotesStore.readHistory(write.name)});
+		}
 		// A manifest can remember an object that has since disappeared or changed. Verify even an
 		// unchanged event before acknowledging it; publish the manifest only after its new event reads.
 		await H.materialize(result.manifest, result.version.id, name => _rapierNotesStore.readHistory(name));
-		for (const write of result.writes) if (!write.immutable) await _rapierNotesStore.writeHistory(write.name, write.bytes);
+		for (const write of result.writes) if (!write.immutable) {
+			await _rapierNotesStore.writeHistory(write.name, write.bytes);
+			if (held == null) createdFiles.push({file: 'history/' + write.name, bytes: write.bytes, actual: await _rapierNotesStore.readHistory(write.name)});
+		}
+		result.createdFiles = createdFiles;
 		state.historyAt = result.version?.id ?? state.historyAt;
 		return result;
 	});
@@ -5790,8 +5799,14 @@ async function _rapierNotesDocxEntry(file) {
 	try {
 		const D = globalThis.RapierDocxImport;
 		if (typeof D?.readDocx === 'function') {
-			const result = await D.readDocx(new File([bytes], file.name, {type: file.type}), {embedImage: async image => _rapierNotesDataUrl(new Blob([image.bytes], {type: image.type || 'application/octet-stream'}))});
-			if (typeof result?.html === 'string') body = result.html.replace(/data-rapier-asset=/g, 'src=');
+			const pictures = new Map();
+			const result = await D.readDocx(new File([bytes], file.name, {type: file.type}), {embedImage: async image => {
+				const reference = 'word-picture-' + pictures.size;
+				const url = await _rapierNotesDataUrl(new Blob([image.bytes], {type: image.type || 'application/octet-stream'}));
+				pictures.set(reference, url);
+				return {reference, url};
+			}});
+			if (typeof result?.html === 'string') body = D.docxPortableHtml(result.html, pictures);
 		}
 	} catch (_) { /* The complete original, including embedded objects, remains an ordinary file. */ }
 	const html = '<html><head><title>' + escape(file.name.replace(/\.docx$/i, '')) + '</title></head><body>' + body + '<p><a href="' + href + '">Original Word file</a></p></body></html>';
@@ -5896,6 +5911,8 @@ async function _rapierNotesImportFiles(files, source) {
 		...(flavour ? {flavour} : {}),
 		...(typeof P?.importPictures === 'function' ? {pictureImporter: P.importPictures} : {}) }, _rapierNotesImporters());
 	const { notes, skipped, sections, sources, unoffered } = result;
+	if (result.alreadyImported) { showToast('This export is already in Notes. Nothing changed.', 'info'); return; }
+	if (result.repeatConflict) { showToast(result.skipped.map(row => row.name + ': ' + row.why).join('\n'), 'error'); return; }
 	const Landing = globalThis.RapierNotesImportPlan, Receipt = globalThis.RapierNotesImportReceipt;
 	if (!Landing || typeof Landing.planImportLanding !== 'function' || !Receipt?.createImportReceipt) throw new Error('The import landing and its record must load before any files can be written.');
 	let receiptError = null, importVerified = false, record = null;
@@ -5916,10 +5933,20 @@ async function _rapierNotesImportFiles(files, source) {
 	let pastKept = 0, pastFailed = 0, unplaced = 0, pastWhy = '', pastObjectsFailed = 0, arrivalFailed = 0, backupSavedFiles = 0;
 	const failedPastIds = new Set();
 	try {
-	for (const file of result.attachments || []) await _rapierNotesStore.createAttachment(file.name, new Blob([file.bytes]), {exact: true});
+	const recordFile = async (file, bytes) => {
+		if (!record) return;
+		record = await Receipt.verifyImportFile(record, file, bytes, await _rapierNotesStore.bytes.read(file));
+		state.index = Receipt.appendImportReceipt(state.index, record);
+		await _rapierNotesWriteIndex();
+	};
+	for (const file of result.attachments || []) {
+		const name = await _rapierNotesStore.createAttachment(file.name, new Blob([file.bytes]), {exact: true});
+		await recordFile('attachments/' + name, file.bytes);
+	}
 	for (const audio of result.audio || []) {
 		const name = await _rapierNotesStore.createAudio(audio.note || 'Recording.md', audio.mime, new Blob([audio.bytes], {type: audio.mime || 'application/octet-stream'}), audio.name);
 		recordingMap(audio.rootId).set(audio.name, name);
+		await recordFile('audio/' + name, audio.bytes);
 	}
 	// A Rapier backup carries the folder's own siblings beside its notes -- the recordings under
 	// `audio/` -- and hands them back as `backupFiles` under the names allocated above. They land
@@ -5942,6 +5969,7 @@ async function _rapierNotesImportFiles(files, source) {
 	for (const file of backupFiles) {
 		if (/^attachments\/[^/\\]+$/.test(file?.name || '') && file.bytes) {
 			await _rapierNotesStore.createAttachment(file.name.slice(12), new Blob([file.bytes]), {exact: true});
+			await recordFile(file.name, file.bytes);
 			backupSavedFiles++;
 			continue;
 		}
@@ -5956,6 +5984,7 @@ async function _rapierNotesImportFiles(files, source) {
 		if (!landed || !file.bytes || !A.validRecordingName(landed)) continue;
 		const mime = A.audioMime('', landed) || 'application/octet-stream';
 		await _rapierNotesStore.createAudio('Recording.md', mime, new Blob([file.bytes], {type: mime}), landed, {exact: true});
+		await recordFile(file.name, file.bytes);
 		backupSavedFiles++;
 	}
 	await _rapierNotesStore.historyCommit(async () => {
@@ -6030,7 +6059,6 @@ async function _rapierNotesImportFiles(files, source) {
 	// Made in the first landing batch, in the same transaction as the notes that name them; the
 	// collapse a section arrives with is set after the landing.
 	const sectionsToMake = (sections || []).filter(name => !(state.index.sections || []).some(s => s.name === name));
-	const collapsedArriving = (sections || []).filter(name => added.get(name));
 	// What the picture importer could not bring, counted by what it said rather than guessed. A
 	// picture it could not find and one it refused to guess between are the two a person can do
 	// something about, so they are named; the rest are one honest number.
@@ -6053,7 +6081,7 @@ async function _rapierNotesImportFiles(files, source) {
 	// arrival event is the shell's own step after each committed group, counted and said when it
 	// fails, and it never stops the landing. A verification that refuses does stop it, because the
 	// folder has changed under the import and what was not yet written is safest still in the export.
-	const landed = [], landedNames = new Map();
+	const landed = [], landedNames = new Map(), landedEntries = new Map();
 	const turn = () => typeof globalThis.scheduler?.yield === 'function' ? globalThis.scheduler.yield() : new Promise(resolve => setTimeout(resolve, 0));
 	let landing = Landing.createImportLanding(Landing.planImportLanding({notes: notes.map(note => ({file: note.file, text: note.text, entry: note.entry})), receipts: record ? notes.map(note => ({file: note.file})) : []}));
 	// The record as it stands goes into the folder with the next batch's transaction, and after the last.
@@ -6080,11 +6108,12 @@ async function _rapierNotesImportFiles(files, source) {
 						taken.add(file.toLowerCase()); names.push(file);
 						rows.push({ordinal: item.ordinal, file, text: item.text, entry: item.entry});
 					}
-					return {notes: rows, sections: want, index: receipt && Receipt ? Receipt.appendImportReceipt(index, receipt) : index};
+					return {notes: rows, sections: want, sectionsAdded: want.map(name => ({name, collapsed: added.get(name) === true})), index: receipt && Receipt ? Receipt.appendImportReceipt(index, receipt) : index};
 				});
 				_rapierNotesTake(snapshot);
+				if (record) record = Receipt.recordImportSections(record, snapshot.result.createdSections || []);
 				for (const row of snapshot.result.notes) {
-					landedNames.set(row.ordinal, row.file); _rapierNotesHold(row.file, row.text);
+					landedNames.set(row.ordinal, row.file); landedEntries.set(row.ordinal, JSON.parse(JSON.stringify(snapshot.index.notes[row.file]))); _rapierNotesHold(row.file, row.text);
 					landed.push({file: row.file, text: row.text, note: notes[row.ordinal]});
 					if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(row.file);
 					written++;
@@ -6100,7 +6129,10 @@ async function _rapierNotesImportFiles(files, source) {
 					if (file !== item.file) throw new Error('a note landed under another name than the one planned, so its record could not be verified');
 					const back = await _rapierNotesStore.read(file);
 					if (typeof back !== 'string') throw new Error('the imported note is missing during read-back: ' + file);
-					record = await Receipt.verifyImportWrite(record, {...notes[item.ordinal], file, text: item.text}, {bytes: new TextEncoder().encode(back), entry: state.index.notes[file], created: true});
+					const entry = landedEntries.get(item.ordinal);
+					if (!entry || state.index.notes[file]?.id !== entry.id) throw new Error('the imported note identity changed before verification');
+					// The arrival owns its committed metadata, never a later pin, move or colour edit.
+					record = await Receipt.verifyImportWrite(record, {...notes[item.ordinal], file, text: item.text}, {bytes: new TextEncoder().encode(back), entry, created: true});
 					completed++;
 				}
 			} catch (error) { why = String(error?.message || error); receiptError = error; }
@@ -6119,18 +6151,20 @@ async function _rapierNotesImportFiles(files, source) {
 			for (const item of batch.items.slice(0, outcome.completed)) {
 				const file = landedNames.get(item.ordinal);
 				if (failedPastIds.has(state.index.notes[file]?.id)) continue;
-				try { await _rapierNotesRecordVersion({file, text: item.text, entry: state.index.notes[file], reason: 'import'}); }
+				try {
+					const arrival = await _rapierNotesRecordVersion({file, text: item.text, entry: state.index.notes[file], reason: 'import'});
+					if (record && arrival?.createdFiles?.length) record = await Receipt.verifyImportHistory(record, arrival.createdFiles);
+				}
 				catch (error) { arrivalFailed++; console.warn('[rapier] notes history', error); }
 			}
 		}
 		if (landing.batch) await turn();
 	}
-	for (const name of collapsedArriving) { const shut = M.setCollapsed(state.index, name, true); if (shut !== state.index) state.index.sections = shut.sections; }
 	if (!notes.length) for (const name of sectionsToMake) { const grown = M.addSection(state.index, name); if (grown !== state.index) state.index.sections = grown.sections; }
 	const stopped = landing.status !== 'complete';
 	if (record) {
 		try {
-			const sectionsMade = (result.sectionsAdded || []).map(section => section?.name ?? section);
+			const sectionsMade = (record.createdSections || []).map(section => section.name);
 			if (!stopped && record.written.length === record.plannedFiles.length) { importVerified = true; record = Receipt.finishImportReceipt(record, {status: 'complete', sections: sectionsMade}); }
 			else record = Receipt.finishImportReceipt(record, {status: landing.status === 'cancelled' ? 'cancelled' : 'failed', why: landing.stop?.why || String(receiptError?.message || receiptError || 'the landing stopped'), sections: sectionsMade});
 			state.index = Receipt.appendImportReceipt(state.index, record);

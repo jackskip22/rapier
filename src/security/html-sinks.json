@@ -457,7 +457,12 @@
       "_rapierReadImportedDocument": {
         "count": 1,
         "kind": "untrusted-parse",
-        "reason": "inert.innerHTML = result.html parses the docx/pdf-reader's markup (derived from an untrusted uploaded file) into an inert <template>; per the adjoining comment, only labels are read from it and image bytes are resolved separately through the asset map."
+        "reason": "inert.innerHTML = result.html parses docx/pdf reader markup from an untrusted uploaded file into a detached template, never attached; the following custody walk resolves image labels or embedded data URLs and verifies whole-table source tokens before reading them."
+      },
+      "visit": {
+        "count": 2,
+        "kind": "untrusted-parse",
+        "reason": "The image-custody visitors parse either a whole-table source accepted by _rapierSourceTokenValue or Markdown HTML tokens containing img into detached template.content. Neither fragment is attached or executed. Only image source/order is read, and each source must be an admitted embedded data image or an asset label resolved through the existing map."
       }
     },
     "layout/browser.js": {

@@ -136,7 +136,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
         _rapierImportProgress(run, 'Embedding picture ' + (++imageCount) + '…');
         const normalized = await _rapierNormaliseRaster(new File([bytes], image.name || 'picture.png'), profile, transform);
         checkCurrent();
-        converted.set(key, {reference: normalized.asset.label, width: normalized.width, height: normalized.height});
+        converted.set(key, {reference: normalized.asset.label, url: normalized.asset.url, width: normalized.width, height: normalized.height});
         if (!assets.has(normalized.asset.id)) {
           assets.set(normalized.asset.id, normalized.asset);
           embeddedChars += normalized.asset.block.length;
@@ -148,7 +148,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
       if (image.displayWidth > 0 && image.displayHeight > 0 &&
           Math.abs(normalized.width / normalized.height / (image.displayWidth / image.displayHeight) - 1) > .03)
         imageWarnings.add('Stretched pictures use their natural proportions in Markdown.');
-      return normalized.reference;
+      return kind === 'docx' ? {reference: normalized.reference, url: normalized.url} : normalized.reference;
     };
     _rapierImportProgress(run, 'Reading ' + kind.toUpperCase() + '…');
     const reader = kind === 'docx' ? globalThis.RapierDocxImport.readDocx : globalThis.RapierPdf.readPdf;
@@ -156,27 +156,17 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
       onProgress: progress => _rapierImportProgress(run, typeof progress === 'string' ? progress :
         'Reading page ' + progress.page + (progress.pages ? ' of ' + progress.pages : '') + '…')});
     checkCurrent();
-    // Reader markup carries labels; bytes occur only in the final definitions.
+    // Flow images carry labels; ordinary HTML tables carry their converted data URLs.
     const inert = document.createElement('template');
     inert.innerHTML = result.html;
-    const expectedImages = [...inert.content.querySelectorAll('img')].map(node => {
-      const label = node.getAttribute('data-rapier-asset') || '';
-      const asset = assets.get(RapierImageAssets.normalizeLabel(label));
-      if (!asset) throw new Error('An imported picture is missing its embedded source.');
-      return md.normalizeLink(asset.url);
-    });
+    const expectedImages = _rapierImportedImageSources(inert.content, assets, true);
     let text = turndown.turndown(inert.content).trim();
     if (!text) throw new Error(kind === 'pdf' ? 'This PDF has no editable text. Import it as page images.' : 'This document has no supported content.');
     for (const asset of assets.values()) {
       checkCurrent();
       text = (await RapierImageAssets.appendAsset(text, asset)).source;
     }
-    const actualImages = [];
-    const visit = tokens => { for (const token of tokens) {
-      if (token.type === 'image') actualImages.push(token.attrGet('src') || '');
-      else if (token.children) visit(token.children);
-    }};
-    visit(md.parse(text, {}));
+    const actualImages = _rapierImportedMarkdownImageSources(text, assets);
     if (actualImages.length !== expectedImages.length || actualImages.some((src, index) => src !== expectedImages[index]))
       throw new Error('The pictures could not all be preserved in Markdown. The current document is unchanged.');
     text += text.endsWith('\n') ? '' : '\n';
@@ -225,4 +215,43 @@ async function _rapierOpenImportedFile(file, name = file?.name || '', options = 
     if (error.name !== 'AbortError') showToast('Import failed: ' + String(error.message || error), 'error');
     return false;
   }
+}
+// Reader source tokens are inert transport, not permission to skip image custody. Complex
+// tables carry ordinary HTML; inspect their verified source and the Markdown HTML tokens too.
+function _rapierImportedImageSources(root, assets, sourceTokens) {
+  const sources = [];
+  const visit = node => {
+    if (sourceTokens && node.nodeType === 1 && node.hasAttribute('data-rapier-source')) {
+      const source = _rapierSourceTokenValue(node);
+      if (source !== null && /^<table[ >]/i.test(source)) {
+        const fragment = document.createElement('template');
+        fragment.innerHTML = source;
+        for (const child of fragment.content.childNodes) visit(child);
+        return;
+      }
+    }
+    if (node.nodeName === 'IMG') {
+      const label = node.getAttribute('data-rapier-asset');
+      const url = label ? assets.get(RapierImageAssets.normalizeLabel(label))?.url : node.getAttribute('src');
+      if (!RapierImageAssets.dataImage(url)) throw new Error('An imported picture is missing its embedded source.');
+      sources.push(md.normalizeLink(url));
+    }
+    for (const child of node.childNodes || []) visit(child);
+  };
+  visit(root);
+  return sources;
+}
+
+function _rapierImportedMarkdownImageSources(text, assets) {
+  const sources = [];
+  const visit = tokens => { for (const token of tokens) {
+    if (token.type === 'image') sources.push(token.attrGet('src') || '');
+    else if ((token.type === 'html_block' || token.type === 'html_inline') && /<img(?:\s|\/|>)/i.test(token.content)) {
+      const fragment = document.createElement('template');
+      fragment.innerHTML = token.content;
+      sources.push(..._rapierImportedImageSources(fragment.content, assets, false));
+    } else if (token.children) visit(token.children);
+  }};
+  visit(md.parse(text, {}));
+  return sources;
 }

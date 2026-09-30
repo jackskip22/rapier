@@ -1,6 +1,6 @@
 // A relocation plan, not a write. One root and exact source path identify an object;
 // two uses share that object, two different exports never share it by accident.
-import {scanLinks, normalizeSourcePath, resolveAssetPath, escapeLinkAttribute} from './links.mjs';
+import {scanLinks, normalizeSourcePath, resolveAssetPath, resolveLink, escapeLinkAttribute} from './links.mjs';
 import {attachmentHref, planAttachment} from './attachments.mjs';
 
 const root = row => String(row.rootId || '');
@@ -48,7 +48,9 @@ export function importAttachments(notes, sources, {existing = [], ascii = false}
 		for (const link of scanLinks(text)) {
 			if (link.unresolvedDecode || !link.dest || /^(?:data:|#)/i.test(link.dest)) continue;
 			// Finalized links between notes are already owned by importLinkPatches.
-			if (!link.image && finalNames.has(link.dest)) continue;
+			// Destinations may be percent-escaped, reference links or extensionless wiki links.
+			// Compare their resolved identity, not their spelling, before considering attachment bytes.
+			if (!link.image && resolveLink(link, {from: note.file, files: finalNames}).file) continue;
 			const aliased = aliases.get(key(root(note), link.dest));
 			const resolved = aliased ? {} : resolveAssetPath(note.sourceName, link.dest);
 			if (resolved.outside) continue;

@@ -17,7 +17,8 @@ import {THEMATIC_BREAK as rapierThematicBreak, HARD_BREAK as rapierHardBreak, ce
 	highlightOfStyle as rapierHighlightOfStyle, highlightRun as rapierHighlightRun,
 	cellAlignment as rapierCellAlignment, alignmentDelimiter as rapierAlignmentDelimiter,
 	codeLanguage as rapierCodeLanguage, linkTitle as rapierLinkTitle, markRuns as rapierMarkRuns,
-	listIsLoose as rapierListIsLoose} from '../spec/html-reading.mjs';
+	listIsLoose as rapierListIsLoose, wordListLevel as rapierWordListLevel, wordListIsMarker as rapierWordListIsMarker,
+	wordListMarker as rapierWordListMarker, wordListTree as rapierWordListTree} from '../spec/html-reading.mjs';
 const RAPIER_HIGHLIGHT_COLORS = Object.freeze({
 	green: '🟢',
 	red: '🔴',
@@ -363,4 +364,6 @@ export {
 	rapierCellAlignment as cellAlignment, rapierAlignmentDelimiter as alignmentDelimiter,
 	rapierCodeLanguage as codeLanguage, rapierLinkTitle as linkTitle, rapierMarkRuns as markRuns,
 	rapierListIsLoose as listIsLoose,
+	rapierWordListLevel as wordListLevel, rapierWordListIsMarker as wordListIsMarker,
+	rapierWordListMarker as wordListMarker, rapierWordListTree as wordListTree,
 };

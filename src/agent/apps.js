@@ -381,9 +381,11 @@
     const value = modelContext(), signature = JSON.stringify(value);
     if (signature === modelSent) return;
     modelQueued = false;
+    // The host shows this block as an attachment the person can remove; the title names it (block _meta never reaches the model).
     modelFlight = request('ui/update-model-context', {structuredContent: {rapier: value}, content: [{type: 'text',
       text: value.dirty ? 'The person has unsaved edits; edit after they sync.' :
-        'The person\'s view of the Rapier document; selection is a source range. Read with document.get_context and document.read_context before editing.'}]}, 5000)
+        'The person\'s view of the Rapier document; selection is a source range. Read with document.get_context and document.read_context before editing.',
+      _meta: {'openai/title': value.filename ? 'Rapier: ' + value.filename : 'Rapier document'}}]}, 5000)
       .then(() => { modelSent = signature; modelFailures = 0; })
       .catch(error => { if (error?.code === -32601 || ++modelFailures >= 3) modelAvailable = false; })
       .finally(() => { modelFlight = null; if (modelQueued) void publishModelContext(); });

@@ -8,6 +8,7 @@ import {attachmentHref} from './attachments.mjs';
 import {importLinkPatches, scanLinks, resolveAssetPath} from './links.mjs';
 import {addBackup, backupSetId, verifyBackupStream, BACKUP_MANIFEST_FILE} from './restore.mjs';
 import {createImportReceipt} from './import-receipt.mjs';
+import {sha256} from './integrity.mjs';
 import {setTags, tagsOf} from './frontmatter.mjs';
 import {readImportText, keepImportCharacters, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
 
@@ -541,6 +542,35 @@ export async function importAny(entries, options = {}, importers = {}) {
 		notes.push(note); recordConsumed(e.inputId, note); sources.markdown = (sources.markdown || 0) + 1;
 	}
 	// Original inputs win metadata about themselves; duplicate paths remain distinct candidates.
+	// Provenance belongs to the note, so the recent-receipt window cannot make the same export
+	// create duplicates later. Hash exact admitted inputs, their namespaces and the chosen grammar;
+	// neither a title nor equality with today's edited body is proof of a previous import.
+	if (notes.length && !backups.length) {
+		const members = new Map();
+		for (const row of opened) { if (!members.has(row.rootId)) members.set(row.rootId, []); members.get(row.rootId).push(row); }
+		const roots = new Map(), copies = new Map();
+		for (const [id, rows] of members) {
+			const key = JSON.stringify([rows[0].rootName || '', (await Promise.all(rows.map(async row => JSON.stringify([row.name, row.flavour || '', row.unreadable || '', await sha256(bytesOf(row))])))).sort()]);
+			const ordinal = copies.get(key) || 0; copies.set(key, ordinal + 1);
+			roots.set(id, await sha256(enc.encode(JSON.stringify([key, ordinal]))));
+		}
+		const source = await sha256(enc.encode(JSON.stringify([options.flavour || '', [...roots.values()].sort()]))), items = new Map();
+		for (const note of notes) {
+			const key = JSON.stringify([source, roots.get(note.rootId), note.sourceName, note.sourceItem || '']), ordinal = items.get(key) || 0;
+			items.set(key, ordinal + 1); note.entry.importSource = await sha256(enc.encode(JSON.stringify([key, ordinal])));
+		}
+		const prior = new Set(Object.values(options.index?.notes || {}).map(entry => entry.importSource));
+		const repeated = notes.filter(note => prior.has(note.entry.importSource));
+		if (repeated.length) {
+			const complete = repeated.length === notes.length;
+			const result = {notes: [], fileMap: [], warnings: [], skipped: complete ? [] : opened.picked.map(row => ({name: row.name, rootId: row.rootId,
+				why: 'Part of this exact export is already in this folder. Nothing was imported; keep the export and review the earlier import before adding it again.'})),
+				sections: [], sectionsAdded: [], pictures: [], audio: [], attachments: [], sources: {}, unoffered: [], picked: opened.picked, accounting: [], backups: [], backupFiles: [],
+				alreadyImported: complete, repeatConflict: !complete, repeatedNotes: repeated.length};
+			result.receipt = createImportReceipt(result, {stamp: options.stamp ?? null, id: options.id ?? null});
+			return result;
+		}
+	}
 	for (const e of opened) if (IMAGE_EXT.test(e.name) && !e.unreadable && !pictures.some(p => sameInput(p, e))) pictures.push({...e, sourceName: e.name});
 	const uniquePictures = pictures.filter((p, i) => !p.inputId || pictures.findIndex(q => sameInput(p, q)) === i);
 	const embeddedPicturePaths = new Set();

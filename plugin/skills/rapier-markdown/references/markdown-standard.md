@@ -61,19 +61,19 @@ the image; one comment carries its layout. In these schematic examples,
 `<payload>` stands for the image bytes encoded as Base64.
 
 ```md
-![System diagram][diagram] <!--md-layout:v1 width=47% align=center-->
+![Site photograph][photo] <!--md-layout:v1 width=47% align=center-->
 
-![System diagram][diagram] <!--md-layout:v1 width=47% x=72%-->
+![Site photograph][photo] <!--md-layout:v1 width=47% x=72%-->
 
-![System diagram][diagram] <!--md-layout:v1 width=47% wrap=around x=72% y=2.4em-->
+![Site photograph][photo] <!--md-layout:v1 width=47% wrap=around x=72% y=2.4em-->
 
-![System diagram][diagram] <!--md-layout:v1 width=47% wrap=around x=72% rotate=15deg-->
+![Site photograph][photo] <!--md-layout:v1 width=47% wrap=around x=72% rotate=15deg-->
 
-![System diagram][diagram] <!--md-layout:v1 width=47% wrap=behind x=50% opacity=30%-->
+![Site photograph][photo] <!--md-layout:v1 width=47% wrap=behind x=50% opacity=30%-->
 
 Following prose can flow above, beside and below the picture.
 
-[diagram]: data:image/jxl;base64,<payload>
+[photo]: data:image/jxl;base64,<payload>
 ```
 
 | Field | Values | Meaning |
@@ -223,12 +223,15 @@ The definition holds its bytes in a Base64 data URL:
 ```md
 Here is the diagram.
 
-![System diagram][diagram] <!--md-layout:v1 width=47% align=center-->
+![Site photograph][photo] <!--md-layout:v1 width=47% align=center-->
 
 Later prose stays readable.
 
-[diagram]: data:image/jxl;base64,<payload>
+[photo]: data:image/jxl;base64,<payload>
 ```
+
+A drawing or diagram is never a raster: an editable drawing is the SVG the editor wrote, kept as SVG. The
+choice below is for rasters, photographs, paintings and pasted pictures:
 
 | Image choice | Definition destination |
 | --- | --- |

@@ -8,8 +8,7 @@
 // know about, so they are swapped for inert \x01-sentinels before that walk and resolved back into
 // Markdown after it, in the note's own final text -- html-md.mjs stays Evernote-ignorant.
 //
-// Pure: no DOM (this file writes its own small, tolerant XML tree-walk -- the same tolerance
-// html-md.mjs's tokenizer has, applied to XML: an unmatched close tag is ignored), no fs, no fetch.
+// Pure: no DOM (a small XML tree-walk refuses damaged structure and entity declarations), no fs, no fetch.
 // Imports only ./model.mjs, ./zip.mjs and ./html-md.mjs, exactly as the brief requires.
 import {noteFileName, orderAfter} from './model.mjs';
 import {zipOversizeSkip} from './zip.mjs';
@@ -18,21 +17,37 @@ import {audioMime, appendImportedRecording} from './audio.mjs';
 import {expandImportZips, importTags, literalInline, literalDestination, importMetadata, importAlarm, uniquePictureName} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
-// ---- A small tolerant XML tree, independent of html-md.mjs's HTML one: XML's self-closing tag is
+const trimHtmlSpace = text => text.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
+
+// ---- A small XML tree, independent of html-md.mjs's tolerant HTML one: XML's self-closing tag is
 // always explicit ("/>"), so there is no VOID-tag guessing, and CDATA is the load-bearing feature
 // (a note's whole ENML body arrives as one CDATA section). -----------------------------------------
 const XML_ENTITIES = {amp: '&', lt: '<', gt: '>', quot: '"', apos: "'"};
-function decodeXml(s) {
+function decodeXml(s, strict = false) {
+	if (strict) {
+		const rest = String(s).replace(/&(amp|lt|gt|quot|apos|#x[0-9a-fA-F]+|#\d+);/g, (whole, value) => {
+			if (value[0] !== '#') return '';
+			const n = value[1] === 'x' ? parseInt(value.slice(2), 16) : Number(value.slice(1));
+			if (![9, 10, 13].includes(n) && !(n >= 0x20 && n <= 0xD7FF || n >= 0xE000 && n <= 0xFFFD || n >= 0x10000 && n <= 0x10FFFF)) throw new Error('ENEX character reference is invalid');
+			return '';
+		});
+		if (rest.includes('&')) throw new Error('ENEX entity reference is undeclared or malformed');
+	}
 	return String(s).replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);/g, (m, e) => {
 		if (e[0] !== '#') return XML_ENTITIES[e] ?? m;
 		const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
 		return Number.isFinite(code) && code >= 0 && code <= 0x10FFFF && !(code >= 0xD800 && code <= 0xDFFF) ? String.fromCodePoint(code) : m;
 	});
 }
-function parseXmlAttrs(raw) {
+function parseXmlAttrs(raw, strict = false) {
 	const attrs = {}, re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-	let m;
-	while ((m = re.exec(raw))) attrs[m[1].toLowerCase()] = decodeXml(m[2] ?? m[3] ?? '');
+	let m, end = 0;
+	while ((m = re.exec(raw))) {
+		const name = m[1].toLowerCase();
+		if (strict && (!/^[ \t\r\n]+$/.test(raw.slice(end, m.index)) || Object.hasOwn(attrs, name) || /</.test(m[2] ?? m[3] ?? ''))) throw new Error('ENEX attribute is malformed or repeated');
+		attrs[name] = decodeXml(m[2] ?? m[3] ?? '', strict); end = re.lastIndex;
+	}
+	if (strict && raw.slice(end).replace(/\/\s*$/, '').trim()) throw new Error('ENEX attribute is malformed');
 	return attrs;
 }
 function parseXml(src) {
@@ -40,26 +55,34 @@ function parseXml(src) {
 	let i = 0;
 	while (i < n) {
 		const lt = s.indexOf('<', i);
-		if (lt < 0) { if (i < n) stack[stack.length - 1].children.push(decodeXml(s.slice(i))); break; }
-		if (lt > i) stack[stack.length - 1].children.push(decodeXml(s.slice(i, lt)));
-		if (s.startsWith('<!--', lt)) { const e = s.indexOf('-->', lt + 4); i = e < 0 ? n : e + 3; continue; }
-		if (s.startsWith('<![CDATA[', lt)) { const e = s.indexOf(']]>', lt + 9); stack[stack.length - 1].children.push(s.slice(lt + 9, e < 0 ? n : e)); i = e < 0 ? n : e + 3; continue; } // literal: never entity-decoded
-		if (s[lt + 1] === '?' || s[lt + 1] === '!') { const e = s.indexOf('>', lt); i = e < 0 ? n : e + 1; continue; } // PI/DOCTYPE, dropped
+		if (lt < 0) { if (i < n) stack[stack.length - 1].children.push(decodeXml(s.slice(i), true)); break; }
+		if (lt > i) stack[stack.length - 1].children.push(decodeXml(s.slice(i, lt), true));
+		if (s.startsWith('<!--', lt)) { const e = s.indexOf('-->', lt + 4); if (e < 0) throw new Error('ENEX comment is incomplete'); i = e + 3; continue; }
+		if (s.startsWith('<![CDATA[', lt)) { const e = s.indexOf(']]>', lt + 9); if (e < 0) throw new Error('ENEX CDATA is incomplete'); stack[stack.length - 1].children.push(s.slice(lt + 9, e)); i = e + 3; continue; } // literal: never entity-decoded
+		if (s[lt + 1] === '?' || s[lt + 1] === '!') {
+			const e = s.indexOf('>', lt); if (e < 0) throw new Error('ENEX declaration is incomplete');
+			const declaration = s.slice(lt, e + 1);
+			// A declaration is admitted only here, outside comments and CDATA. It is never fetched.
+			if (!/^<\?xml\s[^?]*\?>$/i.test(declaration) && !/^<!DOCTYPE\s+en-export\s+SYSTEM\s+["']https?:\/\/xml\.evernote\.com\/pub\/evernote-export\d+\.dtd["']\s*>$/i.test(declaration)) throw new Error('ENEX declaration is not supported');
+			i = e + 1; continue;
+		}
 		let j = lt + 1, close = false;
 		if (s[j] === '/') { close = true; j++; }
 		const nameStart = j;
 		while (j < n && /[a-zA-Z0-9:_-]/.test(s[j])) j++;
-		const name = s.slice(nameStart, j).toLowerCase();
-		if (!name) { i = lt + 1; continue; }
+		const name = s.slice(nameStart, j);
+		if (!name) throw new Error('ENEX element name is invalid');
 		let quote = '';
 		while (j < n) { const c = s[j]; if (quote) { if (c === quote) quote = ''; j++; continue; } if (c === '"' || c === "'") { quote = c; j++; continue; } if (c === '>') break; j++; }
 		const attrsRaw = s.slice(nameStart + name.length, j);
+		if (j === n || quote) throw new Error('ENEX element is incomplete');
 		i = j + 1;
-		if (close) { for (let k = stack.length - 1; k >= 1; k--) if (stack[k].tag === name) { stack.length = k; break; } continue; }
-		const node = {tag: name, attrs: parseXmlAttrs(attrsRaw), children: []};
+		if (close) { if (stack.length === 1 || stack.at(-1).tag !== name || attrsRaw.trim()) throw new Error('ENEX closing element does not match'); stack.pop(); continue; }
+		const node = {tag: name, attrs: parseXmlAttrs(attrsRaw, true), children: []};
 		stack[stack.length - 1].children.push(node);
 		if (!/\/\s*$/.test(attrsRaw)) stack.push(node);
 	}
+	if (stack.length !== 1 || root.children.filter(c => typeof c === 'object').length !== 1 || root.children.some(c => typeof c === 'string' && c.trim())) throw new Error('ENEX document is incomplete');
 	return root;
 }
 const child = (node, tag) => (node?.children || []).find(c => c && typeof c === 'object' && c.tag === tag) || null;
@@ -205,7 +228,8 @@ export async function importEnex(entries, options) {
 			if (!f || typeof f.name !== 'string' || !/\.enex$/i.test(f.name)) continue;
 			const sourceWarnings = [], text = readImportText(f, sourceWarnings);
 			const root = parseXml(text);
-			const doc = child(root, 'en-export') || root;
+			const doc = child(root, 'en-export');
+			if (!doc) throw new Error('ENEX root is not en-export');
 			const noteNodes = allChildren(doc, 'note');
 			if (!noteNodes.length) { skipped.push({name: f.name, why: 'not a readable ENEX export (no <note> found)'}); continue; }
 
@@ -213,7 +237,7 @@ export async function importEnex(entries, options) {
 				const label = f.name + ' note ' + (index + 1);
 				try {
 					const warnings = [...sourceWarnings];
-					const rawTitle = textOf(child(note, 'title')), title = rawTitle.replace(/\s+/g, ' ').trim();
+					const rawTitle = textOf(child(note, 'title')), title = trimHtmlSpace(rawTitle.replace(/[ \t\r\n\f]+/g, ' '));
 					reportCharacterChange(rawTitle, title, warnings, 'ENEX title');
 					const contentNode = child(note, 'content');
 					if (!title && !contentNode) { skipped.push({name: label, why: 'missing title and content'}); return; }
@@ -238,7 +262,7 @@ export async function importEnex(entries, options) {
 					let body = '';
 					try { body = contentNode ? contentToMarkdown(textOf(contentNode), resources, warnings) : ''; }
 					catch (_) { body = textOf(contentNode); warnings.push({code: 'unsupported_block', message: 'Unparsed ENML retained as source.'}); }
-					if (body.trim()) blocks.push(body.trim());
+					if (trimHtmlSpace(body)) blocks.push(trimHtmlSpace(body));
 					const attrsNode = child(note, 'note-attributes');
 					const sourceUrl = attrsNode && textOf(child(attrsNode, 'source-url')).trim();
 					if (sourceUrl) blocks.push('Source: ' + literalInline(sourceUrl));
@@ -251,7 +275,7 @@ export async function importEnex(entries, options) {
 					// ENEX writes an attribute only when it is set (the DTD's elements are optional): nothing
 					// here is an "unset" value of its own beyond the empty ones every export shares.
 					importMetadata(attrs, ['source-url','reminder-time','reminder-done-time'], warnings, 'Evernote fields', {labels: {'application-data': 'app data'}});
-					let noteText = blocks.join('\n\n').replace(/\r\n?/g, '\n').trimEnd() + '\n';
+					let noteText = blocks.join('\n\n').replace(/\r\n?/g, '\n').replace(/[ \t\r\n\f]+$/, '') + '\n';
 
 					const file = noteFileName(noteText, pool);
 					pool.push(file);
@@ -282,8 +306,8 @@ export async function importEnex(entries, options) {
 					skipped.push({name: label, why: 'could not be read'});
 				}
 			});
-		} catch (_) {
-			skipped.push({name: f && typeof f.name === 'string' ? f.name : '(unnamed)', why: 'not a readable ENEX export'});
+		} catch (error) {
+			skipped.push({name: f && typeof f.name === 'string' ? f.name : '(unnamed)', why: 'not a readable ENEX export: ' + String(error?.message || error)});
 		}
 	}
 

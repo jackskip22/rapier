@@ -8,6 +8,6 @@ export function describeImportUndo(receipt, plan) {
 		confirm: plan.remove.length ? 'Undo import' : 'Keep notes and finish undo',
 		summary: plan.refuse || count(plan.remove.length, 'note') + ' will be removed; ' + count(plan.kept.length, 'note') + ' will be kept',
 		lines: ['only the unchanged notes selected here will be removed',
-			'sections, recordings, pictures, thumbnails and history will be kept',
+			'unchanged imported history, empty sections and unused imported files may be removed',
 			'notes outside this import will not be changed']};
 }

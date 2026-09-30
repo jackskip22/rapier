@@ -101,6 +101,30 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
   }
 }
 
+// The alignment of an empty line (a blank paragraph or heading the caret stands in): the attributes an aligned line's edit surface
+// carries, so the caret shows it and the words typed next take it, written as the marker words already get, after them. Nothing
+// is written to the source until there are words, and a line left empty writes nothing; left is the default, so it takes the
+// attributes off. False when the line is not empty or is not a paragraph or heading (a list item, a quote: nothing changes).
+function _rapierAlignEmptyLine(wrapper, align) {
+  const edit = wrapper.classList.contains('block-wrapper--editing') ? wrapper.querySelector(':scope > .block-edit') : null;
+  if (!edit || /\S/.test(String(edit.textContent || '')) || edit.querySelector('li, blockquote, pre, table, img, svg, hr, math, .math-rendered')) return false;
+  let line = edit.querySelector('p, h1, h2, h3, h4, h5, h6');
+  if (!line) {
+    line = document.createElement('p');
+    line.dir = 'ltr';
+    while (edit.firstChild) line.appendChild(edit.firstChild);
+    edit.appendChild(line);
+  }
+  const marker = align === 'left' ? '' : globalThis.RapierMarkdownLayout.formatLayout({align});
+  if (marker) { line.setAttribute('data-md-layout', encodeURIComponent(marker)); line.setAttribute('data-md-align', align); }
+  else { line.removeAttribute('data-md-layout'); line.removeAttribute('data-md-align'); }
+  _rapierSeatCaretAtBlockStart(edit);
+  _rapierRememberToolbarSelection(window.getSelection(), edit);
+  _rapierUpdateAlignmentButton(window.getSelection());
+  refreshFormatToolbar();
+  return true;
+}
+
 async function rapierAlign(align) {
   if (_rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown' ||
       !['left', 'center', 'right', 'justify'].includes(align)) return false;
@@ -133,6 +157,8 @@ async function rapierAlign(align) {
     if (wrapper) { wrappers = [wrapper]; range = null; }
   }
   if (!wrappers.length) return false;
+  // An empty line has no words to carry the layout marker (it is written after them): the alignment stands on the line itself.
+  if (wrappers.length === 1 && range && range.collapsed && !image?.isConnected && _rapierAlignEmptyLine(wrappers[0], align)) return true;
   const state = {selection, range, wrappers,
     blocksBefore: wrappers.map(wrapper => _rapierHistoryBlock(_rapierBoundBlock(wrapper)))};
   const next = [];

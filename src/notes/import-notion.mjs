@@ -17,7 +17,8 @@ function basename(path) { const s = String(path).split(/[\\/]/); return s[s.leng
 
 const IMAGE_MIME = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', heic: 'image/heic', heif: 'image/heic'};
 function imageMime(ext) { return IMAGE_MIME[ext.replace(/^\./, '').toLowerCase()] || null; }
-function oneLine(s) { return String(s).replace(/\s+/g, ' ').trim(); }
+const trimPropertySpace = text => String(text).replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
+function oneLine(s) { return trimPropertySpace(String(s).replace(/[ \t\r\n\f]+/g, ' ')); }
 
 // A minimal RFC4180 reader: a quoted field doubles its own quote to escape one and may itself hold a
 // comma or a real newline. Notion's own CSV export uses ordinary quoting, nothing proprietary.
@@ -118,20 +119,20 @@ export async function importNotion(entries, options) {
 			damagedCsv.push({entry: csv, why: 'CSV structure is damaged: ' + String(error?.message || error)}); continue;
 		}
 		if (!rows.length) { skipped.push({name: csv.name, why: 'empty CSV'}); continue; }
-		const headers = rows[0].map(h => String(h).trim());
+		const headers = rows[0].map(h => trimPropertySpace(h));
 		if (!headers.length || !headers[0]) { skipped.push({name: csv.name, why: 'no column to use as a title'}); continue; }
 		const dbTitle = stripId(splitExt(basename(csv.name))[0]);
 		for (const [rowIndex, values] of rows.slice(1).entries()) {
-			if (!values.some(value => value.trim())) continue;
-			const title = (values[0] || '').trim() || 'Untitled row ' + (rowIndex + 2);
-			const warnings = [...(csv.characterWarnings || []), ...((values[0] || '').trim() ? [] : [{code: 'row_untitled', message: 'Row has no title; its remaining values were kept in a separately named note.'}])];
+			if (!values.some(value => trimPropertySpace(value))) continue;
+			const title = trimPropertySpace(values[0] || '') || 'Untitled row ' + (rowIndex + 2);
+			const warnings = [...(csv.characterWarnings || []), ...(trimPropertySpace(values[0] || '') ? [] : [{code: 'row_untitled', message: 'Row has no title; its remaining values were kept in a separately named note.'}])];
 			reportCharacterChange(csv.text, csv.text.replace(/\r\n?/g, '\n'), warnings, 'CSV line endings');
 			warnings.push({code: 'database_properties', message: 'Database properties are plain text in this note, not live relations, formulas or database views. Date columns without a timezone remain text.'});
 			const lines = [], tags = [];
 			for (let i = 1; i < Math.max(headers.length, values.length); i++) { const v = values[i] || ''; if (v) lines.push(literalLine(headers[i] || 'Column ' + (i + 1)) + ': ' + v.split('\n').map(literalLine).join('  \n')); }
 			// A column actually named Tag or Tags is the row's tags; every column, that one included,
 			// still becomes a property line in the note, and no other column is read as a tag.
-			for (let i = 1; i < Math.min(headers.length, values.length); i++) if (/^tags?$/i.test(headers[i])) { const names = String(values[i] || '').split(','); for (const name of names) reportCharacterChange(name, name.trim(), warnings, 'CSV tag display name'); tags.push(...names.map(tag => tag.trim()).filter(Boolean)); }
+			for (let i = 1; i < Math.min(headers.length, values.length); i++) if (/^tags?$/i.test(headers[i])) { const names = String(values[i] || '').split(','); for (const name of names) reportCharacterChange(name, trimPropertySpace(name), warnings, 'CSV tag display name'); tags.push(...names.map(tag => trimPropertySpace(tag)).filter(Boolean)); }
 			if (values.length > headers.length) warnings.push({code: 'csv_extra_columns', message: 'Values beyond the named columns were kept by column number.'});
 			const created = dateFromRow(headers, values, CREATED_HEADER), modified = dateFromRow(headers, values, MODIFIED_HEADER);
 			const queue = mdByTitle.get(title) || [];
@@ -140,7 +141,7 @@ export async function importNotion(entries, options) {
 			const md = candidates.length === 1 ? candidates[0] : null;
 			if (md) queue.splice(queue.indexOf(md), 1);
 			if (md) claims.set(md, {lines, tags, created, modified, sourceName: csv.sourceName, warnings});
-			else standalone.push({title: oneLine(title), lines, tags, created, modified, category: dbTitle, sourceName: csv.sourceName, rootId: csv.rootId ?? '', warnings: [...warnings, {code: candidates.length > 1 ? 'row_ambiguous' : 'row_unmatched', message: 'CSV row kept as a separate note because its own page could not be identified uniquely.'}]});
+			else standalone.push({title: oneLine(title), sourceItem: 'row:' + (rowIndex + 2), lines, tags, created, modified, category: dbTitle, sourceName: csv.sourceName, rootId: csv.rootId ?? '', warnings: [...warnings, {code: candidates.length > 1 ? 'row_ambiguous' : 'row_unmatched', message: 'CSV row kept as a separate note because its own page could not be identified uniquely.'}]});
 		}
 	}
 
@@ -161,14 +162,14 @@ export async function importNotion(entries, options) {
 			const claim = claims.get(e);
 			warnings.push(...(claim?.warnings || []));
 			if (claim && claim.lines.length) {
-				const lines = text.split('\n');
-				let at = lines.findIndex(l => l.trim());
-				at = at < 0 ? lines.length : at + 1;
-				// A blank line already sitting at `at` (title directly followed by a blank, the
-				// common case) already separates the property block from whatever follows it.
-				const insert = lines[at] === '' ? ['', ...claim.lines] : ['', ...claim.lines, ''];
-				lines.splice(at, 0, ...insert);
-				text = lines.join('\n');
+				// A CR-only page has lines too. Locate the first authored line without splitting
+				// and rejoining its bytes: CSV properties belong below its title, not at its tail.
+				const eol = /\r\n|\r|\n/.exec(text)?.[0] || '\n';
+				const first = /[^\r\n]*\S[^\r\n]*(?:\r\n|\r|\n|$)/.exec(text);
+				const at = first ? first.index + first[0].length : text.length;
+				const prefix = text.slice(0, at), rest = text.slice(at);
+				text = prefix + (prefix && !/[\r\n]$/.test(prefix) ? eol : '') + eol
+					+ claim.lines.join('\n').replace(/\n/g, eol) + eol + (rest && !/^[\r\n]/.test(rest) ? eol : '') + rest;
 			}
 			text = (front.present ? front.bom + front.block : '') + text;
 			// Even an empty page is a file the person handed us.
@@ -190,7 +191,7 @@ export async function importNotion(entries, options) {
 			const entry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''};
 			if (row.category) entry.category = row.category;
 			if (row.modified !== undefined) entry.modified = row.modified;
-			built.push({file, text: importTags(text, row.tags, row.warnings, row.title), entry, sourceName: row.sourceName, rootId: row.rootId, warnings: row.warnings, created: row.created ?? -Infinity});
+			built.push({file, text: importTags(text, row.tags, row.warnings, row.title), entry, sourceName: row.sourceName, sourceItem: row.sourceItem, rootId: row.rootId, warnings: row.warnings, created: row.created ?? -Infinity});
 		} catch (_) { skipped.push({name: row.title, why: 'could not be read'}); }
 	}
 

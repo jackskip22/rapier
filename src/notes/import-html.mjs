@@ -20,6 +20,8 @@ import {expandImportZips, literalInline, literalBlock, uniquePictureName, import
 import {readImportText, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
 
 // Samsung's plain text and file-name-derived titles use the shared literal import grammar.
+const trimHtmlSpace = text => text.replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
+
 // ---- Names and paths -------------------------------------------------------------------------------
 function basenameOf(s) { return String(s || '').split(/[?#]/)[0].split(/[\\/]/).pop() || ''; }
 function dirOf(path) { const i = String(path || '').lastIndexOf('/'); return i < 0 ? '' : path.slice(0, i + 1); }
@@ -84,11 +86,11 @@ function extractTitleAndBody(html, warnings) {
 	let body = bodyMatch ? bodyMatch[1] : src.replace(/<head\b[^>]*>[\s\S]*?<\/head>/i, '');
 	headParts(/<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(src)?.[1] || '', warnings);
 	const titleMatch = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(src);
-	let title = titleMatch ? htmlToMarkdown(titleMatch[1], {warnings}).replace(/\s+/g, ' ').trim() : '';
+	let title = titleMatch ? trimHtmlSpace(htmlToMarkdown(titleMatch[1], {warnings}).replace(/[ \t\r\n\f]+/g, ' ')) : '';
 	if (titleMatch) reportCharacterChange(titleMatch[1], title, warnings, 'HTML title');
 	if (!title) {
 		const h = /<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>/i.exec(body);
-		if (h) { title = htmlToMarkdown(h[0], {warnings}).replace(/^#+\s*/, '').replace(/\s+/g, ' ').trim(); body = body.slice(0, h.index) + body.slice(h.index + h[0].length); }
+		if (h) { title = trimHtmlSpace(htmlToMarkdown(h[0], {warnings}).replace(/^#+[ \t]*/, '').replace(/[ \t\r\n\f]+/g, ' ')); body = body.slice(0, h.index) + body.slice(h.index + h[0].length); }
 	}
 	return {title, body};
 }
@@ -98,8 +100,8 @@ function noteFromHtml(html, fallbackTitle, findByRef, warnings) {
 	const converted = htmlToMarkdown(resolveImages(body, findByRef), {warnings});
 	const blocks = [];
 	if (heading) blocks.push('# ' + heading.replace(/(\s+#+)$/, m => m.replace('#', '\\#')));
-	if (converted.trim()) blocks.push(converted.trim());
-	return blocks.join('\n\n').replace(/\r\n?/g, '\n').trimEnd() + '\n';
+	if (trimHtmlSpace(converted)) blocks.push(trimHtmlSpace(converted));
+	return blocks.join('\n\n').replace(/\r\n?/g, '\n').replace(/[ \t\r\n\f]+$/, '') + '\n';
 }
 
 // ---- .mht/.mhtml: a MIME-multipart message (RFC 2557). One boundary, headers per part separated
@@ -172,7 +174,7 @@ function textOfPart(part, warnings) {
 // exactly like notes/takeout.mjs's own plain-text rule (support pages: three-dot menu > Save as
 // file > Text file, plain text, no formatting kept -- there is nothing else to read against).
 function noteFromText(text) {
-	return literalBlock(text).replace(/\r\n?/g, '\n').trimEnd() + '\n';
+	return literalBlock(text).replace(/\r\n?/g, '\n').replace(/[ \t\r\n\f]+$/, '') + '\n';
 }
 
 function detectKind(name, sniff) {

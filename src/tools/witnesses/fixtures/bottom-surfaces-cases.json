@@ -787,53 +787,6 @@
       }
     },
     {
-      "id": "format-toolbar-desktop",
-      "selector": "html[data-format-toolbar-mode=\"desktop\"] .format-toolbar-stack",
-      "rule": {
-        "file": "editor/styles/rapier-editor.css",
-        "origin": "stylesheet",
-        "at": [
-          {
-            "name": "media",
-            "params": "(min-width: 900px)"
-          }
-        ],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "inset",
-            "value": "auto",
-            "important": false
-          },
-          {
-            "property": "top",
-            "value": "0",
-            "important": false
-          },
-          {
-            "property": "left",
-            "value": "0",
-            "important": false
-          },
-          {
-            "property": "transform",
-            "value": "none",
-            "important": false
-          }
-        ]
-      },
-      "basis": "production CSS; synthetic component content, not an app-opening receipt",
-      "inactive": {
-        "condition": "(min-width: 900px)",
-        "reason": "This declaration is inactive in both requested phone viewports; do not force a desktop state and count it as phone coverage."
-      }
-    },
-    {
       "id": "info-action-overlay",
       "selector": ".info-action-overlay",
       "rule": {

@@ -1,5 +1,5 @@
 {
-  "release": "1.1.19",
+  "release": "1.1.20",
   "core": [
     {
       "name": "document.get_context",
@@ -6069,7 +6069,7 @@
     },
     {
       "name": "rapier.open",
-      "title": "Open Rapier",
+      "title": "Rapier editor",
       "description": "Creates a workspace from text and shows its editor, or reopens one by its document capability. Use first over MCP when an editable explanation, visual walkthrough, substantial draft or plan, creative canvas, or reviewable revision helps the requested task, even without naming Rapier. Keep brief answers in chat and honour explicit format choices. Include prose and supported Mermaid flowcharts directly in text; reopen existing work with document alone. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.",
       "inputSchema": {
         "type": "object",
@@ -6158,6 +6158,15 @@
         ],
         "additionalProperties": true
       },
+      "icons": [
+        {
+          "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMCAyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMS4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNS41IDZoM3Y4TTUuNSAxNGg2TTguNSA5LjVDOC41IDcuMyAxMCA2IDEyLjMgNmgyLjJ2MS41Ii8+PC9zdmc+",
+          "mimeType": "image/svg+xml",
+          "sizes": [
+            "any"
+          ]
+        }
+      ],
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -6174,13 +6183,23 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.19.html",
+          "resourceUri": "ui://rapier/editor-1.1.20.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.19.html"
+        "openai/outputTemplate": "ui://rapier/editor-1.1.20.html",
+        "openai/ui": {
+          "entrypoints": [
+            {
+              "type": "global"
+            },
+            {
+              "type": "thread"
+            }
+          ]
+        }
       }
     },
     {

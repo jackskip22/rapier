@@ -1510,18 +1510,26 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		return _idbClearHandles();
 	}
 
-	function _webEngineOwnsDocumentAuthority(authority) {
+	// The engine's state is one closure's (editor/engine.js), not a page global: the engine tells the platform which
+	// document is current through its shell port, and that answer alone says whether a saved file still belongs to it.
+	function _engineDocumentAuthority() {
 		try {
-			return typeof rapier === 'object' &&
-				String(rapier.identity && rapier.identity.authority || '') === String(authority || '');
-		} catch (_) { return false; }
+			var port = window.Rapier;
+			return port && port.document && typeof port.document.authority === 'function'
+				? String(port.document.authority() || '') : '';
+		} catch (_) { return ''; }
+	}
+
+	function _engineOwnsDocumentAuthority(authority) {
+		var current = _engineDocumentAuthority();
+		return !!current && current === String(authority || '');
 	}
 
 	async function _webRefreshCurrentFileNow(authority, value, persistedKey, requireEngineAuthority) {
 		var id = String(authority || '').trim();
 		var record = _webHandleRecord(value);
 		if (!id || !record.handle) return { bound: false, persisted: false };
-		if (requireEngineAuthority && !_webEngineOwnsDocumentAuthority(id)) {
+		if (requireEngineAuthority && !_engineOwnsDocumentAuthority(id)) {
 			return { bound: false, persisted: false };
 		}
 		if (_webFileRuntime.activeAuthority && _webFileRuntime.activeAuthority !== id) return { bound: false, persisted: false };
@@ -1531,7 +1539,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		_setPlatformFileBinding(id, record.generation, true);
 		var key = persistedKey || ('authority:' + id);
 		var stored = await _idbPut(key, record);
-		if (requireEngineAuthority && !_webEngineOwnsDocumentAuthority(id)) {
+		if (requireEngineAuthority && !_engineOwnsDocumentAuthority(id)) {
 			if (_webFileRuntime.activeAuthority === id) _webFileRuntime.activeAuthority = '';
 			_webFileRuntime.liveHandles.delete(id);
 			_webFileRuntime.reportedGenerations.delete(id);
@@ -2338,11 +2346,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			contentType: _srContentType(created, blob.type),
 			documentAuthority: String(options && options.documentAuthority || '').trim(),
 		};
-		var engineOwnsSave = false;
-		try {
-			engineOwnsSave = typeof rapier === 'object' &&
-				String(rapier.identity && rapier.identity.authority || '') === payload.documentAuthority;
-		} catch (_) {}
+		var engineOwnsSave = _engineOwnsDocumentAuthority(payload.documentAuthority);
 		var currentAuthority = String(_srState.current && _srState.current.documentAuthority || '').trim();
 		if (destinationName && engineOwnsSave &&
 				(!currentAuthority || currentAuthority === payload.documentAuthority)) {
@@ -2479,11 +2483,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				var destinationName = providedName
 					? (_rapierDocumentNameIsAdmissible(providedName) ? providedName : '')
 					: (_rapierDocumentNameIsAdmissible(saveName) ? saveName : '');
-				var engineStillOwnsSave = false;
-				try {
-					engineStillOwnsSave = typeof rapier === 'object' &&
-						String(rapier.identity && rapier.identity.authority || '') === expectedAuthority;
-				} catch (_) {}
+				var engineStillOwnsSave = _engineOwnsDocumentAuthority(expectedAuthority);
 				var stillBound = engineStillOwnsSave &&
 					String(_srState.current && _srState.current.documentAuthority || '').trim() === expectedAuthority &&
 					_srState.currentHandle === saveHandle;

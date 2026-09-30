@@ -147,5 +147,5 @@ export function rewriteSyncMedia(text, mapping = {}) {
 	const rewrite = source => rewriteAttachmentNames(rewriteRecordingNames(source, audio), attachments);
 	// The merge owner admits only exact envelopes it knows how to reconstruct. Ordinary
 	// fenced examples, malformed markers and arbitrary comments retain their literal bytes.
-	return rewrite(mapTextConflictVariants(text, source => rewriteSyncMedia(source, mapping)));
+	return rewrite(mapTextConflictVariants(text, rewrite));
 }

@@ -629,52 +629,6 @@
       "reason": "The format stack reserves its full box including the toolbar it contains."
     },
     {
-      "id": "format-toolbar-desktop",
-      "file": "editor/styles/rapier-editor.css",
-      "selector": "html[data-format-toolbar-mode=\"desktop\"] .format-toolbar-stack",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [
-          {
-            "name": "media",
-            "params": "(min-width: 900px)"
-          }
-        ],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "inset",
-            "value": "auto",
-            "important": false
-          },
-          {
-            "property": "top",
-            "value": "0",
-            "important": false
-          },
-          {
-            "property": "left",
-            "value": "0",
-            "important": false
-          },
-          {
-            "property": "transform",
-            "value": "none",
-            "important": false
-          }
-        ]
-      },
-      "role": "overlay",
-      "interactive": true,
-      "edge": "floating",
-      "reason": "The desktop override removes the bottom anchor; the phone matrix must record this rule as inactive."
-    },
-    {
       "id": "info-action-overlay",
       "file": "editor/styles/rapier-info.css",
       "selector": ".info-action-overlay",
