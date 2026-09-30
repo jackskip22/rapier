@@ -151,10 +151,10 @@ the image inline.
 
 The marker is one line beginning exactly `<!--md-layout:v1`, with one or more
 unquoted `key=value` fields separated by ASCII spaces or tabs, ending `-->`. Each key
-occurs once. Geometry uses unsigned decimal digits, optionally followed by a
+occurs once. Geometry uses decimal digits, optionally followed by a
 decimal point and digits, then `%` for `width`/`x` or `em` for `y`; no leading
-zeroes, except `0`, signs or exponent notation. Horizontal whitespace before
-the close is accepted. `rotate` is the one signed field: an optional leading
+zeroes except `0`, plus signs or exponent notation. `y` may begin with `-`, within
+its stated range. Horizontal whitespace before the close is accepted. `rotate` also accepts an optional leading
 `-`, then the same unsigned digits as the others but at most one decimal
 place, then `deg`; no `+`, no exponent, no `°` sign, and no `-0deg` (zero is
 always unsigned, like `y=0em`). `opacity` is a whole number with no leading zero, then `%`.
@@ -175,8 +175,8 @@ source; opening, rendering and viewport resizing never normalize it.
 
 ### Conformance rungs
 
-A reader's support for this section is one of four rungs. Each is a conformance statement, not a
-suggestion: a reader claiming a rung shows exactly what that rung says, no less and no more.
+The first three rungs are portable conformance statements: a reader claiming one shows exactly
+its stated behavior. Rung 3 names the kit's implementation profile.
 
 **Rung 0 — any CommonMark reader.** Every layout comment is an ordinary HTML comment; CommonMark
 already shows nothing for one. A picture shows inline, upright and solid, at the reader's own default width.
@@ -212,6 +212,8 @@ agreement with Rapier — the placement is the standard; the exact line is not.
 "The drop-in module") plans lines exactly as Rapier's own live view and styled export do, up to font
 metrics: a different font wraps differently everywhere, and the module is deterministic given its
 measurer. This is the only rung that reproduces both-sides wrapping and an interior wrap.
+This is a kit implementation profile; exact line breaks are not an independent reader's
+conformance requirement. Rungs 0–2 define portable rendering support.
 
 ## Embedded images
 

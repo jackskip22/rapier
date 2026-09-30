@@ -16,7 +16,7 @@ An object's name in the bucket is `objects/` followed by that hash, written in h
 
 The vault key is `32` bytes. The recovery code is that key, written so it can be typed: Crockford's base32, `52` symbols, in groups of four. It is not stored in the bucket. Anyone who has it can open the vault, so it belongs with you, not in the bucket and not on this page.
 
-A passphrase is not the vault key. The header records how a wrapping key is derived from the passphrase: `PBKDF2-HMAC-SHA-256`, `600000` iterations, a `16`-byte salt. That wrapping key seals the vault key with AES-256-GCM. A new passphrase wraps the same vault key again. It does not reseal the notes.
+A passphrase is not the vault key. The header records how a wrapping key is derived from the passphrase: `scrypt` with N=`32768`, r=`8`, p=`1`, and a `16`-byte salt. That wrapping key seals the vault key with AES-256-GCM. A new passphrase wraps the same vault key again. It does not reseal the notes.
 
 The header itself is not sealed. It is JSON: format version `1`, the derivation's name and iteration count, the salt, the wrapped vault key, and a verifier. Its name in the bucket is `keys/` followed by the SHA-256 of those header bytes. Nothing in it is a secret by itself. The salt and the iteration count are public, and the wrapped key does nothing without the passphrase or the recovery code.
 

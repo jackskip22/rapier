@@ -28,11 +28,13 @@ function _rapierWillMarkerOf(content) {
 		return null;
 	}
 	const near = fault => ({ kind: 'near', fault, law: '', intent: null, content: line });
+	const afterPrefix = line.slice(_RAPIER_WILL_OPENER_PREFIX.length);
+	const versionGap = afterPrefix.indexOf(' ');
+	if ((versionGap < 0 ? afterPrefix : afterPrefix.slice(0, versionGap)) !== '1') return near('unknown_version');
 	if (!line.endsWith(_RAPIER_WILL_CLOSE_SUFFIX)) return near('malformed_marker');
 	const middle = line.slice(_RAPIER_WILL_OPENER_PREFIX.length,
 		line.length - _RAPIER_WILL_CLOSE_SUFFIX.length);
 	const gap = middle.indexOf(' ');
-	if ((gap < 0 ? middle : middle.slice(0, gap)) !== '1') return near('unknown_version');
 	if (gap < 0) return near('malformed_marker');
 	const rest = middle.slice(gap + 1);
 	const word = (/^[^:\s]*/.exec(rest))[0];

@@ -7136,6 +7136,31 @@ function _rapierInitBlockInteractionRouter() {
 		if (context) _rapierScheduleEditBlur(context.editDiv, context.block.id);
 	});
 
+	// The gap between two blocks, and the gutter beside a line, belong to the nearest words (the founder: as intuitive
+	// as Word or Docs): a press there is a press on the nearest surface's nearest line, at the same x. A block's line
+	// below its words is the style pack's margin inside the wrapper's box, so such a press lands on the wrapper (or
+	// on the host beside a line), never on the words, and used to do nothing. The gutter keeps "tap outside the text
+	// when you're done" while a block is open; the gap always goes to the words of a block not being edited.
+	const nearestSurface = (clientX, clientY) => {
+		let best = null;
+		for (const wrapper of host.children) {
+			if (!wrapper.classList?.contains('block-wrapper') || wrapper.hidden || wrapper.classList.contains('block-wrapper--metadata')) continue;
+			const surface = wrapper.classList.contains('block-wrapper--editing') ? wrapper.querySelector(':scope > .block-edit') : wrapper.querySelector(':scope > .block-read');
+			if (!surface) continue;
+			const rect = surface.getBoundingClientRect();
+			if (!rect.height) continue;
+			const distance = clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
+			if (distance > 40 || (best && distance >= best.distance)) continue;
+			best = { wrapper, surface, distance, x: Math.min(Math.max(clientX, rect.left + 1), rect.right - 1), y: Math.min(Math.max(clientY, rect.top + 1), rect.bottom - 1) };
+		}
+		// The open block's own line below its words is left to the browser and the caret already there.
+		return best && !best.surface.classList.contains('block-edit') ? best : null;
+	};
+	const gapPress = event => {
+		const target = event.target;
+		if (target === host) return _activeBlockEditContext() ? null : nearestSurface(event.clientX, event.clientY);
+		return target?.classList?.contains('block-wrapper') && host.contains(target) ? nearestSurface(event.clientX, event.clientY) : null;
+	};
 	host.addEventListener('pointerdown', event => {
 		host._rapierBlankPress = event.target?.closest?.('.block-wrapper, button, .rapier-image-tools, .rapier-image-grip, .rapier-image-move')
 			? null : { x: event.clientX, y: event.clientY, scrollTop: host.scrollTop, toolsOpen: _rapierImageRuntime.blockId != null, touch: event.pointerType === 'touch' };
@@ -7161,7 +7186,13 @@ function _rapierInitBlockInteractionRouter() {
 		}
 		const readDiv = event.target?.closest?.('.block-read');
 		const wrapper = readDiv?.closest?.('.block-wrapper');
-		if (!readDiv || !wrapper || !host.contains(wrapper)) return;
+		host._rapierGapPress = null;
+		if (!readDiv) {
+			const near = gapPress(event);
+			if (near) { host._rapierBlankPress = null; host._rapierGapPress = { near, x: event.clientX, y: event.clientY, scrollTop: host.scrollTop }; }
+			return;
+		}
+		if (!wrapper || !host.contains(wrapper)) return;
 		const active = _activeBlockEditContext();
 		if (active && active.wrapper === wrapper) _rapierCheckpointEdit(active.editDiv);
 		wrapper._rapierPointerDownX = event.clientX;
@@ -7264,6 +7295,29 @@ function _rapierInitBlockInteractionRouter() {
 		const readDiv = pressed?.closest?.('.block-read');
 		const wrapper = readDiv?.closest?.('.block-wrapper');
 		const block = _rapierBoundBlock(wrapper);
+		const gap = host._rapierGapPress;
+		host._rapierGapPress = null;
+		if (!readDiv && gap && gap.near.wrapper.isConnected) {
+			const gdx = event.clientX - gap.x, gdy = event.clientY - gap.y;
+			if (gdx * gdx + gdy * gdy > 25 || Math.abs(host.scrollTop - gap.scrollTop) > 1) return;
+			const live = window.getSelection && window.getSelection();
+			if (live && !live.isCollapsed && live.rangeCount && _rangeIntersectsEditor(live.getRangeAt(0))) return;
+			const { near } = gap;
+			if (rapier.speech.active && !rapier.speech.paused) { _readSeekToPoint(near.x, near.y); return; }
+			const gapBlock = _rapierBoundBlock(near.wrapper);
+			if (!gapBlock || _rapierLoneControlBlock(gapBlock)) return;
+			const gapRaw = _blockUsesRawEditor(gapBlock.raw), under = document.elementFromPoint(near.x, near.y) || near.surface;
+			enterBlockEdit(gapBlock, near.wrapper, {
+				liveRange: gapRaw ? null : _rapierCaretRangeFromPoint(near.x, near.y),
+				tableCell: _rapierTableCellActivation(near.surface, under, near.x, near.y),
+				charOffset: gapRaw ? _rapierRenderedCharOffsetFromPoint(near.surface, near.x, near.y) : null,
+				clientX: near.x,
+				clientY: near.y,
+				preserveScroll: true,
+				scrollTop: host.scrollTop,
+			});
+			return;
+		}
 		if (!readDiv || !wrapper || !block) {
 			if (!pressed?.closest?.('.block-wrapper')) _rapierBlankTap(event);
 			return;
@@ -21801,7 +21855,7 @@ function _rapierDocumentPrintCss(hostSelector) {
 	${p('.md-render a')}{color:#111!important;text-decoration:underline}
 	${p('.md-render ol>li::before')}{background:#fff!important;color:#111!important;border-color:#111!important}
 	${p('.md-render ol>li:not(:last-child)::after')}{border-color:#111!important}
-	${p('.md-render blockquote.callout')}{background:none!important;color:#111!important;--md-color-success:#1a9148;--md-color-warning:#b45309;--md-color-error:#c00}
+	${p('.md-render blockquote.callout')}{background:none!important;color:#111!important;--md-color-success:#188844;--md-color-warning:#b26105;--md-color-error:#c00}
 }`;
 }
 
@@ -21826,6 +21880,33 @@ function _rapierArtifactStyles(theme, includeFonts, printMode) {
 	if (includeFonts) parts.push(_rapierStyleText('rapier-font-style'));
 	parts.push(_rapierStyleText('rapier-content-style'));
 	parts.push(_rapierArtifactThemeCss());
+	// Where the faces do not ride (the written page's policy carries no font-src), the reader's own sans is
+	// matched to Geist's metrics: one family per system face, src:local() only (fetched by nothing, so the
+	// policy is untouched), size-adjust from Geist's weighted average advance over the face's own (Geist 467
+	// per 1000, measured from repo/shell/fonts; the system faces from their tables), the ascent and descent
+	// overrides divided by that size-adjust so the used metrics are Geist's 1005/295 per 1000, the line gap
+	// Geist's zero. Bold weights take the face's own bold; 500 the regular. Proved in Chromium against the
+	// installed Liberation Sans: widths 1.057 as computed, regular and bold loaded, the stack resolving to it.
+	// The family list walks the platforms: Roboto (Android), Helvetica Neue (Apple), Segoe UI (Windows),
+	// Arial, then Linux's Noto Sans, Ubuntu, Liberation Sans, DejaVu Sans; a face that is not installed fails
+	// to load and the browser moves to the next family. font-size-adjust was tried and rescaled Geist itself.
+	if (!includeFonts) parts.push(`@font-face{font-family:'Geist/Roboto';src:local('Roboto');font-weight:400 500;size-adjust:105%;ascent-override:95.7%;descent-override:28.1%;line-gap-override:0%}
+@font-face{font-family:'Geist/Roboto';src:local('Roboto Bold');font-weight:600 700;size-adjust:105%;ascent-override:95.7%;descent-override:28.1%;line-gap-override:0%}
+@font-face{font-family:'Geist/Helvetica Neue';src:local('Helvetica Neue');font-weight:400 500;size-adjust:103.8%;ascent-override:96.8%;descent-override:28.4%;line-gap-override:0%}
+@font-face{font-family:'Geist/Helvetica Neue';src:local('Helvetica Neue Bold');font-weight:600 700;size-adjust:103.8%;ascent-override:96.8%;descent-override:28.4%;line-gap-override:0%}
+@font-face{font-family:'Geist/Segoe UI';src:local('Segoe UI');font-weight:400 500;size-adjust:105.3%;ascent-override:95.4%;descent-override:28%;line-gap-override:0%}
+@font-face{font-family:'Geist/Segoe UI';src:local('Segoe UI Bold');font-weight:600 700;size-adjust:105.3%;ascent-override:95.4%;descent-override:28%;line-gap-override:0%}
+@font-face{font-family:'Geist/Arial';src:local('Arial');font-weight:400 500;size-adjust:104.8%;ascent-override:95.9%;descent-override:28.2%;line-gap-override:0%}
+@font-face{font-family:'Geist/Arial';src:local('Arial Bold');font-weight:600 700;size-adjust:104.8%;ascent-override:95.9%;descent-override:28.2%;line-gap-override:0%}
+@font-face{font-family:'Geist/Noto Sans';src:local('Noto Sans');font-weight:400 500;size-adjust:98.5%;ascent-override:102%;descent-override:29.9%;line-gap-override:0%}
+@font-face{font-family:'Geist/Noto Sans';src:local('Noto Sans Bold');font-weight:600 700;size-adjust:98.5%;ascent-override:102%;descent-override:29.9%;line-gap-override:0%}
+@font-face{font-family:'Geist/Ubuntu';src:local('Ubuntu');font-weight:400 500;size-adjust:102.6%;ascent-override:97.9%;descent-override:28.7%;line-gap-override:0%}
+@font-face{font-family:'Geist/Ubuntu';src:local('Ubuntu Bold');font-weight:600 700;size-adjust:102.6%;ascent-override:97.9%;descent-override:28.7%;line-gap-override:0%}
+@font-face{font-family:'Geist/Liberation Sans';src:local('Liberation Sans');font-weight:400 500;size-adjust:105.7%;ascent-override:95%;descent-override:27.9%;line-gap-override:0%}
+@font-face{font-family:'Geist/Liberation Sans';src:local('Liberation Sans Bold');font-weight:600 700;size-adjust:105.7%;ascent-override:95%;descent-override:27.9%;line-gap-override:0%}
+@font-face{font-family:'Geist/DejaVu Sans';src:local('DejaVu Sans');font-weight:400 500;size-adjust:92.1%;ascent-override:109.1%;descent-override:32%;line-gap-override:0%}
+@font-face{font-family:'Geist/DejaVu Sans';src:local('DejaVu Sans Bold');font-weight:600 700;size-adjust:92.1%;ascent-override:109.1%;descent-override:32%;line-gap-override:0%}
+:root,.md-render{--md-font-sans:'Geist','Geist/Roboto','Geist/Helvetica Neue','Geist/Segoe UI','Geist/Arial','Geist/Noto Sans','Geist/Ubuntu','Geist/Liberation Sans','Geist/DejaVu Sans',system-ui,sans-serif}`);
 	const highlightCss = _rapierStyleText('rapier-highlight-style');
 	parts.push(highlightCss);
 	// A page written for the system theme has no body.light to switch: under a light system
@@ -21942,9 +22023,10 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// rules of its own -- Share, for the no-script float it alone writes -- appends them.
 	// The type faces ride only where they can load. A written page's policy is default-src
 	// 'none' with no font-src, so a data: font in one is fetched by nothing and would be tens of
-	// kilobytes of bytes no reader ever sees; those pages fall back to system-ui, which is the
-	// one difference between a Rapier document and its exported page. A print artifact renders
-	// inside this page, under this page's policy, so it keeps the real faces.
+	// kilobytes of bytes no reader ever sees; those pages take the reader's own sans matched to
+	// Geist's metrics (_rapierArtifactStyles), which is the one difference between a Rapier
+	// document and its exported page. A print artifact renders inside this page, under this
+	// page's policy, so it keeps the real faces.
 	const css = _rapierArtifactStyles(theme, !!opts.print, !!opts.print || opts.kind === 'standalone')
 		+ (opts.extraCss ? '\n\n' + opts.extraCss : '');
 	// Every written page is offline. Only the writer's nonce script may run; it, pictures,
@@ -22100,8 +22182,8 @@ function _rapierCreatePrintHost(artifact) {
 	host.style.setProperty('--color-text-secondary', '#444444');
 	host.style.setProperty('--color-text-muted', '#606060');
 	host.style.setProperty('--color-text-subtle', '#878787');
-	host.style.setProperty('--color-success', '#1a9148');
-	host.style.setProperty('--color-warning', '#d97706');
+	host.style.setProperty('--color-success', '#188844');
+	host.style.setProperty('--color-warning', '#b26105');
 	host.style.setProperty('--color-error', '#c00');
 
 	const main = document.createElement('main');

@@ -3,7 +3,7 @@
 // where it does not, and refused where it says it refuses. The decoder is jxl-oxide (a development dependency).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {encode, transcode, encodeLosslessRGBA, encodeLossyRGBA, LIMITS} from '../../index.mjs';
+import {encode, transcode, encodeLosslessRGBA, encodeLossyRGBA, encodeLossless, inspectPixels, LIMITS} from '../../index.mjs';
 import {writeJPEG} from './jpeg-writer.mjs';
 import {decoder} from './decoder.mjs';
 
@@ -38,6 +38,30 @@ test('lossy: at quality 90 the picture is close and smaller; at 70 smaller still
 	assert.ok(psnr(rgbaOf(decode(q90)), data) > 38, 'quality 90 stays above 38 dB on a soft picture');
 	const few = picture(120, 90, {colours: 6}); assert.deepEqual(rgbaOf(decode(encode(few, 120, 90, {quality: 60}))), few, 'few colours come back exact at any quality');
 });
+test('palette and direct streams preserve the same pixels; the cheaper direct representation remains available', {skip: needs}, () => {
+	for (const [w, h, colours] of [[256, 256, 256], [64, 64, 64], [128, 128, 16]]) {
+		const data = new Uint8Array(w * h * 4);
+		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+			const n = Math.floor((x % colours) * 255 / (colours - 1)); data.set([n, 0, 255 - n, 255], (y * w + x) * 4);
+		}
+		const chosen = encodeLosslessRGBA(data, w, h), direct = encodeLossless(data, w, h, {shape: inspectPixels(data, w, h, {palette: false})});
+		assert.ok(chosen.length <= direct.length, 'palette eligibility must not force a larger stream');
+		assert.deepEqual(rgbaOf(decode(chosen)), data); assert.deepEqual(rgbaOf(decode(direct)), data);
+	}
+});
+test('lossy colour keeps authored alpha exact across Squeeze levels and group boundaries', {skip: needs}, () => {
+	for (const [w, h, grey] of [[17, 1, true], [9, 9, false], [513, 259, false]]) {
+		const data = new Uint8Array(w * h * 4);
+		for (let i = 0; i < data.length; i += 4) {
+			data[i] = random() * 256 | 0; data[i + 1] = grey ? data[i] : random() * 256 | 0;
+			data[i + 2] = grey ? data[i] : random() * 256 | 0; data[i + 3] = (i / 4 * 73) & 255;
+		}
+		for (const quality of [1, 80]) {
+			const back = rgbaOf(decode(encode(data, w, h, {quality})));
+			for (let i = 3; i < data.length; i += 4) assert.equal(back[i], data[i], `${w}x${h}, quality ${quality}, alpha ${i >> 2}`);
+		}
+	}
+});
 test('a JPEG carried whole decodes to the JPEG\'s own pixels and is smaller', {skip: needs}, () => {
 	const w = 77, h = 45;
 	const comp = (hs, vs, hmax, vmax, scale) => { const stride = Math.ceil(w / (8 * hmax)) * hs, rows = Math.ceil(h / (8 * vmax)) * vs, coeffs = new Int16Array(stride * rows * 64), quant = new Int32Array(64);
@@ -63,4 +87,17 @@ test('refusals are the five codes and nothing else', () => {
 	assert.throws(() => encode(new Uint8Array((LIMITS.edge + 1) * 4), LIMITS.edge + 1, 1), {code: 'JXL_DIMENSIONS'});
 	assert.throws(() => transcode(new Uint8Array(0)), {code: 'JXL_INPUT'});
 	assert.throws(() => transcode(Uint8Array.from([0xff, 0xd8, 0xff, 0xc3, 0, 8, 8, 0, 8, 0, 8, 1, 1, 0x11, 0])), {code: 'JXL_JPEG'});
+});
+
+test('a valid palette survives a direct candidate above the stream limit', () => {
+	const w = 2400, h = 2400, data = new Uint8Array(w * h * 4); let state = 19;
+	for (let i = 0; i < data.length; i += 4) {
+		state = (Math.imul(state, 1664525) + 1013904223) >>> 0; const n = state >>> 24;
+		data.set([n, (n * 73) & 255, (n * 151) & 255, (n * 199) & 255], i);
+	}
+	let direct;
+	try { direct = encodeLossless(data, w, h, {shape: inspectPixels(data, w, h, {palette: false})}).length; }
+	catch (error) { assert.equal(error.code, 'JXL_SIZE'); direct = Infinity; }
+	assert.ok(direct > LIMITS.bytes, 'the rejected candidate crosses the real stream limit');
+	assert.ok(encodeLosslessRGBA(data, w, h).length < LIMITS.bytes, 'the palette remains a valid answer');
 });

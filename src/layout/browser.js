@@ -1951,7 +1951,7 @@ const _rapierImageFlow = (() => {
   // The box under a page point: a figure that holds words or can (never a connector, ink or paint), front to back.
   // `step` says the point sits on the box's step figures, which stand above its words.
   function boxAt(image, clientX, clientY) {
-    const core = globalThis.RapierDrawCore, recipe = isDrawing(image) ? _rapierDrawRecipeFromImage(image) : null;
+    const core = globalThis.RapierDrawCore, recipe = typeof _rapierDrawRecipeFromImage === 'function' ? _rapierDrawRecipeFromImage(image) : null;
     if (!recipe || !core?._rapierDrawShapeBBoxIn) return null;
     const point = drawingPoint(image, recipe, clientX, clientY);
     if (!point) return null;
@@ -2091,7 +2091,7 @@ const _rapierImageFlow = (() => {
   }
   function placeShapeField(hit) {
     if (!shapeField || !fieldOpen) return;
-    const image = fieldOpen.image, recipe = hit?.recipe || _rapierDrawRecipeFromImage(image), core = globalThis.RapierDrawCore;
+    const image = fieldOpen.image, recipe = hit?.recipe || (typeof _rapierDrawRecipeFromImage === 'function' ? _rapierDrawRecipeFromImage(image) : null), core = globalThis.RapierDrawCore;
     const bounds = rect(image);
     const shape = recipe?.shapes.find(row => row.id === fieldOpen.shapeId), box = shape && core?._rapierDrawShapeBBoxIn?.(shape, recipe);
     let left = bounds.left, top = bounds.top, width = 160;
@@ -2115,7 +2115,7 @@ const _rapierImageFlow = (() => {
     if (!open || open.done) return false;
     const value = open.input.value, before = open.value, edit = globalThis.RapierDrawEdit;
     closeShapeField();
-    if (value === before || !edit?.editDrawing || !selected?.isConnected || selected !== open.image) return false;
+    if (value === before || !edit?.editDrawing || !selected?.isConnected || selected !== open.image || typeof _rapierDrawRecipeFromImage !== 'function') return false;
     // The drawing as it is now, not as it was when the field opened: an agent may have changed it meanwhile.
     const base = _rapierDrawRecipeFromImage(open.image);
     if (!base || !base.shapes.some(row => row.id === open.shapeId)) { showToast('That box is no longer in the drawing.', 'info'); return false; }

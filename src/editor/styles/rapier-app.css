@@ -134,10 +134,10 @@ body.light{
 	--color-error:#c00;
 	--color-error-foreground:#fff;
 	--color-error-muted:rgba(204,0,0,0.10);
-	--color-success:#1a9148;
-	--color-success-muted:rgba(26,145,72,0.10);
-	--color-warning:#d97706;
-	--color-warning-muted:rgba(217,119,6,0.10);
+	--color-success:#188844;
+	--color-success-muted:rgba(24,136,68,0.10);
+	--color-warning:#b26105;
+	--color-warning-muted:rgba(178,97,5,0.10);
 
 	color-scheme:light;
 }
@@ -458,6 +458,8 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 .block-wrapper--metadata{display:none!important}
 .rapier-source-token{color:inherit;background:none;border:0;padding:0;font:inherit}
 .rapier-source-token--softbreak::after{content:' '}
+/* The soft break after a callout's label opens the body's first line: its space would indent that line by one space (4 px on a phone) where the lines below start at the margin. */
+.callout__label + .rapier-source-token--softbreak::after{content:none}
 
 
 

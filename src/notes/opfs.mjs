@@ -1,5 +1,6 @@
 import {createNativeByteStore as nativeByteStore, createNativeNotesLocks as nativeNotesLocks} from './native-store.mjs';
-import {exactBytes, sha256State, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
+import {exactBytes, blobByteChunks, checkByteAbort} from './integrity.mjs';
+import {parts, FOLDERS} from './opfs-paths.mjs';
 import {stampFor} from './search-store.mjs';
 import {isRecordingPartial, recordingStorageError} from './recording-files.mjs';
 
@@ -9,38 +10,70 @@ export function createNativeNotesLocks(options) { return nativeNotesLocks(option
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const missing = error => error?.name === 'NotFoundError';
-const same = (a, b) => a != null && b != null && a.length === b.length && a.every((n, i) => n === b[i]);
-// Top-level file, the two asset folders, or history's three sub-folders; never deeper. Same space as native-store.mjs `prefixes`.
-const HISTORY_SUBS = ['manifests', 'texts', 'blobs'];
-// The same six folders as native-store.mjs and idb-store.mjs (notes-idb-store-admission).
-const FOLDERS = new Set(['', 'audio', 'attachments', 'thumbs', ...HISTORY_SUBS.map(sub => 'history/' + sub)]);
-const parts = name => {
-	if (typeof name !== 'string' || !name || name.includes('\\') || name.includes('\0')) throw fail('name', 'This file does not belong to the notes folder.');
-	const value = name.split('/');
-	const admitted = value.length === 1
-		|| value.length === 2 && ['audio', 'attachments', 'thumbs'].includes(value[0])
-		|| value.length === 3 && value[0] === 'history' && HISTORY_SUBS.includes(value[1]);
-	if (!admitted || value.some(p => !p || p === '.' || p === '..')) throw fail('name', 'This file does not belong to the notes folder.');
-	return value;
-};
+// The built page carries the worker through the same retained module factories as backup.
+function fileWorker() {
+ const source = globalThis.RapierNotesOPFSWorker?.workerSource;
+ if (typeof source !== 'function' || typeof Worker !== 'function') throw fail('atomic', 'This browser cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
+ const url = URL.createObjectURL(new Blob([source()], {type: 'text/javascript'}));
+ try { return new Worker(url, {name: 'rapier-notes-files'}); }
+ finally { URL.revokeObjectURL(url); }
+}
+const errorRecord = error => ({name: String(error?.name || 'Error'), message: String(error?.message || error), ...(error?.code !== undefined ? {code: error.code} : {})});
+// One request/reply per ordinary file write. The owner retains its bytes; no transfer detaches
+// the array it needs for its independent readback. A port fault retires the client, never retries.
+function workerPort(directory, createWorker) {
+ let worker, fault, sequence = 0; const pending = new Map();
+ const finish = (id, error, value) => {
+  const job = pending.get(id); if (!job) return;
+  pending.delete(id); job.signal?.removeEventListener('abort', job.cancel);
+  error ? job.reject(error) : job.resolve(value);
+ };
+ const stop = error => {
+  fault ||= error instanceof Error ? error : new Error(String(error));
+  for (const id of pending.keys()) finish(id, fault);
+  worker?.terminate();
+ };
+ const open = () => {
+  if (fault) throw fault;
+  if (worker) return worker;
+  worker = createWorker();
+  worker.onerror = event => { event.preventDefault?.(); stop(event.error || Object.assign(new Error(event.message || 'The notes file worker stopped before it answered.'), {name: 'Error'})); };
+  worker.onmessageerror = () => stop(new Error('The notes file worker could not read its answer.'));
+  worker.onmessage = ({data}) => {
+   const job = pending.get(data?.id); if (!job) return;
+   if (data.progress) {
+    let error;
+    try { job.onProgress?.(data.progress); } catch (caught) { error = errorRecord(caught); }
+    try { worker.postMessage({id: data.id, operation: 'progress', ...(error ? {error} : {})}); }
+    catch (caught) { stop(caught); }
+   } else finish(data.id, data.error ? Object.assign(new Error(data.error.message), data.error) : null, data.value);
+  };
+  return worker;
+ };
+ return async (operation, value = {}, {signal, onProgress} = {}) => {
+  checkByteAbort(signal); const port = open(), dir = await directory();
+  // Directory discovery yields. A worker fault there must not strand a new job on its dead port.
+  if (fault) throw fault; checkByteAbort(signal);
+  return new Promise((resolve, reject) => {
+   const id = ++sequence, cancel = () => { try { port.postMessage({id, operation: 'cancel'}); } catch (error) { stop(error); } };
+   pending.set(id, {resolve, reject, signal, cancel, onProgress});
+   signal?.addEventListener('abort', cancel, {once: true});
+   try { port.postMessage({id, operation, directory: dir, ...value, ...(onProgress ? {progress: true} : {})}); }
+   catch (error) { finish(id, error); }
+  });
+ };
+}
 
 // Only the folder owner calls this. `memory` here is a Node witness's stand-in, never a page's.
-export function createByteStore({directory, memory = null, token = () => crypto.randomUUID(), beforeStep = async () => {}, afterStep = async () => {}} = {}) {
+export function createByteStore({directory, memory = null, token = () => crypto.randomUUID(), beforeStep = async () => {}, afterStep = async () => {}, createWorker = fileWorker} = {}) {
 	let writable = memory ? true : undefined, ascii = false, reason = '';
+	const request = memory ? null : workerPort(directory, createWorker);
 	const locate = async (name, create = false) => {
 		const path = parts(name); let dir = await directory();
 		// One `getDirectoryHandle` per parent segment, so a two-part asset path and a three-part
 		// history path (folder inside folder) share the same walk instead of a length check per case.
 		for (let i = 0; i < path.length - 1; i++) dir = await dir.getDirectoryHandle(path[i], {create});
 		return {dir, name: path.at(-1)};
-	};
-	// A temporary name is not ours merely because it looks private. Probe before creating it;
-	// only a handle created by this attempt may enter its cleanup set. The folder lease owns
-	// Rapier writers; a nonce also keeps an interrupted or foreign scratch file out of the way.
-	const scratch = async (dir, name) => {
-		try { await dir.getFileHandle(name); throw fail('collision', 'A temporary file already uses this name. It was kept; retry saving.'); }
-		catch (error) { if (!missing(error)) throw error; }
-		return dir.getFileHandle(name, {create: true});
 	};
 	const read = async name => {
 		parts(name); await beforeStep('read', name);
@@ -67,37 +100,7 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 		if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
 		if (!(blob instanceof Blob)) throw new TypeError('A file copy needs an original Blob.');
 		checkByteAbort(signal); await beforeStep('write', name, blob);
-		const at = await locate(name, true), tmp = '.rapier-attachment-' + token() + '.tmp';
-		let stream, staged = false;
-		try {
-			if (await stat(name) !== null) throw fail('collision', 'Another file already uses ' + name + '. It was kept; retry adding the original.');
-			const handle = await scratch(at.dir, tmp); staged = true;
-			stream = await handle.createWritable(); const hash = sha256State(); let done = 0;
-			onProgress?.({phase: 'writing', done, total: blob.size});
-			for await (const bytes of blobByteChunks(blob, {signal})) {
-				hash.update(bytes); await stream.write(bytes); done += bytes.length;
-				onProgress?.({phase: 'writing', done, total: blob.size});
-			}
-			checkByteAbort(signal); await stream.close(); stream = null;
-			const digest = hash.finish(), back = await handle.getFile();
-			if (back.size !== blob.size) throw fail('verify', 'The file copy has a different size. Keep the original file.');
-			onProgress?.({phase: 'verifying', done: 0, total: blob.size});
-			const actual = await digestByteChunks(blobByteChunks(back, {signal}), {size: blob.size, signal,
-				onProgress: done => onProgress?.({phase: 'verifying', done, total: blob.size})});
-			if (actual !== digest) throw fail('verify', 'The file copy did not match the original. No link was added. Keep the original file.');
-			checkByteAbort(signal);
-			if (await stat(name) !== null) throw fail('collision', 'Another file arrived under ' + name + '. It was kept; retry adding the original.');
-			checkByteAbort(signal);
-			await handle.move(at.name); staged = false;
-			return {size: blob.size, digest};
-		} catch (error) { throw byteCopyError(error); }
-		finally {
-			try { await stream?.abort(); } finally {
-				if (staged) try { await at.dir.removeEntry(tmp); } catch (error) {
-					if (!missing(error)) throw fail('cleanup', 'The unfinished copy could not be removed: attachments/' + tmp + '. No link was added. Keep the original file and retry after storage is available.');
-				}
-			}
-		}
+		return request('writeBlob', {name, blob, token: token()}, {signal, onProgress});
 	};
 
 	// The one directory walk behind list() and statAll().
@@ -148,68 +151,27 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 		const bytes = exactBytes(value);
 		await beforeStep('write', name, bytes);
 		if (memory) memory.set(name, bytes);
-		else {
-			const at = await locate(name, true), tmp = '.rapier-write-' + token() + '.tmp';
-			let stream, owned = false;
-			try {
-				const handle = await scratch(at.dir, tmp); owned = true;
-				stream = await handle.createWritable(); await stream.write(bytes); await stream.close(); stream = null;
-				// The bytes are read back before they take the name: a write the file system resolved with
-				// other bytes never replaces the words under the name.
-				if (!same(new Uint8Array(await (await handle.getFile()).arrayBuffer()), bytes)) throw fail('verify', 'The notes folder did not keep the bytes written to ' + name + '.');
-				await handle.move(at.name); owned = false;
-			} catch (error) { try { await stream?.abort(); } catch (_) {} throw error; }
-			finally { if (owned) try { await at.dir.removeEntry(tmp); } catch (_) {} }
-		}
+		else await request('write', {name, bytes, token: token()});
 		await afterStep('write', name, bytes);
 	};
 	const prepare = async () => {
 		if (writable !== undefined) return writable;
-		const dir = await directory(), stem = '.rapier-atomic-' + token(), a = stem + '.tmp', b = stem + '-target.tmp', u = stem + '-é.tmp';
-		let stream; const owned = new Set();
-		const create = async name => { const handle = await scratch(dir, name); owned.add(name); return handle; };
-		try {
-			const first = await create(a), target = await create(b);
-			if (typeof first.createWritable !== 'function' || typeof first.move !== 'function') throw fail('atomic', 'This browser cannot safely replace a note. These notes are read-only here; opening, search and backup still work.');
-			const old = new Uint8Array([239, 187, 191, 13, 10, 0, 255]), next = new Uint8Array([65, 13, 10]);
-			stream = await target.createWritable(); await stream.write(old); await stream.close(); stream = null;
-			stream = await target.createWritable(); await stream.write(next);
-			if (!same(await read(b), old)) throw fail('atomic', 'The browser exposed an unfinished file write. These notes are read-only here.');
-			await stream.abort(); stream = null;
-			if (!same(await read(b), old)) throw fail('atomic', 'The browser did not keep the file after an abandoned write. These notes are read-only here.');
-			stream = await first.createWritable(); await stream.write(next); await stream.close(); stream = null;
-			await first.move(b); owned.delete(a);
-			if (!same(await read(b), next) || await read(a) !== null) throw fail('atomic', 'The browser did not replace the whole file. These notes are read-only here.');
-			const empty = await create(a);
-			stream = await empty.createWritable(); await stream.close(); stream = null; await empty.move(b); owned.delete(a);
-			if ((await read(b))?.length !== 0) throw fail('atomic', 'The browser did not keep an empty file. These notes are read-only here.');
-			try { await create(u); }
-			catch (error) { if (['TypeMismatchError', 'InvalidCharacterError', 'TypeError'].includes(error?.name)) ascii = true; else throw error; }
-			writable = true;
-		} catch (error) {
+		try { const result = await request('prepare', {token: token()}); ascii = result.ascii; writable = true; }
+		catch (error) {
 			if (error?.code !== 'atomic' && error?.name !== 'NotSupportedError') throw error;
 			writable = false; reason = error.message;
-		} finally {
-			try { await stream?.abort(); } catch (_) {}
-			for (const name of owned) try { await dir.removeEntry(name); } catch (_) {}
 		}
 		return writable;
 	};
-	// A closed writable is the browser's commit boundary. There is no fsync/flush method on
-	// FileSystemWritableFileStream: keepExistingData + close, then exact tail read-back, is the
-	// strongest acknowledgement this main-thread API supplies. Never keep one writer open for
-	// the lifetime of the microphone; a killed page would lose that writer's whole staging file.
+	// Sync access changes its file immediately. The worker replaces a verified sibling, preserving
+	// the last acknowledged recording until the copied prefix and new tail both match.
 	const recording = memory ? null : {
 		async begin(name) {
 			if (!isRecordingPartial(name)) throw fail('name', 'This is not an unfinished recording.');
 			if (!await prepare()) throw recordingStorageError();
 			if (await stat(name) !== null) throw fail('collision', 'This unfinished recording already exists.');
 			const bytes = new Uint8Array(); await beforeStep('write', name, bytes);
-			const at = await locate(name, true), handle = await at.dir.getFileHandle(at.name, {create: true});
-			let stream;
-			try { stream = await handle.createWritable(); await stream.close(); stream = null; }
-			catch (error) { try { await stream?.abort(); } catch (_) {} throw error; }
-			if ((await handle.getFile()).size !== 0) throw fail('verify', 'The unfinished recording could not be started safely.');
+			await request('begin', {name, token: token()});
 			await afterStep('write', name, bytes);
 		},
 		async append(name, offset, value) {
@@ -218,18 +180,8 @@ export function createByteStore({directory, memory = null, token = () => crypto.
 			const bytes = exactBytes(value);
 			if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(offset + bytes.length)) throw fail('recording-size', 'The recording byte count is not readable.');
 			await beforeStep('write', name, bytes);
-			const at = await locate(name), handle = await at.dir.getFileHandle(at.name);
-			if ((await handle.getFile()).size !== offset) throw fail('changed', 'The unfinished recording changed; nothing was lost.');
-			let stream;
-			try {
-				stream = await handle.createWritable({keepExistingData: true});
-				await stream.seek(offset); await stream.write(bytes); await stream.close(); stream = null;
-			} catch (error) { try { await stream?.abort(); } catch (_) {} throw error; }
-			const back = await handle.getFile();
-			if (back.size !== offset + bytes.length || !same(new Uint8Array(await back.slice(offset).arrayBuffer()), bytes))
-				throw fail('verify', 'The last recording chunk could not be verified. Keep the audio captured so far.');
-			await afterStep('write', name, bytes);
-			return back.size;
+			const size = await request('append', {name, offset, bytes, token: token()});
+			await afterStep('write', name, bytes); return size;
 		},
 	};
 	return {read, readBlob, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recording, get streamingAttachments() { return !memory && writable === true; }, get writable() { return writable; }, get ascii() { return ascii; }, get reason() { return reason; },

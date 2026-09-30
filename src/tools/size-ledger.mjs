@@ -125,7 +125,7 @@ export function inspect(html, symbols = {}) {
     // A group packed with the words prefilter (tools/text-pack-build.mjs) is expanded by the one
     // bounded expander the shell carries, before the length and the spans are read.
     const prefilter = group[2].trim();
-    assert(group[2] === ' ' || group[2] === ' prefilter=words1 ', id + ': unknown packed text prefilter or metadata');
+    assert(group[2] === ' ' || group[2] === ' prefilter=words2 ', id + ': unknown packed text prefilter or metadata');
     const gzip = Buffer.from(decodeBase124(group[3])), inflated = gunzipSync(gzip);
     const bytes = prefilter ? Buffer.from(decodeTextPack(inflated, Number(group[1]))) : inflated, names = [];
     assert.equal(bytes.length, Number(group[1]), id + ': decoded length');
@@ -372,7 +372,7 @@ export function report(r) {
 }
 
 export function options(args) {
-  const out = {profiles: ['full', 'document'], packing: 'release'};
+  const out = {profiles: ['document', 'full'], packing: 'release'};
   for (const arg of args) {
     let m;
     if (arg === '--ledger') continue;

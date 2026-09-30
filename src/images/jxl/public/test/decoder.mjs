@@ -30,5 +30,7 @@ export async function decoder() {
 	const source = (await readFile(script, 'utf8')).replaceAll('import.meta.url', "'file:jxl'");
 	const mod = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 	await mod.default({module_or_path: await readFile(wasm)});
-	return bytes => { const image = new mod.JxlImage(); try { image.forceSrgb = true; image.feedBytes(bytes); image.tryInit(); return unpng(image.render(0).encodeToPng()); } finally { image.free(); } };
+	const decode = bytes => { const image = new mod.JxlImage(); try { image.forceSrgb = true; image.feedBytes(bytes); image.tryInit(); return unpng(image.render(0).encodeToPng()); } finally { image.free(); } };
+	decode.version = mod.version();
+	return decode;
 }

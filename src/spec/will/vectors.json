@@ -1,8 +1,8 @@
 {
   "suite": "will-conformance",
-  "suiteVersion": "2.0.0",
+  "suiteVersion": "2.0.1",
   "spec": "will/1",
-  "about": "The normative conformance vectors of the Will/1 Markdown text binding (a marker line that happens to be an HTML comment; no HTML binding is claimed). kind=\"parse\" checks parse(bytes) against the full normalized result, exactly: faulted, the ordered faults with mode, line and byteSpan, and the regions with law, intent, opener, closer and governedSpan. kind=\"evaluate\" checks evaluate(beforeBytes, splices, path) against {outcome, reason?, rule?, region?, law?, faults?} exactly, key for key in both directions; outcome \"invalid\" (reason \"precondition\") is the shape for splices or a path that could not be read, checked before any document law and identically on every path. A foreign implementation driven through the adapter protocol (will.mjs --adapter) is reasonably compared as a subset, since it may carry harmless extra fields. Byte-sensitive inputs (invalid UTF-8, CRLF, non-ASCII, exact offsets) travel as *Base64 fields; plain string fields hold pure ASCII and LF only. Byte spans are zero-based, half-open [start, end); line and region indexes are zero-based; faults are listed in document order by span start, never deduplicated; invalid UTF-8 is one fault at the first malformed sequence and parsing stops there; one malformed marker-shaped line is one fault.",
+  "about": "The normative conformance vectors of the Will/1 Markdown text binding (a marker line that happens to be an HTML comment; no HTML binding is claimed). kind=\"parse\" checks parse(bytes) against the full normalized result, exactly: faulted, the ordered faults with mode, line and byteSpan, and the regions with law, intent, opener, closer and governedSpan. kind=\"evaluate\" checks evaluate(beforeBytes, splices, path) against {outcome, reason?, rule?, region?, law?, faults?} exactly, key for key in both directions; outcome \"invalid\" (reason \"precondition\") is the shape for splices or a path that could not be read, checked before any document law and identically on every path. A foreign implementation driven through the adapter protocol (will.mjs --adapter) is reasonably compared as a subset, since it may carry harmless extra fields. Byte-sensitive inputs (invalid UTF-8, CR/CRLF, non-ASCII, exact offsets) travel as *Base64 fields; plain string fields hold pure ASCII and LF only. Byte spans are zero-based, half-open [start, end); line and region indexes are zero-based; faults are listed in document order by span start, never deduplicated; invalid UTF-8 is one fault at the first malformed sequence and parsing stops there; one malformed marker-shaped line is one fault.",
   "vectors": [
     {
       "id": "MD1",
@@ -2368,6 +2368,264 @@
         ],
         "regions": [],
         "faulted": true
+      }
+    },
+    {
+      "id": "BINDING-CR-REGION",
+      "kind": "parse",
+      "note": "CR is a line terminator, preserving existing host authority on CR documents.",
+      "docBase64": "SGVhZC4NPCEtLSB3aWxsLzEga2VlcCAtLT4NQm9keS4NPCEtLSAvd2lsbCAtLT4NVGFpbC4=",
+      "expect": {
+        "faulted": false,
+        "faults": [],
+        "regions": [
+          {
+            "index": 0,
+            "law": "keep",
+            "intent": null,
+            "opener": {
+              "line": 1,
+              "byteSpan": [
+                6,
+                27
+              ]
+            },
+            "closer": {
+              "line": 3,
+              "byteSpan": [
+                33,
+                48
+              ]
+            },
+            "governedSpan": [
+              27,
+              33
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BINDING-CR-INTENT",
+      "kind": "parse",
+      "note": "A bare CR ends the marker line; intent cannot run through it.",
+      "docBase64": "PCEtLSB3aWxsLzEga2VlcDogeA15IC0tPgpCb2R5Lgo8IS0tIC93aWxsIC0tPgo=",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "malformed_marker",
+            "line": 0,
+            "byteSpan": [
+              0,
+              20
+            ]
+          },
+          {
+            "mode": "unpaired_marker",
+            "line": 3,
+            "byteSpan": [
+              32,
+              47
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "BINDING-CR-KEEP-REFUSED",
+      "kind": "evaluate",
+      "note": "The same CR carrier governs the byte reference and the app host; last-line append excludes its CR terminator.",
+      "beforeBase64": "SGVhZC4NPCEtLSB3aWxsLzEga2VlcCAtLT4NQm9keS4NPCEtLSAvd2lsbCAtLT4NVGFpbC4=",
+      "path": "working",
+      "splices": [
+        {
+          "start": 27,
+          "end": 32,
+          "insert": "Changed."
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "law_violated",
+        "region": 0,
+        "law": "keep"
+      }
+    },
+    {
+      "id": "BINDING-CR-APPEND-GROWS",
+      "kind": "evaluate",
+      "note": "The same CR carrier governs the byte reference and the app host; last-line append excludes its CR terminator.",
+      "beforeBase64": "SGVhZC4NPCEtLSB3aWxsLzEgYXBwZW5kIC0tPg1Cb2R5Lg08IS0tIC93aWxsIC0tPg1UYWlsLg==",
+      "path": "working",
+      "splices": [
+        {
+          "start": 34,
+          "end": 34,
+          "insert": " added"
+        }
+      ],
+      "expect": {
+        "outcome": "applied"
+      }
+    },
+    {
+      "id": "BINDING-CR-APPEND-REFUSED",
+      "kind": "evaluate",
+      "note": "The same CR carrier governs the byte reference and the app host; last-line append excludes its CR terminator.",
+      "beforeBase64": "SGVhZC4NPCEtLSB3aWxsLzEgYXBwZW5kIC0tPg1Cb2R5Lg08IS0tIC93aWxsIC0tPg1UYWlsLg==",
+      "path": "working",
+      "splices": [
+        {
+          "start": 29,
+          "end": 34,
+          "insert": "Changed."
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "law_violated",
+        "region": 0,
+        "law": "append"
+      }
+    },
+    {
+      "id": "PARSE-VERSION-BEFORE-BAD-DELIMITER",
+      "kind": "parse",
+      "note": "Version precedence applies even when delimiter grammar also fails.",
+      "docBase64": "PCEtLSB3aWxsLzIga2VlcCAtLT4ganVuawpCb2R5Lgo8IS0tIC93aWxsIC0tPgo=",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "unknown_version",
+            "line": 0,
+            "byteSpan": [
+              0,
+              26
+            ]
+          },
+          {
+            "mode": "unpaired_marker",
+            "line": 2,
+            "byteSpan": [
+              32,
+              47
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "PARSE-VERSION-BEFORE-MISSING-DELIMITER",
+      "kind": "parse",
+      "note": "Version precedence applies even when delimiter grammar also fails.",
+      "docBase64": "PCEtLSB3aWxsLzIga2VlcApCb2R5Lgo8IS0tIC93aWxsIC0tPgo=",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "unknown_version",
+            "line": 0,
+            "byteSpan": [
+              0,
+              17
+            ]
+          },
+          {
+            "mode": "unpaired_marker",
+            "line": 2,
+            "byteSpan": [
+              23,
+              38
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "UTF8-SPAN-CONTINUATION",
+      "kind": "parse",
+      "note": "Lead bits nominate sequence width; fault span follows truncation, continuation, then scalar validity.",
+      "docBase64": "QeGAQg==",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "invalid_utf8",
+            "line": null,
+            "byteSpan": [
+              1,
+              2
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "UTF8-SPAN-TRUNCATED",
+      "kind": "parse",
+      "note": "Lead bits nominate sequence width; fault span follows truncation, continuation, then scalar validity.",
+      "docBase64": "QeGA",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "invalid_utf8",
+            "line": null,
+            "byteSpan": [
+              1,
+              3
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "UTF8-SPAN-OVERLONG",
+      "kind": "parse",
+      "note": "Lead bits nominate sequence width; fault span follows truncation, continuation, then scalar validity.",
+      "docBase64": "QcCvQg==",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "invalid_utf8",
+            "line": null,
+            "byteSpan": [
+              1,
+              3
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "UTF8-SPAN-SCALAR-OVER-RANGE",
+      "kind": "parse",
+      "note": "Lead bits nominate sequence width; fault span follows truncation, continuation, then scalar validity.",
+      "docBase64": "QfWAgIBC",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "invalid_utf8",
+            "line": null,
+            "byteSpan": [
+              1,
+              5
+            ]
+          }
+        ],
+        "regions": []
       }
     }
   ]

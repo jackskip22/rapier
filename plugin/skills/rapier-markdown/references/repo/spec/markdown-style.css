@@ -32,8 +32,8 @@
 	--md-color-border-focus:light-dark(#c4c2bc,#2a2a2a);
 	--md-color-text-secondary:light-dark(#444444,#a1a1a1);
 	--md-color-text-muted:light-dark(#606060,#878787);
-	--md-color-success:light-dark(#1a9148,#45d483);
-	--md-color-warning:light-dark(#d97706,#f5a623);
+	--md-color-success:light-dark(#188844,#45d483);
+	--md-color-warning:light-dark(#b26105,#f5a623);
 	--md-color-error:light-dark(#c00,#ec5156);
 	--md-space-8:32px;
 	--md-color-accent:#12A594;
@@ -354,6 +354,8 @@
 .md-render{
 	font:var(--md-fw-regular) var(--md-text-body)/var(--md-line) var(--md-font-sans);color:var(--md-color-text);text-align:start}
 .md-render>:first-child,.md-render :is(blockquote,li,td,th,dd,.callout,details)>:first-child{margin-top:0}
+/* A block's last line ends the block: the line its last paragraph would leave is the block's own (a quote used to stand a line taller than its words). */
+.md-render :is(blockquote,td,th,dd)>:last-child{margin-bottom:0}
 .md-render h1,.md-render h2,.md-render h3,.md-render h4,.md-render h5,.md-render h6{
 	font-family:var(--md-font-sans);letter-spacing:-0.01em;
 	line-height:var(--md-line);margin:0 0 calc(var(--md-line) / 2);color:var(--md-heading-color);text-wrap:balance}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Whitespace out, private names shortened, class names kept, comments out except licence notices, nothing moved between functions.
-// A function whose own text the page reads back (.toString(), Function.prototype.toString.call, artifactFactories, backupFactories) keeps its
+// A function whose own text the page reads back (.toString(), Function.prototype.toString.call, artifactFactories, workerFactories) keeps its
 // name and free names; the build refuses otherwise. Arbitrary dynamic reflection is not recognised.
 import {createRequire} from 'node:module';
 import vm from 'node:vm';
@@ -9,7 +9,7 @@ import acorn from '../agent/vendor/acorn.mjs';
 const {minify} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
 const parseCSS = createRequire(import.meta.url)('./vendor/postcss-parse.cjs');
 const parse = source => acorn.parse(source, {ecmaVersion: 'latest'});
-const factoryOwners = new Set(['artifactFactories', 'backupFactories']);
+const factoryOwners = new Set(['artifactFactories', 'workerFactories']);
 function walk(node, visit) {
   if (!node || typeof node.type !== 'string') return;
   visit(node);

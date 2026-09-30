@@ -9,7 +9,7 @@ async function _rapierInflateVendor(id) {
   const text = document.getElementById(id)?.textContent;
   if (!text) throw new Error(id);
   const groupMarker = _RAPIER_STORED_GROUP_MARKER.exec(text);
-  if (!groupMarker || groupMarker[2] && groupMarker[2] !== 'words1') throw new Error(id);
+  if (!groupMarker || groupMarker[2] && groupMarker[2] !== 'words2') throw new Error(id);
   const groupFrom = text.indexOf('*/', groupMarker.index) + 3;
   const groupTo = text.indexOf('/* RAPIER_VENDOR_GROUP_END */', groupFrom);
   if (groupFrom < 3 || groupTo < groupFrom) throw new Error(id);

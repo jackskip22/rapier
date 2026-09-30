@@ -27,7 +27,7 @@
 
 import {admitPersonal, mergePersonal, personalAsset} from './personal.mjs';
 import {noteFileName, isNoteFile, emptyIndex} from './model.mjs';
-import {mergeText, mergeIndex, inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
+import {mergeText, mergeIndex, assignNoteFilenames, inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
 import {seal, open} from './vault.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
@@ -420,7 +420,6 @@ export async function plan(local, heads, capabilities) {
 	const uploads = [], downloads = [], localWrites = [], localTrash = [], merges = [], renames = [], deletionConflicts = [];
 	const revivalById = new Map();
 	const tombstonesOut = {}, notesOut = {};
-	const taken = new Set(Object.keys(local.files || {}));
 
 	const knownObjectFor = (content, row) => {
 		if (row && row.object) return row.object;
@@ -473,15 +472,13 @@ export async function plan(local, heads, capabilities) {
 			const tipHashes = tipsOf(remoteVersions.map(v => v.object).filter(Boolean), parents).sort();
 			if (contentSet.size <= 1 || tipHashes.length <= 1) {
 				const v = remoteVersions.find(r => r.object === tipHashes[0]) || remoteVersions[0];
-				const file = claimFile(v.file, taken, (v.file || 'note').replace(/\.md$/i, ''));
-				taken.add(file);
+				const file = v.file;
 				const carried = (v.conflicts || []).length ? {conflicts: v.conflicts} : {};
 				downloads.push({id, device: v.device, key: objectKey(v.object), hash: v.object, file, sidecar: copyEntry(v.entry), content: v.content, parents: v.parents || [], ...carried});
 				notesOut[id] = {file, object: v.object, content: v.content, sidecar: copyEntry(v.entry), parents: v.parents || [], ...carried};
 			} else {
 				const tipRows = tipHashes.map(hash => remoteVersions.find(r => r.object === hash)).filter(Boolean);
-				const file = claimFile(tipRows[0].file, taken, (tipRows[0].file || 'note').replace(/\.md$/i, ''));
-				taken.add(file);
+				const file = tipRows[0].file;
 				merges.push({id, file, oursText: null, oursDevice: null, oursEntry: null, oursObject: null, base: null,
 					tips: tipRows.map(v => ({object: v.object, device: v.device, file: v.file, entry: v.entry, content: v.content, parents: v.parents || []}))});
 				notesOut[id] = {file, object: null, content: null, sidecar: copyEntry(tipRows[0].entry), parents: []};
@@ -547,6 +544,17 @@ export async function plan(local, heads, capabilities) {
 		notesOut[id] = {file: localRow.file, object: ourTip, content: localRow.content, sidecar: copyEntry(localRow.entry), parents: localRow.parents || []};
 	}
 
+	const deferredIds = new Set(), deferredFiles = new Set();
+	for (const [file, value] of Object.entries(local.files || {})) {
+		const text = typeof value === 'string' ? value : value.text;
+		if ([...recordingsOf(text).map(row => 'audio/' + row.name), ...attachmentsOf(text).map(row => 'attachments/' + row.name)].some(name => assets.skipped.includes(name))) {
+			deferredIds.add(local.index.notes[file]?.id); deferredFiles.add(file);
+		}
+	}
+	// A linked note stays local too: publishing it alone would strand another device with a
+	// missing dependency. Absence is not deletion; existing remote copies remain untouched.
+	for (const id of deferredIds) delete notesOut[id];
+
 	// Metadata has its own changes. A content fast-forward must not choose a whole sidecar,
 	// and a text merge must never pretend the current sidecar is its common ancestor.
 	const downloadsById = new Map(downloads.map(row => [row.id, row]));
@@ -557,7 +565,7 @@ export async function plan(local, heads, capabilities) {
 		const peers = versions.filter(v => v.source === 'head' && (v.device !== deviceId || !localRow));
 		const seed = localRow || peers.find(v => v.object === rec.object) || peers[0];
 		let entry = copyEntry(seed.entry), chosenFile = seed.file;
-		let conflicts = [...(ourHead.notes[id]?.conflicts || []), ...peers.flatMap(v => v.conflicts || [])];
+		let conflicts = [...(local.index?.conflicts || []).filter(c => c.path?.[0] === 'notes' && c.path[1] === id), ...(ourHead.notes[id]?.conflicts || []), ...peers.flatMap(v => v.conflicts || [])];
 		for (const peer of peers) {
 			if (peer === seed) continue;
 			const base = peerBases.get(peer.device)?.notes[id];
@@ -570,14 +578,21 @@ export async function plan(local, heads, capabilities) {
 		if (deletionConflicts.some(c => c.path[1] === id)) {
 			entry = {...entry, trashed: false, archived: false}; delete entry.trashedAt; delete entry.trashDigest; delete entry.trashRevision;
 		}
-		const oldFile = rec.file;
-		if (chosenFile === oldFile) taken.delete(oldFile);
-		rec.file = claimFile(chosenFile, taken, chosenFile.replace(/\.md$/i, '')); taken.add(rec.file);
-		if (localRow && rec.file !== localRow.file) renames.push({id, file: localRow.file, wanted: rec.file, content: await contentHash(typeof local.files[localRow.file] === 'string' ? local.files[localRow.file] : local.files[localRow.file].text)});
+		rec.file = chosenFile;
 		if (revivalById.get(id)?.length) rec.revivals = revivalById.get(id);
 		rec.sidecar = entry;
 		conflicts = uniqueConflicts(conflicts);
 		if (conflicts.length) rec.conflicts = conflicts;
+	}
+	// Allocate once across identities, never against this device's temporary path ownership.
+	const reserved = Object.keys(local.files || {}).filter(file => !locals.some(row => row.file === file && notesOut[row.id]));
+	for (const named of assignNoteFilenames(Object.entries(notesOut).map(([id, rec]) => ({file: rec.file, entry: {...rec.sidecar, id}})), reserved)) {
+		const id = named.entry.id, rec = notesOut[id], localRow = locals.find(row => row.id === id), entry = rec.sidecar;
+		rec.file = named.file;
+		const conflicts = [...(rec.conflicts || [])];
+		if (named.file !== named.requested) conflicts.push({kind: 'filename-collision', path: ['notes', id, 'file'], noteID: id, requested: named.requested, assigned: named.file});
+		if (conflicts.length) rec.conflicts = uniqueConflicts(conflicts);
+		if (localRow && rec.file !== localRow.file) renames.push({id, file: localRow.file, wanted: rec.file, content: await contentHash(typeof local.files[localRow.file] === 'string' ? local.files[localRow.file] : local.files[localRow.file].text)});
 		const download = downloadsById.get(id), merge = mergesById.get(id);
 		if (download) { download.file = rec.file; download.sidecar = entry; if (conflicts.length) download.conflicts = conflicts; }
 		if (merge) { merge.file = rec.file; merge.sidecar = entry; merge.conflicts = conflicts; }
@@ -617,16 +632,7 @@ export async function plan(local, heads, capabilities) {
 	// Only this collection's authenticated heads can carry an address into its next head.
 	const personalObjects = new Set([ourHead, ...allHeads].flatMap(head => Object.values(head.personal || {}).filter(row => row.value?.object).map(row => row.value.content + ':' + row.value.object)));
 	for (const [key, row] of Object.entries(head.personal)) if (personalAsset(key) && row.value?.object && !personalObjects.has(row.value.content + ':' + row.value.object)) row.value.object = null;
-	const deferredIds = new Set(), deferredFiles = new Set();
-	for (const [file, value] of Object.entries(local.files || {})) {
-		const text = typeof value === 'string' ? value : value.text;
-		if ([...recordingsOf(text).map(row => 'audio/' + row.name), ...attachmentsOf(text).map(row => 'attachments/' + row.name)].some(name => assets.skipped.includes(name))) {
-			deferredIds.add(local.index.notes[file]?.id); deferredFiles.add(file);
-		}
-	}
-	// A linked note stays local too: publishing it alone would strand another device with a
-	// missing dependency. Absence is not deletion; existing remote copies remain untouched.
-	for (const id of deferredIds) delete notesOut[id];
+
 	const omit = list => { for (let i = list.length - 1; i >= 0; i--) if (deferredIds.has(list[i].id) || deferredFiles.has(list[i].file)) list.splice(i, 1); };
 	for (const list of [uploads, downloads, merges, localWrites, localTrash, renames]) omit(list);
 	head.ancestry = Object.fromEntries([...parents].map(([object, list]) => [object, [...list]]));
@@ -687,26 +693,27 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	const snapshot = await store.snapshot();
 	if (await snapshotToken(snapshot) !== plan.expected) refuse('changed', 'the folder changed after planning; nothing was replaced');
 	const rebound = new Map();
-	function rewriteLinks(text) {
-		if (!plan.linkRenames?.length) return text;
+	function rewriteLinks(text, local = false) {
+		const renames = local ? [...(plan.renames || []), ...(plan.linkRenames || [])] : plan.linkRenames;
+		if (!renames?.length) return text;
 		const rewrite = source => {
 			let out = source;
-			for (const row of plan.linkRenames) {
+			for (const row of renames) {
 				const texts = new Map([['sync-note.md', out]]), links = buildLinkIndex(texts);
-				links.files = new Set([...Object.values(plan.head.notes).map(note => note.file), ...plan.linkRenames.map(rename => rename.file), 'sync-note.md']);
+				links.files = new Set([...Object.values(plan.head.notes).map(note => note.file), ...renames.map(rename => rename.file), 'sync-note.md']);
 				resolveLinkIndex(links); out = renameLinks(links, texts, row.file, row.wanted)[0]?.text || out;
 			}
 			return out;
 		};
 		return rewrite(mapTextConflictVariants(text, rewrite));
 	}
-	async function rewriteKnown(text, mapping, id, ledger) {
-		const rewritten = rewriteLinks(rewriteSyncMedia(text, mapping));
+	async function rewriteKnown(text, mapping, id, ledger, local = false) {
+		const rewritten = rewriteLinks(rewriteSyncMedia(text, mapping), local);
 		if (rewritten === text) return text;
 		for (const block of inspectTextConflicts(text)) {
 			const old = await textConflictDigest(block, id);
 			if (!(ledger || []).some(c => c.blockHash === old.blockHash && same(c.path, old.path) && same(c.variants, old.variants))) continue;
-			const changed = rewriteLinks(rewriteSyncMedia(block.block, mapping)), next = inspectTextConflicts(changed)[0];
+			const changed = rewriteLinks(rewriteSyncMedia(block.block, mapping), local), next = inspectTextConflicts(changed)[0];
 			if (next) rebound.set(old.blockHash, await textConflictDigest(next, id));
 		}
 		return rewritten;
@@ -793,16 +800,15 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	}
 
 	const files = {};
-	for (const [name, rec] of Object.entries(snapshot.files || {})) files[name] = {text: await rewriteKnown(typeof rec === 'string' ? rec : rec.text, plan.assetMappings?.local, snapshot.index.notes[name]?.id, snapshot.index.conflicts)};
+	for (const [name, rec] of Object.entries(snapshot.files || {})) files[name] = {text: await rewriteKnown(typeof rec === 'string' ? rec : rec.text, plan.assetMappings?.local, snapshot.index.notes[name]?.id, snapshot.index.conflicts, true)};
 	const index = structuredClone(snapshot.index || emptyIndex());
 	const trashedAt = {};
 	const resolvedConflicts = [...(plan.rootConflicts || [])];
 	index.sections = plan.head.metadata.sections; index.collapsed = plan.head.metadata.collapsed;
 
-	for (const rename of plan.renames || []) {
-		files[rename.wanted] = files[rename.file]; delete files[rename.file];
-		index.notes[rename.wanted] = index.notes[rename.file]; delete index.notes[rename.file];
-	}
+	const moved = (plan.renames || []).map(rename => ({...rename, body: files[rename.file], entry: index.notes[rename.file]}));
+	for (const rename of moved) { delete files[rename.file]; delete index.notes[rename.file]; }
+	for (const rename of moved) { files[rename.wanted] = rename.body; index.notes[rename.wanted] = rename.entry; }
 
 	for (const w of plan.localWrites || []) {
 		if (w.text != null) files[w.file] = {text: w.text};
@@ -829,7 +835,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		const baseText = m.base ? rewriteLinks(await fetchText(m.base)) : null;
 		// Keep direct parents only: the local tip (or the base of an unsealed local edit)
 		// and each peer tip. Verified history supplies the rest of the ancestry.
-		let accText = m.oursText == null ? null : await rewriteKnown(m.oursText, plan.assetMappings?.local, m.id, m.conflicts), accDevice = m.oursDevice;
+		let accText = m.oursText == null ? null : await rewriteKnown(m.oursText, plan.assetMappings?.local, m.id, m.conflicts, true), accDevice = m.oursDevice;
 		const accEntry = m.sidecar;
 		let accParents = [m.oursObject || m.base].filter(Boolean);
 		let accBase = baseText;
@@ -870,11 +876,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		}
 	}
 
-	for (const rename of plan.renames || []) {
-		const texts = new Map(Object.entries(files).map(([file, value]) => [file, value.text]));
-		const links = buildLinkIndex(texts); links.files = new Set([...texts.keys(), rename.file]); resolveLinkIndex(links);
-		for (const patch of renameLinks(links, texts, rename.file, rename.wanted)) files[patch.file] = {text: patch.text};
-	}
+
 
 	// Relinking creates a causal text version, even for a remote fast-forward. Its original
 	// sealed object remains the parent; no link may silently inherit the other branch's bytes.
@@ -1168,7 +1170,26 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 					if (result.revived.length || result.missing.length || result.deferred.length) refuse('changed', 'a note changed before deletion and was kept; sync again to keep both decisions');
 					fresh = await capture(lease);
 				}
-				const writes = new Map(), removes = [], renamedSources = new Set();
+				const remaining = [...(next.renames || [])];
+				while (remaining.length) {
+					const names = Object.keys(fresh.files), at = remaining.findIndex(row => !names.some(name => name.normalize('NFC').toLowerCase() === row.wanted.normalize('NFC').toLowerCase()));
+					if (at < 0) refuse('changed', 'the chosen note names still overlap; every note was kept');
+					const [row] = remaining.splice(at, 1), bodies = new Map(Object.entries(fresh.files).map(([file, value]) => [file, te.encode(value.text)]));
+					const planned = await planFolderRename({index: structuredClone(fresh.index), files: names, bodies},
+						{file: row.file, id: row.id, expectedDigest: row.content, wanted: row.wanted, ascii: folder.store.ascii});
+					if (planned.file !== row.wanted) refuse('changed', 'a rename destination changed; all notes were kept');
+					const collisions = (next.index.conflicts || []).filter(c => c.kind === 'filename-collision' && c.path?.[1] === row.id);
+					if (collisions.length) planned.index.conflicts = uniqueConflicts([...(planned.index.conflicts || []), ...collisions]);
+					const expectedFiles = {...fresh.files};
+					for (const write of planned.writes || []) expectedFiles[write.file] = {text: td.decode(write.bytes)};
+					for (const remove of planned.removes || []) delete expectedFiles[remove.file];
+					const result = await lease.transact(() => { assertActive(); return planned; }, {bodies: []});
+					if (result.dropped?.length) refuse('changed', 'the owner retained a newer foreign write; reconcile before publishing');
+					const expectedAfter = await snapshotToken({...fresh, index: result.index, files: expectedFiles});
+					fresh = await capture(lease, true);
+					if (await snapshotToken(fresh) !== expectedAfter) refuse('changed', 'the folder changed during its rename; every newer change was kept');
+				}
+				const writes = new Map(), removes = [];
 				const index = structuredClone(next.index);
 				index.folderGeneration = fresh.index.folderGeneration;
 				index.noteCounters = fresh.index.noteCounters;
@@ -1176,16 +1197,6 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 				index.assetTombstones = {...fresh.index.assetTombstones, ...next.head.assetTombstones};
 				index.assetRevivals = next.head.assetRevivals;
 				if (fresh.index.deletions) index.deletions = fresh.index.deletions; else delete index.deletions;
-				const bodies = new Map(Object.entries(fresh.files).map(([file, value]) => [file, te.encode(value.text)]));
-				const names = Object.keys(fresh.files);
-				for (const row of next.renames || []) {
-					const planned = await planFolderRename({index: structuredClone(fresh.index), files: names, bodies},
-						{file: row.file, id: row.id, expectedDigest: row.content, wanted: row.wanted, ascii: folder.store.ascii});
-					if (planned.file !== row.wanted) refuse('changed', 'a rename destination changed; all notes were kept');
-					for (const write of planned.writes || []) writes.set(write.file, write);
-					for (const remove of planned.removes || []) { removes.push(remove); renamedSources.add(remove.file); }
-				}
-				for (const file of renamedSources) writes.delete(file);
 				// The normal history writer keeps exact preimages. Its verified objects and manifest
 				// precede the note replacement inside the same recoverable owner journal.
 				const histories = new Map(), nextById = new Map(Object.entries(index.notes).map(([file, entry]) => [entry.id, file]));
@@ -1208,7 +1219,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 					const planned = writes.get(file);
 					writes.set(file, {...planned, file, bytes: te.encode(value.text), ...(fresh.files[file] ? {expectedDigest: await contentHash(fresh.files[file].text)} : {createOnly: true})});
 				}
-				if (Object.keys(fresh.files).some(file => !Object.hasOwn(next.files, file) && !renamedSources.has(file))) refuse('keep', 'sync has no owner proof to remove a kept local file');
+				if (Object.keys(fresh.files).some(file => !Object.hasOwn(next.files, file))) refuse('keep', 'sync has no owner proof to remove a kept local file');
 				for (const [file, bytes] of Object.entries(next.assets || {})) {
 					if (!safeAsset(file)) refuse('name', 'sync media must be complete bytes in the owner’s media directories');
 					if (fresh.assets[file]) {
@@ -1223,7 +1234,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 				writes.set(SYNC_STATE_FILE, await syncStateWrite(state, previous.bytes));
 				const result = await lease.transact(() => {
 					assertActive();
-					return {kind: next.renames?.length ? 'rename' : 'sync', index, writes: [...histories.values(), ...writes.values()], removes};
+					return {kind: 'sync', index, writes: [...histories.values(), ...writes.values()], removes};
 				}, {bodies: []});
 				if (result.dropped?.length) refuse('changed', 'the owner retained a newer foreign write; reconcile before publishing');
 				return result;

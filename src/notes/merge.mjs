@@ -603,6 +603,15 @@ function ixSafeName(file, id, occupied) {
 	return candidate;
 }
 
+// One allocator for index merge and Sync's already-merged per-ID sidecars.
+export function assignNoteFilenames(notes, reservedNames = []) {
+	const reserved = new Set([...notes.map(note => ixFileKey(note.file)), ...reservedNames.map(ixFileKey)]), occupied = new Set(reservedNames.map(ixFileKey));
+	return notes.slice().sort((a, b) => ixCompare(a.entry.id, b.entry.id)).map(note => {
+		const file = occupied.has(ixFileKey(note.file)) ? ixSafeName(note.file, note.entry.id, new Set([...reserved, ...occupied])) : note.file;
+		occupied.add(ixFileKey(file)); return {...note, file, requested: note.file};
+	});
+}
+
 export function mergeIndex(base, ours, theirs, options = {}) {
 	for (const index of [base, ours, theirs]) if (index !== null) ixValidate(index, true);
 	if (!ours || !theirs) ixFail('two complete index snapshots required');
@@ -634,14 +643,9 @@ export function mergeIndex(base, ours, theirs, options = {}) {
 		} else merged.push(live);
 	}
 	out.notes = {};
-	const reserved = new Set(merged.map(note => ixFileKey(note.file))), occupied = new Set();
-	for (const note of merged.sort((a, b) => ixCompare(a.entry.id, b.entry.id))) {
-		let file = note.file;
-		if (occupied.has(ixFileKey(file))) {
-			file = ixSafeName(file, note.entry.id, new Set([...reserved, ...occupied]));
-			ixConflict(context, 'filename-collision', ['notes', note.entry.id, 'file'], ...maps.map(map => map.get(note.entry.id) ?? IX_MISSING), {noteID: note.entry.id, assigned: file});
-		}
-		occupied.add(ixFileKey(file)); ixPut(out.notes, file, note.entry);
+	for (const note of assignNoteFilenames(merged)) {
+		if (note.file !== note.requested) ixConflict(context, 'filename-collision', ['notes', note.entry.id, 'file'], ...maps.map(map => map.get(note.entry.id) ?? IX_MISSING), {noteID: note.entry.id, assigned: note.file});
+		ixPut(out.notes, note.file, note.entry);
 	}
 	if (indexes.some(index => index && ixOwn(index, 'sections'))) out.sections = ixSections(context, indexes, out.notes);
 	if (indexes.some(index => index && ixOwn(index, 'collapsed'))) out.collapsed = ixFields(context, ...indexes.map(index => index?.collapsed || IX_MISSING), ['collapsed']);

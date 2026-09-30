@@ -69,9 +69,10 @@ const _rapierNotesSyncUi = (() => {
 			const gate = availability(); if (!gate.ready) throw new Error(gate.reason);
 			const opened = api().createSyncSession({folder: _rapierNotesStore.folder, personal: _rapierPersonal, mode: mode(),
 				fetch: window.fetch.bind(window), pendingStorage: sessionStorage,
+				device: api().createRememberedDevice({storage: api().createDeviceStorage({scope: RapierStorage.scope})}),
 				pendingKey: 'rapier:cloudflare:pending' + RapierStorage.scope, environment: environment(),
 				onChange: () => { paint(); renderSettings(); wearBox(); if (session && !status().unlocked) { automatic = false; clearTimeout(timer); } }});
-			await opened.inspect(); session = opened; return opened;
+			await opened.inspect(); session = opened; if (status().authorized && status().unlocked) { automatic = true; schedule(1600); } return opened;
 		})().finally(() => { initializing = null; });
 		return initializing;
 	}
@@ -141,6 +142,12 @@ const _rapierNotesSyncUi = (() => {
 			choice('retry removing access', 'sync stays stopped until cloudflare confirms', () => session.signOut());
 			paragraph('closing this page does not remove rapier’s access: first remove it under manage oauth authorizations in cloudflare.');
 			return;
+		}
+		if (state.rememberAvailable) {
+			const row = node('label', 'export-choice'), field = node('input');
+			field.type = 'checkbox'; field.checked = state.rememberDevice; field.disabled = state.busy || acting;
+			field.addEventListener('change', () => { const checked = field.checked; void perform(() => session.setRememberDevice(checked)); });
+			row.append(field, node('span', 'export-choice__label', 'remember this device')); body.append(row);
 		}
 		if (mode() === 'oauth' && !state.authorized) {
 			paragraph(api().SYNC_CONSENT);

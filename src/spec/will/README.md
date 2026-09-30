@@ -40,14 +40,16 @@ In Markdown, a marker is a whole line at column zero:
 scalar values and never contains `--`. Words and spacing are exact: no other dash, spelling or case. Markers are
 recognised by these bytes alone, inside code fences too; `<!--will/` and `<!--/will` at column zero are faults,
 and text outside these prefixes is content. Pairs never nest or interleave; a pair copied elsewhere governs
-there. The governed region starts after the opener's line terminator and ends before the closer's line. `keep`
+there. Only LF, CRLF and CR end a line. The governed region starts after the opener's line terminator and ends before the closer's line. `keep`
 compares it byte for byte; `append` needs the old bytes as an exact prefix, less the final line terminator
 before the closer, which belongs to the carrier.
 
 A will that cannot be read exactly faults the whole document closed: a working hand treats all of it as `keep`
 until a person repairs it. The faults are `unpaired_marker`, `malformed_marker`, `unknown_law`,
 `unknown_version`, `intent_over_bound` and `invalid_utf8`, each with its byte span, in document order, never
-guessed. The version token is the bytes after `will/` up to the first space, checked first.
+guessed. The version token is the bytes after `will/` up to the first space, checked before delimiter grammar.
+For UTF-8 faults, lead bits nominate a 2–4-byte sequence: span the remaining suffix if truncated, the lead byte
+if a continuation is wrong, or the whole sequence if its scalar is invalid; other invalid leads span one byte.
 
 ## The host
 
@@ -70,7 +72,7 @@ Conversion that is aware of Will preserves it, says WILL LOST, or refuses; it ne
 
 ## Conformance
 
-`vectors.json` holds 98 vectors, the normative machine truth: every parse and every evaluation, faults with their
+`vectors.json` holds the normative machine truth: every parse and every evaluation, faults with their
 byte spans included. `will.mjs` is the reference reader and evaluator, one file, no dependencies:
 
 ```sh
@@ -78,7 +80,7 @@ node will.mjs check vectors.json       # this reference against the vectors
 node will.mjs --adapter < cases.ndjson # any implementation over the same cases
 ```
 
-Hosts written independently in Python and Go, from the standard's text and the vectors alone, passed all 98.
+Hosts written independently in Python and Go, from this text and the vectors alone, pass them all.
 
 ## For an agent
 

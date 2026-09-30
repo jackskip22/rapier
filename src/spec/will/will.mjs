@@ -11,7 +11,7 @@
 //
 // Byte law, no normalization: every operation here works on raw bytes.
 // Strict UTF-8 is required and decoding errors are reported as a fault,
-// never silently replaced. Line terminators (LF, CRLF) are recognised but
+// never silently replaced. Line terminators (LF, CRLF, CR) are recognised but
 // never converted into one another, and no comparison anywhere trims or
 // pads a byte range that was not asked for.
 //
@@ -97,7 +97,7 @@ const UNSPACED_OPENER_PREFIX = '<!--will/';
 const UNSPACED_CLOSER_PREFIX = '<!--/will';
 
 // ───────────────────────── byte-level line splitting ─────────────────────
-// A "line" is bytes up to LF or CRLF. lineSpan (a marker's own protected
+// A "line" is bytes up to LF, CRLF or CR. lineSpan (a marker's own protected
 // span) is [start, end) INCLUDING the terminator; contentSpan is [start,
 // contentEnd) EXCLUDING it. This makes lineSpans tile the document with no
 // gaps, and it is exactly what makes the governed interval fall out for
@@ -109,9 +109,9 @@ function splitLines(buf) {
   const n = buf.length;
   let lineStart = 0;
   for (let i = 0; i < n; i++) {
-    if (buf[i] === 0x0A) {
-      let contentEnd = i;
-      if (i > lineStart && buf[i - 1] === 0x0D) contentEnd = i - 1;
+    if (buf[i] === 0x0A || buf[i] === 0x0D) {
+      const contentEnd = i;
+      if (buf[i] === 0x0D && buf[i + 1] === 0x0A) i++;
       lines.push({ start: lineStart, contentEnd, lineEnd: i + 1 });
       lineStart = i + 1;
     }
@@ -212,6 +212,14 @@ export function parse(bytesInput) {
       continue; // otherwise: ordinary content
     }
 
+    // Version is checked before delimiter grammar, including an incomplete line.
+    const afterPrefix = text.slice(OPENER_PREFIX.length);
+    const versionGap = afterPrefix.indexOf(' ');
+    const version = versionGap === -1 ? afterPrefix : afterPrefix.slice(0, versionGap);
+    if (version !== '1') {
+      faults.push({ mode: 'unknown_version', line: idx, byteSpan: lineSpan });
+      continue;
+    }
     // Namespace hit. A marker line is EXACTLY the grammar: no trailing
     // bytes before the terminator, so the line must literally end with
     // the fixed " -->" delimiter.
@@ -221,13 +229,6 @@ export function parse(bytesInput) {
     }
     const middle = text.slice(OPENER_PREFIX.length, text.length - CLOSE_SUFFIX.length);
     const sp = middle.indexOf(' ');
-    // The version is judged before anything else on the line: a document written for a Will
-    // this reader has never met is one kind of stranger, whatever else the line says.
-    const version = sp === -1 ? middle : middle.slice(0, sp);
-    if (version !== '1') {
-      faults.push({ mode: 'unknown_version', line: idx, byteSpan: lineSpan });
-      continue;
-    }
     if (sp === -1) {
       faults.push({ mode: 'malformed_marker', line: idx, byteSpan: lineSpan });
       continue;
@@ -413,6 +414,7 @@ function stripOneTrailingTerminator(buf) {
     if (n >= 2 && buf[n - 2] === 0x0d) return buf.slice(0, n - 2);
     return buf.slice(0, n - 1);
   }
+  if (buf[n - 1] === 0x0d) return buf.slice(0, n - 1);
   return buf;
 }
 

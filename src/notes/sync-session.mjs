@@ -10,13 +10,18 @@ import {createS3Transport} from './transport-s3.mjs';
 import {synchronize, createOwnerSyncStore, putVerified, contentHash} from './sync.mjs';
 import {readSyncState, updateSyncState} from './sync-state.mjs';
 export {readSyncState};
+import {createDeviceStorage, createRememberedDevice} from './sync-device.mjs';
+export {createDeviceStorage, createRememberedDevice};
 import {resolveTextConflict, inspectTextConflicts} from './merge.mjs';
 export {CLOUDFLARE_SYNC, SYNC_UNAVAILABLE, SYNC_CONSENT, syncAvailability, r2KeyAvailability};
 
 const td = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
 const te = new TextEncoder();
 const fail = (code, message) => Object.assign(new Error(message), {code});
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Persisted canonical JSON sorts keys; a reconstructed digest record may insert them differently.
+const same = (a, b) => a === b || !!a && !!b && typeof a === 'object' && typeof b === 'object' &&
+	Array.isArray(a) === Array.isArray(b) && Object.keys(a).length === Object.keys(b).length &&
+	Object.keys(a).every(name => Object.hasOwn(b, name) && same(a[name], b[name]));
 const PENDING_MS = 10 * 60 * 1000;
 // The deliberate verification door must survive Cloudflare's exact redirect, which has no hash.
 // Only this tab's fresh, matching PKCE state can restore it; ordinary visitors remain gated.
@@ -106,7 +111,7 @@ async function checkedRecord(record) {
 }
 
 export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendingKey = 'rapier:cloudflare:pending',
-	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, now = Date.now, onChange = () => {}} = {}) {
+	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, device = null, now = Date.now, onChange = () => {}} = {}) {
 	if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
 	// A private copy prevents a caller mutating registration or host facts after admission.
 	config = Object.freeze({...config, scopes: Object.freeze([...(config.scopes || [])])});
@@ -114,14 +119,14 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	if (!['oauth', 'r2-key'].includes(mode)) throw fail('config', 'choose the cloudflare sign-in or an r2 bucket key.');
 	const gate = mode === 'r2-key' ? r2KeyAvailability(environment) : syncAvailability(environment, config);
 	const oauth = () => createOAuthClient({fetch: fetchFn, clientId: config.clientId, redirectUri: config.redirectUri});
-	let grant = null, key = null, connection = null, work = null, epoch = 0, revoking = null, locking = null;
-	let staged = null;
+	let grant = null, key = null, connection = null, work = null, epoch = 0, revoking = null, locking = null, stopping = null;
+	let staged = null, rememberDevice = !!device, deviceInspected = false, deviceAuthorityFailed = false, folderIdentity = null;
 	let accounts = null, storage = null;
 	let stage = 'signed-out', notice = '', needsRevoke = false, backedUpAt = null, rejoinRequired = false;
 	const transports = new Set(), credentials = new Map();
 	const status = () => Object.freeze({stage, mode, authorized: mode === 'r2-key' ? !!key && !!connection?.credential : !!grant && !needsRevoke, unlocked: !!key,
-		hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
-		busy: !!work || !!revoking || !!locking, revocationPending: needsRevoke,
+		rememberDevice, rememberAvailable: !!device, hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
+		busy: !!work || !!revoking || !!locking || !!stopping, revocationPending: needsRevoke,
 		address: connection && (mode === 'oauth' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt});
 	const announce = (next, text = '') => { stage = next; notice = text; onChange(status()); };
 	const ready = () => { if (!gate.ready) throw fail('unavailable', gate.reason); };
@@ -130,6 +135,50 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		if (token.refreshToken) credentials.set(token.refreshToken, 'refresh_token');
 		grant = {...token, expiresAt: token.expiresIn ? now() + token.expiresIn * 1000 : now()};
 	};
+	const deviceBinding = () => JSON.stringify({folder: folderIdentity, mode, address: connection?.address || null,
+		registration: mode === 'oauth' ? [config.clientId, config.redirectUri, config.scopes] : null, origin: new URL(environment.url).origin});
+	async function keepDevice(ticket) {
+		if (!device || !rememberDevice) return;
+		active(ticket);
+		const saved = {grant, credentials: [...credentials], key: key ? Array.from(key) : null};
+		try { await device.keep(deviceBinding(), saved); }
+		catch { throw fail('device', 'this device could not remember the changed sync. your notes are kept; try again or turn off remember this device.'); }
+		finally { saved.key?.fill(0); }
+		active(ticket);
+	}
+	async function restoreDevice(ticket) {
+		if (!device || deviceInspected) return;
+		deviceInspected = true;
+		let savedKey, authorityCaptured = false;
+		try {
+			const restored = await device.read(deviceBinding()); rememberDevice = restored.enabled;
+			const value = restored.data; savedKey = value?.key;
+			if (value && (!Array.isArray(value.credentials) || value.credentials.some(row => !Array.isArray(row) || row.length !== 2 || typeof row[0] !== 'string' || !row[0] || !['access_token', 'refresh_token'].includes(row[1])))) throw fail('device', 'the saved sign-in cannot be read.');
+			for (const [token, hint] of value?.credentials || []) credentials.set(token, hint);
+			const saved = value?.grant;
+			if (saved) {
+				if (mode !== 'oauth' || typeof saved.accessToken !== 'string' || !saved.accessToken || !Number.isFinite(saved.expiresAt) ||
+					(saved.refreshToken != null && typeof saved.refreshToken !== 'string') || typeof saved.scope !== 'string') throw fail('device', 'the saved sign-in cannot be read.');
+				// Revocation must retain custody even when Sign out cancelled this restoration.
+				credentials.set(saved.accessToken, 'access_token');
+				if (saved.refreshToken) credentials.set(saved.refreshToken, 'refresh_token');
+			}
+			authorityCaptured = true; active(ticket);
+			if (!value) return;
+			if (saved) { remember(saved); grant.expiresAt = saved.expiresAt; checkScopes(); }
+			if (value.key) {
+				if (rejoinRequired || !connection || !Array.isArray(value.key) || value.key.length !== 32 || value.key.some(n => !Number.isInteger(n) || n < 0 || n > 255)) throw fail('device', 'the saved unlock cannot be read.');
+				const restoredKey = Uint8Array.from(value.key);
+				try { if (await vaultId(restoredKey) !== connection.target.vaultId) throw fail('device', 'the saved unlock names another vault.'); active(ticket); key = restoredKey; }
+				finally { if (key !== restoredKey) restoredKey.fill(0); value.key.fill(0); }
+			}
+			stage = key ? 'ready' : grant ? 'locked' : 'signed-out';
+		} catch (error) {
+			deviceAuthorityFailed ||= !authorityCaptured;
+			key?.fill(0); key = null; grant = null;
+			if (error.code !== 'cancelled') { rememberDevice = false; notice = 'this device could not restore sync. sign in and unlock again.'; }
+		} finally { if (Array.isArray(savedKey)) savedKey.fill(0); }
+	}
 	const checkScopes = () => {
 		// OAuth permits omission of scope when it is unchanged. An explicit narrowed grant is not.
 		if (grant.scope && config.scopes.some(scope => !grant.scope.split(/\s+/).includes(scope))) throw fail('permission', 'cloudflare did not grant storage access: sign out and try again.');
@@ -137,10 +186,10 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	const active = ticket => { if (ticket !== epoch || needsRevoke) throw fail('cancelled', 'sync stopped. your notes, and what waits to upload, are kept.'); };
 	function run(fn) {
 		ready();
-		if (work || revoking || locking) throw fail('busy', 'let the current sync finish, or lock the vault to stop it.');
+		if (work || revoking || locking || stopping) throw fail('busy', 'let the current sync finish, or lock the vault to stop it.');
 		if (needsRevoke) throw fail('revoke', 'sync stays stopped until cloudflare confirms: retry removing access.');
 		const ticket = epoch;
-		work = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).finally(() => { work = null; onChange(status()); });
+		work = Promise.resolve().then(async () => { active(ticket); if (device && !deviceInspected) { await readLocal(); await restoreDevice(ticket); active(ticket); } return fn(ticket); }).finally(() => { work = null; onChange(status()); });
 		onChange(status());
 		return work;
 	}
@@ -153,7 +202,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			const refreshed = await oauth().refresh({refreshToken: previous.refreshToken});
 			// Keep every issued credential reachable by revoke, including a late refresh on sign-out.
 			remember({...refreshed, refreshToken: refreshed.refreshToken || previous.refreshToken, scope: refreshed.scope || previous.scope});
-			active(ticket);
+			active(ticket); await keepDevice(ticket);
 		}
 		checkScopes();
 		return grant.accessToken;
@@ -197,7 +246,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		if (kept && kept.mode !== mode) throw fail('connection', 'this folder syncs another way: open its saved connection.');
 		if (state.head && !kept) throw fail('connection', 'this folder has synced before, but its vault address is missing: restore it before syncing. nothing was reset.');
 		if (key && connection && (!kept || connection.address !== kept.address)) throw fail('connection', 'this folder now names another vault: lock it before going on.');
-		connection = kept;
+		connection = kept; folderIdentity = snapshot.index.folderDeviceId;
 		rejoinRequired = state.rejoin === true;
 		if (rejoinRequired) { key?.fill(0); key = null; notice = 'this restored folder must join its vault again; paste a device code from another device.'; }
 		backedUpAt = Number.isSafeInteger(state.backedUpAt) && state.backedUpAt > 0 ? state.backedUpAt : null;
@@ -222,11 +271,27 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			throw fail('connection', 'the vault address did not read back. your notes are unchanged.');
 	}
 
-	async function stop() {
+	function stop() {
+		if (stopping) return stopping;
 		epoch++;
 		for (const tr of transports) tr.pause();
 		const held = key; key = null; staged?.vdk?.fill(0); staged = null;
-		try { await work; } catch {} finally { held?.fill(0); }
+		stopping = (async () => {
+			let removalFailed = false;
+			if (device && mode === 'oauth') {
+				// Every stop retains revocation custody before removing its sole persisted copy.
+				// Coalescing also covers Lock and Sign out arriving during the same first read.
+				try { await work; } catch {}
+				if (!deviceInspected) {
+					try { await readLocal(); await restoreDevice(epoch - 1); } catch { deviceAuthorityFailed = true; }
+				}
+			}
+			try { if (device) await device.forget(rememberDevice); } catch { removalFailed = true; }
+			try { await work; } catch {} finally { held?.fill(0); }
+			if (deviceAuthorityFailed) throw fail('revoke', 'this device could not read its saved sign-in. revoke rapier in cloudflare to confirm access is removed.');
+			if (removalFailed) throw fail('device', 'this device could not forget its saved sync. clear this site’s storage before leaving a shared device.');
+		})().finally(() => { stopping = null; });
+		return stopping;
 	}
 	function readPending() {
 		let row;
@@ -274,6 +339,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 
 	return Object.freeze({
 		status, confirmRecovery, leave,
+		setRememberDevice(enabled) { return run(async ticket => {
+			if (!device || typeof enabled !== 'boolean') throw fail('device', 'this device cannot remember sync.');
+			await readLocal(); active(ticket); deviceInspected = true;
+			await device.forget(enabled); active(ticket); rememberDevice = enabled; if (enabled) await keepDevice(ticket);
+			return status();
+		}); },
 		cloudflareAccounts() { return run(async ticket => {
 			accounts = await withSetup(ticket, setup => setup.accounts());
 			return accounts.map(account => ({...account}));
@@ -284,7 +355,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			storage = await withSetup(ticket, setup => setup.storage(accountId));
 			return {...storage, vaults: storage.vaults.map(target => ({address: connectionCode(target)}))};
 		}); },
-		async inspect() { await readLocal(); if (mode === 'r2-key' && !work && !key) stage = connection?.credential ? 'locked' : 'signed-out'; return status(); },
+		inspect() { return run(async ticket => { await readLocal(); active(ticket); if (mode === 'r2-key' && !key) stage = connection?.credential ? 'locked' : 'signed-out'; return status(); }); },
 		prepare({passphrase} = {}) { return run(async ticket => {
 			if (mode !== 'r2-key') throw fail('config', 'the recovery check belongs to bucket key setup.');
 			await readLocal(); active(ticket);
@@ -300,6 +371,8 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		beginSignIn() { return run(async ticket => {
 			if (mode !== 'oauth') throw fail('unavailable', 'a bucket key does not use the cloudflare sign-in.');
 			if (grant) throw fail('auth', 'this page is already signed in.');
+			await readLocal(); await restoreDevice(ticket); active(ticket);
+			if (grant) throw fail('auth', 'this device is already signed in.');
 			const random = n => crypto.getRandomValues(new Uint8Array(n));
 			const verifier = createVerifier(random), state = createVerifier(random);
 			const challenge = await challengeFor(verifier, bytes => crypto.subtle.digest('SHA-256', bytes));
@@ -320,7 +393,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			announce('signing-in');
 			remember(await oauth().exchange({code, verifier: pending.verifier}));
 			active(ticket); checkScopes();
-			await readLocal(); active(ticket);
+			await readLocal(); active(ticket); await keepDevice(ticket);
 			announce('locked');
 			return status();
 		}); },
@@ -351,7 +424,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				}
 				await keepConnection(target, made.headerBytes, ticket, credential, null, local.folderDeviceId); active(ticket);
 				if (staged === made) staged = null;
-				key = made.vdk; made.vdk = null;
+				key = made.vdk; made.vdk = null; await keepDevice(ticket);
 				announce('ready', mode === 'r2-key' ? 'bucket checked, and its key locked with your vault. no notes sent yet: press sync now.' : 'save the recovery code somewhere safe. nothing is uploaded yet.');
 				return {address: status().address, recovery: made.recovery};
 			} finally { if (made !== staged) made?.vdk?.fill(0); }
@@ -381,7 +454,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 						await keepConnection(code, got.bytes, ticket, null, before, local.folderDeviceId); active(ticket);
 					});
 				}
-				key?.fill(0); key = opened; opened = null;
+				key?.fill(0); key = opened; opened = null; await keepDevice(ticket);
 				announce('ready', 'vault unlocked. sync keeps both devices’ notes and replaces nothing; a name already taken gets a new one.');
 				return status();
 			} finally { opened?.fill(0); }
@@ -401,7 +474,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				await withTransport(target, ticket, tr => tr.connect(), pair); active(ticket);
 				const credential = await sealCredential(target, pair, opened); active(ticket);
 				await keepConnection(target, bytes, ticket, credential, before, local.folderDeviceId); active(ticket);
-				key?.fill(0); key = opened; opened = null;
+				key?.fill(0); key = opened; opened = null; await keepDevice(ticket);
 				announce('ready', 'new bucket key checked and saved; give the new device code to your other devices.');
 				return status();
 			} finally { opened?.fill(0); }
@@ -419,7 +492,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					const pair = await openCredential(connection.target.vaultId, connection.credential, opened);
 					if (pair.accountId !== connection.target.accountId || pair.bucket !== connection.target.bucket || pair.jurisdiction !== connection.target.jurisdiction) throw fail('credential', 'the vault address and bucket key do not match. nothing was sent.');
 				}
-				active(ticket); key?.fill(0); key = opened; opened = null;
+				active(ticket); key?.fill(0); key = opened; opened = null; await keepDevice(ticket);
 				announce('ready'); return status();
 			} finally { opened?.fill(0); }
 		}); },
@@ -516,16 +589,17 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			announce('revoking', 'sync stopped. revoking cloudflare access…');
 			try { pendingStorage.removeItem(pendingKey); } catch {}
 			revoking = (async () => {
-				await stop();
+				let removalError; try { await stop(); } catch (error) { removalError = error; }
 				for (const [token, hint] of [...credentials].sort((a, b) => (a[1] === 'refresh_token' ? -1 : 1) - (b[1] === 'refresh_token' ? -1 : 1))) {
 					try { await oauth().revoke({token, hint}); credentials.delete(token); } catch {}
 				}
-				if (credentials.size) {
-					announce('revocation-pending', 'sync stopped, but cloudflare has not confirmed revocation. retry here, or revoke rapier in cloudflare before you close this page.');
+				if (credentials.size || removalError?.code === 'revoke') {
+					announce('revocation-pending', removalError?.code === 'revoke' ? removalError.message : 'sync stopped, but cloudflare has not confirmed revocation. retry here, or revoke rapier in cloudflare before you close this page.');
 					throw fail('revoke', notice);
 				}
 				grant = null; accounts = null; storage = null; needsRevoke = false;
-				announce('signed-out', 'signed out, and cloudflare confirmed revocation. your notes and the vault stay.');
+				announce('signed-out', removalError ? removalError.message : 'signed out, and cloudflare confirmed revocation. your notes and the vault stay.');
+				if (removalError) throw removalError;
 				return {revoked: true};
 			})().finally(() => { revoking = null; onChange(status()); });
 			return revoking;

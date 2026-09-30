@@ -10,7 +10,9 @@ import {OBJECT_AAD, OBJECT_PREFIX} from '../notes/sync.mjs';
 export function vaultPageFacts() {
 	return {
 		KDF_NAME: V.KDF_NAME,
-		KDF_ITERATIONS: V.KDF_ITERATIONS,
+		KDF_N: V.KDF_N,
+		KDF_R: V.KDF_R,
+		KDF_P: V.KDF_P,
 		SALT_BYTES: V.SALT_BYTES,
 		VDK_BYTES: V.VDK_BYTES,
 		NONCE_BYTES: V.NONCE_BYTES,

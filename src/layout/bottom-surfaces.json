@@ -1909,6 +1909,63 @@
       "reason": "This logical-inline-end offset seats the fold control beside its heading, not on a viewport-bottom surface."
     },
     {
+      "id": "section-fold-control-h1",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".block-wrapper--heading[data-heading-level=\"1\"] > .section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-block-start",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "The fold control's block-start offset centres it on its heading's first line, not on a viewport-bottom surface."
+    },
+    {
+      "id": "section-fold-control-h2-h3",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".block-wrapper--heading:is([data-heading-level=\"2\"], [data-heading-level=\"3\"]) > .section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-block-start",
+            "value": "calc((var(--md-line) * 1.5 - 44px) / 2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "The fold control's block-start offset centres it on its heading's first line, not on a viewport-bottom surface."
+    },
+    {
+      "id": "section-fold-control-h4-h6",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".block-wrapper--heading:is([data-heading-level=\"4\"], [data-heading-level=\"5\"], [data-heading-level=\"6\"]) > .section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-block-start",
+            "value": "calc((var(--md-line) - 44px) / 2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "The fold control's block-start offset centres it on its heading's first line, not on a viewport-bottom surface."
+    },
+    {
       "id": "will-choice-input",
       "file": "editor/styles/rapier-editor.css",
       "selector": ".will-controls__choice input",

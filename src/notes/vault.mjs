@@ -1,8 +1,9 @@
+import {scrypt} from './scrypt.mjs';
 // notes/vault.mjs: the keys and the seal. Pure (WebCrypto, crypto.subtle); the one owner of these bytes.
 // Laws: docs/notes-architecture.md "The network law", docs/Rapier-Sync-architecture.md §6.2, §7,
 // docs/sync-engine.md.
-// - A random 256-bit VDK. The passphrase derives a wrapping key (PBKDF2-HMAC-SHA-256, 600,000 iterations, 16-byte salt); the VDK is wrapped with
-// AES-256-GCM. A new passphrase re-wraps, never re-seals. No Argon2id (size law). KDF parameters live in the header, none secret.
+// - A random 256-bit VDK. The passphrase derives a wrapping key (scrypt N=32768, r=8, p=1, 16-byte salt); the VDK is wrapped with
+// AES-256-GCM. A new passphrase re-wraps, never re-seals. The fixed 32 MiB ROMix workspace and cost parameters are public; no WASM is needed.
 // - Every object: version byte, fresh 12-byte nonce, AES-256-GCM, domain/path as AAD. One tampered byte is refused; nothing partially decrypts.
 // - keys/<header digest> is not sealed: format, KDF parameters, salt, wrapped VDK, verifier. Nothing secret.
 // - The recovery code IS the VDK in a typable alphabet (tighter than architecture §7.6; the tension is named in docs/sync-engine.md).
@@ -10,9 +11,10 @@
 
 export const VAULT_VERSION = 1;
 export const SEAL_VERSION = 1;
-export const KDF_NAME = 'PBKDF2-HMAC-SHA-256';
-export const KDF_ITERATIONS = 600000;
-export const KDF_MAX_ITERATIONS = 2000000;
+export const KDF_NAME = 'scrypt';
+export const KDF_N = 32768;
+export const KDF_R = 8;
+export const KDF_P = 1;
 export const HEADER_MAX_BYTES = 4096;
 export const SALT_BYTES = 16;
 export const VDK_BYTES = 32;
@@ -40,10 +42,8 @@ function asBytes(value) {
 	if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 	refuse('invalid', 'vault input must be bytes, not a coerced value');
 }
-function iterations(value) {
-	if (!Number.isSafeInteger(value) || value < KDF_ITERATIONS || value > KDF_MAX_ITERATIONS)
-		refuse('kdf', 'the supported KDF range is 600000–2000000 iterations; the vault was not opened');
-	return value;
+function cost(value) {
+	if (value.n !== KDF_N || value.r !== KDF_R || value.p !== KDF_P) refuse('kdf', 'unsupported scrypt work parameters; the vault was not opened');
 }
 function passphraseText(value) {
 	if (typeof value !== 'string' || value.length === 0) refuse('invalid', 'a nonempty passphrase is required');
@@ -128,13 +128,9 @@ function b64ToBytes(text) {
 async function aesKey(raw, usage) {
 	return subtle().importKey('raw', asBytes(raw), {name: 'AES-GCM'}, false, usage);
 }
-export async function deriveWrappingKey(passphrase, salt, iterations = KDF_ITERATIONS) {
+export async function deriveWrappingKey(passphrase, salt) {
 	passphraseText(passphrase);
-	const iter = Number.isSafeInteger(iterations) && iterations >= KDF_ITERATIONS && iterations <= KDF_MAX_ITERATIONS ? iterations : refuse('kdf', 'the supported KDF range is 600000–2000000 iterations');
-	const saltBytes = requireBytes(salt, SALT_BYTES, 'salt');
-	const material = await subtle().importKey('raw', te.encode(passphrase), 'PBKDF2', false, ['deriveBits']);
-	const bits = await subtle().deriveBits({name: 'PBKDF2', salt: saltBytes, iterations: iter, hash: 'SHA-256'}, material, 256);
-	return new Uint8Array(bits);
+	return scrypt(passphrase, requireBytes(salt, SALT_BYTES, 'salt'), {N: KDF_N, r: KDF_R});
 }
 
 async function aesGcmEncrypt(rawKey, nonce, plain, aad) {
@@ -190,13 +186,13 @@ export async function open(vdk, key, sealed) {
 	return aesGcmDecrypt(requireBytes(vdk, VDK_BYTES, 'the vault key'), bytes.subarray(1, 1 + NONCE_BYTES), bytes.subarray(1 + NONCE_BYTES), te.encode(key));
 }
 
-// Canonical header bytes: JSON, keys in this order, no whitespace. Frozen by the witness digest.
+// Canonical header bytes: one format, bounded cost parameters, no whitespace.
 export function encodeHeader(header) {
 	if (!header || typeof header !== 'object') refuse('corrupt', 'the vault header is missing');
 	const body = {
 		v: header.v,
 		kdf: header.kdf,
-		iter: header.iter,
+		n: header.n, r: header.r, p: header.p,
 		salt: header.salt,
 		wrapped: header.wrapped,
 		verifier: header.verifier,
@@ -212,7 +208,7 @@ export function decodeHeader(bytes) {
 	const version = raw.v;
 	if (version !== VAULT_VERSION) refuse(version > VAULT_VERSION ? 'newer' : 'corrupt', 'the vault header names no readable version');
 	if (raw.kdf !== KDF_NAME) refuse('corrupt', 'the vault header names no readable KDF');
-	iterations(raw.iter);
+	cost(raw);
 	if (typeof raw.salt !== 'string' || typeof raw.wrapped !== 'string' || typeof raw.verifier !== 'string') refuse('corrupt', 'the vault header is missing a field');
 	const salt = b64ToBytes(raw.salt);
 	if (salt.length !== SALT_BYTES) refuse('corrupt', 'the vault header salt is the wrong length');
@@ -220,7 +216,7 @@ export function decodeHeader(bytes) {
 	if (wrapped.length !== NONCE_BYTES + VDK_BYTES + TAG_BYTES) refuse('corrupt', 'the wrapped key is the wrong length');
 	const verifier = b64ToBytes(raw.verifier);
 	if (verifier.length !== 1 + NONCE_BYTES + TAG_BYTES + te.encode(VERIFIER_PLAIN).length) refuse('corrupt', 'the vault header verifier is the wrong length');
-	return {v: VAULT_VERSION, kdf: KDF_NAME, iter: raw.iter, salt, wrapped, verifier, saltB64: raw.salt, wrappedB64: raw.wrapped, verifierB64: raw.verifier};
+	return {v: VAULT_VERSION, kdf: KDF_NAME, n: raw.n, r: raw.r, p: raw.p, salt, wrapped, verifier, saltB64: raw.salt, wrappedB64: raw.wrapped, verifierB64: raw.verifier};
 }
 
 // Public callers may use wire bytes, the emitted JSON header, or a previously decoded header.
@@ -229,7 +225,7 @@ function readHeader(value) {
 	if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return decodeHeader(value);
 	if (!value || typeof value !== 'object') refuse('corrupt', 'the vault header is missing');
 	const encoded = value.salt instanceof Uint8Array ? {
-		v: value.v, kdf: value.kdf, iter: value.iter, salt: bytesToB64(value.salt),
+		v: value.v, kdf: value.kdf, n: value.n, r: value.r, p: value.p, salt: bytesToB64(value.salt),
 		wrapped: bytesToB64(value.wrapped), verifier: bytesToB64(value.verifier),
 	} : value;
 	return decodeHeader(encodeHeader(encoded));
@@ -245,8 +241,7 @@ export async function createVault(passphrase, options = {}) {
 	passphraseText(passphrase);
 	const vdk = options.vdk ? requireBytes(options.vdk, VDK_BYTES, 'the vault key') : generateVdk();
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
-	const iter = iterations(options.iter ?? KDF_ITERATIONS);
-	const kek = await deriveWrappingKey(passphrase, salt, iter);
+	const kek = await deriveWrappingKey(passphrase, salt);
 	let wrapped;
 	try { wrapped = await wrapVdk(kek, vdk, options.wrapNonce ? {nonce: options.wrapNonce} : {}); }
 	finally { kek.fill(0); }
@@ -254,7 +249,7 @@ export async function createVault(passphrase, options = {}) {
 	const header = {
 		v: VAULT_VERSION,
 		kdf: KDF_NAME,
-		iter,
+		n: KDF_N, r: KDF_R, p: KDF_P,
 		salt: bytesToB64(salt),
 		wrapped: bytesToB64(wrapped),
 		verifier: bytesToB64(verifier),
@@ -267,7 +262,7 @@ export async function unlockVault(headerBytes, passphrase) {
 	passphraseText(passphrase);
 	const forms = passphraseForms(passphrase);
 	for (let i = 0; i < forms.length; i++) {
-		const kek = await deriveWrappingKey(forms[i], header.salt, header.iter);
+		const kek = await deriveWrappingKey(forms[i], header.salt);
 		let vdk;
 		try { vdk = await unwrapVdk(kek, header.wrapped); }
 		catch (error) {
@@ -296,15 +291,14 @@ export async function rewrapVault(headerBytes, vdk, passphrase, options = {}) {
 	passphraseText(passphrase);
 	await checkVerifier(vdk, header.verifier);
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
-	const iter = iterations(options.iter ?? header.iter);
-	const kek = await deriveWrappingKey(passphrase, salt, iter);
+	const kek = await deriveWrappingKey(passphrase, salt);
 	let wrapped;
 	try { wrapped = await wrapVdk(kek, vdk, options.wrapNonce ? {nonce: options.wrapNonce} : {}); }
 	finally { kek.fill(0); }
 	const next = {
 		v: VAULT_VERSION,
 		kdf: KDF_NAME,
-		iter,
+		n: KDF_N, r: KDF_R, p: KDF_P,
 		salt: bytesToB64(salt),
 		wrapped: bytesToB64(wrapped),
 		verifier: header.verifierB64 || bytesToB64(header.verifier),

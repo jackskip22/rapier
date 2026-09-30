@@ -332,6 +332,12 @@ body.rapier-notes-open .rapier-frontmatter { display: none; }
 }
 
 .block-wrapper[data-folded="true"] > .section-fold-btn svg { transform: rotate(90deg); }
+/* The chevron sits centred on the heading's first line. A heading's line box is the whole or half lines its size
+   fills (the style pack's line model: h1 two lines, h2 and h3 one and a half, h4 to h6 one), so the control takes
+   that box's height, and never less than the 44 px a finger needs, centred on it. */
+.block-wrapper--heading[data-heading-level="1"] > .section-fold-btn { inset-block-start: 0; height: calc(var(--md-line) * 2); }
+.block-wrapper--heading:is([data-heading-level="2"], [data-heading-level="3"]) > .section-fold-btn { inset-block-start: calc((var(--md-line) * 1.5 - 44px) / 2); height: 44px; }
+.block-wrapper--heading:is([data-heading-level="4"], [data-heading-level="5"], [data-heading-level="6"]) > .section-fold-btn { inset-block-start: calc((var(--md-line) - 44px) / 2); height: 44px; }
 .block-wrapper--editing > .section-fold-btn,
 html[data-headings="off"] .section-fold-btn { display: none !important; }
 @media (hover:none), (pointer:coarse) { .section-fold-btn { opacity: .37; } }

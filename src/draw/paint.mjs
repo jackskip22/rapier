@@ -1946,6 +1946,7 @@ export class PaintSurface {
 		const w = x1 - x0 + 1, h = y1 - y0 + 1;
 		if (this.mask.length < w * h) this.mask = new Float32Array(w * h);
 		const mask = this.mask, oneOverR2 = 1 / (radius * radius);
+		const spans = this.spans && this.spans.length >= h * 2 ? this.spans : (this.spans = new Int32Array(Math.max(h * 2, 64)));
 		let any = false;
 		if (radius < 3) {
 			const aaBorder = 1;
@@ -1979,16 +1980,40 @@ export class PaintSurface {
 				if (opa < 1 / 32768) opa = 0; else any = true;
 				mask[(yp - y0) * w + (xp - x0)] = opa;
 			}
+			for (let j = 0; j < h; j++) { spans[j * 2] = 0; spans[j * 2 + 1] = w; }
 		} else {
-			for (let yp = y0; yp <= y1; yp++) for (let xp = x0; xp <= x1; xp++) {
-				const yy = yp + 0.5 - y, xx = xp + 0.5 - x, yyr = (yy * cs - xx * sn) * aspect, xxr = yy * sn + xx * cs, rr = (yyr * yyr + xxr * xxr) * oneOverR2;
-				let opa = rr <= hardness ? seg1Offset + rr * seg1Slope : seg2Offset + rr * seg2Slope;
-				if (rr > 1) opa = 0;
-				if (opa < 1 / 32768) opa = 0; else any = true;
-				mask[(yp - y0) * w + (xp - x0)] = opa;
+			// Each row's own reach of the ellipse, solved once: (u + v xx)^2 + (s + t xx)^2 <= radius^2 is a
+			// quadratic in xx, so the pixels a row cannot reach are zeroed by a fill and never evaluated, and
+			// the walkers take the span. The evaluated pixels run the arithmetic below unchanged; a pixel's
+			// margin each side of the roots covers the roots' own rounding, and a pixel beyond that margin is
+			// outside by at least 1/radius^2, far above what a double can mistake, so the mask is the one the
+			// whole-box walk wrote: `node tools/probes/scumble-cost.mjs --against <ref>` paints ten strokes of six
+			// brushes on both engines and compares every surface byte (identical against the engine before this,
+			// the lead, 30 September). The box is 2.7x the dab on a Scumble stroke; the probe's Scumble stroke at
+			// 89 over Oil paint went from 1,208 to 1,062 ms here, its masks from 42 to 23 ms.
+			const qa = sn * sn * aspect * aspect + cs * cs, v = -sn * aspect, r2 = radius * radius;
+			for (let yp = y0; yp <= y1; yp++) {
+				const yy = yp + 0.5 - y, j = yp - y0, row = j * w;
+				const u = yy * cs * aspect, s = yy * sn, qb = u * v + s * cs, disc = qb * qb - qa * (u * u + s * s - r2);
+				let ia = 0, ib = 0;
+				if (disc >= 0) {
+					const root = Math.sqrt(disc), xa = (-qb - root) / qa + x - 0.5 - x0, xb = (-qb + root) / qa + x - 0.5 - x0;
+					ia = Math.max(0, Math.floor(xa) - 1); ib = Math.min(w, Math.ceil(xb) + 2);
+					if (ib < ia) ib = ia;
+				}
+				if (ia > 0) mask.fill(0, row, row + ia);
+				if (ib < w) mask.fill(0, row + ib, row + w);
+				spans[j * 2] = ia; spans[j * 2 + 1] = ib;
+				for (let xp = x0 + ia; xp < x0 + ib; xp++) {
+					const xx = xp + 0.5 - x, yyr = (yy * cs - xx * sn) * aspect, xxr = yy * sn + xx * cs, rr = (yyr * yyr + xxr * xxr) * oneOverR2;
+					let opa = rr <= hardness ? seg1Offset + rr * seg1Slope : seg2Offset + rr * seg2Slope;
+					if (rr > 1) opa = 0;
+					if (opa < 1 / 32768) opa = 0; else any = true;
+					mask[row + (xp - x0)] = opa;
+				}
 			}
 		}
-		return any ? { x0, y0, w, h, mask } : null;
+		return any ? { x0, y0, w, h, mask, spans } : null;
 	}
 	// R81: THE reason every dry mark was a tube. A dry medium does not meet a smooth plane -- it
 	// catches the sheet's peaks and skips its valleys, and that, not the brush, is where the
@@ -2908,11 +2933,13 @@ export class PaintSurface {
 		// W6: one raster loop, not a fresh captured callback at every bristle. The pigment
 		// arithmetic and Float32 stores below retain their order. Tile fetches remain lazy,
 		// once per touched row-run, and neither dab geometry nor coverage is approximated.
-		const {x0, y0, w, h, mask} = box, D = this.data, W = this.width, T = RAPIER_TOOTH_TILE, bite = this.bite;
+		const {x0, y0, w, h, mask, spans} = box, D = this.data, W = this.width, T = RAPIER_TOOTH_TILE, bite = this.bite;
 		for (let j = 0; j < h; j++) {
 			const y = y0 + j, row = (y - ((y / T) | 0) * T) * T;
-			let p = (y * W + x0) * 4, m = j * w, tile = null, tx = -1;
-			for (let i = 0; i < w; i++, p += 4, m++) {
+			// The row's span from the mask's own renderer; a box from another maker walks whole.
+			const ia = spans ? spans[j * 2] : 0, ib = spans ? spans[j * 2 + 1] : w;
+			let p = (y * W + x0 + ia) * 4, m = j * w + ia, tile = null, tx = -1;
+			for (let i = ia; i < ib; i++, p += 4, m++) {
 				const o = mask[m]; if (!o) continue;
 				let ceil = 1;
 				if (bite > 0) {
