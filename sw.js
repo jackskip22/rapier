@@ -27,7 +27,7 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'c7c041538bd6b760b34d6fcf236ed708825cd69d5e6c90da079a353bbffef211';
+const SHELL_RELEASE_SHA256 = 'a6a0d2bbf6d7187e1db1e1380f7fcd55a49f9a1730e759449fb20e00ca37f69f';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */
@@ -162,9 +162,10 @@ async function cachedNavigationResponse(request) {
   const page = new URL(SHELL_PAGE_URL);
   /* And the doors the page names itself by (docs/intent.md laws 41 and 42; repo/_redirects): while Notes
      or Draw is up the address reads notes or draw under the root, so a reload there offline is a reload
-     of Rapier, with the trailing slash the door mark allows (shell/platform.js _rapierDoorPathMark). */
+     of Rapier, with the trailing slash the door mark allows (shell/platform.js _rapierDoorPathMark). The
+     privacy and commercial sheets are doors of the same kind. */
   const door = requested.pathname.startsWith(root.pathname) &&
-    /^(?:notes|draw|privacy)\/?$/.test(requested.pathname.slice(root.pathname.length));
+    /^(?:notes|draw|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
   if (requested.origin !== root.origin ||
       (requested.pathname !== root.pathname && requested.pathname !== page.pathname && !door)) return null;
   const cache = await shellCache();

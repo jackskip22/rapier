@@ -7,6 +7,9 @@ const DRAWING_START = '<script type="text/plain" id="rapier-drawing"';
 // The text the document was proposed against (docs/page-door.md, "2. A change carried"): the page opens on its diff.
 const BASE_START = '<script type="text/markdown" id="rapier-base"';
 const END = '</script>';
+// The page's search words (rapier.html's RAPIER_SEO regions: description, canonical address, previews, structured data and the plain guide
+// a crawler reads) are rapier.website's own. A page that carries someone's document never claims that address or that description.
+const SEARCH_WORDS = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g;
 
 // One encoding, exactly reversible (docs/page-door.md, "What a block may hold"): no `<` before `/` or `!`, no CR, no NUL.
 // engine.js _rapierDecodeCarried is its inverse.
@@ -46,7 +49,7 @@ export function wrap(pageHtml, text, name, options) {
 		if (typeof opts.base !== 'string') throw new Error('the base must be text');
 		carriedBlocks += '\n' + BASE_START + ' data-name="' + safeName(opts.baseName, docName) + '">' + encodeCarried(opts.base) + END;
 	}
-	const stripped = unwrap(pageHtml).html;
+	const stripped = unwrap(pageHtml).html.replace(SEARCH_WORDS, '');
 	// Before Rapier's scripts: parsed before the engine boots.
 	const bodyTag = /<body[^>]*>/.exec(stripped);
 	if (!bodyTag) throw new Error('not a Rapier page: no <body>');

@@ -822,7 +822,9 @@ body.light .rapier-recording-live{--color-text:#000000}
 /* The same square orange box in both settings panels; the verified backup time stays inside it. */
 .rapier-notes-sync{height:auto;min-height:48px;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding-top:var(--space-2);padding-bottom:var(--space-2);text-align:left}
 #settings-notes-section{margin-top:var(--space-6);margin-bottom:var(--space-6)}
-#settings-notes-section .settings-action-row{margin-bottom:0}
+/* OPEN, START IN NOTES and SIGN IN WITH CLOUDFLARE stand apart as every other group's boxes do, by the gap of
+   .settings-action-row (the founder, 29 September: "the boxes are meant to have a slight gap between them"). */
+#settings-notes-section .settings-action-row,#settings-notes-section .theme-switcher{margin-bottom:var(--space-2)}
 #settings-notes-section .rapier-notes-sync{width:100%}
 .settings-action-btn.rapier-cloudflare,.export-choice.rapier-cloudflare{background:#f38020;color:#171717}
 .rapier-cloudflare .export-choice__description{color:inherit}

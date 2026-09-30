@@ -4641,6 +4641,16 @@ async function _rapierDrawReadImage(file, session) {
 		if (!core._rapierDrawValidRaster(url)) throw new Error('This image is too large for the drawing canvas.');
 		return { url, width: input.info.displayWidth || input.info.width, height: input.info.displayHeight || input.info.height };
 	}
+	// A JPEG is carried whole into JPEG XL, its coefficients as they are; one the carrier refuses is decoded below.
+	if (input.mime === 'image/jpeg' && wantsJxl && _rapierJxlEncoderPresent()) {
+		let carried = null;
+		try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', { bytes: input.bytes.slice() }); } catch (_) {}
+		if (!state.open || state.session !== session || state.finishing) return null;
+		if (carried?.bytes && globalThis.RapierImageAssets.validAssetDimensions(carried.width, carried.height)) {
+			const url = _rapierDrawRasterDataURL(carried.bytes, 'image/jxl');
+			if (core._rapierDrawValidRaster(url)) return { url, width: carried.width, height: carried.height };
+		}
+	}
 	let decoded = null, canvas = null;
 	const releaseDecoded = () => {
 		if (decoded?.close) decoded.close();

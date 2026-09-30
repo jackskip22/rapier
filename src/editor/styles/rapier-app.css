@@ -212,6 +212,9 @@ select{
 .theme-switcher.theme-switcher--sliding>.theme-switcher__btn{background:transparent;color:var(--color-text);opacity:1;transition:none}
 .theme-switcher.theme-switcher--sliding .theme-switcher__selection>.theme-switcher__btn{background:transparent;color:var(--color-bg);opacity:1;transition:none;pointer-events:none}
 .theme-switcher[data-switch-label]>.theme-switcher__btn{width:100%;transition:background-color 160ms var(--ease-out),color 160ms var(--ease-out)}
+/* A switch of one state, tapped on and off, reads as the panel's action boxes do: its words at the left, the same 16px in
+   (the founder, 29 September: "They need to be left aligned"). Rows of several options keep their centred words. */
+.theme-switcher[data-switch-label]>.onoff-btn{justify-content:flex-start;padding:0 var(--space-4);text-align:left}
 .theme-switcher__btn:focus-visible svg{transform:none}
 @media(prefers-reduced-motion:reduce){.theme-switcher__selection,.theme-switcher[data-switch-label]>.theme-switcher__btn{transition:none}}
 

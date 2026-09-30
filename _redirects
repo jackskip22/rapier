@@ -7,4 +7,6 @@
 /agents https://github.com/jackskip22/rapier/blob/main/docs/agents.md 302
 /privacy/ /privacy 308
 /privacy /rapier.html 200
+/commercial/ /commercial 308
+/commercial /rapier.html 200
 /favicon.ico /icon-192.png 200

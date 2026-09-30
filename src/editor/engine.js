@@ -381,8 +381,9 @@ function applyTheme(value) {
 	}
 }
 
-// Light settles into the ground, then the page and its controls. Snapshots keep the text still;
-// only opacity and a small exposure change move. A new touch ends the transition immediately.
+// Light settles into the ground, then the page, the dim behind an open settings panel, and the panel.
+// Snapshots keep the text still; only opacity and a small exposure change move. A new touch ends the
+// transition immediately.
 function _rapierThemeLight(value, change) {
 	const root = document.documentElement, previous = root._rapierThemeLight;
 	if (previous) { previous.apply(); previous.skip(); previous.clean(); }
@@ -392,7 +393,10 @@ function _rapierThemeLight(value, change) {
 	const seen = element => element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
 	const page = ['.rapier-draw-surface', '.rapier-notes-surface', '#source-mode', '#editor-blocks'].map(selector => document.querySelector(selector)).find(seen);
 	const controls = [...document.querySelectorAll('.settings-overlay.open > .settings-panel')].filter(seen).at(-1);
-	for (const [element, name] of [[page, 'rapier-light-page'], [controls, 'rapier-light-controls']]) {
+	// The dim is the overlay round that panel. Left unnamed it is drawn with the ground, beneath the page's snapshot:
+	// it went out as the change began and came back as it ended. Notes' overlay stands inside its page and fades with it.
+	const scrim = controls?.parentElement, dim = scrim && !page?.contains(scrim) ? scrim : null;
+	for (const [element, name] of [[page, 'rapier-light-page'], [dim, 'rapier-light-scrim'], [controls, 'rapier-light-controls']]) {
 		if (!element) continue;
 		names.push({element, name, before: element.style.viewTransitionName});
 		element.style.viewTransitionName = name;
@@ -415,12 +419,15 @@ function _rapierThemeLight(value, change) {
 		transition = document.startViewTransition(apply);
 		transition.ready.then(() => {
 			if (cleaned) return;
-			for (const [name, duration, delay] of [['root', 340, 0], ['rapier-light-page', 410, 25], ['rapier-light-controls', 360, 70]]) {
+			// An opaque layer simply covers its old image. The dim is see-through: its old image must leave as the new one
+			// arrives, and adding the two (plus-lighter) makes one wash running from one theme's dim to the other's.
+			for (const [name, duration, delay, sheer] of [['root', 340, 0], ['rapier-light-page', 410, 25], ['rapier-light-scrim', 380, 45, true], ['rapier-light-controls', 360, 70]]) {
 				if (name !== 'root' && !names.some(row => row.name === name)) continue;
-				animations.push(root.animate([{opacity: 0, filter: light ? 'brightness(.97)' : 'brightness(1.08)'}, {opacity: 1, filter: 'brightness(1)'}],
-					{duration, delay, easing: 'cubic-bezier(.22,0,.18,1)', fill: 'both', pseudoElement: '::view-transition-new(' + name + ')'}));
-				animations.push(root.animate([{filter: 'brightness(1)'}, {filter: light ? 'brightness(1.04)' : 'brightness(.94)'}],
-					{duration, delay, easing: 'ease-out', fill: 'both', pseudoElement: '::view-transition-old(' + name + ')'}));
+				const easing = 'cubic-bezier(.22,0,.18,1)', blend = sheer ? {mixBlendMode: 'plus-lighter'} : {};
+				animations.push(root.animate([{opacity: 0, filter: light ? 'brightness(.97)' : 'brightness(1.08)', ...blend}, {opacity: 1, filter: 'brightness(1)', ...blend}],
+					{duration, delay, easing, fill: 'both', pseudoElement: '::view-transition-new(' + name + ')'}));
+				animations.push(root.animate(sheer ? [{opacity: 1, ...blend}, {opacity: 0, ...blend}] : [{filter: 'brightness(1)'}, {filter: light ? 'brightness(1.04)' : 'brightness(.94)'}],
+					{duration, delay, easing: sheer ? easing : 'ease-out', fill: 'both', pseudoElement: '::view-transition-old(' + name + ')'}));
 			}
 		}, () => {});
 		addEventListener('pointerdown', skip, true);
@@ -26071,7 +26078,7 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
     const check = () => options.signal?.throwIfAborted();
     check();
     options.status?.('Opening image…');
-    const {bytes, isJxl, mime} = options.input || await _rapierReadRasterFile(file);
+    const {bytes, isJxl, mime, info} = options.input || await _rapierReadRasterFile(file);
     check();
     const finish = async (data, width, height) => {
         check();
@@ -26079,6 +26086,22 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
         check();
         return {asset, reference: asset.label, dataUrl: asset.url, bytes: data.length, width, height};
     };
+    // A JPEG is carried whole into JPEG XL when nothing asks for its pixels (no turn, no resize, the compact
+    // profile): its coefficients as they are, no second loss. A JPEG the carrier refuses takes the path below.
+    if (mime === 'image/jpeg' && profile === 'jxl' && !transform && _rapierJxlEncoderPresent()) {
+        const longest = Math.max(info?.width || 0, info?.height || 0);
+        if (!(options.maxDimension > 0 && longest > options.maxDimension)) {
+            options.status?.('Carrying the JPEG into the compact image…');
+            let carried = null;
+            try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', {bytes: bytes.slice()}, {signal: options.signal}); }
+            catch (error) { if (error?.name === 'AbortError') throw error; }
+            check();
+            if (carried?.bytes && assets.validAssetDimensions(carried.width, carried.height)) {
+                options.status?.('Preparing the embedded image…');
+                return await finish(carried.bytes, carried.width, carried.height);
+            }
+        }
+    }
     let decoded = null, canvas = null;
     const releaseDecoded = () => {
         if (decoded?.close) decoded.close();
@@ -33408,8 +33431,12 @@ function _rapierPublishBootReady(context) {
 		try { window.RapierPlatform.files.finishBoot({ documentConsumed: !!context.documentConsumed }); } catch (_) {}
 	}
 	if (_rapierFileLaunchRuntime.pending) _rapierConsumeFileLaunch(null);
-	// rapier.website/privacy is a door: the page opens its privacy sheet (a boot from the address, http only).
-	try { if (/^https?:$/.test(location.protocol) && /^\/privacy\/?$/.test(location.pathname)) _rapierUiOpenPrivacy(); } catch (_) {}
+	// rapier.website/privacy and /commercial are doors: the page opens that sheet (a boot from the address, http only). The
+	// commercial sheet is in the full page alone and has no other way in; a copy without it opens nothing.
+	try {
+		const door = /^https?:$/.test(location.protocol) && /^\/(privacy|commercial)\/?$/.exec(location.pathname);
+		if (door && document.getElementById(door[1] + '-overlay')) _rapierUiOpenPrivacy(door[1]);
+	} catch (_) {}
 	// Open-work item 5: the boot has settled once two frames have painted after it; the attempt that
 	// rapierTryRestore began is cleared, a held one stays held until the person has the work.
 	requestAnimationFrame(() => requestAnimationFrame(() => { try { window.RapierBootAttempts?.settle(); } catch (_) {} }));
@@ -43971,6 +43998,9 @@ function _rapierUiSurfaces() {
 		{ overlay: () => document.getElementById('privacy-overlay'),
 			open: () => typeof document === 'object' && _rapierUiDialogIsOpen(document.getElementById('privacy-overlay')), question: true,
 			close: () => _rapierUiClosePrivacy() },
+		{ overlay: () => document.getElementById('commercial-overlay'),
+			open: () => typeof document === 'object' && _rapierUiDialogIsOpen(document.getElementById('commercial-overlay')), question: true,
+			close: () => _rapierUiClosePrivacy('commercial') },
 		// The settings disclosure is a surface only while the settings overlay is up: its flag
 		// outlives the panel, and a Back inside a note (B09's order: the editor's surfaces before
 		// the note's return to the cards) must not be spent collapsing a panel nobody can see.
@@ -46055,15 +46085,19 @@ function renderLicenses() {
 // The privacy policy and the terms, one sheet of few words inside the page (editor/ui.html #privacy-overlay):
 // the About section's PRIVACY button, and the door rapier.website/privacy (_redirects rewrites it to the page;
 // the boot opens the sheet and marks the address, as /notes and /draw are marked; closing takes the mark off).
-function _rapierUiOpenPrivacy() {
+// The commercial licence sheet (#commercial-overlay, door rapier.website/commercial, opened only by the boot from that
+// address) is the same kind of door and shares these two: `door` is 'commercial' from there, and a click passes its control.
+function _rapierUiOpenPrivacy(door) {
+	const name = door === 'commercial' ? 'commercial' : 'privacy';
 	closeDialog(_rapierUi.refs.settingsOverlay);
-	openDialog(document.getElementById('privacy-overlay'), { panel: '.privacy-panel' });
-	try { _rapierDoorPathMark('privacy', true); } catch (_) {}
+	openDialog(document.getElementById(name + '-overlay'), { panel: '.' + name + '-panel' });
+	try { _rapierDoorPathMark(name, true); } catch (_) {}
 }
 
-function _rapierUiClosePrivacy() {
-	closeDialog(document.getElementById('privacy-overlay'));
-	try { _rapierDoorPathMark('privacy', false); } catch (_) {}
+function _rapierUiClosePrivacy(door) {
+	const name = door === 'commercial' ? 'commercial' : 'privacy';
+	closeDialog(document.getElementById(name + '-overlay'));
+	try { _rapierDoorPathMark(name, false); } catch (_) {}
 }
 
 function _rapierUiOpenLicenses() {
@@ -46703,9 +46737,10 @@ function _rapierUiMount() {
 	const versionMeta = document.querySelector('meta[name="rapier-version"]');
 	const version = versionMeta && versionMeta.content ? versionMeta.content.trim() : '';
 	_rapierUi.version = /^\d+\.\d+(?:\.\d+)?$/.test(version) ? version : '0.0';
-	// The privacy sheet's two actions are dispatched here, not from the action table: the table is
-	// top-level code under the ownership ratchet, and a function owns these bytes.
-	const privacyAction = name => name === 'privacy' ? _rapierUiOpenPrivacy : name === 'privacy-close' ? _rapierUiClosePrivacy : null;
+	// The privacy sheet's two actions (and the commercial sheet's close) are dispatched here, not from the action table: the
+	// table is top-level code under the ownership ratchet, and a function owns these bytes.
+	const privacyAction = name => name === 'privacy' ? _rapierUiOpenPrivacy : name === 'privacy-close' ? _rapierUiClosePrivacy
+		: name === 'commercial-close' ? () => _rapierUiClosePrivacy('commercial') : null;
 	const runAction = event => {
 		const control = event.target instanceof Element ? event.target.closest('[data-action]') : null;
 		const action = control && (_RAPIER_UI_ACTIONS[control.dataset.action] || privacyAction(control.dataset.action));

@@ -1,7 +1,10 @@
-# Deploy the finished page and its optional installation companions only.
+# Deploy the finished page, its optional installation companions and the three files crawlers read.
 /*
 !/rapier.html
 !/sw.js
 !/manifest.json
 !/icon-192.png
 !/icon-512.png
+!/robots.txt
+!/sitemap.xml
+!/llms.txt

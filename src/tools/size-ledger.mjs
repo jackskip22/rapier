@@ -203,7 +203,7 @@ export function partition(a) {
 const SCRIPTS = 'editor/scripts.json', STYLES = 'editor/styles.json';
 export const GROUPS = [
   {id: 'jxl', name: 'JPEG XL encoder (the worker, its adapter and its refusal stay)', edits: {'tools/build.mjs': omitEncoder},
-    inputs: () => ['images/encoder.mjs', 'images/vendor/jxl-encoder/encode.wasm.gz', 'images/vendor/jxl-encoder/THIRD-PARTY-NOTICES.txt'],
+    inputs: () => ['images/encoder.mjs', 'images/jxl/bits.mjs', 'images/jxl/prefix.mjs', 'images/jxl/modular.mjs', 'images/jxl/frame.mjs', 'images/jxl/squeeze.mjs', 'images/jxl/lossless.mjs', 'images/jxl/lossy.mjs', 'images/jxl/jpeg.mjs', 'images/jxl/entropy.mjs', 'images/jxl/vardct.mjs'],
     // The worker is compiled (tools/minify.mjs): its declarations merge and lose their spaces, and an
     // `undefined` is printed `void 0`, so the anchors read the statement, not its spelling.
     carries: a => /\bencoderFactory\s*=\s*createJPEGXLEncoder\b/.test(a.text('rapier-jxl-worker.js')),

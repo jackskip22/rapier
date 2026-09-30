@@ -37,7 +37,7 @@ const drawingOperations = {type: 'array', maxItems: 64, description: 'Edits to e
 }, ['type'])};
 // Deep figure/shape checks live in draw/core.mjs (_rapierDrawLowerFigures, _rapierDrawApplyShapesPatch, _rapierDrawAdmitRecipe): a bounded container here.
 const record = {type: 'object', additionalProperties: true};
-const drawFigures = {type: 'array', maxItems: 128, items: record, description: 'Figures use kind, not type. Example: [{"kind":"rect","id":"start","label":"Start"},{"kind":"rect","id":"end","label":"Finish"},{"kind":"arrow","from":"start","to":"end"}]. Omit coordinates for automatic layout.'};
+const drawFigures = {type: 'array', maxItems: 128, items: record, description: 'Figures use kind, not type. Example: [{"kind":"rect","id":"start","label":"Start"},{"kind":"rect","id":"end","label":"Finish"},{"kind":"arrow","from":"start","to":"end"}]. Omit x, y, w and h for automatic layout.'};
 const drawShapesPatch = described(object({add: {type: 'array', maxItems: 128, items: record, description: 'Figures or shapes to add.'}, replace: {type: 'array', maxItems: 128, items: record, description: 'Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape.'}, remove: described({...ids, items: drawingId}, 'The ids to remove.')}), 'A patch to an existing drawing.');
 const drawAlt = {...string(240, 'The caption, as the person reads it (required on create).'), minLength: 1};
 const page = {next_cursor: nullableRef, complete: flag, remaining: count, omitted: count};

@@ -1,6 +1,6 @@
-// `memory`: 32,767 pages of 64 KiB, the most V8 grows a wasm32 memory on a 32-bit build. Every route encodes the pixel cap inside it
-// (peak 1,770.7 MiB, Modular lossless at 24 MP; tools/probes/jxl-encoder-equivalence.mjs --memory).
-export const JPEG_XL_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, pixels: 24_000_000, edge: 16384, memory: 32767 * 65536});
+// The encoder's limits: 16 MiB of output, 24 megapixels, 16,384 pixels on an edge (images/jxl works one group of
+// 256x256 at a time; a lossy picture holds its squeezed planes whole, two bytes a sample).
+export const JPEG_XL_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, pixels: 24_000_000, edge: 16384});
 
 export function codecError(code, message) {
   return Object.assign(new Error(message), {code});

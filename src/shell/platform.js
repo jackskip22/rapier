@@ -141,7 +141,7 @@ Object.defineProperty(window, 'RapierPlatform', {
 const RAPIER_ACCENT_PRESETS = Object.freeze([
 	Object.freeze({ name: 'Teal',   accent: '#12A594', fg: '#000000' }),
 	Object.freeze({ name: 'Blue',   accent: '#3291ff', fg: '#000000' }),
-	Object.freeze({ name: 'Amber',  accent: '#F5A623', fg: '#000000' }),
+	Object.freeze({ name: 'Amber',  accent: '#F38020', fg: '#000000' }),
 	Object.freeze({ name: 'Green',  accent: '#45D483', fg: '#000000' }),
 	Object.freeze({ name: 'Red',    accent: '#E5484D', fg: '#000000' }),
 	Object.freeze({ name: 'Purple', accent: '#8E4EC6', fg: '#ffffff' }),
@@ -166,7 +166,8 @@ const RAPIER_STORAGE_SCOPE = (function () {
 const RapierStorage = Object.freeze({
 	scope: RAPIER_STORAGE_SCOPE,
 	preferences: Object.freeze({
-		accent:         Object.freeze({ key: 'rapier:preference:accent',            fallback: '#12A594', values: RAPIER_ACCENT_VALUES }),
+		// Amber's hex became the Cloudflare orange (the founder, 29 September 2026): a saved '#F5A623' is read as it, not reset.
+		accent:         Object.freeze({ key: 'rapier:preference:accent',            fallback: '#12A594', values: RAPIER_ACCENT_VALUES, legacy: Object.freeze({ '#F5A623': '#F38020' }) }),
 		// Law 52: a fresh Rapier follows the device's light or dark setting.
 		theme:          Object.freeze({ key: 'rapier:preference:theme',             fallback: 'system', values: Object.freeze(['dark', 'light', 'system']) }),
 		fontSize:       Object.freeze({ key: 'rapier:preference:font-size',         fallback: 'md', values: Object.freeze(['sm', 'md', 'lg', 'xl']) }),
@@ -297,6 +298,8 @@ return Object.freeze({
 				return spec.fallback;
 			}
 		}
+		// A value the preference once admitted and has since given up is read as the one that took its place, so a saved choice is kept.
+		if (spec.legacy && typeof value === 'string' && Object.prototype.hasOwnProperty.call(spec.legacy, value)) value = spec.legacy[value];
 		if (_preferenceAdmits(spec, value)) return value;
 		if (!platform || platform.preferences.ownsStore !== true || typeof platform.preferences.read !== 'function') {
 			try { localStorage.removeItem(spec.key); } catch (_) {}

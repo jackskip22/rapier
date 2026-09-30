@@ -26,6 +26,7 @@ import {checkToolchain} from './check-toolchain.mjs';
 import {SIZE_BUDGETS} from './profile-budgets.mjs';
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
+import {seoSection} from './seo-page.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
@@ -541,8 +542,13 @@ const notesMarkup = /<!-- RAPIER_NOTES_BEGIN -->([\s\S]*?)<!-- RAPIER_NOTES_END 
 if (!notesRegions.length || notesRegions.some(([, inner]) => inner.includes('<!-- RAPIER_NOTES_')) ||
   ui.split('<!-- RAPIER_NOTES_').length - 1 !== 2 * notesRegions.length) throw new Error('Notes markup markers are unbalanced');
 ui = PROFILE === 'full' ? ui.replace(/<!-- RAPIER_NOTES_(?:BEGIN|END) -->/g, '') : ui.replace(notesMarkup, '');
+// The commercial sheet (rapier.website/commercial) is the full profile's only: its checkout slots are filled from
+// commercial-checkout.json before anything is packed, the document profile drops it, and the ChatGPT copy is packed
+// without it below (no link that starts a purchase rides there). Its markers stay until the interface is assembled.
+const commercialMarkup = /<!-- RAPIER_COMMERCIAL_BEGIN -->[\s\S]*?<!-- RAPIER_COMMERCIAL_END -->\n?/g;
+if ([...ui.matchAll(commercialMarkup)].length !== 1 || ui.split('<!-- RAPIER_COMMERCIAL_').length !== 3) throw new Error('Commercial sheet markers are unbalanced');
+ui = PROFILE === 'full' ? commercialPage(ui, JSON.parse(await read('commercial-checkout.json'))) : ui.replace(commercialMarkup, '');
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-const imageNotices = await read('images/vendor/jxl-encoder/THIRD-PARTY-NOTICES.txt');
 const freehandNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/freehand.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
 if (!freehandNotice?.includes('MIT License') || !freehandNotice.includes('Copyright (c) 2021 Stephen Ruiz Ltd')) throw new Error('Missing perfect-freehand notice');
 const roughNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/rough.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
@@ -556,8 +562,7 @@ if (!dieterleNotice.includes('Brien Dieterle') || !dieterleNotice.includes('CC0'
 // Vendor entries are unbracketed: nothing reads a marker back.
 ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list">\n' +
   // The document profile ships no JPEG XL encoder, so no notice for it.
-  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">JPEG XL encoder · jixel 0.2.27</span><span class="license-id">BSD-3-Clause / Apache-2.0</span></summary><pre class="license-text">' + escapeHtml(imageNotices) + '</pre></details>\n' : '') +
-  '<details class="license-entry"><summary><span class="license-name">Pretext 0.0.9</span><span class="license-id">MIT</span></summary><pre class="license-text" data-license="pretext"></pre></details>\n' +
+    '<details class="license-entry"><summary><span class="license-name">Pretext 0.0.9</span><span class="license-id">MIT</span></summary><pre class="license-text" data-license="pretext"></pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">perfect-freehand</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(freehandNotice) + '</pre></details>\n' +
   '<details class="license-entry"><summary><span class="license-name">rough.js generator</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(roughNotice) + '</pre></details>\n' +
   // Nor Paint's engine and presets.
@@ -573,7 +578,10 @@ ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list"
     throw new Error('The Licences sheet does not carry the notice of ' + path + ', which the shared runtime no longer repeats');
 }
 if (/<script\b/i.test(ui)) throw new Error('Editor interface markup must not contain scripts');
-ui = dropIndentation(stripMarkupComments(ui));
+// The ChatGPT copy's interface is this markup without the commercial sheet; the page's own loses only the sheet's markers.
+const appsUi = PROFILE === 'full' ? dropIndentation(stripMarkupComments(ui.replace(commercialMarkup, ''))) : null;
+if (appsUi !== null && /commercial-overlay|RAPIER_COMMERCIAL|buy\.stripe\.com/.test(appsUi)) throw new Error('The ChatGPT copy\'s interface must carry no commercial sheet and no link that starts a purchase');
+ui = dropIndentation(stripMarkupComments(ui.replace(/<!-- RAPIER_COMMERCIAL_(?:BEGIN|END) -->\n?/g, '')));
 // The document profile carries no Draw/Paint styles (docs/build.md, "Build profiles").
 const styleRows = JSON.parse(await read('editor/styles.json')).filter(row => PROFILE === 'full' || (row.id !== 'rapier-draw-style' && row.id !== 'rapier-notes-style' && row.id !== 'rapier-todo-style'));
 const styles = await Promise.all(styleRows.map(async row => ({...row, css: packStyleWhitespace(await inlineFonts(stripStyleComments(await read(row.path)), row.path))})));
@@ -592,6 +600,25 @@ html = html.replace(/<!-- RAPIER_APPS_BRIDGE_BEGIN -->[\s\S]*?<!-- RAPIER_APPS_B
 html = html.replace(/<!-- RAPIER_RUNTIME_BEGIN -->[\s\S]*?<!-- RAPIER_RUNTIME_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_PLATFORM_BEGIN -->[\s\S]*?<!-- RAPIER_PLATFORM_END -->\n?/g, '<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n');
 html = html.replace(/<meta name="rapier-version" content="[^"]+">/, `<meta name="rapier-version" content="${VERSION}">`);
+// The page's search words (docs/build.md, "The page's search words"). The template carries two RAPIER_SEO regions: the head's (the site's
+// description, previews, canonical address and structured data) and the body's (the plain guide a crawler reads, written below from the
+// welcome document). Only the full page, the site's own, keeps them. The document profile, the ChatGPT copy and every page that carries
+// someone's document (skills/rapier-html/page.mjs) drop both: none of them is rapier.website.
+const seoRegion = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g;
+const seoRegions = [...html.matchAll(seoRegion)], bodyAt = html.indexOf('<body');
+if (seoRegions.length !== 2 || bodyAt < 0 || seoRegions[0].index > bodyAt || seoRegions[1].index < bodyAt || !/<script type="application\/ld\+json">/.test(seoRegions[0][0]) ||
+    html.split('<!-- RAPIER_SEO_').length !== 5) throw new Error('The shell must carry its two RAPIER_SEO regions: metadata in the head, the guide in the body');
+if (PROFILE === 'document') html = html.replace(seoRegion, '');
+else {
+  // One version: the structured data says version.mjs's number, as the rapier-version meta does.
+  html = html.replace(/(<script type="application\/ld\+json">)([\s\S]*?)(<\/script>)/, (_, open, json, close) => {
+    const data = JSON.parse(json);
+    if (data['@type'] !== 'SoftwareApplication') throw new Error('The structured data must describe the SoftwareApplication');
+    return open + JSON.stringify({...data, softwareVersion: VERSION}) + close;
+  });
+  const [guide] = [...html.matchAll(seoRegion)].slice(1);
+  html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection(await read('editor/engine.js')) + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);
+}
 // One page policy (security/csp.mjs): shell <meta> is csp('web'); Android and Windows send csp('native'). Absent native trees are `unchecked`.
 {
   const shellPolicy = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html);
@@ -881,7 +908,7 @@ const BUDGET = SIZE_BUDGETS[PROFILE];
 await writeFile(resolve(root, OUTPUT_FILE), html);
 
 // The PWA and the Apps bridge are the full profile's only.
-let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null;
+let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null, appsSpans = null;
 if (PROFILE === 'full') {
   const shellRows = [];
   for (const path of ['rapier.html', 'manifest.json', 'icon-192.png', 'icon-512.png']) {
@@ -898,8 +925,17 @@ if (PROFILE === 'full') {
   if (html.split('id="rapier-editor-runtime"').length !== 2 || !editorElement.test(html)) throw new Error('The Apps copy needs the one editor runtime element to place its bridge after');
   // The Apps bridge owns the bounded frame size through MCP Apps notifications. Browser-level
   // automatic iframe expansion would compete with that viewport and expose the full document.
+  // Its interface is packed again without the commercial sheet (docs/briefs/commercial.md: no link that starts a purchase rides
+  // in the ChatGPT copy); that one span's record stands in the Apps receipt for the page's own interface row.
+  const interfaceElement = /<script type="application\/rapier-runtime" id="rapier-ui-runtime">[^<]*<\/script>\n/;
+  if (html.split('id="rapier-ui-runtime"').length !== 2 || !interfaceElement.test(html)) throw new Error('The Apps copy needs the one interface element to pack without the commercial sheet');
+  const recorded = packedRecord.length;
+  const appsInterface = await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', appsUi);
+  const [appsInterfaceRow] = packedRecord.splice(recorded);
+  appsSpans = packedRecord.map(row => row.element === 'rapier-ui-runtime' ? appsInterfaceRow : row);
+  // Nor does it claim rapier.website as its address or its description: the search words are the site's page alone.
   appHtml = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n?/, '').replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<script>globalThis.RAPIER_APPS_HOST = true;</script>')
-    .replace(editorElement, element => element + appsScript);
+    .replace(seoRegion, '').replace(interfaceElement, () => appsInterface).replace(editorElement, element => element + appsScript);
   const destination = resolve(root, 'dist/chatgpt');
   await mkdir(destination, {recursive: true});
   await writeFile(resolve(destination, 'rapier-app.html'), appHtml);
@@ -910,7 +946,6 @@ if (PROFILE === 'full') {
   const licensingFonts = await inlineFonts(await read('shell/fonts/fonts.css'), 'shell/fonts/fonts.css');
   const pageFonts = page => page.replace('/* RAPIER_FONTS */', licensingFonts);
   await writeFile(resolve(destination, 'licensing.html'), pageFonts(await read('licensing.html')));
-  await writeFile(resolve(root, 'dist/commercial.html'), pageFonts(commercialPage(await read('commercial.html'), JSON.parse(await read('commercial-checkout.json')))));
   await cp(resolve(root, 'icon-192.png'), resolve(destination, 'icon-192.png'));
   await cp(resolve(root, 'icon-512.png'), resolve(destination, 'icon-512.png'));
   appHtmlBytes = Buffer.byteLength(appHtml); appHtmlSha256 = checksum(appHtml);
@@ -930,7 +965,7 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, canonical: toolchainCanonical};
 // `mode`: 'development' for any fast/zlib pack
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: packedRecord} : priorReceipt?.apps ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans} : priorReceipt?.apps ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 // `dist/` may not exist in a fresh copy.
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');

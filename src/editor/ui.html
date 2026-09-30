@@ -804,6 +804,57 @@
 	</div>
 </div>
 
+<!-- ════════ -->
+<!-- The commercial licence page, inside the page itself: rapier.website/commercial is a door like /privacy (_redirects
+     rewrites it to this page; the boot opens this sheet), and it has no button, menu entry or link in the interface but
+     the licences sheet's "commercial licensing" line. The three slots are filled at build time from commercial-checkout.json
+     (tools/commercial-page.mjs); a checkout is one plain https link, never a script, frame or form. The document profile
+     drops the sheet, and the ChatGPT copy is packed without it: no purchase link rides there (docs/briefs/commercial.md). -->
+<!-- RAPIER_COMMERCIAL_BEGIN -->
+<div class="settings-overlay restore-modal-overlay" id="commercial-overlay" inert aria-hidden="true"
+		 role="dialog" aria-modal="true" aria-labelledby="commercial-title">
+	<div class="settings-panel licenses-panel commercial-panel">
+		<div class="settings-panel__body">
+			<div class="navigator-title-row">
+				<h2 id="commercial-title" class="settings-section__title licenses-title">commercial</h2>
+				<button type="button" class="navigator-close" data-action="commercial-close" aria-label="close commercial">
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+							 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+							 stroke-linejoin="round" aria-hidden="true"><use href="#i-close"></use></svg>
+				</button>
+			</div>
+			<div class="licenses-app commercial-words">
+				<p>Rapier is free under AGPL-3.0, including for commercial use. These licences offer alternative terms for
+					organisations that need them.</p>
+				<p>Pay once. Yours for life. Future public releases included.</p>
+				<h3 class="licenses-given">Commercial</h3>
+				<p class="licenses-subtitle">US$1,000 · One payment</p>
+				<p>Keep a small “Includes Rapier” acknowledgement in your product’s About screen or legal notices.</p>
+				<!-- COMMERCIAL_CHECKOUT -->
+				<h3 class="licenses-given">White-label</h3>
+				<p class="licenses-subtitle">US$5,000 · One payment · commercial licence included</p>
+				<p>The same permissions, with no Rapier acknowledgement required. Third-party licence notices remain.</p>
+				<!-- WHITELABEL_CHECKOUT -->
+				<h3 class="licenses-given">One licence for your organisation</h3>
+				<p>Both licences cover one legal entity and its products, including work by its employees and contractors. Use
+					either the full or document-only editor. No per-product, seat, installation, domain or royalty charges.</p>
+				<p>The licence never expires and includes future public releases of the covered Rapier editor code, without
+					upgrade charges. It does not include support, custom development or hosted services, or a promise that
+					future releases will be produced.</p>
+				<p>No account, activation, licence server or usage tracking. Your software never has to contact us to keep
+					working.</p>
+				<!-- AGREEMENT_LINK -->
+				<p>Prices are in US dollars. Any applicable taxes are shown before payment.</p>
+				<p>Need a quote, procurement paperwork, different terms or an early-stage discount?</p>
+				<div class="licenses-links">
+					<a class="licenses-link" href="mailto:hello@rapier.website">Contact us</a>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- RAPIER_COMMERCIAL_END -->
+
 <div class="settings-overlay restore-modal-overlay" id="licenses-overlay" inert aria-hidden="true"
 		 role="dialog" aria-modal="true" aria-labelledby="licenses-title">
 	<div class="settings-panel licenses-panel">

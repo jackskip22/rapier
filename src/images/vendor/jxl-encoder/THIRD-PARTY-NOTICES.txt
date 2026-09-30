@@ -1,5 +1,0 @@
-jixel 0.2.27 -- a JPEG XL encoder in Rust, by Radzivon Bartoshyk
-https://github.com/awxkee/jixel
-Licensed under BSD-3-Clause OR Apache-2.0 (LICENSE.jixel.md, LICENSE-APACHE.jixel.md in this directory).
-The fast-lossless path is jixel's port of libjxl's enc_fast_lossless (the JPEG XL Project Authors, BSD-3-Clause).
-Rapier specializes the pinned source for its existing RGBA8/sRGB worker configuration.

@@ -1,5 +1,5 @@
 {
-  "release": "1.1.14",
+  "release": "1.1.15",
   "core": [
     {
       "name": "document.get_context",
@@ -2241,7 +2241,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit coordinates for automatic layout."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout."
           },
           "direction": {
             "enum": [
@@ -5433,7 +5433,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit coordinates for automatic layout."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout."
           },
           "direction": {
             "enum": [
@@ -6142,13 +6142,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.14.html",
+          "resourceUri": "ui://rapier/editor-1.1.15.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.14.html"
+        "openai/outputTemplate": "ui://rapier/editor-1.1.15.html"
       }
     },
     {
