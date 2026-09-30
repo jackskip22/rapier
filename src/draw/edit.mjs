@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
+import { RAPIER_DRAW_LABEL_MAX, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const FRAMES = new Set(['rect', 'paint', 'diamond', 'star', 'hexagon', 'pentagon', 'octagon', 'cylinder', 'subroutine', 'asymmetric']);
@@ -93,9 +93,11 @@ function transformShape(shape, recipe, matrix, preserveGrow = true) {
 			}
 			if (g.inner != null) geom.inner = g.inner;
 		} else if (kind === 'line' || kind === 'arrow') {
-			const old = _rapierDrawArrowRoutePoints(shape, recipe), a = point([g.x1, g.y1]), b = point([g.x2, g.y2]);
+			// Only a curved route's control point is carried through the transform; an automatic route is
+			// never asked here, since the scene is mid-transform (a half-rotated drawing has no clear routes).
+			const old = shape.route === 'curved' ? _rapierDrawArrowRoutePoints(shape, recipe) : null, a = point([g.x1, g.y1]), b = point([g.x2, g.y2]);
 			geom = { x1: a[0], y1: a[1], x2: b[0], y2: b[1] };
-			if (shape.route === 'curved' && old.length === 3) {
+			if (shape.route === 'curved' && old && old.length === 3) {
 				const c = point(old[1]), dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy);
 				bend = length ? ((c[1] - a[1]) * dx - (c[0] - a[0]) * dy) / (2 * length) : 0;
 				curveT = length ? ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / (length * length) : .5;
@@ -501,6 +503,27 @@ function applyOperations(input, operations) {
 				// (brush) or dash itself, against the one shared capability table
 				// (_rapierDrawDashActive) the human Style sheet's dash row reads too.
 				if ((brush !== undefined || dash !== undefined) && shape.dash && !_rapierDrawDashActive(shape)) fail('drawing_look_invalid');
+			}
+		} else if (type === 'set_label') {
+			// The words of a box or a text, as Draw's own label editor sets them: the box refits its words and
+			// its connectors follow. A line or arrow takes a caption the same way; ink and paint carry none.
+			const label = operation.label;
+			if (typeof label !== 'string' || label.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(label)) fail('drawing_label_invalid');
+			for (const shape of shapes) {
+				if (shape.recognized === 'ink' || shape.recognized === 'paint' || shape.recognized === 'arc') fail('drawing_label_invalid');
+				if (shape.recognized === 'text' && !label) fail('drawing_label_invalid');
+				if (!shape.label && !['text', 'line', 'arrow'].includes(shape.recognized)) shape.labelIn = true;
+				if (label) shape.label = label; else { delete shape.label; delete shape.step; }
+				_rapierDrawFitText(shape, recipe);
+			}
+		} else if (type === 'set_step') {
+			// The place a box holds in the order a flow is read: an integer from 1 to 99 above its words, or none.
+			const step = operation.step;
+			if (step != null && (!Number.isInteger(step) || step < 1 || step > 99)) fail('drawing_label_invalid');
+			for (const shape of shapes) {
+				if (!shape.label || !shape.labelIn || ['text', 'line', 'arrow', 'ink', 'paint', 'arc'].includes(shape.recognized)) fail('drawing_label_invalid');
+				if (step == null) delete shape.step; else shape.step = step;
+				_rapierDrawFitText(shape, recipe);
 			}
 		} else if (type === 'front' || type === 'back') moveLayer(recipe, ids, type === 'front');
 		else if (type === 'forward' || type === 'backward') stepLayer(recipe, ids, type === 'forward');

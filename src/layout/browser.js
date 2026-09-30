@@ -14,6 +14,8 @@ const _rapierImageFlow = (() => {
   function resetRotatePerf() { rotatePerf.writer = rotatePerf.urlsCreated = rotatePerf.urlsRevoked = rotatePerf.decodesStarted = rotatePerf.inFlight = rotatePerf.maxInFlight = 0; }
 
   let moveHandle = null, rotateGrip = null, wrapRow = null, wrapRowOpen = false, fadeRow = null, fadeRowOpen = false, fadeHold = false, armed = false;
+  // A box of a drawing edited where it stands: the field over the box and what it holds (item 3, 30 September).
+  let shapeField = null, fieldOpen = null;
   // Draw's touch-rotate rules (draw/draw.js): live 15deg magnet, right-angle gravity at release.
   const ROTATE_STEP = Math.PI / 12, ROTATE_MAGNET_RAD = 4 * Math.PI / 180, ROTATE_GRAVITY_RAD = 5 * Math.PI / 180;
   let lastWidth = 0, lastHeight = 0, restoring = false, printing = false, lastObstacles = [], userIntent = 0, caretPlaced = null;
@@ -471,12 +473,15 @@ const _rapierImageFlow = (() => {
       const softbreak = parents.some(parent => parent.classList.contains('rapier-source-token--softbreak'));
       const prepared = geometry.prepareRun(softbreak ? ' ' : node.data, font, letterSpacing);
       if (!prepared) return null;
-      const atomic = parents.some(parent => parent.tagName === 'CODE' || parent.hasAttribute('data-rapier-source'));
-      const extraWidth = atomic ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'marginLeft', 'marginRight']
+      // A chip and a source token wear a box that each piece of them repeats. Only the token is one unit; a chip breaks as the browser
+      // breaks inline code (at a space, after a hyphen, and inside itself where it is wider than its slot), never leaving a column empty.
+      const boxed = parents.some(parent => parent.tagName === 'CODE' || parent.hasAttribute('data-rapier-source'));
+      const unit = parents.some(parent => parent.hasAttribute('data-rapier-source'));
+      const extraWidth = boxed ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'marginLeft', 'marginRight']
         .reduce((width, key) => width + (parseFloat(computed[key]) || 0), 0) : 0;
       const directions = parents.map(parent => parent.getAttribute('dir') === 'auto' ? getComputedStyle(parent).direction : null);
       runs.push({node, parents, directions, prepared});
-      items.push({text: prepared.raw, font, letterSpacing, break: atomic && !softbreak ? 'never' : 'normal', extraWidth});
+      items.push({text: prepared.raw, font, letterSpacing, break: unit && !softbreak ? 'never' : 'normal', extraWidth});
     }
     if (!runs.length) return null;
     const computed = getComputedStyle(paragraph);
@@ -495,9 +500,13 @@ const _rapierImageFlow = (() => {
     const run = record.runs[fragment.itemIndex];
     const mapped = geometry.mapFragment(run.prepared, fragment);
     if (!mapped) return null;
-    const text = document.createTextNode(mapped.text);
+    // A line ends on the white space it broke at. A chip, a link or a highlight must not paint that space, so it stands after the shell.
+    const kept = run.parents.length ? mapped.text.replace(/[ \t\n\r\f]+$/, '') : mapped.text;
+    const split = kept && kept.length < mapped.text.length;
+    const body = split ? kept : mapped.text;
+    const text = document.createTextNode(body);
 
-    endpoints.set(text, {node: run.node, offsets: mapped.offsets, parents: run.parents, record, text: mapped.text});
+    endpoints.set(text, {node: run.node, offsets: split ? mapped.offsets.slice(0, body.length + 1) : mapped.offsets, parents: run.parents, record, text: body});
     let child = text;
     for (let index = run.parents.length - 1; index >= 0; index--) {
       const shell = run.parents[index].cloneNode(false);
@@ -505,7 +514,11 @@ const _rapierImageFlow = (() => {
       if (run.directions[index]) shell.setAttribute('dir', run.directions[index]);
       shell.append(child); child = shell;
     }
-    return child;
+    if (!split) return child;
+    const rest = document.createTextNode(mapped.text.slice(body.length)), pair = document.createDocumentFragment();
+    endpoints.set(rest, {node: run.node, offsets: mapped.offsets.slice(body.length), parents: run.parents, record, text: rest.data});
+    pair.append(child, rest);
+    return pair;
   }
 
   function gapPoints(record, previous, current) {
@@ -533,7 +546,7 @@ const _rapierImageFlow = (() => {
   // F75-11: a committed raster rotation turns this alpha via geometry.rotatedRasterAlpha; the angle is in the cache key.
   function pictureProfile(image, rotateRad = 0) {
     // A live rotate keeps the <img> src and feeds its own profile, bypassing the cache.
-    if (moving?.kind === 'rotate' && moving.image === image) return moving.previewProfile || null;
+    if ((moving?.kind === 'rotate' || moving?.kind === 'shape') && moving.image === image) return moving.previewProfile || null;
     if (!image?.complete || !(image.naturalWidth > 0) || !(image.naturalHeight > 0)) return null;
     const src = image.currentSrc || image.getAttribute('src') || '';
     const cached = shapeProfiles.get(image);
@@ -1090,7 +1103,7 @@ const _rapierImageFlow = (() => {
       let ownerLed = false;
       for (const {row: source, layout, active} of own) {
         // While rotating, the box takes the live candidate's natural width, not a stale one.
-        const defaultWidth = active && moving?.kind === 'rotate' ? source.naturalWidth : source.imageBounds.width;
+        const defaultWidth = active && (moving?.kind === 'rotate' || moving?.kind === 'shape') ? source.naturalWidth : source.imageBounds.width;
         const unrotated = geometry.imageBox(owner.width, source.naturalWidth, source.naturalHeight, layout, defaultWidth);
         if (!unrotated) continue;
         // A drawing's imageBox is already turned; only a raster reserves for CSS rotation. The live angle wins during its gesture.
@@ -1126,7 +1139,7 @@ const _rapierImageFlow = (() => {
           visualX: x + visualDeltaX, visualY: y + visualDeltaY, visualWidth: fit.fit.width, visualHeight: fit.fit.height,
           rotateDeg: rasterRad ? rasterRad * 180 / Math.PI : 0});
         if (!outOfFlow(layout)) {
-          const previewRecipe = active && moving?.kind === 'rotate' && !moving.raster ? moving.previewRecipe : null;
+          const previewRecipe = active && (moving?.kind === 'rotate' || moving?.kind === 'shape') && !moving.raster ? moving.previewRecipe : null;
           const slices = layout.wrap === 'box'
             ? (rasterRad ? geometry.pictureSlices(geometry.rasterTiltProfile(fit.fit.width, fit.fit.height, rasterRad), x, y, box.width, box.height)
                 : boxSlices(source.image, x, y, box.width, box.height, previewRecipe))
@@ -1222,7 +1235,7 @@ const _rapierImageFlow = (() => {
   function positionGrip() {
     if (!resizeGrips.length) return;
     // F75-12: Plain has no move, resize or rotate grips.
-    const shown = gripsOk && selected?.isConnected && selected.naturalWidth > 0 &&
+    const shown = gripsOk && selected?.isConnected && selected.naturalWidth > 0 && moving?.kind !== 'shape' && !fieldOpen &&
       !rapier.access.readOnly && !rapier.compare.active && rapier.view.mode !== 'source' && !_rapierPlainLayout();
     if (!shown) {
       for (const button of resizeGrips) button.hidden = true;
@@ -1441,9 +1454,11 @@ const _rapierImageFlow = (() => {
 
   function select(image) {
     if (moving && moving.image !== image) cancel();
-    if (selected !== image) { disarm(); closeWrapRow(); if (!fadeHold) closeFadeRow(); selected?.removeAttribute('data-rapier-image-selected'); }
+    if (selected !== image) { disarm(); closeWrapRow(); if (!fadeHold) closeFadeRow(); closeShapeField(); selected?.removeAttribute('data-rapier-image-selected'); selected?.removeAttribute('data-rapier-drawing'); }
     selected = image;
     selected.setAttribute('data-rapier-image-selected', 'true');
+    // A drawing's boxes take the finger in any direction, so the browser pans nothing from a selected drawing.
+    if (isDrawing(image)) selected.setAttribute('data-rapier-drawing', 'true'); else selected.removeAttribute('data-rapier-drawing');
     gripsOk = gripsAllowed();
     if (!resizeGrips.length) {
       for (const [corner, label] of [['nw', 'top left'], ['ne', 'top right'], ['sw', 'bottom left'], ['se', 'bottom right']]) {
@@ -1792,7 +1807,8 @@ const _rapierImageFlow = (() => {
     disarm();
     closeWrapRow();
     if (!fadeHold) closeFadeRow();
-    selected?.removeAttribute('data-rapier-image-selected'); selected = null;
+    closeShapeField();
+    selected?.removeAttribute('data-rapier-image-selected'); selected?.removeAttribute('data-rapier-drawing'); selected = null;
     for (const button of resizeGrips) button.hidden = true;
     if (moveHandle) moveHandle.hidden = true;
     if (rotateGrip) rotateGrip.hidden = true;
@@ -1880,21 +1896,21 @@ const _rapierImageFlow = (() => {
     if (value == null) element.removeAttribute(name); else element.setAttribute(name, value);
   }
 
-  // Rotation changes only the definition's SVG bytes; replaceImage re-carries the occurrence's layout marker verbatim.
-  async function commitRotate(record, gesture, angle, releaseTop, viewport = null) {
-    const edit = globalThis.RapierDrawEdit, core = globalThis.RapierDrawCore, assets = globalThis.RapierImageAssets;
-    if (!edit || !core || !assets) return false;
+  // A drawing's new bytes into the document: the recipe's SVG as a fresh asset, the occurrence's layout marker
+  // re-carried verbatim by replaceImage, one Undo step. A rotation, a box moved and a box relabelled all land here.
+  async function commitDrawing(record, gesture, recipe, releaseTop, viewport = null) {
+    const core = globalThis.RapierDrawCore, assets = globalThis.RapierImageAssets;
+    if (!core || !assets || !recipe) return false;
     const span = _rapierExcerptCanonicalBlockSpans().get(record.block.id);
     if (!span) return false;
-    // Capture identity before the first await: a stale gesture must not pin the viewport or steal the reselect. The rotation still lands.
+    // Capture identity before the first await: a stale gesture must not pin the viewport or steal the reselect. The change still lands.
     const identity = rapier.identity.authority, intent = userIntent;
     const current = () => identity === rapier.identity.authority && intent === userIntent;
-    const recipe = edit.rotateDrawing(gesture.baseRecipe, angle);
     // Preview and commit share this candidate; admission only rounds an integer viewport.
     const candidate = rotateCandidate(recipe);
     const svgText = candidate?.svg ?? core._rapierDrawBuildSVG(recipe);
     const currentAlt = _rapierImageAltText(_rapierImageAltSourceParts(record.image.altSource).alt);
-    // One finally: restore pre-rotation bytes only when nothing replaced them.
+    // One finally: restore the pre-gesture bytes only when nothing replaced them.
     try {
       const asset = await assets.createAsset(new TextEncoder().encode(svgText), null, {codec: 'image/svg+xml', title: currentAlt || 'drawing'});
       const raw = '![' + _rapierEscapeImageAlt(currentAlt) + '][' + asset.label + ']';
@@ -1912,6 +1928,215 @@ const _rapierImageFlow = (() => {
       endSettle(); schedule();
       return committed;
     } finally { restoreRotateImage(gesture); }
+  }
+
+  // Rotation changes only the definition's SVG bytes; replaceImage re-carries the occurrence's layout marker verbatim.
+  async function commitRotate(record, gesture, angle, releaseTop, viewport = null) {
+    const edit = globalThis.RapierDrawEdit;
+    if (!edit) return false;
+    return commitDrawing(record, gesture, edit.rotateDrawing(gesture.baseRecipe, angle), releaseTop, viewport);
+  }
+
+  // --- A diagram's boxes, inside the document (the founder's item 3, 30 September). A tap selects the drawing
+  // as before; on a selected drawing the finger takes a box in any direction and a tap on a box opens its words
+  // (or its step number) where they stand. Every change is the headless editor's, written back as the drawing's
+  // new bytes in one Undo step; nothing here knows how a box is drawn.
+
+  // A page point in a drawing's own units, through the picture's view (the SVG's viewBox fills the <img>).
+  function drawingPoint(image, recipe, clientX, clientY) {
+    const bounds = rect(image), view = recipeView(recipe);
+    if (!(bounds.width > 0) || !(bounds.height > 0) || !(view.w > 0) || !(view.h > 0)) return null;
+    return [view.x + (clientX - bounds.left) / bounds.width * view.w, view.y + (clientY - bounds.top) / bounds.height * view.h];
+  }
+  // The box under a page point: a figure that holds words or can (never a connector, ink or paint), front to back.
+  // `step` says the point sits on the box's step figures, which stand above its words.
+  function boxAt(image, clientX, clientY) {
+    const core = globalThis.RapierDrawCore, recipe = isDrawing(image) ? _rapierDrawRecipeFromImage(image) : null;
+    if (!recipe || !core?._rapierDrawShapeBBoxIn) return null;
+    const point = drawingPoint(image, recipe, clientX, clientY);
+    if (!point) return null;
+    for (let i = recipe.shapes.length - 1; i >= 0; i--) {
+      const shape = recipe.shapes[i];
+      if (shape.locked || !shape.geom || ['line', 'arrow', 'ink', 'paint', 'arc'].includes(shape.recognized)) continue;
+      const box = core._rapierDrawShapeBBoxIn(shape, recipe);
+      if (!box || point[0] < box.minX || point[0] > box.maxX || point[1] < box.minY || point[1] > box.maxY) continue;
+      const polygon = shape.recognized === 'text' ? null : core._rapierDrawShapePolygon?.(shape, recipe);
+      if (polygon?.length > 2 && core._rapierDrawPointInPolygon && !core._rapierDrawPointInPolygon(point, polygon)) continue;
+      let step = false;
+      if (Number.isInteger(shape.step) && shape.labelIn && core._rapierDrawTextLayout) {
+        try { const laid = core._rapierDrawTextLayout(shape, recipe); step = !!laid?.box && point[1] < laid.box.minY - (laid.fontSize || 14) * .2; } catch (_) { step = false; }
+      }
+      return {image, recipe, shape, box, point, step};
+    }
+    return null;
+  }
+
+  function beginShape(hit) {
+    const ready = readyGesture('This drawing cannot be changed without altering its source');
+    if (!ready) return;
+    const {record, occurrence} = ready;
+    const image = selected, recipe = hit.recipe, bounds = rect(image), area = rect(host), view = recipeView(recipe);
+    if (!(bounds.width > 0) || !(view.w > 0)) return;
+    endSettle();
+    resetRotatePerf();
+    moving = {kind: 'shape', image, blockId: record.block.id, imageIndex: record.imageIndex, record, occurrence, hit,
+      owner: positioned(occurrence.layout) ? wrapOwner(image.closest('.block-wrapper')) : null,
+      shapeId: hit.shape.id, baseRecipe: recipe, previewRecipe: null, previewProfile: null, refused: null, offset: null,
+      // Page pixels per drawing unit at the start; the box follows the finger's travel in the drawing's own units.
+      scale: bounds.width / view.w, angle: 0,
+      box: {x: bounds.left - area.left, y: bounds.top - area.top + host.scrollTop, width: bounds.width, height: bounds.height},
+      stamp: Object.freeze(_rapierMutationStamp()), source: _rapierSourceText(), pointer: null,
+      // The preview swaps <img> src and natural-size attributes; these restore them on cancel.
+      originalSrc: image.src, originalNaturalWidth: image.getAttribute('data-rapier-natural-width'),
+      originalNaturalHeight: image.getAttribute('data-rapier-natural-height'), candidateUrl: null, candidateToken: 0,
+      pendingRecipe: null, candidateBusy: false};
+    _rapierCancelViewRestore();
+    image.setAttribute('data-rapier-image-gesture', 'shape');
+    host.setAttribute('data-rapier-image-gesture', 'shape');
+    controls(); notify(); schedule();
+  }
+
+  function startShape(event, hit) {
+    cancel(); beginShape(hit);
+    if (!moving) { pointerClick = event.pointerId; return; }
+    const x = event.clientX, y = event.clientY, bounds = rect(moving.image);
+    moving.pointer = event.pointerId; moving.pointerOwner = host; moving.pointerType = event.pointerType;
+    moving.drag = {x, y, clientX: x, clientY: y, left: moving.box.x, top: moving.box.y, width: moving.box.width, scroll: host.scrollTop,
+      offsetX: x - bounds.left, offsetY: y - bounds.top, contact: Number(event.height) || 1, moved: false};
+    try { host.setPointerCapture(event.pointerId); } catch (_) { cancel(); return; }
+    notify();
+  }
+
+  // Every frame of a box drag: the box moved on the base recipe by the finger's travel; a move the drawing refuses
+  // (a connector left no way) keeps the last one it took, and the release says so if it took none.
+  function shapePreview() {
+    if (!moving || moving.kind !== 'shape' || moving.committing || !moving.drag) return;
+    const gesture = moving, drag = gesture.drag, edit = globalThis.RapierDrawEdit, core = globalThis.RapierDrawCore;
+    if (!edit?.editDrawing) return;
+    const dx = (drag.clientX - drag.x) / gesture.scale, dy = (drag.clientY - drag.y + host.scrollTop - drag.scroll) / gesture.scale;
+    if (gesture.offset && gesture.offset.dx === dx && gesture.offset.dy === dy) return;
+    let recipe;
+    try { recipe = edit.editDrawing(gesture.baseRecipe, [gesture.shapeId], {type: 'move', dx, dy}).recipe; gesture.refused = null; }
+    catch (error) { gesture.refused = error; return; }
+    gesture.offset = {dx, dy}; gesture.previewRecipe = recipe;
+    const view = core?._rapierDrawInkView ? core._rapierDrawInkView(recipe) : null;
+    gesture.previewProfile = view && typeof _rapierDrawShapeProfileFor === 'function' ? _rapierDrawShapeProfileFor({...recipe, view}, null) : null;
+    if (view) {
+      gesture.image.setAttribute('data-rapier-natural-width', view.w);
+      gesture.image.setAttribute('data-rapier-natural-height', view.h);
+    }
+    schedule();
+    refreshRotateCandidate(gesture, recipe);
+  }
+  function scheduleShapePreview() {
+    if (rotateFrame) return;
+    rotateFrame = requestAnimationFrame(() => { rotateFrame = 0; shapePreview(); });
+  }
+
+  // The words of a box, or its step number, edited where they stand: a field over the box. Set (or Escape, or a
+  // tap away) writes the drawing; Cancel leaves it. The words a person typed are never dropped without a word.
+  function openShapeField(hit) {
+    closeShapeField();
+    const {image, shape} = hit, step = hit.step, edit = globalThis.RapierDrawEdit;
+    if (!edit?.editDrawing || !selected || selected !== image || !image.isConnected) return;
+    if (!shapeField) {
+      shapeField = document.createElement('div'); shapeField.className = 'rapier-image-field';
+      shapeField.setAttribute('role', 'group'); shapeField.setAttribute('aria-label', 'drawing words');
+      // A press inside the field is the field's own: never a document press, and never a blur that sets the words
+      // before Cancel can be heard.
+      shapeField.addEventListener('pointerdown', event => { event.stopPropagation(); if (fieldOpen) fieldOpen.pressing = true; });
+      shapeField.addEventListener('pointerup', () => { if (fieldOpen) fieldOpen.pressing = false; });
+      shapeField.addEventListener('pointercancel', () => { if (fieldOpen) fieldOpen.pressing = false; });
+      document.body.append(shapeField);
+    }
+    shapeField.replaceChildren();
+    const input = document.createElement(step ? 'input' : 'textarea');
+    if (step) {
+      input.type = 'number'; input.min = '1'; input.max = '99'; input.inputMode = 'numeric';
+      input.value = shape.step != null ? String(shape.step) : '';
+      input.setAttribute('aria-label', 'Step number');
+    } else {
+      input.value = shape.label || ''; input.rows = 2; input.spellcheck = true;
+      input.setAttribute('aria-label', shape.recognized === 'text' ? 'Drawing text' : 'Box words');
+    }
+    const cancelButton = document.createElement('button'), setButton = document.createElement('button');
+    cancelButton.type = setButton.type = 'button';
+    cancelButton.setAttribute('aria-label', 'cancel'); setButton.setAttribute('aria-label', step ? 'set number' : 'set words');
+    cancelButton.append(fieldGlyph('M18 6 6 18M6 6l12 12')); setButton.append(fieldGlyph('M20 6 9 17l-5-5'));
+    shapeField.append(input, cancelButton, setButton);
+    fieldOpen = {image, shapeId: shape.id, step, input, value: input.value, done: false, pressing: false};
+    shapeField.hidden = false;
+    placeShapeField(hit);
+    cancelButton.addEventListener('click', event => { event.preventDefault(); if (event.isTrusted) closeShapeField(); });
+    setButton.addEventListener('click', event => { event.preventDefault(); if (event.isTrusted) void applyShapeField(); });
+    input.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Escape' || (event.key === 'Enter' && (step || event.ctrlKey || event.metaKey))) { event.preventDefault(); void applyShapeField(); }
+    });
+    input.addEventListener('blur', () => {
+      if (fieldOpen?.input !== input || fieldOpen.done) return;
+      setTimeout(() => { if (fieldOpen?.input === input && !fieldOpen.done && !fieldOpen.pressing && !shapeField.contains(document.activeElement)) void applyShapeField(); }, 0);
+    });
+    positionGrip(); controls();
+    input.focus({preventScroll: true});
+    if (!step) input.setSelectionRange(input.value.length, input.value.length);
+  }
+  // A stroked glyph built as nodes, never as markup.
+  function fieldGlyph(d) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('d', d); svg.append(path);
+    return svg;
+  }
+  function placeShapeField(hit) {
+    if (!shapeField || !fieldOpen) return;
+    const image = fieldOpen.image, recipe = hit?.recipe || _rapierDrawRecipeFromImage(image), core = globalThis.RapierDrawCore;
+    const bounds = rect(image);
+    const shape = recipe?.shapes.find(row => row.id === fieldOpen.shapeId), box = shape && core?._rapierDrawShapeBBoxIn?.(shape, recipe);
+    let left = bounds.left, top = bounds.top, width = 160;
+    if (box && recipe && bounds.width > 0) {
+      const view = recipeView(recipe), sx = bounds.width / view.w, sy = bounds.height / view.h;
+      left = bounds.left + (box.minX - view.x) * sx; top = bounds.top + (box.minY - view.y) * sy; width = (box.maxX - box.minX) * sx;
+    }
+    if (!fieldOpen.step) fieldOpen.input.style.width = px(clamp(width, 160, 420));
+    const field = shapeField.getBoundingClientRect();
+    shapeField.style.left = px(clamp(left, 8, Math.max(8, window.innerWidth - Math.max(field.width, 120) - 8)));
+    shapeField.style.top = px(clamp(top, 8, Math.max(8, window.innerHeight - Math.max(field.height, 48) - 8)));
+  }
+  function closeShapeField() {
+    if (!fieldOpen) return;
+    fieldOpen.done = true; fieldOpen = null;
+    if (shapeField) shapeField.hidden = true;
+    positionGrip();
+  }
+  async function applyShapeField() {
+    const open = fieldOpen;
+    if (!open || open.done) return false;
+    const value = open.input.value, before = open.value, edit = globalThis.RapierDrawEdit;
+    closeShapeField();
+    if (value === before || !edit?.editDrawing || !selected?.isConnected || selected !== open.image) return false;
+    // The drawing as it is now, not as it was when the field opened: an agent may have changed it meanwhile.
+    const base = _rapierDrawRecipeFromImage(open.image);
+    if (!base || !base.shapes.some(row => row.id === open.shapeId)) { showToast('That box is no longer in the drawing.', 'info'); return false; }
+    let recipe;
+    try {
+      const result = open.step
+        ? edit.editDrawing(base, [open.shapeId], {type: 'set_step', step: value.trim() === '' ? null : Number(value)})
+        : edit.editDrawing(base, [open.shapeId], {type: 'set_label', label: value});
+      if (!result.changed) return false;
+      recipe = result.recipe;
+    } catch (error) {
+      showToast(error.code === 'drawing_label_invalid' ? (open.step ? 'A step number is 1 to 99.' : 'Those words cannot go in this box.')
+        : error.code === 'drawing_route_blocked' ? 'Those words leave a connector no way, so the drawing was kept.' : String(error.message || error), 'error');
+      return false;
+    }
+    const ready = readyGesture('This drawing cannot be changed without altering its source');
+    if (!ready) return false;
+    const image = selected, releaseTop = rect(image).top - rect(host).top;
+    const gesture = {image, stamp: Object.freeze(_rapierMutationStamp()), candidateUrl: null};
+    const viewport = _rapierCaptureEditorViewport(image.closest('.block-wrapper'), true, true);
+    return commitDrawing(ready.record, gesture, recipe, releaseTop, viewport);
   }
 
   // Fold into the writer's own domain, `(-180, 180]` degrees.
@@ -2010,6 +2235,18 @@ const _rapierImageFlow = (() => {
       if (Math.abs(gesture.box.width - gesture.start.width) <= .5) { cancel(); return true; }
       const releaseTop = rect(gesture.image).top - rect(host).top, viewport = admitGesture(gesture);
       try { return await commitLayout(sourceRecord, occurrence, gesture.layout, 'document.resize-image', viewport, releaseTop); }
+      finally { if (moving === gesture) cancel(); }
+    }
+    if (gesture.kind === 'shape') {
+      // The pointer is already released here (releasePointer clears drag): the offset says whether a preview moved the box.
+      const recipe = gesture.previewRecipe;
+      if (!gesture.offset || (!gesture.offset.dx && !gesture.offset.dy)) {
+        const refused = gesture.refused; cancel();
+        if (refused) showToast('That move leaves a connector no way, so the box stayed where it was.', 'info');
+        return !refused;
+      }
+      const releaseTop = rect(gesture.image).top - rect(host).top, viewport = admitGesture(gesture);
+      try { return await commitDrawing(sourceRecord, gesture, recipe, releaseTop, viewport); }
       finally { if (moving === gesture) cancel(); }
     }
     if (gesture.kind === 'rotate') {
@@ -2160,6 +2397,16 @@ const _rapierImageFlow = (() => {
     .rapier-image-rotate svg{grid-area:1/1;width:18px;height:18px;position:relative}
     .rapier-image-rotate[hidden]{display:none}
     .rapier-image-rotate:focus-visible{outline:none}.rapier-image-rotate:focus-visible::before{outline:2px solid currentColor;outline-offset:2px}
+    img[data-rapier-image-selected][data-rapier-drawing]{touch-action:none}
+    .rapier-image-field{position:fixed;z-index:153;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:start;padding:6px;background:var(--color-bg);border:1px solid var(--color-accent);box-shadow:0 2px 12px rgba(0,0,0,.18);touch-action:none}
+    .rapier-image-field[hidden]{display:none}
+    .rapier-image-field textarea,.rapier-image-field input{grid-column:1;min-width:0;box-sizing:border-box;padding:6px 8px;border:1px solid var(--color-border,currentColor);border-radius:0;background:var(--color-bg);color:var(--color-text);font:inherit;line-height:1.35;resize:none}
+    .rapier-image-field textarea{max-width:min(70vw,420px);min-height:56px}
+    .rapier-image-field input{width:72px;text-align:center;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+    .rapier-image-field input::-webkit-outer-spin-button,.rapier-image-field input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+    .rapier-image-field button{width:36px;height:36px;padding:0;border:1px solid currentColor;border-radius:50%;background:var(--color-bg);color:var(--color-accent);display:grid;place-items:center;cursor:pointer}
+    .rapier-image-field button svg{width:16px;height:16px}
+    .rapier-image-field button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
     img[data-rapier-image-selected][data-rapier-image-armed]{outline:2px dashed var(--color-accent);outline-offset:2px}
     body:has(.link-dialog__overlay,dialog[open]) .rapier-image-grip,body:has(.link-dialog__overlay,dialog[open]) .rapier-image-move,body:has(.link-dialog__overlay,dialog[open]) .rapier-image-rotate{visibility:hidden}
     .rapier-image-grip:focus-visible{outline:none}.rapier-image-grip:focus-visible::after{outline:2px solid currentColor;outline-offset:3px}
@@ -2460,6 +2707,7 @@ const _rapierImageFlow = (() => {
     if (!moving?.drag || !moving.drag.moved) return;
     if (!rebaseGesture(moving)) return;
     if (moving.kind === 'rotate') { scheduleRotatePreview(); return; }
+    if (moving.kind === 'shape') { scheduleShapePreview(); return; }
     const drag = moving.drag, dx = drag.clientX - drag.x;
     const dy = drag.clientY - drag.y + (moving.kind === 'resize' && !moving.ownerGeometry ? 0 : host.scrollTop - drag.scroll);
     if (moving.kind === 'resize') {
@@ -2562,6 +2810,16 @@ const _rapierImageFlow = (() => {
         return;
       }
     }
+    // A box of a selected drawing: the finger takes the box in any direction, no hold; a tap opens its words.
+    if (!handle && event.target === selected && !armed && !moving) {
+      const hit = boxAt(selected, event.clientX, event.clientY);
+      if (hit) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (event.pointerType !== 'touch' && document.activeElement !== host && document.activeElement !== selected) host.focus({preventScroll: true});
+        startShape(event, hit);
+        return;
+      }
+    }
     if (!resizeGrips.includes(handle) && event.target !== selected) return;
     const kind = handle ? 'resize' : 'move';
     if (event.target === selected && event.pointerType !== 'touch' && document.activeElement !== host && document.activeElement !== selected)
@@ -2637,8 +2895,15 @@ const _rapierImageFlow = (() => {
       moving.drag.clientX = event.clientX; moving.drag.clientY = event.clientY; updatePointerBox();
       // Flush the pending preview frame before releasePointer() clears the drag state.
       if (moving.kind === 'rotate' && rotateFrame) { cancelAnimationFrame(rotateFrame); rotateFrame = 0; rotatePreview(); }
+      if (moving.kind === 'shape' && rotateFrame) { cancelAnimationFrame(rotateFrame); rotateFrame = 0; shapePreview(); }
     }
     const commit = moving?.drag?.moved;
+    if (moving.kind === 'shape' && !commit) {
+      // A tap on a box: its words, or its step number, open where they stand.
+      const hit = moving.hit; pointerClick = event.pointerId; cancel();
+      if (hit) openShapeField(hit);
+      return;
+    }
     const target = commit ? handoffTarget() : undefined;
     if (target) switchOwner(target); else if (target === null) setFree();
     pointerClick = event.pointerId;

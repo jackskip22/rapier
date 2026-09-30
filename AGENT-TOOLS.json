@@ -1,5 +1,5 @@
 {
-  "release": "1.1.15",
+  "release": "1.1.16",
   "core": [
     {
       "name": "document.get_context",
@@ -2317,9 +2317,25 @@
                     "move",
                     "clean",
                     "unclean",
-                    "set_look"
+                    "set_look",
+                    "set_label",
+                    "set_step"
                   ],
                   "description": "The operation."
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 4096,
+                  "description": "set_label: the words of the shape (empty removes them)."
+                },
+                "step": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "maximum": 99,
+                  "description": "set_step: the number a box shows above its words in the order a flow is read, or null for none."
                 },
                 "brush": {
                   "type": "string",
@@ -5509,9 +5525,25 @@
                     "move",
                     "clean",
                     "unclean",
-                    "set_look"
+                    "set_look",
+                    "set_label",
+                    "set_step"
                   ],
                   "description": "The operation."
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 4096,
+                  "description": "set_label: the words of the shape (empty removes them)."
+                },
+                "step": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "maximum": 99,
+                  "description": "set_step: the number a box shows above its words in the order a flow is read, or null for none."
                 },
                 "brush": {
                   "type": "string",
@@ -6142,13 +6174,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.15.html",
+          "resourceUri": "ui://rapier/editor-1.1.16.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.15.html"
+        "openai/outputTemplate": "ui://rapier/editor-1.1.16.html"
       }
     },
     {

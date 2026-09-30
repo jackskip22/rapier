@@ -52,11 +52,12 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
       const letterSpacing = parseFloat(computedRun.letterSpacing) || 0;
       const prepared = geometry.prepareRun(node.data, font, letterSpacing);
       if (!prepared) return null;
-      const atomic = parents.some(parent => parent.tagName === 'CODE');
-      const extraWidth = atomic ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'marginLeft', 'marginRight']
+      // A chip's box is repeated by each piece of it, and it breaks as the browser breaks inline code, as the editor's projection does.
+      const boxed = parents.some(parent => parent.tagName === 'CODE');
+      const extraWidth = boxed ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'marginLeft', 'marginRight']
         .reduce((width, key) => width + (parseFloat(computedRun[key]) || 0), 0) : 0;
       runs.push({parents, prepared, directions: parents.map(parent => parent.getAttribute('dir') === 'auto' ? css(parent).direction : null)});
-      items.push({text: prepared.raw, font, letterSpacing, break: atomic ? 'never' : 'normal', extraWidth});
+      items.push({text: prepared.raw, font, letterSpacing, break: 'normal', extraWidth});
     }
     if (!runs.length) return null;
     const fontSize = parseFloat(computed.fontSize) || 16;
@@ -70,14 +71,20 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   function fragmentNode(record, fragment) {
     const run = record.runs[fragment.itemIndex], mapped = geometry.mapFragment(run?.prepared, fragment);
     if (!mapped) return null;
-    let child = doc.createTextNode(mapped.text);
+    // A line ends on the white space it broke at. A chip, a link or a highlight must not paint that space, so it stands after the shell.
+    const kept = run.parents.length ? mapped.text.replace(/[ \t\n\r\f]+$/, '') : mapped.text;
+    const split = kept && kept.length < mapped.text.length;
+    let child = doc.createTextNode(split ? kept : mapped.text);
     for (let index = run.parents.length - 1; index >= 0; index--) {
       const shell = run.parents[index].cloneNode(false);
       if (shell.id) { if (idsKept.has(run.parents[index])) shell.removeAttribute('id'); else idsKept.add(run.parents[index]); }
       if (run.directions[index]) shell.setAttribute('dir', run.directions[index]);
       shell.append(child); child = shell;
     }
-    return child;
+    if (!split) return child;
+    const pair = doc.createDocumentFragment();
+    pair.append(child, doc.createTextNode(mapped.text.slice(kept.length)));
+    return pair;
   }
 
   function project(record, width, top, obstacles) {

@@ -1,4 +1,67 @@
 // SPDX-License-Identifier: MIT
+// A word or an address wider than its slot has to break inside itself; the browser would let it run out of the column, a
+// projection cannot. Pretext breaks it after the last hyphen that fits, else after the last letter that fits. A person reads an
+// address better broken where it has its own punctuation, so the break moves back to the last of these that fits.
+const naturalBreak = /[/._?&=]/, hyphen = /[-\u058a\u2010\u2012\u2013\u2014]/;
+let clusters;
+const lettersOf = new WeakMap();
+
+function breakAtPunctuation(flow, range, cursor, layoutNextRichInlineLineRange) {
+  const last = range.fragments.at(-1), end = last?.end;
+  if (!end || end.graphemeIndex === 0) return range;
+  const prepared = flow.items[last.itemIndex]?.prepared, segment = prepared?.segments?.[end.segmentIndex];
+  if (typeof segment !== 'string') return range;
+  // A long address is cut once per line; its letters are counted once.
+  let byIndex = lettersOf.get(prepared);
+  if (!byIndex) lettersOf.set(prepared, byIndex = new Map());
+  let letters = byIndex.get(end.segmentIndex);
+  if (!letters) {
+    clusters ||= new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+    byIndex.set(end.segmentIndex, letters = [...clusters.segment(segment)].map(part => part.segment));
+  }
+  const from = last.start.segmentIndex === end.segmentIndex ? last.start.graphemeIndex : 0;
+  if (end.graphemeIndex > letters.length || hyphen.test(letters[end.graphemeIndex - 1]) || naturalBreak.test(letters[end.graphemeIndex - 1])) return range;
+  let target = end.graphemeIndex - 1;
+  while (target > from && !naturalBreak.test(letters[target - 1])) target--;
+  if (target <= from) return range;
+  // Each narrower limit yields the break one letter back (`balanced` walks the breaks of a line the same way).
+  for (let limit = range.width - .05, at = end.graphemeIndex; at > target;) {
+    const shorter = layoutNextRichInlineLineRange(flow, limit, cursor), tail = shorter?.fragments.at(-1);
+    if (!tail || tail.itemIndex !== last.itemIndex || tail.end.segmentIndex !== end.segmentIndex || tail.end.graphemeIndex >= at) return range;
+    if (tail.end.graphemeIndex === target) return shorter;
+    at = tail.end.graphemeIndex;
+    limit = shorter.width - .05;
+  }
+  return range;
+}
+
+// Pretext lets a line end wherever one element ends and the next begins. The browser allows no break there unless white space
+// stands between them, so a comma, a colon or a closing bracket straight after `agents.md` (a chip, a link, bold words) would
+// start the next line alone. The line ends one break earlier instead, and the punctuation keeps its word.
+const closing = /^[,.:;!?)\]}%\u2019\u201d\u00bb\u203a\u2026\u060c\u061b\u061f\u3001\u3002\uff0c\uff0e\uff1a\uff1b\uff01\uff1f\uff09\u300d\u300f]/;
+
+function stranding(flow, range) {
+  const {itemIndex, segmentIndex, graphemeIndex} = range.end;
+  if (segmentIndex !== 0 || graphemeIndex !== 0) return false;
+  for (let index = itemIndex; index < flow.items.length; index++) {
+    const item = flow.items[index];
+    if (!item?.establishesLine) continue;
+    return !item.breakBefore && closing.test(item.prepared?.segments?.[0] ?? '');
+  }
+  return false;
+}
+
+function keepWithWord(flow, range, cursor, layoutNextRichInlineLineRange) {
+  if (!stranding(flow, range)) return range;
+  for (let limit = range.width - .05, tries = 64; tries > 0; tries--) {
+    const shorter = layoutNextRichInlineLineRange(flow, limit, cursor);
+    if (!shorter || shorter.width > limit + .05) return range;
+    if (!stranding(flow, shorter)) return shorter;
+    limit = shorter.width - .05;
+  }
+  return range;
+}
+
 export function linePlan(flow, width, top, obstacles, lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange) {
   const lines = [], ranges = [];
   let cursor = {itemIndex: 0, segmentIndex: 0, graphemeIndex: 0}, y = 0, bottom = 0, rows = 0;
@@ -6,13 +69,20 @@ export function linePlan(flow, width, top, obstacles, lineHeight, minWidth, dire
     const bands = slotsForBand(width, obstacles, top + y, lineHeight, Math.min(minWidth, width));
     if (!bands) return null;
     if (direction === 'rtl') bands.reverse();
+    const widest = Math.max(0, ...bands.map(band => band.width));
     let advanced = false;
     for (const band of bands) {
-      const range = layoutNextRichInlineLineRange(flow, band.width, cursor);
+      let range = layoutNextRichInlineLineRange(flow, band.width, cursor);
       if (!range) return lines.length ? {lines: balance ? balanced(flow, width, balance, lines, ranges, lineHeight, layoutNextRichInlineLineRange, materializeRichInlineLineRange) : lines, height: Math.max(lineHeight, bottom)} : null;
       if (range.width > width + .5 || range.end.itemIndex === cursor.itemIndex &&
           range.end.segmentIndex === cursor.segmentIndex && range.end.graphemeIndex === cursor.graphemeIndex) return null;
       if (range.width > band.width + .5) continue;
+      range = breakAtPunctuation(flow, range, cursor, layoutNextRichInlineLineRange);
+      // Ending a line earlier for a comma can cut a word too, so that cut is settled as well.
+      if (!balance && stranding(flow, range)) range = breakAtPunctuation(flow, keepWithWord(flow, range, cursor, layoutNextRichInlineLineRange), cursor, layoutNextRichInlineLineRange);
+      // A word or address that must break inside itself does it in the widest slot of the row. A narrower one, a sliver beside the
+      // picture, waits and the widest takes it, so the head of an address, or "passage" and "s,", is never left alone in a corner.
+      if (range.end.graphemeIndex > 0 && band.width < widest - .5) continue;
       if (lines.length === 4096) return null;
       lines.push({...materializeRichInlineLineRange(flow, range), ...band, y}); ranges.push(range);
       cursor = range.end; advanced = true; bottom = y + lineHeight;

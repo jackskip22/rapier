@@ -1737,6 +1737,38 @@
       }
     },
     {
+      "id": "image-field",
+      "selector": ".rapier-image-field",
+      "rule": {
+        "file": "layout/browser.js",
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-image-field",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 220,
+          "height": 72
+        }
+      }
+    },
+    {
       "id": "image-wrap-row",
       "selector": ".rapier-image-wrap-row",
       "rule": {

@@ -44728,7 +44728,7 @@ function _rapierUiInstallTouchRouter() {
 		const rect = refs.edgeSwipe.getBoundingClientRect();
 
 		if (touch.clientX < rect.left || touch.clientX > rect.right || touch.clientY > rect.bottom) return;
-		if (target && target.closest('.scroll-fab,.rapier-image-grip,.rapier-image-move,img[data-rapier-image-selected]')) return;
+		if (target && target.closest('.scroll-fab,.rapier-image-grip,.rapier-image-move,.rapier-image-field,img[data-rapier-image-selected]')) return;
 		_rapierUiGestureBegin('opening', touch.clientX, touch.clientY, touch.identifier, 'touch',
 			target || refs.edgeSwipe);
 	}, { capture: true, passive: true });

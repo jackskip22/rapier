@@ -2119,7 +2119,19 @@ function _rapierDrawFindOrthogonalRoute(shape, recipe, occupied, rail, scene, op
 			if (titles.length) obstacles.push({target, minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: Math.min(...titles.map(title => title.maxY)) + 8});
 			continue;
 		}
-		obstacles.push({ target, minX: Math.max(-65536, b.minX - pad), minY: Math.max(-65536, b.minY - pad), maxX: Math.min(65536, b.maxX + pad), maxY: Math.min(65536, b.maxY + pad) });
+		obstacles.push({ target, real: b, minX: Math.max(-65536, b.minX - pad), minY: Math.max(-65536, b.minY - pad), maxX: Math.min(65536, b.maxX + pad), maxY: Math.min(65536, b.maxY + pad) });
+	}
+	// Two bound boxes closer than two paddings (one dragged up to its neighbour) keep a way between them: this
+	// connector's own two boxes give up padding along the axis that separates them and meet at the midline, so
+	// the ports stand between the boxes and the run between them is open. Every other box keeps its padding.
+	const bound = ['start', 'end'].map(end => obstacles.find(o => o.real && o.target.id === shape.bind?.[end]?.to));
+	if (bound[0] && bound[1] && bound[0] !== bound[1]) for (const [lo, hi] of [['minX', 'maxX'], ['minY', 'maxY']]) {
+		const [p, q] = bound, pair = p.real[hi] <= q.real[lo] ? [p, q] : q.real[hi] <= p.real[lo] ? [q, p] : null;
+		if (!pair) continue;
+		const [near, far] = pair, apart = far.real[lo] - near.real[hi];
+		if (apart <= 0 || near[hi] <= far[lo]) continue;
+		const mid = near.real[hi] + apart / 2;
+		near[hi] = mid; far[lo] = mid;
 	}
 	_rapierDrawWorkCount(obstacles.length, 96);
 	const turn = 1000000;

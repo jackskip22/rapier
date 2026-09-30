@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.15+skills.71213a8247c7c6c610119327b274ba685fabeec85409b68da18b08abc8379bd2",
+  "version": "1.1.16+skills.fca0e23622bcf8f246c8274880962df02cc69541532dfd648444e63ed2ac85c9",
   "description": "Explain, plan, write and create together on an editable page. Rapier combines prose, diagrams, movable drawings, painting and inspectable revisions so a person can explore an idea, change it and continue with the agent. Use when a visual explanation, substantial draft, plan, spatial sketch or meaningful revision benefits from shared editing, even without naming Rapier. Read current passages or drawing objects, change only what is needed, and preserve the person’s work. Deliver an offline editable page when a lasting file is wanted. Brief answers and chat-only requests stay in the conversation.",
   "author": {
     "name": "Jack Skipworth",

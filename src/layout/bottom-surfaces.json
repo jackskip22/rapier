@@ -1400,6 +1400,27 @@
       "reason": "The picture rotation grip is a fixed drag target and can enter the bottom band."
     },
     {
+      "id": "image-field",
+      "file": "layout/browser.js",
+      "selector": ".rapier-image-field",
+      "rule": {
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The words field of a drawing's box is a fixed overlay placed over the box and can enter the bottom band."
+    },
+    {
       "id": "image-wrap-row",
       "file": "layout/browser.js",
       "selector": ".rapier-image-wrap-row",

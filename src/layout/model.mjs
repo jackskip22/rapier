@@ -110,31 +110,43 @@ export function rasterReserved(columnWidth, unrotated, rad) {
 }
 
 
-const shapeGrid = 48, alphaThreshold = .1, profileBands = new WeakMap();
+const shapeGrid = 48, alphaThreshold = .1, alphaOversample = 4, profileBands = new WeakMap();
 
+// The picture's silhouette as 48 bands of horizontal runs, read from its alpha at four times that resolution both ways: a band
+// holds the ink of its four pixel rows, and a run's ends fall on a 192nd of the picture's width, so the standoff a slice adds
+// (`pictureSlices`' `gap`) is the least distance from the words to the paint however large the picture is drawn. At 48 columns
+// a run's end drifted by a 48th of the width (9 px at 430) and a thin stroke fell between two samples.
 export function alphaProfile(image) {
   const src = image.currentSrc || image.getAttribute('src') || '';
   if (!image.complete || !image.naturalWidth || !image.naturalHeight || !src || /^data:image\/jpe?g[;,]/i.test(src)) return null;
+  const fine = shapeGrid * alphaOversample;
   const canvas = image.ownerDocument.createElement('canvas');
-  canvas.width = canvas.height = shapeGrid;
+  canvas.width = canvas.height = fine;
   let data;
   try {
     const context = canvas.getContext('2d', {willReadFrequently: true});
     if (!context) return null;
-    context.drawImage(image, 0, 0, shapeGrid, shapeGrid);
-    data = context.getImageData(0, 0, shapeGrid, shapeGrid).data;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, fine, fine);
+    data = context.getImageData(0, 0, fine, fine).data;
   } catch (_) { return null; }
   finally { canvas.width = canvas.height = 0; }
   const bands = [];
   let opaque = true;
-  for (let y = 0; y < shapeGrid; y++) {
+  for (let band = 0; band < shapeGrid; band++) {
+    const ink = new Uint8Array(fine);
+    for (let y = band * alphaOversample; y < (band + 1) * alphaOversample; y++) {
+      for (let x = 0; x < fine; x++) {
+        const alpha = data[(y * fine + x) * 4 + 3];
+        if (alpha < 250) opaque = false;
+        if (alpha > alphaThreshold * 255) ink[x] = 1;
+      }
+    }
     const runs = [];
     let start = -1;
-    for (let x = 0; x <= shapeGrid; x++) {
-      const alpha = x < shapeGrid ? data[(y * shapeGrid + x) * 4 + 3] : 0;
-      if (x < shapeGrid && alpha < 250) opaque = false;
-      if (alpha > alphaThreshold * 255) { if (start < 0) start = x; }
-      else if (start >= 0) { runs.push([start / shapeGrid, x / shapeGrid]); start = -1; }
+    for (let x = 0; x <= fine; x++) {
+      if (x < fine && ink[x]) { if (start < 0) start = x; }
+      else if (start >= 0) { runs.push([start / fine, x / fine]); start = -1; }
     }
     bands.push(runs);
   }
@@ -242,7 +254,8 @@ export function pictureSlices(profile, x, y, width, height, gap = 10) {
     let previous = new Map();
     for (let index = 0; index < shapeGrid; index++) {
       const top = index / shapeGrid, bottom = (index + 1) / shapeGrid;
-      const runs = [top, (top + bottom) / 2, bottom].flatMap(t => {
+      // Sampled just inside the bottom edge: on the edge itself a band profile answers with the next band's row and the slice runs a row long.
+      const runs = [top, (top + bottom) / 2, bottom - 1e-9].flatMap(t => {
         if (profile.runsAt) return profile.runsAt(t) || [];
         const span = profile.spanAt(t);
         return span ? [span] : [];
