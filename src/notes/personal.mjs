@@ -91,6 +91,8 @@ export function createPersonalOwner({storage, apply = () => {}, validateAsset = 
 			state = check(await storage.update(raw => { const next = check(raw); next.blobs[content] = value; if (next.records[key]?.value?.content !== content) next.records[key] = {by: next.writer, n: tick(clock(next)), value: {content, object: null}}; next.records = admitPersonal(next.records, {local: true}); return next; }));
 		}); },
 		snapshot() { return schedule(async () => { await read(); return {records: structuredClone(state.records), blobs: {...state.blobs}}; }); },
+		// The shelf's writer, the provenance its records carry (`by`): a head names it beside the device's label.
+		writer() { return schedule(async () => (await read()).writer); },
 		ledger() { return schedule(async () => structuredClone((await read()).ledger)); },
 		// An earlier choice comes back as the newest choice here, and so everywhere after a sync.
 		restore(entry) { return schedule(async () => {

@@ -5,10 +5,10 @@ A bounded survey, not proof of a global minimum; the encoders differ in what the
 
 | Encoder / entry | Version | Minified JS + WASM bytes | gzip bytes | Included capability |
 | --- | --- | ---: | ---: | --- |
-| Rapier JXL core | this release | __MIN_BYTES__ | __MIN_GZIP__ | 8-bit lossless RGBA, lossy modular with exact alpha, JPEG coefficients |
-| Rapier JXL lossless | this release | __LOSSLESS_BYTES__ | __LOSSLESS_GZIP__ | 8-bit exact RGBA |
-| Rapier JXL JPEG | this release | __JPEG_BYTES__ | __JPEG_GZIP__ | JPEG coefficients, orientation; no JPEG reconstruction |
-| Rapier JXL photo | this release | __PHOTO_BYTES__ | __PHOTO_GZIP__ | 8-bit photographic VarDCT, exact alpha; q100 lossless |
+| Rapier JXL core | __VERSION__ | __CORE_BYTES__ | __CORE_GZIP__ | 8-bit lossless RGBA, lossy modular with exact alpha |
+| Rapier JXL effort door | __VERSION__ | __EFFORT_BYTES__ | __EFFORT_GZIP__ | The core, and the weighted predictor searched for lossless |
+| Rapier JXL JPEG door | __VERSION__ | __JPEG_BYTES__ | __JPEG_GZIP__ | JPEG coefficients, orientation; no JPEG reconstruction |
+| Rapier JXL photo door | __VERSION__ | __PHOTO_BYTES__ | __PHOTO_GZIP__ | 8-bit photographic VarDCT, exact alpha; q100 lossless |
 | [jSquash](https://github.com/jamsinclair/jSquash/tree/main/packages/jxl) | 1.3.0 | 1,388,572 | 525,782 | 8-bit lossless/lossy RGBA |
 | [Discourse's jSquash package](https://www.npmjs.com/package/@discourse/jxl) | 1.3.0 | 1,388,572 | 525,782 | The same encoder bytes as jSquash |
 | [Lacinak's jSquash fork](https://github.com/kelaci/jSquash) | 1.3.0-kelaci.0 | 2,071,514 | 844,866 | High bit-depth input options |
@@ -51,7 +51,7 @@ Gaussian, no downsampling); alpha-bearing inputs are matted on white for the tab
 reference tool at 80 nits, the worse of the white and black mattes for alpha inputs. Higher PSNR and SSIM and
 lower Butteraugli are that metric's preference, not a human verdict. **R / N** is Rapier / native.
 
-### Photo entry
+### The photo door
 
 Native is within 0.402% of the budget in all 20 rows, and better on PSNR and SSIM in 19 of 20 and on
 Butteraugli in 19 of 20; the exceptions are Grace q99 (Rapier's PSNR and SSIM) and lit surface q99 (Rapier's
@@ -80,7 +80,7 @@ Butteraugli).
 | Grace Hopper · 90 | 56,543 | 56,519 | 1.110 | 38.605 / 38.944 | 0.950222 / 0.970007 | 2.3300 / 1.4546 |
 | Grace Hopper · 99 | 110,542 | 110,533 | 0.173 | 49.948 / 47.182 | 0.996348 / 0.995977 | 0.4889 / 0.3406 |
 
-### Lossy modular entry on drawings and paintings
+### The core's lossy modular on drawings and paintings
 
 Fourteen rows are matched within 0.127%. In the ten **†** rows an exact native stream fits in 3.052% to
 51.144% fewer bytes. Native SSIM and Butteraugli are better in all 24 rows; PSNR favours Rapier for paint-0001

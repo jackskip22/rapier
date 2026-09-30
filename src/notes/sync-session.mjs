@@ -128,7 +128,7 @@ async function checkedRecord(record) {
 }
 
 export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendingKey = 'rapier:cloudflare:pending',
-	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, device = null, now = Date.now, onChange = () => {}, companion = null} = {}) {
+	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, device = null, now = Date.now, onChange = () => {}, companion = null, label = null} = {}) {
 	// Through Rapier Sync the page has no network of its own: companion.call is the app's seam (host.syncTransport).
 	if (!folder?.owner || mode !== 'companion' && typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
 	// A private copy prevents a caller mutating registration or host facts after admission.
@@ -142,11 +142,13 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	let staged = null, rememberDevice = !!device && device.available !== false, deviceInspected = false, folderIdentity = null;
 	let accounts = null, storage = null;
 	let stage = 'signed-out', notice = '', needsRevoke = false, backedUpAt = null, rejoinRequired = false;
+	// The vault's devices as the last run read their newest heads: each device id with its label and shelf writer.
+	let devices = Object.freeze([]);
 	const transports = new Set(), credentials = new Map();
 	const status = () => Object.freeze({stage, mode, authorized: mode === 'companion' ? !!connection : mode === 'r2-key' ? !!key && !!connection?.credential : !!grant && !needsRevoke, unlocked: !!key,
 		rememberDevice, rememberAvailable: !!device && device.available !== false, hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
 		busy: !!work || !!revoking || !!locking || !!stopping || !!leaving || !!cancelling, revocationPending: needsRevoke,
-		address: connection && (mode !== 'r2-key' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt});
+		address: connection && (mode !== 'r2-key' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt, devices});
 	const announce = (next, text = '') => { stage = next; notice = text; onChange(status()); };
 	const ready = () => { if (!gate.ready) throw fail('unavailable', gate.reason); };
 	const pruneCredentials = () => {
@@ -408,7 +410,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		leaving = (async () => {
 			await stop();
 			await folder.leaveVault();
-			connection = null; rejoinRequired = false; backedUpAt = null;
+			connection = null; rejoinRequired = false; backedUpAt = null; devices = Object.freeze([]);
 			if (!revoking) announce(grant ? 'locked' : 'signed-out', 'this folder left the vault; every note stays here. other devices and the online vault are unchanged.');
 			return {left: true, revoked: false};
 		})().finally(() => { leaving = null; onChange(status()); });
@@ -648,11 +650,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					await putVerified(tr, 'keys/' + connection.target.headerHash, connection.bytes); active(ticket);
 					// The adapter asks after every owner lease it waited for and at each write-plan handoff,
 					// so a Lock that lands while this sync is queued refuses the unhanded work.
-					const store = createOwnerSyncStore({folder, personal, deviceId: local.deviceId || folder.deviceId,
+					const store = createOwnerSyncStore({folder, personal, label, deviceId: local.deviceId || folder.deviceId,
 						assertActive: () => active(ticket)});
 					return synchronize(tr, store, {vdk: held});
 				});
 				active(ticket);
+				if (Array.isArray(result.devices)) devices = Object.freeze(result.devices.map(row => Object.freeze({device: row.device, writer: row.writer ?? null, label: row.label ?? null})));
 				// Kept in the folder's own sync state, beside the checkpoint it dates. A record that fails
 				// leaves the last time that was kept: it can understate the backup, never claim one.
 				try {

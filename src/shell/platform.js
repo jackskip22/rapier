@@ -194,6 +194,8 @@ const RapierStorage = Object.freeze({
 	}),
 	webFileHandlesDb: 'rapier:file-handles' + RAPIER_STORAGE_SCOPE,
 	webGenerationPrefix: 'web:',
+	// A document kept in Rapier stays bound to its kept file across a reload (KEEP IN RAPIER, below).
+	keptBindings: 'rapier:kept-bindings' + RAPIER_STORAGE_SCOPE,
 	recoveryDb: 'rapier:recovery' + RAPIER_STORAGE_SCOPE,
 	recoverySnapshot: 'rapier:recovery:snapshot' + RAPIER_STORAGE_SCOPE,
 	restoreCursor: 'rapier:recovery:restore-cursor' + RAPIER_STORAGE_SCOPE,
@@ -2686,27 +2688,71 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	// its own; Rapier shows the notes, where kept documents and code files are. The notes module owns the folder
 	// (globalThis.RapierNotesKeep, notes/notes.js); this owns the destination and the binding. Where no notes
 	// runtime is (the document profile, a host without Notes), every file operation is the host's own, unchanged.
-	const _rapierKeptRuntime = Object.seal({ bindings: new Map(), dirty: false, timer: 0, saving: false });
+	const _rapierKeptRuntime = Object.seal({ bindings: new Map(), dirty: false, timer: 0, saving: false, stored: true });
 	function _rapierKeep() {
 		var keep = globalThis.RapierNotesKeep;
 		try { return keep && keep.available() ? keep : null; } catch (_) { return null; }
 	}
-	function _rapierKeptBinding(authority) { return _rapierKeptRuntime.bindings.get(String(authority || '').trim()) || null; }
+	// A binding outlives a reload: it is kept in this origin's storage under the document's authority, which the
+	// editor's recovery restores with the document, so after a reload Save still writes the kept file in place and
+	// AutoSave still runs. Its digest is the words this document last read or wrote there, so a change made elsewhere
+	// since is still kept beside. The newest few are kept; one this page dropped is never read back.
+	const _RAPIER_KEPT_STORED = 16;
+	function _rapierKeptStoredList() {
+		try {
+			var list = JSON.parse(localStorage.getItem(RapierStorage.keptBindings) || '[]');
+			return Array.isArray(list) ? list.filter(function (entry) {
+				return !!entry && typeof entry.authority === 'string' && /^\S{1,256}$/.test(entry.authority)
+					&& typeof entry.file === 'string' && /^[^/\\\u0000]{1,1024}$/.test(entry.file)
+					&& (entry.id === null || typeof entry.id === 'string') && typeof entry.digest === 'string' && /^[0-9a-f]{64}$/.test(entry.digest);
+			}) : [];
+		} catch (_) { return []; }
+	}
+	function _rapierKeptStore(authority, bound) {
+		try {
+			var list = authority ? _rapierKeptStoredList().filter(function (entry) { return entry.authority !== authority; }) : [];
+			if (bound) list.unshift({ authority: authority, file: bound.file, id: bound.id, digest: bound.digest });
+			list = list.slice(0, _RAPIER_KEPT_STORED);
+			if (list.length) localStorage.setItem(RapierStorage.keptBindings, JSON.stringify(list));
+			else localStorage.removeItem(RapierStorage.keptBindings);
+		} catch (_) {}
+	}
+	function _rapierKeptBinding(authority) {
+		var id = String(authority || '').trim();
+		if (!id) return null;
+		if (_rapierKeptRuntime.bindings.has(id)) return _rapierKeptRuntime.bindings.get(id);
+		if (!_rapierKeptRuntime.stored) return null;
+		var entry = _rapierKeptStoredList().find(function (item) { return item.authority === id; });
+		var bound = entry ? Object.freeze({ file: entry.file, id: entry.id, digest: entry.digest }) : null;
+		_rapierKeptRuntime.bindings.set(id, bound);
+		return bound;
+	}
 	// The saved bytes as the document wrote them: a byte-order mark is kept, never decoded away.
 	async function _rapierKeptText(blob) { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await blob.arrayBuffer()); }
 	function _rapierKeptBind(authority, kept) {
-		_rapierKeptRuntime.bindings.set(String(authority || '').trim(), Object.freeze({ file: kept.file, id: kept.id, digest: kept.digest }));
+		var id = String(authority || '').trim(), bound = Object.freeze({ file: kept.file, id: kept.id, digest: kept.digest });
+		_rapierKeptRuntime.bindings.set(id, bound);
+		_rapierKeptStore(id, bound);
 		_rapierKeptAutosave();
 		return { status: 'saved', confirmed: true, verified: true, fileGeneration: kept.digest, destinationName: kept.file, destinationSelected: true };
 	}
+	// One document's binding, or (no authority) every binding this page or an earlier one made.
+	function _rapierKeptUnbind(authority) {
+		var id = String(authority || '').trim();
+		if (id) { _rapierKeptRuntime.bindings.set(id, null); _rapierKeptStore(id, null); return; }
+		_rapierKeptRuntime.bindings.clear();
+		_rapierKeptRuntime.stored = false;
+		_rapierKeptStore('', null);
+	}
 	// AutoSave: while the current document is kept in Rapier and has unsaved words, the editor's own Save runs on
-	// the notes' cadence; it saves only a settled document (an edit in progress waits for the next beat).
+	// the notes' cadence; it saves only a settled document (an edit in progress waits for the next beat). The beat
+	// stops while the document on the page is not kept; a binding, or unsaved words in a kept one, starts it again.
 	function _rapierKeptAutosave() {
-		if (_rapierKeptRuntime.timer || !_rapierKeptRuntime.bindings.size) return;
+		if (_rapierKeptRuntime.timer || !_rapierKeptBinding(_engineDocumentAuthority())) return;
 		_rapierKeptRuntime.timer = setInterval(function () {
-			if (!_rapierKeptRuntime.bindings.size) { clearInterval(_rapierKeptRuntime.timer); _rapierKeptRuntime.timer = 0; return; }
 			var keep = _rapierKeep(), authority = _engineDocumentAuthority();
-			if (!keep || !_rapierKeptRuntime.dirty || _rapierKeptRuntime.saving || !_rapierKeptBinding(authority)) return;
+			if (!_rapierKeptBinding(authority)) { clearInterval(_rapierKeptRuntime.timer); _rapierKeptRuntime.timer = 0; return; }
+			if (!keep || !_rapierKeptRuntime.dirty || _rapierKeptRuntime.saving) return;
 			_rapierKeptRuntime.saving = true;
 			Promise.resolve().then(function () { return keep.saveCurrent(authority); }).catch(function () {}).finally(function () { _rapierKeptRuntime.saving = false; });
 		}, 700);
@@ -2719,7 +2765,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				if (!keep || !authority || authority.indexOf('notes:') === 0) return raw.saveAs(blob, filename, options);
 				var choice = await keep.ask('save');
 				// Saved on the device, the document belongs to that file from now on, not to a kept one.
-				if (choice === 'secondary') { _rapierKeptRuntime.bindings.delete(authority); return raw.saveAs(blob, filename, options); }
+				if (choice === 'secondary') { _rapierKeptUnbind(authority); return raw.saveAs(blob, filename, options); }
 				if (choice !== true) return { status: 'cancelled', confirmed: false, verified: false };
 				if (options && options.beforeWrite) await options.beforeWrite;
 				return _rapierKeptBind(authority, await keep.keep(await _rapierKeptText(blob), String(filename || 'document.md')));
@@ -2740,8 +2786,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				return raw.acceptOpened ? raw.acceptOpened(payload) : Promise.resolve({ bound: true, persisted: false });
 			},
 			detach: function (authority) {
-				var id = String(authority || '').trim();
-				if (id) _rapierKeptRuntime.bindings.delete(id); else _rapierKeptRuntime.bindings.clear();
+				_rapierKeptUnbind(authority);
 				return raw.detach ? raw.detach.apply(null, arguments) : Promise.resolve();
 			},
 			hasWritable: function (authority) { return !!_rapierKeptBinding(authority) || (raw.hasWritable ? raw.hasWritable(authority) : false); },
@@ -2754,7 +2799,11 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				if (choice === true) await keep.show();
 				return null;
 			},
-			publishDirty: function (value) { _rapierKeptRuntime.dirty = value === true; if (raw.publishDirty) raw.publishDirty(value); },
+			publishDirty: function (value) {
+				_rapierKeptRuntime.dirty = value === true;
+				if (_rapierKeptRuntime.dirty) _rapierKeptAutosave();
+				if (raw.publishDirty) raw.publishDirty(value);
+			},
 		});
 	}
 

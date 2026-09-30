@@ -26966,7 +26966,7 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
             try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', {bytes: bytes.slice()}, {signal: options.signal}); }
             catch (error) { if (error?.name === 'AbortError') throw error; }
             check();
-            if (carried?.bytes && assets.validAssetDimensions(carried.width, carried.height)) {
+            if (carried?.bytes && assets.validCarriedDimensions(carried.width, carried.height)) {
                 options.status?.('Preparing the embedded image…');
                 return await finish(carried.bytes, carried.width, carried.height);
             }
@@ -26989,7 +26989,9 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
         }
         check();
         let width = decoded.naturalWidth || decoded.width, height = decoded.naturalHeight || decoded.height;
-        if (!assets.validAssetDimensions(width, height)) throw new Error('This image exceeds the 24 megapixel image limit.');
+        // A JPEG XL kept whole (or made smaller) never meets a canvas its own size, and its header admitted it as far as
+        // the carrier writes one (images/header.mjs); any other picture is drawn whole and meets the 24 MP guard.
+        if (!(isJxl && !transform) && !assets.validAssetDimensions(width, height)) throw new Error('This image exceeds the 24 megapixel image limit.');
         if (transform) {
             const transformed = _rapierTransformImportedRaster(decoded, width, height, transform);
             releaseDecoded(); decoded = transformed;
@@ -27015,7 +27017,7 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
             const rgba = context.getImageData(0, 0, width, height);
             canvas.width = 0; canvas.height = 0; canvas = null;
             const encoded = await globalThis.RapierEmbeddedImages.codec('encode', {
-                width, height, data: rgba.data, options: {quality: 90, lossless: mime === 'image/png'},
+                width, height, data: rgba.data, options: {quality: 90, lossless: mime === 'image/png', photo: true},
             }, {signal: options.signal});
             check();
             options.status?.('Preparing the embedded image…');
@@ -46543,8 +46545,11 @@ function _rapierCfConsumeCallback(context) {
 	if (typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.consume(context);
 }
 function _rapierCfToggle() {
-	if (_rapierUiSyncIsCompanion()) { _rapierUiSyncOpen(); return; }
-	if (typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.open();
+	// The notes sheet is the one sync surface everywhere: on Android it runs in companion mode itself (the sync lane, 1
+	// October) and opens Rapier Sync from its own row, so the settings row no longer opens the companion directly. A page
+	// without the notes sheet falls back to the companion.
+	if (typeof _rapierNotesSyncUi !== 'undefined') { _rapierNotesSyncUi.open(); return; }
+	if (_rapierUiSyncIsCompanion()) _rapierUiSyncOpen();
 }
 
 function _rapierUiPlugin(key, label, renderPrompt) {

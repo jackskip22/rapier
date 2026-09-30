@@ -76,6 +76,11 @@ const MEDIA_OP_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}:[a-f0-9-]{36}$/;
 const DEVICE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const HEAD_RE = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/([0-9]{12}|[1-9][0-9]{0,10})-([a-f0-9]{64})$/;
 const safeFile = file => isNoteFile(file) && !/[\0-\x1f\x7f]/.test(file);
+// Provenance a person reads (docs/sync-design.md §1.2): the shelf's writer (notes/personal.mjs `by`) and a coarse label
+// for the device ("Android phone", "Windows, Edge"), sealed in the head beside its device id. Display alone: a head
+// holding one this engine does not admit is read without it, never refused for it.
+const WRITER_RE = /^[a-f0-9]{32}$/;
+export const headLabel = value => typeof value === 'string' && value.length > 0 && value.length <= 64 && value.trim() === value && !/[\0-\x1f\x7f]/.test(value) ? value : null;
 const safeAsset = file => typeof file === 'string' && /^(?:audio|attachments)\/[^/\\\x00-\x1f\x7f]+$/.test(file) && !file.split('/')[1].startsWith('.');
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const headAAD = head => `${HEAD_PREFIX}${head.device}/${head.written ?? headGeneration(head.generation)}`;
@@ -115,7 +120,8 @@ export function encodeHead(head) {
 	for (const id of Object.keys(head.notes || {}).sort()) notes[id] = head.notes[id];
 	const tombstones = {};
 	for (const id of Object.keys(head.tombstones || {}).sort()) tombstones[id] = head.tombstones[id];
-	return te.encode(JSON.stringify({v: HEAD_VERSION, device: head.device, generation: head.generation ?? 0, previous: head.previous ?? null, seen: head.seen || [], notes, tombstones, assets: sortObject(head.assets || {}), assetTombstones: sortObject(head.assetTombstones || {}), assetRevivals: head.assetRevivals || [], ancestry: sortObject(head.ancestry || {}), metadata: head.metadata || portableIndex(null), personal: admitPersonal(head.personal || {})}));
+	return te.encode(JSON.stringify({v: HEAD_VERSION, device: head.device, generation: head.generation ?? 0, previous: head.previous ?? null, seen: head.seen || [], notes, tombstones, assets: sortObject(head.assets || {}), assetTombstones: sortObject(head.assetTombstones || {}), assetRevivals: head.assetRevivals || [], ancestry: sortObject(head.ancestry || {}), metadata: head.metadata || portableIndex(null), personal: admitPersonal(head.personal || {}),
+		...(head.writer ? {writer: head.writer} : {}), ...(head.label ? {label: head.label} : {})}));
 }
 function inspectHeadJSON(value, depth = 0) {
 	if (depth > 64) refuse('corrupt', 'head metadata nesting exceeds this reader’s budget; kept data was not truncated');
@@ -173,6 +179,9 @@ export function decodeHead(bytes) {
 	for (const [object, parents] of Object.entries(raw.ancestry)) if (!HASH_RE.test(object) || !Array.isArray(parents) || parents.some(parent => !HASH_RE.test(parent) || parent === object)) refuse('corrupt', 'the head has an invalid causal graph');
 	if (!record(raw.metadata) || !Array.isArray(raw.metadata.sections) || !record(raw.metadata.collapsed)) refuse('corrupt', 'the head has no readable portable metadata');
 	raw.personal = admitPersonal(raw.personal || {});
+	// A head written before provenance, or with a label this engine does not admit, is read without it.
+	if (raw.writer !== undefined && !(typeof raw.writer === 'string' && WRITER_RE.test(raw.writer))) delete raw.writer;
+	if (raw.label !== undefined && headLabel(raw.label) === null) delete raw.label;
 	return raw;
 }
 
@@ -357,7 +366,7 @@ function tombstoneWins(localRow, tombstones, liveVersions, parents) {
 	return true;
 }
 
-function headPayload(head) { return sortObject({notes: head.notes, tombstones: head.tombstones, assets: head.assets || {}, assetTombstones: head.assetTombstones || {}, assetRevivals: head.assetRevivals || [], metadata: head.metadata, personal: head.personal || {}}); }
+function headPayload(head) { return sortObject({notes: head.notes, tombstones: head.tombstones, assets: head.assets || {}, assetTombstones: head.assetTombstones || {}, assetRevivals: head.assetRevivals || [], metadata: head.metadata, personal: head.personal || {}, writer: head.writer ?? null, label: head.label ?? null}); }
 function same(left, right) { return JSON.stringify(sortObject(left)) === JSON.stringify(sortObject(right)); }
 function uniqueConflicts(rows, active = null) {
 	const unique = [...new Map(rows.map(c => [JSON.stringify(sortObject(c)), c])).values()];
@@ -660,6 +669,8 @@ export async function plan(local, heads, capabilities) {
 	const previous = published?._key || ourHead._key || null;
 	const generation = (published?.generation || ourHead.generation || 0) + 1;
 	const head = {v: HEAD_VERSION, device: deviceId, generation, previous, seen: allHeads.map(head => head._key).filter(Boolean).sort(), notes: notesOut, tombstones: tombstonesOut, assets: assets.output, assetTombstones: assets.tombstones, assetRevivals: assets.assetRevivals, metadata};
+	if (typeof local.writer === 'string' && WRITER_RE.test(local.writer)) head.writer = local.writer;
+	if (headLabel(local.label)) head.label = local.label;
 	head.personal = mergePersonal(ourHead.personal, ...allHeads.map(head => head.personal), local.personal?.records);
 	// The shelf is shared between collections; an encrypted address belongs to one vault.
 	// Only this collection's authenticated heads can carry an address into its next head.
@@ -671,6 +682,9 @@ export async function plan(local, heads, capabilities) {
 	head.ancestry = Object.fromEntries([...parents].map(([object, list]) => [object, [...list]]));
 	return {
 		expected, skipped: assets.skipped, renames, linkRenames, linkContexts, assetRemoves: assets.removes, verified: heads.verified || local.verified || null, rootConflicts, assetUploads: assets.uploads, assetDownloads: assets.downloads, assetCopies: assets.copies, assetAliases: assets.aliases, assetMappings: assets.mappings, observed: allHeads.map(h => h._key).filter(Boolean),
+		// Every device of the vault as its newest head names it (this one as it publishes now): the sheet reads a device
+		// by its label, and a shelf's writer by the device that carries it.
+		devices: [head, ...others].map(h => ({device: h.device, writer: h.writer ?? null, label: h.label ?? null})),
 		uploads: uploads.map(sortObject).sort((a, b) => (a.id || '').localeCompare(b.id || '') || a.file.localeCompare(b.file)),
 		downloads: downloads.map(sortObject).sort((a, b) => a.key.localeCompare(b.key) || a.file.localeCompare(b.file)),
 		localWrites: localWrites.map(sortObject).sort((a, b) => a.file.localeCompare(b.file)),
@@ -998,7 +1012,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 			await store.observe([...new Set([...plan.observed, snapshot.head._key])].filter(Boolean), verified);
 		}
 		if (store.applyPersonal) await store.applyPersonal(personal, snapshot.personal);
-		return {ok: true, caughtUp: !snapshot.personal || same((await store.snapshot()).personal?.records || {}, personal.records), downloaded: 0, uploaded: 0, conflicts: [], head: snapshot.head._key, skipped: plan.skipped, unchanged: true};
+		return {ok: true, caughtUp: !snapshot.personal || same((await store.snapshot()).personal?.records || {}, personal.records), downloaded: 0, uploaded: 0, conflicts: [], head: snapshot.head._key, skipped: plan.skipped, unchanged: true, devices: plan.devices};
 	}
 	// The exact encrypted head is journaled WITH the owner's data commit, before publication.
 	// A lost response/restart can resend these bytes, not mint a second sibling generation.
@@ -1022,7 +1036,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	await resumePending(transport, store, {vdk});
 	const current = await store.snapshot();
 	const caughtUp = (!current.personal || same(current.personal.records, personal.records)) && same(current.files, files) && same(portableIndex(current.index), portableIndex(index)) && same(current.index.notes, index.notes);
-	return {ok: true, caughtUp, downloaded: downloaded.size, uploaded: sealedUploads.length, conflicts: resolvedConflicts, head: key, skipped: plan.skipped};
+	return {ok: true, caughtUp, downloaded: downloaded.size, uploaded: sealedUploads.length, conflicts: resolvedConflicts, head: key, skipped: plan.skipped, devices: plan.devices};
 }
 
 // Success means the exact full bytes were read back. A PUT timeout is not an acknowledgement.
@@ -1161,7 +1175,12 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 				bytes = got.bytes; fetched = true;
 			}
 			if (await sha256Hex(bytes) !== address.hash) refuse('ciphertext', 'the head ciphertext does not match its address');
-			head = decodeHead(await open(vdk, headAAD(address), bytes));
+			const plain = await open(vdk, headAAD(address), bytes);
+			// It opened under the vault's key, so a device of this vault wrote it: a head this Rapier cannot read was
+			// written by a newer one (a record kind or a version it does not know). Still refused, and nothing is
+			// replaced; the refusal says which, so the sheet asks for the update (notes/sync-ui.js).
+			try { head = decodeHead(plain); }
+			catch (error) { if (error?.code === 'corrupt') refuse('newer', 'a newer Rapier wrote a head in this vault: update Rapier to sync this folder. nothing was replaced'); throw error; }
 			if (fetched && cache) await cache.put(key, bytes);
 			if (key === checkpoint && ownHead && !same(head, decodeHead(encodeHead(ownHead)))) refuse('cache', 'the local checkpoint differs from its authenticated published bytes');
 		}
@@ -1216,8 +1235,9 @@ export async function synchronize(transport, store, {vdk} = {}) {
 // assertActive is a caller's cancellation fence (the web session's Lock). It runs after every
 // owner lease this adapter waited for and at each write-plan handoff, beside activeFolder's
 // identity fence, never in place of it. Work already handed to the owner keeps its own finish.
-export function createOwnerSyncStore({folder, deviceId, personal = null, assertActive = () => {}}) {
+export function createOwnerSyncStore({folder, deviceId, personal = null, label = null, assertActive = () => {}}) {
 	if (!folder?.owner || !DEVICE_RE.test(deviceId) || typeof assertActive !== 'function') refuse('store', 'an admitted folder owner and install identity are required');
+	label = headLabel(label);
 	const objects = new Map(), byContent = new Map(), media = new Map();
 	let loaded = false, limit = Infinity, folderIdentity = null;
 	// A left or restored folder mints a fresh folderDeviceId (notes/folder.mjs leaveVault/
@@ -1280,7 +1300,9 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 		for (const [name, bytes] of current.bodies) files[name] = {text: td.decode(bytes)};
 		await loadObjects();
 		if (state.deviceId && state.deviceId !== deviceId) refuse('identity', 'this folder sync state belongs to a different install identity');
-		return {deviceId, files, assets, personal: personal ? await personal.snapshot() : undefined, assetAliases: state.assetAliases || {}, index: current.index, forgotten: state.forgotten || [],
+		const writer = typeof personal?.writer === 'function' ? await personal.writer() : null;
+		return {deviceId, files, assets, personal: personal ? await personal.snapshot() : undefined, writer: typeof writer === 'string' && WRITER_RE.test(writer) ? writer : null, label,
+			assetAliases: state.assetAliases || {}, index: current.index, forgotten: state.forgotten || [],
 			verified: state.verified || null, head: state.head || null, pending: state.pending || null, observed: state.observed || [],
 			byContent: Object.fromEntries([...byContent].map(([content, hashes]) => [content, hashes.at(-1)]))};
 	}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The appendix surface is spec/md-assets.mjs (MIT), re-exported; this file keeps what needs AGPL picture bytes.
-import {inspectJPEGXL} from './header.mjs';
+import {inspectJPEGXL, JPEG_XL_PICTURE_LIMITS} from './header.mjs';
 import {inspectRaster} from './raster.mjs';
 import {fontCssURL} from '../draw/font.mjs';
 import {
@@ -25,10 +25,12 @@ function bytesOf(value) {
 
 // The CSS default for a replaced element with no intrinsic size.
 export const UNSTATED_SIZE = Object.freeze({width: 300, height: 150});
-export function validAssetDimensions(width, height) {
+export function validAssetDimensions(width, height, pixels = IMAGE_LIMITS.pixels) {
   return Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0 &&
-    width <= IMAGE_LIMITS.dimension && height <= IMAGE_LIMITS.dimension && width * height <= IMAGE_LIMITS.pixels;
+    width <= IMAGE_LIMITS.dimension && height <= IMAGE_LIMITS.dimension && width * height <= pixels;
 }
+// A JPEG carried whole, or a stored JPEG XL: as large as the encoder's carrier writes (images/header.mjs).
+export function validCarriedDimensions(width, height) { return validAssetDimensions(width, height, JPEG_XL_PICTURE_LIMITS.pixels); }
 export function isJxl(value) {
   const bytes = bytesOf(value);
   if (bytes[0] === 255 && bytes[1] === 10) return true;
@@ -206,7 +208,7 @@ export function imageDimensions(bytes, codec) {
   const info = codec === 'image/jxl' ? inspectJPEGXL(bytes) : codec === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes);
   if (codec !== 'image/jxl' && info.type !== codec) return fail('image_codec_invalid');
   const width = info.orientation >= 5 ? info.height : info.width, height = info.orientation >= 5 ? info.width : info.height;
-  if (!validAssetDimensions(width, height)) return fail('image_dimensions_invalid');
+  if (!(codec === 'image/jxl' ? validCarriedDimensions(width, height) : validAssetDimensions(width, height))) return fail('image_dimensions_invalid');
   return {width, height};
 }
 // Bytes without the size assertion: a damaged JPEG XL container must still reach the grey notice (R84).

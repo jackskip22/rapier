@@ -4669,7 +4669,7 @@ async function _rapierDrawReadImage(file, session) {
 		let carried = null;
 		try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', { bytes: input.bytes.slice() }); } catch (_) {}
 		if (!state.open || state.session !== session || state.finishing) return null;
-		if (carried?.bytes && globalThis.RapierImageAssets.validAssetDimensions(carried.width, carried.height)) {
+		if (carried?.bytes && globalThis.RapierImageAssets.validCarriedDimensions(carried.width, carried.height)) {
 			const url = _rapierDrawRasterDataURL(carried.bytes, 'image/jxl');
 			if (core._rapierDrawValidRaster(url)) return { url, width: carried.width, height: carried.height };
 		}
@@ -4698,7 +4698,7 @@ async function _rapierDrawReadImage(file, session) {
 		if (wantsJxl && _rapierJxlEncoderPresent()) {
 			const rgba = context.getImageData(0, 0, width, height);
 			const lossless = input.mime === 'image/png';
-			const encoded = await globalThis.RapierEmbeddedImages.codec('encode', { width, height, data: rgba.data, options: lossless ? { lossless: true } : { quality: 90 } });
+			const encoded = await globalThis.RapierEmbeddedImages.codec('encode', { width, height, data: rgba.data, options: lossless ? { lossless: true } : { quality: 90, photo: true } });
 			url = _rapierDrawRasterDataURL(encoded.bytes || encoded, 'image/jxl');
 		} else {
 			const blob = await _rapierCanvasBlob(canvas, 'image/png');

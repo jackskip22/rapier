@@ -1,6 +1,6 @@
 {
-  "release": "1.1.23",
-  "snapshotId": "1.1.23+skills.93cfb0dc1fbd4244b842822666b10f11b81f220aec250cf781d91cc31dc243ba",
-  "skillsSha256": "93cfb0dc1fbd4244b842822666b10f11b81f220aec250cf781d91cc31dc243ba",
-  "skillSha256": "8fc797ac06bbf1750f49c384f59c9ec7189a30678569d1b3102700443ffc43a8"
+  "release": "1.1.24",
+  "snapshotId": "1.1.24+skills.b4cb1b651d87eacf6a65c1f80d38e1280184ae9cd964c13edb4b6d9f4e90ce50",
+  "skillsSha256": "b4cb1b651d87eacf6a65c1f80d38e1280184ae9cd964c13edb4b6d9f4e90ce50",
+  "skillSha256": "cf326d4962c23627c01fbdb8a3d9239e4f1c875382bcd1cccd3c336a75038084"
 }

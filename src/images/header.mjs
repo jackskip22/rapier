@@ -1,8 +1,11 @@
-// The encoder's limits: 16 MiB of output, 24 megapixels, 16,384 pixels on an edge (images/jxl works one group of
-// 256x256 at a time; a lossy picture holds its squeezed planes whole, two bytes a sample).
-import {LIMITS} from './jxl/bits.mjs';
+// The encoder's limits: 16 MiB of output, 16,384 pixels on an edge, and each door's pixels by its memory (images/jxl/
+// bits.mjs): 24 megapixels for pixels the page encodes (a lossy picture holds its squeezed planes whole), 64 for a JPEG
+// the carrier keeps whole (its coefficients, two bytes a sample).
+import {LIMITS, JPEG_LIMITS} from './jxl/bits.mjs';
 // The one owner of the limits is the encoder (images/jxl/bits.mjs): what the page admits is what the codec takes.
 export const JPEG_XL_LIMITS = LIMITS;
+// The largest picture the page keeps: a JPEG carried whole; a stored JPEG XL is admitted up to it.
+export const JPEG_XL_PICTURE_LIMITS = JPEG_LIMITS;
 
 export function codecError(code, message) {
   return Object.assign(new Error(message), {code});
@@ -14,9 +17,9 @@ export function byteView(value) {
   throw codecError('JXL_INPUT', 'JPEG XL input must be bytes.');
 }
 
-export function boundedDimensions(width, height) {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > JPEG_XL_LIMITS.edge || height > JPEG_XL_LIMITS.edge || width * height > JPEG_XL_LIMITS.pixels) {
-    throw codecError('JXL_DIMENSIONS', 'This image exceeds the 24 megapixel image limit.');
+export function boundedDimensions(width, height, limits = JPEG_XL_LIMITS) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > limits.edge || height > limits.edge || width * height > limits.pixels) {
+    throw codecError('JXL_DIMENSIONS', 'This image exceeds the ' + limits.pixels / 1e6 + ' megapixel image limit.');
   }
   return {width, height};
 }
@@ -77,7 +80,7 @@ export function inspectJPEGXL(input) {
   const size = () => {
     const small = read(1), dimension = () => small ? 8 * (1 + read(5)) : 1 + read([9, 13, 18, 30][read(2)]);
     const height = dimension(), ratio = read(3), width = ratio ? ratioWidth(height, ratio) : dimension();
-    return boundedDimensions(width, height);
+    return boundedDimensions(width, height, JPEG_XL_PICTURE_LIMITS);
   };
   const dimensions = size();
   let orientation = 1;
@@ -90,7 +93,7 @@ export function inspectJPEGXL(input) {
         return div8 ? (choice < 2 ? [16, 32][choice] : [0, 0, 1, 33][choice] + read([0, 0, 5, 9][choice])) * 8 : [1, 65, 321, 1345][choice] + read([6, 8, 10, 12][choice]);
       };
       const height = dimension(), ratio = read(3);
-      boundedDimensions(ratio ? ratioWidth(height, ratio) : dimension(), height);
+      boundedDimensions(ratio ? ratioWidth(height, ratio) : dimension(), height, JPEG_XL_PICTURE_LIMITS);
     }
     if (read(1)) throw codecError('JXL_ANIMATION', 'Animated JPEG XL images cannot be inserted as a still image.');
   }

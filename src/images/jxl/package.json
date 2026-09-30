@@ -1,0 +1,19 @@
+{
+  "name": "rapier-jxl",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.mjs",
+  "types": "./index.d.mts",
+  "exports": {
+    ".": {"types": "./index.d.mts", "default": "./index.mjs"},
+    "./min": {"types": "./index.d.mts", "default": "./rapier-jxl.min.mjs"},
+    "./jpeg": {"types": "./jpeg.d.mts", "default": "./jpeg.mjs"},
+    "./photo": {"types": "./photo.d.mts", "default": "./photo.mjs"},
+    "./effort": {"types": "./effort.d.mts", "default": "./effort.mjs"},
+    "./writer": "./writer.mjs",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {"node": ">=18"},
+  "homepage": "https://rapier.website"
+}

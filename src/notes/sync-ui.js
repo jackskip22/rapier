@@ -6,13 +6,59 @@ const _rapierNotesSyncUi = (() => {
 	let automatic = false, timer = null, syncing = false;
 	let message = '', recovery = null, conflicts = null, joined = false, setup = null, route = null, acting = false, joinCode = '', replacing = false;
 	const api = () => globalThis.RapierNotesSyncSession;
-	const environment = () => ({url: location.href,
-		native: ['android', 'windows'].includes(String(globalThis.RapierPlatform?.environment?.id || '').toLowerCase()),
-		framed: window.top !== window});
+	const platformId = () => String(globalThis.RapierPlatform?.environment?.id || '').toLowerCase();
+	const environment = () => ({url: location.href, native: ['android', 'windows'].includes(platformId()), framed: window.top !== window});
 	const oauthGate = () => api()?.syncAvailability(environment()) || {ready: false, reason: 'cloudflare sync did not load. backup saves your notes to a file.'};
 	const keyGate = () => api()?.r2KeyAvailability(environment()) || {ready: false, reason: oauthGate().reason};
-	const mode = () => session?.status().mode || route || 'oauth';
-	const availability = () => mode() === 'r2-key' ? keyGate() : oauthGate();
+	// THE COMPANION'S BRANCH. In the Android app, where Rapier has no network, the same sheet runs through Rapier
+	// Sync (notes/sync-session.mjs's companion mode): the same rows and words, with the companion's answer where the
+	// provider's would be. The app answers the sheet's question (android/.../RapierSyncCourier.kt status) from its
+	// package manager: whether Rapier's own Rapier Sync is installed, whether its store listing would open, and for a
+	// vault, whether Rapier Sync approved that vault's storage. Asking opens nothing; an app is opened only from the
+	// row that says rapier sync, through the editor's own door (_rapierUiSyncOpen), and the store's listing only
+	// where the app says it is live. What the sheet says when the companion is not there is the editor's own
+	// sentence for each answer (_rapierUiSyncOpen's, the same words).
+	const COMPANION_ABSENT = Object.freeze({
+		absent: 'Rapier Sync is coming soon. Your notes are not synced. Use Notes BACKUP to keep a separate copy.',
+		impostor: 'An app using Rapier Sync\'s name is installed, but it is not signed by Rapier\'s certificate. Rapier will not open it.',
+		unsigned: 'The Rapier Sync on this phone has no readable signature, so Rapier cannot tell whether it is the real one. It was not opened.'});
+	const COMPANION_UNAPPROVED = 'open rapier sync and approve this vault’s storage; nothing was sent.';
+	let companion = null;
+	const companionSeam = () => { try { const host = globalThis.RapierPlatform?.host; return typeof host?.syncTransport === 'function' ? host : null; } catch (_) { return null; } };
+	const companionGate = () => companion?.state === 'ready' && companionSeam() ? {ready: true, reason: ''} : {ready: false, reason: COMPANION_ABSENT[companion?.state] || COMPANION_ABSENT.absent};
+	async function askCompanion(vault = null) {
+		let answer = null;
+		try { answer = await companionSeam()?.syncTransport('status', vault ? {vault} : {}); } catch (_) {}
+		const read = !!answer && typeof answer === 'object' && (answer.state === 'ready' || Object.hasOwn(COMPANION_ABSENT, answer.state)) &&
+			typeof answer.listing === 'boolean' && typeof answer.ready === 'boolean' ? answer : null;
+		if (!vault) companion = read ? {state: read.state, listing: read.listing, approved: null} : {state: 'absent', listing: false, approved: null};
+		else if (companion) companion = {...companion, approved: read?.state === 'ready' ? read.ready : null};
+	}
+	// This vault's approval, once the folder has one: asked again whenever the sheet opens or the person comes back to it.
+	async function askCompanionVault() {
+		const address = session?.status().address;
+		let vault = null;
+		try { vault = address ? api().readConnectionCode(address).vaultId : null; } catch (_) {}
+		if (vault && companion?.state === 'ready') await askCompanion(vault);
+	}
+	function openCompanion() { if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen(); }
+	// PROVENANCE (docs/sync-design.md §1.2). Each head this device publishes carries a coarse label for it, from the
+	// platform and the browser and never an identifier, sealed with the head; the sheet names another device by the
+	// label its newest head carries, and a choice another device replaced by the device whose shelf wrote it.
+	function deviceLabel() {
+		const agent = String(navigator.userAgent || '');
+		if (platformId() === 'android') return /Mobile/.test(agent) ? 'Android phone' : 'Android tablet';
+		if (platformId() === 'windows') return 'Windows';
+		const system = /iPhone/.test(agent) ? 'iPhone' : /iPad/.test(agent) || /Macintosh/.test(agent) && navigator.maxTouchPoints > 1 ? 'iPad'
+			: /Android/.test(agent) ? 'Android' : /CrOS/.test(agent) ? 'ChromeOS' : /Windows/.test(agent) ? 'Windows' : /Mac OS X|Macintosh/.test(agent) ? 'Mac' : /Linux/.test(agent) ? 'Linux' : '';
+		const browser = /Edg(?:e|A|iOS)?\//.test(agent) ? 'Edge' : /OPR\/|Opera/.test(agent) ? 'Opera' : /Firefox\/|FxiOS\//.test(agent) ? 'Firefox'
+			: /Chrome\/|CriOS\//.test(agent) ? 'Chrome' : /Safari\//.test(agent) ? 'Safari' : '';
+		return [system, browser].filter(Boolean).join(', ') || null;
+	}
+	const deviceNamed = device => status().devices?.find(row => row.device === device)?.label || device;
+	const writerNamed = writer => status().devices?.find(row => row.writer === writer)?.label || null;
+	const mode = () => session?.status().mode || route || (platformId() === 'android' ? 'companion' : 'oauth');
+	const availability = () => mode() === 'companion' ? companionGate() : mode() === 'r2-key' ? keyGate() : oauthGate();
 	const status = () => session?.status() || {authorized: false, unlocked: false, busy: false, gate: availability()};
 	function node(tag, className, text) {
 		const el = document.createElement(tag);
@@ -53,10 +99,14 @@ const _rapierNotesSyncUi = (() => {
 	// The Notes settings panel's box (law 54, notes/notes.js _rapierNotesSyncBoxWear) says what the sync is
 	// now: connected or not, and the last finished run's time. It is worn again whenever that can change.
 	const wearBox = () => { if (typeof _rapierNotesSyncBoxWear === 'function') _rapierNotesSyncBoxWear(); };
+	// A head in the vault that this Rapier cannot read was written by a newer one (notes/sync.mjs refuses it, 'newer',
+	// and replaces nothing): the sheet says what to do instead of the refusal's own sentence.
+	const NEWER = 'update Rapier to sync this folder.';
+	const said = (error, otherwise) => error?.code === 'newer' ? NEWER : String(error?.message || otherwise);
 	async function perform(action, clear = true) {
 		if (clear) message = ''; acting = true;
 		try { const result = action(); paint(); await result; }
-		catch (error) { if (visible) message = String(error?.message || 'that did not finish; your notes are unchanged.'); }
+		catch (error) { if (visible) message = said(error, 'that did not finish; your notes are unchanged.'); }
 		finally { acting = false; paint(); renderSettings(); wearBox(); }
 	}
 	async function owner() {
@@ -70,7 +120,9 @@ const _rapierNotesSyncUi = (() => {
 			const opened = api().createSyncSession({folder: _rapierNotesStore.folder, personal: _rapierPersonal, mode: mode(),
 				fetch: window.fetch.bind(window), pendingStorage: sessionStorage,
 				device: api().createRememberedDevice({storage: api().createDeviceStorage({scope: RapierStorage.scope})}),
-				pendingKey: 'rapier:cloudflare:pending' + RapierStorage.scope, environment: environment(),
+				pendingKey: 'rapier:cloudflare:pending' + RapierStorage.scope, environment: environment(), label: deviceLabel(),
+				// Through Rapier Sync the engine's objects cross the app's seam, sealed; the page has no network of its own.
+				...(mode() === 'companion' ? {companion: {call: (operation, args) => companionSeam().syncTransport(operation, args)}} : {}),
 				onChange: () => { paint(); renderSettings(); wearBox(); if (session && !status().unlocked) { automatic = false; clearTimeout(timer); } }});
 			await opened.inspect(); session = opened; if (status().authorized && status().unlocked) { automatic = true; schedule(1600); } return opened;
 		})().finally(() => { initializing = null; });
@@ -104,8 +156,19 @@ const _rapierNotesSyncUi = (() => {
 		clearBody();
 		const gate = availability(), state = status();
 		if (message) { const p = node('p', 'export-choice__description', message); p.setAttribute('role', 'alert'); body.append(p); }
+		// Nothing is said about Rapier Sync before the app has answered.
+		if (mode() === 'companion' && !companion) {
+			const loading = node('p', 'export-choice__description', 'Opening sync settings.');
+			loading.setAttribute('role', 'status'); body.append(loading); return;
+		}
 		if (!gate.ready) {
 			paragraph(gate.reason);
+			if (mode() === 'companion') {
+				// Rapier Sync is not here, or not Rapier's: its store listing, only where the app says the listing is live.
+				if (companion.listing) choice('rapier sync', '', openCompanion, {enabled: !acting});
+				choice('backup', 'save all your notes to one file', async () => { close(); await _rapierNotesBackup(); }, {enabled: true});
+				return;
+			}
 			paragraph('your notes stay on this device.');
 			if (mode() === 'oauth' && keyGate().ready) {
 				choice('advanced: use a storage key', 'connect an existing r2 bucket yourself', async () => { session = null; route = 'r2-key'; await owner(); }, {enabled: !acting});
@@ -141,6 +204,9 @@ const _rapierNotesSyncUi = (() => {
 			loading.setAttribute('role', 'status'); body.append(loading); return;
 		}
 		if (state.notice) { const p = node('p', 'export-choice__description', state.notice); p.setAttribute('role', 'status'); body.append(p); }
+		// Where the provider's state would be: whether Rapier Sync approved this vault's storage (its transport's words,
+		// said once when a sync just said them).
+		if (mode() === 'companion' && state.hasConnection && companion.approved === false && message !== COMPANION_UNAPPROVED) paragraph(COMPANION_UNAPPROVED);
 		if (state.revocationPending) {
 			choice('retry removing access', 'sync stays stopped until cloudflare confirms', () => session.signOut());
 			paragraph('closing this page does not remove rapier’s access: first remove it under manage oauth authorizations in cloudflare.');
@@ -166,6 +232,11 @@ const _rapierNotesSyncUi = (() => {
 		}
 		if (mode() === 'r2-key' && (!state.credentialStored || joined || state.rejoinRequired)) {
 			paintKeySetup(state); paintVaultChoices(state);
+			return;
+		}
+		if (mode() === 'companion' && (!state.hasConnection || state.rejoinRequired)) {
+			paintCompanionSetup(state); paintVaultChoices(state);
+			choice('rapier sync', '', openCompanion, {enabled: true});
 			return;
 		}
 		if (recovery) {
@@ -209,7 +280,7 @@ const _rapierNotesSyncUi = (() => {
 				for (const row of conflicts) {
 					paragraph(row.file);
 					for (const [index, variant] of row.conflict.variants.entries()) {
-						paragraph('version from ' + variant.device);
+						paragraph('version from ' + deviceNamed(variant.device));
 						value('version text', variant.text);
 						choice('keep this version', 'replaces only these words, unless the note has changed', async () => {
 							await flush(); await session.resolve({...row, variant: index});
@@ -220,7 +291,8 @@ const _rapierNotesSyncUi = (() => {
 			}
 			if (replaced.length) {
 				paragraph('chosen here, then replaced by another device’s later choice:');
-				for (const entry of replaced) choice(entry.key.slice(entry.key.indexOf('/') + 1).replace(/^own\//, '') + (entry.value !== null && typeof entry.value !== 'object' ? ': ' + String(entry.value) : ''),
+				for (const entry of replaced) choice(entry.key.slice(entry.key.indexOf('/') + 1).replace(/^own\//, '') + (entry.value !== null && typeof entry.value !== 'object' ? ': ' + String(entry.value) : '') +
+					(writerNamed(entry.over?.by) ? ' — ' + writerNamed(entry.over.by) : ''),
 					'keep mine: it becomes the choice on every device', async () => { await _rapierPersonal.restore(entry); await keptChoices(); });
 			}
 		}
@@ -229,7 +301,37 @@ const _rapierNotesSyncUi = (() => {
 		if (mode() === 'r2-key') {
 			paragraph('forgetting the key here does not end its access: delete the key in cloudflare. device codes you copied still hold it, encrypted.');
 			choice('forget bucket key', 'stops sync here and forgets the key; your notes stay', async () => { setup = null; conflicts = null; await session.forgetKey(); }, {enabled: true});
-		} else choice('sign out and revoke', 'stops sync and revokes this page’s access; your notes stay', async () => { recovery = null; conflicts = null; await session.signOut(); }, {enabled: true});
+		// Through Rapier Sync this page holds no access to revoke: the storage and its sign-in are Rapier Sync's.
+		} else if (mode() === 'companion') choice('rapier sync', '', openCompanion, {enabled: true});
+		else choice('sign out and revoke', 'stops sync and revokes this page’s access; your notes stay', async () => { recovery = null; conflicts = null; await session.signOut(); }, {enabled: true});
+	}
+	// The companion's connect rows, in the bucket-key route's words: a passphrase, then the recovery code, then the
+	// bucket, which here is Rapier Sync's to set up; or another device's code. Nothing in them names a provider.
+	function paintCompanionSetup(state) {
+		if (joined || state.rejoinRequired) {
+			paragraph('paste the device code from your other device and unlock it here. nothing here is replaced: sync now keeps both.');
+			const address = input('device code from your other device', {value: joinCode}), secret = input('vault passphrase or recovery code', {secret: true});
+			for (const recover of [false, true]) choice(recover ? 'connect with recovery code' : 'connect existing vault', 'nothing syncs until you press sync now', async () => {
+				const parameters = {address: address.value, secret: secret.value, recovery: recover}; joinCode = address.value; secret.value = '';
+				try { await (await owner()).join(parameters); joined = false; joinCode = ''; await askCompanionVault(); } finally { parameters.secret = ''; }
+			});
+			if (!state.rejoinRequired) choice('create a new vault instead', 'choose a passphrase for a new vault', () => { joined = false; });
+			return;
+		}
+		paragraph('choose a sync passphrase.');
+		paragraph('it locks the online copy of your notes, and rapier cannot reset it. use at least 16 characters.');
+		const secret = input('new vault passphrase', {secret: true}), repeat = input('repeat passphrase', {secret: true});
+		choice('continue', 'next, your recovery code, then your bucket', async () => {
+			const parameters = {passphrase: secret.value}, matches = secret.value === repeat.value; secret.value = ''; repeat.value = '';
+			try {
+				if (!matches) throw new Error('the passphrases do not match.');
+				if ([...parameters.passphrase].length < 16) throw new Error('use at least 16 characters.');
+				const made = await (await owner()).create(parameters);
+				if (visible) recovery = made;
+				await askCompanionVault();
+			} finally { parameters.passphrase = ''; }
+		});
+		choice('connect another device’s vault', 'paste its device code and type the passphrase', () => { joined = true; });
 	}
 	async function startSignIn() {
 		const screen = view, current = () => visible && screen === view;
@@ -318,7 +420,11 @@ const _rapierNotesSyncUi = (() => {
 			if (!current.unlocked || !current.authorized) { automatic = false; return; }
 			if (visible || document.hidden || navigator.onLine === false || acting || syncing || current.busy) { schedule(10000); return; }
 			try { await syncOnce(); }
-			catch (error) { message = String(error?.message || 'sync is waiting for a connection.'); }
+			catch (error) {
+				message = said(error, 'sync is waiting for a connection.');
+				// Until Rapier is updated the same head refuses every run: the automatic ones stop, and nothing is replaced.
+				if (error?.code === 'newer') automatic = false;
+			}
 			schedule(60000);
 		}, delay);
 	}
@@ -332,6 +438,10 @@ const _rapierNotesSyncUi = (() => {
 	}
 	addEventListener('online', changed);
 	document.addEventListener('visibilitychange', () => { if (!document.hidden) changed(); });
+	// Back from Rapier Sync, the sheet asks again what it holds (an approval made there shows here).
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden && visible && mode() === 'companion' && companion) void perform(async () => { await askCompanion(); await askCompanionVault(); }, false);
+	});
 	async function leaveVaultChoice() {
 		await flush();
 		await (await owner()).leave();
@@ -427,10 +537,14 @@ const _rapierNotesSyncUi = (() => {
 			overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
 		}
 		visible = true; const screen = ++view;
+		// Rapier Sync is asked each time the sheet opens: it may have been installed, or this vault approved, since.
+		if (mode() === 'companion') companion = null;
 		if (initialize) void perform(async () => {
+			if (mode() === 'companion') { await askCompanion(); if (!visible || screen !== view || !companionGate().ready) return; }
 			await owner(); await keptChoices();
 			if (!visible || screen !== view) return;
-			if (mode() === 'oauth' && !status().authorized) await startSignIn();
+			if (mode() === 'companion') await askCompanionVault();
+			else if (mode() === 'oauth' && !status().authorized) await startSignIn();
 			else if (mode() === 'oauth' && !status().hasConnection && !accounts) await loadAccounts();
 		}, false);
 		paint(); openDialog(overlay, {panel: '.settings-panel', onEscape: close});

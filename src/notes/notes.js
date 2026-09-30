@@ -1430,15 +1430,15 @@ function _rapierNotesColourModeWear(b) { b?.setAttribute('aria-pressed', String(
 // says "backed up" unless a run finished with its bytes read back (notes/sync-session.mjs syncNow dates it).
 function _rapierNotesSyncFacts() {
 	const app = _rapierNotesIsApp();
-	if (app) return {app, connected: false, at: null};
 	// A session open on this page is the truth (a vault just made, a run just finished, a key forgotten);
 	// without one, the folder's sidecar as Notes last read it. The Cloudflare sign-in is held by the page
-	// alone (docs/sync-web-session.md), so without a session only a kept bucket key is a connection.
+	// alone (docs/sync-web-session.md), so without a session only a kept bucket key is a connection. In the
+	// app the storage is Rapier Sync's, so a vault joined through it is the connection.
 	let live = null;
 	try { live = typeof _rapierNotesSyncUi === 'object' ? _rapierNotesSyncUi.status() : null; } catch (_) {}
 	const vault = _rapierNotes.syncState?.vault;
 	const connected = live?.stage ? (live.mode === 'r2-key' ? live.credentialStored === true : live.authorized === true)
-		: vault?.mode === 'r2-key' && Array.isArray(vault.credential) && vault.credential.length > 0;
+		: app ? vault?.mode === 'companion' : vault?.mode === 'r2-key' && Array.isArray(vault.credential) && vault.credential.length > 0;
 	const at = live?.stage ? live.backedUpAt : _rapierNotes.syncState?.backedUpAt;
 	return {app, connected, at: connected && Number.isSafeInteger(at) && at > 0 ? at : null};
 }
@@ -1463,10 +1463,15 @@ function _rapierNotesSyncBoxWear(b) {
 	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : 'not backed up yet'));
 	if (facts.connected) b.dataset.active = 'true'; else delete b.dataset.active;
 }
-// Both boxes and the storage warning enter here. Native opens its companion; the website starts
-// the registered OAuth flow through the shared sheet, after local work is safely flushed.
+// Both boxes and the storage warning enter here. The website starts the registered OAuth flow through the
+// shared sheet, after local work is safely flushed; in the app the same sheet runs through Rapier Sync
+// (notes/sync-ui.js, the companion's branch), which asks the app and opens nothing until a row is pressed.
 function _rapierNotesSyncPress() {
-	if (_rapierNotesIsApp()) { if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen(); return; }
+	if (_rapierNotesIsApp()) {
+		if (typeof _rapierNotesSyncUi === 'object') _rapierNotesSyncUi.open();
+		else if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen();
+		return;
+	}
 	if (navigator.onLine === false) { showToast('This device is not connected to the internet.', 'info'); return; }
 	if (typeof _rapierCfToggle === 'function') _rapierCfToggle();
 }

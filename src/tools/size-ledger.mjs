@@ -13,6 +13,7 @@ import acorn from '../agent/vendor/acorn.mjs';
 import {decodeBase124} from './base124.mjs';
 import {decodeTextPack} from './text-pack.mjs';
 import {restoreSymbols} from './runtime-symbols.mjs';
+import {JPEG_XL_MODULES} from '../images/codec-build.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const OUTPUT = {full: 'rapier.html', document: 'rapier-document.html'};
@@ -203,7 +204,7 @@ export function partition(a) {
 const SCRIPTS = 'editor/scripts.json', STYLES = 'editor/styles.json';
 export const GROUPS = [
   {id: 'jxl', name: 'JPEG XL encoder (the worker, its adapter and its refusal stay)', edits: {'tools/build.mjs': omitEncoder},
-    inputs: () => ['images/encoder.mjs', 'images/jxl/bits.mjs', 'images/jxl/prefix.mjs', 'images/jxl/modular.mjs', 'images/jxl/frame.mjs', 'images/jxl/squeeze.mjs', 'images/jxl/lossless.mjs', 'images/jxl/lossy.mjs', 'images/jxl/jpeg.mjs', 'images/jxl/entropy.mjs', 'images/jxl/vardct.mjs'],
+    inputs: () => JPEG_XL_MODULES.map(name => 'images/' + name),
     // The worker is compiled (tools/minify.mjs): its declarations merge and lose their spaces, and an
     // `undefined` is printed `void 0`, so the anchors read the statement, not its spelling.
     carries: a => /\bencoderFactory\s*=\s*createJPEGXLEncoder\b/.test(a.text('rapier-jxl-worker.js')),

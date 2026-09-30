@@ -3,22 +3,24 @@
 // PNG: https://www.w3.org/TR/png-3/
 // WebP: https://developers.google.com/speed/webp/docs/riff_container
 // Camera metadata: https://developer.android.com/media/platform/motion-photo-format
-import {JPEG_XL_LIMITS} from './header.mjs';
+import {JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS} from './header.mjs';
 
 function fail(code = 'RASTER_HEADER', message = 'Rapier could not read this image’s dimensions.') {
   throw Object.assign(new Error(message), {code});
 }
 
-function dimensions(width, height) {
+// The admission takes what the door takes: a JPEG is carried whole (the carrier's limits), any other picture's pixels
+// are encoded (the core's).
+function dimensions(width, height, limits = JPEG_XL_LIMITS) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) fail();
-  if (width > JPEG_XL_LIMITS.edge || height > JPEG_XL_LIMITS.edge || width * height > JPEG_XL_LIMITS.pixels) {
-    fail('RASTER_DIMENSIONS', 'This image exceeds the 24 megapixel or 16,384 pixel edge limit.');
+  if (width > limits.edge || height > limits.edge || width * height > limits.pixels) {
+    fail('RASTER_DIMENSIONS', 'This image exceeds the ' + limits.pixels / 1e6 + ' megapixel or 16,384 pixel edge limit.');
   }
   return {width, height};
 }
 
 function result(type, width, height, orientation = 1) {
-  dimensions(width, height);
+  dimensions(width, height, type === 'image/jpeg' ? JPEG_XL_PICTURE_LIMITS : JPEG_XL_LIMITS);
   orientation ||= 1;
   return {type, width, height, orientation, displayWidth: orientation >= 5 ? height : width, displayHeight: orientation >= 5 ? width : height};
 }
@@ -83,7 +85,7 @@ function jpeg(bytes, view) {
     const length = view.getUint16(position), start = position + 2, end = position + length;
     if (length < 2 || end > bytes.length) break;
     if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker) && start + 5 <= end) {
-      const frame = dimensions(view.getUint16(start + 3), view.getUint16(start + 1));
+      const frame = dimensions(view.getUint16(start + 3), view.getUint16(start + 1), JPEG_XL_PICTURE_LIMITS);
       width ??= frame.width; height ??= frame.height;
     } else if (marker === 0xe1) {
       if (end - start >= 6 && fourCC(bytes, start) === 'Exif' && bytes[start + 4] === 0 && bytes[start + 5] === 0) {

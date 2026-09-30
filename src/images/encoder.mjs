@@ -1,48 +1,40 @@
-// Rapier's own JPEG XL encoder (images/jxl, MIT): pure JavaScript, no WebAssembly, no filesystem, network or imports
-// at run time. One picture at a time: RGBA in, a bare codestream out.
-import {JPEG_XL_LIMITS, codecError, boundedDimensions} from './header.mjs';
-import {inspectPixels, encodeLossless} from './jxl/lossless.mjs';
-import {encodeLossy} from './jxl/lossy.mjs';
-import {transcodeJPEG} from './jxl/vardct.mjs';
-import {parseJPEG} from './jxl/jpeg.mjs';
+// Rapier's own JPEG XL encoder (images/jxl, MIT) behind the page's worker, through the package's own checked doors:
+// pure JavaScript, no WebAssembly, no filesystem, network or imports at run time; one picture at a time. Pixels go to
+// the effort door (the core's work with a search above it), exact at quality 100 and lossy modular below it (a picture
+// of few colours exact when that is smaller). A request the page marks `photo` (a photograph it turned, resized or
+// converted) goes to the photo door, unless the picture has few colours; notes thumbnails and paintings stay on the
+// modular path (at matched PSNR the photo door gains a thumbnail nothing). A JPEG carried whole keeps its
+// coefficients; JXL_JPEG names one the carrier does not take, which the caller decodes and encodes instead.
+//
+// The time rule (the lead's ruling, 30 September 2026): an exact picture is written at the page's effort, 3 (the
+// weighted predictor, its contexts split by its own error), and its search gets one second after effort 1 ends. The
+// door writes effort 1's stream first (the job's first half, fractions up to 0.5), so today's bytes are the floor; the
+// job is hurried SEARCH_MS after that, or at once when the search's own pace, read over its first half second, says it
+// would end later, and a hurried job answers with the smallest stream written so far. No insert waits more than about
+// a second longer than it does today, and a faster device ends effort 1 sooner and gets more of the search inside the
+// same second. The editor shows a picture only when the encode returns, which is why the second is per insert. A
+// hurried picture records and says nothing: the person sees the picture; the bytes are what the second allowed.
+import {encodeSteps} from './jxl/effort.mjs';
+import {transcode} from './jxl/jpeg.mjs';
+import {encodePhoto} from './jxl/photo.mjs';
+import {inspectPixels} from './jxl/lossless.mjs';
+
+const SEARCH_MS = 1000;
 
 export function createJPEGXLEncoder() {
-  const refused = () => codecError('JXL_MEMORY', 'JPEG XL could not allocate enough memory for this image.');
-  return {encode(data, width, height, {quality}) {
-    try {
-      const shape = inspectPixels(data, width, height);
-      let bytes;
-      if (quality >= 100) bytes = encodeLossless(data, width, height, {shape});
-      else if (!shape.palette) bytes = encodeLossy(data, width, height, {quality, shape});
-      else {
-        // A picture of few colours is smaller exact than approximated: a lossy request never costs more bytes than
-        // the lossless answer, and never less quality when the bytes are the same. The exact stream is cheap to make
-        // (256-pixel sections) and is made first, so a lossy attempt that runs out of memory still answers with it.
-        const exact = encodeLossless(data, width, height, {shape});
-        try { bytes = encodeLossy(data, width, height, {quality, shape}); }
-        catch (error) { if (!(error instanceof RangeError)) throw error; bytes = exact; }
-        if (exact.length <= bytes.length) bytes = exact;
+  return {
+    encode(data, width, height, {quality, effort, photo}) {
+      if (photo && quality < 100 && !inspectPixels(data, width, height).palette) return encodePhoto(data, width, height, {quality});
+      const job = encodeSteps(data, width, height, {quality, effort});
+      let mark = null;
+      for (let step = job.next(); !step.done; step = job.next()) {
+        const now = performance.now(), done = step.value;
+        if (!mark) { if (done >= 0.5) mark = [now, done]; continue; }
+        const spent = now - mark[0], pace = spent > 500 ? spent / (done - mark[1]) : 0;
+        if (spent > SEARCH_MS || spent + pace * (1 - done) > SEARCH_MS) job.hurry = true;
       }
-      if (bytes.length > JPEG_XL_LIMITS.bytes) throw codecError('JXL_SIZE', 'The encoded JPEG XL image exceeds 16 MiB.');
-      return bytes;
-    } catch (error) {
-      if (error instanceof RangeError) throw refused();
-      throw error;
-    }
-  },
-  // A JPEG carried whole: its coefficients into a VarDCT frame, its Exif orientation into the header. JXL_JPEG names
-  // a JPEG this path does not take (the caller decodes and encodes it instead).
-  transcode(jpeg) {
-    try {
-      const parsed = parseJPEG(jpeg);
-      boundedDimensions(parsed.width, parsed.height);
-      const bytes = transcodeJPEG(jpeg, parsed);
-      if (bytes.length > JPEG_XL_LIMITS.bytes) throw codecError('JXL_SIZE', 'The encoded JPEG XL image exceeds 16 MiB.');
-      const swapped = parsed.orientation >= 5;
-      return {bytes, width: swapped ? parsed.height : parsed.width, height: swapped ? parsed.width : parsed.height, orientation: parsed.orientation};
-    } catch (error) {
-      if (error instanceof RangeError) throw refused();
-      throw error;
-    }
-  }};
+      return job.bytes;
+    },
+    transcode,
+  };
 }
