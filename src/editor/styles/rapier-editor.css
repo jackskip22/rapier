@@ -284,16 +284,20 @@ body.rapier-notes-open .rapier-frontmatter { display: none; }
 #editor-blocks.editor-area--read .block-edit { caret-color: transparent; }
 
 
+/* A wrapper adds nothing to the page's rhythm: the style pack's own margins are the whole gap between blocks (the
+   line model, spec/markdown-style.css), and the wrapper is a flow root so that gap, its last child's margin, stays
+   inside the wrapper's box, where the ledger and every other measurement of a block find it. */
 .block-wrapper {
 	position: relative;
-	margin: 0 0 var(--space-2);
+	display: flow-root;
+	margin: 0;
 }
 .block-wrapper--heading > .block-read { padding-inline-end: 0; }
 .section-fold-btn {
 	position: absolute;
 	z-index: 2;
 
-	inset-block-start: 5px;
+	inset-block-start: 0;
 	inset-inline-end: calc(0px - var(--editor-h-pad));
 	width: 48px;
 	height: 56px;
@@ -444,9 +448,12 @@ html[data-headings="off"] .section-fold-btn { display: none !important; }
 .block-wrapper .block-edit {
 	box-sizing: border-box;
 	width: 100%;
-	padding: var(--space-1) 0;
-	min-height: 1.75em;
-	border: 1px solid transparent;
+	/* No padding and no border: a surface is the block's line boxes, so the wash on the block under the pointer or
+	   being edited is exactly its lines and the gap below is the style pack's alone; an empty paragraph keeps one
+	   line to tap. */
+	padding: 0;
+	min-height: var(--md-line);
+	border: 0;
 }
 
 
@@ -1308,18 +1315,18 @@ html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;
 	 adjacent-sibling rule below settles the real "is it truly right after a table" question against
 	 the live .block-wrapper DOM, reactively, with no bookkeeping kept in sync on insert/delete/reorder. */
 .block-wrapper--table + .block-wrapper .block-read > p.rapier-table-caption-candidate {
-	margin-top: calc(-1 * var(--space-4));
+	margin-top: calc(var(--space-1) - var(--md-line));
 	font-style: italic;
 	font-size: var(--text-sm);
 	color: var(--color-text-secondary);
 }
 #editor-blocks.editor-area--virtualized > .block-wrapper:not(.block-wrapper--editing){
 	content-visibility:auto;
-	/* The ledger's height is a block's whole occupancy, gap included, and the box carries the gap as
-		 its own margin: the placeholder box is that number less one gap (as the dormant rule below), or
-		 every wrapper not yet rendered stands 8 px taller than it will, and a viewport restore measured
-		 against such neighbours lands a line off and corrects a frame later — a bounce on every tap. */
-	contain-intrinsic-size:auto calc(var(--rapier-intrinsic-height,80px) - var(--space-2));
+	/* The ledger's height is a block's whole occupancy, and so is the wrapper's box (its gap is its content's own
+		 margin, kept inside by the flow root), so the placeholder is exactly that number (as the dormant rule below);
+		 a placeholder taller or shorter than the block it stands for puts a viewport restore measured against such
+		 neighbours a line off, corrected a frame later — a bounce on every tap. */
+	contain-intrinsic-size:auto var(--rapier-intrinsic-height,80px);
 }
 #editor-blocks.editor-area--virtualized > .block-wrapper.block-wrapper--selection-live{
 	content-visibility:visible!important;
@@ -1335,10 +1342,10 @@ html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;
 	 the document's own ink at a whisper, faded out at the foot so a partly-seen one blends into
 	 the page instead of ending on a cut line. Paint only — a placeholder costs no nodes. */
 #editor-blocks.editor-area--virtualized > .block-wrapper--dormant{
-	/* The ledger's height is a block's whole occupancy, gap included; the box carries the gap as
-		 its own margin, so the box is that number less one gap. Charging the gap twice walks the
-		 document's foot away from the ledger's by one gap per sleeping block. */
-	height:calc(var(--rapier-intrinsic-height,80px) - var(--space-2));
+	/* The ledger's height is a block's whole occupancy, the wrapper's own box; a placeholder charged
+		 more or less than that walks the document's foot away from the ledger's by the difference
+		 per sleeping block. */
+	height:var(--rapier-intrinsic-height,80px);
 	overflow:hidden;
 	background-image:
 		linear-gradient(to bottom,transparent 0,transparent calc(100% - 2.1em),var(--color-bg) 100%),

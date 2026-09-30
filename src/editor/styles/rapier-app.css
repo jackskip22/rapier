@@ -65,7 +65,6 @@ img[data-rapier-asset-state="error"] { outline:1px solid var(--color-error); pad
 	--text-base:1rem;
 	--text-lg:1.125rem;
 	--text-xl:1.25rem;
-	--leading-tight:1.2;
 	--fw-regular:400; --fw-medium:500; --fw-semibold:600;
 
 
@@ -692,7 +691,6 @@ html.rapier-theme-light :is(button,input,textarea,select,.block-read,.recent-dra
 	--md-text-base:var(--text-base);
 	--md-fw-semibold:var(--fw-semibold);
 	--md-fw-regular:var(--fw-regular);
-	--md-leading-tight:var(--leading-tight);
 	--md-space-6:var(--space-6);
 	--md-space-4:var(--space-4);
 	--md-space-3:var(--space-3);

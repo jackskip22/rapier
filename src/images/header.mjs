@@ -1,6 +1,8 @@
 // The encoder's limits: 16 MiB of output, 24 megapixels, 16,384 pixels on an edge (images/jxl works one group of
 // 256x256 at a time; a lossy picture holds its squeezed planes whole, two bytes a sample).
-export const JPEG_XL_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, pixels: 24_000_000, edge: 16384});
+import {LIMITS} from './jxl/bits.mjs';
+// The one owner of the limits is the encoder (images/jxl/bits.mjs): what the page admits is what the codec takes.
+export const JPEG_XL_LIMITS = LIMITS;
 
 export function codecError(code, message) {
   return Object.assign(new Error(message), {code});

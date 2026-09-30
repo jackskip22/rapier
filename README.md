@@ -271,3 +271,9 @@ Rapier owns editing and Compare; this app owns storage and the save.
 - **Android feature access.** In the Android app, full Compare, complete excerpts and DOCX and PDF export need Rapier Pro. Purchases can be restored, and confirmed access holds offline. `src/editor/engine.js`, `src/shell/platform.js`
 - **Windows app.** Needs the WebView2 Runtime. Native file dialogs, verified saves, checks for files changed on disk, recent files, opening from Explorer or by drop, clipboard, printing and system sharing where available. The page loads nothing remote; links you choose open in their system app. `src/shell/platform.js`, `src/editor/engine.js`, `src/security/csp.mjs`
 - **Windows installation and recovery.** Run the .exe directly or install it for your user, with a Start menu entry and file associations; update from a newer .exe, or uninstall. Closing checks unsaved work, shutdown requests a recovery checkpoint, and a failed web view can restart. `src/shell/platform.js`, `src/editor/engine.js`
+
+## The other repositories
+
+- [rapier-plugins](https://github.com/jackskip22/rapier-plugins): the Claude plugin, the OpenAI package and the three npm packages (`rapier-html`, `rapier-markdown-kit`, `rapier-embed`), published from there.
+- [rapier-jxl](https://github.com/jackskip22/rapier-jxl): the JPEG XL encoder inside Rapier on its own, pure JavaScript, one file, MIT (npm `rapier-jxl`).
+- [will](https://github.com/jackskip22/will): the Will standard, the person's word to whatever agent edits their document next, with its reference reader and its vectors.

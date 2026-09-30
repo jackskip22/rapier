@@ -1640,7 +1640,7 @@
           },
           {
             "property": "bottom",
-            "value": "-0.4rem",
+            "value": "calc(var(--md-line) / -4)",
             "important": false
           }
         ]
@@ -1895,7 +1895,7 @@
           },
           {
             "property": "inset-block-start",
-            "value": "5px",
+            "value": "0",
             "important": false
           },
           {

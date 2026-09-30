@@ -62,6 +62,28 @@ function keepWithWord(flow, range, cursor, layoutNextRichInlineLineRange) {
   return range;
 }
 
+// A chip (inline code, a box each piece of it repeats) breaks at its own spaces and hyphens like any words, but never across a
+// picture: "npx rapier-" left of the picture and "html" right of it read as two things. When a line would end inside a chip
+// with another slot of the row still to come, the line ends before the chip instead and the chip goes whole to the next slot;
+// when nothing but the chip stands in the slot, the row's remaining slots are given up and the chip's pieces stack in this one.
+function insideChip(flow, range) {
+  const {itemIndex, segmentIndex, graphemeIndex} = range.end;
+  return (segmentIndex > 0 || graphemeIndex > 0) && flow.items[itemIndex]?.extraWidth > 0;
+}
+function beforeChip(flow, range, cursor, layoutNextRichInlineLineRange) {
+  let first = range.end.itemIndex;
+  while (first > 0 && flow.items[first - 1]?.extraWidth > 0) first--;
+  if (first === 0 || first <= cursor.itemIndex && (cursor.segmentIndex > 0 || cursor.graphemeIndex > 0 || first < cursor.itemIndex)) return null;
+  const before = shorter => shorter.end.itemIndex < first || shorter.end.itemIndex === first && shorter.end.segmentIndex === 0 && shorter.end.graphemeIndex === 0;
+  for (let limit = range.width - .05, tries = 64; tries > 0; tries--) {
+    const shorter = layoutNextRichInlineLineRange(flow, limit, cursor);
+    if (!shorter || shorter.width > limit + .05) return null;
+    if (before(shorter)) return shorter.end.itemIndex === cursor.itemIndex && shorter.end.segmentIndex === cursor.segmentIndex && shorter.end.graphemeIndex === cursor.graphemeIndex ? null : shorter;
+    limit = shorter.width - .05;
+  }
+  return null;
+}
+
 export function linePlan(flow, width, top, obstacles, lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange) {
   const lines = [], ranges = [];
   let cursor = {itemIndex: 0, segmentIndex: 0, graphemeIndex: 0}, y = 0, bottom = 0, rows = 0;
@@ -71,7 +93,8 @@ export function linePlan(flow, width, top, obstacles, lineHeight, minWidth, dire
     if (direction === 'rtl') bands.reverse();
     const widest = Math.max(0, ...bands.map(band => band.width));
     let advanced = false;
-    for (const band of bands) {
+    for (let slot = 0; slot < bands.length; slot++) {
+      const band = bands[slot];
       let range = layoutNextRichInlineLineRange(flow, band.width, cursor);
       if (!range) return lines.length ? {lines: balance ? balanced(flow, width, balance, lines, ranges, lineHeight, layoutNextRichInlineLineRange, materializeRichInlineLineRange) : lines, height: Math.max(lineHeight, bottom)} : null;
       if (range.width > width + .5 || range.end.itemIndex === cursor.itemIndex &&
@@ -83,9 +106,15 @@ export function linePlan(flow, width, top, obstacles, lineHeight, minWidth, dire
       // A word or address that must break inside itself does it in the widest slot of the row. A narrower one, a sliver beside the
       // picture, waits and the widest takes it, so the head of an address, or "passage" and "s,", is never left alone in a corner.
       if (range.end.graphemeIndex > 0 && band.width < widest - .5) continue;
+      let column = false;
+      if (!balance && slot + 1 < bands.length && insideChip(flow, range)) {
+        const whole = beforeChip(flow, range, cursor, layoutNextRichInlineLineRange);
+        if (whole) range = whole; else column = true;
+      }
       if (lines.length === 4096) return null;
       lines.push({...materializeRichInlineLineRange(flow, range), ...band, y}); ranges.push(range);
       cursor = range.end; advanced = true; bottom = y + lineHeight;
+      if (column) break;
     }
     if (advanced) { y += lineHeight; rows++; continue; }
     let next = Infinity;

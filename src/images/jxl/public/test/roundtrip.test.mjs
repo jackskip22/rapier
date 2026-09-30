@@ -3,38 +3,10 @@
 // where it does not, and refused where it says it refuses. The decoder is jxl-oxide (a development dependency).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {inflateSync} from 'node:zlib';
-import {fileURLToPath} from 'node:url';
-import {readFile} from 'node:fs/promises';
 import {encode, transcode, encodeLosslessRGBA, encodeLossyRGBA, LIMITS} from '../../index.mjs';
 import {writeJPEG} from './jpeg-writer.mjs';
+import {decoder} from './decoder.mjs';
 
-// The decoder, or none: jxl-oxide-wasm installed beside these tests, or Rapier's own vendored copy; the tests that
-// need it say so instead of failing on a missing install.
-async function decoder() {
-	let script, wasm;
-	try { script = fileURLToPath(import.meta.resolve('jxl-oxide-wasm')); wasm = fileURLToPath(import.meta.resolve('jxl-oxide-wasm/module.wasm')); }
-	catch {
-		const vendored = new URL('../../../../tools/vendor/jxl-oxide/', import.meta.url);
-		try { script = fileURLToPath(new URL('jxl_oxide_wasm.js', vendored)); wasm = fileURLToPath(new URL('jxl_oxide_wasm_bg.wasm', vendored)); await readFile(script); } catch { return null; }
-	}
-	// The bindings are loaded from their text so the WebAssembly is handed over as bytes, never fetched.
-	const source = (await readFile(script, 'utf8')).replaceAll('import.meta.url', "'file:jxl'");
-	const mod = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-	await mod.default({module_or_path: await readFile(wasm)});
-	return bytes => { const image = new mod.JxlImage(); try { image.forceSrgb = true; image.feedBytes(bytes); image.tryInit(); return unpng(image.render(0).encodeToPng()); } finally { image.free(); } };
-}
-function unpng(png) {
-	const view = new DataView(png.buffer, png.byteOffset, png.byteLength), width = view.getUint32(16), height = view.getUint32(20);
-	const channels = {0: 1, 2: 3, 4: 2, 6: 4}[png[25]], idat = [];
-	for (let at = 8; at + 8 <= png.length;) { const length = view.getUint32(at), tag = String.fromCharCode(...png.subarray(at + 4, at + 8)); if (tag === 'IDAT') idat.push(png.subarray(at + 8, at + 8 + length)); at += 12 + length; }
-	const raw = inflateSync(Buffer.concat(idat.map(Buffer.from))), stride = width * channels, out = new Uint8Array(height * stride);
-	const paeth = (a, b, c) => { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; };
-	for (let y = 0; y < height; y++) { const filter = raw[y * (stride + 1)], line = y * (stride + 1) + 1, dst = y * stride, up = dst - stride;
-		for (let i = 0; i < stride; i++) { const x = raw[line + i], a = i >= channels ? out[dst + i - channels] : 0, b = y ? out[up + i] : 0, c = y && i >= channels ? out[up + i - channels] : 0;
-			out[dst + i] = (filter === 0 ? x : filter === 1 ? x + a : filter === 2 ? x + b : filter === 3 ? x + ((a + b) >> 1) : x + paeth(a, b, c)) & 255; } }
-	return {width, height, channels, data: out};
-}
 const rgbaOf = image => { const out = new Uint8Array(image.width * image.height * 4); for (let i = 0; i < image.width * image.height; i++) { const c = image.channels, d = image.data; out[i * 4] = d[i * c]; out[i * 4 + 1] = c >= 3 ? d[i * c + 1] : d[i * c]; out[i * 4 + 2] = c >= 3 ? d[i * c + 2] : d[i * c]; out[i * 4 + 3] = c === 4 ? d[i * 4 + 3] : c === 2 ? d[i * 2 + 1] : 255; } return out; };
 const psnr = (a, b, channels = 3) => { let se = 0, n = 0; for (let i = 0; i < a.length; i += 4) for (let c = 0; c < channels; c++) { const d = a[i + c] - b[i + c]; se += d * d; n++; } return se ? 10 * Math.log10(255 * 255 / (se / n)) : Infinity; };
 let seed = 7; const random = () => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; return seed / 4294967296; };

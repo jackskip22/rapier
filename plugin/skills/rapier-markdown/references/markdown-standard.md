@@ -327,6 +327,14 @@ same glyphs. The host owns the page frame and available width; equal font metric
 are necessary for equal line breaks. Headings balance their lines (`text-wrap: balance`); paragraphs keep the
 browser's greedy breaks.
 
+The sheet spaces a page the way a Word document reads: one line, `--md-line` (1.75rem, 1.6 lines of the
+1.1rem body, `--md-text-body`), is the unit of the vertical rhythm. Body text sits on that line; a heading's
+box is the whole or half lines its size fills (h1 at 2.4 x the body on two lines, h2 and h3 on one and a
+half, h4 to h6 on one); every block ends one line below its last line and a heading half a line below; list
+items are a quarter line apart. No block sets a top margin, so blocks whose margins collapse (a plain page)
+and blocks wrapped one by one (an editor) space alike, and the space before any block is the line its
+predecessor leaves. A host that sets `--md-line` and `--md-text-body` together rescales the whole rhythm.
+
 | Content | HTML the renderer supplies |
 | --- | --- |
 | Paragraphs and headings | `p`, `h1` through `h6`; use `dir="auto"` where the block's words determine its writing direction. |

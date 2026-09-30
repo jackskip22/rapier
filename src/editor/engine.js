@@ -28798,7 +28798,7 @@ function _rapierShellClassesReady() {
 		const sheet = new CSSStyleSheet();
 		_RAPIER_SHELL_LADDER.forEach((height, index) => sheet.insertRule(
 			'#editor-blocks.editor-area--virtualized > .block-wrapper--dormant.rapier-shell-' + index +
-			'{height:calc(' + height + 'px - var(--space-2));contain-intrinsic-size:auto calc(' + height + 'px - var(--space-2));}'));
+			'{height:' + height + 'px;contain-intrinsic-size:auto ' + height + 'px;}'));
 		document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
 		_rapierShellSheet = sheet;
 	} catch (_) { _rapierShellSheet = false; }

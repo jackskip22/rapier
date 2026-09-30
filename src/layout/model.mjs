@@ -111,11 +111,14 @@ export function rasterReserved(columnWidth, unrotated, rad) {
 
 
 const shapeGrid = 48, alphaThreshold = .1, alphaOversample = 4, profileBands = new WeakMap();
+// Slices are cut at up to this many bands: a picture shown 6 px a band or finer keeps every row the profile holds.
+const sliceGridMax = shapeGrid * alphaOversample, slicePixelsPerBand = 6;
 
-// The picture's silhouette as 48 bands of horizontal runs, read from its alpha at four times that resolution both ways: a band
-// holds the ink of its four pixel rows, and a run's ends fall on a 192nd of the picture's width, so the standoff a slice adds
-// (`pictureSlices`' `gap`) is the least distance from the words to the paint however large the picture is drawn. At 48 columns
-// a run's end drifted by a 48th of the width (9 px at 430) and a thin stroke fell between two samples.
+// The picture's silhouette as 192 bands of horizontal runs, read from its alpha at that resolution both ways: a band holds the
+// ink of one sampled row, and a run's ends fall on a 192nd of the picture's width, so the standoff a slice adds (`pictureSlices`'
+// `gap`) is the least distance from the words to the paint however large the picture is drawn. At 48 rows and columns a run's
+// end drifted by a 48th of the width (9 px at 430), a thin stroke fell between two samples, and a tall picture's bands were
+// 20 px high. The descriptor an exported page carries (`serializeProfile`) still writes 48 bands.
 export function alphaProfile(image) {
   const src = image.currentSrc || image.getAttribute('src') || '';
   if (!image.complete || !image.naturalWidth || !image.naturalHeight || !src || /^data:image\/jpe?g[;,]/i.test(src)) return null;
@@ -133,25 +136,19 @@ export function alphaProfile(image) {
   finally { canvas.width = canvas.height = 0; }
   const bands = [];
   let opaque = true;
-  for (let band = 0; band < shapeGrid; band++) {
-    const ink = new Uint8Array(fine);
-    for (let y = band * alphaOversample; y < (band + 1) * alphaOversample; y++) {
-      for (let x = 0; x < fine; x++) {
-        const alpha = data[(y * fine + x) * 4 + 3];
-        if (alpha < 250) opaque = false;
-        if (alpha > alphaThreshold * 255) ink[x] = 1;
-      }
-    }
+  for (let y = 0; y < fine; y++) {
     const runs = [];
     let start = -1;
     for (let x = 0; x <= fine; x++) {
-      if (x < fine && ink[x]) { if (start < 0) start = x; }
+      const alpha = x < fine ? data[(y * fine + x) * 4 + 3] : 0;
+      if (x < fine && alpha < 250) opaque = false;
+      if (x < fine && alpha > alphaThreshold * 255) { if (start < 0) start = x; }
       else if (start >= 0) { runs.push([start / fine, x / fine]); start = -1; }
     }
     bands.push(runs);
   }
   if (opaque) return null;
-  const runsAt = t => bands[Math.max(0, Math.min(shapeGrid - 1, Math.floor(t * shapeGrid)))];
+  const runsAt = t => bands[Math.max(0, Math.min(fine - 1, Math.floor(t * fine)))];
   return {runsAt,
     spanAt(t) { const runs = runsAt(t); return runs.length ? [runs[0][0], runs.at(-1)[1]] : null; }};
 }
@@ -246,14 +243,23 @@ export function parseProfile(text) {
   return bandsProfile(bands);
 }
 
+// The standoff is round: a band's own rows are pushed out by the whole gap, and the rows above and below it, out to a gap away,
+// by what a circle of that radius allows at their distance, in three steps. A square standoff stood up to 14 px off a slanted
+// stroke and 10 off a level one; this stands 10 off both, within a step.
+const shoulderSteps = 3, shoulders = Array.from({length: shoulderSteps}, (_, k) => ({from: k / shoulderSteps, to: (k + 1) / shoulderSteps, reach: Math.sqrt(1 - ((k + .5) / shoulderSteps) ** 2)}));
+
 export function pictureSlices(profile, x, y, width, height, gap = 10) {
   if (!profile) return [{x: x - gap, y: y - gap, width: width + gap * 2, height: height + gap * 2}];
-  let bands = profileBands.get(profile);
+  // A band is at most 6 px high at the shown size, never coarser than the descriptor's 48 nor finer than the profile's 192.
+  const count = Math.max(shapeGrid, Math.min(sliceGridMax, Math.ceil((finite(height) && height > 0 ? height : 0) / slicePixelsPerBand)));
+  let byCount = profileBands.get(profile);
+  if (!byCount) profileBands.set(profile, byCount = new Map());
+  let bands = byCount.get(count);
   if (!bands) {
     bands = [];
     let previous = new Map();
-    for (let index = 0; index < shapeGrid; index++) {
-      const top = index / shapeGrid, bottom = (index + 1) / shapeGrid;
+    for (let index = 0; index < count; index++) {
+      const top = index / count, bottom = (index + 1) / count;
       // Sampled just inside the bottom edge: on the edge itself a band profile answers with the next band's row and the slice runs a row long.
       const runs = [top, (top + bottom) / 2, bottom - 1e-9].flatMap(t => {
         if (profile.runsAt) return profile.runsAt(t) || [];
@@ -277,10 +283,19 @@ export function pictureSlices(profile, x, y, width, height, gap = 10) {
       }
       previous = current;
     }
-    profileBands.set(profile, bands);
+    byCount.set(count, bands);
   }
-  return bands.map(band => ({x: x + band.left * width - gap, y: y + band.top * height - gap,
-    width: (band.right - band.left) * width + gap * 2, height: (band.bottom - band.top) * height + gap * 2}));
+  const slices = [];
+  for (const band of bands) {
+    const left = x + band.left * width, right = x + band.right * width, top = y + band.top * height, bottom = y + band.bottom * height;
+    slices.push({x: left - gap, y: top, width: right - left + gap * 2, height: bottom - top});
+    for (const {from, to, reach} of shoulders) {
+      const ext = gap * reach, span = gap * (to - from);
+      slices.push({x: left - ext, y: top - gap * to, width: right - left + ext * 2, height: span});
+      slices.push({x: left - ext, y: bottom + gap * from, width: right - left + ext * 2, height: span});
+    }
+  }
+  return slices;
 }
 
 export function slotsForBand(width, obstacles, top, height, minWidth = 40) {

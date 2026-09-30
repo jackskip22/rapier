@@ -12,6 +12,8 @@ Unmarked content is `edit`. Regions never overlap. A change reaching several reg
 
 The person remains free to author the document and its Will. A host declares authoring and working paths; a working path cannot author, remove or move markers, even by rewriting identical bytes. A Will-aware interface makes effective regions, laws and intent available to the person. Ordinary rendering hides the carrier.
 
+The standard's own repository is [jackskip22/will](https://github.com/jackskip22/will): `README.md` (the whole standard in a few words), `will.mjs` (the reference reader and evaluator, one file, no dependencies), `vectors.json` (the 98 normative vectors) and LICENSE, with one workflow that runs the vectors. It is staged from `repo/spec/will/` by `tools/stage-will-repo.mjs` (which refuses to stage unless the staged reference answers every vector and the README carries no live marker; the Node row `will-vectors` keeps the same in the tree) and published as `rapier.website` at each checkpoint. Rapier's own host is `agent/will.mjs`, the same grammar, judged by its own rows.
+
 ## Marker grammar
 
 An opener is exactly `<!-- will/1 <law> -->` or `<!-- will/1 <law>: <intent> -->`; the closer is exactly `<!-- /will -->`. Intent belongs to whichever law carries it. A writer keeps the person's words when the law changes, and writes the opener of a region saved unchanged back byte for byte. The first ASCII `: ` after the law separates intent; subsequent colons belong to the words. Intent is nonempty when present, one line, at most 512 Unicode scalar values and cannot contain `--`. It is never silently shortened. Words and spacing are exact; no alternate dash, unspaced spelling or uppercase law is admitted.

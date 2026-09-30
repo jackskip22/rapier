@@ -1966,9 +1966,9 @@ button.settings-text-action:disabled { opacity: .6; cursor: wait; }
 
 
 .rapier-hscroll{position:relative;display:block;min-width:0}
-.rapier-hscroll--code{margin:0 0 var(--space-4)}
-.rapier-hscroll--table{margin:0 0 var(--space-5)}
-.rapier-hscroll--math{margin:var(--space-2) 0 var(--space-4)}
+/* The shell carries the block's line (the surface's own margin is zeroed below): a code block and a table end one line down, display math inside a paragraph a quarter line in. */
+.rapier-hscroll--code,.rapier-hscroll--table{margin:0 0 var(--md-line)}
+.rapier-hscroll--math{margin:calc(var(--md-line) / 4) 0 var(--md-line)}
 .rapier-hscroll>.rapier-hscroll__surface{margin:0!important}
 .rapier-hscroll>.rapier-hscroll__surface:focus-visible{outline:none}
 .rapier-hscroll::after{

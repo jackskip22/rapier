@@ -16,7 +16,8 @@
 	--md-text-base:1rem;
 	--md-fw-semibold:600;
 	--md-fw-regular:400;
-	--md-leading-tight:1.2;
+	--md-text-body:1.1rem;
+	--md-line:1.75rem;
 	--md-space-6:24px;
 	--md-space-4:16px;
 	--md-space-3:12px;
@@ -35,7 +36,6 @@
 	--md-color-warning:light-dark(#d97706,#f5a623);
 	--md-color-error:light-dark(#c00,#ec5156);
 	--md-space-8:32px;
-	--md-space-7:28px;
 	--md-color-accent:#12A594;
 	--md-color-text-subtle:light-dark(#636363,#858585);
 	--md-heading-color:var(--md-color-text);
@@ -117,7 +117,7 @@
    runs past the column reads as a wide table does -- it scrolls, under the same fading edge. */
 :where(.md-render) .diagram-block {
 	position: relative;
-	margin: 1em 0;
+	margin: 0 0 var(--md-line);
 	max-width: 100%;
 	overflow: auto;
 }
@@ -345,25 +345,29 @@
 	opacity: .78;
 }
 
+/* The line model (item 2c, the founder's: the way a Word document reads). One line, --md-line, is the body's line
+   box: 1.75rem, 1.6 lines of the 1.1rem body, a whole 28 px at the browser's 16 px root so baselines land on pixels.
+   Every block ends one line below its last line; a heading ends half a line below. A heading's own box is the whole
+   or half lines its size fills: h1 at 2.4 x the body on two lines, h2 and h3 on one and a half, h4 to h6 on one.
+   Nothing sets a top margin, so a plain page (sibling margins collapsing) and the editor (a wrapper per block) space
+   alike, and the space before any block is the line its predecessor leaves. */
 .md-render{
-	font:var(--md-fw-regular) 1.1rem/1.75 var(--md-font-sans);color:var(--md-color-text);text-align:start}
+	font:var(--md-fw-regular) var(--md-text-body)/var(--md-line) var(--md-font-sans);color:var(--md-color-text);text-align:start}
 .md-render>:first-child,.md-render :is(blockquote,li,td,th,dd,.callout,details)>:first-child{margin-top:0}
 .md-render h1,.md-render h2,.md-render h3,.md-render h4,.md-render h5,.md-render h6{
 	font-family:var(--md-font-sans);letter-spacing:-0.01em;
-	line-height:var(--md-leading-tight);color:var(--md-heading-color);text-wrap:balance}
-.md-render h1{font-size:2.8rem;font-weight:700;
-	margin:var(--md-space-6) 0 var(--md-space-4);
-	padding-bottom:var(--md-space-3)}
-.md-render h2{font-size:2.2rem;font-weight:600;margin:var(--md-space-6) 0 var(--md-space-3)}
-.md-render h3{font-size:1.7rem;font-weight:600;margin:var(--md-space-5) 0 var(--md-space-2)}
-.md-render h4{font-size:1.3rem;font-weight:500;margin:var(--md-space-4) 0 var(--md-space-2)}
+	line-height:var(--md-line);margin:0 0 calc(var(--md-line) / 2);color:var(--md-heading-color);text-wrap:balance}
+.md-render h1{font-size:calc(var(--md-text-body) * 2.4);line-height:calc(var(--md-line) * 2);font-weight:700}
+.md-render h2{font-size:calc(var(--md-text-body) * 1.9);line-height:calc(var(--md-line) * 1.5);font-weight:600}
+.md-render h3{font-size:calc(var(--md-text-body) * 1.5);line-height:calc(var(--md-line) * 1.5);font-weight:600}
+.md-render h4{font-size:calc(var(--md-text-body) * 1.25);font-weight:500}
 /* h5/h6 complete the six-level hierarchy: modest but owned (explicit size/weight/colour), never
-   the browser default. Size stays strictly monotonic below h4; h6 firms up weight and dims colour
-   since its size alone reads weakly small next to body text. */
-.md-render h5{font-size:1.1rem;font-weight:600;margin:var(--md-space-4) 0 var(--md-space-2)}
-.md-render h6{font-size:0.95rem;font-weight:600;margin:var(--md-space-3) 0 var(--md-space-2);color:var(--md-heading-muted-color)}
-.md-render p{margin:0 0 var(--md-space-4)}
-.md-render ul,.md-render ol{margin:0 0 var(--md-space-4);padding-inline-start:var(--md-space-5)}
+   the browser default. Size stays strictly monotonic below h4; h6 sits at the body's own size and
+   firms up weight and dims colour, since its size alone would read as body text. */
+.md-render h5{font-size:calc(var(--md-text-body) * 1.1);font-weight:600}
+.md-render h6{font-size:var(--md-text-body);font-weight:600;color:var(--md-heading-muted-color)}
+.md-render p{margin:0 0 var(--md-line)}
+.md-render ul,.md-render ol{margin:0 0 var(--md-line);padding-inline-start:var(--md-space-5)}
 .md-render ul{list-style:none}
 .md-render ul>li{position:relative}
 
@@ -445,7 +449,7 @@
 .md-render ol{
 	list-style:none;
 	padding-inline-start:2.75rem;
-	margin:0 0 var(--md-space-4);
+	margin:0 0 var(--md-line);
 	counter-reset:rapier-ol;
 }
 .md-render ol>li{
@@ -475,12 +479,13 @@
 
 	inset-inline-start:calc(-1.75rem - 1.5px);
 	top:2.2rem;
-	bottom:-0.4rem;
+	bottom:calc(var(--md-line) / -4);
 	border-inline-start:3px dotted var(--md-color-line);
 	z-index:0;
 }
-.md-render li{margin:0 0 var(--md-space-3)}
-.md-render li>ul,.md-render li>ol{margin:var(--md-space-2) 0 0}
+.md-render li{margin:0 0 calc(var(--md-line) / 4)}
+.md-render li:last-child{margin-bottom:0}
+.md-render li>ul,.md-render li>ol{margin:calc(var(--md-line) / 4) 0 0}
 .md-render a{color:var(--md-color-accent-text);text-decoration:underline;text-underline-offset:2px}
 /* The house focus (rapier-app.css) in the document and on the exported page: the underline thickens, no ring. */
 .md-render a:focus-visible,.md-render ul.rapier-jump-list>li>a:focus-visible,.md-render .footnote-ref a:focus-visible,.md-render summary:focus-visible{outline:none;text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
@@ -499,7 +504,7 @@
 	--md-jump-marker-center:1em;
 	list-style:none;
 	padding-inline-start:1.85rem;
-	margin:0 0 var(--md-space-5);
+	margin:0 0 var(--md-line);
 }
 .md-render ul.rapier-jump-list>li{
 	position:relative;
@@ -543,13 +548,13 @@
 .md-render em{font-style:italic}
 .md-render code{font-family:var(--md-font-mono);font-size:0.85em;
 	background:var(--md-color-inset);border:1px solid var(--md-color-border);padding:1px 5px}
-.md-render pre{margin:0 0 var(--md-space-4);padding:var(--md-space-3) var(--md-space-4);
+.md-render pre{margin:0 0 var(--md-line);padding:var(--md-space-3) var(--md-space-4);
 	background:var(--md-color-surface-2);border:1px solid var(--md-color-border);overflow-x:auto}
-.md-render pre code{background:none;border:none;padding:0;font-size:0.8125rem;line-height:1.6}
+.md-render pre code{background:none;border:none;padding:0;font-size:0.8125rem;line-height:calc(var(--md-line) * .75)}
 .md-render .math-display-wrap{
 	display:block;
 	max-width:100%;
-	margin:0 0 var(--md-space-4);
+	margin:0 0 var(--md-line);
 	overflow-x:auto;
 	overflow-y:hidden;
 	-webkit-overflow-scrolling:touch;
@@ -565,14 +570,14 @@
 	text-align:initial;
 	vertical-align:middle;
 }
-.md-render p>.math-display-wrap{margin:var(--md-space-2) 0 var(--md-space-4)}
+.md-render p>.math-display-wrap{margin:calc(var(--md-line) / 4) 0 var(--md-line)}
 .md-render math[display="block"]{font-size:1.12em}
 .md-render math:not([display="block"]){font-size:1em}
-.md-render blockquote{margin:0 0 var(--md-space-4);
+.md-render blockquote{margin:0 0 var(--md-line);
 	padding-block:var(--md-space-1);padding-inline-start:var(--md-space-4);padding-inline-end:0;
 	border-inline-start:2px solid var(--md-color-border-focus);color:var(--md-color-text-secondary)}
 .md-render blockquote blockquote{
-	margin:var(--md-space-3) 0 var(--md-space-2);padding-inline-start:var(--md-space-3);
+	margin:calc(var(--md-line) / 2) 0 calc(var(--md-line) / 4);padding-inline-start:var(--md-space-3);
 	border-inline-start-color:color-mix(in srgb,var(--md-color-border-focus) 70%,var(--md-color-text-muted));
 	color:color-mix(in srgb,var(--md-color-text-secondary) 84%,var(--md-color-text-muted))
 }
@@ -597,7 +602,7 @@
 .md-render blockquote.callout>:last-child{margin-bottom:0}
 @media print{.md-render{--md-callout-note:#0969da;--md-callout-important:#8250df}}
 
-.md-render details { border: 1px solid var(--md-color-border); border-radius: 0; padding: var(--md-space-2) var(--md-space-4); margin: 0 0 var(--md-space-4); }
+.md-render details { border: 1px solid var(--md-color-border); border-radius: 0; padding: var(--md-space-2) var(--md-space-4); margin: 0 0 var(--md-line); }
 .md-render details[open] { padding-bottom: var(--md-space-3); }
 /* A section with nothing typed into it yet has no paragraph to tap: without this, the only body
    space below the summary is the plain padding-bottom above (12px), too thin a margin for a real
@@ -615,15 +620,15 @@
 	background:transparent;
 	color:var(--md-color-line);
 	opacity:1;
-	margin:var(--md-space-7) 0;
+	margin:var(--md-line) 0;
 	overflow:visible;
 }
 .md-render hr[data-hr-style="dash"]{
 	border-top:2px solid var(--md-color-line);
 }
 .md-render hr[data-hr-style="stars"]{
-	height:18px;
-	margin:var(--md-space-8) 0;
+	height:var(--md-line);
+	margin:var(--md-line) 0;
 }
 .md-render hr[data-hr-style="stars"]::before{
 	content:"";
@@ -652,7 +657,7 @@
 	height:0;
 	border:none;
 	border-top:1px dashed var(--md-color-text-muted);
-	margin:var(--md-space-7) 0;
+	margin:var(--md-line) 0;
 	opacity:.37;
 }
 .md-render [data-md-break]::after{
@@ -671,7 +676,7 @@
 .md-render table{
 	width:100%;
 	border-collapse:collapse;
-	margin:0 0 var(--md-space-5);
+	margin:0 0 var(--md-line);
 	font-size:var(--md-text-sm);
 	border:2px solid var(--md-color-line);
 }
@@ -695,7 +700,7 @@
 	 adjacent-sibling rule below settles the real "is it truly right after a table" question against
 	 the live .block-wrapper DOM, reactively, with no bookkeeping kept in sync on insert/delete/reorder. */
 :where(.md-render) .rapier-table-caption {
-	margin-top: calc(-1 * var(--md-space-4));
+	margin-top: calc(var(--md-space-1) - var(--md-line));
 	font-style: italic;
 	font-size: var(--md-text-sm);
 	color: var(--md-color-text-secondary);
@@ -714,8 +719,8 @@
 .md-render :has(>img[data-md-drawing],>a>img[data-md-drawing]){overflow-x:auto}
 .md-render img:is([data-rapier-asset],[data-rapier-image-url]):not([data-rapier-asset-state="ready"]){background:color-mix(in srgb,var(--md-color-text) 5%,transparent)}
 
-.md-render dl{margin:0 0 var(--md-space-4)}
-.md-render dt{font-weight:var(--md-fw-semibold);margin:var(--md-space-2) 0 0}
+.md-render dl{margin:0 0 var(--md-line)}
+.md-render dt{font-weight:var(--md-fw-semibold);margin:calc(var(--md-line) / 4) 0 0}
 .md-render dt:first-child{margin-top:0}
 .md-render dd{margin:var(--md-space-1) 0 0;padding-inline-start:var(--md-space-4);color:var(--md-color-text-secondary)}
 
@@ -752,7 +757,7 @@
 .md-render del,.md-render s{color:var(--md-color-text-muted);text-decoration:line-through}
 
 .md-render .footnotes-sep{display:none}
-.md-render .footnotes{margin:var(--md-space-7) 0 0;padding-top:var(--md-space-3);border-top:1px solid var(--md-color-border);font-size:var(--md-text-sm);color:var(--md-color-text-secondary)}
+.md-render .footnotes{margin:var(--md-line) 0 0;padding-top:var(--md-space-3);border-top:1px solid var(--md-color-border);font-size:var(--md-text-sm);color:var(--md-color-text-secondary)}
 .md-render .footnotes-list{list-style:decimal;padding-inline-start:var(--md-space-5);margin:0;counter-reset:none}
 .md-render .footnotes-list>li{padding-top:0;min-height:0}
 .md-render .footnotes-list>li::before,.md-render .footnotes-list>li::after{content:none}
@@ -781,8 +786,9 @@
 }
 
 /* Overflow belongs to the document; the surrounding page owns its measure and padding. */
-.md-render .table-scroll-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
-.md-render .table-scroll-wrap table{min-width:100%}
+/* A wide table scrolls inside its wrap; the wrap carries the block's line, so a scrollbar sits under the table, not a line below it. */
+.md-render .table-scroll-wrap{width:100%;margin:0 0 var(--md-line);overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.md-render .table-scroll-wrap table{min-width:100%;margin-bottom:0}
 @media print{
   .md-render [data-md-break]{border:0!important;height:0!important;margin:0!important;break-before:page;page-break-before:always}
   .md-render [data-md-break]::after{content:none!important}

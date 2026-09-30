@@ -838,8 +838,11 @@ function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 	// moved the shapes left or down moved the window with them, is written on this step so Undo gives it back,
 	// and is shown again. A growth that cannot be measured never stops the seal.
 	try {
+		// The growth writes its shift on the open step itself (_rapierDrawRecordShift, when `before` is that step); it is
+		// added here only when it could not, so a shift is never counted twice (an audit of 30 September found Undo
+		// giving back double the move).
 		const grown = _rapierDrawGrowCanvasToContent();
-		if (grown && (grown.dx || grown.dy)) { before.shift = { dx: (before.shift?.dx || 0) + grown.dx, dy: (before.shift?.dy || 0) + grown.dy }; _rapierDrawRenderShapes(); }
+		if (grown && (grown.dx || grown.dy)) { if (!grown.recorded) before.shift = { dx: (before.shift?.dx || 0) + grown.dx, dy: (before.shift?.dy || 0) + grown.dy }; _rapierDrawRenderShapes(); }
 	} catch (_) {}
 	const prior = { ...before.recipe, fonts: before.fonts };
 	const entry = _rapierDrawHistoryDelta(prior, state.recipe);
@@ -973,9 +976,12 @@ function _rapierDrawGrowCanvas(minX, minY, maxX, maxY) {
 	// so the person's work stays under the same pixel: without this the whole drawing jumps right and
 	// down the instant a stroke crosses the left edge. The window's SIZE is untouched -- see
 	// _rapierDrawViewBase -- so the zoom is the zoom the person set, before and after.
-	if (dx || dy) { const v = _rapierDrawView(); v.x += dx; v.y += dy; _rapierDrawRecordShift(dx, dy); }
+	// The shift is written once, here, on the step this command holds open; a caller that grows before it opens its
+	// step gets `recorded: false` and writes the shift itself.
+	let recorded = false;
+	if (dx || dy) { const v = _rapierDrawView(); v.x += dx; v.y += dy; recorded = _rapierDrawRecordShift(dx, dy); }
 	_rapierDrawApplyView();
-	return { dx, dy };
+	return { dx, dy, recorded };
 }
 // The paper holds everything on it (the founder, 29 September: the canvas "is not expanding automatically
 // properly to capture new content ... It's everything"): after every committed change the canvas grows to the
@@ -998,8 +1004,9 @@ function _rapierDrawGrowCanvasToContent(recipe = _rapierDrawState.recipe) {
 // across when the snapshot becomes a delta.
 function _rapierDrawRecordShift(dx, dy) {
 	const state = _rapierDrawState, entry = state.undoStack.at(-1);
-	if (!entry || entry !== state.renderEdit?.entry) return;
+	if (!entry || entry !== state.renderEdit?.entry) return false;
 	entry.shift = {dx: (entry.shift?.dx || 0) + dx, dy: (entry.shift?.dy || 0) + dy};
+	return true;
 }
 // Law 47 (the founder, 26 September 2026: "It's literally an undo and a redo button, and it should be
 // absolutely identical absolutely everywhere ... Copy the icons, the animations, the behavior, every
@@ -4122,7 +4129,7 @@ function _rapierDrawCommand(change, snapshot = true, menu = true) {
 		state.recipe = admitted;
 		if (snapshot && !_rapierDrawSameRecipe(before)) {
 			_rapierDrawSnapshot(before);
-			if (grown && (grown.dx || grown.dy)) { const entry = state.undoStack.at(-1); entry.shift = { dx: (entry.shift?.dx || 0) + grown.dx, dy: (entry.shift?.dy || 0) + grown.dy }; }
+			if (grown && (grown.dx || grown.dy) && !grown.recorded) { const entry = state.undoStack.at(-1); entry.shift = { dx: (entry.shift?.dx || 0) + grown.dx, dy: (entry.shift?.dy || 0) + grown.dy }; }
 			_rapierDrawSealHistory(); state.sweepBase = before;
 		}
 		else if (!snapshot && state.sweepBase && state.undoStack.length) {
