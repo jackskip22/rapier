@@ -52,11 +52,14 @@ function _rapierUpdateAlignmentButton(selection) {
   const button = document.getElementById('fmt-btn-alignment');
   if (!button) return;
   const align = _rapierSelectionAlignment(selection), next = _rapierNextAlignment(align);
-  button.dataset.alignment = align;
-  button.dataset.tip = 'alignment: ' + align + ' · tap for ' + next;
-  button.setAttribute('aria-label', 'Alignment: ' + align + '. Change to ' + next + ' alignment');
-  button.querySelector('path')?.setAttribute('d', _rapierAlignmentIcons[align]);
-  button.toggleAttribute('data-active', align !== 'left');
+  // Written only where it differs: every keystroke's toolbar refresh comes through here.
+  const tip = 'alignment: ' + align + ' · tap for ' + next, label = 'Alignment: ' + align + '. Change to ' + next + ' alignment';
+  if (button.dataset.alignment !== align) button.dataset.alignment = align;
+  if (button.dataset.tip !== tip) button.dataset.tip = tip;
+  if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+  const path = button.querySelector('path');
+  if (path && path.getAttribute('d') !== _rapierAlignmentIcons[align]) path.setAttribute('d', _rapierAlignmentIcons[align]);
+  if (button.hasAttribute('data-active') !== (align !== 'left')) button.toggleAttribute('data-active', align !== 'left');
 }
 
 function rapierCycleAlignment() {

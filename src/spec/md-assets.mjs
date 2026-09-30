@@ -128,6 +128,52 @@ export function parseAssets(source, factory = configured || globalThis.markdowni
   return index;
 }
 export function documentAssets(source, factory) { return parseAssets(source, factory, markdownBodyOffset(source)); }
+
+// The same index folded from the document's top-level blocks: `rows` are the blocks as markdown-it's block parse
+// of the body cuts them, each {start, raw} with `start` absolute in `source`, and `parse(raw, row)` is parseAssets
+// over one block (the caller may cache it by the row). A definition the whole parse finds is one a block's own parse
+// finds at the block's place, because a top-level block's lines parse the same alone as in the document; labels,
+// duplicates, the first definition's precedence, the count limit and the appendix fold as parseAssets folds them.
+// Null when the rows are not this source: a block's bytes elsewhere than its start, rows out of order or overlapping,
+// or text that could hold a definition (`]:`) between the body's start, the rows and the end, where no row parses
+// it. Positions are the source's own, never normalized.
+export function blockwiseAssets(source, rows, parse = raw => parseAssets(raw), bodyOffset = markdownBodyOffset(source)) {
+  if (typeof source !== 'string' || !Array.isArray(rows)) return null;
+  const blocks = [], references = Object.create(null), duplicateLabels = new Set(), seen = new Set(), assets = new Map();
+  let cursor = bodyOffset;
+  for (const row of rows) {
+    const raw = String(row.raw || ''), start = row.start;
+    if (!(start >= cursor) || source.slice(cursor, start).includes(']:') || source.slice(start, start + raw.length) !== raw) return null;
+    cursor = start + raw.length;
+    if (!raw.includes(']:')) continue;
+    const index = parse(raw, row);
+    // Every label the block defines, picture or not: an earlier definition of a label, of any kind, is the one
+    // the document resolves, so a later picture under it is inactive and the label a duplicate.
+    const labels = Object.keys(index.references);
+    for (const label of index.duplicateLabels) duplicateLabels.add(label);
+    for (const label of labels) {
+      if (seen.has(label)) duplicateLabels.add(label);
+      if (!Object.hasOwn(references, label)) references[label] = index.references[label];
+    }
+    for (const block of index.blocks) {
+      const active = block.active && !seen.has(block.id);
+      const shifted = {...block, start: block.start + start, end: block.end + start, status: 'unverified', active};
+      for (const key of ['urlStart', 'urlEnd', 'payloadStart', 'payloadEnd']) if (block[key] != null) shifted[key] = block[key] + start;
+      blocks.push(shifted);
+      if (active) assets.set(block.id, shifted);
+    }
+    for (const label of labels) seen.add(label);
+  }
+  if (source.slice(cursor).includes(']:')) return null;
+  if (assets.size > IMAGE_LIMITS.assets) for (const asset of assets.values()) asset.status = 'asset_count_limit';
+  let appendixStart = source.length;
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    const block = blocks[index];
+    if (!block.active || !block.topLevel || !/^[ \t\r\n]*$/.test(source.slice(block.end, appendixStart))) break;
+    appendixStart = block.start;
+  }
+  return {assets, blocks, duplicateLabels, appendixStart, references};
+}
 export function imageEnvironment(source, factory) { return {references: Object.assign(Object.create(null), documentAssets(source, factory).references)}; }
 
 function imageUses(source, factory, env = {}) {

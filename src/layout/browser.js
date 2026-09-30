@@ -424,9 +424,17 @@ const _rapierImageFlow = (() => {
     return true;
   }
 
-  function mirrorComposedText(record, text, mapping) {
+  // A composed word lands with the paragraph's own lines first, as a typed letter does (replan): the whole pass
+  // when the paragraph's height moved since the composition began, or when that height is not known. The frame
+  // that this compositionend's own schedule left for the whole pass is cancelled once the landing is done (it
+  // would lay the same lines again, measured at 42 ms a word at CPU 4); a frame another cause left stands.
+  function mirrorComposedText(record, text, mapping, previousHeight = null) {
     spliceComposedRun(mapping, text.data ?? '');
-    layoutNow(record.wrapper);
+    const pending = frame, own = composeFrame;
+    composeFrame = 0;
+    if (!(Number.isFinite(previousHeight) && replan(record.wrapper, previousHeight))) { frame = pending; layoutNow(record.wrapper); return; }
+    if (pending && own === pending) cancelAnimationFrame(pending);
+    else if (pending && !frame) frame = pending;
   }
 
   function activation(wrapper, value) {
@@ -1218,7 +1226,58 @@ const _rapierImageFlow = (() => {
   let pressed = false, pressedLayout = false;
   function schedule() {
     if (pressed && !moving) { pressedLayout = true; return; }
-    if (!frame && host) frame = requestAnimationFrame(() => layout());
+    if (!frame && host) frame = requestAnimationFrame(() => { const wrapper = replanWrapper; replanWrapper = null; if (!(wrapper && replan(wrapper))) layout(); });
+  }
+
+  // Typing inside one wrapped paragraph: the picture beside it has not moved and nothing above or
+  // below has changed height, so only that paragraph's lines want laying again, against the obstacles
+  // the last whole pass left. The paragraph is unprojected, prepared and projected alone, its selection
+  // carried as the whole pass carries it; if its height came out as before, the rest of the document
+  // stands where it was and the pass is done, else the whole pass runs. Measured on the welcome's first
+  // paragraph at CPU 4, the whole pass was 39 ms of every 30 ms key. `window.__rapierWholeProjection`
+  // forces the whole pass, so a probe can prove the two lay identical geometry.
+  let replanWrapper = null;
+  function replan(wrapper, previousHeight = null) {
+    if (window.__rapierWholeProjection || !wrapper?.isConnected || !host || !geometry || !metadata || !pretext || moving || restoring || printing) return false;
+    if (hasSelection() || rapier.composition.block || rapier.composition.source) return false;
+    if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source' || rapier.compare.active) return false;
+    const [row] = rows([wrapper]);
+    if (!row?.paragraph || row.image || !prose(wrapper)) return false;
+    const area = rect(host), origin = area.top - host.scrollTop;
+    const before = rect(wrapper), top = before.top - origin, wasHeight = previousHeight ?? before.height;
+    const relevant = lastObstacles.filter(obstacle => obstacle.y + obstacle.height > top && obstacle.y < top + wasHeight + 4096);
+    if (!relevant.length) return false;
+    frame = 0;
+    observer?.disconnect();
+    const editSelection = window.getSelection();
+    let preserveStart = null, preserveEnd = null;
+    if (editSelection?.rangeCount && (host.contains(editSelection.anchorNode) || host.contains(editSelection.focusNode))) {
+      preserveStart = mappedPoint(editSelection.anchorNode, editSelection.anchorOffset);
+      preserveEnd = mappedPoint(editSelection.focusNode, editSelection.focusOffset);
+    }
+    restore(wrapper); observer?.disconnect();
+    const bounds = rect(wrapper), natural = rect(row.paragraph);
+    if (row.editable) cache.delete(row.paragraph);
+    const record = prepareParagraph(row.paragraph, wrapper);
+    const horizontal = natural.left - area.left, paragraphTop = top + natural.top - bounds.top;
+    const mapped = relevant.map(obstacle => ({...obstacle, x: obstacle.x - horizontal}));
+    let height = record ? project(record, natural.width, paragraphTop, mapped) : null;
+    if (height == null) height = floatAround(row.paragraph, natural, paragraphTop, mapped);
+    if (height != null) style(wrapper, {'content-visibility': 'visible', contain: 'none'});
+    if (preserveStart?.node && preserveEnd?.node) {
+      const from = livePoint(null, preserveStart.node, preserveStart.offset) || preserveStart;
+      const to = livePoint(null, preserveEnd.node, preserveEnd.offset) || preserveEnd;
+      if (from.node?.isConnected && to.node?.isConnected) {
+        try {
+          if (!sameSelection(editSelection, from, to)) editSelection.setBaseAndExtent(from.node, from.offset, to.node, to.offset);
+          caretPlaced = {anchor: from.node, anchorOffset: from.offset, focus: to.node, focusOffset: to.offset};
+        } catch (_) {}
+      }
+    }
+    watch();
+    if (height == null || Math.abs(rect(wrapper).height - wasHeight) > 0.5) return false;
+    positionGrip();
+    return true;
   }
 
   function layoutNow(anchorWrapper = null) {
@@ -2450,9 +2509,40 @@ const _rapierImageFlow = (() => {
     @media(max-width:374px){.rapier-image-tools__btn{min-width:31px;padding-inline:4px}.rapier-image-tools__size{min-width:42px}}
   `;
   document.head.append(sheet);
+  // Typing re-renders one block's edit surface (child-list records, not only text). When no band
+  // touches that block, it holds no picture and its height is what it was, no wrapper's box has moved
+  // and the pass would lay the same lines again: measured on the welcome at CPU 4, 39 ms of every
+  // 30 ms key (the whole document unprojected, measured, re-planned and its selection put back).
+  // A wrapped paragraph, a block holding a picture, a second block, or a changed height still schedules.
+  const typedHeights = new WeakMap();
+  function typedBlock(records) {
+    let wrapper = null;
+    for (const record of records) {
+      const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+      const edit = target?.closest?.('.block-edit');
+      if (!edit) return null;
+      const owner = edit.closest('#editor-blocks > .block-wrapper');
+      if (!owner || (wrapper && wrapper !== owner)) return null;
+      wrapper = owner;
+    }
+    return wrapper;
+  }
+  function wrappedBlock(wrapper) {
+    if (wrapper.querySelector('[data-rapier-flow="true"]')) return true;
+    for (const map of [floats, floatsRight]) for (const paragraph of map.keys()) if (wrapper.contains(paragraph)) return true;
+    return false;
+  }
   observer = new MutationObserver(records => {
     if (restoring) return;
     if (records.every(record => record.type === 'characterData' && record.target.parentElement?.closest('.block-edit'))) return;
+    const typed = typedBlock(records);
+    if (typed && !typed.querySelector('img[data-rapier-image-layout]')) {
+      if (wrappedBlock(typed)) { replanWrapper = typed; schedule(); return; }
+      const height = typed.offsetHeight;
+      if (typedHeights.get(typed) === height) return;
+      typedHeights.set(typed, height);
+    }
+    replanWrapper = null;
     schedule();
   });
   watch();
@@ -2489,7 +2579,10 @@ const _rapierImageFlow = (() => {
         selection.focusNode === caretPlaced.focus && selection.focusOffset === caretPlaced.focusOffset) return;
     schedule();
   });
-  document.addEventListener('compositionend', schedule);
+  // The frame a compositionend creates for the whole pass is remembered, so the word's own landing (mirrorComposedText,
+  // on the window after this) can cancel that one and no other.
+  let composeFrame = 0;
+  document.addEventListener('compositionend', () => { const pending = frame; schedule(); composeFrame = !pending && frame ? frame : 0; });
   for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, event => {
     if (event.isTrusted) userIntent++;
   }, {capture: true, passive: true});
@@ -3011,9 +3104,9 @@ const _rapierImageFlow = (() => {
   for (const name of ['copy', 'cut']) document.addEventListener(name, event => {
     if (!_rapierClipboardOutsideDocument(event) && hasSelection() && projections.size) restoreSelection();
   }, true);
-  let reprojectAfterInput = null;
+  let reprojectAfterInput = null, reprojectHeight = null;
   window.addEventListener('beforeinput', event => {
-    reprojectAfterInput = null;
+    reprojectAfterInput = null; reprojectHeight = null;
     if (_rapierHostNativeField(event.target)) return;
     const composing = event.isComposing || event.inputType === 'insertCompositionText' || rapier.composition.block;
     if (event.isTrusted && !composing && hasSelection() && projections.size) { restoreSelection(); return; }
@@ -3026,16 +3119,30 @@ const _rapierImageFlow = (() => {
     const paragraph = element?.closest?.('[data-rapier-flow="true"]');
     const record = paragraph && projections.get(paragraph);
     if (!record || !record.wrapper.classList.contains('block-wrapper--editing')) return;
+    reprojectHeight = rect(record.wrapper).height;
     reprojectAfterInput = unproject(record.wrapper) ? record.wrapper : null;
   }, true);
 
   window.addEventListener('input', event => {
     if (!reprojectAfterInput) return;
-    const wrapper = reprojectAfterInput; reprojectAfterInput = null;
-    if (!_rapierHostNativeField(event.target) && !rapier.composition.block) layoutNow(wrapper);
+    const wrapper = reprojectAfterInput, wasHeight = reprojectHeight; reprojectAfterInput = null; reprojectHeight = null;
+    // The paragraph's own lines first (its picture has not moved); the whole pass when its height changed.
+    if (!_rapierHostNativeField(event.target) && !rapier.composition.block && !replan(wrapper, wasHeight)) layoutNow(wrapper);
   }, true);
 
+  // The wrapper's height when a composition begins, so the word's landing knows whether the paragraph grew.
+  let composeWrapper = null, composeHeight = null;
+  window.addEventListener('compositionstart', event => {
+    composeWrapper = null; composeHeight = null;
+    if (_rapierHostNativeField(event.target) || !projections.size) return;
+    const selection = window.getSelection();
+    const text = selection?.rangeCount ? selection.anchorNode : null;
+    const record = text?.nodeType === Node.TEXT_NODE ? endpoints.get(text)?.record : null;
+    if (record?.wrapper?.isConnected) { composeWrapper = record.wrapper; composeHeight = rect(record.wrapper).height; }
+  });
   window.addEventListener('compositionend', event => {
+    const wrapper = composeWrapper, height = composeHeight;
+    composeWrapper = null; composeHeight = null;
     if (_rapierHostNativeField(event.target) || !projections.size) return;
     const selection = window.getSelection();
     const text = selection?.rangeCount ? selection.anchorNode : null;
@@ -3044,7 +3151,7 @@ const _rapierImageFlow = (() => {
     const record = mapping?.record;
     if (!mapping || !record || record.paragraph?.dataset.rapierFlow !== 'true' ||
         !record.wrapper.classList.contains('block-wrapper--editing')) return;
-    mirrorComposedText(record, text, mapping);
+    mirrorComposedText(record, text, mapping, record.wrapper === wrapper ? height : null);
   });
   window.addEventListener('keydown', event => {
     if (event.isTrusted && !event.isComposing && !_rapierHostNativeField(event.target) && !moving && hasSelection() && projections.size &&

@@ -5,7 +5,7 @@ import {inspectRaster} from './raster.mjs';
 import {fontCssURL} from '../draw/font.mjs';
 import {
   IMAGE_LIMITS, configureParser, normalizeLabel, assetTitle, installMarkdownImages, markdownParser,
-  markdownBodyOffset, dataImage, parseAssets, documentAssets, imageEnvironment,
+  markdownBodyOffset, dataImage, parseAssets, documentAssets, blockwiseAssets, imageEnvironment,
   mayRetireImageDefinitions, retireDeletedImageDefinitions, assetOmissions, isAssetBlock,
   escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
 } from '../spec/md-assets.mjs';
@@ -13,7 +13,7 @@ import {
 export {inspectJPEGXL, inspectRaster};
 export {
   IMAGE_LIMITS, configureParser, normalizeLabel, installMarkdownImages, markdownParser,
-  markdownBodyOffset, dataImage, parseAssets, documentAssets, imageEnvironment,
+  markdownBodyOffset, dataImage, parseAssets, documentAssets, blockwiseAssets, imageEnvironment,
   mayRetireImageDefinitions, retireDeletedImageDefinitions, assetOmissions, isAssetBlock,
   escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
 };

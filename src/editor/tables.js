@@ -509,7 +509,8 @@ function _rapierTablePickNow() {
 
 function _rapierTablePickShow() {
 	const pick = _rapierTablePickNow();
-	document.querySelectorAll('#editor-blocks .rapier-cell--picked').forEach(cell => cell.classList.remove('rapier-cell--picked'));
+	// Nothing picked before and nothing now: no cell carries the fill, so the document is not searched for it.
+	if (pick || _rapierTablePick) document.querySelectorAll('#editor-blocks .rapier-cell--picked').forEach(cell => cell.classList.remove('rapier-cell--picked'));
 	_rapierTablePick = pick;
 	if (!pick) return;
 	pick.rows.slice(pick.r0, pick.r1 + 1).forEach(row =>

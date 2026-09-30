@@ -13,11 +13,15 @@ export function createJPEGXLEncoder() {
       const shape = inspectPixels(data, width, height);
       let bytes;
       if (quality >= 100) bytes = encodeLossless(data, width, height, {shape});
+      else if (!shape.palette) bytes = encodeLossy(data, width, height, {quality, shape});
       else {
-        bytes = encodeLossy(data, width, height, {quality, shape});
         // A picture of few colours is smaller exact than approximated: a lossy request never costs more bytes than
-        // the lossless answer, and never less quality when the bytes are the same.
-        if (shape.palette) { const exact = encodeLossless(data, width, height, {shape}); if (exact.length <= bytes.length) bytes = exact; }
+        // the lossless answer, and never less quality when the bytes are the same. The exact stream is cheap to make
+        // (256-pixel sections) and is made first, so a lossy attempt that runs out of memory still answers with it.
+        const exact = encodeLossless(data, width, height, {shape});
+        try { bytes = encodeLossy(data, width, height, {quality, shape}); }
+        catch (error) { if (!(error instanceof RangeError)) throw error; bytes = exact; }
+        if (exact.length <= bytes.length) bytes = exact;
       }
       if (bytes.length > JPEG_XL_LIMITS.bytes) throw codecError('JXL_SIZE', 'The encoded JPEG XL image exceeds 16 MiB.');
       return bytes;

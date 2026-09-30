@@ -116,12 +116,33 @@ const _rapierEmbeddedImages = (() => {
     queue = job.catch(() => {});
     return job;
   }
+  // The index folded from the engine's blocks (spec/md-assets.mjs blockwiseAssets), which are markdown-it's own
+  // top-level blocks (engine.js _splitByTokenStream): a keystroke re-parses the one block it changed instead of
+  // the document (the whole parse of a 1.6 MB document with twenty pictures is 80 ms in Node, and it ran on
+  // every key). Each block's parse is kept by its id while its raw stands. The whole parse stays the reference:
+  // a model that is not this source byte for byte, or no model, goes to it.
+  const parsedBlocks = new Map();
+  function blockwiseIndex(source) {
+    const rows = rapier.document.blocks;
+    const spans = rapier.document.docKind === 'markdown' && Array.isArray(rows) && typeof _rapierCurrentBodyBlockSpans === 'function' ? _rapierCurrentBodyBlockSpans() : null;
+    if (!spans || spans.length !== rows.length) return null;
+    const bodyOffset = assets.markdownBodyOffset(source), live = new Set();
+    const parse = (raw, row) => {
+      let entry = parsedBlocks.get(row.id);
+      if (!entry || entry.raw !== raw) { entry = {raw, index: assets.parseAssets(raw)}; parsedBlocks.set(row.id, entry); }
+      live.add(row.id);
+      return entry.index;
+    };
+    const folded = assets.blockwiseAssets(source, rows.map((row, at) => ({start: bodyOffset + spans[at].start, raw: String(row.raw || ''), id: row.id})), parse, bodyOffset);
+    for (const id of parsedBlocks.keys()) if (!live.has(id)) parsedBlocks.delete(id);
+    return folded;
+  }
   function documentIndex() {
     synchronizeScope();
     const nextRoot = rapier.document.source.rootId;
     if (!index || rootId !== nextRoot) {
       currentSource = _rapierSourceText();
-      index = assets.documentAssets(currentSource); rootId = nextRoot;
+      index = blockwiseIndex(currentSource) || assets.documentAssets(currentSource); rootId = nextRoot;
     }
     return {source: currentSource, index};
   }
@@ -1092,6 +1113,6 @@ const _rapierEmbeddedImages = (() => {
     const row = await rasterRecord(source, id, indexForSource(source));
     return {url: presentUrl(row), width: row.width, height: row.height, type: row.type, signature: row.signature, undisplayable: !!row.undisplayable, damaged: !!row.damaged};
   }
-  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown});
+  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex()});
 })();
 globalThis.RapierEmbeddedImages = _rapierEmbeddedImages;

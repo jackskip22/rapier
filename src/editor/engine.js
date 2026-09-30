@@ -1710,9 +1710,10 @@ function _rapierUpdateOverflowShell(shell) {
 	const surface = _rapierOverflowSurface(shell);
 	if (!surface) return;
 	const max = Math.max(0, surface.scrollWidth - surface.clientWidth);
-	const right = max > 2 && surface.scrollLeft < max - 2;
-	shell.dataset.overflowRight = right ? 'true' : 'false';
-	shell.dataset.overflowLeft = max > 2 && surface.scrollLeft > 2 ? 'true' : 'false';
+	const right = max > 2 && surface.scrollLeft < max - 2 ? 'true' : 'false';
+	const left = max > 2 && surface.scrollLeft > 2 ? 'true' : 'false';
+	if (shell.dataset.overflowRight !== right) shell.dataset.overflowRight = right;
+	if (shell.dataset.overflowLeft !== left) shell.dataset.overflowLeft = left;
 	_rapierSyncOverflowAccessibility(shell, surface, max);
 }
 function _rapierOverflowShellNearViewport(shell) {
@@ -9543,8 +9544,9 @@ function _rapierSyncFormatToolbarEdgeFade(surface = FT.surface()) {
 	const scrolls = /auto|scroll/.test(getComputedStyle(surface).overflowX);
 	const maximum = scrolls ? Math.max(0, surface.scrollWidth - surface.clientWidth) : 0;
 	const alpha = _rapierFormatToolbarEdgeAlphas(surface.scrollLeft, maximum);
-	surface.style.setProperty('--format-toolbar-left-edge-alpha', alpha.left.toFixed(3));
-	surface.style.setProperty('--format-toolbar-right-edge-alpha', alpha.right.toFixed(3));
+	const left = alpha.left.toFixed(3), right = alpha.right.toFixed(3);
+	if (surface.style.getPropertyValue('--format-toolbar-left-edge-alpha') !== left) surface.style.setProperty('--format-toolbar-left-edge-alpha', left);
+	if (surface.style.getPropertyValue('--format-toolbar-right-edge-alpha') !== right) surface.style.setProperty('--format-toolbar-right-edge-alpha', right);
 }
 
 const _rapierFormatToolbarFadeSurface = FT.surface();
@@ -9878,7 +9880,7 @@ function _rapierSyncFormatToolbarRoving(target) {
 	const buttons = Array.from(toolbar.querySelectorAll('.fmt-btn:not([disabled])'));
 	const visible = buttons.filter(button => _rapierFormatToolbarButtonAvailable(button, toolbar));
 	const chosen = visible.includes(target) ? target : visible[0];
-	buttons.forEach(button => { button.tabIndex = button === chosen ? 0 : -1; });
+	buttons.forEach(button => { const index = button === chosen ? 0 : -1; if (button.tabIndex !== index) button.tabIndex = index; });
 }
 
 const _rapierFormatToolbarStack = FT.stack();
@@ -10025,9 +10027,11 @@ function refreshFormatToolbar() {
 }
 
 function updateFormatToolbarActiveStates(selection, boundary) {
+	// Only a button whose state differs is written: this runs on every keystroke, and a same-value write is a
+	// mutation that wakes the notice placer and invalidates style for nothing.
 	document.querySelectorAll('.fmt-btn[data-active]').forEach(button => button.removeAttribute('data-active'));
-	document.querySelectorAll('.fmt-btn[aria-pressed]').forEach(button => button.setAttribute('aria-pressed', 'false'));
-	document.querySelectorAll('.fmt-btn[role="menuitemradio"]').forEach(button => button.setAttribute('aria-checked', 'false'));
+	document.querySelectorAll('.fmt-btn[aria-pressed]:not([aria-pressed="false"])').forEach(button => button.setAttribute('aria-pressed', 'false'));
+	document.querySelectorAll('.fmt-btn[role="menuitemradio"]:not([aria-checked="false"])').forEach(button => button.setAttribute('aria-checked', 'false'));
 
 	_rapierPaintColorLetter(null);
 	_rapierUpdateAlignmentButton(selection);
@@ -10088,14 +10092,14 @@ function updateFormatToolbarActiveStates(selection, boundary) {
 
 function _rapierPaintColorLetter(hex) {
 	const letter = document.querySelector('#fmt-btn-color .fmt-color-letter');
-	if (letter) letter.style.stroke = hex || '';
+	if (letter && letter.style.stroke !== (hex || '')) letter.style.stroke = hex || '';
 }
 function _setActive(cmd) {
 	const button = document.querySelector(`.fmt-btn[data-cmd="${cmd}"]`);
 	if (!button) return;
-	button.setAttribute('data-active', '');
-	if (button.getAttribute('role') === 'menuitemradio') button.setAttribute('aria-checked', 'true');
-	else button.setAttribute('aria-pressed', 'true');
+	if (!button.hasAttribute('data-active')) button.setAttribute('data-active', '');
+	const state = button.getAttribute('role') === 'menuitemradio' ? 'aria-checked' : 'aria-pressed';
+	if (button.getAttribute(state) !== 'true') button.setAttribute(state, 'true');
 }
 
 function hideFormatToolbar() {
@@ -10845,9 +10849,9 @@ function _rapierUpdateListToolbarContext(selection, editDiv) {
 		const available = !!li && (direction < 0
 			? _rapierCanOutdentListItem(li)
 			: _rapierCanIndentListItem(li));
-		button.hidden = !available;
-		button.disabled = false;
-		button.setAttribute('aria-disabled', available ? 'false' : 'true');
+		if (button.hidden !== !available) button.hidden = !available;
+		if (button.disabled) button.disabled = false;
+		if (button.getAttribute('aria-disabled') !== (available ? 'false' : 'true')) button.setAttribute('aria-disabled', available ? 'false' : 'true');
 		if (available && wasHidden && !reveal) reveal = button;
 	});
 	if (!li) return;
@@ -43722,12 +43726,20 @@ function renderFilename() {
 	const embedded = _rapierEmbed.active;
 	const editing = _rapierUi.filenameEditing;
 	const locked = !!rapier.access.readOnly || embedded;
+	const dirty = _rapierIsDirty();
+	// Everything written here is a function of these values; the same values write nothing (every stats tick
+	// arrives here), and only a change in the words or the buttons shown re-measures the extension's baseline,
+	// which the dirty mark does not move.
+	const shown = [name, base, extension, embedded ? _rapierEmbed.title || '' : '', editing, locked, rapier.compare.active].join('\u0000');
+	if (refs.filenameRendered === shown + '\u0000' + dirty) return;
+	const remeasure = refs.filenameShown !== shown;
+	refs.filenameRendered = shown + '\u0000' + dirty; refs.filenameShown = shown;
 	refs.filenameNormal.hidden = rapier.compare.active;
 	refs.filenameBtn.hidden = editing === 'base';
 	refs.filenameBtn.textContent = embedded && _rapierEmbed.title ? _rapierEmbed.title : base;
 	refs.filenameBtn.disabled = locked;
 	refs.filenameInput.hidden = editing !== 'base';
-	refs.filenameDirty.hidden = !_rapierIsDirty();
+	refs.filenameDirty.hidden = !dirty;
 	refs.filenameExtBtn.hidden = embedded || editing !== '';
 	refs.filenameExtBtn.disabled = locked;
 	refs.filenameExtText.textContent = extension.toUpperCase();
@@ -43735,7 +43747,7 @@ function renderFilename() {
 
 	document.title = rapier.compare.active ? 'Rapier \u2014 compare'
 		: 'Rapier \u2014 ' + (embedded && _rapierEmbed.title ? _rapierEmbed.title : name);
-	renderFilenameExtBaseline();
+	if (remeasure) renderFilenameExtBaseline();
 }
 
 function renderFilenameExtBaseline() {
@@ -45019,6 +45031,12 @@ function renderToolbar() {
 
 function renderFormatToolbarVisibility(toolbar, visible, excerptOnly) {
 	if (!toolbar) return;
+	// The state it already has is written again by nothing: every keystroke's refresh reaches here, and a
+	// same-value attribute write is still a mutation that wakes the notice placer and invalidates style.
+	const label = visible && excerptOnly ? 'selection actions' : 'text formatting';
+	if (toolbar.classList.contains('visible') === !!visible && toolbar.inert === !visible &&
+			toolbar.getAttribute('aria-hidden') === String(!visible) && toolbar.getAttribute('aria-label') === label &&
+			(toolbar.dataset.excerptOnly === 'true') === !!(visible && excerptOnly)) return;
 	if (!visible) {
 		toolbar.classList.remove('visible');
 		toolbar.setAttribute('aria-hidden', 'true');
@@ -45050,7 +45068,14 @@ function _rapierScheduleToastLift() {
 	let up = typeof _rapierNotes === 'object' && _rapierNotes && _rapierNotes.snack;
 	for (let child = root.firstElementChild; !up && child; child = child.nextElementSibling) up = !child.hidden;
 	if (!up && !root.inert && !root.dataset.rapierTransientState && !document.documentElement.style.getPropertyValue('--rapier-toast-lift')) return;
-	_rapierToastLiftFrame = requestAnimationFrame(() => { _rapierToastLiftFrame = 0; _rapierUpdateToastLift(); });
+	// A notice that found no place retries when the chrome changes, and the chrome changes on every key
+	// (the toolbar's states, the word count, the filename): measured at CPU 4, the placer's pass ran on
+	// every key, 23 ms of each. While it waits it retries twice a second; placed, it follows every change.
+	if (root.dataset.rapierTransientState === 'waiting') {
+		const since = _rapierNow() - (root._rapierLiftAt || 0);
+		if (since < 500) { _rapierToastLiftFrame = setTimeout(() => { _rapierToastLiftFrame = 0; _rapierScheduleToastLift(); }, 500 - since); return; }
+	}
+	_rapierToastLiftFrame = requestAnimationFrame(() => { _rapierToastLiftFrame = 0; root._rapierLiftAt = _rapierNow(); _rapierUpdateToastLift(); });
 }
 function _rapierUpdateToastLift() {
 	const model = _rapierTransientModel();
@@ -45059,7 +45084,18 @@ function _rapierUpdateToastLift() {
 	if (!root._rapierToastListen) {
 		root._rapierToastListen = true;
 		if (typeof MutationObserver === 'function') {
-			const observer = new MutationObserver(() => _rapierScheduleToastLift());
+			// A keystroke mutates the document's blocks and nothing else; no bottom-pinned surface stands in
+			// them, so those records never re-place a notice (measured: with a waiting notice, the placer's
+			// fifty selector queries ran on every key at CPU 4, 23 ms of each 30 ms key). Chrome mutations,
+			// scroll, resize and a turn of the phone still do.
+			const blocks = document.getElementById('editor-blocks');
+			const observer = new MutationObserver(records => {
+				for (const record of records) {
+					const target = record.target && record.target.nodeType === 1 ? record.target : record.target && record.target.parentElement;
+					if (blocks && target && blocks !== target && blocks.contains(target)) continue;
+					_rapierScheduleToastLift(); return;
+				}
+			});
 			observer.observe(document.documentElement, {
 				subtree: true, childList: true, attributes: true,
 				attributeFilter: ['class', 'hidden', 'open', 'aria-hidden', 'data-expanded'],
@@ -45127,12 +45163,17 @@ function _rapierUpdateToastLift() {
 		const surfaces = [];
 		const inventory = model.surfaces.inventory;
 		if (!inventory || !Array.isArray(inventory.surfaces)) return surfaces;
-		for (const decl of inventory.surfaces) {
-			if (skip && skip.has(decl.id)) continue;
-			if (!decl.selector || decl.selector.includes('::')) continue;
-			let matches;
-			try { matches = document.querySelectorAll(decl.selector); }
-			catch (_) { continue; }
+		// One walk of the document for every selector at once, then each element attributed to the
+		// declarations it matches: the same matches as a query per declaration, without a traversal
+		// per declaration (fifty of them, on every pass).
+		const decls = inventory.surfaces.filter(decl => !(skip && skip.has(decl.id)) && decl.selector && !decl.selector.includes('::'));
+		let found;
+		try { found = document.querySelectorAll(decls.map(decl => decl.selector).join(',')); }
+		catch (_) { found = null; }
+		for (const decl of decls) {
+			let matches = [];
+			if (found) { for (const el of found) { try { if (el.matches(decl.selector)) matches.push(el); } catch (_) {} } }
+			else { try { matches = document.querySelectorAll(decl.selector); } catch (_) { continue; } }
 			const many = matches.length > 1;
 			for (let i = 0; i < matches.length; i++) {
 				// A surface the notice stands inside is its ground, never its obstacle: Notes takes the
