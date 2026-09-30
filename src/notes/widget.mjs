@@ -1,6 +1,7 @@
 // Home-screen projection and action. No native Markdown writer: the existing folder lease
 // reads, admits, journals, publishes and recovers every tick. Nothing here decrypts a note.
-import {isNoteFile, projectCard, toggleCheck, cutText, cardSource, cardHead} from './model.mjs';
+// The widget ticks a note's checklist, which is Markdown; a code file's text is never a checklist.
+import {isMarkdownNote as isNoteFile, projectCard, toggleCheck, cutText, cardSource, cardHead} from './model.mjs';
 import {scanLinks} from './links.mjs';
 import {exactBytes, sha256} from './integrity.mjs';
 import {manifestName, parseManifest, recordVersion, materialize} from './history.mjs';
@@ -77,7 +78,7 @@ export function createWidgetNotes(folder, {mayRead = widgetMayRead, limits = WID
 	const allowed = (index, entry) => widgetMayRead(index, entry) && mayRead(index, entry) === true;
 	const snapshot = () => owned(async lease => {
 		const fresh = await lease.read();
-		const files = fresh.files.filter(file => allowed(fresh.index, fresh.index.notes[file])).sort((a, b) => {
+		const files = fresh.files.filter(file => isNoteFile(file) && allowed(fresh.index, fresh.index.notes[file])).sort((a, b) => {
 			const x = fresh.index.notes[a], y = fresh.index.notes[b];
 			return Number(y.pinned) - Number(x.pinned) || (y.modified || y.created || 0) - (x.modified || x.created || 0) || (a < b ? -1 : a > b ? 1 : 0);
 		});

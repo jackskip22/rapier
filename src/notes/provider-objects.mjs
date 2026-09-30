@@ -1,13 +1,21 @@
 import {asBytes, byteCount, refuse} from './provider-http.mjs';
-const OBJECT = /^(?:objects|keys)\/[a-f0-9]{64}$|^heads\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/[1-9][0-9]*-[a-f0-9]{64}$/;
+// A head's generation is twelve digits so a listing can start after one; a vault published before wrote it unpadded.
+const OBJECT = /^(?:objects|keys)\/[a-f0-9]{64}$|^heads\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/(?:[0-9]{12}|[1-9][0-9]{0,10})-[a-f0-9]{64}$/;
 const PREFIX = /^(?:objects\/|keys\/|heads\/(?:[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/)?)/;
 export function objectKey(key) {
-	if (typeof key !== 'string' || !OBJECT.test(key) || (key.startsWith('heads/') && !Number.isSafeInteger(Number(key.split('/')[2].split('-')[0])))) refuse('authority', 'only opaque immutable sync object keys are allowed');
+	if (typeof key !== 'string' || !OBJECT.test(key) || (key.startsWith('heads/') && !(Number(key.split('/')[2].split('-')[0]) >= 1))) refuse('authority', 'only opaque immutable sync object keys are allowed');
 	return key;
 }
 export function objectPrefix(prefix) {
 	if (typeof prefix !== 'string' || !(OBJECT.test(prefix) || (PREFIX.test(prefix) && PREFIX.exec(prefix)[0] === prefix))) refuse('authority', 'list only an opaque object family in this vault');
 	return prefix;
+}
+// A listing narrows only one device's heads, from a generation on; it groups only the head family.
+export function listOptions(prefix, {startAfter = null, delimiter = null} = {}) {
+	if (startAfter !== null && (typeof startAfter !== 'string' || !/^heads\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/[0-9]{12}-$/.test(startAfter) || !startAfter.startsWith(prefix) || !/^heads\/[^/]+\/$/.test(prefix)))
+		refuse('authority', 'a listing starts only after one device’s head generation');
+	if (delimiter !== null && (delimiter !== '/' || prefix !== 'heads/')) refuse('authority', 'a listing groups only the head family by device');
+	return {startAfter, delimiter};
 }
 export function vaultName(value) {
 	if (!/^[a-f0-9]{32}$/.test(value || '')) refuse('config', 'an opaque vault id is required');

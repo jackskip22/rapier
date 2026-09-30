@@ -1,5 +1,5 @@
 import {createHTTP, asBytes, byteCount as size, fail, refuse, jsonBody} from './provider-http.mjs';
-import {objectKey, objectPrefix} from './provider-objects.mjs';
+import {objectKey, objectPrefix, listOptions} from './provider-objects.mjs';
 // Cloudflare REST, exclusively inside the network-enabled companion. No ambient fetch, no
 // endpoint override, no VDK, no mutable head, no implicit DELETE. Application scope is NOT a
 // narrower provider grant. See ASTRA-A37-DESIGN.md for OAuth registration and account authority.
@@ -58,7 +58,7 @@ export function createR2Transport(options = {}) {
 	const capabilities = Object.freeze({supportsConditionalWrite: false, supportsETag: true,
 		supportsResumableUpload: false, supportsMultipart: false, supportsDeltaFeed: false,
 		supportsServerSideCopy: false, supportsNativeVersioning: false,
-		maxSingleUploadBytes: PUT_MAX_BYTES, seams: SEAMS});
+		maxSingleUploadBytes: PUT_MAX_BYTES, listsFrom: true, seams: SEAMS});
 	const transport = {
 		capabilities,
 		pause: http.pause,
@@ -72,10 +72,13 @@ export function createR2Transport(options = {}) {
 			return {key, etag: String(json.result.etag || ''), size: body.length};
 		},
 		async get(key) { keyCheck(key); const value = await request('GET', key); return value ? {key, ...value} : null; },
-		async list(prefix, cursor = null) {
+		async list(prefix, cursor = null, options = {}) {
 			objectPrefix(prefix);
 			if (cursor !== null && (typeof cursor !== 'string' || !cursor || cursor.length > 8192)) refuse('cursor', 'invalid provider cursor');
+			const {startAfter, delimiter} = listOptions(prefix, options);
 			const query = new URLSearchParams({prefix: root + prefix, per_page: '1000'});
+			if (startAfter !== null) query.set('start_after', root + startAfter);
+			if (delimiter !== null) query.set('delimiter', delimiter);
 			if (cursor !== null) query.set('cursor', cursor);
 			const json = await request('GET', null, {query: query.toString(), json: true});
 			if (!json || !Array.isArray(json.result)) refuse('response', 'the object listing is not readable');
@@ -87,7 +90,14 @@ export function createR2Transport(options = {}) {
 			const info = json.result_info;
 			if (!info || typeof info.is_truncated !== 'boolean') refuse('response', 'the listing does not say whether it is complete');
 			if (info.is_truncated && (typeof info.cursor !== 'string' || !info.cursor || info.cursor === cursor)) refuse('cursor', 'the listing did not advance its cursor');
-			return {keys, truncated: info.is_truncated, cursor: info.is_truncated ? info.cursor : null};
+			// A grouped listing names each device's heads as one prefix (result_info.delimited).
+			const groups = info.delimited ?? [];
+			if (!Array.isArray(groups) || delimiter === null && groups.length) refuse('response', 'the listing grouped objects it was not asked to group');
+			const prefixes = delimiter === null ? null : groups.map(group => {
+				if (typeof group !== 'string' || !group.startsWith(root + prefix) || !/^heads\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/$/.test(group.slice(root.length))) refuse('authority', 'the provider returned a grouping outside the requested scope');
+				return group.slice(root.length);
+			});
+			return {keys, ...(prefixes ? {prefixes} : {}), truncated: info.is_truncated, cursor: info.is_truncated ? info.cursor : null};
 		},
 		async stat(key) {
 			keyCheck(key);

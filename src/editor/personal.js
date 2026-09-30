@@ -92,22 +92,41 @@ const _rapierPersonal = (() => {
 			if (typeof _rapierNotes !== 'undefined' && _rapierNotes.open) { _rapierNotesLayout(); _rapierNotesRender(); _rapierNotesHeadPaint(); }
 		} finally { applying = false; }
 	}
-	const owner = globalThis.RapierPersonal.createPersonalOwner({storage, apply, validateAsset});
-	const changed = () => { if (typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.changed(); };
+	const owner = globalThis.RapierPersonal.createPersonalOwner({storage, apply: async profile => { await apply(profile); plugins.scan(); plugins.fulfil(); }, validateAsset});
+	const travels = globalThis.RapierPersonal.personalTravels;
+	// A settings change syncs after a longer quiet than a saved edit, so a run of tries publishes once.
+	const changed = () => { if (typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.changed('settings'); };
 	const report = error => showToast(String(error?.message || 'Personal settings could not be saved.'), 'error');
-	for (const field of Object.keys(RapierStorage.preferences)) RapierPreferences.subscribe(field, value => {
+	// A plug-in installed here travels as a wish, never its bytes: each device fetches its own verified copy.
+	// A delete is this device's alone: it declines the plug-in here and leaves the wish where it was.
+	const plugins = (() => {
+		const KEYS = ['math', 'mermaid', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque', 'pdf'], DECLINED = 'rapier:plugin:declined';
+		const declined = () => { try { return new Set(JSON.parse(localStorage.getItem(DECLINED) || '[]')); } catch (_) { return new Set(); } };
+		const mark = (key, on) => { try { const set = declined(); if (on) set.add(key); else set.delete(key); localStorage.setItem(DECLINED, JSON.stringify([...set])); } catch (_) {} };
+		const provider = key => key === 'pdf' ? globalThis.RapierPdfPlugin : _rapierProviders[key];
+		const here = key => { const p = provider(key); return !p ? 'none' : key === 'pdf' ? (p.state().installed ? 'ready' : p.state().downloading || p.state().error ? 'busy' : 'absent') : p.status; };
+		const wished = key => owner.values('plugin/')[key] === true;
+		function record(key) { mark(key, false); if (!wished(key)) owner.set('plugin/' + key, true).then(changed).catch(report); }
+		function fulfil() { for (const key of KEYS) if (wished(key) && !declined().has(key) && here(key) === 'absent') Promise.resolve(provider(key).install()).catch(() => {}); }
+		for (const key of KEYS) if (key !== 'pdf') addEventListener('rapier:' + key + 'plugin', event => { if (event.detail?.installed) record(key); else if (event.detail?.status === 'absent') fulfil(); });
+		return {record, fulfil, decline: key => mark(key, true), scan: () => { for (const key of KEYS) if (here(key) === 'ready') record(key); }};
+	})();
+	for (const field of Object.keys(RapierStorage.preferences)) if (travels('preference/' + field)) RapierPreferences.subscribe(field, value => {
 		if (applying) return;
 		const token = {}; pendingPreferences.set(field, token);
 		owner.set('preference/' + field, value).then(changed).catch(report).finally(() => { if (pendingPreferences.get(field) === token) pendingPreferences.delete(field); });
 	});
 	const ready = owner.ready.then(async () => {
 		const {records} = await owner.snapshot();
-		for (const [field, spec] of Object.entries(RapierStorage.preferences)) if (!records['preference/' + field] && (localStorage.getItem(spec.key) != null || RapierPreferences.read(field) !== spec.fallback)) await owner.set('preference/' + field, RapierPreferences.read(field));
+		for (const [field, spec] of Object.entries(RapierStorage.preferences)) if (travels('preference/' + field) && !records['preference/' + field] && (localStorage.getItem(spec.key) != null || RapierPreferences.read(field) !== spec.fallback)) await owner.set('preference/' + field, RapierPreferences.read(field));
 		for (const [field, key] of Object.entries(drawKeys())) { const value = localStorage.getItem(key); if (value !== null && !records['drawing/' + field]) await owner.set('drawing/' + field, value); }
 		for (const row of _rapierPaintOwnBrushes()) if (!records['brush/' + row.id]) await owner.putAsset('brush/' + row.id, {id: row.id, name: row.name, notes: row.notes, myb: row.myb});
+		plugins.scan();
 	});
 	ready.catch(report);
 	return Object.freeze({...owner, ready,
+		declinePlugin: plugins.decline,
+		async restore(entry) { await ready; await owner.restore(entry); changed(); },
 		async snapshot() { await ready; return owner.snapshot(); },
 		fonts() { return Object.values(owner.values('font/')).filter(Boolean); },
 		async addFont(font) { await ready; await owner.putAsset('font/' + font.id, font); changed(); },

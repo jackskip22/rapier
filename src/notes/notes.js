@@ -383,7 +383,9 @@ const _rapierNotesStore = {
 		// Strict, not lossy: `.text()` would quietly turn bytes that are not UTF-8 into question
 		// marks and a save would then write those marks over the person's file. A refusal here
 		// keeps the bytes exactly as they are; the caller decides what to say about one file.
-		try { return new TextDecoder('utf-8', {fatal: true, ignoreBOM: /\.md$/i.test(name)}).decode(bytes); }
+		// A note or code file keeps a byte-order mark as the first character of its words (its bytes are the person's).
+		const kept = globalThis.RapierNotesModel ? globalThis.RapierNotesModel.isNoteFile(name) : /\.md$/i.test(name);
+		try { return new TextDecoder('utf-8', {fatal: true, ignoreBOM: kept}).decode(bytes); }
 		catch (_) { throw Object.assign(new Error('this file is not UTF-8 text'), {name: 'EncodingError', code: 'unreadable'}); }
 	},
 	// Compare the bytes actually readable from the handle, in bounded chunks. A resolved close is
@@ -3368,8 +3370,54 @@ async function _rapierNotesOpenAsDocument(file) {
 	const text = (await _rapierNotesTexts([file], {hold: false})).get(file);
 	if (typeof text !== 'string') { showToast('The note could not be read. Nothing was opened.', 'error'); return false; }
 	if (!await _rapierNotesEditor()) return false;
+	// A document or code file kept in Rapier is not copied: it opens bound to its kept file (the lead's ruling 5),
+	// so Save and AutoSave write it there (shell/platform.js). A note opens as the copy law 10 describes.
+	if (_rapierNotesKeptDocument(file)) return await rapierOpenPlatformPayload({text, name: file, rapierKept: await _rapierNotesKeptRecord(file, text)}) === true;
 	return await rapierOpenPlatformPayload({text, name: file, transient: true}) === true;
 }
+// KEEP IN RAPIER (docs/sync-design.md §2, the lead's rulings 5 and 6): the notes folder is a place the editor saves
+// to and opens from, beside the device. shell/platform.js owns the destination and the binding and asks here for
+// the folder's own operations: a Markdown document is kept as a note marked a document, a code file as its exact
+// bytes, and every write is the owner's guarded save, so a kept file changed elsewhere is never written over (the
+// newer words stay, this save is kept beside them as "<name> kept").
+function _rapierNotesKeptDocument(file) {
+	const entry = _rapierNotes.index?.notes?.[file];
+	return !!entry && (_rapierNotesModel().isCodeFile(file) || entry.kind === 'document');
+}
+async function _rapierNotesKeptRecord(file, text) {
+	return {file, id: _rapierNotes.index.notes[file]?.id || null, digest: await globalThis.RapierNotesIntegrity.sha256(text)};
+}
+globalThis.RapierNotesKeep = Object.freeze({
+	available() { return !!globalThis.RapierNotesModel && !!globalThis.RapierNotesIntegrity; },
+	ask(purpose) {
+		return purpose === 'open'
+			? rapierConfirm({title: 'open', message: 'Open a document kept in Rapier, or one from this device?', confirmLabel: 'from rapier', secondaryLabel: 'this device'})
+			: rapierConfirm({title: 'save', message: 'Keep this document in Rapier, beside your notes and synced with them, or save it on this device?', confirmLabel: 'keep in rapier', secondaryLabel: 'this device'});
+	},
+	async keep(text, name) {
+		await _rapierNotesReady();
+		if (!_rapierNotes.indexBase) await _rapierNotesLoad();
+		const M = _rapierNotesModel(), code = M.isCodeFile(name);
+		const wanted = code || M.isMarkdownNote(name) ? name : String(name || 'document').replace(/\.[^./\\]*$/, '') + '.md';
+		const file = await _rapierNotesWriteNew(text, wanted, {..._rapierNotesPlaceFirst(), ...(code ? {} : {kind: 'document'})});
+		_rapierNotesAdmit(file, text);
+		return _rapierNotesKeptRecord(file, text);
+	},
+	async save(bound, text) {
+		const store = _rapierNotesStore;
+		await store.kind();
+		const saved = _rapierNotesTake(await store.folder.save({file: bound.file, id: bound.id, expectedDigest: [bound.digest], text}));
+		_rapierNotesHold(saved.file, text);
+		if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(saved.file);
+		if (saved.copied) showToast(bound.file + ' was changed elsewhere while you wrote. Its newer words stay; yours are kept as ' + saved.file + ', which this document now saves to.', 'info');
+		return {file: saved.file, id: saved.id, digest: saved.digest};
+	},
+	// A kept file's words as the folder holds them now, byte-order mark and all (null when absent).
+	async read(file) { await _rapierNotesStore.kind(); return _rapierNotesStore.read(file); },
+	show() { return _rapierNotesOpen(); },
+	// AutoSave's beat: the editor's own Save, for the document the platform found kept, and no other.
+	saveCurrent(authority) { return String(rapier.identity.authority || '') === String(authority || '') && !!authority ? rapierSave({quiet: true}) : false; },
+});
 // SHARE (the founder, 25 September 2026, night, law 23: "when you press Share ... it should open it as a
 // document, a Markdown document inside the main Rapier editor, basically the same function as the Open as
 // Document button, except then it automatically opens up the Share dialog"). OPEN AS DOCUMENT, then the
@@ -5650,6 +5698,8 @@ function _rapierNotesTagsOf(file) {
 async function _rapierNotesWriteTags(file, tags) {
 	const state = _rapierNotes, F = globalThis.RapierNotesFrontMatter;
 	if (!F || typeof F.setTags !== 'function') { showToast('This build cannot write a note\'s tags.', 'error'); return false; }
+	// Tags live in a note's Markdown; a code file's words are its own and are never written into.
+	if (_rapierNotesModel().isCodeFile(file)) { showToast('A code file keeps no tags: its words are left as they are.', 'info'); return false; }
 	if (state.current === file) { try { await _rapierNotesFlush(); } catch (_) { return false; } }
 	await _rapierNotesTexts([file]);
 	const text = state.texts.get(file); if (text == null) return false;
@@ -5683,6 +5733,7 @@ async function _rapierNotesTagRemove(file, name) {
 }
 async function _rapierNotesToggleCheck(file, n) {
 	const state = _rapierNotes, M = _rapierNotesModel(), ink = _rapierNotesInk(file, n);
+	if (M.isCodeFile(file)) return; // a code file's "- [ ]" is code, not a box
 	if (state.current === file) { try { await _rapierNotesFlush(); } catch (_) { return; } }
 	await _rapierNotesTexts([file]);
 	const text = state.texts.get(file); if (text == null) return;

@@ -63,7 +63,7 @@ and grants nothing: the document carries the word, the host carries the path.
 | Format | Carrier |
 | --- | --- |
 | DOCX | Each marker is one paragraph of a single hidden run with a hidden paragraph mark; the whole paragraphs between the pair are governed. |
-| PDF | Each marker is one text object in non-rendering mode 3, on its own baseline between visible lines, with a lossless ToUnicode mapping. |
+| PDF | Each marker is one text object that draws no ink: text render mode 3, or text set in an embedded font whose glyphs enclose no area; on its own baseline between visible lines, with a lossless ToUnicode mapping. Reading order is by position (page, then y, then x), never the order of the stream. A reader takes the marker's ASCII frame and law from any text layer, and the intent exactly only where the layer keeps its scalars (ActualText honoured). |
 | Google Docs | The named exception: named ranges under a `will/1` naming convention; the importer strips a text carrier. |
 
 Conversion that is aware of Will preserves it, says WILL LOST, or refuses; it never drops a marker silently.

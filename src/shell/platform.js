@@ -2679,9 +2679,95 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		}
 	}
 
+	// KEEP IN RAPIER (docs/sync-design.md §2, the lead's rulings 5 and 6). Rapier is a destination beside the device:
+	// Save As asks which; a document kept in Rapier is bound to its kept file in the notes folder, so Save writes it
+	// through the folder owner's guarded save (a kept file changed elsewhere is never written over: the save is kept
+	// beside it, "<name> kept") and a pause saves it (AutoSave). Open asks where from, where this host has an Open of
+	// its own; Rapier shows the notes, where kept documents and code files are. The notes module owns the folder
+	// (globalThis.RapierNotesKeep, notes/notes.js); this owns the destination and the binding. Where no notes
+	// runtime is (the document profile, a host without Notes), every file operation is the host's own, unchanged.
+	const _rapierKeptRuntime = Object.seal({ bindings: new Map(), dirty: false, timer: 0, saving: false });
+	function _rapierKeep() {
+		var keep = globalThis.RapierNotesKeep;
+		try { return keep && keep.available() ? keep : null; } catch (_) { return null; }
+	}
+	function _rapierKeptBinding(authority) { return _rapierKeptRuntime.bindings.get(String(authority || '').trim()) || null; }
+	// The saved bytes as the document wrote them: a byte-order mark is kept, never decoded away.
+	async function _rapierKeptText(blob) { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await blob.arrayBuffer()); }
+	function _rapierKeptBind(authority, kept) {
+		_rapierKeptRuntime.bindings.set(String(authority || '').trim(), Object.freeze({ file: kept.file, id: kept.id, digest: kept.digest }));
+		_rapierKeptAutosave();
+		return { status: 'saved', confirmed: true, verified: true, fileGeneration: kept.digest, destinationName: kept.file, destinationSelected: true };
+	}
+	// AutoSave: while the current document is kept in Rapier and has unsaved words, the editor's own Save runs on
+	// the notes' cadence; it saves only a settled document (an edit in progress waits for the next beat).
+	function _rapierKeptAutosave() {
+		if (_rapierKeptRuntime.timer || !_rapierKeptRuntime.bindings.size) return;
+		_rapierKeptRuntime.timer = setInterval(function () {
+			if (!_rapierKeptRuntime.bindings.size) { clearInterval(_rapierKeptRuntime.timer); _rapierKeptRuntime.timer = 0; return; }
+			var keep = _rapierKeep(), authority = _engineDocumentAuthority();
+			if (!keep || !_rapierKeptRuntime.dirty || _rapierKeptRuntime.saving || !_rapierKeptBinding(authority)) return;
+			_rapierKeptRuntime.saving = true;
+			Promise.resolve().then(function () { return keep.saveCurrent(authority); }).catch(function () {}).finally(function () { _rapierKeptRuntime.saving = false; });
+		}, 700);
+	}
+	function _rapierKeptFiles(raw) {
+		return Object.freeze({
+			saveAs: raw.saveAs && async function (blob, filename, options) {
+				var keep = _rapierKeep(), authority = String(options && options.documentAuthority || '').trim();
+				// A note open in Notes is already kept there: its Save As is a file on this device.
+				if (!keep || !authority || authority.indexOf('notes:') === 0) return raw.saveAs(blob, filename, options);
+				var choice = await keep.ask('save');
+				// Saved on the device, the document belongs to that file from now on, not to a kept one.
+				if (choice === 'secondary') { _rapierKeptRuntime.bindings.delete(authority); return raw.saveAs(blob, filename, options); }
+				if (choice !== true) return { status: 'cancelled', confirmed: false, verified: false };
+				if (options && options.beforeWrite) await options.beforeWrite;
+				return _rapierKeptBind(authority, await keep.keep(await _rapierKeptText(blob), String(filename || 'document.md')));
+			},
+			saveInPlace: async function (blob, filename, options) {
+				var authority = String(options && options.documentAuthority || '').trim(), bound = _rapierKeptBinding(authority), keep = bound && _rapierKeep();
+				if (!keep) return raw.saveInPlace ? raw.saveInPlace(blob, filename, options) : raw.saveAs ? raw.saveAs(blob, filename, options)
+					: Promise.reject(new Error('This host does not provide a save destination.'));
+				if (options && options.beforeWrite) await options.beforeWrite;
+				// The folder owner admits the write against the words this document last read or wrote; a kept file
+				// changed since keeps both, and the document is bound from then on to the copy holding its words.
+				var saved = await keep.save(bound, await _rapierKeptText(blob));
+				return _rapierKeptBind(authority, saved);
+			},
+			acceptOpened: function (payload) {
+				var kept = payload && payload.rapierKept, authority = String(payload && payload.documentAuthority || '').trim();
+				if (kept && authority && _rapierKeep()) { _rapierKeptBind(authority, kept); return Promise.resolve({ bound: true, persisted: false }); }
+				return raw.acceptOpened ? raw.acceptOpened(payload) : Promise.resolve({ bound: true, persisted: false });
+			},
+			detach: function (authority) {
+				var id = String(authority || '').trim();
+				if (id) _rapierKeptRuntime.bindings.delete(id); else _rapierKeptRuntime.bindings.clear();
+				return raw.detach ? raw.detach.apply(null, arguments) : Promise.resolve();
+			},
+			hasWritable: function (authority) { return !!_rapierKeptBinding(authority) || (raw.hasWritable ? raw.hasWritable(authority) : false); },
+			generation: function (authority) { var bound = _rapierKeptBinding(authority); return bound ? bound.digest : raw.generation ? raw.generation(authority) : null; },
+			open: raw.open && async function () {
+				var keep = _rapierKeep();
+				if (!keep) return raw.open.apply(null, arguments);
+				var choice = await keep.ask('open');
+				if (choice === 'secondary') return raw.open.apply(null, arguments);
+				if (choice === true) await keep.show();
+				return null;
+			},
+			publishDirty: function (value) { _rapierKeptRuntime.dirty = value === true; if (raw.publishDirty) raw.publishDirty(value); },
+		});
+	}
+
 	function _createPlatformPort(raw) {
 		function method(name) {
 			return typeof raw[name] === 'function' ? raw[name] : null;
+		}
+		// The host's own file operations, and Rapier's destination beside them where Notes runs (above).
+		function kept(name, rawName) {
+			if (!_rapierKeep()) return method(rawName);
+			return _rapierKeptFiles({ saveAs: method('saveAs'), saveInPlace: method('saveInPlace'), acceptOpened: method('acceptOpenedDocument'),
+				detach: method('detachCurrentFile'), hasWritable: method('hasWritableHandle'), generation: method('currentFileGeneration'),
+				open: method('openDocument'), publishDirty: method('publishDirty') })[name] || null;
 		}
 		var environment = Object.freeze({
 			get id() { return String(raw.id || 'unknown'); },
@@ -2713,19 +2799,19 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get showsRecentFilesUi() { return raw.showsRecentFilesUi === true; },
 			get showsUploadUi() { return raw.showsUploadUi === true; },
 			get prepareChooser() { return method('prepareFileChooser'); },
-			get open() { return method('openDocument'); },
+			get open() { return kept('open', 'openDocument'); },
 			get upload() { return method('uploadDocument'); },
 			get chooseCompare() { return method('chooseCompareDocument'); },
 			get readCurrent() { return method('readCurrentDocument'); },
 			get checkExternalChange() { return method('checkExternalFileChange'); },
-			get acceptOpened() { return method('acceptOpenedDocument'); },
-			get detach() { return method('detachCurrentFile'); },
-			get hasWritable() { return method('hasWritableHandle'); },
+			get acceptOpened() { return kept('acceptOpened', 'acceptOpenedDocument'); },
+			get detach() { return kept('detach', 'detachCurrentFile'); },
+			get hasWritable() { return kept('hasWritable', 'hasWritableHandle'); },
 			get currentAuthority() { return method('currentFileAuthority'); },
-			get generation() { return method('currentFileGeneration'); },
+			get generation() { return kept('generation', 'currentFileGeneration'); },
 			get observeGeneration() { return method('observeFileGeneration'); },
-			get saveAs() { return method('saveAs'); },
-			get saveInPlace() { return method('saveInPlace'); },
+			get saveAs() { return kept('saveAs', 'saveAs'); },
+			get saveInPlace() { return kept('saveInPlace', 'saveInPlace'); },
 			get exportArtifact() { return method('exportArtifact'); },
 			get takeBoot() { return method('takeBootDocument'); },
 			get hasPendingBoot() { return method('hasPendingBootDocument'); },
@@ -2774,7 +2860,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get openReminderSettings() { return method('openReminderSettings'); },
 			get openMicrophoneSettings() { return method('openMicrophoneSettings'); },
 			get approveClose() { return method('approveClose'); },
-			get publishDirty() { return method('publishDirty'); },
+			get publishDirty() { return kept('publishDirty', 'publishDirty'); },
 			get publishTitle() { return method('publishTitle'); },
 			get publishSelection() { return method('publishSelection'); },
 			get publishTheme() { return method('publishTheme'); },
@@ -3158,6 +3244,14 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get openSync() {
 				return _nativeCapability('sync') ? function () {
 					return _nativeHostCall('sync.open', {});
+				} : null;
+			},
+			// Android only: the page's sync transport (notes/transport-companion.mjs) to Rapier Sync through the app. The page
+			// names a vault id, an object's address, its size and digest; chunks of sealed bytes cross as frames.
+			get syncTransport() {
+				return _nativeCapability('syncTransport') ? function (operation, args) {
+					// A get's begin answers once the companion holds the whole object, which a large one on a slow network can take minutes to do.
+					return _nativeHostCall('sync.' + String(operation || ''), args || {}, 600000);
 				} : null;
 			},
 			// Uploaded in bounded messages, replaced atomically after commit; empty cancels all. null only where native scheduling cannot exist.

@@ -851,7 +851,7 @@ async function _rapierRecorderOfferKeep(offer, row) {
 			}
 		} else {
 			const text = A.addRecordingLine('', line);
-			file = assigned = await _rapierNotesWriteNew(text, M.isNoteFile(entry.originalNote) ? entry.originalNote : 'Recording.md');
+			file = assigned = await _rapierNotesWriteNew(text, M.isMarkdownNote(entry.originalNote) ? entry.originalNote : 'Recording.md');
 			_rapierNotesAdmit(file, text); await _rapierNotesWriteIndex();
 		}
 		await store.acknowledgeRecording(entry, assigned);

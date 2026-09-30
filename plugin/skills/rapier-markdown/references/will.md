@@ -47,13 +47,15 @@ All bindings preserve region meaning and use one canonical discovery carrier. Ma
 | Format | Carrier and region |
 | --- | --- |
 | DOCX | Each marker is one paragraph with a single hidden `w:vanish` run and a hidden paragraph mark. The whole paragraphs between the pair are governed, including structure, emphasis, links and relationships. Hidden marker paragraphs must add no visible vertical space. |
-| PDF | Each marker is one in-bounds text object on one baseline, in non-rendering text mode 3, within the governed text's reading-flow column and strictly between visible lines. Its baseline consumes no document flow. Restore graphics state afterward and provide a lossless `ToUnicode` mapping for every represented scalar. Use logical-order extraction. |
+| PDF | Each marker is one in-bounds text object that draws no ink (text render mode 3, or text set in an embedded font whose glyphs enclose no area) on one baseline, within the governed text's reading-flow column and strictly between visible lines. Its baseline consumes no document flow. Restore graphics state afterward and provide a lossless `ToUnicode` mapping for every represented scalar. Reading order is by position (page, then y, then x), never the order of the content stream. |
 | Google Docs | The named exception: API named ranges under a `will/1` naming convention, not a text-layer binding. A complete concrete range encoding is not implemented by Rapier. |
 
-A PDF reader may combine marker discovery with structure, geometry and other exact witnesses to resolve the governed region. An enforcing host must say what it can prove; a host unable to restructure a fixed page refuses mechanical `append`. Screenshots alone have no discoverable text-layer carrier.
+A PDF reader takes a marker's ASCII frame and law from any text layer, and its intent exactly only where the layer keeps its scalars (ActualText honoured). It may combine marker discovery with structure, geometry and other exact witnesses to resolve the governed region. An enforcing host must say what it can prove; a host unable to restructure a fixed page refuses mechanical `append`. Screenshots alone have no discoverable text-layer carrier.
 
 ## Conversion
 
 Will-aware conversion preserves equivalent Will, explicitly reports **WILL LOST**, or refuses. It never silently drops a marker or invents a stricter region to conceal a mapping failure. Reflow of extracted marker units is itself conversion. Unaware software makes no preservation promise.
 
-Rapier supports Markdown enforcement and DOCX hidden-marker conversion. Complete HTML exports preserve the exact original source. Its print and PDF path does not emit the PDF carrier or recoverable Markdown. There is no Google Docs adapter.
+Rapier supports Markdown enforcement and DOCX hidden-marker conversion. Complete HTML exports preserve the exact original source. Its PDF carries every marker as invisible text: a line of exactly the Markdown's bytes on its own baseline between the visible lines it stood between, in an embedded font whose glyphs enclose no area, because the browser's PDF writer cannot set text mode 3. A marker a PDF cannot hold stops the export with **WILL LOST**; the PDF carries no recoverable Markdown. There is no Google Docs adapter.
+
+Open item of the standard: a marker quoted in visible text (a code block, raw HTML) cannot be told from a carried one by a reader that works on a plain text layer, so Rapier's Word and PDF exports refuse a document that quotes one (**WILL LOST**, with what to do: take the quoted marker out, or export HTML, which keeps the source exact). The refusal can go once the binding says that visible text is never a marker and readers are known to honour it.

@@ -4,7 +4,8 @@
 // bytes are scratch files. No open/recovery path deletes them. Finish retains a receipt until the
 // ordinary Markdown link has itself been saved and checked.
 import {exactBytes, sha256} from './integrity.mjs';
-import {isNoteFile} from './model.mjs';
+// A recording belongs to a note: Markdown links it; a code file never holds one.
+import {isMarkdownNote as isNoteFile} from './model.mjs';
 import {recordingsOf, streamingRecordingType, inspectRecording, validRecordingName} from './audio.mjs';
 import {recordingStem, recordingPaths, recordingStorageError} from './recording-files.mjs';
 const enc = new TextEncoder(), dec = new TextDecoder('utf-8', {fatal: true});

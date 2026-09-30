@@ -56,20 +56,53 @@ function openSeal(vdk, aad, sealed) {
 	} catch (_) { refuse(); }
 }
 
-function main() {
-	const [headerPath, objectPath, code] = process.argv.slice(2);
-	if (!headerPath || !objectPath || !code || process.argv.length !== 5) {
-		process.stderr.write('usage: node tools/check-vault.mjs <header> <object> <recovery-code>\n');
+// The recovery code is the vault key. It is read from standard input, never from an argument: a
+// command line stays in the shell's history and in every listing of running processes.
+const CODE_INPUT_MAX = 4096;
+function readTyped(input) {
+	return new Promise((resolve, reject) => {
+		let code = '';
+		const finish = (value, error) => {
+			input.setRawMode(false); input.pause(); input.removeListener('data', take); process.stderr.write('\n');
+			if (error) reject(error); else resolve(value);
+		};
+		const take = chunk => {
+			for (const char of chunk) {
+				if (char === '\r' || char === '\n' || char === '\u0004') return finish(code);
+				if (char === '\u0003') return finish('', new Error('cancelled'));
+				if (char === '\u007f' || char === '\b') code = code.slice(0, -1);
+				else if (char >= ' ' && code.length < CODE_INPUT_MAX) code += char;
+			}
+		};
+		process.stderr.write('recovery code (nothing shows as you type): ');
+		input.setEncoding('utf8'); input.setRawMode(true); input.on('data', take); input.resume();
+	});
+}
+async function readPiped(input) {
+	const parts = []; let size = 0;
+	for await (const chunk of input) { size += chunk.length; if (size > CODE_INPUT_MAX) refuse(); parts.push(chunk); }
+	return Buffer.concat(parts).toString('utf8').split(/\r?\n/)[0];
+}
+
+async function main() {
+	const args = process.argv.slice(2);
+	if (args.length > 2) {
+		process.stderr.write('the recovery code is never a command argument: it would stay in your shell history and the process list. Run the command without it, then type the code when asked or pipe it in.\n');
+		process.exit(1);
+	}
+	const [headerPath, objectPath] = args;
+	if (!headerPath || !objectPath) {
+		process.stderr.write('usage: node tools/check-vault.mjs <header> <object>, then the recovery code on standard input\n');
 		process.exit(1);
 	}
 	let header, vdk;
 	try {
 		header = V.decodeHeader(readFileSync(headerPath));
-		vdk = V.decodeRecovery(code);
+		vdk = V.decodeRecovery(process.stdin.isTTY ? await readTyped(process.stdin) : await readPiped(process.stdin));
 	} catch (_) { refuse(); }
 	const verifier = openSeal(vdk, V.HEADER_KEY, header.verifier);
 	if (verifier.toString('utf8') !== V.VERIFIER_PLAIN) refuse();
 	process.stdout.write(openSeal(vdk, OBJECT_AAD, readFileSync(objectPath)));
 }
 
-if (process.argv[1] && process.argv[1].endsWith('check-vault.mjs')) main();
+if (process.argv[1] && process.argv[1].endsWith('check-vault.mjs')) await main();

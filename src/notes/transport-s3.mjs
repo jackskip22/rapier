@@ -1,5 +1,5 @@
 import {createHTTP, asBytes, byteCount as integer, fail, refuse, isProviderRefusal} from './provider-http.mjs';
-import {objectKey, objectPrefix} from './provider-objects.mjs';
+import {objectKey, objectPrefix, listOptions} from './provider-objects.mjs';
 // S3 SigV4, in the network owner only. Inject fetch; configure the destination in Sync, NEVER
 // from a note. Prefer provider credentials scoped to this bucket AND vault prefix: our key
 // checks restrict the application, not the provider grant. No OAuth bearer and no vault key.
@@ -199,17 +199,20 @@ function scalar(node, name, required = false) {
 	if (found.length > 1 || required && !found.length || found.some(n => n.children.length)) refuse('response', 'the listing has missing, duplicate or nested scalar fields');
 	return found.length ? found[0].text : null;
 }
-function parseListing(bytes, {bucket, root}, prefix, cursor) {
+function parseListing(bytes, {bucket, root}, prefix, cursor, {startAfter = null, delimiter = null} = {}) {
 	let text;
 	try { text = td.decode(bytes); } catch { refuse('response', 'the listing is not valid UTF-8'); }
 	const xml = readXML(text);
-	const allowed = new Set(['Name', 'Prefix', 'KeyCount', 'MaxKeys', 'IsTruncated', 'EncodingType', 'ContinuationToken', 'NextContinuationToken', 'Contents', 'Delimiter', 'StartAfter']);
+	const allowed = new Set(['Name', 'Prefix', 'KeyCount', 'MaxKeys', 'IsTruncated', 'EncodingType', 'ContinuationToken', 'NextContinuationToken', 'Contents', 'Delimiter', 'StartAfter', ...(delimiter === null ? [] : ['CommonPrefixes'])]);
 	if (xml.text.trim() || xml.children.some(c => !allowed.has(c.name))) refuse('response', 'the listing contains an unexpected object grouping');
 	const encoding = scalar(xml, 'EncodingType');
 	if (encoding !== null && encoding !== 'url') refuse('response', 'the listing uses an unknown key encoding');
 	const decode = value => { try { return encoding === 'url' ? decodeURIComponent(value) : value; } catch { refuse('response', 'the listing has invalid URL-encoded keys'); } };
 	if (scalar(xml, 'Name', true) !== bucket || decode(scalar(xml, 'Prefix', true)) !== root + prefix) refuse('authority', 'the listing does not belong to the requested bucket and prefix');
-	if (scalar(xml, 'Delimiter') || scalar(xml, 'StartAfter')) refuse('response', 'the listing omitted objects through an unrequested grouping or start key');
+	// A grouping or a start key omits objects, so only the requested ones are admitted.
+	const echoedDelimiter = scalar(xml, 'Delimiter'), echoedStart = scalar(xml, 'StartAfter');
+	if (echoedDelimiter !== null && decode(echoedDelimiter) !== delimiter || echoedStart !== null && decode(echoedStart) !== (startAfter === null ? null : root + startAfter))
+		refuse('response', 'the listing omitted objects through an unrequested grouping or start key');
 	const echo = scalar(xml, 'ContinuationToken');
 	if (echo !== null && echo !== (cursor ?? '')) refuse('cursor', 'the listing belongs to a different continuation');
 	const flag = scalar(xml, 'IsTruncated', true);
@@ -225,10 +228,17 @@ function parseListing(bytes, {bucket, root}, prefix, cursor) {
 		if (seen.has(key)) refuse('response', 'the listing repeated an object'); seen.add(key);
 		return {key, size: integer(scalar(row, 'Size', true)), etag: scalar(row, 'ETag') || ''};
 	});
-	const count = scalar(xml, 'KeyCount'), max = scalar(xml, 'MaxKeys');
-	if (keys.length > 1000 || count !== null && integer(count) !== keys.length || max !== null && (integer(max) > 1000 || keys.length > integer(max)))
+	const prefixes = xml.children.filter(c => c.name === 'CommonPrefixes').map(group => {
+		if (group.text.trim() || group.children.some(c => c.name !== 'Prefix')) refuse('response', 'the listing contains an unexpected grouping');
+		const full = decode(scalar(group, 'Prefix', true)), value = full.slice(root.length);
+		if (!full.startsWith(root + prefix) || !/^heads\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/$/.test(value)) refuse('authority', 'the provider returned a grouping outside the requested vault scope');
+		if (seen.has(value)) refuse('response', 'the listing repeated a grouping'); seen.add(value);
+		return value;
+	});
+	const count = scalar(xml, 'KeyCount'), max = scalar(xml, 'MaxKeys'), entries = keys.length + prefixes.length;
+	if (entries > 1000 || count !== null && integer(count) !== entries || max !== null && (integer(max) > 1000 || entries > integer(max)))
 		refuse('response', 'the listing count does not match its objects');
-	return {keys, truncated: flag === 'true', cursor: flag === 'true' ? next : null};
+	return {keys, ...(delimiter === null ? {} : {prefixes}), truncated: flag === 'true', cursor: flag === 'true' ? next : null};
 }
 // Reuse the bounded XML reader; only a known direct Code may select our own words.
 // Message, RequestId, credentials, malformed/nested/duplicate codes are never reflected.
@@ -341,7 +351,7 @@ export function createS3Transport(options = {}) {
 		destination, connect,
 		capabilities: Object.freeze({supportsConditionalWrite: false, supportsETag: true, supportsResumableUpload: false,
 			supportsMultipart: false, supportsDeltaFeed: false, supportsServerSideCopy: false, supportsNativeVersioning: false,
-			maxSingleUploadBytes: maxObjectBytes, seams: SEAMS}),
+			maxSingleUploadBytes: maxObjectBytes, listsFrom: true, seams: SEAMS}),
 		pause: http.pause,
 		async put(key, value, condition) {
 			check(); keyCheck(key); noConditional(condition);
@@ -353,13 +363,16 @@ export function createS3Transport(options = {}) {
 			return {key, etag: receipt.etag, size: body.length};
 		},
 		async get(key) { keyCheck(key); const value = await request('GET', key); return value ? {key, ...value} : null; },
-		async list(prefix, cursor = null) {
+		async list(prefix, cursor = null, options = {}) {
 			if (prefix !== '') objectPrefix(prefix);
 			if (cursor !== null && (typeof cursor !== 'string' || !cursor || cursor.length > 8192)) refuse('cursor', 'invalid provider cursor');
+			const {startAfter, delimiter} = listOptions(prefix, options);
 			const query = [['list-type', '2'], ['encoding-type', 'url'], ['max-keys', '1000'], ['prefix', destination.root + prefix]];
+			if (startAfter !== null) query.push(['start-after', destination.root + startAfter]);
+			if (delimiter !== null) query.push(['delimiter', delimiter]);
 			if (cursor !== null) query.push(['continuation-token', cursor]);
 			const page = await request('GET', null, {query, listing: true});
-			return parseListing(page.bytes, destination, prefix, cursor);
+			return parseListing(page.bytes, destination, prefix, cursor, {startAfter, delimiter});
 		},
 		stat, head: stat,
 		async exists(key) { return (await stat(key)) !== null; },

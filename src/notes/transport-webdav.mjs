@@ -3,7 +3,7 @@ import {createHTTP, asBytes as bytes, fail, refuse} from './provider-http.mjs';
 const DAV = 'DAV:', XML = 'http://www.w3.org/XML/1998/namespace';
 const XMLNS = 'http://www.w3.org/2000/xmlns/';
 const HASH = '[a-f0-9]{64}', DEVICE = '[A-Za-z0-9][A-Za-z0-9_-]{0,63}';
-const OBJECT = new RegExp(`^(?:objects|keys)/${HASH}$|^heads/${DEVICE}/[1-9][0-9]*-${HASH}$`);
+const OBJECT = new RegExp(`^(?:objects|keys)/${HASH}$|^heads/${DEVICE}/(?:(?!0{12})[0-9]{12}|[1-9][0-9]{0,10})-${HASH}$`); // twelve digits, or unpadded as first published
 const FAMILY = new RegExp(`^(?:objects/|keys/|heads/(?:${DEVICE}/)?)$`);
 const te = new TextEncoder(), td = new TextDecoder('utf-8', {fatal: true});
 export const WEBDAV_MAX_OBJECT_BYTES = 300000000;

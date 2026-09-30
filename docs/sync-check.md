@@ -41,8 +41,10 @@ An OAuth bearer token is not a bucket credential; Rapier does not accept one as 
 The script is [tools/check-vault.mjs](../src/tools/check-vault.mjs). It uses Node's own crypto and nothing else. Run it from a copy of the Rapier source with the header and one object copied from your bucket:
 
 ```
-node tools/check-vault.mjs <header> <object> <recovery-code>
+node tools/check-vault.mjs <header> <object>
 ```
+
+It asks for the recovery code and hides it as you type; you can pipe it in instead. The code is never part of the command, because a shell keeps its history and the code opens the whole vault: a code given as an argument is refused.
 
 It prints the note to standard output. A code that does not open the header is refused with a message and prints nothing.
 

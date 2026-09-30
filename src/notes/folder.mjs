@@ -16,7 +16,7 @@ import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, en
 import {createRecordings} from './recording.mjs';
 import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf} from './attachments.mjs';
 import {exactBytes, sha256, storedFileDigest, checkByteAbort} from './integrity.mjs';
-import {NOTES_INDEX_FILE, isNoteFile, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, serializeIndex, addSection, setCollapsed} from './model.mjs';
+import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, serializeIndex, addSection, setCollapsed} from './model.mjs';
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
@@ -70,10 +70,15 @@ export async function planFolderRename({index, files, bodies}, {file, id, expect
 	if (!bodies.has(file) || index.notes[file]?.id !== id || await digest(bodies.get(file)) !== expectedDigest) throw fail('changed', 'The note changed before it could be renamed. Its words and name were kept.');
 	if (wanted === file) return {index, file, patched: 0, dropped: 0};
 	const names = files;
-	const destination = isNoteFile(wanted) && !names.some(name => name !== file && name.normalize('NFC').toLowerCase() === wanted.normalize('NFC').toLowerCase()) && !(ascii && /[^\x00-\x7f]/.test(wanted)) ? wanted : noteFileName(wanted.replace(/\.md$/i, ''), names, {ascii});
+	// A code file stays code under its new name (its extension kept unless another code type is named), and
+	// its bytes are never a link source; a note stays Markdown.
+	const code = isCodeFile(file), fits = code ? isCodeFile(wanted) : isMarkdownNote(wanted);
+	const destination = fits && !names.some(name => name !== file && name.normalize('NFC').toLowerCase() === wanted.normalize('NFC').toLowerCase()) && !(ascii && /[^\x00-\x7f]/.test(wanted)) ? wanted
+		: code ? codeFileName(wanted.replace(/\.[A-Za-z0-9]+$/, '') + file.slice(file.lastIndexOf('.')), names.filter(name => name !== file), {ascii}) : noteFileName(wanted.replace(/\.md$/i, ''), names, {ascii});
+	if (!destination) throw fail('name', 'That name cannot hold this file. Its words and name were kept.');
 	if (destination === file) return {index, file, patched: 0, dropped: 0};
 	const texts = new Map();
-	for (const [name, bytes] of bodies) try { texts.set(name, decode(bytes)); } catch (_) { dropped++; }
+	for (const [name, bytes] of bodies) if (isMarkdownNote(name)) try { texts.set(name, decode(bytes)); } catch (_) { dropped++; }
 	const variantPatches = new Map();
 	for (const [name, text] of texts) {
 		const changed = mapTextConflictVariants(text, variant => {
@@ -158,6 +163,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const available = (wanted, text, names) => {
 		const taken = new Set(names.map(n => n.toLowerCase()));
 		if (isNoteFile(wanted) && !taken.has(wanted.toLowerCase()) && !(store.ascii && /[^\x00-\x7f]/.test(wanted))) return wanted;
+		// A code file is named by the person, never by its first line: a taken name numbers the stem.
+		if (isCodeFile(wanted)) { const name = codeFileName(wanted, names, {ascii: store.ascii}); if (name) return name; }
 		return noteFileName(text, names, {ascii: store.ascii});
 	};
 	const read = async options => { const snapshot = await owner.read(scope, options); if (snapshot?.index) identify(snapshot.index);
@@ -212,8 +219,9 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const stale = !destination || !admitted.includes(actual);
 			if (stale && !(destination && actual === nextDigest)) {
 				if (!preserveConflict) throw fail('changed', 'The note changed since this edit was prepared. Its newer words were kept.');
-				const stem = file.replace(/\.md$/i, '') + ' kept';
-				destination = noteFileName(stem, files, {ascii: store.ascii}); copied = true;
+				// A stale code file is kept beside the newer one as code: "script kept.py".
+				const ext = isCodeFile(file) ? file.slice(file.lastIndexOf('.')) : '', stem = (ext ? file.slice(0, -ext.length) : file.replace(/\.md$/i, '')) + ' kept';
+				destination = (ext && codeFileName(stem + ext, files, {ascii: store.ascii})) || noteFileName(stem, files, {ascii: store.ascii}); copied = true;
 				index = createEntry(index, destination, {created: clock(), modified: clock(), keptFrom: {file, ...(id ? {id} : {}), digest: admitted[0]}});
 			} else if (index.notes[destination].trashed) index = reviveTrashed(index, destination, nextDigest);
 			index.notes[destination].revision = 'sha256:' + nextDigest; index.notes[destination].modified = clock();

@@ -7,6 +7,7 @@ import {createR2Transport} from './transport-r2.mjs';
 import {createCloudflareSetup, storageDashboard} from './cloudflare-setup.mjs';
 export {storageDashboard};
 import {createS3Transport} from './transport-s3.mjs';
+import {createCompanionTransport} from './transport-companion.mjs';
 import {synchronize, createOwnerSyncStore, putVerified, contentHash} from './sync.mjs';
 import {readSyncState, updateSyncState} from './sync-state.mjs';
 export {readSyncState};
@@ -53,9 +54,24 @@ function readLocator(value) {
 	if (!m) throw fail('connection', 'the vault address is not complete.');
 	return {accountId: m[1], bucket: m[2], jurisdiction: m[3], vaultId: m[4], headerHash: m[5]};
 }
+// A vault reached through Rapier Sync (Android) is named by its public id and header digest alone: the companion
+// keeps where it is stored and the key that reaches it, so neither is in the page, its record or its device code.
+const COMPANION_LOCATOR = /^([a-f0-9]{32}):([a-f0-9]{64})$/;
+function companionLocator(target) {
+	const value = `${target.vaultId}:${target.headerHash}`;
+	if (!COMPANION_LOCATOR.test(value)) throw fail('connection', 'the vault address is not complete.');
+	return value;
+}
+function readCompanionLocator(value) {
+	const m = typeof value === 'string' && COMPANION_LOCATOR.exec(value);
+	if (!m) throw fail('connection', 'the vault address is not complete.');
+	return {vaultId: m[1], headerHash: m[2]};
+}
+const addressOf = (mode, target) => mode === 'companion' ? companionLocator(target) : locator(target);
 // One format, two authority routes. Key-route destination fields are inside the seal, so a
 // pasted code cannot substitute a bucket or endpoint before the passphrase opens it.
 export function connectionCode(target, {mode = 'oauth', header, credential} = {}) {
+	if (mode === 'companion') return 'rapier-vault:' + b64(te.encode(JSON.stringify({mode, address: companionLocator(target)})));
 	locator(target);
 	const body = mode === 'r2-key' ? {mode, vaultId: target.vaultId, header: b64(header), credential: b64(credential)} : {mode: 'oauth', address: locator(target)};
 	return 'rapier-vault:' + b64(te.encode(JSON.stringify(body)));
@@ -67,6 +83,7 @@ export function readConnectionCode(value) {
 		body = JSON.parse(td.decode(unb64(value.trim().slice(13))));
 	} catch { throw fail('connection', 'paste the whole device code from your other device.'); }
 	if (body?.mode === 'oauth' && Object.keys(body).sort().join() === 'address,mode') return {mode: 'oauth', ...readLocator(body.address)};
+	if (body?.mode === 'companion' && Object.keys(body).sort().join() === 'address,mode') return {mode: 'companion', ...readCompanionLocator(body.address)};
 	if (body?.mode !== 'r2-key' || Object.keys(body).sort().join() !== 'credential,header,mode,vaultId' || !/^[a-f0-9]{32}$/.test(body.vaultId || '')) throw fail('connection', 'paste the whole device code from your other device.');
 	const header = unb64(body.header), credential = unb64(body.credential);
 	decodeHeader(header);
@@ -99,8 +116,8 @@ async function openCredential(id, sealed, vdk) {
 }
 async function checkedRecord(record) {
 	if (!record) return null;
-	if (!['oauth', 'r2-key'].includes(record.mode)) throw fail('connection', 'this folder’s sync connection cannot be read.');
-	const target = readLocator(record.address);
+	if (!['oauth', 'r2-key', 'companion'].includes(record.mode)) throw fail('connection', 'this folder’s sync connection cannot be read.');
+	const target = record.mode === 'companion' ? readCompanionLocator(record.address) : readLocator(record.address);
 	if (!Array.isArray(record.header) || record.header.length > HEADER_MAX_BYTES || record.header.some(n => !Number.isInteger(n) || n < 0 || n > 255)) throw fail('header', 'the saved vault header cannot be read. your notes are unchanged.');
 	const bytes = Uint8Array.from(record.header);
 	decodeHeader(bytes);
@@ -111,23 +128,25 @@ async function checkedRecord(record) {
 }
 
 export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendingKey = 'rapier:cloudflare:pending',
-	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, device = null, now = Date.now, onChange = () => {}} = {}) {
-	if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
+	config = CLOUDFLARE_SYNC, environment = {}, mode = 'oauth', personal = null, device = null, now = Date.now, onChange = () => {}, companion = null} = {}) {
+	// Through Rapier Sync the page has no network of its own: companion.call is the app's seam (host.syncTransport).
+	if (!folder?.owner || mode !== 'companion' && typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
 	// A private copy prevents a caller mutating registration or host facts after admission.
 	config = Object.freeze({...config, scopes: Object.freeze([...(config.scopes || [])])});
 	environment = Object.freeze({...environment});
-	if (!['oauth', 'r2-key'].includes(mode)) throw fail('config', 'choose the cloudflare sign-in or an r2 bucket key.');
-	const gate = mode === 'r2-key' ? r2KeyAvailability(environment) : syncAvailability(environment, config);
+	if (!['oauth', 'r2-key', 'companion'].includes(mode)) throw fail('config', 'choose the cloudflare sign-in or an r2 bucket key.');
+	const gate = mode === 'companion' ? (typeof companion?.call === 'function' ? {ready: true, reason: ''} : {ready: false, reason: 'rapier sync is not connected on this device; open it from notes settings.'})
+		: mode === 'r2-key' ? r2KeyAvailability(environment) : syncAvailability(environment, config);
 	const oauth = (clientId = config.clientId) => createOAuthClient({fetch: fetchFn, clientId, redirectUri: config.redirectUri});
 	let grant = null, key = null, connection = null, work = null, epoch = 0, revoking = null, locking = null, stopping = null, leaving = null, cancelling = null;
 	let staged = null, rememberDevice = !!device && device.available !== false, deviceInspected = false, folderIdentity = null;
 	let accounts = null, storage = null;
 	let stage = 'signed-out', notice = '', needsRevoke = false, backedUpAt = null, rejoinRequired = false;
 	const transports = new Set(), credentials = new Map();
-	const status = () => Object.freeze({stage, mode, authorized: mode === 'r2-key' ? !!key && !!connection?.credential : !!grant && !needsRevoke, unlocked: !!key,
+	const status = () => Object.freeze({stage, mode, authorized: mode === 'companion' ? !!connection : mode === 'r2-key' ? !!key && !!connection?.credential : !!grant && !needsRevoke, unlocked: !!key,
 		rememberDevice, rememberAvailable: !!device && device.available !== false, hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
 		busy: !!work || !!revoking || !!locking || !!stopping || !!leaving || !!cancelling, revocationPending: needsRevoke,
-		address: connection && (mode === 'oauth' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt});
+		address: connection && (mode !== 'r2-key' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt});
 	const announce = (next, text = '') => { stage = next; notice = text; onChange(status()); };
 	const ready = () => { if (!gate.ready) throw fail('unavailable', gate.reason); };
 	const pruneCredentials = () => {
@@ -223,6 +242,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		return grant.accessToken;
 	}
 	async function transport(target, ticket, pair = null) {
+		if (mode === 'companion') {
+			active(ticket);
+			const result = createCompanionTransport({call: companion.call, vaultId: target.vaultId});
+			transports.add(result);
+			return result;
+		}
 		if (mode === 'r2-key') {
 			active(ticket);
 			if (!pair) {
@@ -268,7 +293,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		return {...state, folderDeviceId: snapshot.index.folderDeviceId};
 	}
 	async function keepConnection(target, bytes, ticket, credential, before, identity, committed = () => {}) {
-		const address = locator(target), header = Array.from(bytes);
+		const address = addressOf(mode, target), header = Array.from(bytes);
 		const record = {mode, address, header, ...(mode === 'r2-key' ? {credential: credential ? Array.from(credential) : null} : {})};
 		await updateSyncState(folder, (state, index) => {
 			active(ticket);
@@ -372,6 +397,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		} catch { throw fail('recovery', 'type the recovery code you just saved before connecting your bucket.'); }
 		finally { typed?.fill(0); }
 	}
+	function lockVault() {
+		if (locking) return locking;
+		locking = (async () => { await stop(); if (!revoking && !needsRevoke && !leaving) announce(grant || mode === 'r2-key' && connection?.credential || mode === 'companion' && connection ? 'locked' : 'signed-out', 'vault locked and sync stopped. your notes are kept.'); return status(); })()
+			.finally(() => { locking = null; onChange(status()); });
+		return locking;
+	}
 	function leave() {
 		if (leaving) return leaving;
 		leaving = (async () => {
@@ -402,7 +433,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			storage = await withSetup(ticket, setup => setup.storage(accountId));
 			return {...storage, vaults: storage.vaults.map(target => ({address: connectionCode(target)}))};
 		}); },
-		inspect() { return run(async ticket => { await readLocal(); active(ticket); if (mode === 'r2-key' && !key) stage = connection?.credential ? 'locked' : 'signed-out'; return status(); }); },
+		inspect() { return run(async ticket => {
+			await readLocal(); active(ticket);
+			if (mode === 'r2-key' && !key) stage = connection?.credential ? 'locked' : 'signed-out';
+			if (mode === 'companion' && !key) stage = connection ? 'locked' : 'signed-out';
+			return status();
+		}); },
 		prepare({passphrase} = {}) { return run(async ticket => {
 			if (mode !== 'r2-key') throw fail('config', 'the recovery check belongs to bucket key setup.');
 			await readLocal(); active(ticket);
@@ -484,8 +520,9 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				}
 				active(ticket);
 				const header = await headerObject(made.headerBytes);
-				const target = {accountId, bucket, jurisdiction, vaultId: made.vaultId, headerHash: header.key.slice(5)};
-				locator(target);
+				const target = mode === 'companion' ? {vaultId: made.vaultId, headerHash: header.key.slice(5)}
+					: {accountId, bucket, jurisdiction, vaultId: made.vaultId, headerHash: header.key.slice(5)};
+				addressOf(mode, target);
 				let credential = null;
 				if (mode === 'r2-key') {
 					const pair = keySettings(target, {accessKeyId, secretAccessKey});
@@ -499,7 +536,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					// Returning its recovery code is then part of completing that commit, not new work.
 					if (!committed) {
 						const kept = await checkedRecord((await readSyncState(folder)).vault);
-						if (kept?.address !== locator(target)) throw error;
+						if (kept?.address !== addressOf(mode, target)) throw error;
 					}
 					verified = false;
 				}
@@ -520,10 +557,21 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			const local = await readLocal(), before = local.vault || null; active(ticket);
 			if (connection && mode !== 'r2-key' && !rejoinRequired) throw fail('connection', 'this folder already has a vault: unlock it instead.');
 			const code = readConnectionCode(address);
-			if (code.mode !== mode) throw fail('connection', 'this device code syncs another way.');
+			// Through Rapier Sync any device code joins: the page takes the vault's id and header from it, nothing more;
+			// the companion reaches the storage with the key typed into it, never a key or address from the code.
+			if (code.mode !== mode && mode !== 'companion') throw fail('connection', 'this device code syncs another way.');
 			let opened;
 			try {
-				if (mode === 'r2-key') {
+				if (mode === 'companion') {
+					const target = {vaultId: code.vaultId, headerHash: code.mode === 'r2-key' ? await headerDigest(code.header) : code.headerHash};
+					if (connection && companionLocator(target) !== connection.address) throw fail('connection', 'this folder belongs to another vault; its connection was not replaced.');
+					const header = code.mode === 'r2-key' ? code.header : await withTransport(target, ticket, async tr => (await tr.get('keys/' + target.headerHash))?.bytes);
+					active(ticket);
+					if (!header || header.length > HEADER_MAX_BYTES || await headerDigest(header) !== target.headerHash) throw fail('header', 'the vault header is missing or did not verify. nothing was imported.');
+					opened = await (recovery ? unlockVaultWithRecovery(header, secret) : unlockVault(header, secret)); active(ticket);
+					if (await vaultId(opened) !== target.vaultId) throw fail('connection', 'this key does not open that vault.');
+					await keepConnection(target, header, ticket, null, before, local.folderDeviceId); active(ticket);
+				} else if (mode === 'r2-key') {
 					opened = await (recovery ? unlockVaultWithRecovery(code.header, secret) : unlockVault(code.header, secret)); active(ticket);
 					if (await vaultId(opened) !== code.vaultId) throw fail('connection', 'this key does not open that vault.');
 					const pair = await openCredential(code.vaultId, code.credential, opened); active(ticket);
@@ -662,15 +710,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				return result;
 			} finally { await lease.release(); }
 		}); },
-		lock() {
-			if (locking) return locking;
-			locking = (async () => { await stop(); if (!revoking && !needsRevoke && !leaving) announce(grant || mode === 'r2-key' && connection?.credential ? 'locked' : 'signed-out', 'vault locked and sync stopped. your notes are kept.'); return status(); })()
-				.finally(() => { locking = null; onChange(status()); });
-			return locking;
-		},
+		lock() { return lockVault(); },
 		forgetKey() { return forgetKey(); },
 		signOut() {
 			if (mode === 'r2-key') return forgetKey();
+			// The companion holds the storage's authority; the page has none to revoke, and locks.
+			if (mode === 'companion') return lockVault();
 			return revokeGrant();
 		},
 	});

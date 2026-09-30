@@ -218,6 +218,11 @@ const _rapierNotesSyncUi = (() => {
 					}
 				}
 			}
+			if (replaced.length) {
+				paragraph('chosen here, then replaced by another device’s later choice:');
+				for (const entry of replaced) choice(entry.key.slice(entry.key.indexOf('/') + 1).replace(/^own\//, '') + (entry.value !== null && typeof entry.value !== 'object' ? ': ' + String(entry.value) : ''),
+					'keep mine: it becomes the choice on every device', async () => { await _rapierPersonal.restore(entry); await keptChoices(); });
+			}
 		}
 		paintVaultChoices(state);
 		choice('lock vault', 'stops sync here; your notes stay readable', async () => { recovery = null; conflicts = null; await session.lock(); }, {enabled: true});
@@ -291,18 +296,24 @@ const _rapierNotesSyncUi = (() => {
 		if (accounts.length > 1) choice('choose another account', 'keep notes in a different cloudflare account', () => { selectedAccount = null; cloudStorage = null; });
 		choice('use a device code', 'connect a collection shared from your other device', () => { joined = true; });
 	}
+	// Choices this device made that another device's later choice replaced (notes/personal.mjs's ledger).
+	let replaced = [];
+	async function keptChoices() { if (typeof _rapierPersonal === 'undefined') return; try { replaced = await _rapierPersonal.ledger(); } catch (_) { replaced = []; } }
 	async function syncOnce() {
 		syncing = true;
-		try { await flush(); await session.syncNow(); await _rapierNotesFolderChanged(); }
+		try { await flush(); await session.syncNow(); await _rapierNotesFolderChanged(); await keptChoices(); }
 		finally { syncing = false; wearBox(); }
 	}
 	async function connectAndSync() {
 		await syncOnce(); automatic = status().unlocked && status().authorized; schedule(60000);
 	}
+	let dueAt = 0, settingsQuiet = false;
 	function schedule(delay) {
-		clearTimeout(timer);
+		clearTimeout(timer); dueAt = 0; settingsQuiet = false;
 		if (!automatic) return;
+		dueAt = Date.now() + delay;
 		timer = setTimeout(async () => {
+			dueAt = 0;
 			const current = status();
 			if (!current.unlocked || !current.authorized) { automatic = false; return; }
 			if (visible || document.hidden || navigator.onLine === false || acting || syncing || current.busy) { schedule(10000); return; }
@@ -311,7 +322,14 @@ const _rapierNotesSyncUi = (() => {
 			schedule(60000);
 		}, delay);
 	}
-	function changed() { if (!syncing) schedule(1600); }
+	// A saved edit syncs after 1.6 s of quiet. A settings change waits 15 s of quiet, so a run of tries
+	// publishes one head, and it never pushes back a run that is already due sooner.
+	function changed(kind) {
+		if (syncing) return;
+		if (kind !== 'settings') { schedule(1600); return; }
+		if (dueAt && !settingsQuiet && dueAt - Date.now() <= 15000) return;
+		schedule(15000); settingsQuiet = true;
+	}
 	addEventListener('online', changed);
 	document.addEventListener('visibilitychange', () => { if (!document.hidden) changed(); });
 	async function leaveVaultChoice() {
@@ -410,7 +428,7 @@ const _rapierNotesSyncUi = (() => {
 		}
 		visible = true; const screen = ++view;
 		if (initialize) void perform(async () => {
-			await owner();
+			await owner(); await keptChoices();
 			if (!visible || screen !== view) return;
 			if (mode() === 'oauth' && !status().authorized) await startSignIn();
 			else if (mode() === 'oauth' && !status().hasConnection && !accounts) await loadAccounts();

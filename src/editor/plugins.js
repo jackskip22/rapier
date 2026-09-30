@@ -57,6 +57,8 @@ async function _rapierPluginDeleteNow() {
 	state.busy = true; _rapierPluginDeletePaint();
 	try {
 		await plugin.forget();
+		// This device's delete stays here: the wish other devices synced is left as it was (editor/personal.js).
+		if (typeof _rapierPersonal !== 'undefined') _rapierPersonal.declinePlugin(key);
 		state.asking = null;
 		closeDialog(document.getElementById('plugin-delete-overlay'));
 	} catch (error) {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Exact source survives; only an inspected conflict choice may remove a variant.
+import {isNoteFile, isCodeFile} from './model.mjs';
 
 function textFault(code, message) { return Object.assign(new Error(message), {code}); }
 export function canonicalNote(text) {
@@ -387,7 +388,7 @@ function ixJSON(value, stack = new Set()) {
 }
 const ixEqual = (a, b) => a === IX_MISSING || b === IX_MISSING ? a === b : ixJSON(a) === ixJSON(b);
 const ixClone = value => JSON.parse(ixJSON(value));
-const ixFile = file => typeof file === 'string' && /^[^/\\\u0000-\u001F]+\.md$/i.test(file);
+const ixFile = file => isNoteFile(file) && !/[\u0000-\u001F]/.test(file);
 const ixID = id => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id.slice(id.lastIndexOf(':') + 1)));
 
 function ixValidate(index, ids = false) {
@@ -600,11 +601,13 @@ function ixSections(context, indexes, notes) {
 
 const ixFileKey = file => file.normalize('NFC').toLowerCase();
 function ixSafeName(file, id, occupied) {
-	let stem = Array.from(file.replace(/\.md$/i, '').replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/[ .]+$/g, '')).slice(0, 80).join('') || 'note';
+	// A code file keeps its own extension through a collision; a note is Markdown.
+	const ext = isCodeFile(file) ? file.slice(file.lastIndexOf('.')) : '.md';
+	let stem = Array.from(file.slice(0, -ext.length).replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/[ .]+$/g, '')).slice(0, 80).join('') || 'note';
 	if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(stem)) stem = 'note-' + stem;
 	const tag = id.replace(/[^A-Za-z0-9_-]/g, '-');
-	let candidate = stem + ' (' + tag + ').md', n = 2;
-	while (occupied.has(ixFileKey(candidate))) candidate = stem + ' (' + tag + '-' + n++ + ').md';
+	let candidate = stem + ' (' + tag + ')' + ext, n = 2;
+	while (occupied.has(ixFileKey(candidate))) candidate = stem + ' (' + tag + '-' + n++ + ')' + ext;
 	return candidate;
 }
 

@@ -21974,7 +21974,8 @@ function _rapierCarryWillMarkersXml(xmlText, markers, sentinel) {
 	if (xml.documentElement.localName !== 'document' || xml.documentElement.namespaceURI !== ns ||
 			xml.getElementsByTagNameNS('*', 'parsererror').length) throw new Error('DOCX document XML is invalid');
 	const tokens = new Map(markers.map((marker, index) => [sentinel + index + RAPIER_WILL_SENTINEL_MARK, marker]));
-	const lost = () => { throw new Error('WILL LOST — the DOCX converter could not preserve every Will marker'); };
+	// The same words as the PDF's refusal (docs/will.md, the standard's open item): what went wrong, and what to do.
+	const lost = () => { throw new Error('WILL LOST — the Word document could not carry every Will marker: a marker stands inside other content (a code block, raw HTML or a table cell). Take the quoted marker out, or export HTML, which keeps the source exact.'); };
 	const child = (node, name) => Array.from(node.children).find(item => item.namespaceURI === ns && item.localName === name);
 	const make = name => xml.createElementNS(ns, 'w:' + name);
 	const ensure = (node, name) => child(node, name) || node.appendChild(make(name));
@@ -22333,8 +22334,13 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// Geist's metrics (_rapierArtifactStyles), which is the one difference between a Rapier
 	// document and its exported page. A print artifact renders inside this page, under this
 	// page's policy, so it keeps the real faces.
+	// The print page carries its faces as data: faces of its own, and a Will's carriers' font among them (the secure-runtime host prints this
+	// page, not the one it was made in). Its policy alone has font-src data:, which reaches no network, whether or not the page has a Will:
+	// with it only for a Will the same document would print in its faces with the Will and in the reader's own without (measured).
+	const willFont = opts.print && opts.willFont ? opts.willFont : null;
 	const css = _rapierArtifactStyles(theme, !!opts.print, !!opts.print || opts.kind === 'standalone')
-		+ (opts.extraCss ? '\n\n' + opts.extraCss : '');
+		+ (opts.extraCss ? '\n\n' + opts.extraCss : '')
+		+ (willFont ? '\n\n@font-face{font-family:' + willFont.family + ';src:url(' + await _rapierBlobDataUrl(new Blob([willFont.bytes], { type: 'font/ttf' })) + ') format("truetype")}' : '');
 	// Every written page is offline. Only the writer's nonce script may run; it, pictures,
 	// styles and other page resources get no network authority. Following an ordinary link
 	// is the reader's navigation, with no Referer, not a background resource request.
@@ -22357,7 +22363,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		// exported from Rapier and carried in someone's page shows whole, with no inner scroll. Any origin may
 		// read the height: the page is the document, published by the person who exported it.
 		+ '<meta name="responsive-embedded-sizing" content="allow-origins=*">\n'
-		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || lexerScript ? nonce : '') + '">\n'
+		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || lexerScript ? nonce : '', !!opts.print) + '">\n'
 		+ '<meta name="referrer" content="no-referrer">\n'
 		+ '<meta name="generator" content="Rapier ' + escapeRapierHtmlText(version) + '">\n'
 		+ '<title>' + escapeRapierHtmlText(metadata.filename) + '</title>\n'
@@ -22375,9 +22381,11 @@ async function _rapierBuildArtifact(options, providedContext) {
 }
 
 // One policy for standalone and Share; no caller option can reopen the network. A page
-// without reflow explicitly refuses scripts, rather than granting an unused nonce.
-function _rapierExportedPageCsp(nonce) {
+// without reflow explicitly refuses scripts, rather than granting an unused nonce. The print page,
+// which carries its faces as data: faces, alone adds font-src data:.
+function _rapierExportedPageCsp(nonce, fonts) {
 	return "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; "
+		+ (fonts ? "font-src data:; " : '')
 		+ "script-src " + (nonce ? "'nonce-" + nonce + "'" : "'none'") + "; base-uri 'none'; form-action 'none'";
 }
 
@@ -22387,10 +22395,231 @@ function _rapierArtifactNonce() {
 	return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// The Will in the PDF (docs/will.md, "Other format bindings"). A PDF has no comment to hide a marker in, so each marker line of the
+// source goes into the page as a line of text of its own, between the blocks it stood between, and the person's word travels with the
+// file. The plan is the DOCX writer's own: one sentinel paragraph for every marker-shaped line, found again in the rendered page and
+// put back as the exact bytes. A marker that cannot be put back exactly stops the export with WILL LOST, never a silent loss.
 async function _rapierBuildPrintArtifact(capturedDocument = null) {
-	const context = await _rapierPrepareInterchangeContext({ print: true }, capturedDocument);
-	const artifact = await _rapierBuildArtifact({ print: true }, context);
-	return { ...artifact, filename: context.baseName + '.pdf' };
+	const canonical = capturedDocument ? String(capturedDocument.canonical || '') : _rapierGetCanonicalText();
+	const metadata = capturedDocument?.metadata || _rapierGetDocumentMetadata();
+	const plan = _rapierWillSentinelPlan(canonical, metadata.docKind);
+	if (plan) _rapierPrintWillAdmit(canonical, plan);
+	const captured = plan ? { ...(capturedDocument || { metadata, plain: _rapierPlainLayout() }), canonical: plan.canonical } : capturedDocument;
+	const context = await _rapierPrepareInterchangeContext({ print: true }, captured);
+	const willFont = plan ? _rapierPrintWillFont(plan.markers) : null;
+	const artifact = await _rapierBuildArtifact({ print: true, willFont, extraCss: plan ? _rapierPrintWillPageCss() : '', afterRoot: plan ? root => _rapierPrintWillPlace(root, plan) : null }, context);
+	return { ...artifact, filename: context.baseName + '.pdf', willFont };
+}
+
+// The stop of a PDF that cannot carry a marker: what the writer could not do and what the person can do about it (the HTML export keeps
+// the source exact). WILL LOST is the standard's own report; the export never goes on without the marker.
+function _rapierPrintWillLost(why, fix) {
+	return new Error('WILL LOST — the PDF could not carry every Will marker: ' + why + '. ' + fix + ', or export HTML, which keeps the source exact.');
+}
+
+// What the export tells the person when the print stops: a stop that names the Will is theirs to read, any other failure is the print's.
+function _rapierPrintFailure(error) {
+	const text = String(error && error.message || '');
+	return text.startsWith('WILL LOST') ? 'Could not export: ' + text : 'PDF export failed';
+}
+
+// What Chromium's PDF writer does not read back exactly from text (measured on Chromium 141, every scalar of the BMP and samples of
+// the other planes through the carrier below): a tab or a form feed leaves no glyph at all, U+202B and U+1DF8 come back wrong, and
+// the HTML the host is built from drops a null. Anything else, joiners and combining marks included, comes back through ToUnicode
+// and, where the writer needs it, ActualText. A marker quoted in visible text (a code block, raw HTML) is refused where it is placed,
+// below: a reader that works on a plain text layer cannot tell it from a carried one, so the export fails closed. The standard's open
+// item (docs/will.md): once its binding says that visible text is never a marker, and readers are known to honour it, the refusal can go.
+function _rapierPrintWillAdmit(canonical, plan) {
+	const front = _rapierSplitOpeningFrontmatter(canonical).frontmatter;
+	if (front && _rapierWillParse(front).blocks.length) throw _rapierPrintWillLost('a marker stands in the front matter, which is not on the printed page', 'Take it out of the front matter');
+	for (const marker of plan.markers) {
+		const bad = /[\u0000\u0009\u000a\u000c\u000d\u1df8\u202b]/.exec(marker);
+		if (bad) throw _rapierPrintWillLost('U+' + bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0') + ' in a marker cannot be read back from a PDF', 'Take it out of the marker');
+	}
+	if (new Set(plan.markers.flatMap(marker => Array.from(marker))).size > 65000) throw _rapierPrintWillLost('the markers use more distinct characters than a font can hold', 'Shorten them');
+}
+
+// The carriers are invisible by their font and by nothing else: drawn in another face a marker is ink at 1/255, and ink is not a carrier.
+// The browser is asked to take the font before anything is printed, and the export stops where it does not (`into`, the page's font
+// set, is where the print page keeps it; the secure-runtime host's page has the font in its own markup and is only proved here).
+async function _rapierPrintWillProve(willFont, into) {
+	try {
+		const face = new FontFace(willFont.family, willFont.bytes);
+		await face.load();
+		if (into) into.add(face);
+		return face;
+	} catch (error) {
+		console.warn('[rapier] the PDF Will font was refused', error);
+		throw _rapierPrintWillLost('the browser did not accept the font that carries them', 'Try another browser');
+	}
+}
+
+// The measures of the carrier, one place for the font that draws it and the line that sets it. The type is two pixels: a reader that
+// takes a PDF's text by position (pypdf) joins lines closer than about three quarters of the type size, and a run of markers stands
+// three pixels apart. Each glyph advances a fifth of the type, 0.4 px: the readers that drop a glyph lying on the one before it
+// (PDFium, MuPDF) keep every glyph from a tenth of the type upward. No line is wider than 216 pixels, a little over the standard's
+// longest marker (536 glyphs, 214 px) at that advance: the writer keeps only the glyphs inside the page, and the print of a page whose
+// text runs past its width is shrunk whole to fit it (both measured on Chromium 141), which would move every other line of the page.
+// A marker longer than that (the standard calls it a fault, and a fault is still carried) is set closer by the font's own advance, the
+// one measure every script obeys (a letter-spacing reaches neither Arabic nor every glyph of a cluster).
+function _rapierPrintWillMetrics(markers) {
+	const size = 2, natural = 200, line = 216;
+	const longest = markers.reduce((most, marker) => Math.max(most, Array.from(marker).length), 1);
+	return { size, advance: Math.max(1, Math.min(natural, Math.floor(line * 1000 / (longest * size)))) };
+}
+
+// A font of glyphs that draw nothing, one glyph for each scalar the markers use. The PDF writer takes ToUnicode from the font's own
+// cmap, so one glyph to one scalar reads each marker back exactly; one font in one run keeps a marker one text object however
+// many scripts it holds. Each glyph is a contour of three points on a line, four font units tall: it has bounds (the writer
+// drops a run whose glyphs have none) and encloses no area, so no viewer, printer or rasteriser has a pixel to put. Scalars of the
+// astral planes come last and downward: the writer merges glyphs of consecutive codes into one range of its ToUnicode, and a range
+// that runs over a surrogate block reads back wrong.
+function _rapierPrintWillFont(markers) {
+	const { size, advance } = _rapierPrintWillMetrics(markers);
+	const scalars = Array.from(new Set(markers.flatMap(marker => Array.from(marker, ch => ch.codePointAt(0)))));
+	const order = scalars.filter(code => code < 0x10000).sort((a, b) => a - b)
+		.concat(scalars.filter(code => code >= 0x10000).sort((a, b) => b - a));
+	const count = order.length + 1;
+	const u16 = v => [(v >> 8) & 255, v & 255];
+	const u32 = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+	const cat = (...parts) => parts.flat(Infinity);
+	const groups = pairs => pairs.reduce((out, [code, glyph]) => {
+		const last = out[out.length - 1];
+		if (last && code === last.end + 1 && glyph === last.glyph + code - last.start) last.end = code;
+		else out.push({ start: code, end: code, glyph });
+		return out;
+	}, []);
+	const pairs = order.map((code, index) => [code, index + 1]).sort((a, b) => a[0] - b[0]);
+	const segments = groups(pairs.filter(([code]) => code < 0xffff))
+		.map(g => [g.start, g.end, (g.glyph - g.start) & 0xffff]).concat([[0xffff, 0xffff, 1]]);
+	const wide = groups(pairs);
+	let power = 1, select = 0;
+	while (power * 2 <= segments.length) { power *= 2; select++; }
+	const narrow = cat(u16(4), u16(16 + segments.length * 8), u16(0), u16(segments.length * 2), u16(power * 2), u16(select),
+		u16(segments.length * 2 - power * 2), segments.map(s => u16(s[1])), u16(0), segments.map(s => u16(s[0])),
+		segments.map(s => u16(s[2])), segments.map(() => u16(0)));
+	const full = cat(u16(12), u16(0), u32(16 + wide.length * 12), u32(0), u32(wide.length), wide.map(g => cat(u32(g.start), u32(g.end), u32(g.glyph))));
+	const outline = cat(u16(1), u16(0), u16(-2), u16(10), u16(2), u16(2), u16(0), [1, 1, 1], u16(0), u16(10), u16(-5), u16(-2), u16(4), u16(-2), [0]);
+	const utf16 = text => Array.from(text, ch => u16(ch.charCodeAt(0)));
+	const names = [[1, 'RapierWill'], [2, 'Regular'], [4, 'RapierWill Regular'], [6, 'RapierWill-Regular']];
+	let offset = 0;
+	const tables = {
+		'OS/2': cat(u16(4), u16(advance), u16(400), u16(5), u16(0), u16(650), u16(600), u16(0), u16(75), u16(650), u16(600), u16(0), u16(350),
+			u16(50), u16(300), u16(0), new Array(10).fill(0), u32(0), u32(0), u32(0), u32(0), [78, 79, 78, 69], u16(0x40),
+			u16(order.find(code => code < 0xffff) || 0x20), u16(order.filter(code => code < 0xffff).pop() || 0x20), u16(500), u16(-500), u16(0),
+			u16(500), u16(500), u32(1), u32(0), u16(500), u16(700), u16(0), u16(32), u16(0)),
+		cmap: cat(u16(0), u16(2), u16(3), u16(1), u32(20), u16(3), u16(10), u32(20 + narrow.length), narrow, full),
+		glyf: Array.from({ length: count }, () => outline).flat(),
+		head: cat(u32(0x00010000), u32(0x00010000), u32(0), u32(0x5f0f3cf5), u16(1), u16(1000), new Array(16).fill(0), u16(0), u16(-2), u16(10), u16(2),
+			u16(0), u16(8), u16(2), u16(1), u16(0)),
+		hhea: cat(u32(0x00010000), u16(500), u16(-500), u16(0), u16(advance), u16(0), u16(advance - 10), u16(10), u16(1), u16(0), u16(0), new Array(8).fill(0), u16(0), u16(count)),
+		hmtx: Array.from({ length: count }, () => cat(u16(advance), u16(0))).flat(),
+		loca: Array.from({ length: count + 1 }, (_, index) => u32(index * outline.length)).flat(),
+		maxp: cat(u32(0x00010000), u16(count), u16(3), u16(1), u16(0), u16(0), u16(2), new Array(16).fill(0)),
+		name: cat(u16(0), u16(names.length), u16(6 + names.length * 12),
+			names.map(([id, text]) => { const at = offset; offset += text.length * 2; return cat(u16(3), u16(1), u16(0x409), u16(id), u16(text.length * 2), u16(at)); }),
+			names.map(([, text]) => utf16(text))),
+		post: cat(u32(0x00030000), u32(0), u16(-100), u16(50), new Array(20).fill(0)),
+	};
+	const tags = Object.keys(tables).sort();
+	const padded = table => table.length % 4 ? table.concat(new Array(4 - table.length % 4).fill(0)) : table;
+	const sum = bytes => { let total = 0; for (let at = 0; at < bytes.length; at += 4) total = (total + ((bytes[at] << 24 | bytes[at + 1] << 16 | bytes[at + 2] << 8 | bytes[at + 3]) >>> 0)) >>> 0; return total; };
+	let place = 12 + tags.length * 16;
+	const directory = tags.map(tag => { const at = place; place += padded(tables[tag]).length; return cat([...tag].map(ch => ch.charCodeAt(0)), u32(sum(padded(tables[tag]))), u32(at), u32(tables[tag].length)); });
+	let tableSelect = 0;
+	while (2 << tableSelect <= tags.length) tableSelect++;
+	const file = cat(u32(0x00010000), u16(tags.length), u16((1 << tableSelect) * 16), u16(tableSelect), u16(tags.length * 16 - (1 << tableSelect) * 16), directory, tags.map(tag => padded(tables[tag])));
+	const headAt = 12 + tags.length * 16 + tags.slice(0, tags.indexOf('head')).reduce((total, tag) => total + padded(tables[tag]).length, 0);
+	file.splice(headAt + 8, 4, ...u32((0xb1b0afba - sum(file)) >>> 0));
+	return { family: 'RapierWillCarrier', bytes: Uint8Array.from(file), size };
+}
+
+// Each marker back where it stood: the sentinel paragraphs the plan wrote are replaced, in place, by lines of text that draw nothing. A
+// line has no height and takes no room (the block above and below meet as they did), the first of a run of markers standing on the
+// line's own top and each after it three pixels lower with the room given back, so every marker has a baseline of its own between the
+// last line above and the first below, in the order they stand. Text is set in the carrier's font at a fill of 1/255 (the least the
+// writer will emit; a fully transparent fill is never written); an engine that will not take the font stops the export, for the text
+// would then be ink (_rapierPrintWillProve).
+function _rapierPrintWillPlace(root, plan) {
+	// A marker the page holds inside other content (a code block, say) is quoted text, which a reader of the PDF's text could not tell from a carried marker.
+	const lost = () => { throw _rapierPrintWillLost('a marker stands inside other content, where a reader of the PDF\'s text could not tell it from a carried marker', 'Take the quoted marker out'); };
+	const measure = _rapierPrintWillMetrics(plan.markers);
+	const tokens = new Map(plan.markers.map((marker, index) => [plan.sentinel + index + RAPIER_WILL_SENTINEL_MARK, index]));
+	const rows = [];
+	for (const paragraph of root.querySelectorAll('p')) {
+		const index = tokens.get(paragraph.textContent);
+		if (index !== undefined) rows.push({ paragraph, index });
+	}
+	if (rows.length !== plan.markers.length || rows.some((row, at) => row.index !== at)) lost();
+	const runs = [];
+	for (const row of rows) {
+		let before = row.paragraph.previousSibling;
+		while (before && before.nodeType === Node.TEXT_NODE && !before.nodeValue.trim()) before = before.previousSibling;
+		const last = runs[runs.length - 1];
+		if (last && before === last[last.length - 1].paragraph) last.push(row);
+		else runs.push([row]);
+	}
+	const line = 'display:block;position:static;float:none;box-sizing:content-box;width:auto;height:0;min-height:0;margin:0;padding:0;border:0;overflow:visible;'
+		+ 'white-space:pre;text-align:left;text-indent:0;text-transform:none;text-shadow:none;letter-spacing:0;word-spacing:0;hyphens:none;'
+		+ 'font:' + measure.size + 'px/0 RapierWillCarrier,sans-serif;font-variant-ligatures:none;font-kerning:none;font-feature-settings:normal;'
+		+ 'direction:ltr;unicode-bidi:normal;color:rgba(0,0,0,.0039);break-after:avoid;break-inside:avoid;user-select:none;pointer-events:none;';
+	for (const run of runs) {
+		const first = run[0].paragraph;
+		const next = run[run.length - 1].paragraph.nextElementSibling;
+		const carriers = run.map((row, at) => {
+			const carrier = document.createElement('div');
+			carrier.className = 'rapier-will-carrier';
+			carrier.setAttribute('aria-hidden', 'true');
+			carrier.style.cssText = line + (at ? 'padding-top:' + at * 3 + 'px;margin-bottom:-' + at * 3 + 'px;' : '');
+			carrier.textContent = plan.markers[row.index];
+			return carrier;
+		});
+		// A rule's own top margin is a line of the sheet's (none at the head of the page, where the sheet takes it off the first child): it
+		// moves to the run, so the gap the rule makes with the block above is the one it made.
+		if (next && next.tagName === 'HR') {
+			if (first.previousElementSibling || first.parentNode !== root) carriers[0].style.marginTop = 'var(--md-line)';
+			next.style.marginTop = '0';
+		}
+		first.before(...carriers);
+		for (const row of run) row.paragraph.remove();
+	}
+	if (String(root.textContent).includes(plan.sentinel)) lost();
+}
+
+// Two things only the standing page can tell, for they need its own styles. A browser-wide minimum type size (an accessibility setting,
+// measured on Chromium 141 at 6 and 12 px) lifts the carrier's two pixels and every glyph's advance with them: the line runs past the
+// page, the writer keeps only what lies inside it and the print is shrunk whole to fit. A lifted carrier is scaled back from its own left
+// edge to the width it was made, the step of a marker in a run kept. And the run of markers that ends the document stands after the margin
+// of the block above it, which a page that ends there cannot hold: the writer would carry the run to a sheet of its own, blank (measured:
+// at 26 of 41 page heights with the run left after the margin, at 2 of 153 with it pulled to the block's bottom edge, at none with it
+// pulled four pixels above). That run is pulled up by the margin and four pixels, which leaves its baseline under the last line's.
+function _rapierPrintWillSettle(host, size) {
+	const carriers = Array.from(host.querySelectorAll('.rapier-will-carrier'));
+	for (const carrier of carriers) {
+		const lifted = parseFloat(getComputedStyle(carrier).fontSize);
+		if (!(lifted > size + 0.01)) continue;
+		const scale = size / lifted, step = parseFloat(carrier.style.paddingTop) || 0;
+		carrier.style.transformOrigin = '0 0';
+		carrier.style.transform = 'translateY(' + (step * (1 - scale)).toFixed(4) + 'px) scale(' + scale.toFixed(6) + ')';
+	}
+	for (const last of carriers) {
+		if (last.nextElementSibling || last.parentElement !== host.firstElementChild) continue;
+		let first = last;
+		while (first.previousElementSibling && first.previousElementSibling.classList.contains('rapier-will-carrier')) first = first.previousElementSibling;
+		if (first.previousElementSibling) first.style.marginTop = -(parseFloat(getComputedStyle(first.previousElementSibling).marginBottom) + 4) + 'px';
+	}
+}
+
+// The run that ends the document, set back as _rapierPrintWillSettle does, for the page the host prints (which has no script to measure
+// with): by the sheet's own line and four pixels, a heading's by half a line. A block with another margin below it (a paragraph the
+// layout comment made tight) is set back a little wrong, by the difference; measured without it, that page ran to a blank sheet at 6 of 31
+// page heights.
+function _rapierPrintWillPageCss() {
+	const last = '.rapier-will-carrier:not(:has(~:not(.rapier-will-carrier)))';
+	return '@media print{\n'
+		+ '.md-render>:not(.rapier-will-carrier,h1,h2,h3,h4,h5,h6)+' + last + '{margin-top:calc(-1 * var(--md-line) - 4px)!important}\n'
+		+ '.md-render>:is(h1,h2,h3,h4,h5,h6)+' + last + '{margin-top:calc(-1 * var(--md-line) / 2 - 4px)!important}\n'
+		+ '}';
 }
 
 function _rapierWaitForArtifactResources(root, options) {
@@ -22507,12 +22736,14 @@ function _rapierCanPrintCurrentDocument(platform) {
 async function _rapierPrintArtifactInPlace(artifact) {
 	if (window.RapierPlatform && typeof window.RapierPlatform.host.printArtifact === 'function') {
 		try {
+			// The host prints the page, whose own markup carries the font: the browser is asked here to take it first, as it is below.
+			if (artifact.willFont) await _rapierPrintWillProve(artifact.willFont);
 			const opened = await window.RapierPlatform.host.printArtifact(artifact);
 			if (!opened) showToast('PDF export unavailable', 'error');
 			return !!opened;
 		} catch (error) {
 			console.error('[rapier] platform print failed', error);
-			showToast('PDF export failed', 'error');
+			showToast(_rapierPrintFailure(error), 'error');
 			return false;
 		}
 	}
@@ -22553,12 +22784,14 @@ async function _rapierPrintArtifactInPlace(artifact) {
 		let fallbackTimer = 0;
 		let leftPageForPrintUi = false;
 		let returnTimer = 0;
+		let willFace = null;
 
 		const cleanup = () => {
 			if (cleaned) return;
 			cleaned = true;
 			if (fallbackTimer) clearTimeout(fallbackTimer);
 			if (returnTimer) clearTimeout(returnTimer);
+			if (willFace) { try { document.fonts.delete(willFace); } catch (_) {} willFace = null; }
 			window.removeEventListener('afterprint', onAfterPrint);
 			window.removeEventListener('blur', markPrintUiAway);
 			window.removeEventListener('focus', maybeCleanupAfterReturn);
@@ -22622,6 +22855,10 @@ async function _rapierPrintArtifactInPlace(artifact) {
 
 		_rapierPrintRuntime.cleanup = cleanup;
 
+		// The Will's carrier font (see _rapierPrintWillFont) is made for this print, loaded before the host stands and dropped with it. A
+		// font the engine refuses stops the export here (WILL LOST): the carriers would be drawn in the reader's own face, as ink at 1/255.
+		if (artifact.willFont) willFace = await _rapierPrintWillProve(artifact.willFont, document.fonts);
+
 		document.head.appendChild(style);
 		document.body.appendChild(host);
 		html.setAttribute('data-rapier-printing', 'on');
@@ -22631,6 +22868,7 @@ async function _rapierPrintArtifactInPlace(artifact) {
 
 		await _rapierWaitForArtifactResources(host, { skipFonts: true });
 
+		if (artifact.willFont) _rapierPrintWillSettle(host, artifact.willFont.size);
 		void host.offsetHeight;
 
 		if (platformPrint) {
@@ -22665,7 +22903,7 @@ async function _rapierPrintArtifactInPlace(artifact) {
 	} catch (error) {
 		_rapierRemovePrintArtifact();
 		console.warn('[rapier] PDF print artifact failed', error);
-		showToast('PDF export failed', 'error');
+		showToast(_rapierPrintFailure(error), 'error');
 		return false;
 	}
 }
@@ -22679,7 +22917,6 @@ async function rapierExport(fmt) {
 
 	if (fmt === 'pdf') {
 
-		if (_rapierDocumentWill().present) showToast('The PDF leaves out the will; it stays in your document', 'info');
 		return _rapierPrintArtifactInPlace(await _rapierBuildPrintArtifact(captured));
 	}
 
@@ -31914,11 +32151,15 @@ function _bindScrollFab(fab, host, virtual) {
 		const max = h.scrollHeight - h.clientHeight;
 
 		if (!v && max <= 40 && !fab.dataset.presence) { fab.classList.remove('visible'); return false; }
+		// A connected agent's circle stands on a document that may not scroll at all: max is 0 there, and
+		// 0 / 0 is NaN, which the browser refuses as a transform while the top of 0 it was given stays --
+		// the circle then sat over the top bar's own buttons (review-survives-restart, 1 October). A page
+		// that cannot scroll has nothing to show progress on: the circle rests at the top of its track.
 		const progress = v
 			? virtual().frac()
-			: Math.min(1, Math.max(0, h.scrollTop / max));
+			: max > 0 ? Math.min(1, Math.max(0, h.scrollTop / max)) : 0;
 		const { top, bottom } = trackBounds();
-		ride(top + progress * (bottom - top));
+		ride(Number.isFinite(progress) ? top + progress * (bottom - top) : top);
 		return true;
 	}
 	function showFab() {

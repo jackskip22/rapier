@@ -80,16 +80,28 @@ export function orderMidpoint(a = '', b = '') {
 		// ca === cb: the shared prefix continues.
 	}
 }
-// A first key, and keys before/after the extremes.
+// A first key, and keys past either end. Past the last a key counts up in its own digits (plus one, carried),
+// before the first it counts down (borrowed), and it never ends in 0, so two neighbours always have room between
+// them. Only a key at the end of its length's range (all z, or 0...01) grows, by as many digits as it has and at
+// most eight: a run of n notes chained after the last or placed first costs about log n digits, not n / 6.
 export function orderFirst() { return 'V'; }
-export function orderBefore(first) { return orderMidpoint('', first); }
-export function orderAfter(last) {
-	// Past the last key: bump its first digit when room remains, else extend.
-	if (!last) return orderFirst();
-	const c = DIGITS.indexOf(last[0]);
-	if (c >= 0 && c < D - 1 && last.length === 1) return DIGITS[c + 1];
-	return orderMidpoint(last, '');
+function orderStep(key, up) {
+	const digits = [...key].map(c => DIGITS.indexOf(c)), edge = up ? D - 1 : 0;
+	if (!digits.length || digits.includes(-1)) throw new Error('orderStep: not a key');
+	for (;;) {
+		let i = digits.length - 1;
+		while (i >= 0 && digits[i] === edge) digits[i--] = D - 1 - edge;
+		if (i < 0) break;
+		digits[i] += up ? 1 : -1;
+		if (digits.at(-1) !== 0) return digits.map(d => DIGITS[d]).join('');
+	}
+	const grow = Math.min(key.length, 8);
+	if (up) return key + '0'.repeat(grow - 1) + '1';
+	// Only a key's own prefixes sort below a key of zeros; for that key the midpoint answers, as it always did.
+	return /^0+$/.test(key) ? orderMidpoint('', key) : '0'.repeat(key.length) + 'z'.repeat(grow);
 }
+export function orderBefore(first) { return orderStep(first, false); }
+export function orderAfter(last) { return last ? orderStep(last, true) : orderFirst(); }
 
 // ---- The sidecar -------------------------------------------------------------------------------
 export function emptyIndex() { return {version: NOTES_INDEX_VERSION, notes: {}, sections: [], collapsed: {skills: true, pinned: false, others: false, archive: true, trash: true}}; }
@@ -183,7 +195,27 @@ export function parseIndex(text) {
 	return index;
 }
 export function serializeIndex(index) { return JSON.stringify({...index, version: NOTES_INDEX_VERSION}, null, 1) + '\n'; }
-export function isNoteFile(name) { return typeof name === 'string' && /^[^/\\]+\.md$/i.test(name) && name !== NOTES_INDEX_FILE; }
+// The folder keeps two kinds of text file side by side (docs/sync-design.md §2): Markdown, a note, and a
+// code file (code, plain text or data, the text types the editor opens), kept as the exact bytes the person
+// wrote. Every custody rule (save, history, Trash, backup, sync) holds for both; only a note's Markdown is
+// ever read for links, media, tags or checklists, or merged with a conflict block.
+const CODE_EXTENSIONS = new Set(('txt js mjs cjs ts tsx jsx json jsonc html htm xml xhtml vue svelte css scss sass less styl ' +
+	'py rb go rs php cs fs fsx java kt swift m mm c h cpp cc cxx hpp hh zig sh bash zsh fish ps1 psm1 psd1 yml yaml toml ini ' +
+	'cfg conf env properties sql lua r dart vb pl pm ex exs erl hrl clj cljs scala groovy nim graphql gql proto diff patch ' +
+	'tex rst adoc asciidoc tf tfvars hcl sol gradle log csv tsv').split(' '));
+export function isMarkdownNote(name) { return typeof name === 'string' && /^[^/\\]+\.md$/i.test(name) && name !== NOTES_INDEX_FILE; }
+// The folder's own files are never code: its index, a backup's manifest and every dotfile.
+export function isCodeFile(name) {
+	const m = typeof name === 'string' && /^([^/\\.][^/\\]*)\.([A-Za-z0-9]+)$/.exec(name);
+	return !!m && CODE_EXTENSIONS.has(m[2].toLowerCase()) && name !== NOTES_INDEX_FILE && name !== 'rapier-backup.json';
+}
+export function isNoteFile(name) { return isMarkdownNote(name) || isCodeFile(name); }
+// A code file keeps its extension; a taken name numbers its stem ("script 2.py", "script kept.py").
+export function codeFileName(wanted, existing = [], {ascii = false} = {}) {
+	let name = null;
+	try { name = attachmentFileName(wanted, existing, {ascii}); } catch (_) {}
+	return isCodeFile(name) ? name : null;
+}
 
 // Files without an entry are appended in name order; entries without a file go.
 export function reconcile(index, files) {

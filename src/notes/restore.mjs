@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {emptyIndex, parseIndex, isNoteFile, noteFileName, orderAfter, serializeIndex} from './model.mjs';
+import {emptyIndex, parseIndex, isNoteFile, isMarkdownNote, noteFileName, orderAfter, serializeIndex} from './model.mjs';
 import {exactBytes, sha256} from './integrity.mjs';
 import {OWNER_JOURNAL_FILE} from './owner.mjs';
 import {ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
@@ -283,7 +283,8 @@ function rootsOf(entries, rootId) {
 function allocateFile(name, taken) {
 	if (!taken.has(fold(name))) { taken.add(fold(name)); return name; }
 	let result;
-	if (isNoteFile(name)) result = noteFileName(name.slice(0, -3).normalize('NFC'), [...taken]);
+	// A note is renamed as notes are; a code file, like any other file, keeps its extension ("script 2.py").
+	if (isMarkdownNote(name)) result = noteFileName(name.slice(0, -3).normalize('NFC'), [...taken]);
 	else {
 		const slash = name.lastIndexOf('/'), dot = name.lastIndexOf('.'), split = dot > slash ? dot : name.length;
 		let n = 2;

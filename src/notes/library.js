@@ -192,7 +192,8 @@ function _rapierNotesLibraryLinkIndex() {
 	const L = _rapierNotesLinksModule(), lib = _rapierNotesLib;
 	if (!L) return null;
 	_rapierNotesLibraryFresh();
-	if (!lib.lidx) lib.lidx = L.buildLinkIndex(_rapierNotes.texts);
+	// Links are read in notes only: a code file's words are code (docs/sync-design.md §2).
+	if (!lib.lidx) lib.lidx = L.buildLinkIndex(new Map([..._rapierNotes.texts].filter(([file]) => !_rapierNotesModel().isCodeFile(file))));
 	return lib.lidx;
 }
 // One note changed; `gone` drops it. No index is built here.
@@ -203,7 +204,7 @@ function _rapierNotesLibraryTouch(file, gone) {
 	if (text == null && !gone) return;
 	const S = _rapierNotesSearchModule(), L = _rapierNotesLinksModule();
 	if (lib.build && S) { lib.build = S.updateSearchIndex(lib.build, file, text, (state.index && state.index.notes[file]) || {}, {own: true}); lib.sidx = lib.build.index; if (!lib.build.done) _rapierNotesLibraryScheduleSlice(); }
-	if (lib.lidx && L) lib.lidx = L.updateLinkIndex(lib.lidx, file, text);
+	if (lib.lidx && L && !_rapierNotesModel().isCodeFile(file)) lib.lidx = L.updateLinkIndex(lib.lidx, file, text);
 	lib.results = null; lib.job = null; if (lib.snips) lib.snips.delete(file);
 	// A note written since its pictures were read is read again, in idle time.
 	if (typeof _rapierOcrTouched === 'function') _rapierOcrTouched(file, gone);

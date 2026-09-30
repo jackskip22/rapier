@@ -26,7 +26,7 @@
 //     is discovered on the next listing, never re-uploaded as a new version.
 
 import {admitPersonal, mergePersonal, personalAsset} from './personal.mjs';
-import {noteFileName, isNoteFile, emptyIndex} from './model.mjs';
+import {noteFileName, isNoteFile, isCodeFile, codeFileName, emptyIndex} from './model.mjs';
 import {mergeText, mergeIndex, assignNoteFilenames, inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
 import {seal, open} from './vault.mjs';
 import {recordingsOf} from './audio.mjs';
@@ -63,23 +63,27 @@ export async function sha256Hex(bytes) {
 export function canonicalText(text) { return String(text ?? ''); } // Byte fidelity, including CRLF and BOM.
 export async function contentHash(text) { return sha256Hex(te.encode(canonicalText(text))); }
 export function objectKey(hash) { return OBJECT_PREFIX + hash; }
+// A generation is written in twelve digits, so discovery lists a device's heads from the last it saw. A vault
+// published before wrote it unpadded: still read, sealed as written, and listed after every padded one.
+const GENERATION_DIGITS = 12;
+export const headGeneration = generation => String(generation).padStart(GENERATION_DIGITS, '0');
 export function headKey(deviceId, generation, hash) {
-	if (!DEVICE_RE.test(deviceId) || !Number.isSafeInteger(generation) || generation < 1 || !HASH_RE.test(hash)) refuse('corrupt', 'invalid head address');
-	return `${HEAD_PREFIX}${deviceId}/${generation}-${hash}`;
+	if (!DEVICE_RE.test(deviceId) || !Number.isSafeInteger(generation) || generation < 1 || generation >= 10 ** GENERATION_DIGITS || !HASH_RE.test(hash)) refuse('corrupt', 'invalid head address');
+	return `${HEAD_PREFIX}${deviceId}/${headGeneration(generation)}-${hash}`;
 }
 const HASH_RE = /^[a-f0-9]{64}$/;
 const MEDIA_OP_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}:[a-f0-9-]{36}$/;
 const DEVICE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const HEAD_RE = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/([1-9][0-9]*)-([a-f0-9]{64})$/;
+const HEAD_RE = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/([0-9]{12}|[1-9][0-9]{0,10})-([a-f0-9]{64})$/;
 const safeFile = file => isNoteFile(file) && !/[\0-\x1f\x7f]/.test(file);
 const safeAsset = file => typeof file === 'string' && /^(?:audio|attachments)\/[^/\\\x00-\x1f\x7f]+$/.test(file) && !file.split('/')[1].startsWith('.');
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
-const headAAD = head => `${HEAD_PREFIX}${head.device}/${head.generation}`;
+const headAAD = head => `${HEAD_PREFIX}${head.device}/${head.written ?? headGeneration(head.generation)}`;
 const portableIndex = index => ({version: 1, notes: {}, sections: index?.sections || [], collapsed: index?.collapsed || {}});
 function parseHeadKey(key) {
 	const m = typeof key === 'string' && HEAD_RE.exec(key);
-	if (!m || !Number.isSafeInteger(Number(m[2]))) refuse('corrupt', 'invalid immutable head address');
-	return {device: m[1], generation: Number(m[2]), hash: m[3]};
+	if (!m || !(Number(m[2]) >= 1)) refuse('corrupt', 'invalid immutable head address');
+	return {device: m[1], generation: Number(m[2]), hash: m[3], written: m[2]};
 }
 export async function snapshotToken(snapshot) {
 	const assets = {};
@@ -236,8 +240,11 @@ function sortObject(value) {
 // duplicate-name suffix model.mjs already writes for every other new note is the honest one.
 function claimFile(preferred, taken, seedText) {
 	if (safeFile(preferred) && ![...taken].some(name => name.normalize('NFC').toLowerCase() === preferred.normalize('NFC').toLowerCase())) return preferred;
-	return noteFileName(seedText || (preferred || 'note').replace(/\.md$/i, ''), [...taken]);
+	return (isCodeFile(preferred) && codeFileName(preferred, [...taken])) || noteFileName(seedText || (preferred || 'note').replace(/\.md$/i, ''), [...taken]);
 }
+// A code file is bytes (docs/sync-design.md §2.2): sync never reads a link or a recording in it, never
+// rewrites it, and never folds two versions into one conflict block. Its words pass through as they are.
+const noteText = (file, text, rewrite) => isCodeFile(file) ? text : rewrite(text);
 
 // A single-note index lets the sidecar fold reuse A8's whole-index field/rename rules (mergeIndex)
 // exactly, rather than a second hand-written field-by-field merge. sections/collapsed/tombstones
@@ -371,7 +378,7 @@ export async function plan(local, heads, capabilities) {
 	const published = allHeads.find(h => h && h.device === deviceId);
 	if (local.head?._key && published?._key !== local.head._key) refuse('rollback', 'this install checkpoint and its published head differ; keep both copies and reconnect the restored copy with a fresh install identity');
 	const assets = await planSyncMedia(local, allHeads, capabilities);
-	const rewrittenFiles = Object.fromEntries(Object.entries(local.files || {}).map(([file, value]) => [file, {text: rewriteSyncMedia(typeof value === 'string' ? value : value.text, assets.mappings.local)}]));
+	const rewrittenFiles = Object.fromEntries(Object.entries(local.files || {}).map(([file, value]) => [file, {text: noteText(file, typeof value === 'string' ? value : value.text, text => rewriteSyncMedia(text, assets.mappings.local))}]));
 	const localForHash = {...local, files: rewrittenFiles, head: local.head?.device === deviceId ? local.head : published || local.head || emptyHead(deviceId)};
 	const {rows: locals, ourHead} = await hashedLocals(localForHash, parentGraph([localForHash.head, ...allHeads]));
 	if (!local.head && published && locals.some(row => {
@@ -550,6 +557,7 @@ export async function plan(local, heads, capabilities) {
 	const deferredIds = new Set(), deferredFiles = new Set();
 	for (const [file, value] of Object.entries(local.files || {})) {
 		const text = typeof value === 'string' ? value : value.text;
+		if (isCodeFile(file)) continue;
 		if ([...recordingsOf(text).map(row => 'audio/' + row.name), ...attachmentsOf(text).map(row => 'attachments/' + row.name)].some(name => assets.skipped.includes(name))) {
 			deferredIds.add(local.index.notes[file]?.id); deferredFiles.add(file);
 		}
@@ -826,7 +834,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	}
 
 	const files = {};
-	for (const [name, rec] of Object.entries(snapshot.files || {})) files[name] = {text: await rewriteKnown(typeof rec === 'string' ? rec : rec.text, plan.assetMappings?.local, snapshot.index.notes[name]?.id, snapshot.index.conflicts, plan.linkContexts.local)};
+	for (const [name, rec] of Object.entries(snapshot.files || {})) files[name] = {text: await noteText(name, typeof rec === 'string' ? rec : rec.text, text => rewriteKnown(text, plan.assetMappings?.local, snapshot.index.notes[name]?.id, snapshot.index.conflicts, plan.linkContexts.local))};
 	const index = structuredClone(snapshot.index || emptyIndex());
 	const trashedAt = {};
 	const resolvedConflicts = [...(plan.rootConflicts || [])];
@@ -846,7 +854,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	for (const d of plan.downloads || []) {
 		const got = downloaded.get(d.id);
 		if (!got) continue;
-		files[d.file] = {text: await rewriteKnown(got.text, plan.assetMappings?.heads[d.device], d.id, d.conflicts, plan.linkContexts.heads[d.device])};
+		files[d.file] = {text: await noteText(d.file, got.text, text => rewriteKnown(text, plan.assetMappings?.heads[d.device], d.id, d.conflicts, plan.linkContexts.heads[d.device]))};
 		index.notes[d.file] = {...defaultEntry(), ...(d.sidecar || {}), ...(d.id ? {id: d.id} : {})};
 		// A note downloaded already resolved elsewhere carries its ledger entries forward so a
 		// fast-forwarding device sees the same "needs a look" the resolving device recorded.
@@ -858,8 +866,9 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		if (m.sidecarOnly) { resolvedConflicts.push(...(m.conflicts || [])); continue; }
 		const tips = m.tips || [];
 		if (!tips.length) continue;
+		const code = isCodeFile(m.file), versions = [];
 		let baseText = null;
-		if (m.base) {
+		if (m.base && !code) {
 			const original = await fetchText(m.base), contexts = plan.linkContexts.objects[m.base] || [[]];
 			const normalized = [...new Set(contexts.map(context => rewriteLinks(original, context)))];
 			// Equal source objects can outlive a filename namespace. Only an agreed exact
@@ -868,22 +877,35 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		}
 		// Keep direct parents only: the local tip (or the base of an unsealed local edit)
 		// and each peer tip. Verified history supplies the rest of the ancestry.
-		let accText = m.oursText == null ? null : await rewriteKnown(m.oursText, plan.assetMappings?.local, m.id, m.conflicts, plan.linkContexts.local), accDevice = m.oursDevice;
+		let accText = m.oursText == null ? null : await noteText(m.file, m.oursText, text => rewriteKnown(text, plan.assetMappings?.local, m.id, m.conflicts, plan.linkContexts.local)), accDevice = m.oursDevice;
 		const accEntry = m.sidecar;
 		let accParents = [m.oursObject || m.base].filter(Boolean);
 		let accBase = baseText;
 		let theseConflicts = [...(m.conflicts || [])];
+		if (code && accText != null) versions.push({text: accText, modified: m.oursEntry?.modified});
 		for (const tip of tips) {
 			const originalTip = await fetchText(tip.object);
-			const tipText = await rewriteKnown(originalTip, plan.assetMappings?.heads[tip.device], m.id, m.conflicts, plan.linkContexts.heads[tip.device]);
+			const tipText = await noteText(m.file, originalTip, text => rewriteKnown(text, plan.assetMappings?.heads[tip.device], m.id, m.conflicts, plan.linkContexts.heads[tip.device]));
 			if (tip.content && await contentHash(originalTip) !== tip.content) refuse('content', 'the merge tip does not match its declared plaintext digest');
 			if (tipText == null) throw Object.assign(new Error('merge object missing ' + tip.object), {code: 'incomplete'});
+			if (code) { accParents = versions.length ? [...new Set([...accParents, tip.object])] : [tip.object]; versions.push({text: tipText, modified: tip.entry?.modified}); continue; }
 			if (accText == null) { accText = tipText; accDevice = tip.device; accParents = [tip.object]; continue; }
 			const textResult = await mergeContent(m.id, accBase, accText, tipText, accDevice, tip.device);
 			theseConflicts.push(...textResult.conflicts);
 			accText = textResult.text;
 			accParents = [...new Set([...accParents, tip.object])];
 			accBase = null; // no known common ancestor between an already-folded result and the next tip
+		}
+		// Two versions of a code file are never folded into one. The one saved last (its sidecar's time; then the
+		// greater content digest) keeps the name on every device; each other version is kept whole beside it (below).
+		const kept = [];
+		if (code) {
+			for (const {text, modified} of versions) {
+				const content = await contentHash(text), at = Number.isFinite(modified) ? modified : -Infinity, same = kept.find(row => row.content === content);
+				if (same) same.at = Math.max(same.at, at); else kept.push({text, content, at});
+			}
+			kept.sort((a, b) => b.at - a.at || (a.content < b.content ? 1 : a.content > b.content ? -1 : 0));
+			accText = kept.shift().text;
 		}
 		theseConflicts = uniqueConflicts(theseConflicts);
 		resolvedConflicts.push(...theseConflicts);
@@ -896,6 +918,20 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		}
 		if (store.rememberObject) await store.rememberObject(await contentHash(accText), objectHash, sealedNew);
 		await putVerified(transport, objectKey(objectHash), sealedNew);
+		// The clash said by name: "script kept.py", a code file of its own. Its identity is derived from the
+		// clash alone, so every device that resolves the same clash keeps the same one file, once; one the
+		// person already deleted is not brought back.
+		for (const row of kept) {
+			const id = 'kept-' + (await sha256Hex(te.encode(m.id + '\n' + row.content))).slice(0, 24) + ':1';
+			if (plan.head.notes[id] || plan.head.tombstones[id] || Object.values(index.notes).some(entry => entry.id === id)) continue;
+			const ext = finalFile.slice(finalFile.lastIndexOf('.')), file = claimFile(finalFile.slice(0, -ext.length) + ' kept' + ext, new Set(Object.keys(files)));
+			const sidecar = {...defaultEntry(), id, keptFrom: {file: finalFile, id: m.id, digest: row.content}};
+			files[file] = {text: row.text}; index.notes[file] = sidecar;
+			const {sealed, object} = await sealUpload({text: row.text, content: row.content, ancestors: []}, vdk, store);
+			plan.head.notes[id] = {file, object, content: row.content, sidecar: copyEntry(sidecar), parents: []};
+			if (store.rememberObject) await store.rememberObject(row.content, object, sealed);
+			await putVerified(transport, objectKey(object), sealed);
+		}
 	}
 
 	const expectedDownloads = (plan.downloads || []).length;
@@ -936,8 +972,8 @@ export async function execute(inputPlan, transport, store, options = {}) {
 			}
 		}
 	}
-	const activeConflicts = new Set();
-	for (const value of Object.values(files)) for (const block of inspectTextConflicts(value.text, {nested: true})) activeConflicts.add(await contentHash(block.block));
+	const activeConflicts = new Set(), markdown = Object.entries(files).filter(([file]) => !isCodeFile(file)).map(([, value]) => value);
+	for (const value of markdown) for (const block of inspectTextConflicts(value.text, {nested: true})) activeConflicts.add(await contentHash(block.block));
 	// A link rewrite changes the exact custody bytes, not why or where the conflict
 	// was recorded. The envelope parser cannot recover no-ancestor provenance.
 	const rebind = conflict => {
@@ -948,10 +984,10 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		index.conflicts = uniqueConflicts([...(index.conflicts || []), ...resolvedConflicts].map(rebind), activeConflicts);
 	}
 	for (const rec of Object.values(plan.head.notes)) if (rec.conflicts) rec.conflicts = uniqueConflicts(rec.conflicts.map(rebind), activeConflicts);
-	for (const value of Object.values(files)) for (const recording of recordingsOf(value.text)) {
+	for (const value of markdown) for (const recording of recordingsOf(value.text)) {
 		if (!Object.hasOwn(assets, 'audio/' + recording.name) && !Object.values(plan.head.assetTombstones || {}).some(t => t.file === 'audio/' + recording.name)) refuse('incomplete_asset', 'a note names a recording whose complete bytes are not available; nothing was replaced');
 	}
-	for (const value of Object.values(files)) for (const attachment of attachmentsOf(value.text)) {
+	for (const value of markdown) for (const attachment of attachmentsOf(value.text)) {
 		if (!Object.hasOwn(assets, 'attachments/' + attachment.name) && !Object.values(plan.head.assetTombstones || {}).some(t => t.file === 'attachments/' + attachment.name)) refuse('incomplete_asset', 'a note links to a file whose complete bytes are not available; nothing was replaced');
 	}
 	if (snapshot.head && same(headPayload(snapshot.head), headPayload(plan.head)) && same(files, snapshot.files) && same(index, snapshot.index) && same(forgotten, snapshot.forgotten || [])) {
@@ -979,6 +1015,8 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	const verified = structuredClone(plan.verified || {keys: [], digests: {}});
 	verified.keys = [...verified.keys.filter(old => parseHeadKey(old).device !== plan.head.device), key].sort();
 	verified.digests = Object.fromEntries(verified.keys.map(key => [key, parseHeadKey(key).hash]));
+	// The next run trusts its own checkpoint by this sealed digest instead of downloading it.
+	verified.head = await sha256Hex(encodeHead(plan.head));
 	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, forgotten, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
 	await store.commit(next, {expected: plan.expected});
 	await resumePending(transport, store, {vdk});
@@ -1055,21 +1093,53 @@ export function headRetirementCandidates(keys, deviceId, keep = HEAD_RETENTION_G
 	for (const key of own) { const generation = parseHeadKey(key).generation; if (generations.has(generation)) refuse('device_fork', 'head retirement cannot choose between forked generations'); generations.add(generation); }
 	return keep === Infinity ? [] : own.slice(keep);
 }
-export async function loadHeads(transport, vdk, {anchors = [], verified = null, deviceId, checkpoint = null, headBytes = {}} = {}) {
+async function listEvery(transport, prefix, options) {
+	const keys = [], prefixes = [], cursors = new Set(); let cursor = null;
+	for (;;) {
+		const page = await (options ? transport.list(prefix, cursor, options) : transport.list(prefix, cursor));
+		if (!page || !Array.isArray(page.keys) || typeof page.truncated !== 'boolean' || page.prefixes !== undefined && !Array.isArray(page.prefixes)) refuse('listing', 'head discovery returned an invalid page');
+		keys.push(...page.keys); prefixes.push(...(page.prefixes || []));
+		if (!page.truncated) return {keys, prefixes};
+		if (typeof page.cursor !== 'string' || !page.cursor || cursors.has(page.cursor)) refuse('listing', 'head discovery did not advance its cursor');
+		cursors.add(page.cursor); cursor = page.cursor;
+	}
+}
+// Discovery downloads only what changed. Where the store lists from a key, each device's heads are
+// listed from the generation this install last saw, so a quiet poll lists one head a device. This
+// install's own head is its checkpoint, proved by the vault-sealed record of the last run; every
+// other head is downloaded once and then read from the store's cache of verified ciphertext.
+export async function loadHeads(transport, vdk, {anchors = [], verified = null, deviceId, checkpoint = null, ownHead = null, cache = null} = {}) {
 	if (verified) {
 		const checked = await authenticateHeads(verified, deviceId, checkpoint);
 		if (td.decode(await open(vdk, checked.aad, checked.proof)) !== checked.digest) refuse('cache', 'the verified head frontier changed; no work was replaced');
 		verified = checked.value;
 	}
-	const found = new Set(), seenCursors = new Set(); let cursor = null;
-	do {
-		const page = await transport.list(HEAD_PREFIX, cursor);
-		if (!page || !Array.isArray(page.keys) || typeof page.truncated !== 'boolean') refuse('listing', 'head discovery returned an invalid page');
-		for (const item of page.keys) { parseHeadKey(item.key); found.add(item.key); }
-		if (!page.truncated) break;
-		if (typeof page.cursor !== 'string' || !page.cursor || seenCursors.has(page.cursor)) refuse('listing', 'head discovery did not advance its cursor');
-		seenCursors.add(page.cursor); cursor = page.cursor;
-	} while (true);
+	const found = new Set(), bounds = new Map(), seenFrom = new Map();
+	for (const key of [...(verified?.keys || []), ...anchors]) { const {device, generation} = parseHeadKey(key); seenFrom.set(device, Math.max(seenFrom.get(device) || 0, generation)); }
+	if (transport.capabilities?.listsFrom) {
+		const {keys: loose, prefixes} = await listEvery(transport, HEAD_PREFIX, {delimiter: '/'}), groups = new Set(prefixes);
+		// A store that ignores the grouping lists the heads themselves; each names its device. Heads
+		// before a requested start are more than was asked for, never fewer, and are kept as found.
+		for (const item of loose) { groups.add(HEAD_PREFIX + parseHeadKey(item.key).device + '/'); found.add(item.key); }
+		for (const group of groups) {
+			const device = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/$/.exec(group)?.[1];
+			if (!device) refuse('listing', 'head discovery returned an invalid device group');
+			const from = seenFrom.get(device);
+			const {keys} = await listEvery(transport, group, from ? {startAfter: group + headGeneration(from) + '-'} : {});
+			for (const item of keys) { if (parseHeadKey(item.key).device !== device) refuse('listing', 'head discovery returned a head outside its device'); found.add(item.key); }
+			if (from) bounds.set(device, from);
+		}
+	} else for (const item of (await listEvery(transport, HEAD_PREFIX)).keys) { parseHeadKey(item.key); found.add(item.key); }
+	if (checkpoint && !found.has(checkpoint)) refuse('rollback', 'this install’s published checkpoint is missing; no local work was replaced');
+	for (const key of anchors) if (!found.has(key)) refuse('incomplete', 'a previously observed generation is missing; no local note was replaced');
+	const known = new Map();
+	if (checkpoint && ownHead) {
+		const own = decodeHead(encodeHead(ownHead));
+		if (verified?.head) {
+			if (await sha256Hex(encodeHead(own)) !== verified.head) refuse('cache', 'the local checkpoint differs from its authenticated record; no work was replaced');
+			known.set(checkpoint, own);
+		}
+	}
 	const generations = new Map(), frontiers = new Map();
 	for (const key of [...found, ...(verified?.keys || []), ...anchors]) {
 		const {device, generation} = parseHeadKey(key), at = device + '/' + generation;
@@ -1081,13 +1151,27 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 	const loaded = new Map();
 	async function read(key) {
 		if (loaded.has(key)) return loaded.get(key);
-		const address = parseHeadKey(key), got = headBytes[key] ? {bytes: headBytes[key]} : await transport.get(key);
-		if (!got) refuse('incomplete', 'a listed or previously observed generation is missing; no local note was replaced');
-		if (await sha256Hex(got.bytes) !== address.hash) refuse('ciphertext', 'the head ciphertext does not match its address');
-		const head = decodeHead(await open(vdk, headAAD(address), got.bytes));
+		const address = parseHeadKey(key);
+		let head = known.get(key);
+		if (!head) {
+			let bytes = cache ? await cache.get(key) : null, fetched = false;
+			if (!bytes) {
+				const got = await transport.get(key);
+				if (!got) refuse('incomplete', 'a listed or previously observed generation is missing; no local note was replaced');
+				bytes = got.bytes; fetched = true;
+			}
+			if (await sha256Hex(bytes) !== address.hash) refuse('ciphertext', 'the head ciphertext does not match its address');
+			head = decodeHead(await open(vdk, headAAD(address), bytes));
+			if (fetched && cache) await cache.put(key, bytes);
+			if (key === checkpoint && ownHead && !same(head, decodeHead(encodeHead(ownHead)))) refuse('cache', 'the local checkpoint differs from its authenticated published bytes');
+		}
 		if (head.device !== address.device || head.generation !== address.generation) refuse('corrupt', 'the head disagrees with its address');
-		if (head.previous && !found.has(head.previous)) refuse('incomplete', 'the newest head’s exact predecessor is missing; no local work was replaced');
-		if (head.previous && generations.get(address.device + '/' + (address.generation - 1)) !== head.previous) refuse('device_fork', 'the newest head names a different kept predecessor');
+		// Below the listed range a predecessor was proved when this install first observed its successor.
+		const prior = head.previous ? parseHeadKey(head.previous) : null, bound = bounds.get(address.device);
+		if (prior && !(bound && prior.generation < bound)) {
+			if (!found.has(head.previous)) refuse('incomplete', 'the newest head’s exact predecessor is missing; no local work was replaced');
+			if (generations.get(address.device + '/' + (address.generation - 1)) !== head.previous) refuse('device_fork', 'the newest head names a different kept predecessor');
+		}
 		head._key = key; head._parents = head.ancestry || {}; loaded.set(key, head); return head;
 	}
 	const tips = [];
@@ -1105,6 +1189,8 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 		for (const key of keys.slice(1, HEADS_PER_DEVICE)) await read(key);
 	}
 	tips.verified = {keys: tips.map(head => head._key).sort(), digests: Object.fromEntries(tips.map(head => [head._key, parseHeadKey(head._key).hash]))};
+	const own = tips.find(head => head.device === deviceId);
+	if (own) tips.verified.head = await sha256Hex(encodeHead(own));
 	return tips.sort((a, b) => a.device.localeCompare(b.device));
 }
 
@@ -1113,16 +1199,9 @@ export async function synchronize(transport, store, {vdk} = {}) {
 		try {
 			await store.beginRun?.(transport.capabilities);
 			await resumePending(transport, store, {vdk});
-			const local = await store.snapshot(), headBytes = {};
-			if (local.head?._key) {
-				const own = await transport.get(local.head._key);
-				if (!own) refuse('rollback', 'this install’s published checkpoint is missing; no local work was replaced');
-				if (await sha256Hex(own.bytes) !== parseHeadKey(local.head._key).hash) refuse('ciphertext', 'the published checkpoint does not match its immutable address');
-				const ownHead = decodeHead(await open(vdk, headAAD(local.head), own.bytes));
-				if (!same(ownHead, decodeHead(encodeHead(local.head)))) refuse('cache', 'the local checkpoint differs from its authenticated published bytes');
-				headBytes[local.head._key] = own.bytes;
-			}
-			const heads = await loadHeads(transport, vdk, {anchors: local.observed || [], verified: local.verified, deviceId: local.deviceId, checkpoint: local.head?._key, headBytes});
+			const local = await store.snapshot();
+			const heads = await loadHeads(transport, vdk, {anchors: local.observed || [], verified: local.verified, deviceId: local.deviceId,
+				checkpoint: local.head?._key || null, ownHead: local.head || null, cache: store.heads || null});
 			const result = await execute(await plan(local, heads, transport.capabilities), transport, store, {vdk});
 			return {...result, rebases: attempt};
 		} catch (error) {
@@ -1149,6 +1228,13 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 		folderIdentity ||= index.folderDeviceId;
 	};
 	const spoolPattern = /^\.rapier-sync-object-([a-f0-9]{64})-([a-f0-9]{64})\.tmp$/;
+	// Verified head ciphertext, named by the head key's own hash, so a head is downloaded once. A
+	// temporary file: backups leave it out, and each finished run keeps only its observed frontier.
+	const headCachePattern = /^\.rapier-sync-head-([a-f0-9]{64})\.tmp$/, headCacheName = key => '.rapier-sync-head-' + parseHeadKey(key).hash + '.tmp';
+	async function retainHeads(keys) {
+		const keep = new Set(keys.map(headCacheName));
+		for (const name of await folder.store.list()) if (headCachePattern.test(name) && !keep.has(name)) { try { await folder.store.remove(name); } catch (_) {} }
+	}
 	function rememberName(content, hash, name) {
 		objects.set(hash, name);
 		if (!byContent.has(content)) byContent.set(content, []);
@@ -1333,11 +1419,20 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 				return result;
 			});
 		},
+		heads: {
+			async get(key) {
+				const bytes = await folder.store.read(headCacheName(key));
+				return bytes && await sha256Hex(bytes) === parseHeadKey(key).hash ? bytes : null;
+			},
+			put: (key, bytes) => withLease(() => folder.store.write(headCacheName(key), bytes)),
+		},
 		async observe(keys, verified) {
-			return updateSyncState(folder, (state, index) => {
+			const result = await updateSyncState(folder, (state, index) => {
 				activeFolder(index); assertActive();
 				return same(state.observed || [], keys) && same(state.verified, verified) ? null : {...state, observed: keys, verified};
 			});
+			await withLease(() => retainHeads(keys));
+			return result;
 		},
 		async acknowledge(key) {
 			await updateSyncState(folder, (state, index) => {
@@ -1351,6 +1446,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, assertA
 				await loadObjects(); assertActive();
 				for (const name of objects.values()) { try { await folder.store.remove(name); } catch (_) {} }
 				objects.clear(); byContent.clear(); loaded = false;
+				await retainHeads((await readSyncStateBytes(folder.store)).state.observed || []);
 			});
 		},
 		async rememberObject(content, hash, bytes) {
