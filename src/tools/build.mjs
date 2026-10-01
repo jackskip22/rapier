@@ -765,7 +765,7 @@ if (!Array.isArray(editorScriptsAll) || new Set(editorScriptsAll).size !== edito
   typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|layout|notes)\/[a-z-]+\.js$/.test(path)))
   throw new Error('Editor script sources are invalid');
 // The document profile drops Draw, Paint and Notes scripts whole; editor/info.js drops only its marked Notes part (below).
-const DOCUMENT_PROFILE_DROPPED_SCRIPTS = new Set(['editor/personal.js', 'draw/draw.js', 'draw/paint-tool.js', 'notes/notes.js', 'notes/todo.js', 'notes/library.js', 'notes/ocr.js', 'notes/recorder.js', 'notes/sync-ui.js',  'notes/attachments.js']);
+const DOCUMENT_PROFILE_DROPPED_SCRIPTS = new Set(['editor/personal.js', 'draw/draw.js', 'draw/effects-tool.js', 'draw/paint-tool.js', 'notes/notes.js', 'notes/todo.js', 'notes/library.js', 'notes/ocr.js', 'notes/recorder.js', 'notes/sync-ui.js',  'notes/attachments.js']);
 const editorScripts = PROFILE === 'full' ? editorScriptsAll : editorScriptsAll.filter(path => !DOCUMENT_PROFILE_DROPPED_SCRIPTS.has(path));
 // editor/info.js's Notes entries (#339) are marked and dropped
 // as ui.html's RAPIER_NOTES markup is.

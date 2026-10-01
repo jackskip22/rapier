@@ -6094,7 +6094,7 @@ async function _rapierNotesImportFiles(files, source) {
 	// Exact backup references (current AND historical) are already bound by restore.mjs.
 	// Reapplying the old-name map would chain A→B→C when B was also an incoming filename.
 	for (const note of notes) {
-		if (note.exactBackup) continue;
+		if (note.exactBackup || M.isCodeFile(note.file)) continue;
 		const text = A.rewriteRecordingNames(note.text, recordingMap(note.rootId));
 		if (text !== note.text) { note.text = text; note.bytes = new TextEncoder().encode(text); }
 	}
@@ -6139,7 +6139,7 @@ async function _rapierNotesImportFiles(files, source) {
 	// folder has changed under the import and what was not yet written is safest still in the export.
 	const landed = [], landedNames = new Map(), landedEntries = new Map();
 	const turn = () => typeof globalThis.scheduler?.yield === 'function' ? globalThis.scheduler.yield() : new Promise(resolve => setTimeout(resolve, 0));
-	let landing = Landing.createImportLanding(Landing.planImportLanding({notes: notes.map(note => ({file: note.file, text: note.text, entry: note.entry})), receipts: record ? notes.map(note => ({file: note.file})) : []}));
+	let landing = Landing.createImportLanding(Landing.planImportLanding({notes: notes.map(note => ({file: note.file, text: note.text, ...(M.isCodeFile(note.file) ? {bytes: note.bytes} : {}), entry: note.entry})), receipts: record ? notes.map(note => ({file: note.file})) : []}));
 	// The record as it stands goes into the folder with the next batch's transaction, and after the last.
 	const checkpoint = () => { if (!record) return; record = {...record, landing: {nextBatch: landing.cursor, status: landing.status, done: landing.done, ...(landing.stop ? {stop: landing.stop} : {}), ...(landing.position ? {position: landing.position} : {})}}; };
 	if (landing.batch) await turn();
@@ -6160,16 +6160,18 @@ async function _rapierNotesImportFiles(files, source) {
 						// The name was planned before the links were bound to it, so a name a file from outside took
 						// between the plan and this write moves here for an ordinary conversion, and its links point
 						// at a name nothing has. That is rare and it is not silent: the person is told how many.
-						if (taken.has(file.toLowerCase())) { file = M.noteFileName(file.replace(/\.md$/i, ''), names, {ascii}); moved++; }
+						if (taken.has(file.toLowerCase())) { file = M.isCodeFile(file) ? M.codeFileName(file, names, {ascii}) : M.noteFileName(file.replace(/\.md$/i, ''), names, {ascii}); moved++; }
 						taken.add(file.toLowerCase()); names.push(file);
-						rows.push({ordinal: item.ordinal, file, text: item.text, entry: item.entry});
+						rows.push({ordinal: item.ordinal, file, text: item.text, ...(item.bytes ? {bytes: item.bytes} : {}), entry: item.entry});
 					}
 					return {notes: rows, sections: want, sectionsAdded: want.map(name => ({name, collapsed: added.get(name) === true})), index: receipt && Receipt ? Receipt.appendImportReceipt(index, receipt) : index};
 				});
 				_rapierNotesTake(snapshot);
 				if (record) record = Receipt.recordImportSections(record, snapshot.result.createdSections || []);
 				for (const row of snapshot.result.notes) {
-					landedNames.set(row.ordinal, row.file); landedEntries.set(row.ordinal, JSON.parse(JSON.stringify(snapshot.index.notes[row.file]))); _rapierNotesHold(row.file, row.text);
+					landedNames.set(row.ordinal, row.file); landedEntries.set(row.ordinal, JSON.parse(JSON.stringify(snapshot.index.notes[row.file])));
+					// An unreadable code file stays bytes, never a replacement-character cache to save later.
+					try { _rapierNotesHold(row.file, row.bytes ? new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(row.bytes) : row.text); } catch (_) {}
 					landed.push({file: row.file, text: row.text, note: notes[row.ordinal]});
 					if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(row.file);
 					written++;
@@ -6183,12 +6185,12 @@ async function _rapierNotesImportFiles(files, source) {
 				for (const item of batch.items) {
 					const file = landedNames.get(item.ordinal);
 					if (file !== item.file) throw new Error('a note landed under another name than the one planned, so its record could not be verified');
-					const back = await _rapierNotesStore.read(file);
-					if (typeof back !== 'string') throw new Error('the imported note is missing during read-back: ' + file);
+					const back = await _rapierNotesStore.read(file, {bytes: true});
+					if (!(back instanceof Uint8Array)) throw new Error('the imported note is missing during read-back: ' + file);
 					const entry = landedEntries.get(item.ordinal);
 					if (!entry || state.index.notes[file]?.id !== entry.id) throw new Error('the imported note identity changed before verification');
 					// The arrival owns its committed metadata, never a later pin, move or colour edit.
-					record = await Receipt.verifyImportWrite(record, {...notes[item.ordinal], file, text: item.text}, {bytes: new TextEncoder().encode(back), entry, created: true});
+					record = await Receipt.verifyImportWrite(record, {...notes[item.ordinal], file, text: item.text}, {bytes: back, entry, created: true});
 					completed++;
 				}
 			} catch (error) { why = String(error?.message || error); receiptError = error; }
@@ -6208,7 +6210,8 @@ async function _rapierNotesImportFiles(files, source) {
 				const file = landedNames.get(item.ordinal);
 				if (failedPastIds.has(state.index.notes[file]?.id)) continue;
 				try {
-					const arrival = await _rapierNotesRecordVersion({file, text: item.text, entry: state.index.notes[file], reason: 'import'});
+					const text = item.bytes ? new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(item.bytes) : item.text;
+					const arrival = await _rapierNotesRecordVersion({file, text, entry: state.index.notes[file], reason: 'import'});
 					if (record && arrival?.createdFiles?.length) record = await Receipt.verifyImportHistory(record, arrival.createdFiles);
 				}
 				catch (error) { arrivalFailed++; console.warn('[rapier] notes history', error); }

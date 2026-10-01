@@ -3,6 +3,7 @@ import {getStroke, getStrokePoints} from './freehand.mjs';
 import {DRAW_TEXT_MAX, admitText, layoutText, restoreLetters} from './text.mjs';
 import {admitFonts, fontDefs, fontMetadata, restoreFonts} from './font.mjs';
 import {roughPaths} from './rough.mjs';
+import {COPIER_PRESETS, copierPreset, admitCopier, copierBounds, copierMarkup} from './effects.mjs';
 import {_rapierColorForDarkPaper, _rapierContrastRatio} from '../editor/colour-math.mjs';
 
 function _rapierDrawNextAssetName(records) {
@@ -285,6 +286,11 @@ function _rapierDrawDarkRules(used, recipe, { currentColor = false, paint = fals
 		if (fill && !a.stroke) rules.push(scope + ' > [data-box-mark]{stroke:' + ink + '}');
 	}
 	if (paint) rules.push('[data-rapier-paint]{filter:url(#rapier-paint-ink)}');
+	// The scanner reads the original ink, including on dark paper. A theme must not turn
+	// black source into white before the copier derives its luminance or invert its pixels.
+	if (recipe.effect?.strength || recipe.shapes.some(shape => shape.effect?.strength)) {
+		return rules.map(rule => rule.replace('{', ':not([data-rapier-copy] *){')).concat('[data-rapier-copy]{color:' + RAPIER_DRAW_INK + '}');
+	}
 	return rules;
 }
 // One compact dark presentation in the file, containing only paints this drawing actually uses.
@@ -2627,6 +2633,7 @@ function _rapierDrawShapeMarkup(shape, recipe) {
 	// A precise filled figure already uses its ink; recolouring its second ink would erase it.
 	if (ink !== RAPIER_DRAW_INK && !shape.border && !shape.authorStyle && !['cylinder', 'subroutine'].includes(shape.recognized)) body = body.replaceAll(RAPIER_DRAW_INK, ink);
 	if (shape.label) { const label = (parts?.label || _rapierDrawTextLayout(shape, recipe)).markup; body += shape.authorStyle ? '<g data-author-label="">' + label + '</g>' : label; }
+	if (shape.effect) body = copierMarkup(shape.effect, body, _rapierDrawShapePaintedBBoxIn({ ...shape, effect: undefined }, recipe), 'shape:' + shape.id);
 
 	// The element's own fade is its group's SVG opacity, so every viewer shows it.
 	return '<g data-shape-id="' + _rapierDrawEscapeAttr(shape.id) + '" data-brush="' + _rapierDrawEscapeAttr(shape.brush) + (shape.opacity != null ? '" opacity="' + _rapierDrawFmt(shape.opacity) : '') + '">' + body + '</g>';
@@ -2709,10 +2716,16 @@ function _rapierDrawShapePaintedBBoxIn(shape, recipe) {
 	if (shape.angle) add(box, RAPIER_DRAW_ANGLE_R + 22);
 	if (shape.len) add(box, 28);
 	if (shape.label) add(_rapierDrawTextLayout(shape, recipe).bounds, 2);
-	return { minX, minY, maxX, maxY };
+	const bounds = { minX, minY, maxX, maxY };
+	return shape.effect ? copierBounds(shape.effect, bounds) : bounds;
 }
 
+function _rapierDrawCopierFrame(recipe) {
+	const ink = _rapierDrawUnionView({ ...recipe, effect: undefined });
+	return { minX: Math.min(0, ink?.minX ?? 0), minY: Math.min(0, ink?.minY ?? 0), maxX: Math.max(recipe.canvas.w, ink?.maxX ?? 0), maxY: Math.max(recipe.canvas.h, ink?.maxY ?? 0) };
+}
 function _rapierDrawUnionView(recipe) {
+	if (recipe.effect?.strength) return copierBounds(recipe.effect, _rapierDrawCopierFrame(recipe));
 	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 	for (const shape of recipe.shapes) {
 		const box = _rapierDrawShapePaintedBBoxIn(shape, recipe);
@@ -2729,6 +2742,8 @@ function _rapierDrawUnionView(recipe) {
 // still owns turning that same view into the one candidate that gets decoded and, at release,
 // admitted -- this never computes a second, independent crop.
 function _rapierDrawInkView(recipe, measured) {
+	// Native getBBox reads source geometry only; it cannot bound a filter's copied ink.
+	if (recipe.effect?.strength || recipe.shapes.some(shape => shape.effect?.strength)) measured = null;
 	const valid = measured && ['minX', 'minY', 'maxX', 'maxY'].every(k => Number.isFinite(measured[k])) && measured.maxX >= measured.minX && measured.maxY >= measured.minY;
 	const box = valid ? { ...measured } : _rapierDrawUnionView(recipe);
 	if (!box) return null;
@@ -2779,14 +2794,28 @@ function _rapierDrawSceneMarkup(recipe, includeFonts = true, keepRasters = false
 	let body = includeFonts ? fontDefs(recipe.fonts) : '';
 	let work = body.length;
 	_rapierDrawWorkCount(work, 16 * 1024 * 1024);
-	for (const shape of recipe.shapes) {
-		const markup = _rapierDrawShapeMarkup(shape, recipe);
+	for (let i = 0; i < recipe.shapes.length; i++) {
+		const shape = recipe.shapes[i], pieces = [shape];
+		// Lossless storage pieces still form one painting. Share the filter across adjacent
+		// pieces with the same settings, without moving any intervening artwork in the stack.
+		if (shape.recognized === 'paint' && shape.paint?.group && shape.effect) {
+			while (i + 1 < recipe.shapes.length) {
+				const next = recipe.shapes[i + 1];
+				if (next.recognized !== 'paint' || next.paint?.group !== shape.paint.group || next.opacity !== shape.opacity || JSON.stringify(next.effect) !== JSON.stringify(shape.effect)) break;
+				pieces.push(next); i++;
+			}
+		}
+		let markup;
+		if (pieces.length > 1) {
+			const source = { ...recipe, effect: undefined, shapes: pieces.map(piece => ({ ...piece, effect: undefined })) };
+			markup = '<g data-rapier-copy-layer=""' + (shape.opacity != null ? ' opacity="' + _rapierDrawFmt(shape.opacity) + '"' : '') + '>' + copierMarkup(shape.effect, pieces.map(piece => _rapierDrawShapeMarkup({ ...piece, effect: undefined, opacity: undefined }, recipe)).join(''), _rapierDrawUnionView(source), 'layer:' + shape.id) + '</g>';
+		} else markup = _rapierDrawShapeMarkup(shape, recipe);
 		// Copying kept pixels is not geometry work; a large photo must not exhaust the vector budget.
-		work += markup.length - (keepRasters && shape.recognized === 'paint' ? shape.raster.length : 0);
+		work += markup.length - (keepRasters && shape.recognized === 'paint' ? pieces.reduce((sum, piece) => sum + piece.raster.length, 0) : 0);
 		_rapierDrawWorkCount(work, 16 * 1024 * 1024);
 		body += markup;
 	}
-	return body;
+	return recipe.effect ? copierMarkup(recipe.effect, body, _rapierDrawCopierFrame(recipe), 'canvas', true) : body;
 }
 
 function _rapierDrawSerializeSVG(recipe, measure, keepRasters = false) {
@@ -3582,10 +3611,11 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	const canvas = input.canvas;
 	if (!canvas || !finite(canvas.w) || !finite(canvas.h) || canvas.w <= 0 || canvas.h <= 0 || canvas.w > 65536 || canvas.h > 65536) return null;
 	const out = { version: RAPIER_DRAW_VERSION, canvas: { w: canvas.w, h: canvas.h }, strokes: [], shapes: [] };
+	if (input.effect !== undefined) { const effect = admitCopier(input.effect); if (!effect) return null; out.effect = effect; }
 	for (const key of ['smooth', 'nib']) if (finite(input[key])) out[key] = key === 'smooth' ? _rapierDrawSmoothLevel(input[key]) : _rapierDrawNibLevel(input[key]);
 	// The tool the drawing was last edited with (A29 item 12): Edit reopens on it. Bounded to the
 	// tool names Draw has; anything else is dropped and Edit opens in Select as before.
-	if (typeof input.tool === 'string' && /^(select|brush|pen|paint|shape|text|erase)$/.test(input.tool)) out.tool = input.tool;
+	if (typeof input.tool === 'string' && /^(select|brush|pen|paint|shape|text|erase|effects)$/.test(input.tool)) out.tool = input.tool;
 	if (finite(input.light)) out.light = input.light % (Math.PI * 2);
 	// A whole-drawing rotate (layout's picture rotate grip) bakes the turn into every shape's own
 	// geometry and only keeps this as a cumulative record in whole degrees, so Edit reopens at the
@@ -3645,6 +3675,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		const traits = _rapierDrawFigureTraits(raw, kind);
 		if (!traits || traits.authorStyle?.fill && shape.style !== 'solid') return null;
 		Object.assign(shape, traits);
+		if (raw.effect !== undefined) { const effect = admitCopier(raw.effect); if (!effect) return null; shape.effect = effect; }
 		if (kind !== 'rect' && RAPIER_DRAW_BOXES.has(kind) || shape.corner) {
 			// A positive declared size can collapse at its centre's floating-point precision. Validate the actual
 			// affine frame, for scalar dimensions and supplied corners alike, before any contour divides by its sides.
@@ -3864,4 +3895,4 @@ function _rapierDrawShapeContours(shape, recipe) {
 	return path?.length ? [path, ...marks.map(points => points.map(p => p.concat(0)))] : [];
 }
 
-export {RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestorePaint,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots,restoreLetters};
+export {COPIER_PRESETS,copierPreset,admitCopier,copierBounds,copierMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestorePaint,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots,restoreLetters};

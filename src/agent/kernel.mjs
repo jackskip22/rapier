@@ -9,6 +9,7 @@ import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput } from './catalog.mjs';
 import { _rapierTransformSplices as transformSplices } from '../editor/journal-records.mjs';
+import { pairInkMarkers, hasInkMarker } from '../spec/md-marks.mjs';
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
@@ -253,6 +254,62 @@ export function imageDeletionSplices(before, after, splices, actor = 'human') {
   if (!rows.length || actor !== 'agent') return rows;
   const will = parseWill(after);
   return rows.filter(row => !regionVerdict(will, row));
+}
+
+// Ink (spec/md-marks.mjs): a pair is the person's mark on its words, so a door edit leaves it whole or takes it with the last of
+// its words. Where an offset of the text the rows made stood in the text they began from, or -1 inside what a row wrote.
+function inkOffsetBefore(rows, offset) {
+  for (let index = rows.length - 1; index >= 0 && offset >= 0; index--) {
+    const { pos, removed, inserted } = rows[index];
+    if (offset >= pos) offset = offset >= pos + inserted.length ? offset - inserted.length + removed.length : -1;
+  }
+  return offset;
+}
+
+// What an edit would break of the ink it meets, or null. A marker left standing alone that holds bytes of a marker of a pair, from
+// text no row wrote, is a pair severed (an opener cut into is no marker, and then its closer is what stands alone); the pair is
+// named by where it stands in the document. More empty pairs than the document held is a pair written empty, whoever wrote its
+// comments. A marker standing alone that the edit wrote is its author's own, and a stray that was one already is not the edit's.
+function inkBroken(before, after, rows) {
+  const was = pairInkMarkers(before).runs;
+  if (!was.length && !rows.some(row => hasInkMarker(row.inserted))) return null;
+  const now = pairInkMarkers(after);
+  const pairAt = at => {
+    let low = 0, high = was.length;
+    while (low < high) { const mid = (low + high) >> 1; if (was[mid].end <= at) low = mid + 1; else high = mid; }
+    const run = was[low];
+    return run && at >= run.start && (at < run.innerStart || at >= run.innerEnd) ? run : null;
+  };
+  for (const stray of now.strays) {
+    for (let at = stray.start; at < stray.end; at++) {
+      const from = inkOffsetBefore(rows, at), pair = from >= 0 && pairAt(from);
+      if (pair) return { rule: 'marker_stranded', start: pair.start, end: pair.end };
+    }
+  }
+  const empty = run => run.innerStart === run.innerEnd;
+  return now.runs.filter(empty).length > was.filter(empty).length ? { rule: 'pair_emptied' } : null;
+}
+
+// A pair an edit emptied goes with its words, so no empty pair is ever written: both markers of each empty pair whose two markers
+// the rows left as they were and stood in pairs with words before. They remove only what stood before, each marker as a row of
+// its own, the opener then the closer, so the change still reverses around the point its words went from. A pair that was empty
+// before, and one the edit wrote, are not the edit's to clear.
+function inkDeletionSplices(before, after, rows, actor = 'human') {
+  const opened = new Set(), closed = new Set();
+  for (const run of pairInkMarkers(before).runs) if (run.innerEnd > run.innerStart) { opened.add(run.start); closed.add(run.innerEnd); }
+  if (!opened.size) return [];
+  const unchanged = (start, end) => {
+    const from = inkOffsetBefore(rows, start), last = inkOffsetBefore(rows, end - 1);
+    return from >= 0 && last === from + end - 1 - start && before.slice(from, from + end - start) === after.slice(start, end) ? from : -1;
+  };
+  let gone = pairInkMarkers(after).runs.filter(run => run.innerEnd === run.innerStart &&
+    opened.has(unchanged(run.start, run.innerStart)) && closed.has(unchanged(run.innerEnd, run.end))).reverse();
+  if (gone.length && actor === 'agent') {
+    const will = parseWill(after);
+    gone = gone.filter(run => !regionVerdict(will, { pos: run.start, removed: after.slice(run.start, run.end), inserted: '' }));
+  }
+  return gone.flatMap(run => [{ pos: run.start, removed: after.slice(run.start, run.innerStart), inserted: '' },
+    { pos: run.start, removed: after.slice(run.innerEnd, run.end), inserted: '' }]);
 }
 
 // A drawing's definition is derived at commit against the decided text, appended once at the text's end if absent,
@@ -1705,6 +1762,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (docKind === 'markdown' && operation !== 'document.open_text' && !restores && !sourceTransactionId) {
       const retired = imageDeletionSplices(beforeText, text, authoredSplices, actor);
       if (retired.length) { splices = splices.concat(retired); text = transformSplices(text, retired); }
+      const emptied = inkDeletionSplices(beforeText, text, splices, actor);
+      if (emptied.length) { splices = splices.concat(emptied); text = transformSplices(text, emptied); }
     }
     if (docKind === 'markdown' && drawAssets?.length) {
       let additions;
@@ -1753,6 +1812,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // Same fence as commit(): asked for every path before a review exists.
     const fenced = commitFenceRefusal(options.fence);
     if (fenced) return fenced;
+    // An agent's edit never leaves an ink marker standing alone or an empty pair: each pair stays whole or goes whole, or the edit is
+    // refused with the source exact.
+    const broken = !law && state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.open_text' &&
+      options.restores !== true && !options.sourceTransactionId ? inkBroken(beforeText, text, splices) : null;
+    if (broken) return failure('ink_pair_broken', 'refused', broken);
     // R87g law: on the drawing the person has OPEN, an agent draws immediately (one Undo step). options.watched is remembered, so it is
     // re-established here from both halves (DS-02): the patch is admitted and ordinary commits are fenced. Otherwise the posture applies.
     const watchedNow = options.watched === true && !!options.fence && !!commitFenceRefusal();
@@ -2066,14 +2130,21 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!later) return failure('history_unavailable', 'conflict');
     const reverse = splices => {
       const rows = [];
-      // Collapsed deletions restore at one point in reverse source-splice order.
       for (let index = splices.length - 1; index >= 0; index--) {
         const row = splices[index];
         const range = transportInterval(row.pos, row.pos + row.inserted.length, splices.slice(index + 1));
         if (!range) return null;
-        rows.push({ pos: range.start, removed: row.inserted, inserted: row.removed });
+        // Where this row's words stood before any row of the change ran: deletions that collapse at one point restore there
+        // from the right-hand one first, so the left-hand one lands before it and the words read as they did.
+        let origin = row.pos;
+        for (let back = index - 1; back >= 0; back--) {
+          const earlier = splices[back];
+          if (origin >= earlier.pos) origin = origin >= earlier.pos + earlier.inserted.length
+            ? origin - earlier.inserted.length + earlier.removed.length : earlier.pos;
+        }
+        rows.push({ pos: range.start, removed: row.inserted, inserted: row.removed, origin });
       }
-      return rows.sort((a, b) => b.pos - a.pos);
+      return rows.sort((a, b) => b.pos - a.pos || b.origin - a.origin).map(({ pos, removed, inserted }) => ({ pos, removed, inserted }));
     };
     // An edit followed by its exact Undo is neutral, including nested undone pairs. Keep the journal and
     // handle invalidation intact; only inverse transport can cross these proven cancellations. A claimed

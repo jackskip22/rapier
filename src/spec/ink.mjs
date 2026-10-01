@@ -12,13 +12,13 @@ export const INK_EM = Object.freeze({
 	dot: 0.3,          // a stroke shorter than this is a dot: free
 	closeGap: 0.6,     // a loop closes when its ends are within this, or a fifth of its size
 	flatHeight: 0.45,  // under and strike: the stroke's height at most this
-	flatWidth: 1.0,    // and at least this wide
-	tallWidth: 0.6,    // bracket: at most this wide
+	flatWidth: 0.5,    // and at least this wide: a short stroke under a two-letter word still counts
+	tallWidth: 1.0,    // bracket: at most this wide, including its end hooks
 	tallHeight: 1.2,   // and at least this tall
 	margin: 0.1,       // bracket: outside the words' column by at least this
 	reach: 0.15,       // under and strike: words within this of the stroke's ends are marked
-	simplify: 0.015,   // the resampler's tolerance: no point moves further than this
-	asDrawn: 0.12,     // derive: the frame within this fraction of the stored box is as drawn
+	simplify: 0.015,   // simplification's tolerance, before the path cap requires resampling
+	asDrawn: 0.10,     // derive: within a tenth of the stored box is as drawn (the brief, §3)
 	ringPad: 0.15,     // a re-derived ring stands this far outside its fragment
 });
 const STRIKE_BAND = [0.25, 0.62]; // the stroke's mean height within the line's box, as a fraction of it
@@ -45,7 +45,42 @@ export function unionBox(boxes) {
 const overlapsY = (a, b) => a.y < b.y + b.height && a.y + a.height > b.y;
 const overlapsX = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x;
 const overlaps = (a, b) => overlapsX(a, b) && overlapsY(a, b);
-const mean = values => values.reduce((sum, v) => sum + v, 0) / values.length;
+const verticalDistance = (y, r) => Math.max(r.y - y, y - r.y - r.height, 0);
+
+// Length, mean height and horizontal extent of the path inside one line's vertical band. Integrate segments,
+// not pointer samples: pausing at a line crossing must not move the mark to the line carrying less of the stroke.
+function strokeBand(points, top, bottom) {
+	let length = 0, moment = 0, left = Infinity, right = -Infinity;
+	for (let i = 1; i < points.length; i++) {
+		const a = points[i - 1], b = points[i], dx = b.x - a.x, dy = b.y - a.y;
+		const segment = Math.hypot(dx, dy);
+		if (!segment) continue;
+		const lo = Math.max(top, Math.min(a.y, b.y)), hi = Math.min(bottom, Math.max(a.y, b.y));
+		if (hi < lo || dy && hi === lo) continue;
+		const part = dy ? segment * (hi - lo) / Math.abs(dy) : segment;
+		const x0 = dy ? a.x + dx * (lo - a.y) / dy : a.x;
+		const x1 = dy ? a.x + dx * (hi - a.y) / dy : b.x;
+		length += part; moment += part * (lo + hi) / 2;
+		left = Math.min(left, x0, x1); right = Math.max(right, x0, x1);
+	}
+	if (!length) { const box = bounds(points); return { length, y: box.y + box.height / 2, x: box.x, width: box.width }; }
+	return { length, y: moment / length, x: left, width: right - left };
+}
+
+// An under/strike crossing belongs to the line carrying most of its arc length. Equal lengths prefer the line
+// nearest the stroke's mean height, then the earlier line. With no intersection, use the nearest line and full path.
+function strokeLine(points, fragments) {
+	const whole = strokeBand(points, -Infinity, Infinity);
+	let best = null;
+	for (const box of fragments) {
+		const part = strokeBand(points, box.y, box.y + box.height), distance = verticalDistance(whole.y, box);
+		if (!best || part.length > best.part.length || part.length === best.part.length &&
+			(distance < best.distance || distance === best.distance && (box.y < best.box.y || box.y === best.box.y && box.x < best.box.x))) {
+			best = { box, part, distance };
+		}
+	}
+	return best && { box: best.box, stroke: best.part.length ? best.part : whole };
+}
 
 // Even-odd point-in-polygon over the stroke read as a closed loop.
 export function encloses(points, x, y) {
@@ -74,14 +109,9 @@ export function classifyStroke(points, fragments, em) {
 		return beside.length && beside.every(f => cx <= f.x - INK_EM.margin * em || cx >= f.x + f.width + INK_EM.margin * em) ? 'bracket' : 'free';
 	}
 	if (!flat) return 'free';
-	const my = mean(points.map(p => p.y));
-	let line = null, best = Infinity;
-	for (const f of fragments) {
-		const d = my < f.y ? f.y - my : my > f.y + f.height ? my - f.y - f.height : 0;
-		if (d < best) { best = d; line = f; }
-	}
-	if (!line || !line.height) return 'free';
-	const rel = (my - line.y) / line.height;
+	const line = strokeLine(points, fragments);
+	if (!line || !line.box.height) return 'free';
+	const rel = (line.stroke.y - line.box.y) / line.box.height;
 	if (rel >= STRIKE_BAND[0] && rel <= STRIKE_BAND[1]) return 'strike';
 	if (rel > UNDER_BAND[0] && rel <= UNDER_BAND[1]) return 'under';
 	return 'free';
@@ -89,7 +119,7 @@ export function classifyStroke(points, fragments, em) {
 
 const rectDistance = (p, r) => {
 	const dx = p.x < r.x ? r.x - p.x : p.x > r.x + r.width ? p.x - r.x - r.width : 0;
-	const dy = p.y < r.y ? r.y - p.y : p.y > r.y + r.height ? p.y - r.y - r.height : 0;
+	const dy = verticalDistance(p.y, r);
 	return Math.hypot(dx, dy);
 };
 const span = words => ({ start: Math.min(...words.map(w => w.start)), end: Math.max(...words.map(w => w.end)) });
@@ -98,22 +128,24 @@ const toStored = (v, em) => Math.round(v * 100 / em);
 // The words a stroke marks, and the frame its path is stored against: {start, end, frame, at} or null when it touches
 // no words it can mark. under and strike take the words of their line within reach of the stroke's ends; a ring what it
 // encloses; a bracket every word of the lines it stands beside; a free stroke its nearest word, with its offset.
+// For free marks, nearest means the nearest line vertically, then the nearest word's rectangle. Equally near
+// lines are decided by word distance; an exact word-distance tie goes to the earliest source offset.
 export function anchorStroke(points, kind, words, em) {
 	if (!Array.isArray(points) || !points.length || !Array.isArray(words) || !words.length) return null;
 	const b = bounds(points);
 	let chosen = [];
 	if (kind === 'under' || kind === 'strike') {
-		const my = mean(points.map(p => p.y));
-		const reach = INK_EM.reach * em;
-		const band = { x: b.x - reach, y: my, width: b.width + 2 * reach, height: 0 };
-		chosen = words.filter(w => w.box.y <= my && my <= w.box.y + w.box.height * (kind === 'under' ? UNDER_BAND[1] : 1) && overlapsX(band, w.box));
-		if (!chosen.length) {
-			let nearest = null, best = Infinity;
-			for (const w of words) { const d = rectDistance({ x: b.x + b.width / 2, y: my }, w.box); if (d < best) { best = d; nearest = w; } }
-			if (!nearest) return null;
-			chosen = words.filter(w => w.box.y === nearest.box.y && overlapsX(band, w.box));
-			if (!chosen.length) return null;
+		const byLine = new Map();
+		for (const word of words) {
+			if (!byLine.has(word.box.y)) byLine.set(word.box.y, []);
+			byLine.get(word.box.y).push(word);
 		}
+		const line = strokeLine(points, Array.from(byLine.values(), group => unionBox(group.map(w => w.box))));
+		if (!line) return null;
+		const reach = INK_EM.reach * em;
+		const band = { x: line.stroke.x - reach, width: line.stroke.width + 2 * reach };
+		chosen = byLine.get(line.box.y).filter(w => overlapsX(band, w.box));
+		if (!chosen.length) return null;
 	} else if (kind === 'ring') {
 		chosen = words.filter(w => {
 			const centre = { x: w.box.x + w.box.width / 2, y: w.box.y + w.box.height / 2 };
@@ -127,9 +159,15 @@ export function anchorStroke(points, kind, words, em) {
 		chosen = words.filter(w => overlapsY(b, w.box));
 		if (!chosen.length) return null;
 	} else {
-		let nearest = null, best = Infinity;
+		let nearest = null, bestLine = Infinity, bestWord = Infinity;
 		const centre = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
-		for (const w of words) { const d = rectDistance(centre, w.box); if (d < best) { best = d; nearest = w; } }
+		for (const w of words) {
+			const lineDistance = verticalDistance(centre.y, w.box), wordDistance = rectDistance(centre, w.box);
+			if (lineDistance < bestLine || lineDistance === bestLine && (wordDistance < bestWord ||
+				wordDistance === bestWord && w.start < nearest.start)) {
+				bestLine = lineDistance; bestWord = wordDistance; nearest = w;
+			}
+		}
 		if (!nearest) return null;
 		chosen = [nearest];
 	}
@@ -180,7 +218,8 @@ export function resampleStroke(points, count) {
 }
 
 // The stroke to its stored form: simplified within the tolerance, capped, in hundredths of an em from the origin;
-// box is the frame's size the same way. The hand is kept: nothing is straightened or snapped.
+// box is the frame's size the same way. If simplification cannot meet the grammar's cap within its tolerance,
+// resampling along arc length keeps the endpoints but may exceed that tolerance.
 export function encodeStroke(points, origin, size, em) {
 	let kept = simplifyStroke(points, INK_EM.simplify * em);
 	if (kept.length > INK_PATH_MAX) kept = resampleStroke(kept, INK_PATH_MAX);

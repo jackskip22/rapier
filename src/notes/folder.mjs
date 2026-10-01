@@ -339,6 +339,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const namesIn = text => { const recordings = recordingsOf(text); return {attachments: count(attachmentsOf(text)), recordings: count(recordings), lengths: recordings.filter(row => row.duration != null).map(row => [row.name, row.duration])}; };
 		const measure = names => { for (const [name, seconds] of names.lengths) if (!refs.lengths.has(name)) refs.lengths.set(name, seconds); };
 		for (const file of before.files.slice().sort()) {
+			if (isCodeFile(file)) continue;
 			checkByteAbort(signal); const bytes = await store.read(file);
 			if (bytes === null) throw fail('changed', file + ' disappeared while file references were checked. No file was deleted.');
 			let text;
@@ -359,6 +360,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				manifest = parseManifest(raw, {noteId: id, now: clock()});
 			} catch (error) { throw fail('unreadable', 'Retained history ' + leaf + ' could not be checked. No file was deleted.'); }
 			for (const version of manifest.versions) {
+				if (isCodeFile(version.file)) continue;
 				checkByteAbort(signal);
 				const key = version.hash + JSON.stringify(manifest.objects[version.hash]);
 				let names = checked.get(key);
@@ -527,7 +529,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			attachmentMap.set(row.name, kept.name);
 			result.createdFiles.push({file: 'attachments/' + kept.name, bytes: row.bytes});
 		}
-		for (const note of result.notes) if (!note.exactBackup) note.text = rewriteAttachmentNames(note.text, attachmentMap);
+		for (const note of result.notes) if (!note.exactBackup && !isCodeFile(note.file)) note.text = rewriteAttachmentNames(note.text, attachmentMap);
 		const audioMap = new Map(), takenAudio = await store.list('audio');
 		for (const audio of result.audio || []) {
 			const name = audioName(audio.note || 'Recording.md', audio.mime, audio.name, takenAudio); takenAudio.push(name); audioMap.set(audio.name, name);
@@ -545,8 +547,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			for (const note of result.notes) {
 				if (note.entry?.category) index = addSection(index, note.entry.category);
 				index = createEntry(index, note.file, note.entry || {});
-				if (!note.exactBackup) note.text = rewriteRecordingNames(note.text, audioMap);
-				if (!note.exactBackup || !writes.has(note.file)) writes.set(note.file, {file: note.file, bytes: note.exactBackup && note.bytes ? note.bytes : exactBytes(note.text), createOnly: true});
+				if (!note.exactBackup && !isCodeFile(note.file)) note.text = rewriteRecordingNames(note.text, audioMap);
+				if (!note.exactBackup || !writes.has(note.file)) writes.set(note.file, {file: note.file, bytes: (note.exactBackup || isCodeFile(note.file)) && note.bytes ? note.bytes : exactBytes(note.text), createOnly: true});
 			}
 			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));

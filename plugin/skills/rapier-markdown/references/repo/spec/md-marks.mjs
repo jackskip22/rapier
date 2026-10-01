@@ -151,6 +151,22 @@ export function parseInkOpen(comment) {
 	return match && readInkMatch(match);
 }
 
+// The opener's body is what a rendered span carries (a renderer's sanitizer drops an attribute whose value holds the
+// comment's own close): the opener after `<!--ink ` and before `-->`, so the attribute reads `under red box=… 0,95 …`,
+// and only a body that reads as a mark goes back. Read and write through the same grammar, so an invalid body cannot
+// invent a mark. Relocated into the parse Worker with the three above: reads INK_OPEN_PATTERN and readInkMatch alone.
+export function inkOpenBody(opener) {
+	if (typeof opener !== 'string') return null;
+	const match = new RegExp('^' + INK_OPEN_PATTERN + '$').exec(opener);
+	return match && readInkMatch(match) ? opener.slice(8, -3) : null;
+}
+export function parseInkBody(body) {
+	return typeof body === 'string' ? parseInkOpen('<!--ink ' + body + '-->') : null;
+}
+export function formatInkOpenFromBody(body) {
+	return parseInkBody(body) ? '<!--ink ' + body + '-->' : null;
+}
+
 export function isInkClose(comment) {
 	return comment === INK_CLOSE;
 }

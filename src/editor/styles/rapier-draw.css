@@ -375,6 +375,15 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-metric{display:grid;grid-template-columns:minmax(92px,auto) minmax(0,1fr) minmax(62px,auto);align-items:center;gap:var(--space-2);min-height:44px;color:var(--color-text-secondary);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase}
 .rapier-draw-metric output{color:var(--color-text);text-align:right;white-space:nowrap}
 .rapier-draw-metric .rapier-draw-seek{width:100%}
+.rapier-draw-copy-panel{max-height:min(62dvh,540px);overflow-y:auto;overscroll-behavior:contain;padding:var(--space-2) var(--space-3)}
+.rapier-draw-copy-panel [hidden]{display:none}
+.rapier-draw-copy-choices{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.rapier-draw-copy-choices label{flex:1 1 140px;display:flex;flex-direction:column;gap:var(--space-1);font:var(--fw-medium) var(--text-sm) var(--font-mono);color:var(--color-text-secondary)}
+.rapier-draw-copy-choices select{width:100%;min-height:44px;font:inherit;color:var(--color-text);background:var(--color-surface-2);border:1px solid var(--color-border);padding:var(--space-1)}
+.rapier-draw-copy-tabs,.rapier-draw-copy-actions{display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-1) 0}
+.rapier-draw-copy-tabs>*,.rapier-draw-copy-actions>*{flex:1;min-height:44px}
+.rapier-draw-copy-tabs [aria-selected="true"],.rapier-draw-copy-actions [aria-pressed="true"]{color:var(--color-accent)}
+.rapier-draw-copy-status{font:var(--fw-medium) var(--text-sm) var(--font-mono);color:var(--color-text-secondary);margin:var(--space-1) 0}
 .rapier-draw-options{flex:none;display:flex;flex-direction:column;padding:0 var(--space-3) var(--space-1);gap:0;background:var(--color-surface-2)}
 .rapier-draw-option{appearance:none;display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:transparent;color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;text-align:left;cursor:pointer;touch-action:manipulation}
 .rapier-draw-option svg{width:22px;height:22px;flex:none;color:var(--color-icon)}

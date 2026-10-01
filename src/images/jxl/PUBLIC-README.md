@@ -7,9 +7,10 @@ JavaScript or WebAssembly JPEG XL encoder among the payloads [we measured](ENCOD
 - **Lossless.** Every pixel back as it went in: 8-bit grey, grey with alpha, RGB, RGBA.
 - **Lossy**, quality 1 to 99, for flat-colour rasters (screenshots, pixel art, scanned line art). Alpha stays exact.
   A picture of few colours is written exact when that is smaller.
-- **Smaller exact pictures, slower**: `rapier-jxl/effort`, the same `encode` with `{effort: 2}` or `3`, each never
+- **Smaller exact pictures, slower**: `rapier-jxl/effort`, the same `encode` with `{effort: 2}`, `3`, `4` or `6`, each never
   larger than the effort below. Effort 1, its default, is the core's bytes.
-- **Photographs**: `rapier-jxl/photo`, DCT8 compression with exact alpha, a door of its own.
+- **Photographs**: `rapier-jxl/photo`, DCT8 compression with exact alpha, a door of its own. Effort 5 searches
+  quantisation per block and keeps a candidate only when its complete stream is smaller.
 - **A JPEG carried as its coefficients**: `rapier-jxl/jpeg`, one call, no decode, the way libjxl transcodes. Not
   carried: the reconstruction data (the JPEG file cannot be rebuilt), the ICC bytes, Exif beyond the orientation, XMP.
 - **sRGB or Display P3.** `{colorSpace: 'display-p3'}` declares a wide-gamut canvas's samples. A JPEG's profile is
@@ -41,6 +42,12 @@ gives a module's author the layers beneath the doors (readable only; they change
 TypeScript declarations sit beside each door, and a worker and a page are under `public/examples/`. Quality numbers
 are not the same fidelity across encoders or pictures, and lossy is not always smaller than lossless.
 
+The photo door defaults to effort 1. Its higher efforts keep the preceding stream as a candidate; effort 5 also
+bounds effort 1's unclipped RGB sample reconstruction error on edge-extended DCT blocks, before clipping and integer output.
+Decoded integer RGB error can differ from that model. Quality 100 remains exact at every effort.
+The quantisation search keeps the preceding stream when its estimated memory would exceed the photo door's
+working budget; the door's 40-million-pixel admission stays the same.
+
 ### In a worker
 
 Encoding is synchronous. Run it off the main thread:
@@ -63,8 +70,15 @@ Each door has a twin that does the same work in steps: `encodeSteps`, `transcode
 job, `for (const done of job)` runs one group of one pass per step (`done` is the fraction, the last exactly 1), and
 `job.bytes` is the stream after the loop, the same bytes the door writes. Leaving the loop cancels, so a worker can
 take messages and report progress between steps (`public/examples/worker.mjs`). `job.hurry = true` (the example's
-`deadline` sets it) ends the effort door's search at its next step with the smallest stream written so far, never
+`deadline` sets it) ends a door's search at its next step with the smallest stream written so far, never
 larger than effort 1's.
+
+The JPEG and photograph doors also read effort: 3 tries a 32-cluster budget, and 4 also tries an order learned
+from coefficient counts. These entropy rungs keep the smaller complete stream and preserve every reconstructed pixel. Their
+default remains 1; effort 2 keeps the default plan. A hurried JPEG job finishes its effort-1 floor in its first
+half; through effort 4 the photo job first makes coefficients, then writes that floor, and searches in its final
+quarter. At effort 5, its first half finishes the preceding stream and its second half searches quantisation,
+keeping the completed floor on a hurry.
 
 ### Limits and errors
 
@@ -113,7 +127,8 @@ that column and in the bundle of every door.
 What it writes: bare codestreams, 8-bit, prefix codes (never ANS), one frame, no preview, animation, ICC (sRGB or
 Display P3 is declared), XYB, chroma-from-luma or filters. Lossless in modular mode, a palette of up to 2,048
 colours weighed against direct coding by actual length, groups of 256, reversible YCoCg, a predictor chosen per
-channel; at effort 2 and 3 also the weighted predictor, its contexts split by its own error. Lossy through Squeeze
+channel; at effort 2 and 3 also the weighted predictor, its contexts split by its own error; at 4 local modelling of
+palette indices; at 6 local gradient-property splits. Effort 5 uses rung 4. Lossy through Squeeze
 with exact alpha. Carried JPEGs in VarDCT with the JPEG's own tables. The photo door
 writes DCT8 coefficients for the same writer.
 

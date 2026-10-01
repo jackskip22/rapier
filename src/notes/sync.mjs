@@ -380,6 +380,8 @@ function uniqueConflicts(rows, active = null) {
 
 export async function plan(local, heads, capabilities) {
 	const deviceId = local.deviceId;
+	const returned = !!heads.retiredFrontiers?.length;
+	const whole = returned || !local.head;
 	if (!DEVICE_RE.test(deviceId)) refuse('identity', 'a stable install identity is required');
 	if (local.pending) refuse('pending', 'finish the durable pending publication before planning another sync');
 	const expected = await snapshotToken(local);
@@ -495,7 +497,7 @@ export async function plan(local, heads, capabilities) {
 			} else {
 				const tipRows = tipHashes.map(hash => remoteVersions.find(r => r.object === hash)).filter(Boolean);
 				const file = tipRows[0].file;
-				merges.push({id, file, oursText: null, oursDevice: null, oursEntry: null, oursObject: null, base: null,
+				merges.push({id, file, whole, oursText: null, oursDevice: null, oursEntry: null, oursObject: null, base: null,
 					tips: tipRows.map(v => ({object: v.object, device: v.device, file: v.file, entry: v.entry, content: v.content, parents: v.parents || []}))});
 				notesOut[id] = {file, object: null, content: null, sidecar: copyEntry(tipRows[0].entry), parents: []};
 			}
@@ -554,10 +556,14 @@ export async function plan(local, heads, capabilities) {
 		// execute() holds the vault key that can read a remote tip's words, so the actual fold
 		// (mergeText, mergeIndex) happens there; this records WHAT needs it, deterministically.
 		const tipRows = tipsOf(remoteVersions.map(v => v.object).filter(Boolean), parents).map(hash => remoteVersions.find(v => v.object === hash)).filter(Boolean);
+		// A returning reader's unchanged copy is no third authored version beside two peers'
+		// concurrent descendants. The authenticated ancestry can prove replacement without
+		// fetching the retired merge base; changed local bytes remain an independent version.
+		const supersededLocal = whole && !locallyEdited && ourTip && remoteTips.some(tip => tip !== ourTip && isAncestor(ourTip, tip, parents));
 		merges.push({
-			id, file: localRow.file, oursText: localRow.text, oursDevice: deviceId,
+			id, file: localRow.file, whole, oursText: supersededLocal ? null : localRow.text, oursDevice: deviceId,
 			oursEntry: copyEntry(localRow.entry), oursObject: ourTip,
-			base: commonAncestor(ourBase, tipRows[0]?.object, parents),
+			base: returned ? null : commonAncestor(ourBase, tipRows[0]?.object, parents),
 			tips: tipRows.map(v => ({object: v.object, device: v.device, file: v.file, entry: v.entry, content: v.content, parents: v.parents || []})),
 		});
 		notesOut[id] = {file: localRow.file, object: ourTip, content: localRow.content, sidecar: copyEntry(localRow.entry), parents: localRow.parents || []};
@@ -681,6 +687,7 @@ export async function plan(local, heads, capabilities) {
 	for (const list of [uploads, downloads, merges, localWrites, localTrash, renames]) omit(list);
 	head.ancestry = Object.fromEntries([...parents].map(([object, list]) => [object, [...list]]));
 	return {
+		returned,
 		expected, skipped: assets.skipped, renames, linkRenames, linkContexts, assetRemoves: assets.removes, verified: heads.verified || local.verified || null, rootConflicts, assetUploads: assets.uploads, assetDownloads: assets.downloads, assetCopies: assets.copies, assetAliases: assets.aliases, assetMappings: assets.mappings, observed: allHeads.map(h => h._key).filter(Boolean),
 		// Every device of the vault as its newest head names it (this one as it publishes now): the sheet reads a device
 		// by its label, and a shelf's writer by the device that carries it.
@@ -880,9 +887,9 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		if (m.sidecarOnly) { resolvedConflicts.push(...(m.conflicts || [])); continue; }
 		const tips = m.tips || [];
 		if (!tips.length) continue;
-		const code = isCodeFile(m.file), versions = [];
+		const code = isCodeFile(m.file), whole = code || m.whole, versions = [];
 		let baseText = null;
-		if (m.base && !code) {
+		if (m.base && !whole) {
 			const original = await fetchText(m.base), contexts = plan.linkContexts.objects[m.base] || [[]];
 			const normalized = [...new Set(contexts.map(context => rewriteLinks(original, context)))];
 			// Equal source objects can outlive a filename namespace. Only an agreed exact
@@ -896,13 +903,13 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		let accParents = [m.oursObject || m.base].filter(Boolean);
 		let accBase = baseText;
 		let theseConflicts = [...(m.conflicts || [])];
-		if (code && accText != null) versions.push({text: accText, modified: m.oursEntry?.modified});
+		if (whole && accText != null) versions.push({text: accText, modified: m.oursEntry?.modified});
 		for (const tip of tips) {
 			const originalTip = await fetchText(tip.object);
 			const tipText = await noteText(m.file, originalTip, text => rewriteKnown(text, plan.assetMappings?.heads[tip.device], m.id, m.conflicts, plan.linkContexts.heads[tip.device]));
 			if (tip.content && await contentHash(originalTip) !== tip.content) refuse('content', 'the merge tip does not match its declared plaintext digest');
 			if (tipText == null) throw Object.assign(new Error('merge object missing ' + tip.object), {code: 'incomplete'});
-			if (code) { accParents = versions.length ? [...new Set([...accParents, tip.object])] : [tip.object]; versions.push({text: tipText, modified: tip.entry?.modified}); continue; }
+			if (whole) { accParents = versions.length ? [...new Set([...accParents, tip.object])] : [tip.object]; versions.push({text: tipText, modified: tip.entry?.modified}); continue; }
 			if (accText == null) { accText = tipText; accDevice = tip.device; accParents = [tip.object]; continue; }
 			const textResult = await mergeContent(m.id, accBase, accText, tipText, accDevice, tip.device);
 			theseConflicts.push(...textResult.conflicts);
@@ -910,10 +917,10 @@ export async function execute(inputPlan, transport, store, options = {}) {
 			accParents = [...new Set([...accParents, tip.object])];
 			accBase = null; // no known common ancestor between an already-folded result and the next tip
 		}
-		// Two versions of a code file are never folded into one. The one saved last (its sidecar's time; then the
+		// Code, and a fresh return without its old merge base, keep each version whole. The one saved last (then the
 		// greater content digest) keeps the name on every device; each other version is kept whole beside it (below).
 		const kept = [];
-		if (code) {
+		if (whole) {
 			for (const {text, modified} of versions) {
 				const content = await contentHash(text), at = Number.isFinite(modified) ? modified : -Infinity, same = kept.find(row => row.content === content);
 				if (same) same.at = Math.max(same.at, at); else kept.push({text, content, at});
@@ -1004,7 +1011,9 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	for (const value of markdown) for (const attachment of attachmentsOf(value.text)) {
 		if (!Object.hasOwn(assets, 'attachments/' + attachment.name) && !Object.values(plan.head.assetTombstones || {}).some(t => t.file === 'attachments/' + attachment.name)) refuse('incomplete_asset', 'a note links to a file whose complete bytes are not available; nothing was replaced');
 	}
-	if (snapshot.head && same(headPayload(snapshot.head), headPayload(plan.head)) && same(files, snapshot.files) && same(index, snapshot.index) && same(forgotten, snapshot.forgotten || [])) {
+	// An expired reader must publish its renewed frontier even if the words returned to exactly
+	// what it already held; otherwise every other device still sees its abandoned observation.
+	if (!plan.returned && snapshot.head && same(headPayload(snapshot.head), headPayload(plan.head)) && same(files, snapshot.files) && same(index, snapshot.index) && same(forgotten, snapshot.forgotten || [])) {
 		if (typeof store.validate === 'function') await store.validate(plan.expected);
 		if (typeof store.observe === 'function') {
 			const {proof, ...previous} = snapshot.verified || {};
@@ -1098,14 +1107,58 @@ async function authenticateHeads(verified, deviceId, checkpoint, vdk = null) {
 // selects a reviewed retirement policy. The read frontier is one newest generation per device.
 export const HEADS_PER_DEVICE = 1;
 export const HEAD_RETENTION_GENERATIONS = Infinity;
-// Selection only: provider retirement remains a separate reviewed act. Infinity keeps all.
-export function headRetirementCandidates(keys, deviceId, keep = HEAD_RETENTION_GENERATIONS) {
+// An explicit window counts a writer's authenticated later generations, never wall time.
+// Infinity keeps every enrolled frontier. No provider or session enables a finite window.
+export const HEAD_RETENTION_WINDOW = Infinity;
+function checkRetentionWindow(window, keep = 2) {
+	if (window !== Infinity && (!Number.isSafeInteger(window) || window < keep)) refuse('retention', 'the observed-frontier window must cover the retained generations');
+}
+// Selection only: provider retirement remains a separate reviewed act. A count alone cannot
+// release a reader's merge base. Supply the authenticated newest heads from this same listing;
+// their observed frontiers, and the predecessors discovery needs to read them, remain pinned.
+export function headRetirementCandidates(keys, deviceId, keep = HEAD_RETENTION_GENERATIONS, heads = null, window = HEAD_RETENTION_WINDOW) {
 	if (!DEVICE_RE.test(deviceId) || keep !== Infinity && (!Number.isSafeInteger(keep) || keep < 2)) refuse('retention', 'head retention must keep at least two complete generations');
-	const own = [...new Set(keys)].filter(key => parseHeadKey(key).device === deviceId)
+	checkRetentionWindow(window, keep === Infinity ? 2 : keep);
+	keys = [...new Set(keys)];
+	const own = keys.filter(key => parseHeadKey(key).device === deviceId)
 		.sort((a, b) => parseHeadKey(b).generation - parseHeadKey(a).generation);
 	const generations = new Set();
 	for (const key of own) { const generation = parseHeadKey(key).generation; if (generations.has(generation)) refuse('device_fork', 'head retirement cannot choose between forked generations'); generations.add(generation); }
-	return keep === Infinity ? [] : own.slice(keep);
+	// A first publication can race this listing. Without a finite recovery window its newly
+	// enrolled reader could name an already retired head and have no safe way back.
+	if (keep === Infinity || window === Infinity) return [];
+	if (!Array.isArray(heads)) refuse('retention', 'head retirement needs every device’s authenticated newest head');
+	const newest = new Map(), namedGenerations = new Map();
+	for (const key of keys) {
+		const at = parseHeadKey(key), previous = newest.get(at.device);
+		const named = at.device + '/' + at.generation;
+		if (namedGenerations.has(named) && namedGenerations.get(named) !== key) refuse('device_fork', 'head retirement cannot choose between forked generations');
+		namedGenerations.set(named, key);
+		if (!previous || at.generation > parseHeadKey(previous).generation) newest.set(at.device, key);
+	}
+	if (heads.length !== newest.size || new Set(heads.map(head => head.device)).size !== heads.length)
+		refuse('retention', 'head retirement needs one newest head for every listed device');
+	const protectedKeys = new Set();
+	const protectFrom = own.length ? parseHeadKey(own[0]).generation - window : Infinity;
+	for (const head of heads) {
+		if (head._key !== newest.get(head.device)) refuse('retention', 'head retirement was given a stale frontier');
+		const admitted = decodeHead(encodeHead(head));
+		if (admitted.generation !== parseHeadKey(head._key).generation) refuse('retention', 'head retirement disagrees with its listing');
+		for (const key of [head._key, admitted.previous].filter(Boolean)) protectedKeys.add(key);
+		for (const key of admitted.seen) {
+			const at = parseHeadKey(key), tip = newest.get(at.device);
+			if (!tip || parseHeadKey(tip).generation < at.generation) refuse('retention', 'the listing omits a writer or generation a newest head observed');
+			const named = namedGenerations.get(at.device + '/' + at.generation);
+			if (named && named !== key) refuse('device_fork', 'an observed frontier names another branch of a listed generation');
+			if (parseHeadKey(tip).generation - at.generation < window) protectedKeys.add(key);
+		}
+		// A quiet poll advances local observation without publishing an acknowledgement (which
+		// would echo forever). Its real frontier may be anywhere after its last published one.
+		// The complete count window and its predecessor cover every such unpublished observation.
+	}
+	const pinnedGenerations = new Set([...protectedKeys].map(parseHeadKey)
+		.filter(at => at.device === deviceId).flatMap(at => [at.generation, at.generation - 1]));
+	return own.slice(keep).filter(key => { const generation = parseHeadKey(key).generation; return generation < protectFrom && !pinnedGenerations.has(generation); });
 }
 async function listEvery(transport, prefix, options) {
 	const keys = [], prefixes = [], cursors = new Set(); let cursor = null;
@@ -1122,7 +1175,8 @@ async function listEvery(transport, prefix, options) {
 // listed from the generation this install last saw, so a quiet poll lists one head a device. This
 // install's own head is its checkpoint, proved by the vault-sealed record of the last run; every
 // other head is downloaded once and then read from the store's cache of verified ciphertext.
-export async function loadHeads(transport, vdk, {anchors = [], verified = null, deviceId, checkpoint = null, ownHead = null, cache = null} = {}) {
+export async function loadHeads(transport, vdk, {anchors = [], verified = null, deviceId, checkpoint = null, ownHead = null, cache = null, retentionWindow = HEAD_RETENTION_WINDOW} = {}) {
+	checkRetentionWindow(retentionWindow);
 	if (verified) {
 		const checked = await authenticateHeads(verified, deviceId, checkpoint);
 		if (td.decode(await open(vdk, checked.aad, checked.proof)) !== checked.digest) refuse('cache', 'the verified head frontier changed; no work was replaced');
@@ -1145,7 +1199,8 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 		}
 	} else for (const item of (await listEvery(transport, HEAD_PREFIX)).keys) { parseHeadKey(item.key); found.add(item.key); }
 	if (checkpoint && !found.has(checkpoint)) refuse('rollback', 'this install’s published checkpoint is missing; no local work was replaced');
-	for (const key of anchors) if (!found.has(key)) refuse('incomplete', 'a previously observed generation is missing; no local note was replaced');
+	const absent = anchors.filter(key => !found.has(key));
+	if (absent.length && retentionWindow === Infinity) refuse('incomplete', 'a previously observed generation is missing; no local note was replaced');
 	const known = new Map();
 	if (checkpoint && ownHead) {
 		const own = decodeHead(encodeHead(ownHead));
@@ -1197,13 +1252,24 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 	for (const [device, keys] of frontiers) {
 		keys.sort((a, b) => parseHeadKey(b).generation - parseHeadKey(a).generation);
 		const tip = await read(keys[0]); tips.push(tip);
+	}
+	// Only an authenticated newer generation can prove that a missing frontier is beyond the
+	// explicit count window. An omitted recent frontier, or our own checkpoint, still refuses.
+	const expired = key => {
+		const at = parseHeadKey(key), tip = tips.find(head => head.device === at.device);
+		return retentionWindow !== Infinity && tip && tip.generation - at.generation >= retentionWindow;
+	};
+	for (const key of absent) if (!expired(key)) refuse('incomplete', 'a missing observed generation is still inside the retention window');
+	tips.retiredFrontiers = absent;
+	for (const tip of tips) {
+		const device = tip.device, keys = frontiers.get(device);
 		// A previously observed head is the exact field-merge base, fetched only when it changed.
 		// It is never kept as a second plaintext head in the local checkpoint.
 		const prior = anchors.find(key => parseHeadKey(key).device === device);
-		if (prior && prior !== tip._key) tip._previousHead = await read(prior);
-		if (device !== deviceId) {
+		if (!absent.length && prior && prior !== tip._key) tip._previousHead = await read(prior);
+		if (!absent.length && device !== deviceId) {
 			const seen = tip.seen.find(key => parseHeadKey(key).device === deviceId);
-			if (seen && (!prior || seen === checkpoint)) tip._seenHead = await read(seen);
+			if (seen && (!prior || seen === checkpoint) && (found.has(seen) || !expired(seen))) tip._seenHead = await read(seen);
 		}
 		for (const key of keys.slice(1, HEADS_PER_DEVICE)) await read(key);
 	}
@@ -1213,16 +1279,16 @@ export async function loadHeads(transport, vdk, {anchors = [], verified = null, 
 	return tips.sort((a, b) => a.device.localeCompare(b.device));
 }
 
-export async function synchronize(transport, store, {vdk} = {}) {
+export async function synchronize(transport, store, {vdk, retentionWindow = HEAD_RETENTION_WINDOW} = {}) {
 	for (let attempt = 0; attempt < 4; attempt++) {
 		try {
 			await store.beginRun?.(transport.capabilities);
 			await resumePending(transport, store, {vdk});
 			const local = await store.snapshot();
 			const heads = await loadHeads(transport, vdk, {anchors: local.observed || [], verified: local.verified, deviceId: local.deviceId,
-				checkpoint: local.head?._key || null, ownHead: local.head || null, cache: store.heads || null});
+				checkpoint: local.head?._key || null, ownHead: local.head || null, cache: store.heads || null, retentionWindow});
 			const result = await execute(await plan(local, heads, transport.capabilities), transport, store, {vdk});
-			return {...result, rebases: attempt};
+			return {...result, rebases: attempt, ...(heads.retiredFrontiers.length ? {retiredFrontiers: heads.retiredFrontiers} : {})};
 		} catch (error) {
 			if (error?.code !== 'changed' || attempt === 3) throw error;
 			// Replan the fresh owner's state; verified upload intents survive every attempt.

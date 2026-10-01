@@ -17,14 +17,21 @@ The doors (`package.json`'s exports, each with its declaration beside it):
   predictor's own error at libjxl's cut points, neighbours merged where a shared code costs less (exact dynamic
   programming). Each plan is priced exactly (its tree and histograms as written, every token's code and raw bits);
   the two rungs' plans are both written when their prices lie within what padding and the table of contents can
-  move, so a stream is never larger than the effort below, effort 1's on a tie. A lossy request is effort 1's. The
+  move. Rung 4 adds per-group trees for palette indices (`local.mjs`); rung 6 also models direct and palette planes
+  with splits on the unclamped gradient and the west-minus-northwest difference. Every complete candidate competes
+  against the smaller streams already written. Effort 5 uses rung 4. A stream is never larger than the effort below,
+  effort 1's on a tie. A lossy request is effort 1's. The
   core stays rung 1 until a rung's table shows every importer gains.
-- `jpeg.mjs`: `transcode(jpeg)`, a JPEG carried as its coefficients into a VarDCT frame the way libjxl transcodes one
+- `jpeg.mjs`: `transcode(jpeg, {effort})`, a JPEG carried as its coefficients into a VarDCT frame the way libjxl transcodes one
   (`jfif.mjs` reads the scans: baseline, extended and progressive, restarts, 8-bit, grey or three components, an Exif
   orientation; `vardct.mjs` and `entropy.mjs` write the frame, contexts clustered into prefix codes). A JPEG it does
   not take is JXL_JPEG.
-- `photo.mjs`: `encodePhoto(rgba, width, height, {quality})`, pixels through the same VarDCT writer (YCbCr, DCT8,
-  quantisation), quality 90 by default.
+- `photo.mjs`: `encodePhoto(rgba, width, height, {quality, effort})`, pixels through the same VarDCT writer (YCbCr,
+  DCT8, quantisation), quality 90 and effort 1 by default. Effort 5 adds quantisation per block and rate/error
+  rounding (`photo-quant.mjs`). The complete preceding stream stands unless the candidate is smaller. Its
+  reconstruction budget is effort 1's squared unclipped RGB sample AC error on edge-extended blocks, using the stored
+  half-precision scale and default coefficient bias, before clipping and integer rounding; decoded integer RGB
+  error can increase. DC and alpha do not change.
 - `writer.mjs`, for a module's author: the layers beneath the doors, readable only, changed only with the package's
   major version.
 
@@ -32,10 +39,16 @@ Every pixel door takes `{colorSpace: 'srgb' | 'display-p3'}`, declared in the he
 bits for Display P3), the samples written as they are; the carrier reads a JPEG's ICC profile by what it does
 (`jfif.mjs`, `profileSpace`: the colorants and every channel's curve) and declares sRGB or Display P3, or refuses.
 
+The JPEG and photograph doors read effort, default 1. Effort 2 keeps effort 1's work; 3 also tries a 32-cluster
+budget at creation cost 160; 4 also tries one coefficient order learned from integer nonzero counts. Each keeps
+the smaller complete stream. These entropy rungs preserve exactly the same reconstructed pixels.
+Their search uses `coefficient-effort.mjs`; the broader measured DC-bucket and cluster-budget searches stay
+outside the package.
+
 Each door has a twin that does its work in steps (`encodeSteps`, `transcodeSteps`, `encodePhotoSteps`): a job
 (`admit.mjs`) whose steps are one group of one pass (`lossless.mjs`, `lossy.mjs`, `vardct.mjs` as generators), the
 fraction done in (0, 1], the last exactly 1, the bytes the door's. The one-call doors run the same steps to the end.
-A job's `hurry` ends the effort door's search at its next step with the smallest stream written so far, effort 1's
+A job's `hurry` ends a door's search at its next step with the smallest stream written so far, effort 1's
 at least.
 
 The layers: `admit.mjs` (the options, the limits, the five codes every door refuses with, and the job),
@@ -49,6 +62,10 @@ effort door 24 million, the photo door 40 million (6.5 bytes a pixel, 421 MB at 
 (3.3 bytes a pixel at 4:2:0 and 6.4 at 4:4:4, 412 MB at its limit), so a phone's 24 and 48 megapixel JPEGs are
 carried. Every door's edge is 16,384 and its stream 16 MiB. The page takes a JPEG and a stored JPEG XL to the
 carrier's limit and every picture it encodes from pixels to the core's (`images/header.mjs`).
+Those memory figures describe the default paths. The photo quantisation search estimates its additional score
+arrays and retained streams against that working budget, keeping the preceding stream if the estimate exceeds
+it. This estimate is not a guarantee about a JavaScript engine's resident-set high water; the door's input limits
+do not change with effort. Scoring, selection and materialisation yield at most every 1,024 blocks.
 Nothing that decides a byte calls a function engines round differently; `tools/stage-jxl-repo.mjs` refuses a module
 that does.
 

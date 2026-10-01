@@ -3,7 +3,7 @@
 [Rapier](https://rapier.website) is a document editor in one offline page: writing, drawing, painting, pictures, Notes
 and the diff of a change, with no account and nothing sent until the person chooses it. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.25 notes.md` makes one HTML file that is the whole editor with the
+**A file to hand a person.** `npx rapier-html@1.1.26 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it with one click, edit, draw and paint in it, review a proposed change as a diff, save it
 and send it back exactly.
 

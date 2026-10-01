@@ -17,6 +17,7 @@
   "draw/flowchart-editor.js",
   "editor/personal.js",
   "draw/draw.js",
+  "draw/effects-tool.js",
   "draw/paint-tool.js",
   "notes/notes.js",
   "notes/todo.js",

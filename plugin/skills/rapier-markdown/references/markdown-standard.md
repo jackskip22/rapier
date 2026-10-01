@@ -274,10 +274,36 @@ number is an integer in hundredths of an em; a path holds at most 160 points. Th
 do not nest in each other: an opener before another's closer, or a closer without an opener, stays ordinary
 comment text and shows nothing. A comment that does not read exactly this way is not a mark.
 
+The inline algebra (`formatting-algebra.md` §§2–5) keeps an ink pair inside one enclosing inline
+container. For equal ranges newly written together, highlight encloses ink, ink encloses colour, and
+the ordinary bold, italic, underline and strike marks sit inside them. Existing legal nesting keeps its
+original spelling. A crossing pair is not repaired into nesting. Code and links are barriers: a stroke
+over them marks only the surrounding stretches of words, never their contents or their delimiters.
+
+Typing inside the span extends that same span without changing the recorded stroke. A paragraph break
+closes it before the break and does not reopen it after; an empty prefix has no mark to keep. A soft or
+hard line break within the paragraph keeps one pair, with pieces derived from the line fragments. This
+also permits a bracket drawn beside several lines to remain one mark. These are the page-editing laws;
+the source model preserves authored bytes, including unsupported spellings, on opening and saving.
+
+Find and Replace All read a mark's words across its two comments: a phrase may run over the opener or the
+closer and is one hit; a replacement keeps each comment that still has words inside it, byte for byte, with
+the mark of the hit's first character; and a pair whose words all go goes with them. An agent's edit through
+the door keeps a pair whole the same way: an edit that takes a pair's last words takes its two comments with
+them, and one that would leave a comment standing alone or write an empty pair is refused as `ink_pair_broken`.
+
 A reader that is not Rapier shows the words and nothing else. Rapier draws the stroke over the words it marks
 and re-derives it from their boxes at every layout: as it was drawn while the words lie as they did; one piece
 per line when they wrap. Stripping comments loses the ink, not the words. The design is `briefs/ink.md`; the
 grammar's owner is `spec/md-marks.mjs`, the geometry's `spec/ink.mjs`.
+
+A semantic page span carries `class="rapier-ink-mark"` and `data-rapier-ink` containing the opener's body,
+without its comment delimiters. `inkOpenBody` and `parseInkBody` read that boundary through the same grammar;
+the attribute does not supply a second spelling. Plain text keeps the words and drops the comments. A shared
+page keeps the exact authored Markdown, including ink, through `wrap` and `unwrap`. Word export maps `under`
+and `strike` to native underline and strikethrough on the marked runs; `ring`, `bracket` and `free` keep the
+words and their existing text formatting. A stroke's colour never becomes the words' colour. Importing a
+native Word underline produces the ordinary underline mark, never invented ink or a fabricated stroke.
 
 ## Table captions
 
@@ -310,6 +336,7 @@ Every other reader treats the line as an invisible comment and shows the two par
 ## Blank lines
 
 Markdown reads any run of blank lines as one separator, so an empty paragraph a person leaves on purpose (the line Enter makes with nothing on it) is one line holding only `&nbsp;`, the form every CommonMark reader draws as an empty paragraph too; the blank line that only separates two blocks writes nothing, and a document of one empty paragraph is an empty file. The other forms keep the line too: plain text (the `.txt` export, Copy as plain text, a plain paste) writes an empty paragraph as one newline more between its neighbours, as Word's own plain text does, and a Word export writes it as a paragraph with no run, as Word writes an empty paragraph, not as a line holding a space.
+Reading that empty Word paragraph and writing it again keeps the paragraph with no run; the importer's lone `<br>` is its empty-paragraph placeholder. Breaks among words and multiple authored breaks remain content.
 
 ## Reference style
 

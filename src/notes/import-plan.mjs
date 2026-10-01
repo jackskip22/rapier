@@ -71,7 +71,8 @@ export function planImportLanding({notes, history = [], receipts = []}, options 
 		need(object(note) && isNoteFile(note.file) && typeof note.text === 'string' && object(note.entry), 'an import note needs its file, text and sidecar entry');
 		need(!files.has(note.file), 'import notes repeat a file');
 		files.add(note.file);
-		items.push(freeze({ordinal: items.length, file: note.file, text: note.text, entry: copyEntry(note.entry), byteLength: textBytes(note.text)}));
+		need(note.bytes === undefined || note.bytes instanceof Uint8Array, 'import source bytes must be a byte array');
+		items.push(freeze({ordinal: items.length, file: note.file, text: note.text, ...(note.bytes ? {bytes: note.bytes} : {}), entry: copyEntry(note.entry), byteLength: note.bytes ? note.bytes.length : textBytes(note.text)}));
 	}
 	const histories = select(history, files, 'history'), verifications = select(receipts, files, 'receipt');
 	const batches = [];

@@ -558,7 +558,8 @@ const { RAPIER_HIGHLIGHT_COLORS, RAPIER_MARKDOWN_SPEC,
 	matchColorOpen: _rapierMatchColorOpen, parseColorOpen: _rapierParseColorOpen,
 	isColorClose: _rapierIsColorClose, scanColorMarkers: _rapierScanColorMarkers,
 	stripColorMarkers: _rapierStripColorMarkers, hasColorMarker: _rapierHasColorMarker,
-	isPageBreakLine: _rapierIsPageBreakLine, isPageBreakBlock: _rapierIsPageBreakBlock,
+	// The ink pair reader, for editor/visible-source.mjs, which tells an ink marker from every other hidden comment.
+	pairInkMarkers: _rapierPairInkMarkers, isPageBreakBlock: _rapierIsPageBreakBlock,
 	} = globalThis.RapierMarkdownSpec;
 const RAPIER_HIGHLIGHT_COLOR_BY_MARKER = Object.freeze(
 	Object.fromEntries(Object.entries(RAPIER_HIGHLIGHT_COLORS).map(([color, marker]) => [marker, color]))
@@ -24084,11 +24085,15 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 	// Admit visible matches before the hit cap and the flexible-separator decision. Hidden
 	// payload bytes must neither exhaust Find's budget nor suppress a visible flexible hit.
 	const hidden = surface === 'source' ? null : _rapierHiddenSourceRanges(source, md);
-	const result = _rapierFindFlexibleSeparatorHits(source, query, _RAPIER_FIND_MATCH_LIMIT, hidden);
+	// The words an ink pair marks read across its two hidden comments: a hit may run over one, and comes back in source offsets.
+	const read = hidden && _rapierVisibleInkText(source, hidden);
+	const result = read ? _rapierFindFlexibleSeparatorHits(read.text, query, _RAPIER_FIND_MATCH_LIMIT, read.hidden)
+		: _rapierFindFlexibleSeparatorHits(source, query, _RAPIER_FIND_MATCH_LIMIT, hidden);
+	const found = read ? result.hits.map(read.hit) : result.hits;
 
 	if (surface === 'source') {
 		return {
-			records: result.hits.map(hit => ({
+			records: found.map(hit => ({
 				start: hit.start, end: hit.end, blockId: null, surface: 'source', range: null,
 			})),
 			overflow: result.overflow,
@@ -24098,7 +24103,7 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 	const spans = _rapierCurrentBodyBlockSpans();
 	const projections = new Map();
 	const ordinals = new Map();
-	const records = result.hits.map(hit => {
+	const records = found.map(hit => {
 		const bodyStart = _rapierBodyOffsetOfCanonical(hit.start);
 		const bodyEnd = _rapierBodyOffsetOfCanonical(hit.end);
 		let index = -1;
@@ -24118,7 +24123,7 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 		if (!projections.has(blockId)) projections.set(blockId, _rapierFindBlockProjection(blockId));
 		const projection = projections.get(blockId);
 		if (!projection) return record;
-		const literal = source.slice(hit.start, hit.end);
+		const literal = hit.shown ?? source.slice(hit.start, hit.end);
 		// The block's shown hits below are found without case, so The and the count as one run of hits.
 		const key = blockId + '\u0000' + literal.toLowerCase();
 		const ordinal = ordinals.get(key) || 0;
@@ -24232,7 +24237,9 @@ function _rapierEscapeRegExp(value) {
 function _rapierReplaceAllOccurrences(text, query, replacement, markdown = true) {
 	const source = String(text);
 	const hidden = markdown ? _rapierHiddenSourceRanges(source, md) : null;
-	const matches = _rapierFindFlexibleSeparatorHits(source, query, Number.MAX_SAFE_INTEGER, hidden).hits;
+	const read = hidden && _rapierVisibleInkText(source, hidden);
+	const matches = read ? _rapierFindFlexibleSeparatorHits(read.text, query, Number.MAX_SAFE_INTEGER, read.hidden).hits.map(read.hit)
+		: _rapierFindFlexibleSeparatorHits(source, query, Number.MAX_SAFE_INTEGER, hidden).hits;
 	const plan = _rapierPlanVisibleReplacement(source, matches, replacement, markdown, md);
 	let value = '', cursor = 0;
 	for (const splice of plan.splices) {

@@ -2,6 +2,7 @@
 import {unpackFiles, ARCHIVE_LIMITS, crc32} from '../images/archive.mjs';
 import {zipStored} from '../notes/zip-records.mjs';
 import {formatLayout, parseLayout, decodeLayoutAttribute} from '../spec/md-layout.mjs';
+import {parseInkBody} from '../spec/md-marks.mjs';
 import {willMarkerOf} from '../agent/will.mjs';
 import {inspectRaster, isJxl, dataImage} from '../images/assets.mjs';
 
@@ -895,6 +896,11 @@ export function docxBlocksFromDom(root) {
         continue;
       }
       const next = {...style};
+      // Word can carry these two stroke meanings as native run properties. Other ink
+      // keeps its words and existing formatting; a stroke colour is not a text colour.
+      const ink = tag === 'SPAN' ? parseInkBody(child.getAttribute('data-rapier-ink')) : null;
+      if (ink?.kind === 'under') next.underline = true;
+      else if (ink?.kind === 'strike') next.strike = true;
       if (tag === 'STRONG' || tag === 'B') next.bold = true;
       else if (tag === 'EM' || tag === 'I') next.italic = true;
       else if (tag === 'U' || tag === 'INS') next.underline = true;
@@ -994,10 +1000,10 @@ export function docxBlocksFromDom(root) {
         blocks.push({type: 'image', alt: image.getAttribute('alt') || '', src: image.getAttribute('src') || '', ref: null, layout: layoutOf(image) || layoutOf(element)});
         continue;
       }
-      // A blank line, the paragraph Enter makes (one line holding only a no-break space), is a paragraph with no run: Word shows the
-      // empty line the page shows, and not a line that holds a space.
+      // A blank line is a paragraph with no run. The Markdown renderer gives it a
+      // no-break space; readDocx gives it a lone BR. Neither becomes a run on the next save.
       const runs = runsOf(element);
-      const blank = runs.length === 1 && runs[0].type === 'text' && /^\u00a0+$/.test(runs[0].text);
+      const blank = runs.length === 1 && runs[0].type === 'text' && /^(?:\u00a0+|\n)$/.test(runs[0].text);
       blocks.push({type: 'paragraph', runs: blank ? [] : runs, layout: layoutOf(element)});
       continue;
     }

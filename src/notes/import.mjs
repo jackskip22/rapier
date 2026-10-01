@@ -2,7 +2,7 @@
 // Storage effects belong to the folder owner; a result is a plan, never a successful write.
 import {zipEntries, readZipEntries, zipOversizeSkip, ZIP_MAX_ENTRIES, ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
 import {walkZipEntries} from './zip-walk.mjs';
-import {noteFileName, orderAfter} from './model.mjs';
+import {noteFileName, orderAfter, isCodeFile, codeFileName} from './model.mjs';
 import {importAttachments} from './import-attachments.mjs';
 import {attachmentHref} from './attachments.mjs';
 import {importLinkPatches, scanLinks, resolveAssetPath} from './links.mjs';
@@ -65,7 +65,7 @@ export async function openBackupSetForImport(files) {
 	Object.freeze(out); backupSetImports.add(out); return out;
 }
 
-export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'notion', 'evernote', 'html', 'zoho', 'joplin', 'simplenote', 'standardnotes']);
+export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'notion', 'evernote', 'html', 'zoho', 'joplin', 'simplenote', 'standardnotes', 'code']);
 export const IMPORT_MAX_ENTRIES = ZIP_MAX_ENTRIES;
 export const IMPORT_MAX_BYTES = ZIP_READ_MAX_BYTES;
 export const IMPORT_JSON_MAX_BYTES = 25 * 1024 * 1024;
@@ -343,7 +343,12 @@ export function sourceOf(entry) {
 	if (ext === 'jex') return 'joplin';
 	if (/^(?:html?|mht|mhtml)$/.test(ext)) return 'html';
 	if (ext === 'znote' || ext === 'zoho') return 'zoho';
-	if (ext === 'json') return jsonSource(jsonValue(entry).value, name);
+	if (ext === 'json') {
+		const parsed = jsonValue(entry), source = jsonSource(parsed.value, name);
+		// Known export and damaged-source grammars retain their own doors. A data file is
+		// code, while package/application metadata remains an attachment to its source.
+		return source || (!parsed.error && importCodeFile(entry) ? 'code' : '');
+	}
 	if (ext === 'txt' || ext === 'text') {
 		if (/^\s*\uFEFF?\s*\{/.test(text)) { const found = jsonSource(jsonValue(entry).value, name); if (found) return found; }
 		return 'markdown';
@@ -355,9 +360,30 @@ export function sourceOf(entry) {
 			&& /\n(?:id|parent_id|type_): [^\n]*\n(?:[a-z_]+: [^\n]*\n)*$/.test(normal.replace(/\n*$/, '\n')) && /\ntype_: \d+\n/.test(normal + '\n')) return 'joplin';
 		return /[0-9a-f]{32}$/i.test(baseOf(name).replace(/\.[^.]+$/, '')) ? 'notion' : 'markdown';
 	}
-	if (ext === 'csv') return /[0-9a-f]{32}/i.test(baseOf(name)) ? 'notion' : '';
+	if (ext === 'csv' && /[0-9a-f]{32}/i.test(baseOf(name))) return 'notion';
 	if (IMAGE_EXT.test(name)) return 'picture';
-	return '';
+	return importCodeFile(entry) ? 'code' : '';
+}
+
+function importCodeFile(entry) {
+	const name = entry.name;
+	return isCodeFile(baseOf(name)) && !/(^|\/)(\.obsidian|\.trash|__MACOSX)(\/|$)/i.test(name)
+		&& !(baseOf(name).toLowerCase() === 'info.json' && /\.text(?:bundle|pack)(?:\/|$)/i.test(name + '/' + (entry.rootName || '')));
+}
+function importCode(entries, {lastOrder = ''} = {}) {
+	const notes = [];
+	for (const entry of entries) {
+		const bytes = bytesOf(entry), file = codeFileName(baseOf(entry.name), notes.map(note => note.file));
+		if (!file) throw new Error('This source filename cannot be kept as code.');
+		lastOrder = orderAfter(lastOrder);
+		// Text is a display projection only: a decoder can never replace the authoritative bytes.
+		let text; const warnings = [];
+		try { text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes); }
+		catch (_) { text = new TextDecoder('utf-8', {ignoreBOM: true}).decode(bytes); warnings.push({code: 'code-text-unreadable', message: 'The code file was kept byte for byte. Its encoding is not UTF-8, so text editing and text history are unavailable; keep the original file.'}); }
+		notes.push({file, sourceName: entry.name, rootId: entry.rootId, bytes, text, warnings,
+			entry: {order: lastOrder, pinned: false, skill: false, archived: false, trashed: false, colour: ''}});
+	}
+	return {notes};
 }
 
 // A family runs once per root when cross-note metadata matters. Self-contained export payloads
@@ -457,7 +483,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 	function recordConsumed(inputId, note) { if (!consumed.has(inputId)) consumed.set(inputId, []); if (note) consumed.get(inputId).push(note); }
 	for (const batch of batches) {
 		const {source, rootId, primary} = batch;
-		const fn = source === 'rapier' ? addBackup : typeof importers[source] === 'function' ? importers[source] : null;
+		const fn = source === 'rapier' ? addBackup : source === 'code' ? importCode : typeof importers[source] === 'function' ? importers[source] : null;
 		if (!fn) {
 			if (!unoffered.includes(source)) unoffered.push(source);
 			for (const e of primary) { const why = 'no importer for ' + source + ' in this build'; skipped.push(skippedRow(e, why)); refused.set(e.inputId, why); }
@@ -487,7 +513,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 			const inputs = backupInputs ? (backupInputs.has(n.sourceName) ? [backupInputs.get(n.sourceName)] : []) : primary.filter(e => e.name === n.sourceName || (n.sourceInputId && e.inputId === n.sourceInputId));
 			if (!inputs.length && primary.length === 1) inputs.push(primary[0]);
 			n.sourceInputIds = inputs.map(e => e.inputId);
-			n.warnings = [...(n.warnings || []), ...inputs.flatMap(e => e.characterWarnings || [])];
+			n.warnings = [...(n.warnings || []), ...(source === 'code' ? [] : inputs.flatMap(e => e.characterWarnings || []))];
 			for (const e of inputs) recordConsumed(e.inputId, n);
 			if (n.entry.category) { admitSection(n.entry.category); n.entry.category = spelling.get(n.entry.category.toLowerCase()); }
 			notes.push(n);
@@ -577,7 +603,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 	const final = finalizeImport(notes, {existing, ascii: options.ascii === true});
 	for (let i = 0; i < final.notes.length; i++) {
 		let note = final.notes[i];
-		if (note.exactBackup) continue;
+		if (note.exactBackup || isCodeFile(note.file)) continue;
 		if (typeof options.pictureImporter === 'function') {
 			try {
 				const result = await options.pictureImporter(note.text, {rootId: note.rootId, sourceName: note.sourceName, pictures: uniquePictures, convert: options.convertPicture});
@@ -646,16 +672,17 @@ export function finalizeImport(notes, {existing = [], ascii = false} = {}) {
 	const pool = [...existing], occupied = new Set(pool), planned = (notes || []).map(note => {
 		const sourceName = note.sourceName || note.sourcePath || note.file;
 		const title = typeof note.title === 'string' && note.title ? '# ' + note.title : note.text;
-		const file = note.exactBackup ? note.file : noteFileName(title, pool, {ascii});
+		const file = note.exactBackup ? note.file : isCodeFile(note.file) ? codeFileName(note.file, pool, {ascii}) : noteFileName(title, pool, {ascii});
+		if (!file) throw new Error('import filename cannot keep its code type: ' + note.file);
 		if (occupied.has(file)) throw new Error('import would replace occupied file: ' + file);
 		pool.push(file); occupied.add(file);
 		return {...note, entry: {...note.entry}, file, sourceName, rootId: String(note.rootId || '')};
 	});
 	const fileMap = planned.map(n => ({rootId: n.rootId, sourceName: n.sourceName, file: n.file, sourceAliases: [...(n.sourceAliases || [])]}));
 	// Exact backups never use rewritten links; do not run and discard that quadratic work.
-	const patches = importLinkPatches(planned.filter(n => !n.exactBackup), fileMap); let nextPatch = 0;
+	const patches = importLinkPatches(planned.filter(n => !n.exactBackup && !isCodeFile(n.file)), fileMap); let nextPatch = 0;
 	return {notes: planned.map(n => {
-		if (n.exactBackup) return n;
+		if (n.exactBackup || isCodeFile(n.file)) return n;
 		const p = patches[nextPatch++];
 		return {...n, text: p.text, ...(p.changed.length ? {bytes: new TextEncoder().encode(p.text)} : {}), changedLinks: p.changed, unresolvedLinks: p.unresolved};
 	}), fileMap};

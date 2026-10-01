@@ -2,6 +2,7 @@
 // two uses share that object, two different exports never share it by accident.
 import {scanLinks, normalizeSourcePath, resolveAssetPath, resolveLink, escapeLinkAttribute} from './links.mjs';
 import {attachmentHref, planAttachment} from './attachments.mjs';
+import {isCodeFile} from './model.mjs';
 
 const root = row => String(row.rootId || '');
 const sourceName = row => String(row.sourceName || row.name || '');
@@ -42,7 +43,7 @@ export function importAttachments(notes, sources, {existing = [], ascii = false}
 	}
 	const stored = new Map(), finalNames = new Set(notes.map(n => n.file));
 	const result = notes.map(note => {
-		if (note.exactBackup) return note;
+		if (note.exactBackup || isCodeFile(note.file)) return note;
 		let text = note.text; const edits = new Map(), warnings = [...(note.warnings || [])], linked = [];
 		const missingRecordings = missingRecordingPaths(note);
 		for (const link of scanLinks(text)) {
@@ -50,7 +51,7 @@ export function importAttachments(notes, sources, {existing = [], ascii = false}
 			// Finalized links between notes are already owned by importLinkPatches.
 			// Destinations may be percent-escaped, reference links or extensionless wiki links.
 			// Compare their resolved identity, not their spelling, before considering attachment bytes.
-			if (!link.image && resolveLink(link, {from: note.file, files: finalNames}).file) continue;
+			if (!link.image && resolveLink(link, {from: note.file, files: finalNames, sourceFiles: true}).file) continue;
 			const aliased = aliases.get(key(root(note), link.dest));
 			const resolved = aliased ? {} : resolveAssetPath(note.sourceName, link.dest);
 			if (resolved.outside) continue;

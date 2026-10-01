@@ -1,6 +1,6 @@
 // Plans are not saves. Only body read-back plus the committed identity can enter `written`.
 import {exactBytes, sha256 as digestBytes, sha256State} from './integrity.mjs';
-import {isNoteFile, isAttachmentName, projectCard} from './model.mjs';
+import {isNoteFile, isCodeFile, isAttachmentName, projectCard} from './model.mjs';
 import {validRecordingName} from './audio.mjs';
 import {finishImportCharacters} from './import-characters.mjs';
 import {missingRecordingPaths} from './import-attachments.mjs';
@@ -203,7 +203,7 @@ export function appendImportReceipt(index, receipt) {
 }
 
 // The import door's source keys, in the shell's existing words; never infer an app from a path.
-export const IMPORT_SOURCE_WORDS = Object.freeze({rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes'});
+export const IMPORT_SOURCE_WORDS = Object.freeze({rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', code: 'code files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes'});
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const get = (rows, key) => rows instanceof Map ? rows.get(key) : object(rows) && own(rows, key) ? rows[key] : undefined;
@@ -461,11 +461,27 @@ export function planImportUndo(receipt, index, texts, {files, keep = []} = {}) {
 		if (!why && selected && !selected.has(row.file)) why = 'was not selected in this confirmation';
 		if (why) kept.push({file: row.file, why}); else remove.push(row.file);
 	}
+	// Import Undo never removes code. It releases only the exact import-source claim
+	// this receipt created, following a rename by identity without touching later choices.
+	// `files` narrows removal only; the shell never selects preserved code for removal.
+	let entries;
+	try { entries = copy(Object.entries(index.notes)); }
+	catch (_) { return refuse('the folder record could not be copied; nothing will be removed'); }
+	const released = [];
+	for (const row of receipt.written) if (isCodeFile(row.file)) {
+		const at = remove.indexOf(row.file);
+		if (at >= 0) { remove.splice(at, 1); kept.push({file: row.file, why: 'code bytes stay; only import bookkeeping is undone'}); }
+		if (!row.created || !identity(row.id) || row.entry?.id !== row.id || !sha256(row.entry.importSource)) continue;
+		const matches = entries.filter(([, entry]) => entry.id === row.id);
+		if (matches.length === 1 && isCodeFile(matches[0][0]) && matches[0][1].importSource === row.entry.importSource) {
+			delete matches[0][1].importSource; released.push(matches[0][0]);
+		}
+	}
 	const removing = new Set(remove);
 	try {
 		// A section name is not proof of its unchanged metadata. No section, media, history or
 		// thumbnail is collected here; other notes may still use them.
-		return {remove, kept, entries: copy(Object.entries(index.notes).filter(([file]) => !removing.has(file))), sections: copy(index.sections), refuse: null};
+		return {remove, kept, released, entries: entries.filter(([file]) => !removing.has(file)), sections: copy(index.sections), refuse: null};
 	} catch (_) { return refuse('the folder record could not be copied; nothing will be removed'); }
 }
 
@@ -475,7 +491,7 @@ export function recordImportUndo(receipt, plan, {stamp} = {}) {
 	const why = importUndoReadiness(receipt);
 	if (why || plan.refuse) throw new Error(why || plan.refuse);
 	if (!Number.isSafeInteger(stamp) || stamp < 0) throw new Error('import undo needs a valid time');
-	const out = {...copy(receipt), undo: {kind: 'import-undo', stamp, requested: plan.remove.slice(), kept: copy(plan.kept)}};
+	const out = {...copy(receipt), undo: {kind: 'import-undo', stamp, requested: plan.remove.slice(), kept: copy(plan.kept), ...(plan.released?.length ? {released: plan.released.slice()} : {})}};
 	const problem = receiptProblem(out);
 	if (problem) throw new Error(problem);
 	return out;

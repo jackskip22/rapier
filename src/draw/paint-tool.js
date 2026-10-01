@@ -1623,7 +1623,7 @@ function _rapierPaintTargetKey(shape) { return shape.id + ':' + (shape.raster ? 
 function _rapierPaintMemberKey(shape) {
 	const px = shape?.paint?.px;
 	return _rapierPaintTargetKey(shape) + '|' + (Array.isArray(px) ? px.join('x') : '?') + '|' + (shape?.paint?.scale ?? '?')
-		+ '|' + (shape?.paint?.group ?? '?') + '|' + (_rapierPaintEligiblePaint(shape) ? '1' : '0');
+		+ '|' + (shape?.paint?.group ?? '?') + '|' + JSON.stringify(shape?.effect || null) + '|' + (_rapierPaintEligiblePaint(shape) ? '1' : '0');
 }
 // Every OTHER piece of `target`'s painting, in recipe order: a painting kept in lossless pieces is
 // ONE painting (the picture-format law, R86e), so picking any piece up reopens the whole group.
@@ -1636,6 +1636,8 @@ function _rapierPaintGroupMembers(target, frame) {
 	const state = _rapierDrawState;
 	if (!target || target.paint?.group == null || !frame || !_rapierPaintFrameIsSimple(frame)) return [];
 	return (state.recipe?.shapes || []).filter(shape => shape.id !== target.id && shape.recognized === 'paint' && shape.paint?.group === target.paint.group && shape.raster && _rapierPaintEligiblePaint(shape))
+		// Merging raw pieces under one shape must not discard an individually authored effect.
+		.filter(shape => JSON.stringify(shape.effect || null) === JSON.stringify(target.effect || null))
 		.filter(shape => { const f = _rapierPaintTargetFrame(shape); return f && _rapierPaintFrameIsSimple(f) && Math.abs(f.scale - frame.scale) < 1e-6; });
 }
 // The immutable dependency of the COMPLETE material a decode is about: the primary and its ordered
@@ -1715,18 +1717,29 @@ function _rapierPaintCloseLayer() {
 // target whose decode failed) mounts at the END of the shape list -- the natural place for a shape
 // that does not exist until commit, which then appends it there for real.
 function _rapierPaintMountLive(canvas, atShapeId) {
-	const state = _rapierDrawState;
 	const mount = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
 	mount.setAttribute('x', '0'); mount.setAttribute('y', '0');
 	mount.style.overflow = 'visible';
 	canvas.style.display = 'block';
 	mount.appendChild(canvas);
-	const at = atShapeId != null ? state.svg?.querySelector('[data-shape-id="' + atShapeId + '"]') : null;
-	if (at && at.parentElement === state.svg) at.after(mount); else state.svg?.appendChild(mount);
-	// A faded layer's stroke shows at the layer's fade, as it will be when it lands.
-	const shape = atShapeId != null ? _rapierDrawShapeById(atShapeId) : null;
-	if (shape?.opacity != null) mount.setAttribute('opacity', String(shape.opacity));
+	_rapierPaintPositionMount(mount, atShapeId);
 	return mount;
+}
+function _rapierPaintPositionMount(mount, id) {
+	const host = _rapierDrawState.svg, at = id != null ? host?.querySelector('[data-shape-id="' + id + '"]') : null;
+	// A copier can wrap the drawing or a split painting. Keep the overlay in its source
+	// group and z-slot, including after a new composite filter replaces the scene nodes.
+	if (at) at.after(mount); else (host?.querySelector('[data-rapier-copy-scene]') || host)?.appendChild(mount);
+	// A shared layer wrapper already carries the fade; never apply it twice on remount.
+	const shape = id != null ? _rapierDrawShapeById(id) : null;
+	if (shape?.opacity != null && !mount.closest('[data-rapier-copy-layer]')) mount.setAttribute('opacity', String(shape.opacity));
+	else mount.removeAttribute('opacity');
+}
+function _rapierPaintReattachLive() {
+	const layer = _rapierDrawState.paintLayer;
+	if (!layer?.mount || !layer.canvas) return;
+	_rapierPaintPositionMount(layer.mount, layer.id);
+	_rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer);
 }
 // The paper is what is seen (R78, the founder: strokes were cut off at a square canvas inside a
 // portrait phone). A whole-canvas layer covers the union of the drawing's canvas and the visible
