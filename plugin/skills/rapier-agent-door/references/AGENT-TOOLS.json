@@ -1,5 +1,5 @@
 {
-  "release": "1.1.29",
+  "release": "1.1.30",
   "core": [
     {
       "name": "document.get_context",
@@ -2244,6 +2244,7 @@
             "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout."
           },
           "direction": {
+            "type": "string",
             "enum": [
               "down",
               "across",
@@ -2299,6 +2300,7 @@
               "type": "object",
               "properties": {
                 "type": {
+                  "type": "string",
                   "enum": [
                     "group",
                     "ungroup",
@@ -2417,6 +2419,7 @@
                   "description": "duplicate: the ids the copies take."
                 },
                 "alignment": {
+                  "type": "string",
                   "enum": [
                     "left",
                     "center",
@@ -2428,6 +2431,7 @@
                   "description": "align: the edge or centre to line up."
                 },
                 "axis": {
+                  "type": "string",
                   "enum": [
                     "x",
                     "y"
@@ -3406,6 +3410,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Locate the work",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -3602,6 +3607,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Map the document",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -3829,6 +3835,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Inspect a passage",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -4050,6 +4057,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Find the target",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -4231,6 +4239,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Edit inspected text",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -4416,6 +4425,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Propose inspected edits",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -4529,6 +4539,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Undo your change",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -4669,6 +4680,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Inspect your changes",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -4854,6 +4866,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Compare a complete alternative",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -4995,6 +5008,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Replace the working document",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -5093,6 +5107,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Show an inspected passage",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -5198,6 +5213,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Create a page return",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -5321,6 +5337,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Receive the person’s reply",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -5420,6 +5437,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Save the document",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -5470,6 +5488,7 @@
             "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout."
           },
           "direction": {
+            "type": "string",
             "enum": [
               "down",
               "across",
@@ -5525,6 +5544,7 @@
               "type": "object",
               "properties": {
                 "type": {
+                  "type": "string",
                   "enum": [
                     "group",
                     "ungroup",
@@ -5643,6 +5663,7 @@
                   "description": "duplicate: the ids the copies take."
                 },
                 "alignment": {
+                  "type": "string",
                   "enum": [
                     "left",
                     "center",
@@ -5654,6 +5675,7 @@
                   "description": "align: the edge or centre to line up."
                 },
                 "axis": {
+                  "type": "string",
                   "enum": [
                     "x",
                     "y"
@@ -5780,6 +5802,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Draw a picture",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -5929,6 +5952,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "List notes",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -6087,6 +6111,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Read a note",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -6204,6 +6229,7 @@
         }
       ],
       "annotations": {
+        "title": "Rapier editor",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -6219,13 +6245,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.29.html",
+          "resourceUri": "ui://rapier/editor-1.1.30.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.29.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.30.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -6314,6 +6340,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Refresh the editor",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
@@ -6430,6 +6457,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Save the person’s edits",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -6558,6 +6586,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Decide a comparison",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -6716,6 +6745,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Update the person’s context",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -6831,6 +6861,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Set collaboration controls",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -6961,6 +6992,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Decide the exact review",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -7071,6 +7103,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Acknowledge editor presentation",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -7173,6 +7206,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Disconnect agents",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -7260,6 +7294,7 @@
         "additionalProperties": true
       },
       "annotations": {
+        "title": "Delete this workspace",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
