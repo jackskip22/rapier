@@ -3,7 +3,7 @@
 [Rapier](https://rapier.website) is a document editor in one offline page: writing, drawing, painting, pictures, Notes
 and the diff of a change, with no account and nothing sent until the person chooses it. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.30 notes.md` makes one HTML file that is the whole editor with the
+**A file to hand a person.** `npx rapier-html@1.1.31 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it with one click, edit, draw and paint in it, review a proposed change as a diff, save it
 and send it back exactly.
 
@@ -59,4 +59,6 @@ The repository must be public before the plugin listing goes live. See the Claud
 The skills run in the host's file and tool environment and upload nothing; the declared package command downloads its
 pinned package from npm when needed. The connector sends the document you share with the assistant to the door, which
 keeps it for that workspace and drops it after thirty idle days. No account, no telemetry; the person ends the
-assistant's access from the editor at any moment. In full: [PRIVACY.md](PRIVACY.md).
+assistant's access from the editor at any moment. The connector needs no API key and reads no credential from the
+device's environment or credential files. Its configuration declares only the transport and fixed HTTPS endpoint.
+In full: [PRIVACY.md](PRIVACY.md).

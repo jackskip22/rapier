@@ -1,13 +1,15 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.30+skills.d273d6d18f49e5910799523ca2cde85f9b9623f1cedece7e90408b2f9912c32d",
+  "version": "1.1.31+skills.2fd29ce019cca6ff9aad8196cb2f2627e752d5fe7388567c2b5af897a0bc8814",
   "description": "Explain, plan, write and create together on an editable page. Rapier combines prose, diagrams, movable drawings, painting and inspectable revisions so a person can explore an idea, change it and continue with the agent. Use when a visual explanation, substantial draft, plan, spatial sketch or meaningful revision benefits from shared editing, even without naming Rapier. Read current passages or drawing objects, change only what is needed, and preserve the person’s work. Deliver an offline editable page when a lasting file is wanted. Brief answers and chat-only requests stay in the conversation.",
   "author": {
     "name": "Jack Skipworth",
     "url": "https://rapier.website"
   },
   "homepage": "https://rapier.website/agents",
+  "icon": "./icon-512.png",
+  "privacyPolicyUrl": "https://mcp.rapier.website/privacy.html",
   "repository": "https://github.com/jackskip22/rapier",
   "license": "AGPL-3.0-only",
   "keywords": [
