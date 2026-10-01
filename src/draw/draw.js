@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-const {_rapierDrawRouteChanges,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawRestorePaint,_rapierDrawTextLayout,_rapierDrawShapeContours,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawEscapeAttr,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawApplyShapesPatch,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,RAPIER_DRAW_RASTER_MAX,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawShapeBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawDashActive,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,restoreLetters} = globalThis.RapierDrawCore;
+const {_rapierDrawShapePaintedBBoxIn,_rapierDrawInkView,_rapierDrawRouteChanges,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawRestorePaint,_rapierDrawTextLayout,_rapierDrawShapeContours,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawEscapeAttr,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawApplyShapesPatch,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,RAPIER_DRAW_RASTER_MAX,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawShapeBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawDashActive,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,restoreLetters} = globalThis.RapierDrawCore;
 const {_rapierDrawTranslateGeom,_rapierDrawTranslateShape,_rapierDrawReleaseBindings,_rapierDrawRotatePt,_rapierDrawResizeShape,_rapierDrawResizeShapeLocal,_rapierDrawRotateShape,_rapierDrawBindAnchorFor,_rapierDrawPruneUnusedStrokes,anchorResize:_rapierDrawAnchorResize,anchorResizeLocal:_rapierDrawAnchorResizeLocal,selectionFrame:_rapierDrawSelectionFrame,editDrawing:_rapierDrawEdit,selectionIds:_rapierDrawGroupSelection,snapMove:_rapierDrawSnapMove,snapResize:_rapierDrawSnapResize} = globalThis.RapierDrawEdit;
 
 const RAPIER_DRAW_INK_LABEL = Object.freeze({ green: 'Green', red: 'Red', blue: 'Blue', gold: 'Gold', purple: 'Purple' });
@@ -1000,7 +1000,7 @@ function _rapierDrawGrowCanvas(minX, minY, maxX, maxY) {
 // growth back with the step that made it (_rapierDrawCommand records the shift on that step).
 const RAPIER_DRAW_PAPER_MARGIN = 24;
 function _rapierDrawGrowCanvasToContent(recipe = _rapierDrawState.recipe) {
-	// Effects may spill outside the paper; only authored geometry grows or translates it.
+	// Effects expand the displayed paper only; authored geometry grows or translates the canvas.
 	// Otherwise adding a copy stack would move the originals, and a sheet filter would grow
 	// its own canvas again at every history seal. The SVG crop still includes all filtered ink.
 	const source = recipe && { ...recipe, effect: undefined, shapes: recipe.shapes.map(shape => shape.effect ? { ...shape, effect: undefined } : shape) };
@@ -3579,6 +3579,13 @@ function _rapierDrawViewBase() {
 	const canvas = state.recipe?.canvas;
 	return (state.viewBase = canvas ? { w: canvas.w, h: canvas.h } : { w: 1, h: 1 });
 }
+function _rapierDrawPaperView(recipe) {
+	const canvas = recipe.canvas;
+	const ink = recipe.effect?.strength || recipe.shapes.some(shape => shape.effect?.strength) ? _rapierDrawInkView(recipe) : null;
+	if (!ink) return { x: 0, y: 0, w: canvas.w, h: canvas.h };
+	const x = Math.min(0, ink.x), y = Math.min(0, ink.y);
+	return { x, y, w: Math.max(canvas.w, ink.x + ink.w) - x, h: Math.max(canvas.h, ink.y + ink.h) - y };
+}
 // The window is re-measured only where a canvas is genuinely new to the person: the drawing opening, and a
 // still-empty canvas taking the stage's size after a real rotation. The window at zoom 1 is the whole stage in
 // canvas units, at the scale that fits the paper into the band under the settings row (state.viewInset, the
@@ -3587,15 +3594,16 @@ function _rapierDrawViewBase() {
 // locked to your viewport. The canvas is not locked to the UI"), so folding the row moves nothing: it only
 // uncovers the band above the paper.
 function _rapierDrawViewBaseReset(rect = _rapierDrawState.svgRoot?.getBoundingClientRect()) {
-	const state = _rapierDrawState, canvas = state.recipe?.canvas;
-	if (!canvas) return;
+	const state = _rapierDrawState;
+	if (!state.recipe?.canvas) return;
+	const canvas = _rapierDrawPaperView(state.recipe);
 	const W = Math.max(1, rect?.width || canvas.w), H = Math.max(1, rect?.height || canvas.h), inset = Math.min(state.viewInset || 0, H / 2);
 	const scale = Math.max(1e-6, Math.min(W / canvas.w, (H - inset) / canvas.h));
 	state.viewBase = { w: W / scale, h: H / scale };
 	const v = _rapierDrawView();
 	v.k = 1;
-	v.x = (canvas.w - state.viewBase.w) / 2;
-	v.y = -(inset + (H - inset - canvas.h * scale) / 2) / scale;
+	v.x = canvas.x + (canvas.w - state.viewBase.w) / 2;
+	v.y = canvas.y - (inset + (H - inset - canvas.h * scale) / 2) / scale;
 }
 // The settings row's height while it is shown: the band the opening view keeps clear of the paper.
 function _rapierDrawSettingsInset() {
@@ -3607,15 +3615,18 @@ function _rapierDrawApplyView() {
 	const state = _rapierDrawState, recipe = state.recipe, svg = state.svgRoot;
 	if (!svg || !recipe?.canvas) return;
 	const v = _rapierDrawView(), base = _rapierDrawViewBase(), w = base.w / v.k, h = base.h / v.k;
+	// The displayed paper includes filtered output without feeding its reach back into the
+	// authored canvas. Otherwise every seal would grow the whole-drawing filter again.
+	const extent = _rapierDrawPaperView(recipe);
 	// The window may travel past the paper -- painting up to a corner needs room beyond it -- but not
 	// so far that the paper leaves the screen entirely.
-	const slackX = Math.max(recipe.canvas.w, w) * 0.9, slackY = Math.max(recipe.canvas.h, h) * 0.9;
-	v.x = Math.min(Math.max(v.x, -slackX), recipe.canvas.w + slackX - w);
-	v.y = Math.min(Math.max(v.y, -slackY), recipe.canvas.h + slackY - h);
+	const slackX = Math.max(extent.w, w) * 0.9, slackY = Math.max(extent.h, h) * 0.9;
+	v.x = Math.min(Math.max(v.x, extent.x - slackX), extent.x + extent.w + slackX - w);
+	v.y = Math.min(Math.max(v.y, extent.y - slackY), extent.y + extent.h + slackY - h);
 	const box = _rapierDrawFmt(v.x) + ' ' + _rapierDrawFmt(v.y) + ' ' + _rapierDrawFmt(w) + ' ' + _rapierDrawFmt(h);
 	if (svg.getAttribute('viewBox') !== box) svg.setAttribute('viewBox', box);
 	const paper = svg.querySelector('.rapier-draw-paper');
-	if (paper) { paper.setAttribute('width', recipe.canvas.w); paper.setAttribute('height', recipe.canvas.h); }
+	if (paper) for (const [key, value] of Object.entries({ x: extent.x, y: extent.y, width: extent.w, height: extent.h })) paper.setAttribute(key, value);
 	// The paint overlay is a raster positioned over the stage, not an SVG child, so it is placed again
 	// against the new window or it would sit still while everything under it moved.
 	if (typeof _rapierPaintPlaceLive === 'function') _rapierPaintPlaceLive();
@@ -4807,7 +4818,7 @@ function _rapierDrawBuildSurface() {
 			: '<button type="button" class="rapier-draw-tool-menu-item" role="menuitemradio" data-draw-act="tool" data-draw-tool="' + name + '" aria-pressed="false" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>').join('') +
 			'</div></div>' +
 		'<div class="rapier-draw-settings" role="toolbar" aria-label="Tool settings"><div class="rapier-draw-settings-controls">' +
-		'<button type="button" class="rapier-draw-btn" data-draw-setting="copyMachine" data-draw-act="copyMachine" aria-expanded="false">Copy machine</button>' +
+		'<button type="button" class="rapier-draw-btn rapier-draw-btn--quiet" data-draw-setting="copyMachine" data-draw-act="copyMachine" aria-expanded="false">Copy machine</button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="ink" data-draw-act="ink" aria-label="colour" data-tip="colour" aria-expanded="false"><span class="rapier-draw-ink-dot"></span><span class="rapier-draw-btn-name">colour</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="nib" data-draw-act="nib" aria-label="width" data-tip="width" aria-expanded="false">' + RAPIER_DRAW_ICONS.width + '<span class="rapier-draw-btn-name">width</span></button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--icon" data-draw-setting="smooth" data-draw-act="smooth" aria-label="smooth" data-tip="smooth" aria-expanded="false">' + RAPIER_DRAW_ICONS.smooth + '<span class="rapier-draw-btn-name">smooth</span></button>' +
@@ -6307,6 +6318,10 @@ const RAPIER_DRAW_OPEN_HALF = 4;
 
 function _rapierDrawShapeCover(shape, recipe) {
 	if (!shape || typeof shape !== 'object') return null;
+	if (shape.effect?.strength) {
+		const b = _rapierDrawShapePaintedBBoxIn(shape, recipe);
+		return { poly: [[b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY]] };
+	}
 	if (shape.recognized === 'text') return { poly: _rapierDrawTextLayout(shape, recipe).polygon };
 	return _rapierDrawShapeContours(shape, recipe).filter(points => points.length > 1).map(points => {
 		const pad = _rapierDrawCoverPad(shape, recipe, _rapierDrawBBox(points));
@@ -6405,8 +6420,11 @@ function _rapierDrawShapeProfileFor(recipe, glyphs) {
 	const saved = recipe.view;
 	const view = saved && saved.w > 0 && saved.h > 0
 		? { x: +saved.x || 0, y: +saved.y || 0, w: +saved.w, h: +saved.h } : { x: 0, y: 0, w, h };
+	// The scene filter paints paper and impressions beyond every source silhouette. The
+	// document and shared page must reserve its saved viewport, even without decoded pixels.
+	if (recipe.effect?.strength) return { spanAt() { return [0, 1]; }, runsAt() { return [[0, 1]]; } };
 
-	if (recipe.shapes.length === 1 && recipe.shapes[0] && typeof recipe.shapes[0] === 'object' && !recipe.shapes[0].label) {
+	if (recipe.shapes.length === 1 && recipe.shapes[0] && typeof recipe.shapes[0] === 'object' && !recipe.shapes[0].label && !recipe.shapes[0].effect?.strength) {
 		const shape = recipe.shapes[0], g = shape.geom || {};
 
 		if (!_rapierDrawShapePaintsInk(shape, recipe)) {
@@ -6424,7 +6442,7 @@ function _rapierDrawShapeProfileFor(recipe, glyphs) {
 	}
 	const covers = [];
 	for (const shape of recipe.shapes) {
-		if (glyphs && (shape.recognized === 'text' || shape.recognized === 'paint')) continue;
+		if (glyphs && !shape.effect?.strength && (shape.recognized === 'text' || shape.recognized === 'paint')) continue;
 		let cover = null;
 
 		try { cover = _rapierDrawShapeCover(shape, recipe); } catch (_) { cover = null; }

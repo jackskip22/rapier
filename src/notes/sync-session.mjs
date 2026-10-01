@@ -362,7 +362,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				}
 				add('download', kind, id, row.content, pendingSizes.get(row.object) ?? null);
 			}
-			for (const row of next.uploads) add('upload', noteKind(row.file), row.id, row.content, te.encode(row.text).length);
+			for (const row of next.uploads) add('upload', noteKind(row.file), row.id, row.content, row.bytes?.byteLength ?? te.encode(row.text).length);
 			for (const row of next.assetUploads) add('upload', mediaKind(row.file), row.file, row.content, assetSize(row.bytes));
 			for (const row of next.downloads) await incoming(noteKind(row.file), row.id, {...row, object: row.hash});
 			for (const row of next.assetDownloads) await incoming(mediaKind(row.file), row.file, row);

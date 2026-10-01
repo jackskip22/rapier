@@ -9,7 +9,7 @@ import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput } from './catalog.mjs';
 import { _rapierTransformSplices as transformSplices } from '../editor/journal-records.mjs';
-import { pairInkMarkers, hasInkMarker } from '../spec/md-marks.mjs';
+import { pairMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
@@ -256,9 +256,9 @@ export function imageDeletionSplices(before, after, splices, actor = 'human') {
   return rows.filter(row => !regionVerdict(will, row));
 }
 
-// Ink (spec/md-marks.mjs): a pair is the person's mark on its words, so a door edit leaves it whole or takes it with the last of
+// Colour and ink (spec/md-marks.mjs): a pair is the person's mark on its words, so a door edit leaves it whole or takes it with the last of
 // its words. Where an offset of the text the rows made stood in the text they began from, or -1 inside what a row wrote.
-function inkOffsetBefore(rows, offset) {
+function markerOffsetBefore(rows, offset) {
   for (let index = rows.length - 1; index >= 0 && offset >= 0; index--) {
     const { pos, removed, inserted } = rows[index];
     if (offset >= pos) offset = offset >= pos + inserted.length ? offset - inserted.length + removed.length : -1;
@@ -266,14 +266,14 @@ function inkOffsetBefore(rows, offset) {
   return offset;
 }
 
-// What an edit would break of the ink it meets, or null. A marker left standing alone that holds bytes of a marker of a pair, from
+// What an edit would break of the paired marks it meets, or null. A marker left standing alone that holds bytes of a marker of a pair, from
 // text no row wrote, is a pair severed (an opener cut into is no marker, and then its closer is what stands alone); the pair is
 // named by where it stands in the document. More empty pairs than the document held is a pair written empty, whoever wrote its
 // comments. A marker standing alone that the edit wrote is its author's own, and a stray that was one already is not the edit's.
-function inkBroken(before, after, rows) {
-  const was = pairInkMarkers(before).runs;
-  if (!was.length && !rows.some(row => hasInkMarker(row.inserted))) return null;
-  const now = pairInkMarkers(after);
+function markerBroken(before, after, rows, kind) {
+  const was = pairMarkers(before, kind).runs;
+  if (!was.length && !rows.some(row => (kind === 'color' ? hasColorMarker : hasInkMarker)(row.inserted))) return null;
+  const now = pairMarkers(after, kind);
   const pairAt = at => {
     let low = 0, high = was.length;
     while (low < high) { const mid = (low + high) >> 1; if (was[mid].end <= at) low = mid + 1; else high = mid; }
@@ -282,7 +282,7 @@ function inkBroken(before, after, rows) {
   };
   for (const stray of now.strays) {
     for (let at = stray.start; at < stray.end; at++) {
-      const from = inkOffsetBefore(rows, at), pair = from >= 0 && pairAt(from);
+      const from = markerOffsetBefore(rows, at), pair = from >= 0 && pairAt(from);
       if (pair) return { rule: 'marker_stranded', start: pair.start, end: pair.end };
     }
   }
@@ -294,15 +294,15 @@ function inkBroken(before, after, rows) {
 // the rows left as they were and stood in pairs with words before. They remove only what stood before, each marker as a row of
 // its own, the opener then the closer, so the change still reverses around the point its words went from. A pair that was empty
 // before, and one the edit wrote, are not the edit's to clear.
-function inkDeletionSplices(before, after, rows, actor = 'human') {
+function markerDeletionSplices(before, after, rows, actor, kind) {
   const opened = new Set(), closed = new Set();
-  for (const run of pairInkMarkers(before).runs) if (run.innerEnd > run.innerStart) { opened.add(run.start); closed.add(run.innerEnd); }
+  for (const run of pairMarkers(before, kind).runs) if (run.innerEnd > run.innerStart) { opened.add(run.start); closed.add(run.innerEnd); }
   if (!opened.size) return [];
   const unchanged = (start, end) => {
-    const from = inkOffsetBefore(rows, start), last = inkOffsetBefore(rows, end - 1);
+    const from = markerOffsetBefore(rows, start), last = markerOffsetBefore(rows, end - 1);
     return from >= 0 && last === from + end - 1 - start && before.slice(from, from + end - start) === after.slice(start, end) ? from : -1;
   };
-  let gone = pairInkMarkers(after).runs.filter(run => run.innerEnd === run.innerStart &&
+  let gone = pairMarkers(after, kind).runs.filter(run => run.innerEnd === run.innerStart &&
     opened.has(unchanged(run.start, run.innerStart)) && closed.has(unchanged(run.innerEnd, run.end))).reverse();
   if (gone.length && actor === 'agent') {
     const will = parseWill(after);
@@ -1284,13 +1284,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   // The notes store is injected; never import notes/model.mjs (the document profile has no Notes).
-  // notes_unavailable: this build has no door. notes_folder_unreadable: the door could not answer, try later.
+  // An absent store is ordinary empty data. A configured but unreadable folder remains a refusal.
+  const noNotes = file => accepted({ availability: 'unavailable', reason: 'notes_not_configured',
+    message: 'Notes is not set up on this host.', complete: true, remaining: 0, next_cursor: null,
+    ...(file === undefined ? {notes: []} : {file, found: false, text: null}) });
   async function notesList(input, who, context) {
-    if (typeof host.notesList !== 'function') return failure('notes_unavailable');
+    if (typeof host.notesList !== 'function') return noNotes();
     cancelled(context);
     const rows = await host.notesList({ ...who, signal: context.signal });
+    cancelled(context);
     // undefined: no door. null or non-array: the folder could not answer.
-    if (rows === undefined) return failure('notes_unavailable');
+    if (rows === undefined) return noNotes();
     if (!Array.isArray(rows)) return failure('notes_folder_unreadable');
     const sorted = rows.map(row => ({
       file: clip(String(row?.file || ''), 256),
@@ -1323,17 +1327,21 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const end = offset + page.length;
     const next = end < sorted.length ? mint('cursors', 'notes_list_', { kind: 'notes-list', offset: end }, who) : null;
     if (input.cursor) delete state.cursors[input.cursor];
-    return accepted({ notes: page, complete: end >= sorted.length, remaining: Math.max(0, sorted.length - end), next_cursor: next?.id || null });
+    return accepted({ availability: 'available', notes: page, complete: end >= sorted.length, remaining: Math.max(0, sorted.length - end), next_cursor: next?.id || null,
+      ...(!sorted.length ? {message: 'Notes has nothing yet.'} : {}) });
   }
 
   async function notesRead(input, who, context) {
-    if (typeof host.notesRead !== 'function') return failure('notes_unavailable');
     const file = typeof input.file === 'string' ? input.file : '';
     if (!file) return failure('notes_file_required', 'invalid');
+    if (typeof host.notesRead !== 'function') return noNotes(file);
     cancelled(context);
     const got = await host.notesRead({ file, ...who, signal: context.signal });
-    if (got === undefined) return failure('notes_unavailable');
-    if (!got || typeof got.text !== 'string') return failure('notes_not_found');
+    cancelled(context);
+    if (got === undefined) return noNotes(file);
+    if (!got) return accepted({availability: 'available', file, found: false, text: null, complete: true,
+      remaining: 0, next_cursor: null, reason: 'notes_not_found', message: 'This note is not in Notes. List notes to choose an available file.'});
+    if (typeof got.text !== 'string') return failure('notes_folder_unreadable');
     const text = got.text;
     let offset = 0;
     if (input.cursor) {
@@ -1356,7 +1364,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const complete = end >= text.length;
     const next = !complete ? mint('cursors', 'notes_read_', { kind: 'notes-read', file, offset: end }, who) : null;
     if (input.cursor) delete state.cursors[input.cursor];
-    return accepted({ file, text: page, start: offset, end, complete, remaining: Math.max(0, text.length - end), next_cursor: next?.id || null });
+    return accepted({ availability: 'available', found: true, file, text: page, start: offset, end, complete, remaining: Math.max(0, text.length - end), next_cursor: next?.id || null });
   }
 
   async function outline(context) {
@@ -1762,8 +1770,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (docKind === 'markdown' && operation !== 'document.open_text' && !restores && !sourceTransactionId) {
       const retired = imageDeletionSplices(beforeText, text, authoredSplices, actor);
       if (retired.length) { splices = splices.concat(retired); text = transformSplices(text, retired); }
-      const emptied = inkDeletionSplices(beforeText, text, splices, actor);
-      if (emptied.length) { splices = splices.concat(emptied); text = transformSplices(text, emptied); }
+      // Retiring an inner pair can empty the other kind around it. Only untouched original
+      // markers retire, and every pass removes bytes, so the derived rows finish together.
+      let emptied;
+      do {
+        emptied = false;
+        for (const kind of ['ink', 'color']) {
+          const rows = markerDeletionSplices(beforeText, text, splices, actor, kind);
+          if (rows.length) { splices = splices.concat(rows); text = transformSplices(text, rows); emptied = true; }
+        }
+      } while (emptied);
     }
     if (docKind === 'markdown' && drawAssets?.length) {
       let additions;
@@ -1812,11 +1828,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // Same fence as commit(): asked for every path before a review exists.
     const fenced = commitFenceRefusal(options.fence);
     if (fenced) return fenced;
-    // An agent's edit never leaves an ink marker standing alone or an empty pair: each pair stays whole or goes whole, or the edit is
+    // An agent's edit never leaves a colour or ink marker standing alone or an empty pair: each pair stays whole or goes whole, or the edit is
     // refused with the source exact.
-    const broken = !law && state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.open_text' &&
-      options.restores !== true && !options.sourceTransactionId ? inkBroken(beforeText, text, splices) : null;
-    if (broken) return failure('ink_pair_broken', 'refused', broken);
+    if (!law && state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.open_text' &&
+        options.restores !== true && !options.sourceTransactionId) {
+      for (const kind of ['ink', 'color']) {
+        const broken = markerBroken(beforeText, text, splices, kind);
+        if (broken) return failure(kind + '_pair_broken', 'refused', broken);
+      }
+    }
     // R87g law: on the drawing the person has OPEN, an agent draws immediately (one Undo step). options.watched is remembered, so it is
     // re-established here from both halves (DS-02): the patch is admitted and ordinary commits are fenced. Otherwise the posture applies.
     const watchedNow = options.watched === true && !!options.fence && !!commitFenceRefusal();

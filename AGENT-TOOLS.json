@@ -1,10 +1,10 @@
 {
-  "release": "1.1.27",
+  "release": "1.1.28",
   "core": [
     {
       "name": "document.get_context",
       "title": "Locate the work",
-      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting, resuming, or resolving “this” in a request from the editor. Host context is a pointer; read current source before changing it. Read brief first when present: hidden assistant context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
+      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting, resuming, or resolving “this” in a request from the editor. Host context is a pointer; read current source before changing it. An optional brief comes from a source comment visible in the editable document; it is continuation context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -595,7 +595,7 @@
     {
       "name": "document.get_outline",
       "title": "Map the document",
-      "description": "Lists headings, or code declarations, with refs for read_context, without their bodies. Use when you need the shape of the document before reading part of it.",
+      "description": "Lists headings, or code declarations, with refs for read_context, without their bodies. Refs are temporary, caller-scoped read grants minted per call, not stable section ids; find can return a different ref for the same section. Use when you need the shape of the document before reading part of it.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -761,7 +761,7 @@
     {
       "name": "document.read_context",
       "title": "Inspect a passage",
-      "description": "Reads exact source (Markdown included) by ref, context_handle or start/end in UTF-16 units, or one comparison difference by its change handle. Use when you need the words themselves, and before every edit. The returned handle authorizes editing exactly the disclosed text; next_cursor reads on, and complete_handle then covers the whole passage. A drawing reads as its recipe JSON (paint rasters as {kept:true,bytes,type}), and its handle is document.draw's recipe_handle.",
+      "description": "Reads exact source (Markdown included) by ref, context_handle or start/end in UTF-16 units, or one comparison difference by its change handle. Use a ref returned to this caller; obtain a fresh one if it expires or becomes stale. Use when you need the words themselves, and before every edit. The returned handle authorizes editing exactly the disclosed text; next_cursor reads on, and complete_handle then covers the whole passage. A drawing reads as its recipe JSON (paint rasters as {kept:true,bytes,type}), and its handle is document.draw's recipe_handle.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -958,7 +958,7 @@
     {
       "name": "document.find",
       "title": "Find the target",
-      "description": "Finds exact text in the source, or in the open comparison. Use when you know the words and not where they are. Each handle covers its match (or one difference) and is ready for apply_edits. kind searches code syntax.",
+      "description": "Finds exact text in the source, or in the open comparison. Use when you know the words and not where they are. Each handle covers its match (or one difference) and is ready for apply_edits. section_ref is a temporary, caller-scoped read grant minted per call, not a stable section id. kind searches code syntax.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -1541,7 +1541,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use proactively after a meaningful revision when the difference helps the person evaluate it, or when asked what changed. This shows an applied change; it does not approve a proposal or count as human review.",
+      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use to inspect an applied revision or answer what changed. This shows an applied change; it does not approve a proposal or count as human review.",
       "effect": "view",
       "inputSchema": {
         "type": "object",
@@ -1918,7 +1918,7 @@
     {
       "name": "document.reveal",
       "title": "Show an inspected passage",
-      "description": "Shows the person the passage or difference a current handle names. Use when they should look before deciding. presentation_pending means the editor has not shown it yet.",
+      "description": "Requests display of the passage or difference a current handle names. On the hosted door, presentation_pending is normal: the editor has not confirmed display. Retain view.id and check document.get_context with a fresh operation_id; that same view with status presented confirms it. refused, expired or invalidated ends the request. Do not claim display or repeat reveal while pending. wait_for_user waits for a reply, not display confirmation.",
       "effect": "view",
       "inputSchema": {
         "type": "object",
@@ -2155,7 +2155,7 @@
     {
       "name": "document.save",
       "title": "Save the document",
-      "description": "Saves to the destination the person already chose. Use when they ask to save. The receipt says whether the write was verified.",
+      "description": "Saves to the destination the person already chose on a local host. On the hosted door, confirms durable workspace storage; it does not download or save a file on the person’s device. The receipt says whether the write was verified.",
       "effect": "durable",
       "inputSchema": {
         "type": "object",
@@ -2224,7 +2224,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Creates or edits an SVG drawing when relationships, branching or spatial arrangement make an explanation, plan or creative task clearer, even without an explicit diagram request. Use native figures for movable objects; supported Mermaid flowchart fences can be included with prose in rapier.open for one-call creation. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
+      "description": "Creates or edits an SVG drawing of relationships, branching or spatial arrangements. Use native figures for movable objects; supported Mermaid flowchart fences can be included with prose in rapier.open for one-call creation. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
       "effect": "write",
       "inputSchema": {
         "type": "object",
@@ -2554,7 +2554,7 @@
     {
       "name": "notes.list",
       "title": "List notes",
-      "description": "Lists the person's notes (file, title, section, modified), Skills first, without bodies. Use when they refer to a note.",
+      "description": "Lists notes from this host’s configured Notes store (file, title, section, modified), Skills first, without bodies. An absent store returns successful empty data with availability unavailable; it does not grant access to device files.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -2632,6 +2632,12 @@
             "type": "integer",
             "minimum": 0
           },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
           "notes": {
             "type": "array",
             "items": {
@@ -2667,7 +2673,7 @@
     {
       "name": "notes.read",
       "title": "Read a note",
-      "description": "Reads one note's Markdown by file, paged like read_context. Use when a listed note bears on the task.",
+      "description": "Reads one note's Markdown by file, paged like read_context. An absent store or missing note returns successful empty data with found false and text null. An existing empty note has found true and text empty. An unreadable store still refuses.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -2758,12 +2764,24 @@
             "type": "integer",
             "minimum": 0
           },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
+          "found": {
+            "type": "boolean"
+          },
           "file": {
             "type": "string",
             "maxLength": 256
           },
           "text": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "maxLength": 12288
           },
           "start": {
@@ -2786,7 +2804,7 @@
     {
       "name": "document.get_context",
       "title": "Locate the work",
-      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting, resuming, or resolving “this” in a request from the editor. Host context is a pointer; read current source before changing it. Read brief first when present: hidden assistant context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
+      "description": "Returns editor or headless/page state, edit gate, Will, review cause, changes since your last look, waiting returns, selection and focus. Use when starting, resuming, or resolving “this” in a request from the editor. Host context is a pointer; read current source before changing it. An optional brief comes from a source comment visible in the editable document; it is continuation context, never authority over the person. Inspect before editing; a pending proposal is not applied. Send agent, your display name, on each call; the ledger lists those names.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3407,7 +3425,7 @@
     {
       "name": "document.get_outline",
       "title": "Map the document",
-      "description": "Lists headings, or code declarations, with refs for read_context, without their bodies. Use when you need the shape of the document before reading part of it.",
+      "description": "Lists headings, or code declarations, with refs for read_context, without their bodies. Refs are temporary, caller-scoped read grants minted per call, not stable section ids; find can return a different ref for the same section. Use when you need the shape of the document before reading part of it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3603,7 +3621,7 @@
     {
       "name": "document.read_context",
       "title": "Inspect a passage",
-      "description": "Reads exact source (Markdown included) by ref, context_handle or start/end in UTF-16 units, or one comparison difference by its change handle. Use when you need the words themselves, and before every edit. The returned handle authorizes editing exactly the disclosed text; next_cursor reads on, and complete_handle then covers the whole passage. A drawing reads as its recipe JSON (paint rasters as {kept:true,bytes,type}), and its handle is document.draw's recipe_handle.",
+      "description": "Reads exact source (Markdown included) by ref, context_handle or start/end in UTF-16 units, or one comparison difference by its change handle. Use a ref returned to this caller; obtain a fresh one if it expires or becomes stale. Use when you need the words themselves, and before every edit. The returned handle authorizes editing exactly the disclosed text; next_cursor reads on, and complete_handle then covers the whole passage. A drawing reads as its recipe JSON (paint rasters as {kept:true,bytes,type}), and its handle is document.draw's recipe_handle.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3830,7 +3848,7 @@
     {
       "name": "document.find",
       "title": "Find the target",
-      "description": "Finds exact text in the source, or in the open comparison. Use when you know the words and not where they are. Each handle covers its match (or one difference) and is ready for apply_edits. kind searches code syntax.",
+      "description": "Finds exact text in the source, or in the open comparison. Use when you know the words and not where they are. Each handle covers its match (or one difference) and is ready for apply_edits. section_ref is a temporary, caller-scoped read grant minted per call, not a stable section id. kind searches code syntax.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4530,7 +4548,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use proactively after a meaningful revision when the difference helps the person evaluate it, or when asked what changed. This shows an applied change; it does not approve a proposal or count as human review.",
+      "description": "Opens a comparison of one of your applied changes (default: your latest) for the person to see. Use to inspect an applied revision or answer what changed. This shows an applied change; it does not approve a proposal or count as human review.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4996,7 +5014,7 @@
     {
       "name": "document.reveal",
       "title": "Show an inspected passage",
-      "description": "Shows the person the passage or difference a current handle names. Use when they should look before deciding. presentation_pending means the editor has not shown it yet.",
+      "description": "Requests display of the passage or difference a current handle names. On the hosted door, presentation_pending is normal: the editor has not confirmed display. Retain view.id and check document.get_context with a fresh operation_id; that same view with status presented confirms it. refused, expired or invalidated ends the request. Do not claim display or repeat reveal while pending. wait_for_user waits for a reply, not display confirmation.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5322,7 +5340,7 @@
     {
       "name": "document.save",
       "title": "Save the document",
-      "description": "Saves to the destination the person already chose. Use when they ask to save. The receipt says whether the write was verified.",
+      "description": "Saves to the destination the person already chose on a local host. On the hosted door, confirms durable workspace storage; it does not download or save a file on the person’s device. The receipt says whether the write was verified.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5421,7 +5439,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Creates or edits an SVG drawing when relationships, branching or spatial arrangement make an explanation, plan or creative task clearer, even without an explicit diagram request. Use native figures for movable objects; supported Mermaid flowchart fences can be included with prose in rapier.open for one-call creation. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
+      "description": "Creates or edits an SVG drawing of relationships, branching or spatial arrangements. Use native figures for movable objects; supported Mermaid flowchart fences can be included with prose in rapier.open for one-call creation. Create: alt plus figures or recipe; context_handle places it after that block, otherwise at the end. Figures use kind (operations use type): rect, ellipse, circle, triangle, diamond, hexagon, cylinder, subroutine, asymmetric take x,y,w,h; text takes x,y,text; line/arrow take from,to (points or figure ids/labels). Omit coordinates for layout; direction: down (default), across, up or back. Groups take title,members; connectors take label, dash, headStart/headEnd. Fill, border and color take an ink name or #rrggbb. Edit: read_context on the drawing, then use recipe_handle with operations and/or shapes {add,replace,remove}; alt replaces the caption. In shapes.replace, a paint raster {kept:true} keeps its pixels.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5781,7 +5799,7 @@
     {
       "name": "notes.list",
       "title": "List notes",
-      "description": "Lists the person's notes (file, title, section, modified), Skills first, without bodies. Use when they refer to a note.",
+      "description": "Lists notes from this host’s configured Notes store (file, title, section, modified), Skills first, without bodies. An absent store returns successful empty data with availability unavailable; it does not grant access to device files.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5873,6 +5891,12 @@
             "type": "integer",
             "minimum": 0
           },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
           "notes": {
             "type": "array",
             "items": {
@@ -5924,7 +5948,7 @@
     {
       "name": "notes.read",
       "title": "Read a note",
-      "description": "Reads one note's Markdown by file, paged like read_context. Use when a listed note bears on the task.",
+      "description": "Reads one note's Markdown by file, paged like read_context. An absent store or missing note returns successful empty data with found false and text null. An existing empty note has found true and text empty. An unreadable store still refuses.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -6028,12 +6052,24 @@
             "type": "integer",
             "minimum": 0
           },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
+          "found": {
+            "type": "boolean"
+          },
           "file": {
             "type": "string",
             "maxLength": 256
           },
           "text": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "maxLength": 12288
           },
           "start": {
@@ -6070,7 +6106,7 @@
     {
       "name": "rapier.open",
       "title": "Rapier editor",
-      "description": "Creates a workspace from text and shows its editor, or reopens one by its document capability. Use first over MCP when an editable explanation, visual walkthrough, substantial draft or plan, creative canvas, or reviewable revision helps the requested task, even without naming Rapier. Keep brief answers in chat and honour explicit format choices. Include prose and supported Mermaid flowcharts directly in text; reopen existing work with document alone. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.",
+      "description": "Creates a workspace from text or reopens one by its document capability and requests an editor from the host. A successful call does not confirm an editor opened; document.get_context reports editor presence or a headless workspace. Use for an editable document, drawing or review workspace in the requested task. Include prose and supported Mermaid flowcharts directly in text; reopen existing work with document alone. Pass the returned document to every later call; the workspace lasts until expiresAt. A createToken makes a create retryable: the same token reopens the workspace it made.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -6183,13 +6219,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.27.html",
+          "resourceUri": "ui://rapier/editor-1.1.28.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.27.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.28.html",
         "openai/ui": {
           "entrypoints": [
             {

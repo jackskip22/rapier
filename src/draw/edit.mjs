@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { RAPIER_DRAW_LABEL_MAX, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
+import { RAPIER_DRAW_LABEL_MAX, _rapierDrawInkView, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const FRAMES = new Set(['rect', 'paint', 'diamond', 'star', 'hexagon', 'pentagon', 'octagon', 'cylinder', 'subroutine', 'asymmetric']);
@@ -182,6 +182,14 @@ function rotateDrawing(recipe, angle) {
 // pivot works for this round trip as long as the same one unrotates and re-rotates, so there is no
 // need to remember the centre `rotateDrawing` actually used. Feeds the `wrap=box` obstacle.
 function contentTiltBox(recipe) {
+	// Filters paint in document axes, independently of the source shapes' recorded turn.
+	// Reserve the saved viewport; unrotating source geometry cannot measure copied ink or paper.
+	if (recipe.effect?.strength || recipe.shapes.some(shape => shape.effect?.strength)) {
+		const view = _rapierDrawInkView(recipe);
+		if (!view) return null;
+		const { x, y, w, h } = view;
+		return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+	}
 	const box = contentBox(recipe);
 	if (!box) return null;
 	const theta = ((recipe.angle || 0) % 360) * Math.PI / 180;

@@ -80,9 +80,12 @@
 
   const visible = () => document.visibilityState !== 'hidden';
   const composing = () => !!(rapier.composition.source || rapier.composition.block);
-  const editing = () => composing() || _rapierMutationBarrierActive() ||
-    globalThis.RapierFlowchartEditor?.editing() === true ||
-    Date.now() - lastInputAt < 900 || rapier.document.blocks.some(block => block.dirty) ||
+  // A successful external-document checkpoint has already committed the live drafts. A dirty
+  // block still needs its reading projection rebuilt, and an idle label field may remain open;
+  // neither is a human editing lease after that checkpoint. Fresh input and barriers still win.
+  const editing = (settled = false) => composing() || _rapierMutationBarrierActive() ||
+    (!settled && (globalThis.RapierFlowchartEditor?.editing() === true || rapier.document.blocks.some(block => block.dirty))) ||
+    Date.now() - lastInputAt < 900 ||
     globalThis.RapierImageFlow?.status().moving === true;
   const pointerCurrent = () => retainedPointer && retainedPointer.documentId === String(rapier.identity.authority) &&
     retainedPointer.revision === Number(rapier.revision.settled) &&
@@ -189,7 +192,7 @@
       : {selection: null, focus: null};
     return {ok: true, documentId: value.documentId, revision: value.revision, generation: value.generation,
       filename: value.filename, docKind: value.docKind, text: value.text,
-      context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(),
+      context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(true),
         posture: value.posture, readOnly: value.readOnly,
         ...(value.reviewedRevision == null ? {} : {reviewedRevision: value.reviewedRevision})}};
   }
@@ -588,10 +591,11 @@
   async function applyView(intent, expected, value) {
     await ready;
     if (!intent || intent.status !== 'pending' || !['document', 'compare'].includes(intent.kind)) return fail('view_invalid', 'invalid');
+    const hand = await humanContext();
     if (!value || value.documentId !== expected?.expectedDocumentId || value.text !== expected.expectedText ||
         value.revision !== intent.revision || !expectedCurrent(expected)) return fail('document_changed', 'conflict');
     if (!visible()) return fail('view_hidden');
-    if (editing() || remoteReview || _rapierWillReviewSlot.settling) return fail('human_edit_in_progress', 'yielded');
+    if (!hand.ok || hand.context.editing || remoteReview || _rapierWillReviewSlot.settling) return fail('human_edit_in_progress', 'yielded');
     if (!Number.isFinite(intent.expiresAt) || intent.expiresAt <= Date.now()) return fail('view_expired');
     viewFlight?.abort();
     const controller = new AbortController();
@@ -687,14 +691,18 @@
     if (!value || value.documentId !== expected?.expectedDocumentId || value.text !== expected.expectedText ||
         value.revision !== review.revision || !expectedCurrent(expected)) return fail('review_document_changed', 'conflict');
     if (!visible()) return fail('view_hidden');
-    if (editing()) return fail('human_edit_in_progress', 'yielded');
+    const hand = await humanContext();
+    if (!hand.ok || hand.context.editing) return fail('human_edit_in_progress', 'yielded');
+    if (!expectedCurrent(expected)) return fail('review_document_changed', 'conflict');
     const image = reviewImage(review, value.text);
     if (!image) return fail('review_evidence_unavailable');
     if (rapier.compare?.active && ownsComparison(comparisonOwner)) {
       const closed = await closeComparison({documentId: value.documentId, principal: comparisonOwner});
       if (!closed.ok || !expectedCurrent(expected)) return fail('review_document_changed', 'conflict');
     }
-    if (!visible() || editing()) return fail('human_edit_in_progress', 'yielded');
+    const afterClose = await humanContext();
+    if (!visible() || !afterClose.ok || afterClose.context.editing) return fail('human_edit_in_progress', 'yielded');
+    if (!expectedCurrent(expected)) return fail('review_document_changed', 'conflict');
     if (rapier.compare?.active || rapier.compare?.running || _rapierWillReviewSlot.settling) return fail('human_review_in_progress');
     const controller = new AbortController();
     const resolved = {kind: 'document-range', source: value.text, start: 0, end: value.text.length, record: {}};
@@ -992,13 +1000,13 @@
     snapshot, commit, reveal, compare: showComparison, closeCompare: closeComparison, presentReview: presentKernelReview,
     // notes.list / notes.read (R86i): the folder is answered by the Notes shell's own door where the
     // build carries Notes (notes/notes.js sets globalThis.rapierNotesHost at install); the document
-    // profile has no such door, so the kernel refuses with notes_unavailable, exactly its contract
+    // profile has no such door, so the kernel returns an empty, unavailable listing
     // (docs/sync-engine.md, "the host contract the shell wires").
     //
     // Call-time lookup, never a one-time capture: this file is spliced BEFORE notes/notes.js
     // (editor/scripts.json), so the door does not exist at adapter create. Returning null when the
     // door is absent used to look like notes_folder_unreadable (retry the folder) instead of
-    // notes_unavailable (this build has no Notes). undefined is the kernel's "no door" signal;
+    // an unavailable empty listing (this build has no Notes). undefined is the kernel's "no door" signal;
     // the door itself still returns null when the folder cannot answer.
     notesList: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.list !== 'function') return undefined; return door.list({signal: request?.signal}); },
     notesRead: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.read !== 'function') return undefined; return door.read(String(request?.file || ''), {signal: request?.signal}); },

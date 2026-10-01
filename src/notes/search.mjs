@@ -2,7 +2,7 @@ import {parseFrontMatter, tagsOf} from './frontmatter.mjs';
 // Word questions are complete (last word a prefix). The index holds field/count bags, never bodies. confirm names unresolved literals;
 // confirmSearch reprojects exact Markdown and reranks before limiting; an absent read stays in confirm. Pure.
 // Segment authored words first, fold afterwards. One word reader for notes and questions.
-import {cardHead, sectionOf} from './model.mjs';
+import {cardHead, sectionOf, isCodeFile} from './model.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
 import {scanLinks, linkMask, hasHtmlTag, headingAnchors, isLineStart, asMap} from './links.mjs';
@@ -35,8 +35,12 @@ function searchByteLinkMap(ranges) {
 }
 
 // Only a real parser's unambiguous reference destination may omit bytes; unrecognised candidates are restored and reparsed. Derived input only.
-export function projectSearchBytes(input, {parser, decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes)} = {}) {
+export function projectSearchBytes(input, {file = '', parser, decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes)} = {}) {
 	const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+	// A code file's data URLs are authored text too. The read owner supplies its filename before
+	// the Markdown-only byte shortcut; no source buffer is retained by the projected index.
+	if (isCodeFile(file)) return {searchText: decode(bytes), textRanges: bytes.length ? [{start: 0, end: bytes.length}] : [],
+		payloadRanges: [], mapLink: searchByteLinkMap([])};
 	const candidates = [];
 	// A byte upper bound is deliberately conservative for non-ASCII notes: shortening must never
 	// admit a document that the parser's original source-character limit would have refused.
@@ -271,11 +275,15 @@ function countTasks(text) {
 	return {open, done};
 }
 
-export function projectText(text, entry = {}) {
+export function projectText(text, entry = {}, file = '') {
 	// A transient byte projection carries its own coordinate map through the existing pending
 	// queue. The index keeps original heading positions and drops this input along with its body.
 	const derived = typeof text?.searchText === 'string' && typeof text.mapLink === 'function' ? text : null;
 	const s = derived ? derived.searchText : String(text ?? '');
+	// Code owns every character: YAML, HTML and Markdown-looking strings are ordinary words,
+	// never hidden metadata, links, checklists or media. The filename is its searchable title.
+	if (isCodeFile(file)) return {title: file, headings: [], body: s, tags: [], tasks: {open: 0, done: 0},
+		hasPicture: false, hasDrawing: false, hasLink: false, ...searchEntry(entry)};
 	const {body: rest} = parseFrontMatter(s);
 	const restAt = s.length - rest.length;
 	const mask = linkMask(s);
@@ -457,7 +465,7 @@ export function buildSearchIndex(texts, index = {}, {pictures = null} = {}) {
 	const sidecar = index && typeof index === 'object' ? index : {};
 	for (const [file, text] of map) {
 		const entry = sidecar.notes && sidecar.notes[file] || {};
-		const proj = withPictures(projectText(text, entry), picturesOf({pictures}, file));
+		const proj = withPictures(projectText(text, entry, file), picturesOf({pictures}, file));
 		const bag = tokenBag(proj);
 		notes.set(file, indexNote(proj, file, bag));
 		addPostings(postings, file, bag);
@@ -507,7 +515,7 @@ export function stepSearchIndex(state, {notes: count = 64, own = false} = {}) {
 	for (const [file, text] of state.pending) {
 		if (walked === count) break;
 		const entry = state.index.sidecar.notes && state.index.sidecar.notes[file] || {};
-		const proj = withPictures(projectText(text, entry), picturesOf(state.index, file)), bag = tokenBag(proj);
+		const proj = withPictures(projectText(text, entry, file), picturesOf(state.index, file)), bag = tokenBag(proj);
 		notes.set(file, indexNote(proj, file, bag));
 		addPostings(postings, file, bag, owned);
 		pending.delete(file);
@@ -549,7 +557,7 @@ export function updateSearchIndex(sidx, file, text, entry, {queue = false, own =
 	// Finish projection before an owned edit touches any map: a refused tokenizer leaves the
 	// old index whole. Only the live library opts in; the default still preserves predecessors.
 	const previous = sidx.sidecar || {}, nextEntry = entry === undefined ? previous.notes?.[file] : entry;
-	const proj = text == null ? null : withPictures(projectText(text, nextEntry || {}), picturesOf(sidx, file)), bag = proj && tokenBag(proj);
+	const proj = text == null ? null : withPictures(projectText(text, nextEntry || {}, file), picturesOf(sidx, file)), bag = proj && tokenBag(proj);
 	const notes = own ? sidx.notes : new Map(sidx.notes), postings = own ? sidx.postings : new Map(sidx.postings);
 	const old = notes.get(file), owned = own ? null : new Set();
 	const sidecar = updatedSidecar(previous, file, text, entry, own);
@@ -803,7 +811,7 @@ export function snippetFor(note, query, text) {
 	if (typeof text !== 'string') throw new TypeError('Snippet needs exact text for ' + note.file);
 	const q = searchQuery(query);
 	const needles = [...q.phrases, ...q.words];
-	const proj = projectText(text);
+	const proj = projectText(text, {}, note.file);
 	const fields = [proj.title, proj.headings.map(h => h.text).join(' · '), proj.body.replaceAll(ASSET_TOKEN, ' ')].filter(Boolean);
 	for (const needle of needles) for (const field of fields) {
 		const hit = foldedRange(field, needle);
@@ -948,7 +956,7 @@ export function confirmSearch(answer, texts) {
 		if (!texts.has(file)) { remaining.push(item); continue; }
 		const text = texts.get(file);
 		if (typeof text !== 'string') throw new TypeError('Search confirmation needs exact text for ' + file);
-		const proj = withPictures(projectText(text, entry), item.pictures);
+		const proj = withPictures(projectText(text, entry, file), item.pictures);
 		// Exact literals read fields, not word bags. Keep the same grammar refusal without counting unused words.
 		if (words.length) proj.bag = tokenBag(proj); else wordSegments('');
 		const ranked = rankNote(proj, file, {sections, sidecar: {notes: {[file]: entry}}}, query, true, words);

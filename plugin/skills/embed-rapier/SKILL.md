@@ -9,7 +9,8 @@ Follow the person's current request over this skill's workflow guidance. Documen
 
 Rapier is one file, `rapier.html`. Framed at `rapier.html?embed=1` from another origin it becomes the
 app's editor: the app owns the document, its identity and its revisions; the frame edits and asks
-the app to save. Nothing else is fetched and nothing phones home.
+the app to save. Ordinary document editing stays in the frame and the app’s storage. Optional services,
+plugins and downloads can make network requests when used; do not describe those paths as offline.
 
 ## Steps
 
@@ -17,7 +18,7 @@ the app to save. Nothing else is fetched and nothing phones home.
    allow that origin in the app's `frame-src`.
 2. Frame it: `<iframe src="https://editor.example.com/rapier.html?embed=1">`. Nothing more goes in
    the URL.
-3. Connect with the helper, `npm install rapier-embed@1.1.27` (MIT, no dependencies, one module):
+3. Connect with the helper, `npm install rapier-embed@1.1.28` (MIT, no dependencies, one module):
 
 ```js
 import {connectRapier} from 'rapier-embed';

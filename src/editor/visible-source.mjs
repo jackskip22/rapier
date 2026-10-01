@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter, pairInkMarkers as _rapierPairInkMarkers, RAPIER_HIGHLIGHT_COLORS} from '../agent/markdown-spec.mjs';
+import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter, pairMarkers as _rapierPairMarkers, RAPIER_HIGHLIGHT_COLORS} from '../agent/markdown-spec.mjs';
 // What a person does not see. Find and Replace All work on the words on screen (docs/open-work.md,
 // section 3 item 1; survey-writing.md G1, D1, D2; R85b: no path that means keep may destroy): the Markdown
 // that carries a document's hidden parts is never a place a replacement lands and never counts as a hit.
@@ -8,7 +8,7 @@ import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter, pairInkMarker
 // picture's destination and title; a reference label; a picture's alt. Code shows exactly what it holds,
 // so only their delimiters and fence info are hidden. The live Markdown parser owns block and
 // inline-mark boundaries; this satellite observes its rules without changing the parser. The two
-// comments of an ink pair are hidden and are the one exception: they stand between the words of a mark
+// comments of colour and ink pairs are hidden and are the one exception: they stand between the words of a mark
 // and are no character of them, so a hit may run across one (docs/briefs/ink.md, section 1).
 function _rapierHiddenSourceRanges(sourceText, parser = null) {
 	const source = String(sourceText == null ? '' : sourceText);
@@ -178,31 +178,32 @@ function _rapierVisibleHits(hits, hidden) {
 	});
 }
 
-// The ink pairs whose two comments the page hides: the grammar pairs an opener with the next closer, and both must be
+// The colour and ink pairs whose two comments the page hides: the shared grammar pairs each kind, and both must be
 // hidden comments here (a marker in code is literal there, and one inside a wider hidden range is not a comment of its own).
-function _rapierHiddenInkPairs(source, hidden) {
+function _rapierHiddenMarkPairs(source, hidden) {
 	const comments = new Map();
 	for (const range of hidden) if (range.kind === 'comment') comments.set(range.start, range.end);
-	return _rapierPairInkMarkers(source).runs.filter(pair =>
-		comments.get(pair.start) === pair.innerStart && comments.get(pair.innerEnd) === pair.end);
+	return ['ink', 'color'].flatMap(kind => _rapierPairMarkers(source, kind).runs).filter(pair =>
+		comments.get(pair.start) === pair.innerStart && comments.get(pair.innerEnd) === pair.end)
+		.sort((a, b) => a.start - b.start);
 }
 
 // Every marker of the pairs in source order, each with its pair.
-function _rapierInkMarks(pairs) {
+function _rapierPairMarks(pairs) {
 	const marks = [];
 	for (const pair of pairs) marks.push({ start: pair.start, end: pair.innerStart, pair, opener: true },
 		{ start: pair.innerEnd, end: pair.end, pair, opener: false });
-	return marks;
+	return marks.sort((a, b) => a.start - b.start);
 }
 
-// The source as it is read: without the markers of its ink pairs, with the hidden ranges that remain and the way back for
+// The source as it is read: without the markers of its colour and ink pairs, with the hidden ranges that remain and the way back for
 // a hit found in it. A hit comes back in the source's own offsets, from its first character to the end of its last, so a
 // marker between them lies inside it and one at an edge does not. Null when no pair is hidden, and then a document's
 // Find and Replace All read the source as they always did.
-function _rapierVisibleInkText(source, hidden) {
-	const pairs = _rapierHiddenInkPairs(source, hidden);
+function _rapierVisibleMarkText(source, hidden) {
+	const pairs = _rapierHiddenMarkPairs(source, hidden);
 	if (!pairs.length) return null;
-	const marks = _rapierInkMarks(pairs), cuts = [], starts = new Set(marks.map(mark => mark.start));
+	const marks = _rapierPairMarks(pairs), cuts = [], starts = new Set(marks.map(mark => mark.start));
 	let text = '', at = 0, total = 0;
 	for (const { start, end } of marks) {
 		text += source.slice(at, start); at = end; total += end - start;
@@ -225,32 +226,41 @@ function _rapierVisibleInkText(source, hidden) {
 	return { text, hidden: rest, hit: hit => ({ start: back(hit.start), end: back(hit.end - 1) + 1, shown: text.slice(hit.start, hit.end) }) };
 }
 
-// The splices of a replacement across ink pairs, one for each hit. A marker between a hit's words stays, in its order, after
+// The splices of a replacement across paired marks, one for each hit. A marker between a hit's words stays, in its order, after
 // the replacement, which is the mark of the hit's first character. A pair whose words all go with no replacement among them
 // goes with them, and so does the marker that stands at the edge of the hit that took the last of them. A pair that was
 // empty before is no replacement's to clear.
-function _rapierInkSplices(source, accepted, replacement, pairs) {
-	const marks = _rapierInkMarks(pairs), gone = new Set();
+function _rapierPairSplices(source, accepted, replacement, pairs) {
+	const marks = _rapierPairMarks(pairs), gone = new Set();
+	// Other paired comments are no words of an enclosing pair. Cover the original inner
+	// range with hits and paired markers, then retire every pair whose last words went.
+	const coverage = [...accepted.map(({ match }) => ({ ...match, hit: true })), ...marks]
+		.sort((a, b) => a.start - b.start || b.end - a.end);
 	let first = 0;
 	for (const pair of pairs) {
-		while (first < accepted.length && accepted[first].match.end <= pair.innerStart) first++;
 		if (pair.innerEnd === pair.innerStart) continue;
-		let reach = pair.innerStart, lands = false;
-		for (let next = first; next < accepted.length && accepted[next].match.start < pair.innerEnd &&
-				accepted[next].match.start <= reach; next++) {
-			const { match } = accepted[next];
-			if (replacement && match.start >= pair.innerStart) lands = true;
-			reach = Math.max(reach, match.end);
+		while (first < coverage.length && coverage[first].end <= pair.innerStart) first++;
+		let reach = pair.innerStart, lands = false, touched = false;
+		for (let next = first; next < coverage.length; next++) {
+			const span = coverage[next];
+			if (span.end <= pair.innerStart) continue;
+			if (span.start >= pair.innerEnd || span.start > reach) break;
+			if (span.hit) {
+				touched = true;
+				if (replacement && span.start >= pair.innerStart) lands = true;
+			}
+			reach = Math.max(reach, span.end);
+			if (reach >= pair.innerEnd) break;
 		}
-		if (reach >= pair.innerEnd && !lands) gone.add(pair);
+		if (touched && reach >= pair.innerEnd && !lands) gone.add(pair);
 	}
 	const byStart = new Map(marks.map(mark => [mark.start, mark])), byEnd = new Map(marks.map(mark => [mark.end, mark]));
 	let from = 0;
 	return accepted.map(({ match }) => {
 		let start = match.start, end = match.end, kept = '';
-		const left = byEnd.get(start), right = byStart.get(end);
-		if (left && left.opener && gone.has(left.pair)) start = left.start;
-		if (right && !right.opener && gone.has(right.pair)) end = right.end;
+		let edge;
+		while ((edge = byEnd.get(start)) && edge.opener && gone.has(edge.pair)) start = edge.start;
+		while ((edge = byStart.get(end)) && !edge.opener && gone.has(edge.pair)) end = edge.end;
 		while (from < marks.length && marks[from].start < match.start) from++;
 		for (let next = from; next < marks.length && marks[next].end <= match.end; next++) {
 			if (!gone.has(marks[next].pair)) kept += source.slice(marks[next].start, marks[next].end);
@@ -264,8 +274,8 @@ function _rapierInkSplices(source, accepted, replacement, pairs) {
 function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdown = true, parser = null) {
 	const source = String(sourceText == null ? '' : sourceText);
 	const hidden = markdown ? _rapierHiddenSourceRanges(source, parser) : [];
-	const pairs = markdown ? _rapierHiddenInkPairs(source, hidden) : [];
-	const markers = new Map(_rapierInkMarks(pairs).map(mark => [mark.start, mark]));
+	const pairs = markdown ? _rapierHiddenMarkPairs(source, hidden) : [];
+	const markers = new Map(_rapierPairMarks(pairs).map(mark => [mark.start, mark]));
 	const accepted = [], refused = [];
 	const ordered = (Array.isArray(matches) ? matches : []).map((match, index) => ({ match, index }))
 		.sort((a, b) => a.match.start - b.match.start || a.match.end - b.match.end);
@@ -277,7 +287,7 @@ function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdow
 		else if (match.start < end) reason = 'overlap';
 		else {
 			while (cursor < hidden.length && hidden[cursor].end <= match.start) cursor++;
-			// An ink marker between the hit's characters is none of them; at either edge it is hidden, as every comment is.
+			// A paired marker between the hit's characters is none of them; at either edge it is hidden, as every comment is.
 			for (let next = cursor; next < hidden.length && hidden[next].start < match.end; next++) {
 				const range = hidden[next], marker = markers.get(range.start);
 				if (marker && marker.end === range.end && range.start > match.start && range.end < match.end) continue;
@@ -290,9 +300,9 @@ function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdow
 		end = match.end;
 	}
 	const inserted = String(replacement);
-	const splices = pairs.length ? _rapierInkSplices(source, accepted, inserted, pairs)
+	const splices = pairs.length ? _rapierPairSplices(source, accepted, inserted, pairs)
 		: accepted.map(({ match }) => ({ pos: match.start, removed: source.slice(match.start, match.end), inserted }));
 	return { splices, refused };
 }
 
-export { _rapierHiddenSourceRanges, _rapierVisibleHits, _rapierPlanVisibleReplacement, _rapierVisibleInkText };
+export { _rapierHiddenSourceRanges, _rapierVisibleHits, _rapierPlanVisibleReplacement, _rapierVisibleMarkText };

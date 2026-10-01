@@ -3,7 +3,7 @@
 [Rapier](https://rapier.website) is a document editor in one offline page: writing, drawing, painting, pictures, Notes
 and the diff of a change, with no account and nothing sent until the person chooses it. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.27 notes.md` makes one HTML file that is the whole editor with the
+**A file to hand a person.** `npx rapier-html@1.1.28 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it with one click, edit, draw and paint in it, review a proposed change as a diff, save it
 and send it back exactly.
 
@@ -26,7 +26,16 @@ editable SVG drawings travel inside one `.md` file every Markdown app can read.
 
 ## Install
 
-`claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier`
+**Claude chat and Cowork:** add the plugin, open its **Connectors** tab, and add or connect **Rapier** at
+`https://mcp.rapier.website/mcp`. No Rapier account or login is needed. Installing the skills alone does not connect the tools.
+
+**Claude Code:** `claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier`
+
+For a first document, ask: “Create an editable garden plan in Rapier with beds for tomatoes, herbs and flowers.”
+The assistant creates a workspace with `rapier.open` and checks `document.get_context` for editor presence.
+If the host supplies no editor, it can deliver an offline editable file through an available file/code surface,
+or the Markdown source in chat. A successful workspace call alone does not confirm that an editor opened.
+If Rapier tools are unavailable, check the plugin's connector connection before retrying.
 
 Each skill carries its own references and helpers. The `rapier-html` npm package supplies the editor for `npx`;
 `SKILLS.json` records the staged package versions. Node 22 and npm depend on the host; an MCP connection does not
@@ -37,10 +46,13 @@ promise a shell.
 `SKILLS.json` names this skill snapshot, its file digest and the worker source digest it was staged with. The worker's
 `serverInfo.version` is `<release>+worker.<id>` when Cloudflare supplies its version metadata, otherwise the release
 alone; read it through MCP or `/health` and record it beside the submitted snapshot. The source digest is build
-identity, not proof of a deployment. OpenAI imports skills as a submission-time snapshot: upload changed skills with a
-new submission, or deploy and Scan Tools again when importing from MCP. Rules:
-[portable package](https://developers.openai.com/plugins/build/plugins), [skills](https://developers.openai.com/plugins/build/skills),
-[With MCP submission](https://developers.openai.com/plugins/guides/submit-claude-plugin).
+identity, not proof of a deployment. For Claude, submit the remote server as an **MCP connector** and this folder as a **Plugin bundle** from
+`jackskip22/rapier-plugins`, plugin path `claude`. Use the same endpoint for both submissions so they share
+one connection. Validate the exact candidate commit in the developer portal; revalidate after any change.
+The repository must be public before the plugin listing goes live. See the Claude directory's
+[plugin submission guide](https://claude.com/docs/plugins/submit),
+[plugin checklist](https://claude.com/docs/plugins/pre-submission-checklist) and
+[connector submission guide](https://claude.com/docs/connectors/building/submission).
 
 ## What it sends
 

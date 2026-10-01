@@ -972,7 +972,7 @@ async function _rapierNotesReadFile(row) {
 			try {
 				const S = globalThis.RapierNotesSearch;
 				if (search && exact === undefined && S && typeof _rapierNotesLibraryRead === 'function') {
-					const projected = S.projectSearchBytes(source, {decode});
+					const projected = S.projectSearchBytes(source, {decode, file});
 					state.titles.set(file, _rapierNotesModel().projectCard(file, projected.searchText).title || '');
 					state.readFailed.delete(file);
 					if (_rapierNotesLibraryRead(file, projected)) return;

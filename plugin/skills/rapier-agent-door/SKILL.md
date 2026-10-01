@@ -39,6 +39,12 @@ only for the schema needed. Structure reads and scoped edits keep long documents
 
 ## Create a useful first result
 
+Check that the MCP tools are available before starting a hosted workspace. In Claude chat or Cowork, an
+installed plugin's skills can be available before its connector: direct the person to the plugin's
+**Connectors** tab to add or connect **Rapier**. Keep the supplied source while they connect. If the tools
+remain unavailable, use an available offline file surface or hand off source in chat; do not invent a
+workspace capability, tool receipt, editor opening or applied change.
+
 1. Over MCP, call `rapier.open` with the complete initial Markdown, a filename, and a fresh random
    `createToken` for retryable creation. Put prose and supported Mermaid fences directly in `text`.
    Do not create markers, find them, then replace them just to assemble a new page.

@@ -55,6 +55,10 @@ export function scanColorMarkers(source) {
 	return markers;
 }
 
+export function pairColorMarkers(source) {
+	return pairMarkers(source, 'color');
+}
+
 export function stripColorMarkers(text) {
 	return String(text == null ? '' : text).replace(new RegExp('<!--(?:c ' + COLOR_VALUE + '|/c)-->', 'g'), '');
 }
@@ -189,12 +193,28 @@ export function scanInkMarkers(source) {
 // The runs: an opener and the next closer with no opener between them. A marker that pairs with nothing is text
 // (it shows nothing and marks nothing) and is listed under strays.
 export function pairInkMarkers(source) {
+	return pairMarkers(source, 'ink');
+}
+
+// Colour keeps the first opener, as its inline parser does; ink replaces an unclosed opener.
+// Neither kind nests in itself. The shared range shape lets custody owners treat both alike.
+export function pairMarkers(source, kind) {
+	if (kind !== 'ink' && kind !== 'color') throw new TypeError('Unknown paired marker kind');
+	const color = kind === 'color';
 	const runs = [], strays = [];
 	let open = null;
-	for (const marker of scanInkMarkers(source)) {
-		if (!marker.close) { if (open) strays.push(open); open = marker; continue; }
+	for (const marker of color ? scanColorMarkers(source) : scanInkMarkers(source)) {
+		if (color ? marker.hex !== null : !marker.close) {
+			if (open) {
+				strays.push(color ? marker : open);
+				if (color) continue;
+			}
+			open = marker;
+			continue;
+		}
 		if (!open) { strays.push(marker); continue; }
-		runs.push({ start: open.start, end: marker.end, innerStart: open.end, innerEnd: marker.start, mark: open.mark });
+		runs.push({ start: open.start, end: marker.end, innerStart: open.end, innerEnd: marker.start,
+			...(color ? { hex: open.hex } : { mark: open.mark }) });
 		open = null;
 	}
 	if (open) strays.push(open);
