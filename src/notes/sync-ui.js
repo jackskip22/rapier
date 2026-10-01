@@ -211,6 +211,9 @@ const _rapierNotesSyncUi = (() => {
 				choice('backup', 'save all your notes to one file', async () => { close(); await _rapierNotesBackup(); }, {enabled: true});
 				return;
 			}
+			// The sign-in stands where it will be, said plainly (the founder, 1 October): a button that does nothing yet,
+			// so nobody has to guess whether it was left out or is not switched on.
+			if (mode() === 'oauth') choice('sign in with cloudflare', 'available soon', () => {}, {enabled: false, cloudflare: true});
 			paragraph('your notes stay on this device.');
 			if (mode() === 'oauth' && keyGate().ready) {
 				choice('advanced: use a storage key', 'connect an existing r2 bucket yourself', async () => { session = null; route = 'r2-key'; await owner(); }, {enabled: !acting});

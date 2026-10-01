@@ -1950,7 +1950,7 @@ const RAPIER_DRAW_TOOLS = ['select', 'brush', 'pen', 'paint', 'shape', 'text', '
 const RAPIER_DRAW_TOOL_MENU = ['brush', 'paint', 'erase', 'shape', 'text', 'image', 'select', 'pen', 'effects'];
 // The current tool anchors the head's left edge. The menu carries the full vocabulary;
 // only Raster Brush is shortened in the head because the founder deliberately asked for RASTER.
-const RAPIER_DRAW_TOOL_WORDS = { select: 'Select', brush: 'SVG Brush', pen: 'SVG Pen (Testing)', paint: 'Raster Brush', shape: 'Shape', text: 'Text', erase: 'Eraser', image: 'Image', effects: 'Effects' };
+const RAPIER_DRAW_TOOL_WORDS = { select: 'Select', brush: 'SVG Brush', pen: 'SVG Pen (Testing)', paint: 'Raster Brush', shape: 'Shape', text: 'Text', erase: 'Eraser', image: 'Image', effects: 'Effects (Testing)' };
 const RAPIER_DRAW_TOOL_SHORT = { select: 'Select', brush: 'SVG Brush', pen: 'SVG Pen', paint: 'Raster', shape: 'Shape', text: 'Text', erase: 'Eraser', effects: 'Effects' };
 // The empty canvas says what the tool in hand will actually do. A new drawing opens in SVG Brush, a new
 // drawing in a note on Notes' own last tool, and a drawing opened again on the tool it was last

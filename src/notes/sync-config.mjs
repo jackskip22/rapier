@@ -6,7 +6,7 @@ export const CLOUDFLARE_SYNC = Object.freeze({
 	scopes: Object.freeze([]),
 	browserRoundTripVerified: false,
 });
-export const SYNC_UNAVAILABLE = 'the cloudflare sign-in is not available yet.';
+export const SYNC_UNAVAILABLE = 'sign in with cloudflare will be available soon.';
 export const SYNC_CONSENT = 'cloudflare grants rapier access to storage across the account you choose. your notes are encrypted before they leave this device.';
 // The registration facts alone: a client id and a scope beyond identity.
 export function registrationReady(config = CLOUDFLARE_SYNC) {

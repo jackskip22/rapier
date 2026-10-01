@@ -17,7 +17,7 @@ the app to save. Nothing else is fetched and nothing phones home.
    allow that origin in the app's `frame-src`.
 2. Frame it: `<iframe src="https://editor.example.com/rapier.html?embed=1">`. Nothing more goes in
    the URL.
-3. Connect with the helper, `npm install rapier-embed@1.1.26` (MIT, no dependencies, one module):
+3. Connect with the helper, `npm install rapier-embed@1.1.27` (MIT, no dependencies, one module):
 
 ```js
 import {connectRapier} from 'rapier-embed';
