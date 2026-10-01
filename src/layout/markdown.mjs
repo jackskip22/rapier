@@ -10,7 +10,8 @@ const family = /^<!--[ \t]*md-layout(?=[: \t\r\n-]|$)/i;
 
 function validTargetLayout(value, imageOnly) {
   // `rotate` and `opacity` join width/wrap/x/y as picture-only (F75-11): text has no turn or fade to carry.
-  return validLayout(value) && (imageOnly ? value.align !== 'justify' :
+  // A picture has no first line or indent to set: `first` and `indent` are text's, as `width` and its kin are a picture's.
+  return validLayout(value) && (imageOnly ? value.align !== 'justify' && !['first', 'indent'].some(key => Object.hasOwn(value, key)) :
     !['width', 'wrap', 'x', 'y', 'rotate', 'opacity'].some(key => Object.hasOwn(value, key)));
 }
 
@@ -130,6 +131,8 @@ export function annotateMarkdownLayout(state) {
     if (info.image) (info.image.meta ||= {}).mdLayout = meta;
     opener.attrSet('data-md-layout', encodeURIComponent(info.marker));
     if (info.layout.align) opener.attrSet('data-md-align', info.layout.align);
+    if (info.layout.first) opener.attrSet('data-md-first', String(info.layout.first));
+    if (info.layout.indent) opener.attrSet('data-md-indent', String(info.layout.indent));
     if (tight) {
       // A paragraph owns its own alignment; the enclosing li also owns children.
       opener.hidden = false;

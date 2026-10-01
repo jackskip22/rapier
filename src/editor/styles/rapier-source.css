@@ -731,18 +731,24 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 }
 
 
+/* A closed sheet is not only transparent but hidden: a reader that extracts the page's text (a search engine's
+	 renderer took the licence notice for the page's description) sees nothing of a sheet nobody opened. The fade stays:
+	 visibility turns on at once when the sheet opens and off only after the opacity has gone. */
 .settings-overlay {
 	position: fixed;
 	inset: 0;
 	z-index: 200;
 	background: var(--color-scrim);
 	opacity: 0;
+	visibility: hidden;
 	pointer-events: none;
-	transition: opacity var(--dur-enter) var(--ease-out);
+	transition: opacity var(--dur-enter) var(--ease-out), visibility 0s linear var(--dur-enter);
 }
 .settings-overlay.open {
 	opacity: 1;
+	visibility: visible;
 	pointer-events: auto;
+	transition: opacity var(--dur-enter) var(--ease-out), visibility 0s;
 }
 .settings-panel {
 	position: fixed;

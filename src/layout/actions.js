@@ -101,11 +101,12 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
   }
 }
 
-// The alignment of an empty line (a blank paragraph or heading the caret stands in): the attributes an aligned line's edit surface
+// The layout of an empty line (a blank paragraph or heading the caret stands in): the attributes a laid-out line's edit surface
 // carries, so the caret shows it and the words typed next take it, written as the marker words already get, after them. Nothing
-// is written to the source until there are words, and a line left empty writes nothing; left is the default, so it takes the
-// attributes off. False when the line is not empty or is not a paragraph or heading (a list item, a quote: nothing changes).
-function _rapierAlignEmptyLine(wrapper, align) {
+// is written to the source until there are words, and a line left empty writes nothing. `change` is the keys to set, a null taking
+// one off (left is the default alignment, so it takes the attributes off); the line's other keys stay. False when the line is not
+// empty or is not a paragraph or heading (a list item, a quote: nothing changes).
+function _rapierLayoutEmptyLine(wrapper, change) {
   const edit = wrapper.classList.contains('block-wrapper--editing') ? wrapper.querySelector(':scope > .block-edit') : null;
   if (!edit || /\S/.test(String(edit.textContent || '')) || edit.querySelector('li, blockquote, pre, table, img, svg, hr, math, .math-rendered')) return false;
   let line = edit.querySelector('p, h1, h2, h3, h4, h5, h6');
@@ -115,15 +116,20 @@ function _rapierAlignEmptyLine(wrapper, align) {
     while (edit.firstChild) line.appendChild(edit.firstChild);
     edit.appendChild(line);
   }
-  const marker = align === 'left' ? '' : globalThis.RapierMarkdownLayout.formatLayout({align});
-  if (marker) { line.setAttribute('data-md-layout', encodeURIComponent(marker)); line.setAttribute('data-md-align', align); }
-  else { line.removeAttribute('data-md-layout'); line.removeAttribute('data-md-align'); }
+  const layout = globalThis.RapierMarkdownLayout, next = {...(layout.parseLayoutAttribute(line.getAttribute('data-md-layout')) || {})};
+  for (const key of Object.keys(change)) { if (change[key] == null) delete next[key]; else next[key] = change[key]; }
+  let marker;
+  try { marker = layout.formatLayout(next); } catch (_) { return false; }
+  if (marker) line.setAttribute('data-md-layout', encodeURIComponent(marker)); else line.removeAttribute('data-md-layout');
+  for (const key of ['align', 'first', 'indent']) { if (next[key]) line.setAttribute('data-md-' + key, String(next[key])); else line.removeAttribute('data-md-' + key); }
   _rapierSeatCaretAtBlockStart(edit);
   _rapierRememberToolbarSelection(window.getSelection(), edit);
   _rapierUpdateAlignmentButton(window.getSelection());
   refreshFormatToolbar();
   return true;
 }
+
+function _rapierAlignEmptyLine(wrapper, align) { return _rapierLayoutEmptyLine(wrapper, {align: align === 'left' ? null : align}); }
 
 // The direction a layout target's words read in: the first strong letter of its visible text, as the page draws the paragraph (dir=auto).
 function _rapierTargetDirection(source, target) {
@@ -146,10 +152,28 @@ function _rapierLeftAlignPatch(target, text) {
 }
 
 async function rapierAlign(align) {
-  if (_rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown' ||
-      !['left', 'center', 'right', 'justify'].includes(align)) return false;
+  if (!['left', 'center', 'right', 'justify'].includes(align)) return false;
+  return _rapierEditLayout(align === 'left' ? _rapierLeftAlignPatch : {align, wrap: null, x: null, y: null}, 'document.align',
+    wrapper => _rapierAlignEmptyLine(wrapper, align), () => _rapierUpdateAlignmentButton(window.getSelection()));
+}
+
+// Tab in a paragraph of its own (Shift+Tab takes one off): the first line is indented one more level, up to the grammar's four, as Word's Tab at a
+// paragraph's start sets a first-line indent; written as `first` in the layout comment, one Undo step, never as characters in the words.
+function rapierFirstLine(step) {
+  const change = target => { const level = Math.max(0, Math.min(4, (target.layout.first || 0) + step)); return {first: level || null}; };
+  return _rapierEditLayout(change, 'document.first-line', wrapper => {
+    const line = wrapper.querySelector(':scope > .block-edit > p');
+    const now = line && globalThis.RapierMarkdownLayout.parseLayoutAttribute(line.getAttribute('data-md-layout'));
+    return _rapierLayoutEmptyLine(wrapper, change({layout: now || {}}));
+  }, () => {});
+}
+
+// Edit the layout comment of the paragraphs a selection or the caret is in: `patch` is one object of fields for every target, or a function giving
+// each its own (layout/markdown.mjs editLayout). `onEmptyLine(wrapper)` writes it on an empty line (which has no words to carry the comment), and
+// `after` runs once the source is written.
+async function _rapierEditLayout(patch, operation, onEmptyLine, after) {
+  if (_rapierUserMutationBlocked() || rapier.document.docKind !== 'markdown') return false;
   const layout = globalThis.RapierMarkdownLayout;
-  const patch = align === 'left' ? _rapierLeftAlignPatch : {align, wrap: null, x: null, y: null};
   _rapierRestoreToolbarSelection();
   _rapierCheckpointPendingTyping();
   if (rapier.view.mode === 'source') {
@@ -166,7 +190,7 @@ async function rapierAlign(align) {
     const map = point => plan.edits.reduce((at, edit) => at + (edit.end <= point ? edit.text.length - (edit.end - edit.start) : 0), point);
     return _rapierCommitSourceProjection(plan.edits.slice().sort((a,b) => b.start-a.start)
       .map(edit => ({pos: edit.start, removed: source.slice(edit.start, edit.end), inserted: edit.text})),
-      'document.align', {start: map(range.start), end: map(range.end), direction: textarea.selectionDirection});
+      operation, {start: map(range.start), end: map(range.end), direction: textarea.selectionDirection});
   }
   const selection = window.getSelection();
   const context = _rapierSelectionContext(selection);
@@ -182,7 +206,7 @@ async function rapierAlign(align) {
   }
   if (!wrappers.length) return false;
   // An empty line has no words to carry the layout marker (it is written after them): the alignment stands on the line itself.
-  if (wrappers.length === 1 && range && range.collapsed && !image?.isConnected && _rapierAlignEmptyLine(wrappers[0], align)) return true;
+  if (wrappers.length === 1 && range && range.collapsed && !image?.isConnected && onEmptyLine(wrappers[0])) return true;
   const state = {selection, range, wrappers,
     blocksBefore: wrappers.map(wrapper => _rapierHistoryBlock(_rapierBoundBlock(wrapper)))};
   const next = [];
@@ -212,7 +236,7 @@ async function rapierAlign(align) {
     next.push(value);
   }
   const changed = _rapierApplyRawRange(state, next, {keepEditing: true});
-  _rapierUpdateAlignmentButton(window.getSelection());
+  after();
   refreshFormatToolbar();
   return changed;
 }

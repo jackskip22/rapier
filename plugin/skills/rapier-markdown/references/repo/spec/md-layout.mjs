@@ -2,12 +2,14 @@
 
 // `rotate`: degrees in (-180, 180], one decimal, omitted when 0; never written for a Rapier drawing (its turn lives in its SVG).
 // `opacity`: a picture's fade, a whole percent from 5 to 100, omitted at 100; the picture's bytes never change.
-export const fields = new Set(['align', 'width', 'wrap', 'x', 'y', 'rotate', 'opacity']);
+// `first`/`indent`: a paragraph's first-line indent and its whole-block indent, in levels of one step (2em), a whole number from 1 to 4, omitted when 0; text only.
+export const fields = new Set(['align', 'width', 'wrap', 'x', 'y', 'rotate', 'opacity', 'first', 'indent']);
 export const alignments = new Set(['left', 'center', 'right', 'justify']);
 // `behind`/`front`: out of flow; the paragraph lays out as though the picture were absent.
 export const wraps = new Set(['around', 'box', 'behind', 'front']);
 const has = (value, key) => Object.hasOwn(value, key);
 const percent = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+const level = value => Number.isInteger(value) && value >= 1 && value <= 4;
 const oneDecimalDegrees = value => typeof value === 'number' && Number.isFinite(value) &&
   value > -180 && value <= 180 && Math.abs(value * 10 - Math.round(value * 10)) < 1e-9;
 
@@ -22,6 +24,7 @@ export function validLayout(value) {
     (!has(value, 'y') || typeof value.y === 'number' && Number.isFinite(value.y) && value.y >= -50 && has(value, 'wrap')) &&
     (!has(value, 'rotate') || oneDecimalDegrees(value.rotate)) &&
     (!has(value, 'opacity') || Number.isInteger(value.opacity) && value.opacity >= 5 && value.opacity <= 100) &&
+    (!has(value, 'first') || level(value.first)) && (!has(value, 'indent') || level(value.indent)) &&
     !(has(value, 'align') && (has(value, 'wrap') || has(value, 'x')));
 }
 
@@ -56,6 +59,9 @@ export function parseLayout(comment) {
     } else if (key === 'opacity') {
       if (!/^[1-9]\d{0,2}%$/.test(raw)) return null;
       value.opacity = Number(raw.slice(0, -1));
+    } else if (key === 'first' || key === 'indent') {
+      if (!/^[1-4]$/.test(raw)) return null;
+      value[key] = Number(raw);
     } else value[key] = raw;
   }
   return validLayout(value) ? value : null;

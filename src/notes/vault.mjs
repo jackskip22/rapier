@@ -4,6 +4,8 @@ import {scrypt} from './scrypt.mjs';
 // docs/sync-engine.md.
 // - A random 256-bit VDK. The passphrase derives a wrapping key (scrypt N=32768, r=8, p=1, 16-byte salt); the VDK is wrapped with
 // AES-256-GCM. A new passphrase re-wraps, never re-seals. The fixed 32 MiB ROMix workspace and cost parameters are public; no WASM is needed.
+//   The product offers no re-wrap: sync never deletes, so the old header would stay readable, and a device code carries
+//   the header itself. A passphrase change is a new vault (docs/sync-design.md, ruling 11).
 // - Every object: version byte, fresh 12-byte nonce, AES-256-GCM, domain/path as AAD. One tampered byte is refused; nothing partially decrypts.
 // - keys/<header digest> is not sealed: format, KDF parameters, salt, wrapped VDK, verifier. Nothing secret.
 // - The recovery code IS the VDK in a typable alphabet (tighter than architecture §7.6; the tension is named in docs/sync-engine.md).

@@ -1181,6 +1181,8 @@ html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-high
    unscoped rule above, which still owns Rapier's own layout. One owner: html[data-layout], set by
    renderLineFurniture() from the RapierStorage.preferences.layout preference. */
 html[data-layout="plain"] [data-md-align]{text-align:inherit!important}
+html[data-layout="plain"] .md-render p[data-md-first]{text-indent:0}
+html[data-layout="plain"] .md-render p[data-md-indent]{margin-inline-start:0}
 html[data-layout="plain"] .md-render p[data-md-align="center"]>img,
 html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;margin-right:0}
 .block-wrapper--diagram-source {

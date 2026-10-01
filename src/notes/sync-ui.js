@@ -5,6 +5,8 @@ const _rapierNotesSyncUi = (() => {
 	let accounts = null, selectedAccount = null, cloudStorage = null, activation = false, newVault = false;
 	let automatic = false, timer = null, syncing = false;
 	let message = '', recovery = null, conflicts = null, joined = false, setup = null, route = null, acting = false, joinCode = '', replacing = false;
+	let intakeJoin = false, drawnCode = null;
+	const joinReturnKey = () => 'rapier:sync:join-return' + RapierStorage.scope;
 	const api = () => globalThis.RapierNotesSyncSession;
 	const platformId = () => String(globalThis.RapierPlatform?.environment?.id || '').toLowerCase();
 	const environment = () => ({url: location.href, native: ['android', 'windows'].includes(platformId()), framed: window.top !== window});
@@ -22,10 +24,19 @@ const _rapierNotesSyncUi = (() => {
 		absent: 'Rapier Sync is coming soon. Your notes are not synced. Use Notes BACKUP to keep a separate copy.',
 		impostor: 'An app using Rapier Sync\'s name is installed, but it is not signed by Rapier\'s certificate. Rapier will not open it.',
 		unsigned: 'The Rapier Sync on this phone has no readable signature, so Rapier cannot tell whether it is the real one. It was not opened.'});
+	// Once the app says the store listing is live, the absent sentence sends the person there, and an impostor is told to go first.
+	const COMPANION_ABSENT_LISTED = Object.freeze({
+		absent: 'Rapier Sync is not installed. Get it from Google Play to sync your notes. Until then, use Notes BACKUP to keep a separate copy.',
+		impostor: COMPANION_ABSENT.impostor + ' Remove that app, then install Rapier Sync from Google Play.',
+		unsigned: COMPANION_ABSENT.unsigned});
 	const COMPANION_UNAPPROVED = 'open rapier sync and approve this vault’s storage; nothing was sent.';
 	let companion = null;
 	const companionSeam = () => { try { const host = globalThis.RapierPlatform?.host; return typeof host?.syncTransport === 'function' ? host : null; } catch (_) { return null; } };
-	const companionGate = () => companion?.state === 'ready' && companionSeam() ? {ready: true, reason: ''} : {ready: false, reason: COMPANION_ABSENT[companion?.state] || COMPANION_ABSENT.absent};
+	const companionGate = () => companion?.state === 'ready' && companionSeam() ? {ready: true, reason: ''}
+		: {ready: false, reason: (companion?.listing ? COMPANION_ABSENT_LISTED : COMPANION_ABSENT)[companion?.state] || (companion?.listing ? COMPANION_ABSENT_LISTED : COMPANION_ABSENT).absent};
+	// The vault's public identifier (32 hexadecimal characters, never a key): Rapier Sync's storage screen asks for it
+	// when the person approves this vault's storage, so the sheet shows it beside the device code.
+	const companionVaultId = state => { try { return state?.address ? api().readConnectionCode(state.address).vaultId || null : null; } catch (_) { return null; } };
 	async function askCompanion(vault = null) {
 		let answer = null;
 		try { answer = await companionSeam()?.syncTransport('status', vault ? {vault} : {}); } catch (_) {}
@@ -60,6 +71,15 @@ const _rapierNotesSyncUi = (() => {
 	const mode = () => session?.status().mode || route || (platformId() === 'android' ? 'companion' : 'oauth');
 	const availability = () => mode() === 'companion' ? companionGate() : mode() === 'r2-key' ? keyGate() : oauthGate();
 	const status = () => session?.status() || {authorized: false, unlocked: false, busy: false, gate: availability()};
+	function pendingWords(pending) {
+		if (!pending) return 'sends and receives changes; a conflict holds both versions for you';
+		const describe = counts => {
+			const parts = [['notes', 'note'], ['pictures', 'picture'], ['recordings', 'recording'], ['files', 'file']]
+				.filter(([name]) => counts[name]).map(([name, word]) => counts[name] + ' ' + word + (counts[name] === 1 ? '' : 's'));
+			return parts.length ? parts.join(', ') + ' (' + (counts.bytes === null ? 'size unavailable' : api().attachmentSizeWords(counts.bytes)) + ')' : 'no new content';
+		};
+		return 'send ' + describe(pending.upload) + '; receive ' + describe(pending.download) + '. a conflict holds both versions for you';
+	}
 	function node(tag, className, text) {
 		const el = document.createElement(tag);
 		if (className) el.className = className;
@@ -71,7 +91,21 @@ const _rapierNotesSyncUi = (() => {
 		paragraph(label);
 		const el = node('textarea', 'navigator-outline-filter');
 		el.value = text; el.readOnly = true; el.rows = 3; el.setAttribute('aria-label', label);
-		body.append(el); return el;
+		body.append(el);
+		if (typeof text === 'string' && text.startsWith('rapier-vault:')) deviceQR(text);
+		return el;
+	}
+	function deviceQR(address) {
+		try {
+			if (drawnCode?.address !== address) drawnCode = {address, ...api().qrDrawing(api().encodeQR(api().connectionLink(address)))};
+			const {size, path} = drawnCode, ns = 'http://www.w3.org/2000/svg';
+			const svg = document.createElementNS(ns, 'svg'), paper = document.createElementNS(ns, 'rect'), ink = document.createElementNS(ns, 'path');
+			svg.setAttribute('viewBox', `0 0 ${size} ${size}`); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'device code');
+			svg.setAttribute('width', size * 4); svg.setAttribute('height', size * 4); svg.setAttribute('shape-rendering', 'crispEdges');
+			svg.style.maxWidth = '100%'; svg.style.height = 'auto'; svg.style.display = 'block';
+			paper.setAttribute('width', size); paper.setAttribute('height', size); paper.setAttribute('fill', '#fff');
+			ink.setAttribute('d', path); ink.setAttribute('fill', '#000'); svg.append(paper, ink); body.append(svg);
+		} catch (error) { paragraph(error?.code === 'qr-capacity' ? error.message : 'the qr code could not be made; select and copy the device code above.'); }
 	}
 	function input(label, {secret = false, value: initial = ''} = {}) {
 		const row = node('label', 'export-choice');
@@ -124,7 +158,7 @@ const _rapierNotesSyncUi = (() => {
 				// Through Rapier Sync the engine's objects cross the app's seam, sealed; the page has no network of its own.
 				...(mode() === 'companion' ? {companion: {call: (operation, args) => companionSeam().syncTransport(operation, args)}} : {}),
 				onChange: () => { paint(); renderSettings(); wearBox(); if (session && !status().unlocked) { automatic = false; clearTimeout(timer); } }});
-			await opened.inspect(); session = opened; if (status().authorized && status().unlocked) { automatic = true; schedule(1600); } return opened;
+			await opened.inspect(); session = opened; if (!intakeJoin && status().backedUpAt && status().authorized && status().unlocked) { automatic = true; schedule(1600); } return opened;
 		})().finally(() => { initializing = null; });
 		return initializing;
 	}
@@ -148,7 +182,7 @@ const _rapierNotesSyncUi = (() => {
 			void session?.cancelSetup?.().then(state => { if (state.revocationPending) showToast(state.notice, 'error'); })
 				.catch(error => showToast(String(error?.message || error), 'error'));
 		}
-		visible = false; recovery = null; conflicts = null; setup = null; joinCode = ''; replacing = false; message = '';
+		visible = false; recovery = null; conflicts = null; setup = null; joinCode = ''; replacing = false; message = ''; intakeJoin = false; drawnCode = null;
 		clearBody(); if (overlay) closeDialog(overlay); wearBox();
 	}
 	function paint() {
@@ -156,6 +190,14 @@ const _rapierNotesSyncUi = (() => {
 		clearBody();
 		const gate = availability(), state = status();
 		if (message) { const p = node('p', 'export-choice__description', message); p.setAttribute('role', 'alert'); body.append(p); }
+		// A camera link is a local landing, even while this route is unavailable. It does not
+		// inspect a saved folder, request sign-in or fetch the destination merely by opening.
+		if (intakeJoin) {
+			if (!gate.ready && (mode() !== 'companion' || platformId() !== 'android' || companion)) paragraph(gate.reason);
+			paintKeySetup(state);
+			if (mode() === 'oauth' && !state.authorized) choice('sign in with cloudflare', 'then unlock the device code here', startSignIn, {enabled: gate.ready && !acting && !state.busy, cloudflare: true});
+			return;
+		}
 		// Nothing is said about Rapier Sync before the app has answered.
 		if (mode() === 'companion' && !companion) {
 			const loading = node('p', 'export-choice__description', 'Opening sync settings.');
@@ -165,7 +207,7 @@ const _rapierNotesSyncUi = (() => {
 			paragraph(gate.reason);
 			if (mode() === 'companion') {
 				// Rapier Sync is not here, or not Rapier's: its store listing, only where the app says the listing is live.
-				if (companion.listing) choice('rapier sync', '', openCompanion, {enabled: !acting});
+				if (companion.listing) choice('rapier sync', 'get it from google play', openCompanion, {enabled: !acting});
 				choice('backup', 'save all your notes to one file', async () => { close(); await _rapierNotesBackup(); }, {enabled: true});
 				return;
 			}
@@ -236,23 +278,23 @@ const _rapierNotesSyncUi = (() => {
 		}
 		if (mode() === 'companion' && (!state.hasConnection || state.rejoinRequired)) {
 			paintCompanionSetup(state); paintVaultChoices(state);
-			choice('rapier sync', '', openCompanion, {enabled: true});
+			choice('rapier sync', 'opens rapier sync; it holds your storage and its status', openCompanion, {enabled: true});
 			return;
 		}
 		if (recovery) {
 			paragraph('this code unlocks the vault: save it outside rapier, never in a note, and share it with no one.');
 			value('recovery code', recovery.recovery); value('vault address — for your other device', recovery.address);
-			choice('start syncing', 'i have saved the code outside rapier; sync my notes now', async () => { recovery = null; await connectAndSync(); });
+			choice('sync now', pendingWords(state.pending) + '; i have saved the recovery code outside rapier', async () => { recovery = null; await connectAndSync(); });
 		} else if (!state.hasConnection && !state.address || state.rejoinRequired) {
 			if (joined || state.rejoinRequired) {
 				const address = input('vault address from your other device'), secret = input('vault passphrase', {secret: true});
 				choice('connect existing vault', 'it unlocks here, never at cloudflare', async () => {
 					const parameters = {address: address.value, secret: secret.value}; secret.value = '';
-					try { await session.join(parameters); await connectAndSync(); } finally { parameters.secret = ''; }
+					try { await session.join(parameters); joined = false; } finally { parameters.secret = ''; }
 				});
 				choice('use a recovery code instead', 'the recovery code stays in this page', async () => {
 					const parameters = {address: address.value, secret: secret.value, recovery: true}; secret.value = '';
-					try { await session.join(parameters); await connectAndSync(); } finally { parameters.secret = ''; }
+					try { await session.join(parameters); joined = false; } finally { parameters.secret = ''; }
 				});
 				choice('create a new vault instead', 'in an r2 bucket of your own', () => { joined = false; });
 			} else {
@@ -262,7 +304,7 @@ const _rapierNotesSyncUi = (() => {
 			const secret = input('vault passphrase or recovery code', {secret: true});
 			for (const recover of [false, true]) choice(recover ? 'unlock with recovery code' : 'unlock vault', 'the key never leaves this page', async () => {
 				let value = secret.value; secret.value = '';
-				try { await session.unlock(value, {recovery: recover}); await connectAndSync(); } finally { value = ''; }
+				try { await session.unlock(value, {recovery: recover}); } finally { value = ''; }
 			});
 		} else {
 			paragraph(automatic ? 'sync is on while this page is open and the vault is unlocked.' : 'sync is paused. your notes stay here.');
@@ -271,7 +313,16 @@ const _rapierNotesSyncUi = (() => {
 				if (!navigator.clipboard?.writeText) throw new Error('select the device code above and copy it.');
 				await navigator.clipboard.writeText(state.address); message = 'device code copied.';
 			});
-			choice('sync now', 'sends and receives changes; a conflict holds both versions for you', async () => {
+			// Through Rapier Sync the vault's public identifier is what its storage screen asks for; it is not a key.
+			if (mode() === 'companion' && companionVaultId(state)) {
+				const vaultId = companionVaultId(state);
+				value('vault id — rapier sync asks for it when you approve this vault’s storage', vaultId);
+				choice('copy vault id', 'then approve storage for it in rapier sync', async () => {
+					if (!navigator.clipboard?.writeText) throw new Error('select the vault id above and copy it.');
+					await navigator.clipboard.writeText(vaultId); message = 'vault id copied.';
+				});
+			}
+			choice('sync now', pendingWords(state.pending), async () => {
 				await connectAndSync(); conflicts = await session.conflicts();
 			});
 			choice('review conflicts', 'read both versions and choose one', async () => { conflicts = await session.conflicts(); });
@@ -301,8 +352,12 @@ const _rapierNotesSyncUi = (() => {
 		if (mode() === 'r2-key') {
 			paragraph('forgetting the key here does not end its access: delete the key in cloudflare. device codes you copied still hold it, encrypted.');
 			choice('forget bucket key', 'stops sync here and forgets the key; your notes stay', async () => { setup = null; conflicts = null; await session.forgetKey(); }, {enabled: true});
-		// Through Rapier Sync this page holds no access to revoke: the storage and its sign-in are Rapier Sync's.
-		} else if (mode() === 'companion') choice('rapier sync', '', openCompanion, {enabled: true});
+		// Through Rapier Sync this page holds no access to revoke: the storage and its sign-in are Rapier Sync's. Leaving the
+		// vault here (paintVaultChoices) forgets this folder's connection and nothing in the app.
+		} else if (mode() === 'companion') {
+			choice('rapier sync', 'opens rapier sync: approve storage, see its status, remove this vault’s storage there', openCompanion, {enabled: true});
+			paragraph('leaving this vault here does not remove its storage from rapier sync; do that in the app.');
+		}
 		else choice('sign out and revoke', 'stops sync and revokes this page’s access; your notes stay', async () => { recovery = null; conflicts = null; await session.signOut(); }, {enabled: true});
 	}
 	// The companion's connect rows, in the bucket-key route's words: a passphrase, then the recovery code, then the
@@ -339,6 +394,10 @@ const _rapierNotesSyncUi = (() => {
 		await flush(true); if (!current()) return;
 		const own = await owner(); if (!current()) return;
 		const url = await own.beginSignIn();
+		if (intakeJoin) {
+			api().readConnectionCode(joinCode);
+			sessionStorage.setItem(joinReturnKey(), JSON.stringify({address: joinCode, state: new URL(url).searchParams.get('state'), at: Date.now()}));
+		}
 		await flush(true); if (current()) location.assign(url);
 	}
 	async function loadAccounts() {
@@ -381,9 +440,9 @@ const _rapierNotesSyncUi = (() => {
 				body.append(selected);
 			}
 			const secret = input('sync passphrase or recovery code', {secret: true});
-			for (const recover of [false, true]) choice(recover ? 'use recovery code' : 'connect and sync', 'keeps the notes already on this device too', async () => {
+			for (const recover of [false, true]) choice(recover ? 'use recovery code' : 'connect existing vault', 'keeps the notes already on this device too', async () => {
 				const parameters = {address: cloudStorage.vaults[Number(selected?.value || 0)].address, secret: secret.value, recovery: recover}; secret.value = '';
-				try { await session.join(parameters); await connectAndSync(); } finally { parameters.secret = ''; }
+				try { await session.join(parameters); joined = false; } finally { parameters.secret = ''; }
 			});
 			choice('start a separate collection', 'keeps your existing online notes untouched', () => { newVault = true; });
 		} else {
@@ -455,9 +514,10 @@ const _rapierNotesSyncUi = (() => {
 			if (!joined && !replacing) choice('join with a new device code', 'updates the key from another device without losing this folder’s notes', () => { joined = true; });
 		}
 		choice('leave this vault', 'forgets this folder’s connection, not its notes; the online vault and other devices stay', leaveVaultChoice);
-		choice('start a new vault', 'leaves this vault and keeps every note, then asks for a new passphrase', leaveVaultChoice);
+		choice('start a new vault', 'the way to change your passphrase: leaves this vault, keeps every note and seals them again under a new key', leaveVaultChoice);
 	}
 	function paintKeyReplacement(state) {
+		if (state.address) value('device code — for your other device', state.address);
 		paragraph('use a new object read and write key for this same bucket; the old key is not used for this check.');
 		const id = input('new access key id', {secret: true}), access = input('new secret access key', {secret: true});
 		const secret = state.unlocked ? null : input('vault passphrase or recovery code', {secret: true});
@@ -475,12 +535,17 @@ const _rapierNotesSyncUi = (() => {
 			if (state.hasConnection && !state.credentialStored && !state.rejoinRequired) paragraph('this device forgot its bucket key. to cut rapier off, delete the key in cloudflare; to reconnect, paste a device code you saved.');
 			paragraph('paste the device code from your other device and unlock it here. nothing here is replaced: sync now keeps both.');
 			const address = input('device code from your other device', {value: joinCode}), secret = input('vault passphrase or recovery code', {secret: true});
+			address.addEventListener('input', () => { if (intakeJoin) joinCode = address.value; });
+			const canJoin = !state.busy && !acting && (!intakeJoin || mode() === 'companion' && platformId() === 'android' || availability().ready && (mode() !== 'oauth' || state.authorized));
 			for (const recover of [false, true]) choice(recover ? 'connect with recovery code' : 'connect existing vault', 'nothing syncs until you press sync now', async () => {
 				const parameters = {address: address.value, secret: secret.value, recovery: recover}; joinCode = address.value; secret.value = '';
-				try { await (await owner()).join(parameters); joined = false; joinCode = ''; } finally { parameters.secret = ''; }
-			});
-			if (state.hasConnection && state.credentialStored && !state.rejoinRequired) choice('back to vault', 'keeps the saved connection', () => { joined = false; joinCode = ''; });
-			if (!state.hasConnection && !state.rejoinRequired) choice('create a new vault instead', 'choose a passphrase for a new vault', () => { joined = false; });
+				try {
+					if (intakeJoin && mode() === 'companion') { await askCompanion(); if (!companionGate().ready) throw new Error(companionGate().reason); }
+					await (await owner()).join(parameters); joined = false; joinCode = ''; intakeJoin = false;
+				} finally { parameters.secret = ''; }
+			}, {enabled: canJoin});
+			if (state.hasConnection && state.credentialStored && !state.rejoinRequired) choice('back to vault', 'keeps the saved connection', () => { joined = false; joinCode = ''; intakeJoin = false; });
+			if (!state.hasConnection && !state.rejoinRequired) choice('create a new vault instead', 'choose a passphrase for a new vault', () => { joined = false; intakeJoin = false; });
 			return;
 		}
 		if (setup?.stage === 'recovery') {
@@ -541,7 +606,9 @@ const _rapierNotesSyncUi = (() => {
 		if (mode() === 'companion') companion = null;
 		if (initialize) void perform(async () => {
 			if (mode() === 'companion') { await askCompanion(); if (!visible || screen !== view || !companionGate().ready) return; }
-			await owner(); await keptChoices();
+			const prior = session; await owner();
+			if (prior === session && !status().busy) await session.inspect();
+			await keptChoices();
 			if (!visible || screen !== view) return;
 			if (mode() === 'companion') await askCompanionVault();
 			else if (mode() === 'oauth' && !status().authorized) await startSignIn();
@@ -550,19 +617,38 @@ const _rapierNotesSyncUi = (() => {
 		paint(); openDialog(overlay, {panel: '.settings-panel', onEscape: close});
 	}
 	function consume(context) {
+		const hash = context.hash || location.hash || '';
+		if (hash.startsWith('#join=')) {
+			// Remove the capability before even parsing it. The page's own camera is never opened.
+			history.replaceState(null, '', _rapierBootPathAndQuery());
+			automatic = false; clearTimeout(timer); intakeJoin = true; joined = true; joinCode = ''; message = '';
+			try {
+				const landing = api().readJoinFragment(hash); joinCode = landing.address;
+				if (!session) route = platformId() === 'android' ? 'companion' : landing.mode;
+			} catch (error) { message = said(error); if (!session) route = platformId() === 'android' ? 'companion' : 'r2-key'; }
+			open({initialize: false}); return;
+		}
 		if (!context.params.has('code') && !context.params.has('error')) return;
 		const search = context.params.toString(), callback = location.href;
 		let verification = false;
 		try { verification = api().verificationReturn(callback, sessionStorage.getItem('rapier:cloudflare:pending' + RapierStorage.scope), search); } catch (_) {}
-		history.replaceState(null, '', _rapierBootPathAfterIntake() + (verification ? '#sync-verify' : ''));
+		history.replaceState(null, '', _rapierBootPathAndQuery() + (verification ? '#sync-verify' : ''));
 		if (mode() !== 'oauth') { session = null; route = 'oauth'; }
 		open({initialize: false});
 		const screen = view;
 		if (availability().ready) void perform(async () => {
 			const own = await owner(); if (!visible || screen !== view) return;
 			await own.finishSignIn(search, callback);
-			if (visible && screen === view && !status().hasConnection && !status().rejoinRequired) await loadAccounts();
+			let saved;
+			try { saved = JSON.parse(sessionStorage.getItem(joinReturnKey())); } catch (_) {}
+			sessionStorage.removeItem(joinReturnKey());
+			if (saved && saved.state === context.params.get('state') && saved.at <= Date.now() && Date.now() - saved.at <= 600000) {
+				const landing = api().readJoinFragment('#join=' + saved.address);
+				if (landing?.mode === 'oauth') { joinCode = landing.address; intakeJoin = true; joined = true; }
+			}
+			if (!intakeJoin && visible && screen === view && !status().hasConnection && !status().rejoinRequired) await loadAccounts();
 		});
 	}
 	return Object.freeze({open, consume, status, changed});
 })();
+

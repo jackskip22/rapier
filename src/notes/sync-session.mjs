@@ -8,12 +8,19 @@ import {createCloudflareSetup, storageDashboard} from './cloudflare-setup.mjs';
 export {storageDashboard};
 import {createS3Transport} from './transport-s3.mjs';
 import {createCompanionTransport} from './transport-companion.mjs';
-import {synchronize, createOwnerSyncStore, putVerified, contentHash} from './sync.mjs';
+import {synchronize, createOwnerSyncStore, putVerified, contentHash, loadHeads, plan} from './sync.mjs';
+import {assetSize, SEAL_OVERHEAD_BYTES} from './sync-assets.mjs';
+import {isCodeFile} from './model.mjs';
+import {attachmentKind} from './attachments.mjs';
+import {attachmentSizeWords} from './size-words.mjs';
+export {attachmentSizeWords};
 import {readSyncState, updateSyncState} from './sync-state.mjs';
 export {readSyncState};
 import {createDeviceStorage, createRememberedDevice} from './sync-device.mjs';
 export {createDeviceStorage, createRememberedDevice};
 import {resolveTextConflict, inspectTextConflicts} from './merge.mjs';
+import {encodeQR, qrDrawing} from './qr-code.mjs';
+export {encodeQR, qrDrawing};
 export {CLOUDFLARE_SYNC, SYNC_UNAVAILABLE, SYNC_CONSENT, syncAvailability, r2KeyAvailability};
 
 const td = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
@@ -90,6 +97,18 @@ export function readConnectionCode(value) {
 	if (credential.length < 30 || credential.length > 8192) throw fail('connection', 'the bucket key in this code is not complete.');
 	return {mode: 'r2-key', vaultId: body.vaultId, header, credential};
 }
+export function connectionLink(address) {
+	readConnectionCode(address);
+	return 'https://rapier.website/notes#join=' + address;
+}
+// Intake is a local parse only. A fragment never chooses a destination or starts a session;
+// the normal join operation admits the code again after the person supplies their passphrase.
+export function readJoinFragment(hash) {
+	if (typeof hash !== 'string' || !hash.startsWith('#join=')) return null;
+	const address = hash.slice(6);
+	try { const code = readConnectionCode(address); return {address, mode: code.mode}; }
+	catch { throw fail('connection', 'paste the whole device code from your other device.'); }
+}
 async function conflictDigests(conflict) {
 	return {blockHash: await contentHash(conflict.block), variants: await Promise.all(conflict.variants.map(async value => ({device: value.device, content: await contentHash(value.text)})))};
 }
@@ -144,11 +163,14 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	let stage = 'signed-out', notice = '', needsRevoke = false, backedUpAt = null, rejoinRequired = false;
 	// The vault's devices as the last run read their newest heads: each device id with its label and shelf writer.
 	let devices = Object.freeze([]);
-	const transports = new Set(), credentials = new Map();
+	let pending = null, pendingHeads = null;
+	const pendingSizes = new Map();
+	const transports = new Set(), credentials = new Map(), answeredBuckets = new Set();
+	const bucketAddress = target => JSON.stringify([target.accountId, target.jurisdiction, target.bucket]);
 	const status = () => Object.freeze({stage, mode, authorized: mode === 'companion' ? !!connection : mode === 'r2-key' ? !!key && !!connection?.credential : !!grant && !needsRevoke, unlocked: !!key,
 		rememberDevice, rememberAvailable: !!device && device.available !== false, hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
 		busy: !!work || !!revoking || !!locking || !!stopping || !!leaving || !!cancelling, revocationPending: needsRevoke,
-		address: connection && (mode !== 'r2-key' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt, devices});
+		address: connection && (mode !== 'r2-key' || connection.credential) ? connectionCode(connection.target, {mode, header: connection.bytes, credential: connection.credential}) : '', notice, gate, backedUpAt, devices, pending});
 	const announce = (next, text = '') => { stage = next; notice = text; onChange(status()); };
 	const ready = () => { if (!gate.ready) throw fail('unavailable', gate.reason); };
 	const pruneCredentials = () => {
@@ -271,7 +293,20 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	}
 	async function withTransport(target, ticket, fn, pair = null) {
 		const tr = await transport(target, ticket, pair);
-		try { return await fn(tr); } finally { tr.pause(); transports.delete(tr); }
+		const destination = mode === 'r2-key' ? bucketAddress(target) : null;
+		// Transports end after each operation. Keep response evidence for this bucket
+		// across retries; a saved connection already passed its remote checks.
+		const known = answeredBuckets.has(destination) || connection?.credential && bucketAddress(connection.target) === destination;
+		try { return await fn(tr); }
+		catch (error) {
+			if (destination && !known && !tr.answered && error.code === 'network' && error.unanswered && error.unconfirmed) {
+				// Fetch cannot distinguish CORS, DNS, offline or TLS failure. This is advice,
+				// never an acknowledgement that a request failed to reach the bucket.
+				error.likelyCause = 'cors'; error.setup = 'bucket-cors';
+				error.message += '. a missing bucket cors rule is a likely cause; in cloudflare, open this bucket’s settings and cors policy, then use the bucket cors rule shown in sync.';
+			}
+			throw error;
+		} finally { if (destination && tr.answered) answeredBuckets.add(destination); tr.pause(); transports.delete(tr); }
 	}
 	async function withSetup(ticket, fn) {
 		if (mode !== 'oauth') throw fail('config', 'automatic setup uses cloudflare sign-in.');
@@ -293,6 +328,57 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		if (rejoinRequired) { key?.fill(0); key = null; notice = 'this restored folder must join its vault again; paste a device code from another device.'; }
 		backedUpAt = Number.isSafeInteger(state.backedUpAt) && state.backedUpAt > 0 ? state.backedUpAt : null;
 		return {...state, folderDeviceId: snapshot.index.folderDeviceId};
+	}
+	async function refreshPending(local, ticket, tr = null, vdk = key) {
+		pending = null;
+		const store = createOwnerSyncStore({folder, deviceId: local.deviceId || folder.deviceId, assertActive: () => active(ticket)});
+		const snapshot = await store.snapshot(); active(ticket);
+		// A committed publication must resume before the planner can describe its successor.
+		if (snapshot.pending) return;
+		async function count(remote) {
+			const heads = remote ? await loadHeads(remote, vdk, {anchors: snapshot.observed, verified: snapshot.verified,
+				deviceId: snapshot.deviceId, checkpoint: snapshot.head?._key, ownHead: snapshot.head, cache: store.heads})
+				: [...(pendingHeads || []).filter(head => head.device !== snapshot.head?.device), ...(snapshot.head ? [snapshot.head] : [])];
+			active(ticket);
+			// The sync planner owns causal versions, deletions and media aliases. Preview never executes its writes.
+			const next = await plan(snapshot, heads, remote?.capabilities);
+			const empty = () => ({notes: 0, pictures: 0, recordings: 0, files: 0, bytes: 0});
+			const upload = empty(), download = empty(), counted = new Set(), versions = new Set();
+			const noteKind = file => isCodeFile(file) ? 'files' : 'notes';
+			const mediaKind = file => file.startsWith('audio/') ? 'recordings' : attachmentKind(file) === 'Image' ? 'pictures' : 'files';
+			function add(direction, kind, id, content, bytes) {
+				const total = direction === 'upload' ? upload : download, identity = direction + ':' + kind + ':' + id, version = identity + ':' + content;
+				if (!counted.has(identity)) { counted.add(identity); total[kind]++; }
+				if (versions.has(version)) return;
+				versions.add(version);
+				total.bytes = total.bytes === null || bytes === null ? null : total.bytes + bytes;
+			}
+			async function incoming(kind, id, row) {
+				if (!pendingSizes.has(row.object) && remote) {
+					// Heads authenticate the object address, not its length. Read metadata only; note and media bodies wait for sync now.
+					const stat = await remote.stat('objects/' + row.object); active(ticket);
+					if (!stat || !Number.isSafeInteger(stat.size) || stat.size < SEAL_OVERHEAD_BYTES) throw fail('incomplete', 'the vault’s file size could not be checked. nothing was imported.');
+					pendingSizes.set(row.object, stat.size - SEAL_OVERHEAD_BYTES);
+				}
+				add('download', kind, id, row.content, pendingSizes.get(row.object) ?? null);
+			}
+			for (const row of next.uploads) add('upload', noteKind(row.file), row.id, row.content, te.encode(row.text).length);
+			for (const row of next.assetUploads) add('upload', mediaKind(row.file), row.file, row.content, assetSize(row.bytes));
+			for (const row of next.downloads) await incoming(noteKind(row.file), row.id, {...row, object: row.hash});
+			for (const row of next.assetDownloads) await incoming(mediaKind(row.file), row.file, row);
+			for (const row of next.merges) {
+				if (row.sidecarOnly) continue;
+				const content = row.oursText === null ? null : await contentHash(row.oursText);
+				if (content && !heads.some(head => head.notes[row.id]?.content === content)) add('upload', noteKind(row.file), row.id, content, te.encode(row.oursText).length);
+				for (const tip of row.tips) if (tip.content !== content) await incoming(noteKind(row.file), row.id, tip);
+			}
+			active(ticket);
+			if (remote || snapshot.head || !connection) pendingHeads = heads;
+			pending = Object.freeze({upload: Object.freeze(upload), download: Object.freeze(download)});
+		}
+		// A reopened, never-synced join has no checkpoint yet. Its ciphertext cache avoids downloading the same heads again.
+		if (!tr && connection && key && !pendingHeads && !snapshot.head) return withTransport(connection.target, ticket, count);
+		return count(tr);
 	}
 	async function keepConnection(target, bytes, ticket, credential, before, identity, committed = () => {}) {
 		const address = addressOf(mode, target), header = Array.from(bytes);
@@ -319,6 +405,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			epoch++;
 			for (const tr of transports) tr.pause();
 			const held = key; key = null; staged?.vdk?.fill(0); staged = null;
+			pending = null; pendingHeads = null; pendingSizes.clear();
 			stopping = (async () => {
 				try { await work; } catch {} finally { held?.fill(0); }
 				if (device) {
@@ -410,7 +497,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		leaving = (async () => {
 			await stop();
 			await folder.leaveVault();
-			connection = null; rejoinRequired = false; backedUpAt = null; devices = Object.freeze([]);
+			connection = null; rejoinRequired = false; backedUpAt = null; devices = Object.freeze([]); pending = null; pendingHeads = null; pendingSizes.clear();
 			if (!revoking) announce(grant ? 'locked' : 'signed-out', 'this folder left the vault; every note stays here. other devices and the online vault are unchanged.');
 			return {left: true, revoked: false};
 		})().finally(() => { leaving = null; onChange(status()); });
@@ -436,7 +523,9 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			return {...storage, vaults: storage.vaults.map(target => ({address: connectionCode(target)}))};
 		}); },
 		inspect() { return run(async ticket => {
-			await readLocal(); active(ticket);
+			const local = await readLocal(); active(ticket);
+			try { await refreshPending(local, ticket); }
+			catch (error) { active(ticket); pending = null; notice = error.message; }
 			if (mode === 'r2-key' && !key) stage = connection?.credential ? 'locked' : 'signed-out';
 			if (mode === 'companion' && !key) stage = connection ? 'locked' : 'signed-out';
 			return status();
@@ -511,6 +600,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			const local = await readLocal(); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again, or leave it before starting a new vault.');
 			if (connection) throw fail('connection', 'this folder already has a vault: unlock it instead.');
+			await refreshPending(local, ticket);
 			let made;
 			try {
 				if (mode === 'r2-key' && staged) {
@@ -567,19 +657,22 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 				if (mode === 'companion') {
 					const target = {vaultId: code.vaultId, headerHash: code.mode === 'r2-key' ? await headerDigest(code.header) : code.headerHash};
 					if (connection && companionLocator(target) !== connection.address) throw fail('connection', 'this folder belongs to another vault; its connection was not replaced.');
-					const header = code.mode === 'r2-key' ? code.header : await withTransport(target, ticket, async tr => (await tr.get('keys/' + target.headerHash))?.bytes);
-					active(ticket);
-					if (!header || header.length > HEADER_MAX_BYTES || await headerDigest(header) !== target.headerHash) throw fail('header', 'the vault header is missing or did not verify. nothing was imported.');
-					opened = await (recovery ? unlockVaultWithRecovery(header, secret) : unlockVault(header, secret)); active(ticket);
-					if (await vaultId(opened) !== target.vaultId) throw fail('connection', 'this key does not open that vault.');
-					await keepConnection(target, header, ticket, null, before, local.folderDeviceId); active(ticket);
+					await withTransport(target, ticket, async tr => {
+						const header = code.mode === 'r2-key' ? code.header : (await tr.get('keys/' + target.headerHash))?.bytes;
+						active(ticket);
+						if (!header || header.length > HEADER_MAX_BYTES || await headerDigest(header) !== target.headerHash) throw fail('header', 'the vault header is missing or did not verify. nothing was imported.');
+						opened = await (recovery ? unlockVaultWithRecovery(header, secret) : unlockVault(header, secret)); active(ticket);
+						if (await vaultId(opened) !== target.vaultId) throw fail('connection', 'this key does not open that vault.');
+						await refreshPending(local, ticket, tr, opened);
+						await keepConnection(target, header, ticket, null, before, local.folderDeviceId); active(ticket);
+					});
 				} else if (mode === 'r2-key') {
 					opened = await (recovery ? unlockVaultWithRecovery(code.header, secret) : unlockVault(code.header, secret)); active(ticket);
 					if (await vaultId(opened) !== code.vaultId) throw fail('connection', 'this key does not open that vault.');
 					const pair = await openCredential(code.vaultId, code.credential, opened); active(ticket);
 					const target = {...pair, vaultId: code.vaultId, headerHash: await headerDigest(code.header)};
 					if (connection && locator(target) !== connection.address) throw fail('connection', 'this folder belongs to another vault; its connection was not replaced.');
-					await withTransport(target, ticket, tr => tr.connect(), pair); active(ticket);
+					await withTransport(target, ticket, async tr => { await tr.connect(); active(ticket); await refreshPending(local, ticket, tr, opened); }, pair); active(ticket);
 					await keepConnection(target, code.header, ticket, code.credential, before, local.folderDeviceId); active(ticket);
 				} else {
 					if (connection && locator(code) !== connection.address) throw fail('connection', 'this folder belongs to another vault; its connection was not replaced.');
@@ -588,6 +681,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 						if (!got || got.bytes.length > HEADER_MAX_BYTES || await headerDigest(got.bytes) !== code.headerHash) throw fail('header', 'the vault header is missing or did not verify. nothing was imported.');
 						opened = await (recovery ? unlockVaultWithRecovery(got.bytes, secret) : unlockVault(got.bytes, secret)); active(ticket);
 						if (await vaultId(opened) !== code.vaultId) throw fail('connection', 'this key does not open that vault.');
+						await refreshPending(local, ticket, tr, opened);
 						await keepConnection(code, got.bytes, ticket, null, before, local.folderDeviceId); active(ticket);
 					});
 				}
@@ -617,7 +711,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			} finally { opened?.fill(0); }
 		}); },
 		unlock(secret, {recovery = false} = {}) { return run(async ticket => {
-			await readLocal(); active(ticket);
+			const local = await readLocal(); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again; paste a device code from another device.');
 			if (!connection) throw fail('connection', 'create a vault, or connect the one from your other device, first.');
 			if (mode === 'r2-key' && !connection.credential) throw fail('credential', 'this device forgot its bucket key: add it again with a code from another device.');
@@ -630,6 +724,8 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					if (pair.accountId !== connection.target.accountId || pair.bucket !== connection.target.bucket || pair.jurisdiction !== connection.target.jurisdiction) throw fail('credential', 'the vault address and bucket key do not match. nothing was sent.');
 				}
 				active(ticket); key?.fill(0); key = opened; opened = null; await keepDevice(ticket);
+				// Unlock stays local even when a never-synced join's preview cannot reach its provider.
+				try { await refreshPending(local, ticket); } catch { pending = null; active(ticket); }
 				announce('ready'); return status();
 			} finally { opened?.fill(0); }
 		}); },
@@ -664,6 +760,10 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 						backedUpAt = Math.max(backedUpAt || 0, since);
 					}
 				} catch {}
+				// New edits during this run belong to the next one. A failed preview must not turn a verified sync into a failure.
+				pendingHeads = null; pendingSizes.clear();
+				try { await refreshPending(await readLocal(), ticket); } catch { pending = null; }
+				active(ticket);
 				announce('ready', result.skipped?.length ? 'Too large to sync: ' + result.skipped.join(', ') + '; these files and their linked notes stay here while the rest syncs.' : (result.caughtUp !== false && (result.caughtUp || result.unchanged)) ? 'sync complete. back up too: sync is not a backup.' : 'changes synced. edits made since go with the next sync.');
 				return result;
 			} catch (error) { if (ticket === epoch) announce('ready', 'sync did not finish. your notes, and what waits to upload, are kept.'); throw error; }
@@ -723,3 +823,4 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		},
 	});
 }
+

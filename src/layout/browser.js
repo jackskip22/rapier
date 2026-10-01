@@ -3032,7 +3032,7 @@ const _rapierImageFlow = (() => {
   document.addEventListener('keydown', event => {
     if (!event.isTrusted || !selected || moving?.committing) return;
     const handle = event.target?.closest?.('.rapier-image-grip');
-    const erase = (event.key === 'Backspace' || event.key === 'Delete') && !moving;
+    const erase = (event.key === 'Backspace' || event.key === 'Delete') && !moving && !event.ctrlKey && !event.metaKey && !event.altKey;
 
     if (!handle && (event.target === document.body || event.target?.closest?.('.rapier-image-tools'))) {
       if (event.key !== 'Escape' && !erase) return;

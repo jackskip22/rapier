@@ -700,6 +700,13 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				(!byFile.has(row.requires) || byFile.get(row.requires).requires !== undefined || row.requires === row.file ||
 				 writes.includes(row) && writes.indexOf(byFile.get(row.requires)) >= writes.indexOf(row))) throw fail('plan', 'A file operation must follow its independent prerequisite write.');
 			if (Object.keys(after.notes).length !== present.size || [...present].some(file => !own(after.notes, file))) throw fail('plan', 'The resulting sidecar must describe every resulting note exactly once.');
+			if (!restoring && !writes.length && !removes.length && jsonSame(before.index, after)) {
+				// Redelivery earned no new transaction. Still check the admitted sidecar:
+				// a foreign writer may have changed it while an async planner was reading.
+				if (await readJournal()) throw fail('pending', 'A pending notes journal must finish before another starts.');
+				if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
+				return {...before, bodies: new Map()};
+			}
 			delete after.ownerNotice;
 			after.folderGeneration = before.generation + 1;
 			if (!Number.isSafeInteger(after.folderGeneration)) throw fail('generation', 'The notes folder generation is exhausted.');
@@ -784,3 +791,4 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 	}
 	return {acquire, read, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
 }
+

@@ -150,7 +150,10 @@ function _rapierTableSwallowClick(pressed) {
 // Enter in a cell goes down, as a phone's return key and a spreadsheet do: to the cell below, or on
 // the last row to a new row's first cell; Enter on that new row still empty leaves the table for an
 // empty line under it (the row taken back in the same transaction), as Enter on an empty list item
-// leaves the list. Shift+Enter keeps its line break inside the cell.
+// leaves the list. Shift+Enter keeps its line break inside the cell. A table that opens the page has
+// no line above it for the caret to reach: Enter at the start of its first cell makes that paragraph,
+// as in Word and Docs, and the caret stays with the table's words, as Enter at the start of a paragraph
+// leaves it.
 function _rapierTableEnter(editDiv, wrapper, block, cell) {
 	const position = _rapierTableActionPosition(editDiv);
 	const raw = position && _tableRawFromBlock(block.id);
@@ -158,6 +161,12 @@ function _rapierTableEnter(editDiv, wrapper, block, cell) {
 	if (!info || info.sepIdx < 0) return false;
 	const rowCount = 1 + info.dataIdxs.length;
 	_rapierCheckpointEdit(editDiv);
+	const selection = window.getSelection && window.getSelection(), range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+	if (position.rowIndex === 0 && position.cellIndex === 0 && range && range.collapsed && cell.contains(range.startContainer) &&
+			_charOffsetForRangePoint(cell, range.startContainer, range.startOffset) === 0 && _rapierShownWrappers(_editorHostEl())[0] === wrapper &&
+			!_rapierNotesOwnTheDocument()) {
+		return _replaceOneBlockWithRawSet(block, [_rapierEmptyParagraphRaw(rapier.document.blocks.length + 1), block.raw], 1, 0);
+	}
 	if (position.rowIndex + 1 < rowCount) return _rapierMoveTableCaret(editDiv, position.rowIndex + 1, Math.min(position.cellIndex, Math.max(0, info.cols - 1)), true);
 	const last = position.rowIndex > 0 && _tableSplitRow(info.lines[info.dataIdxs[info.dataIdxs.length - 1]]);
 	if (!last || last.some(value => String(value || '').replace(/\u200b/g, '').trim())) {
@@ -483,11 +492,12 @@ function _rapierTableFromTypedRow(block, wrapper, editDiv, prefixRaw, suffixRaw)
 	return true;
 }
 
-// Cells picked: a selection that runs from one cell into another picks the rectangle between them,
-// shown by fill. Delete or Backspace empties those cells in one commit (every cell of the table
+// Cells picked: a tap on a row's or a column's grip picks that whole row or column, the rectangle of
+// cells shown by fill. Delete or Backspace empties those cells in one commit (every cell of the table
 // picked is the table deleted); a letter typed empties them and starts the first; Copy carries them
 // as a spreadsheet's cells, an HTML table and a Markdown table at once; Cut copies, then empties.
-// A tap on a row's or a column's grip picks that whole row or column.
+// A selection a person makes (a drag, Shift and the arrows) is text: it is read in reading order and
+// the characters it covers are what goes (_rapierTableSelected), what the page highlights.
 let _rapierTablePick = null;
 function _rapierTablePickNow() {
 	const selection = window.getSelection && window.getSelection();
@@ -496,6 +506,10 @@ function _rapierTablePickNow() {
 	const from = cellOf(selection.anchorNode), to = cellOf(selection.focusNode);
 	if (!from || !to || from === to) return null;
 	const table = from.closest('table');
+	// Only the selection a grip set is a pick: the points it left stay on the table, and any other selection is not.
+	const grip = table && table._rapierGrip;
+	if (!grip || grip.anchor !== selection.anchorNode || grip.anchorOffset !== selection.anchorOffset ||
+			grip.focus !== selection.focusNode || grip.focusOffset !== selection.focusOffset) return null;
 	const wrapper = table && table.closest('.block-wrapper--editing.block-wrapper--table');
 	const editDiv = wrapper && wrapper.querySelector(':scope > .block-edit');
 	if (!editDiv || to.closest('table') !== table || !editDiv.contains(table)) return null;
@@ -524,7 +538,42 @@ function _rapierTablePickLine(table, axis, index) {
 	if (cells.length < 2 || !selection) return false;
 	const last = cells[cells.length - 1];
 	selection.setBaseAndExtent(cells[0], 0, last, last.childNodes.length);
+	table._rapierGrip = { anchor: selection.anchorNode, anchorOffset: selection.anchorOffset, focus: selection.focusNode, focusOffset: selection.focusOffset };
 	_rapierTablePickShow();
+	return true;
+}
+
+// The selection over several cells of the open table that a grip did not pick, with the part of it inside each cell (_rapierTableCellRanges).
+function _rapierTableSelected() {
+	const selection = window.getSelection && window.getSelection();
+	if (!selection || !selection.rangeCount || selection.isCollapsed) return null;
+	const range = selection.getRangeAt(0);
+	const cellOf = node => (node && (node.nodeType === 1 ? node : node.parentElement))?.closest?.('th,td') || null;
+	const wrapper = _blockWrapperOf(range.startContainer);
+	const editDiv = wrapper && wrapper.classList.contains('block-wrapper--editing') && wrapper.classList.contains('block-wrapper--table')
+		? wrapper.querySelector(':scope > .block-edit') : null;
+	const table = editDiv && editDiv.querySelector('table');
+	if (!table || !editDiv.contains(range.startContainer) || !editDiv.contains(range.endContainer) ||
+			cellOf(range.startContainer) === cellOf(range.endContainer)) return null;
+	return { editDiv, table, blockId: Number(wrapper.dataset.blockId), parts: _rapierTableCellRanges(table, range) };
+}
+
+// The characters of such a selection taken out of their cells, each cell's own part and nothing else, one step for Undo, and the caret where the
+// selection began (in the first cell that held any of it). Every cell left with no words is the table removed. A delete is read back by the table's
+// own reader through an input event; a letter about to be typed, or a word about to be composed, is left to the browser at that caret.
+function _rapierTableTake(span, inputType) {
+	if (_rapierUserMutationBlocked()) return false;
+	const { editDiv, table, blockId, parts } = span;
+	if (!parts.length) return true;
+	_rapierCheckpointEdit(editDiv);
+	parts.forEach(({ range }) => range.deleteContents());
+	if (Array.from(table.querySelectorAll('td, th')).every(cell => !String(cell.textContent || '').replace(/[\s\u200b\ufeff]+/g, '') && !cell.querySelector('img'))) {
+		return _rapierTableRemove(blockId);
+	}
+	const selection = window.getSelection();
+	selection.removeAllRanges();
+	selection.addRange(parts[0].range);
+	if (/^delete/.test(inputType)) editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType }));
 	return true;
 }
 
@@ -556,19 +605,33 @@ function _rapierTablePickEmpty(pick, typed = '') {
 function _rapierTablePickInput(event) {
 	if (event.defaultPrevented || !/^(?:deleteContent|deleteWord|deleteSoftLine|deleteHardLine|deleteByCut|insertText$|insertReplacementText$)/.test(String(event.inputType || ''))) return;
 	const pick = _rapierTablePickNow();
-	if (!pick) return;
+	const typed = /^insert/.test(event.inputType);
+	if (!pick) {
+		// A selection over cells that no grip picked: its own characters go, and a letter is typed by the browser where the selection began.
+		const span = _rapierTableSelected();
+		if (!span) return;
+		if (!typed) { event.preventDefault(); event.stopImmediatePropagation(); }
+		_rapierTableTake(span, event.inputType);
+		return;
+	}
 	event.preventDefault();
 	event.stopImmediatePropagation();
-	_rapierTablePickEmpty(pick, /^insert/.test(event.inputType) ? String(event.data || '') : '');
+	_rapierTablePickEmpty(pick, typed ? String(event.data || '') : '');
 }
 
 // A composing keyboard (a phone's: its first letter starts a composition nothing may cancel) typing over
 // picked cells: the picked cells are emptied in the edit and the caret put in the first before the
 // composition takes the selection, so the word lands there and nothing else goes. The composition's own
-// commit writes them, one Undo with the word.
+// commit writes them, one Undo with the word. A selection over cells that no grip picked has its own
+// characters taken out the same way.
 function _rapierTablePickCompose() {
+	if (rapier.composition.block || _rapierUserMutationBlocked(false)) return;
 	const pick = _rapierTablePickNow();
-	if (!pick || rapier.composition.block || _rapierUserMutationBlocked(false)) return;
+	if (!pick) {
+		const span = _rapierTableSelected();
+		if (span) _rapierTableTake(span, 'insertCompositionText');
+		return;
+	}
 	_rapierCheckpointEdit(pick.editDiv);
 	pick.rows.slice(pick.r0, pick.r1 + 1).forEach(row =>
 		_rapierTableCellsOf(row).slice(pick.c0, pick.c1 + 1).forEach(cell => cell.replaceChildren()));
@@ -605,6 +668,12 @@ document.addEventListener('paste', _rapierTableHtmlPaste, true);
 document.addEventListener('copy', event => _rapierTablePickCopy(event, false), true);
 document.addEventListener('cut', event => _rapierTablePickCopy(event, true), true);
 
-// The four the engine's own owners reach for, by the satellites' idiom (as RapierImageFlow): an
+// The cut of a selection over cells that no grip picked, once the clipboard carries it: its characters leave their cells.
+function _rapierTableCut() {
+	const span = _rapierTableSelected();
+	return !!span && _rapierTableTake(span, 'deleteByCut');
+}
+
+// The five the engine's own owners reach for, by the satellites' idiom (as RapierImageFlow): an
 // owner lifted alone into a proof harness runs without this file and simply does without them.
-globalThis.RapierTables = Object.freeze({ arrive: _rapierTableArriveNext, shape: _rapierTableShape, grid: _rapierTableDelimitedGrid, key: _rapierTableKey });
+globalThis.RapierTables = Object.freeze({ arrive: _rapierTableArriveNext, shape: _rapierTableShape, grid: _rapierTableDelimitedGrid, key: _rapierTableKey, cut: _rapierTableCut });

@@ -4,6 +4,28 @@ Rapier Sync keeps a copy of your notes in a bucket you own, sealed in the editor
 
 A script opens one object from your bucket on your machine. It does not contact the bucket or send the code anywhere.
 
+## Bucket CORS
+
+For the browser's bucket-key connection, open the selected bucket in Cloudflare, then **Settings → CORS policy**.
+Use this rule, also shown in Rapier's Sync setup:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://rapier.website"],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedHeaders": ["authorization", "content-type", "x-amz-content-sha256", "x-amz-date"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+If this destination has never answered, an unreadable network request can mean this rule is missing.
+The browser cannot distinguish that from an offline connection, DNS or TLS failure; the request's outcome
+remains unconfirmed. An HTTP refusal or a response whose body is cut proves the destination answered, without
+proving that the operation completed. Setup does not send notes; sync begins when you press **sync now**.
+
 ## What a sealed note is
 
 A sealed object is a version byte (`1`), a `12`-byte nonce, then the ciphertext and its `16`-byte authentication tag. The cipher is AES-256-GCM. Every seal draws a new nonce. One changed byte in the ciphertext or the tag and the object does not open.
@@ -14,7 +36,7 @@ The additional data on a note or file object is the fixed string `object`, never
 
 The vault key is `32` bytes. The recovery code is that key in Crockford's base32: `52` symbols in groups of four. It is not in the bucket, and anyone who has it can open the vault.
 
-The header records how a wrapping key is derived from the passphrase: `scrypt` with N=`32768`, r=`8`, p=`1` and a `16`-byte salt. That key seals the vault key with AES-256-GCM. A new passphrase wraps the same vault key again and does not reseal the notes.
+The header records how a wrapping key is derived from the passphrase: `scrypt` with N=`32768`, r=`8`, p=`1` and a `16`-byte salt. That key seals the vault key with AES-256-GCM. To change the passphrase, start a new vault. Rewrapping the same key would leave old headers and device codes usable with the old passphrase.
 
 The header is unsealed JSON: format version `1`, the derivation's name and iteration count, the salt, the wrapped vault key and a verifier. The salt and iteration count are public, and the wrapped key does nothing without the passphrase or the recovery code.
 
@@ -49,3 +71,4 @@ It asks for the recovery code and hides it as you type; you can pipe it in inste
 It prints the note to standard output. A code that does not open the header is refused with a message and prints nothing.
 
 The numbers on this page come from `notes/vault.mjs` and `notes/sync.mjs`.
+

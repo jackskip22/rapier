@@ -66,6 +66,7 @@ export function createHTTP(options = {}) {
 	const timeoutMs = options.timeoutMs ?? 30000;
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) refuse('config', 'request deadline must be between 1 and 300000 milliseconds');
 	const lifetime = new AbortController(), active = new Set();
+	let answered = false;
 	const check = () => { if (lifetime.signal.aborted || signal?.aborted) refuse('cancelled', 'sync is paused; local work and queued ciphertext are kept'); };
 	function pause() { lifetime.abort(); for (const controller of active) controller.abort(); }
 	async function wait(ms) {
@@ -111,6 +112,9 @@ export function createHTTP(options = {}) {
 				refuse('redirect', 'the provider redirected or changed the target; credentials were not forwarded');
 			}
 			if (!Number.isInteger(response.status) || response.status < 200 || response.status > 599) refuse('response', 'the provider returned no readable HTTP response');
+			// A refusal or a body cut still proves the destination answered. It does not
+			// prove this request completed or license a later unconfirmed write.
+			answered = true;
 			const read = inspect ? inspect(response) !== false : true;
 			if (!read || method === 'HEAD') return {status: response.status, headers: response.headers, bytes: new Uint8Array()};
 			const cap = response.status >= 400 ? 64 * 1024 : maxBytes;
@@ -139,9 +143,9 @@ export function createHTTP(options = {}) {
 		} catch (error) {
 			if (reader) void reader.cancel().catch(() => {});
 			check();
-			if (expired) throw fail('timeout', 'the request exceeded its deadline; its outcome is unconfirmed');
+			if (expired) throw fail('timeout', 'the request exceeded its deadline; its outcome is unconfirmed', {unconfirmed: true});
 			if (isProviderRefusal(error)) throw error;
-			throw fail('network', 'the network request failed; its outcome is unconfirmed', {unanswered: attempted && !response});
+			throw fail('network', 'the network request failed; its outcome is unconfirmed', {unconfirmed: true, unanswered: attempted && !response});
 		} finally {
 			clearTimeout(timer); signal?.removeEventListener('abort', stop); active.delete(controller);
 			try { reader?.releaseLock(); } catch {}
@@ -162,5 +166,6 @@ export function createHTTP(options = {}) {
 			await wait(Math.max(delay, backoff(attempt)));
 		}
 	}
-	return Object.freeze({request, retry, wait, check, pause});
+	return Object.freeze({request, retry, wait, check, pause, get answered() { return answered; }});
 }
+

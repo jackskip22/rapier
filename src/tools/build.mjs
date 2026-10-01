@@ -124,7 +124,7 @@ if (purityViolations.length) throw new Error(`Decision purity gate: ${PURITY_ENT
 
 
 // --- Convention owner gate: the marker literals appear only in spec/md-marks.mjs, docs and witnesses. ---
-const MARK_CONVENTION_LITERALS = ['<!--c ', '<!--/c-->', '<!--md-break:v1'];
+const MARK_CONVENTION_LITERALS = ['<!--c ', '<!--/c-->', '<!--md-break:v1', '<!--ink ', '<!--/ink-->'];
 const MARK_CONVENTION_OWNER = 'spec/md-marks.mjs';
 // tools/build.mjs names the literals below in order to look for them; that is the gate itself,
 // not a second implementation of the grammar (it writes nothing and parses nothing with them).
@@ -156,8 +156,8 @@ async function markConventionViolations(dir = '') {
 
 const markConventionFindings = await markConventionViolations();
 if (markConventionFindings.length) throw new Error('Convention owner gate: only ' + MARK_CONVENTION_OWNER +
-  ' may spell out the text-colour/page-break comment markers; every other owner must call it instead ' +
-  '(docs/markdown-standard.md, "Text colour", "Page break"):\n' + markConventionFindings.map(row => '  ' + row).join('\n'));
+  ' may spell out the text-colour/page-break/ink comment markers; every other owner must call it instead ' +
+  '(docs/markdown-standard.md, "Text colour", "Page break", "Ink"):\n' + markConventionFindings.map(row => '  ' + row).join('\n'));
 
 // --- MCP descriptor projection law: AGENT-TOOLS.json and mcp/worker.mjs DESCRIPTORS come from one mcpDescriptors call; refuse on the first differing path. ---
 const manifestMcp = mcpDescriptors({uiResource: UI_RESOURCE});

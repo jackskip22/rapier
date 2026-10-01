@@ -9488,9 +9488,6 @@ function _rapierRouteStrayEditingKey(event) {
 	if (!event.isTrusted || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || !typed && !step && !edge || edge && event.shiftKey) return;
 	const target = event.target, host = _editorHostEl();
 	if (!host || !(target instanceof Element)) return;
-	// Words the person has selected are the selection's: a letter, Backspace or Delete over them acts through the cross-block replace (_rapierGuardEditingKey), not at the start of a block.
-	const held = window.getSelection && window.getSelection();
-	if ((typed || key === 'Backspace' || key === 'Delete') && held && held.rangeCount && !held.isCollapsed && _rangeIntersectsEditor(held.getRangeAt(0))) return;
 	let open = _activeBlockEditContext();
 	// Up and Down are the browser's and the open block's own; only a selected picture takes them (below).
 	if (edge && (open || _rapierImageRuntime.blockId == null)) return;

@@ -95,6 +95,14 @@
 :where(.md-render) [data-md-align="center"]{text-align:center!important}
 :where(.md-render) [data-md-align="right"]{text-align:right!important}
 :where(.md-render) [data-md-align="justify"]{text-align:justify!important}
+:where(.md-render) p[data-md-first="1"]{text-indent:2em}
+:where(.md-render) p[data-md-first="2"]{text-indent:4em}
+:where(.md-render) p[data-md-first="3"]{text-indent:6em}
+:where(.md-render) p[data-md-first="4"]{text-indent:8em}
+:where(.md-render) p[data-md-indent="1"]{margin-inline-start:2em}
+:where(.md-render) p[data-md-indent="2"]{margin-inline-start:4em}
+:where(.md-render) p[data-md-indent="3"]{margin-inline-start:6em}
+:where(.md-render) p[data-md-indent="4"]{margin-inline-start:8em}
 .md-render p[data-md-align="center"]>img{margin-inline:auto}
 .md-render p[data-md-align="right"]>img{margin-left:auto;margin-right:0}
 :where(.md-render) p[data-md-layout-tight]{margin-block:0!important}

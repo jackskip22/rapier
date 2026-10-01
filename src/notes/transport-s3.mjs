@@ -305,13 +305,7 @@ export function createS3Transport(options = {}) {
 			},
 		}), response => response.status === 429 || response.status >= 500
 			? {error: fail(response.status === 429 ? 'rate' : 'server', 'the provider is temporarily refusing requests; work is kept')} : null,
-		true, attempt => Math.min(2000, 200 * 2 ** attempt)).catch(error => {
-			// Fetch does not distinguish CORS/preflight, DNS, offline or TLS failures. Offer
-			// the relevant check, never claim to have diagnosed a missing CORS rule.
-			if (error.code === 'network' && error.unanswered && destination.origin.endsWith('.r2.cloudflarestorage.com'))
-				throw fail('network', 'the network request could not be read; check your connection and the bucket’s cors rule for rapier.website.');
-			throw error;
-		});
+		true, attempt => Math.min(2000, 200 * 2 ** attempt));
 		if (res.status === 403) throw forbiddenResponse(res, destination);
 		if (res.status === 404 && !listing && ['GET', 'HEAD'].includes(method)) return null;
 		const etag = res.headers?.get('etag') || '';
@@ -349,6 +343,7 @@ export function createS3Transport(options = {}) {
 	const stat = async key => { keyCheck(key); const value = await request('HEAD', key); return value ? {key, ...value} : null; };
 	const transport = {
 		destination, connect,
+		get answered() { return http.answered; },
 		capabilities: Object.freeze({supportsConditionalWrite: false, supportsETag: true, supportsResumableUpload: false,
 			supportsMultipart: false, supportsDeltaFeed: false, supportsServerSideCopy: false, supportsNativeVersioning: false,
 			maxSingleUploadBytes: maxObjectBytes, listsFrom: true, seams: SEAMS}),
@@ -384,3 +379,4 @@ export function createS3Transport(options = {}) {
 	};
 	return Object.freeze(transport);
 }
+

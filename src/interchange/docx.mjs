@@ -994,7 +994,11 @@ export function docxBlocksFromDom(root) {
         blocks.push({type: 'image', alt: image.getAttribute('alt') || '', src: image.getAttribute('src') || '', ref: null, layout: layoutOf(image) || layoutOf(element)});
         continue;
       }
-      blocks.push({type: 'paragraph', runs: runsOf(element), layout: layoutOf(element)});
+      // A blank line, the paragraph Enter makes (one line holding only a no-break space), is a paragraph with no run: Word shows the
+      // empty line the page shows, and not a line that holds a space.
+      const runs = runsOf(element);
+      const blank = runs.length === 1 && runs[0].type === 'text' && /^\u00a0+$/.test(runs[0].text);
+      blocks.push({type: 'paragraph', runs: blank ? [] : runs, layout: layoutOf(element)});
       continue;
     }
     blocks.push({type: 'paragraph', runs: runsOf(element), layout: null});
