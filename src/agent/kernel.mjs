@@ -27,7 +27,47 @@ const encoder = new TextEncoder();
 const clone = value => structuredClone(value);
 const bytes = value => encoder.encode(value).byteLength;
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
-const failure = (reason, outcome = 'refused', detail = {}) => ({ outcome, reason, ...detail });
+// A refusal names its next step (docs/kernel.md, "A refusal carries a hint"): one sentence a caller can act on. The
+// reason stays the contract; the hint is advice, present only for the reasons below.
+const HINTS = {
+  context_missing: 'This handle is unknown here or was consumed; call find or read_context again for a fresh handle.',
+  context_expired: 'This handle has expired; call find or read_context again for a fresh handle.',
+  reference_missing: 'This ref is unknown here; call get_outline or find again for a fresh ref.',
+  document_replaced: 'The document was replaced; call get_context, then read again before editing.',
+  document_changed: 'The document changed since this handle was read; read_context again and resend with the fresh handle.',
+  target_changed: 'The passage changed since it was read; read_context again and resend with the fresh handle.',
+  context_handle_wrong_kind: 'This handle is not for this call: edit with a handle from find or read_context, decide a comparison with a change handle, edit a drawing with its recipe_handle.',
+  authority_mismatch: 'This handle or ref belongs to another caller; obtain your own with find, read_context or get_outline.',
+  change_not_inspected: 'Read each difference with read_context by its change handle before accepting it.',
+  change_missing: 'No such change; get_context lists the changes since your last look.',
+  change_not_owned_or_unavailable: 'That change is not yours to reverse, or is no longer reversible; get_context lists the changes.',
+  no_agent_change: 'No change under this agent name to undo; name change_id, or the agent name that made it.',
+  other_agent_latest: 'The latest change is another agent\'s; name its change_id to undo it.',
+  compare_not_open: 'No comparison is open; open one with compare, or show one of your changes with show_changes.',
+  edits_overlap: 'Two edits cover the same text; merge them into one edit.',
+  batch_too_large: 'Send fewer edits in one call.',
+  draw_shape_limit: 'A drawing holds 1 to 128 shapes; send fewer.',
+  draw_alt_required: 'Give alt, a short caption of the drawing.',
+  draw_requires_markdown: 'Drawings live in Markdown documents only.',
+  figures_invalid: 'Each figure names a kind from kinds and the fields the tool description lists for it.',
+  recipe_invalid: 'Send figures, or a recipe exactly as read_context returned it.',
+  document_read_only: 'The person set this workspace read-only; ask them, or propose_edits.',
+  document_law: 'The Will in the document refuses this change; read the Will from get_context and keep to it.',
+  human_edit_in_progress: 'The person is editing; wait for their input to settle, then get_context and retry.',
+  human_review_required: 'The person\'s review is required before this applies; wait_for_user or check get_context, do not resend.',
+  review_pending: 'One review at a time; wait for the pending one to settle.',
+  editor_not_present: 'No editor is open on this workspace: get_context reports headless, so deliver the page through a file surface or ask the person to open Rapier.',
+  presentation_already_pending: 'A reveal is already pending; check its view status in get_context before another.',
+  wait_already_pending: 'One wait at a time; the earlier wait must finish first.',
+  notes_folder_unreadable: 'Notes could not answer just now; try again later.',
+  world_changed: 'The document changed during the call; call again.',
+  outline_changed: 'The document changed during the call; call get_outline again.',
+  search_changed: 'The document changed during the call; call find again.',
+  read_snapshot_changed: 'The document changed during the call; read_context again.',
+};
+// The figure kinds draw/core.mjs admits (_rapierDrawFigureFault's kind check), answered beside a refused figures list.
+const FIGURE_KINDS = Object.freeze(['rect', 'ellipse', 'circle', 'triangle', 'diamond', 'hexagon', 'cylinder', 'subroutine', 'asymmetric', 'text', 'line', 'arrow', 'group']);
+const failure = (reason, outcome = 'refused', detail = {}) => ({ outcome, reason, ...(HINTS[reason] && !Object.hasOwn(detail, 'hint') ? { hint: HINTS[reason] } : {}), ...detail });
 const accepted = value => ({ outcome: 'ok', ...value });
 // The object under the finger (focus.kind), derived from text and image facts, never sent by a door.
 function pointedKind(text, start, end, images) {
@@ -2518,8 +2558,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     try {
       const recipeInput = input.recipe != null ? input.recipe : input.figures != null ? { figures: input.figures, direction: input.direction } : null;
       recipe = recipeInput && _rapierDrawNormalizeAgentRecipe(recipeInput);
-      // A refused figure names itself (draw/core.mjs _rapierDrawFigureFault): the index, the field and what the field takes.
-      if (!recipe) return input.figures != null && input.recipe == null ? failure('figures_invalid', 'invalid', _rapierDrawFigureFault(input.figures, [], input.direction) || {}) : failure('recipe_invalid', 'invalid');
+      // A refused figure names itself (draw/core.mjs _rapierDrawFigureFault): the index, the field and what the field takes,
+      // and the kinds a figure may name (the list draw/core.mjs admits).
+      if (!recipe) return input.figures != null && input.recipe == null ? failure('figures_invalid', 'invalid', { ...(_rapierDrawFigureFault(input.figures, [], input.direction) || {}), kinds: FIGURE_KINDS }) : failure('recipe_invalid', 'invalid');
       recipe = applyOperations(recipe, input.operations || []).recipe;
       if (!recipe.shapes.length || recipe.shapes.length > 128) return failure('draw_shape_limit', 'invalid');
       svg = _rapierDrawBuildSVG(recipe);

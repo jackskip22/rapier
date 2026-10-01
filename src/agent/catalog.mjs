@@ -197,13 +197,14 @@ export function validateInput(schema, value, path = 'arguments') {
     }
   } else if (schema.type === 'array') {
     if (!Array.isArray(value)) invalid('expected an array');
-    if (value.length < (schema.minItems || 0) || value.length > (schema.maxItems ?? Infinity)) invalid('array length outside bounds');
+    if (value.length < (schema.minItems || 0) || value.length > (schema.maxItems ?? Infinity)) invalid('array length outside bounds (' + (schema.minItems || 0) + ' to ' + (schema.maxItems ?? 'any') + ')');
     if (schema.uniqueItems && new Set(value).size !== value.length) invalid('duplicate item');
     value.forEach((item, index) => validateInput(schema.items, item, path + '[' + index + ']'));
   } else if (schema.type === 'string') {
     if (typeof value !== 'string') invalid('expected a string');
-    if (value.length < (schema.minLength || 0) || schema.pattern && !new RegExp(schema.pattern).test(value)) invalid('string outside bounds');
-    if (value.length > (schema.maxLength ?? Infinity)) invalid('string exceeds bound');
+    if (value.length < (schema.minLength || 0)) invalid('string shorter than ' + schema.minLength);
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) invalid('string does not match ' + schema.pattern);
+    if (value.length > (schema.maxLength ?? Infinity)) invalid('string longer than ' + schema.maxLength);
   } else if (schema.type === 'number') {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity)) invalid('number outside bounds');
   } else if (schema.type === 'integer') {
