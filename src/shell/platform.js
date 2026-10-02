@@ -173,6 +173,7 @@ const RapierStorage = Object.freeze({
 		checker:        Object.freeze({ key: 'rapier:preference:checker',           fallback: true }),
 		lineNums:       Object.freeze({ key: 'rapier:preference:line-numbers',      fallback: 'auto', values: Object.freeze(['auto', 'off', 'selected', 'all']) }),
 		imageStorage:   Object.freeze({ key: 'rapier:preference:image-storage', fallback: 'jxl', values: Object.freeze(['jxl', 'original']) }),
+		inkColour:      Object.freeze({ key: 'rapier:preference:ink-colour',        fallback: '#b32034' }),
 		inkStylus:      Object.freeze({ key: 'rapier:preference:ink-stylus',        fallback: 'on', values: Object.freeze(['on', 'off']) }),
 		wrap:           Object.freeze({ key: 'rapier:preference:wrap',              fallback: true }),
 		dim:            Object.freeze({ key: 'rapier:preference:dim',               fallback: 'dim', values: Object.freeze(['dim', 'full']) }),

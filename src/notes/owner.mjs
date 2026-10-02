@@ -490,7 +490,9 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					await writeVerified(row.file, stage, row.digest);
 				}
 				for (const row of writes) {
-					if (syncStateFile(row.file) || row.caseSource !== undefined) continue; // Checkpoint follows every admitted write AND removal.
+					// Exact restore has no removals: its prepared checkpoint is the final staged
+					// member, before notes.json. Ordinary checkpoints follow removals below.
+					if (!exact && syncStateFile(row.file) || row.caseSource !== undefined) continue;
 					if (dropped.includes(row.file) || !await ready(row)) continue;
 					const digest = await digestOf(await readBytes(row.file));
 					if (digest !== row.digest) {

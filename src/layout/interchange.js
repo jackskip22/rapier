@@ -418,6 +418,7 @@ function _rapierArtifactInkScript(root, nonce = '') {
   const dependencies = globalThis.RapierArtifactLayoutDependencies;
   if (!dependencies?.factories || !dependencies.groups?.ink || !root.querySelector('span.rapier-ink-mark[data-rapier-ink]')) return '';
   const script = '/* Rapier export ink: the marks drawn from their own words. SPDX-License-Identifier: AGPL-3.0-only */\n' +
+    '/* ' + dependencies.inkLicense + '\n*/\n' +
     '(() => {\nconst modules = {};\n' + _rapierArtifactFactoryModules(dependencies, 'ink') +
     '\nmodules["layout/ink-draw.mjs"].watchInk(document.querySelector("main.rapier-page"), modules["spec/md-marks.mjs"], modules["spec/ink.mjs"]);\n})();';
   return '<script' + (nonce ? ' nonce="' + nonce + '"' : '') + '>\n' + script.replace(/<\/script/gi, '<\\/script') + '\n</script>';

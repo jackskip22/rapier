@@ -279,7 +279,9 @@ export function createS3Transport(options = {}) {
 		const path = destination.path + (key === null ? '' : destination.root + key);
 		const qs = canonicalQuery(query), url = destination.origin + encodeObjectKey(path) + (qs ? '?' + qs : '');
 		const res = await http.retry(() => http.request(url, {origin: destination.origin, method, body,
-			allowHTTP: destination.origin.startsWith('http:'), exactTarget: true, identityOnly: true,
+			// Fetch may decode compressed listing XML; its decoded stream stays bounded.
+			// Opaque objects still require identity bytes and exact complete-object lengths.
+			allowHTTP: destination.origin.startsWith('http:'), exactTarget: true, identityOnly: !listing,
 			maxBytes: listing ? LIST_MAX_BYTES : method === 'GET' ? maxObjectBytes : 65536,
 			prepare: async () => {
 				let date;

@@ -1,23 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The pen (docs/briefs/ink.md §4): with the pen down, or with a stylus, a drag over the page is a stroke; at the lift the
 // stroke's kind is read once, its words are found, its path is stored, and the words take the pair through the engine's
-// own exact-source door (_rapierApplyInk), so Undo takes it back in one step. A tap is a tap: it places the caret as
-// ever. With the pen down two fingers scroll the page. The strip (#ink-strip) holds the colour, the eraser and done;
+// own exact-source door (_rapierApplyInk), so Undo takes it back in one step. An explicit drawing tap makes a dot;
+// a stylus tap outside annotation mode places the caret. Two fingers or the Scroll tool move the page;
 // Esc lifts the pen. Spliced into editor/engine.js at /* RAPIER_INK_PEN_MODULE */. Everything it needs comes in through
 // _rapierInkPenInstall; its state lives on the host.
 
 const _RAPIER_INK_PEN_SELECTOR = '[data-action="ink-pen"]';
 const _RAPIER_INK_STRIP_ID = 'ink-strip';
-const _RAPIER_INK_PEN_NOTICE = 'draw on the words. the marks stay with them. tap the pen again to stop.';
-const _RAPIER_INK_ERASER_NOTICE = 'tap a mark to remove it.';
 
 function _rapierInkPenState(host) {
-	return host._rapierInkPen || (host._rapierInkPen = { installed: false, down: false, tool: 'pen', hex: '#b32034', stroke: null, live: null, pending: false, scroll: null, swallowClick: false, doors: null });
+	return host._rapierInkPen || (host._rapierInkPen = { installed: false, down: false, tool: 'pen', hex: '#b32034', stroke: null, live: null, pending: false, scroll: null, swallowClick: false, doors: null, frame: 0, cursor: null, colours: false });
 }
 
-// doors: {spec, ink, draw, apply, erase, liveOf, dark, say, stylus}: the grammar, the geometry, the drawing module, the
-// engine's apply and erase (over the selection), the live element of a block wrapper, the dark-page colour, the one-line
-// notice, and whether a stylus inks with no button (a switch; on when absent).
+// The engine supplies grammar, geometry, source transactions, mutation admission and the stylus preference.
 function _rapierInkPenInstall(doors) {
 	const host = _rapierInkHost();
 	if (!host || !doors || !doors.spec || !doors.ink || !doors.draw || typeof doors.apply !== 'function') return;
@@ -25,18 +21,33 @@ function _rapierInkPenInstall(doors) {
 	state.doors = doors;
 	if (state.installed) return;
 	state.installed = true;
+	const remembered = doors.colour?.();
+	if (/^#[0-9a-f]{6}$/i.test(remembered || '')) state.hex = remembered.toLowerCase();
 	host.addEventListener('pointerdown', _rapierInkPenDown, { capture: true });
 	host.addEventListener('pointermove', _rapierInkPenMove, { capture: true });
 	host.addEventListener('pointerup', _rapierInkPenUp, { capture: true });
 	host.addEventListener('pointercancel', _rapierInkPenCancel, { capture: true });
+	host.addEventListener('lostpointercapture', _rapierInkPenCancel);
+	host.addEventListener('pointerleave', () => { if (!state.stroke) _rapierInkPenClear(host); });
+	host.addEventListener('scroll', () => { if (state.stroke) _rapierInkPenClear(host); }, { passive: true });
+	window.addEventListener('blur', () => { _rapierInkPenClear(host); state.scroll = null; });
+	window.addEventListener('resize', () => _rapierInkPenClear(host));
 	host.addEventListener('click', _rapierInkPenClick, { capture: true });
-	// A stroke must not scroll the page: the first touch move under a stroke is kept (a tap never moves, so its click
-	// still reaches the engine).
+	// The gesture's first touch belongs to ink; a second finger changes it to scrolling without saving a mark.
 	host.addEventListener('touchmove', _rapierInkPenTouch, { capture: true, passive: false });
 	document.addEventListener('keydown', _rapierInkPenKey, { capture: true });
 	for (const button of document.querySelectorAll(_RAPIER_INK_PEN_SELECTOR)) button.addEventListener('click', _rapierInkPenToggle);
 	const strip = document.getElementById(_RAPIER_INK_STRIP_ID);
-	if (strip) strip.addEventListener('click', _rapierInkPenStrip);
+	if (strip) {
+		strip.addEventListener('click', _rapierInkPenStrip);
+		strip.addEventListener('input', event => {
+			if (!event.target.matches('[data-ink-colour-input]')) return;
+			state.hex = event.target.value; state.tool = 'pen';
+			state.doors.setColour?.(state.hex);
+			_rapierInkPenPaintStrip(strip, state);
+			_rapierInkPenMode(host);
+		});
+	}
 }
 
 function _rapierInkPenToggle() {
@@ -44,27 +55,43 @@ function _rapierInkPenToggle() {
 	if (host) _rapierInkPenSet(host, !_rapierInkPenState(host).down);
 }
 
+function _rapierInkPenMode(host) {
+	const state = host._rapierInkPen;
+	host.style.touchAction = state.down && state.tool !== 'scroll' ? 'none' : '';
+	if (state.down) host.setAttribute('data-rapier-pen', state.tool); else host.removeAttribute('data-rapier-pen');
+}
+
 function _rapierInkPenSet(host, down) {
 	const state = _rapierInkPenState(host);
-	if (state.stroke) _rapierInkPenClear(host);
+	_rapierInkPenClear(host);
+	state.scroll = null;
+	state.swallowClick = false;
 	state.down = !!down;
-	if (!state.down) state.tool = 'pen';
-	host.style.touchAction = state.down ? 'none' : '';
-	if (state.down) host.setAttribute('data-rapier-pen', 'down'); else host.removeAttribute('data-rapier-pen');
-	for (const button of document.querySelectorAll(_RAPIER_INK_PEN_SELECTOR)) button.setAttribute('aria-pressed', state.down ? 'true' : 'false');
+	if (state.down && host.contains(document.activeElement)) document.activeElement.blur();
+	if (!state.down) { state.tool = 'pen'; state.colours = false; }
+	_rapierInkPenMode(host);
+	for (const button of document.querySelectorAll(_RAPIER_INK_PEN_SELECTOR)) button.setAttribute('aria-pressed', String(state.down));
 	const strip = document.getElementById(_RAPIER_INK_STRIP_ID);
 	if (strip) {
 		strip.classList.toggle('visible', state.down);
-		strip.setAttribute('aria-hidden', state.down ? 'false' : 'true');
+		strip.setAttribute('aria-hidden', String(!state.down));
+		strip.inert = !state.down;
 		_rapierInkPenPaintStrip(strip, state);
 	}
-	if (state.down && state.doors && typeof state.doors.say === 'function') state.doors.say(_RAPIER_INK_PEN_NOTICE);
 }
 
 function _rapierInkPenPaintStrip(strip, state) {
-	for (const button of strip.querySelectorAll('[data-action="ink-colour"]')) button.setAttribute('aria-pressed', state.tool === 'pen' && button.getAttribute('data-value') === state.hex ? 'true' : 'false');
-	for (const button of strip.querySelectorAll('[data-action="ink-eraser"]')) button.setAttribute('aria-pressed', state.tool === 'eraser' ? 'true' : 'false');
-	for (const button of strip.querySelectorAll('[data-action="ink-stylus"]')) button.setAttribute('aria-pressed', _rapierInkPenStylusOn(state) ? 'true' : 'false');
+	if (!strip) return;
+	for (const button of strip.querySelectorAll('[data-action="ink-colour"]')) button.setAttribute('aria-pressed', String(button.getAttribute('data-value') === state.hex));
+	for (const [action, tool] of [['ink-draw', 'pen'], ['ink-eraser', 'eraser'], ['ink-scroll', 'scroll']]) {
+		for (const button of strip.querySelectorAll('[data-action="' + action + '"]')) button.setAttribute('aria-pressed', String(state.tool === tool));
+	}
+	for (const button of strip.querySelectorAll('[data-action="ink-stylus"]')) button.setAttribute('aria-pressed', String(_rapierInkPenStylusOn(state)));
+	const colours = strip.querySelector('.ink-strip__colours'), toggle = strip.querySelector('[data-action="ink-palette"]');
+	if (colours) colours.hidden = !state.colours;
+	if (toggle) { toggle.setAttribute('aria-expanded', String(state.colours)); toggle.style.setProperty('--ink-colour', state.hex); }
+	const custom = strip.querySelector('[data-ink-colour-input]');
+	if (custom) custom.value = state.hex;
 }
 
 // The switch (docs/briefs/ink.md §4): a stylus inks with no button, unless the person who uses a stylus as a finger says so.
@@ -78,13 +105,19 @@ function _rapierInkPenStrip(event) {
 	const button = event.target && event.target.closest ? event.target.closest('[data-action]') : null;
 	if (!host || !button) return;
 	const state = _rapierInkPenState(host), action = button.getAttribute('data-action');
+	_rapierInkPenClear(host);
 	if (action === 'ink-colour') {
 		const value = String(button.getAttribute('data-value') || '').toLowerCase();
-		if (/^#[0-9a-f]{6}$/.test(value)) state.hex = value;
+		if (/^#[0-9a-f]{6}$/.test(value)) { state.hex = value; state.doors.setColour?.(value); }
 		state.tool = 'pen';
+	} else if (action === 'ink-draw') {
+		state.tool = 'pen';
+	} else if (action === 'ink-scroll') {
+		state.tool = 'scroll';
+	} else if (action === 'ink-palette') {
+		state.colours = !state.colours;
 	} else if (action === 'ink-eraser') {
 		state.tool = state.tool === 'eraser' ? 'pen' : 'eraser';
-		if (state.tool === 'eraser' && state.doors && typeof state.doors.say === 'function') state.doors.say(_RAPIER_INK_ERASER_NOTICE);
 	} else if (action === 'ink-stylus') {
 		if (state.doors && typeof state.doors.setStylus === 'function') state.doors.setStylus(!_rapierInkPenStylusOn(state));
 	} else if (action === 'ink-done') {
@@ -92,6 +125,7 @@ function _rapierInkPenStrip(event) {
 		return;
 	} else return;
 	event.preventDefault();
+	_rapierInkPenMode(host);
 	_rapierInkPenPaintStrip(button.closest('#' + _RAPIER_INK_STRIP_ID) || document.getElementById(_RAPIER_INK_STRIP_ID), state);
 }
 
@@ -107,7 +141,7 @@ function _rapierInkPenKey(event) {
 
 // A stylus inks with no button, unless the switch says a stylus is a finger.
 function _rapierInkPenInks(state, event) {
-	if (state.down) return true;
+	if (state.down) return state.tool !== 'scroll';
 	if (event.pointerType !== 'pen') return false;
 	return _rapierInkPenStylusOn(state);
 }
@@ -117,40 +151,56 @@ function _rapierInkPenDown(event) {
 	if (!host || !host._rapierInkPen || !host._rapierInkPen.doors) return;
 	const state = host._rapierInkPen;
 	// A second finger while a stroke is live: the stroke is dropped and the two fingers scroll the page.
-	if (state.stroke && !event.isPrimary && event.pointerType === 'touch') {
+	if (state.stroke && state.stroke.type === 'touch' && !event.isPrimary && event.pointerType === 'touch') {
 		const first = state.stroke.id, last = state.stroke.points[state.stroke.points.length - 1];
 		_rapierInkPenClear(host);
 		state.scroll = { ys: new Map([[first, last.y], [event.pointerId, event.clientY]]) };
+		state.swallowClick = true;
+		try { host.setPointerCapture(first); host.setPointerCapture(event.pointerId); } catch (_) {}
 		event.preventDefault();
 		event.stopPropagation();
 		return;
 	}
 	if (state.scroll) { if (event.pointerType === 'touch') state.scroll.ys.set(event.pointerId, event.clientY); return; }
+	if (state.down && state.tool === 'scroll' && event.pointerType !== 'touch' && event.button === 0) {
+		state.scroll = { ys: new Map([[event.pointerId, event.clientY]]) };
+		state.swallowClick = true;
+		try { host.setPointerCapture(event.pointerId); } catch (_) {}
+		event.preventDefault(); event.stopPropagation(); return;
+	}
 	if (!_rapierInkPenInks(state, event) || !event.isPrimary || event.button !== 0 || state.stroke) return;
 	const target = event.target;
 	if (target && target.closest && target.closest('button, input, textarea, select, a[href], .rapier-image-tools, .rapier-ink-layer')) return;
+	if (state.doors.allowed && !state.doors.allowed()) return;
+	_rapierInkPenClear(host);
 	state.stroke = { id: event.pointerId, type: event.pointerType, points: [{ x: event.clientX, y: event.clientY }], target, moved: false };
 	state.pending = true;
 	try { host.setPointerCapture(event.pointerId); } catch (_) {}
-	// No selection starts under a stroke; a tap still places the caret (the click after the lift is left to the engine).
+	// Text selection and the software keyboard must not start beneath an annotation gesture.
 	event.preventDefault();
-	if (state.tool === 'eraser') return;
-	const layer = _rapierInkLayerOf(host);
-	if (!layer) return;
-	const live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	live.setAttribute('data-ink-live', '1');
-	live.setAttribute('class', 'rapier-ink-piece');
-	// One pixel, not zero: a zero-sized svg root paints nothing at all (SVG's "zero disables rendering"), so the stroke
-	// showed only at the lift; the layer's overflow is visible, so the path paints wherever the finger goes.
-	live.style.left = '0'; live.style.top = '0'; live.style.width = '1px'; live.style.height = '1px';
-	live.style.setProperty('--md-ink', state.hex);
-	live.style.setProperty('--md-ink-dark', state.doors.dark ? state.doors.dark(state.hex) : state.hex);
-	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-	path.style.strokeWidth = '2px';
-	live.appendChild(path);
-	layer.appendChild(live);
-	state.live = live;
+	event.stopPropagation();
+	if (state.tool === 'eraser') { state.cursor = { x: event.clientX, y: event.clientY }; _rapierInkPenTrace(host); return; }
 	_rapierInkPenTrace(host);
+}
+
+// A nonzero SVG viewport is essential: an overflow-visible zero-sized SVG does not paint in Chromium.
+function _rapierInkPenLive(host) {
+	const state = host._rapierInkPen, layer = _rapierInkLayerOf(host);
+	if (!layer) return null;
+	if (!state.live) {
+		state.live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		state.live.setAttribute('data-ink-live', '1');
+		state.live.setAttribute('class', 'rapier-ink-piece');
+		layer.appendChild(state.live);
+	}
+	const rect = host.getBoundingClientRect(), origin = layer.getBoundingClientRect();
+	state.live.style.left = (rect.left - origin.left) + 'px';
+	state.live.style.top = (rect.top - origin.top) + 'px';
+	state.live.style.width = Math.max(1, host.clientWidth) + 'px';
+	state.live.style.height = Math.max(1, host.clientHeight) + 'px';
+	state.live.style.setProperty('--md-ink', state.hex);
+	state.live.style.setProperty('--md-ink-dark', state.doors.dark ? state.doors.dark(state.hex) : state.hex);
+	return { svg: state.live, rect };
 }
 
 function _rapierInkPenTouch(event) {
@@ -172,9 +222,15 @@ function _rapierInkPenMove(event) {
 		event.stopPropagation();
 		return;
 	}
-	if (!state.stroke || event.pointerId !== state.stroke.id) return;
+	if (!state.stroke || event.pointerId !== state.stroke.id) {
+		if (state.down && state.tool === 'eraser' && event.pointerType !== 'touch') {
+			state.cursor = { x: event.clientX, y: event.clientY }; _rapierInkPenTrace(host);
+		}
+		return;
+	}
 	const events = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
 	for (const e of events.length ? events : [event]) state.stroke.points.push({ x: e.clientX, y: e.clientY });
+	state.cursor = { x: event.clientX, y: event.clientY };
 	const em = _rapierInkPenEm(state.stroke.target);
 	if (!state.stroke.moved && state.doors.ink.strokeLength(state.stroke.points) >= state.doors.ink.INK_EM.dot * em) state.stroke.moved = true;
 	event.preventDefault();
@@ -195,28 +251,59 @@ function _rapierInkPenEm(target) {
 
 function _rapierInkPenTrace(host) {
 	const state = host._rapierInkPen;
-	if (!state.live || !state.stroke) return;
-	const origin = state.live.getBoundingClientRect();
-	state.live.firstChild.setAttribute('d', state.stroke.points.map((p, i) => (i ? 'L' : 'M') + (p.x - origin.left).toFixed(2) + ' ' + (p.y - origin.top).toFixed(2)).join(''));
+	if (state.frame) return;
+	state.frame = requestAnimationFrame(() => {
+		state.frame = 0;
+		if (!state.stroke && !state.cursor) return;
+		const live = _rapierInkPenLive(host);
+		if (!live) return;
+		const { svg, rect } = live, ns = 'http://www.w3.org/2000/svg';
+		svg.replaceChildren();
+		if (state.tool === 'eraser') {
+			const point = state.cursor || state.stroke.points.at(-1), radius = 8;
+			const ranges = _rapierInkPenEraseRanges(host, state.stroke?.points || [point], state.doors, radius);
+			for (const piece of _rapierInkLayerOf(host).children) {
+				if (piece._rapierInkSpan) piece.toggleAttribute('data-ink-erasing', ranges.marks.includes(piece._rapierInkSpan) || ranges.marks.includes(piece._rapierInkEndSpan));
+			}
+			for (const range of ranges) for (const box of range.getClientRects()) {
+				const preview = document.createElementNS(ns, 'rect');
+				preview.setAttribute('x', box.left - rect.left); preview.setAttribute('y', box.top - rect.top);
+				preview.setAttribute('width', box.width); preview.setAttribute('height', box.height);
+				preview.setAttribute('class', 'ink-erase-preview'); svg.appendChild(preview);
+			}
+			const cursor = document.createElementNS(ns, 'circle');
+			cursor.setAttribute('cx', point.x - rect.left); cursor.setAttribute('cy', point.y - rect.top);
+			cursor.setAttribute('r', radius); cursor.setAttribute('class', 'ink-erase-cursor'); svg.appendChild(cursor);
+		} else if (state.stroke) {
+			const path = document.createElementNS(ns, 'path');
+			path.setAttribute('d', state.doors.draw.inkPath(state.stroke.points.map(p => ({ x: p.x - rect.left, y: p.y - rect.top })), .11 * _rapierInkPenEm(state.stroke.target), false));
+			svg.appendChild(path);
+		}
+	});
 }
 
 function _rapierInkPenCancel(event) {
 	const host = _rapierInkHost();
 	const state = host && host._rapierInkPen;
 	if (!state) return;
-	if (state.scroll) { state.scroll.ys.delete(event.pointerId); if (state.scroll.ys.size < 2) state.scroll = null; return; }
+	if (state.scroll) { state.scroll.ys.delete(event.pointerId); if (!state.scroll.ys.size) state.scroll = null; return; }
 	if (!state.stroke || event.pointerId !== state.stroke.id) return;
 	_rapierInkPenClear(host);
 }
 
 function _rapierInkPenClear(host) {
 	const state = host._rapierInkPen;
+	if (state.frame) cancelAnimationFrame(state.frame);
+	state.frame = 0; state.cursor = null;
+	const id = state.stroke?.id;
+	for (const piece of _rapierInkLayerOf(host)?.querySelectorAll('[data-ink-erasing]') || []) piece.removeAttribute('data-ink-erasing');
 	if (state.live && state.live.parentNode) state.live.parentNode.removeChild(state.live);
 	state.live = null; state.stroke = null; state.pending = false;
-	try { host.style.touchAction = state.down ? 'none' : ''; } catch (_) {}
+	if (id != null) { try { host.releasePointerCapture(id); } catch (_) {} }
+	_rapierInkPenMode(host);
 }
 
-// The click that follows a stroke is not a tap: it is swallowed once. A tap's click goes on to the engine.
+// Suppress the compatibility click after drawing, erasing or panning; it must not open the keyboard.
 function _rapierInkPenClick(event) {
 	const host = _rapierInkHost();
 	const state = host && host._rapierInkPen;
@@ -368,8 +455,36 @@ function _rapierInkPenPathHitsRect(points, rect, slack) {
 	return false;
 }
 
+// Hit the painted path, not its bounding box: the empty middle of a loop is not ink.
+function _rapierInkPenHitsPiece(points, piece, slack) {
+	const rect = piece.getBoundingClientRect();
+	if (!_rapierInkPenPathHitsRect(points, rect, slack)) return false;
+	const line = piece._rapierInkPoints, origin = piece._rapierInkOrigin;
+	if (!line?.length || !origin) return false;
+	const dx = rect.left - origin.x, dy = rect.top - origin.y, reach = slack + (piece._rapierInkWidth || 0) / 2;
+	const distance = (p, a, b) => {
+		const vx = b.x - a.x, vy = b.y - a.y, length = vx * vx + vy * vy;
+		const t = length ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / length)) : 0;
+		return Math.hypot(p.x - a.x - t * vx, p.y - a.y - t * vy);
+	};
+	const cross = (a, b, p) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+	for (let i = 0; i < points.length; i++) {
+		const a = points[Math.max(0, i - 1)], b = points[i];
+		for (let j = 0; j < line.length; j++) {
+			const c = { x: line[Math.max(0, j - 1)].x + dx, y: line[Math.max(0, j - 1)].y + dy };
+			const d = { x: line[j].x + dx, y: line[j].y + dy };
+			if (Math.max(a.x, b.x) + reach < Math.min(c.x, d.x) || Math.min(a.x, b.x) - reach > Math.max(c.x, d.x) ||
+				Math.max(a.y, b.y) + reach < Math.min(c.y, d.y) || Math.min(a.y, b.y) - reach > Math.max(c.y, d.y)) continue;
+			if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0 ||
+				Math.min(distance(a, c, d), distance(b, c, d), distance(c, a, b), distance(d, a, b)) <= reach) return true;
+		}
+	}
+	return false;
+}
+
 function _rapierInkPenEraseRanges(host, points, doors, slack) {
 	const ranges = [], pieces = Array.from(_rapierInkLayerOf(host)?.children || []);
+	ranges.marks = [];
 	for (const span of host.querySelectorAll(doors.draw.SPAN_SELECTOR)) {
 		const wrapper = span.closest('.block-wrapper'), live = wrapper && (doors.liveOf ? doors.liveOf(wrapper) : wrapper);
 		if (!live || !live.contains(span)) continue;
@@ -378,12 +493,14 @@ function _rapierInkPenEraseRanges(host, points, doors, slack) {
 		const words = _rapierInkPenEraseWords(span);
 		if (!words.length) continue;
 		const hits = words.filter(word => word.rects.some(rect => _rapierInkPenPathHitsRect(points, rect, slack)));
-		const pieceHit = () => pieces.some(piece => piece._rapierInkSpan === span && _rapierInkPenPathHitsRect(points, piece.getBoundingClientRect(), slack));
+		const pieceHit = () => pieces.some(piece => piece._rapierInkSpan === span && _rapierInkPenHitsPiece(points, piece, slack));
 		if (mark.kind === 'free' || mark.kind === 'arrow' || mark.kind === 'end') {
-			if (!hits.length && !pieceHit()) continue;
+			if (mark.kind === 'free' ? !pieceHit() : !hits.length && !pieceHit()) continue;
+			ranges.marks.push(span);
 			const range = words[0].range.cloneRange(), end = words[words.length - 1].range;
 			range.setEnd(end.endContainer, end.endOffset); ranges.push(range);
 		} else if (hits.length) {
+			ranges.marks.push(span);
 			for (const word of hits) ranges.push(word.range);
 		} else if (pieceHit()) {
 			// A ring or bracket can be touched outside its words. The nearest marked word owns that part of the mark.
@@ -392,7 +509,18 @@ function _rapierInkPenEraseRanges(host, points, doors, slack) {
 				const dx = Math.max(rect.left - point.x, 0, point.x - rect.right), dy = Math.max(rect.top - point.y, 0, point.y - rect.bottom);
 				if (dx * dx + dy * dy < distance) { nearest = word; distance = dx * dx + dy * dy; }
 			}
-			if (nearest) ranges.push(nearest.range);
+			if (nearest) { ranges.push(nearest.range); ranges.marks.push(span); }
+		}
+	}
+	// Show both ends of an arrow: erasing either removes the paired annotation in the same Undo.
+	for (const span of ranges.marks.slice()) {
+		const mark = doors.spec.parseInkBody(span.getAttribute('data-rapier-ink'));
+		if (mark?.id == null) continue;
+		for (const other of host.querySelectorAll(doors.draw.SPAN_SELECTOR)) {
+			if (ranges.marks.includes(other)) continue;
+			if (doors.spec.parseInkBody(other.getAttribute('data-rapier-ink'))?.id !== mark.id) continue;
+			const range = document.createRange(); range.selectNodeContents(other);
+			ranges.push(range); ranges.marks.push(other);
 		}
 	}
 	return ranges;
@@ -402,13 +530,14 @@ function _rapierInkPenUp(event) {
 	const host = _rapierInkHost();
 	const state = host && host._rapierInkPen;
 	if (!state) return;
-	if (state.scroll) { state.scroll.ys.delete(event.pointerId); if (state.scroll.ys.size < 2) state.scroll = null; event.preventDefault(); event.stopPropagation(); return; }
+	if (state.scroll) { state.scroll.ys.delete(event.pointerId); if (!state.scroll.ys.size) state.scroll = null; event.preventDefault(); event.stopPropagation(); return; }
 	if (!state.stroke || event.pointerId !== state.stroke.id) return;
 	const stroke = state.stroke, doors = state.doors;
 	_rapierInkPenClear(host);
 	try { host.releasePointerCapture(event.pointerId); } catch (_) {}
 	const { spec, ink, draw } = doors;
 	const points = stroke.points;
+	if (event.clientX !== points.at(-1).x || event.clientY !== points.at(-1).y) points.push({ x: event.clientX, y: event.clientY });
 	const b = ink.bounds(points);
 	if (state.tool === 'eraser') {
 		// All words visited by this stroke leave their ink in one source edit; doodles and paired arrows leave whole.
@@ -417,13 +546,13 @@ function _rapierInkPenUp(event) {
 		state.swallowClick = true;
 		if (typeof doors.erase !== 'function') return false;
 		const visited = points.concat({ x: event.clientX, y: event.clientY });
-		const ranges = _rapierInkPenEraseRanges(host, visited, doors, 0.3 * _rapierInkPenEm(stroke.target));
+		const ranges = _rapierInkPenEraseRanges(host, visited, doors, 8);
 		if (!ranges.length) return false;
-		try { return Promise.resolve(doors.erase(ranges)).catch(() => false); } catch (_) { return false; }
+		try { return Promise.resolve(doors.erase(ranges, ranges.marks)).catch(() => false); } catch (_) { return false; }
 	}
-	// A tap is a tap: nothing is drawn, the caret goes where it landed (the pointerdown's own placing was kept back so no
-	// selection could start under a stroke), and the engine's own tap goes on (the click after this lift).
-	if (!stroke.moved) {
+	// Outside explicit annotation mode, a stylus tap places the caret. Pointerdown kept selection
+	// back until the gesture could be distinguished from a stroke; the engine's click now goes on.
+	if (!stroke.moved && !state.down) {
 		try {
 			const p = points[points.length - 1];
 			const caret = document.caretPositionFromPoint ? document.caretPositionFromPoint(p.x, p.y) : null;
@@ -439,18 +568,28 @@ function _rapierInkPenUp(event) {
 	// The block under the stroke: the one its first point landed on, or the one at its middle.
 	const at = stroke.target && stroke.target.closest ? stroke.target.closest('.block-wrapper') : null;
 	const middle = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
-	const wrapper = at || (middle && middle.closest ? middle.closest('.block-wrapper') : null);
+	let wrapper = at || (middle && middle.closest ? middle.closest('.block-wrapper') : null);
+	if (!wrapper) {
+		let distance = Infinity;
+		for (const block of host.querySelectorAll('.block-wrapper')) {
+			const box = block.getBoundingClientRect();
+			if (!box.height) continue;
+			const d = Math.hypot(Math.max(box.left - b.x, 0, b.x - box.right), Math.max(box.top - b.y, 0, b.y - box.bottom));
+			if (d < distance) { distance = d; wrapper = block; }
+		}
+	}
 	const live = wrapper ? (doors.liveOf ? doors.liveOf(wrapper) : wrapper) : null;
 	if (!live) return;
 	const em = parseFloat(getComputedStyle(live).fontSize) || 16;
-	if (ink.strokeLength(points) < ink.INK_EM.dot * em) return;
-	const arrow = _rapierInkPenArrow(host, points, doors, em, state.hex);
-	if (arrow) {
-		try { return doors.applyArrow(arrow.tail, arrow.head, arrow.mark); } catch (_) { return false; }
-	}
+	if (!state.down && ink.strokeLength(points) < ink.INK_EM.dot * em) return;
 	const { lines, words } = _rapierInkPenWords(live);
 	if (!words.length) return;
 	const kind = ink.classifyStroke(points, lines, em);
+	// A straight stroke through a line of words is a strikethrough, not an unasked arrowhead.
+	const arrow = kind === 'strike' || kind === 'under' || kind === 'ring' ? null : _rapierInkPenArrow(host, points, doors, em, state.hex);
+	if (arrow) {
+		try { return doors.applyArrow(arrow.tail, arrow.head, arrow.mark); } catch (_) { return false; }
+	}
 	const anchor = ink.anchorStroke(points, kind, words, em);
 	if (!anchor) return;
 	const unit = em / 100;

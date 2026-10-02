@@ -276,6 +276,16 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-tabs .rapier-draw-chip--active{background:var(--color-icon);color:var(--color-bg)}
 .rapier-draw-pane{padding-top:var(--space-1)}
 .rapier-draw-colours{flex:none;padding:0 var(--space-3) var(--space-1);background:var(--color-surface-2)}
+.rapier-draw-colour-editor{display:flex;align-items:center;gap:var(--space-1);width:100%;min-width:0}
+.rapier-draw-colour-editor>.rapier-draw-swatch,.rapier-draw-colour-editor>.rapier-draw-colour-custom{flex:none}
+.rapier-draw-colour-hex{appearance:none;box-sizing:border-box;flex:1;min-width:0;height:44px;padding:0 var(--space-2);border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);font:var(--fw-medium) 16px var(--font-mono);text-transform:uppercase;touch-action:manipulation}
+.rapier-draw-colour-hex:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
+.rapier-draw-colour-hex[aria-invalid="true"]{outline:2px solid var(--color-error);outline-offset:-2px}
+.rapier-draw-colour-copy{color:var(--color-icon)}
+.rapier-draw-swatch.rapier-draw-colour-copy>span{box-shadow:none}
+.rapier-draw-colour-copy svg{width:20px;height:20px}
+.rapier-draw-colour-copy[data-copied="yes"]{color:var(--color-accent);background:var(--color-surface-hover)}
+.rapier-draw-colour-copy[data-copied="no"]{color:var(--color-error)}
 /* R84: the colour row SCROLLS sideways, it does not wrap. The founder: "you can swipe, horizontal
    scroll to view more colours." A memory of ten plus the named inks is more than a phone's width,
    and a second line would push the canvas down every time the row opened. */
@@ -460,17 +470,19 @@ body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 /* The dropper's own session: the row goes away so the whole drawing is visible, a swatch rides
    ABOVE the finger (a finger hides what it points at) and one bar holds the value and Done. */
 .rapier-draw-dropper{position:absolute;inset:0;z-index:4;pointer-events:none}
+.rapier-draw-sampling :is(.rapier-draw-menu,.rapier-draw-handles,.rapier-draw-hint){visibility:hidden;pointer-events:none}
 .rapier-draw-dropper-swatch{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:var(--color-surface-2);box-shadow:0 0 0 3px var(--color-bg)}
-.rapier-draw-dropper-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2);background:var(--color-surface-2);pointer-events:auto}
+.rapier-draw-dropper-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:var(--space-1);padding:var(--space-1);background:var(--color-surface-2);pointer-events:auto}
+.rapier-draw-dropper-bar>.rapier-draw-btn{padding:0 var(--space-2);font-size:var(--text-xs)}
 .rapier-draw-dropper-say{flex:1;font:var(--fw-medium) var(--text-2xs,10px) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;color:var(--color-text-secondary)}
 /* Law 9 (the afternoon list): sampled, the bar's main word is the hex in the bar's own button type, beside a flat chip of
    the colour, and the word is the copy; it takes the hint's place at the left, Done staying at the right. Copied, its
    glyph is the editor's check for a moment; refused, the hint beside it says so (a page notice waits while Draw is up). */
-.rapier-draw-dropper-hex{margin-right:auto;gap:var(--space-2);padding:0 var(--space-3) 0 var(--space-2)}
+.rapier-draw-dropper-hex{margin-right:auto;gap:var(--space-1);padding:0 var(--space-2);min-width:0}
 .rapier-draw-dropper-chip{flex:none;width:20px;height:20px}
 .rapier-draw-dropper-glyph{display:flex}
-.rapier-draw-dropper-glyph--done,.rapier-draw-dropper-hex[data-copied="yes"] .rapier-draw-dropper-glyph{display:none}
-.rapier-draw-dropper-hex[data-copied="yes"] .rapier-draw-dropper-glyph--done{display:flex}
+.rapier-draw-dropper-glyph--done,:is(.rapier-draw-dropper-hex,.rapier-draw-colour-copy)[data-copied="yes"] .rapier-draw-dropper-glyph{display:none}
+:is(.rapier-draw-dropper-hex,.rapier-draw-colour-copy)[data-copied="yes"] .rapier-draw-dropper-glyph--done{display:flex}
 .rapier-draw-dropper-hex svg{flex:none;width:18px;height:18px}
 /* R85c: over paper the ink dot shows the ink as it will land -- on white -- so a black ink on the
    dark chrome reads as a black dot on paper, not an empty ring. */

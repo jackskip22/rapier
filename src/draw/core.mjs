@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {getStroke, getStrokePoints} from './freehand.mjs';
+import {getStrokePoints} from './freehand.mjs';
+import {penPath, strokeHasPressure as _rapierDrawStrokeHasPressure} from './pen-path.mjs';
 import {DRAW_TEXT_MAX, admitText, layoutText, restoreLetters} from './text.mjs';
 import {admitFonts, fontDefs, fontMetadata, restoreFonts} from './font.mjs';
 import {roughPaths} from './rough.mjs';
@@ -992,84 +993,12 @@ function _rapierDrawStrokeSamples(pts, step) {
 	return out;
 }
 
-const RAPIER_DRAW_PEN_SIZE = 9;
-
-const RAPIER_DRAW_PEN_OPTIONS = { thinning: 0.6, smoothing: 0.5, streamline: 0.5, last: true };
-
-const RAPIER_DRAW_PEN_TAPER = 2;
-
-function _rapierDrawPenOutlinePath(points) {
-	const len = points && points.length;
-	if (!len || len < 4) return '';
-	const mid = (a, b) => _rapierDrawFmt((a + b) / 2);
-	let a = points[0], b = points[1];
-	const c = points[2];
-	let d = 'M' + _rapierDrawFmt(a[0]) + ',' + _rapierDrawFmt(a[1]) +
-		' Q' + _rapierDrawFmt(b[0]) + ',' + _rapierDrawFmt(b[1]) + ' ' + mid(b[0], c[0]) + ',' + mid(b[1], c[1]) + ' T';
-	for (let i = 2, max = len - 1; i < max; i++) {
-		a = points[i]; b = points[i + 1];
-		d += mid(a[0], b[0]) + ',' + mid(a[1], b[1]) + ' ';
-	}
-	return d + 'Z';
-}
-
-const RAPIER_DRAW_PRESSURE_VARIANCE = 0.05;
-
-// Constant pressure is treated as a device placeholder; only variation replaces the velocity model.
-function _rapierDrawStrokeHasPressure(pts) {
-	if (!pts || pts.length < 3) return false;
-	let min = Infinity, max = -Infinity;
-	for (const p of pts) {
-		const v = p.length > 3 ? p[3] : null;
-		if (typeof v !== 'number' || !(v >= 0)) return false;
-		if (v < min) min = v;
-		if (v > max) max = v;
-	}
-	return max - min > RAPIER_DRAW_PRESSURE_VARIANCE;
-}
-
 // The Brush: perfect-freehand's outline (vendored in draw/freehand.mjs) with pressure where the
 // device gives it and velocity-simulated pressure where it does not, drawn as the filled quadratic
 // path perfect-freehand's own README describes. Its feel is fixed (thinning, smoothing and
 // streamline are the brush's own); the Pen, not the Brush, carries the smoothing control.
 function _rapierDrawPenPathD(pts, smooth, last, size) {
-	if (!pts || pts.length < 2) return '';
-
-	const pressured = _rapierDrawStrokeHasPressure(pts);
-	const nib = size || RAPIER_DRAW_PEN_SIZE;
-	// A dot (a stroke shorter than its own nib) takes no taper: the tapers would eat the whole of
-	// it and leave nothing on the paper; it is a round dab of the nib's width instead.
-	let length = 0;
-	for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-	const taper = length < nib ? 0 : nib * RAPIER_DRAW_PEN_TAPER;
-	// Compaction changes the distance between retained samples, not the hand's speed. The
-	// freehand library's distance-per-sample simulation therefore thinned every frozen chunk.
-	// Use the captured clock for velocity and time-based pressure settling; retain the library's
-	// simulation only for generated geometry, which has no capture clock. Source samples stay exact.
-	const clocked = pts.at(-1)[2] > pts[0][2] && pts.every((p, i) => Number.isFinite(p[2]) && (!i || p[2] >= pts[i - 1][2]));
-	let pressure = .5;
-	const input = pts.map((p, i) => {
-		if (pressured) return [p[0], p[1], p[3]];
-		if (!clocked || length < nib) return [p[0], p[1]];
-		if (i) {
-			const previous = pts[i - 1], dt = p[2] - previous[2];
-			if (dt > 0) {
-				const speed = Math.hypot(p[0] - previous[0], p[1] - previous[1]) / dt;
-				const target = 1 - Math.min(1, speed * (1000 / 60) / nib);
-				pressure += (target - pressure) * -Math.expm1(-dt / 45);
-			}
-		}
-		return [p[0], p[1], pressure];
-	});
-	let outline;
-	try {
-		outline = getStroke(input, { ...RAPIER_DRAW_PEN_OPTIONS, size: nib,
-			simulatePressure: !pressured && !clocked && length >= nib, last: !!last,
-
-			start: { taper, cap: true },
-			end: { taper, cap: true } });
-	} catch (_) { return ''; }
-	return _rapierDrawPenOutlinePath(outline);
+	return penPath(pts, {size, last: !!last});
 }
 
 function _rapierDrawBrushPenPath(shape, recipe) {

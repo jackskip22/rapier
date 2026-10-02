@@ -85,14 +85,14 @@ const EXPORTS = new Map(), bundling = new Set(), DEPS = new Map();
 // What each bundled module imports from each other (dependency -> names), and the source each was
 // assembled from: the tree-shake below reads both.
 const IMPORTED = new Map(), MODULE_SOURCES = new Map();
-// Ink retains each owner's reading/layout closure, not its editor-only writing, recognition or hit testing.
-const INK_FACTORIES = {'spec/md-marks.mjs': 'inkReader', 'spec/ink.mjs': 'inkGeometry', 'layout/ink-draw.mjs': 'inkDrawing'};
+// Ink retains its grammar and geometry readers, not the editor's writing and recognition paths.
+const INK_FACTORIES = {'spec/md-marks.mjs': 'inkReader', 'spec/ink.mjs': 'inkGeometry'};
 // Retained into the styled export's factory set, by group: layout (pretext, model, line-plan, md-layout) for the
-// reflow script, ink's three named closures for the ink script (docs/briefs/ink.md §3); the export never carries a
-// drawing recipe or the Draw modules, only numeric wrap polygons and the marks on their own words.
+// reflow script, ink's readers and shared SVG brush for the ink script (docs/briefs/ink.md §3); the export never
+// carries drawing recipes or the Draw editor, only numeric wrap polygons and the marks on their own words.
 const RETAINED_GROUPS = {
   layout: path => path.startsWith('agent/vendor/pretext/') || path === 'layout/model.mjs' || path === 'layout/line-plan.mjs' || path === 'spec/md-layout.mjs',
-  ink: path => Object.hasOwn(INK_FACTORIES, path),
+  ink: path => Object.hasOwn(INK_FACTORIES, path) || ['draw/freehand.mjs', 'draw/pen-path.mjs', 'layout/ink-draw.mjs'].includes(path),
 };
 const retainedGroup = path => Object.keys(RETAINED_GROUPS).find(group => RETAINED_GROUPS[group](path)) || null;
 const retainedModule = path => retainedGroup(path) !== null;
@@ -540,10 +540,12 @@ Object.defineProperty(modules[${JSON.stringify(entry)}], 'workerSource', {value:
   ${JSON.stringify(workerClosure(entry))}.map(path => 'modules[' + JSON.stringify(path) + '] = (' + workerFactories[path].toString() + ')();').join('\\n') +
   '\\nmodules[${JSON.stringify(entry)}].${install}(self);\\n})();\\n'});`).join('');
 const pretextLicense = await read('agent/vendor/pretext/LICENSE');
+const freehandNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/freehand.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
+if (!freehandNotice?.includes('MIT License') || !freehandNotice.includes('Copyright (c) 2021 Stephen Ruiz Ltd')) throw new Error('Missing perfect-freehand notice');
 // Each group's factories in dependency order (the bundle's own order), so a script builder plants only its own.
 const retainedGroups = Object.fromEntries(Object.keys(RETAINED_GROUPS).map(group => [group, [...MODULES.keys()].filter(path => retainedGroup(path) === group)]));
 // Pretext's licence rides once, as the string the styled export writes; the Licences sheet shows it.
-const bundleText = await lean('(() => {\nconst modules = {}, artifactFactories = {}' + (workerPaths.size ? ', workerFactories = {}' : '') + ';\n' + [...MODULES.values()].join('\n') + workerSource + '\n' + Object.entries(globals).map(([name, path]) => `globalThis.${name} = Object.freeze(modules[${JSON.stringify(path)}]);`).join('\n') + '\nglobalThis.RapierArtifactLayoutDependencies = Object.freeze({factories:Object.freeze(artifactFactories),groups:' + JSON.stringify(retainedGroups) + ',license:' + JSON.stringify(pretextLicense) + '});\n})();', 'rapier-shared.js');
+const bundleText = await lean('(() => {\nconst modules = {}, artifactFactories = {}' + (workerPaths.size ? ', workerFactories = {}' : '') + ';\n' + [...MODULES.values()].join('\n') + workerSource + '\n' + Object.entries(globals).map(([name, path]) => `globalThis.${name} = Object.freeze(modules[${JSON.stringify(path)}]);`).join('\n') + '\nglobalThis.RapierArtifactLayoutDependencies = Object.freeze({factories:Object.freeze(artifactFactories),groups:' + JSON.stringify(retainedGroups) + ',license:' + JSON.stringify(pretextLicense) + ',inkLicense:' + JSON.stringify(freehandNotice) + '});\n})();', 'rapier-shared.js');
 new vm.Script(bundleText, {filename: 'rapier-agent-bundle.js'});
 
 let html = await read('rapier.html');
@@ -572,8 +574,6 @@ const commercialMarkup = /<!-- RAPIER_COMMERCIAL_BEGIN -->[\s\S]*?<!-- RAPIER_CO
 if ([...ui.matchAll(commercialMarkup)].length !== 1 || ui.split('<!-- RAPIER_COMMERCIAL_').length !== 3) throw new Error('Commercial sheet markers are unbalanced');
 ui = PROFILE === 'full' ? commercialPage(ui, JSON.parse(await read('commercial-checkout.json'))) : ui.replace(commercialMarkup, '');
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-const freehandNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/freehand.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
-if (!freehandNotice?.includes('MIT License') || !freehandNotice.includes('Copyright (c) 2021 Stephen Ruiz Ltd')) throw new Error('Missing perfect-freehand notice');
 const roughNotice = /^\/\*([\s\S]*?)\*\//.exec(await read('draw/rough.mjs'))?.[1].replace(/^ {3}/gm, '').trim();
 if (!roughNotice?.includes('MIT License') || !roughNotice.includes('Copyright (c) 2019 Preet Shihn')) throw new Error('Missing rough.js notice');
 // The Paint engine is a port of libmypaint (ISC) and the factory brushes are Brien Dieterle's (CC0):

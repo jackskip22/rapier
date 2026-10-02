@@ -318,6 +318,19 @@ function markerOffsetBefore(rows, offset) {
   return offset;
 }
 
+// Hidden boundaries are no words of a containing ink span. Counting source without those
+// boundaries retires every nested shell together when the final anchor characters are deleted.
+function markerTextOffsets(markers) {
+  const offsets = new Map();
+  let hidden = 0;
+  for (const marker of markers) {
+    offsets.set(marker.start, marker.start - hidden);
+    hidden += marker.end - marker.start;
+    offsets.set(marker.end, marker.end - hidden);
+  }
+  return offsets;
+}
+
 // What an edit would break of the paired marks it meets, or null. A marker left standing alone that holds bytes of a marker of a pair, from
 // text no row wrote, is a pair severed (an opener cut into is no marker, and then its closer is what stands alone); the pair is
 // named by where it stands in the document. More empty pairs than the document held is a pair written empty, whoever wrote its
@@ -333,14 +346,16 @@ function semanticMarkers(source, kind) {
 }
 
 function markerBroken(before, after, rows, kind) {
-  const was = pairMarkers(before, kind, semanticMarkers(before, kind)).runs;
+  const beforeMarkers = semanticMarkers(before, kind), afterMarkers = semanticMarkers(after, kind);
+  const was = pairMarkers(before, kind, beforeMarkers).runs;
   if (!was.length && !rows.some(row => (kind === 'color' ? hasColorMarker : hasInkMarker)(row.inserted))) return null;
-  const now = pairMarkers(after, kind, semanticMarkers(after, kind));
+  const now = pairMarkers(after, kind, afterMarkers);
+  const boundaries = was.flatMap(run => [{start: run.start, end: run.innerStart, run}, {start: run.innerEnd, end: run.end, run}]).sort((a, b) => a.start - b.start);
   const pairAt = at => {
-    let low = 0, high = was.length;
-    while (low < high) { const mid = (low + high) >> 1; if (was[mid].end <= at) low = mid + 1; else high = mid; }
-    const run = was[low];
-    return run && at >= run.start && (at < run.innerStart || at >= run.innerEnd) ? run : null;
+    let low = 0, high = boundaries.length;
+    while (low < high) { const mid = (low + high) >> 1; if (boundaries[mid].end <= at) low = mid + 1; else high = mid; }
+    const boundary = boundaries[low];
+    return boundary && at >= boundary.start ? boundary.run : null;
   };
   for (const stray of now.strays) {
     for (let at = stray.start; at < stray.end; at++) {
@@ -348,8 +363,11 @@ function markerBroken(before, after, rows, kind) {
       if (pair) return { rule: 'marker_stranded', start: pair.start, end: pair.end };
     }
   }
-  const empty = run => run.innerStart === run.innerEnd;
-  return now.runs.filter(empty).length > was.filter(empty).length ? { rule: 'pair_emptied' } : null;
+  const emptyCount = (runs, markers) => {
+    const offsets = kind === 'ink' ? markerTextOffsets(markers) : null;
+    return runs.filter(run => offsets ? offsets.get(run.innerStart) === offsets.get(run.innerEnd) : run.innerStart === run.innerEnd).length;
+  };
+  return emptyCount(now.runs, afterMarkers) > emptyCount(was, beforeMarkers) ? { rule: 'pair_emptied' } : null;
 }
 
 // A pair an edit emptied goes with its words, so no empty pair is ever written: both markers of each empty pair whose two markers
@@ -357,18 +375,22 @@ function markerBroken(before, after, rows, kind) {
 // its own, from the end backward, so every offset and the inverse still name the original bytes. A pair that was empty
 // before, and one the edit wrote, are not the edit's to clear.
 function markerDeletionSplices(before, after, rows, actor, kind, semantic = null) {
-  const previous = pairMarkers(before, kind, semantic?.before ?? semanticMarkers(before, kind));
+  const markersBefore = semantic?.before ?? semanticMarkers(before, kind);
+  const previous = pairMarkers(before, kind, markersBefore);
+  const beforeOffsets = kind === 'ink' ? markerTextOffsets(markersBefore) : null;
+  const hasWords = (run, offsets) => offsets ? offsets.get(run.innerEnd) > offsets.get(run.innerStart) : run.innerEnd > run.innerStart;
   const opened = new Set(), closed = new Set();
-  for (const run of previous.runs) if (run.innerEnd > run.innerStart) { opened.add(run.start); closed.add(run.innerEnd); }
+  for (const run of previous.runs) if (hasWords(run, beforeOffsets)) { opened.add(run.start); closed.add(run.innerEnd); }
   if (!opened.size) return [];
   const unchanged = (start, end) => {
     const from = markerOffsetBefore(rows, start), last = markerOffsetBefore(rows, end - 1);
     return from >= 0 && last === from + end - 1 - start && before.slice(from, from + end - start) === after.slice(start, end) ? from : -1;
   };
   const markersAfter = semantic?.after ?? semanticMarkers(after, kind);
+  const afterOffsets = kind === 'ink' ? markerTextOffsets(markersAfter) : null;
   const current = (kind === 'ink' ? pairInkSpans(after, markersAfter) : pairMarkers(after, kind, markersAfter)).runs;
   const intact = run => opened.has(unchanged(run.start, run.innerStart)) && closed.has(unchanged(run.innerEnd, run.end));
-  let groups = current.filter(run => run.mark?.id == null && run.innerEnd === run.innerStart && intact(run)).map(run => [run]);
+  let groups = current.filter(run => run.mark?.id == null && !hasWords(run, afterOffsets) && intact(run)).map(run => [run]);
   if (previous.arrows?.length) {
     const byId = new Map();
     for (const run of current) if (run.mark.id != null) {
@@ -376,13 +398,13 @@ function markerDeletionSplices(before, after, rows, actor, kind, semantic = null
       byId.get(run.mark.id).push(run);
     }
     for (const arrow of previous.arrows) {
-      if ([arrow.tail, arrow.head].some(run => run.innerStart === run.innerEnd)) continue;
+      if ([arrow.tail, arrow.head].some(run => !hasWords(run, beforeOffsets))) continue;
       const present = byId.get(arrow.id) || [];
       const originals = present.filter(run => intact(run) && [arrow.tail.start, arrow.head.start].includes(unchanged(run.start, run.innerStart)));
       // A newly introduced collision cannot retire an existing arrow. Only the loss of an original anchor or
       // its last words retires its mate; an intentionally rewritten complete pair remains the author's.
-      if (originals.length === 2 && originals.every(run => run.innerStart < run.innerEnd)) continue;
-      if (present.length === 2 && present[0].mark.kind !== present[1].mark.kind && present.every(run => run.innerStart < run.innerEnd)) continue;
+      if (originals.length === 2 && originals.every(run => hasWords(run, afterOffsets))) continue;
+      if (present.length === 2 && present[0].mark.kind !== present[1].mark.kind && present.every(run => hasWords(run, afterOffsets))) continue;
       // A rendered block edit can rewrite its unchanged comments with the block. Its empty endpoint is
       // still part of the original pair; keep retirement whole while leaving actual collisions for refusal.
       if (present.length <= 2 && new Set(present.map(run => run.mark.kind)).size === present.length) groups.push(present);

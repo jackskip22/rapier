@@ -152,6 +152,10 @@ async function _rapierNotesEditor() {
 			_rapierNotesLeaveNote();
 			state.cameFrom = undefined;
 			_rapierNotesPopup(null); _rapierNotesClose(true);
+			// View continuity is restored while Notes still fences the editor. Give its surviving
+			// input the focus only after that fence is down; otherwise leaving Notes strands it on body.
+			const source = document.getElementById('source-textarea');
+			(source?.getClientRects().length ? source : document.getElementById('editor-blocks'))?.focus({ preventScroll: true });
 			return true;
 		} catch (error) {
 			if (state.returnRefused) { rapier.access.notesReadOnly = true; rapierSetReadOnly(false); }
@@ -1688,7 +1692,7 @@ function _rapierNotesAskOpen(on, from) {
 		closeDialog(overlay); state.askFrom = null;
 		return;
 	}
-	openDialog(overlay, {panel: '.navigator-panel', noreturn: true, noautofocus: true, onEscape: () => _rapierNotesAskOpen(false)});
+	openDialog(overlay, {panel: '.navigator-panel', onEscape: () => _rapierNotesAskOpen(false)});
 	if (panel && arrow && typeof _rapierUiCircleGrowth === 'function') _rapierUiCircleGrowth(panel, true, arrow);
 }
 

@@ -218,7 +218,7 @@ export function scanInkMarkers(source) {
 	return markers;
 }
 
-// The runs: an opener and the next closer with no opener between them. A marker that pairs with nothing is text
+// Ink nests so independent strokes can share the same words. A marker that pairs with nothing is text
 // (it shows nothing and marks nothing) and is listed under strays.
 export function pairInkMarkers(source, markers = null) {
 	return pairMarkers(source, 'ink', markers);
@@ -230,8 +230,8 @@ export function pairInkSpans(source, markers = null) {
 	return pairSpanMarkers(source, 'ink', markers);
 }
 
-// Colour keeps the first opener, as its inline parser does; ink replaces an unclosed opener.
-// Neither kind nests in itself. The shared range shape lets custody owners treat both alike.
+// Colour keeps its first opener; ink pairs each closer with the innermost opener. The shared range
+// shape lets custody owners keep every independent stroke, including strokes on identical words.
 export function pairMarkers(source, kind, markers = null) {
 	const paired = pairSpanMarkers(source, kind, markers);
 	if (kind !== 'ink') return paired;
@@ -261,23 +261,21 @@ export function pairMarkers(source, kind, markers = null) {
 function pairSpanMarkers(source, kind, markers = null) {
 	if (kind !== 'ink' && kind !== 'color') throw new TypeError('Unknown paired marker kind');
 	const color = kind === 'color';
-	const runs = [], strays = [];
-	let open = null;
+	const runs = [], strays = [], stack = [];
 	for (const marker of markers || (color ? scanColorMarkers(source) : scanInkMarkers(source))) {
 		if (color ? marker.hex !== null : !marker.close) {
-			if (open) {
-				strays.push(color ? marker : open);
-				if (color) continue;
-			}
-			open = marker;
+			if (color && stack.length) { strays.push(marker); continue; }
+			stack.push(marker);
 			continue;
 		}
+		const open = stack.pop();
 		if (!open) { strays.push(marker); continue; }
 		runs.push({ start: open.start, end: marker.end, innerStart: open.end, innerEnd: marker.start,
 			...(color ? { hex: open.hex } : { mark: open.mark }) });
-		open = null;
 	}
-	if (open) strays.push(open);
+	strays.push(...stack);
+	runs.sort((a, b) => a.start - b.start);
+	strays.sort((a, b) => a.start - b.start);
 	return { runs, strays };
 }
 

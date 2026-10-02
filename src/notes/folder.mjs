@@ -605,16 +605,13 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		// Full source verification precedes the lease and every destination effect. The
 		// owner stages one verified file at a time and publishes the original sidecar last.
 		const plan = entries?.parts ? await planSnapshotStream(entries) : await planSnapshot(entries), sidecar = plan.files.find(row => row.name === NOTES_INDEX_FILE);
-		let indexBytes = sidecar.bytes ?? await sidecar.read(), renewedState = null;
+		let indexBytes = sidecar.bytes ?? await sidecar.read(), checkpoint = null;
 		const writes = [];
 		for (const row of plan.files) {
 			if (row === sidecar) continue;
 			if (row.name === SYNC_STATE_FILE) {
-				// The exact-restore journal is note/support bytes only (notes/owner.mjs's own
-				// `restoring` write classification has no room for the checkpoint file); a carried
-				// checkpoint is staged and installed as its own ordinary owner transaction right
-				// after, below, never inside the exact-restore journal itself.
-				const bytes = row.bytes ?? await row.read(), state = decodeSyncState(bytes);
+				let bytes = row.bytes ?? await row.read();
+				const state = decodeSyncState(bytes);
 				if (state.vault || state.head) {
 					// A carried checkpoint is not a second writer for this folder's future notes
 					// and publications. The identity renewal below happens once, before the journal
@@ -626,21 +623,21 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					raw.folderDeviceId = crypto.randomUUID().replace(/-/g, '');
 					indexBytes = exactBytes(JSON.stringify(raw));
 					plan.index = parseIndex(decode(indexBytes));
-					renewedState = {rejoin: true, ...(state.vault ? {vault: {...state.vault, credential: null}} : {})};
+					bytes = encodeSyncState({rejoin: true, ...(state.vault ? {vault: {...state.vault, credential: null}} : {})});
 				}
+				// The renewed checkpoint and writer share the exact journal. Ordinary read()
+				// recovery must finish both without the original caller or source credentials.
+				checkpoint = {file: row.name, size: bytes.length, digest: await sha256(bytes), read: () => bytes, createOnly: true};
 				continue;
 			}
 			writes.push({file: row.name, size: row.size ?? row.bytes.length, digest: row.sha256 ?? await sha256(row.bytes), read: row.read ?? (() => row.bytes), createOnly: true});
 		}
+		if (checkpoint) writes.push(checkpoint);
 		return tracked(async () => {
 			const lease = await owner.acquire(scope);
 			try {
 				const snapshot = await lease.transact({kind: 'restore', index: plan.index, exactIndex: indexBytes, writes}, {exactRestore: true});
 				deviceId = snapshot.index.folderDeviceId || '';
-				if (renewedState) {
-					const write = await syncStateWrite(renewedState, null);
-					await lease.transact(({index}) => ({kind: 'sync-restore', index, writes: [write]}), {brief: true});
-				}
 				// The exact publication is the backup's own sidecar: ids and namespaces stay the backup's
 				// bytes, for a later read to admit (docs/notes-restore.md), except a renewed writer above.
 				return {...snapshot, verification: plan.verification};

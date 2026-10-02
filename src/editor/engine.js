@@ -3997,7 +3997,7 @@ function createTurndown() {
 		replacement: (content, node) => {
 			const spec = globalThis.RapierMarkdownSpec;
 			const opener = spec.formatInkOpenFromBody(String(node.getAttribute('data-rapier-ink') || ''));
-			if (!content || !opener || (node.querySelector && node.querySelector('[data-rapier-ink]'))) return content;
+			if (!content || !opener) return content;
 			return opener + content + spec.INK_CLOSE;
 		},
 	});
@@ -10807,8 +10807,6 @@ function _rapierRevealActiveCaret() {
 	if (!sel || !sel.rangeCount) return;
 	const range = sel.getRangeAt(0);
 	if (!_nodeInside(edit, range.startContainer)) return;
-	const caretRect = _rapierPreferredFormatToolbarRect(range, sel) || _rapierCaretClientRect(range);
-	if (!caretRect) return;
 
 	const host = document.getElementById('editor-blocks');
 	if (!host) return;
@@ -10828,8 +10826,19 @@ function _rapierRevealActiveCaret() {
 	const offset = _charOffsetForRangePoint(edit, sel.focusNode, sel.focusOffset);
 	const block = edit.closest('.block-wrapper')?.dataset.blockId || '';
 	const sameCaret = seen?.surface === edit && seen.block === block && seen.offset === offset;
-	host._rapierCaretKeeper = {surface: edit, band, block, offset, input, top: topLimit - hostRect.top, bottom: bottomLimit - hostRect.top};
 	if (sameCaret && !typed && seen.band === band) return;
+	const next = {surface: edit, band, block, offset, input, top: topLimit - hostRect.top, bottom: bottomLimit - hostRect.top};
+	// A projected line wholly inside the safe band proves there is no scroll to make. At an
+	// edge the browser's font rect still owns the exact correction, read once by this frame owner.
+	const projected = range.collapsed && globalThis.RapierImageFlow?.caretBand?.(range.startContainer, range.startOffset);
+	const origin = hostRect.top - host.scrollTop;
+	if (projected && origin + projected.top >= topLimit && origin + projected.bottom <= bottomLimit) {
+		host._rapierCaretKeeper = next;
+		return;
+	}
+	const caretRect = _rapierPreferredFormatToolbarRect(range, sel);
+	if (!caretRect) return;
+	host._rapierCaretKeeper = next;
 	// A keyboard resize must not bring back a caret the person deliberately scrolled past.
 	if (sameCaret && !typed &&
 			(caretRect.bottom <= hostRect.top + seen.top || caretRect.top >= hostRect.top + seen.bottom)) return;
@@ -14815,21 +14824,24 @@ function _rapierRenderedInkProbe(raw) {
 }
 function _rapierInkRuns(root) {
 	{
-		let text = ''; const paint = [];
+		let text = ''; const paint = [], runs = [];
 		const walk = (node, inside) => {
 			if (node.nodeType === 3) { text += node.nodeValue; for (let i = 0; i < node.nodeValue.length; i++) paint.push(inside); return; }
 			if (node.nodeType !== 1) return;
-			const held = inside || (node.tagName === 'SPAN' && node.hasAttribute('data-rapier-ink'));
-			for (const child of node.childNodes) walk(child, held);
+			const marked = node.tagName === 'SPAN' && node.hasAttribute('data-rapier-ink');
+			const run = marked ? {start: text.length, end: text.length, body: node.getAttribute('data-rapier-ink')} : null;
+			if (run) runs.push(run);
+			for (const child of node.childNodes) walk(child, inside || marked);
+			if (run) run.end = text.length;
 		};
 		walk(root, false);
-		return { text, paint };
+		return { text, paint, runs };
 	}
 }
 
 // Ink's exact-source planner (docs/briefs/ink.md §1): the selected words gain one pair, the opener as the pen formatted it
 // and the grammar's closer, and nothing else changes: not the words, not another mark, not the rendered text. null when
-// the words are not found whole, already stand inside an ink pair, or more than one place in the source could be meant.
+// the words are not found whole, would cross an existing pair, or more than one source occurrence could be meant.
 function _rapierPlanExactSourceInk(raw, selectedText, opener, targetStart, targetEnd) {
 	const source = String(raw || ''), spec = globalThis.RapierMarkdownSpec;
 	let selected = String(selectedText || '').replace(/\u2060/g, '\n');
@@ -14846,22 +14858,35 @@ function _rapierPlanExactSourceInk(raw, selectedText, opener, targetStart, targe
 	for (const marker of markers) { if (marker.start < cursor) continue; take(cursor, marker.start); cursor = marker.end; }
 	take(cursor, source.length);
 	map.push(source.length);
-	const runs = spec.pairInkSpans(source).runs;
+	const runs = [...spec.pairInkSpans(source).runs, ...spec.pairColorMarkers(source).runs];
 	const before = _rapierRenderedInkProbe(source);
-	if (!before) return null;
+	const semantics = _rapierOtherSemanticsFingerprint(source, 'ink');
+	if (!before || before.text.slice(targetStart, targetEnd) !== selected || semantics == null) return null;
+	const fingerprint = rows => JSON.stringify(rows.map(run => [run.start, run.end, run.body]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].localeCompare(b[2])));
+	const wanted = fingerprint([...before.runs, {start: targetStart, end: targetEnd, body: spec.inkOpenBody(opener)}]);
+	const visibleAt = at => {
+		let low = 0, high = map.length;
+		while (low < high) { const mid = (low + high) >> 1; if (map[mid] < at) low = mid + 1; else high = mid; }
+		return low;
+	};
 	const valid = [];
 	for (const index of _rapierAllIndicesOf(stripped, selected)) {
-		const sourceStart = map[index], sourceEnd = map[index + selected.length];
-		if (runs.some(run => sourceStart < run.innerEnd && sourceEnd > run.innerStart)) continue;
+		const end = index + selected.length;
+		let sourceStart = map[index], sourceEnd = map[end - 1] + 1, crossing = false;
+		for (const run of runs) {
+			const a = visibleAt(run.innerStart), b = visibleAt(run.innerEnd);
+			if (end <= a || index >= b || index >= a && end <= b) continue;
+			if (index <= a && end >= b) { sourceStart = Math.min(sourceStart, run.start); sourceEnd = Math.max(sourceEnd, run.end); }
+			else { crossing = true; break; }
+		}
+		if (crossing) continue;
 		const next = source.slice(0, sourceStart) + opener + source.slice(sourceStart, sourceEnd) + spec.INK_CLOSE + source.slice(sourceEnd);
 		const after = _rapierRenderedInkProbe(next);
-		if (!after || after.text !== before.text) continue;
-		let ok = true;
-		for (let i = 0; i < after.paint.length && ok; i++) {
-			const want = (i >= targetStart && i < targetEnd) || before.paint[i];
-			if (after.paint[i] !== want) ok = false;
-		}
-		if (ok) valid.push(next);
+		// Coverage alone cannot distinguish a second stroke on one of two already marked words.
+		// Prove every old stroke's identity and range, plus exactly the requested new one.
+		if (!after || after.text !== before.text || fingerprint(after.runs) !== wanted ||
+			_rapierOtherSemanticsFingerprint(next, 'ink') !== semantics) continue;
+		valid.push(next);
 	}
 	return valid.length === 1 ? valid[0] : null;
 }
@@ -14918,14 +14943,43 @@ function _rapierApplyInkArrow(tailRange, headRange, mark) {
 
 // The eraser gathers every touched word before changing source. All marker splices, including an arrow's remote
 // endpoint, enter the canonical transaction together; the words are never a removed byte and Undo is one step.
-async function _rapierRemoveInk(ranges) {
+async function _rapierRemoveInk(ranges, marks = null) {
 	if (_rapierUserMutationBlocked()) return false;
 	const spec = globalThis.RapierMarkdownSpec;
 	if (!spec) return false;
+	const identities = [];
+	if (marks != null) {
+		if (!Array.isArray(marks) || !marks.length) return false;
+		for (const mark of new Set(marks)) {
+			const wrapper = _blockWrapperOf(mark), live = wrapper && _liveBlockEl(wrapper);
+			if (!live || !live.contains(mark)) return false;
+			const spans = Array.from(live.querySelectorAll('span[data-rapier-ink]'));
+			const index = spans.indexOf(mark);
+			if (index < 0) return false;
+			identities.push({wrapper, index, body: mark.getAttribute('data-rapier-ink')});
+		}
+	}
 	const capture = _rapierInkSourceRanges(ranges);
 	if (!capture) return false;
 	const { source, spans } = capture, paired = spec.pairInkMarkers(source, _rapierInkSourceMarkers(source));
-	const touched = new Set(paired.runs.filter(run => capture.ranges.some(hit => hit.start < run.innerEnd && hit.end > run.innerStart)).map(run => run.start));
+	const requested = marks == null ? null : new Set();
+	for (const wrapper of new Set(identities.map(identity => identity.wrapper))) {
+		const block = _rapierBoundBlock(wrapper), live = _liveBlockEl(wrapper), span = block && spans.get(Number(block.id));
+		if (!span || !live || source.slice(span.start, span.end) !== block.raw) return false;
+		const raw = block.raw, local = spec.pairInkSpans(raw, _rapierInkSourceMarkers(raw)).runs;
+		const bodies = local.map(run => spec.inkOpenBody(raw.slice(run.start, run.innerStart)));
+		const projected = _rapierRenderedInkProbe(raw)?.runs.map(run => run.body);
+		const shown = Array.from(live.querySelectorAll('span[data-rapier-ink]'), mark => mark.getAttribute('data-rapier-ink'));
+		// Source and DOM share preorder, even for identical nested strokes. Refuse a stale or
+		// unrendered pair rather than guessing from colour/path bytes shared by several marks.
+		if (JSON.stringify(bodies) !== JSON.stringify(projected) || JSON.stringify(bodies) !== JSON.stringify(shown)) return false;
+		for (const identity of identities.filter(identity => identity.wrapper === wrapper)) {
+			if (bodies[identity.index] !== identity.body) return false;
+			requested.add(span.start + local[identity.index].start);
+		}
+	}
+	const touched = new Set(paired.runs.filter(run => requested ? requested.has(run.start)
+		: capture.ranges.some(hit => hit.start < run.innerEnd && hit.end > run.innerStart)).map(run => run.start));
 	for (const arrow of paired.arrows) if (touched.has(arrow.tail.start) || touched.has(arrow.head.start)) {
 		touched.add(arrow.tail.start); touched.add(arrow.head.start);
 	}
@@ -14972,7 +15026,20 @@ function _rapierPlanExactSourceInkRemoval(raw, jobs, hits) {
 	if (!spec || !before || !semantics) return null;
 	const map = _rapierCutSourceMap(source, before.text, semantics.formulas) || _rapierCutSourceMap(source, before.text, semantics.formulas, true);
 	if (!map) return null;
-	const paint = _rapierInkRuns(before.root).paint, wanted = paint.slice(), kept = [], splices = [];
+	const rendered = _rapierInkRuns(before.root), paint = rendered.paint, kept = [], splices = [];
+	const indexAt = (positions, at, after) => {
+		let low = 0, high = positions.length;
+		while (low < high) { const mid = (low + high) >> 1; if (after ? positions[mid] <= at : positions[mid] < at) low = mid + 1; else high = mid; }
+		return low;
+	};
+	const sourceRuns = spec.pairInkSpans(source, _rapierInkSourceMarkers(source)).runs.map(run => ({...run,
+		from: indexAt(map.from, run.innerStart, false), to: indexAt(map.to, run.innerEnd, true),
+		body: spec.inkOpenBody(source.slice(run.start, run.innerStart)),
+	}));
+	const fingerprint = runs => JSON.stringify(runs.map(run => [run.start, run.end, run.body]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].localeCompare(b[2])));
+	if (fingerprint(sourceRuns.map(run => ({start: run.from, end: run.to, body: run.body}))) !== fingerprint(rendered.runs)) return null;
+	const selected = new Set(jobs.map(job => job.start));
+	const wanted = sourceRuns.filter(run => !selected.has(run.start)).map(run => ({start: run.from, end: run.to, body: run.body}));
 	const erased = new Array(before.text.length).fill(false);
 	for (const word of before.text.matchAll(/\S+/g)) {
 		const end = word.index + word[0].length;
@@ -14988,7 +15055,7 @@ function _rapierPlanExactSourceInkRemoval(raw, jobs, hits) {
 		for (let i = 0; i <= before.text.length; i++) {
 			const inside = i < before.text.length && map.from[i] >= job.innerStart && map.to[i] <= job.innerEnd;
 			const keep = inside && !job.whole && !erased[i];
-			if (inside && !keep) { wanted[i] = false; if (paint[i] && /\S/.test(before.text[i])) changed = true; }
+			if (inside && !keep && paint[i] && /\S/.test(before.text[i])) changed = true;
 			if (keep && start < 0) start = i;
 			else if (!keep && start >= 0) { kept.push({ start, end: i, opener }); start = -1; }
 		}
@@ -14996,6 +15063,7 @@ function _rapierPlanExactSourceInkRemoval(raw, jobs, hits) {
 	if (!changed) return null;
 	const boundaries = new Set();
 	for (const runs of Object.values(semantics.runs)) for (const run of runs) { boundaries.add(run.start); boundaries.add(run.end); }
+	for (const run of wanted) { boundaries.add(run.start); boundaries.add(run.end); }
 	for (const run of kept) {
 		const cuts = [run.start, ...Array.from(boundaries).filter(at => at > run.start && at < run.end).sort((a, b) => a - b), run.end];
 		for (let i = 1; i < cuts.length; i++) {
@@ -15003,6 +15071,7 @@ function _rapierPlanExactSourceInkRemoval(raw, jobs, hits) {
 			while (start < end && /\s/.test(before.text[start])) start++;
 			while (end > start && /\s/.test(before.text[end - 1])) end--;
 			if (start >= end) continue;
+			wanted.push({start, end, body: spec.inkOpenBody(run.opener)});
 			splices.push({ pos: map.from[start], removed: '', inserted: run.opener },
 				{ pos: map.to[end - 1], removed: '', inserted: spec.INK_CLOSE });
 		}
@@ -15013,8 +15082,7 @@ function _rapierPlanExactSourceInkRemoval(raw, jobs, hits) {
 	if (next == null || next === source) return null;
 	const after = _rapierRenderedMarkProbe(next, 'bold');
 	if (!after || after.text !== before.text || JSON.stringify(_rapierCutSemantics(next)) !== JSON.stringify(semantics)) return null;
-	const afterPaint = _rapierInkRuns(after.root).paint;
-	if (afterPaint.length !== wanted.length || afterPaint.some((value, index) => /\S/.test(before.text[index]) && value !== wanted[index])) return null;
+	if (fingerprint(_rapierInkRuns(after.root).runs) !== fingerprint(wanted)) return null;
 	return { raw: next, splices };
 }
 
@@ -20892,7 +20960,7 @@ async function _rapierPlatformCloseRequested() {
 	if (!platform || !platform.host.approveClose || _rapierLifecycleRuntime.closePromptActive) return;
 	_rapierLifecycleRuntime.closePromptActive = true;
 	try {
-
+		await _rapierEndOpenComposition();
 		const state = await _rapierWithSettledExternalDocument(() => {
 			if (_rapierIsDirty()) return { outcome: 'dirty' };
 			if (!_rapierGuestQuiescent()) return { outcome: 'not_quiescent' };
@@ -29099,7 +29167,7 @@ function _hasRealInlineFormatting(htmlString) {
 	const tmp = document.createElement('div');
 	tmp.innerHTML = htmlString;
 	return !!tmp.querySelector(
-		'strong,b,em,i,u,s,del,ins,mark,sup,sub,a[href],code,img');
+		'strong,b,em,i,u,s,del,ins,mark,sup,sub,a[href],code,img,span[data-md-color]');
 }
 
 // A list from Word arrives as paragraphs (spec/html-reading.mjs, wordListLevel): each becomes an item of one list, at
@@ -29179,6 +29247,8 @@ function _stripBrowserPasteWrapper(htmlString) {
 	while (tmp.childNodes.length === 1 && tmp.firstChild.nodeType === Node.ELEMENT_NODE && guard++ < 20) {
 		const only = tmp.firstChild;
 		if (!['P', 'DIV', 'SPAN', 'FONT'].includes(only.tagName)) break;
+		// Normalization's colour span carries document data, even when it holds the entire paste.
+		if (only.hasAttribute('data-md-color')) break;
 		const inner = only.innerHTML;
 		tmp.innerHTML = inner;
 	}
@@ -33300,7 +33370,9 @@ function _bindScrollFab(fab, host, virtual) {
 		// The track's floor is the highest bottom-pinned bar that is up -- the docked format strip, the
 		// picture tools, the page-break tools -- so the circle never stands over a control a finger is
 		// about to reach for (bottom-surfaces-live, live-wrap at 390 px: the circle over the last tool).
-		let floor = rect.bottom;
+		// On the app's edge-to-edge page the host's rect runs under the system's navigation bar; the circle's
+		// floor stops above it (the founder, 2 October: the circle at the end of a document behind the buttons).
+		let floor = rect.bottom - (h === document.documentElement ? 0 : _rapierNativeBottomInset());
 		for (const bar of [dockedStrip && dockedStrip.classList.contains('visible') ? dockedStrip : null, document.querySelector('.rapier-image-tools:not([hidden])'), document.querySelector('.rapier-image-wrap-row:not([hidden])')]) {
 			if (bar && bar.getClientRects().length) floor = Math.min(floor, bar.getBoundingClientRect().top);
 		}
@@ -35312,7 +35384,7 @@ function _rapierPublishBootReady(context) {
 	if (_rapierFileLaunchRuntime.pending) _rapierConsumeFileLaunch(null);
 	// The ink layer draws every mark from its words' boxes from now on (editor/ink-layer.mjs; docs/briefs/ink.md).
 	try { _rapierInkInstall(globalThis.RapierMarkdownSpec, globalThis.RapierInk, globalThis.RapierInkDraw, _rapierDeriveDarkColor); } catch (_) {}
-	try { _rapierInkPenInstall({ spec: globalThis.RapierMarkdownSpec, ink: globalThis.RapierInk, draw: globalThis.RapierInkDraw, apply: _rapierApplyInk, applyArrow: _rapierApplyInkArrow, erase: _rapierRemoveInk, liveOf: _liveBlockEl, dark: _rapierDeriveDarkColor, say: text => showToast(text, 'info'), stylus: () => RapierPreferences.read('inkStylus') !== 'off', setStylus: on => RapierPreferences.write('inkStylus', on ? 'on' : 'off') }); } catch (_) {}
+	try { _rapierInkPenInstall({ colour: () => RapierPreferences.read('inkColour'), setColour: hex => RapierPreferences.write('inkColour', hex), allowed: () => !_rapierUserMutationBlocked(), spec: globalThis.RapierMarkdownSpec, ink: globalThis.RapierInk, draw: globalThis.RapierInkDraw, apply: _rapierApplyInk, applyArrow: _rapierApplyInkArrow, erase: _rapierRemoveInk, liveOf: _liveBlockEl, dark: _rapierDeriveDarkColor, say: text => showToast(text, 'info'), stylus: () => RapierPreferences.read('inkStylus') !== 'off', setStylus: on => RapierPreferences.write('inkStylus', on ? 'on' : 'off') }); } catch (_) {}
 	// rapier.website/privacy and /commercial are doors: the page opens that sheet (a boot from the address, http only). The
 	// commercial sheet is in the full page alone and has no other way in; a copy without it opens nothing.
 	try {
@@ -37630,10 +37702,15 @@ function _rapierResolvePastePayload(payload) {
 	const value = payload || {};
 	const finish = content => _rapierPrepareInkPasteContent(content, value);
 	const decision = _rapierPasteDecision(value, () => _rapierPasteHtmlCarriesOnlyWords(value.html));
-	// A delimited grid (TSV, CSV) in the plain text is a table (the tables lane), asked before the plain words,
-	// through every door: the large paste asks the same question below.
+	// Explicit Markdown blocks keep their syntax. Otherwise a delimited grid (TSV, CSV) is a table,
+	// through every door; the async converter delegates its plain payloads here too.
 	const grid = () => {
-		const cells = String(value.plain || '').trim() ? _rapierTableFromDelimited(value.plain) : null;
+		const plain = String(value.plain || '');
+		// A leading tab can also be an empty spreadsheet cell; the grid reader owns that admission.
+		const literalKinds = plain.includes('\t') ? ['prose', 'blank', 'indented-code'] : ['prose', 'blank'];
+		if (!/[\t,]/.test(plain) || plain.split(/\r\n?|\n/).some(line =>
+			!literalKinds.includes(_rapierPlainPasteLineKind(line)))) return null;
+		const cells = _rapierTableFromDelimited(plain);
 		return cells ? { kind: 'markdown', markdown: cells, plainText: false, html: '' } : null;
 	};
 	if (decision !== 'html') return finish(decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null);
@@ -37742,13 +37819,7 @@ async function _rapierResolveLargePastePayload(payload, job) {
 	const value = payload || {};
 	const finish = content => _rapierPrepareInkPasteContent(content, value);
 	const decision = _rapierPasteDecision(value, () => _rapierPasteHtmlCarriesOnlyWords(value.html));
-	// The delimited grid (TSV, CSV) is asked before the plain words here as at the ordinary door: the editor's
-	// every paste comes through this one.
-	const grid = () => {
-		const cells = String(value.plain || '').trim() ? _rapierTableFromDelimited(value.plain) : null;
-		return cells ? { kind: 'markdown', markdown: cells, plainText: false, html: '' } : null;
-	};
-	if (decision !== 'html') return finish(decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null);
+	if (decision !== 'html') return _rapierResolvePastePayload({...value, html: ''});
 	const markdown = [];
 	let conversionError = null;
 	for (const chunk of _rapierChunkPasteHtml(value.html)) {
@@ -37765,7 +37836,7 @@ async function _rapierResolveLargePastePayload(payload, job) {
 	}
 	if (!conversionError && markdown.length) return finish(_rapierPasteContent('html', value, markdown.join('\n\n')));
 	if (conversionError && !String(value.plain || '').trim()) throw conversionError;
-	return finish(grid() || (String(value.plain || '').trim() ? _rapierPasteContent('plain', value) : null));
+	return _rapierResolvePastePayload({...value, html: ''});
 }
 
 async function _rapierResolveLargeFlatPastePayload(payload, job) {
@@ -41370,8 +41441,21 @@ function _rapierLeaveAsk() {
 // One law for leaving (law 56; LEAVE, and the close box's CLOSE since Lane K's decision 1): the document is
 // kept first -- the departure's quick copy, or its journal write where a document is too large for that
 // copy -- and only then may Rapier go. What could not be kept is said, and Rapier stays.
+// A keyboard's composition left open blocks the capture: the phone hides the keyboard on the first Back and
+// ends no composition, so LEAVE answered "finish the current edit" for ever (the founder's phone, 2 October).
+// The departure ends the edit itself -- the composed words are the person's, kept first -- before it takes
+// the stamp it will leave on, since ending the edit is itself a change of the document.
+async function _rapierEndOpenComposition() {
+	if (!(rapier.composition.block || rapier.composition.source)) return;
+	const active = document.activeElement;
+	if (active && active !== document.body && typeof active.blur === 'function') { try { active.blur(); } catch (_) {} }
+	_leaveAllEditingBlocks();
+	for (let waited = 0; waited < 1500 && _rapierPersistenceCaptureBlocked(); waited += 50) await new Promise(resolve => setTimeout(resolve, 50));
+}
+
 async function _rapierKeptForDeparture(verb) {
 	clearTimeout(rapier.autosave.debounceTimer);
+	await _rapierEndOpenComposition();
 	_writeRestoreCursor();
 	const departure = _rapierDepartureFlush();
 	// A read-only tab keeps what it made when its lease-loss write landed (survey-platforms D1); until then, or if
@@ -41390,7 +41474,9 @@ async function _rapierKeptForDeparture(verb) {
 // (MainActivity.kt approveClose); the web goes back past the page's own entries
 // (shell/platform.js _rapierBackEntriesLeave).
 async function _rapierLeave() {
-	const platform = window.RapierPlatform, guard = _rapierMutationStamp();
+	const platform = window.RapierPlatform;
+	await _rapierEndOpenComposition();
+	const guard = _rapierMutationStamp();
 	if (!await _rapierKeptForDeparture('leave')) return;
 	// Like the close box: the keep may have waited on disk while typing, a load or an agent
 	// changed the document. Check and leave in one settled turn, never on an older receipt.
@@ -49570,4 +49656,3 @@ Object.defineProperty(window, 'Rapier', {
 	value: _rapierShellPort,
 	enumerable: true,
 });
-

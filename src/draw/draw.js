@@ -1040,7 +1040,7 @@ function _rapierDrawDialButton(act) {
 function _rapierDrawRenderHistory() {
 	const state = _rapierDrawState, [undo, redo] = state.surface?.querySelectorAll('.rapier-draw-head .rapier-dial') || [], layer = state.paintLayer;
 	if (!undo || !redo) return;
-	_rapierDialSay(undo, 'undo change', state.finishing || !(state.undoStack.length || layer?.pendingOverflow || layer?.pendingCommit || layer?.surface?.wetState));
+	_rapierDialSay(undo, 'undo change', state.finishing || !(state.undoStack.length || layer?.pendingOverflow || layer?.pendingCommit || layer?.previousFlip?.pendingCommit || layer?.surface?.wetState));
 	_rapierDialSay(redo, 'redo change', state.finishing || !state.redoStack.length);
 }
 // False when there was nothing to take back or bring back: the head's arrow presses in rather than
@@ -1247,6 +1247,7 @@ function _rapierDrawReplayNibMarkup(point, colour, width, paper) {
 // stage, so the ring separates the nib from whatever it is standing on, white paper or photograph.
 function _rapierDrawReplayPaper() {
 	if (_rapierDrawState.paper) return '#ffffff';
+	if (_rapierDrawState.recipe?.paper === 'black') return '#000000';
 	const bg = getComputedStyle(document.body).getPropertyValue('--color-bg').trim();
 	return /^#[0-9a-f]{3,8}$/i.test(bg) ? bg : '#000000';
 }
@@ -3192,7 +3193,12 @@ const RAPIER_DRAW_RECENT_KEY = 'rapier:draw.recentinks', RAPIER_DRAW_RECENT_MAX 
 // dropper ever produce. Checked here rather than borrowed from the core's own ink admission, which
 // also accepts the named ids -- and a named ink is already on the row, so remembering one would
 // spend a slot on a colour that was never lost.
-const _rapierDrawHexInk = value => /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(value || ''));
+const _rapierDrawHexInk = value => /^#[0-9a-f]{6}$/i.test(String(value || ''));
+function _rapierDrawReadHex(value) {
+	const digits = String(value || '').trim().replace(/^#/, '');
+	if (!/^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(digits)) return null;
+	return '#' + (digits.length === 3 ? [...digits].map(c => c + c).join('') : digits).toLowerCase();
+}
 function _rapierDrawRecentInks() {
 	const state = _rapierDrawState;
 	if (state.recentInks) return state.recentInks;
@@ -3207,7 +3213,8 @@ function _rapierDrawRecentInks() {
 // id, so they are excluded here by the same rule rather than by format alone.
 const RAPIER_DRAW_PERMANENT_HEX = new Set(['#000000', '#ffffff']);
 function _rapierDrawRememberInk(value) {
-	if (!_rapierDrawHexInk(value) || RAPIER_DRAW_PERMANENT_HEX.has(String(value).toLowerCase())) return;
+	value = _rapierDrawReadHex(value);
+	if (!value || RAPIER_DRAW_PERMANENT_HEX.has(value)) return;
 	const rows = _rapierDrawRecentInks().filter(row => row.toLowerCase() !== String(value).toLowerCase());
 	rows.unshift(value);
 	rows.length = Math.min(rows.length, RAPIER_DRAW_RECENT_MAX);
@@ -3221,10 +3228,14 @@ function _rapierDrawPalette(ink, scope) {
 	// colour is chosen; every other tool's first swatch after black and white is the paper's ink.
 	const accent = scope === 'next' && _rapierDrawTool() === 'paint' ? _rapierDrawAccentInk() : null;
 	const words = [['#000000', 'Black'], ['#ffffff', 'White'], accent ? [accent, 'Accent'] : [scope === 'border' ? '#121212' : '', 'Default'], ...RAPIER_DRAW_INK_ORDER.map(id => [id, RAPIER_DRAW_INK_LABEL[id]])];
-	return '<span class="rapier-draw-palette" data-draw-palette="' + scope + '">' +
+	const hex = _rapierDrawShapeInk({ ink });
+	return '<span class="rapier-draw-colour-editor" data-draw-colour-scope="' + scope + '">' +
+		'<label class="rapier-draw-colour-custom" title="Choose any colour"><input type="color" aria-label="Choose any colour" value="' + hex + '" data-draw-colour="' + scope + '"></label>' +
+		'<input class="rapier-draw-colour-hex" type="text" inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="7" aria-label="Hex colour" value="' + hex.toUpperCase() + '" data-draw-hex="' + scope + '">' +
+		'<button type="button" class="rapier-draw-swatch rapier-draw-colour-copy" data-draw-colour-copy="' + scope + '" aria-label="Copy hex colour"><span class="rapier-draw-dropper-glyph">' + RAPIER_DRAW_ICONS.copy + '</span><span class="rapier-draw-dropper-glyph rapier-draw-dropper-glyph--done">' + RAPIER_DRAW_ICONS.check + '</span></button>' +
+		'<button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-draw-act="dropper" data-draw-colour-scope="' + scope + '" aria-label="Pick a colour off the drawing" data-tip="pick">' + RAPIER_DRAW_ICONS.dropper + '</button></span>' +
+		'<span class="rapier-draw-palette" data-draw-palette="' + scope + '">' +
 		(scope === 'border' ? '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="" data-draw-colour-scope="border" aria-label="None" data-tip="none" aria-pressed="' + !ink + '">' + RAPIER_DRAW_ICONS.none + '</button>' : '') +
-		'<label class="rapier-draw-colour-custom" title="Choose any colour"><input type="color" aria-label="Choose any colour" value="' + _rapierDrawShapeInk({ ink }) + '" data-draw-colour="' + scope + '"></label>' +
-		'<button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-draw-act="dropper" data-draw-colour-scope="' + scope + '" aria-label="Pick a colour off the drawing" data-tip="pick">' + RAPIER_DRAW_ICONS.dropper + '</button>' +
 		words.map(([id, label]) => '<button type="button" class="rapier-draw-swatch" data-draw-colour-value="' + id + '" data-draw-colour-scope="' + scope + '" aria-label="' + label + '" data-tip="' + label.toLowerCase() + '" aria-pressed="' + ((ink || '').toLowerCase() === id.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: id })) + '"></span></button>').join('') +
 		_rapierDrawRecentInks().map(value => '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--recent" data-draw-colour-value="' + _rapierDrawEscapeAttr(value) + '" data-draw-colour-scope="' + scope + '" aria-label="Recent colour ' + _rapierDrawEscapeAttr(value) + '" data-tip="recent" aria-pressed="' + ((ink || '').toLowerCase() === value.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(value) + '"></span></button>').join('') + '</span>';
 }
@@ -3249,33 +3260,41 @@ async function _rapierDrawOpenDropper(scope) {
 	// outright, and any live gesture is cancelled first -- sampling is read-only, never a paint stroke.
 	if (!state.open || state.finishing || !surface || !svg || state.dropper) return;
 	_rapierDrawCancelGesture();
+	surface.focus({ preventScroll: true });
 	// `drawing`: this opening's own session token, so a decode that outlives a close/reopen can tell
 	// (state.session is reused by the NEXT drawing the moment this one closes).
 	const drawing = state.session, stage = surface.querySelector('.rapier-draw-stage') || svg.parentElement || surface;
-	const row = surface.querySelector('.rapier-draw-colours'), wasOpen = state.colourOpen;
+	const row = surface.querySelector('.rapier-draw-colours'), wasOpen = state.colourOpen, previousInk = state.ink, previousChosen = state.inkChosen;
 	let sheet, pad = null, move = null, picked = '', pointer = null;
 	const close = keep => {
 		if (state.dropper !== session) return;
 		state.dropper = null;
+		surface.classList.remove('rapier-draw-sampling');
 		pad?.remove();
-		if (move) for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) svg.removeEventListener(type, move);
+		if (move) for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) svg.removeEventListener(type, move);
 		if (pointer != null) { try { svg.releasePointerCapture(pointer); } catch (_) {} pointer = null; }
 		if (!state.open || state.session !== drawing) return;
-		if (keep && picked) { _rapierDrawSetColour(scope, picked); _rapierDrawRememberInk(picked); _rapierDrawUpdateInkBtn(); _rapierDrawUpdateMenu(); }
+		surface.focus({ preventScroll: true });
 		state.colourOpen = wasOpen;
-		if (row) { row.hidden = !wasOpen; if (wasOpen) row.innerHTML = _rapierDrawPalette(state.ink, 'next'); }
+		if (keep && picked) _rapierDrawChooseColour(scope, picked);
+		else {
+			if (scope === 'next') { state.ink = previousInk; state.inkChosen = previousChosen; }
+			_rapierDrawUpdateInkBtn(); _rapierPaintUpdateStrip(); _rapierDrawUpdateMenu();
+		}
 	};
 	// Sampling owns the canvas from this reservation, not only once the image has decoded: a late
 	// decode of a closed sampler, or one from a drawing that has since closed, must not mount a pad
 	// or move colours in whatever is open now.
 	const session = { close };
 	state.dropper = session;
+	surface.classList.add('rapier-draw-sampling');
 	if (row) row.hidden = true;
 	try {
 		// Whatever is still wet or over budget belongs in the sample too (ZA3 F3): the founder drew
 		// the dropper as reading exactly what the canvas shows, not the last committed picture.
 		_rapierPaintSettleOverflow();
-		const text = _rapierDrawBuildSVG(state.recipe, _rapierDrawMeasuredView, true);
+		_rapierPaintFlushRevision();
+		const text = _rapierPaintShowable(_rapierDrawBuildSVG(state.recipe, _rapierDrawMeasuredView, true));
 		const image = new Image();
 		image.src = 'data:image/svg+xml;base64,' + RapierBundleIO.toBase64(new TextEncoder().encode(text));
 		await image.decode();
@@ -3307,17 +3326,18 @@ async function _rapierDrawOpenDropper(scope) {
 	// hex code of the colour they're sampling ... so rapier can be used as a hex code finder tool also"):
 	// sampled, the bar's main word is the colour as #RRGGBB beside a chip of it, and that word is the one
 	// tap that copies it (_rapierDrawCopyHex); the bar itself says the copy (its glyph turns to the editor's
-	// check) or the refusal. No panel of its own; Done and Cancel stay as they were.
-	pad.innerHTML = '<span class="rapier-draw-dropper-swatch" aria-hidden="true"></span>' +
+		// check) or the refusal. Confirmation names its effect on the active colour.
+	pad.innerHTML = '<span class="rapier-draw-dropper-swatch" aria-hidden="true" hidden></span>' +
 		'<div class="rapier-draw-dropper-bar">' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-dropper-hex" data-draw-dropper="copy" hidden><span class="rapier-draw-dropper-chip" aria-hidden="true"></span><span class="rapier-draw-dropper-code"></span>' +
 		'<span class="rapier-draw-dropper-glyph">' + RAPIER_DRAW_ICONS.copy + '</span><span class="rapier-draw-dropper-glyph rapier-draw-dropper-glyph--done">' + RAPIER_DRAW_ICONS.check + '</span></button>' +
-		'<span class="rapier-draw-dropper-say">Drag on the drawing</span>' +
-		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done" data-draw-dropper="done">Done</button>' +
-		'<button type="button" class="rapier-draw-btn rapier-draw-btn--stowed" data-draw-dropper="cancel">Cancel</button></div>';
+		'<span class="rapier-draw-dropper-say" role="status">Touch a colour</span>' +
+		'<button type="button" class="rapier-draw-btn" data-draw-dropper="cancel">Cancel</button>' +
+		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done" data-draw-dropper="done" disabled>Use colour</button></div>';
 	stage.appendChild(pad);
 	const swatch = pad.querySelector('.rapier-draw-dropper-swatch'), say = pad.querySelector('.rapier-draw-dropper-say');
 	const copy = pad.querySelector('.rapier-draw-dropper-hex'), chip = pad.querySelector('.rapier-draw-dropper-chip'), code = pad.querySelector('.rapier-draw-dropper-code');
+	const use = pad.querySelector('[data-draw-dropper="done"]');
 	const sample = (clientX, clientY) => {
 		const { rect, dpr, paper, data } = sheet, now = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
 		// ZA3 F3: the stage moved (a resize, an orientation change, a zoom) since the sheet was
@@ -3328,20 +3348,20 @@ async function _rapierDrawOpenDropper(scope) {
 		const x = Math.round((clientX - rect.left) * dpr), y = Math.round((clientY - rect.top) * dpr);
 		if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
 		const i = (y * data.width + x) * 4, a = data.data[i + 3] / 255;
-		// The paper is not a colour (the lead's ruling): a fully transparent pixel is bare paper or the empty
-		// inside of a shape, nothing a person drew, so it takes nothing and the ink stays what it was -- never
-		// the paper's white, which would make the next stroke invisible on it. Any ink at all still counts.
-		if (a === 0) return;
 		// The colour on the paper, not full-strength pigment hidden in a partly transparent pixel.
 		const hex = '#' + [0, 1, 2].map(k => Math.round(data.data[i + k] * a + paper[k] * (1 - a)).toString(16).padStart(2, '0')).join('');
 		picked = hex;
+		// Next ink is a reversible tool preference. Selection changes wait for confirmation so a
+		// drag over many pixels becomes exactly one artwork edit, with one Undo step.
+		if (scope === 'next') _rapierDrawSetColour(scope, picked, true);
+		use.disabled = false;
 		swatch.style.background = hex;
 		const word = hex.toUpperCase();
 		say.hidden = true; copy.hidden = false; delete copy.dataset.copied; chip.style.background = hex; code.textContent = word;
 		copy.setAttribute('aria-label', 'Copy ' + word);
 		// Above the touch, never under it: a finger hides what it is pointing at.
-		swatch.style.left = (clientX - rect.left) + 'px';
-		swatch.style.top = Math.max(0, clientY - rect.top - RAPIER_DRAW_DROPPER_LIFT) + 'px';
+		swatch.style.left = _rapierDrawClamp(clientX - rect.left, 24, rect.width - 24) + 'px';
+		swatch.style.top = Math.max(24, clientY - rect.top - RAPIER_DRAW_DROPPER_LIFT) + 'px';
 		swatch.hidden = false;
 	};
 	// ZA3 F3: one pointer, captured, across down/move/up/cancel -- the base's plain listeners left the
@@ -3353,13 +3373,13 @@ async function _rapierDrawOpenDropper(scope) {
 			pointer = evt.pointerId; try { svg.setPointerCapture(pointer); } catch (_) {}
 		} else if (evt.pointerId !== pointer) return;
 		evt.preventDefault(); evt.stopPropagation();
-		if (evt.type !== 'pointercancel') sample(evt.clientX, evt.clientY);
-		if ((evt.type === 'pointerup' || evt.type === 'pointercancel') && pointer != null) {
+		if (evt.type !== 'pointercancel' && evt.type !== 'lostpointercapture') sample(evt.clientX, evt.clientY);
+		if ((evt.type === 'pointerup' || evt.type === 'pointercancel' || evt.type === 'lostpointercapture') && pointer != null) {
 			const id = pointer; pointer = null; try { svg.releasePointerCapture(id); } catch (_) {}
 		}
 	};
-	for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) svg.addEventListener(type, move);
-	pad.addEventListener('click', evt => {
+	for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) svg.addEventListener(type, move);
+	_rapierDrawBindTap(pad, evt => {
 		const act = evt.target.closest('[data-draw-dropper]')?.dataset.drawDropper;
 		if (!act) return;
 		evt.preventDefault(); evt.stopPropagation();
@@ -4452,6 +4472,8 @@ function _rapierDrawBindTap(el, handler) {
 }
 function _rapierDrawUpdateInkBtn(palette = true) {
 	const state = _rapierDrawState, btn = state.surface?.querySelector('[data-draw-act="ink"]');
+	// The palette reads the theme; finish those reads before replacing any button or panel nodes.
+	const colours = palette && state.colourOpen ? _rapierDrawPalette(state.ink, 'next') : '';
 	if (btn) {
 		const was = btn.querySelector('.rapier-draw-ink-dot')?.style.background || '';
 		btn.innerHTML = '<span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: state.ink })) + '"></span><span class="rapier-draw-btn-name">colour</span>';
@@ -4469,7 +4491,7 @@ function _rapierDrawUpdateInkBtn(palette = true) {
 	}
 	if (state.live) state.live.style.color = _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: state.ink }));
 	const row = state.surface?.querySelector('.rapier-draw-colours');
-	if (row && palette) { row.hidden = !state.colourOpen; row.innerHTML = state.colourOpen ? _rapierDrawPalette(state.ink, 'next') : ''; }
+	if (row && palette) { row.hidden = !state.colourOpen; row.innerHTML = colours; }
 }
 function _rapierDrawSetColour(scope, ink, continuous = false) {
 	const state = _rapierDrawState;
@@ -4483,6 +4505,20 @@ function _rapierDrawSetColour(scope, ink, continuous = false) {
 	if (_rapierDrawCommand(() => {
 		for (const shape of _rapierDrawSelectedShapes()) { globalThis.RapierDrawEdit._rapierDrawReleaseAuthorPaint(shape, {[key]: ink || null}); if (ink) shape[key] = ink; else delete shape[key]; }
 	}, !continuous || !state.colourEdit, !continuous) && continuous) state.colourEdit = true;
+}
+function _rapierDrawChooseColour(scope, ink, continuous = false) {
+	_rapierDrawRememberInk(ink);
+	_rapierDrawSetColour(scope, ink, continuous);
+	_rapierDrawState.colourEdit = false; _rapierDrawState.sweepBase = null;
+	_rapierDrawUpdateInkBtn(); _rapierPaintUpdateStrip(); _rapierDrawUpdateMenu(); _rapierDrawRefreshColourRow();
+}
+function _rapierDrawCommitHex(input) {
+	const ink = _rapierDrawReadHex(input.value);
+	input.setCustomValidity(ink ? '' : 'Enter a hex colour, like #1A2B3C.');
+	input.setAttribute('aria-invalid', String(!ink));
+	if (!ink) return false;
+	_rapierDrawChooseColour(input.dataset.drawHex, ink);
+	return true;
 }
 // A fade is one sweep, as a colour is: the selection fades live under the finger and the drag is one Undo step. The sweep
 // goes on only while its own step is the newest; any other step, or Undo, starts the next drag afresh.
@@ -4542,11 +4578,21 @@ function _rapierDrawSetProperty(key, value, asked = false) {
 }
 function _rapierDrawMenuAction(evt) {
 	const state = _rapierDrawState;
-	if (state.finishing) return;
+	if (state.finishing || !evt.target.closest('button')) return;
+	// Touch buttons suppress native focus changes. Commit a typed colour before a button hides
+	// or replaces its field, just as leaving the field with a keyboard or a mouse does.
+	if (document.activeElement?.dataset.drawHex) document.activeElement.blur();
+	const copy = evt.target.closest('[data-draw-colour-copy]');
+	if (copy) {
+		const input = copy.closest('.rapier-draw-colour-editor')?.querySelector('[data-draw-hex]'), hex = _rapierDrawReadHex(input?.value);
+		const button = state.surface.querySelector('[data-draw-colour-copy="' + CSS.escape(copy.dataset.drawColourCopy) + '"]') || copy;
+		if (hex) void _rapierDrawCopyHex(hex.toUpperCase(), button);
+		return;
+	}
 	const dropper = evt.target.closest('[data-draw-act="dropper"]');
 	if (dropper) { void _rapierDrawOpenDropper(dropper.dataset.drawColourScope || 'next'); return; }
 	const swatch = evt.target.closest('[data-draw-colour-value]');
-	if (swatch) { _rapierDrawSetColour(swatch.dataset.drawColourScope, swatch.dataset.drawColourValue); _rapierDrawRememberInk(swatch.dataset.drawColourValue); return; }
+	if (swatch) { _rapierDrawChooseColour(swatch.dataset.drawColourScope, swatch.dataset.drawColourValue); return; }
 	const btn = evt.target.closest('[data-draw-menu-act]'), shape = _rapierDrawShapeById(state.menuShapeId);
 	if (!btn || !shape) return;
 	const act = btn.dataset.drawMenuAct, value = btn.dataset.drawValue;
@@ -5015,9 +5061,9 @@ function _rapierDrawBuildSurface() {
 		// While DONE writes nothing may change, and the dial says so as the editor's does when it cannot
 		// act (law 47): its button is never `disabled`, and the arrow presses in.
 		if (state.finishing) { if (act === 'undo' || act === 'redo') _rapierDialTurn(button, act === 'redo', false); return; }
-		// ZA3 F3: any toolbar activation retires an open sampler first -- it is read-only and never a
-		// substitute for the tool it was reserving the canvas from.
-		state.dropper?.close(false);
+		if (document.activeElement?.dataset.drawHex) document.activeElement.blur();
+		// Continuing with a tool keeps the sampled colour. Cancel and Back alone discard it.
+		state.dropper?.close(true);
 		if (state.textEdit?.composing) {
 			const session = state.session;
 			state.textEdit.afterFinish = () => { if (state.open && state.session === session && button.isConnected) void toolbar({ target: button }); };
@@ -5144,21 +5190,37 @@ function _rapierDrawBuildSurface() {
 		input.addEventListener('input', evt => { evt.stopPropagation(); if (!state.finishing) _rapierDrawSetSetting(which, input.value); });
 		for (const event of ['change', 'blur', 'keyup', 'pointercancel']) input.addEventListener(event, () => { state.settingEdit = null; reposition(); });
 	}
-	surface.addEventListener('input', evt => { const scope = evt.target.dataset.drawColour; if (scope) _rapierDrawSetColour(scope, evt.target.value, true); });
+	surface.addEventListener('input', evt => {
+		const input = evt.target, scope = input.dataset.drawColour;
+		if (input.dataset.drawHex) { input.setCustomValidity(''); input.removeAttribute('aria-invalid'); }
+		if (!scope) return;
+		_rapierDrawSetColour(scope, input.value, true);
+		const hex = input.closest('.rapier-draw-colour-editor')?.querySelector('[data-draw-hex]');
+		if (hex) hex.value = input.value.toUpperCase();
+	});
 	// `change` applies the colour as well: a platform colour dialog may commit without ever firing `input`.
-	surface.addEventListener('change', evt => { const scope = evt.target.dataset.drawColour; if (scope) { _rapierDrawSetColour(scope, evt.target.value, true); _rapierDrawRememberInk(evt.target.value); state.colourEdit = false; state.sweepBase = null; _rapierDrawUpdateInkBtn(); _rapierDrawUpdateMenu(); _rapierDrawRefreshColourRow(); } });
+	surface.addEventListener('change', evt => {
+		const input = evt.target, scope = input.dataset.drawColour;
+		if (scope) _rapierDrawChooseColour(scope, input.value, true);
+		else if (input.dataset.drawHex) _rapierDrawCommitHex(input);
+	});
 	surface.addEventListener('contextmenu', evt => { if (!evt.target.closest('input,textarea,select')) evt.preventDefault(); });
 	surface.addEventListener('keydown', async evt => {
 		evt.stopPropagation();
 		if (evt.defaultPrevented || evt.isComposing || evt.keyCode === 229) return;
 		if (_rapierTrapModalTab(evt, surface)) return;
+		if (evt.target.dataset.drawHex) {
+			if (evt.key === 'Enter') { evt.preventDefault(); if (_rapierDrawCommitHex(evt.target)) surface.focus({ preventScroll: true }); else evt.target.reportValidity(); }
+			else if (evt.key === 'Escape') { evt.preventDefault(); _rapierDrawUpdateInkBtn(); _rapierDrawUpdateMenu(); surface.focus({ preventScroll: true }); }
+			return;
+		}
 		// ZA3 F3: the sampler owns the keyboard while it is open -- every key but its own Escape is
 		// left alone, and Escape dismisses only the sampler, never the drawing underneath it.
 		if (state.dropper) { if (evt.key === 'Escape') { evt.preventDefault(); state.dropper.close(false); } return; }
 		// Undo, Redo and Select all are Draw's wherever the focus is but in the words being typed: a click on a toolbar button or a drag
 		// on a slider leaves the focus there, and Ctrl+Z did nothing (a button owns its Enter and Space, a slider its arrows; neither owns the chord).
-		if ((evt.ctrlKey || evt.metaKey) && !state.finishing && !evt.target.closest('textarea') && ['z', 'y'].includes(evt.key.toLowerCase())) { evt.preventDefault(); _rapierDrawUndo(evt.shiftKey || evt.key.toLowerCase() === 'y'); return; }
-		if ((evt.ctrlKey || evt.metaKey) && !state.finishing && !evt.target.closest('textarea') && evt.key.toLowerCase() === 'a') {
+		if ((evt.ctrlKey || evt.metaKey) && !state.finishing && !evt.target.closest('input[type="text"],textarea') && ['z', 'y'].includes(evt.key.toLowerCase())) { evt.preventDefault(); _rapierDrawUndo(evt.shiftKey || evt.key.toLowerCase() === 'y'); return; }
+		if ((evt.ctrlKey || evt.metaKey) && !state.finishing && !evt.target.closest('input[type="text"],textarea') && evt.key.toLowerCase() === 'a') {
 			evt.preventDefault();
 			const session = state.session;
 			await _rapierDrawSetTool('select');
@@ -5168,7 +5230,7 @@ function _rapierDrawBuildSurface() {
 			_rapierDrawSetSelection(_rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id))); _rapierDrawRenderAll(); return;
 		}
 		// Delete and Backspace belong to no button and no slider: with a selection they remove it wherever the focus is but in the words being typed.
-		if ((evt.key === 'Delete' || evt.key === 'Backspace') && !state.finishing && !evt.target.closest('textarea,select') && _rapierDrawTool() === 'select' && _rapierDrawSelection().length && !_rapierDrawSelectionLocked()) { evt.preventDefault(); _rapierDrawEditSelection({ type: 'delete' }); return; }
+		if ((evt.key === 'Delete' || evt.key === 'Backspace') && !state.finishing && !evt.target.closest('input[type="text"],textarea,select') && _rapierDrawTool() === 'select' && _rapierDrawSelection().length && !_rapierDrawSelectionLocked()) { evt.preventDefault(); _rapierDrawEditSelection({ type: 'delete' }); return; }
 		// Choice buttons keep native Enter/Space and arrow-key scrolling; canvas shortcuts must
 		// not open a label editor or move the drawing while a property control owns focus.
 		if (evt.target.closest('input,textarea,select,[data-draw-menu-act="property"]') || state.finishing) return;
@@ -5383,12 +5445,12 @@ function _rapierDrawLand(label, frames = 30) {
 function _rapierDrawFollowStage() {
 	const state = _rapierDrawState, recipe = state.recipe;
 	if (!state.open || !state.canvasFollowsStage || !recipe || state.gesture) return;
-	if (recipe.strokes.length || recipe.shapes.length || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
 	// Transient chrome (keyboard, a toolbar row appearing, the URL bar) resizes the stage or
 	// visualViewport without the window itself changing size -- only a real window-size change
 	// (device rotated) is a reason for a still-empty canvas to move (the founder: "the canvas
 	// should never move... it moves when the keyboard comes up").
 	if (innerWidth === state.openWindow.w && innerHeight === state.openWindow.h) return;
+	if (recipe.strokes.length || recipe.shapes.length || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
 	state.openWindow = { w: innerWidth, h: innerHeight };
 	const rect = state.svgRoot.getBoundingClientRect(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height - (state.viewInset || 0)));
 	if (w === recipe.canvas.w && h === recipe.canvas.h) return;

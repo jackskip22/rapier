@@ -351,6 +351,9 @@ const _rapierImageFlow = (() => {
       const node = nodes[index], copy = copies[index], record = projections.get(node);
       if (generated.has(node)) { copy.remove(); continue; }
       if (record && node.dataset.rapierFlow === 'true') {
+        // A composition-end waiter can checkpoint before the window's reflow listener.
+        // Collect final mapped text here so that checkpoint never marks old originals fresh.
+        if (!rapier.composition.block) settleComposition(node, record);
         copy.replaceChildren(...record.original.map(child => child.cloneNode(true)));
         delete copy.dataset.rapierFlow;
       }
@@ -373,7 +376,7 @@ const _rapierImageFlow = (() => {
   }
 
   // Projected offsets can collapse whitespace or cross nodes; splice the original range and rebase every endpoint.
-  function spliceComposedRun(mapping, newText) {
+  function spliceComposedRun(mapping, newText, insertion = null) {
     const oldText = mapping.text ?? '';
     if (oldText === newText) return null;
     const points = mapping.points || mapping.offsets?.map(offset => ({node: mapping.node, offset, parents: mapping.parents}));
@@ -384,8 +387,14 @@ const _rapierImageFlow = (() => {
     let suffix = 0;
     const capSuffix = Math.min(oldText.length, newText.length) - prefix;
     while (suffix < capSuffix && oldText[oldText.length - 1 - suffix] === newText[newText.length - 1 - suffix]) suffix++;
+    // A native insert has an exact event range and bytes. Do not rediscover its position
+    // from repeated letters in the rendered fragment; composition alone needs the diff.
+    if (insertion) {
+      if (oldText.slice(0, insertion.offset) + insertion.text + oldText.slice(insertion.offset) !== newText) return null;
+      prefix = insertion.offset; suffix = oldText.length - prefix;
+    }
     const removedStart = prefix, removedEnd = oldText.length - suffix;
-    const insertedText = newText.slice(prefix, newText.length - suffix);
+    const insertedText = insertion ? insertion.text : newText.slice(prefix, newText.length - suffix);
     const from = points[clamp(removedStart, 0, points.length - 1)];
     const to = points[clamp(removedEnd, 0, points.length - 1)];
     const runs = mapping.record.runs, start = runs.findIndex(run => run.node === from.node),
@@ -432,9 +441,14 @@ const _rapierImageFlow = (() => {
     spliceComposedRun(mapping, text.data ?? '');
     const pending = frame, own = composeFrame;
     composeFrame = 0;
-    if (!(Number.isFinite(previousHeight) && replan(record.wrapper, previousHeight))) { frame = pending; layoutNow(record.wrapper); return; }
+    // A word changes the same source runs as a native letter. Keep its original nodes
+    // detached and publish their new lines directly while the surrounding geometry stands.
+    const local = !window.__rapierWholeProjection && (!pending || pending === own) &&
+      !pressedLayout && !moving && !restoring && !printing && reflowProjected(record);
+    if (!local && !(Number.isFinite(previousHeight) && replan(record.wrapper, previousHeight))) { frame = pending; layoutNow(record.wrapper); return; }
     if (pending && own === pending) cancelAnimationFrame(pending);
     else if (pending && !frame) frame = pending;
+    if (local && frame === own) frame = 0;
   }
 
   function activation(wrapper, value) {
@@ -696,6 +710,8 @@ const _rapierImageFlow = (() => {
     style(record.paragraph, {position: 'relative', height: px(plan.height), 'min-height': '0'});
 
     record.projected = [...record.paragraph.childNodes];
+    record.structure = [...record.paragraph.querySelectorAll('*')].map(node => [node, [...node.childNodes]]);
+    record.plan = plan;
     record.geometry = {width, top, obstacles, height: plan.height};
     projections.set(record.paragraph, record);
     return plan.height;
@@ -729,28 +745,88 @@ const _rapierImageFlow = (() => {
     const future = record.runs.map(run => run.node === point.node
       ? run.node.data.slice(0, point.offset) + event.data + run.node.data.slice(point.offset) : run.node.data).join('');
     if (_rapierFirstStrongDir(future) !== record.direction) return null;
-    const bounds = rect(record.paragraph), area = rect(host), saved = record.geometry;
-    if (Math.abs(bounds.width - saved.width) > 0.5 || Math.abs(bounds.height - saved.height) > 0.5 ||
-        Math.abs(bounds.top - area.top + host.scrollTop - saved.top) > 0.5) return null;
+    // Resize, style/font, picture and structural mutations invalidate through schedule.
+    // The current plan owns these dimensions; reading the live boxes here flushed layout
+    // before every native insert even when no geometry had changed.
+    if (cache.get(record.paragraph) !== record) return null;
     return {record, text, mapping, offset, index, expected: text.data.slice(0, offset) + event.data + text.data.slice(offset)};
   }
 
   // Mirror before the editor serializes its input. When the same planner reproduces the live nodes exactly,
   // only their source maps change: the browser already put the caret in the right node, with no selection write.
   function retainProjectedInsert(pending, event) {
-    const {record, text, mapping, offset, index, expected} = pending;
+    const {record, text, mapping, offset, expected} = pending;
     const selection = window.getSelection();
     if (!event.isTrusted || event.inputType !== 'insertText' || !text.isConnected || text.data !== expected ||
         projections.get(record.paragraph) !== record || !selection?.isCollapsed ||
         selection.anchorNode !== text || selection.anchorOffset !== offset + event.data?.length) return false;
-    if (!spliceComposedRun(mapping, text.data)) return false;
+    if (!spliceComposedRun(mapping, text.data, {offset, text: event.data})) return false;
     if (frame || pressedLayout || moving || restoring || printing) return false;
-    const run = record.runs[index], old = run.prepared;
-    record.items[index] = {...record.items[index], text: run.node.data};
+    return reflowProjected(record);
+  }
+
+  // Update only changed text and attributes. Equal descendants keep their native identity;
+  // CharacterData's minimal splice also keeps a caret outside the changed tail in place.
+  function reconcileProjected(parent, candidate) {
+    const desired = [...candidate.childNodes];
+    for (let index = 0; index < desired.length; index++) {
+      const next = desired[index], current = parent.childNodes[index];
+      if (!current) { parent.append(next); continue; }
+      if (current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) {
+        current.replaceWith(next); continue;
+      }
+      if (next.nodeType === Node.TEXT_NODE) {
+        const before = current.data, after = next.data;
+        if (before !== after) {
+          let head = 0, tail = 0;
+          while (head < Math.min(before.length, after.length) && before[head] === after[head]) head++;
+          while (tail < Math.min(before.length, after.length) - head && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
+          current.replaceData(head, before.length - head - tail, after.slice(head, after.length - tail));
+        }
+        endpoints.set(current, endpoints.get(next));
+      } else {
+        for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+        for (const attribute of next.attributes) if (current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
+        reconcileProjected(current, next);
+      }
+    }
+    while (parent.childNodes.length > desired.length) parent.lastChild.remove();
+  }
+
+  function reflowProjected(record) {
+    const selection = window.getSelection(), paragraph = record.paragraph;
+    if (cache.get(paragraph) !== record || projections.get(paragraph) !== record || !record.geometry ||
+        !selection?.isCollapsed || !paragraph.contains(selection.anchorNode) ||
+        !record.projected || paragraph.childNodes.length !== record.projected.length ||
+        record.projected.some((node, at) => node !== paragraph.childNodes[at])) return false;
+    // A composition may change a second run or split nodes. The old restore/reconcile
+    // owner must collect all of that work before any candidate can replace its view.
+    if (record.structure.some(([node, children]) => node.childNodes.length !== children.length ||
+        children.some((child, at) => child !== node.childNodes[at]))) return false;
+    const texts = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+    for (let node; (node = texts.nextNode());) {
+      const mapping = endpoints.get(node);
+      if (mapping?.record !== record || mapping.text !== node.data) return false;
+    }
+    const source = mappedPoint(selection.anchorNode, selection.anchorOffset);
+    if (!source?.mapping || source.mapping.record !== record ||
+        _rapierFirstStrongDir(record.runs.map(run => run.node.data).join('')) !== record.direction) return false;
+    const changed = [];
+    for (let index = 0; index < record.runs.length; index++) {
+      const run = record.runs[index];
+      if (run.node.data === run.prepared.raw) continue;
+      // Source tokens have their own text normalization and measurement rules.
+      if (run.parents.some(parent => parent.hasAttribute('data-rapier-source'))) return false;
+      record.items[index] = {...record.items[index], text: run.node.data};
+      changed.push(index);
+    }
     record.flow = pretext.prepareRichInline(record.items);
-    const prepared = geometry.prepareRun(run.node.data, old.font, old.letterSpacing, record.flow.items[index]?.prepared);
-    if (!prepared) return false;
-    run.prepared = prepared;
+    for (const index of changed) {
+      const run = record.runs[index], old = run.prepared;
+      const prepared = geometry.prepareRun(run.node.data, old.font, old.letterSpacing, record.flow.items[index]?.prepared);
+      if (!prepared) return false;
+      run.prepared = prepared;
+    }
     const {width, top, obstacles, height} = record.geometry;
     const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
       narrowestColumn(record.fontSize), record.direction, record.balance);
@@ -780,23 +856,40 @@ const _rapierImageFlow = (() => {
       // This input already prepared the exact same-height plan. Publish it once instead of
       // restoring the paragraph, measuring its styles and planning these lines a second time.
       // Unexpected native structure still needs restore's source reconciliation.
-      const live = record.paragraph.childNodes;
-      if (!record.projected || live.length !== record.projected.length ||
-          record.projected.some((node, at) => node !== live[at])) return false;
-      const source = mappedPoint(text, selection.anchorOffset);
       const point = source && projectedPoint(record.paragraph, source.node, source.offset, replacement);
       if (!point) return false;
       observer?.disconnect();
       try {
-        record.paragraph.replaceChildren(replacement);
+        reconcileProjected(record.paragraph, replacement);
         record.projected = [...record.paragraph.childNodes];
-        selection.setBaseAndExtent(point.node, point.offset, point.node, point.offset);
-        caretPlaced = {anchor: point.node, anchorOffset: point.offset, focus: point.node, focusOffset: point.offset};
+        record.structure = [...record.paragraph.querySelectorAll('*')].map(node => [node, [...node.childNodes]]);
+        const live = projectedPoint(record.paragraph, source.node, source.offset);
+        if (!sameSelection(selection, live, live)) selection.setBaseAndExtent(live.node, live.offset, live.node, live.offset);
       } finally { watch(); }
-      return true;
     }
-    caretPlaced = {anchor: text, anchorOffset: selection.anchorOffset, focus: text, focusOffset: selection.focusOffset};
+    record.plan = plan;
+    caretPlaced = {anchor: selection.anchorNode, anchorOffset: selection.anchorOffset, focus: selection.focusNode, focusOffset: selection.focusOffset};
     return true;
+  }
+
+  function paragraphStyle(paragraph) {
+    const record = projections.get(paragraph);
+    return !frame && cache.get(paragraph) === record && record ? {align: record.align, direction: record.direction} : null;
+  }
+
+  function caretBand(node, offset) {
+    const mapping = endpoints.get(node), record = mapping?.record;
+    if (frame || restoring || printing || moving || rapier.composition.block || !record?.plan ||
+        cache.get(record.paragraph) !== record || projections.get(record.paragraph) !== record ||
+        node?.nodeType !== Node.TEXT_NODE || node.data !== mapping.text || mapping.parents?.length ||
+        node.parentElement?.parentElement !== record.paragraph || offset < 0 || offset > node.length ||
+        record.lineHeight < record.fontSize) return null;
+    const index = record.projected.indexOf(node.parentElement), line = record.plan.lines[index];
+    if (!line || record.paragraph.childNodes[index] !== node.parentElement) return null;
+    const top = record.geometry.top + line.y;
+    // Font fallback can overhang the CSS line box. This wider band only proves an
+    // interior no-scroll case; the browser still owns every correction near an edge.
+    return {top: top - record.fontSize, bottom: top + record.lineHeight + record.fontSize};
   }
 
   function floatAround(paragraph, natural, top, obstacles) {
@@ -3273,9 +3366,9 @@ const _rapierImageFlow = (() => {
     const paragraph = element?.closest?.('[data-rapier-flow="true"]');
     const record = paragraph && projections.get(paragraph);
     if (!record || !record.wrapper.classList.contains('block-wrapper--editing')) return;
-    reprojectHeight = rect(record.wrapper).height;
     insertInProjection = projectedInsert(event, record, selection);
     if (insertInProjection) { reprojectAfterInput = record.wrapper; return; }
+    reprojectHeight = rect(record.wrapper).height;
     reprojectAfterInput = unproject(record.wrapper) ? record.wrapper : null;
   }, true);
 
@@ -3290,6 +3383,13 @@ const _rapierImageFlow = (() => {
     }
     // The paragraph's own lines first (its picture has not moved); the whole pass when its height changed.
     if (!_rapierHostNativeField(event.target) && !rapier.composition.block && !replan(wrapper, wasHeight)) layoutNow(wrapper);
+  }, true);
+
+  // Restore a replacing selection before the edit surface snapshots it and native IME can remove whole projected fragments.
+  window.addEventListener('compositionstart', event => {
+    if (!event.isTrusted || event.defaultPrevented || rapier.composition.block ||
+        !host.contains(event.target) || _rapierHostNativeField(event.target)) return;
+    if (hasSelection() && projections.size) restoreSelection();
   }, true);
 
   // The wrapper's height when a composition begins, so the word's landing knows whether the paragraph grew.
@@ -3326,7 +3426,7 @@ const _rapierImageFlow = (() => {
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
   schedule();
   return Object.freeze({rotateGlyph, schedule, layoutNow, select, close, activation, restoreSelection, restore, heldWrappers, mappedPoint, sourcePoint, textOffset, invalidate, pinSettled,
-    remove, armSettle, settleNow, unproject, editSource, livePoint, setWrapShape, splitPlan, behindPictureAt,
+    remove, armSettle, settleNow, unproject, editSource, livePoint, setWrapShape, splitPlan, behindPictureAt, paragraphStyle, caretBand,
     status: () => ({moving: !!moving && !moving.committing, committing: !!moving?.committing, settling: !!settle || !!moving?.committing || performance.now() - settledAt < 400, projections: projections.size, images: lastObstacles.length, rotatePerf: {...rotatePerf}})});
 })();
 globalThis.RapierImageFlow = _rapierImageFlow;

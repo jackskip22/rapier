@@ -5,14 +5,25 @@
 // so it scrolls and paginates with the words; every piece is its own small positioned <svg>, so a printed page carries
 // the pieces that fall on it. Pieces are data a row reads back (box, fragments, element): a mark that drifted off its
 // words would be a wrong document.
+import {penPath} from '../draw/pen-path.mjs';
 
-// Retained intact by the export. Editor-only hit testing lives outside this closure.
+// The export retains this module and the same brush dependencies used by Draw.
 const inkDrawing = () => {
 	// SPDX-License-Identifier: AGPL-3.0-only
 	const LAYER_CLASS = 'rapier-ink-layer';
 	const SPAN_SELECTOR = 'span.rapier-ink-mark[data-rapier-ink]';
 	const DEFAULT_HEX = '#b32034';
 	const SVG = 'http://www.w3.org/2000/svg';
+
+	function inkPath(points, width, last = true) {
+		if (!points?.length) return '';
+		const input = points.map(p => [p.x, p.y]);
+		// A repeated sample gives the brush a true round dot instead of inventing a short diagonal.
+		if (input.length === 1) input.push(input[0]);
+		// Word-fitted centerlines are already positioned. Input streamlining would move their
+		// corners after source simplification; the shared outline still receives SVG smoothing.
+		return penPath(input, {size: width, last, fixedPressure: .5, streamline: 0});
+	}
 
 	// The layer: at the root's end for a live editor (whose code reads its first blocks), at the start for a page that prints.
 	function inkLayerOf(root, place = 'end') {
@@ -83,10 +94,10 @@ const inkDrawing = () => {
 			const em = parseFloat(view.getComputedStyle(span).fontSize) || 16;
 			const hex = mark.hex || DEFAULT_HEX;
 			const dark = typeof deps.dark === 'function' ? deps.dark(hex) : (span.getAttribute('data-rapier-ink-dark') || hex);
-			const width = (mark.kind === 'free' ? 0.09 : 0.11) * em;
+			const width = 0.11 * em;
 			const pad = width + 1;
 			for (const piece of ink.deriveMark(mark, fragments, fragments[0], em, endFragments)) {
-				if (piece.length < 2) continue;
+				if (!piece.length) continue;
 				const box = ink.bounds(piece);
 				const svg = doc.createElementNS(SVG, 'svg');
 				const w = box.width + 2 * pad, h = box.height + 2 * pad;
@@ -100,10 +111,12 @@ const inkDrawing = () => {
 				svg.style.setProperty('--md-ink', hex);
 				svg.style.setProperty('--md-ink-dark', dark);
 				const path = doc.createElementNS(SVG, 'path');
-				path.setAttribute('d', piece.map((p, i) => (i ? 'L' : 'M') + (p.x - box.x + pad).toFixed(2) + ' ' + (p.y - box.y + pad).toFixed(2)).join(''));
-				path.style.strokeWidth = width.toFixed(2) + 'px';
+				path.setAttribute('d', inkPath(piece.map(p => ({x: p.x - box.x + pad, y: p.y - box.y + pad})), width));
 				svg.appendChild(path);
 				svg._rapierInkSpan = span;
+				svg._rapierInkPoints = piece;
+				svg._rapierInkWidth = width;
+				svg._rapierInkOrigin = {x: box.x - pad, y: box.y - pad};
 				if (endSpan) svg._rapierInkEndSpan = endSpan;
 				layer.appendChild(svg);
 				pieces.push({ kind: mark.kind, opener: body, box: { x: box.x, y: box.y, width: box.width, height: box.height },
@@ -156,21 +169,7 @@ const inkDrawing = () => {
 			doc.fonts?.removeEventListener?.('loadingdone', schedule);
 		} });
 	}
-	return { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkLayerOf, inkFragments, drawInk, watchInk };
+	return { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkPath, inkLayerOf, inkFragments, drawInk, watchInk };
 };
-const { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkLayerOf, inkFragments, drawInk, watchInk } = inkDrawing();
-export { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkLayerOf, inkFragments, drawInk, watchInk };
-
-// The piece under a point, if any (the pen's eraser): its span.
-export function inkSpanAt(root, x, y, slack = 4) {
-	const layer = inkLayerOf(root);
-	let found = null, best = Infinity;
-	for (const svg of layer.children) {
-		if (!svg._rapierInkSpan) continue;
-		const r = svg.getBoundingClientRect();
-		if (x < r.left - slack || x > r.right + slack || y < r.top - slack || y > r.bottom + slack) continue;
-		const area = r.width * r.height;
-		if (area < best) { best = area; found = svg._rapierInkSpan; }
-	}
-	return found;
-}
+const { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkPath, inkLayerOf, inkFragments, drawInk, watchInk } = inkDrawing();
+export { LAYER_CLASS, SPAN_SELECTOR, DEFAULT_HEX, inkPath, inkLayerOf, inkFragments, drawInk, watchInk };

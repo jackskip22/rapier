@@ -169,10 +169,9 @@
 		<button type="button" class="fmt-btn" data-action="command" data-command="insert.draw" data-tip="draw" aria-label="draw a picture">
 			<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
 		</button>
-		<!-- The pen (docs/briefs/ink.md §4): a nib beside the highlighter, among the marks. Tapping it puts the pen down: nothing
-		     opens, a drag over the words is ink that stays with them; tapping again lifts it. A stylus inks with no button. -->
-		<button type="button" class="fmt-btn" data-action="ink-pen" data-tip="pen" aria-label="pen: mark the words" aria-pressed="false">
-			<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+		<!-- Tabler file-pencil: annotations on a document, distinct from Draw and text highlighting. -->
+		<button type="button" class="fmt-btn" data-action="ink-pen" data-tip="annotate document" aria-label="annotate document" aria-controls="ink-strip" aria-pressed="false">
+			<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2v6h6M10 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8l6 6v4M8 12h4M8 16h2M16 22l5-5a2.12 2.12 0 0 0-3-3l-5 5v3zM17 15l3 3"/></svg>
 		</button>
 		<button type="button" class="fmt-btn" data-cmd="highlight-picker" id="fmt-btn-highlight"
 						data-tip="highlight · hold for color" aria-label="highlight; hold for color" aria-haspopup="menu"
@@ -290,16 +289,26 @@
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn" data-cmd="highlight-none" data-action="pick-highlight" data-value="none" data-tip="remove highlight" aria-label="remove highlight"><span class="highlight-swatch highlight-swatch--remove" aria-hidden="true"></span></button>
 </div>
 
-<!-- ── The pen's strip (docs/briefs/ink.md §4): while the pen is down, its colour, an eraser and done. One width: the stroke's kind sets it. -->
-<div class="ink-strip" id="ink-strip" role="toolbar" aria-label="pen" aria-hidden="true" onmousedown="event.preventDefault()">
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#1c7547" data-tip="green ink" aria-label="green ink" aria-pressed="false"><span class="color-swatch color-swatch--green" aria-hidden="true"></span></button>
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#b32034" data-tip="red ink" aria-label="red ink" aria-pressed="true"><span class="color-swatch color-swatch--red" aria-hidden="true"></span></button>
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#175dc4" data-tip="blue ink" aria-label="blue ink" aria-pressed="false"><span class="color-swatch color-swatch--blue" aria-hidden="true"></span></button>
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#865818" data-tip="gold ink" aria-label="gold ink" aria-pressed="false"><span class="color-swatch color-swatch--gold" aria-hidden="true"></span></button>
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#7924d7" data-tip="purple ink" aria-label="purple ink" aria-pressed="false"><span class="color-swatch color-swatch--purple" aria-hidden="true"></span></button>
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-eraser" data-tip="eraser" aria-label="eraser: tap a mark to remove it" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></svg></button>
-	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-stylus" data-tip="stylus marks the page" aria-label="stylus marks the page with no button: on or off" aria-pressed="true">stylus</button>
-	<button type="button" tabindex="-1" class="fmt-btn ink-strip__done" data-action="ink-done" data-tip="done" aria-label="done: lift the pen">done</button>
+<!-- Annotation tools remain available while the document scrolls. -->
+<div class="ink-strip" id="ink-strip" role="toolbar" aria-label="document annotation" aria-hidden="true" inert onmousedown="if(event.target.closest('button'))event.preventDefault()">
+	<div class="ink-strip__tools">
+		<button type="button" class="fmt-btn" data-action="ink-draw" aria-label="draw annotations" aria-pressed="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19c3-9 5-14 7-14 5 0-5 14 0 14 2 0 4-6 6-6 2 0 0 6 3 6"/></svg><span>draw</span></button>
+		<button type="button" class="fmt-btn" data-action="ink-eraser" aria-label="erase annotations" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3M18 13.3l-6.3 -6.3"/></svg><span>erase</span></button>
+		<button type="button" class="fmt-btn" data-action="ink-scroll" aria-label="scroll document" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg><span>scroll</span></button>
+		<button type="button" class="fmt-btn" data-action="ink-palette" aria-label="annotation colours" aria-expanded="false" aria-controls="ink-colours"><span class="ink-strip__swatch" aria-hidden="true"></span><span>colour</span></button>
+		<button type="button" class="fmt-btn" data-action="ink-done" aria-label="finish annotating"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg><span>done</span></button>
+	</div>
+	<div class="ink-strip__colours" id="ink-colours" hidden>
+		<div class="ink-strip__swatches">
+			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#121212" aria-label="black ink" aria-pressed="false"><span class="color-swatch" style="background:#121212" aria-hidden="true"></span></button>
+			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#b32034" aria-label="red ink" aria-pressed="true"><span class="color-swatch color-swatch--red" aria-hidden="true"></span></button>
+			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#175dc4" aria-label="blue ink" aria-pressed="false"><span class="color-swatch color-swatch--blue" aria-hidden="true"></span></button>
+			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#1c7547" aria-label="green ink" aria-pressed="false"><span class="color-swatch color-swatch--green" aria-hidden="true"></span></button>
+			<button type="button" class="fmt-btn" data-action="ink-colour" data-value="#7924d7" aria-label="purple ink" aria-pressed="false"><span class="color-swatch color-swatch--purple" aria-hidden="true"></span></button>
+			<label class="fmt-btn ink-strip__custom"><input type="color" data-ink-colour-input value="#b32034" aria-label="custom annotation colour"></label>
+		</div>
+		<button type="button" class="ink-strip__stylus" data-action="ink-stylus" aria-pressed="true">stylus always draws</button>
+	</div>
 </div>
 
 <!-- ── Divider style derivative strip ────────-->

@@ -39,7 +39,8 @@ function _rapierSelectionAlignment(selection = window.getSelection()) {
   if (!paragraph) return 'left';
   const explicit = paragraph.closest('[data-md-align]')?.getAttribute('data-md-align');
   if (Object.hasOwn(_rapierAlignmentIcons, explicit)) return explicit;
-  const style = getComputedStyle(paragraph), align = style.textAlign;
+  const projected = globalThis.RapierImageFlow?.paragraphStyle?.(paragraph);
+  const style = projected || getComputedStyle(paragraph), align = projected ? projected.align : style.textAlign;
   if (Object.hasOwn(_rapierAlignmentIcons, align)) return align;
   return (align === 'end' ? style.direction !== 'rtl' : style.direction === 'rtl') ? 'right' : 'left';
 }

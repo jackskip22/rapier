@@ -248,9 +248,11 @@ exactly as the text-colour opener spells it (a name or a lowercase six-digit hex
 `box=W,H`, the size of the frame the stroke was drawn against (the marked words' box, or the stroke's own for a
 free mark); optionally `at=X,Y`, the frame's offset from the marked words' box for a `bracket` or `free` mark;
 and the path, its first point absolute in the frame and every later one a move from the point before. Every
-number is an integer in hundredths of an em; a path holds at most 160 points. The closer is `<!--/ink-->`. Pairs
-do not nest in each other: an opener before another's closer, or a closer without an opener, stays ordinary
-comment text and shows nothing. A comment that does not read exactly this way is not a mark.
+number is an integer in hundredths of an em; a path holds at most 160 points. The closer is `<!--/ink-->`.
+Ink pairs may nest: each closer belongs to the nearest unclosed ink opener. This lets independent strokes
+share words without discarding an earlier stroke. An unpaired opener or closer stays ordinary comment text
+and shows nothing. A comment that does not read exactly this way is not a mark. Colour pairs retain their
+own non-nesting rule.
 
 An `under` or `strike` may omit its path (`<!--ink under-->words<!--/ink-->`): layout derives a straight
 stroke from each line fragment. A loop, bracket or free mark requires its authored path.
@@ -289,6 +291,9 @@ span's comments, retires both spans' comments in the same transaction, keeping a
 Undo restores both anchors together. Copy carries an arrow only when both complete anchor spans are
 selected; a partial copy keeps the selected words without an orphan endpoint. Paste keeps a complete
 pair and changes both pairing numbers together if that number is already occupied in the document.
+Erasing a stroke resolves its exact source occurrence, including strokes with identical openers and words;
+another stroke on those words remains. Removing the last words inside nested strokes retires every emptied
+pair in the same transaction.
 
 Other readers show only the words. Rapier draws the stroke over the words it marks
 and re-derives it from their boxes at every layout: as it was drawn while the words lie as they did; one piece

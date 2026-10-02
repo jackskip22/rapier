@@ -802,14 +802,27 @@ pre.block-source-only { margin: 0; background: none; padding: 0; }
 	color: var(--color-accent-text);
 }
 .highlight-picker .fmt-btn { position:relative; }
-/* The pen's strip (docs/briefs/ink.md §4): a row of the toolbar stack while the pen is down. */
-.ink-strip { position: relative; flex: 0 0 auto; display: none; align-items: center; justify-content: space-evenly; flex-wrap: nowrap; gap: 0; background: var(--format-toolbar-bg); border: 0; box-shadow: none; padding: 0; width: 100%; pointer-events: auto; }
-.ink-strip.visible { display: flex; }
-.ink-strip .fmt-btn { flex: 1 1 0; width: auto; min-width: 0; height: 50px; border: 0; color: var(--color-icon); opacity: 1; font-size: 1.3rem; line-height: 1; }
-.ink-strip .fmt-btn[aria-pressed="true"] { color: var(--color-accent-text); }
-.ink-strip .fmt-btn[aria-pressed="true"] .color-swatch { outline: 2px solid currentColor; outline-offset: 2px; }
-.ink-strip .ink-strip__done, .ink-strip [data-action="ink-stylus"] { font: inherit; font-size: .85rem; letter-spacing: 0; }
-#editor-blocks[data-rapier-pen="down"] { cursor: crosshair; }
+/* The annotation strip shares the floating toolbar's viewport owner. */
+.ink-strip { position: relative; flex: 0 0 auto; display: none; width: 100%; background: var(--color-bg); pointer-events: auto; }
+.ink-strip.visible { display: block; }
+.format-toolbar-stack:has(> .ink-strip.visible) > :not(.ink-strip) { display: none; }
+.ink-strip__tools, .ink-strip__swatches { display: flex; align-items: center; justify-content: space-evenly; }
+.ink-strip .fmt-btn { flex: 1 1 0; width: auto; min-width: 0; height: 54px; border: 0; color: var(--color-icon); opacity: 1; display: flex; flex-direction: column; gap: 3px; font: inherit; font-size: .68rem; line-height: 1.1; }
+.ink-strip .fmt-btn[aria-pressed="true"], .ink-strip [aria-expanded="true"] { color: var(--color-accent-text); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.ink-strip .fmt-btn[aria-pressed="true"] .color-swatch { outline: 2px solid currentColor; outline-offset: 3px; }
+.ink-strip__swatch { width: 20px; height: 20px; border-radius: 50%; background: var(--ink-colour, #b32034); border: 1px solid var(--color-icon); }
+.ink-strip__swatches .fmt-btn { height: 46px; }
+.ink-strip__custom input { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.ink-strip__stylus { display: block; width: 100%; min-height: 42px; border: 0; background: transparent; color: var(--color-icon); font: inherit; font-size: .8rem; }
+.ink-strip__stylus::before { content: '○'; margin-right: .5em; }
+.ink-strip__stylus[aria-pressed="true"]::before { content: '✓'; }
+.ink-strip__stylus[aria-pressed="true"] { color: var(--color-accent-text); }
+#editor-blocks[data-rapier-pen="pen"] { cursor: crosshair; }
+#editor-blocks[data-rapier-pen="scroll"] { cursor: grab; }
+#editor-blocks[data-rapier-pen="eraser"] { cursor: crosshair; }
+.rapier-ink-layer [data-ink-erasing] { opacity: .25; }
+.rapier-ink-layer .ink-erase-preview { fill: color-mix(in srgb, var(--color-accent) 18%, transparent); stroke: var(--color-accent-text); stroke-width: 1; stroke-dasharray: 3 2; }
+.rapier-ink-layer .ink-erase-cursor { fill: color-mix(in srgb, var(--color-bg) 65%, transparent); stroke: var(--color-icon); stroke-width: 1.5; }
 .highlight-swatch {
 	width:22px;
 	height:12px;

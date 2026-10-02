@@ -740,13 +740,17 @@ function _rapierPaintSyncSet() {
 	const set = _rapierDrawState.surface?.querySelector('[data-draw-act="paintSet"]'), word = set?.querySelector('.rapier-draw-btn-name');
 	const layer = _rapierPaintLayer();
 	if (set) set.disabled = !!_rapierDrawState.paintSetting || !layer || !!layer.warmView;
-	if (word) word.textContent = _rapierDrawState.paintSetting ? 'setting' : 'set';
+	const label = _rapierDrawState.paintSetting ? 'setting' : 'set';
+	if (word && word.textContent !== label) word.textContent = label;
 }
 function _rapierPaintDipSyncPanel(repaintSample = true) {
-	_rapierPaintSyncSet();
 	const panel = _rapierPaintDipPanel();
-	if (!panel || panel.hidden) return;
+	if (!panel || panel.hidden) { _rapierPaintSyncSet(); return; }
 	const id = _rapierPaintBrushId(), color = _rapierPaintColor(), [load, water] = _rapierPaintDip(id);
+	// Read the paper before changing the knob or words. A computed-style read after the transform
+	// forced the whole panel through style and layout on every pointer move.
+	const paper = _rapierPaintDipPaper();
+	_rapierPaintSyncSet();
 	const pad = panel.querySelector('.rapier-draw-dip-pad'), knob = panel.querySelector('.rapier-draw-dip-knob'), track = panel.querySelector('.rapier-draw-dip-track');
 	const ink = color.join(',');
 	if (panel.dataset.dipInk !== ink) { panel.dataset.dipInk = ink; _rapierPaintDipField(panel.querySelector('.rapier-draw-dip-field'), color); }
@@ -755,10 +759,11 @@ function _rapierPaintDipSyncPanel(repaintSample = true) {
 	// The knob rides a track the pad's size, carried by a transform (the track's percentages are the pad's): a drag
 	// moves it on the compositor, never laying the panel out.
 	track.style.transform = 'translate(calc((100% - 26px) * ' + water.toFixed(4) + '), calc((100% - 26px) * ' + (1 - load).toFixed(4) + '))';
-	const a = _rapierPaintDipStrength(load, water), paper = _rapierPaintDipPaper();
+	const a = _rapierPaintDipStrength(load, water);
 	knob.style.setProperty('--rapier-dip-ink', 'rgb(' + [0, 1, 2].map(k => Math.round(color[k] * 255 * a + paper[k] * (1 - a))).join(',') + ')');
 	const word = _rapierPaintDipWord(id);
-	panel.querySelector('.rapier-draw-dip-word').textContent = word;
+	const label = panel.querySelector('.rapier-draw-dip-word');
+	if (label.textContent !== word) label.textContent = word;
 	pad.setAttribute('aria-label', 'Dip the brush. Left and right for water, up and down for paint. Now: ' + word);
 	panel.querySelector('[data-draw-paint-act="redip"]').hidden = !_rapierPaintDipped(id);
 	const light = _rapierDrawState.paintStrength === 'light';
@@ -809,7 +814,6 @@ function _rapierPaintDipOpen(open) {
 	if (!panel.dataset.dipBound) {
 		panel.dataset.dipBound = '1';
 		const pad = panel.querySelector('.rapier-draw-dip-pad');
-		// Held, the knob swells under the finger and glides to where the finger came down; moved, it follows at once;
 		// let go, it settles (rapier-draw.css .rapier-draw-dip-pad--held, --moving).
 		const letGo = () => { pad.classList.remove('rapier-draw-dip-pad--held', 'rapier-draw-dip-pad--moving'); _rapierPaintUpdateStrip(); };
 		pad.addEventListener('pointerdown', evt => { evt.preventDefault(); pad.setPointerCapture(evt.pointerId); pad.classList.add('rapier-draw-dip-pad--held'); _rapierPaintDipFromPoint(pad, evt.clientX, evt.clientY); });
@@ -842,7 +846,7 @@ function _rapierPaintFacts() {
 		// A watcher that only read `setting`/`pendingOverflow` to know the layer is idle (the automatic
 		// Set is the same wait, just later) would see both false while this worker round trip is still
 		// outstanding -- the commit has not reached the recipe yet. Expose it as its own fact.
-		committing: !!layer?.pendingCommit, flips: state.paintFlips || 0, timing: state.paintTiming ? { ...state.paintTiming } : null, surface: layer?.surface ? layer.surface.width + 'x' + layer.surface.height : null, brush: layer?.brushId || null, brushChosen: state.paintBrush || null, size: _rapierPaintSize(), strength: state.paintStrength || null, dirty: !!layer?.surface?.dirty, scale: layer?.scale || null, showing: !!layer && layer.canvas.style.visibility !== 'hidden',
+		committing: _rapierPaintRevisionLayers(layer).some(sheet => !!sheet.pendingCommit), flips: state.paintFlips || 0, timing: state.paintTiming ? { ...state.paintTiming } : null, surface: layer?.surface ? layer.surface.width + 'x' + layer.surface.height : null, brush: layer?.brushId || null, brushChosen: state.paintBrush || null, size: _rapierPaintSize(), strength: state.paintStrength || null, dirty: !!layer?.surface?.dirty, scale: layer?.scale || null, showing: !!layer && layer.canvas.style.visibility !== 'hidden',
 		// What the seven operators did on this surface (draw/paint.mjs applyOp): dabs run, dabs that
 		// changed anything, total travel handed to them, total dab radius. Reset by a witness with
 		// `surface.opStats = null`.
@@ -904,8 +908,8 @@ function _rapierPaintJxlShowable() {
 async function _rapierPaintShownFor(surface, box) { return (await _rapierPaintJxlShowable()) ? null : _rapierPaintPNG.compressed(surface.toRGBA8(box)); }
 function _rapierPaintKeepShown(pieces) { for (const piece of pieces || []) if (piece?.shown && piece.url) _rapierPaintShownAs.set(piece.url, piece.shown); }
 function _rapierPaintShowable(html) {
-	if (!html || !_rapierPaintShownAs.size || !html.includes('data:image/jxl')) return html;
-	return html.replace(/(href=")(data:image\/jxl;base64,[A-Za-z0-9+/=]+)"/g, (whole, lead, url) => { const shown = _rapierPaintShownAs.get(url); return shown ? lead + shown + '"' : whole; });
+	if (!html || !_rapierPaintShownAs.size || !html.includes('data:image/')) return html;
+	return html.replace(/(href=")(data:image\/(?:jxl|png);base64,[A-Za-z0-9+/=]+)"/g, (whole, lead, url) => { const shown = _rapierPaintShownAs.get(url); return shown ? lead + shown + '"' : whole; });
 }
 async function _rapierPaintEncodeJXL(surface, box, options = {lossless: true}) {
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options}); // witness seam (paint-auto-set-lossless)
@@ -1043,6 +1047,8 @@ async function _rapierPaintSplitShape(shapes, shape, pieces) { return _rapierPai
 // the caller can say so if it wants to -- the work itself is always kept, whole and at full quality.
 function _rapierPaintPixelsSurface(px) {
 	return {width: px.width, height: px.height, toRGBA8(b) {
+		// The whole captured picture is already immutable straight RGBA; only a cut piece needs a copy.
+		if (!b || (b.x0 === 0 && b.y0 === 0 && b.x1 === px.width - 1 && b.y1 === px.height - 1)) return px;
 		const width = b.x1 - b.x0 + 1, height = b.y1 - b.y0 + 1, data = new Uint8ClampedArray(width * height * 4);
 		for (let y = 0; y < height; y++) data.set(px.data.subarray(((b.y0 + y) * px.width + b.x0) * 4, ((b.y0 + y) * px.width + b.x1 + 1) * 4), y * width * 4);
 		return {width, height, data};
@@ -1053,6 +1059,9 @@ async function _rapierPaintKeepAsJXL(recipe) {
 	// a picture and follows the same rule, so it never disagrees with the rest of the document.
 	if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return [];
 	const state = _rapierDrawState, budget = _rapierPaintRasterBudget(), split = [];
+	// Recovery can ask while a cap's captured channels are already in the final codec. Retain
+	// those immutable jobs before any await, even if their live history owner finishes meanwhile.
+	const encodes = new Map(state.paintEncodes || []);
 	// A supplied recipe is an immutable-in-time snapshot, not permission to read a later live layer.
 	const layer = recipe ? null : state.paintLayer;
 	// Done owns a frozen recipe. Capture its matching live surface now, before any encoder await;
@@ -1070,7 +1079,8 @@ async function _rapierPaintKeepAsJXL(recipe) {
 		if (live && !box) continue;
 		const was = shape.raster.length;
 		let pieces;
-		if (live) pieces = await _rapierPaintLosslessPieces(b => _rapierPaintEncodeJXL(live.surface, b, { lossless: true }), box, budget);
+		if (encodes.has(shape.raster)) pieces = await encodes.get(shape.raster);
+		else if (live) pieces = await _rapierPaintLosslessPieces(b => _rapierPaintEncodeJXL(live.surface, b, { lossless: true }), box, budget);
 		else {
 			const exact = shape === frozenShape && frozenPixels ? frozenPixels : await _rapierPaintPNG.decode(shape.raster);
 			if (exact) {
@@ -1394,13 +1404,45 @@ function _rapierPaintGeomOf(layer, box) {
 	}
 	return { geom, pw, ph, s };
 }
+// A cap frees a new material sheet while the earlier sheet's immutable bytes are being encoded.
+// This chain is also the one custody barrier: recovery waits on it, and Undo/Close finish it in order.
+function _rapierPaintRevisionLayers(layer = _rapierPaintLayer()) {
+	const layers = [];
+	for (; layer; layer = layer.previousFlip) layers.unshift(layer);
+	return layers;
+}
+function _rapierPaintRetireRevisionLayer(layer) {
+	const next = layer.nextFlip;
+	if (!next) return;
+	if (next.previousFlip === layer) next.previousFlip = layer.previousFlip || null;
+	if (layer.previousFlip) layer.previousFlip.nextFlip = next;
+	layer.previousFlip = layer.nextFlip = null;
+	if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
+	layer.mount?.remove();
+	if (layer.canvas) layer.canvas.width = layer.canvas.height = 0;
+	_rapierPaintReattachLive();
+	return next;
+}
+function _rapierPaintSealRevision(layer, stroke, priorShift, grown) {
+	const state = _rapierDrawState, canvas = state.recipe.canvas;
+	const entry = _rapierDrawSealHistory();
+	if (stroke) stroke.entry = entry;
+	// Seal may grow the paper again for its content margin. Every pending sheet follows the full
+	// shift of this command, not just the first GrowCanvas call (nor the earlier sheets' shifts).
+	const shift = entry?.shift ? {dx: entry.shift.dx - (priorShift?.dx || 0), dy: entry.shift.dy - (priorShift?.dy || 0)} : grown;
+	if (grown || state.recipe.canvas !== canvas) _rapierPaintFollowGrowth(layer, shift || {dx: 0, dy: 0});
+	const shape = _rapierDrawShapeById(layer.id);
+	if (shape) layer.geom = JSON.stringify(shape.geom);
+}
 function _rapierPaintEncodeRevision(layer, px, keep, frozen) {
 	if (typeof Worker !== 'function') return false;
 	let owner = layer.pngWorker;
 	if (!owner) {
 		let url;
 		try {
-			url = URL.createObjectURL(new Blob(['const codec = (' + globalThis.RapierDrawPaint.createPaintPNGCodec.toString() + ')(); self.onmessage = async e => { const {id, px} = e.data; try { self.postMessage({id, raster: await codec.compressed(px)}); } catch (e) { self.postMessage({id, error: String(e.message || e)}); } };'], {type: 'text/javascript'}));
+			// The stored form keeps cap custody outside the final-file budget. Its exact compressed
+			// display twin avoids parsing a many-megabyte href every time the live SVG is rebuilt.
+			url = URL.createObjectURL(new Blob(['const codec = (' + globalThis.RapierDrawPaint.createPaintPNGCodec.toString() + ')(); self.onmessage = async e => { const {id, px, stored} = e.data; try { const raster = stored ? codec.encode(px) : await codec.compressed(px); let shown = null; if (stored) { try { shown = await codec.compressed(px); } catch (_) {} } self.postMessage({id, raster, shown}); } catch (e) { self.postMessage({id, error: String(e.message || e)}); } };'], {type: 'text/javascript'}));
 			owner = layer.pngWorker = {worker: new Worker(url), url, serial: 0};
 		} catch (_) { if (url) URL.revokeObjectURL(url); return false; }
 		const worker = owner.worker;
@@ -1409,6 +1451,7 @@ function _rapierPaintEncodeRevision(layer, px, keep, frozen) {
 			if (!job || job.raster) return;
 			try { job.raster = event.data.raster || _rapierPaintPNG.encode(job.px); }
 			catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); return; }
+			if (event.data.shown) _rapierPaintKeepShown([{url: job.raster, shown: event.data.shown}]);
 			_rapierPaintDrainRevisions(layer);
 		};
 		worker.onerror = worker.onmessageerror = () => { try { _rapierPaintFlushRevision(layer); } catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); } };
@@ -1418,17 +1461,18 @@ function _rapierPaintEncodeRevision(layer, px, keep, frozen) {
 	const held = { width: px.width, height: px.height, data: new Uint8ClampedArray(px.data) };
 	const wire = new Uint8ClampedArray(held.data);
 	layer.pngSerial = (layer.pngSerial || 0) + 1;
-	const job = {id: layer.pngSerial, px: held, keep, frozen, brushId: layer.brushId, worker, url: owner.url, session: _rapierDrawState.session, revision: layer.surface.revision, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve()};
+	const job = {id: layer.pngSerial, px: held, keep, frozen, stroke: layer.flipStroke, brushId: layer.brushId, worker, url: owner.url, session: _rapierDrawState.session, revision: layer.surface.revision, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve()};
 	layer.revisions = layer.revisions || [];
 	layer.revisions.push(job);
 	layer.pendingCommit = layer.revisions[0];
 	_rapierDrawRenderHistory();
 	job.timer = setTimeout(() => { if ((layer.revisions || []).includes(job)) { try { _rapierPaintFlushRevision(layer); } catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); } } }, 15000);
-	try { worker.postMessage({id: job.id, px: {width: held.width, height: held.height, data: wire}}, [wire.buffer]); }
+	try { worker.postMessage({id: job.id, stored: !!layer.nextFlip, px: {width: held.width, height: held.height, data: wire}}, [wire.buffer]); }
 	catch (_) { _rapierPaintFlushRevision(layer); }
 	return true;
 }
 function _rapierPaintDrainRevisions(layer) {
+	if (layer.previousFlip?.pendingCommit) return;
 	const queue = layer.revisions || [];
 	while (queue[0]?.raster && layer.revisions === queue) _rapierPaintFinishRevision(layer, queue[0].raster);
 }
@@ -1442,12 +1486,23 @@ function _rapierPaintFinishRevision(layer, raster, cancel = false) {
 	clearTimeout(job.timer);
 	if (cancel && !queue.length) { try { job.worker.terminate(); } catch (_) {} try { URL.revokeObjectURL(job.url); } catch (_) {} layer.pngWorker = null; }
 	try {
-		if (_rapierDrawState.paintLayer !== layer || _rapierDrawState.session !== job.session) throw new Error('The painting changed before its revision was kept');
-		const live = layer.surface.revision === job.revision && !_rapierDrawState.gesture && !queue.length;
+		if (_rapierDrawState.session !== job.session || !_rapierPaintRevisionLayers().includes(layer)) {
+			for (const abandoned of queue) { clearTimeout(abandoned.timer); abandoned.resolve(); }
+			queue.length = 0; layer.pendingCommit = null;
+			if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
+			const next = _rapierPaintRetireRevisionLayer(layer);
+			if (next) _rapierPaintDrainRevisions(next);
+			return;
+		}
+		const live = !layer.nextFlip && layer.surface.revision === job.revision && !_rapierDrawState.gesture && !queue.length;
 		if (live) _rapierPaintCommit(job.keep, raster);
 		else _rapierPaintPublishFrozen(layer, job, raster);
-	} catch (error) { layer.pendingOverflow = true; throw error; }
-	finally { job.resolve(); }
+	} catch (error) { queue.unshift(job); layer.pendingCommit = job; layer.pendingOverflow = true; throw error; }
+	finally { if (!queue.includes(job)) job.resolve(); }
+	if (!queue.length && layer.nextFlip) {
+		const next = _rapierPaintRetireRevisionLayer(layer);
+		if (next) _rapierPaintDrainRevisions(next);
+	}
 }
 // The stroke was already lifted. Its pixels and its place were taken then. Publishing them now
 // must not settle the wash a newer stroke is still in, must not hide that stroke's overlay, and
@@ -1459,8 +1514,9 @@ function _rapierPaintPublishFrozen(layer, job, raster) {
 	const geom = layer.frame ? built.geom : { ...built.geom };
 	const pw = built.pw, ph = built.ph, s = built.s;
 	const existing = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
-	const joins = !!layer.joinsStroke && layer.joinsStroke === state.undoStack.at(-1);
-	if (joins) layer.joinsStroke = null;
+	const stroke = job.stroke || layer.flipStroke;
+	const joins = !!stroke?.entry && stroke.entry === state.undoStack.at(-1);
+	const priorShift = joins ? state.undoStack.at(-1)?.shift : null;
 	_rapierDrawSnapshot(undefined, joins);
 	const grown = !layer.frame && _rapierDrawGrowCanvas(geom.cx - geom.w / 2, geom.cy - geom.h / 2, geom.cx + geom.w / 2, geom.cy + geom.h / 2);
 	state.paintLastGrown = grown || null;
@@ -1473,10 +1529,12 @@ function _rapierPaintPublishFrozen(layer, job, raster) {
 	}
 	layer.id = shape.id; layer.raster = raster; layer.geom = JSON.stringify(geom);
 	layer.checkpoint = {revision: job.revision, raster};
-	if (grown || layer.retire?.length) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
-	_rapierDrawSealHistory();
-	if (grown) _rapierPaintFollowGrowth(layer, grown);
+	const retired = !!layer.retire?.length;
+	if (retired) { const gone = new Set(layer.retire); state.recipe.shapes = state.recipe.shapes.filter(row => row === shape || !gone.has(row.id)); layer.retire = null; }
+	if (grown || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
+	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
 	_rapierPaintSyncPaper();
+	if (layer.nextFlip) void _rapierPaintEncodeShapeLater(shape.id, raster, job.px, stroke);
 }
 // The paper grew under a kept stroke, and every shape and the view moved by (dx, dy) canvas units with it. The live layer moves
 // too -- its pixels are where they were, only its origin names them anew -- so the next stroke begins on the painting as it stands.
@@ -1485,33 +1543,32 @@ function _rapierPaintPublishFrozen(layer, job, raster) {
 // the next stroke was already down, so that stroke would have been kept shifted by the growth. A stroke in progress takes the new
 // pointer map; its held samples are the layer's own coordinates and need nothing.
 function _rapierPaintFollowGrowth(layer, grown) {
-	if (layer.frame || !layer.origin) { _rapierPaintCloseLayer(); return; }
-	layer.origin[0] += grown.dx; layer.origin[1] += grown.dy;
-	_rapierPaintPlaceLive();
+	for (const current of _rapierPaintRevisionLayers()) {
+		if (current.frame) { current.frame.c0[0] += grown.dx; current.frame.c0[1] += grown.dy; }
+		else if (current.origin) { current.origin[0] += grown.dx; current.origin[1] += grown.dy; }
+		for (const job of current.revisions || []) {
+			const geom = job.frozen?.geom;
+			if (geom?.p) for (const p of geom.p) { p[0] += grown.dx; p[1] += grown.dy; }
+			else if (geom) { geom.cx += grown.dx; geom.cy += grown.dy; }
+		}
+		_rapierPaintPlaceLive(current);
+	}
 	const gesture = _rapierDrawState.gesture;
-	if (gesture?.kind === 'paint' && gesture.paint && !gesture.paint.pending && _rapierDrawState.paintLayer === layer) gesture.paint.geom = _rapierDrawPointerGeometry();
+	if (gesture?.kind === 'paint' && gesture.paint && !gesture.paint.pending) gesture.paint.geom = _rapierDrawPointerGeometry();
 }
 function _rapierPaintFlushRevision(layer = _rapierPaintLayer()) {
-	if (!layer) return;
-	const queue = layer.revisions?.length ? layer.revisions.splice(0) : (layer.pendingCommit ? [layer.pendingCommit] : []);
-	layer.pendingCommit = null;
-	layer.revisions = [];
-	const owner = layer.pngWorker;
-	if (owner) {
-		owner.worker.onmessage = owner.worker.onerror = owner.worker.onmessageerror = null;
-		try { owner.worker.terminate(); } catch (_) {}
-		try { URL.revokeObjectURL(owner.url); } catch (_) {}
-		layer.pngWorker = null;
-	}
-	for (const job of queue) {
-		clearTimeout(job.timer);
-		try {
-			if (_rapierDrawState.paintLayer !== layer || _rapierDrawState.session !== job.session) throw new Error('The painting changed before its revision was kept');
-			const raster = _rapierPaintPNG.encode(job.px);
-			if (layer.surface.revision === job.revision && !_rapierDrawState.gesture) _rapierPaintCommit(job.keep, raster);
-			else _rapierPaintPublishFrozen(layer, job, raster);
-		} catch (error) { layer.pendingOverflow = true; job.resolve(); throw error; }
-		job.resolve();
+	for (const pending of _rapierPaintRevisionLayers(layer)) {
+		const owner = pending.pngWorker;
+		if (owner) {
+			owner.worker.onmessage = owner.worker.onerror = owner.worker.onmessageerror = null;
+			try { owner.worker.terminate(); } catch (_) {}
+			try { URL.revokeObjectURL(owner.url); } catch (_) {}
+			pending.pngWorker = null;
+		}
+		while (pending.pendingCommit) {
+			const job = pending.pendingCommit;
+			_rapierPaintFinishRevision(pending, job.raster || _rapierPaintPNG.encode(job.px));
+		}
 	}
 }
 
@@ -1735,10 +1792,11 @@ function _rapierPaintPositionMount(mount, id) {
 	else mount.removeAttribute('opacity');
 }
 function _rapierPaintReattachLive() {
-	const layer = _rapierDrawState.paintLayer;
-	if (!layer?.mount || !layer.canvas) return;
-	_rapierPaintPositionMount(layer.mount, layer.id);
-	_rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer);
+	for (const layer of _rapierPaintRevisionLayers()) {
+		if (!layer.mount || !layer.canvas) continue;
+		_rapierPaintPositionMount(layer.mount, layer.id);
+		_rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer);
+	}
 }
 // The paper is what is seen (R78, the founder: strokes were cut off at a square canvas inside a
 // portrait phone). A whole-canvas layer covers the union of the drawing's canvas and the visible
@@ -1772,10 +1830,12 @@ function _rapierPaintStageUnion(recipe, pad = RAPIER_PAINT_EDGE_PAD) {
 	}
 	return { x0: x0 - pad, y0: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
 }
-function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = null) {
+function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = null, emptyUnion = null) {
 	const state = _rapierDrawState, recipe = state.recipe;
 	_rapierPaintCloseLayer();
-	let union = _rapierPaintStageUnion(recipe);
+	// Only a cap's new, empty sheet supplies its own box. Reopening existing paint always keeps the
+	// full scene bounds below; no caller may use an empty sheet's narrower allocation to crop it.
+	let union = emptyUnion || _rapierPaintStageUnion(recipe);
 	// R84, REVERTED after it destroyed a person's work. The version here shrinks the layer back to
 	// the CANVAS BOX when the union will not fit, and that is deliberate: the canvas box is the one
 	// region the committed painting is guaranteed to live inside.
@@ -1791,11 +1851,11 @@ function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = nul
 	// this lost the picture. A layer may never be smaller than the work it is holding, and any future
 	// attempt at the crop has to start from that, not from the reachable area.
 	let w = Math.max(1, Math.round(union.w * scale)), h = Math.max(1, Math.round(union.h * scale));
-	if (w * h > RAPIER_PAINT_AREA_MAX * 2) {
+	if (!emptyUnion && w * h > RAPIER_PAINT_AREA_MAX * 2) {
 		union = { x0: -RAPIER_PAINT_EDGE_PAD, y0: -RAPIER_PAINT_EDGE_PAD, w: recipe.canvas.w + RAPIER_PAINT_EDGE_PAD * 2, h: recipe.canvas.h + RAPIER_PAINT_EDGE_PAD * 2 };
 		w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale));
 	}
-	if (w * h > RAPIER_PAINT_AREA_MAX * 2) { union = { x0: 0, y0: 0, w: recipe.canvas.w, h: recipe.canvas.h }; w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale)); }
+	if (!emptyUnion && w * h > RAPIER_PAINT_AREA_MAX * 2) { union = { x0: 0, y0: 0, w: recipe.canvas.w, h: recipe.canvas.h }; w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale)); }
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Canvas is too large to paint on');
 	const surface = new PaintSurface(w, h, {wet: RAPIER_PAINT_WET});
 	surface.paper = RAPIER_PAINT_PAPER;
@@ -1855,8 +1915,7 @@ function _rapierPaintOpenLocalLayer(frame, atShapeId = null) {
 // map `_rapierPaintEventPoint` and `_rapierPaintCommit` already read. The SVG's own viewBox-to-screen
 // transform (letterboxing included) then places it on screen for free -- no separate screen-pixel
 // math, and no separate reason for it to drift from where the shapes around it actually sit.
-function _rapierPaintPlaceLive() {
-	const state = _rapierDrawState, layer = state.paintLayer;
+function _rapierPaintPlaceLive(layer = _rapierDrawState.paintLayer) {
 	if (!layer?.mount || !layer.canvas) return;
 	const mount = layer.mount, canvas = layer.canvas, w = canvas.width, h = canvas.height;
 	mount.setAttribute('width', w); mount.setAttribute('height', h);
@@ -1976,7 +2035,7 @@ function _rapierPaintScheduleBlit() {
 // translucent edge would double) and never both hide (a mark would vanish).
 function _rapierPaintShowLive(on, layer = _rapierDrawState.paintLayer) {
 	const state = _rapierDrawState;
-	if (!layer?.canvas || state.paintLayer !== layer) return;
+	if (!layer?.canvas || !_rapierPaintRevisionLayers().includes(layer)) return;
 	const visibility = on ? '' : 'hidden';
 	if (layer.canvas.style.visibility !== visibility) layer.canvas.style.visibility = visibility;
 	// An overlay whose pixels the browser took away shows nothing: the kept picture stays up under it.
@@ -2205,8 +2264,10 @@ function _rapierPaintAdmitSettings(erasing) {
 function _rapierPaintStrokeCheckpoint(gesture, layer) {
 	const state = _rapierDrawState;
 	_rapierPaintFlushRevision(layer);
+	// The earlier stroke is now sealed, including every cap sheet. This gesture gets its own step.
+	layer.flipStroke = null;
 	const props = {};
-	for (const key of ['id', 'raster', 'geom', 'origin', 'frame', 'retire', 'checkpoint', 'pendingOverflow', 'setPending', 'paintVersion', 'joinsStroke']) props[key] = _rapierDrawHistoryCopy(layer[key]);
+	for (const key of ['id', 'raster', 'geom', 'origin', 'frame', 'retire', 'checkpoint', 'pendingOverflow', 'setPending', 'paintVersion']) props[key] = _rapierDrawHistoryCopy(layer[key]);
 	gesture.paintRollback = {layer, props, pixels: layer.surface.beginStroke(), recipe: _rapierDrawHistoryRecipe(), undo: state.undoStack.slice(), redo: state.redoStack.slice(), view: {..._rapierDrawView()}};
 }
 function _rapierPaintReleaseStroke(gesture, cancel = false) {
@@ -2214,18 +2275,19 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	if (gesture.paint?.pending) gesture.paint.discarded = true;
 	if (!saved) return;
 	delete gesture.paintRollback;
-	if (!cancel) { saved.layer.surface.endStroke(saved.pixels); return; }
-	const layers = new Set([saved.layer, state.paintLayer].filter(Boolean));
+	if (!cancel) { if (!saved.restored) saved.layer.surface.endStroke(saved.pixels); if (saved.layer !== state.paintLayer) saved.layer.surface = null; return; }
+	const layers = new Set([saved.layer, ..._rapierPaintRevisionLayers()].filter(Boolean));
 	for (const layer of layers) {
 		for (const key of ['raf', 'holdRaf', 'dryRaf']) { if (layer[key]) cancelAnimationFrame(layer[key]); layer[key] = 0; }
 		for (const job of layer.revisions || []) { clearTimeout(job.timer); job.resolve(); }
 		layer.revisions = []; layer.pendingCommit = null;
 		if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
+		layer.previousFlip = layer.nextFlip = null; layer.flipStroke = null;
 		layer.mount?.remove();
 	}
 	state.paintSetting = false;
 	const layer = saved.layer;
-	layer.surface.endStroke(saved.pixels, true);
+	if (!saved.restored) layer.surface.endStroke(saved.pixels, true);
 	Object.assign(layer, saved.props);
 	state.paintLayer = layer; state.recipe = _rapierDrawRestoreRecipe(saved.recipe);
 	state.undoStack = saved.undo; state.redoStack = saved.redo; state.view = saved.view;
@@ -2470,7 +2532,7 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 // existing decode as the barrier for Done, recovery and tool changes, not a second sample queue.
 function _rapierPaintPendingStroke() {
 	const state = _rapierDrawState;
-	if (state.paintLayer?.pendingCommit) return state.paintLayer.pendingCommit.promise;
+	for (const layer of _rapierPaintRevisionLayers()) if (layer.pendingCommit) return layer.pendingCommit.promise;
 	return state.paintRehydrateWaiters?.some(g => g.paint?.pending && g.paint.ended && !g.paint.discarded)
 		? state.paintRehydrateTask : null;
 }
@@ -2491,6 +2553,9 @@ function _rapierPaintBegin(evt, gesture) {
 	// through rapierPaintFacts.timing by interaction-budgets and paint-first-dab-stages; costs
 	// five timestamps.
 	const timing = _rapierDrawState.paintTiming = { begin: performance.now(), layer: 0, brush: 0, seat: 0, blit: 0, opened: false };
+	// Resolve a new gesture's target after earlier cap sheets have reached the recipe. Otherwise a
+	// material tool on the clean sheet could start decoding the picture from before that flip.
+	if (_rapierPaintLayer()?.previousFlip) _rapierPaintFlushRevision();
 	// Admitted once, here, for both paths below (P03): the fast synchronous path uses it at once: the
 	// queued path (a decode still in flight) carries it through unread until replay.
 	const settings = _rapierPaintAdmitSettings(gesture.eraseInk), geom = _rapierDrawPointerGeometry();
@@ -2572,11 +2637,11 @@ function _rapierPaintGrowToHold(layer, paint, p) {
 // pixels, and a canvas that has grown to hold strokes off three edges holds a surface near the cap
 // before the fourth begins). The founder's durability law (R85b: never delete the person's work,
 // never stop it; canvas-durability.md: the automatic Set) says what happens instead of a clipped
-// mark: the painting so far is set as a picture, in its own history step, and the stroke carries
-// on over it on a fresh sheet at the view's own scale -- the brush carried across with everything
+// mark: the painting so far is captured for the worker, and the stroke carries
+// on over it on a fresh sheet at the current layer's scale -- the brush carried across with everything
 // it remembers (its position, its smudge, its load), the hand's running position and every held
-// sample carried as world coordinates, the pointer's map re-read once because the canvas may have
-// grown under the hand -- so the mark is one continuous mark across two pictures. Said once, in a
+// sample carried as world coordinates. Its picture publishes in order with the other sheets of
+// this same stroke, and any canvas growth moves the pending geometry too. Said once, in a
 // toast. Returns the layer the stroke continues on; the old one if the flip cannot happen now (a
 // settle already in flight), in which case the sample is clipped as before.
 function _rapierPaintFlipAtCap(layer, paint, p) {
@@ -2590,14 +2655,15 @@ function _rapierPaintFlipAtCap(layer, paint, p) {
 	try {
 		for (const q of carried) { q.x += origin[0]; q.y += origin[1]; }
 		layer.surface.settleWet();
-		state.paintLastGrown = null;
-		_rapierPaintCommit(true);
-		const settled = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
-		// The canvas grew to hold the picture and every shape moved with it; so does the hand.
-		const grown = state.paintLastGrown;
-		if (grown) for (const q of carried) { q.x += grown.dx; q.y += grown.dy; }
-		if (grown) paint.geom = _rapierDrawPointerGeometry();
-		if (state.paintLayer === layer) _rapierPaintCloseLayer();
+		_rapierPaintBlit();
+		const box = layer.surface.bounds();
+		if (!box) { for (const q of carried) { q.x -= origin[0]; q.y -= origin[1]; } return layer; }
+		const frozen = _rapierPaintGeomOf(layer, box);
+		const px = typeof layer.surface.readCommitted === 'function' ? layer.surface.readCommitted(box) : layer.surface.toRGBA8(box);
+		for (const key of ['raf', 'holdRaf', 'dryRaf']) { if (layer[key]) cancelAnimationFrame(layer[key]); layer[key] = 0; }
+		// Closing the view would flush its encoder. Detach it instead: its overlay stays underneath
+		// the clean sheet until the immutable revision owns a picture, then its view can be released.
+		state.paintLayer = null;
 		let fresh, o;
 		if (frame) {
 			// Keep the brush in its native affine basis across Set. The new sheet begins under the
@@ -2607,44 +2673,89 @@ function _rapierPaintFlipAtCap(layer, paint, p) {
 			o = [(x - fresh.frame.pad) / layer.scale, (y - fresh.frame.pad) / layer.scale];
 			fresh.surface.toothOX = layer.surface.toothOX + (o[0] - origin[0]) * layer.scale;
 			fresh.surface.toothOY = layer.surface.toothOY + (o[1] - origin[1]) * layer.scale;
-		} else { fresh = _rapierPaintOpenLayer(); o = fresh.origin || [0, 0]; }
+		} else {
+			// The old picture has not published or grown the scene yet. Start this blank sheet at the
+			// hand, at the current scale and on the same pixel grid. Include the preceding drawn point
+			// so an ordinary coalesced segment fits too; a remote jump still gets its own finite sheet.
+			const scale = layer.scale, reach = Math.ceil((paint.reach || 0) * scale + RAPIER_PAINT_GROW_MARGIN);
+			let x = Math.floor((p.x - origin[0]) * scale) - reach, y = Math.floor((p.y - origin[1]) * scale) - reach;
+			let w = reach * 2 + 2, h = w;
+			if (paint.drawn) {
+				const previous = paint.drawn.p, left = Math.floor((Math.min(p.x, previous.x) - origin[0]) * scale) - reach;
+				const top = Math.floor((Math.min(p.y, previous.y) - origin[1]) * scale) - reach;
+				const right = Math.floor((Math.max(p.x, previous.x) - origin[0]) * scale) + reach + 2;
+				const bottom = Math.floor((Math.max(p.y, previous.y) - origin[1]) * scale) + reach + 2;
+				if ((right - left) * (bottom - top) <= RAPIER_PAINT_AREA_MAX * 2) { x = left; y = top; w = right - left; h = bottom - top; }
+			}
+			fresh = _rapierPaintOpenLayer(scale, null, {x0: origin[0] + x / scale, y0: origin[1] + y / scale, w: w / scale, h: h / scale});
+			o = fresh.origin;
+			fresh.surface.toothOX = layer.surface.toothOX + x;
+			fresh.surface.toothOY = layer.surface.toothOY + y;
+		}
 		for (const q of carried) { q.x -= o[0]; q.y -= o[1]; }
 		fresh.brush = paint.brush; fresh.brushId = layer.brushId; fresh.brushDip = layer.brushDip; fresh.brushRadius = layer.brushRadius;
-		// One stroke is one Undo step: the sheet's first commit joins the step the flip wrote, while that
-		// step is still the head of history.
-		fresh.joinsStroke = state.undoStack.at(-1) || null;
-		paint.brush?.rebase?.((origin[0] + (grown?.dx || 0) - o[0]) * RAPIER_PAINT_GRAIN, (origin[1] + (grown?.dy || 0) - o[1]) * RAPIER_PAINT_GRAIN);
+		fresh.flipStroke = layer.flipStroke || (layer.flipStroke = {entry: null});
+		fresh.previousFlip = layer; layer.nextFlip = fresh;
+		paint.brush?.rebase?.((origin[0] - o[0]) * RAPIER_PAINT_GRAIN, (origin[1] - o[1]) * RAPIER_PAINT_GRAIN);
 		paint.scale = fresh.scale;
-		if (frame) _rapierPaintGrowToHold(fresh, paint, p);
+		if (!_rapierPaintEncodeRevision(layer, px, true, frozen)) {
+			_rapierPaintPublishFrozen(layer, {frozen, px, brushId: layer.brushId, revision: layer.surface.revision, stroke: layer.flipStroke}, _rapierPaintPNG.encode(px));
+			_rapierPaintRetireRevisionLayer(layer);
+		}
+		// The rollback needs only its baseline, not the material grown to the cap. Restore that
+		// baseline now; every later sheet can release its material outright after RGBA capture.
+		const rollback = state.gesture?.paintRollback;
+		if (rollback?.layer === layer) { layer.surface.endStroke(rollback.pixels, true); rollback.restored = true; }
+		else layer.surface = null;
+		_rapierPaintGrowToHold(fresh, paint, p);
 		_rapierPaintShowLive(true);
 		state.paintFlips = (state.paintFlips || 0) + 1;
-		if (settled) void _rapierPaintEncodeShapeLater(settled.id, settled.raster);
 		showToast('This painting reached what memory holds, so it was set as a picture. You are on a clean sheet over it -- keep going.', 'info');
 		return fresh;
 	} catch (error) {
 		console.warn('[rapier] paint flip at cap', error);
+		if (!state.paintLayer) { state.paintLayer = layer; for (const q of carried) { q.x -= origin[0]; q.y -= origin[1]; } }
 		return _rapierPaintLayer() || layer;
 	} finally { state.paintFlipping = false; }
 }
-// The picture a flip set is the working PNG at first, so the flip costs the hand nothing; its JPEG
-// XL is written the moment the encoder is done, in place and without a history step (exactly as
+// The picture a flip set is the worker's working PNG at first; its JPEG XL is written the moment
+// the encoder is done, in place and without a history step (exactly as
 // Done would write it), unless the shape has changed or gone meanwhile -- an Undo across the flip
 // puts the earlier picture back, and that one is not touched.
-async function _rapierPaintEncodeShapeLater(shapeId, was) {
+async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, stroke = null) {
 	const state = _rapierDrawState, session = state.session;
+	const encodes = state.paintEncodes || (state.paintEncodes = new Map());
+	let task;
 	try {
 		if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return;
-		const pixels = await _rapierPaintPNG.decode(was), surface = pixels ? _rapierPaintPixelsSurface(pixels) : null;
-		const canvas = surface ? null : await _rapierPaintRasterCanvas(was), source = surface || canvas;
-		const pieces = await _rapierPaintLosslessPieces(b => surface ? _rapierPaintEncodeJXL(surface, b, {lossless: true}).then(async out => ({ ...out, shown: await _rapierPaintShownFor(surface, b) })) : _rapierPaintEncodeCanvasBox(canvas, b, {lossless: true}), {x0: 0, y0: 0, x1: source.width - 1, y1: source.height - 1}, _rapierPaintRasterBudget());
+		task = (async () => {
+			const pixels = captured || await _rapierPaintPNG.decode(was), surface = pixels ? _rapierPaintPixelsSurface(pixels) : null;
+			const canvas = surface ? null : await _rapierPaintRasterCanvas(was), source = surface || canvas;
+			const encode = async box => {
+				if (!surface) return _rapierPaintEncodeCanvasBox(canvas, box, {lossless: true});
+				const out = await _rapierPaintEncodeJXL(surface, box, {lossless: true});
+				return {...out, shown: await _rapierPaintShownFor(surface, box)};
+			};
+			return _rapierPaintLosslessPieces(encode, {x0: 0, y0: 0, x1: source.width - 1, y1: source.height - 1}, _rapierPaintRasterBudget());
+		})();
+		encodes.set(was, task);
+		const pieces = await task;
 		if (!pieces || !state.open || state.session !== session) return;
-		_rapierPaintKeepShown(pieces);
 		const shape = _rapierDrawShapeById(shapeId);
 		if (!shape || shape.raster !== was) return;
-		if (pieces.length === 1) { shape.raster = pieces[0].url; _rapierDrawRenderShapes([shape.id]); return; }
-		const made = await _rapierPaintSplitShape(state.recipe.shapes, shape, pieces);
-		if (made) _rapierDrawRenderAll();
+		// A later stroke owns a different history head. Its file keep can finish this representation;
+		// this codec result must not reach backwards into the newer stroke's history or an Undo branch.
+		if (stroke && stroke.entry !== state.undoStack.at(-1)) return;
+		if (stroke) _rapierDrawSnapshot(undefined, true);
+		_rapierPaintKeepShown(pieces);
+		if (pieces.length === 1) { shape.raster = pieces[0].url; _rapierDrawRenderShapes([shape.id]); }
+		else if (_rapierPaintSplitShapeSync(state.recipe.shapes, shape, pieces)) _rapierDrawRenderAll();
+		if (stroke) stroke.entry = _rapierDrawSealHistory();
+		// The history now owns the final codec too; its large interim display key can be released.
+		if (captured) _rapierPaintShownAs.delete(was);
+		_rapierPaintReattachLive();
 	} catch (error) { console.warn('[rapier] paint flip encode', error); }
+	finally { if (encodes.get(was) === task) encodes.delete(was); }
 }
 // Resizing a <canvas> CLEARS it, and the live blit only paints the dirty box -- so after a grow the
 // next frame showed the new dab on a blank sheet and every earlier stroke vanished until the commit
@@ -2908,15 +3019,16 @@ function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 		const others = state.recipe.shapes.reduce((total, shape) => total + (shape !== existing && shape.recognized === 'paint' && typeof shape.raster === 'string' && !_rapierPaintPNG.isStored(shape.raster) ? shape.raster.length : 0), 0);
 		if (others + raster.length > globalThis.RapierDrawCore?.RAPIER_DRAW_RASTER_TOTAL) {
 			const already = layer.pendingOverflow;
-			layer.pendingOverflow = true; layer.joinsStroke = null;
+			layer.pendingOverflow = true;
 			if (!already) showToast('This drawing’s paintings together are at what one document picture can hold. Set this painting to keep it, or download the drawing and start another.', 'info');
 			return;
 		}
 	}
 	layer.pendingOverflow = false;
 	const built = _rapierPaintGeomOf(layer, box), pw = built.pw, ph = built.ph, s = built.s, geom = built.geom;
-	const joins = !!layer.joinsStroke && layer.joinsStroke === state.undoStack.at(-1);
-	layer.joinsStroke = null;
+	const stroke = layer.flipStroke;
+	const joins = !!stroke?.entry && stroke.entry === state.undoStack.at(-1);
+	const priorShift = custody || joins ? state.undoStack.at(-1)?.shift : null;
 	_rapierDrawSnapshot(undefined, custody || joins);
 	// The paper grows under the hand (R78): ink committed beyond the canvas widens it, shifting every
 	// shape when it grows leftward or upward; one history step with the stroke itself.
@@ -2948,11 +3060,9 @@ function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 		if (!made && shape.paint?.group != null && !state.recipe.shapes.some(row => row !== shape && row.paint?.group === shape.paint.group)) delete shape.paint.group;
 	}
 	if (grown || made || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
-	_rapierDrawSealHistory();
+	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
 	// The committed <image> now shows the same pixels the overlay does; hand the picture back to the SVG.
 	_rapierPaintShowLive(false);
-	// The paper grew: the live layer follows it (`_rapierPaintFollowGrowth`).
-	if (grown) _rapierPaintFollowGrowth(layer, grown);
 	_rapierPaintSyncPaper();
 }
 

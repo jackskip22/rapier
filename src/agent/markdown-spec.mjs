@@ -238,25 +238,25 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 				}
 			}
 		});
-		// Ink pairs (docs/markdown-standard.md, "Ink"), paired as the colour pairs are: an opener and the next closer at
-		// the same depth become one span that carries the opener whole in data-rapier-ink; an opener inside a pair, a
-		// closer with no opener, or a pair that crosses a container stays comment text and marks nothing.
+		// Each ink closer takes its innermost opener at the same inline-container depth. Nesting keeps
+		// separate strokes on shared words; an orphan or a mark crossing a container remains inert.
 		instance.core.ruler.after('rapier-text-color', 'rapier-ink', function rapierInkPairs(state) {
 			for (const blockToken of state.tokens) {
 				if (blockToken.type !== 'inline' || !Array.isArray(blockToken.children)) continue;
 				const children = blockToken.children;
-				let openIndex = -1, openDepth = 0, depth = 0;
+				const stack = [];
+				let depth = 0;
 				for (let index = 0; index < children.length; index++) {
 					const token = children[index];
 					if (token.type !== 'html_inline') {
 						depth += token.nesting || 0;
-						if (openIndex !== -1 && depth < openDepth) openIndex = -1;
+						while (stack.length && depth < stack.at(-1).depth) stack.pop();
 						continue;
 					}
 					const content = token.content;
 					if (rapierIsInkClose(content)) {
-						if (openIndex === -1 || depth !== openDepth) continue;
-						const opener = children[openIndex];
+						if (!stack.length || depth !== stack.at(-1).depth) continue;
+						const opener = children[stack.pop().index];
 						opener.type = 'rapier_ink_open';
 						opener.tag = 'span';
 						opener.nesting = 1;
@@ -266,12 +266,9 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 						token.tag = 'span';
 						token.nesting = -1;
 						token.content = '';
-						openIndex = -1;
 						continue;
 					}
-					if (openIndex !== -1 || !rapierParseInkOpen(content)) continue;
-					openIndex = index;
-					openDepth = depth;
+					if (rapierParseInkOpen(content)) stack.push({index, depth});
 				}
 			}
 		});

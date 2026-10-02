@@ -776,8 +776,8 @@
 .md-render span.rapier-ink-mark{all:unset;display:inline}
 .rapier-ink-layer{--md-ink:#b32034;--md-ink-dark:#b32034;position:relative;display:block;width:0;height:0;margin:0;padding:0;border:0;overflow:visible;pointer-events:none;z-index:3}
 .rapier-ink-layer svg{position:absolute;display:block;margin:0;padding:0;overflow:visible}
-.rapier-ink-layer path{fill:none;stroke:light-dark(var(--md-ink),var(--md-ink-dark));stroke-linecap:round;stroke-linejoin:round;opacity:.92}
-@media print{.rapier-ink-layer path{stroke:var(--md-ink)}}
+.rapier-ink-layer path{fill:light-dark(var(--md-ink),var(--md-ink-dark));stroke:none;opacity:.92}
+@media print{.rapier-ink-layer path{fill:var(--md-ink)}}
 .md-render [data-md-color="#1c7547"]{--md-color-dark:#70c390}
 .md-render [data-md-color="#b32034"]{--md-color-dark:#ff8385}
 .md-render [data-md-color="#175dc4"]{--md-color-dark:#7bafff}

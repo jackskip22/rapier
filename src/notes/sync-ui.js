@@ -252,6 +252,11 @@ const _rapierNotesSyncUi = (() => {
 			loading.setAttribute('role', 'status'); body.append(loading); return;
 		}
 		if (state.notice) { const p = node('p', 'export-choice__description', state.notice); p.setAttribute('role', 'status'); body.append(p); }
+		const limits = node('details', 'export-choice__description');
+		limits.append(node('summary', '', 'storage and backups'),
+			node('p', '', 'rapier keeps every encrypted version in your storage. deleting a note here does not erase those online copies; your provider can remove them.'),
+			node('p', '', 'sync can only check the versions your storage returns. it cannot detect newer work it has never seen. keep a separate backup.'));
+		body.append(limits);
 		// Where the provider's state would be: whether Rapier Sync approved this vault's storage (its transport's words,
 		// said once when a sync just said them).
 		if (mode() === 'companion' && state.hasConnection && companion.approved === false && message !== COMPANION_UNAPPROVED) paragraph(COMPANION_UNAPPROVED);

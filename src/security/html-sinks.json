@@ -105,12 +105,7 @@
       "_rapierDrawOpenDropper": {
         "count": 1,
         "kind": "static-template",
-        "reason": "pad.innerHTML is fixed markup -- the dropper's swatch, the hex button with its chip, the copy glyph and the check it turns to (RAPIER_DRAW_ICONS.copy and .check, read from Notes' and the editor's constant tables), the hint, Done and Cancel -- with nothing else interpolated. The sampled colour reaches the DOM only through style.background, textContent and an aria-label attribute."
-      },
-      "close": {
-        "count": 1,
-        "kind": "static-template",
-        "reason": "the dropper session's own close(): row.innerHTML is restored from _rapierDrawPalette, the same fixed template the row was built from before the dropper hid it."
+        "reason": "pad.innerHTML is fixed markup -- the dropper's swatch, the hex button with its chip, the copy glyph and the check it turns to (RAPIER_DRAW_ICONS.copy and .check, read from Notes' and the editor's constant tables), the hint, Use colour and Cancel -- with nothing else interpolated. The sampled colour reaches the DOM only through style.background, textContent and an aria-label attribute."
       },
       "_rapierDrawRenderTextFontPanel": {
         "count": 1,

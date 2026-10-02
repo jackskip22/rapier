@@ -51,7 +51,7 @@ function _rapierInkOnMutation(records) {
 }
 
 // spec is the Markdown grammar (parseInkBody), ink the geometry (deriveMark, bounds), draw the drawing module
-// (inkLayerOf, drawInk, inkSpanAt), dark the engine's light-to-dark colour.
+// (inkLayerOf, drawInk, inkPath), dark the engine's light-to-dark colour.
 function _rapierInkInstall(spec, ink, draw, dark) {
 	const host = _rapierInkHost();
 	if (!host || !spec || !ink || !draw) return;
