@@ -1327,13 +1327,7 @@ function _rapierNotesBuildSurface() {
 // better than just reordering them custom? The date created and the date modified are the useful
 // ones." Three also lets the words sit at the panel's own button size instead of being squeezed.
 const RAPIER_NOTES_SORT_ORDER = [['custom', 'Custom'], ['created', 'Created'], ['modified', 'Modified']];
-// One reader, because the panel no longer offers every value a phone may already have stored.
-// 'title' was struck this evening and 'remind' before it; a person carrying either would otherwise
-// be sorted by a mode with no control on screen and no way to see why. They read as Custom.
-function _rapierNotesSortMode() {
-	const stored = _rapierNotesPref('notesSort', 'custom');
-	return RAPIER_NOTES_SORT_ORDER.some(([id]) => id === stored) ? stored : 'custom';
-}
+function _rapierNotesSortMode() { return _rapierNotesPref('notesSort', 'custom'); }
 function _rapierNotesInfoBtn(value) {
 	const b = _rapierNotesEl('button', 'settings-info-btn settings-info-btn--hang');
 	b.type = 'button'; b.dataset.action = 'information'; b.dataset.value = value;
@@ -1458,7 +1452,8 @@ function _rapierNotesSyncBox() {
 function _rapierNotesSyncBoxWear(b) {
 	if (!b) { for (const button of document.querySelectorAll('.rapier-notes-sync')) _rapierNotesSyncBoxWear(button); return; }
 	const facts = _rapierNotesSyncFacts();
-	b.classList.toggle('rapier-cloudflare', !facts.app);
+	// The founder, 2 October: in the app the Rapier Sync box wears the same orange as the Cloudflare box it replaces.
+	b.classList.add('rapier-cloudflare');
 	b.replaceChildren(_rapierNotesEl('span', 'rapier-notes-sync__word', facts.app ? 'rapier sync' : !facts.connected ? 'sign in with cloudflare' : facts.at ? 'backed up to cloudflare' : 'connected to cloudflare'));
 	if (facts.connected) b.appendChild(_rapierNotesEl('span', 'rapier-notes-sync__when', facts.at ? _rapierNotesBackupWhen(facts.at) : 'not backed up yet'));
 	if (facts.connected) b.dataset.active = 'true'; else delete b.dataset.active;
@@ -1468,6 +1463,8 @@ function _rapierNotesSyncBoxWear(b) {
 // (notes/sync-ui.js, the companion's branch), which asks the app and opens nothing until a row is pressed.
 function _rapierNotesSyncPress() {
 	if (_rapierNotesIsApp()) {
+		// Rapier Sync is Pro (the founder, 2 October): without it the press opens the Pro sheet, nothing else.
+		if (typeof _rapierRequireFeature === 'function' && !_rapierRequireFeature('sync', {source: 'notes-sync'})) return;
 		if (typeof _rapierNotesSyncUi === 'object') _rapierNotesSyncUi.open();
 		else if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen();
 		return;
@@ -1501,9 +1498,7 @@ function _rapierNotesSettingsPaint() {
 	const toggle = (label, values, chosen, act, key, small) => {
 		const box = _rapierNotesEl('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff' + (small ? ' rapier-notes-switch--four' : '') + ' rapier-notes-switch');
 		box.setAttribute('role', 'group'); box.setAttribute('aria-label', label);
-		const single = values.length === 2 && values[0][1].toLowerCase() === 'off';
-		if (single) { box.dataset.switchLabel = label; box.dataset.off = values[0][0]; box.dataset.on = values[1][0]; }
-		for (const [value, word] of single ? [values[1]] : values) {
+		for (const [value, word] of values) {
 			const b = _rapierNotesEl('button', 'theme-switcher__btn onoff-btn', word);
 			b.type = 'button'; b.dataset.notesAct = act; b.dataset.value = value;
 			box.appendChild(b);
@@ -2062,7 +2057,8 @@ function _rapierNotesCard(file) {
 	el.setAttribute('aria-describedby', 'rapier-notes-card-help' + (state.selected.has(file) ? ' rapier-notes-selected' : ''));
 	if (state.selected.has(file)) el.classList.add('rapier-notes-card--selected');
 	// R86i: a search whose match is in the title marks it there, and the card keeps its own body.
-	if (card.title) { const h3 = _rapierNotesEl('h3', '', card.title); if (typeof _rapierNotesLibraryMarkTitle === 'function') _rapierNotesLibraryMarkTitle(h3, file); el.appendChild(h3); }
+	const title = card.title ? _rapierNotesEl('h3', '', card.title) : null;
+	if (title) el.appendChild(title);
 	// An unread note (over the preview bound, or its read failed) is its name -- the title above, which
 	// the projection of no words is -- and the reason, and opens whole. One whose read is still on its
 	// way is only its name: the card flashed "not read yet, 1 KB" under its name written twice.
@@ -2072,7 +2068,9 @@ function _rapierNotesCard(file) {
 	const link = card.title && !card.body.length && !card.checks.length && /^https?:\/\/\S+$/i.test(card.title);
 	if (link) { el.classList.add('rapier-notes-card--link'); let host = ''; try { host = new URL(card.title).hostname.replace(/^www\./, ''); } catch (_) {} if (host) el.appendChild(_rapierNotesEl('div', 'rapier-notes-card-link', host)); }
 	const takes = _rapierNotesRecordings(file);
-	const snippet = _rapierNotesSnippet(file), rich = snippet ? null : _rapierNotesCardBody(file, card);
+	const snippet = _rapierNotesSnippet(file);
+	const rich = !snippet || (title && held?.includes('<!--') && globalThis.RapierMarkdownSpec?.hasInkMarker(held)) ? _rapierNotesCardBody(file, card, title, !!snippet) : null;
+	if (title && typeof _rapierNotesLibraryMarkTitle === 'function') _rapierNotesLibraryMarkTitle(title, file);
 	if (snippet) el.appendChild(snippet);
 	else if (rich) {
 		const cover = rich.firstElementChild?.classList.contains('rapier-notes-card-cover') ? rich.firstElementChild : null;
@@ -2129,6 +2127,7 @@ function _rapierNotesCard(file) {
 	}
 	for (const block of el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote')) block.dir = 'auto';
 	if (entry.pinned) { const pin = _rapierNotesGlyph('pin'); pin.setAttribute('class', 'rapier-notes-mark'); el.appendChild(pin); }
+	if (title?._rapierNotesInk || rich?._rapierNotesInk) el._rapierNotesInk = [...(title?._rapierNotesInk || []), ...(!snippet && rich?._rapierNotesInk || [])];
 	return el;
 }
 // R86i law 3 (the founder: "We need to actually show rich WYSIWYG Markdown inside the cards, of
@@ -2171,23 +2170,25 @@ function _rapierNotesSpring() {
 	state.spring = easing;
 	return easing;
 }
-function _rapierNotesCardBody(file, card) {
+function _rapierNotesCardBody(file, card, title = null, titleOnly = false) {
 	const render = globalThis.rapierRenderPreview, assets = globalThis.RapierImageAssets;
 	if (typeof render !== 'function' || !assets || typeof assets.parseAssets !== 'function') return null;
 	const text = _rapierNotes.texts.get(file) || '', M = _rapierNotesModel();
 	// The model's own view of the lines (Astra A8, ported): a task line inside a fence, an indented
 	// block, a comment or raw HTML is text, never a box, and a note the card may not tick gets none.
-	const source = M.cardSource(text), lines = source.lines, at = M.cardHead(source.visible).at;
-	let n = 0, used = 0; const out = [];
+	const source = M.cardSource(text), lines = source.lines, at = M.cardHead(source.visible, lines).at;
+	const heading = title && at >= 0 ? lines.slice(at, card.start).join('\n') : '';
+	const markedTitle = heading.includes('<!--') && globalThis.RapierMarkdownSpec?.hasInkMarker(heading);
+	let n = 0, used = 0, cutAt = lines.length; const out = markedTitle ? [heading, ''] : [];
 	// The pictures a note opens with come first, the title's lines (already the card's h3; a `===`
 	// rule under it too) left out.
-	for (let i = card.lead >= 0 ? card.lead : card.start; i < lines.length; i++) {
+	for (let i = card.lead >= 0 ? card.lead : card.start; !titleOnly && i < lines.length; i++) {
 		if (card.lead >= 0 && card.title && i >= at && i < card.start) continue;
 		const line = lines[i];
 		// The pictures the note opens with are not preview words: a picture written inline is its whole
 		// data URL on one line, and counted, it spent the budget and left the card no words under it.
 		const lead = card.lead >= 0 && (at < 0 || i < at);
-		if (!lead && used + line.length > RAPIER_NOTES_PREVIEW_CHARS && out.length) break;
+		if (!lead && used + line.length > RAPIER_NOTES_PREVIEW_CHARS && out.length) { cutAt = i; break; }
 		if (!lead) used += line.length + 1;
 		// An item with NO words yet is still an item. This used to demand a non-space after the box
 		// (`\s+\S`), so a brand new "- [ ] " fell through to the renderer and the card drew the
@@ -2201,9 +2202,53 @@ function _rapierNotesCardBody(file, card) {
 	if (!out.some(l => l.trim())) return null;
 	const body = _rapierNotesBody(text);
 	let references = null; try { references = assets.parseAssets(body).references; } catch (_) { references = null; }
-	let html; try { html = render(out.join('\n'), references); } catch (_) { return null; }
-	if (html == null) return null;
-	const el = _rapierNotesEl('div', 'rapier-notes-card-body'); el.innerHTML = html;
+	const preview = out.join('\n'); let markdown = preview, boundary = '';
+	if (cutAt < lines.length && preview.includes('<!--')) {
+		const spec = globalThis.RapierMarkdownSpec;
+		if (spec?.hasInkMarker(preview)) {
+			const whole = preview + '\n' + lines.slice(cutAt).join('\n');
+			const crossing = spec.pairInkSpans(whole).runs.find(run => run.innerStart < preview.length && run.innerEnd > preview.length);
+			if (crossing) {
+				// Let the shared parser see the real close, then keep only the original excerpt's
+				// DOM. A synthetic close could turn an invalid paragraph-straddling mark into ink.
+				boundary = '\u2063inkcut\u2063'; while (whole.includes(boundary)) boundary += '\u2063';
+				markdown += boundary + whole.slice(preview.length, crossing.end);
+			}
+		}
+	}
+	const el = _rapierNotesEl('div', 'rapier-notes-card-body'); let html;
+	try {
+		for (;;) {
+			html = render(markdown, references); if (html == null) return null;
+			el.innerHTML = html;
+			if (!boundary) break;
+			const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let found = false;
+			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+				const at = node.nodeValue.indexOf(boundary); if (at < 0) continue;
+				const range = document.createRange(); range.setStart(node, at); range.setEnd(el, el.childNodes.length); range.deleteContents(); found = true; break;
+			}
+			if (found) break;
+			// An opaque comment or attribute can swallow the boundary; the original excerpt is
+			// still the fallback, never the extra source read only to finish a visible span.
+			markdown = preview; boundary = '';
+		}
+	} catch (_) { return null; }
+	// The same sanitized renderer supplies a marked title, including its span attributes. Move
+	// its inline children into the existing title; a second HTML sink or marker parser is unnecessary.
+	if (markedTitle && el.firstElementChild?.tagName === 'H1') {
+		const head = el.firstElementChild, limit = M.cutText(head.textContent, 80, 80).length;
+		if (limit < head.textContent.length) {
+			const walker = document.createTreeWalker(head, NodeFilter.SHOW_TEXT); let offset = 0;
+			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+				if (offset + node.nodeValue.length >= limit) { const range = document.createRange(); range.setStart(node, limit - offset); range.setEnd(head, head.childNodes.length); range.deleteContents(); break; }
+				offset += node.nodeValue.length;
+			}
+		}
+		for (const anchor of head.querySelectorAll('a')) { anchor.removeAttribute('href'); anchor.removeAttribute('target'); }
+		title.replaceChildren(...head.childNodes); head.remove();
+		const spans = [...title.querySelectorAll('span.rapier-ink-mark[data-rapier-ink]')];
+		if (spans.length) title._rapierNotesInk = spans;
+	}
 	// M3's own line for a recording is not words: the renderer draws it as a link, the card strips
 	// its href below, and the person is left with underlined words where a recording belongs. The
 	// line goes here; the card says the recording itself in a row under this body.
@@ -2244,7 +2289,42 @@ function _rapierNotesCardBody(file, card) {
 		fold.type = 'button'; fold.dataset.notesFold = open ? 'hide' : 'show'; fold.setAttribute('aria-expanded', String(open));
 		el.appendChild(fold);
 	}
+	if (html.includes('data-rapier-ink=')) {
+		const spans = [...el.querySelectorAll('span.rapier-ink-mark[data-rapier-ink]')].filter(span => !span.closest('.rapier-notes-check--folded'));
+		if (spans.length) el._rapierNotesInk = spans;
+	}
+	if (!el.firstElementChild && !el.textContent.trim()) return null;
 	return el;
+}
+
+// Only materialized cards with marked words enter the drawing closure. The card is its root
+// so a title and body can share an arrow; fragments outside the body's preview are not anchors.
+// Repacking already follows resize, image loading and task folds, so cards need no watchers.
+function _rapierNotesCardInk(card) {
+	const draw = globalThis.RapierInkDraw, spec = globalThis.RapierMarkdownSpec, ink = globalThis.RapierInk;
+	if (!draw || !spec || !ink || _rapierNotes.drag) return;
+	const body = card.querySelector('.rapier-notes-card-body'), clip = body?.getBoundingClientRect();
+	const fragments = new Map(), clipped = new Set();
+	for (const span of card._rapierNotesInk) {
+		if (!card.contains(span) || span.closest('.rapier-notes-check--folded')) continue;
+		let boxes = draw.inkFragments(span);
+		if (body?.contains(span)) {
+			boxes = boxes.filter(box => box.y < clip.bottom && box.y + box.height > clip.top && box.x < clip.right && box.x + box.width > clip.left);
+			clipped.add(span);
+		}
+		if (boxes.length) fragments.set(span, boxes);
+	}
+	if (!fragments.size) { card.querySelector('.rapier-ink-layer')?.remove(); return; }
+	const pieces = draw.drawInk(card, {spec, ink, spans: fragments.keys(), fragments: span => fragments.get(span) || []});
+	// Keep the same body clip even though its marks live at the card root. This clips geometry,
+	// not source: a partially shown line keeps its actual baseline instead of being fitted again.
+	for (const piece of pieces) {
+		if (!clipped.has(piece.span) || (piece.endSpan && !clipped.has(piece.endSpan))) continue;
+		const pad = (piece.kind === 'free' ? 0.09 : 0.11) * piece.em + 1, box = piece.box;
+		const edges = [clip.top - box.y + pad, box.x + box.width + pad - clip.right, box.y + box.height + pad - clip.bottom, clip.left - box.x + pad].map(value => Math.max(0, value));
+		if (edges.some(value => value > 0)) piece.element.style.clipPath = 'inset(' + edges.map(value => value.toFixed(2) + 'px').join(' ') + ')';
+	}
+	if (!_rapierNotes.inkFonts) { _rapierNotes.inkFonts = true; document.fonts?.addEventListener?.('loadingdone', _rapierNotesRepackSoon); }
 }
 // ---- The collage (R86i law 11) ------------------------------------------------------------------
 // The founder, from four screenshots of his own Keep: "images must auto size themselves and cards
@@ -2596,6 +2676,7 @@ function _rapierNotesWindowCommit(grid, win, cards, items) {
 		card.setAttribute('aria-posinset', String(from + i + 1));
 		card.setAttribute('aria-setsize', String(win.files.length));
 	});
+	for (const card of cards) if (card._rapierNotesInk) _rapierNotesCardInk(card);
 	return true;
 }
 // Derive until the model says the viewport is covered, or the section is complete: each round asks
@@ -3394,10 +3475,18 @@ async function _rapierNotesKeptRecord(file, text) {
 }
 globalThis.RapierNotesKeep = Object.freeze({
 	available() { return !!globalThis.RapierNotesModel && !!globalThis.RapierNotesIntegrity; },
+	// The founder, 2 October, from his phone: the question is asked only where syncing is on, and it names what is
+	// true, the person's own cloud storage, never "Rapier"; without sync, Save and Open are the device's, no question.
+	synced() {
+		try {
+			const s = typeof _rapierNotesSyncUi !== 'undefined' && _rapierNotesSyncUi.status();
+			return !!(s && s.unlocked && s.authorized);
+		} catch (_) { return false; }
+	},
 	ask(purpose) {
 		return purpose === 'open'
-			? rapierConfirm({title: 'open', message: 'Open a document kept in Rapier, or one from this device?', confirmLabel: 'from rapier', secondaryLabel: 'this device'})
-			: rapierConfirm({title: 'save', message: 'Keep this document in Rapier, beside your notes and synced with them, or save it on this device?', confirmLabel: 'keep in rapier', secondaryLabel: 'this device'});
+			? rapierConfirm({title: 'open', message: 'Open a document from your cloud storage, or one from this device?', confirmLabel: 'cloud storage', secondaryLabel: 'this device'})
+			: rapierConfirm({title: 'save', message: 'Save to your cloud storage, beside your notes, or on this device?', confirmLabel: 'cloud storage', secondaryLabel: 'this device'});
 	},
 	async keep(text, name) {
 		await _rapierNotesReady();
@@ -8398,6 +8487,44 @@ globalThis.rapierNotesWidgetOpen = function rapierNotesWidgetOpen(file, id = nul
 	});
 	_rapierNotes.captureChain = run; return run;
 };
+// The native inbox is durable until the folder has kept the note and every linked byte.
+// Share, widget and lock-screen launches enter one queue; a failed receipt is safe to redeliver.
+globalThis.rapierNotesReceiveShares = function rapierNotesReceiveShares() {
+	const run = _rapierNotes.captureChain.catch(() => {}).then(async () => {
+		const host = globalThis.RapierPlatform?.host;
+		if (!host?.shareInbox || !host.readShared) return false;
+		try {
+			const inbox = await host.shareInbox('list', {});
+			if (!Array.isArray(inbox?.items)) throw new Error('The shared items could not be read.');
+			if (!inbox.items.length) return true;
+			if (!await _rapierNotesUnlock()) return false;
+			await _rapierNotesFlush();
+			await _rapierNotesOpen();
+			if (!_rapierNotes.open || !_rapierNotes.index) return false;
+			const standing = {current: _rapierNotes.current, stamp: _rapierMutationStamp()};
+			let last, adopted = true;
+			for (const entry of inbox.items) {
+				const blob = await host.readShared(entry);
+				const base = _rapierNotes.indexBase;
+				last = await _rapierNotesStore.folder.createShared(entry, blob);
+				// Durable arrival does not own metadata changed while this write awaited.
+				if (_rapierNotes.indexBase === base && JSON.stringify(_rapierNotes.index) === JSON.stringify(base)) _rapierNotesTake(last);
+				else { _rapierNotesStore.stale = true; adopted = false; }
+				const ack = await host.shareInbox('ack', {id: entry.id, digest: entry.digest});
+				if (ack?.acknowledged !== true) throw new Error('The shared note was kept but its receipt was not acknowledged.');
+			}
+			if (adopted && _rapierNotes.open && _rapierNotes.current === standing.current && _rapierMutationStampIsCurrent(standing.stamp)) {
+				_rapierNotesRender();
+				if (last) await _rapierNotesOpenNote(last.file, false, last.index.notes[last.file]?.id);
+			}
+			return true;
+		} catch (error) {
+			showToast('The share could not finish. Its original is kept for another try.', 'error');
+			console.warn('[rapier] share', error); return false;
+		}
+	});
+	_rapierNotes.captureChain = run; return run;
+};
 async function _rapierNotesCapture(kind, captureToken) {
 	if (captureToken) { _rapierNotes.captureToken = captureToken; _rapierNotes.capturePreparing = true; }
 	let ready = false;
@@ -8441,14 +8568,17 @@ async function _rapierNotesStartCapture(kind, capture, captured = false) {
 // nothing is capped at the first note, the next page open, or an arbitrary future horizon.
 function _rapierNotesRemindSync() {
 	const schedule = globalThis.RapierPlatform?.host?.scheduleReminder;
-	if (typeof schedule !== 'function' || !_rapierNotes.index) return;
+	if (typeof schedule !== 'function' || !_rapierNotes.index || _rapierNotes.remindApplying) return;
 	const rows = _rapierNotesModel().nativeReminderRows(_rapierNotes.index, file => _rapierNotesTitle(file) || file.replace(/\.md$/i, ''));
-	const key = JSON.stringify(rows);
+	let key = JSON.stringify(rows);
 	if (key === _rapierNotes.remindSyncedKey) return;
 	_rapierNotes.remindSyncedKey = key;
 	_rapierNotes.remindChain = _rapierNotes.remindChain.catch(() => {}).then(async () => {
 		if (_rapierNotes.remindSyncedKey !== key) return;
-		await schedule(rows);
+		await _rapierNotesDrainReminderActions();
+		const current = _rapierNotesModel().nativeReminderRows(_rapierNotes.index, file => _rapierNotesTitle(file) || file.replace(/\.md$/i, ''));
+		key = JSON.stringify(current); _rapierNotes.remindSyncedKey = key;
+		await schedule(current);
 	}).catch(error => {
 		if (_rapierNotes.remindSyncedKey === key) {
 			_rapierNotes.remindSyncedKey = undefined;
@@ -8457,6 +8587,35 @@ function _rapierNotesRemindSync() {
 		console.warn('[rapier] notes', error);
 	});
 }
+
+// Notification actions are durable native receipts, consumed only after the existing folder
+// owner has committed them. Replays are idempotent by the action token stored in note data.
+async function _rapierNotesDrainReminderActions() {
+	const host = globalThis.RapierPlatform?.host;
+	if (typeof host?.reminderActions !== 'function') return;
+	for (;;) {
+		const {actions} = await host.reminderActions();
+		if (!Array.isArray(actions)) throw new Error('Invalid reminder actions');
+		if (!actions.length) return;
+		await _rapierNotesReady(); await _rapierNotesStore.kind();
+		const base = _rapierNotes.indexBase;
+		const snapshot = await _rapierNotesStore.folder.reminderActions(actions);
+		// A human choice or another completed transaction may have arrived during the
+		// owner write. Keep it in the page; the next owner read settles the fresh index.
+		if (_rapierNotes.indexBase === base && JSON.stringify(_rapierNotes.index) === JSON.stringify(base)) {
+			_rapierNotes.remindApplying = true;
+			try { _rapierNotesTake(snapshot); } finally { _rapierNotes.remindApplying = false; }
+		} else _rapierNotesStore.stale = true;
+		await host.acknowledgeReminderActions(actions.map(action => action.token));
+	}
+}
+globalThis.rapierNotesReceiveReminderActions = function rapierNotesReceiveReminderActions() {
+	const state = _rapierNotes;
+	state.remindChain = state.remindChain.catch(() => {}).then(_rapierNotesDrainReminderActions).then(() => {
+		state.remindSyncedKey = undefined; _rapierNotesRemindSync();
+	}).catch(error => { console.warn('[rapier] reminder actions remain pending', error); });
+	return state.remindChain;
+};
 
 // A setting is acknowledged after folder and native table custody. Ask permission only for this
 // deliberate act, then read live app/channel and alarm state instead of the earlier upload reply.

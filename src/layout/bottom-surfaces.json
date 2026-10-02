@@ -120,7 +120,7 @@
           },
           {
             "property": "bottom",
-            "value": "calc(16px + env(safe-area-inset-bottom, 0px))",
+            "value": "calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)))",
             "important": false
           },
           {
@@ -234,22 +234,22 @@
           },
           {
             "property": "left",
-            "value": "0",
+            "value": "var(--draw-safe-left)",
             "important": false
           },
           {
             "property": "right",
-            "value": "0",
+            "value": "var(--draw-safe-right)",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "0",
+            "value": "var(--draw-safe-bottom)",
             "important": false
           },
           {
             "property": "top",
-            "value": "calc(env(safe-area-inset-top,0px) + var(--draw-cell) + 2 * var(--space-1))",
+            "value": "calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))",
             "important": false
           }
         ]
@@ -291,12 +291,12 @@
         "declarations": [
           {
             "property": "left",
-            "value": "0",
+            "value": "var(--draw-safe-left)",
             "important": false
           },
           {
             "property": "right",
-            "value": "0",
+            "value": "var(--draw-safe-right)",
             "important": false
           },
           {
@@ -774,17 +774,17 @@
           },
           {
             "property": "left",
-            "value": "0",
+            "value": "var(--notes-safe-left)",
             "important": false
           },
           {
             "property": "right",
-            "value": "0",
+            "value": "var(--notes-safe-right)",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "env(safe-area-inset-bottom,0px)",
+            "value": "var(--notes-safe-bottom)",
             "important": false
           },
           {
@@ -877,7 +877,7 @@
           },
           {
             "property": "inset",
-            "value": "auto 0 0",
+            "value": "auto var(--notes-safe-right) 0 var(--notes-safe-left)",
             "important": false
           }
         ]
@@ -1560,7 +1560,7 @@
           },
           {
             "property": "top",
-            "value": "0",
+            "value": "calc(0.15rem + (var(--md-line) - 2rem) / 2)",
             "important": false
           }
         ]
@@ -1601,6 +1601,93 @@
       },
       "owner": ".md-render li",
       "reason": "The connector is a decorative pseudo-element between list items, not a bottom surface."
+    },
+    {
+      "id": "ordered-continued-connector-1",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ol[data-rapier-list-continues]>li:last-child::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(-1.75rem - 1.5px)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "2.2rem",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--md-line) / -4)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "A numbered list that a heading interrupts carries its dotted connector on past its last item, decoration inside the list block."
+    },
+    {
+      "id": "ordered-continued-connector-2",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ol[data-rapier-list-continues]>li:last-child::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 2,
+        "declarations": [
+          {
+            "property": "bottom",
+            "value": "calc(-1 * var(--md-line))",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "A numbered list that a heading interrupts carries its dotted connector on past its last item, decoration inside the list block."
+    },
+    {
+      "id": "ordered-continued-heading",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(1rem - 1.5px)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--md-line) / -2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render h2",
+      "reason": "The dotted connector of a numbered list runs down the heading that interrupts it, decoration inside the heading block."
     },
     {
       "id": "jump-marker",
@@ -2400,6 +2487,35 @@
       },
       "owner": ".table-scroll-wrap",
       "reason": "A wide table's first column stays at the start edge of its own sideways scroller, inside the table, never against the viewport."
+    },
+    {
+      "id": "table-header",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render thead",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [
+          {
+            "name": "media",
+            "params": "screen"
+          }
+        ],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "sticky",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "var(--md-table-header-top,0px)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render table",
+      "reason": "The header stays inside its table at the top of the document's vertical scroller; it creates no bottom surface and does not stick in print."
     }
   ]
 }

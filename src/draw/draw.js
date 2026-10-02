@@ -5247,7 +5247,7 @@ function _rapierDrawOpenSurface(options) {
 	// product is for, under the words the founder wrote for it (law 8). Re-opening an EXISTING
 	// drawing opens on the tool it was last edited with (`recipe.tool`, written by Done and the
 	// backup), so somebody halfway through a vector figure is not dragged into Paint every time they
-	// come back; a drawing saved before this law carried no tool and still opens in Select (law 4).
+	// come back; a drawing that names no tool opens in Select (law 4).
 	// A new drawing in a note opens on Notes' own last tool (RAPIER_DRAW_NOTES_TOOLS, above).
 	state.tool = state.editing ? (RAPIER_DRAW_TOOLS.includes(recipe.tool) ? recipe.tool : 'select') : state.notes ? _rapierDrawRemembered('notesTool') : 'brush';
 	state.pen = state.tool === 'pen';
@@ -5783,10 +5783,10 @@ async function _rapierDrawBackupRead() {
 					if (record?.version !== 1 || record.drawing !== drawing || record.revision !== row.revision || typeof record.authority !== 'string' || !record.authority || typeof record.filename !== 'string' || !Number.isFinite(record.at)) throw new Error('recovery record');
 					// keepRasters (28b part 3): recovery must never refuse what it itself wrote. A live
 					// state the door now keeps under the aggregate can still cross it through a closing
-					// commit (Set, Done, a tool change) that law forbids refusing -- and an older build's
-					// checkpoint, or one from before this ruling, may already be over it. Admission here
+					// commit (Set, Done, a tool change) that law forbids refusing, so a checkpoint may be over
+					// it. Admission here
 					// only shapes the recipe; the drawing still opens, with Done refused by name below.
-					const recipe = _rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts || record.recipe?.fonts }, true);
+					const recipe = _rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts }, true);
 					if (!recipe) throw new Error('recovery recipe');
 					record.recipe = recipe; record.fonts = recipe.fonts;
 					// Marked, not just silently kept: the same admission Done/Add already runs, without
@@ -6062,7 +6062,7 @@ async function _rapierDrawFinish({ back = false } = {}) {
 		let svgBytes = new TextEncoder().encode(svgText);
 		// Only reached when JPEG XL is this document's own image profile; a document without the
 		// encoder (or a witness forcing portable pictures) has no quality-95 to offer and falls
-		// through to the refusal below, exactly as before this law was in code.
+		// through to the refusal below.
 		if (svgBytes.length > _rapierDrawAssetBudget() && (typeof _rapierDefaultImageProfile !== 'function' || _rapierDefaultImageProfile() === 'jxl')) {
 			const before = svgBytes.length;
 			await _rapierPaintReencodeQuality95(recipe);

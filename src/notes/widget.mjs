@@ -30,7 +30,7 @@ function locate(index, id) {
 // byte oracle. Read complete visible lines so a long URL is removed BEFORE any text cut.
 // Check/action numbering still comes exclusively from projectCard over the original note.
 function widgetBody(text) {
-	const {visible, checkable} = cardSource(text), {title, start, lead, at} = cardHead(visible), body = [];
+	const {visible, lines, checkable} = cardSource(text), {title, start, lead, at} = cardHead(visible, lines), body = [];
 	for (let i = lead >= 0 ? lead : start; i < visible.length && body.length < 2; i++) {
 		if (lead >= 0 && title && i >= at && i < start) continue;
 		const line = visible[i].trim();

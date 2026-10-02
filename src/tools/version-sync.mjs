@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {VERSION} from '../version.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'skills/embed-rapier/package.json', 'skills/rapier-html/package.json', 'kit/package.json',
+export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'packages/rapier-embed/package.json', 'skills/rapier-html/package.json', 'kit/package.json',
 	'skills/README.md', 'skills/embed-rapier/SKILL.md',
 	'skills/rapier-html/SKILL.md', 'skills/rapier-html/README.md', 'skills/rapier-markdown/SKILL.md'];
 
@@ -27,6 +27,13 @@ export async function syncVersion({check = false, absent = 'refuse'} = {}) {
 		if (next === text) continue;
 		drifted.push(rel);
 		if (!check) await writeFile(path, next);
+	}
+	// One authored embed text serves the installed skill and its npm README.
+	const skill = resolve(root, 'skills/embed-rapier/SKILL.md'), readme = resolve(root, 'packages/rapier-embed/README.md');
+	if (existsSync(skill) && (absent !== 'skip' || existsSync(readme))) {
+		const body = (await readFile(skill, 'utf8')).replace(/^---\n[\s\S]*?\n---\n\s*/, '');
+		const current = existsSync(readme) ? await readFile(readme, 'utf8') : '';
+		if (current !== body) { drifted.push('packages/rapier-embed/README.md'); if (!check) await writeFile(readme, body); }
 	}
 	return {version: VERSION, files: VERSIONED_FILES.length, drifted, absent: missing};
 }

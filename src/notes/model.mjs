@@ -1,4 +1,5 @@
 import {parseFrontMatter, stripFrontMatter} from './frontmatter.mjs';
+import {stripInkMarkers, stripColorMarkers} from '../spec/md-marks.mjs';
 // How many of a note's leading lines the metadata block covers, from the module's own reading of it.
 // `pieces` carry their own endings, so this counts the same under LF, CRLF and CR alike.
 function frontLineCount(pieces, raw, body) {
@@ -110,21 +111,26 @@ export function emptyIndex() { return {version: NOTES_INDEX_VERSION, notes: {}, 
 const BUILTIN_SECTION_NAMES = ['skills', 'pinned', 'other', 'others', 'archive', 'archived', 'trash', 'deleted'];
 function isBuiltinSectionName(name) { return typeof name === 'string' && BUILTIN_SECTION_NAMES.includes(name.trim().toLowerCase()); }
 
-// R86f law 6: {at: integer ms, repeat?}; 'none' normalises away. Anything invalid drops the whole field, never throws.
-const REMIND_REPEATS = ['daily', 'weekly', 'monthly', 'yearly'];
-function cleanRemind(raw) {
+// The note's own rule. Custom intervals project to calendar days; weekdays to a day mask.
+const REMIND_REPEATS = ['daily', 'weekly', 'monthly', 'yearly', 'weekdays', 'custom'];
+const REMIND_MAX_DATE = 8_640_000_000_000_000, REMIND_MAX_STEP = 2_147_483_647;
+export function cleanRemind(raw) {
 	if (!raw || typeof raw !== 'object') return null;
-	if (!Number.isInteger(raw.at) || raw.at < 0) return null;
-	if (raw.repeat === undefined || raw.repeat === 'none') return {at: raw.at};
-	if (!REMIND_REPEATS.includes(raw.repeat)) return null;
-	return {at: raw.at, repeat: raw.repeat};
+	if (!Number.isSafeInteger(raw.at) || raw.at < 1 || raw.at > REMIND_MAX_DATE) return null;
+	const repeat = raw.repeat === 'none' ? undefined : raw.repeat;
+	if (repeat !== undefined && !REMIND_REPEATS.includes(repeat)) return null;
+	if (repeat === 'custom' && (!['days', 'weeks'].includes(raw.unit) || !Number.isSafeInteger(raw.every) || raw.every < 1 || raw.every > Math.floor(REMIND_MAX_STEP / (raw.unit === 'weeks' ? 7 : 1)))) return null;
+	if (raw.snoozeMinutes !== undefined && (!Number.isSafeInteger(raw.snoozeMinutes) || raw.snoozeMinutes < 1 || raw.snoozeMinutes > REMIND_MAX_STEP)) return null;
+	// Alphabetical keys agree with the sidecar merger's canonical reminder binding.
+	return {at: raw.at, ...(repeat === 'custom' ? {every: raw.every} : {}), ...(repeat ? {repeat} : {}),
+		...(raw.snoozeMinutes !== undefined ? {snoozeMinutes: raw.snoozeMinutes} : {}), ...(repeat === 'custom' ? {unit: raw.unit} : {})};
 }
 export function validNoteId(id) { return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id.slice(id.lastIndexOf(':') + 1))); }
 function cleanEntry(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	// Written in this function's field order, then unknown fields in their order: a round trip is byte-identical and keeps other owners' data.
 	const entry = {};
-	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'modified', 'created']);
+	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created']);
 	if (raw.id !== undefined && !validNoteId(raw.id)) throw Object.assign(new Error('invalid note identity'), {code: 'corrupt'});
 	if (raw.revision !== undefined && (typeof raw.revision !== 'string' || !raw.revision)) throw Object.assign(new Error('invalid note revision'), {code: 'corrupt'});
 	if (raw.id !== undefined) entry.id = raw.id;
@@ -143,6 +149,8 @@ function cleanEntry(raw) {
 	if (remind) entry.remind = remind;
 	if (Number.isInteger(raw.remindDone) && raw.remindDone >= 0) entry.remindDone = raw.remindDone;
 	if (typeof raw.remindDoneFor === 'string') entry.remindDoneFor = raw.remindDoneFor;
+	if (Number.isSafeInteger(raw.remindSnoozedUntil) && raw.remindSnoozedUntil >= 0 && raw.remindSnoozedUntil <= REMIND_MAX_DATE) entry.remindSnoozedUntil = raw.remindSnoozedUntil;
+	if (typeof raw.remindAction === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(raw.remindAction)) entry.remindAction = raw.remindAction;
 	if (Number.isFinite(raw.modified)) entry.modified = raw.modified;
 	// `created` sorts Date created.
 	if (Number.isFinite(raw.created)) entry.created = raw.created;
@@ -390,11 +398,15 @@ export function setRemind(index, file, remind) {
 	if (!index.notes[file]) return index;
 	const entry = {...index.notes[file]};
 	const clean = remind === null ? null : cleanRemind(remind);
+	const previous = cleanRemind(entry.remind);
+	const sameCalendar = clean && previous && clean.at === previous.at && JSON.stringify(reminderStep(clean)) === JSON.stringify(reminderStep(previous));
 	// A handled occurrence belongs to its exact schedule, never to a replacement.
-	if (!clean || JSON.stringify(cleanRemind(entry.remind)) !== JSON.stringify(clean)) {
+	if (!sameCalendar) {
 		delete entry.remindDone;
 		delete entry.remindDoneFor;
-	}
+		delete entry.remindSnoozedUntil;
+		delete entry.remindAction;
+	} else if (entry.remindDoneFor === JSON.stringify(previous)) entry.remindDoneFor = JSON.stringify(clean);
 	if (clean) entry.remind = clean; else delete entry.remind;
 	return {...index, notes: {...index.notes, [file]: entry}};
 }
@@ -455,10 +467,33 @@ function monthDayOccurrence(anchor, year, month) {
 // The sole mapping from product repeat rules to calendar increments. Native receives these
 // numeric projections, never 'daily'/'weekly'/... rules or a finite occurrence horizon.
 const REMIND_STEPS = {daily: {days: 1, months: 0}, weekly: {days: 7, months: 0}, monthly: {days: 0, months: 1}, yearly: {days: 0, months: 12}};
-function repeatStep(repeat, anchor, n) {
-	const step = REMIND_STEPS[repeat];
+function reminderStep(remind) {
+	if (remind.repeat === 'custom') return {days: remind.every * (remind.unit === 'weeks' ? 7 : 1), months: 0, weekdays: 0};
+	if (remind.repeat === 'weekdays') return {days: 0, months: 0, weekdays: 62};
+	return {...(REMIND_STEPS[remind.repeat] || {days: 0, months: 0}), weekdays: 0};
+}
+function repeatStep(remind, n) {
+	const anchor = new Date(remind.at), step = reminderStep(remind);
+	if (step.weekdays) {
+		const offsets = Array.from({length: 7}, (_, i) => i).filter(i => step.weekdays & (1 << ((anchor.getDay() + i) % 7)));
+		const d = new Date(anchor); d.setDate(d.getDate() + Math.floor(n / offsets.length) * 7 + offsets[n % offsets.length]);
+		return d.getTime();
+	}
+	if (n === 0 || !remind.repeat) return remind.at;
 	if (step.days) { const d = new Date(anchor); d.setDate(d.getDate() + n * step.days); return d.getTime(); }
 	return monthDayOccurrence(anchor, anchor.getFullYear(), anchor.getMonth() + n * step.months);
+}
+function firstOccurrenceAfter(remind, now) {
+	if (repeatStep(remind, 0) > now) return 0;
+	let low = 0, high = 1;
+	// Invalid Date is beyond the supported date range. It must terminate the search,
+	// including a very old daily anchor; never enumerate every elapsed occurrence.
+	while (repeatStep(remind, high) <= now) high *= 2;
+	while (high - low > 1) {
+		const mid = low + Math.floor((high - low) / 2);
+		if (repeatStep(remind, mid) <= now) low = mid; else high = mid;
+	}
+	return high;
 }
 export function nativeReminderRows(index, title = file => file.replace(/\.md$/i, '')) {
 	const rows = [];
@@ -467,44 +502,45 @@ export function nativeReminderRows(index, title = file => file.replace(/\.md$/i,
 		if (!remind || entry.trashed) continue;
 		// Rows carry the note's id: a renamed note does not ring again. No id, no table until the next commit.
 		rows.push({file, ...(typeof entry.id === 'string' ? {id: entry.id} : {}), title: String(title(file) || file).slice(0, 512), at: remind.at,
-			...(remind.repeat ? REMIND_STEPS[remind.repeat] : {days: 0, months: 0}), done: remindDoneAt(entry)});
+			...reminderStep(remind), done: remindDoneAt(entry), snoozeMinutes: remind.snoozeMinutes ?? 10, snoozedUntil: remindSnoozedAt(entry)});
 	}
 	return rows.sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
 }
 // Repeats are strictly after now so the reached slot is never scheduled twice; one-offs keep
 // their own instant even when missed. Due/acknowledgement use currentOccurrence instead.
 export function nextOccurrence(remind, now) {
+	remind = cleanRemind(remind);
 	if (!remind) return null;
-	if (!remind.repeat || remind.at > now) return remind.at;
-	const anchor = new Date(remind.at);
-	for (let n = 1; ; n++) {
-		const at = repeatStep(remind.repeat, anchor, n);
-		if (at > now) return at;
-	}
+	if (!remind.repeat) return remind.at;
+	const at = repeatStep(remind, firstOccurrenceAfter(remind, now));
+	return Number.isFinite(at) ? at : null;
 }
 
 // The latest occurrence at or before now; "due" and "handled" measure against it.
 function currentOccurrence(remind, now) {
-	if (!remind || remind.at > now) return null;
+	remind = cleanRemind(remind);
+	if (!remind || repeatStep(remind, 0) > now) return null;
 	if (!remind.repeat) return remind.at;
-	const anchor = new Date(remind.at);
-	let last = remind.at;
-	for (let n = 1; ; n++) {
-		const at = repeatStep(remind.repeat, anchor, n);
-		if (at > now) return last;
-		last = at;
-	}
+	return repeatStep(remind, firstOccurrenceAfter(remind, now) - 1);
 }
 // A binding to another definition cannot suppress this schedule.
 function remindDoneAt(entry) {
 	return entry.remindDoneFor === undefined || entry.remindDoneFor === JSON.stringify(cleanRemind(entry.remind)) ? (entry.remindDone || 0) : 0;
+}
+function remindSnoozedAt(entry) {
+	return entry.remindDoneFor === JSON.stringify(cleanRemind(entry.remind)) ? (entry.remindSnoozedUntil || 0) : 0;
+}
+function dueOccurrence(entry, now) {
+	const snoozed = remindSnoozedAt(entry);
+	if (snoozed > remindDoneAt(entry)) return snoozed <= now ? snoozed : null;
+	return currentOccurrence(entry.remind, now);
 }
 // Due while past remindDone: a one-off's `at` never moves.
 export function dueReminders(index, now) {
 	const out = [];
 	for (const [file, entry] of Object.entries(index.notes)) {
 		if (!entry.remind) continue;
-		const at = currentOccurrence(entry.remind, now);
+		const at = dueOccurrence(entry, now);
 		if (at != null && at > remindDoneAt(entry)) out.push(file);
 	}
 	return out;
@@ -513,9 +549,41 @@ export function dueReminders(index, now) {
 export function acknowledgeRemind(index, file, now) {
 	const entry = index.notes[file];
 	if (!entry || !entry.remind) return index;
-	const at = currentOccurrence(entry.remind, now);
+	const at = dueOccurrence(entry, now);
 	if (at == null || at <= remindDoneAt(entry)) return index;
-	return {...index, notes: {...index.notes, [file]: {...entry, remindDone: at, remindDoneFor: JSON.stringify(cleanRemind(entry.remind))}}};
+	return {...index, notes: {...index.notes, [file]: {...entry, remindDone: at, remindDoneFor: JSON.stringify(cleanRemind(entry.remind)), remindSnoozedUntil: 0}}};
+}
+
+// Receipts are replayed in their native order inside one folder-owner transaction. The
+// last committed token skips the prefix after a crash between that commit and native ack.
+export function applyReminderActions(index, actions) {
+	if (!Array.isArray(actions) || actions.length > 64) throw new TypeError('Invalid reminder actions');
+	const grouped = new Map(), tokens = new Set();
+	for (const action of actions) {
+		const before = action?.before;
+		if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(action?.token) || tokens.has(action.token) || !validNoteId(before?.id)
+			|| !Number.isSafeInteger(before.delivered) || before.delivered <= before.done || before.delivered > REMIND_MAX_DATE
+			|| !Number.isSafeInteger(action.snoozedUntil) || action.snoozedUntil < 0 || action.snoozedUntil > REMIND_MAX_DATE
+			|| action.snoozedUntil !== 0 && action.snoozedUntil <= before.delivered) throw new TypeError('Invalid reminder action');
+		tokens.add(action.token);
+		const list = grouped.get(before.id) || []; list.push(action); grouped.set(before.id, list);
+	}
+	let next = index;
+	for (const [id, pending] of grouped) {
+		const files = Object.keys(next.notes).filter(file => next.notes[file].id === id);
+		if (files.length !== 1) continue;
+		const file = files[0]; let entry = next.notes[file];
+		const acknowledged = pending.findIndex(action => action.token === entry.remindAction);
+		for (const action of pending.slice(acknowledged + 1)) {
+			if (entry.trashed) break;
+			const row = nativeReminderRows({notes: {[file]: entry}})[0], before = action.before;
+			if (!row || ['at', 'days', 'months', 'weekdays', 'done', 'snoozedUntil'].some(key => row[key] !== before[key])) continue;
+			entry = {...entry, remindDone: before.delivered, remindDoneFor: JSON.stringify(cleanRemind(entry.remind)),
+				remindSnoozedUntil: action.snoozedUntil, remindAction: action.token};
+		}
+		if (entry !== next.notes[file]) next = {...next, notes: {...next.notes, [file]: entry}};
+	}
+	return next;
 }
 
 // ---- The card, projected from the bytes. The title is a level-one heading (ATX or ===) and nothing else (task #369); a plain first line is body.
@@ -523,18 +591,25 @@ export function acknowledgeRemind(index, file, now) {
 const PICTURE_LINE = /^(?:!\[(?:\\.|[^\]\\])*\](?:\((?:[^()]|\([^()]*\))*\)|\[[^\]]*\])(?:[ \t]*<!--md-layout:v1[ \t][^>\r\n]*-->)?\s*)+$/;
 // R86k: a recording line is an attachment, never the title; no `lead` (the card draws its own row). Pattern kept here: audio.mjs imports this file.
 const RECORDING_LINE = /^\[(?:\\.|[^\]\\])*\]\(\s*<?(?:audio|attachments)\/[^()<>]*>?\s*(?:"[^"]*"|'[^']*')?\s*\)$/;
-export function cardHead(lines) {
+function cardInkWords(line) {
+	if (!line.includes('<!--')) return line;
+	const words = stripInkMarkers(line);
+	return words === line ? line : stripColorMarkers(words);
+}
+export function cardHead(lines, rawLines = lines) {
 	let lead = -1;
 	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i].trim();
+		const line = cardInkWords(lines[i].trim());
 		if (!line) continue;
 		// R86i law 11: leading pictures head the card; the title is the first words after them.
 		if (PICTURE_LINE.test(line)) { if (lead < 0) lead = i; continue; }
 		if (RECORDING_LINE.test(line)) continue;
 		// `at`: where the Title field stands when there is no title.
-		const atx = /^#\s+(.*?)(?:\s+#+)?\s*$/.exec(line); // a closing run of #s is not the title; C# is
-		const setext = !atx && /^ {0,3}=+\s*$/.test(lines[i + 1] || '') && !/^(?:#|>|[-*+]\s|\d+[.)]\s|\|)/.test(line);
-		const word = atx ? atx[1].replace(/[*_`~]/g, '').trim() : setext ? line.replace(/[*_`~]/g, '').trim() : '';
+		// Inline formatting can contain literal heading-shaped words; only the raw prefix
+		// establishes a heading. The displayed title still leaves its markers behind.
+		const raw = rawLines[i].trim(), atx = /^#\s+(.*?)(?:\s+#+)?\s*$/.exec(raw); // a closing run of #s is not the title; C# is
+		const setext = !atx && /^ {0,3}=+\s*$/.test(rawLines[i + 1] || '') && !/^(?:#|>|[-*+]\s|\d+[.)]\s|\|)/.test(raw);
+		const word = atx ? cardInkWords(atx[1]).replace(/[*_`~]/g, '').trim() : setext ? line.replace(/[*_`~]/g, '').trim() : '';
 		if (word) return {title: cutText(word, 80, 80), start: i + (setext ? 2 : 1), lead, at: i};
 		return {title: '', start: i, lead, at: i};
 	}
@@ -542,13 +617,13 @@ export function cardHead(lines) {
 }
 // The Title field asks this, never a second reading.
 export function noteHead(raws) {
-	const lines = [], owner = [];
+	const lines = [], rawLines = [], owner = [];
 	let at = -1;
 	for (let b = 0; b < raws.length; b++) {
-		const own = cardSource(raws[b]).visible;
-		for (const line of own) { lines.push(line); owner.push(b); }
-		lines.push(''); owner.push(b); // blocks stand a blank line apart, as the file has them
-		const head = cardHead(lines);
+		const source = cardSource(raws[b]), own = source.visible;
+		for (let i = 0; i < own.length; i++) { lines.push(own[i]); rawLines.push(source.lines[i]); owner.push(b); }
+		lines.push(''); rawLines.push(''); owner.push(b); // blocks stand a blank line apart, as the file has them
+		const head = cardHead(lines, rawLines);
 		if (head.at >= 0) return {title: head.title ? owner[head.at] : -1, at: at >= 0 ? at : owner[head.at]};
 		// No words yet: this block is the pictures the note opens with, or it holds nothing a card reads.
 		if (at < 0 && !own.some(line => line.trim())) at = b;
@@ -573,7 +648,8 @@ export function cardSource(text) {
 	let fence = '', comment = false, tag = '';
 	const visible = lines.map((line, i) => {
 		if (i < frontEnd) return '';
-		const value = line.trimStart(), mark = /^(`{3,}|~{3,})(.*)$/.exec(value);
+		let value = line.trimStart();
+		const mark = /^(`{3,}|~{3,})(.*)$/.exec(value);
 		if (fence) {
 			if (mark && mark[1][0] === fence[0] && mark[1].length >= fence.length && !mark[2].trim()) fence = '';
 			return '';
@@ -582,16 +658,20 @@ export function cardSource(text) {
 		if (tag) { if (new RegExp('</' + tag + '\\s*>', 'i').test(value)) tag = ''; return ''; }
 		if (/^(?: {4}|\t)/.test(line)) return '';
 		if (mark) { fence = mark[1]; return ''; }
+		// Ink is inline formatting, not an opaque comment line. Keep its words in the card's
+		// projection; `lines` still holds the exact markers for the shared preview renderer.
+		const shown = cardInkWords(line);
+		if (shown !== line) value = shown.trimStart();
 		if (value.includes('<!--') && !PICTURE_LINE.test(value)) { comment = !value.slice(value.indexOf('<!--') + 4).includes('-->'); return ''; }
 		const html = /^<(pre|script|style|textarea)(?:\s|>)/i.exec(value);
 		if (html) { if (!new RegExp('</' + html[1] + '\\s*>', 'i').test(value)) tag = html[1]; return ''; }
-		return line;
+		return shown;
 	});
 	return {pieces, lines, visible, needsReview, checkable};
 }
 export function projectCard(file, text, {bodyLines = 6, taskDepth = false} = {}) {
-	const {visible: lines, needsReview, checkable} = cardSource(text);
-	const {title, start, lead, at} = cardHead(lines);
+	const {visible: lines, lines: rawLines, needsReview, checkable} = cardSource(text);
+	const {title, start, lead, at} = cardHead(lines, rawLines);
 	const body = [], checks = [];
 	// Leading pictures are body; the title's lines are never body.
 	for (let i = lead >= 0 ? lead : start; i < lines.length && body.length < bodyLines; i++) {
@@ -599,10 +679,10 @@ export function projectCard(file, text, {bodyLines = 6, taskDepth = false} = {})
 		const line = lines[i].trim();
 		if (!line) continue;
 		// An item with no words is an item. This test, notes.js's card sentinel and toggleCheck must stay identical.
-		const box = checkable && /^[-*]\s+\[( |x|X)\](?:\s+(.*))?$/.exec(line);
-		if (box) { checks.push({done: box[1] !== ' ', text: cutText(box[2] || '', 120, 120), ...(taskDepth ? {depth: /^  [-*]\s/.test(lines[i]) ? 1 : 0} : {})}); continue; }
-		if (/^!\[/.test(line)) { body.push('\u{1F5BC}'); continue; }
-		body.push(cutText(line.replace(/^#{1,6}\s+/, '').replace(/^[-*>]\s+/, '').replace(/[*_`~]/g, ''), 280, 280));
+		const raw = rawLines[i].trim(), box = checkable && /^[-*]\s+\[( |x|X)\](?:\s+(.*))?$/.exec(raw);
+		if (box) { checks.push({done: box[1] !== ' ', text: cutText(cardInkWords(box[2] || ''), 120, 120), ...(taskDepth ? {depth: /^  [-*]\s/.test(lines[i]) ? 1 : 0} : {})}); continue; }
+		if (/^!\[/.test(raw)) { body.push('\u{1F5BC}'); continue; }
+		body.push(cutText(cardInkWords(raw.replace(/^#{1,6}\s+/, '').replace(/^[-*>]\s+/, '')).replace(/[*_`~]/g, ''), 280, 280));
 	}
 	// `start` is where toggleCheck counts from.
 	return {file, title: title || (body.length || checks.length ? '' : file.replace(/\.md$/i, '')), body, checks, empty: !title && !body.length && !checks.length, needsReview, start, lead};
@@ -610,14 +690,16 @@ export function projectCard(file, text, {bodyLines = 6, taskDepth = false} = {})
 
 // Only the tick changes (CR-only EOLs too); null when no such box or not tickable.
 export function toggleCheck(text, n) {
-	const {pieces, visible, checkable} = cardSource(text);
+	const {pieces, lines, visible, checkable} = cardSource(text);
 	if (!checkable) return null;
-	const {start} = cardHead(visible);
+	const {start} = cardHead(visible, lines);
 	let seen = 0;
 	for (let i = start; i < pieces.length; i++) {
 		if (!visible[i]) continue;
 		// Identical to projectCard and notes.js's sentinel.
-		const m = /^(\s*[-*]\s+\[)( |x|X)(\](?:\s.*)?)$/.exec(visible[i]);
+		// Only the raw task prefix locates the writable byte: removing inline ink can expose
+		// checkbox-shaped prose, and its offset must never be used against the original file.
+		const m = /^(\s*[-*]\s+\[)( |x|X)(\](?:\s.*)?)$/.exec(lines[i]);
 		if (!m || seen++ !== n) continue;
 		pieces[i] = pieces[i].slice(0, m[1].length) + (m[2] === ' ' ? 'x' : ' ') + pieces[i].slice(m[1].length + 1);
 		return pieces.join('');

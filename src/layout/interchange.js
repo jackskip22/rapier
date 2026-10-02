@@ -404,6 +404,25 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   }});
 }
 
+// One group's retained factories as the module lines an exported page's script begins with (the build publishes each
+// group's paths in dependency order beside the factories).
+function _rapierArtifactFactoryModules(dependencies, group) {
+  const paths = dependencies.groups && dependencies.groups[group] ? dependencies.groups[group] : Object.keys(dependencies.factories);
+  return paths.map(path => 'modules[' + JSON.stringify(path) + '] = (' + Function.prototype.toString.call(dependencies.factories[path]) + ')();').join('\n');
+}
+
+// The ink in an exported page (docs/briefs/ink.md §3): the page's own script draws every mark again from its words'
+// boxes whenever the page lays out again and before it prints (layout/ink-draw.mjs watchInk), under the same nonce as
+// the reflow script. Only a page carrying a mark earns it; the policy stays script-src 'none' otherwise.
+function _rapierArtifactInkScript(root, nonce = '') {
+  const dependencies = globalThis.RapierArtifactLayoutDependencies;
+  if (!dependencies?.factories || !dependencies.groups?.ink || !root.querySelector('span.rapier-ink-mark[data-rapier-ink]')) return '';
+  const script = '/* Rapier export ink: the marks drawn from their own words. SPDX-License-Identifier: AGPL-3.0-only */\n' +
+    '(() => {\nconst modules = {};\n' + _rapierArtifactFactoryModules(dependencies, 'ink') +
+    '\nmodules["layout/ink-draw.mjs"].watchInk(document.querySelector("main.rapier-page"), modules["spec/md-marks.mjs"], modules["spec/ink.mjs"]);\n})();';
+  return '<script' + (nonce ? ' nonce="' + nonce + '"' : '') + '>\n' + script.replace(/<\/script/gi, '<\\/script') + '\n</script>';
+}
+
 function _rapierArtifactLayoutScript(root, nonce = '') {
   const dependencies = globalThis.RapierArtifactLayoutDependencies;
   // Every wrap value earns the reflow script, and an inline turned raster (keyed off data-rapier-image-layout).
@@ -412,8 +431,7 @@ function _rapierArtifactLayoutScript(root, nonce = '') {
   if (!dependencies?.factories ||
       (![...root.querySelectorAll('p[data-md-layout]')].some(element => ['around', 'box', 'behind', 'front'].includes(layoutOf(element)?.wrap)) &&
        ![...root.querySelectorAll('img[data-rapier-image-layout]')].some(image => pictureLayoutOf(image)?.rotate))) return '';
-  const modules = Object.entries(dependencies.factories).map(([path, factory]) =>
-    'modules[' + JSON.stringify(path) + '] = (' + Function.prototype.toString.call(factory) + ')();').join('\n');
+  const modules = _rapierArtifactFactoryModules(dependencies, 'layout');
   const script = '/* Rapier export layout: SPDX-License-Identifier: AGPL-3.0-only */\n' +
     '/* Pretext 0.0.9\n' + dependencies.license + '\n*/\n' +
     '(() => {\nconst modules = {};\n' + modules + '\n(' + _rapierProjectArtifactLayout.toString() +

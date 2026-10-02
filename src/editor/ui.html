@@ -169,6 +169,11 @@
 		<button type="button" class="fmt-btn" data-action="command" data-command="insert.draw" data-tip="draw" aria-label="draw a picture">
 			<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
 		</button>
+		<!-- The pen (docs/briefs/ink.md §4): a nib beside the highlighter, among the marks. Tapping it puts the pen down: nothing
+		     opens, a drag over the words is ink that stays with them; tapping again lifts it. A stylus inks with no button. -->
+		<button type="button" class="fmt-btn" data-action="ink-pen" data-tip="pen" aria-label="pen: mark the words" aria-pressed="false">
+			<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+		</button>
 		<button type="button" class="fmt-btn" data-cmd="highlight-picker" id="fmt-btn-highlight"
 						data-tip="highlight · hold for color" aria-label="highlight; hold for color" aria-haspopup="menu"
 						aria-controls="highlight-picker"
@@ -283,6 +288,18 @@
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="highlight-yellow" data-action="pick-highlight" data-value="yellow" data-tip="yellow highlight" aria-label="yellow highlight"><span class="highlight-swatch highlight-swatch--yellow" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="highlight-purple" data-action="pick-highlight" data-value="purple" data-tip="purple highlight" aria-label="purple highlight"><span class="highlight-swatch highlight-swatch--purple" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn" data-cmd="highlight-none" data-action="pick-highlight" data-value="none" data-tip="remove highlight" aria-label="remove highlight"><span class="highlight-swatch highlight-swatch--remove" aria-hidden="true"></span></button>
+</div>
+
+<!-- ── The pen's strip (docs/briefs/ink.md §4): while the pen is down, its colour, an eraser and done. One width: the stroke's kind sets it. -->
+<div class="ink-strip" id="ink-strip" role="toolbar" aria-label="pen" aria-hidden="true" onmousedown="event.preventDefault()">
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#1c7547" data-tip="green ink" aria-label="green ink" aria-pressed="false"><span class="color-swatch color-swatch--green" aria-hidden="true"></span></button>
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#b32034" data-tip="red ink" aria-label="red ink" aria-pressed="true"><span class="color-swatch color-swatch--red" aria-hidden="true"></span></button>
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#175dc4" data-tip="blue ink" aria-label="blue ink" aria-pressed="false"><span class="color-swatch color-swatch--blue" aria-hidden="true"></span></button>
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#865818" data-tip="gold ink" aria-label="gold ink" aria-pressed="false"><span class="color-swatch color-swatch--gold" aria-hidden="true"></span></button>
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-colour" data-value="#7924d7" data-tip="purple ink" aria-label="purple ink" aria-pressed="false"><span class="color-swatch color-swatch--purple" aria-hidden="true"></span></button>
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-eraser" data-tip="eraser" aria-label="eraser: tap a mark to remove it" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></svg></button>
+	<button type="button" tabindex="-1" class="fmt-btn" data-action="ink-stylus" data-tip="stylus marks the page" aria-label="stylus marks the page with no button: on or off" aria-pressed="true">stylus</button>
+	<button type="button" tabindex="-1" class="fmt-btn ink-strip__done" data-action="ink-done" data-tip="done" aria-label="done: lift the pen">done</button>
 </div>
 
 <!-- ── Divider style derivative strip ────────-->
@@ -473,8 +490,9 @@
 
 			<!-- Read only — a persisted preference; the engine owns enforcement. -->
 			<div class="settings-section__title">read only</div>
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-only" data-switch="readOnly" data-switch-label="Read only" data-off="off" data-on="on" role="group" aria-label="read only" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="on" style="flex:1;width:auto">Read only: Off</button>
+			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-only" data-switch="readOnly" role="group" aria-label="read only" style="width:100%;margin-bottom:var(--space-4)">
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">OFF</button>
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="on" style="flex:1;width:auto">ON</button>
 			</div>
 
 
@@ -488,9 +506,10 @@
 				<div class="settings-action-row">
 					<button type="button" class="settings-action-btn" id="notes-open-btn" data-action="notes-open" hidden>open</button>
 				</div>
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-notes-start" data-switch="notesStart" data-switch-label="Start in Notes" data-off="editor" data-on="notes" role="group" aria-label="start in" style="width:100%" hidden>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="notes" style="flex:1;width:auto">Start in Notes: Off</button>
-			</div>
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-notes-start" data-switch="notesStart" role="group" aria-label="start in" style="width:100%" hidden>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="editor" style="flex:1;width:auto">EDITOR FIRST</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="notes" style="flex:1;width:auto">NOTES FIRST</button>
+				</div>
 				<button type="button" class="settings-action-btn rapier-notes-sync rapier-cloudflare" id="notes-sync-btn" data-action="notes-sync" hidden>SIGN IN WITH CLOUDFLARE</button>
 			</div>
 			<!-- RAPIER_NOTES_END -->
@@ -559,23 +578,16 @@
 
 			<!-- Read-aloud visibility toggle. -->
 			<div class="settings-section__title">read aloud</div>
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-aloud" data-switch="showPlayButton" data-switch-label="Read aloud" data-off="false" data-on="true" role="group" aria-label="read aloud button" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">Read aloud: Off</button>
-			</div>
-
-			<!-- Highlights — three-state syntax-highlight palette. -->
-			<div class="settings-section__title">highlights</div>
-			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-highlights" data-switch="highlights" role="group" aria-label="syntax highlights" style="width:100%;margin-bottom:var(--space-4)">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">OFF</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="standard" style="flex:1;width:auto">STANDARD</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="accent" style="flex:1;width:auto">ACCENT</button>
+			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-aloud" data-switch="showPlayButton" role="group" aria-label="read aloud button" style="width:100%;margin-bottom:var(--space-4)">
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="false" style="flex:1;width:auto">OFF</button>
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">ON</button>
 			</div>
 
 			<div class="settings-section__title">headings</div>
 			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-headings" data-switch="headings" role="group" aria-label="heading sections" style="width:100%;margin-bottom:var(--space-4)">
 				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">OFF</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="collapsed" style="flex:1;width:auto">COLLAPSED</button>
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="expanded" style="flex:1;width:auto">EXPANDED</button>
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="collapsed" style="flex:1;width:auto">COLLAPSE</button>
+				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="expanded" style="flex:1;width:auto">EXPAND</button>
 			</div>
 
 			<!-- Layout — Rapier's own live layout, or Plain (rung 0: no width/place/turn/align applied; F75-12). -->
@@ -588,51 +600,68 @@
 				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="plain" style="flex:1;width:auto">PLAIN</button>
 			</div>
 
-			<!-- Lines — collapsed by default. -->
+			<!-- Code (the founder, 2 October, evening): one collapsed section for everything a code block or a code
+			     file shows. The highlight palette lives here now, two states, never off. A strip whose choices only
+			     mean something while the control above it is on (the checkerboard's contrast, the wrapped line's
+			     numbers) joins that control's underside and folds away with it: the adaptive interface. -->
 			<div class="settings-disclosure-shell">
-				<button class="settings-section__title settings-disclosure-title"
-								id="settings-lines-title"
-								type="button"
-								data-action="lines-toggle"
-								aria-expanded="false"
-								aria-controls="settings-lines-controls">
-					<span>lines</span>
-					<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
-				</button>
+				<div class="settings-disclosure-title settings-disclosure-title--split" id="settings-code-title" tabindex="-1">
+					<button type="button" class="settings-section__title settings-disclosure-word" id="settings-code-word"
+						data-action="code-toggle" aria-expanded="false" aria-controls="settings-code-controls">code</button>
+					<button type="button" class="settings-info-btn settings-info-btn--hang" id="code-info" data-action="information" data-value="code" aria-label="about code" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+					<button type="button" class="settings-disclosure-glyph-btn" id="settings-code-glyph"
+						data-action="code-toggle" aria-expanded="false" aria-controls="settings-code-controls" aria-label="toggle code settings">
+						<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
+					</button>
+				</div>
 				<div class="settings-disclosure"
-						 id="settings-lines-controls"
+						 id="settings-code-controls"
 						 data-open="false">
 					<div class="settings-disclosure__inner">
-						<div class="lines-toggle-group" style="margin-bottom:var(--space-4)">
+						<div class="code-toggle-group" style="margin-bottom:var(--space-4)">
 
-				<!-- Checkerboard strip: OFF | CHECKERBOARD (default). -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-checker" data-switch="checker" data-switch-label="Checkerboard" data-off="false" data-on="true" role="group" aria-label="checkerboard lines" style="width:100%">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">Checkerboard: Off</button>
-			</div>
+				<!-- Highlights: the standard palette, or the accent palette (the same lexer's tokens worn in the accent colour). -->
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-highlights" data-switch="highlights" role="group" aria-label="syntax highlights" style="width:100%">
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="standard" style="flex:1;width:auto">STANDARD</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="accent" style="flex:1;width:auto">ACCENT</button>
+				</div>
 
-				<!-- Line numbers: AUTO (default) | OFF | SELECTED | ALL NUMBERS. -->
+				<!-- Checkerboard, with its contrast joined beneath while it is on. Dim is the default. -->
+				<div class="settings-switch-stack">
+					<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-checker" data-switch="checker" data-switch-label="Checkerboard" data-on="true" data-off="false" role="group" aria-label="checkerboard lines" style="width:100%">
+						<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">CHECKERBOARD OFF</button>
+					</div>
+					<div class="settings-disclosure settings-switch-stack__under" id="switch-dim-shell" data-open="false">
+						<div class="settings-disclosure__inner">
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-dim" data-switch="dim" role="group" aria-label="checkerboard contrast" style="width:100%">
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="dim" style="flex:1;width:auto">DIM</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="full" style="flex:1;width:auto">100%</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Line numbers: AUTO (all for a code file, selected for prose; the default) | OFF | SELECTED | ALL. -->
 				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-line-numbers" data-switch="lineNums" role="group" aria-label="line numbers" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="auto" style="flex:1;width:auto">AUTO</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">OFF</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="selected" style="flex:1;width:auto">SELECTED</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="auto" style="flex:1;width:auto">AUTO NUMBERS</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">NO NUMBERS</button>
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="selected" style="flex:1;width:auto">CURRENT NUMBER</button>
 					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="all" style="flex:1;width:auto">ALL NUMBERS</button>
 				</div>
 
-				<!-- Wrapping: OFF | WRAPPING (default). -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-wrap" data-switch="wrap" data-switch-label="Wrapping" data-off="false" data-on="true" role="group" aria-label="line wrapping" style="width:100%">
-				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" style="flex:1;width:auto">Wrapping: Off</button>
-			</div>
-
-				<!-- Dim is the default; 100% uses opaque black and white cells. -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-dim" data-switch="dim" role="group" aria-label="line contrast" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="dim" style="flex:1;width:auto">DIM</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="full" style="flex:1;width:auto">100%</button>
-				</div>
-
-				<!-- Line number fit: TRUNCATE (default) | RESIZE. -->
-				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-line-fit" data-switch="lineFit" role="group" aria-label="long line numbers" style="width:100%">
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="truncate" style="flex:1;width:auto">TRUNCATE</button>
-					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="resize" style="flex:1;width:auto">RESIZE</button>
+				<!-- Wrapping, with how a wrapped line's number fits joined beneath while it is on. Truncate is the default. -->
+				<div class="settings-switch-stack">
+					<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-wrap" data-switch="wrap" data-switch-label="Wrapping" data-on="true" data-off="false" role="group" aria-label="line wrapping" style="width:100%">
+						<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">WRAPPING OFF</button>
+					</div>
+					<div class="settings-disclosure settings-switch-stack__under" id="switch-line-fit-shell" data-open="false">
+						<div class="settings-disclosure__inner">
+							<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-line-fit" data-switch="lineFit" role="group" aria-label="long line numbers" style="width:100%">
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="truncate" style="flex:1;width:auto">TRUNCATE</button>
+								<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="resize" style="flex:1;width:auto">RESIZE</button>
+							</div>
+						</div>
+					</div>
 				</div>
 
 						</div>
@@ -642,38 +671,35 @@
 
 
 
-			<!-- Native Android launcher icon colour — collapsed and context-free by design. -->
-			<div class="settings-disclosure-shell" id="settings-icon-section" hidden>
-				<button class="settings-section__title settings-disclosure-title"
-								id="settings-icon-title"
-								type="button"
-								data-action="icon-toggle"
-								aria-expanded="false"
-								aria-controls="settings-icon-controls">
-					<span>icon</span>
-					<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
-				</button>
-				<div class="settings-disclosure"
-						 id="settings-icon-controls"
-						 data-open="false">
-					<div class="settings-disclosure__inner">
-						<div class="swatches" id="icon-swatches" role="group" aria-label="app icon colour" style="margin-bottom:var(--space-4)"></div>
-					</div>
+			<!-- Pro (the founder, 2 October, from his phone): one collapsed section titled "pro", its information circle
+			     beside the word and the plus at the right, nothing said under the title; inside, the launcher icon's colours
+			     (a Pro feature the Android host alone offers; the chosen colour is pressed, and pressing it again goes back
+			     to the plain icon) and the purchase rows. The official Android host alone exposes Pro status. -->
+			<div class="settings-disclosure-shell" id="settings-pro-section" hidden>
+				<div class="settings-disclosure-title settings-disclosure-title--split" id="settings-pro-title">
+					<button type="button" class="settings-section__title settings-disclosure-word" id="settings-pro-word"
+									data-action="pro-toggle" aria-expanded="false" aria-controls="settings-pro-controls">pro</button>
+					<button type="button" class="settings-info-btn settings-info-btn--hang" id="pro-info" data-action="information" data-value="pro" aria-label="about pro" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+					<button type="button" class="settings-disclosure-glyph-btn" id="settings-pro-glyph"
+									data-action="pro-toggle" aria-expanded="false" aria-controls="settings-pro-controls" aria-label="show pro">
+						<span class="settings-disclosure-title__glyph" aria-hidden="true"></span>
+					</button>
 				</div>
-			</div>
-
-			<!-- The official Android host alone may expose Rapier Pro status. -->
-			<div id="settings-pro-section" hidden>
-				<div class="settings-section__title">rapier pro</div>
-				<div class="pro-status">
-					<div class="pro-status__title" id="pro-status-title"></div>
-					<div class="pro-status__copy" id="pro-status-copy"></div>
-					<div class="settings-action-row" id="pro-status-actions" style="margin-top:var(--space-3)">
-						<button type="button" class="settings-action-btn" data-action="pro-open">get rapier pro</button>
-						<button type="button" class="settings-action-btn" id="pro-status-restore" data-action="pro-restore">restore purchase</button>
-					</div>
-					<div class="settings-action-row" style="margin-top:var(--space-3);margin-bottom:0">
-						<a class="settings-action-btn" href="mailto:hello@rapier.website?subject=Rapier%20bug%20report">bug report</a>
+				<div class="settings-disclosure" id="settings-pro-controls" data-open="false">
+					<div class="settings-disclosure__inner">
+						<!-- The founder, 2 October, evening: no unlabelled swatches in the panel. One named button opens the
+						     colours in a pop-up; the bug-report address sits inside the section with the rest of Pro. -->
+						<div class="pro-settings-actions">
+							<div class="settings-action-row" id="pro-status-actions">
+								<button type="button" class="settings-action-btn" data-action="pro-open" aria-haspopup="dialog">get pro</button>
+							</div>
+							<div class="settings-action-row" id="pro-icon-row" hidden>
+								<button type="button" class="settings-action-btn" id="pro-icon-colour" data-action="icon-colour" aria-haspopup="dialog">app icon colour</button>
+							</div>
+							<div class="settings-action-row" id="pro-bug-report-row" hidden>
+								<a class="settings-action-btn" href="mailto:hello@rapier.website?subject=Rapier%20bug%20report">bug report</a>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -784,21 +810,23 @@
 				</button>
 			</div>
 			<div class="licenses-app privacy-words">
-				<p>Rapier keeps nothing about you: no accounts, no analytics, no advertising. What you write stays on your
-					device until you save, share, back up or sync it yourself. Sync goes to a bucket you own, encrypted with a
-					key that never leaves your devices.</p>
-				<p>The Android editor has no Internet permission; it records audio only when you press Record, and keeps
-					recordings in your notes. Google Play handles purchases and optional plugin downloads under its own policy.</p>
-				<p>The agent door (mcp.rapier.website): when you use Rapier through an AI assistant, the document you work on
-					together is sent to the door so the assistant can read and edit it and you can see its changes. The door
-					keeps it for that workspace only and drops it thirty days after the workspace was last used, and keeps a
-					hash of your network address for an hour to limit new workspaces. The assistant's host has its own policy
-					for the conversation.</p>
-				<p>Cloudflare serves the page and the door and sees what any web request shows. No cookies.</p>
+				<p>Rapier has no accounts, analytics or advertising. Your files stay on your device until you save, share,
+					back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep
+					or delete local files; Delete forever removes notes and their history.</p>
+				<p>The Android editor has no Internet permission. It records audio only when you press Record, into your
+					notes. Google Play handles purchases and optional plugin downloads under its policy.</p>
+				<p>Using an assistant sends your document to the agent door (mcp.rapier.website) for shared reading and
+					editing. Its workspace keeps the document, edit history, inspected passages, proposals, decisions, presence,
+					selections and tool records; secret keys control workspace access. Active use renews workspace expiry to
+					about 30 days; unchanged sync does not. Expired workspaces are cleared on their next request or deletion
+					alarm. In the editor, delete the workspace or end assistant access. The door keeps a network-address hash
+					and creation records for one hour to limit new workspaces. Your assistant's host handles the conversation
+					under its policy.</p>
+				<p>Cloudflare serves the page and door and sees what web requests show. No cookies.</p>
 				<h3 class="licenses-given">terms</h3>
-				<p>Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper. It comes as is, without warranty, as
-					far as the law allows. Keep your own copies of what matters. The door may change or close.</p>
-				<p><strong>Jack Skipworth · hello@rapier.website · effective 27 September 2026</strong></p>
+				<p>Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper.
+					Provided as is, without warranty where law allows. Keep your own copies. The door may change or close.</p>
+				<p><strong>Jack Skipworth · hello@rapier.website · effective 2 October 2026</strong></p>
 			</div>
 		</div>
 	</div>
@@ -2044,6 +2072,7 @@ SOFTWARE.</pre>
 		<div class="settings-panel__body">
 			<div class="navigator-title-row">
 				<h2 id="export-modal-title" class="settings-section__title">html</h2>
+				<button type="button" class="settings-info-btn settings-info-btn--hang" id="export-info" data-action="information" data-value="export-html" aria-label="about html export" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
 				<button type="button" class="navigator-close" data-action="close-export" aria-label="close HTML export">
 					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 				</button>
@@ -2051,13 +2080,9 @@ SOFTWARE.</pre>
 			<div class="export-choice-list">
 				<button type="button" class="export-choice" data-action="export-choice" data-value="html-publishing">
 					<span class="export-choice__label">publishing html</span>
-					<span class="export-choice__description">The page’s content alone, for a newsletter, blog or website.</span>
-					<span class="export-choice__meta">no Rapier styling</span>
 				</button>
 				<button type="button" class="export-choice" data-action="export-choice" data-value="html-standalone">
 					<span class="export-choice__label">standalone web page</span>
-					<span class="export-choice__description">A whole web page, styled as Rapier shows it.</span>
-					<span class="export-choice__meta">offline · printable · one file</span>
 				</button>
 			</div>
 		</div>
@@ -2071,6 +2096,8 @@ SOFTWARE.</pre>
 		<div class="settings-panel__body">
 			<div class="navigator-title-row">
 				<h2 id="copy-menu-title" class="settings-section__title">copy</h2>
+				<!-- The founder, 2 October: the choices carry their names alone; what each one does is behind the circle. -->
+				<button type="button" class="settings-info-btn settings-info-btn--hang" id="copy-info" data-action="information" data-value="copy" aria-label="about copying" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
 				<button type="button" class="navigator-close" data-action="close-copy" aria-label="close copy choices">
 					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 				</button>
@@ -2078,26 +2105,22 @@ SOFTWARE.</pre>
 			<div class="export-choice-list">
 				<button type="button" class="export-choice" data-action="copy-choice" data-value="formatted">
 					<span class="export-choice__label">copy formatted</span>
-					<span class="export-choice__description">Paste into Word, Google Docs or an email with its headings, links, lists and tables.</span>
-					<span class="export-choice__meta">plain text where formatting can’t go</span>
 				</button>
 				<button type="button" class="export-choice" data-action="copy-choice" data-value="markdown">
 					<span class="export-choice__label">copy markdown</span>
-					<span class="export-choice__description">Your document exactly as written, metadata included.</span>
-					<span class="export-choice__meta">original source</span>
-				</button>
-				<button type="button" class="export-choice-toggle" id="copy-markdown-pandoc-toggle"
-								data-action="toggle-pandoc-dialect" aria-pressed="false">
-					<span class="export-choice-toggle__text">
-						<span class="export-choice-toggle__label">export for Pandoc/Quarto</span>
-						<span class="export-choice-toggle__hint">keeps colour, highlights and page breaks for Pandoc or Quarto, which otherwise drop them</span>
-					</span>
-					<span class="export-choice-toggle__state">OFF</span>
 				</button>
 				<button type="button" class="export-choice" data-action="copy-choice" data-value="plain">
 					<span class="export-choice__label">copy plain text</span>
-					<span class="export-choice__description">Just the words, without Markdown’s marks.</span>
-					<span class="export-choice__meta">readable text</span>
+				</button>
+				<!-- The Pandoc/Quarto dialect switch: last, quiet, one line (the founder, 2 October: "it just needs to be
+				     non obtrusive and at the bottom ... hardly anyone will want it or even know what it is"). What it
+				     changes is said in the circle's text, not here. -->
+				<button type="button" class="export-choice-toggle export-choice-toggle--quiet" id="copy-markdown-pandoc-toggle"
+								data-action="toggle-pandoc-dialect" aria-pressed="false">
+					<span class="export-choice-toggle__text">
+						<span class="export-choice-toggle__label">for pandoc and quarto</span>
+					</span>
+					<span class="export-choice-toggle__state">OFF</span>
 				</button>
 			</div>
 		</div>
@@ -2113,7 +2136,9 @@ SOFTWARE.</pre>
 		<div class="settings-panel__body">
 			<div class="navigator-title-row">
 				<h2 id="notes-sync-title" class="settings-section__title">cloudflare sync</h2>
-				<button type="button" class="navigator-close notes-sync-close" aria-label="close sync choices">close</button>
+				<button type="button" class="navigator-close notes-sync-close" aria-label="close sync choices">
+					<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+				</button>
 			</div>
 			<div class="export-choice-list notes-sync-body"></div>
 		</div>
@@ -2487,6 +2512,14 @@ SOFTWARE.</pre>
 
 <!-- ════════ -->
 
+<!-- The app icon's colours (Pro, the Android host alone): the information sheet's shape, the swatches as its body.
+     The worn colour is pressed; pressing it again goes back to the plain icon. -->
+<section class="settings-overlay info-action-overlay" id="icon-colour-overlay" inert aria-hidden="true" aria-label="App icon colour">
+  <div class="info-action-sheet" role="dialog" aria-modal="true" aria-labelledby="icon-colour-title" tabindex="-1">
+    <header class="track-action-head"><div class="track-action-copy"><div class="track-action-title" id="icon-colour-title">app icon colour</div></div><button type="button" class="icon-button close-button" data-icon-colour-close aria-label="Close app icon colour"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header>
+    <div class="info-action-body"><div class="swatches" id="icon-swatches" role="group" aria-label="app icon colour"></div></div>
+  </div>
+</section>
 <section class="settings-overlay info-action-overlay" id="info-overlay" inert aria-hidden="true" aria-label="Information">
   <div class="info-action-sheet" role="dialog" aria-modal="true" aria-labelledby="info-sheet-title" tabindex="-1">
     <header class="track-action-head"><div class="track-action-copy"><div class="track-action-title" id="info-sheet-title"></div></div><button type="button" class="icon-button close-button" data-info-close aria-label="Close information"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header>

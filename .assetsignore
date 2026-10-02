@@ -1,4 +1,4 @@
-# Deploy the finished page, its optional installation companions and the three files crawlers read.
+# Deploy the finished page, document embeds, optional installation companions and crawler files.
 /*
 !/rapier.html
 !/sw.js
@@ -8,3 +8,5 @@
 !/robots.txt
 !/sitemap.xml
 !/llms.txt
+!/embed/
+!/embed/**

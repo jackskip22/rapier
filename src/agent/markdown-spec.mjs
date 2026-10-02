@@ -17,7 +17,9 @@ import {
 	inkOpenBody as rapierInkOpenBody, parseInkBody as rapierParseInkBody,
 	isInkClose as rapierIsInkClose, scanInkMarkers as rapierScanInkMarkers,
 	pairInkMarkers as rapierPairInkMarkers, stripInkMarkers as rapierStripInkMarkers,
-	hasInkMarker as rapierHasInkMarker,
+	pairInkSpans as rapierPairInkSpans, sliceInkArrows as rapierSliceInkArrows, prepareInkPaste as rapierPrepareInkPaste,
+	hasInkMarker as rapierHasInkMarker, INK_OPEN_PATTERN as RAPIER_INK_OPEN_PATTERN,
+	readInkMatch as rapierReadInkMatch, formatInkOpenFromBody as rapierFormatInkOpenFromBody,
 	formatPageBreak as rapierFormatPageBreak, isPageBreakLine as rapierIsPageBreakLine,
 	isPageBreakBlock as rapierIsPageBreakBlock,
 } from '../spec/md-marks.mjs';
@@ -194,7 +196,7 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 			const originalHtmlBlock = htmlBlockRule.fn;
 			const colorAwareHtmlBlock = function rapierColorAwareHtmlBlock(state, startLine, endLine, silent) {
 				const start = state.bMarks[startLine] + state.tShift[startLine];
-				if (state.src.charCodeAt(start) === 0x3C && rapierMatchColorOpen(state.src.slice(start, start + 30))) return false;
+				if (state.src.charCodeAt(start) === 0x3C && (rapierMatchColorOpen(state.src.slice(start, start + 30)) || rapierMatchInkOpen(state.src.slice(start, start + 2048)))) return false;
 				return originalHtmlBlock(state, startLine, endLine, silent);
 			};
 			colorAwareHtmlBlock.rapierColorAware = true;
@@ -232,6 +234,43 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 					if (hex == null || openIndex !== -1) continue;
 					openIndex = index;
 					openHex = hex;
+					openDepth = depth;
+				}
+			}
+		});
+		// Ink pairs (docs/markdown-standard.md, "Ink"), paired as the colour pairs are: an opener and the next closer at
+		// the same depth become one span that carries the opener whole in data-rapier-ink; an opener inside a pair, a
+		// closer with no opener, or a pair that crosses a container stays comment text and marks nothing.
+		instance.core.ruler.after('rapier-text-color', 'rapier-ink', function rapierInkPairs(state) {
+			for (const blockToken of state.tokens) {
+				if (blockToken.type !== 'inline' || !Array.isArray(blockToken.children)) continue;
+				const children = blockToken.children;
+				let openIndex = -1, openDepth = 0, depth = 0;
+				for (let index = 0; index < children.length; index++) {
+					const token = children[index];
+					if (token.type !== 'html_inline') {
+						depth += token.nesting || 0;
+						if (openIndex !== -1 && depth < openDepth) openIndex = -1;
+						continue;
+					}
+					const content = token.content;
+					if (rapierIsInkClose(content)) {
+						if (openIndex === -1 || depth !== openDepth) continue;
+						const opener = children[openIndex];
+						opener.type = 'rapier_ink_open';
+						opener.tag = 'span';
+						opener.nesting = 1;
+						opener.attrSet('data-rapier-ink', rapierInkOpenBody(opener.content));
+						opener.content = '';
+						token.type = 'rapier_ink_close';
+						token.tag = 'span';
+						token.nesting = -1;
+						token.content = '';
+						openIndex = -1;
+						continue;
+					}
+					if (openIndex !== -1 || !rapierParseInkOpen(content)) continue;
+					openIndex = index;
 					openDepth = depth;
 				}
 			}
@@ -379,12 +418,16 @@ export {
 	rapierPairColorMarkers as pairColorMarkers, rapierPairMarkers as pairMarkers,
 	rapierStripColorMarkers as stripColorMarkers, rapierHasColorMarker as hasColorMarker,
 	RAPIER_INK_KINDS, RAPIER_INK_CLOSE, RAPIER_INK_PATH_MAX, RAPIER_INK_INT_MAX,
+	// The same four under the grammar's own names: the engine's exact-source doors and the parse Worker's plant read them so.
+	RAPIER_INK_KINDS as INK_KINDS, RAPIER_INK_CLOSE as INK_CLOSE, RAPIER_INK_PATH_MAX as INK_PATH_MAX, RAPIER_INK_INT_MAX as INK_INT_MAX,
 	rapierFormatInkOpen as formatInkOpen, rapierFormatInkRun as formatInkRun,
 	rapierMatchInkOpen as matchInkOpen, rapierParseInkOpen as parseInkOpen,
 	rapierInkOpenBody as inkOpenBody, rapierParseInkBody as parseInkBody,
 	rapierIsInkClose as isInkClose, rapierScanInkMarkers as scanInkMarkers,
 	rapierPairInkMarkers as pairInkMarkers, rapierStripInkMarkers as stripInkMarkers,
-	rapierHasInkMarker as hasInkMarker,
+	rapierPairInkSpans as pairInkSpans, rapierSliceInkArrows as sliceInkArrows, rapierPrepareInkPaste as prepareInkPaste,
+	rapierHasInkMarker as hasInkMarker, RAPIER_INK_OPEN_PATTERN as INK_OPEN_PATTERN,
+	rapierReadInkMatch as readInkMatch, rapierFormatInkOpenFromBody as formatInkOpenFromBody,
 	rapierFormatPageBreak as formatPageBreak, rapierIsPageBreakLine as isPageBreakLine,
 	rapierIsPageBreakBlock as isPageBreakBlock,
 	rapierThematicBreak as thematicBreak, rapierHardBreak as hardBreak, rapierCellBreaks as cellBreaks, rapierParseCssColor as parseCssColor,

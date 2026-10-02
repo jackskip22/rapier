@@ -93,9 +93,10 @@ async function _rapierConfirmDirtyTransition(options = {}) {
 	return null;
 }
 
-const _RAPIER_PRO_FEATURE_IDS = Object.freeze([
-	'compare.full', 'excerpt.complete', 'export.pdf', 'export.docx', 'icon.custom',
-]);
+// The founder, 2 October: Complete Excerpt is everyone's ("nobody even understands what that is"); PDF and DOCX export,
+// full Compare and the icon's colours stay Pro, as does Rapier Sync: its door in the app (the sync box's press,
+// notes/notes.js) asks here; the companion's own enforcement over the Binder is still its own item.
+const _RAPIER_PRO_FEATURE_IDS = Object.freeze(['compare.full','export.pdf','export.docx','icon','sync']);
 
 function _rapierFeatureAllowedForPlatform(featureId, platform) {
 	const id = String(featureId || '');
@@ -690,6 +691,19 @@ function initMarkdownIt() {
 		return '<span data-md-color="' + hex + '" style="--md-color:' + hex + ';--md-color-dark:' + dark + '">';
 	};
 	md.renderer.rules.rapier_color_close = () => '</span>';
+	// Ink: the span carries its opener's body (the grammar's inkOpenBody: a sanitizer drops an attribute holding the comment's
+	// close); the ink layer reads it back through the one grammar and draws the stroke over the words' own boxes
+	// (docs/briefs/ink.md §3). The span itself shows nothing.
+	md.renderer.rules.rapier_ink_open = (tokens, idx) => {
+		const body = String(tokens[idx].attrGet('data-rapier-ink') || '');
+		// The dark-page colour on the span, as the colour span's: an exported page draws its ink with no engine to ask (the
+		// rules run on this thread alone; the Worker plants the parser, not the renderer).
+		const spec = globalThis.RapierMarkdownSpec;
+		const mark = spec && typeof spec.parseInkBody === 'function' ? spec.parseInkBody(body) : null;
+		return '<span class="rapier-ink-mark" data-rapier-ink="' + md.utils.escapeHtml(body) + '"'
+			+ (mark ? ' data-rapier-ink-dark="' + _rapierDeriveDarkColor(mark.hex || '#b32034') + '"' : '') + '>';
+	};
+	md.renderer.rules.rapier_ink_close = () => '</span>';
 
 	const sourceToken = (source, visible, className) =>
 		'<span class="rapier-source-token ' + className + '" data-rapier-source="' +
@@ -701,6 +715,20 @@ function initMarkdownIt() {
 	};
 	md.renderer.rules.softbreak = () =>
 		sourceToken('\n', '\u2060', 'rapier-source-token--softbreak');
+	// A backslash escape the edit surface's writer would not write itself (`https\://`, `www\.`, `a\@b`: an unlinked
+	// address, or a person's own escape) is carried through the edit projection as a source token, as a soft break and
+	// an emoji are; the parser joins escapes into plain text before rendering, so they are kept apart first. The
+	// characters the writer escapes on its own (\ * ` [ ] _) stay the writer's.
+	md.core.ruler.before('text_join', 'rapier_escape_token', state => {
+		for (const token of state.tokens) {
+			if (token.type !== 'inline' || !token.children) continue;
+			for (const child of token.children) {
+				if (child.type === 'text_special' && child.info === 'escape' && child.content.length === 1 && !/[\\*`[\]_]/.test(child.content)) child.type = 'rapier_escape';
+			}
+		}
+	});
+	md.renderer.rules.rapier_escape = (tokens, idx) =>
+		sourceToken('\\' + tokens[idx].content, tokens[idx].content, 'rapier-source-token--escape');
 
 	const linkOpenDefault = md.renderer.rules.link_open ||
 		((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));
@@ -1806,6 +1834,7 @@ function _rapierDecorateJumpLists(root) {
 
 function _rapierEnhanceRenderedContent(root) {
 	if (!root) return;
+	_rapierWatchListContinuations();
 	_rapierWillPlateDecorate(root);
 	globalThis.RapierTables?.shape(root);
 	root.querySelectorAll('img').forEach((image, index) => {
@@ -2152,6 +2181,10 @@ function _rapierAnnotateDefinitionFacts(blocks) {
 /* RAPIER_SOURCE_FINALIZE_BLOCKS_MODULE */
 
 /* RAPIER_PLAIN_PASTE_MODULE */
+
+/* RAPIER_INK_LAYER_MODULE */
+
+/* RAPIER_INK_PEN_MODULE */
 
 async function splitPastedMarkdownBlocksAsync(markdown, options = null) {
 	const plainText = !!(options && options.plainText);
@@ -2600,6 +2633,19 @@ function _buildParseWorkerSource() {
 		+ '\n;self.rapierParseColorOpen=' + _rapierParseColorOpen.toString() + ';'
 		+ '\n;self.rapierIsColorClose=' + _rapierIsColorClose.toString() + ';'
 		+ '\n;self.rapierIsPageBreakBlock=' + _rapierIsPageBreakBlock.toString() + ';'
+		// Ink's four (spec/md-marks.mjs, "Relocated into the parse Worker"): the constants they read, planted first. The
+		// html rule asks matchInkOpen whether a line or a run that starts with "<" is an ink opener (an opener at a
+		// paragraph's start is a paragraph, not an HTML block); unplanted, the Worker's first "<" was a ReferenceError and
+		// every formatted view fell back to source (found by the pen's row, 2 October).
+		+ '\n;self.INK_CLOSE=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_CLOSE) + ';'
+		+ '\n;self.INK_OPEN_PATTERN=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_OPEN_PATTERN) + ';'
+		+ '\n;self.INK_PATH_MAX=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_PATH_MAX) + ';'
+		+ '\n;self.INK_INT_MAX=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_INT_MAX) + ';'
+		+ '\n;self.readInkMatch=' + globalThis.RapierMarkdownSpec.readInkMatch.toString() + ';'
+		+ '\n;self.rapierMatchInkOpen=' + globalThis.RapierMarkdownSpec.matchInkOpen.toString() + ';'
+		+ '\n;self.rapierParseInkOpen=' + globalThis.RapierMarkdownSpec.parseInkOpen.toString() + ';'
+		+ '\n;self.rapierIsInkClose=' + globalThis.RapierMarkdownSpec.isInkClose.toString() + ';'
+		+ '\n;self.rapierInkOpenBody=' + globalThis.RapierMarkdownSpec.inkOpenBody.toString() + ';'
 		+ '\n;self.__rapierApplyMarkdownSpec=' + _rapierApplyMarkdownSpec.toString() + ';'
 		+ '\n;self.__rapierInstallMarkdownImages=' + globalThis.RapierImageAssets.installMarkdownImages.toString() + ';'
 		+ '\n;self._rapierSourceCharEscaped=' + _rapierSourceCharEscaped.toString() + ';'
@@ -3943,6 +3989,16 @@ function createTurndown() {
 			const hex = String(node.getAttribute('data-md-color') || '').toLowerCase();
 			if (!/^#[0-9a-f]{6}$/.test(hex) || !content) return content;
 			return _rapierFormatColorRun(hex, content);
+		},
+	});
+	// An ink span writes back the pair it was read from, through the one grammar: an opener it cannot read is no mark.
+	turndown.addRule('rapierInk', {
+		filter: node => node.nodeName === 'SPAN' && node.hasAttribute('data-rapier-ink'),
+		replacement: (content, node) => {
+			const spec = globalThis.RapierMarkdownSpec;
+			const opener = spec.formatInkOpenFromBody(String(node.getAttribute('data-rapier-ink') || ''));
+			if (!content || !opener || (node.querySelector && node.querySelector('[data-rapier-ink]'))) return content;
+			return opener + content + spec.INK_CLOSE;
 		},
 	});
 
@@ -6224,6 +6280,22 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 	let value = String(raw || '');
 	if (_rapierBlockRenderBudgetExceeded(value)) return 'block-chars-limit';
 
+	// Ink is inline formatting only where the parser actually consumed every marker. A literal marker in code, an
+	// escaped comment or a stray pair still needs the exact-source editor; a remote arrow mate is not a local condition.
+	const inkSpec = globalThis.RapierMarkdownSpec;
+	const inkMarkers = inkSpec && value.includes('<!--') ? inkSpec.scanInkMarkers(value) : [];
+	if (inkMarkers.length) {
+		let parsed = 0;
+		try {
+			for (const token of md.parse(value, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references))) {
+				if (token.type !== 'inline') continue;
+				for (const child of token.children || []) if (child.type === 'rapier_ink_open' || child.type === 'rapier_ink_close') parsed++;
+			}
+		} catch (_) { return 'html-comment'; }
+		if (parsed !== inkMarkers.length) return 'html-comment';
+		value = inkSpec.stripInkMarkers(value);
+	}
+
 	if (value.includes('<!--md-layout:') && md) {
 		try {
 			const markers = globalThis.RapierMarkdownLayout.layoutTargets(value, md, _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references))
@@ -6279,7 +6351,7 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 	}
 	if (/^[ ]{0,3}\*\[[^\]\n]+\]:\s*.+$/m.test(value)) return 'abbreviation-definition';
 	const collectPlainText = (tokens, into) => (tokens || []).forEach(token => {
-		if (token.type === 'text') into.push(token.content);
+		if (token.type === 'text' || token.type === 'rapier_escape') into.push(token.content);
 		else if (token.children) collectPlainText(token.children, into);
 		else if (token.content) into.push('�');
 	});
@@ -9968,7 +10040,6 @@ const FT = {
 	get: function() {
 		if (!this.el) {
 			this.el = document.getElementById('format-toolbar');
-			if (this.el) _rapierRegisterOverflowShell(this.el);
 		}
 		return this.el;
 	},
@@ -10027,7 +10098,7 @@ function _rapierFormatToolbarEdgeAlphas(scrollLeft, maximum, edge = _RAPIER_FORM
 }
 
 function _rapierSyncFormatToolbarEdgeFade(surface = FT.surface()) {
-	if (!surface) return;
+	if (!surface || !FT.get()?.classList.contains('visible')) return;
 	const scrolls = /auto|scroll/.test(getComputedStyle(surface).overflowX);
 	const maximum = scrolls ? Math.max(0, surface.scrollWidth - surface.clientWidth) : 0;
 	const alpha = _rapierFormatToolbarEdgeAlphas(surface.scrollLeft, maximum);
@@ -10213,9 +10284,12 @@ function _rapierPositionTouchFormatToolbar(stack, toolbar) {
 		stack.scrollHeight || 0,
 		toolbar.offsetHeight || 0,
 	);
-	stack.style.bottom = 'auto';
-	stack.style.top = Math.max(0, Math.round(bottomEdge - height + 1)) + 'px';
+	const top = Math.max(0, Math.round(bottomEdge - height + 1)) + 'px';
+	const moved = stack.style.bottom !== 'auto' || stack.style.top !== top;
+	if (stack.style.bottom !== 'auto') stack.style.bottom = 'auto';
+	if (stack.style.top !== top) stack.style.top = top;
 	renderFormatToolbarVisibility(toolbar, true, toolbar.dataset.excerptOnly === 'true');
+	if (moved) _rapierScheduleToastLift();
 }
 
 const _rapierToolbarRuntime = Object.seal({ positionFrame: 0, range: null, editDiv: null, selectionBackward: false, editLength: null });
@@ -10225,7 +10299,8 @@ function _rapierPositionFormatToolbar() {
 	const toolbar = FT.get();
 	if (!stack || !toolbar || !toolbar.classList.contains('visible')) return;
 	if (!_rapierUsesDesktopFormatToolbar()) {
-		_rapierClearDesktopFormatToolbarPlacement();
+		// Modality changes and hiding clear the old placement. Clearing it here would dirty the
+		// toolbar immediately before its own measure, even when its position has not changed.
 		_rapierPositionTouchFormatToolbar(stack, toolbar);
 		return;
 	}
@@ -10326,9 +10401,17 @@ function _rapierScheduleFormatToolbarPosition() {
 }
 
 function rapierRepositionFormatToolbar() {
+	const toolbar = FT.get();
+	if (!toolbar || !toolbar.classList.contains('visible')) return;
+	// Opening owns overflow registration: merely reading the closed strip must not force
+	// the editor's first layout through the overflow observer's width measurement.
+	_rapierRegisterOverflowShell(toolbar);
 	const active = document.activeElement?.closest?.('#format-toolbar .fmt-btn');
 	_rapierSyncFormatToolbarRoving(active || null);
+	_rapierSyncFormatToolbarEdgeFade();
+	_rapierUpdateOverflowShell(toolbar);
 	_rapierScheduleFormatToolbarPosition();
+	_rapierScheduleKeyboardAccommodation();
 }
 
 function _rapierFormatToolbarButtonAvailable(button, toolbar = FT.get()) {
@@ -10363,7 +10446,7 @@ function _rapierHandleFormatToolbarKeydown(event) {
 
 function _rapierSyncFormatToolbarRoving(target) {
 	const toolbar = FT.get();
-	if (!toolbar) return;
+	if (!toolbar || !toolbar.classList.contains('visible')) return;
 	const buttons = Array.from(toolbar.querySelectorAll('.fmt-btn:not([disabled])'));
 	const visible = buttons.filter(button => _rapierFormatToolbarButtonAvailable(button, toolbar));
 	const chosen = visible.includes(target) ? target : visible[0];
@@ -10447,16 +10530,19 @@ function _rapierCollapsedCaretSupportsFormatToolbar(context) {
 function _rapierShowFormatToolbar(toolbar, excerptCandidate, excerptOnly) {
 	if (!toolbar) return;
 	const button = document.getElementById('fmt-complete-excerpt');
-	if (button) button.hidden = !excerptCandidate;
+	const controlsChanged = !!button && button.hidden !== !excerptCandidate;
+	if (controlsChanged) button.hidden = !excerptCandidate;
 	const surface = FT.surface();
 	const wasVisible = toolbar.classList.contains('visible');
-	renderFormatToolbarVisibility(toolbar, true, excerptOnly);
+	const visibilityChanged = renderFormatToolbarVisibility(toolbar, true, excerptOnly);
+	// Each refresh keeps selection custody current, but the bottom-pinned strip has no
+	// caret geometry. Only its own visibility/controls or the viewport owners remeasure it.
+	if (!visibilityChanged && !controlsChanged) {
+		if (_rapierUsesDesktopFormatToolbar()) _rapierScheduleFormatToolbarPosition();
+		return;
+	}
 	if (!wasVisible && surface) surface.scrollLeft = 0;
-	_rapierSyncFormatToolbarEdgeFade(surface);
-	_rapierSyncFormatToolbarRoving();
-	_rapierUpdateOverflowShell(toolbar);
-	_rapierScheduleFormatToolbarPosition();
-	_rapierScheduleKeyboardAccommodation();
+	rapierRepositionFormatToolbar();
 }
 
 function refreshFormatToolbar() {
@@ -10466,6 +10552,7 @@ function refreshFormatToolbar() {
 	}
 	const excerptCandidate = _rapierPrepareCompleteExcerptCandidate();
 	const toolbar = FT.get();
+	const desktop = _rapierUsesDesktopFormatToolbar();
 
 	const crossBlockSelection = rapier.view.mode === 'read' && !rapier.access.readOnly &&
 		!excerptCandidate && _rapierCrossBlockRange();
@@ -10475,7 +10562,7 @@ function refreshFormatToolbar() {
 		const context = _rapierSelectionContext(selection);
 		if (context) {
 			_rapierRememberToolbarSelection(selection, context.editDiv);
-			_rapierCaptureFormatToolbarGeometry(
+			if (desktop) _rapierCaptureFormatToolbarGeometry(
 				context.range,
 				_rapierPreferredFormatToolbarRect(context.range, selection),
 			);
@@ -10490,7 +10577,7 @@ function refreshFormatToolbar() {
 	if (!_rapierBarStandsFor(context)) {
 		if (excerptCandidate) {
 			_rapierRememberToolbarSelection(selection, context.editDiv);
-			_rapierCaptureFormatToolbarGeometry(
+			if (desktop) _rapierCaptureFormatToolbarGeometry(
 				context.range,
 				_rapierPreferredFormatToolbarRect(context.range, selection),
 			);
@@ -10500,23 +10587,22 @@ function refreshFormatToolbar() {
 		return;
 	}
 
-	const listItem = context.editDiv && _rapierListItemForSelection(context.editDiv, selection);
 	const collapsedCaret = selection.isCollapsed;
-	if (collapsedCaret && (_rapierUsesDesktopFormatToolbar() ||
+	if (collapsedCaret && (desktop ||
 			!_rapierCollapsedCaretSupportsFormatToolbar(context))) {
 		hideFormatToolbar();
 		return;
 	}
 
-	const rect = collapsedCaret
-		? (_rapierCaretClientRect(context.range) || listItem?.getBoundingClientRect() ||
-			context.editDiv?.getBoundingClientRect())
-		: _rapierPreferredFormatToolbarRect(context.range, selection);
-	if (!rect) { hideFormatToolbar(); return; }
-	if (rect.width === 0 && rect.height === 0) { hideFormatToolbar(); return; }
+	// Touch placement uses the viewport and the strip's height, never a caret/selection rect.
+	// Keep the live range for commands without forcing layout to record unused geometry.
+	if (desktop) {
+		const rect = _rapierPreferredFormatToolbarRect(context.range, selection);
+		if (!rect || rect.width === 0 && rect.height === 0) { hideFormatToolbar(); return; }
+		_rapierCaptureFormatToolbarGeometry(context.range, rect);
+	}
 
 	_rapierRememberToolbarSelection(selection, context.editDiv);
-	_rapierCaptureFormatToolbarGeometry(context.range, rect);
 	_rapierShowFormatToolbar(toolbar, excerptCandidate, false);
 	updateFormatToolbarActiveStates(selection, context.editDiv || _liveBlockEl(context.wrappers[0]));
 	if (context.editDiv) _rapierUpdateListToolbarContext(selection, context.editDiv);
@@ -10524,11 +10610,14 @@ function refreshFormatToolbar() {
 }
 
 function updateFormatToolbarActiveStates(selection, boundary) {
+	// The stack owns the strip and every derivative picker; the document is not a control.
+	const stack = FT.stack();
+	if (!stack) return;
 	// Only a button whose state differs is written: this runs on every keystroke, and a same-value write is a
 	// mutation that wakes the notice placer and invalidates style for nothing.
-	document.querySelectorAll('.fmt-btn[data-active]').forEach(button => button.removeAttribute('data-active'));
-	document.querySelectorAll('.fmt-btn[aria-pressed]:not([aria-pressed="false"])').forEach(button => button.setAttribute('aria-pressed', 'false'));
-	document.querySelectorAll('.fmt-btn[role="menuitemradio"]:not([aria-checked="false"])').forEach(button => button.setAttribute('aria-checked', 'false'));
+	stack.querySelectorAll('.fmt-btn[data-active]').forEach(button => button.removeAttribute('data-active'));
+	stack.querySelectorAll('.fmt-btn[aria-pressed]:not([aria-pressed="false"])').forEach(button => button.setAttribute('aria-pressed', 'false'));
+	stack.querySelectorAll('.fmt-btn[role="menuitemradio"]:not([aria-checked="false"])').forEach(button => button.setAttribute('aria-checked', 'false'));
 
 	_rapierPaintColorLetter(null);
 	_rapierUpdateAlignmentButton(selection);
@@ -10554,7 +10643,7 @@ function updateFormatToolbarActiveStates(selection, boundary) {
 			const hex = typing.color || String(node.getAttribute('data-md-color') || '').toLowerCase();
 			if (/^#[0-9a-f]{6}$/.test(hex)) {
 				_setActive('color-picker');
-				const swatch = document.querySelector('#color-picker [data-value="' + hex + '"]');
+				const swatch = document.getElementById('color-picker')?.querySelector('[data-value="' + hex + '"]');
 				if (swatch) {
 					swatch.setAttribute('data-active', '');
 					if (swatch.getAttribute('role') === 'menuitemradio') swatch.setAttribute('aria-checked', 'true');
@@ -10580,7 +10669,7 @@ function updateFormatToolbarActiveStates(selection, boundary) {
 				if (on !== 'none') { _setActive(mark + '-picker'); if (mark === 'highlight') _setActive('highlight-' + on); }
 				continue;
 			}
-			const button = document.querySelector(`.fmt-btn[data-cmd="${mark}"]`);
+			const button = stack.querySelector(`.fmt-btn[data-cmd="${mark}"]`);
 			if (on) _setActive(mark);
 			else if (button) { button.removeAttribute('data-active'); button.setAttribute('aria-pressed', 'false'); }
 		}
@@ -10588,11 +10677,11 @@ function updateFormatToolbarActiveStates(selection, boundary) {
 }
 
 function _rapierPaintColorLetter(hex) {
-	const letter = document.querySelector('#fmt-btn-color .fmt-color-letter');
+	const letter = document.getElementById('fmt-btn-color')?.querySelector('.fmt-color-letter');
 	if (letter && letter.style.stroke !== (hex || '')) letter.style.stroke = hex || '';
 }
 function _setActive(cmd) {
-	const button = document.querySelector(`.fmt-btn[data-cmd="${cmd}"]`);
+	const button = FT.stack()?.querySelector(`.fmt-btn[data-cmd="${cmd}"]`);
 	if (!button) return;
 	if (!button.hasAttribute('data-active')) button.setAttribute('data-active', '');
 	const state = button.getAttribute('role') === 'menuitemradio' ? 'aria-checked' : 'aria-pressed';
@@ -11370,18 +11459,21 @@ function _rapierPlaceCaretInListItem(li, atEnd) {
 
 function _rapierUpdateListToolbarContext(selection, editDiv) {
 	const li = _rapierListItemForSelection(editDiv, selection);
-	let reveal = null;
-	document.querySelectorAll('.fmt-btn--list-depth').forEach(button => {
+	let reveal = null, controlsChanged = false;
+	FT.get()?.querySelectorAll('.fmt-btn--list-depth').forEach(button => {
 		const wasHidden = button.hidden;
 		const direction = Number(button.dataset.listDepth || 0);
 		const available = !!li && (direction < 0
 			? _rapierCanOutdentListItem(li)
 			: _rapierCanIndentListItem(li));
-		if (button.hidden !== !available) button.hidden = !available;
-		if (button.disabled) button.disabled = false;
+		if (button.hidden !== !available) { button.hidden = !available; controlsChanged = true; }
+		if (button.disabled) { button.disabled = false; controlsChanged = true; }
 		if (button.getAttribute('aria-disabled') !== (available ? 'false' : 'true')) button.setAttribute('aria-disabled', available ? 'false' : 'true');
 		if (available && wasHidden && !reveal) reveal = button;
 	});
+	// Entering or leaving a list can change the strip's contents without resizing its outer
+	// box; this owner refreshes overflow and keyboard targets even when no button is revealed.
+	if (controlsChanged) rapierRepositionFormatToolbar();
 	if (!li) return;
 	const list = _rapierListParent(li);
 	if (list) _setActive(list.tagName === 'OL' ? 'ol' : 'ul');
@@ -11948,6 +12040,47 @@ function _rapierRetireImageProjection(rows) {
 	}
 }
 
+function _rapierRetireInkProjection(rows) {
+	const spec = globalThis.RapierMarkdownSpec;
+	const retired = new Set(rows.map(row => spec.parseInkOpen(row.removed)?.id).filter(id => id != null));
+	if (!retired.size || rapier.view.mode === 'source') return;
+	const authority = rapier.identity.authority;
+	// Block-edit callers finish their local raw/DOM projection after the commit returns. Retire the remote
+	// and local metadata after that synchronous work, without changing text nodes or the person's caret.
+	queueMicrotask(() => {
+		if (authority !== rapier.identity.authority || rapier.view.mode === 'source') return;
+		for (const marker of _rapierInkSourceMarkers(_rapierSourceText())) if (marker.mark?.id != null) retired.delete(marker.mark.id);
+		if (!retired.size) return;
+		const clean = raw => {
+			let text = String(raw ?? '');
+			const runs = spec.pairInkSpans(text, _rapierInkSourceMarkers(text)).runs.filter(run => retired.has(run.mark.id));
+			for (const run of runs.sort((a, b) => b.start - a.start)) {
+				text = text.slice(0, run.innerEnd) + text.slice(run.end);
+				text = text.slice(0, run.start) + text.slice(run.innerStart);
+			}
+			return text;
+		};
+		for (const block of rapier.document.blocks) {
+			const raw = clean(block.raw);
+			if (raw === block.raw) continue;
+			block.raw = raw; block.rendered = renderBlock(raw); block.dirty = true;
+			rapier.autosave.dirty.add(block.id);
+			const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');
+			if (!wrapper) continue;
+			wrapper._rapierBlockRaw = raw;
+			const edit = wrapper.querySelector('.block-edit');
+			if (edit) for (const field of ['_rapierHistoryBaselineRaw', '_rapierEditOpenedAs', '_rapierEditOpenedRaw']) {
+				if (typeof edit[field] === 'string') edit[field] = clean(edit[field]);
+			}
+			for (const span of wrapper.querySelectorAll('[data-rapier-ink]')) {
+				const mark = spec.parseInkBody(span.getAttribute('data-rapier-ink'));
+				if (!retired.has(mark?.id)) continue;
+				span.removeAttribute('data-rapier-ink'); span.removeAttribute('data-rapier-ink-dark'); span.classList.remove('rapier-ink-mark');
+			}
+		}
+	});
+}
+
 function _rapierCommitSplices(splices, options = null) {
 	const config = {...(options || {})};
 	let rows = splices.map(row => Object.freeze({
@@ -11961,7 +12094,7 @@ function _rapierCommitSplices(splices, options = null) {
 	const liveRoot = rapier.document.source.rootId;
 	const alreadyApplied = config.sourceAlreadyApplied === true;
 	let retired = config.retiredImages || [];
-	let comments = [];
+	let comments = [], ink = [];
 	if (!alreadyApplied && !config.retiredImages && !config.sourceTransactionId && config.navigation !== false &&
 			rapier.document.docKind === 'markdown' && globalThis.RapierImageAssets.mayRetireImageDefinitions(_rapierSourceText(), rows)) {
 		const before = _rapierSourceText(), after = _rapierTransformSplices(before, rows);
@@ -11989,6 +12122,21 @@ function _rapierCommitSplices(splices, options = null) {
 			delete config.blockRange; delete config.blockRanges;
 		}
 	}
+	if (!alreadyApplied && !config.sourceTransactionId && config.navigation !== false && rapier.document.docKind === 'markdown') {
+		const before = _rapierSourceText();
+		if (before.includes('<!--') && globalThis.RapierMarkdownSpec.hasInkMarker(before)) {
+			const after = _rapierTransformSplices(before, rows);
+			if (after == null) return null;
+			ink = globalThis.RapierKernel.inkDeletionSplices(before, after, rows,
+				_rapierNormalizeTransactionContext(config.context || _rapierTransactionRuntime.context).actor.kind,
+				{before: _rapierInkSourceMarkers(before), after: _rapierInkSourceMarkers(after)});
+			if (ink.length) {
+				rows = rows.concat(ink.map(row => Object.freeze(row)));
+				config.selectionAfter = _rapierAfterImageRetirement(config.selectionAfter, ink);
+				delete config.blockRange; delete config.blockRanges;
+			}
+		}
+	}
 	if (!alreadyApplied) {
 		const checkpoint = rapier.document.source.capture();
 		try { _rapierApplySourceSplices(rows); }
@@ -12000,7 +12148,8 @@ function _rapierCommitSplices(splices, options = null) {
 	}
 	if (retired.length && config.retireProjection !== false) _rapierRetireImageProjection(retired);
 	if (comments.length) globalThis.RapierCommentsUI.project(comments);
-	const applied = {splices: Object.freeze(rows), retiredImages: Object.freeze(retired), commentSplices: Object.freeze(comments), selectionAfter: config.selectionAfter};
+	if (ink.length) _rapierRetireInkProjection(ink);
+	const applied = {inkSplices: Object.freeze(ink), splices: Object.freeze(rows), retiredImages: Object.freeze(retired), commentSplices: Object.freeze(comments), selectionAfter: config.selectionAfter};
 
 	if (_rapierTransactionRuntime.compound) {
 		_rapierTransactionRuntime.compound.splices.push(...rows);
@@ -14481,11 +14630,12 @@ function _rapierColorRuns(root) {
 	return { text, runs };
 }
 
-function _rapierRenderedColorProbe(raw) {
+// One rendering of a block for the exact-source planners to read (the colour runs by default; ink passes its own reader).
+function _rapierRenderedColorProbe(raw, read = _rapierColorRuns) {
 	try {
 		const root = document.createElement('div');
 		root.innerHTML = renderBlock(String(raw || ''));
-		return _rapierColorRuns(root);
+		return read(root);
 	} catch (_) { return null; }
 }
 
@@ -14656,6 +14806,223 @@ function rapierApplyColor(requestedHex) {
 
 function rapierTextColor(hexOrNone) {
 	return rapierApplyColor(hexOrNone);
+}
+
+// Ink: where the rendered words of a block stand inside an ink span, as the colour probe reads colour runs. {text, paint}:
+// the block's rendered text and, per character, whether an ink span holds it.
+function _rapierRenderedInkProbe(raw) {
+	return _rapierRenderedColorProbe(raw, _rapierInkRuns);
+}
+function _rapierInkRuns(root) {
+	{
+		let text = ''; const paint = [];
+		const walk = (node, inside) => {
+			if (node.nodeType === 3) { text += node.nodeValue; for (let i = 0; i < node.nodeValue.length; i++) paint.push(inside); return; }
+			if (node.nodeType !== 1) return;
+			const held = inside || (node.tagName === 'SPAN' && node.hasAttribute('data-rapier-ink'));
+			for (const child of node.childNodes) walk(child, held);
+		};
+		walk(root, false);
+		return { text, paint };
+	}
+}
+
+// Ink's exact-source planner (docs/briefs/ink.md §1): the selected words gain one pair, the opener as the pen formatted it
+// and the grammar's closer, and nothing else changes: not the words, not another mark, not the rendered text. null when
+// the words are not found whole, already stand inside an ink pair, or more than one place in the source could be meant.
+function _rapierPlanExactSourceInk(raw, selectedText, opener, targetStart, targetEnd) {
+	const source = String(raw || ''), spec = globalThis.RapierMarkdownSpec;
+	let selected = String(selectedText || '').replace(/\u2060/g, '\n');
+	const leading = /^\n+/.exec(selected);
+	if (leading) { selected = selected.slice(leading[0].length); targetStart += leading[0].length; }
+	const trailing = /\n+$/.exec(selected);
+	if (trailing) { selected = selected.slice(0, -trailing[0].length); targetEnd -= trailing[0].length; }
+	if (!selected || targetEnd <= targetStart || !spec.parseInkOpen(opener)) return null;
+	if (spec.hasInkMarker(selected) || _rapierHasColorMarker(selected)) return null;
+	const markers = [...spec.scanInkMarkers(source), ..._rapierColorMarkers(source)].sort((a, b) => a.start - b.start);
+	const map = [];
+	let stripped = '', cursor = 0;
+	const take = (from, to) => { for (let index = from; index < to; index++) { map.push(index); stripped += source[index]; } };
+	for (const marker of markers) { if (marker.start < cursor) continue; take(cursor, marker.start); cursor = marker.end; }
+	take(cursor, source.length);
+	map.push(source.length);
+	const runs = spec.pairInkSpans(source).runs;
+	const before = _rapierRenderedInkProbe(source);
+	if (!before) return null;
+	const valid = [];
+	for (const index of _rapierAllIndicesOf(stripped, selected)) {
+		const sourceStart = map[index], sourceEnd = map[index + selected.length];
+		if (runs.some(run => sourceStart < run.innerEnd && sourceEnd > run.innerStart)) continue;
+		const next = source.slice(0, sourceStart) + opener + source.slice(sourceStart, sourceEnd) + spec.INK_CLOSE + source.slice(sourceEnd);
+		const after = _rapierRenderedInkProbe(next);
+		if (!after || after.text !== before.text) continue;
+		let ok = true;
+		for (let i = 0; i < after.paint.length && ok; i++) {
+			const want = (i >= targetStart && i < targetEnd) || before.paint[i];
+			if (after.paint[i] !== want) ok = false;
+		}
+		if (ok) valid.push(next);
+	}
+	return valid.length === 1 ? valid[0] : null;
+}
+
+// The pen's door: the selected words of one block take the ink pair the pen formatted, through the same selection
+// state, segments and raw-range commit the colour strips use, so Undo takes the mark back in one step.
+function _rapierApplyInk(opener) {
+	if (_rapierUserMutationBlocked()) return false;
+	const spec = globalThis.RapierMarkdownSpec;
+	if (!spec || !spec.parseInkOpen(opener)) return false;
+	const selection = window.getSelection && window.getSelection();
+	if (!selection || selection.isCollapsed) return false;
+	const refusal = _rapierFormatRefusal(selection.rangeCount ? selection.getRangeAt(0) : null);
+	if (refusal) { showToast(refusal, 'info'); return false; }
+	const context = _rapierSelectionContext(selection);
+	if (!context || !_rapierSelectionActionableForFormat(context, true)) return false;
+	for (const wrapper of context.wrappers) {
+		const live = _liveBlockEl(wrapper);
+		if (wrapper.classList.contains('block-wrapper--editing') && live && live._rapierCheckpointFresh === false) _rapierCheckpointEdit(live);
+		if (!_rapierBoundBlock(wrapper)) return false;
+	}
+	const state = _rapierFormatSelectionState({ checkpoint: false, marks: true });
+	if (!state || state.wrappers.length !== 1 || !_rapierFormatCanTake(state)) return false;
+	const segments = _rapierHighlightSegments(state);
+	if (!segments || segments.length !== 1 || segments[0].cells || segments[0].start >= segments[0].end) return false;
+	const planned = _rapierPlanExactSourceInk(String(state.blocksBefore[0].raw || ''), segments[0].selected, opener, segments[0].start, segments[0].end);
+	if (planned == null) { showToast('the pen cannot mark these words without changing their Markdown', 'error'); return false; }
+	const changed = _rapierApplyRawRange(state, [planned], { keepEditing: true, segments });
+	requestAnimationFrame(refreshFormatToolbar);
+	return changed;
+}
+
+// Two word anchors enter one transaction, including a head above its tail or in another block.
+function _rapierApplyInkArrow(tailRange, headRange, mark) {
+	if (_rapierUserMutationBlocked()) return false;
+	if (_rapierFormatRefusal(tailRange) || _rapierFormatRefusal(headRange)) return false;
+	const spec = globalThis.RapierMarkdownSpec, captured = _rapierInkSourceRanges([tailRange, headRange]);
+	if (!spec || !captured) return false;
+	const [tail, head] = captured.ranges, source = captured.source;
+	if (tail.start < head.end && tail.end > head.start) return false;
+	const runs = spec.pairInkSpans(source).runs;
+	if (runs.some(run => [tail, head].some(range => range.start < run.end && range.end > run.start))) return false;
+	const used = new Set(spec.scanInkMarkers(source).filter(m => m.mark?.id != null).map(m => m.mark.id));
+	let id = 1;
+	while (used.has(id)) id++;
+	let opener, end;
+	try { opener = spec.formatInkOpen({ ...mark, kind: 'arrow', id }); end = spec.formatInkOpen({ kind: 'end', id }); }
+	catch (_) { return false; }
+	const splices = [[tail, opener], [head, end]].flatMap(([range, open]) => [
+		{ pos: range.end, removed: '', inserted: spec.INK_CLOSE }, { pos: range.start, removed: '', inserted: open },
+	]).sort((a, b) => b.pos - a.pos);
+	return _rapierApplyCanonicalSplices(splices, { operation: 'document.ink', selectionBefore: { start: tail.start, end: tail.end } });
+}
+
+// The eraser gathers every touched word before changing source. All marker splices, including an arrow's remote
+// endpoint, enter the canonical transaction together; the words are never a removed byte and Undo is one step.
+async function _rapierRemoveInk(ranges) {
+	if (_rapierUserMutationBlocked()) return false;
+	const spec = globalThis.RapierMarkdownSpec;
+	if (!spec) return false;
+	const capture = _rapierInkSourceRanges(ranges);
+	if (!capture) return false;
+	const { source, spans } = capture, paired = spec.pairInkMarkers(source, _rapierInkSourceMarkers(source));
+	const touched = new Set(paired.runs.filter(run => capture.ranges.some(hit => hit.start < run.innerEnd && hit.end > run.innerStart)).map(run => run.start));
+	for (const arrow of paired.arrows) if (touched.has(arrow.tail.start) || touched.has(arrow.head.start)) {
+		touched.add(arrow.tail.start); touched.add(arrow.head.start);
+	}
+	if (!touched.size) return false;
+	const selected = paired.runs.filter(run => touched.has(run.start)), splices = [];
+	let plannedRuns = 0;
+	for (const block of rapier.document.blocks) {
+		const span = spans.get(Number(block.id));
+		if (!span) continue;
+		const jobs = selected.filter(run => run.start >= span.start && run.end <= span.end).map(run => ({
+			start: run.start - span.start, end: run.end - span.start,
+			innerStart: run.innerStart - span.start, innerEnd: run.innerEnd - span.start,
+			whole: run.mark.kind === 'free' || run.mark.kind === 'arrow' || run.mark.kind === 'end',
+		}));
+		if (!jobs.length) continue;
+		const raw = String(block.raw || '');
+		if (source.slice(span.start, span.end) !== raw) return false;
+		const hits = capture.ranges.filter(hit => hit.start < span.end && hit.end > span.start)
+			.map(hit => ({ start: hit.start - span.start, end: hit.end - span.start }));
+		const plan = _rapierPlanExactSourceInkRemoval(raw, jobs, hits);
+		if (!plan) return false;
+		for (const splice of plan.splices) splices.push({ ...splice, pos: span.start + splice.pos });
+		plannedRuns += jobs.length;
+	}
+	if (plannedRuns !== selected.length || !splices.length || _rapierSourceText() !== source) return false;
+	splices.sort((a, b) => b.pos - a.pos || b.removed.length - a.removed.length);
+	const first = capture.ranges[0], caret = _rapierTransformSourceOffset(first.start, splices);
+	if (caret == null) return false;
+	const viewport = _rapierCaptureEditorViewport();
+	try {
+		return !!await _rapierApplyCanonicalSplices(splices, {
+			operation: 'document.ink-erase',
+			selectionBefore: { start: first.start, end: first.end }, selectionAfter: { start: caret, end: caret },
+		});
+	} finally { _rapierRestoreEditorViewport(viewport); requestAnimationFrame(refreshFormatToolbar); }
+}
+
+// Split the retained ink at whole-word boundaries. Other inline marks supply additional boundaries, so a surviving
+// ink span never crosses a bold/link/colour shell. Rendered text and all other semantics must prove unchanged before
+// the caller can commit these comment-only edits. The original opener (including the person's path) is copied exact.
+function _rapierPlanExactSourceInkRemoval(raw, jobs, hits) {
+	const source = String(raw || ''), spec = globalThis.RapierMarkdownSpec;
+	const before = _rapierRenderedMarkProbe(source, 'bold'), semantics = _rapierCutSemantics(source);
+	if (!spec || !before || !semantics) return null;
+	const map = _rapierCutSourceMap(source, before.text, semantics.formulas) || _rapierCutSourceMap(source, before.text, semantics.formulas, true);
+	if (!map) return null;
+	const paint = _rapierInkRuns(before.root).paint, wanted = paint.slice(), kept = [], splices = [];
+	const erased = new Array(before.text.length).fill(false);
+	for (const word of before.text.matchAll(/\S+/g)) {
+		const end = word.index + word[0].length;
+		if (!hits.some(hit => map.from[word.index] < hit.end && map.to[end - 1] > hit.start)) continue;
+		for (let i = word.index; i < end; i++) erased[i] = true;
+	}
+	let changed = false;
+	for (const job of jobs) {
+		const opener = source.slice(job.start, job.innerStart);
+		splices.push({ pos: job.start, removed: opener, inserted: '' },
+			{ pos: job.innerEnd, removed: source.slice(job.innerEnd, job.end), inserted: '' });
+		let start = -1;
+		for (let i = 0; i <= before.text.length; i++) {
+			const inside = i < before.text.length && map.from[i] >= job.innerStart && map.to[i] <= job.innerEnd;
+			const keep = inside && !job.whole && !erased[i];
+			if (inside && !keep) { wanted[i] = false; if (paint[i] && /\S/.test(before.text[i])) changed = true; }
+			if (keep && start < 0) start = i;
+			else if (!keep && start >= 0) { kept.push({ start, end: i, opener }); start = -1; }
+		}
+	}
+	if (!changed) return null;
+	const boundaries = new Set();
+	for (const runs of Object.values(semantics.runs)) for (const run of runs) { boundaries.add(run.start); boundaries.add(run.end); }
+	for (const run of kept) {
+		const cuts = [run.start, ...Array.from(boundaries).filter(at => at > run.start && at < run.end).sort((a, b) => a - b), run.end];
+		for (let i = 1; i < cuts.length; i++) {
+			let start = cuts[i - 1], end = cuts[i];
+			while (start < end && /\s/.test(before.text[start])) start++;
+			while (end > start && /\s/.test(before.text[end - 1])) end--;
+			if (start >= end) continue;
+			splices.push({ pos: map.from[start], removed: '', inserted: run.opener },
+				{ pos: map.to[end - 1], removed: '', inserted: spec.INK_CLOSE });
+		}
+	}
+	// A deletion at the same position must precede an insertion: each removed field is checked against live bytes.
+	splices.sort((a, b) => b.pos - a.pos || b.removed.length - a.removed.length);
+	const next = _rapierTransformSplices(source, splices);
+	if (next == null || next === source) return null;
+	const after = _rapierRenderedMarkProbe(next, 'bold');
+	if (!after || after.text !== before.text || JSON.stringify(_rapierCutSemantics(next)) !== JSON.stringify(semantics)) return null;
+	const afterPaint = _rapierInkRuns(after.root).paint;
+	if (afterPaint.length !== wanted.length || afterPaint.some((value, index) => /\S/.test(before.text[index]) && value !== wanted[index])) return null;
+	return { raw: next, splices };
+}
+
+// Ink drawn into any laid-out root (the print page): the pieces, each its own positioned box.
+function _rapierInkDrawInto(root) {
+	const draw = globalThis.RapierInkDraw, spec = globalThis.RapierMarkdownSpec, ink = globalThis.RapierInk;
+	if (!root || !draw || !spec || !ink || !root.querySelector('span.rapier-ink-mark')) return [];
+	return draw.drawInk(root, { spec, ink, dark: _rapierDeriveDarkColor, place: 'start' });
 }
 
 function _rapierRangeInsideCode(range) {
@@ -21311,6 +21678,63 @@ function _rapierUnwrapElement(element) {
 	element.remove();
 }
 
+// A heading between two parts of one numbered list (item 9, a heading, then a list that starts at 10): the dotted line
+// between the circles must run on past the heading, and the heading stands on the margin the item text stands on.
+// `blocks` is the document's top-level elements in order (null where a block is not a rendered element). Only
+// attributes are written; the source is untouched.
+function _rapierMarkListContinuations(blocks) {
+	const isHeading = element => !!element && /^H[1-6]$/.test(element.tagName);
+	blocks.forEach((element, index) => {
+		if (!element || element.tagName !== 'OL') return;
+		const start = parseInt(element.getAttribute('start'), 10);
+		const last = (Number.isFinite(start) ? start : 1) + element.querySelectorAll(':scope > li').length - 1;
+		const headings = [];
+		let next = index + 1;
+		while (isHeading(blocks[next])) headings.push(blocks[next++]);
+		const following = blocks[next];
+		if (!headings.length || !following || following.tagName !== 'OL') return;
+		if (parseInt(following.getAttribute('start'), 10) !== last + 1) return;
+		element.setAttribute('data-rapier-list-continues', '');
+		headings.forEach(heading => heading.setAttribute('data-rapier-list-through', ''));
+	});
+}
+
+// The live view renders each block on its own, so the neighbours are read from the wrappers, settled again whenever
+// a block's rendered surface changes (keys typed inside an open block change none).
+function _rapierSettleListContinuations(host) {
+	host._rapierListSettle = 0;
+	host.querySelectorAll('[data-rapier-list-continues],[data-rapier-list-through]').forEach(element => {
+		element.removeAttribute('data-rapier-list-continues');
+		element.removeAttribute('data-rapier-list-through');
+	});
+	const blocks = Array.from(host.children, wrapper => {
+		if (!wrapper.classList.contains('block-wrapper') || wrapper.classList.contains('block-wrapper--editing')) return null;
+		const read = Array.from(wrapper.children).find(child => child.classList.contains('block-read'));
+		return read && read.childElementCount === 1 ? read.firstElementChild : null;
+	});
+	_rapierMarkListContinuations(blocks);
+}
+function _rapierWatchListContinuations() {
+	const host = document.getElementById('editor-blocks');
+	if (!host || typeof MutationObserver !== 'function') return;
+	const schedule = () => {
+		if (host._rapierListSettle) return;
+		host._rapierListSettle = requestAnimationFrame(() => _rapierSettleListContinuations(host));
+	};
+	if (!host._rapierListWatch) {
+		host._rapierListWatch = new MutationObserver(records => {
+			for (const record of records) {
+				const target = record.target;
+				if (target.nodeType === 1 && target.closest('.block-edit')) continue;
+				schedule();
+				return;
+			}
+		});
+		host._rapierListWatch.observe(host, {childList: true, subtree: true});
+	}
+	schedule();
+}
+
 const RAPIER_TABLE_CAPTION_PREFIX_RE = /^(?:Table:|:) /;
 function _rapierMarkTableCaptions(root) {
 	// The source convention is untouched: the caption stays an ordinary trailing paragraph
@@ -21369,6 +21793,7 @@ function _rapierRenderSemanticRoot(canonical, metadata) {
 
 	root.querySelectorAll('pre > code').forEach(_rapierNormalizeCodeElement);
 	_rapierMarkTableCaptions(root);
+	_rapierMarkListContinuations(Array.from(root.children));
 	_rapierDecorateJumpLists(root);
 	return root;
 }
@@ -22958,7 +23383,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	const theme = opts.print
 		? 'light'
 		: _rapierArtifactPreference('theme', ['system', 'light', 'dark']);
-	const highlights = _rapierArtifactPreference('highlights', ['accent', 'standard', 'off']);
+	const highlights = _rapierArtifactPreference('highlights', ['accent', 'standard']);
 	const versionMeta = document.querySelector('meta[name="rapier-version"]');
 	const version = versionMeta && versionMeta.content ? versionMeta.content.trim() : '0.0.0';
 	const bodyClass = theme === 'light' ? 'light' : '';
@@ -22995,6 +23420,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// The lexer for the page's code, under the same nonce, only when a block earned it: the CPU
 	// spans are the first paint, and where the reader's browser has WebGPU the lexer repaints them.
 	const lexerScript = !opts.print ? _rapierArtifactLexerScript(styledRoot, nonce) : '';
+	const inkScript = !opts.print ? _rapierArtifactInkScript(styledRoot, nonce) : '';
 	const page = '<!DOCTYPE html>\n'
 		+ '<html lang="en" data-rapier-theme="' + theme + '" data-highlights="' + highlights + '">\n'
 		+ '<head>\n<meta charset="UTF-8">\n'
@@ -23004,13 +23430,13 @@ async function _rapierBuildArtifact(options, providedContext) {
 		// exported from Rapier and carried in someone's page shows whole, with no inner scroll. Any origin may
 		// read the height: the page is the document, published by the person who exported it.
 		+ '<meta name="responsive-embedded-sizing" content="allow-origins=*">\n'
-		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || lexerScript ? nonce : '', !!opts.print) + '">\n'
+		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || lexerScript || inkScript ? nonce : '', !!opts.print) + '">\n'
 		+ '<meta name="referrer" content="no-referrer">\n'
 		+ '<meta name="generator" content="Rapier ' + escapeRapierHtmlText(version) + '">\n'
 		+ '<title>' + escapeRapierHtmlText(metadata.filename) + '</title>\n'
 		+ '<style>' + css + '</style>\n</head>\n'
 		+ '<body class="' + bodyClass + '"><main class="' + docClass + '" data-md-theme="' + theme + '">'
-		+ bodyHtml + '</main>' + carrier + layoutScript + lexerScript + '</body>\n</html>';
+		+ bodyHtml + '</main>' + carrier + layoutScript + lexerScript + inkScript + '</body>\n</html>';
 
 	return {
 		html: page,
@@ -23511,6 +23937,8 @@ async function _rapierPrintArtifactInPlace(artifact) {
 
 		if (artifact.willFont) _rapierPrintWillSettle(host, artifact.willFont.size);
 		void host.offsetHeight;
+		// The ink drawn from the printed words, each piece its own box, so the page it falls on carries it (docs/briefs/ink.md §3).
+		try { _rapierInkDrawInto(host.querySelector('main') || host); } catch (_) {}
 
 		if (platformPrint) {
 			if (typeof platform.host.printCurrentDocument !== 'function') {
@@ -28402,8 +28830,8 @@ function _rangeInsertHTML(htmlString) {
 // Typing that makes its own blocks (docs/formatting-algebra.md): the moment the space after a
 // line-start marker lands (`1. `, `- `, `[ ] `, `> `, `## `), or Enter after a line that is only
 // `---` or a code fence's opening, the line becomes the block the person expects; the moment the
-// space, punctuation or Enter after a closed `**bold**`, `*italic*`, `` `code` `` or `[link](address)`
-// lands, the run becomes that mark -- as Word, Docs and Notion do, the source exactly what was typed.
+// closing delimiter of `**bold**`, `*italic*` or `` `code` `` lands, the run becomes its mark. A link
+// still waits for a following space, punctuation or Enter. The source is exactly what was typed.
 // Two history steps: the characters as typed, then the block, so one Undo gives the characters back;
 // and a line taken back that way is not made again (`_rapierTypedLiteral`). `options.enter`: asked by the Enter owner
 // before its split; `options.data`: what the input inserted. Returns true when it acted.
@@ -28411,7 +28839,7 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 	if (!editDiv || !block || rapier.composition.block || _rapierTransactionRuntime.formatting || rapier.access.readOnly) return false;
 	const wrapper = editDiv.closest('.block-wrapper');
 	if (!wrapper || _rapierBoundBlock(wrapper) !== block || !wrapper.classList.contains('block-wrapper--editing') ||
-			/\bblock-wrapper--(?:source-edit|math-source|table)\b/.test(wrapper.className) || _blockUsesRawEditor(block.raw)) return false;
+			/\bblock-wrapper--(?:source-edit|math-source|table)\b/.test(wrapper.className)) return false;
 	// A line taken back by Undo is left as typed only while it is still that line: once its words move
 	// on (or another block is typed in), the memory goes, and the marker typed again makes its block.
 	const remembered = editDiv._rapierTypedLiteral;
@@ -28435,24 +28863,40 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 	const where = !scope ? null : scope === only ? 'paragraph' :
 		scope.parentElement?.tagName === 'UL' && !scope.querySelector('input[type="checkbox"]') ? 'item' : null;
 	let head = null, tail = '';
-	if (where) {
+	if (where && !markOnly && (enter || typed === ' ')) {
 		try {
 			const probe = document.createRange();
 			probe.setStart(scope, 0); probe.setEnd(node, offset);
 			head = probe.toString();
-			probe.setStart(node, offset); probe.setEnd(scope, scope.childNodes.length);
-			tail = probe.toString();
+			if (enter) {
+				probe.setStart(node, offset); probe.setEnd(scope, scope.childNodes.length);
+				tail = probe.toString();
+			}
 		} catch (_) { head = null; }
 	}
 	// The marker is the text node's own first characters, nothing standing before it.
 	const own = head != null && head === node.data.slice(0, offset);
 	const decision = own && !markOnly ? _rapierTypedBlock(head, enter ? 'enter' : typed === ' ' ? 'space' : '', where) : null;
 	if (decision && enter && tail.replace(/\u00a0/g, ' ').trim()) return false;
-	// The run ends where the boundary begins: before the character just typed, or at the caret for Enter.
-	const runEnd = markOnly ? offset : offset - 1;
-	const mark = !decision && (!enter || markOnly) && /^(?:P|LI|H[1-6])$/.test(node.parentElement.tagName)
-		? _rapierTypedMark(node.data.slice(0, runEnd), markOnly ? '\n' : node.data[offset - 1]) : null;
+	// A closing delimiter is the request itself; following boundaries still admit a completed link
+	// or a whole run committed together. The same matcher rejects a single star inside a bold close.
+	let runEnd = markOnly ? offset : offset - 1, mark = null;
+	if (!decision && (!enter || markOnly) && /^(?:P|LI|H[1-6])$/.test(node.parentElement.tagName)) {
+		if (!enter && /[*_`]/.test(typed)) {
+			mark = _rapierTypedMark(node.data.slice(0, offset));
+			if (mark) runEnd = offset;
+		}
+		if (!mark) mark = _rapierTypedMark(node.data.slice(0, runEnd), markOnly ? '\n' : node.data[offset - 1]);
+	}
 	if (!decision && !mark) return false;
+	// Classify source only for a conversion the shared grammar actually proposed.
+	if (_blockUsesRawEditor(block.raw)) return false;
+	if (mark?.delim) {
+		// The caret may stand before existing text: a matching delimiter makes this only part of
+		// a longer run. Underscore marks keep their existing following-boundary trigger.
+		const following = node.data.slice(runEnd) || node.nextSibling?.textContent || '';
+		if (following[0] === mark.delim[0]) return false;
+	}
 	// Where the caret stood among the characters as typed: where one Undo puts it back.
 	const caret = _charOffsetForRangePoint(editDiv, node, offset);
 	const typedText = editDiv.textContent;
@@ -28504,9 +28948,15 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 			return false;
 		}
 		if (!node.data) node.remove();
-		caretAt(after, markOnly ? 0 : 1);
+		caretAt(after, offset - runEnd);
 		_markEditDivDirty(editDiv);
 		_rapierCheckpointEdit(editDiv);
+		// Chromium may place the next input inside a mark when its following text node is empty.
+		// The existing typing-state planner keeps the just-closed mark off without adding source bytes.
+		if (!enter && runEnd === offset) {
+			const closed = { strong: 'bold', em: 'italic', code: 'code' }[mark.kind];
+			_rapierCarryTypingMarks(editDiv, { [closed]: false });
+		}
 		editDiv._rapierTypedLiteral = { blockId: block.id, raw: literal, caret, text: typedText };
 		return true;
 	}
@@ -29083,6 +29533,15 @@ function _cloneRangeFrom(el, fromNode, fromOffset) {
 
 /* RAPIER_INLINE_SOURCE_MODULE */
 
+// The Markdown parser distinguishes an actual hidden comment from the same bytes in literal code.
+function _rapierInkSourceMarkers(source) {
+	const markers = globalThis.RapierMarkdownSpec.scanInkMarkers(source);
+	if (!markers.length) return markers;
+	const comments = new Map(_rapierHiddenSourceRanges(source, md).filter(range => range.kind === 'comment')
+		.map(range => [range.start, range.end]));
+	return markers.filter(marker => comments.get(marker.start) === marker.end);
+}
+
 function _rapierClipboardExactMarkdown(range) {
 	if (!range || range.collapsed) return null;
 	const wrappers = _rangeSelectedWrappers(range);
@@ -29110,7 +29569,9 @@ function _rapierClipboardExactMarkdown(range) {
 		const localS = start - startSpan.start;
 		const localE = end - startSpan.start;
 		if (localS < 0 || localE > raw.length) return null;
-		return _rapierExpandWholeRunMarks(raw, localS, localE, md.helpers).text;
+		const expanded = _rapierExpandWholeRunMarks(raw, localS, localE, md.helpers);
+		return globalThis.RapierMarkdownSpec.sliceInkArrows(source, startSpan.start + expanded.start,
+			startSpan.start + expanded.end, _rapierInkSourceMarkers(source));
 	}
 	const startRaw = String(startBlock.raw || '');
 	const endRaw = String(endBlock.raw || '');
@@ -29119,7 +29580,7 @@ function _rapierClipboardExactMarkdown(range) {
 	const absS = startSpan.start + startExp.start;
 	const absE = endSpan.start + endExp.end;
 	if (absS < 0 || absE > source.length || absE <= absS) return null;
-	return source.slice(absS, absE);
+	return globalThis.RapierMarkdownSpec.sliceInkArrows(source, absS, absE, _rapierInkSourceMarkers(source));
 }
 
 function _clipboardReadRange(range, clipboardData) {
@@ -29237,10 +29698,18 @@ function _clipboardReadRange(range, clipboardData) {
 	try { markdown = _rapierCompleteImageExcerpt(markdown, _rapierSourceText()); }
 	catch (error) { showToast('Copy could not include the embedded image', 'error'); throw error; }
 
-	const html = globalThis.RapierEmbeddedImages.clipboard(scratch) ?
-		sanitizeRapierHtml(_rapierResolveSoftBreakTokens(scratch).innerHTML, 'render') : '';
 	const exact = _rapierClipboardExactMarkdown(range);
 	if (exact != null) markdown = exact;
+	else markdown = globalThis.RapierMarkdownSpec.prepareInkPaste(markdown, '', _rapierInkSourceMarkers(markdown));
+	// HTML and Markdown carry the same complete arrows. A formatting-context clone may contain only part
+	// of an anchor, so its presence in the clone does not grant that endpoint clipboard custody.
+	const copiedArrows = new Set(globalThis.RapierMarkdownSpec.pairInkMarkers(markdown, _rapierInkSourceMarkers(markdown)).arrows.map(arrow => arrow.id));
+	for (const span of scratch.querySelectorAll('[data-rapier-ink]')) {
+		const mark = globalThis.RapierMarkdownSpec.parseInkBody(span.getAttribute('data-rapier-ink'));
+		if (mark?.id != null && !copiedArrows.has(mark.id)) _rapierUnwrapElement(span);
+	}
+	const html = globalThis.RapierEmbeddedImages.clipboard(scratch) ?
+		sanitizeRapierHtml(_rapierResolveSoftBreakTokens(scratch).innerHTML, 'render') : '';
 	if (clipboardData) {
 		try { if (html) clipboardData.setData('text/html', html); } catch (_) {}
 		try { clipboardData.setData('text/markdown', markdown); } catch (_) {}
@@ -33173,6 +33642,7 @@ function _rapierEmbedEnvelope(type, payload, requestId) {
 function _rapierEmbedPost(type, payload, requestId) {
 	// Capability checks belong on both sides: a UI save/retry is also a disclosure to the host.
 	const required = type === 'save-request' ? 'read' : type === 'document-state' ? 'changes'
+		: type === 'agent-review' ? 'agent'
 		: ['close-request', 'close-ready'].includes(type) ? 'close' : null;
 	if (required && !_rapierEmbed.capabilities?.includes(required)) return false;
 	if (!_rapierEmbed.port || !_rapierEmbed.connected) return false;
@@ -33202,6 +33672,7 @@ function _rapierEmbedConnectionIdentityAllowed(
 	);
 }
 function _rapierEmbedPublishState() {
+	globalThis.RapierAgentBrowser?.publishEmbedReview();
 	if (!_rapierEmbed.connected || !_rapierEmbed.capabilities?.includes('changes')) { _rapierEmbed.stateSignature = ''; return; }
 	const state = {
 		loaded: _rapierEmbed.loaded,
@@ -34750,23 +35221,6 @@ async function _rapierConsumeShortcut(context) {
 	if (context.handledShortcut) history.replaceState(null, '', _rapierCleanBootPath());
 }
 
-async function _rapierRefreshWelcome(context) {
-	if (context.documentConsumed || context.handledShortcut ||
-			(!window.RapierPlatform || window.RapierPlatform.environment.allowsBrowserIntake !== true)) {
-		return;
-	}
-
-	const version = '14';
-	let stored = '';
-	try { stored = localStorage.getItem(RapierStorage.welcomeVersion) || ''; } catch (_) {}
-	if (stored === version) return;
-	if (_rapierIsBuiltInWelcomeDocument()) {
-		await _rapierLoadBuiltInWelcome();
-		if (_rapierBootSuperseded(context)) return;
-	}
-	try { localStorage.setItem(RapierStorage.welcomeVersion, version); } catch (_) {}
-}
-
 async function _rapierRestoreBootDocument(context) {
 	// A page that carries a document (tools/page.mjs wrapped one into it: an agent's, a friend's, a
 	// download) opens on that document, never on a saved recovery of some other document that shares
@@ -34806,9 +35260,6 @@ async function _rapierRestoreBootDocument(context) {
 		await _rapierOpenCarriedDrawing();
 		if (_rapierBootSuperseded(context)) return false;
 		if (carried) await _rapierOpenCarriedBase();
-		if (_rapierBootSuperseded(context)) return false;
-	} else {
-		await _rapierRefreshWelcome(context);
 		if (_rapierBootSuperseded(context)) return false;
 	}
 	return true;
@@ -34859,6 +35310,9 @@ function _rapierPublishBootReady(context) {
 		try { window.RapierPlatform.files.finishBoot({ documentConsumed: !!context.documentConsumed }); } catch (_) {}
 	}
 	if (_rapierFileLaunchRuntime.pending) _rapierConsumeFileLaunch(null);
+	// The ink layer draws every mark from its words' boxes from now on (editor/ink-layer.mjs; docs/briefs/ink.md).
+	try { _rapierInkInstall(globalThis.RapierMarkdownSpec, globalThis.RapierInk, globalThis.RapierInkDraw, _rapierDeriveDarkColor); } catch (_) {}
+	try { _rapierInkPenInstall({ spec: globalThis.RapierMarkdownSpec, ink: globalThis.RapierInk, draw: globalThis.RapierInkDraw, apply: _rapierApplyInk, applyArrow: _rapierApplyInkArrow, erase: _rapierRemoveInk, liveOf: _liveBlockEl, dark: _rapierDeriveDarkColor, say: text => showToast(text, 'info'), stylus: () => RapierPreferences.read('inkStylus') !== 'off', setStylus: on => RapierPreferences.write('inkStylus', on ? 'on' : 'off') }); } catch (_) {}
 	// rapier.website/privacy and /commercial are doors: the page opens that sheet (a boot from the address, http only). The
 	// commercial sheet is in the full page alone and has no other way in; a copy without it opens nothing.
 	try {
@@ -37154,8 +37608,27 @@ function _rapierPasteHtmlCarriesOnlyWords(html) {
 	}
 }
 
+function _rapierPrepareInkPasteContent(content, payload) {
+	if (!content || payload?.insideCode || !content.markdown?.includes('<!--')) return content;
+	let existing = _rapierSourceText(), markers;
+	const textarea = rapier.view.mode === 'source' && document.getElementById('source-textarea');
+	if (textarea) {
+		const whole = _rapierSelectionOwnsDocument(textarea);
+		const start = whole ? 0 : _rapierAbsPos(textarea.selectionStart), end = whole ? existing.length : _rapierAbsPos(textarea.selectionEnd);
+		// Source paste is parsed where it will land: a comment pasted inside inline code is literal, too.
+		const proposed = existing.slice(0, start) + content.markdown + existing.slice(end);
+		markers = _rapierInkSourceMarkers(proposed).filter(marker => marker.start >= start && marker.end <= start + content.markdown.length)
+			.map(marker => ({...marker, start: marker.start - start, end: marker.end - start}));
+		existing = existing.slice(0, start) + existing.slice(end);
+	} else markers = _rapierInkSourceMarkers(content.markdown);
+	if (!markers.some(marker => marker.mark?.id != null)) return content;
+	const markdown = globalThis.RapierMarkdownSpec.prepareInkPaste(content.markdown, existing, markers);
+	return markdown === content.markdown ? content : {...content, markdown};
+}
+
 function _rapierResolvePastePayload(payload) {
 	const value = payload || {};
+	const finish = content => _rapierPrepareInkPasteContent(content, value);
 	const decision = _rapierPasteDecision(value, () => _rapierPasteHtmlCarriesOnlyWords(value.html));
 	// A delimited grid (TSV, CSV) in the plain text is a table (the tables lane), asked before the plain words,
 	// through every door: the large paste asks the same question below.
@@ -37163,14 +37636,14 @@ function _rapierResolvePastePayload(payload) {
 		const cells = String(value.plain || '').trim() ? _rapierTableFromDelimited(value.plain) : null;
 		return cells ? { kind: 'markdown', markdown: cells, plainText: false, html: '' } : null;
 	};
-	if (decision !== 'html') return decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null;
+	if (decision !== 'html') return finish(decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null);
 	let markdown = '';
 	try {
 		const html = _rapierPreparePasteHtml(value.html);
 		markdown = html.trim() ? String(turndown.turndown(html) || '').trim() : '';
 	} catch (_) {   }
-	if (markdown) return _rapierPasteContent('html', value, markdown);
-	return grid() || (String(value.plain || '').trim() ? _rapierPasteContent('plain', value) : null);
+	if (markdown) return finish(_rapierPasteContent('html', value, markdown));
+	return finish(grid() || (String(value.plain || '').trim() ? _rapierPasteContent('plain', value) : null));
 }
 
 function _rapierChunkPasteHtml(html, targetChars = 48 * 1024) {
@@ -37267,6 +37740,7 @@ function _rapierChunkPasteHtml(html, targetChars = 48 * 1024) {
 
 async function _rapierResolveLargePastePayload(payload, job) {
 	const value = payload || {};
+	const finish = content => _rapierPrepareInkPasteContent(content, value);
 	const decision = _rapierPasteDecision(value, () => _rapierPasteHtmlCarriesOnlyWords(value.html));
 	// The delimited grid (TSV, CSV) is asked before the plain words here as at the ordinary door: the editor's
 	// every paste comes through this one.
@@ -37274,7 +37748,7 @@ async function _rapierResolveLargePastePayload(payload, job) {
 		const cells = String(value.plain || '').trim() ? _rapierTableFromDelimited(value.plain) : null;
 		return cells ? { kind: 'markdown', markdown: cells, plainText: false, html: '' } : null;
 	};
-	if (decision !== 'html') return decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null;
+	if (decision !== 'html') return finish(decision === 'plain' ? grid() || _rapierPasteContent('plain', value) : decision ? _rapierPasteContent(decision, value) : null);
 	const markdown = [];
 	let conversionError = null;
 	for (const chunk of _rapierChunkPasteHtml(value.html)) {
@@ -37289,9 +37763,9 @@ async function _rapierResolveLargePastePayload(payload, job) {
 		await _rapierYieldUserVisibleWork();
 		if (job && job.cancelled) return null;
 	}
-	if (!conversionError && markdown.length) return _rapierPasteContent('html', value, markdown.join('\n\n'));
+	if (!conversionError && markdown.length) return finish(_rapierPasteContent('html', value, markdown.join('\n\n')));
 	if (conversionError && !String(value.plain || '').trim()) throw conversionError;
-	return grid() || (String(value.plain || '').trim() ? _rapierPasteContent('plain', value) : null);
+	return finish(grid() || (String(value.plain || '').trim() ? _rapierPasteContent('plain', value) : null));
 }
 
 async function _rapierResolveLargeFlatPastePayload(payload, job) {
@@ -38435,6 +38909,43 @@ function _rapierHeavyWindowMaybeSlideForScroll(ta) {
 	}
 }
 
+function _rapierSourceClipboardMarkdown(textarea) {
+	if (rapier.document.docKind !== 'markdown') return null;
+	const whole = _rapierSelectionOwnsDocument(textarea);
+	if (!whole && textarea.selectionStart === textarea.selectionEnd) return null;
+	const source = _rapierFlatValue(), start = whole ? 0 : _rapierAbsPos(textarea.selectionStart),
+		end = whole ? source.length : _rapierAbsPos(textarea.selectionEnd);
+	return globalThis.RapierMarkdownSpec.sliceInkArrows(source, start, end, _rapierInkSourceMarkers(source));
+}
+
+function _rapierSourceClipboardCopy(e) {
+	const ta = e.currentTarget;
+	const markdown = _rapierSourceClipboardMarkdown(ta);
+	if (markdown == null && !_rapierSelectionOwnsDocument(ta)) return;
+	try {
+		e.clipboardData.setData('text/plain', markdown == null ? _rapierFlatValue() : markdown);
+		if (markdown != null) e.clipboardData.setData('text/markdown', markdown);
+		e.preventDefault();
+	} catch (_) {}
+}
+
+function _rapierSourceClipboardCut(e) {
+	const ta = e.currentTarget;
+	const markdown = _rapierSourceClipboardMarkdown(ta), whole = _rapierSelectionOwnsDocument(ta);
+	if (markdown == null && !whole) return;
+	try {
+		e.clipboardData.setData('text/plain', markdown == null ? _rapierFlatValue() : markdown);
+		if (markdown != null) e.clipboardData.setData('text/markdown', markdown);
+	} catch (_) { return; }
+	e.preventDefault();
+	if (rapier.access.readOnly) return;
+	if (whole) { _rapierHeavyWindowReplaceAll(''); return; }
+	const beforeInput = new InputEvent('beforeinput', {bubbles: true, cancelable: true, inputType: 'deleteByCut'});
+	if (!ta.dispatchEvent(beforeInput)) return;
+	ta.setRangeText('', ta.selectionStart, ta.selectionEnd, 'start');
+	ta.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteByCut'}));
+}
+
 (function () {
 	const ta = document.getElementById('source-textarea');
 	if (!ta) return;
@@ -38453,21 +38964,8 @@ function _rapierHeavyWindowMaybeSlideForScroll(ta) {
 		_rapierSelectAllSource(ta);
 	});
 
-	ta.addEventListener('copy', (e) => {
-		if (!_rapierSelectionOwnsDocument(ta)) return;
-		try {
-			e.clipboardData.setData('text/plain', _rapierFlatValue());
-			e.preventDefault();
-		} catch (_) {}
-	});
-	ta.addEventListener('cut', (e) => {
-		if (!_rapierSelectionOwnsDocument(ta)) return;
-		const full = _rapierFlatValue();
-		try { e.clipboardData.setData('text/plain', full); } catch (_) {}
-		e.preventDefault();
-		if (rapier.access.readOnly) return;
-		_rapierHeavyWindowReplaceAll('');
-	});
+	ta.addEventListener('copy', _rapierSourceClipboardCopy);
+	ta.addEventListener('cut', _rapierSourceClipboardCut);
 })();
 
 const _rapierSelectionRuntime = Object.seal({ minting: false });
@@ -39507,7 +40005,7 @@ function _rapierSyncSingleLineHighlight() {
 				return;
 			}
 			if (burstOwnsCommit) _burstSplices.push(...staged.splices);
-			if (staged.retiredImages.length || staged.commentSplices.length) {
+			if (staged.retiredImages.length || staged.commentSplices.length || staged.inkSplices.length) {
 				const source = _rapierSourceText(), selection = staged.selectionAfter, scrollTop = ta.scrollTop;
 				_rapierHeavyWindowReset();
 				if (!globalThis.RapierSourceAssets?.mount(source, {...selection, scrollTop, skipRefresh: true})) {
@@ -40077,13 +40575,21 @@ function _rapierRestoreCanonicalSelection(start, end, capture) {
 }
 
 function _rapierResolveExactCanonicalSelection() {
+	// A typing caret has no excerpt. Prove a live selection before walking the canonical
+	// blocks or constructing target evidence; source mode has its own textarea selection.
+	const sourceMode = rapier.view.mode === 'source';
+	const selection = sourceMode ? null : window.getSelection && window.getSelection();
+	if (sourceMode) {
+		const textarea = document.getElementById('source-textarea');
+		if (!textarea || textarea.selectionStart === textarea.selectionEnd) return null;
+	} else if (!selection || !selection.rangeCount || selection.isCollapsed) return null;
 	const snapshot = _rapierExcerptAuthoritySnapshot();
 	if (!snapshot) return null;
 	const target = _rapierCurrentSelectionTarget();
 	if (!target || target.documentAuthority !== snapshot.authority || target.revision !== snapshot.revision ||
 			Number(target.selectedLength || 0) <= 0) return null;
 
-	if (rapier.view.mode === 'source') {
+	if (sourceMode) {
 
 		const start = Number(target.start);
 		const end = Number(target.end);
@@ -40092,8 +40598,6 @@ function _rapierResolveExactCanonicalSelection() {
 		return { ...snapshot, target, start, end };
 	}
 
-	const selection = window.getSelection && window.getSelection();
-	if (!selection || !selection.rangeCount || selection.isCollapsed) return null;
 	const range = selection.getRangeAt(0);
 	if (!_rangeIntersectsEditor(range)) return null;
 	const wrappers = _rangeSelectedWrappers(range);
@@ -40166,7 +40670,6 @@ async function rapierCopyCompleteExcerpt() {
 
 	const current = _rapierRevalidateCompleteExcerptCandidate(candidate);
 	if (!current) { hideFormatToolbar(); return false; }
-	if (!_rapierRequireFeature('excerpt.complete', { source: 'format-toolbar' })) return false;
 	const source = captured.canonical;
 	if (!_rapierMutationStampIsCurrent(captured.stamp) ||
 			!_rapierSemanticRuntime.excerptCandidate || _rapierSemanticRuntime.excerptCandidate.documentAuthority !== String(rapier.identity.authority || '') ||
@@ -40850,7 +41353,10 @@ function _rapierLeaveAsk() {
 	const app = !!platform && typeof platform.host.approveClose === 'function';
 	const web = !app && typeof _rapierBackEntriesArmed === 'function' && _rapierBackEntriesArmed();
 	if ((!app && !web) || !_rapierBootstrapRuntime.complete || _rapierBootstrapRuntime.failed || !_rapierUi.refs) return false;
-	const file = _rapierIsDirty() && typeof platform.files.hasWritable === 'function' &&
+	// The founder, 2 October, evening: a document with nothing changed (no mark by its name) has nothing to
+	// lose, so Back leaves at once; the question is for unsaved work alone (law 56's own case).
+	if (!_rapierIsDirty()) { void _rapierLeave(); return true; }
+	const file = typeof platform.files.hasWritable === 'function' &&
 		platform.files.hasWritable(String(rapier.identity.authority || ''));
 	void rapierConfirm({
 		title: 'leave rapier?',
@@ -43567,7 +44073,7 @@ const RAPIER_OPERATIONS = Object.freeze({'document.export': async (input, ctx) =
 
 function _rapierSpeedracerOperations() {
  const projection = {};
- for (const tool of globalThis.RapierAgentCatalog.TOOLS) projection[tool.name] = (input, ctx) => {
+ for (const tool of globalThis.RapierAgentCatalog.PAGE_TOOLS) projection[tool.name] = (input, ctx) => {
  const stamped = _rapierDoorStamp(ctx, 'platform');
  return globalThis.RapierAgentBrowser.invoke(tool.name, input, {actor: _rapierHostActorKind(stamped), principal: String(stamped.actor?.id || 'host'), transport: 'platform', requestId: stamped.invocation?.id, signal: stamped.signal});
  };
@@ -45506,8 +46012,8 @@ const _rapierUi = Object.seal({
 	replaceOpen: false,
 	picker: '',
 	toolbarExpanded: false,
-	linesOpen: false,
-	iconOpen: false,
+	codeOpen: false,
+	proOpen: false,
 	recentOpen: false,
 	confirmId: '',
 	confirmReturnSettings: false,
@@ -45546,9 +46052,10 @@ function renderScrollFabPresence(state, witnessed, acorn, active) {
 function renderStats() {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
-	refs.statWords.textContent = String(rapier.stats.words);
-	refs.statChars.textContent = String(rapier.stats.chars);
-	refs.statLines.textContent = String(rapier.stats.lines);
+	const words = String(rapier.stats.words), chars = String(rapier.stats.chars), lines = String(rapier.stats.lines);
+	if (refs.statWords.textContent !== words) refs.statWords.textContent = words;
+	if (refs.statChars.textContent !== chars) refs.statChars.textContent = chars;
+	if (refs.statLines.textContent !== lines) refs.statLines.textContent = lines;
 }
 
 function renderHistory() {
@@ -45593,7 +46100,7 @@ function renderFilename() {
 	// Everything written here is a function of these values; the same values write nothing (every stats tick
 	// arrives here), and only a change in the words or the buttons shown re-measures the extension's baseline,
 	// which the dirty mark does not move.
-	const shown = [name, base, extension, embedded ? _rapierEmbed.title || '' : '', editing, locked, rapier.compare.active].join('\u0000');
+	const shown = [name, base, extension, embedded ? _rapierEmbed.title || '' : '', editing, locked, rapier.compare.active, _rapierIsBuiltInWelcomeDocument()].join('\u0000');
 	if (refs.filenameRendered === shown + '\u0000' + dirty) return;
 	const remeasure = refs.filenameShown !== shown;
 	refs.filenameRendered = shown + '\u0000' + dirty; refs.filenameShown = shown;
@@ -45608,9 +46115,34 @@ function renderFilename() {
 	refs.filenameExtText.textContent = extension.toUpperCase();
 	refs.filenameExtWrap.hidden = editing !== 'ext';
 
-	document.title = rapier.compare.active ? 'Rapier \u2014 compare'
-		: 'Rapier \u2014 ' + (embedded && _rapierEmbed.title ? _rapierEmbed.title : name);
+	_rapierRenderDocumentHead();
 	if (remeasure) renderFilenameExtBaseline();
+}
+
+// The template owns the site's head. A sheet borrows it while open; a person's document keeps its
+// own title, even when its filename is welcome.md. Copies without site metadata gain none.
+function _rapierRenderDocumentHead() {
+	const refs = _rapierUi.refs;
+	if (!refs) return;
+	const head = refs.documentHead || (refs.documentHead = (() => {
+		const description = document.querySelector('meta[name="description"]');
+		const canonical = document.querySelector('link[rel="canonical"]');
+		return { title: document.title, description, canonical,
+			descriptionValue: description?.content, canonicalValue: canonical?.getAttribute('href') };
+	})());
+	const door = ['privacy', 'commercial'].find(name => _rapierUiDialogIsOpen(document.getElementById(name + '-overlay')));
+	const sheet = door === 'privacy' ? {
+		title: 'Rapier privacy and terms',
+		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.',
+	} : door === 'commercial' ? {
+		title: 'Rapier commercial licence',
+		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
+	} : null;
+	document.title = sheet ? sheet.title : rapier.compare.active ? 'Rapier \u2014 compare'
+		: _rapierIsBuiltInWelcomeDocument() && !_rapierEmbed.active ? head.title
+		: 'Rapier \u2014 ' + (_rapierEmbed.active && _rapierEmbed.title ? _rapierEmbed.title : _rapierUiFilenameParts().name);
+	if (head.description) head.description.content = sheet ? sheet.description : head.descriptionValue;
+	if (head.canonical) head.canonical.setAttribute('href', sheet ? new URL(door, head.canonicalValue).href : head.canonicalValue);
 }
 
 function renderFilenameExtBaseline() {
@@ -45840,6 +46372,10 @@ function _rapierUiRaise(overlay) {
 	overlay.classList.add('open');
 	overlay.inert = false;
 	overlay.setAttribute('aria-hidden', 'false');
+	// Visibility alone does not resize a switch: first opening explicitly starts its deferred layout.
+	for (const group of overlay.querySelectorAll('.theme-switcher')) {
+		if (group._rapierSwitchTap) _rapierSwitchSlide(group);
+	}
 }
 
 function _rapierUiLower(overlay) {
@@ -45961,8 +46497,11 @@ function _rapierUiSurfaces() {
 		// The settings disclosure is a surface only while the settings overlay is up: its flag
 		// outlives the panel, and a Back inside a note (B09's order: the editor's surfaces before
 		// the note's return to the cards) must not be spent collapsing a panel nobody can see.
-		{ open: () => _rapierUiDialogIsOpen(refs.settingsOverlay) && _rapierUi.linesOpen, question: true, answerOnly: true,
-			close: () => { _rapierUi.linesOpen = false; renderSettings(); } },
+		{ open: () => _rapierUiDialogIsOpen(refs.settingsOverlay) && _rapierUi.codeOpen, question: true, answerOnly: true,
+			close: () => { _rapierUi.codeOpen = false; renderSettings(); } },
+		{ overlay: () => refs.iconOverlay,
+			open: () => _rapierUiDialogIsOpen(refs.iconOverlay),
+			close: () => closeDialog(refs.iconOverlay) },
 
 		{ open: () => _rapierImageRuntime.lightbox
 				? _rapierUiDialogIsOpen(_rapierImageRuntime.lightbox) : false,
@@ -46040,6 +46579,8 @@ function _rapierSwitchTap(group) {
 function _rapierSwitchSlide(group) {
 	if (!group?.classList.contains('theme-switcher') || group.dataset.switchLabel) return;
 	_rapierSwitchTap(group);
+	// Closed sheets and disclosures have no selection ink to lay out. Their opening owner calls us again.
+	if (group.closest('[inert], [hidden], [aria-hidden="true"]')) return;
 	const buttons = [...group.children].filter(el => el.matches('button'));
 	if (buttons.length < 2) return;
 	let state = group._rapierSwitch;
@@ -46057,6 +46598,7 @@ function _rapierSwitchSlide(group) {
 		group.appendChild(ink);
 		state = group._rapierSwitch = { ink, positioned: false, layout: null };
 		state.layout = (animate = false) => {
+			if (group.closest('[inert], [hidden], [aria-hidden="true"]')) { state.positioned = false; return; }
 			const chosen = buttons.find(button => button.hasAttribute('data-active'));
 			if (!chosen || !group.clientWidth || !group.clientHeight) { state.positioned = false; return; }
 			const clip = 'inset(' + chosen.offsetTop + 'px ' + Math.max(0, group.clientWidth - chosen.offsetLeft - chosen.offsetWidth) + 'px ' + Math.max(0, group.clientHeight - chosen.offsetTop - chosen.offsetHeight) + 'px ' + chosen.offsetLeft + 'px)';
@@ -46084,7 +46626,7 @@ function renderSwitch(group, value) {
 	const current = String(value);
 	if (group.dataset.switchLabel) {
 		const button = group.querySelector('button'), on = current === group.dataset.on;
-		button.textContent = group.dataset.switchLabel + ': ' + (on ? 'On' : 'Off');
+		button.textContent = group.dataset.switchLabel + ' ' + (on ? 'On' : 'Off');
 		button.dataset.value = on ? group.dataset.off : group.dataset.on;
 		button.toggleAttribute('data-active', on);
 		button.setAttribute('role', 'switch'); button.setAttribute('aria-checked', String(on));
@@ -46186,6 +46728,18 @@ function renderSettings() {
 	refs.settingsAttribution.hidden = !(_rapierEmbed.local || embedded);
 	_rapierRenderPandocDialectToggle();
 
+	refs.codeControls.dataset.open = _rapierUi.codeOpen ? 'true' : 'false';
+	// A closed disclosure stays out of Tab and the AX tree. Set inert before its switches render,
+	// so first opening can start their deferred layout.
+	refs.codeControls.inert = !_rapierUi.codeOpen;
+	for (const button of refs.codeTitle.querySelectorAll('[data-action="code-toggle"]')) button.setAttribute('aria-expanded', _rapierUi.codeOpen ? 'true' : 'false');
+	// A strip that only means something while the control above it is on joins it and folds away with it.
+	for (const [under, on] of [[refs.dimSwitch, !!RapierPreferences.read('checker')], [refs.lineFitSwitch, !!RapierPreferences.read('wrap')]]) {
+		const shell = under.closest('.settings-switch-stack__under');
+		shell.dataset.open = on ? 'true' : 'false';
+		shell.inert = !on;
+	}
+
 	renderSwitch(refs.readOnlySwitch, locked ? 'on' : 'off');
 	const policyPending = globalThis.RAPIER_APPS_HOST === true && !globalThis.RapierAgentBrowser?.policyReady();
 	for (const button of refs.readOnlySwitch.querySelectorAll('button')) {
@@ -46218,18 +46772,19 @@ function renderSettings() {
 		button.disabled = _rapierUiPlatform.windowsBusy;
 	}
 
-	refs.linesControls.dataset.open = _rapierUi.linesOpen ? 'true' : 'false';
-	// A closed disclosure is only faded and folded: inert keeps its controls out of Tab and the AX tree.
-	refs.linesControls.inert = !_rapierUi.linesOpen;
-	refs.linesTitle.setAttribute('aria-expanded', _rapierUi.linesOpen ? 'true' : 'false');
-	refs.iconSection.hidden = !facts.icon;
-	refs.iconControls.dataset.open = _rapierUi.iconOpen ? 'true' : 'false';
-	refs.iconControls.inert = !_rapierUi.iconOpen;
-	refs.iconTitle.setAttribute('aria-expanded', _rapierUi.iconOpen ? 'true' : 'false');
+	// Pro (the founder, 2 October): one collapsed section, the word and the plus both its toggle; the launcher icon's
+	// colours inside it where the host offers them, nothing said under the title (the circle says it).
+	refs.proSection.hidden = !facts.pro && !facts.icon;
+	refs.proControls.dataset.open = _rapierUi.proOpen ? 'true' : 'false';
+	refs.proControls.inert = !_rapierUi.proOpen;
+	for (const button of refs.proTitle.querySelectorAll('[data-action="pro-toggle"]')) button.setAttribute('aria-expanded', _rapierUi.proOpen ? 'true' : 'false');
+	refs.proIconRow.hidden = !facts.icon;
+	refs.proIconBtn.disabled = _rapierUiPro.iconBusy;
 	renderSwitch(refs.iconSwatches, facts.icon ? _rapierUiPro.launcherIcon : '');
 	for (const button of refs.iconSwatches.querySelectorAll('[data-value]')) {
 		button.disabled = _rapierUiPro.iconBusy;
 	}
+	if (!facts.icon && _rapierUiDialogIsOpen(refs.iconOverlay)) closeDialog(refs.iconOverlay);
 
 	// About (by id rather than through refs, so the engine's sealed _rapierUi and its ratcheted top
 	// level grow by nothing). B5 (the founder, 21 September evening):
@@ -46238,14 +46793,9 @@ function renderSettings() {
 	// was redundant and could only drift from it.
 	if (_rapierUiPro.unlocked) document.getElementById('about-review-row').hidden = true;
 
-	refs.proSection.hidden = !facts.pro;
-	refs.proStatusTitle.textContent = _rapierUiPro.unlocked
-		? 'Rapier Pro unlocked' : 'support Rapier development';
-	refs.proStatusCopy.textContent = _rapierUiPro.unlocked
-		? 'Full Compare, Complete Excerpt, PDF export, DOCX export and custom app icons are available.'
-		: _rapierUiPro.priceSentence();
 	refs.proActions.hidden = _rapierUiPro.unlocked;
 	refs.proRestoreBtn.disabled = _rapierUiPro.busy;
+	refs.proBugReport.hidden = !facts.pro;
 
 	refs.mathAction.hidden = _rapierUiMath.installed();
 	refs.mathInstalled.hidden = !_rapierUiMath.installed();
@@ -46903,13 +47453,13 @@ function renderToolbar() {
 }
 
 function renderFormatToolbarVisibility(toolbar, visible, excerptOnly) {
-	if (!toolbar) return;
+	if (!toolbar) return false;
 	// The state it already has is written again by nothing: every keystroke's refresh reaches here, and a
 	// same-value attribute write is still a mutation that wakes the notice placer and invalidates style.
 	const label = visible && excerptOnly ? 'selection actions' : 'text formatting';
 	if (toolbar.classList.contains('visible') === !!visible && toolbar.inert === !visible &&
 			toolbar.getAttribute('aria-hidden') === String(!visible) && toolbar.getAttribute('aria-label') === label &&
-			(toolbar.dataset.excerptOnly === 'true') === !!(visible && excerptOnly)) return;
+			(toolbar.dataset.excerptOnly === 'true') === !!(visible && excerptOnly)) return false;
 	if (!visible) {
 		toolbar.classList.remove('visible');
 		toolbar.setAttribute('aria-hidden', 'true');
@@ -46917,7 +47467,7 @@ function renderFormatToolbarVisibility(toolbar, visible, excerptOnly) {
 		delete toolbar.dataset.excerptOnly;
 		toolbar.setAttribute('aria-label', 'text formatting');
 		_rapierScheduleToastLift();
-		return;
+		return true;
 	}
 	if (excerptOnly) toolbar.dataset.excerptOnly = 'true';
 	else delete toolbar.dataset.excerptOnly;
@@ -46926,6 +47476,7 @@ function renderFormatToolbarVisibility(toolbar, visible, excerptOnly) {
 	toolbar.setAttribute('aria-hidden', 'false');
 	toolbar.inert = false;
 	_rapierScheduleToastLift();
+	return true;
 }
 
 let _rapierToastLiftFrame = 0;
@@ -46957,8 +47508,8 @@ function _rapierUpdateToastLift() {
 	if (!root._rapierToastListen) {
 		root._rapierToastListen = true;
 		if (typeof MutationObserver === 'function') {
-			// A keystroke mutates the document's blocks and nothing else; no bottom-pinned surface stands in
-			// them, so those records never re-place a notice (measured: with a waiting notice, the placer's
+			// No bottom-pinned surface stands inside the document's blocks, so their mutation records
+			// never re-place a notice (measured: with a waiting notice, the placer's
 			// fifty selector queries ran on every key at CPU 4, 23 ms of each 30 ms key). Chrome mutations,
 			// scroll, resize and a turn of the phone still do.
 			const blocks = document.getElementById('editor-blocks');
@@ -46966,11 +47517,26 @@ function _rapierUpdateToastLift() {
 				for (const record of records) {
 					const target = record.target && record.target.nodeType === 1 ? record.target : record.target && record.target.parentElement;
 					if (blocks && target && blocks !== target && blocks.contains(target)) continue;
+					if (target && !root.contains(target)) {
+						// A same-value attribute write moves no obstacle. Content behind a closed
+						// surface (including the stats readout) cannot move one either. Keep a real
+						// hide/show on the surface itself: removing an obstacle also changes the place.
+						if (record.type === 'attributes' && record.oldValue === target.getAttribute(record.attributeName)) continue;
+						if (target.parentElement?.closest('[hidden],[inert]')) continue;
+						if (record.type !== 'attributes' && target.closest('[hidden],[inert]')) continue;
+						// A title update or a lazy script's insertion/removal occupies no surface.
+						// Its executed DOM changes still arrive here; stylesheet changes still place.
+						if (record.type === 'childList' && (
+							target.parentElement === document.head && /^(?:SCRIPT|TITLE)$/.test(target.tagName) ||
+							target === document.head && [...record.addedNodes, ...record.removedNodes].every(node =>
+								node.nodeType !== Node.ELEMENT_NODE || /^(?:SCRIPT|TITLE)$/.test(node.nodeName))
+						)) continue;
+					}
 					_rapierScheduleToastLift(); return;
 				}
 			});
 			observer.observe(document.documentElement, {
-				subtree: true, childList: true, attributes: true,
+				subtree: true, childList: true, attributes: true, attributeOldValue: true,
 				attributeFilter: ['class', 'hidden', 'open', 'aria-hidden', 'data-expanded'],
 			});
 			root._rapierToastObserver = observer;
@@ -47039,7 +47605,8 @@ function _rapierUpdateToastLift() {
 		// One walk of the document for every selector at once, then each element attributed to the
 		// declarations it matches: the same matches as a query per declaration, without a traversal
 		// per declaration (fifty of them, on every pass).
-		const decls = inventory.surfaces.filter(decl => !(skip && skip.has(decl.id)) && decl.selector && !decl.selector.includes('::'));
+		// Noninteractive decoration is never an obstacle, so do not query or measure it.
+		const decls = inventory.surfaces.filter(decl => decl.interactive === true && !(skip && skip.has(decl.id)) && decl.selector && !decl.selector.includes('::'));
 		let found;
 		try { found = document.querySelectorAll(decls.map(decl => decl.selector).join(',')); }
 		catch (_) { found = null; }
@@ -47056,7 +47623,7 @@ function _rapierUpdateToastLift() {
 				const seen = painted(matches[i]);
 				if (!seen) continue;
 				const {box, style} = seen;
-				if (!(decl.interactive === true && !(style.pointerEvents === 'none' && (style.opacity === '0' || parseFloat(style.opacity) === 0)))) continue;
+				if (style.pointerEvents === 'none' && (style.opacity === '0' || parseFloat(style.opacity) === 0)) continue;
 				const surface = {
 					id: many ? decl.id + ':' + i : decl.id,
 					role: decl.role,
@@ -47831,7 +48398,7 @@ const _rapierUiPro = {
 	syncIcon() {
 		const platform = window.RapierPlatform;
 		if (!_rapierUiPlatformFacts().icon) {
-			_rapierUi.iconOpen = false;
+			_rapierUi.proOpen = false;
 			this.launcherIcon = 'black';
 			this.iconBusy = false;
 			return;
@@ -47863,15 +48430,15 @@ const _rapierUiPro = {
 	featureCopy() {
 		const named = ({
 			'compare.full': 'Full Compare is part of Rapier Pro. ',
-			'excerpt.complete': 'Complete Excerpt is part of Rapier Pro. ',
 			'export.pdf': 'PDF export is part of Rapier Pro. ',
 			'export.docx': 'DOCX export is part of Rapier Pro. ',
-			'icon.custom': 'Custom app icons are part of Rapier Pro. ',
+			'icon': 'The app icon\'s colours are part of Rapier Pro. ',
+			'sync': 'Rapier Sync is part of Rapier Pro. ',
 		})[this.feature] || '';
 		const price = this.priceAvailable
 			? ' Rapier Pro costs ' + this.priceLabel + ' once.'
 			: ' Rapier Pro is a one-time purchase.';
-		return named + 'Rapier is free to use.' + price + ' Pro unlocks Full Compare, Complete Excerpt, PDF export, DOCX export and custom app icons. If Rapier is useful to you, buying Pro supports continued development.';
+		return named + 'Rapier is free to use.' + price + ' Pro unlocks full Compare, PDF export, DOCX export, the app icon\'s colours and Rapier Sync. If Rapier is useful to you, buying Pro supports continued development.';
 	},
 	priceSentence() {
 		return this.priceAvailable
@@ -48091,12 +48658,14 @@ function _rapierUiOpenPrivacy(door) {
 	closeDialog(_rapierUi.refs.settingsOverlay);
 	openDialog(document.getElementById(name + '-overlay'), { panel: '.' + name + '-panel' });
 	try { _rapierDoorPathMark(name, true); } catch (_) {}
+	_rapierRenderDocumentHead();
 }
 
 function _rapierUiClosePrivacy(door) {
 	const name = door === 'commercial' ? 'commercial' : 'privacy';
 	closeDialog(document.getElementById(name + '-overlay'));
 	try { _rapierDoorPathMark(name, false); } catch (_) {}
+	_rapierRenderDocumentHead();
 }
 
 function _rapierUiOpenLicenses() {
@@ -48393,6 +48962,14 @@ async function _rapierUiOpenWelcome() {
 // share and stuff like that, so you can see the settings panel behind it"; docs/intent.md law 24).
 // The panel is inert under the dialog (the modal isolation's own rule for settings overlays) and
 // live again the moment the dialog closes, its opener row taking the focus back.
+function _rapierUiOpenIconColour() {
+	// The app icon's colours, opened from the one named button inside Pro (the founder, 2 October, evening).
+	const overlay = _rapierUi.refs.iconOverlay, sheet = overlay.querySelector('.info-action-sheet');
+	openDialog(overlay, {panel: '.info-action-sheet', noautofocus: true});
+	renderSwitch(_rapierUi.refs.iconSwatches, _rapierUiPro.launcherIcon);
+	sheet.focus({preventScroll: true});
+}
+
 function _rapierUiOpenInterchange(overlay) {
 	const refs = _rapierUi.refs;
 	_rapierRenderPageReturn();
@@ -48462,8 +49039,9 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 			} else change();
 		}
 	},
-	'lines-toggle': () => { _rapierUi.linesOpen = !_rapierUi.linesOpen; renderSettings(); },
-	'icon-toggle': () => { _rapierUi.iconOpen = !_rapierUi.iconOpen; renderSettings(); },
+	'code-toggle': () => { _rapierUi.codeOpen = !_rapierUi.codeOpen; renderSettings(); },
+	'pro-toggle': () => { _rapierUi.proOpen = !_rapierUi.proOpen; renderSettings(); },
+	'icon-colour': () => _rapierUiOpenIconColour(),
 	'icon-select': control => _rapierUiPro.selectIcon(
 		RAPIER_ACCENT_PRESETS.find(preset => preset.name.toLowerCase() === control.dataset.value)),
 
@@ -48643,11 +49221,10 @@ const _RAPIER_UI_REFS = Object.freeze({
 	windowsSection: 'settings-windows-section', windowsInstall: 'settings-windows-install',
 	windowsUpdate: 'settings-windows-update', windowsUninstall: 'settings-windows-uninstall',
 	windowsDefaults: 'settings-windows-defaults',
-	linesTitle: 'settings-lines-title', linesControls: 'settings-lines-controls',
-	iconSection: 'settings-icon-section', iconTitle: 'settings-icon-title',
-	iconControls: 'settings-icon-controls', iconSwatches: 'icon-swatches',
-	proSection: 'settings-pro-section', proStatusTitle: 'pro-status-title',
-	proStatusCopy: 'pro-status-copy', proActions: 'pro-status-actions', proRestoreBtn: 'pro-status-restore',
+	codeControls: 'settings-code-controls',
+	iconSwatches: 'icon-swatches',
+	proSection: 'settings-pro-section', proTitle: 'settings-pro-title', proControls: 'settings-pro-controls',
+	proActions: 'pro-status-actions', proRestoreBtn: 'pro-sheet-restore', proBugReport: 'pro-bug-report-row',
 	mathAction: 'math-plugin-action', mathInstalled: 'math-plugin-installed',
 	mermaidAction: 'mermaid-plugin-action', mermaidInstalled: 'mermaid-plugin-installed',
 
@@ -48726,6 +49303,20 @@ function _rapierUiMount() {
 		refs[name] = element;
 	}
 	_rapierUi.refs = refs;
+	// The code section's title is the disclosure's own button, the one before its controls.
+	refs.codeTitle = refs.codeControls.previousElementSibling;
+	// The app icon's colours: the button inside Pro, its row, and the sheet the swatches sit in.
+	refs.iconOverlay = refs.iconSwatches.closest('.info-action-overlay');
+	refs.proIconBtn = refs.proControls.querySelector('[data-action="icon-colour"]');
+	refs.proIconRow = refs.proIconBtn.parentElement;
+	// They close as the information sheet does: the scrim, the cross, Escape.
+	refs.iconOverlay.addEventListener('click', event => {
+		if (event.target === refs.iconOverlay || event.target.closest('[data-icon-colour-close]')) closeDialog(refs.iconOverlay);
+	});
+	refs.iconOverlay.addEventListener('keydown', event => {
+		event.stopPropagation();
+		if (event.key === 'Escape') { event.preventDefault(); closeDialog(refs.iconOverlay); }
+	});
 
 	// Build profiles (docs/build.md, "Build profiles"): editor/ui.html's markup is shared by every
 	// profile, so the format toolbar's static Draw button (there is no dynamic list to filter it out
@@ -48979,3 +49570,4 @@ Object.defineProperty(window, 'Rapier', {
 	value: _rapierShellPort,
 	enumerable: true,
 });
+

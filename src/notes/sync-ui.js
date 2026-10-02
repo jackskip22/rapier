@@ -30,6 +30,8 @@ const _rapierNotesSyncUi = (() => {
 		impostor: COMPANION_ABSENT.impostor + ' Remove that app, then install Rapier Sync from Google Play.',
 		unsigned: COMPANION_ABSENT.unsigned});
 	const COMPANION_UNAPPROVED = 'open rapier sync and approve this vault’s storage; nothing was sent.';
+	const PRO_REQUIRED = 'Rapier Pro is required to sync your notes.';
+	const proRefusal = error => error?.code === 'pro_required' || /\(PRO_REQUIRED\)$/.test(String(error?.message || ''));
 	let companion = null;
 	const companionSeam = () => { try { const host = globalThis.RapierPlatform?.host; return typeof host?.syncTransport === 'function' ? host : null; } catch (_) { return null; } };
 	const companionGate = () => companion?.state === 'ready' && companionSeam() ? {ready: true, reason: ''}
@@ -39,7 +41,8 @@ const _rapierNotesSyncUi = (() => {
 	const companionVaultId = state => { try { return state?.address ? api().readConnectionCode(state.address).vaultId || null : null; } catch (_) { return null; } };
 	async function askCompanion(vault = null) {
 		let answer = null;
-		try { answer = await companionSeam()?.syncTransport('status', vault ? {vault} : {}); } catch (_) {}
+		try { answer = await companionSeam()?.syncTransport('status', vault ? {vault} : {}); }
+		catch (error) { if (proRefusal(error)) message = PRO_REQUIRED; }
 		const read = !!answer && typeof answer === 'object' && (answer.state === 'ready' || Object.hasOwn(COMPANION_ABSENT, answer.state)) &&
 			typeof answer.listing === 'boolean' && typeof answer.ready === 'boolean' ? answer : null;
 		if (!vault) companion = read ? {state: read.state, listing: read.listing, approved: null} : {state: 'absent', listing: false, approved: null};
@@ -86,7 +89,7 @@ const _rapierNotesSyncUi = (() => {
 		if (text != null) el.textContent = text;
 		return el;
 	}
-	function paragraph(text) { body.append(node('p', 'export-choice__description', text)); }
+	function paragraph(text) { if (text && text === message) return; body.append(node('p', 'export-choice__description', text)); }
 	function value(label, text) {
 		paragraph(label);
 		const el = node('textarea', 'navigator-outline-filter');
@@ -136,7 +139,7 @@ const _rapierNotesSyncUi = (() => {
 	// A head in the vault that this Rapier cannot read was written by a newer one (notes/sync.mjs refuses it, 'newer',
 	// and replaces nothing): the sheet says what to do instead of the refusal's own sentence.
 	const NEWER = 'update Rapier to sync this folder.';
-	const said = (error, otherwise) => error?.code === 'newer' ? NEWER : String(error?.message || otherwise);
+	const said = (error, otherwise) => proRefusal(error) ? PRO_REQUIRED : error?.code === 'newer' ? NEWER : String(error?.message || otherwise);
 	async function perform(action, clear = true) {
 		if (clear) message = ''; acting = true;
 		try { const result = action(); paint(); await result; }
@@ -654,4 +657,3 @@ const _rapierNotesSyncUi = (() => {
 	}
 	return Object.freeze({open, consume, status, changed});
 })();
-

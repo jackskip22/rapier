@@ -406,8 +406,8 @@ const _rapierEmbeddedImages = (() => {
     // The paper's presentation has one owner: presentUrl.
     const ready = geometry.url && geometry.signature === url;
     const attributes = _rapierImageSizeAttributes(size, layout);
-    // A native-size or full-column drawing keeps a legible floor; an explicitly smaller picture keeps its chosen size.
-    const drawing = !size && (!layout || globalThis.RapierMarkdownLayout.parseLayout(layout)?.width === 100) && /^data:image\/svg\+xml[;,]/i.test(url || '');
+    // Only an unsized drawing keeps the legibility floor. An authored layout, including width=100%, owns its size.
+    const drawing = !size && !layout && /^data:image\/svg\+xml[;,]/i.test(url || '');
     const ratio = 'aspect-ratio:' + geometry.width + '/' + geometry.height + ';' + (drawing ? '--md-drawing-width:' + geometry.width + 'px;' : '');
     const sized = attributes.includes(' style=') ? attributes.replace(' style="', ' style="' + ratio) : attributes + ' style="' + ratio + '"';
     return '<img data-rapier-markdown-image="" ' + (id ? 'data-rapier-asset="' + esc(id) : 'data-rapier-image-url="' + esc(url)) +
@@ -435,7 +435,7 @@ const _rapierEmbeddedImages = (() => {
   function inkForPaper(text) {
     if (!darkPaper() || typeof _rapierDeriveDarkColor !== 'function' || !text.includes('<metadata id="rapier-draw">')) return text;
     const paper = getComputedStyle(document.body).getPropertyValue('--color-text').trim(), paperInk = /^#[0-9a-f]{6}$/i.test(paper) ? paper.toLowerCase() : null;
-    // Promote the drawing's own rules for the editor's explicit theme. A legacy drawing still derives unnamed paints.
+    // Promote the drawing's own rules for the editor's explicit theme. A drawing with no rules of its own derives its unnamed paints.
     const own = /<style>@media \(prefers-color-scheme:dark\)\{([^<]*)\}<\/style>/.exec(text);
     const named = new Set([...(own?.[1] || '').matchAll(/\[(fill|stroke|color|stop-color)="(#[0-9a-f]{6})"\]/g)].map(m => m[1] + m[2]));
     let out = own ? text.replace(own[0], '<style>' + own[1] + '</style>') : text;

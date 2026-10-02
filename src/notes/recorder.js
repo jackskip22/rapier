@@ -1,4 +1,4 @@
-const _rapierRecorder = {draft: null, dialog: null, players: new Map(), shelf: new Set(), observer: null, scan: 0, epoch: 0, speech: null, transcript: null, said: null};
+const _rapierRecorder = {draft: null, dialog: null, players: new Map(), shelf: new Set(), observer: null, scan: 0, epoch: 0, speech: null, transcript: null, dictation: null, said: null};
 function _rapierRecorderModel() { return globalThis.RapierNotesAudio; }
 function _rapierRecorderOwner() { return _rapierNotes.current && !_rapierNotes.open && _rapierNotes.mode ? String(rapier.identity.authority || '') : ''; }
 function _rapierRecorderButton(word, act) {
@@ -581,6 +581,75 @@ function _rapierRecorderLocalSpeech() {
 	const C = globalThis.SpeechRecognition;
 	return C && 'processLocally' in C.prototype && typeof C.available === 'function' && typeof HTMLMediaElement.prototype.captureStream === 'function' ? C : null;
 }
+// Live dictation is a native on-device utterance. The existing saved-recording transcriber
+// has its own audio-track custody; neither door may substitute a browser/server recognizer here.
+async function rapierDictationState() {
+	const state = globalThis.RapierPlatform?.host?.dictationState;
+	return typeof state === 'function' ? state() : {available: false};
+}
+async function rapierStartDictation() {
+	const R = _rapierRecorder, host = globalThis.RapierPlatform?.host;
+	if (typeof host?.startDictation !== 'function') throw new Error('On-device transcription is unavailable on this device.');
+	if (R.dictation) throw new Error('Transcription is already listening.');
+	if (['requesting', 'recording', 'paused'].includes(R.draft?.phase)) throw new Error('Stop the recording before transcribing.');
+	const owner = _rapierRecorderOwner();
+	if (!owner) throw new Error('Open a note before transcribing.');
+	if (_rapierUserMutationBlocked(false) || !_rapierSettlePendingDocumentChange()) throw new Error('Finish the current note edit before transcribing.');
+	const target = _rapierCurrentSelectionTarget();
+	if (!target || target.start !== target.end || target.kind === 'block-range' && target.startBlockId !== target.endBlockId) {
+		throw new Error('Place the caret in the note before transcribing.');
+	}
+	const record = _rapierCaptureStableTargetRecord(target);
+	if (!record) throw new Error('The insertion point is unavailable.');
+	const job = R.dictation = {owner, record, mode: rapier.view.mode};
+	let text = '', inserted = false;
+	try {
+		const answer = await host.startDictation();
+		text = typeof answer?.text === 'string' ? answer.text : '';
+		if (!text) throw new Error('No words were recognised.');
+		// A native reply cannot grant a different note or overwrite work typed while it listened.
+		// Settle the person's live typing first so its revision is included in this decision.
+		if (R.dictation !== job || _rapierRecorderOwner() !== owner || !_rapierIdentityIsCurrent(record) ||
+				rapier.view.mode !== job.mode || _rapierUserMutationBlocked(false) || !_rapierSettlePendingDocumentChange() ||
+				Number(rapier.revision.settled || 0) !== record.baseRevision) {
+			throw new Error('The note changed during transcription.');
+		}
+		const resolved = _rapierResolveStableTargetRecord(record);
+		if (!resolved || resolved.outcome !== 'applied') throw new Error('The insertion point changed during transcription.');
+		await _rapierWithCompoundTransaction({actor: {kind: 'human', id: 'notes'}, operation: 'notes.dictation'}, async () => {
+			if (resolved.kind === 'document-range') {
+				const end = resolved.start + text.length;
+				if (!await _rapierApplyCanonicalSplices([{pos: resolved.start, removed: '', inserted: text}], {
+					keepSourceMode: true, selectionBefore: {start: resolved.start, end: resolved.start},
+					selectionAfter: {start: end, end},
+				})) throw new Error('The recognised words could not be inserted.');
+				_rapierFlatSelectAndReveal(end, end, false);
+			} else if (!await _rapierReplaceMarkdownResolved(text, resolved)) {
+				throw new Error('The recognised words could not be inserted.');
+			}
+		});
+		inserted = true;
+		await _rapierNotesAutosave();
+		return {inserted: true, text};
+	} catch (error) {
+		// A refused insertion leaves its transcript with the caller for the lead's recovery control.
+		const failure = error instanceof Error ? error : new Error(String(error));
+		failure.inserted = inserted;
+		if (text && !inserted) failure.transcript = text;
+		throw failure;
+	} finally { if (R.dictation === job) R.dictation = null; }
+}
+async function rapierStopDictation() {
+	if (!_rapierRecorder.dictation) return false;
+	await globalThis.RapierPlatform.host.stopDictation();
+	return true;
+}
+async function rapierCancelDictation() {
+	if (!_rapierRecorder.dictation) return false;
+	_rapierRecorder.dictation = null;
+	await globalThis.RapierPlatform.host.cancelDictation();
+	return true;
+}
 // Said once, when kept (task #366). The words belong to the moment the recording joined its note, so
 // the recorder keeps hold of its toast: when that note closes, or another note opens, the toast is
 // withdrawn -- whether it was seen or is still waiting for room to be seen -- and is never said
@@ -600,6 +669,7 @@ function _rapierRecorderUnsay(where) {
 }
 function _rapierRecorderClosePlayers() {
 	const R = _rapierRecorder; R.epoch++;
+	void rapierCancelDictation().catch(() => {});
 	_rapierRecorderUnsay(); _rapierRecorderCardClose();
 	// Nothing may decorate the words after this. Leaving a note is asynchronous (the folder is read
 	// again on the way out), and every edit in that window is a mutation the watcher would answer by

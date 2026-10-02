@@ -8,3 +8,12 @@
   Permissions-Policy: camera=(), geolocation=(), microphone=(self)
   Origin-Agent-Cluster: ?1
   Origin-Trial: AtFuTRsj1SOJpqIO0IrTpfvZjWjm61v47tsWw+RpPlMP3J1ZpZr895WYl81B5uRkO6X9sjAtQN/yp0SrhKNZ9QkAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==
+
+# Matching rules combine headers; remove the inherited cache policy before setting this one.
+/embed/rapier-document.html
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/embed/:version/rapier-document.html
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable

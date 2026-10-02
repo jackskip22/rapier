@@ -1,13 +1,13 @@
 # Check the encryption
 
-Rapier Sync keeps a copy of your notes in a bucket you own, sealed in the editor before it leaves the page. No Rapier account is involved and no Rapier server can read the notes.
+Rapier Sync seals notes in the editor before copying them to your bucket. No Rapier account is involved; no Rapier server can read them.
 
-A script opens one object from your bucket on your machine. It does not contact the bucket or send the code anywhere.
+The script opens one bucket object on your machine without contacting the bucket or sending the code anywhere.
 
 ## Bucket CORS
 
-For the browser's bucket-key connection, open the selected bucket in Cloudflare, then **Settings → CORS policy**.
-Use this rule, also shown in Rapier's Sync setup:
+For the browser’s bucket-key connection, open your Cloudflare bucket’s **Settings → CORS policy**.
+Use this rule from Rapier’s Sync setup:
 
 ```json
 [
@@ -21,9 +21,8 @@ Use this rule, also shown in Rapier's Sync setup:
 ]
 ```
 
-If this destination has never answered, an unreadable network request can mean this rule is missing.
-The browser cannot distinguish that from an offline connection, DNS or TLS failure; the request's outcome
-remains unconfirmed. An HTTP refusal or a response whose body is cut proves the destination answered, without
+Until the destination answers, an unreadable request may mean missing CORS, an offline connection,
+DNS or TLS failure; the browser cannot distinguish them, and the outcome stays unconfirmed. An HTTP refusal or a response whose body is cut proves the destination answered, without
 proving that the operation completed. Setup does not send notes; sync begins when you press **sync now**.
 
 ## What a sealed note is
@@ -40,7 +39,7 @@ The header records how a wrapping key is derived from the passphrase: `scrypt` w
 
 The header is unsealed JSON: format version `1`, the derivation's name and iteration count, the salt, the wrapped vault key and a verifier. The salt and iteration count are public, and the wrapped key does nothing without the passphrase or the recovery code.
 
-The verifier is a seal of the text `rapier-notes-vault-v1` with additional data `vault.json`. A recovery code that does not open it is refused and nothing else is decrypted.
+The verifier is a seal of the text `rapier-notes-vault-v1` with additional data `vault.json`. A recovery code that cannot open it is refused; nothing else is decrypted.
 
 ## What the bucket holds
 
@@ -60,13 +59,13 @@ An OAuth bearer token is not a bucket credential; Rapier does not accept one as 
 
 ## Open one object
 
-The script is [tools/check-vault.mjs](../src/tools/check-vault.mjs). It uses Node's own crypto and nothing else. Run it from a copy of the Rapier source with the header and one object copied from your bucket:
+Run [tools/check-vault.mjs](../src/tools/check-vault.mjs) from a copy of Rapier’s source, with a header and one object copied from your bucket. It uses only Node’s own crypto:
 
 ```
 node tools/check-vault.mjs <header> <object>
 ```
 
-It asks for the recovery code and hides it as you type; you can pipe it in instead. The code is never part of the command, because a shell keeps its history and the code opens the whole vault: a code given as an argument is refused.
+It asks for the recovery code and hides it as you type; you can pipe it in instead. It refuses the code as a command argument: shells keep history, and the code opens the whole vault.
 
 It prints the note to standard output. A code that does not open the header is refused with a message and prints nothing.
 

@@ -471,7 +471,8 @@
 .md-render ol>li::before{
 	content:counter(rapier-ol);
 	position:absolute;
-	inset-inline-start:-2.75rem; top:0;
+	/* The circle is centred on the item's first line: the li's own padding, plus half of what the 2rem circle is taller than one line. */
+	inset-inline-start:-2.75rem; top:calc(0.15rem + (var(--md-line) - 2rem) / 2);
 	width:2rem; height:2rem;
 	display:flex; align-items:center; justify-content:center;
 	border:2px solid var(--md-color-line);
@@ -483,13 +484,28 @@
 	box-sizing:border-box;
 	z-index:1;
 }
-.md-render ol>li:not(:last-child)::after{
+.md-render ol>li:not(:last-child)::after,
+.md-render ol[data-rapier-list-continues]>li:last-child::after{
 	content:'';
 	position:absolute;
 
 	inset-inline-start:calc(-1.75rem - 1.5px);
 	top:2.2rem;
 	bottom:calc(var(--md-line) / -4);
+	border-inline-start:3px dotted var(--md-color-line);
+	z-index:0;
+}
+/* A heading between two parts of one numbered list (the second part's start follows the first's last number;
+   _rapierMarkListContinuations marks them): the heading stands on the margin the item text stands on, and the dotted
+   line runs on, out of the first part's last item, down the heading's own height, to the next circle. */
+.md-render ol[data-rapier-list-continues]>li:last-child::after{bottom:calc(-1 * var(--md-line))}
+.md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]{position:relative;padding-inline-start:2.75rem}
+.md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]::before{
+	content:'';
+	position:absolute;
+	inset-inline-start:calc(1rem - 1.5px);
+	top:0;
+	bottom:calc(var(--md-line) / -2);
 	border-inline-start:3px dotted var(--md-color-line);
 	z-index:0;
 }
@@ -556,6 +572,7 @@
 }
 .md-render strong{font-weight:var(--md-fw-semibold)}
 .md-render em{font-style:italic}
+.md-render :not(pre)>code{line-height:1}
 .md-render code{font-family:var(--md-font-mono);font-size:0.85em;
 	background:var(--md-color-inset);border:1px solid var(--md-color-border);padding:1px 5px}
 .md-render pre{margin:0 0 var(--md-line);padding:var(--md-space-3) var(--md-space-4);
@@ -755,6 +772,12 @@
 	 pre-computed --md-color-dark here, so the common case survives even a round-trip that kept
 	 data-md-color but dropped style, exactly like highlight's own swatch constants. */
 .md-render [data-md-color]{--md-color-dark:var(--md-color);color:light-dark(var(--md-color),var(--md-color-dark))}
+/* Ink (docs/markdown-standard.md, "Ink"): the span shows nothing; the ink layer draws the stroke over the words it marks. */
+.md-render span.rapier-ink-mark{all:unset;display:inline}
+.rapier-ink-layer{--md-ink:#b32034;--md-ink-dark:#b32034;position:relative;display:block;width:0;height:0;margin:0;padding:0;border:0;overflow:visible;pointer-events:none;z-index:3}
+.rapier-ink-layer svg{position:absolute;display:block;margin:0;padding:0;overflow:visible}
+.rapier-ink-layer path{fill:none;stroke:light-dark(var(--md-ink),var(--md-ink-dark));stroke-linecap:round;stroke-linejoin:round;opacity:.92}
+@media print{.rapier-ink-layer path{stroke:var(--md-ink)}}
 .md-render [data-md-color="#1c7547"]{--md-color-dark:#70c390}
 .md-render [data-md-color="#b32034"]{--md-color-dark:#ff8385}
 .md-render [data-md-color="#175dc4"]{--md-color-dark:#7bafff}
@@ -799,6 +822,13 @@
 /* A wide table scrolls inside its wrap; the wrap carries the block's line, so a scrollbar sits under the table, not a line below it. */
 .md-render .table-scroll-wrap{width:100%;margin:0 0 var(--md-line);overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
 .md-render .table-scroll-wrap table{min-width:100%;margin-bottom:0}
+/* Single-axis overflow leaves vertical sticky positioning with the document's scroller.
+   Older engines keep the ordinary sideways wrapper; screen-only rules leave print unchanged. */
+@media screen{
+	.md-render{--md-table-header-top:0px}
+	.md-render .table-scroll-wrap{overflow:auto clip}
+	.md-render thead{position:sticky;top:var(--md-table-header-top,0px);z-index:2;background:var(--md-color-bg)}
+}
 @media print{
   .md-render [data-md-break]{border:0!important;height:0!important;margin:0!important;break-before:page;page-break-before:always}
   .md-render [data-md-break]::after{content:none!important}

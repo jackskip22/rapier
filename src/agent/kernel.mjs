@@ -9,7 +9,8 @@ import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput } from './catalog.mjs';
 import { _rapierTransformSplices as transformSplices } from '../editor/journal-records.mjs';
-import { pairMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
+import { pairMarkers, pairInkSpans, scanInkMarkers, scanColorMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
+import { _rapierHiddenSourceRanges } from '../editor/visible-source.mjs';
 import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentUndoSplice, imageCommentTarget} from './comments.mjs';
 import {visualRequest, visualResult} from './visual.mjs';
 
@@ -302,6 +303,11 @@ export function imageDeletionSplices(before, after, splices, actor = 'human') {
   return rows.filter(row => !regionVerdict(will, row));
 }
 
+// The editor commits human source edits through the same ink retirement owner as the agent door.
+export function inkDeletionSplices(before, after, splices, actor = 'human', markers = null) {
+  return markerDeletionSplices(before, after, splices, actor, 'ink', markers);
+}
+
 // Colour and ink (spec/md-marks.mjs): a pair is the person's mark on its words, so a door edit leaves it whole or takes it with the last of
 // its words. Where an offset of the text the rows made stood in the text they began from, or -1 inside what a row wrote.
 function markerOffsetBefore(rows, offset) {
@@ -316,10 +322,20 @@ function markerOffsetBefore(rows, offset) {
 // text no row wrote, is a pair severed (an opener cut into is no marker, and then its closer is what stands alone); the pair is
 // named by where it stands in the document. More empty pairs than the document held is a pair written empty, whoever wrote its
 // comments. A marker standing alone that the edit wrote is its author's own, and a stray that was one already is not the edit's.
+// The same Markdown owner used by visible editing distinguishes comments from literal code. A door edit
+// may change example words or marker characters without granting their comment-shaped bytes ink custody.
+function semanticMarkers(source, kind) {
+  const markers = kind === 'ink' ? scanInkMarkers(source) : scanColorMarkers(source);
+  if (!markers.length) return markers;
+  const comments = new Map(_rapierHiddenSourceRanges(source, markdownParser()).filter(range => range.kind === 'comment')
+    .map(range => [range.start, range.end]));
+  return markers.filter(marker => comments.get(marker.start) === marker.end);
+}
+
 function markerBroken(before, after, rows, kind) {
-  const was = pairMarkers(before, kind).runs;
+  const was = pairMarkers(before, kind, semanticMarkers(before, kind)).runs;
   if (!was.length && !rows.some(row => (kind === 'color' ? hasColorMarker : hasInkMarker)(row.inserted))) return null;
-  const now = pairMarkers(after, kind);
+  const now = pairMarkers(after, kind, semanticMarkers(after, kind));
   const pairAt = at => {
     let low = 0, high = was.length;
     while (low < high) { const mid = (low + high) >> 1; if (was[mid].end <= at) low = mid + 1; else high = mid; }
@@ -338,24 +354,50 @@ function markerBroken(before, after, rows, kind) {
 
 // A pair an edit emptied goes with its words, so no empty pair is ever written: both markers of each empty pair whose two markers
 // the rows left as they were and stood in pairs with words before. They remove only what stood before, each marker as a row of
-// its own, the opener then the closer, so the change still reverses around the point its words went from. A pair that was empty
+// its own, from the end backward, so every offset and the inverse still name the original bytes. A pair that was empty
 // before, and one the edit wrote, are not the edit's to clear.
-function markerDeletionSplices(before, after, rows, actor, kind) {
+function markerDeletionSplices(before, after, rows, actor, kind, semantic = null) {
+  const previous = pairMarkers(before, kind, semantic?.before ?? semanticMarkers(before, kind));
   const opened = new Set(), closed = new Set();
-  for (const run of pairMarkers(before, kind).runs) if (run.innerEnd > run.innerStart) { opened.add(run.start); closed.add(run.innerEnd); }
+  for (const run of previous.runs) if (run.innerEnd > run.innerStart) { opened.add(run.start); closed.add(run.innerEnd); }
   if (!opened.size) return [];
   const unchanged = (start, end) => {
     const from = markerOffsetBefore(rows, start), last = markerOffsetBefore(rows, end - 1);
     return from >= 0 && last === from + end - 1 - start && before.slice(from, from + end - start) === after.slice(start, end) ? from : -1;
   };
-  let gone = pairMarkers(after, kind).runs.filter(run => run.innerEnd === run.innerStart &&
-    opened.has(unchanged(run.start, run.innerStart)) && closed.has(unchanged(run.innerEnd, run.end))).reverse();
-  if (gone.length && actor === 'agent') {
-    const will = parseWill(after);
-    gone = gone.filter(run => !regionVerdict(will, { pos: run.start, removed: after.slice(run.start, run.end), inserted: '' }));
+  const markersAfter = semantic?.after ?? semanticMarkers(after, kind);
+  const current = (kind === 'ink' ? pairInkSpans(after, markersAfter) : pairMarkers(after, kind, markersAfter)).runs;
+  const intact = run => opened.has(unchanged(run.start, run.innerStart)) && closed.has(unchanged(run.innerEnd, run.end));
+  let groups = current.filter(run => run.mark?.id == null && run.innerEnd === run.innerStart && intact(run)).map(run => [run]);
+  if (previous.arrows?.length) {
+    const byId = new Map();
+    for (const run of current) if (run.mark.id != null) {
+      if (!byId.has(run.mark.id)) byId.set(run.mark.id, []);
+      byId.get(run.mark.id).push(run);
+    }
+    for (const arrow of previous.arrows) {
+      if ([arrow.tail, arrow.head].some(run => run.innerStart === run.innerEnd)) continue;
+      const present = byId.get(arrow.id) || [];
+      const originals = present.filter(run => intact(run) && [arrow.tail.start, arrow.head.start].includes(unchanged(run.start, run.innerStart)));
+      // A newly introduced collision cannot retire an existing arrow. Only the loss of an original anchor or
+      // its last words retires its mate; an intentionally rewritten complete pair remains the author's.
+      if (originals.length === 2 && originals.every(run => run.innerStart < run.innerEnd)) continue;
+      if (present.length === 2 && present[0].mark.kind !== present[1].mark.kind && present.every(run => run.innerStart < run.innerEnd)) continue;
+      // A rendered block edit can rewrite its unchanged comments with the block. Its empty endpoint is
+      // still part of the original pair; keep retirement whole while leaving actual collisions for refusal.
+      if (present.length <= 2 && new Set(present.map(run => run.mark.kind)).size === present.length) groups.push(present);
+      else if (originals.length) groups.push(originals);
+    }
   }
-  return gone.flatMap(run => [{ pos: run.start, removed: after.slice(run.start, run.innerStart), inserted: '' },
-    { pos: run.start, removed: after.slice(run.innerEnd, run.end), inserted: '' }]);
+  const markers = run => [{ start: run.start, end: run.innerStart }, { start: run.innerEnd, end: run.end }];
+  if (groups.length && actor === 'agent') {
+    const will = parseWill(after);
+    // Authority covers the entire arrow: a protected mate refuses the edit instead of retiring only one half.
+    groups = groups.filter(group => group.every(run => markers(run).every(marker => !regionVerdict(will,
+      { pos: marker.start, removed: after.slice(marker.start, marker.end), inserted: '' }))));
+  }
+  return groups.flat().flatMap(markers).sort((a, b) => b.start - a.start)
+    .map(marker => ({ pos: marker.start, removed: after.slice(marker.start, marker.end), inserted: '' }));
 }
 
 // A drawing's definition is derived at commit against the decided text, appended once at the text's end if absent,

@@ -305,4 +305,6 @@ function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdow
 	return { splices, refused };
 }
 
-export { _rapierHiddenSourceRanges, _rapierVisibleHits, _rapierPlanVisibleReplacement, _rapierVisibleMarkText };
+// Shared with the document kernel: the engine binds these original declarations from the same published owner.
+export { _rapierHiddenSourceRanges, _rapierInlineSourceRanges, _rapierVisibleHits, _rapierHiddenMarkPairs,
+	_rapierPairMarks, _rapierVisibleMarkText, _rapierPairSplices, _rapierPlanVisibleReplacement };

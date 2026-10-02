@@ -1,19 +1,19 @@
 {
-  "release": "1.1.32",
-  "snapshotId": "1.1.32+skills.35d71c80c9d6861630b36443203b9b700a895aeb4087e10e223b79f9a3baf90d",
+  "release": "1.1.33",
+  "snapshotId": "1.1.33+skills.5c6071895b928f6237acc769fc2113e558aa6c16a06b1544d3a95d99d61083a1",
   "endpoint": "https://mcp.rapier.website/mcp",
-  "skillsSha256": "35d71c80c9d6861630b36443203b9b700a895aeb4087e10e223b79f9a3baf90d",
-  "filesSha256": "ec34f91c0c0e8403399513215356439a2e401ebc23e32d7d1a2c21332f348da5",
-  "serverSourceSha256": "8322d915c68230eae3aa187e94b0fc51e2617415ed8716922e37615deb638ff2",
+  "skillsSha256": "5c6071895b928f6237acc769fc2113e558aa6c16a06b1544d3a95d99d61083a1",
+  "filesSha256": "41760cd8c48e4462e65ac60d0fece33e37c1666d7ae5cad8e433a1f447838876",
+  "serverSourceSha256": "6ec1b768c62cd4af2f512c30105eec48dbb2b7be9150dd7617aaece69571c626",
   "packages": {
-    "rapier-html": "1.1.32",
-    "rapier-markdown-kit": "1.1.32",
-    "rapier-embed": "1.1.32"
+    "rapier-html": "1.1.33",
+    "rapier-markdown-kit": "1.1.33",
+    "rapier-embed": "1.1.33"
   },
   "skills": [
     {
       "path": "skills/embed-rapier/SKILL.md",
-      "sha256": "8d0b18f95d6dfc7a79ccdd0be3aeeb7dc38a94d70d92bba6bffac78a28f99b67"
+      "sha256": "f2d9e7ba776c52ea7fc8cf8d017f07b76bcbd8157b916e14a90c21e4b29b27d7"
     },
     {
       "path": "skills/rapier-agent-door/SKILL.md",
@@ -21,17 +21,17 @@
     },
     {
       "path": "skills/rapier-html/SKILL.md",
-      "sha256": "a78649d93915da009495c4b773f11a387cf86d93f3ca702b190d18073713e01d"
+      "sha256": "e7ac68fc4d015e45d8e98e77fd8bc815d6a4be8ffae7256b3d1c12d84dca7fe5"
     },
     {
       "path": "skills/rapier-markdown/SKILL.md",
-      "sha256": "17138dc4f4dcf73f1f5c1acaabc5d501618df06b931adb6a4755cd326eb025b9"
+      "sha256": "eb62d69e616ee0843c0b06cdcd654a2ab5156d2ea15941527e7b613d88ffba5a"
     }
   ],
   "files": [
     {
       "path": "skills/embed-rapier/embed.mjs",
-      "sha256": "38242eb775b3652533efef8a42c2adc155478b0c319173d93208cc39c9e05a3c"
+      "sha256": "8afb42f7ff5e6787a60a68f2acc0cfc57e1109b0ba9cbf9ca272adda2b543d90"
     },
     {
       "path": "skills/embed-rapier/LICENSE",
@@ -39,19 +39,19 @@
     },
     {
       "path": "skills/embed-rapier/README.md",
-      "sha256": "d5995ad58e3ccef71326441ca4c5917f579b7d384471a8ebe8e128c24f0e2ef4"
+      "sha256": "d9e0f67883e005b8e13bd8f2b006accc2eb25945edd9618af0d6070c5cc98a84"
     },
     {
       "path": "skills/embed-rapier/references/embed-contract.md",
-      "sha256": "dd5b953652df8f7bbe93d717dee15036e1ce6069a61ac9091579e3e2dc528eb1"
+      "sha256": "879e443b0b7a81b9eea787c7fe2f35178989bf42281e27af9cb2f7e5b297f67d"
     },
     {
       "path": "skills/embed-rapier/SKILL.md",
-      "sha256": "8d0b18f95d6dfc7a79ccdd0be3aeeb7dc38a94d70d92bba6bffac78a28f99b67"
+      "sha256": "f2d9e7ba776c52ea7fc8cf8d017f07b76bcbd8157b916e14a90c21e4b29b27d7"
     },
     {
       "path": "skills/embed-rapier/SNAPSHOT.json",
-      "sha256": "8068545d5b3e9ac9e264babc95f4d7c1bf4390c1f87d776cd964a1b84c08569e"
+      "sha256": "b620fd2849d835c31936deb989ddf3737580d60d74c0324e8c688690191668e5"
     },
     {
       "path": "skills/rapier-agent-door/agents/openai.yaml",
@@ -59,7 +59,7 @@
     },
     {
       "path": "skills/rapier-agent-door/references/AGENT-TOOLS.json",
-      "sha256": "0ab1c7f8e531415ba76d3282c9b0125928099e52bcf7197052a70e576a6045dc"
+      "sha256": "b945801af7aa6ff7f4731815c0507541dbb66597f5365f50c312eb6a73e15e53"
     },
     {
       "path": "skills/rapier-agent-door/references/collaboration.md",
@@ -79,7 +79,7 @@
     },
     {
       "path": "skills/rapier-agent-door/SNAPSHOT.json",
-      "sha256": "4b1cc8d41df6e00327a8322b9f85368d81455dd7c7e784c2ee309238e6ff4580"
+      "sha256": "2ec861befd380be47594c6799543d1f5307aee514a3c8ea6c53608f3bb5db75e"
     },
     {
       "path": "skills/rapier-html/agents/openai.yaml",
@@ -91,7 +91,7 @@
     },
     {
       "path": "skills/rapier-html/README.md",
-      "sha256": "0ffbaa0d3ad8b9145e06e9d1ea52d91e2a19d1ccdeaff7428d858e0853956318"
+      "sha256": "3eae597f71077267fc9fbf696800232d4b6d5120da0f29509ea090bf030eaeb7"
     },
     {
       "path": "skills/rapier-html/return-address.mjs",
@@ -99,11 +99,11 @@
     },
     {
       "path": "skills/rapier-html/SKILL.md",
-      "sha256": "a78649d93915da009495c4b773f11a387cf86d93f3ca702b190d18073713e01d"
+      "sha256": "e7ac68fc4d015e45d8e98e77fd8bc815d6a4be8ffae7256b3d1c12d84dca7fe5"
     },
     {
       "path": "skills/rapier-html/SNAPSHOT.json",
-      "sha256": "752ab5486569f983ed4100f3a049a3412490c29192909a7bdad331619e6541f7"
+      "sha256": "f41f5545b0d3b233c05203e0a477c5acc5fe8e02fefc04bb4dd342ae223ca311"
     },
     {
       "path": "skills/rapier-markdown/agents/openai.yaml",
@@ -111,11 +111,11 @@
     },
     {
       "path": "skills/rapier-markdown/references/markdown-profile.md",
-      "sha256": "1492f50359a2756d0209a909e0a8a25eb65bce471c73f6b3df9374352c9cfbcc"
+      "sha256": "c32f17d21a6061553db0d6fb0d73b73e96f99786538ddfc258eff245a8fcec98"
     },
     {
       "path": "skills/rapier-markdown/references/markdown-standard.md",
-      "sha256": "1d3d36a7a07c76c5fff11bfb3ed73c7be6bee95f3a87f9603e1852619933c2f7"
+      "sha256": "f2ef0f420022edf9a7b532a48403a2a48a65edd97cb9e6b429943f4117145cb7"
     },
     {
       "path": "skills/rapier-markdown/references/repo/LICENSE",
@@ -123,7 +123,7 @@
     },
     {
       "path": "skills/rapier-markdown/references/repo/spec/markdown-style.css",
-      "sha256": "ec3e47b5773e6c017faea05e8a5e18817ce6729dc843daa0445f3b90e4865923"
+      "sha256": "5a091e263168ad3f3d74aa0c0457ba6d04ec76fce6352ea66f5d1a4e621d11d8"
     },
     {
       "path": "skills/rapier-markdown/references/repo/spec/md-layout.mjs",
@@ -131,27 +131,27 @@
     },
     {
       "path": "skills/rapier-markdown/references/repo/spec/md-marks.mjs",
-      "sha256": "34abbd914b99e97d91b59f4bb97d1378ee546f99eb0dd2662ee6937d9acf6f16"
+      "sha256": "31fa38300644cda219679f44879b2ecbd102853e6c104db63367d62eb7f42c53"
     },
     {
       "path": "skills/rapier-markdown/references/standard-adoption.md",
-      "sha256": "15950c6f21eb2bec0de1237ffa14e59481e418a3fa3d1f8e96d9c124fb72c69d"
+      "sha256": "23c7bc669eddfbbda4a02e54d39693c9c426499b656fdfcff829511dd4731362"
     },
     {
       "path": "skills/rapier-markdown/references/will.md",
-      "sha256": "63721a3f815456401459ae5df51f9b0bffbf2e349b3aa451528e2fe4b72c08f9"
+      "sha256": "d45053407b89db09aeab32f539c4d8587c3e8394eb60831b96112ccc7d89f4b4"
     },
     {
       "path": "skills/rapier-markdown/SKILL.md",
-      "sha256": "17138dc4f4dcf73f1f5c1acaabc5d501618df06b931adb6a4755cd326eb025b9"
+      "sha256": "eb62d69e616ee0843c0b06cdcd654a2ab5156d2ea15941527e7b613d88ffba5a"
     },
     {
       "path": "skills/rapier-markdown/SNAPSHOT.json",
-      "sha256": "c294992b1c6c664bcc916ab0c5cffb2fff32afe8e47cdcb5eae0b39a1a594d42"
+      "sha256": "b35a7e76c95310794f4f1e16b7aee7309f6f6c26f9ca2712dd0be78bdccc79ff"
     },
     {
       "path": "skills/README.md",
-      "sha256": "56e795ffbd4a5da03be7e37dd4783a5d67261a57226f6a0402fd1e2ff5b8a314"
+      "sha256": "7b9fc822d1f759d305feb849d90098cce3b3a9db5e25f381463f2e61899e97f5"
     }
   ]
 }

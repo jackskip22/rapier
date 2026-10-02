@@ -210,12 +210,8 @@ select{
 .theme-switcher__selection{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;box-sizing:border-box;padding:inherit;gap:inherit;background:var(--color-text);pointer-events:none;clip-path:inset(0 100% 0 0);transition:clip-path 230ms var(--ease-out)}
 .theme-switcher.theme-switcher--sliding>.theme-switcher__btn{background:transparent;color:var(--color-text);opacity:1;transition:none}
 .theme-switcher.theme-switcher--sliding .theme-switcher__selection>.theme-switcher__btn{background:transparent;color:var(--color-bg);opacity:1;transition:none;pointer-events:none}
-.theme-switcher[data-switch-label]>.theme-switcher__btn{width:100%;transition:background-color 160ms var(--ease-out),color 160ms var(--ease-out)}
-/* A switch of one state, tapped on and off, reads as the panel's action boxes do: its words at the left, the same 16px in
-   (the founder, 29 September: "They need to be left aligned"). Rows of several options keep their centred words. */
-.theme-switcher[data-switch-label]>.onoff-btn{justify-content:flex-start;padding:0 var(--space-4);text-align:left}
 .theme-switcher__btn:focus-visible svg{transform:none}
-@media(prefers-reduced-motion:reduce){.theme-switcher__selection,.theme-switcher[data-switch-label]>.theme-switcher__btn{transition:none}}
+@media(prefers-reduced-motion:reduce){.theme-switcher__selection{transition:none}}
 
 
 
@@ -642,7 +638,7 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 .rapier-import-progress {
 	position: fixed;
 	left: 50%;
-	bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+	bottom: calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)));
 	transform: translateX(-50%);
 	z-index: 9990;
 	display: flex;

@@ -1,7 +1,8 @@
 (() => {
   const {createKernel, createState, measurementsRequired, receiptStructureEligible, receiptStructureFact} = globalThis.RapierKernel;
   const {resolveCaller} = globalThis.RapierDoorIdentity;
-  const {TOOLS, getTool, annotations} = globalThis.RapierAgentCatalog;
+  const {TOOLS, PAGE_TOOLS, getTool, annotations, validateInput} = globalThis.RapierAgentCatalog;
+  const {guideResult} = globalThis.RapierAgentGuide;
   // The decision core takes no clock or randomness of its own (docs/kernel.md, "The census"); this
   // door supplies the real ones, same as mcp/worker.mjs does for the hosted door.
   const kernelClock = () => Date.now();
@@ -45,6 +46,7 @@
   let contextSequence = 0, humanSequence = 0, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, policyAvailable = false, remoteReview = null, projecting = 0, viewFlight = null;
   let visualFlight = null;
+  let embedReviewSignature = '';
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   ready.catch(() => {});
   const fail = (reason, outcome = 'refused') => ({ok: false, outcome, reason});
@@ -765,6 +767,59 @@
     return {ok: true, pending: true, presented: false, reviewId: review.id};
   }
 
+  // The kernel's review is source-rich. The embed receives only this allowlist; even labels,
+  // reasons and caller names can contain document text. Never spread a review onto the wire.
+  function embedReviewMetadata(review) {
+    if (typeof review?.id !== 'string' || !/^review_[0-9a-f]{32}$/.test(review.id) ||
+        !['proposal', 'inline', 'check'].includes(review.kind) ||
+        !['pending', 'approved', 'declined', 'invalidated'].includes(review.status) ||
+        !['will', 'ask', 'check', 'proposal'].includes(review.cause) ||
+        !Number.isSafeInteger(review.revision) || review.revision < 0) return null;
+    const law = review.law ?? null, region = review.region ?? null;
+    if (law !== null && !['keep', 'append', 'edit'].includes(law)) return null;
+    if (region !== null && (!Number.isSafeInteger(region) || region < 0)) return null;
+    if (review.changes != null && !Array.isArray(review.changes)) return null;
+    const changes = [];
+    for (const row of review.changes || []) {
+      if (typeof row?.id !== 'string' || !row.id.startsWith(review.id + '.') ||
+          !/^[1-9][0-9]*$/.test(row.id.slice(review.id.length + 1)) ||
+          !['pending', 'applied', 'dropped', 'stale'].includes(row.status)) return null;
+      changes.push({id: row.id, status: row.status});
+    }
+    let decision = null;
+    if (review.decision) {
+      const row = review.decision;
+      if (!['approve', 'decline'].includes(row.action) ||
+          !['ok', 'applied', 'rebased', 'unchanged'].includes(row.outcome) ||
+          !Number.isSafeInteger(row.revision) || row.revision < 0) return null;
+      decision = {action: row.action, outcome: row.outcome, revision: row.revision};
+    }
+    return {id: review.id, kind: review.kind, status: review.status, cause: review.cause,
+      revision: review.revision, law, region, changes, decision};
+  }
+
+  function publishEmbedReview() {
+    if (!_rapierEmbed.active || !_rapierEmbed.connected || !_rapierEmbed.loaded ||
+        _rapierEmbed.loading || !_rapierEmbed.capabilities?.includes('agent') || !kernel) {
+      embedReviewSignature = ''; return false;
+    }
+    const review = kernel.collaboration()?.review;
+    if (!review) { embedReviewSignature = ''; return false; }
+    const payload = embedReviewMetadata(review);
+    if (!payload) return false;
+    // This is a notification cursor, not review history. Reconnect may replay the current record;
+    // a rebase that changes only its revision must not turn ordinary typing into an event feed.
+    const {revision, ...lifecycle} = payload;
+    const authority = String(rapier.identity.authority);
+    const signature = JSON.stringify([_rapierEmbed.portGeneration, authority, lifecycle]);
+    if (signature === embedReviewSignature) return false;
+    const state = kernel.snapshot();
+    if (state.documentId !== authority || state.review?.documentId !== authority) return false;
+    if (!_rapierEmbedPost('agent-review', payload)) return false;
+    embedReviewSignature = signature;
+    return true;
+  }
+
   // The one owner of "how a human decision reaches the kernel" for a pending proposal, apply/drop
   // included (Tranche H, docs/kernel.md "A review is decided over time"): the review token pins the
   // text a decision commits to the kernel's own previewReview at the live revision, so the host's
@@ -824,6 +879,7 @@
     } finally { if (reviewToken) reviews.delete(reviewToken); }
     if (['refused', 'conflict', 'invalid'].includes(result.outcome)) showToast('Review could not be applied: ' + result.reason, 'error');
     if (result.review && result.review.status !== 'pending') reviewIdentities.delete(review.id);
+    publishEmbedReview();
     void refresh();
     return result;
     } finally { for (const id of affected) decidingChanges.delete(id); }
@@ -839,6 +895,7 @@
     }
     const value = await snapshot();
     if (!matches(request)) return fail('review_document_changed', 'conflict');
+    publishEmbedReview();
     const image = reviewImage(request.review, value.text);
     if (!image) return fail('review_evidence_unavailable');
     return presentReview(request.review, value, {expectedDocumentId: value.documentId,
@@ -1043,6 +1100,7 @@
   // it stages the pending review and returns; this runs after, from invoke() below, and reports the
   // decision back on a continuation through kernel.decideReview -- the one commit owner applies it.
   async function driveInlineReview(review, requestMeta) {
+    publishEmbedReview();
     const decline = () => kernel.decideReview({expectedRevision: review.revision, reviewId: review.id, action: 'decline'},
       {actor: 'human', principal: 'local', transport: 'platform', requestId: crypto.randomUUID(), signal: idleSignal});
     const beforeText = _rapierSourceText();
@@ -1162,6 +1220,12 @@
 
 
   async function invoke(name, args = {}, request = {}) {
+    // The public guide never enters document admission, read grants or the invocation journal.
+    if (name === 'rapier.guide') {
+      try { validateInput(getTool(name).inputSchema, args); }
+      catch (error) { return {outcome: 'invalid', reason: error.message}; }
+      return guideResult();
+    }
     await ready;
     const tool = getTool(name);
     // Unknown names and schema-invalid arguments are admitted to kernel.invoke so they journal
@@ -1281,6 +1345,7 @@
     // at document.get_context, and whenever a door reads collaboration()") -- a stale change from
     // a human edit elsewhere becomes visible here, not only on the next agent-initiated decision.
     _rapierReviewSpansRefresh();
+    publishEmbedReview();
     return result;
   }
 
@@ -1307,7 +1372,7 @@
     // WebMCP's own handshake fact, where the browser exposes one: the client that opened this
     // session, named once (nameAtDoor). Read off the door itself, never off a tool call's arguments.
     nameAtDoor(owner.clientInfo?.name);
-    for (const tool of TOOLS) {
+    for (const tool of PAGE_TOOLS) {
       if (registrations.has(tool.name) || failures.has(tool.name)) continue;
       const controller = new AbortController();
       try {
@@ -1412,6 +1477,7 @@
       }
       await register();
       _rapierPostureRender(); _rapierAgentBarRender(); _rapierReviewSpansRefresh();
+      publishEmbedReview();
       return status();
     })().catch(error => ({...status(), reason: error?.code || 'refresh_failed'})).finally(() => {
       refreshing = null;
@@ -1536,6 +1602,7 @@
     replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual,
     policyReady: () => policyAvailable, applyView, presentReview, dismissReview, presentationChanged, readFile, notify,
     pendingReviewSnapshot, reviewSnapshot, decideReviewChange, representPendingReview, agentRecoveryState,
+    publishEmbedReview,
     reviewDecidingChange: id => decidingChanges.has(id),
     acceptImport: _rapierAcceptDocumentImport,
     importCurrent: result => !result.importStamp || _rapierMutationStampIsCurrent(result.importStamp),

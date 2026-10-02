@@ -9,14 +9,23 @@
 html.rapier-notes-start body{background:#191919}
 html.rapier-notes-start body.light{background:#dddbd7}
 html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
-.rapier-notes-surface{position:fixed;inset:0;z-index:880;display:flex;flex-direction:column;background:var(--notes-page);color:var(--color-text);overflow:hidden;--notes-gap:8px;--notes-cols:2}
+/* Android projects system bars through --native-inset-*; WebView may also expose them through env().
+   They describe the same edge, so take the larger inset once, keeping chrome out of system controls. */
+.rapier-notes-surface,.rapier-recording-sheet{
+	--notes-safe-top:max(env(safe-area-inset-top,0px),var(--native-inset-top,0px));
+	--notes-safe-right:max(env(safe-area-inset-right,0px),var(--native-inset-right,0px));
+	--notes-safe-bottom:max(env(safe-area-inset-bottom,0px),var(--native-inset-bottom,0px));
+	--notes-safe-left:max(env(safe-area-inset-left,0px),var(--native-inset-left,0px));
+	--notes-head-h:calc(44px + var(--notes-safe-top));
+}
+.rapier-notes-surface{position:fixed;inset:0;z-index:880;display:flex;flex-direction:column;padding:0 var(--notes-safe-right) 0 var(--notes-safe-left);background:var(--notes-page);color:var(--color-text);overflow:hidden;--notes-gap:8px;--notes-cols:2}
 .rapier-notes-surface{transition:opacity 150ms linear}
 .rapier-notes-surface--closing{opacity:0}
 @starting-style{.rapier-notes-surface--in{opacity:0}}
 .rapier-notes-surface--closing{pointer-events:none}
 /* the head is the surface's own background, never a grey band (R86i, the founder: "the top bar in
    notes must not be grey either"); only the section labels are grey */
-.rapier-notes-head{flex:none;display:flex;align-items:center;gap:var(--space-1);height:44px;padding:0 var(--space-2);background:transparent}
+.rapier-notes-head{flex:none;display:flex;align-items:center;gap:var(--space-1);height:var(--notes-head-h);padding:var(--notes-safe-top) var(--space-2) 0;background:transparent}
 .rapier-notes-btn{appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 var(--space-3);border:0;border-radius:0;background:transparent;color:var(--color-text);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;white-space:nowrap;cursor:pointer;touch-action:manipulation}
 .rapier-notes-btn--accent{background:var(--color-accent);color:var(--color-accent-foreground)}
 .rapier-notes-btn[aria-pressed="true"]{background:var(--color-icon);color:var(--color-bg)}
@@ -46,7 +55,7 @@ html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#
    solid under the system bar and fading out 32px above it: over the cards, under every sheet, the
    snackbar and the circle, never in a finger's way. The list's own foot room lets the last card
    scroll clear of it. */
-.rapier-notes-surface{--notes-foot:calc(var(--native-inset-bottom,env(safe-area-inset-bottom,0px)) + 32px)}
+.rapier-notes-surface{--notes-foot:calc(var(--notes-safe-bottom) + 32px)}
 .rapier-notes-surface::after{content:'';position:absolute;left:0;right:0;bottom:0;z-index:5;height:var(--notes-foot);background-image:linear-gradient(to top,var(--color-bg) calc(var(--notes-foot) - 32px),transparent);pointer-events:none}
 /* The travel the overlaying search / plus bars need. A list shorter than the screen cannot be
    scrolled at all, so the offset that is supposed to cancel the bar's padding clamps to zero and
@@ -55,7 +64,7 @@ html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#
 .rapier-notes-scroll__room{height:var(--notes-scroll-room,0px);pointer-events:none}
 /* the circle: the main view's fast-scroll indicator, permanent here, a plus cut out of it (the
    founder: the background shows through the plus); it overhangs the right edge as the main one does */
-.rapier-notes-fab{position:absolute;right:-9px;top:60px;z-index:8;width:60px;height:60px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--color-accent);opacity:.5;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent}
+.rapier-notes-fab{position:absolute;right:calc(var(--notes-safe-right) - 9px);top:calc(60px + var(--notes-safe-top));z-index:8;width:60px;height:60px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--color-accent);opacity:.5;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent}
 .rapier-notes-fab svg{display:block;width:60px;height:60px;fill:currentColor}
 .rapier-notes-fab--tracking,.rapier-notes-fab:focus-visible{opacity:.82}
 .rapier-notes-fab:focus-visible{outline:none;opacity:1}
@@ -312,7 +321,7 @@ body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border
 .rapier-notes-recording-play:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
 .rapier-notes-recording-time{font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 /* the snackbar after an archive or a delete, or a due reminder (OPEN/DONE in place of UNDO): one line, six seconds except a reminder, which waits to be answered */
-.rapier-notes-snack{touch-action:none;position:absolute;left:0;right:0;bottom:env(safe-area-inset-bottom,0px);z-index:6;display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-4);min-height:48px;transform:translateY(calc(100% + var(--space-3)));transition:transform 180ms var(--ease-out)}
+.rapier-notes-snack{touch-action:none;position:absolute;left:var(--notes-safe-left);right:var(--notes-safe-right);bottom:var(--notes-safe-bottom);z-index:6;display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-4);min-height:48px;transform:translateY(calc(100% + var(--space-3)));transition:transform 180ms var(--ease-out)}
 .rapier-notes-snack--open{transform:translateY(calc(0px - var(--rapier-notes-snack-lift, 0px)))}
 .rapier-notes-snack[data-rapier-transient-state="waiting"]{visibility:hidden}
 .rapier-notes-snack span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;white-space:normal}
@@ -387,7 +396,7 @@ body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border
    (_rapierNotesSheetSwipe: 7px to start, 88px or 42px above 0.52px/ms to commit, 170ms out,
    150ms back). Geoffrey's max-height is the viewport less its top bar and 12px; Notes' sheet is
    inside its own surface, so the same sentence reads in per cent of that surface. */
-.rapier-notes-sheet{position:absolute;left:0;right:0;bottom:0;z-index:10;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 44px - 12px);overflow:auto;overscroll-behavior:contain;padding:var(--space-2) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom,0px));background:var(--color-surface);color:var(--color-text);transform:translate3d(0,100%,0);visibility:hidden;transition:transform var(--dur-enter) var(--ease-out),visibility 0s linear var(--dur-enter);will-change:transform;touch-action:pan-y}
+.rapier-notes-sheet{position:absolute;left:0;right:0;bottom:0;z-index:10;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - var(--notes-head-h) - 12px);overflow:auto;overscroll-behavior:contain;padding:var(--space-2) calc(var(--space-5) + var(--notes-safe-right)) calc(var(--space-5) + var(--notes-safe-bottom)) calc(var(--space-5) + var(--notes-safe-left));background:var(--color-surface);color:var(--color-text);transform:translate3d(0,100%,0);visibility:hidden;transition:transform var(--dur-enter) var(--ease-out),visibility 0s linear var(--dur-enter);will-change:transform;touch-action:pan-y}
 /* Down, the sheet is hidden for real once its slide has run (a visibility that turns after the
    transform's own duration), never a box waiting below the fold to be painted where it is not: an
    empty closed sheet once showed as a 28 px white band at the foot of the cards, its transform
@@ -629,7 +638,7 @@ body.rapier-notes-mode #btn-notes-remind[data-notes-filled] svg{fill:currentColo
    not moved with it, so selecting a card laid a pitch-black band across a #191919 page and, in
    light, a pure-white band across a warm off-white one. The surface's own colour, with the
    app's as the fallback for anywhere this bar is used outside it. */
-.rapier-notes-selbar{position:absolute;left:0;right:0;top:0;z-index:7;display:flex;align-items:center;gap:var(--space-1);height:44px;padding:0 var(--space-2);background:var(--notes-page,var(--color-bg));color:var(--color-text)}
+.rapier-notes-selbar{position:absolute;left:var(--notes-safe-left);right:var(--notes-safe-right);top:var(--notes-safe-top);z-index:7;display:flex;align-items:center;gap:var(--space-1);height:44px;padding:0 var(--space-2);background:var(--notes-page,var(--color-bg));color:var(--color-text)}
 .rapier-notes-selbar[hidden]{display:none}
 .rapier-notes-selcount{flex:1 1 auto;min-width:0;padding:0 var(--space-1);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps-ui);color:var(--color-text)}
 .rapier-notes-selbar .rapier-notes-btn{min-width:40px;padding:0 var(--space-2)}
@@ -655,7 +664,7 @@ body.rapier-notes-mode #btn-notes-remind[data-notes-filled] svg{fill:currentColo
 .rapier-notes-conn-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rapier-notes-conn-none{padding:var(--space-1) var(--space-4) var(--space-2);color:var(--color-text-secondary);font:var(--text-sm) var(--font-sans)}
 
-.rapier-recording-sheet{box-sizing:border-box;position:fixed;inset:auto 0 0;width:100%;max-width:540px;max-height:90dvh;margin:0 auto;padding:20px 16px max(20px,env(safe-area-inset-bottom));border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);overflow:auto}
+.rapier-recording-sheet{box-sizing:border-box;position:fixed;inset:auto var(--notes-safe-right) 0 var(--notes-safe-left);width:calc(100% - var(--notes-safe-left) - var(--notes-safe-right));max-width:540px;max-height:90dvh;margin:0 auto;padding:20px 16px max(20px,var(--notes-safe-bottom));border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);overflow:auto}
 /* The recording sheet is a real <dialog>.showModal(), so this ::backdrop is what stands between
    it and the app. It asked for var(--color-bg) -- the PAGE colour -- at .75, which is wrong twice
    over. `::backdrop` only began inheriting from its originating element in Chrome 122; in every
@@ -762,12 +771,12 @@ body.light .rapier-recording-live{--color-text:#000000}
    on top just like in main rapier your document should always stay where it is." So the find bar,
    its filters and the plus's own bar are taken out of the column's flow and laid OVER the scroller,
    joined to the head above them. The scroller keeps its own height, so not one card moves. */
-.rapier-notes-find,.rapier-notes-addsbar,.rapier-notes-filters{position:absolute;left:0;right:0;z-index:6}
+.rapier-notes-find,.rapier-notes-addsbar,.rapier-notes-filters{position:absolute;left:var(--notes-safe-left);right:var(--notes-safe-right);z-index:6}
 /* Reorder is a MODE, not a pop-up over the cards: its bar takes its own row in the column, because
    the section headings it asks you to drag must all be reachable under it. */
 .rapier-notes-reorderbar{flex:none}
-.rapier-notes-find,.rapier-notes-addsbar{top:44px}
-.rapier-notes-filters{top:calc(44px + var(--find-bar-h))}
+.rapier-notes-find,.rapier-notes-addsbar{top:var(--notes-head-h)}
+.rapier-notes-filters{top:calc(var(--notes-head-h) + var(--find-bar-h))}
 .rapier-notes-addsbar[hidden],.rapier-notes-reorderbar[hidden]{display:none}
 /* The plus's bar carries the four doors rather than a field: "evenly spaced in 4." The founder, 24
    September evening: "divide that bar evenly in four and put boxes around those options in the exact
@@ -859,7 +868,7 @@ body.light .rapier-recording-live{--color-text:#000000}
 /* Law 39 (the founder, 26 September 2026): the arrow asks before it leaves. The question is the jump panel's
    own shape grown out of the arrow (notes.js _rapierNotesAskOpen), set top left under the bar, its one row
    the question itself in lowercase Geist Mono. */
-.rapier-notes-ask-overlay{align-items:flex-start;justify-content:flex-start;padding:calc(44px + var(--space-2)) var(--space-2) var(--space-2)}
+.rapier-notes-ask-overlay{align-items:flex-start;justify-content:flex-start;padding:calc(var(--notes-head-h) + var(--space-2)) calc(var(--space-2) + var(--notes-safe-right)) calc(var(--space-2) + var(--notes-safe-bottom)) calc(var(--space-2) + var(--notes-safe-left))}
 .rapier-notes-ask-overlay .settings-panel.navigator-panel{width:auto;max-width:calc(100% - var(--space-4))}
 .rapier-notes-jump-overlay .navigator-outline__item.rapier-notes-ask{font:var(--fw-medium) var(--text-sm) var(--font-mono);white-space:normal}
 

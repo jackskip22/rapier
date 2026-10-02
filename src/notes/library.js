@@ -366,6 +366,21 @@ function _rapierNotesLibraryMarkTitle(el, file) {
 	const words = snip.text.slice(snip.from, snip.to), title = el.textContent;
 	const at = title.toLowerCase().indexOf(words.toLowerCase());
 	if (at < 0) return;
+	// A search hit decorates the title's words without discarding their authored ink spans.
+	if (el.querySelector('span.rapier-ink-mark')) {
+		const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = [];
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+		let offset = 0;
+		for (const node of nodes) {
+			const length = node.nodeValue.length, from = Math.max(0, at - offset), to = Math.min(length, at + words.length - offset);
+			offset += length;
+			if (to <= from) continue;
+			if (to < length) node.splitText(to);
+			const hit = from ? node.splitText(from) : node, mark = _rapierNotesEl('mark');
+			hit.replaceWith(mark); mark.appendChild(hit);
+		}
+		return;
+	}
 	el.textContent = '';
 	el.append(title.slice(0, at));
 	el.appendChild(_rapierNotesEl('mark', '', title.slice(at, at + words.length)));

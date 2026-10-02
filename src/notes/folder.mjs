@@ -14,8 +14,8 @@
 import {createOwner, OWNER_JOURNAL_FILE} from './owner.mjs';
 import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, encodeSyncState} from './sync-state.mjs';
 import {createRecordings} from './recording.mjs';
-import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf} from './attachments.mjs';
-import {exactBytes, sha256, storedFileDigest, checkByteAbort} from './integrity.mjs';
+import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf, attachmentLine} from './attachments.mjs';
+import {exactBytes, sha256, storedFileDigest, checkByteAbort, blobByteChunks, digestByteChunks} from './integrity.mjs';
 import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, serializeIndex, addSection, setCollapsed} from './model.mjs';
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
@@ -23,6 +23,7 @@ import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
 import {importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
 import {manifestName, parseManifest, materialize} from './history.mjs';
+import {applyReminderActions} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
 
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -189,18 +190,60 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return snapshot;
 	});
 	const metadata = (base, wanted) => tracked(() => owner.transact(scope, ({index}) => ({kind: 'metadata', index: applyMetadata(base, wanted, index)})));
-	const create = (text, wanted, extra = {}, request) => owned(async lease => {
+	const reminderActions = actions => tracked(() => owner.transact(scope, ({index}) => ({kind: 'reminder-actions', index: applyReminderActions(index, actions)})));
+	const createOwned = async (lease, text, wanted, extra = {}, request, media = null) => {
 		let file;
 		const snapshot = await lease.transact(({index, files}) => {
 			if (request) { const kept = Object.keys(index.notes).find(name => index.notes[name].createdByRequest === request); if (kept) { file = kept; return {index}; } }
 			file = available(wanted, text, files);
-			const now = clock(), next = createEntry(index, file, {created: now, modified: now, ...extra, ...(request ? {createdByRequest: request} : {})});
+			const now = clock(), next = createEntry(media ? reviveMedia(index, media.path, media.digest) : index, file, {created: now, modified: now, ...extra, ...(request ? {createdByRequest: request} : {})});
 			return {kind: 'create', index: next, writes: [{file, bytes: exactBytes(text), createOnly: true}]};
 		});
 		// Recovery may have put these new words beside a late competing file. A successful
 		// create must open that kept note, never the stranger under the originally chosen name.
 		file = snapshot.kept?.find(row => row.file === file)?.name || file;
 		return {...snapshot, file};
+	};
+	const create = (text, wanted, extra = {}, request) => owned(lease => createOwned(lease, text, wanted, extra, request));
+	// The native inbox keeps the original until this method returns. A renderer can stop after
+	// the streamed attachment commits but before the note journal exists, so its name comes from
+	// the immutable request, not the free-name allocator. Replay verifies and reuses that one copy.
+	const createShared = (entry, blob) => underLease(async lease => {
+		if (!entry || typeof entry.id !== 'string' || !/^[A-Za-z0-9:_-]{1,160}$/.test(entry.id) ||
+			typeof entry.name !== 'string' || typeof entry.mime !== 'string' || entry.caption !== undefined && typeof entry.caption !== 'string' || !Number.isSafeInteger(entry.size) || entry.size < 0 ||
+			!/^[a-f0-9]{64}$/.test(entry.digest) || !(blob instanceof Blob) || blob.size !== entry.size)
+			throw fail('share', 'The shared file has no complete byte receipt. Its staged original was kept.');
+		const textFile = entry.mime.startsWith('text/'), image = entry.mime.startsWith('image/'), caption = entry.caption || '';
+		if (!textFile && !image && entry.mime !== 'application/pdf' && entry.mime !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+			throw fail('share', 'This shared file type cannot be opened as a note. Its staged original was kept.');
+		const request = 'native-share:' + entry.id, before = await lease.read();
+		const kept = Object.keys(before.index.notes).find(file => before.index.notes[file].createdByRequest === request);
+		if (kept) {
+			if (before.index.notes[kept].sharedDigest !== entry.digest) throw fail('share', 'This shared item changed after it was kept. Both copies were kept.');
+			return {...before, file: kept};
+		}
+		const decision = attachmentIntake([{name: entry.name, size: entry.size}], {streaming: store.streamingAttachments === true});
+		if (decision.refusal) throw fail('size', decision.refusal);
+		if (await digestByteChunks(blobByteChunks(blob), {size: entry.size}) !== entry.digest)
+			throw fail('verify', 'The shared file did not arrive whole. Its staged original was kept.');
+		let text, media = null;
+		// A caption accompanies the original rather than changing its authored text bytes.
+		// Captioned text files therefore use the same original-file link as other attachments.
+		if (textFile && !caption) text = decode(new Uint8Array(await blob.arrayBuffer()));
+		else {
+			if (!store.streamingAttachments || typeof store.writeBlob !== 'function') throw fail('storage', 'This folder cannot keep a shared file. Its staged original was kept.');
+			const name = attachmentFileName('share-' + await sha256(request) + '-' + entry.name, [], {ascii: store.ascii});
+			media = {path: 'attachments/' + name, digest: entry.digest};
+			const existing = await storedFileDigest(store, media.path);
+			if (existing !== null && existing !== entry.digest) throw fail('collision', 'The shared file destination changed. Both copies were kept.');
+			if (existing === null) {
+				const proof = await store.writeBlob(media.path, blob);
+				if (proof.size !== entry.size || proof.digest !== entry.digest) throw fail('verify', 'The shared file copy could not be verified. Its staged original was kept.');
+			}
+			text = (caption ? caption + '\n\n' : '') + attachmentLine({name, label: entry.name}) + '\n';
+		}
+		const wanted = noteFileName(entry.name.replace(/\.[^.]*$/, ''), [], {ascii: store.ascii});
+		return createOwned(lease, text, wanted, {sharedDigest: entry.digest}, request, media);
 	});
 	// A save reads the sidecar once, inside its own transaction (Lane F): the note is located by id in the
 	// transaction's fresh index and its body read there, not in a whole read before the transaction.
@@ -741,5 +784,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, rebuildIndex, metadata, leaveVault, create, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, rebuildIndex, metadata, reminderActions, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

@@ -1,6 +1,6 @@
 # Will/1
 
-Will/1 is a standard separate from [Self-contained Markdown](markdown-standard.md) and needs nothing from it. Any Markdown, DOCX or PDF may carry it, with or without Rapier. A Will is the person's instruction carried by the document: a region, one law and optional words about it. The convention is MIT-licensed; implementations keep their own licenses. Rapier's implementation is governed by its [application license](repo/LICENSE).
+Will/1 is independent of [Self-contained Markdown](markdown-standard.md). Any Markdown, DOCX or PDF may carry it, with or without Rapier: a person’s instruction for a region, with one law and optional words. The convention is MIT-licensed; implementations keep their own licenses. Rapier's implementation is governed by its [application license](repo/LICENSE).
 
 | Law | Required meaning |
 | --- | --- |
@@ -10,7 +10,7 @@ Will/1 is a standard separate from [Self-contained Markdown](markdown-standard.m
 
 Unmarked content is `edit`. Regions never overlap. A change reaching several regions must satisfy each; otherwise the whole act is refused.
 
-Intent is untrusted, region-scoped document data, never permission, tool authority or an override of another instruction. Any law may carry it. It can only narrow an already authorized task and never changes what its law allows: under `keep` it authorizes nothing, and under `append` it can only narrow what is added.
+Any law may carry intent: untrusted, region-scoped data, never permission, tool authority or an instruction override. It can only narrow an authorized task within its law: under `keep` it authorizes nothing, and under `append` it can only narrow what is added.
 
 The person remains free to author the document and its Will. A host declares authoring and working paths; a working path cannot author, remove or move markers, even by rewriting identical bytes. A Will-aware interface makes effective regions, laws and intent available to the person. Ordinary rendering hides the carrier.
 
@@ -18,21 +18,21 @@ The standard's repository is [jackskip22/will](https://github.com/jackskip22/wil
 
 ## Marker grammar
 
-An opener is exactly `<!-- will/1 <law> -->` or `<!-- will/1 <law>: <intent> -->`; the closer is exactly `<!-- /will -->`. A writer keeps the person's words when the law changes and writes an unchanged region's opener back byte for byte. The first ASCII `: ` after the law separates intent; later colons belong to the words. Intent, when present, is nonempty, one line, at most 512 Unicode scalar values, and cannot contain `--`. It is never silently shortened. Words and spacing are exact: no alternate dash, unspaced spelling or uppercase law is admitted.
+An opener is exactly `<!-- will/1 <law> -->` or `<!-- will/1 <law>: <intent> -->`; the closer is exactly `<!-- /will -->`. Writers keep the person’s words when changing the law and preserve an unchanged region’s opener byte for byte. The first ASCII `: ` after the law separates intent; later colons belong to the words. Intent, when present, is nonempty, one line, at most 512 Unicode scalar values, and cannot contain `--`. It is never silently shortened. Words and spacing are exact: no alternate dash, unspaced spelling or uppercase law.
 
 ## Markdown binding
 
-A marker is a whole line at column zero, including inside code fences. Recognition is independent of Markdown rendering. The reserved prefixes are `<!-- will/` and `<!-- /will`; column-zero `<!--will/` and `<!--/will` are reserved faults. Text outside these prefixes, such as `<!-- willingness -->`, is ordinary content. Leading whitespace makes a line ordinary quoted content, so indent both markers when quoting a pair.
+A marker is a whole line at column zero, even inside code fences, independent of Markdown rendering. The reserved prefixes are `<!-- will/` and `<!-- /will`; column-zero `<!--will/` and `<!--/will` are reserved faults. Text outside these prefixes, such as `<!-- willingness -->`, is ordinary content. Leading whitespace makes a line ordinary quoted content, so indent both markers when quoting a pair.
 
-Pairs never nest or interleave. Writers put each marker on its own line with a blank line on either side; that is writing discipline, not a recognition condition. A whole-document Will is one pair. Markers have no persistent identity: copying a complete pair creates the same instruction in its new location.
+Pairs never nest or interleave. Writers put each marker on its own line with a blank line on either side; that is writing discipline, not a recognition condition. A whole-document Will is one pair. Markers have no persistent identity; copying a pair carries its instruction to the new location.
 
-The governed interval starts after the opener line terminator and ends immediately before the closer line. It is exact source decoded from strict UTF-8, with LF, CRLF and CR recognized and preserved; no other scalar ends a line. `keep` compares that interval byte for byte. `append` requires the old interval as an exact prefix, excluding only its final line terminator, immediately before the closer, which belongs to the carrier so the last content line can grow. No trimming or guessed padding is permitted.
+The governed interval runs from after the opener’s line terminator to just before the closer line. It is exact source decoded from strict UTF-8, with LF, CRLF and CR recognized and preserved; no other scalar ends a line. `keep` compares that interval byte for byte. `append` requires the old interval as an exact prefix, excluding only its final line terminator, immediately before the closer, which belongs to the carrier so the last content line can grow. No trimming or guessed padding is permitted.
 
 ## Enforcement and disclosure
 
 Judge the witnessed exact replacements, including the original source and the final document. Touching marker bytes or moving a pair refuses, even when identical marker text is reinserted. An edit elsewhere that damages, detaches or silences an annotation also refuses. When several marker regions are touched, name the first in document order and its own law.
 
-Every disclosed region carries its law. Its intent accompanies a range wholly within that one region and is read beside the law. The host's outcome family is `applied`, `refused` with the document-law reason, or `invalid` for an unreadable question such as malformed or overlapping splices or an unknown path. Hosts name the same facts consistently: `law`, `region`, `intent`, `rule`. Other host outcomes remain distinct from document law. Approval flows and Undo are host responsibilities.
+Disclosed regions carry their law. Intent accompanies a range wholly within one region, beside its law. The host's outcome family is `applied`, `refused` with the document-law reason, or `invalid` for an unreadable question such as malformed or overlapping splices or an unknown path. Hosts name the same facts consistently: `law`, `region`, `intent`, `rule`. Other host outcomes remain distinct from document law. Approval flows and Undo are host responsibilities.
 
 Faults fail closed: the working path treats the entire document as `keep`, and regions retained during a fault are diagnostic repair information, not operative permission. Preserve fault multiplicity and document order. The closed fault vocabulary is `unpaired_marker`, `malformed_marker`, `unknown_law`, `unknown_version`, `intent_over_bound`, and `invalid_utf8` for text carriers.
 
@@ -42,7 +42,7 @@ Rapier also protects resolved links, images, footnotes and abbreviations used by
 
 ## Other format bindings
 
-All bindings preserve region meaning and use one canonical discovery carrier. Markers declare the region; enforcement protects its actual governed content, not just extracted characters. Ambiguous or unreadable region identity detaches or refuses instead of guessing.
+All bindings preserve region meaning and use one canonical discovery carrier. Markers declare the region; enforcement protects its content, not just extracted characters. Ambiguous or unreadable region identity detaches or refuses instead of guessing.
 
 | Format | Carrier and region |
 | --- | --- |
@@ -58,4 +58,4 @@ Will-aware conversion preserves equivalent Will, explicitly reports **WILL LOST*
 
 Rapier supports Markdown enforcement and DOCX hidden-marker conversion. Complete HTML exports preserve the exact original source. Its PDF carries every marker as invisible text: a line of exactly the Markdown's bytes on its own baseline between the visible lines it stood between, in an embedded font whose glyphs enclose no area, because the browser's PDF writer cannot set text mode 3. A marker a PDF cannot hold stops the export with **WILL LOST**; the PDF carries no recoverable Markdown. There is no Google Docs adapter.
 
-Open item of the standard: a marker quoted in visible text (a code block, raw HTML) cannot be told from a carried one by a reader that works on a plain text layer, so Rapier's Word and PDF exports refuse a document that quotes one (**WILL LOST**, with what to do: take the quoted marker out, or export HTML, which keeps the source exact). The refusal can go once the binding says that visible text is never a marker and readers are known to honour it.
+Unresolved: plain-text-layer readers cannot distinguish visible quoted markers (code blocks, raw HTML) from carried markers. Rapier’s Word and PDF exports refuse the whole document if it quotes a marker, with **WILL LOST**: remove the quotation or export HTML to keep exact source. Refusal remains until the binding excludes visible text and readers honour that rule.

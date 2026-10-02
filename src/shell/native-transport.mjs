@@ -97,7 +97,7 @@ export function decodeFrame(data, {current = null} = {}) {
 
 // The ops whose request or reply carries bytes. Every other op stays on the host's control grammar.
 export const NATIVE_BYTE_OPS = Object.freeze(['notes.store.read.chunk', 'notes.store.write.chunk', 'notes.store.recording.append', 'transfer.chunk', 'intake.chunk',
-	'sync.put.chunk', 'sync.get.chunk']);
+	'sync.put.chunk', 'sync.get.chunk', 'shares.read.chunk']);
 
 export function createNativeTransport({host, origin, binary = false, generation = () => null} = {}) {
 	nativeTransportOrigin(origin);

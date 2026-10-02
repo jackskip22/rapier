@@ -315,10 +315,9 @@ const RAPIER_PAINT_TOOL_ICONS = Object.freeze({ 'rapier/water': RAPIER_PAINT_ICO
 function _rapierPaintToolIcon(id) { return RAPIER_PAINT_TOOL_ICONS[id] || ''; }
 const RAPIER_PAINT_SIZE_DEFAULT = 50;
 // The linear-light white the layer is painted on (draw/paint.mjs PaintSurface.paper).
-// Smudge samples the layer alone, as libmypaint does: an earlier build composited an opaque white
-// sheet under the layer for the smudge probe (so the Dieterle brushes' transparency gate always
-// saw paint), and every light-pressure stroke then smeared white -- the pale, washed-out look the
-// founder saw. Where the layer is bare the picked-up alpha is low and the dab thins or is skipped,
+// Smudge samples the layer alone, as libmypaint does: an opaque white sheet under the layer would
+// make the Dieterle brushes' transparency gate always see paint, and every light-pressure stroke
+// would smear white. Where the layer is bare the picked-up alpha is low and the dab thins or is skipped,
 // which is what paint on paper does; the stage's white paper is display only.
 const RAPIER_PAINT_PAPER = null;
 // The wet media a live layer runs on (R79). `cell` is the raster pixels the physics runs a cell

@@ -11,7 +11,7 @@ import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLWorker} from '../images/codec-build.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import parseCSS from './vendor/postcss-parse.cjs';
-import {TOOLS, UI_RESOURCE, mcpDescriptors} from '../agent/catalog.mjs';
+import {TOOLS, PAGE_TOOLS, UI_RESOURCE, mcpDescriptors} from '../agent/catalog.mjs';
 import {encodeBase124} from './base124.mjs';
 import {encodeTextPack} from './text-pack-build.mjs';
 import {decodeTextPack} from './text-pack.mjs';
@@ -85,9 +85,17 @@ const EXPORTS = new Map(), bundling = new Set(), DEPS = new Map();
 // What each bundled module imports from each other (dependency -> names), and the source each was
 // assembled from: the tree-shake below reads both.
 const IMPORTED = new Map(), MODULE_SOURCES = new Map();
-// Only pretext, model and md-layout are retained into the styled export's factory set; the
-// export never carries a drawing recipe or the Draw modules, only numeric wrap polygons.
-const retainedModule = path => path.startsWith('agent/vendor/pretext/') || path === 'layout/model.mjs' || path === 'layout/line-plan.mjs' || path === 'spec/md-layout.mjs';
+// Ink retains each owner's reading/layout closure, not its editor-only writing, recognition or hit testing.
+const INK_FACTORIES = {'spec/md-marks.mjs': 'inkReader', 'spec/ink.mjs': 'inkGeometry', 'layout/ink-draw.mjs': 'inkDrawing'};
+// Retained into the styled export's factory set, by group: layout (pretext, model, line-plan, md-layout) for the
+// reflow script, ink's three named closures for the ink script (docs/briefs/ink.md §3); the export never carries a
+// drawing recipe or the Draw modules, only numeric wrap polygons and the marks on their own words.
+const RETAINED_GROUPS = {
+  layout: path => path.startsWith('agent/vendor/pretext/') || path === 'layout/model.mjs' || path === 'layout/line-plan.mjs' || path === 'spec/md-layout.mjs',
+  ink: path => Object.hasOwn(INK_FACTORIES, path),
+};
+const retainedGroup = path => Object.keys(RETAINED_GROUPS).find(group => RETAINED_GROUPS[group](path)) || null;
+const retainedModule = path => retainedGroup(path) !== null;
 const parse = (source, sourceType = 'script') => acorn.parse(source, {ecmaVersion: 'latest', sourceType});
 // A comment ships only when it is a licence notice -- `/*!`, `@license` or `@preserve`, an SPDX line, a
 // copyright statement ("Copyright (c)", "Copyright ©" or a year) or a licence grant ("Licensed
@@ -131,6 +139,8 @@ const MARK_CONVENTION_OWNER = 'spec/md-marks.mjs';
 const MARK_CONVENTION_ALLOWED = new Set([MARK_CONVENTION_OWNER, 'tools/build.mjs']);
 // skills/ is documentation an agent reads (skills/README.md); it quotes the grammar, as docs/markdown-standard.md does, and parses nothing.
 const MARK_CONVENTION_SKIP_DIRS = new Set(['dist', '.git', '.wrangler', 'node_modules', 'tools/witnesses', 'skills']);
+// Gradle's output under the Android projects (build/, .gradle/) carries copies of the owner's own file as app assets.
+const MARK_CONVENTION_GRADLE_OUTPUT = (relPath, name) => /^android/.test(relPath) && (name === 'build' || name === '.gradle');
 const MARK_CONVENTION_SKIP_FILES = new Set(['rapier.html', 'rapier-document.html', 'sw.js', 'AGENT-TOOLS.json']);
 const MARK_CONVENTION_EXTENSIONS = new Set(['.js', '.mjs', '.html', '.md']);
 
@@ -139,7 +149,7 @@ async function markConventionViolations(dir = '') {
   for (const entry of await readdir(resolve(root, dir), { withFileTypes: true })) {
     const relPath = dir ? dir + '/' + entry.name : entry.name;
     if (entry.isDirectory()) {
-      if (MARK_CONVENTION_SKIP_DIRS.has(relPath) || MARK_CONVENTION_SKIP_DIRS.has(entry.name)) continue;
+      if (MARK_CONVENTION_SKIP_DIRS.has(relPath) || MARK_CONVENTION_SKIP_DIRS.has(entry.name) || MARK_CONVENTION_GRADLE_OUTPUT(relPath, entry.name)) continue;
       findings.push(...await markConventionViolations(relPath));
       continue;
     }
@@ -364,6 +374,15 @@ async function bundle(path) {
 // before every module that imports it.
 function assemble(path, source) {
   const tree = parse(source, 'module'), changes = [], exported = [];
+  const factory = INK_FACTORIES[path];
+  if (factory) {
+    const declaration = tree.body.filter(node => node.type === 'VariableDeclaration')
+      .flatMap(node => node.declarations).find(row => row.id.type === 'Identifier' && row.id.name === factory);
+    if (declaration?.init?.type !== 'ArrowFunctionExpression' || declaration.init.params.length)
+      throw new Error('Retained ink factory must be a zero-argument closure: ' + path + ':' + factory);
+    // Assign the function itself so minify.mjs checks its relocated free bindings and the page carries it once.
+    changes.push({start: declaration.init.start, end: declaration.init.start, text: `artifactFactories[${JSON.stringify(path)}] = `});
+  }
   for (const node of tree.body) {
     if (node.type === 'ImportDeclaration') {
       const dependency = relative(root, resolve(root, dirname(path), node.source.value)).replaceAll('\\', '/');
@@ -383,7 +402,7 @@ function assemble(path, source) {
     } else if (node.type === 'ExportDefaultDeclaration') throw new Error('Default exports do not belong in the browser kernel');
   }
   EXPORTS.set(path, new Set(exported.map(row => row.slice(0, row.indexOf(':')))));
-  MODULES.set(path, `modules[${JSON.stringify(path)}] = (${retainedModule(path) ? `artifactFactories[${JSON.stringify(path)}] = ` : ''}() => {\n${apply(source, changes)}\nreturn {${exported.join(',')}};\n})();`);
+  MODULES.set(path, `modules[${JSON.stringify(path)}] = (${retainedModule(path) && !factory ? `artifactFactories[${JSON.stringify(path)}] = ` : ''}() => {\n${apply(source, changes)}\nreturn {${exported.join(',')}};\n})();`);
 }
 
 await bundle('agent/catalog.mjs');
@@ -442,7 +461,7 @@ if (PROFILE === 'full') {
   await bundle('notes/library-reads.mjs');
 }
 await bundle('agent/door-identity.mjs');
-const globals = {'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'editor/journal-records.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierPretext': 'agent/vendor/pretext/rich-inline.js', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', ...(PROFILE === 'full' ? {'RapierPersonal': 'notes/personal.mjs', 'RapierDrawPaint': 'draw/paint.mjs', 'RapierDrawBrushes': 'draw/brushes.mjs', 'RapierNotesModel': 'notes/model.mjs', 'RapierNotesLibraryWindow': 'notes/library-window.mjs', 'RapierNotesLibraryReads': 'notes/library-reads.mjs', 'RapierNotesTakeout': 'notes/takeout.mjs', 'RapierNotesImportNotion': 'notes/import-notion.mjs', 'RapierNotesImportSimplenote': 'notes/import-simplenote.mjs', 'RapierNotesImportStandardNotes': 'notes/import-standardnotes.mjs', 'RapierNotesImportJoplin': 'notes/import-joplin.mjs', 'RapierNotesImport': 'notes/import.mjs', 'RapierNotesImportPictures': 'notes/import-pictures.mjs', 'RapierNotesImportReceipt': 'notes/import-receipt.mjs', 'RapierNotesImportUndoFace': 'notes/import-undo-face.mjs', 'RapierNotesImportPlan': 'notes/import-plan.mjs', 'RapierNotesFrontMatter': 'notes/frontmatter.mjs', 'RapierNotesLinks': 'notes/links.mjs', 'RapierNotesSearch': 'notes/search.mjs', 'RapierNotesOcr': 'notes/ocr.mjs', 'RapierNotesSearchCache': 'notes/search-cache.mjs', 'RapierNotesImportMarkdown': 'notes/import-markdown.mjs', 'RapierNotesImportEnex': 'notes/import-enex.mjs', 'RapierNotesImportHtml': 'notes/import-html.mjs', 'RapierNotesRestore': 'notes/restore.mjs', 'RapierNotesTrash': 'notes/trash.mjs', 'RapierNotesHistory': 'notes/history.mjs', 'RapierNotesIntegrity': 'notes/integrity.mjs', 'RapierNotesZip': 'notes/zip.mjs', 'RapierNotesBackup': 'notes/backup.mjs', 'RapierNotesBackupWorker': 'notes/backup-worker.mjs', 'RapierNotesOPFSWorker': 'notes/opfs-worker.mjs', 'RapierNotesOwner': 'notes/owner.mjs', 'RapierNotesOPFS': 'notes/opfs.mjs', 'RapierNotesIdbStore': 'notes/idb-store.mjs', 'RapierNotesFolder': 'notes/folder.mjs', 'RapierNotesTodo': 'notes/todo.mjs', 'RapierNotesAudio': 'notes/audio.mjs', 'RapierNotesAttachments': 'notes/attachments.mjs', 'RapierNotesSync': 'notes/sync.mjs', 'RapierNotesVault': 'notes/vault.mjs', 'RapierNotesMerge': 'notes/merge.mjs', 'RapierNotesSyncSession': 'notes/sync-session.mjs', 'RapierCloudProviders': 'notes/cloud-providers.mjs', 'RapierWebDAVTransport': 'notes/transport-webdav.mjs'} : {}), 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs'};
+const globals = {'RapierAgentGuide': 'agent/guide.mjs', 'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierInk': 'spec/ink.mjs', 'RapierInkDraw': 'layout/ink-draw.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'editor/journal-records.mjs', 'RapierVisibleSource': 'editor/visible-source.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierPretext': 'agent/vendor/pretext/rich-inline.js', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', ...(PROFILE === 'full' ? {'RapierPersonal': 'notes/personal.mjs', 'RapierDrawPaint': 'draw/paint.mjs', 'RapierDrawBrushes': 'draw/brushes.mjs', 'RapierNotesModel': 'notes/model.mjs', 'RapierNotesLibraryWindow': 'notes/library-window.mjs', 'RapierNotesLibraryReads': 'notes/library-reads.mjs', 'RapierNotesTakeout': 'notes/takeout.mjs', 'RapierNotesImportNotion': 'notes/import-notion.mjs', 'RapierNotesImportSimplenote': 'notes/import-simplenote.mjs', 'RapierNotesImportStandardNotes': 'notes/import-standardnotes.mjs', 'RapierNotesImportJoplin': 'notes/import-joplin.mjs', 'RapierNotesImport': 'notes/import.mjs', 'RapierNotesImportPictures': 'notes/import-pictures.mjs', 'RapierNotesImportReceipt': 'notes/import-receipt.mjs', 'RapierNotesImportUndoFace': 'notes/import-undo-face.mjs', 'RapierNotesImportPlan': 'notes/import-plan.mjs', 'RapierNotesFrontMatter': 'notes/frontmatter.mjs', 'RapierNotesLinks': 'notes/links.mjs', 'RapierNotesSearch': 'notes/search.mjs', 'RapierNotesOcr': 'notes/ocr.mjs', 'RapierNotesSearchCache': 'notes/search-cache.mjs', 'RapierNotesImportMarkdown': 'notes/import-markdown.mjs', 'RapierNotesImportEnex': 'notes/import-enex.mjs', 'RapierNotesImportHtml': 'notes/import-html.mjs', 'RapierNotesRestore': 'notes/restore.mjs', 'RapierNotesTrash': 'notes/trash.mjs', 'RapierNotesHistory': 'notes/history.mjs', 'RapierNotesIntegrity': 'notes/integrity.mjs', 'RapierNotesZip': 'notes/zip.mjs', 'RapierNotesBackup': 'notes/backup.mjs', 'RapierNotesBackupWorker': 'notes/backup-worker.mjs', 'RapierNotesOPFSWorker': 'notes/opfs-worker.mjs', 'RapierNotesOwner': 'notes/owner.mjs', 'RapierNotesOPFS': 'notes/opfs.mjs', 'RapierNotesIdbStore': 'notes/idb-store.mjs', 'RapierNotesFolder': 'notes/folder.mjs', 'RapierNotesTodo': 'notes/todo.mjs', 'RapierNotesAudio': 'notes/audio.mjs', 'RapierNotesAttachments': 'notes/attachments.mjs', 'RapierNotesSync': 'notes/sync.mjs', 'RapierNotesVault': 'notes/vault.mjs', 'RapierNotesMerge': 'notes/merge.mjs', 'RapierNotesSyncSession': 'notes/sync-session.mjs', 'RapierCloudProviders': 'notes/cloud-providers.mjs', 'RapierWebDAVTransport': 'notes/transport-webdav.mjs'} : {}), 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs'};
 // Every published global is a build root: a declared capability whose module was never bundled froze `undefined` (R86m's dead BACKUP).
 for (const path of Object.values(globals)) await bundle(path);
 // Unconsumed exports are shaken out with the code only they reach (tools/tree-shake.mjs).
@@ -521,8 +540,10 @@ Object.defineProperty(modules[${JSON.stringify(entry)}], 'workerSource', {value:
   ${JSON.stringify(workerClosure(entry))}.map(path => 'modules[' + JSON.stringify(path) + '] = (' + workerFactories[path].toString() + ')();').join('\\n') +
   '\\nmodules[${JSON.stringify(entry)}].${install}(self);\\n})();\\n'});`).join('');
 const pretextLicense = await read('agent/vendor/pretext/LICENSE');
+// Each group's factories in dependency order (the bundle's own order), so a script builder plants only its own.
+const retainedGroups = Object.fromEntries(Object.keys(RETAINED_GROUPS).map(group => [group, [...MODULES.keys()].filter(path => retainedGroup(path) === group)]));
 // Pretext's licence rides once, as the string the styled export writes; the Licences sheet shows it.
-const bundleText = await lean('(() => {\nconst modules = {}, artifactFactories = {}' + (workerPaths.size ? ', workerFactories = {}' : '') + ';\n' + [...MODULES.values()].join('\n') + workerSource + '\n' + Object.entries(globals).map(([name, path]) => `globalThis.${name} = Object.freeze(modules[${JSON.stringify(path)}]);`).join('\n') + '\nglobalThis.RapierArtifactLayoutDependencies = Object.freeze({factories:Object.freeze(artifactFactories),license:' + JSON.stringify(pretextLicense) + '});\n})();', 'rapier-shared.js');
+const bundleText = await lean('(() => {\nconst modules = {}, artifactFactories = {}' + (workerPaths.size ? ', workerFactories = {}' : '') + ';\n' + [...MODULES.values()].join('\n') + workerSource + '\n' + Object.entries(globals).map(([name, path]) => `globalThis.${name} = Object.freeze(modules[${JSON.stringify(path)}]);`).join('\n') + '\nglobalThis.RapierArtifactLayoutDependencies = Object.freeze({factories:Object.freeze(artifactFactories),groups:' + JSON.stringify(retainedGroups) + ',license:' + JSON.stringify(pretextLicense) + '});\n})();', 'rapier-shared.js');
 new vm.Script(bundleText, {filename: 'rapier-agent-bundle.js'});
 
 let html = await read('rapier.html');
@@ -650,7 +671,7 @@ html = html.replace(/(<script[^>]*type="application\/speedracer-app\+json"[^>]*>
   const manifest = JSON.parse(source);
   const exportOperation = manifest.operations.find(row => row.name === 'document.export');
   manifest.factory.version = VERSION;
-  manifest.operations = TOOLS.map(entry => ({name: entry.name, label: entry.title, description: entry.description, authority: ['read', 'view'].includes(entry.effect) ? 'read' : 'write', input: entry.inputSchema, result: entry.outputSchema}));
+  manifest.operations = PAGE_TOOLS.map(entry => ({name: entry.name, label: entry.title, description: entry.description, authority: ['read', 'view'].includes(entry.effect) ? 'read' : 'write', input: entry.inputSchema, result: entry.outputSchema}));
   if (exportOperation) manifest.operations.push(exportOperation);
   return open + JSON.stringify(manifest) + close;
 });
@@ -692,6 +713,8 @@ const satelliteSlots = [
   ['COLOUR_MATH', 'editor/colour-math.mjs'],
   ['CODE_TOKENS', 'editor/code-tokens.mjs'],
   ['PLAIN_PASTE', 'editor/plain-paste.mjs'],
+  ['INK_LAYER', 'editor/ink-layer.mjs'],
+  ['INK_PEN', 'editor/ink-pen.mjs'],
   ['BODY_SEGMENT_SPANS', 'editor/segment-matches.mjs', ['_rapierBodySegmentSpans']],
   ['SEGMENT_MATCHES', 'editor/segment-matches.mjs', ['_rapierStableBlockIdentityKey', '_rapierProvenSegmentMatches', '_rapierSplicedSegmentMatches']],
   ['INLINE_SOURCE', 'editor/inline-source.mjs'],

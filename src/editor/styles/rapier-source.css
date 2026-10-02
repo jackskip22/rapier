@@ -842,15 +842,6 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 .pro-status {
 	margin: 0 0 var(--space-4);
 }
-.pro-status__title {
-	color: var(--color-text);
-	font: var(--fw-semibold) var(--text-sm)/1.35 var(--font-sans);
-}
-.pro-status__copy {
-	margin-top: var(--space-1);
-	color: var(--color-text-secondary);
-	font: var(--fw-regular) var(--text-xs)/1.5 var(--font-sans);
-}
 .pro-sheet-overlay {
 	display: flex;
 	align-items: flex-end;
@@ -953,7 +944,9 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 .export-choice--compact { min-height: 0; padding: var(--space-3) var(--space-4); gap: 2px; }
 .export-choice {
 	width: 100%;
-	min-height: 112px;
+	/* A choice is as tall as its words: one label alone (the copy pop-up, the founder's ruling) is one line with the
+	   padding, a label with its description two; 56px keeps a finger's target. */
+	min-height: 56px;
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
@@ -1020,6 +1013,16 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	text-transform: uppercase;
 }
 .export-choice-toggle[aria-pressed="true"] .export-choice-toggle__state { color: var(--color-accent); }
+/* The copy sheet's last row (the Pandoc/Quarto dialect): no card behind it, the secondary colour, one line.
+   The founder, 2 October: non-obtrusive, at the bottom, because hardly anyone will want it. */
+.export-choice-toggle--quiet {
+	padding: var(--space-2) var(--space-4) 0;
+	background: transparent;
+	color: var(--color-text-secondary);
+}
+.export-choice-toggle--quiet .export-choice-toggle__label { font-weight: var(--fw-regular); }
+.export-choice-toggle--quiet:focus-visible { background: transparent; color: var(--color-text); }
+@media (hover:hover) and (pointer:fine){ .export-choice-toggle--quiet:hover { background: transparent; color: var(--color-text); } }
 
 .navigator-panel {
 	max-width: 440px;
@@ -1458,7 +1461,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	line-height: 1;
 }
 
-.lines-toggle-group {
+.code-toggle-group {
 	display: flex;
 	flex-direction: column;
 	gap: var(--space-2);
@@ -1578,7 +1581,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	overflow: hidden;
 }
 
-.lines-toggle-group .onoff-btn {
+.code-toggle-group .onoff-btn {
 	font-size: calc(var(--text-sm) * 0.9);
 	letter-spacing: 0.03em;
 	padding: 0 3px;
@@ -1586,6 +1589,46 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	white-space: normal;
 	text-align: center;
 }
+
+/* The adaptive interface (the founder, 2 October, evening): a strip whose choices only mean something while the
+   control above it is on joins that control's underside, one box with a hairline seam, and folds away with it. */
+.settings-switch-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+}
+.settings-switch-stack__under .theme-switcher {
+	border-top: 0;
+}
+
+/* One named On/Off button; the existing dependent disclosure is flush underneath. */
+.code-toggle-group .theme-switcher[data-switch-label] > .theme-switcher__btn {
+	width: 100%;
+	justify-content: flex-start;
+	padding: 0 var(--space-4);
+	text-align: left;
+	transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+	.code-toggle-group .theme-switcher[data-switch-label] > .theme-switcher__btn { transition: none; }
+}
+/* Both the real buttons and their existing sliding ink clones carry these same words. */
+#switch-line-numbers .onoff-btn {
+	min-width: 0;
+	flex-basis: 0;
+	white-space: normal;
+	line-height: 1.1;
+}
+
+/* The same row gap as .code-toggle-group; hidden native-only rows leave no empty space. */
+.pro-settings-actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin-bottom: var(--space-4);
+}
+.pro-settings-actions > .settings-action-row { margin: 0; }
+.pro-settings-actions > [hidden] { display: none; }
 
 
 
@@ -1780,7 +1823,7 @@ button.settings-text-action:disabled { opacity: .6; cursor: wait; }
 }
 .licenses-panel .navigator-title-row {
 	min-width: 0;
-	align-items: flex-start;
+	align-items: center;
 }
 .licenses-title {
 	min-width: 0;
@@ -1912,17 +1955,24 @@ button.settings-text-action:disabled { opacity: .6; cursor: wait; }
 }
 .open-chevron[data-open="true"] svg { transform: rotate(-90deg); }
 
+/* Closed, the drawer is not a flex item at all: a zero-height item in the column still earns the column's gap on both
+   sides, which was the double gap between the open and save rows on the founder's phone (2 October). The slide open
+   starts from nothing through @starting-style; an engine without it shows the open drawer at once. */
 .recent-drawer {
+	display: none;
 	background: var(--color-surface-2);
 	overflow: hidden;
 	max-height: 0;
 	transition: max-height var(--dur-micro) var(--ease-micro);
 }
 .recent-drawer[data-open="true"] {
-
+	display: block;
 	max-height: 240px;
 	overflow-y: auto;
 	overscroll-behavior: contain;
+}
+@starting-style {
+	.recent-drawer[data-open="true"] { max-height: 0; }
 }
 .recent-drawer__list {
 	display: flex;

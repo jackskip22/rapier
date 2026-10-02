@@ -362,19 +362,14 @@ export function packSearchProjection(note) {
 	return row;
 }
 
-// Malformed or older shapes are a cache miss, never a guessed projection. No repair or migration.
-// A nine-slot row, and a ten-slot row whose last slot is picture words, unpack with an empty excerpt.
+// A malformed row is a cache miss, never a guessed projection. A row is nine slots, or ten with picture words,
+// then the excerpt.
 export function unpackSearchProjection(value) {
 	const uint = n => Number.isSafeInteger(n) && n >= 0;
-	if (!Array.isArray(value)) return null;
-	let row = value, excerpt = '';
-	const tail = value.length ? value[value.length - 1] : undefined;
-	if ((value.length === 10 || value.length === 11) && typeof tail === 'string') {
-		if (tail.length > SEARCH_EXCERPT_CHARS) return null;
-		excerpt = tail;
-		row = value.slice(0, -1);
-	}
-	if (row.length !== 9 && row.length !== 10) return null;
+	if (!Array.isArray(value) || (value.length !== 10 && value.length !== 11)) return null;
+	const excerpt = value[value.length - 1];
+	if (typeof excerpt !== 'string' || excerpt.length > SEARCH_EXCERPT_CHARS) return null;
+	const row = value.slice(0, -1);
 	const [title, heads, tags, tasks, hasPicture, hasDrawing, hasLink, bags, media, seen] = row;
 	if (row.length === 10 && (!Array.isArray(seen) || seen.length !== 2 || typeof seen[0] !== 'string' || !seen[0].trim() || !Array.isArray(seen[1]))) return null;
 	if (!uint(media) || media > 3) return null;

@@ -278,7 +278,7 @@ const _rapierImageFlow = (() => {
     } finally { _rapierRestoreEditorViewport(viewport); }
   }
 
-  function projectedPoint(paragraph, node, offset) {
+  function projectedPoint(paragraph, node, offset, surface = paragraph) {
     if (!node || paragraph?.dataset.rapierFlow !== 'true') return null;
     const record = projections.get(paragraph);
     if (node.nodeType !== Node.TEXT_NODE) {
@@ -307,7 +307,7 @@ const _rapierImageFlow = (() => {
     if (!positions.has(node)) return null;
     const target = positions.get(node) + clamp(Number(offset) || 0, 0, node.data.length);
     let best = null, distance = Infinity;
-    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT);
     let text;
     while ((text = walker.nextNode())) {
       const mapping = endpoints.get(text);
@@ -479,8 +479,6 @@ const _rapierImageFlow = (() => {
       const font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
       const letterSpacing = parseFloat(computed.letterSpacing) || 0;
       const softbreak = parents.some(parent => parent.classList.contains('rapier-source-token--softbreak'));
-      const prepared = geometry.prepareRun(softbreak ? ' ' : node.data, font, letterSpacing);
-      if (!prepared) return null;
       // A chip and a source token wear a box that each piece of them repeats. Only the token is one unit; a chip breaks as the browser
       // breaks inline code (at a space, after a hyphen, and inside itself where it is wider than its slot), never leaving a column empty.
       const boxed = parents.some(parent => parent.tagName === 'CODE' || parent.hasAttribute('data-rapier-source'));
@@ -488,15 +486,21 @@ const _rapierImageFlow = (() => {
       const extraWidth = boxed ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'marginLeft', 'marginRight']
         .reduce((width, key) => width + (parseFloat(computed[key]) || 0), 0) : 0;
       const directions = parents.map(parent => parent.getAttribute('dir') === 'auto' ? getComputedStyle(parent).direction : null);
-      runs.push({node, parents, directions, prepared});
-      items.push({text: prepared.raw, font, letterSpacing, break: unit && !softbreak ? 'never' : 'normal', extraWidth});
+      runs.push({node, parents, directions});
+      items.push({text: softbreak ? ' ' : node.data, font, letterSpacing, break: unit && !softbreak ? 'never' : 'normal', extraWidth});
     }
     if (!runs.length) return null;
+    const flow = pretext.prepareRichInline(items);
+    for (let index = 0; index < runs.length; index++) {
+      const item = items[index];
+      runs[index].prepared = geometry.prepareRun(item.text, item.font, item.letterSpacing, flow.items[index]?.prepared);
+      if (!runs[index].prepared) return null;
+    }
     const computed = getComputedStyle(paragraph);
 
     if (computed.textAlign === 'justify' || computed.writingMode !== 'horizontal-tb' || computed.textTransform !== 'none') return null;
     const fontSize = parseFloat(computed.fontSize) || 16;
-    const record = {wrapper, paragraph, runs, flow: pretext.prepareRichInline(items),
+    const record = {wrapper, paragraph, runs, items, flow,
       original: [...paragraph.childNodes], raw: _rapierBoundBlock(wrapper)?.raw, fontSize,
       lineHeight: parseFloat(computed.lineHeight) || fontSize * 1.65,
       direction: computed.direction, align: computed.textAlign, balance: computed.textWrapStyle === 'balance' ? fontSize : 0};
@@ -504,17 +508,49 @@ const _rapierImageFlow = (() => {
     return record;
   }
 
-  function fragmentNode(record, fragment) {
+  // The writer and native-retention comparison consume the same text, attributes and source maps.
+  // Comparison only collects replacements; a later mismatch must leave every live endpoint alone.
+  function projectedText(body, mapping, current, updates) {
+    if (updates) {
+      if (current?.nodeType !== Node.TEXT_NODE || current.data !== body) return null;
+      updates.push([current, mapping]);
+      return current;
+    }
+    const text = document.createTextNode(body);
+    endpoints.set(text, mapping);
+    return text;
+  }
+
+  function projectedSpan(attributes, current, updates) {
+    if (updates) {
+      if (current?.nodeType !== Node.ELEMENT_NODE || current.tagName !== 'SPAN' || current.localName !== 'span' ||
+          current.namespaceURI !== 'http://www.w3.org/1999/xhtml' || current.prefix !== null ||
+          current.attributes.length !== attributes.length) return null;
+      for (const [name, value] of attributes) {
+        const attribute = current.getAttributeNode(name);
+        if (!attribute || attribute.namespaceURI !== null || attribute.prefix !== null ||
+            attribute.localName !== name || attribute.value !== value) return null;
+      }
+      return current;
+    }
+    const element = document.createElement('span');
+    for (const [name, value] of attributes) element.setAttribute(name, value);
+    return element;
+  }
+
+  function fragmentNode(record, fragment, current = null, updates = null) {
     const run = record.runs[fragment.itemIndex];
+    if (updates && run.parents.length) return null;
     const mapped = geometry.mapFragment(run.prepared, fragment);
     if (!mapped) return null;
     // A line ends on the white space it broke at. A chip, a link or a highlight must not paint that space, so it stands after the shell.
     const kept = run.parents.length ? mapped.text.replace(/[ \t\n\r\f]+$/, '') : mapped.text;
     const split = kept && kept.length < mapped.text.length;
     const body = split ? kept : mapped.text;
-    const text = document.createTextNode(body);
-
-    endpoints.set(text, {node: run.node, offsets: split ? mapped.offsets.slice(0, body.length + 1) : mapped.offsets, parents: run.parents, record, text: body});
+    const text = projectedText(body,
+      {node: run.node, offsets: split ? mapped.offsets.slice(0, body.length + 1) : mapped.offsets, parents: run.parents, record, text: body},
+      current, updates);
+    if (!text) return null;
     let child = text;
     for (let index = run.parents.length - 1; index >= 0; index--) {
       const shell = run.parents[index].cloneNode(false);
@@ -523,8 +559,9 @@ const _rapierImageFlow = (() => {
       shell.append(child); child = shell;
     }
     if (!split) return child;
-    const rest = document.createTextNode(mapped.text.slice(body.length)), pair = document.createDocumentFragment();
-    endpoints.set(rest, {node: run.node, offsets: mapped.offsets.slice(body.length), parents: run.parents, record, text: rest.data});
+    const restText = mapped.text.slice(body.length), pair = document.createDocumentFragment();
+    const rest = projectedText(restText,
+      {node: run.node, offsets: mapped.offsets.slice(body.length), parents: run.parents, record, text: restText});
     pair.append(child, rest);
     return pair;
   }
@@ -608,41 +645,158 @@ const _rapierImageFlow = (() => {
     return {svg, view, profile: _rapierDrawShapeProfileFor({...recipe, view}, null)};
   }
 
+  function projectedLines(record, plan, current = null) {
+    const updates = current ? [] : null;
+    if (updates && current.childNodes.length !== plan.lines.length) return null;
+    const output = updates ? null : document.createDocumentFragment();
+    let previous = null;
+    const {lineHeight} = record;
+    const align = ['left', 'center', 'right', 'start', 'end'].includes(record.align)
+      ? record.align : record.direction === 'rtl' ? 'right' : 'left';
+    let lineIndex = 0;
+    for (const line of plan.lines) {
+      // Assign this exact spelling once; comparison reads attributes without invoking the CSS parser.
+      const attributes = [['class', 'rapier-flow-line'],
+        ['style', `left:${px(line.x)};top:${px(line.y)};width:${px(line.width)};height:${px(lineHeight)};direction:${record.direction};text-align:${align}`]];
+      const element = projectedSpan(attributes, current?.childNodes.item(lineIndex++), updates);
+      if (!element) return null;
+      let childAt = updates ? element.firstChild : null;
+      for (const fragment of line.fragments) {
+        const mapped = gapPoints(record, previous, fragment);
+        if (mapped) {
+          const attributes = [['style', `display:inline-block;width:${px(fragment.gapBefore)}`]];
+          if (mapped.sealed) attributes.push(['contenteditable', 'false']);
+          const gap = projectedSpan(attributes, childAt, updates);
+          if (!gap || updates && gap.childNodes.length !== 1) return null;
+          const space = projectedText(' ', {points: mapped.points, record, text: ' '}, gap.firstChild, updates);
+          if (!space) return null;
+          if (updates) childAt = gap.nextSibling;
+          else { gap.append(space); element.append(gap); }
+        }
+        const child = fragmentNode(record, fragment, childAt, updates);
+        if (!child) return null;
+        if (updates) childAt = child.nextSibling;
+        else element.append(child);
+        previous = fragment;
+      }
+      if (updates) { if (childAt) return null; }
+      else output.append(element);
+    }
+    return updates || output;
+  }
+
   function project(record, width, top, obstacles) {
     const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
       narrowestColumn(record.fontSize), record.direction, record.balance);
     if (!plan) return null;
-    const output = document.createDocumentFragment();
-    let previous = null;
-    const {lineHeight} = record;
-    for (const line of plan.lines) {
-      const element = document.createElement('span');
-      element.className = 'rapier-flow-line';
-      element.style.cssText = `left:${px(line.x)};top:${px(line.y)};width:${px(line.width)};height:${px(lineHeight)};direction:${record.direction}`;
-      element.style.textAlign = ['left', 'center', 'right', 'start', 'end'].includes(record.align)
-        ? record.align : record.direction === 'rtl' ? 'right' : 'left';
-      for (const fragment of line.fragments) {
-        const child = fragmentNode(record, fragment);
-        if (!child) return null;
-        const mapped = gapPoints(record, previous, fragment);
-        if (mapped) {
-          const space = document.createTextNode(' '), gap = document.createElement('span');
-          endpoints.set(space, {points: mapped.points, record, text: ' '});
-          gap.style.cssText = `display:inline-block;width:${px(fragment.gapBefore)}`;
-          if (mapped.sealed) gap.setAttribute('contenteditable', 'false');
-          gap.append(space); element.append(gap);
-        }
-        element.append(child); previous = fragment;
-      }
-      output.append(element);
-    }
+    const output = projectedLines(record, plan);
+    if (!output) return null;
     record.paragraph.replaceChildren(output);
     record.paragraph.dataset.rapierFlow = 'true';
     style(record.paragraph, {position: 'relative', height: px(plan.height), 'min-height': '0'});
 
     record.projected = [...record.paragraph.childNodes];
+    record.geometry = {width, top, obstacles, height: plan.height};
     projections.set(record.paragraph, record);
     return plan.height;
+  }
+
+  // Only a plain, one-to-one source run can take a native insertion in its projected text. A single
+  // interior space is equally exact; collapsed whitespace, mark boundaries and pending marks are not.
+  function projectedInsert(event, record, selection) {
+    if (window.__rapierWholeProjection || frame || pressedLayout || moving || restoring || printing ||
+        rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source' || rapier.compare.active ||
+        event.inputType !== 'insertText' || typeof event.data !== 'string' || !event.data) return null;
+    const text = selection.anchorNode, offset = selection.anchorOffset, mapping = endpoints.get(text);
+    if (/\s/.test(event.data) && !(event.data === ' ' && offset > 0 && offset < text?.data?.length &&
+        /\S/.test(text.data[offset - 1]) && /\S/.test(text.data[offset]))) return null;
+    const edit = record.wrapper.querySelector(':scope > .block-edit');
+    if (!record.geometry || text?.nodeType !== Node.TEXT_NODE || mapping?.record !== record ||
+        text.parentElement?.parentElement !== record.paragraph || edit?._rapierTypingMarks ||
+        text.data !== mapping.text || !event.getTargetRanges) return null;
+    const targets = event.getTargetRanges();
+    if (targets.length !== 1 || targets[0].startContainer !== text || targets[0].endContainer !== text ||
+        targets[0].startOffset !== offset || targets[0].endOffset !== offset) return null;
+    const points = mapping.points || mapping.offsets?.map(at => ({node: mapping.node, offset: at, parents: mapping.parents}));
+    const first = points?.[0], point = points?.[offset];
+    if (!first || !point || points.length !== text.data.length + 1 ||
+        points.some((value, index) => value.node !== first.node || value.offset !== first.offset + index || value.parents?.length) ||
+        first.node.data.slice(first.offset, points.at(-1).offset) !== text.data) return null;
+    const index = record.runs.findIndex(run => run.node === point.node);
+    if (index < 0 || record.runs[index].parents.length || point.offset === 0 && index > 0 ||
+        point.offset === point.node.data.length && index < record.runs.length - 1 ||
+        _rapierCaretBoundary(point.node.data, point.offset) !== point.offset) return null;
+    const future = record.runs.map(run => run.node === point.node
+      ? run.node.data.slice(0, point.offset) + event.data + run.node.data.slice(point.offset) : run.node.data).join('');
+    if (_rapierFirstStrongDir(future) !== record.direction) return null;
+    const bounds = rect(record.paragraph), area = rect(host), saved = record.geometry;
+    if (Math.abs(bounds.width - saved.width) > 0.5 || Math.abs(bounds.height - saved.height) > 0.5 ||
+        Math.abs(bounds.top - area.top + host.scrollTop - saved.top) > 0.5) return null;
+    return {record, text, mapping, offset, index, expected: text.data.slice(0, offset) + event.data + text.data.slice(offset)};
+  }
+
+  // Mirror before the editor serializes its input. When the same planner reproduces the live nodes exactly,
+  // only their source maps change: the browser already put the caret in the right node, with no selection write.
+  function retainProjectedInsert(pending, event) {
+    const {record, text, mapping, offset, index, expected} = pending;
+    const selection = window.getSelection();
+    if (!event.isTrusted || event.inputType !== 'insertText' || !text.isConnected || text.data !== expected ||
+        projections.get(record.paragraph) !== record || !selection?.isCollapsed ||
+        selection.anchorNode !== text || selection.anchorOffset !== offset + event.data?.length) return false;
+    if (!spliceComposedRun(mapping, text.data)) return false;
+    if (frame || pressedLayout || moving || restoring || printing) return false;
+    const run = record.runs[index], old = run.prepared;
+    record.items[index] = {...record.items[index], text: run.node.data};
+    record.flow = pretext.prepareRichInline(record.items);
+    const prepared = geometry.prepareRun(run.node.data, old.font, old.letterSpacing, record.flow.items[index]?.prepared);
+    if (!prepared) return false;
+    run.prepared = prepared;
+    const {width, top, obstacles, height} = record.geometry;
+    const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
+      narrowestColumn(record.fontSize), record.direction, record.balance);
+    if (!plan || plan.height !== height) return false;
+    let replacement = null;
+    if (record.runs.every(run => !run.parents.length)) {
+      const updates = projectedLines(record, plan, record.paragraph);
+      if (updates) {
+        for (const [node, mapping] of updates) endpoints.set(node, mapping);
+      } else {
+        replacement = projectedLines(record, plan);
+        if (!replacement) return false;
+      }
+    } else {
+      // Rich shells keep their existing DOM equality check; the plain path has no clone or CSS work.
+      const output = projectedLines(record, plan), live = record.paragraph.childNodes;
+      if (!output) return false;
+      if (live.length !== output.childNodes.length ||
+          [...output.childNodes].some((node, at) => !node.isEqualNode(live[at]))) replacement = output;
+      else {
+        const before = document.createTreeWalker(output, NodeFilter.SHOW_TEXT);
+        const after = document.createTreeWalker(record.paragraph, NodeFilter.SHOW_TEXT);
+        for (let node; (node = before.nextNode());) endpoints.set(after.nextNode(), endpoints.get(node));
+      }
+    }
+    if (replacement) {
+      // This input already prepared the exact same-height plan. Publish it once instead of
+      // restoring the paragraph, measuring its styles and planning these lines a second time.
+      // Unexpected native structure still needs restore's source reconciliation.
+      const live = record.paragraph.childNodes;
+      if (!record.projected || live.length !== record.projected.length ||
+          record.projected.some((node, at) => node !== live[at])) return false;
+      const source = mappedPoint(text, selection.anchorOffset);
+      const point = source && projectedPoint(record.paragraph, source.node, source.offset, replacement);
+      if (!point) return false;
+      observer?.disconnect();
+      try {
+        record.paragraph.replaceChildren(replacement);
+        record.projected = [...record.paragraph.childNodes];
+        selection.setBaseAndExtent(point.node, point.offset, point.node, point.offset);
+        caretPlaced = {anchor: point.node, anchorOffset: point.offset, focus: point.node, focusOffset: point.offset};
+      } finally { watch(); }
+      return true;
+    }
+    caretPlaced = {anchor: text, anchorOffset: selection.anchorOffset, focus: text, focusOffset: selection.focusOffset};
+    return true;
   }
 
   function floatAround(paragraph, natural, top, obstacles) {
@@ -3104,9 +3258,9 @@ const _rapierImageFlow = (() => {
   for (const name of ['copy', 'cut']) document.addEventListener(name, event => {
     if (!_rapierClipboardOutsideDocument(event) && hasSelection() && projections.size) restoreSelection();
   }, true);
-  let reprojectAfterInput = null, reprojectHeight = null;
+  let reprojectAfterInput = null, reprojectHeight = null, insertInProjection = null;
   window.addEventListener('beforeinput', event => {
-    reprojectAfterInput = null; reprojectHeight = null;
+    reprojectAfterInput = null; reprojectHeight = null; insertInProjection = null;
     if (_rapierHostNativeField(event.target)) return;
     const composing = event.isComposing || event.inputType === 'insertCompositionText' || rapier.composition.block;
     if (event.isTrusted && !composing && hasSelection() && projections.size) { restoreSelection(); return; }
@@ -3120,12 +3274,20 @@ const _rapierImageFlow = (() => {
     const record = paragraph && projections.get(paragraph);
     if (!record || !record.wrapper.classList.contains('block-wrapper--editing')) return;
     reprojectHeight = rect(record.wrapper).height;
+    insertInProjection = projectedInsert(event, record, selection);
+    if (insertInProjection) { reprojectAfterInput = record.wrapper; return; }
     reprojectAfterInput = unproject(record.wrapper) ? record.wrapper : null;
   }, true);
 
   window.addEventListener('input', event => {
     if (!reprojectAfterInput) return;
-    const wrapper = reprojectAfterInput, wasHeight = reprojectHeight; reprojectAfterInput = null; reprojectHeight = null;
+    const wrapper = reprojectAfterInput, wasHeight = reprojectHeight, pending = insertInProjection;
+    reprojectAfterInput = null; reprojectHeight = null; insertInProjection = null;
+    if (pending) {
+      if (retainProjectedInsert(pending, event)) return;
+      // A different native mutation still belongs to the person. Read it back before mapping the caret for fallback.
+      settleComposition(pending.record.paragraph, pending.record);
+    }
     // The paragraph's own lines first (its picture has not moved); the whole pass when its height changed.
     if (!_rapierHostNativeField(event.target) && !rapier.composition.block && !replan(wrapper, wasHeight)) layoutNow(wrapper);
   }, true);

@@ -104,6 +104,9 @@ if (window.self !== window.top) {
     slot.replaceWith(template.content);
     // Execute in one turn: the shared globals precede the editor, which precedes its host bridge.
     for (const spans of stages) for (const {name, source} of spans) _rapierExecuteVendorSource(name, source);
+    // The shared globals are in: a host that waited to hand a document over may send it now (shell/platform.js
+    // tells the app the page is ready on this event; before it, the seam the bytes cross is not yet in the page).
+    window.dispatchEvent(new Event('rapier:runtime-loaded'));
   } catch (error) {
     if (globalThis._rapierBootstrapRuntime) _rapierBootstrapRuntime.failed = true;
     try { window.RapierPlatform?.files?.clearIntake?.(); } catch (_) {}

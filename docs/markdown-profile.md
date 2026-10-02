@@ -1,6 +1,6 @@
 # Rapier Markdown profile
 
-[The standard](markdown-standard.md) is CommonMark plus a few invisible comment conventions. Rapier's parser admits more. This page lists every non-core syntax it recognizes, what kind of syntax it is and what happens to it. Every convention is documented for anyone to read and write, and none breaks another Markdown app.
+[The standard](markdown-standard.md) adds invisible comment conventions to CommonMark. This profile lists Rapier’s other syntax and its treatment. Anyone may read and write these conventions; none breaks another Markdown app.
 
 Rapier parses and renders every syntax below. Exact round-trip means byte for byte through an unrelated edit.
 
@@ -50,7 +50,7 @@ Rapier's own rendering keeps its `data-*` (a picture's layout, a page break, the
 
 ## What other renderers show today (13 September 2026)
 
-Each claim is read from the public record and carries its source: a published statement or a reproduced public report, never a guess. Re-check when a product ships a relevant change.
+Claims cite published statements or reproduced public reports. Re-check after relevant product changes.
 
 | Product | Engine | `data:` picture (`![](data:image/png;base64,…)`) | JPEG XL picture |
 | --- | --- | --- | --- |
@@ -63,17 +63,17 @@ Each claim is read from the public record and carries its source: a published st
 | iA Writer | WebKit preview | Not stated in the public record; the preview parses inline HTML ([Peer Reviewed: inline HTML in iA Writer](https://www.peerreviewed.io/blog/using-in-line-html-to-preview-images-in-ia-writer)). **Unverified.** | Decoded on Apple platforms (WebKit, as Bear). |
 | Firefox (any web renderer in it) | Gecko | Rendered (a plain `img`). | **Decoded by default from Firefox 157** (end of September 2026; Nightly already), via `jxl-rs` ([Phoronix: Mozilla's plan](https://www.phoronix.com/news/Firefox-JPEG-XL-2026-Plans), [Slashdot](https://tech.slashdot.org/story/26/08/26/0633229/firefox-157-will-include-jpeg-xl-by-default-on-all-platforms)). |
 
-**Rapier acts as if JPEG XL is supported everywhere now.** There is no document-level "make every picture portable" command, only the per-picture format change. A Rapier document's PNG or JPEG `data:` pictures show today in Bear, Obsidian, Joplin and Typora, and nowhere on GitHub. JPEG XL pictures show in Bear and iA Writer (WebKit) and in Firefox 157, and not in the Chromium-based editors until Chrome flips its flag, which Google has not dated. GitHub reads URL pictures only, in any format.
+**Rapier acts as if JPEG XL is supported everywhere now.** There is no document-level "make every picture portable" command, only the per-picture format change. The table records `data:` and JPEG XL support; Google has not dated Chrome’s default enablement. GitHub reads URL pictures only.
 
 ## CommonMark oracle
 
-Rapier's parser and CommonMark disagree only on the rows above. The release run checks it: a corpus of small real documents is parsed with Rapier (markdown-it, `applyMarkdownSpec` and math) and with vendored [micromark](https://github.com/micromark/micromark) 4.0.2 plus `micromark-extension-gfm` 3.0.0 (tables, task lists, strikethrough, autolink literals, footnotes, tagfilter), and a block fingerprint (normalized type and start line, not HTML) is compared. Every disagreement must be a profile row that is not core CommonMark. Blocks that overlap CommonMark must agree, and with GFM loaded the GFM rows (pipe tables, task lists, strikethrough, GitHub footnotes) agree; the remaining disagreements are Rapier's non-GFM extensions (definition lists). Rapier conventions that change block type (`<!--c …-->` against an HTML block, the page-break marker against `html_block`) are classified from the same table. micromark is a Node-only check tool, not bundled into `rapier.html`.
+The release run checks Rapier’s differences from CommonMark against this profile: small documents are parsed with Rapier (markdown-it, `applyMarkdownSpec` and math) and with vendored [micromark](https://github.com/micromark/micromark) 4.0.2 plus `micromark-extension-gfm` 3.0.0 (tables, task lists, strikethrough, autolink literals, footnotes, tagfilter), and compared by block fingerprint (normalized type and start line, not HTML). Every disagreement must be a profile row that is not core CommonMark. Blocks that overlap CommonMark must agree, and with GFM loaded the GFM rows (pipe tables, task lists, strikethrough, GitHub footnotes) agree; the remaining disagreements are Rapier's non-GFM extensions (definition lists). Rapier conventions that change block type (`<!--c …-->` against an HTML block, the page-break marker against `html_block`) are classified from the same table. micromark is a Node-only check tool, not bundled into `rapier.html`.
 
 ## DOCX export (`interchange/docx.mjs` `writeDocx`)
 
 A JPEG XL picture arrives as the portable picture the export already made of it (PNG, or JPEG for an opaque photograph when smaller). WebP and SVG pictures and drawings are rasterised to PNG in the package. Drawings use PNG, not EMF. Math is TeX source with its `$`/`$$` delimiters: Word shows the source, and Rapier re-import recovers the math. Export `.docx` uses `writeDocx` through `_rapierConvertPortableHtmlToDocx`. No plug-in.
 
-Headings 1–6, bold, italic, underline, strikethrough, links, coloured runs, highlights, nested ordered and bullet lists, task lists (`[ ]`/`[x]` prefixes), tables with `Table:` captions, page breaks (`w:br w:type="page"`) and math TeX source round-trip through `writeDocx` and `readDocx`. These rows do not:
+Headings 1–6, bold, italic, underline, strikethrough, links, coloured runs, highlights, nested ordered and bullet lists, task lists (`[ ]`/`[x]` prefixes), tables with `Table:` captions, page breaks (`w:br w:type="page"`) and math TeX source round-trip through `writeDocx` and `readDocx`. Exceptions:
 
 | Syntax | Status | Authored via | Exact round-trip | Save emits | Degrades to |
 | --- | --- | --- | --- | --- | --- |
@@ -94,14 +94,13 @@ explicit RGB, including tint/shade luminance adjustments; theme identity itself 
 
 Word's current text is a defined projection: inserted and moved-to text is retained; deleted and
 moved-from text, change authors/dates and comments are not imported. The warnings disclose those
-omissions. Body text and referenced footnotes are checked separately in XML order; this does not
-claim preservation of the omitted review history or comment text. The original Word file is retained
+omissions. Body text and referenced footnotes are checked separately in XML order. The original Word file is retained
 as an attachment on the Notes import path.
 
 Outside this profile: Word's review and comment workflows, named styles, themes and font schemes, custom tab
 stops, section and page geometry, conditional table styling, and anchored picture positioning and wrapping.
-Markdown has no shared model for them. A tab character is kept even when its tab stops are not; footnote labels
-can change while their content and paragraph boundaries stay intact.
+Markdown has no shared model for them. Tab characters survive without their stops; footnote labels may change
+while content and paragraph boundaries stay intact.
 
 Picture bytes are checked exact through the importer's callback and the writer, and converted bytes are checked
 to reach ordinary HTML tables. That check does not prove the browser's codec conversion, Word's rendering or a

@@ -27,10 +27,12 @@ function normalize(raw) {
   return {text: pieces.join(''), offsets, trimStart: start, trimEnd: end};
 }
 
-export function prepareRun(raw, font, letterSpacing = 0) {
+export function prepareRun(raw, font, letterSpacing = 0, measured = null) {
   if (typeof raw !== 'string' || typeof font !== 'string' || !font.trim() || !finite(letterSpacing)) return null;
   const normalized = normalize(raw);
-  const prepared = prepareWithSegments(normalized.text, font, {letterSpacing});
+  // A paragraph's rich-inline plan has already measured this run. Map those same segments to source
+  // instead of measuring and segmenting it again; standalone callers still prepare their own run.
+  const prepared = measured || prepareWithSegments(normalized.text, font, {letterSpacing});
   if (!Array.isArray(prepared.segments) || prepared.segments.join('') !== normalized.text) return null;
   const segmentOffsets = [0];
   for (const segment of prepared.segments) segmentOffsets.push(segmentOffsets.at(-1) + segment.length);

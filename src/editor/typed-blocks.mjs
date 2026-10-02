@@ -23,8 +23,8 @@ function _rapierTypedBlock(before, key, where) {
 	}
 	if (where !== 'paragraph') return null;
 	if (key === 'space') {
-		// Three digits at most: "1984. That year" is a sentence, not a list's 1984th item.
-		if (/^\d{1,3}[.)] $/.test(text)) return { kind: 'ol', prefix: text, literal: text.slice(0, -2) + '\\' + text.slice(-2) };
+		// CommonMark's ordered marker is one to nine digits, including a non-1 start.
+		if (/^\d{1,9}[.)] $/.test(text)) return { kind: 'ol', prefix: text, literal: text.slice(0, -2) + '\\' + text.slice(-2) };
 		if (/^[-*+] $/.test(text)) return { kind: 'ul', prefix: text, literal: '\\' + text };
 		const task = /^\[([ xX]?)\] $/.exec(text);
 		if (task) return { kind: 'task', prefix: '- [' + (/x/i.test(task[1]) ? 'x' : ' ') + '] ', literal: '\\[' + task[1] + '\\] ' };
@@ -41,8 +41,9 @@ function _rapierTypedBlock(before, key, where) {
 	return null;
 }
 
-// A mark closed just before the boundary the person typed (a space, punctuation or Enter, as Word
-// waits for): `before` is the text node's words up to, not including, that boundary. Only a run wholly
+// An asterisk/code mark closed at the caret, or a mark just before a boundary (space, punctuation
+// or Enter): `before` excludes that boundary when supplied. Underscores and links keep their boundary
+// trigger: a following letter can make an underscore close intraword and therefore literal. Only a run wholly
 // inside those words, opened after the line's start, a space or an opening bracket or quote, with no
 // other mark character inside it, is read -- the runs every CommonMark reader reads the same way.
 // A link `[words](address)` is read the same way: its address holds no space or angle bracket and its
@@ -72,11 +73,12 @@ function _rapierTypedLink(text) {
 }
 
 function _rapierTypedMark(before, boundary) {
-	if (!/^[\s.,;:!?)\]}"'\u2019\u201d]$/.test(String(boundary || ''))) return null;
+	if (boundary && !/^[\s.,;:!?)\]}"'\u2019\u201d]$/.test(String(boundary))) return null;
 	const text = String(before == null ? '' : before);
-	const link = _rapierTypedLink(text);
+	const link = boundary ? _rapierTypedLink(text) : null;
 	if (link) return link;
 	for (const [delim, kind] of _RAPIER_TYPED_MARKS) {
+		if (!boundary && delim[0] === '_') continue;
 		if (!text.endsWith(delim)) continue;
 		const close = text.length - delim.length;
 		if (close < 1 || text[close - 1] === delim[0] || /\s/.test(text[close - 1])) continue;

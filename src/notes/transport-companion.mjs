@@ -10,7 +10,7 @@ import {objectKey, objectPrefix, listOptions, vaultName, verifyBytes, capabiliti
 export const COMPANION_CHUNK = 128 * 1024;
 export const COMPANION_MAX_BYTES = 300000000;
 // Rapier Sync's refusal codes, as the engine's provider codes. The companion's own words never reach the page.
-const CODES = Object.freeze({NOT_CONFIGURED: 'config', AUTH: 'auth', PERMISSION: 'permission', RATE: 'rate', SERVER: 'server',
+const CODES = Object.freeze({NOT_CONFIGURED: 'config', PRO_REQUIRED: 'pro_required', AUTH: 'auth', PERMISSION: 'permission', RATE: 'rate', SERVER: 'server',
 	NETWORK: 'network', UNCONFIRMED: 'network', PAUSED: 'cancelled', BUSY: 'rate', TOO_LARGE: 'too_large', BUCKET: 'bucket',
 	REDIRECT: 'redirect', DIGEST: 'ciphertext', ABSENT: 'response', PROTOCOL: 'protocol', CAPABILITY: 'protocol', AUTHORITY: 'authority'});
 

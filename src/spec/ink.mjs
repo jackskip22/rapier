@@ -7,7 +7,105 @@
 // unit (px) unless its name says em; the stored form is hundredths of an em.
 import { INK_PATH_MAX } from './md-marks.mjs';
 
-// The margins, in em, written here once and in the brief.
+// Layout needs the stored mark only; stroke recognition and encoding stay with the editor below.
+const inkGeometry = () => {
+	// SPDX-License-Identifier: MIT
+	const INK_LAYOUT_EM = Object.freeze({
+		asDrawn: 0.10,     // derive: within a tenth of the stored box is as drawn (the brief, §3)
+		ringPad: 0.15,     // a re-derived ring stands this far outside its fragment
+	});
+
+	function bounds(points) {
+		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		for (const p of points) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+		return points.length ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : { x: 0, y: 0, width: 0, height: 0 };
+	}
+
+	function unionBox(boxes) {
+		if (!boxes.length) return null;
+		const x = Math.min(...boxes.map(b => b.x)), y = Math.min(...boxes.map(b => b.y));
+		return { x, y, width: Math.max(...boxes.map(b => b.x + b.width)) - x, height: Math.max(...boxes.map(b => b.y + b.height)) - y };
+	}
+
+	function decodePath(path, origin, em) {
+		return path.map(([x, y]) => ({ x: origin.x + x * em / 100, y: origin.y + y * em / 100 }));
+	}
+
+	const fit = (path, box, target, em) => {
+		const w = box[0] || 1, h = box[1] || 1;
+		return path.map(([x, y]) => ({ x: target.x + x / w * target.width, y: target.y + y / h * target.height }));
+	};
+	const within = (value, stored, fraction) => Math.abs(value - stored) <= fraction * Math.max(stored, 1e-9);
+
+	// Connect actual fragments, never the empty area inside a wrapped span's union box.
+	function arrowEndpoints(tails, heads) {
+		let endpoints = null, distance = Infinity;
+		for (const tail of tails) for (const head of heads) {
+			const a = { x: tail.x + tail.width / 2, y: tail.y + tail.height / 2 };
+			const b = { x: head.x + head.width / 2, y: head.y + head.height / 2 };
+			const d = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+			if (d > 0 && d < distance) { distance = d; endpoints = [a, b]; }
+		}
+		return endpoints;
+	}
+
+	function deriveArrow(mark, tails, heads, em) {
+		const ends = arrowEndpoints(tails, heads);
+		if (!ends) return [];
+		const [a, b] = ends, dx = b.x - a.x, dy = b.y - a.y;
+		const path = mark.path || [], first = path[0], last = path[path.length - 1];
+		const sx = first && last ? last[0] - first[0] : 0, sy = first && last ? last[1] - first[1] : 0;
+		const squared = sx * sx + sy * sy;
+		const shaft = squared ? path.map(([x, y]) => {
+			const along = ((x - first[0]) * sx + (y - first[1]) * sy) / squared;
+			const across = ((y - first[1]) * sx - (x - first[0]) * sy) / squared;
+			return { x: a.x + along * dx - across * dy, y: a.y + along * dy + across * dx };
+		}) : [a, b];
+		const prior = shaft.slice(0, -1).reverse().find(p => p.x !== b.x || p.y !== b.y) || a;
+		const length = Math.hypot(b.x - prior.x, b.y - prior.y), ux = (b.x - prior.x) / length, uy = (b.y - prior.y) / length;
+		const reach = Math.min(0.55 * em, Math.hypot(dx, dy) / 3), wing = reach * 0.5;
+		return [shaft, [{ x: b.x - reach * ux - wing * uy, y: b.y - reach * uy + wing * ux }, b,
+			{ x: b.x - reach * ux + wing * uy, y: b.y - reach * uy - wing * ux }]];
+	}
+
+	// The pieces to draw for one mark at this layout: fragments are the marked words' line boxes now, anchorBox the
+	// anchor word's box (free). As drawn while the frame still has the size it had; otherwise re-derived per fragment.
+	function deriveMark(mark, fragments, anchorBox, em, endFragments = []) {
+		const unit = em / 100;
+		if (mark.kind === 'end') return [];
+		if (mark.kind === 'arrow') return deriveArrow(mark, fragments, endFragments, em);
+		if ((mark.kind === 'under' || mark.kind === 'strike') && !mark.path?.length) {
+			return fragments.map(f => {
+				const y = f.y + f.height * (mark.kind === 'under' ? 0.95 : 0.5);
+				return [{ x: f.x, y }, { x: f.x + f.width, y }];
+			});
+		}
+		if (mark.kind === 'free') {
+			if (!anchorBox || !mark.at) return [];
+			return [decodePath(mark.path, { x: anchorBox.x + mark.at[0] * unit, y: anchorBox.y + mark.at[1] * unit }, em)];
+		}
+		if (!fragments.length || !mark.box) return [];
+		const U = unionBox(fragments);
+		const stored = { width: mark.box[0] * unit, height: mark.box[1] * unit };
+		if (mark.kind === 'bracket') {
+			if (!mark.at) return [];
+			const sy = stored.height ? U.height / stored.height : 1;
+			const origin = { x: U.x + mark.at[0] * unit, y: U.y + mark.at[1] * unit * sy };
+			return [mark.path.map(([x, y]) => ({ x: origin.x + x * unit, y: origin.y + y * unit * sy }))];
+		}
+		if (within(U.width, stored.width, INK_LAYOUT_EM.asDrawn) && within(U.height, stored.height, INK_LAYOUT_EM.asDrawn)) return [fit(mark.path, mark.box, U, em)];
+		if (mark.kind === 'ring') {
+			const pad = INK_LAYOUT_EM.ringPad * em;
+			return fragments.map(f => fit(mark.path, mark.box, { x: f.x - pad, y: f.y - pad, width: f.width + 2 * pad, height: f.height + 2 * pad }, em));
+		}
+		return fragments.map(f => fit(mark.path, mark.box, f, em));
+	}
+	return { INK_LAYOUT_EM, bounds, unionBox, decodePath, deriveMark, arrowEndpoints };
+};
+const { INK_LAYOUT_EM, bounds, unionBox, decodePath, deriveMark, arrowEndpoints } = inkGeometry();
+export { bounds, unionBox, decodePath, deriveMark, arrowEndpoints };
+
+// The margins, in em, written here once and in the brief; the export carries only the layout margins above.
 export const INK_EM = Object.freeze({
 	dot: 0.3,          // a stroke shorter than this is a dot: free
 	closeGap: 0.6,     // a loop closes when its ends are within this, or a fifth of its size
@@ -18,28 +116,38 @@ export const INK_EM = Object.freeze({
 	margin: 0.1,       // bracket: outside the words' column by at least this
 	reach: 0.15,       // under and strike: words within this of the stroke's ends are marked
 	simplify: 0.015,   // simplification's tolerance, before the path cap requires resampling
-	asDrawn: 0.10,     // derive: within a tenth of the stored box is as drawn (the brief, §3)
-	ringPad: 0.15,     // a re-derived ring stands this far outside its fragment
+	...INK_LAYOUT_EM,
 });
+
 const STRIKE_BAND = [0.25, 0.62]; // the stroke's mean height within the line's box, as a fraction of it
 const UNDER_BAND = [0.62, 1.15];
 
-export function bounds(points) {
-	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-	for (const p of points) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
-	return points.length ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : { x: 0, y: 0, width: 0, height: 0 };
+// Decide two word anchors at the lift. The lower edge belongs to an underline; a margin stroke has no tail.
+// A short turn back at the far tip is a drawn head, so the retained shaft ends at that tip, not at its wing.
+export function arrowStroke(points, words, em) {
+	if (!Array.isArray(points) || points.length < 2 || !Array.isArray(words)) return null;
+	const wordAt = p => words.find(w => p.x >= w.box.x && p.x <= w.box.x + w.box.width && p.y >= w.box.y && p.y < w.box.y + w.box.height * 0.82);
+	const first = points[0], tail = wordAt(first);
+	if (!tail || strokeLength(points) < INK_EM.dot * em) return null;
+	let tip = 0, far = 0;
+	for (let i = 1; i < points.length; i++) {
+		const d = Math.hypot(points[i].x - first.x, points[i].y - first.y);
+		if (d > far) { tip = i; far = d; }
+	}
+	if (tip > 0 && tip < points.length - 1 && far >= em) {
+		const p = points[tip], head = wordAt(p);
+		if (head && head !== tail && points.slice(tip + 1).every(q => Math.hypot(q.x - p.x, q.y - p.y) <= 1.25 * em)) {
+			return { tail, head, points: points.slice(0, tip + 1) };
+		}
+	}
+	const head = wordAt(points[points.length - 1]);
+	return head && head !== tail ? { tail, head, points } : null;
 }
 
 export function strokeLength(points) {
 	let total = 0;
 	for (let i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
 	return total;
-}
-
-export function unionBox(boxes) {
-	if (!boxes.length) return null;
-	const x = Math.min(...boxes.map(b => b.x)), y = Math.min(...boxes.map(b => b.y));
-	return { x, y, width: Math.max(...boxes.map(b => b.x + b.width)) - x, height: Math.max(...boxes.map(b => b.y + b.height)) - y };
 }
 
 const overlapsY = (a, b) => a.y < b.y + b.height && a.y + a.height > b.y;
@@ -227,39 +335,4 @@ export function encodeStroke(points, origin, size, em) {
 		box: [toStored(size.width, em), toStored(size.height, em)],
 		path: kept.map(p => [toStored(p.x - origin.x, em), toStored(p.y - origin.y, em)]),
 	};
-}
-
-export function decodePath(path, origin, em) {
-	return path.map(([x, y]) => ({ x: origin.x + x * em / 100, y: origin.y + y * em / 100 }));
-}
-
-const fit = (path, box, target, em) => {
-	const w = box[0] || 1, h = box[1] || 1;
-	return path.map(([x, y]) => ({ x: target.x + x / w * target.width, y: target.y + y / h * target.height }));
-};
-const within = (value, stored, fraction) => Math.abs(value - stored) <= fraction * Math.max(stored, 1e-9);
-
-// The pieces to draw for one mark at this layout: fragments are the marked words' line boxes now, anchorBox the
-// anchor word's box (free). As drawn while the frame still has the size it had; otherwise re-derived per fragment.
-export function deriveMark(mark, fragments, anchorBox, em) {
-	const unit = em / 100;
-	if (mark.kind === 'free') {
-		if (!anchorBox || !mark.at) return [];
-		return [decodePath(mark.path, { x: anchorBox.x + mark.at[0] * unit, y: anchorBox.y + mark.at[1] * unit }, em)];
-	}
-	if (!fragments.length || !mark.box) return [];
-	const U = unionBox(fragments);
-	const stored = { width: mark.box[0] * unit, height: mark.box[1] * unit };
-	if (mark.kind === 'bracket') {
-		if (!mark.at) return [];
-		const sy = stored.height ? U.height / stored.height : 1;
-		const origin = { x: U.x + mark.at[0] * unit, y: U.y + mark.at[1] * unit * sy };
-		return [mark.path.map(([x, y]) => ({ x: origin.x + x * unit, y: origin.y + y * unit * sy }))];
-	}
-	if (within(U.width, stored.width, INK_EM.asDrawn) && within(U.height, stored.height, INK_EM.asDrawn)) return [fit(mark.path, mark.box, U, em)];
-	if (mark.kind === 'ring') {
-		const pad = INK_EM.ringPad * em;
-		return fragments.map(f => fit(mark.path, mark.box, { x: f.x - pad, y: f.y - pad, width: f.width + 2 * pad, height: f.height + 2 * pad }, em));
-	}
-	return fragments.map(f => fit(mark.path, mark.box, f, em));
 }

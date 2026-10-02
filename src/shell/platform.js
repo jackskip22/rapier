@@ -166,20 +166,20 @@ const RAPIER_STORAGE_SCOPE = (function () {
 const RapierStorage = Object.freeze({
 	scope: RAPIER_STORAGE_SCOPE,
 	preferences: Object.freeze({
-		// Amber's hex became the Cloudflare orange (the founder, 29 September 2026): a saved '#F5A623' is read as it, not reset.
-		accent:         Object.freeze({ key: 'rapier:preference:accent',            fallback: '#12A594', values: RAPIER_ACCENT_VALUES, legacy: Object.freeze({ '#F5A623': '#F38020' }) }),
+		accent:         Object.freeze({ key: 'rapier:preference:accent',            fallback: '#12A594', values: RAPIER_ACCENT_VALUES }),
 		// Law 52: a fresh Rapier follows the device's light or dark setting.
 		theme:          Object.freeze({ key: 'rapier:preference:theme',             fallback: 'system', values: Object.freeze(['dark', 'light', 'system']) }),
 		fontSize:       Object.freeze({ key: 'rapier:preference:font-size',         fallback: 'md', values: Object.freeze(['sm', 'md', 'lg', 'xl']) }),
 		checker:        Object.freeze({ key: 'rapier:preference:checker',           fallback: true }),
 		lineNums:       Object.freeze({ key: 'rapier:preference:line-numbers',      fallback: 'auto', values: Object.freeze(['auto', 'off', 'selected', 'all']) }),
 		imageStorage:   Object.freeze({ key: 'rapier:preference:image-storage', fallback: 'jxl', values: Object.freeze(['jxl', 'original']) }),
+		inkStylus:      Object.freeze({ key: 'rapier:preference:ink-stylus',        fallback: 'on', values: Object.freeze(['on', 'off']) }),
 		wrap:           Object.freeze({ key: 'rapier:preference:wrap',              fallback: true }),
 		dim:            Object.freeze({ key: 'rapier:preference:dim',               fallback: 'dim', values: Object.freeze(['dim', 'full']) }),
 		lineFit:        Object.freeze({ key: 'rapier:preference:line-fit',          fallback: 'truncate', values: Object.freeze(['truncate', 'resize']) }),
 		readOnly:       Object.freeze({ key: 'rapier:preference:read-only',         fallback: false }),
 		showPlayButton: Object.freeze({ key: 'rapier:preference:show-play-button',  fallback: false }),
-		highlights:     Object.freeze({ key: 'rapier:preference:highlights',        fallback: 'standard', values: Object.freeze(['standard', 'accent', 'off']) }),
+		highlights:     Object.freeze({ key: 'rapier:preference:highlights',        fallback: 'standard', values: Object.freeze(['standard', 'accent']) }),
 		highlightColor: Object.freeze({ key: 'rapier:preference:highlight-color',  fallback: 'default', values: Object.freeze(['default', 'green', 'red', 'blue', 'yellow', 'purple']) }),
 		headings:       Object.freeze({ key: 'rapier:preference:headings',          fallback: 'expanded', values: Object.freeze(['off', 'collapsed', 'expanded']) }),
 		// An app preference, never a document fact.
@@ -206,7 +206,6 @@ const RapierStorage = Object.freeze({
 	readingPoints: 'rapier:recovery:reading-points' + RAPIER_STORAGE_SCOPE,
 	writerLease: 'rapier:recovery:writer:v1' + RAPIER_STORAGE_SCOPE,
 	embedDraftPrefix: 'rapier:embed:draft' + RAPIER_STORAGE_SCOPE + ':',
-	welcomeVersion: 'rapier:welcome:v1' + RAPIER_STORAGE_SCOPE,
 	optional: Object.freeze({
 		mathDb: 'rapier:cache:math',
 		mathLocalPrefix: 'rapier:cache:math:',
@@ -300,8 +299,6 @@ return Object.freeze({
 				return spec.fallback;
 			}
 		}
-		// A value the preference once admitted and has since given up is read as the one that took its place, so a saved choice is kept.
-		if (spec.legacy && typeof value === 'string' && Object.prototype.hasOwnProperty.call(spec.legacy, value)) value = spec.legacy[value];
 		if (_preferenceAdmits(spec, value)) return value;
 		if (!platform || platform.preferences.ownsStore !== true || typeof platform.preferences.read !== 'function') {
 			try { localStorage.removeItem(spec.key); } catch (_) {}
@@ -364,6 +361,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	const _nativeHostRuntime = Object.seal({
 		sequence: 0,
 		pending: new Map(),
+		dictationSession: '',
 		ready: null,
 		transport: null,
 		state: Object.seal({
@@ -467,6 +465,10 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	}
 
 	function _nativeHostEvent(name, detail) {
+		if (name === 'reminders.actionsChanged') {
+			if (typeof window.rapierNotesReceiveReminderActions === 'function') window.rapierNotesReceiveReminderActions();
+			return;
+		}
 		if (name === 'document.saveResult') {
 			try { window.dispatchEvent(new CustomEvent('rapier:platform-save-result', { detail: detail || {} })); } catch (_) {}
 			var saveRequestId = String(detail && detail.requestId || '');
@@ -708,7 +710,11 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			return;
 		}
 		if (type === 'frame') {
-			_nativeIntakeChunk(data);
+			try { _nativeIntakeChunk(data); } catch (error) {
+				// A fault here must not leave the app waiting out its clock: it learns the failure by name.
+				var open = _nativeIntakeRuntime.transfer;
+				if (open) _nativeIntakeReject(open, error instanceof Error ? error : new Error(String(error)));
+			}
 			return;
 		}
 		if (type === 'end') {
@@ -795,14 +801,23 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		return Promise.reject(new Error('native document transport is unavailable'));
 	}
 
+	// The page says it is ready for a document only once the seam the bytes cross (shell/native-transport.mjs,
+	// published by the shared runtime stage) is in the page. This platform stage runs first, and the runtime
+	// loader inflates the later stages asynchronously, so a 'ready' sent here had the app's first chunk arrive
+	// in that gap, refused as "the native transport is not part of this page", and the hand-over cancelled:
+	// the fault the founder's phone showed on 2 October. The listener is installed at once; the word waits.
 	if (window.RapierIntake && typeof window.RapierIntake.postMessage === 'function') {
-		try {
-			window.RapierIntake.onmessage = _nativeIntakeOnMessage;
-			window.RapierIntake.postMessage(JSON.stringify({
-				type: 'ready',
-				session: Date.now().toString(36) + Math.random().toString(36).slice(2),
-			}));
-		} catch (_) {}
+		try { window.RapierIntake.onmessage = _nativeIntakeOnMessage; } catch (_) {}
+		var announce = function () {
+			try {
+				window.RapierIntake.postMessage(JSON.stringify({
+					type: 'ready',
+					session: Date.now().toString(36) + Math.random().toString(36).slice(2),
+				}));
+			} catch (_) {}
+		};
+		if (window.RapierNativeTransport) announce();
+		else window.addEventListener('rapier:runtime-loaded', announce, { once: true });
 	}
 
 	function _installNativeSpeechSynthesis() {
@@ -2761,8 +2776,9 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		return Object.freeze({
 			saveAs: raw.saveAs && async function (blob, filename, options) {
 				var keep = _rapierKeep(), authority = String(options && options.documentAuthority || '').trim();
-				// A note open in Notes is already kept there: its Save As is a file on this device.
-				if (!keep || !authority || authority.indexOf('notes:') === 0) return raw.saveAs(blob, filename, options);
+				// A note open in Notes is already kept there: its Save As is a file on this device. Without syncing on,
+				// there is nothing to ask (the founder, 2 October): the device is the one place.
+				if (!keep || !authority || authority.indexOf('notes:') === 0 || !keep.synced()) return raw.saveAs(blob, filename, options);
 				var choice = await keep.ask('save');
 				// Saved on the device, the document belongs to that file from now on, not to a kept one.
 				if (choice === 'secondary') { _rapierKeptUnbind(authority); return raw.saveAs(blob, filename, options); }
@@ -2793,7 +2809,8 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			generation: function (authority) { var bound = _rapierKeptBinding(authority); return bound ? bound.digest : raw.generation ? raw.generation(authority) : null; },
 			open: raw.open && async function () {
 				var keep = _rapierKeep();
-				if (!keep) return raw.open.apply(null, arguments);
+				// The same rule as Save As: no cloud storage connected, no question; Open is the device's picker.
+				if (!keep || !keep.synced()) return raw.open.apply(null, arguments);
 				var choice = await keep.ask('open');
 				if (choice === 'secondary') return raw.open.apply(null, arguments);
 				if (choice === true) await keep.show();
@@ -2895,6 +2912,8 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get printCurrentDocument() { return method('printCurrentDocument'); },
 			get requestClose() { return method('requestClose'); },
 			get notesStore() { return method('notesStore'); },
+			get shareInbox() { return method('shareInbox'); },
+			get readShared() { return method('readShared'); },
 			get openAttachment() { return method('openAttachment'); },
 			get unlockNotes() { return method('unlockNotes'); },
 			get captureReady() { return method('captureReady'); },
@@ -2905,9 +2924,15 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get openSync() { return method('openSync'); },
 			get scheduleReminder() { return method('scheduleReminder'); },
 			get reminderState() { return method('reminderState'); },
+			get reminderActions() { return method('reminderActions'); },
+			get acknowledgeReminderActions() { return method('acknowledgeReminderActions'); },
 			get requestReminderPermission() { return method('requestReminderPermission'); },
 			get openReminderSettings() { return method('openReminderSettings'); },
 			get openMicrophoneSettings() { return method('openMicrophoneSettings'); },
+			get dictationState() { return method('dictationState'); },
+			get startDictation() { return method('startDictation'); },
+			get stopDictation() { return method('stopDictation'); },
+			get cancelDictation() { return method('cancelDictation'); },
 			get approveClose() { return method('approveClose'); },
 			get publishDirty() { return kept('publishDirty', 'publishDirty'); },
 			get publishTitle() { return method('publishTitle'); },
@@ -3258,8 +3283,43 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get reminderState() {
 				return _nativeCapability('reminders') ? function () { return _nativeHostCall('reminders.state', {}); } : null;
 			},
+			get dictationState() {
+				return _nativeCapability('nativeDictation') ? function () { return _nativeHostCall('dictation.state', {}); } : null;
+			},
+			get startDictation() {
+				return _nativeCapability('nativeDictation') ? function () {
+					if (_nativeHostRuntime.dictationSession) return Promise.reject(new Error('Transcription is already listening.'));
+					var session = 'dictation-' + Date.now().toString(36) + '-' + (++_nativeHostRuntime.sequence).toString(36);
+					_nativeHostRuntime.dictationSession = session;
+					return _nativeHostCall('dictation.start', {session: session}, 300000).catch(function (error) {
+						// A timeout or old rejection can only release the microphone owned by that request.
+						_nativeHostNotify('dictation.cancel', {session: session}); throw error;
+					}).finally(function () {
+						if (_nativeHostRuntime.dictationSession === session) _nativeHostRuntime.dictationSession = '';
+					});
+				} : null;
+			},
+			get stopDictation() {
+				return _nativeCapability('nativeDictation') ? function () {
+					var session = _nativeHostRuntime.dictationSession;
+					return session ? _nativeHostCall('dictation.stop', {session: session}) : Promise.resolve({});
+				} : null;
+			},
+			get cancelDictation() {
+				return _nativeCapability('nativeDictation') ? function () {
+					var session = _nativeHostRuntime.dictationSession;
+					_nativeHostRuntime.dictationSession = '';
+					return session ? _nativeHostCall('dictation.cancel', {session: session}) : Promise.resolve({});
+				} : null;
+			},
 			get requestReminderPermission() {
 				return _nativeCapability('reminders') ? function () { return _nativeHostCall('reminders.permission', {}, 300000); } : null;
+			},
+			get reminderActions() {
+				return _nativeCapability('reminders') ? function () { return _nativeHostCall('reminders.actions', {}); } : null;
+			},
+			get acknowledgeReminderActions() {
+				return _nativeCapability('reminders') ? function (tokens) { return _nativeHostCall('reminders.ack', {tokens}); } : null;
 			},
 			get openReminderSettings() {
 				return _nativeCapability('reminders') ? async function (kind) {
@@ -3276,6 +3336,25 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			},
 			get openAttachment() {
 				return _nativeCapability('notesAttachmentOpen') ? function (name) { return _nativeHostCall('notes.attachment.open', {name}); } : null;
+			},
+			get shareInbox() {
+				return _nativeCapability('shareInbox') ? function (operation, args) {
+					if (!['list', 'ack'].includes(operation)) throw new Error('Unknown share inbox operation');
+					return _nativeHostCall('shares.' + operation, args || {});
+				} : null;
+			},
+			get readShared() {
+				return _nativeCapability('shareInbox') ? async function (entry) {
+					if (!Number.isSafeInteger(entry?.size) || entry.size < 0 || entry.size > 300000000) throw new Error('Invalid shared file size');
+					const chunks = [];
+					for (let offset = 0; offset < entry.size;) {
+						const size = Math.min(65536, entry.size - offset);
+						const value = await _nativeHostCall('shares.read.chunk', {id: entry.id, offset, size});
+						if (value.offset !== offset || !(value.bytes instanceof Uint8Array) || value.bytes.length !== size) throw new Error('Incomplete shared file');
+						chunks.push(value.bytes); offset += size;
+					}
+					return new Blob(chunks, {type: entry.mime});
+				} : null;
 			},
 			get unlockNotes() {
 				return _nativeCapability('notesCapture') ? function () { return _nativeHostCall('notes.unlock', {}); } : null;

@@ -146,7 +146,7 @@
           },
           {
             "property": "bottom",
-            "value": "calc(16px + env(safe-area-inset-bottom, 0px))",
+            "value": "calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)))",
             "important": false
           },
           {
@@ -280,22 +280,22 @@
           },
           {
             "property": "left",
-            "value": "0",
+            "value": "var(--draw-safe-left)",
             "important": false
           },
           {
             "property": "right",
-            "value": "0",
+            "value": "var(--draw-safe-right)",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "0",
+            "value": "var(--draw-safe-bottom)",
             "important": false
           },
           {
             "property": "top",
-            "value": "calc(env(safe-area-inset-top,0px) + var(--draw-cell) + 2 * var(--space-1))",
+            "value": "calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))",
             "important": false
           }
         ]
@@ -348,12 +348,12 @@
         "declarations": [
           {
             "property": "left",
-            "value": "0",
+            "value": "var(--draw-safe-left)",
             "important": false
           },
           {
             "property": "right",
-            "value": "0",
+            "value": "var(--draw-safe-right)",
             "important": false
           },
           {
@@ -965,17 +965,17 @@
           },
           {
             "property": "left",
-            "value": "0",
+            "value": "var(--notes-safe-left)",
             "important": false
           },
           {
             "property": "right",
-            "value": "0",
+            "value": "var(--notes-safe-right)",
             "important": false
           },
           {
             "property": "bottom",
-            "value": "env(safe-area-inset-bottom,0px)",
+            "value": "var(--notes-safe-bottom)",
             "important": false
           },
           {
@@ -1089,7 +1089,7 @@
           },
           {
             "property": "inset",
-            "value": "auto 0 0",
+            "value": "auto var(--notes-safe-right) 0 var(--notes-safe-left)",
             "important": false
           }
         ]

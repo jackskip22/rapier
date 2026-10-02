@@ -24,14 +24,45 @@
 	font-weight: inherit !important;
 }
 
-/* Accent: the theme's own tokens, so light and dark follow without a rule of their own. */
+/* Accent is a palette over the same GPULexer/CPU tokens, never another lexer.
+   Colour is evaluated on each token: a body.light override and a live accent change
+   must reach it, rather than freezing a derived value on an ancestor. */
+html[data-highlights="accent"] {
+	--tok-accent-l: .80;
+	--tok-accent-comment-l: .66;
+	--tok-accent-cool: #99bfdc;
+	--tok-accent-leaf: #b0ce9a;
+	--tok-accent-warm: #deb18a;
+	--tok-accent-violet: #c6aadf;
+}
+html[data-highlights="accent"] body.light {
+	--tok-accent-l: .42;
+	--tok-accent-comment-l: .45;
+	--tok-accent-cool: #285876;
+	--tok-accent-leaf: #3b642f;
+	--tok-accent-warm: #77512e;
+	--tok-accent-violet: #684580;
+}
+/* Compatible fallback for WebViews without relative colour syntax. */
 html[data-highlights="accent"] .tok-comment { color: var(--color-text-subtle); font-style: italic; }
-html[data-highlights="accent"] .tok-keyword,
-html[data-highlights="accent"] .tok-constant,
-html[data-highlights="accent"] .tok-type,
-html[data-highlights="accent"] .tok-function { color: var(--color-accent-text); font-weight: 600; }
-html[data-highlights="accent"] .tok-string { color: var(--color-text-secondary); }
-html[data-highlights="accent"] .tok-number { color: var(--color-text); }
+html[data-highlights="accent"] .tok-keyword { color: var(--color-accent-text); font-weight: 600; }
+html[data-highlights="accent"] .tok-constant { color: color-mix(in srgb, var(--color-accent-text) 70%, var(--tok-accent-violet)); font-weight: 600; }
+html[data-highlights="accent"] .tok-type { color: color-mix(in srgb, var(--color-accent-text) 65%, var(--tok-accent-cool)); font-weight: 600; }
+html[data-highlights="accent"] .tok-function { color: color-mix(in srgb, var(--color-accent-text) 82%, var(--color-text)); font-weight: 600; }
+html[data-highlights="accent"] .tok-string { color: color-mix(in srgb, var(--color-accent-text) 60%, var(--tok-accent-leaf)); }
+html[data-highlights="accent"] .tok-number { color: color-mix(in srgb, var(--color-accent-text) 60%, var(--tok-accent-warm)); }
+/* Constant perceptual lightness keeps the palette readable on each paper; bounded
+   chroma avoids neon. A neutral accent deliberately stays neutral. Operators and
+   plain text keep the normal text colour. Standard remains entirely unchanged. */
+@supports (color: oklch(from red .8 min(c, .12) calc(h + 30))) {
+	html[data-highlights="accent"] .tok-keyword { color: oklch(from var(--color-accent-text) var(--tok-accent-l) min(c, .12) h); }
+	html[data-highlights="accent"] .tok-constant { color: oklch(from var(--color-accent-text) var(--tok-accent-l) min(c, .12) calc(h - 90)); }
+	html[data-highlights="accent"] .tok-type { color: oklch(from var(--color-accent-text) var(--tok-accent-l) min(c, .12) calc(h - 45)); }
+	html[data-highlights="accent"] .tok-function { color: oklch(from var(--color-accent-text) var(--tok-accent-l) min(c, .12) calc(h + 30)); }
+	html[data-highlights="accent"] .tok-string { color: oklch(from var(--color-accent-text) var(--tok-accent-l) min(c, .12) calc(h + 65)); }
+	html[data-highlights="accent"] .tok-number { color: oklch(from var(--color-accent-text) var(--tok-accent-l) min(c, .12) calc(h + 135)); }
+	html[data-highlights="accent"] .tok-comment { color: oklch(from var(--color-accent-text) var(--tok-accent-comment-l) min(c, .025) h); }
+}
 
 /* Standard: One Dark on dark paper, One Light on light. The palette is two rules of custom
    properties, so a page written for the system theme (which has no body.light to switch) retints
@@ -50,19 +81,3 @@ html[data-highlights="standard"] .tok-string { color: var(--tok-string); }
 html[data-highlights="standard"] .tok-number { color: var(--tok-number); }
 html[data-highlights="standard"] .tok-type,
 html[data-highlights="standard"] .tok-function { color: var(--tok-type); font-weight: 600; }
-
-/* Off: every token in the text colour; the source rows keep their place. */
-html[data-highlights="off"] .tok,
-html[data-highlights="off"] .source-highlight code,
-html[data-highlights="off"] .tok *:not(.tok-line),
-html[data-highlights="off"] .source-highlight code *:not(.tok-line) {
-	color: var(--color-text) !important;
-	font-weight: inherit !important;
-	font-style: inherit !important;
-	background: transparent !important;
-}
-html[data-highlights="off"] .source-highlight code .tok-line {
-	color: var(--color-text) !important;
-	font-weight: inherit !important;
-	font-style: inherit !important;
-}

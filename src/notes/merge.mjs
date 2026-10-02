@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Exact source survives; only an inspected conflict choice may remove a variant.
-import {isNoteFile, isCodeFile} from './model.mjs';
+import {isNoteFile, isCodeFile, cleanRemind} from './model.mjs';
 
 function textFault(code, message) { return Object.assign(new Error(message), {code}); }
 export function canonicalNote(text) {
@@ -405,9 +405,11 @@ function ixValidate(index, ids = false) {
 		if (ixOwn(entry, 'order') && (typeof entry.order !== 'string' || !/^[0-9A-Za-z]*$/.test(entry.order))) ixFail('invalid order key');
 		if (ixOwn(entry, 'remind')) {
 			const r = entry.remind;
-			if (!ixRecord(r) || !Number.isSafeInteger(r.at) || r.at < 0 || (ixOwn(r, 'repeat') && !['daily', 'weekly', 'monthly', 'yearly'].includes(r.repeat))) ixFail('invalid reminder');
+			if (!ixRecord(r) || !cleanRemind(r)) ixFail('invalid reminder');
 		}
 		if (ixOwn(entry, 'remindDone') && (!Number.isSafeInteger(entry.remindDone) || entry.remindDone < 0)) ixFail('invalid reminder acknowledgement');
+		if (ixOwn(entry, 'remindSnoozedUntil') && (!Number.isSafeInteger(entry.remindSnoozedUntil) || entry.remindSnoozedUntil < 0 || entry.remindSnoozedUntil > 8_640_000_000_000_000)) ixFail('invalid reminder snooze');
+		if (ixOwn(entry, 'remindAction') && (typeof entry.remindAction !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(entry.remindAction))) ixFail('invalid reminder action');
 	}
 	if (ixOwn(index, 'sections')) {
 		if (!Array.isArray(index.sections)) ixFail('invalid sections');

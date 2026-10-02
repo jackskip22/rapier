@@ -634,9 +634,8 @@ function _rapierDrawMulberry32(seed) {
 // shape's own id, so copy/duplicate (which remints ids for identity, never this) keeps a shape's
 // random appearance exactly -- a duplicated sketch, stipple, sphere or wood grain looks the same as
 // its original, texture for texture, the way its position and size already do. Minted once at
-// creation (draw.js) and carried by admission through every load and edit; a shape old enough to
-// predate this field (or foreign input that omits it) falls back to its own id, exactly the seed it
-// already rendered with before this field existed -- no visual change on a plain reopen.
+// creation (draw.js) and carried by admission through every load and edit; a shape that has none
+// (foreign input omits it) falls back to its own id.
 function _rapierDrawShapeSeedBase(shape) { return shape.seed != null ? String(shape.seed) : String(shape.id || 'g'); }
 
 // D03/D05: an OBJECT frame for procedural texture, anchored to the polygon's own vertices rather
