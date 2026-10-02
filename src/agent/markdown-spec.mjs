@@ -248,6 +248,17 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 			}
 		});
 	}
+	instance.core.ruler.after('block', 'rapier-fence-boundaries', function rapierFenceBoundaries(state) {
+		for (const token of state.tokens) {
+			if (token.type !== 'fence' || !token.map) continue;
+			// The parser's span includes the opener and an explicit closer, when present.
+			// Its body has container prefixes removed, so quotes/lists need no second fence grammar.
+			const body = token.content;
+			let lines = body && !body.endsWith('\n') ? 1 : 0;
+			for (let at = body.indexOf('\n'); at >= 0; at = body.indexOf('\n', at + 1)) lines++;
+			token.meta = { ...token.meta, rapierFenceClosed: token.map[1] - token.map[0] === lines + 2 };
+		}
+	});
 	if (spec.linkify) instance.linkify.set(spec.linkify);
 	if (spec.core && spec.core.retainReferenceDefinitions) {
 		instance.core.ruler.disable('strip_references');

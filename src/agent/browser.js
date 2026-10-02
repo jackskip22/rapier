@@ -44,6 +44,7 @@
   let comparisonOwner = null, comparisonKernelId = null, comparisonGeneration = -1, remoteComparison = null;
   let contextSequence = 0, humanSequence = 0, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, policyAvailable = false, remoteReview = null, projecting = 0, viewFlight = null;
+  let visualFlight = null;
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   ready.catch(() => {});
   const fail = (reason, outcome = 'refused') => ({ok: false, outcome, reason});
@@ -957,6 +958,85 @@
         within: requirements.within, offset: requirements.offset} : {}), value};
   }
 
+  // Pixels are an observation of exactly this source, never a source handle. Apps supplies its
+  // already-verified local snapshot separately because local and server revision counters differ.
+  async function inspectVisual(request, expected) {
+    await ready;
+    const identity = {documentId: request?.documentId, revision: request?.revision, scope: request?.scope};
+    const refuse = reason => ({...identity, outcome: 'refused', reason});
+    if (request?.signal?.aborted) return refuse('cancelled');
+    if (visualFlight) return refuse('visual_capture_busy');
+    if (request?.kind !== 'visual' || !['viewport', 'page', 'focus', 'selection'].includes(request.scope))
+      return refuse('visual_target_unavailable');
+    if (admission() || !visible()) return refuse('host_not_connected');
+    if (hostFence()) return refuse(hostFence());
+    if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source' || rapier.compare?.active)
+      return refuse('visual_render_unavailable');
+    const hand = await humanContext();
+    const localRevision = expected?.expectedRevision ?? request.revision;
+    if (!hand.ok || hand.context.editing) return refuse('human_edit_in_progress');
+    if (hand.documentId !== request.documentId || hand.revision !== localRevision ||
+        (expected && (expected.expectedDocumentId !== hand.documentId || expected.expectedText !== hand.text ||
+          expected.expectedGeneration !== hand.generation))) return refuse('document_changed');
+    const root = document.getElementById('editor-blocks');
+    if (!root || !globalThis.RapierVisualCapture?.captureVisual) return refuse('visual_render_unavailable');
+    const target = request.scope === 'focus' || request.scope === 'selection' ? hand.context[request.scope] : null;
+    if (target && (target.start !== request.sourceRange?.start || target.end !== request.sourceRange?.end))
+      return refuse('visual_target_changed');
+    if (['focus', 'selection'].includes(request.scope) && (!target || target.end <= target.start))
+      return refuse('visual_target_missing');
+    const sequence = humanSequence, generation = hand.generation, text = hand.text;
+    const geometry = [root.scrollLeft, root.scrollTop, root.clientWidth, root.clientHeight];
+    const rootRect = root.getBoundingClientRect();
+    let clip;
+    if (request.scope === 'page') clip = {x: 0, y: 0, width: root.clientWidth, height: root.scrollHeight};
+    else if (request.scope === 'viewport') clip = {x: root.scrollLeft, y: root.scrollTop, width: root.clientWidth, height: root.clientHeight};
+    else {
+      const held = request.scope === 'focus' && root.querySelector('img[data-rapier-image-selected]');
+      let bounds = held?.getBoundingClientRect();
+      if (!bounds && request.scope === 'selection') {
+        const selection = window.getSelection();
+        const selected = selection?.rangeCount && selection.getRangeAt(0);
+        if (selected && root.contains(selected.commonAncestorContainer)) bounds = selected.getBoundingClientRect();
+      }
+      if (!bounds && request.scope === 'focus') {
+        const spans = _rapierExcerptCanonicalBlockSpans();
+        const wrappers = [...root.querySelectorAll(':scope > .block-wrapper')].filter(wrapper => {
+          const span = spans.get(_rapierBoundBlock(wrapper)?.id);
+          return span && span.start < target.end && span.end > target.start;
+        });
+        if (wrappers.length && !wrappers.some(wrapper => wrapper._rapierDormant)) {
+          const boxes = wrappers.map(wrapper => wrapper.getBoundingClientRect());
+          bounds = {left: Math.min(...boxes.map(box => box.left)), right: Math.max(...boxes.map(box => box.right)),
+            top: Math.min(...boxes.map(box => box.top)), bottom: Math.max(...boxes.map(box => box.bottom))};
+          bounds.width = bounds.right - bounds.left; bounds.height = bounds.bottom - bounds.top;
+        }
+      }
+      if (!bounds?.width || !bounds?.height) return refuse('visual_target_unavailable');
+      clip = {x: bounds.left - rootRect.left + root.scrollLeft, y: bounds.top - rootRect.top + root.scrollTop,
+        width: bounds.width, height: bounds.height};
+    }
+    if (visualFlight) return refuse('visual_capture_busy');
+    const controller = new AbortController(), abortCapture = () => controller.abort(request.signal?.reason);
+    request.signal?.addEventListener('abort', abortCapture, {once: true});
+    if (request.signal?.aborted) abortCapture();
+    visualFlight = controller;
+    const current = () => visible() && !admission() && !hostFence() && !editing() && humanSequence === sequence &&
+      String(rapier.identity.authority) === hand.documentId && Number(rapier.revision.settled) === localRevision &&
+      Number(rapier.revision.generation) === generation && _rapierSourceText() === text &&
+      geometry.every((value, index) => value === [root.scrollLeft, root.scrollTop, root.clientWidth, root.clientHeight][index]);
+    try {
+      const image = await globalThis.RapierVisualCapture.captureVisual({root, clip, signal: controller.signal, current});
+      if (!current()) return refuse('document_changed');
+      return {...identity, outcome: 'ok', image, ...(target ? {sourceRange: {start: target.start, end: target.end}} : {})};
+    } catch (error) {
+      return refuse(request.signal?.aborted ? 'cancelled' : error?.code || 'visual_render_unavailable');
+    } finally {
+      request.signal?.removeEventListener('abort', abortCapture);
+      if (visualFlight === controller) visualFlight = null;
+    }
+  }
+
   // Drives the inline Will review UI for a pending{kind:'human-review'} whose review.kind is
   // 'inline' -- the same _rapierWillReviewOpen presentation host.review used to drive synchronously
   // inside the kernel. decide no longer blocks on it (docs/kernel.md, "The finding that remains"):
@@ -1121,7 +1201,7 @@
     const eager = measurementsRequired(name, args);
     const beforeText = _rapierSourceText();
     const run = async () => {
-      let world;
+      let world, visualFact;
       if (eager?.structure?.mode === 'outline') {
         const fact = await resolveStructureFact({mode: 'outline', filename: String(rapier.document.filename)});
         if (fact) world = {structure: fact};
@@ -1132,6 +1212,11 @@
       // not the kernel waiting on anything -- each iteration is its own fresh decide().
       for (let guard = 0; guard < 4 && result.outcome === 'pending'; guard++) {
         if (result.pending?.kind === 'surface-fact') {
+          if (result.pending.requirements?.kind === 'visual') {
+            visualFact = await inspectVisual({...result.pending.requirements, signal: who.signal});
+            result = await kernel.invoke(name, args, {...who, continues: result.pending.requestId, world: {visual: visualFact}});
+            continue;
+          }
           const fact = await resolveStructureFact(result.pending.requirements);
           if (!fact) break;
           result = await kernel.invoke(name, args, {...who, continues: result.pending.requestId, world: {structure: fact}});
@@ -1160,6 +1245,17 @@
           const receipt = await structureJob({text: afterText, filename: String(rapier.document.filename), mode: 'receipt', beforeText});
           if (receipt?.ok) result = {...result, structure: {...receiptStructureFact(beforeText, afterText, receipt), attestedBy: 'adapter'}};
         }
+      }
+      if (result.outcome === 'ok' && result.representation === 'visual' && result.observation) {
+        const requirements = {kind: 'visual', documentId: result.observation.documentId,
+          revision: result.observation.revision, scope: result.observation.scope,
+          ...(result.observation.sourceRange ? {sourceRange: result.observation.sourceRange} : {})};
+        // A read receipt may replay after its pixels were released. Re-observe that exact source
+        // and target; never return metadata alone as though an image had reached the caller.
+        visualFact ||= await inspectVisual({...requirements, signal: who.signal});
+        const validated = globalThis.RapierAgentVisual.visualResult(requirements, visualFact);
+        if (validated.outcome !== 'ok') return {...result, ...validated, observation: undefined};
+        return {...result, ...validated, content: [{type: 'image', mimeType: 'image/png', data: visualFact.image.data}]};
       }
       return result;
     };
@@ -1437,7 +1533,7 @@
 
   globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status,
     nameAtDoor, doorName: () => doorName,
-    replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy,
+    replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual,
     policyReady: () => policyAvailable, applyView, presentReview, dismissReview, presentationChanged, readFile, notify,
     pendingReviewSnapshot, reviewSnapshot, decideReviewChange, representPendingReview, agentRecoveryState,
     reviewDecidingChange: id => decidingChanges.has(id),
@@ -1450,12 +1546,12 @@
     document.addEventListener(type, humanActivity, {capture: true, passive: true});
   }
   document.addEventListener('visibilitychange', () => {
-    if (!visible()) { retainedPointer = null; viewFlight?.abort(); }
+    if (!visible()) { retainedPointer = null; viewFlight?.abort(); visualFlight?.abort(); }
     contextChanged('visibility');
   });
   window.addEventListener('blur', () => { contextChanged('blur'); });
   window.addEventListener('focus', () => { contextChanged('focus'); });
-  window.addEventListener('pagehide', retire);
+  window.addEventListener('pagehide', () => { visualFlight?.abort(); retire(); });
   window.addEventListener('pageshow', () => { void refresh(); });
   queueMicrotask(() => { void refresh(); });
 })();

@@ -97,7 +97,10 @@ function _rapierBuildDocumentIssues(facts, sourceText, lineStarts) {
 		const start = Number(fence.evidence && fence.evidence.openingStart);
 		const end = Number(fence.evidence && fence.evidence.openingEnd);
 		const marker = String(fence.evidence && fence.evidence.markup || fence.label || '```');
-		add('unclosed-fence', fence, 'Fenced code block opened here has no closing fence.', 'close-fence', start, end,
+		const message = fence.evidence?.language === 'mermaid'
+			? 'Mermaid block may be missing its closing ' + marker + ' fence.'
+			: 'Fenced code block opened here has no closing fence.';
+		add('unclosed-fence', fence, message, 'close-fence', start, end,
 			{ closingMarker: marker.charAt(0).repeat(Math.max(3, Number(fence.evidence && fence.evidence.minimumLength) || marker.length || 3)) });
 	}
 

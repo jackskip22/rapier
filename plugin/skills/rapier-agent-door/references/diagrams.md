@@ -4,9 +4,16 @@ Use a diagram when relationships, sequence, branching or position make an explan
 Keep the explanation beside it. Label assumptions and unknowns; a neat drawing does not verify a claim.
 Use the document's style and Rapier's defaults, short labels and prose explaining the important path.
 
-## One call for prose and a flowchart
+## Put the diagram in the working document
 
-Put this Markdown straight into `rapier.open.text`. No insertion marker or second drawing call is needed.
+For an open Rapier document, read the intended passage and insert Markdown through `document.apply_edits`,
+or use `document.draw` for native figures. A request to make a diagram is a request to make it there;
+do not ask the person to paste source that the available tools can insert.
+
+For a new workspace, put this Markdown straight into `rapier.open.text`. No insertion marker or second
+drawing call is needed. The four-backtick wrapper below displays the example only; send its contents
+as `text`. When showing source in chat, never nest Mermaid inside an outer triple-backtick fence.
+Use a wrapper longer than every backtick run in the source, or provide the Markdown file.
 
 ````md
 # When an order reaches the kitchen
@@ -34,6 +41,9 @@ promise them offline or assume a diagram type supported by the chat host is nati
 
 The fence stays Mermaid source. Native label editing changes node labels, captions and group titles;
 topology changes through inspected source edits. Use native drawings for freely movable geometry.
+Close a Mermaid block with the same marker character and at least the opening length before resuming prose.
+An unclosed block keeps the remaining text as literal source and shows a warning. Read the exact source
+and insert the missing fence at the intended boundary; do not delete trailing prose to make a diagram parse.
 If a refusal identifies unsupported syntax, simplify it without changing meaning or use native figures.
 Do not silently discard connections or claim that the result rendered without observation.
 

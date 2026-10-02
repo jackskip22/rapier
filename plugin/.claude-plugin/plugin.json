@@ -1,30 +1,38 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.31+skills.2fd29ce019cca6ff9aad8196cb2f2627e752d5fe7388567c2b5af897a0bc8814",
-  "description": "Explain, plan, write and create together on an editable page. Rapier combines prose, diagrams, movable drawings, painting and inspectable revisions so a person can explore an idea, change it and continue with the agent. Use when a visual explanation, substantial draft, plan, spatial sketch or meaningful revision benefits from shared editing, even without naming Rapier. Read current passages or drawing objects, change only what is needed, and preserve the person’s work. Deliver an offline editable page when a lasting file is wanted. Brief answers and chat-only requests stay in the conversation.",
+  "version": "1.1.32+skills.35d71c80c9d6861630b36443203b9b700a895aeb4087e10e223b79f9a3baf90d",
+  "description": "Rapier is a very fast Markdown editor in one HTML file: no server, no account, nothing collected, running on your device in any browser. Long documents open and scroll fast on a phone, so whatever your agent writes you can read, edit and keep. It edits code and plain text too, opens Word and PDF, and saves as Markdown, Word, PDF or a web page. Draw and paint with your agent on the same page: diagrams and drawings are editable SVG inside the Markdown, so the agent draws one, you move its boxes, and it changes it again. Pictures, tables, checklists, footnotes, a table of contents, light and dark. With this plugin the agent hands you a document as one page that opens with one click and works offline, or edits beside you, reading only the passage it needs and changing only that, and you keep or drop every change. The only thing that leaves your device is the document you share with the agent, kept for that chat and deleted after thirty idle days.",
   "author": {
     "name": "Jack Skipworth",
     "url": "https://rapier.website"
   },
   "homepage": "https://rapier.website/agents",
-  "icon": "./icon-512.png",
-  "privacyPolicyUrl": "https://mcp.rapier.website/privacy.html",
   "repository": "https://github.com/jackskip22/rapier",
   "license": "AGPL-3.0-only",
   "keywords": [
     "markdown",
     "editor",
+    "fast",
+    "phone",
+    "offline",
     "documents",
     "writing",
+    "code",
+    "word",
+    "docx",
+    "pdf",
     "drawing",
     "diagrams",
+    "svg",
+    "paint",
     "notes",
-    "offline",
     "review",
     "diff",
     "embed",
     "mcp",
     "self-contained markdown"
-  ]
+  ],
+  "icon": "./icon-512.png",
+  "privacyPolicyUrl": "https://mcp.rapier.website/privacy.html"
 }

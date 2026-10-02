@@ -18,10 +18,13 @@ Paint keeps transparency, and editable drawings stay readable on light or dark p
 
 Turn the supplied material into a populated document: useful headings, the actual content and any requested
 drawing. Keep supplied facts; mark missing information plainly. Use `rapier-markdown` for portable source.
-On the agent door, `rapier.open` takes that text; inspect `document.get_context` to learn whether the editor
-is shown. If it is headless, deliver a page through the available file/code host instead of repeating reveal
-or wait. Without a file/code surface, give the person the exact Markdown in the conversation to paste into
-https://rapier.website. Say which surface is available and whether the delivery is source or an editable page.
+Continue an open Rapier document with inspected edits or `document.draw`; a requested diagram belongs there.
+For a new workspace, `rapier.open` takes the actual Markdown without an outer display fence; inspect
+`document.get_context` to learn whether the editor is shown. If it is headless, deliver a page through the
+available file/code host instead of repeating reveal or wait. Only fall back to source in chat when the
+person asks for source or no usable tool or file surface exists. Never wrap Markdown containing Mermaid
+in another triple-backtick fence: use a wrapper longer than every backtick run in the source, or a file.
+Say which surface is available and whether the delivery is source or an editable page.
 A source handoff does not prove that a page opened.
 
 When a return is wanted, get `document.create_return` from the hosted workspace and add its one-use address
@@ -37,12 +40,12 @@ retained, and the person has a clear way to keep it and, when requested, return 
 With a shell, Node 22 or newer and the declared package release available on npm, `rapier-html` supplies the editor. If the pinned release is unavailable, use the installed page helper with the matching editor HTML when available; do not silently run a different release or claim a file was created:
 
 ```sh
-npx -- rapier-html@1.1.31 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.1.31 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
-npx -- rapier-html@1.1.31 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.1.31 proposal.md --base original.md    # opens on the diff, original against proposal
-npx -- rapier-html@1.1.31 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.1.31 notes.md out.html                 # a named output
+npx -- rapier-html@1.1.32 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.1.32 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
+npx -- rapier-html@1.1.32 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.1.32 proposal.md --base original.md    # opens on the diff, original against proposal
+npx -- rapier-html@1.1.32 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.1.32 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an output that exists is refused, so name a new one. The first `--` keeps npm from taking
@@ -61,6 +64,11 @@ layout and colour travel inside the page.
 - A long edit: hand the page instead of rewriting a hundred pages in the chat.
 
 ## Receive the person's edit
+
+Portable comments travel with the exact Markdown, including resolved threads and stale anchor information.
+Keep the source record when wrapping or unwrapping a page. A picture of the page cannot replace its editable
+source or authorize a write. For a live document's rendered pixels, use the door's `document.inspect_visual`
+with its current revision when an active editor is available.
 
 Call `document.create_return` on the agent door for your document, then pass its `return_url` and
 `return_expires_at` to `--return` and `--return-expires-at`, or `wrap`'s `return` and `return_expires_at` options. The person edits offline and presses Send back in Share when ready;
@@ -93,7 +101,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Hand the file as well when the viewer
   blocks downloads started inside it; apply the host's actual sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.31` and hand the page as a file; it opens
+- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.32` and hand the page as a file; it opens
   in any browser.
 - **A host that shows MCP apps (ChatGPT among them):** `rapier.open` requests the editor in the chat
   (`rapier-agent-door`).

@@ -10,6 +10,8 @@ import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput } from './catalog.mjs';
 import { _rapierTransformSplices as transformSplices } from '../editor/journal-records.mjs';
 import { pairMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
+import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentUndoSplice, imageCommentTarget} from './comments.mjs';
+import {visualRequest, visualResult} from './visual.mjs';
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
@@ -64,6 +66,10 @@ const HINTS = {
   outline_changed: 'The document changed during the call; call get_outline again.',
   search_changed: 'The document changed during the call; call find again.',
   read_snapshot_changed: 'The document changed during the call; read_context again.',
+  comment_missing: 'Call list_comments for the current thread ids before replying or resolving.',
+  comment_text_invalid: 'Send a nonempty comment of at most 4096 UTF-8 bytes.',
+  comment_anchor_invalid: 'Read the exact passage or drawing again, then use that handle and an existing object id.',
+  comments_appendix_unavailable: 'Finish the unclosed Markdown block at the end of the document before adding a comment.',
 };
 // The figure kinds draw/core.mjs admits (_rapierDrawFigureFault's kind check), answered beside a refused figures list.
 const FIGURE_KINDS = Object.freeze(['rect', 'ellipse', 'circle', 'triangle', 'diamond', 'hexagon', 'cylinder', 'subroutine', 'asymmetric', 'text', 'line', 'arrow', 'group']);
@@ -978,6 +984,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   function appendCommit(text, splices, who, operation, options = {}) {
     const baseRevision = state.revision, revision = options.revision == null ? baseRevision + 1 : options.revision;
     const agent = agentLabel(who.agent || options.agent);
+    // Only attest a derived footer row by recomputing it from the actual preceding source
+    // and edits. An imported journal's claim cannot turn an authored comment into metadata.
+    const tail = splices.at(-1), derived = options.derivedCommentIndex == null && who.actor === 'agent' && state.docKind === 'markdown' && splices.length > 1
+      ? commentSplices(state.text, splices.slice(0, -1))[0] : null;
+    const derivedCommentIndex = options.derivedCommentIndex ?? (derived && tail.pos === derived.pos && tail.removed === derived.removed && tail.inserted === derived.inserted
+      ? splices.length - 1 : null);
     const entry = {
       id: options.id || mintId('change_'), baseRevision, revision,
       actor: who.actor, principal: who.principal, transport: who.transport, owner: ownerOf(who),
@@ -985,6 +997,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       splices: clone(splices), createdAt: now(), sourceTransactionId: options.sourceTransactionId || null,
       humanReviewed: options.humanReviewed === true,
       ...(agent ? { agent } : {}),
+      ...(derivedCommentIndex == null ? {} : {derivedCommentIndex}),
     };
     state.text = text; state.revision = revision;
     if (state.selection) {
@@ -1045,7 +1058,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (evidence) {
         for (const row of evidence) {
           const actor = participant(row, mintId), text = transformSplices(state.text, row.splices);
-          appendCommit(text, row.splices, actor, row.operation, row);
+          appendCommit(text, row.splices, actor, row.operation, {...row, derivedCommentIndex: null});
         }
       } else if (incoming.journal != null || (safeInt(target) && target !== base + 1) ||
           transformSplices(state.text, [inferred]) !== incoming.text) {
@@ -1316,9 +1329,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       offset: end, coverage, ref: target.ref || null,
     }, who) : null;
     if (target.cursor) delete state.cursors[target.cursor.id];
+    // Redacted image bytes cannot grant source editing. This separate typed handle permits
+    // only an image comment at the fully inspected image occurrence, including inline data URLs.
+    const commentHandle = end === target.targetEnd && !whole && state.docKind === 'markdown' &&
+      imageCommentTarget(state.text, target.targetStart, target.targetEnd)
+      ? mint('handles', 'ctx_', {kind: 'image-comment', revision: state.revision, start: target.targetStart, end: target.targetEnd,
+        digest: digest(state.text.slice(target.targetStart, target.targetEnd)), used: false}, who) : null;
     return { ...base, handle: disclosed?.id || null, ...(target.ref ? { ref: target.ref } : {}),
       coverage: { disclosed: Math.max(0, reached - target.targetStart), chars: target.targetEnd - target.targetStart, complete: whole },
       ...(completeHandle ? { complete_handle: completeHandle.id } : {}),
+      ...(commentHandle ? {comment_handle: commentHandle.id} : {}),
       ...(!disclosed ? { edit_unavailable: projection.omissions.length ? 'source_redacted' : 'target_over_edit_budget' } : {}),
       next_cursor: next?.id || null, expires_in_ms: LIMITS.lifetimeMs };
   }
@@ -1805,6 +1825,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // Order: authored, retirements, then definitions, so append never reintroduces a retired definition.
   function committedText(beforeText, splices, authoredCount, actor, docKind, operation, restores, sourceTransactionId, drawAssets) {
     const authoredSplices = splices.slice(0, authoredCount);
+    let derivedCommentIndex = null;
     let text = transformSplices(beforeText, splices);
     if (text == null) return null;
     if (docKind === 'markdown' && operation !== 'document.open_text' && !restores && !sourceTransactionId) {
@@ -1826,7 +1847,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       try { additions = pendingAssetSplices(text, drawAssets); } catch { return null; }
       if (additions.length) { splices = splices.concat(additions); text = transformSplices(text, additions); }
     }
-    return { text, splices, authoredSplices };
+    if (docKind === 'markdown' && operation !== 'document.open_text') {
+      const comments = commentSplices(beforeText, splices);
+      if (comments.length) { splices = splices.concat(comments); text = transformSplices(text, comments); derivedCommentIndex = splices.length - 1; }
+    }
+    return { text, splices, authoredSplices, derivedCommentIndex };
   }
 
   // The host's one fence over every commit path, asked before a review exists. `fact` lets a Draw fence admit an edit to the open drawing.
@@ -1901,7 +1926,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     } else cancelled(context);
     const revision = result?.revision == null ? baseRevision + 1 : result.revision;
     if (!safeInt(revision) || revision <= baseRevision) return failure('host_revision_invalid');
-    const entry = appendCommit(text, splices, who, operation, { ...options, revision, humanReviewed: !!approved || !!reviewToken, id: result?.transactionId || undefined });
+    const entry = appendCommit(text, splices, who, operation, { ...options, derivedCommentIndex: computed.derivedCommentIndex, revision, humanReviewed: !!approved || !!reviewToken, id: result?.transactionId || undefined });
     if (options.metadata) { state.filename = options.metadata.filename; state.docKind = options.metadata.docKind; state.handles = {}; state.refs = {}; state.cursors = {}; }
     const structure = structureReceipt(beforeText, text, state.filename, context);
     return { outcome: options.rebased ? 'rebased' : 'applied', changeId: entry.id, editCount: options.editCount || splices.length,
@@ -1929,7 +1954,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const held = lookup('handles', edit.context_handle, who);
       if (held.outcome) return { ...held, editIndex: index };
       // A recipe_handle authorizes document.draw on that picture only.
-      if (held.kind === 'draw') return failure('context_handle_wrong_kind', 'invalid', { editIndex: index });
+      if (held.kind === 'draw' || held.kind === 'image-comment') return failure('context_handle_wrong_kind', 'invalid', { editIndex: index });
       const range = relocate(held);
       if (range.outcome) return { ...range, editIndex: index };
       rebased ||= range.rebased;
@@ -2188,7 +2213,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   function inverse(entry) {
     const later = since(entry.revision);
     if (!later) return failure('history_unavailable', 'conflict');
-    const reverse = splices => {
+    const reverse = (splices, keepIndices = false) => {
       const rows = [];
       for (let index = splices.length - 1; index >= 0; index--) {
         const row = splices[index];
@@ -2202,9 +2227,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           if (origin >= earlier.pos) origin = origin >= earlier.pos + earlier.inserted.length
             ? origin - earlier.inserted.length + earlier.removed.length : earlier.pos;
         }
-        rows.push({ pos: range.start, removed: row.inserted, inserted: row.removed, origin });
+        rows.push({ pos: range.start, removed: row.inserted, inserted: row.removed, origin, index });
       }
-      return rows.sort((a, b) => b.pos - a.pos || b.origin - a.origin).map(({ pos, removed, inserted }) => ({ pos, removed, inserted }));
+      return rows.sort((a, b) => b.pos - a.pos || b.origin - a.origin).map(({pos, removed, inserted, index}) =>
+        ({pos, removed, inserted, ...(keepIndices ? {index} : {})}));
     };
     // An edit followed by its exact Undo is neutral, including nested undone pairs. Keep the journal and
     // handle invalidation intact; only inverse transport can cross these proven cancellations. A claimed
@@ -2218,16 +2244,22 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       })) remaining.pop();
       else remaining.push(row);
     }
-    const operations = reverse(entry.splices);
-    if (!operations) return failure('change_not_invertible', 'conflict');
-    for (const row of operations) {
+    const reversed = reverse(entry.splices, true);
+    if (!reversed) return failure('change_not_invertible', 'conflict');
+    const operations = [];
+    for (const row of reversed) {
       let range = { start: row.pos, end: row.pos + row.removed.length };
       for (const laterEntry of remaining) {
         range = transportInterval(range.start, range.end, laterEntry.splices);
-        if (!range) return failure('change_interleaved', 'conflict');
+        if (!range) break;
       }
-      if (state.text.slice(range.start, range.end) !== row.removed) return failure('change_interleaved', 'conflict');
-      row.pos = range.start;
+      if (!range || state.text.slice(range.start, range.end) !== row.removed) {
+        // New replies or independent edits must not prevent selective Undo of prose. Their
+        // current thread record remains; commit re-derives anchors over the admitted inverse.
+        if (row.index === entry.derivedCommentIndex) continue;
+        return failure('change_interleaved', 'conflict');
+      }
+      operations.push({pos: range.start, removed: row.removed, inserted: row.inserted});
     }
     operations.sort((a, b) => b.pos - a.pos);
     for (let index = 1; index < operations.length; index++) {
@@ -2254,7 +2286,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (other) return failure('other_agent_latest', 'refused', other);
       return failure(input.change_id ? 'change_not_owned_or_unavailable' : 'no_agent_change', 'target_gone');
     }
-    const splices = inverse(entry);
+    let splices = inverse(entry);
+    if (splices.reason === 'change_interleaved') {
+      const row = commentUndoSplice(state.text, entry, since(entry.revision));
+      if (row) splices = [row];
+    }
     if (splices.outcome) return splices;
     const result = await commit(splices, who, context, 'document.undo_agent_change', {
       label: `Undo ${entry.label}`, sourceTransactionId: entry.id, restores: true, editCount: splices.length,
@@ -2534,6 +2570,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (input.context_handle) {
       held = lookup('handles', input.context_handle, who);
       if (held.outcome) return held;
+      if (held.kind === 'image-comment') return failure('context_handle_wrong_kind', 'invalid');
       const range = relocate(held);
       if (range.outcome) return range;
       const facts = await outline(context);
@@ -2730,6 +2767,126 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(!retained ? { reason: 'retained_history_limited' } : {}) };
   }
 
+  function publicCommentAnchor(anchor, parsed) {
+    const {exact, start, end, ...rest} = anchor;
+    return {...rest, ...(anchor.quote ? {quote: display(anchor.quote, 256)} : {}),
+      ...(anchor.status === 'attached' ? commentSourceRange(anchor, parsed) : {})};
+  }
+
+  function listComments(input, who) {
+    if (state.docKind !== 'markdown') return failure('comments_require_markdown');
+    const parsed = parseComments(state.text);
+    if (parsed.reason) return failure(parsed.reason);
+    let offset = 0, textOffset = 0, threadId = input.thread_id || null, status = input.status || 'all';
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'comments') return failure('cursor_kind_mismatch');
+      if (cursor.revision !== state.revision) return failure('read_snapshot_changed', 'conflict');
+      ({offset, textOffset, threadId, status} = cursor);
+    }
+    const threads = commentThreads(state.text, parsed).filter(thread => status === 'all' || thread.resolved === (status === 'resolved'));
+    const thread = threadId ? threads.find(row => row.id === threadId) : null;
+    if (threadId && !thread) return failure('comment_missing', 'target_gone');
+    const items = [], rows = thread ? thread.messages : threads, budget = LIMITS.resultBytes - 2048;
+    const publicMessage = row => ({id: row.id, text: row.text,
+      author: {kind: row.author.kind, name: display(row.author.name, 64)}, createdAt: row.createdAt,
+      ...(row.recipient ? {recipient: display(row.recipient, 64)} : {})});
+    while (offset < rows.length) {
+      const row = rows[offset];
+      const message = thread ? {...publicMessage(row), text: clip(row.text.slice(textOffset), 2048), offset: textOffset,
+        complete: textOffset + clip(row.text.slice(textOffset), 2048).length === row.text.length, chars: row.text.length} : null;
+      const item = thread ? message : {id: row.id, resolved: row.resolved, anchor: publicCommentAnchor(row.anchor, parsed),
+        messages: row.messages.length, lastMessage: {...publicMessage(row.messages.at(-1)), text: display(row.messages.at(-1).text, 240)}};
+      if (bytes(JSON.stringify([...items, item])) > budget) break;
+      items.push(item);
+      if (message && !message.complete) { textOffset += message.text.length; break; }
+      offset++; textOffset = 0;
+    }
+    const complete = offset >= rows.length;
+    const next = complete ? null : mint('cursors', 'comments_', {kind: 'comments', revision: state.revision,
+      threadId, status, offset, textOffset}, who);
+    if (input.cursor) delete state.cursors[input.cursor];
+    return accepted({...(thread ? {thread: {id: thread.id, resolved: thread.resolved, anchor: publicCommentAnchor(thread.anchor, parsed)}, messages: items}
+      : {threads: items}), total: rows.length, complete, next_cursor: next?.id || null});
+  }
+
+  async function comment(input, who, context) {
+    if (state.docKind !== 'markdown') return failure('comments_require_markdown');
+    const parsed = parseComments(state.text);
+    if (parsed.reason) return failure(parsed.reason);
+    const threads = commentThreads(state.text, parsed);
+    const action = input.action;
+    const writesMessage = action === 'create' || action === 'reply';
+    if (writesMessage && (typeof input.text !== 'string' || !input.text.trim() ||
+        bytes(input.text) > 4096 || admissibleText(input.text))) return failure('comment_text_invalid', 'invalid');
+    if (!writesMessage && (input.text !== undefined || input.recipient !== undefined) ||
+        action !== 'create' && (input.context_handle !== undefined || input.anchor !== undefined || input.object_id !== undefined)) {
+      return failure('comment_arguments_invalid', 'invalid');
+    }
+    let thread, held = null;
+    if (action === 'create') {
+      if (input.thread_id) return failure('comment_arguments_invalid', 'invalid');
+      const kind = input.anchor || (input.context_handle ? 'text' : 'document');
+      if (kind === 'document' && (input.context_handle || input.object_id) || kind !== 'drawing' && input.object_id) return failure('comment_anchor_invalid', 'invalid');
+      let range = null;
+      if (kind !== 'document') {
+        held = lookup('handles', input.context_handle, who);
+        if (held.outcome) return held;
+        if (held.kind === 'change') return failure('context_handle_wrong_kind', 'invalid');
+        if (held.kind === 'image-comment' && kind !== 'image') return failure('context_handle_wrong_kind', 'invalid');
+        range = relocate(held);
+        if (range.outcome) return range;
+        if (held.kind === 'draw' && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+        if (kind === 'drawing' && held.kind !== 'draw') return failure('context_handle_wrong_kind', 'invalid');
+      }
+      const anchor = commentAnchor(kind, range?.start, range?.end, state.text, parsed, input.object_id);
+      thread = {id: mintId('thread_'), anchor, resolved: false, messages: []};
+      // The same semantic validation used on every later read proves an image and its object id now.
+      const checked = commentThreads(state.text, {...parsed, current: true, threads: [thread]})[0];
+      if (checked.anchor.status !== 'attached') return failure('comment_anchor_invalid', 'invalid', {detail: checked.anchor.reason});
+      threads.push(thread);
+    } else {
+      thread = threads.find(row => row.id === input.thread_id);
+      if (!thread) return failure('comment_missing', 'target_gone');
+    }
+    let message = null;
+    if (writesMessage) {
+      const recipient = typeof input.recipient === 'string' ? input.recipient.trim() : '';
+      message = {id: mintId('message_'), text: input.text,
+        author: {kind: who.actor, name: who.actor === 'human' ? 'You' : who.agent || who.actor},
+        createdAt: Math.floor(now()), ...(recipient ? {recipient} : {})};
+      thread.messages.push(message);
+    } else if (action === 'resolve' || action === 'reopen') {
+      if (thread.resolved === (action === 'resolve')) return {outcome: 'unchanged', threadId: thread.id};
+      thread.resolved = action === 'resolve';
+    } else return failure('comment_action_invalid', 'invalid');
+    const row = writeComments(state.text, threads, parsed);
+    const result = await commit([row], who, context, 'document.comment', {label: 'Comment', editCount: 1,
+      authoredCount: 1, reviewInline: false});
+    return {...result, threadId: thread.id, ...(message ? {messageId: message.id} : {})};
+  }
+
+  function inspectVisual(input, context) {
+    const pointing = collaboration().presence;
+    const prepared = visualRequest({...state, selection: pointing?.selection || state.selection,
+      focus: pointing?.focus || state.focus}, input);
+    if (prepared.outcome !== 'ok') return prepared;
+    const mode = 'visual:' + prepared.request.scope;
+    if (context.continues) {
+      const invalid = checkContinuation(context, mode);
+      if (invalid) return invalid;
+      const prior = pendingFacts.get(context.continues);
+      pendingFacts.delete(context.continues);
+      if (canonicalJson(prior.requirements?.sourceRange) !== canonicalJson(prepared.request.sourceRange)) return failure('visual_target_changed');
+    }
+    if (context.world?.visual) return visualResult(prepared.request, context.world.visual);
+    const requestId = mintId('fact_');
+    pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements: prepared.request});
+    while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+    return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements: prepared.request}};
+  }
+
   async function execute(name, input, context) {
     pendingInspection = null;
     const who = participant(context, mintId);
@@ -2784,6 +2941,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           collaboration: { posture: together.posture, readOnly: together.readOnly, presence: together.presence,
             review: contextReviewProjection(state.review) },
           sourceChanges: sourceChanges(who),
+          ...(state.docKind === 'markdown' ? {comments: commentSummary(state.text)} : {}),
           ...(liveAgents(who).length ? { agents: liveAgents(who) } : {}),
           ...(images ? { images: { scope: 'markdown', total: images.total, indexed: images.entries.length,
             profiles: images.entries.reduce((counts, row) => { counts[row.profile]++; return counts; }, { embedded: 0, linked: 0 }),
@@ -2818,6 +2976,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         break;
       }
       case 'document.get_outline': result = await getOutline(input, who, context); break;
+      case 'document.list_comments': result = listComments(input, who); break;
+      case 'document.comment': result = await comment(input, who, context); break;
+      case 'document.inspect_visual': result = inspectVisual(input, context); break;
       case 'document.read_context':
         result = input.return_id !== undefined
           ? typeof host.readReturn === 'function' ? await host.readReturn(input) : failure('return_unavailable')

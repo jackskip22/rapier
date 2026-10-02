@@ -18,7 +18,7 @@ plugins and downloads can make network requests when used; do not describe those
    allow that origin in the app's `frame-src`.
 2. Frame it: `<iframe src="https://editor.example.com/rapier.html?embed=1">`. Nothing more goes in
    the URL.
-3. Connect with the helper, `npm install rapier-embed@1.1.31` (MIT, no dependencies, one module):
+3. Connect with the helper, `npm install rapier-embed@1.1.32` (MIT, no dependencies, one module):
 
 ```js
 import {connectRapier} from 'rapier-embed';
@@ -52,7 +52,7 @@ frame's `load` event; on `{type: 'connected'}` post `load`; answer each `save-re
 | `changes` | report `{loaded, dirty, saving, closing, readOnly, filename, docKind}` as it changes |
 | `compare` | open an alternative text the app sends in Compare |
 | `close` | ask the app before closing and take its save, discard or cancel |
-| `agent` | expose its seventeen agent tools to the app's own agent (needs `open` and `read`) |
+| `agent` | expose the shared agent catalogue to the app's own agent (needs `open` and `read`) |
 
 Grants are frozen for the connection; reload the frame to change them. A frame from the app's own
 origin needs no parameter and no protocol: it is the editor with its own storage.

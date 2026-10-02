@@ -29,6 +29,19 @@ chat or return a file. A disconnected agent must be explicitly shared back in be
 
 ## Review without friction
 
+Portable comment threads stay in the document's Markdown. Read `document.list_comments`, following its
+cursor, or supply `thread_id` to read that thread's messages. Create an anchored thread with
+`document.comment({action:"create",context_handle,anchor:"text",text})`; use `anchor:"drawing"` with an
+inspected image occurrence and optional `object_id` for a shape. Reply with `action:"reply"`, the thread ID
+and text; resolve or reopen explicitly. Reads give current anchor status. Changed targets stay stale until
+the person supplies a new target; never relocate them by similar wording. The optional recipient label
+does not send anything. An explicit Ask action sends the person's request with document context.
+
+When the task depends on the rendered region, `document.inspect_visual` takes the current expected
+revision and a viewport/page/focus/selection scope. It returns PNG pixels only while the editor can capture
+that exact settled region. Inspect semantic source for the next edit; the image supplies no write authority.
+If resources or the region are unavailable, use the refusal's reason and the available source honestly.
+
 Read the source, group edits by purpose, and preserve names, numbers, claims and voice outside that scope.
 Use `apply_edits` for an authorized edit and `propose_edits` when the person wants to decide first.
 For a meaningful applied rewrite, `show_changes` exposes the exact difference without another permission

@@ -1,9 +1,10 @@
 # Rapier, the Claude plugin
 
-[Rapier](https://rapier.website) is a document editor in one offline page: writing, drawing, painting, pictures, Notes
-and the diff of a change, with no account and nothing sent until the person chooses it. An assistant gets two things.
+[Rapier](https://rapier.website) is a very fast Markdown editor in one offline HTML file: writing, drawing, painting,
+pictures, Notes and the diff of a change, on a phone or any browser, with no server, no account and nothing collected.
+Long documents open and scroll fast. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.31 notes.md` makes one HTML file that is the whole editor with the
+**A file to hand a person.** `npx rapier-html@1.1.32 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it with one click, edit, draw and paint in it, review a proposed change as a diff, save it
 and send it back exactly.
 
@@ -11,6 +12,13 @@ and send it back exactly.
 by structure and changes the passage or drawing object it inspected; the person sees each change land, keeps or drops
 it, and can undo an agent's change without losing their own. Diagrams are drawn by recipe: name the boxes and arrows,
 and Rapier places and routes them.
+
+Portable comment threads attach to passages, pictures and drawing objects. An explicit Ask action sends a
+request; ordinary comments remain document content. Visual inspection returns the current rendered region
+when an editor is present, while exact source reads establish edit authority. Use those together to move
+between a codebase, its diagram, a human-edited sketch and screenshot annotations.
+
+
 
 The documents are Self-contained Markdown, an open convention on CommonMark: pictures, layout, colour, page breaks and
 editable SVG drawings travel inside one `.md` file every Markdown app can read.
@@ -59,6 +67,4 @@ The repository must be public before the plugin listing goes live. See the Claud
 The skills run in the host's file and tool environment and upload nothing; the declared package command downloads its
 pinned package from npm when needed. The connector sends the document you share with the assistant to the door, which
 keeps it for that workspace and drops it after thirty idle days. No account, no telemetry; the person ends the
-assistant's access from the editor at any moment. The connector needs no API key and reads no credential from the
-device's environment or credential files. Its configuration declares only the transport and fixed HTTPS endpoint.
-In full: [PRIVACY.md](PRIVACY.md).
+assistant's access from the editor at any moment. In full: [PRIVACY.md](PRIVACY.md).

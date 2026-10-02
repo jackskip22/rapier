@@ -129,6 +129,29 @@ export function parseAssets(source, factory = configured || globalThis.markdowni
 }
 export function documentAssets(source, factory) { return parseAssets(source, factory, markdownBodyOffset(source)); }
 
+// Project only parser-recognized payload spans. Their ordinary data URL remains a data URL,
+// with every source newline intact; the parser never needs megabytes of picture bytes.
+export function projectImageDefinitions(source, index) {
+  const records = [], parts = [];
+  let at = 0, length = 0;
+  for (const row of index.blocks) {
+    if (!Number.isSafeInteger(row.payloadStart) || !Number.isSafeInteger(row.payloadEnd) || row.payloadStart < at) continue;
+    const text = source.slice(at, row.payloadStart);
+    parts.push(text, 'AA=='); length += text.length;
+    records.push({start: length, end: length + 4, id: row.id, codec: row.codec,
+      payload: source.slice(row.payloadStart, row.payloadEnd), url: row.url});
+    length += 4; at = row.payloadEnd;
+  }
+  parts.push(source.slice(at));
+  const references = Object.create(null);
+  for (const [label, definition] of Object.entries(index.references)) {
+    const image = dataImage(definition.href);
+    references[label] = {href: image ? definition.href.slice(0, image.payloadStart) + 'AA==' : definition.href,
+      title: definition.title};
+  }
+  return {source: records.length ? parts.join('') : source, records, references};
+}
+
 // The same index folded from the document's top-level blocks: `rows` are the blocks as markdown-it's block parse
 // of the body cuts them, each {start, raw} with `start` absolute in `source`, and `parse(raw, row)` is parseAssets
 // over one block (the caller may cache it by the row). A definition the whole parse finds is one a block's own parse

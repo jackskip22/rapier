@@ -99,26 +99,16 @@ function _rapierCollectTokenFacts(markdown, tokens, slugBase, normalizeReference
 		const markerChar = marker.charAt(0);
 		const minimumLength = marker.length;
 		const raw = source.slice(span.start, span.end);
-		const lines = raw.split(/\r\n?|\n/);
-		let closed = false;
-		if ((markerChar === '`' || markerChar === '~') && minimumLength >= 3) {
-			for (let line = 1; line < lines.length; line++) {
-				const candidate = lines[line];
-				const match = /^[ ]{0,3}(`+|~+)[ \t]*$/.exec(candidate);
-				if (match && match[1].charAt(0) === markerChar && match[1].length >= minimumLength) {
-					closed = true;
-					break;
-				}
-			}
-		}
-		const openingLine = lines[0] || '';
+		const closed = token.meta?.rapierFenceClosed === true;
+		const language = String(token.info || '').trim().split(/\s+/)[0].toLowerCase();
+		const openingLine = raw.split(/\r\n?|\n/, 1)[0] || '';
 		const markerOffset = marker ? openingLine.indexOf(marker) : -1;
 		facts.push({
 			kind: 'fence', normalizedKey: null,
 			sourceStart: span.start, sourceEnd: span.end,
 			label: marker.slice(0, 32),
 			evidence: {
-				token: 'fence', markup: marker, markerChar, minimumLength, closed,
+				token: 'fence', markup: marker, markerChar, minimumLength, closed, language,
 				openingStart: markerOffset >= 0 ? span.start + markerOffset : span.start,
 				openingEnd: markerOffset >= 0 ? span.start + markerOffset + marker.length : span.start + marker.length,
 			},

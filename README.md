@@ -31,6 +31,12 @@ or keyboard.
 arrows that stay attached, wrapped text and imported fonts, groups, snapping, erasing, undo. Black ink stays black
 in the file and shows light on dark paper.
 
+**Work together.** Anchored comment threads travel in the Markdown. Discuss a passage, picture or drawing
+object, reply and resolve it, or deliberately Ask an agent about it. Agents use the same source tools through
+the browser, WebMCP and hosted plugins; visual inspection supplies a current rendered region when needed.
+ChatGPT can open Markdown/text attachments in Rapier, save writable host files without overwriting a
+concurrent edit, and keep a new library copy where the host supports upload.
+
 **Paint.** MyPaint brushes (oil, bristle, scumble, marker, watercolour, pencil, pen), pressure and tilt, watercolour
 that flows and dries, smudge, smear, blend and erase. A painting is a raster layer inside the drawing's SVG.
 

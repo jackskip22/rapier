@@ -14,6 +14,7 @@
   "editor/plugins.js",
   "editor/source-assets.js",
   "agent/browser.js",
+  "agent/comments-ui.js",
   "draw/flowchart-editor.js",
   "editor/personal.js",
   "draw/draw.js",

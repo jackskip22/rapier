@@ -862,7 +862,16 @@ function initMarkdownIt() {
 			const fence = md.utils.escapeHtml(token.markup || '```');
 			const info = token.info == null ? '' : String(token.info);
 			const escapedSrc = md.utils.escapeHtml(src);
+			const sourceHtml = '<pre class="diagram-source"><code data-rapier-fence="' + fence +
+				'" data-rapier-fence-info="' + md.utils.escapeHtml(info) + '">' + escapedSrc + '</code></pre>';
 			const encoded = encodeURIComponent(src);
+			if (token.meta?.rapierFenceClosed === false) {
+				// No render request: even a valid diagram body must not conceal an unfinished fence.
+				return '<figure class="diagram-block diagram-block--error" data-diagram-state="error"' +
+					' data-diagram-unclosed="" data-diagram-src="' + encoded + '">' +
+					'<p class="diagram-reason">Mermaid block may be missing its closing <code>' + fence +
+					'</code> fence. Text below is still inside the block.</p>' + sourceHtml + '</figure>\n';
+			}
 			const native = globalThis.RapierFlowchart?.parseFlowchart(src).ok === true;
 			const provider = _rapierProviders.mermaid;
 			const ready = native || !!(provider && provider.status === 'ready' && typeof provider.renderToString === 'function');
@@ -873,8 +882,7 @@ function initMarkdownIt() {
 			const state = ready ? 'idle' : 'absent';
 			return '<figure class="diagram-block' + (ready ? '' : ' diagram-block--absent') +
 				'" data-diagram-src="' + encoded + '" data-diagram-state="' + state + '"' + (native ? ' data-diagram-native=""' : '') + '>' +
-				'<pre class="diagram-source"><code data-rapier-fence="' + fence +
-				'" data-rapier-fence-info="' + md.utils.escapeHtml(info) + '">' + escapedSrc + '</code></pre>' +
+				sourceHtml +
 				(ready ? '<div class="diagram-cache" hidden></div>' : '') +
 				'</figure>\n';
 		};
@@ -2854,24 +2862,7 @@ function _rapierSourceOutlineOffThread(request, signal) {
 }
 
 function _rapierProjectImageDefinitions(source, index) {
-	const records = [], parts = [];
-	let at = 0, length = 0;
-	for (const row of index.blocks) {
-		if (!Number.isSafeInteger(row.payloadStart) || !Number.isSafeInteger(row.payloadEnd) || row.payloadStart < at) continue;
-		const text = source.slice(at, row.payloadStart);
-		parts.push(text, 'AA=='); length += text.length;
-		records.push({ start: length, end: length + 4, id: row.id, codec: row.codec,
-			payload: source.slice(row.payloadStart, row.payloadEnd), url: row.url });
-		length += 4; at = row.payloadEnd;
-	}
-	parts.push(source.slice(at));
-	const references = Object.create(null);
-	for (const [label, definition] of Object.entries(index.references)) {
-		const image = globalThis.RapierImageAssets.dataImage(definition.href);
-		references[label] = { href: image ? definition.href.slice(0, image.payloadStart) + 'AA==' : definition.href,
-			title: definition.title };
-	}
-	return { source: records.length ? parts.join('') : source, records, references };
+	return globalThis.RapierImageAssets.projectImageDefinitions(source, index);
 }
 
 function _rapierRestoreImageDefinitionParse(parsed, projection, original, normalized) {
@@ -4261,69 +4252,95 @@ function rapierWelcomeMarkdown() {
 		"",
 		"![The rapier logo][rapier-logo] <!--md-layout:v1 width=14% wrap=around x=93%-->",
 		"",
-		"Write, draw, paint and keep your notes. Rapier is free, works offline, is made for your phone and works in any browser. No account.",
+		"A very fast Markdown editor in one file. Write, draw, paint and keep notes on your phone or in any browser, offline, with no account. Long documents open and scroll fast. Nothing leaves your device unless you share it.",
 		"",
-		"On Android, get the Rapier app: your notes live in its own files and it never touches the internet. Sign in with Cloudflare from **Notes settings** to keep your settings, documents, notes and code in sync between your devices, in your own Cloudflare account. An agent can work with you inside Rapier and help you keep it all in order.",
+		"> [!TIP]",
+		"> **Tap any paragraph** to edit it. **Drag the circle** at the right edge to move through a long document, or **tap it** for the headings.",
 		"",
-		"This guide is yours to play with. Change a few words, tick a box or move a picture. **Undo** is there if you need it.",
+		"**Contents**",
+		"",
+		"- [Start here](#start-here)",
+		"- [Writing](#writing)",
+		"- [Lists](#lists)",
+		"- [Pictures](#pictures)",
+		"- [Drawing](#drawing)",
+		"- [Paint](#paint)",
+		"- [Tables](#tables)",
+		"- [Code](#code)",
+		"- [Notes](#notes)",
+		"- [Open, save and export](#open-save-and-export)",
+		"- [Compare](#compare)",
+		"- [Agents](#agents)",
+		"- [Where it runs](#where-it-runs)",
+		"- [Keyboard](#keyboard)",
+		"- [For developers and agents](#for-developers-and-agents)",
+		"- [Will](#will)",
 		"",
 		"## Start here",
 		"",
-		"**Tap a paragraph** to start writing. The formatting bar has the everyday tools; **+** has the rest. Tap outside the text when you're done.",
-		"",
-		"**Drag the circle** at the right edge to move through the page. Tap it to jump to a heading.",
-		"",
-		"- [x] Open Rapier",
-		"- [ ] Change these words",
-		"- [ ] Tick this box",
+		"1. **Tap this line** to edit it in place.",
+		"   1. The formatting bar comes up with the everyday tools. Its **+** has every other command.",
+		"   2. You can type Markdown too; Rapier shows it formatted as you go.",
+		"   3. Tap outside the text when you're done.",
+		"2. **Tap a line in the contents above** to jump there. Every heading is a link, and **+** → **Table of contents** adds a line like those to any document.",
+		"3. **Tick a box.**",
+		"   - [x] Open Rapier",
+		"   - [ ] Change these words",
+		"   - [ ] Tick this box",
+		"4. This guide is yours to play with. **Undo** is on the formatting bar if you need it.",
 		"",
 		"## Writing",
 		"",
-		"Try **bold**, *italic*, ~~strikethrough~~, ++underline++, `code` and ==highlighting==. Highlights come in ==🟢green==, ==🔴red== and ==🔵blue== too. You can write H~2~O and 1^st^, add a footnote[^1], or type Markdown as you go.",
+		"**Bold**, *italic*, ~~struck through~~, ++underlined++, `code`, ==highlighted==, ==🟢green==, ==🔴red==, ==🔵blue==, H~2~O and 1^st^. It's all plain Markdown, so other Markdown apps open the file too.[^1]",
 		"",
 		"> A good sentence is a place to begin.",
 		"",
-		"> [!TIP]",
-		"> Put the cursor in a list item and tap **Nest** to indent it. **Resume** brings it back.",
-		"",
-		"1. A plan",
-		"   - A smaller step",
-		"     - And one small detail",
-		"2. Something to try next",
+		"> [!NOTE]",
+		"> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show it as a quote.",
 		"",
 		"<details>",
-		"<summary>There's more in here</summary>",
+		"<summary>An expanding section</summary>",
 		"",
-		"An expanding section keeps a long page tidy. Tap the title to close it, or edit these words to make it your own. Add another with **+** → **Expanding section**.",
+		"It keeps a long page tidy. Tap the title to open or close it; **+** → **Expanding section** adds one.",
 		"",
 		"</details>",
 		"",
-		"## Pictures, drawing and paint",
+		"Find and replace is behind the magnifier. **+** → **Line** adds a page break for PDF and Word; **Footnote**, **Divider** and **Table of contents** are there too.",
 		"",
-		"Add a picture, then drag to move or resize it. Words can wrap around its outline. Tap the picture for its controls: the **brush** opens Draw, and **T** changes its description.",
+		"## Lists",
 		"",
-		"The same brush on the formatting bar starts a new drawing. Sketch with your finger, draw a diagram or paint with watercolour. **Select** lets you move, resize and restyle what you've made.",
+		"1. A numbered list keeps its numbers as you add, move and delete lines.",
+		"2. Put the cursor in an item and tap **Nest** to indent it; **Resume** brings it back.",
+		"   1. Numbers restart inside.",
+		"   2. Bullets and numbers mix freely.",
+		"      - A bullet inside a number",
+		"      - Another one",
+		"   3. And back out again.",
+		"3. **Tab** and **Shift Tab** do the same from a keyboard.",
+		"4. A checklist is a list with boxes:",
+		"   - [x] one you tick from the page",
+		"   - [ ] one still to do",
+		"5. Paste a list from Word or a web page and it stays a list.",
 		"",
-		"**SVG Brush** follows your pressure and speed. A stroke that looks like a circle, box, line or arrow can become that shape with one tap. **SVG Pen (Testing)** draws an even line; **Raster Brush** opens the painting brushes.",
+		"## Pictures",
+		"",
+		"Add a picture (PNG, JPEG, WebP or JPEG XL), then drag to move or resize it. The words wrap around its outline, not its box. Tap the picture for its controls: the **brush** opens it in Draw, **T** changes its description, and you can turn it or fade it. Pictures live inside this Markdown file; nothing is uploaded. New pictures are stored as JPEG XL, which keeps them small.",
+		"",
+		"## Drawing",
+		"",
+		"The brush on the formatting bar starts a new drawing. **SVG Brush** follows your pressure and speed, and a stroke that looks like a circle, box, line or arrow becomes that shape with one tap. **SVG Pen (Testing)** draws an even line. Tap a shape to move, resize, label or restyle it, or to bind an arrow that stays attached as things move. The drawing is saved in the file as SVG, and an agent can edit it later.",
 		"",
 		"![W][leaf-w] <!--md-layout:v1 width=18% wrap=around x=9%-->",
 		"",
-		"ith a decorative letter, an ordinary paragraph can feel like a page from an old book. Draw has four letter sets to choose from. This W is a drawing too: tap it, then the brush, to make it your own.",
-		"",
-		"Watercolour spreads after you lift your finger, then dries. Choose a different brush for a different feel, or bring in a MyPaint preset. Pictures and drawings stay inside your document.",
+		"ith a decorative letter, an ordinary paragraph can feel like a page from an old book. Draw has four letter sets, traced from the British Library's public scans. This W is a drawing too: tap it, then the brush, to make it your own.",
 		"",
 		"Draw an SVG line, choose **Select**, tap the line, then **Style → Look** to turn it into a spring, rope or tube. For when your meeting notes need more tension.",
 		"",
 		"![An editable spring made from a drawn line][draw-spring] <!--md-layout:v1 width=75%-->",
 		"",
-		"## Notes",
+		"## Paint",
 		"",
-		"Open **Notes** from the three dots. Pin a thought, colour a card, make a checklist or set a reminder. Notes can hold drawings, voice recordings and files too.",
-		"",
-		"**Import** brings in notes from other apps. **Backup** saves your notes as a zip; Cloudflare sync keeps them in your own account.",
-		"",
-		"> [!TIP]",
-		"> Keep a backup of notes you care about. A browser can clear its stored data.",
+		"**Raster Brush** opens the painting brushes: oil, bristle, marker, pencil, pen and watercolour, run by Rapier's own engine, so a MyPaint preset behaves as its author tuned it. Watercolour keeps spreading after you lift your finger, then dries. Smudge, smear, blend and erase work on paint that's already down. A painting is one picture inside the drawing, saved losslessly, and you can paint into it again.",
 		"",
 		"## Tables",
 		"",
@@ -4333,7 +4350,7 @@ function rapierWelcomeMarkdown() {
 		"| An idea | A few words |",
 		"| A list | Whatever you need |",
 		"",
-		"Tap a cell to edit it. Paste cells from a spreadsheet and the table grows to fit them.",
+		"Tap a cell to edit it; **Tab** moves to the next. Add or remove rows and columns from the cell's controls. Paste cells from a spreadsheet and the table grows to fit them.",
 		"",
 		"## Code",
 		"",
@@ -4345,19 +4362,24 @@ function rapierWelcomeMarkdown() {
 		"",
 		"Code is highlighted offline. Text and code files open in the source editor, where the circle takes you to a line or a declaration. The eye/code switch in Settings shows the Markdown behind this page.",
 		"",
-		"## Opening and saving",
+		"## Notes",
 		"",
-		"Open Markdown, Word, text, code, TextPack or PDF files. Word documents become editable pages with their pictures; PDFs can come in as text or pictures of their pages.",
+		"Open **Notes** from the three dots. Each note is a Markdown file shown as a card you can pin, colour and sort into sections. A note can hold a checklist you tick from its card, a reminder, a voice recording, drawings and attached files. **Import** brings in notes from Google Keep, Apple Notes, Evernote, Notion, Obsidian and a dozen more apps; **Backup** saves them all as one zip. **Sync** keeps them in your own Cloudflare account, encrypted with a key that never leaves your devices.",
 		"",
-		"Rapier keeps a draft as you work. **Save** keeps a file you can take with you. Your Markdown stays readable in other apps.",
+		"> [!TIP]",
+		"> Keep a backup of notes you care about. A browser can clear its stored data; the Android app keeps notes in its own files.",
 		"",
-		"Under the three dots, **Copy**, **Share** and **Export** let you send your work as text, a web page, PDF or Word. A shared web page opens offline, and Rapier can open it again for editing.",
+		"## Open, save and export",
 		"",
-		"Need a new printed page? **+** → **Line** adds a page break for PDF and Word.",
+		"Open Markdown, text, code, Word, TextPack or PDF files. A Word document becomes an editable page with its pictures; a PDF comes in as text or as pictures of its pages.",
+		"",
+		"Rapier keeps a draft as you work, so a closed tab comes back. **Save** writes the file and, where it can, reads it back to check. Your Markdown stays readable in every other app.",
+		"",
+		"Under the three dots, **Copy**, **Share** and **Export** send your work as text, a web page, PDF or Word. A shared web page opens offline in any browser, and Rapier can open it again for editing.",
 		"",
 		"## Compare",
 		"",
-		"Choose **Compare** under the three dots and open another version of your document. You'll see what changed, with the unchanged parts tucked away. Both files stay as they were.",
+		"**Compare**, under the three dots, shows what changed between this document and another file, with the unchanged parts folded away. Neither file changes.",
 		"",
 		"```diff",
 		"- A first thought.",
@@ -4366,15 +4388,15 @@ function rapierWelcomeMarkdown() {
 		"",
 		"## Agents",
 		"",
-		"Use Rapier with an AI agent to work on the same document. Ask for an explanation, a rewrite, a plan or a diagram. You can review its changes and undo them without losing your own work.",
+		"Use Rapier with an AI agent on the same document. Ask for an explanation, a rewrite, a plan or a diagram. It reads only the parts it needs, can't overwrite what you're editing, and its changes can be undone without losing your own. While it's connected, the circle says so; tap it for status, messages and changes. Select a passage and use **Ask** to talk about that part.",
 		"",
-		"Try asking: **“Draw how this works, then leave room for my notes.”** The diagram stays editable: move a box, change a label or add your own drawing. Select a passage and use **Ask** to talk about that part.",
+		"Try asking: **“Draw how this works, then leave room for my notes.”** The diagram is laid out for you, with numbered steps and arrows that find their way around the boxes, in light and dark. Every box stays a shape you can move, relabel or recolour.",
 		"",
 		"![An editable diagram: ask, make it together, keep what works][agent-diagram] <!--md-layout:v1 width=100%-->",
 		"",
 		"## Where it runs",
 		"",
-		"Made for your phone, and the same in any browser: use it at rapier.website, install it as an app, or keep `rapier.html` on a USB stick. The whole editor is one file, under 2 MB.",
+		"Made for your phone, and the same in any browser: use it at rapier.website, install it as an app, or keep `rapier.html` on a USB stick. On Android, the Rapier app keeps your notes in its own files and never touches the internet. The whole editor is one file, under 2 MB.",
 		"",
 		"## Keyboard",
 		"",
@@ -4406,7 +4428,7 @@ function rapierWelcomeMarkdown() {
 		"",
 		"[^1]: Footnotes work too. Tap the arrow to return.",
 		"",
-		"## Will (optional)",
+		"## Will",
 		"",
 		"If you work with an agent, you can tell it what it may do with each part of a document: type an intent on a section, or lock it. Select the section and tap **W** on the formatting bar. Rapier writes that into the document as invisible HTML comments, which agents see when they work on it and people never do. It travels with the file: Markdown, Word, PDF and Rapier's own web pages.",
 		"",
@@ -5298,13 +5320,16 @@ function _rapierBlockMayContainMath(block) {
 	return !!(block && String(block.raw || '').includes('$'));
 }
 
-function _rapierDiagramFenceBody(raw) {
-	const trimmed = String(raw || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
-	const match = /^(?:`{3,}|~{3,})[ \t]*mermaid(?:[ \t][^\n]*)?\n([\s\S]*?)\n(?:`{3,}|~{3,})[ \t]*$/i.exec(trimmed);
-	return match ? match[1] : null;
+function _rapierDiagramFenceToken(raw) {
+	const source = String(raw || '').replace(/^\uFEFF/, '');
+	if (!/^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid\b/i.test(source) || !md) return null;
+	const tokens = md.parse(source, {});
+	const token = tokens.length === 1 ? tokens[0] : null;
+	return token?.type === 'fence' && String(token.info || '').trim().split(/\s+/)[0].toLowerCase() === 'mermaid'
+		? token : null;
 }
 function _rapierIsDiagramFence(raw) {
-	return _rapierDiagramFenceBody(raw) !== null;
+	return _rapierDiagramFenceToken(raw) !== null;
 }
 function _rapierBlockMayContainDiagram(block) {
 	return !!(block && /^(?:`{3,}|~{3,})mermaid\b/m.test(String(block.raw || '')));
@@ -5675,7 +5700,7 @@ function _rapierMarkDiagramError(host, err) {
 	if (!reason) {
 		reason = document.createElement('p');
 		reason.className = 'diagram-reason';
-		host.appendChild(reason);
+		host.prepend(reason);
 	}
 	reason.textContent = _rapierFriendlyDiagramError(err);
 	const cache = host.querySelector('.diagram-cache');
@@ -5684,6 +5709,7 @@ function _rapierMarkDiagramError(host, err) {
 
 async function _rapierFillDiagram(host, detached = false) {
 	if (!host || (!detached && !host.isConnected)) return;
+	if (host.hasAttribute('data-diagram-unclosed')) return;
 	const src = _rapierDiagramSourceOf(host);
 	const native = globalThis.RapierFlowchart?.parseFlowchart(src).ok === true;
 	if (native) host.setAttribute('data-diagram-native', '');
@@ -5761,13 +5787,18 @@ function _rapierUpdateDiagramPreview(preview, raw) {
 	// Every new source/state invalidates an older render, including absence and errors.
 	const gen = (preview._rapierPreviewGen || 0) + 1;
 	preview._rapierPreviewGen = gen;
-	const body = _rapierDiagramFenceBody(raw);
-	if (body == null) {
+	const token = _rapierDiagramFenceToken(raw);
+	if (!token) {
 		preview.hidden = true;
 		preview.textContent = '';
 		return;
 	}
 	preview.hidden = false;
+	if (token.meta?.rapierFenceClosed === false) {
+		preview.textContent = 'Mermaid block may be missing its closing ' + token.markup + ' fence.';
+		return;
+	}
+	const body = token.content.replace(/\n$/, '');
 	const native = globalThis.RapierFlowchart?.parseFlowchart(body).ok === true;
 	const provider = _rapierProviders.mermaid;
 	if (!native && (!provider || provider.status !== 'ready' || typeof provider.renderToString !== 'function')) {
@@ -11930,6 +11961,7 @@ function _rapierCommitSplices(splices, options = null) {
 	const liveRoot = rapier.document.source.rootId;
 	const alreadyApplied = config.sourceAlreadyApplied === true;
 	let retired = config.retiredImages || [];
+	let comments = [];
 	if (!alreadyApplied && !config.retiredImages && !config.sourceTransactionId && config.navigation !== false &&
 			rapier.document.docKind === 'markdown' && globalThis.RapierImageAssets.mayRetireImageDefinitions(_rapierSourceText(), rows)) {
 		const before = _rapierSourceText(), after = _rapierTransformSplices(before, rows);
@@ -11950,6 +11982,13 @@ function _rapierCommitSplices(splices, options = null) {
 			}
 		}
 	}
+	if (!alreadyApplied && !config.sourceTransactionId && config.navigation !== false && rapier.document.docKind === 'markdown') {
+		comments = globalThis.RapierComments.commentSplices(_rapierSourceText(), rows);
+		if (comments.length) {
+			rows = rows.concat(comments.map(row => Object.freeze(row)));
+			delete config.blockRange; delete config.blockRanges;
+		}
+	}
 	if (!alreadyApplied) {
 		const checkpoint = rapier.document.source.capture();
 		try { _rapierApplySourceSplices(rows); }
@@ -11960,7 +11999,8 @@ function _rapierCommitSplices(splices, options = null) {
 		}
 	}
 	if (retired.length && config.retireProjection !== false) _rapierRetireImageProjection(retired);
-	const applied = {splices: Object.freeze(rows), retiredImages: Object.freeze(retired), selectionAfter: config.selectionAfter};
+	if (comments.length) globalThis.RapierCommentsUI.project(comments);
+	const applied = {splices: Object.freeze(rows), retiredImages: Object.freeze(retired), commentSplices: Object.freeze(comments), selectionAfter: config.selectionAfter};
 
 	if (_rapierTransactionRuntime.compound) {
 		_rapierTransactionRuntime.compound.splices.push(...rows);
@@ -39467,7 +39507,7 @@ function _rapierSyncSingleLineHighlight() {
 				return;
 			}
 			if (burstOwnsCommit) _burstSplices.push(...staged.splices);
-			if (staged.retiredImages.length) {
+			if (staged.retiredImages.length || staged.commentSplices.length) {
 				const source = _rapierSourceText(), selection = staged.selectionAfter, scrollTop = ta.scrollTop;
 				_rapierHeavyWindowReset();
 				if (!globalThis.RapierSourceAssets?.mount(source, {...selection, scrollTop, skipRefresh: true})) {
