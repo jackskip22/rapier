@@ -8,5 +8,7 @@
 !/robots.txt
 !/sitemap.xml
 !/llms.txt
+!/llms-full.txt
+!/og.png
 !/embed/
 !/embed/**

@@ -1,6 +1,14 @@
 # Rapier
 
-Write, draw, paint and keep notes in one offline HTML file. No account, no telemetry.
+A whole document editor in one offline HTML file, for writing, drawing, painting and notes in plain Markdown.
+
+- No account, no analytics, no cookies; the editor runs on the device and works offline.
+- Pictures live inside the `.md` file: new rasters as JPEG XL, drawings as editable SVG.
+- Opens Word and PDF; saves Markdown; exports Word, PDF and an offline web page with the source inside.
+- For an agent: the MCP door `https://mcp.rapier.website/mcp` and the Claude plugin put agent and person on one
+  page; the agent changes only what it has read, and the person sets what waits for review.
+- For an agent handing a person a document: `npx rapier-html notes.md` writes one page that is the editor with
+  the document inside.
 
 Open [rapier.website](https://rapier.website), install it from the browser, or download
 [rapier.html](https://rapier.website/rapier.html) and open it from a folder. Let the first web load finish before

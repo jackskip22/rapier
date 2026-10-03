@@ -1,5 +1,14 @@
 # Will
 
+A standard for marking, inside a document's own text, which regions an agent may edit, may only add to, or must
+leave exactly as they are.
+
+- In Markdown a region sits between two comment lines other readers hide; DOCX, PDF and Google Docs have carriers
+  of their own.
+- A marker that cannot be read exactly makes the whole document `keep`.
+- 109 vectors test any implementation; the reference reader is one file with no dependencies.
+- For an agent: change what is `edit`, add only at the end of `append`, leave `keep` and every marker untouched.
+
 A person's word to whatever agent edits their document next, carried inside the document itself.
 
 The person marks a region of their document `edit`, `append` or `keep`, with a line of their own words if they

@@ -23594,7 +23594,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	const inkScript = !opts.print ? _rapierArtifactInkScript(styledRoot, nonce) : '';
 	const page = '<!DOCTYPE html>\n'
 		+ '<html lang="en" data-rapier-theme="' + theme + '" data-highlights="' + highlights + '">\n'
-		+ '<head>\n<meta charset="UTF-8">\n'
+		+ '<head>\n<meta charset="UTF-8">\n' + (carrier ? RapierPageReturnAddress.PAGE_SEED + '\n' : '')
 		+ '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
 		// Chrome 154's responsively sized frames (the founder's link, 24 September 2026): a host frame styled
 		// `frame-sizing: content-height` sizes itself to a page that opts in with this meta, so a document

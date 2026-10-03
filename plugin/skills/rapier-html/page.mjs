@@ -1,6 +1,6 @@
 import {readFile, writeFile} from 'node:fs/promises';
 import {basename, dirname, join} from 'node:path';
-import {returnAddress, returnExpiresAt} from './return-address.mjs';
+import {PAGE_SEED, returnAddress, returnExpiresAt} from './return-address.mjs';
 
 const START = '<script type="text/markdown" id="rapier-document"';
 const DRAWING_START = '<script type="text/plain" id="rapier-drawing"';
@@ -49,7 +49,12 @@ export function wrap(pageHtml, text, name, options) {
 		if (typeof opts.base !== 'string') throw new Error('the base must be text');
 		carriedBlocks += '\n' + BASE_START + ' data-name="' + safeName(opts.baseName, docName) + '">' + encodeCarried(opts.base) + END;
 	}
-	const stripped = unwrap(pageHtml).html.replace(SEARCH_WORDS, '');
+	// The agent seed goes after the charset (or <head>), once: a page that already carries it, wrapped again, loses its old one.
+	const unseeded = unwrap(pageHtml).html.replace(SEARCH_WORDS, '').split(PAGE_SEED + '\n').join('');
+	const headTag = /<meta charset[^>]*>\n?/i.exec(unseeded) || /<head[^>]*>\n?/.exec(unseeded);
+	if (!headTag) throw new Error('not a Rapier page: no <head>');
+	const seededAt = headTag.index + headTag[0].length;
+	const stripped = unseeded.slice(0, seededAt) + PAGE_SEED + '\n' + unseeded.slice(seededAt);
 	// Before Rapier's scripts: parsed before the engine boots.
 	const bodyTag = /<body[^>]*>/.exec(stripped);
 	if (!bodyTag) throw new Error('not a Rapier page: no <body>');

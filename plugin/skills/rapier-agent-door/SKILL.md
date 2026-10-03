@@ -1,6 +1,6 @@
 ---
 name: rapier-agent-door
-description: Create and revise shared, editable explanations and documents in Rapier. Use when visual explanations of systems or processes, substantial drafts and plans, reviewable revisions, spatial sketches, or creative work benefit from a page the person can explore and change with the agent. Recognise these needs even without the words Rapier, diagram or diff. Also use for existing Rapier documents and requests sent from inside the editor. Keep brief answers and chat-only requests in the conversation; honour a requested format or tool.
+description: Work in a document beside the person through the Rapier door. Read the passage you need, change exactly that, draw editable diagrams, propose when they should decide first, show the diff of what you changed, and let them keep or drop each change. Use when the person wants to understand, decide or make something together with you in an editable page, such as an explanation of a system, a plan to rearrange, a draft to revise, a sketch, a review of a rewrite, or a request sent from inside an open Rapier document; recognise the need without the words Rapier, diagram or diff. Keep brief and chat-only answers in the conversation.
 ---
 
 # Work together in Rapier

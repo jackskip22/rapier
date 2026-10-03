@@ -637,11 +637,14 @@ if (seoRegions.length !== 2 || bodyAt < 0 || seoRegions[0].index > bodyAt || seo
     html.split('<!-- RAPIER_SEO_').length !== 5) throw new Error('The shell must carry its two RAPIER_SEO regions: metadata in the head, the guide in the body');
 if (PROFILE === 'document') html = html.replace(seoRegion, '');
 else {
-  // One version: the structured data says version.mjs's number, as the rapier-version meta does.
+  // One version: the structured data says version.mjs's number, as the rapier-version meta does. Its sameAs is every place Rapier is
+  // published: the four public repositories and the four npm packages.
+  const sameAs = ['rapier', 'rapier-plugins', 'rapier-jxl', 'will'].map(name => 'https://github.com/jackskip22/' + name)
+    .concat(['rapier-html', 'rapier-markdown-kit', 'rapier-embed', 'rapier-jxl'].map(name => 'https://www.npmjs.com/package/' + name));
   html = html.replace(/(<script type="application\/ld\+json">)([\s\S]*?)(<\/script>)/, (_, open, json, close) => {
     const data = JSON.parse(json);
     if (data['@type'] !== 'SoftwareApplication') throw new Error('The structured data must describe the SoftwareApplication');
-    return open + JSON.stringify({...data, softwareVersion: VERSION}) + close;
+    return open + JSON.stringify({...data, softwareVersion: VERSION, sameAs}) + close;
   });
   const [guide] = [...html.matchAll(seoRegion)].slice(1);
   html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection(await read('editor/engine.js')) + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);

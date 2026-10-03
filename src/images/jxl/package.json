@@ -1,5 +1,7 @@
 {
   "name": "rapier-jxl",
+  "description": "A JPEG XL encoder in pure JavaScript for the browser, workers, Node and Deno: lossless and lossy, the core one file of __CORE_KB__ kB (__CORE_GZIP_KB__ kB gzipped); photographs and JPEGs are optional doors. No WebAssembly, no dependencies.",
+  "keywords": ["jpeg-xl", "jpegxl", "jxl", "encoder", "image-compression", "image", "lossless", "lossy", "jpeg", "transcode", "photo", "canvas", "browser", "web-worker", "javascript", "no-dependencies", "rapier"],
   "license": "MIT",
   "type": "module",
   "main": "./index.mjs",

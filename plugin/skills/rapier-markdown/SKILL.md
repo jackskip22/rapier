@@ -1,6 +1,6 @@
 ---
 name: rapier-markdown
-description: Write or check Self-contained Markdown documents with embedded pictures, portable layout, colour and editable SVG drawings over CommonMark and GFM. Use when working on a Rapier document, a request for a self-contained Markdown file, or preparing an editable page with rapier-html. An ordinary chat answer using Markdown formatting does not need this skill.
+description: Write or check Self-contained Markdown, one .md file that carries its pictures, layout, colour and editable SVG drawings over CommonMark and GFM, and that every Markdown app can read. Use when writing a Rapier document, when asked for a self-contained or portable Markdown file, or before making an editable page with rapier-html. An ordinary chat answer in Markdown does not need this skill.
 ---
 
 # Self-contained Markdown
@@ -14,7 +14,7 @@ know. Nothing is lost when the file travels: no image folder, no zip, no account
 what makes it a better carrier than DOCX: plain text, diffable, readable everywhere, and complete.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.50`. Rapier renders it exactly and
+https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.51`. Rapier renders it exactly and
 writes it back byte for byte; any editor may.
 
 Supported Mermaid flowchart fences also draw offline in Rapier's look, so an agent can write a fence or use figures.

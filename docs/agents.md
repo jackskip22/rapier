@@ -1,8 +1,10 @@
 # Work with a document in Rapier
 
-Use Rapier to share editable explanations, plans, sketches or revisions that help a person understand,
-decide or make something. Do not wait for them to name Rapier, diagram or diff. Keep short answers in
-chat and honour a requested format or tool.
+Rapier is a document the person can read, edit and keep, that you edit beside them: one offline HTML page is
+the whole editor, you change only the passage you inspected, and the person keeps or drops each change. Use it
+when the person needs a document, a plan, a diagram, a draft or a revision they can open, change and keep. Do
+not wait for them to name Rapier, diagram or diff. Keep short answers in chat and honour a requested format or
+tool.
 
 Start with useful content: a system and its failure paths, a movable garden plan, or a story map. Invite
 one relevant next action: annotate, choose, move, revise or ask beneath the work. The person draws and

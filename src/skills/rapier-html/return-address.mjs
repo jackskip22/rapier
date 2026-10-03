@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Shared by the writer and carried-page boot: a file can only return to this worker's one-use route.
+// Shared by the writer and the page. Every page Rapier writes (page.mjs's wrap, the editor's Share and HTML export) carries
+// PAGE_SEED once, after its charset (which must stay in the first 1024 bytes): an HTML comment no person sees that tells an
+// agent what the file is and how to make one, never part of the carried document.
+export const PAGE_SEED = '<!-- This page is a Rapier document: Markdown in one HTML file, its source inside, offline. Read it in any browser; edit it in Rapier, https://rapier.website. Agents: https://rapier.website/agents. `npx rapier-html document.md` makes a page like this. -->';
+// A file can only return to this worker's one-use route.
 export const RETURN_ORIGIN = 'https://mcp.rapier.website';
 export function returnAddress(value) {
 	if (typeof value !== 'string' || /[\s\u0000-\u001f\u007f-\u009f\\@?#]/u.test(value))

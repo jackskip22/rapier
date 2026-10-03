@@ -1,8 +1,8 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.50+skills.0f9e7f4b0900e935bbfd7ee70acf7433517660c6d7ef605338092da9904f306e",
-  "description": "Rapier is a very fast Markdown editor in one HTML file: no server, no account, nothing collected, running on your device in any browser. Long documents open and scroll fast on a phone, so whatever your agent writes you can read, edit and keep. It edits code and plain text too, opens Word and PDF, and saves as Markdown, Word, PDF or a web page. Draw and paint with your agent on the same page: diagrams and drawings are editable SVG inside the Markdown, so the agent draws one, you move its boxes, and it changes it again. Pictures, tables, checklists, footnotes, a table of contents, light and dark. With this plugin the agent hands you a document as one page that opens with one click and works offline, or edits beside you, reading only the passage it needs and changing only that, and you keep or drop every change. What leaves your device is the document you share with the agent and the work on it, kept in a workspace that expires after thirty idle days; your assistant's host keeps the conversation under its own policy.",
+  "version": "1.1.51+skills.6bf0524af40770d1ebbfc06404e87f93d23bdb721c13b8251da19b7b2d3b95d0",
+  "description": "Rapier gives you a document you can read, edit and keep, with your agent editing beside you. It is a Markdown editor in one offline HTML file: no server, no account, nothing collected, fast on a phone even for long documents. Your agent hands you a document as one page that opens with one click and works offline, or works in it with you: it reads only the passage it needs, changes only that, and you keep or drop each change. Diagrams and drawings are editable SVG inside the Markdown: the agent draws one, you move its boxes, it changes it again. Code and plain text too; opens Word and PDF; saves as Markdown, Word, PDF or a web page; pictures, tables, checklists, footnotes, a table of contents, light and dark. What leaves your device is the document you share with the agent and the work on it, kept in a workspace that expires after thirty idle days; your assistant's host keeps the conversation under its own policy.",
   "author": {
     "name": "Jack Skipworth",
     "url": "https://rapier.website"
@@ -13,10 +13,15 @@
   "keywords": [
     "markdown",
     "editor",
-    "fast",
-    "phone",
+    "document",
     "offline",
-    "documents",
+    "single-file",
+    "self-contained",
+    "agent",
+    "mcp",
+    "claude",
+    "chatgpt",
+    "phone",
     "writing",
     "code",
     "word",
@@ -30,8 +35,7 @@
     "review",
     "diff",
     "embed",
-    "mcp",
-    "self-contained markdown"
+    "send-back"
   ],
   "icon": "./icon-512.png",
   "privacyPolicyUrl": "https://mcp.rapier.website/privacy.html"
