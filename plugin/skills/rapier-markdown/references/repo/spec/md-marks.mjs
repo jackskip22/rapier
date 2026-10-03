@@ -258,6 +258,224 @@ export function pairMarkers(source, kind, markers = null) {
 	return { runs, strays, arrows };
 }
 
+// Where a Will marker may stand (docs/will.md, Conversion). A pair inside a fence, a raw block
+// (`<pre>`, `<div>`, a raw table cell) or the opening front matter is text: the line is quoted,
+// and a Word or PDF writer that met it as a marker would govern the wrong region. The same frame
+// as spec/frontmatter.mjs, copied here so this grammar stays inside the MIT kit's closure.
+const WILL_BLOCK_TAGS = new Set('address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param search section summary table tbody td tfoot th thead title tr track ul'.split(' '));
+const WILL_VOID_TAGS = new Set('area base br col embed hr img input link meta param source track wbr'.split(' '));
+
+function willLineAt(text, start) {
+	let end = start;
+	while (end < text.length && text.charCodeAt(end) !== 13 && text.charCodeAt(end) !== 10) end++;
+	const eol = text.charCodeAt(end) === 13 && text.charCodeAt(end + 1) === 10 ? 2 : end < text.length ? 1 : 0;
+	return {start, end, next: end + eol, text: text.slice(start, end)};
+}
+
+function willOpeningFrame(text) {
+	const bom = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+	const opening = willLineAt(text, bom);
+	if (!/^--- *$/.test(opening.text) || opening.next === opening.end) return null;
+	for (let at = opening.next; at < text.length;) {
+		const line = willLineAt(text, at);
+		if (/^(?:---|\.\.\.) *$/.test(line.text)) return {contentStart: opening.next, contentEnd: line.start, bodyStart: line.next};
+		if (line.next <= at) break;
+		at = line.next;
+	}
+	return null;
+}
+
+function willColumns(line) {
+	let col = 0;
+	for (let i = 0; i < line.length; i++) {
+		const code = line.charCodeAt(i);
+		if (code === 32) col++;
+		else if (code === 9) col += 4 - (col % 4);
+		else return {col, index: i};
+	}
+	return {col, index: line.length};
+}
+
+function willQuoteInner(line) {
+	let i = 0, depth = 0;
+	while (i < line.length) {
+		let col = 0, j = i;
+		while (j < line.length && col < 3) {
+			const code = line.charCodeAt(j);
+			if (code === 32) { col++; j++; }
+			else if (code === 9) {
+				const adv = 4 - (col % 4);
+				if (col + adv > 3) break;
+				col += adv; j++;
+			} else break;
+		}
+		if (line.charCodeAt(j) !== 62) break;
+		depth++;
+		j++;
+		if (line.charCodeAt(j) === 32 || line.charCodeAt(j) === 9) j++;
+		i = j;
+	}
+	return depth ? line.slice(i) : null;
+}
+
+function willListItem(line) {
+	const {col, index} = willColumns(line);
+	if (col >= 4) return null;
+	const rest = line.slice(index);
+	const marked = /^([-*+]|\d{1,9}[.)])([ \t]*)/.exec(rest);
+	if (!marked || (marked[2].length === 0 && index + marked[1].length < line.length)) return null;
+	let content = col + marked[1].length, padding = 0;
+	for (const ch of marked[2]) {
+		if (padding >= 4) break;
+		if (ch === ' ') { content++; padding++; }
+		else { const adv = 4 - (content % 4); content += adv; padding += adv; }
+	}
+	if (marked[2].length === 0) content++;
+	return {content};
+}
+
+function willFenceOpen(line) {
+	const {col, index} = willColumns(line);
+	if (col >= 4) return null;
+	const match = /^(`{3,}|~{3,})(.*)$/.exec(line.slice(index));
+	if (!match || (match[1].charCodeAt(0) === 96 && match[2].includes('`'))) return null;
+	return {ch: match[1][0], len: match[1].length};
+}
+
+function willFenceCloses(line, fence) {
+	const raw = fence.inQuote ? willQuoteInner(line) : line;
+	if (raw == null) return false;
+	const {col, index} = willColumns(raw);
+	if (col >= 4) return false;
+	const rest = raw.slice(index);
+	let i = 0;
+	while (i < rest.length && rest[i] === fence.ch) i++;
+	if (i < fence.len) return false;
+	for (let k = i; k < rest.length; k++) if (rest.charCodeAt(k) !== 32 && rest.charCodeAt(k) !== 9) return false;
+	return true;
+}
+
+function willUpdateTags(item, line) {
+	const re = /<!--[\s\S]*?-->|<\/?([A-Za-z][A-Za-z0-9]*)\b[^>]*?>/g;
+	let match;
+	while ((match = re.exec(line))) {
+		if (match[0].charCodeAt(1) === 33) continue;
+		const name = match[1].toLowerCase();
+		const close = match[0].charCodeAt(1) === 47;
+		if (WILL_VOID_TAGS.has(name) || /\/\s*>$/.test(match[0])) continue;
+		if (close) {
+			const at = item.tags.lastIndexOf(name);
+			if (at >= 0) item.tags.splice(at, 1);
+		} else item.tags.push(name);
+	}
+}
+
+function willHtmlOpen(line) {
+	const {col, index} = willColumns(line);
+	if (col >= 4) return null;
+	const rest = line.slice(index);
+	const leaf = /^<(pre|script|style|textarea)(?:[ \t]|\/?>|$)/i.exec(rest);
+	if (leaf) return {kind: leaf[1].toLowerCase() === 'pre' ? 'pre' : 'raw', tag: leaf[1].toLowerCase()};
+	const block = /^<\/?([A-Za-z][A-Za-z0-9]*)(?:[ \t]|\/?>|$)/.exec(rest);
+	if (!block || !WILL_BLOCK_TAGS.has(block[1].toLowerCase())) return null;
+	const item = {kind: 'html', tags: []};
+	willUpdateTags(item, rest);
+	return item;
+}
+
+function willRawCloses(item, line) {
+	const close = new RegExp('</' + item.tag + '(?:[\\t\\n\\f />]|$)', 'i');
+	return close.test(line);
+}
+
+function willQuotedWhere(stack) {
+	for (let i = stack.length - 1; i >= 0; i--) {
+		const item = stack[i];
+		if (item.kind === 'fence') return 'fence';
+		if (item.kind === 'pre') return 'raw-pre';
+		if (item.kind === 'html') {
+			if (item.tags.includes('pre')) return 'raw-pre';
+			if (item.tags.includes('td') || item.tags.includes('th')) return 'raw-table';
+			if (item.tags.includes('div')) return 'raw-div';
+			return null;
+		}
+	}
+	return null;
+}
+
+function willLeaf(stack) {
+	const kind = stack[stack.length - 1]?.kind;
+	return kind === 'fence' || kind === 'pre' || kind === 'html' || kind === 'raw';
+}
+
+// `spans` are [start, end) of marker lines in `source` (the Will reader's own offsets).
+// Returns the first quoted span, {start, end, where}, or null when every span may stand.
+// `where` is `fence`, `raw-pre`, `raw-div`, `raw-table` or `frontmatter`.
+export function quotedWillSpan(source, spans) {
+	const text = String(source ?? '');
+	const marks = Array.isArray(spans) ? spans : [];
+	if (!marks.length) return null;
+	const places = new Map();
+	const frame = willOpeningFrame(text);
+	if (frame) {
+		for (const span of marks) {
+			const start = span[0];
+			if (start >= frame.contentStart && start < frame.contentEnd) places.set(start, 'frontmatter');
+		}
+	}
+	const stack = [];
+	for (let pos = frame ? frame.bodyStart : text.charCodeAt(0) === 0xfeff ? 1 : 0; pos < text.length;) {
+		const line = willLineAt(text, pos);
+		const blank = /^[ \t]*$/.test(line.text);
+		let closedHere = false;
+		while (stack.length) {
+			const top = stack[stack.length - 1];
+			if (top.kind === 'html' && blank) { stack.pop(); continue; }
+			if (top.kind === 'fence' && willFenceCloses(line.text, top)) { stack.pop(); closedHere = true; continue; }
+			break;
+		}
+		let cut = -1;
+		for (let i = 0; i < stack.length; i++) {
+			const item = stack[i];
+			if (item.kind === 'list' && !blank && willColumns(line.text).col < item.content && !willListItem(line.text)) { cut = i; break; }
+			if (item.kind === 'quote' && !blank && willQuoteInner(line.text) == null) { cut = i; break; }
+		}
+		if (cut >= 0) stack.length = cut;
+		if (!places.has(line.start)) {
+			const where = willQuotedWhere(stack);
+			if (where) places.set(line.start, where);
+		}
+		const top = stack[stack.length - 1];
+		if (top?.kind === 'pre' && willRawCloses({tag: 'pre'}, line.text)) stack.pop();
+		else if (top?.kind === 'raw' && willRawCloses(top, line.text)) stack.pop();
+		else if (top?.kind === 'html' && !blank) willUpdateTags(top, line.text);
+		else if (!closedHere && !willLeaf(stack) && !blank) {
+			const inner = willQuoteInner(line.text);
+			const body = inner == null ? line.text : inner;
+			const inQuote = inner != null;
+			if (inQuote && stack[stack.length - 1]?.kind !== 'quote') stack.push({kind: 'quote'});
+			const fence = willFenceOpen(body);
+			if (fence) stack.push({kind: 'fence', ...fence, inQuote});
+			else {
+				const html = willHtmlOpen(body);
+				if (html) stack.push({...html, inQuote});
+				else if (!inQuote) {
+					const item = willListItem(line.text);
+					if (item && stack[stack.length - 1]?.kind !== 'list') stack.push({kind: 'list', content: item.content});
+					else if (item && stack[stack.length - 1]?.kind === 'list' && item.content > stack[stack.length - 1].content) stack.push({kind: 'list', content: item.content});
+				}
+			}
+		}
+		if (line.next <= pos) break;
+		pos = line.next;
+	}
+	for (const span of marks) {
+		const where = places.get(span[0]);
+		if (where) return {start: span[0], end: span[1], where};
+	}
+	return null;
+}
+
 function pairSpanMarkers(source, kind, markers = null) {
 	if (kind !== 'ink' && kind !== 'color') throw new TypeError('Unknown paired marker kind');
 	const color = kind === 'color';

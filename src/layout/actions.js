@@ -168,6 +168,17 @@ function rapierFirstLine(step) {
   }, () => {});
 }
 
+// Ctrl+M indents a paragraph one step, Ctrl+Shift+M outdents it (Docs' keys). One step is the standard's unit
+// (`indent` in the layout comment, levels 1 to 4). One Undo step. The words on the line are not touched.
+function rapierIndent(step) {
+  const change = target => { const level = Math.max(0, Math.min(4, (target.layout.indent || 0) + step)); return {indent: level || null}; };
+  return _rapierEditLayout(change, 'document.indent', wrapper => {
+    const line = wrapper.querySelector(':scope > .block-edit > p, :scope > .block-edit > h1, :scope > .block-edit > h2, :scope > .block-edit > h3, :scope > .block-edit > h4, :scope > .block-edit > h5, :scope > .block-edit > h6');
+    const now = line && globalThis.RapierMarkdownLayout.parseLayoutAttribute(line.getAttribute('data-md-layout'));
+    return _rapierLayoutEmptyLine(wrapper, change({layout: now || {}}));
+  }, () => {});
+}
+
 // Edit the layout comment of the paragraphs a selection or the caret is in: `patch` is one object of fields for every target, or a function giving
 // each its own (layout/markdown.mjs editLayout). `onEmptyLine(wrapper)` writes it on an empty line (which has no words to carry the comment), and
 // `after` runs once the source is written.

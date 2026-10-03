@@ -26,7 +26,7 @@ import {checkToolchain} from './check-toolchain.mjs';
 import {SIZE_BUDGETS} from './profile-budgets.mjs';
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
-import {seoSection} from './seo-page.mjs';
+import {seoSection, welcomePaintHtml} from './seo-page.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
@@ -606,9 +606,24 @@ ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list"
 }
 if (/<script\b/i.test(ui)) throw new Error('Editor interface markup must not contain scripts');
 // The ChatGPT copy's interface is this markup without the commercial sheet; the page's own loses only the sheet's markers.
-const appsUi = PROFILE === 'full' ? dropIndentation(stripMarkupComments(ui.replace(commercialMarkup, ''))) : null;
+let appsUi = PROFILE === 'full' ? dropIndentation(stripMarkupComments(ui.replace(commercialMarkup, ''))) : null;
 if (appsUi !== null && /commercial-overlay|RAPIER_COMMERCIAL|buy\.stripe\.com/.test(appsUi)) throw new Error('The ChatGPT copy\'s interface must carry no commercial sheet and no link that starts a purchase');
 ui = dropIndentation(stripMarkupComments(ui.replace(/<!-- RAPIER_COMMERCIAL_(?:BEGIN|END) -->\n?/g, '')));
+const firstScreenMarker = '<!-- RAPIER_FIRST_SCREEN_END -->';
+const splitFirstScreen = (markup, label) => {
+  const at = markup.indexOf(firstScreenMarker);
+  if (at < 0 || markup.indexOf(firstScreenMarker, at + firstScreenMarker.length) >= 0) throw new Error(label + ' needs one first-screen marker');
+  const head = markup.slice(0, at), rest = markup.slice(at + firstScreenMarker.length);
+  if (!head.includes('id="editor-blocks"') || !head.includes('id="btn-find"') || !head.includes('id="btn-overflow"') || rest.includes('id="editor-blocks"')) throw new Error(label + ' first screen must hold the bar and the editor, once');
+  return [head, rest];
+};
+const [firstScreenMarkup, deferredUi] = splitFirstScreen(ui, 'The editor interface');
+ui = deferredUi;
+if (appsUi !== null) {
+  const [appsHead, appsDeferred] = splitFirstScreen(appsUi, 'The Apps interface');
+  if (appsHead !== firstScreenMarkup) throw new Error('The first screen must be the same in every profile, and must not carry the commercial sheet');
+  appsUi = appsDeferred;
+}
 // The document profile carries no Draw/Paint styles (docs/build.md, "Build profiles").
 const styleRows = JSON.parse(await read('editor/styles.json')).filter(row => PROFILE === 'full' || (row.id !== 'rapier-draw-style' && row.id !== 'rapier-notes-style' && row.id !== 'rapier-todo-style'));
 const styles = await Promise.all(styleRows.map(async row => ({...row, css: packStyleWhitespace(await inlineFonts(stripStyleComments(await read(row.path)), row.path))})));
@@ -618,13 +633,17 @@ if (new Set(styles.map(row => row.id)).size !== styles.length || styles.some(row
 // RAPIER_STYLE_SLOTS markers.
 const styleSlots = /(?:<!-- RAPIER_STYLE_SLOTS_BEGIN -->\s*)?(<style id="rapier-boot-style">[\s\S]*?<\/style>)(?:[\s\S]*?<!-- RAPIER_STYLE_SLOTS_END -->)?/;
 if (!styleSlots.test(html) || !html.includes('<template id="rapier-ui-slot"></template>')) throw new Error('Editor interface slots are missing');
-html = html.replace(styleSlots, (_, critical) => critical);
+html = html.replace(styleSlots, (_, critical) => {
+  const rule = '#rapier-first-screen{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;visibility:hidden}#rapier-first-screen.rapier-first-ready{visibility:visible}';
+  return critical.includes('#rapier-first-screen') ? critical : critical.replace('</style>', rule + '</style>');
+});
 html = html.replace(/<!-- RAPIER_JXL_BEGIN -->[\s\S]*?<!-- RAPIER_JXL_END -->\s*/g, '');
 // `html` is the PREVIOUS artifact: it may still carry a packed worker copy.
 html = html.replace(/<!-- RAPIER_BACKUP_WORKER_BEGIN -->[\s\S]*?<!-- RAPIER_BACKUP_WORKER_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_SHARED_AGENT_BEGIN -->[\s\S]*?<!-- RAPIER_SHARED_AGENT_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_APPS_BRIDGE_BEGIN -->[\s\S]*?<!-- RAPIER_APPS_BRIDGE_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_RUNTIME_BEGIN -->[\s\S]*?<!-- RAPIER_RUNTIME_END -->\s*/g, '');
+html = html.replace(/<!-- RAPIER_PAINT_BEGIN -->[\s\S]*?<!-- RAPIER_PAINT_END -->\s*/g, '');
 html = html.replace(/<!-- RAPIER_PLATFORM_BEGIN -->[\s\S]*?<!-- RAPIER_PLATFORM_END -->\n?/g, '<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n');
 html = html.replace(/<meta name="rapier-version" content="[^"]+">/, `<meta name="rapier-version" content="${VERSION}">`);
 // The page's search words (docs/build.md, "The page's search words"). The template carries two RAPIER_SEO regions: the head's (the site's
@@ -914,12 +933,36 @@ const runtimeLoader = await lean('const _rapierBase124 = (() => {\n' + base124So
   '\nreturn Object.freeze({decodeBase124});\n})();\n' +
   (await read('tools/text-pack.mjs')).replace(/^export /gm, '') + '\n' + await read('tools/runtime-loader.js'), 'rapier-loader.js');
 new vm.Script(runtimeLoader, {filename: 'rapier-runtime-loader.js'});
+const firstScreenBinder = await lean(await read('tools/first-screen-binder.js'), 'rapier-first-screen-binder.js');
+const welcomePaint = welcomePaintHtml(await read('editor/engine.js'));
+// The first paint draws the bar and the welcome. Draw, notes, source and the info sheet stay
+// packed until that paint has been offered a frame (tools/runtime-loader.js).
+const PAINT_STYLE_ORDER = ['rapier-font-style', 'rapier-content-style', 'rapier-app-style', 'rapier-editor-style', 'rapier-highlight-style'];
+const paintStyles = PAINT_STYLE_ORDER.map(id => styles.find(row => row.id === id)).filter(Boolean);
+const restStyles = styles.filter(row => !PAINT_STYLE_ORDER.includes(row.id));
+const missingPaint = PAINT_STYLE_ORDER.filter(id => !paintStyles.some(row => row.id === id));
+if (!paintStyles.length) throw new Error('First-paint styles are empty');
+if (missingPaint.length && restStyles.length) throw new Error('A deferred sheet shipped without its first-paint sheet: ' + missingPaint.join(', '));
+const styleRecord = rows => JSON.stringify(rows.map(({id, css}) => ({id, css})));
+const stylesRuntime = await packedScript('rapier-styles-runtime', 'application/rapier-runtime', 'rapier-styles.json', styleRecord(paintStyles));
+const restStylesRuntime = await packedScript('rapier-style-rest-runtime', 'application/rapier-runtime', 'rapier-styles-rest.json', styleRecord(restStyles));
+// The loader is the first classic script of the body that does work, ahead of the welcome's
+// words and the critical styles, so parsing those overlaps the shell's inflate.
+const paintScript = '<!-- RAPIER_PAINT_BEGIN -->\n'
+  + '<div id="rapier-first-screen">' + firstScreenMarkup + '</div>\n'
+  + '<script data-rapier-owned>\n' + safeScript(firstScreenBinder) + '\n</script>\n'
+  + '<script data-rapier-owned>\n' + safeScript(runtimeLoader) + '\n</script>\n'
+  + '<template id="rapier-welcome-paint">' + welcomePaint + '</template>\n'
+  + stylesRuntime
+  + '<!-- RAPIER_PAINT_END -->\n';
+if (!html.includes('<template id="rapier-ui-slot"></template>')) throw new Error('Editor interface slot is missing');
+html = html.replace('<template id="rapier-ui-slot"></template>', () => paintScript + '<template id="rapier-ui-slot"></template>');
 const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' +
-  await packedScript('rapier-styles-runtime', 'application/rapier-runtime', 'rapier-styles.json', JSON.stringify(styles.map(({id, css}) => ({id, css})))) +
+  restStylesRuntime +
   await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', ui) +
   await packedScript('rapier-shared-runtime', 'application/rapier-runtime', 'rapier-shared.js', bundleText) +
   await packedScript('rapier-editor-runtime', 'application/rapier-runtime', 'rapier-editor.js', source) +
-  '<script data-rapier-owned>\n' + safeScript(runtimeLoader) + '\n</script>\n<!-- RAPIER_RUNTIME_END -->\n';
+  '<!-- RAPIER_RUNTIME_END -->\n';
 const bodyEnd = html.lastIndexOf('</body>');
 if (bodyEnd < 0) throw new Error('Editor body is missing');
 html = html.slice(0, bodyEnd) + codecScript + runtimeScript + html.slice(bodyEnd);

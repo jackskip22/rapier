@@ -284,6 +284,14 @@ body.rapier-notes-open .rapier-frontmatter { display: none; }
 	outline: none;
 	caret-color: transparent;
 }
+#editor-blocks .md-render {
+	--md-text-body: var(--rapier-doc-size, 1.1rem);
+	--md-line: var(--rapier-doc-line, 1.75rem);
+	--md-font-sans: var(--rapier-doc-face, 'Geist', system-ui, sans-serif);
+}
+#editor-blocks[data-doc-leading] .md-render {
+	--md-line: calc(var(--md-text-body) * var(--rapier-doc-leading));
+}
 /* The length a viewport restore needs while freshly written wrappers still stand as placeholders (_rapierHoldEditorExtent). */
 #editor-blocks::after { content: ''; display: block; height: var(--rapier-extent-hold, 0px); }
 #editor-blocks.editor-area--read .block-edit { caret-color: transparent; }
@@ -1274,6 +1282,12 @@ html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;
 	 adjacent-sibling rule below settles the real "is it truly right after a table" question against
 	 the live .block-wrapper DOM, reactively, with no bookkeeping kept in sync on insert/delete/reorder. */
 .block-wrapper--table + .block-wrapper .block-read > p.rapier-table-caption-candidate {
+	margin-top: calc(var(--space-1) - var(--md-line));
+	font-style: italic;
+	font-size: var(--text-sm);
+	color: var(--color-text-secondary);
+}
+.block-wrapper--image + .block-wrapper .block-read > p.rapier-figure-caption-candidate {
 	margin-top: calc(var(--space-1) - var(--md-line));
 	font-style: italic;
 	font-size: var(--text-sm);

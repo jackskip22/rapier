@@ -3,6 +3,7 @@ import {unpackFiles, ARCHIVE_LIMITS, crc32} from '../images/archive.mjs';
 import {zipStored} from '../notes/zip-records.mjs';
 import {formatLayout, parseLayout, decodeLayoutAttribute} from '../spec/md-layout.mjs';
 import {parseInkBody} from '../spec/md-marks.mjs';
+import {readDocumentSettings} from '../spec/document-settings.mjs';
 import {willMarkerOf} from '../agent/will.mjs';
 import {inspectRaster, isJxl, dataImage} from '../images/assets.mjs';
 
@@ -861,6 +862,11 @@ export function docxBlocksFromDom(root) {
       // A drawing never carries rotate: its turn is baked into the rasterised bytes.
       if (parsed) return parsed;
     }
+    const marker = element.getAttribute?.('data-md-layout');
+    if (marker) {
+      const parsed = parseLayout(decodeLayoutAttribute(marker));
+      if (parsed) return parsed;
+    }
     const align = element.getAttribute?.('data-md-align');
     return align ? {align} : null;
   };
@@ -993,6 +999,10 @@ export function docxBlocksFromDom(root) {
       blocks[blocks.length - 1].caption = element.textContent.replace(/^Table:\s*/, '').trim();
       continue;
     }
+    if (tag === 'P' && element.classList.contains('rapier-figure-caption') && blocks.length && blocks[blocks.length - 1].type === 'image') {
+      blocks[blocks.length - 1].caption = element.textContent.replace(/^Figure:\s*/, '').trim();
+      continue;
+    }
     if (tag === 'P' || tag === 'DIV' || tag === 'FIGURE' || tag === 'DETAILS') {
       const images = element.querySelectorAll('img');
       if (images.length === 1 && !element.textContent.trim()) {
@@ -1032,11 +1042,12 @@ function tXml(text, style = {}) {
     part === '\t' ? '<w:tab/>' : '<w:t xml:space="preserve">' + escape(part).replace(/\r/g, '&#13;') + '</w:t>').join('') + '</w:r>';
 }
 
-function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading} = {}) {
+function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading, ind} = {}) {
   const bits = [];
   if (styleId) bits.push('<w:pStyle w:val="' + escape(styleId) + '"/>');
   if (numId != null) bits.push('<w:numPr><w:ilvl w:val="' + (ilvl || 0) + '"/><w:numId w:val="' + numId + '"/></w:numPr>');
   if (align && ['left', 'right', 'center', 'both'].includes(align)) bits.push('<w:jc w:val="' + align + '"/>');
+  if (ind) bits.push(ind);
   if (outline != null) bits.push('<w:outlineLvl w:val="' + outline + '"/>');
   if (vanish) bits.push('<w:rPr><w:vanish/></w:rPr>');
   if (borders) bits.push(borders);
@@ -1051,9 +1062,64 @@ function jcOf(layout) {
   return value === 'justify' ? 'both' : ['left', 'right', 'center'].includes(value) ? value : null;
 }
 
+// One step of `indent` or `first` is 2em (the layout standard). At the page's 16px type, 2em is 32px, which is 480 twips.
+// A heading ignores `first`. `w:left` is the start edge of a left-to-right paragraph, the edge the key indents from.
+function indOf(layout, {first = true} = {}) {
+  if (!layout) return '';
+  const step = 480;
+  const left = layout.indent ? layout.indent * step : 0;
+  const firstLine = first && layout.first ? layout.first * step : 0;
+  if (!left && !firstLine) return '';
+  return '<w:ind' + (left ? ' w:left="' + left + '"' : '') + (firstLine ? ' w:firstLine="' + firstLine + '"' : '') + '/>';
+}
+
 // `rewriteDocument` writes the Will markers into word/document.xml in the one pass.
-export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
+function documentDefaultsXml(settings) {
+  if (!settings || (!settings.fontsize && !(settings.mainfont && settings.mainfont.word) && !settings.linestretch)) return '';
+  const run = [];
+  if (settings.mainfont && settings.mainfont.word) {
+    const face = escape(settings.mainfont.word);
+    run.push('<w:rFonts w:ascii="' + face + '" w:hAnsi="' + face + '" w:cs="' + face + '"/>');
+  }
+  if (settings.fontsize) run.push('<w:sz w:val="' + settings.fontsize.halfPoints + '"/><w:szCs w:val="' + settings.fontsize.halfPoints + '"/>');
+  const spacing = settings.linestretch ? '<w:spacing w:line="' + settings.linestretch.line + '" w:lineRule="auto"/>' : '';
+  return '<w:docDefaults>' +
+    (run.length ? '<w:rPrDefault><w:rPr>' + run.join('') + '</w:rPr></w:rPrDefault>' : '') +
+    (spacing ? '<w:pPrDefault><w:pPr>' + spacing + '</w:pPr></w:pPrDefault>' : '') +
+    '</w:docDefaults>';
+}
+
+function sectionPropertiesXml(settings, footerId) {
+  const base = !settings || (!settings.papersize && !settings.geometry && !footerId);
+  if (base) return '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>' +
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
+  const width = settings.papersize ? settings.papersize.width : 12240;
+  const height = settings.papersize ? settings.papersize.height : 15840;
+  const margin = settings.geometry ? settings.geometry.twips : 1440;
+  const footer = footerId ? '<w:footerReference w:type="default" r:id="' + footerId + '"/>' : '';
+  return '<w:sectPr>' + footer + '<w:pgSz w:w="' + width + '" w:h="' + height + '"/>' +
+    '<w:pgMar w:top="' + margin + '" w:right="' + margin + '" w:bottom="' + margin + '" w:left="' + margin + '" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
+}
+
+function pageNumberFooterXml() {
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<w:ftr xmlns:w="' + NS.w[0] + '" xmlns:xml="http://www.w3.org/XML/1998/namespace"><w:p><w:pPr><w:jc w:val="center"/></w:pPr>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>';
+}
+
+function corePropertiesXml(settings) {
+  if (!settings || (!settings.title && !settings.subtitle)) return null;
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+    (settings.title ? '<dc:title>' + escape(settings.title) + '</dc:title>' : '') +
+    (settings.subtitle ? '<dc:subject>' + escape(settings.subtitle) + '</dc:subject>' : '') +
+    '</cp:coreProperties>';
+}
+
+export async function writeDocx(input, {convertImage, rewriteDocument, canonical} = {}) {
   const {blocks, refs, notes} = input && typeof input === 'object' && Array.isArray(input.blocks) ? input : docxBlocksFromDom(input);
+  const settings = typeof canonical === 'string' ? readDocumentSettings(canonical) : null;
   const navigation = docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]);
   const rels = [], media = [];
   let rid = 1, docPr = 1;
@@ -1199,7 +1265,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
     }
     if (block.type === 'heading') {
       const inner = await emitRuns(block.runs);
-      bodyParts.push(pXml(inner, {styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout)}));
+      bodyParts.push(pXml(inner, {styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout), ind: indOf(block.layout, {first: false})}));
       continue;
     }
     if (block.type === 'math') {
@@ -1211,6 +1277,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
       if (!src) continue;
       const drawing = /^data:image\/svg\+xml/i.test(src);
       bodyParts.push(pXml(pictureXml(await assetFor(src, block.alt, drawing), block.alt, block.layout), {align: jcOf(block.layout)}));
+      if (block.caption) bodyParts.push(pXml(tXml('Figure: ' + block.caption), {align: 'center'}));
       continue;
     }
     if (block.type === 'callout') {
@@ -1313,7 +1380,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
       bodyParts.push(pXml('', {borders: '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>'}));
       continue;
     }
-    bodyParts.push(pXml(await emitRuns(block.runs), {align: jcOf(block.layout)}));
+    bodyParts.push(pXml(await emitRuns(block.runs), {align: jcOf(block.layout), ind: indOf(block.layout)}));
    }
    return bodyParts.join('') || pXml('');
   };
@@ -1325,8 +1392,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
     noteXml.push('<w:footnote w:id="' + note.id + '">' + marked + '</w:footnote>');
   }
 
-  const sectPr = '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>' +
-    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
+  const footerId = settings && settings.pagestyle === 'plain' ? nextRid() : '';
+  const sectPr = sectionPropertiesXml(settings, footerId);
   const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<w:document xmlns:w="' + NS.w[0] + '" xmlns:r="' + NS.r[0] + '" xmlns:a="' + NS.a[0] +
     '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '">\n<w:body>' +
@@ -1336,6 +1403,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
     '<w:style w:type="paragraph" w:styleId="Heading' + level + '"><w:name w:val="heading ' + level + '"/>' +
     '<w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="' + (level - 1) + '"/></w:pPr></w:style>').join('');
   const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:styles xmlns:w="' + NS.w[0] + '">' +
+    documentDefaultsXml(settings) +
     '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' + headingStyles +
     '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/></w:style>' +
     '</w:styles>';
@@ -1364,6 +1432,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
     {id: stylesRid, type: 'styles', target: 'styles.xml'},
     {id: numberingRid, type: 'numbering', target: 'numbering.xml'},
     ...(footnoteXml ? [{id: footnotesRid, type: 'footnotes', target: 'footnotes.xml'}] : []),
+    ...(footerId ? [{id: footerId, type: 'footer', target: 'footer1.xml'}] : []),
     ...rels
   ];
   const types = ['png', 'jpeg'].filter(ext => media.some(row => row.name.endsWith('.' + ext)));
@@ -1377,12 +1446,17 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
     '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
   ];
   if (footnoteXml) overrides.push('<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>');
+  if (footerId) overrides.push('<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>');
+  const coreXml = corePropertiesXml(settings);
+  if (coreXml) overrides.push('<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>');
   const contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="' + NS.ct[0] + '">' +
     defaults + overrides.join('') + '</Types>';
 
+  const packageRels = relXml([{id: 'rIdDoc', type: 'officeDocument', target: 'word/document.xml'}])
+    .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') + '</Relationships>');
   const entries = [
     {name: '[Content_Types].xml', bytes: xmlBytes(contentTypesXml)},
-    {name: '_rels/.rels', bytes: xmlBytes(relXml([{id: 'rIdDoc', type: 'officeDocument', target: 'word/document.xml'}]))},
+    {name: '_rels/.rels', bytes: xmlBytes(packageRels)},
     {name: 'word/document.xml', bytes: xmlBytes(documentXml)},
     {name: 'word/_rels/document.xml.rels', bytes: xmlBytes(relXml(mainRels))},
     {name: 'word/styles.xml', bytes: xmlBytes(stylesXml)},
@@ -1394,6 +1468,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument} = {}) {
     const noteRels = rels.filter(row => used.has(row.id));
     if (noteRels.length) entries.push({name: 'word/_rels/footnotes.xml.rels', bytes: xmlBytes(relXml(noteRels))});
   }
+  if (footerId) entries.push({name: 'word/footer1.xml', bytes: xmlBytes(pageNumberFooterXml())});
+  if (coreXml) entries.push({name: 'docProps/core.xml', bytes: xmlBytes(coreXml)});
   for (const row of media) entries.push({name: 'word/media/' + row.name, bytes: row.bytes});
   const packed = packDocx(entries);
   if (packed.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');

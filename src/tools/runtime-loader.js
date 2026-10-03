@@ -112,48 +112,122 @@ if (window.self !== window.top) {
   globalThis.RapierEarlyConnects = Object.freeze({take() { removeEventListener('message', hold); return held.splice(0); }});
 }
 
+function _rapierWhenRuntime(id) {
+  if (document.getElementById(id)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      observer.disconnect();
+      removeEventListener('load', finish);
+      if (document.getElementById(id)) resolve();
+      else reject(new Error(id));
+    };
+    const observer = new MutationObserver(() => { if (document.getElementById(id)) finish(); });
+    observer.observe(document.documentElement, {childList: true, subtree: true});
+    addEventListener('load', finish);
+  });
+}
+
+function _rapierYieldPaint() {
+  if (typeof requestAnimationFrame !== 'function' || document.hidden) return new Promise(resolve => setTimeout(resolve, 0));
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+// The welcome's words are already rendered. They are shown only when nothing carried is waiting:
+// a page door block, or a host that has already said a document is coming.
+async function _rapierRevealFirstScreen() {
+  const screen = document.getElementById('rapier-first-screen');
+  if (!screen || screen.classList.contains('rapier-first-ready')) return;
+  const carried = document.getElementById('rapier-document');
+  let pending = false;
+  try {
+    const ready = window.RapierPlatform?.environment?.ready;
+    if (typeof ready === 'function') await ready();
+    pending = window.RapierPlatform?.files?.hasPendingBoot?.() === true;
+  } catch (_) {}
+  const blocks = document.getElementById('editor-blocks');
+  const welcome = document.getElementById('rapier-welcome-paint');
+  if (blocks && welcome && !(carried && carried.textContent) && !pending) {
+    const fragment = welcome.content.cloneNode(true);
+    // Off-screen welcome blocks skip layout until scrolled. The editor replaces this
+    // projection with the live first screen; the words are the same document.
+    for (const node of fragment.children) {
+      node.style.contentVisibility = 'auto';
+      node.style.containIntrinsicSize = 'auto 4rem';
+    }
+    blocks.replaceChildren(fragment);
+    blocks.setAttribute('data-rapier-welcome-paint', '');
+    const name = document.getElementById('filename-btn');
+    if (name) name.textContent = 'welcome';
+  }
+  screen.classList.add('rapier-first-ready');
+  try { performance.mark('rapier-first-ready'); } catch (_) {}
+}
+
+function _rapierStyleElements(source, anchor) {
+  const boot = document.getElementById('rapier-boot-style');
+  if (boot?.tagName !== 'STYLE') throw new Error('Editor style anchor is missing');
+  const sheets = JSON.parse(source).map(row => {
+    if (typeof row.id !== 'string' || typeof row.css !== 'string') throw new Error('Editor style record is invalid');
+    const element = document.createElement('style');
+    element.id = row.id;
+    element.textContent = row.css;
+    return element;
+  });
+  if (!sheets.length) return [];
+  if (!document.getElementById(sheets[0].id)) (anchor || boot).after(...sheets);
+  return sheets;
+}
+
 (async () => {
   let publishRuntime;
   _rapierRuntimeReady = new Promise(resolve => { publishRuntime = resolve; });
   try {
-    // The platform stage first (text codecs, providers, RapierPlatform, storage, preferences,
-    // RapierBundleIO, the MathJax loader): what the shell used to carry as plain source and what
-    // every later stage and every host handshake reads.
+    // The first paint needs the shell, the styles that draw the bar and the welcome, the
+    // welcome's words, and nothing else; each of those is awaited in turn. The deferred sheets,
+    // the shared group and the editor stay packed until that paint has been offered a frame.
+    // Nothing is shown before the shell can say whether a carried file is waiting, and nothing
+    // visible is unbound: the first screen's controls are bound by the script that precedes this one.
     for (const {name, source} of await _rapierInflateVendor('rapier-platform-runtime')) _rapierExecuteVendorSource(name, source);
-    // An Apps host page without its bridge refuses to boot.
-    // Shared compilation overlaps the independent interface/editor inflation. There is still
-    // no interface to paint here: publishing it before its editor exists would expose dead controls.
-    const shared = _rapierInflateVendor('rapier-shared-runtime').then(async spans => {
-      for (const span of spans) await _rapierExecuteBootSource(span);
-    });
-    const [styles, ui, editor, apps] = await Promise.all([
-      _rapierInflateVendor('rapier-styles-runtime'), _rapierInflateVendor('rapier-ui-runtime'),
-      _rapierInflateVendor('rapier-editor-runtime'),
-      globalThis.RAPIER_APPS_HOST === true ? _rapierInflateVendor('rapier-apps-runtime') : [], shared,
-    ]);
-    if (styles.length !== 1 || ui.length !== 1) throw new Error('Editor interface records are invalid');
-    // The shell carries no empty slot per stylesheet: each row of the record becomes a <style> with
-    // the row's id, and they all go in right after the boot style, in the record's order.
-    const boot = document.getElementById('rapier-boot-style');
-    if (boot?.tagName !== 'STYLE') throw new Error('Editor style anchor is missing');
-    const sheets = JSON.parse(styles[0].source).map(row => {
-      if (typeof row.id !== 'string' || typeof row.css !== 'string') throw new Error('Editor style record is invalid');
-      const element = document.createElement('style');
-      element.id = row.id;
-      element.textContent = row.css;
-      return element;
-    });
-    const slot = document.getElementById('rapier-ui-slot');
-    if (!slot) throw new Error('Editor interface slot is missing');
-    // This is verified application markup, never document content.
+    await _rapierWhenRuntime('rapier-styles-runtime');
+    const styles = await _rapierInflateVendor('rapier-styles-runtime');
+    if (styles.length !== 1) throw new Error('Editor interface records are invalid');
+    const sheets = _rapierStyleElements(styles[0].source);
+    if (!sheets.length) throw new Error('Editor interface records are invalid');
+    await _rapierWhenRuntime('rapier-welcome-paint');
+    await _rapierRevealFirstScreen();
+    await _rapierYieldPaint();
+    // The words are up. The rest inflates together (the inflater is off the main thread) and is
+    // applied in this order: the deferred sheets, the shared group, the interface, the editor.
+    const restPending = _rapierWhenRuntime('rapier-style-rest-runtime').then(() => _rapierInflateVendor('rapier-style-rest-runtime'));
+    const sharedPending = _rapierWhenRuntime('rapier-shared-runtime').then(() => _rapierInflateVendor('rapier-shared-runtime'));
+    const uiPending = _rapierWhenRuntime('rapier-ui-runtime').then(() => _rapierInflateVendor('rapier-ui-runtime'));
+    const editorPending = _rapierWhenRuntime('rapier-editor-runtime').then(() => _rapierInflateVendor('rapier-editor-runtime'));
+    const rest = await restPending;
+    if (rest.length !== 1) throw new Error('Editor interface records are invalid');
+    sheets.push(..._rapierStyleElements(rest[0].source, sheets.at(-1)));
+    for (const span of await sharedPending) await _rapierExecuteBootSource(span);
+    const ui = await uiPending;
+    const editor = await editorPending;
+    if (ui.length !== 1) throw new Error('Editor interface records are invalid');
     const template = document.createElement('template');
     template.innerHTML = ui[0].source;
     const mountInterface = () => {
-      boot.after(...sheets);
-      slot.replaceWith(template.content);
+      if (!document.getElementById(sheets[0].id)) {
+        const boot = document.getElementById('rapier-boot-style');
+        if (boot) boot.after(...sheets);
+      }
+      const deferred = template.content;
+      const screen = document.getElementById('rapier-first-screen');
+      const slot = document.getElementById('rapier-ui-slot');
+      if (slot) slot.replaceWith(deferred);
+      else if (screen) screen.after(deferred);
+      else throw new Error('Editor interface slot is missing');
     };
     for (const span of editor) await _rapierExecuteBootSource(span, mountInterface);
-    for (const span of apps) await _rapierExecuteBootSource(span);
+    if (globalThis.RAPIER_APPS_HOST === true) {
+      await _rapierWhenRuntime('rapier-apps-runtime');
+      for (const span of await _rapierInflateVendor('rapier-apps-runtime')) await _rapierExecuteBootSource(span);
+    }
     // The shared globals are in: a host that waited to hand a document over may send it now (shell/platform.js
     // tells the app the page is ready on this event; before it, the seam the bytes cross is not yet in the page).
     window.dispatchEvent(new Event('rapier:runtime-loaded'));

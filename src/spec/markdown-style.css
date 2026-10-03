@@ -732,6 +732,12 @@
 	font-size: var(--md-text-sm);
 	color: var(--md-color-text-secondary);
 }
+:where(.md-render) .rapier-figure-caption {
+	margin-top: calc(var(--md-space-1) - var(--md-line));
+	font-style: italic;
+	font-size: var(--md-text-sm);
+	color: var(--md-color-text-secondary);
+}
 .md-render img{
 	max-width:100%;height:auto;
 	border:0;

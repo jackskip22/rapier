@@ -89,6 +89,11 @@ export function omitFonts(css) {
   return edits(css, found.map(m => [m.index, m.index + m[0].length, '']));
 }
 const packedStyles = a => JSON.parse(a.text('rapier-styles.json') || '[]').map(row => row.css).join('\n');
+const styleRecords = a => {
+  const paint = JSON.parse(a.text('rapier-styles.json') || '[]');
+  const rest = a.spans.has('rapier-styles-rest.json') ? JSON.parse(a.text('rapier-styles-rest.json') || '[]') : [];
+  return [...paint, ...rest];
+};
 // Diagnostic only: every draw/ module gone (the artifact cannot run). Each blanking lands in the scope that declares what it names.
 export function drawModuleEdits(source) {
   const bundle = one(find(source, n => n.type === 'FunctionDeclaration' && n.id?.name === 'bundle'), 'bundle() declaration');
@@ -206,7 +211,7 @@ export function partition(a) {
   assert(otherBytes >= 0, 'the parts exceed the file');
   const carries = e => e.spans.map(name => {
     const count = name.endsWith('.js') && a.text(name).includes('modules[') ? factories(a, name).size : 0;
-    return name + (count ? ` (${count} module factories)` : name === 'rapier-styles.json' ? ` (${JSON.parse(a.text(name)).length} stylesheets)` : '');
+    return name + (count ? ` (${count} module factories)` : name === 'rapier-styles.json' || name === 'rapier-styles-rest.json' ? ` (${JSON.parse(a.text(name)).length} stylesheets)` : '');
   }).join(', ');
   return {totalBytes: total, elements: a.elements.map(e => ({id: e.id, storedBytes: e.storedBytes, gzipBytes: e.gzipBytes, decodedBytes: e.decodedBytes, carries: carries(e)}))
     .sort((x, y) => y.storedBytes - x.storedBytes), fontFaces: fonts.length + fontRules(packedStyles(a)).length, fontBytes, otherBytes};
@@ -236,8 +241,8 @@ export const GROUPS = [
     inputs: () => ['interchange/pdf.mjs', 'interchange/pdf-resources.mjs'],
     carries: a => modules(a).has('interchange/pdf.mjs') || modules(a).has('interchange/pdf-resources.mjs')},
   {id: 'styles', name: 'Styles (every editor/styles.json row but the fonts sheet, which is the fonts row)', edits: {[STYLES]: omitStyles},
-    inputs: (a, ctx) => JSON.parse(a.text('rapier-styles.json')).map(row => one(ctx.styles.filter(s => s.id === row.id), 'style row ' + row.id).path).filter(path => path !== FONTS_SHEET),
-    carries: a => JSON.parse(a.text('rapier-styles.json') || '[]').some(row => fontRules(row.css).length === 0)},
+    inputs: (a, ctx) => styleRecords(a).map(row => one(ctx.styles.filter(s => s.id === row.id), 'style row ' + row.id).path).filter(path => path !== FONTS_SHEET),
+    carries: a => styleRecords(a).some(row => fontRules(row.css).length === 0)},
   ...[
     ['lib-markdownit', 'Markdown-it and its shipped extensions'],
     ['lib-gpu-lexer', 'GPU syntax lexer'],

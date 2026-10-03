@@ -4859,14 +4859,16 @@ function _rapierYieldToPaint() {
 // heights cover this many viewports from the top (never fewer than _RAPIER_RENDER_BATCH blocks).
 // The rest is installed as dormant shells and rendered afterwards (_rapierHydrateProjectionTail),
 // so the top of a 2 MB file paints when its own blocks are ready, not when the last one is.
-const _RAPIER_FIRST_PAINT_VIEWPORTS = 2;
+const _RAPIER_FIRST_PAINT_VIEWPORTS = 1;
 function _rapierProjectionHeadCount(blocks) {
-	if (!_rapierWysiwygShouldVirtualize(blocks)) return blocks.length;
+	// The first mount lays out the first screen alone. A document that used to paint every block
+	// before that screen (anything under the long-document threshold) now keeps the same tail:
+	// dormant shells, then _rapierHydrateProjectionTail.
 	const host = document.getElementById('editor-blocks');
-	const budget = Math.max(240, host ? host.clientHeight : 0) * _RAPIER_FIRST_PAINT_VIEWPORTS;
+	const budget = Math.max(240, host && host.clientHeight || 0) * _RAPIER_FIRST_PAINT_VIEWPORTS;
 	let height = 0, count = 0;
-	while (count < blocks.length && (height < budget || count < _RAPIER_RENDER_BATCH)) {
-		height += _rapierWysiwygRememberedHeight(blocks[count].raw) || _rapierWysiwygEstimate(blocks[count].raw);
+	while (count < blocks.length && height < budget) {
+		height += _rapierWysiwygRememberedHeight(blocks[count].raw) || _rapierWysiwygEstimate(blocks[count].raw) || 24;
 		count++;
 	}
 	return count;
@@ -4936,6 +4938,7 @@ async function _rapierHydrateProjectionTail(blocks, from, loadToken, referenceIn
 	// tail in the background -- every shell was rendered on the scroll path as the finger reached it,
 	// which is what made the fast-scroll circle stutter (the R69 phone report, scroll-circle-track).
 	const current = () => loadToken === rapier.identity.loadToken && rapier.document.blocks === blocks;
+	const awake = !_rapierWysiwygShouldVirtualize(blocks);
 	await _rapierYieldToPaint();
 	for (let start = from; start < blocks.length; start += _RAPIER_RENDER_BATCH) {
 		if (!current()) return;
@@ -4946,7 +4949,7 @@ async function _rapierHydrateProjectionTail(blocks, from, loadToken, referenceIn
 			for (let at = 0; at < slice.length; at++) {
 				const block = slice[at], wrapper = _rapierWysiwygLedger.entries.get(String(block.id))?.wrapper;
 				block.rendered = rendered[at];
-				if (wrapper?._rapierUnrendered) _rapierHydrateBlockEl(wrapper, false);
+				if (wrapper?._rapierUnrendered) _rapierHydrateBlockEl(wrapper, awake);
 			}
 		}
 		if (_rapierNow() - sliceStarted >= 32) {
@@ -4955,6 +4958,7 @@ async function _rapierHydrateProjectionTail(blocks, from, loadToken, referenceIn
 		}
 	}
 	if (!current()) return;
+	if (awake) document.getElementById('editor-blocks')?.classList.remove('editor-area--virtualized');
 	assignHeadingSlugs();
 	_rapierScheduleRenderWindow();
 }
@@ -4967,6 +4971,10 @@ function _rapierRemoveBlockWrapper(wrapper) {
 function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	const container = document.getElementById('editor-blocks');
 	if (!container || !fragment) return;
+	if (container.hasAttribute('data-rapier-welcome-paint')) {
+		container.removeAttribute('data-rapier-welcome-paint');
+		container.replaceChildren();
+	}
 	const sameDocument = options?.sameDocument === true;
 	if (document.activeElement === container) {
 		try { container.blur(); } catch (_) {}
@@ -4987,6 +4995,7 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	const timing = {}; let at = _rapierNow();
 	const lap = name => { const now = _rapierNow(); timing[name] = Math.round((now - at) * 10) / 10; at = now; };
 	_rapierWysiwygConfigureVirtualization(container, blocks);
+	if (fragment._rapierTailFrom != null) container.classList.add('editor-area--virtualized');
 	if (!staged) _rapierWysiwygInvalidateHeightWidth();
 	lap('configure');
 	container.insertBefore(fragment, container.firstChild);
@@ -6627,6 +6636,12 @@ function _rapierMarkTableCaptionCandidate(readDiv, raw) {
 	const only = readDiv.firstElementChild;
 	if (only && only.tagName === 'P') only.classList.add('rapier-table-caption-candidate');
 }
+function _rapierMarkFigureCaptionCandidate(readDiv, raw) {
+	if (!/^Figure: /.test(String(raw || ''))) return;
+	if (readDiv.childNodes.length !== 1 || readDiv.childElementCount !== 1) return;
+	const only = readDiv.firstElementChild;
+	if (only && only.tagName === 'P') only.classList.add('rapier-figure-caption-candidate');
+}
 
 function _createBlockReadSurface(block) {
 	const readDiv = document.createElement('div');
@@ -6636,6 +6651,7 @@ function _createBlockReadSurface(block) {
 	readDiv._rapierProjectionHtml = String(html || '');
 	_rapierEnhanceRenderedContent(readDiv);
 	_rapierMarkTableCaptionCandidate(readDiv, block.raw);
+	_rapierMarkFigureCaptionCandidate(readDiv, block.raw);
 	_rapierTableWidths(readDiv, block.raw);
 	return readDiv;
 }
@@ -10692,7 +10708,7 @@ function updateFormatToolbarActiveStates(selection, boundary) {
 	const pending = boundary && boundary._rapierTypingMarks;
 	if (pending && selection.isCollapsed && selection.rangeCount &&
 			pending.root.contains(selection.getRangeAt(0).startContainer) &&
-			_rapierStructuralOffsetForRangePoint(pending.root, selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset) === pending.caret) {
+			_rapierStableLiveOffset(pending.root, selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset) === pending.caret) {
 		for (const [mark, on] of Object.entries(pending.marks)) {
 			if (mark === 'highlight' || mark === 'color') {
 				if (on !== 'none') { _setActive(mark + '-picker'); if (mark === 'highlight') _setActive('highlight-' + on); }
@@ -13912,9 +13928,15 @@ function _rapierApplySegmentedMark(cmd, state) {
 	if (!live) return null;
 	const range = _rapierSnapRangeToAtoms(state.range.cloneRange(), live);
 	const text = String(live.textContent || '');
-	const start = Math.max(0, Math.min(text.length, _rapierStructuralOffsetForRangePoint(live, range.startContainer, range.startOffset)));
-	const end = Math.max(start, Math.min(text.length, _rapierStructuralOffsetForRangePoint(live, range.endContainer, range.endOffset)));
-	const planned = _rapierPlanSegmentedMark(String(state.blocksBefore[0].raw || ''), cmd, start, end);
+	let start = Math.max(0, Math.min(text.length, _rapierStructuralOffsetForRangePoint(live, range.startContainer, range.startOffset)));
+	let end = Math.max(start, Math.min(text.length, _rapierStructuralOffsetForRangePoint(live, range.endContainer, range.endOffset)));
+	const raw = String(state.blocksBefore[0].raw || '');
+	const projected = _rapierProjectionText(raw);
+	if (projected != null) {
+		start = _rapierProjectionOffset(text, projected, start);
+		end = Math.max(start, _rapierProjectionOffset(text, projected, end));
+	}
+	const planned = _rapierPlanSegmentedMark(raw, cmd, start, end);
 	if (planned == null) return null;
 	const changed = _rapierApplyRawRange(state, [planned], { segments: [{ wrapper, live, text, start, end, selected: text.slice(start, end) }] });
 	requestAnimationFrame(refreshFormatToolbar);
@@ -13950,7 +13972,7 @@ function _rapierPressTypingMark(cmd, editDiv, selection, value) {
 	const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
 	const surface = range && range.collapsed ? _rapierTypingSurface(context, range.startContainer) : null;
 	if (!surface) return _rapierFormatCantGoHere();
-	const at = _rapierStructuralOffsetForRangePoint(surface.root, range.startContainer, range.startOffset);
+	const at = _rapierStableLiveOffset(surface.root, range.startContainer, range.startOffset);
 	const pending = editDiv._rapierTypingMarks;
 	const marks = pending && pending.root === surface.root && pending.caret === at ? Object.assign({}, pending.marks) : {};
 	// Code is a typing state too: the words typed next stand in a code element (or outside the one the caret is in). A code
@@ -13958,7 +13980,7 @@ function _rapierPressTypingMark(cmd, editDiv, selection, value) {
 	if (cmd === 'code' ? Object.keys(marks).some(mark => mark !== 'code') : Object.hasOwn(marks, 'code')) return _rapierFormatCantGoHere();
 	const caretEl = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
 	const pressed = cmd === 'code' ? !(caretEl && caretEl.closest && caretEl.closest('code'))
-		: RAPIER_EXACT_MARKS[cmd] ? !_rapierTypingMarkActive(surface.raw(), at, cmd) : value;
+		: RAPIER_EXACT_MARKS[cmd] ? !_rapierTypingMarkActive(surface.raw(), _rapierProjectLiveOffset(surface.root, at), cmd) : value;
 	if (Object.hasOwn(marks, cmd) && (RAPIER_EXACT_MARKS[cmd] || cmd === 'code' || marks[cmd] === value)) delete marks[cmd];
 	else marks[cmd] = pressed;
 	editDiv._rapierTypingMarks = Object.keys(marks).length ? { root: surface.root, at, caret: at, marks } : null;
@@ -14051,7 +14073,7 @@ function _rapierMarksLiveAtCaret(editDiv, range) {
 	}
 	const pending = editDiv._rapierTypingMarks;
 	if (pending && pending.root && pending.root.contains(range.startContainer) &&
-			_rapierStructuralOffsetForRangePoint(pending.root, range.startContainer, range.startOffset) === pending.caret) {
+			_rapierStableLiveOffset(pending.root, range.startContainer, range.startOffset) === pending.caret) {
 		for (const [mark, on] of Object.entries(pending.marks)) {
 			if (mark === 'highlight' || mark === 'color') { if (on === 'none') delete marks[mark]; else marks[mark] = on; }
 			else if (on) marks[mark] = true;
@@ -14069,7 +14091,7 @@ function _rapierCarryTypingMarks(editDiv, live) {
 	if (!editDiv || !Object.keys(marks).length || !selection || !selection.rangeCount || !selection.isCollapsed) return false;
 	const range = selection.getRangeAt(0);
 	if (!editDiv.contains(range.startContainer)) return false;
-	const at = _rapierStructuralOffsetForRangePoint(editDiv, range.startContainer, range.startOffset);
+	const at = _rapierStableLiveOffset(editDiv, range.startContainer, range.startOffset);
 	editDiv._rapierTypingMarks = { root: editDiv, at, caret: at, marks };
 	requestAnimationFrame(refreshFormatToolbar);
 	return true;
@@ -14083,7 +14105,7 @@ function _rapierKeepTypingMarks(editDiv, event) {
 	const range = selection && selection.rangeCount && selection.isCollapsed ? selection.getRangeAt(0) : null;
 	const root = pending.root || editDiv;
 	const at = range && root.contains(range.startContainer)
-		? _rapierStructuralOffsetForRangePoint(root, range.startContainer, range.startOffset) : -1;
+		? _rapierStableLiveOffset(root, range.startContainer, range.startOffset) : -1;
 	if (at !== pending.caret ||
 			!/^insert(?:Text|CompositionText|ReplacementText)$/.test(String(event && event.inputType || ''))) {
 		editDiv._rapierTypingMarks = null;
@@ -14095,7 +14117,10 @@ function _rapierKeepTypingMarks(editDiv, event) {
 // the source it now writes: the same words, and a code span over exactly the typed ones (or none over them); a surface that
 // does not read back so is put as it was and refused.
 function _rapierTypedCode(surface, from, to, on) {
-	const root = surface.root, text = String(root.textContent || '');
+	const root = surface.root;
+	from = _rapierTextOffsetForStable(root, from);
+	to = _rapierTextOffsetForStable(root, to);
+	const text = String(root.textContent || '');
 	let start = from, stop = to;
 	while (start < stop && /\s/.test(text.charAt(start))) start++;
 	while (stop > start && /\s/.test(text.charAt(stop - 1))) stop--;
@@ -14158,8 +14183,8 @@ function _rapierApplyTypingMarks(editDiv) {
 		editDiv._rapierTypingMarks = null;
 		return false;
 	}
-	const root = surface.root, caret = _rapierStructuralOffsetForRangePoint(root, range.startContainer, range.startOffset);
-	const typed = String(root.textContent || '').slice(pending.at, caret);
+	const root = surface.root, caret = _rapierStableLiveOffset(root, range.startContainer, range.startOffset);
+	const typed = _rapierStableLiveText(root).slice(pending.at, caret);
 	if (caret <= pending.at) { editDiv._rapierTypingMarks = null; return false; }
 	pending.caret = caret;
 	if (!/\S/.test(typed.replace(/\u00a0/g, ' '))) return false;
@@ -14171,7 +14196,8 @@ function _rapierApplyTypingMarks(editDiv) {
 		return true;
 	}
 	const raw = surface.raw();
-	const planned = _rapierPlanTypedMarks(raw, pending.at, caret, pending.marks);
+	const anchor = _rapierProjectLiveOffset(root, pending.at), placed = _rapierProjectLiveOffset(root, caret);
+	const planned = _rapierPlanTypedMarks(raw, anchor, placed, pending.marks);
 	if (planned == null) return _rapierFormatCantGoHere();
 	if (planned === raw) return false;
 	const before = Array.from(root.childNodes), rendered = _rapierRenderedMarkProbe(planned, 'bold');
@@ -14190,10 +14216,10 @@ function _rapierApplyTypingMarks(editDiv) {
 		_rapierCheckpointEdit(editDiv);
 		const state = _rapierSingleBlockFormatState();
 		if (!state || !_rapierApplyRawRange(state, [planned], { keepEditing: true })) return _rapierFormatCantGoHere();
-		_setCursorCharOffset(context.wrapper.querySelector(':scope > .block-edit') || editDiv, caret);
+		_setCursorCharOffset(context.wrapper.querySelector(':scope > .block-edit') || editDiv, placed);
 		return true;
 	}
-	_setCursorCharOffset(root, caret);
+	_setCursorCharOffset(root, placed);
 	_markEditDivDirty(editDiv);
 	requestAnimationFrame(refreshFormatToolbar);
 	return true;
@@ -14375,6 +14401,88 @@ function _rapierPlanTableCells(raw, cells, plan) {
 	return changed ? lines.join('\n') : null;
 }
 
+// The open surface and the rendering of its source do not count the same characters. A hard break the page typed is a
+// `<br>` with nothing after it, where the rendering has a newline; a nested list the page typed has none of the newlines
+// the rendering writes between its tags. Offsets past that point are short by those characters, and the exact planners
+// then mark the wrong span (keys-2, found and not fixed, 1 and 2). This is the projection's offset map: a live offset
+// walked onto the rendered text, skipping only whitespace one side has and the other does not. A drawn surface already
+// agrees with the rendering, so its offsets pass through. A point the two texts cannot align on stays as the surface counted it.
+// A newline the HTML parser left immediately after a `<br>` is not one of those characters: the break is the `<br>`, the
+// surface a hard break typed on the page has no such newline, and typing at the next line deletes it. The typing state's
+// live offset (`pending.at`, `caret`) counts the stable characters, and the map below is what the planners read.
+function _rapierBreakNewlineLength(node) {
+	if (!node || node.nodeType !== 3 || node.data.charAt(0) !== '\n') return 0;
+	if (node.parentElement && node.parentElement.closest('pre, code')) return 0;
+	const prev = node.previousSibling;
+	return prev && prev.nodeName === 'BR' ? 1 : 0;
+}
+function _rapierStableLiveText(root) {
+	if (!root) return '';
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	let text = '';
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		const lead = _rapierBreakNewlineLength(node);
+		text += lead ? node.data.slice(lead) : node.data;
+	}
+	return text.replace(/\u2060/g, '\n');
+}
+function _rapierStableLiveOffset(root, node, offset) {
+	if (!root) return 0;
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	let count = 0;
+	for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+		const lead = _rapierBreakNewlineLength(current);
+		if (current === node) {
+			const end = Math.max(0, Math.min(offset | 0, current.data.length));
+			return count + Math.max(0, end - lead);
+		}
+		count += current.data.length - lead;
+	}
+	return count;
+}
+function _rapierTextOffsetForStable(root, stable) {
+	if (!root) return 0;
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	let left = Math.max(0, stable | 0), raw = 0;
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		const lead = _rapierBreakNewlineLength(node);
+		const body = node.data.length - lead;
+		if (left <= body) return raw + lead + left;
+		left -= body;
+		raw += node.data.length;
+	}
+	return raw;
+}
+function _rapierProjectionText(raw) {
+	const probe = _rapierRenderedMarkProbe(String(raw || ''), 'bold');
+	return probe ? probe.text : null;
+}
+function _rapierProjectionOffset(liveText, renderedText, at) {
+	const live = String(liveText || '').replace(/\u2060/g, '\n');
+	const rendered = String(renderedText || '').replace(/\u2060/g, '\n');
+	let i = 0, j = 0;
+	const end = Math.max(0, Math.min(at | 0, live.length));
+	while (i < end && j < rendered.length) {
+		if (live[i] === rendered[j]) { i++; j++; continue; }
+		if (/\s/.test(rendered[j])) { j++; continue; }
+		if (/\s/.test(live[i])) { i++; continue; }
+		return at;
+	}
+	return i === end ? j : at;
+}
+function _rapierRawForProjectionRoot(root) {
+	const wrapper = root && root.closest && root.closest('.block-wrapper');
+	if (!wrapper) return null;
+	try { return _rapierLiveRawForWrapper(wrapper); } catch (_) { return null; }
+}
+function _rapierProjectLiveOffset(root, at) {
+	const raw = _rapierRawForProjectionRoot(root);
+	if (raw == null) return at;
+	const rendered = _rapierProjectionText(raw);
+	if (rendered == null) return at;
+	return _rapierProjectionOffset(_rapierStableLiveText(root), rendered, at);
+}
+
 // The selection cut to each block's own words: where the selection starts and ends in it, as offsets of its surface. Across blocks
 // (the lead's ruling of 30 September, reversible by the founder's word; Word bolds every run of text it can and says nothing) a block
 // that cannot carry a mark has no words here: it is passed over, quietly, and stays as it is.
@@ -14407,6 +14515,16 @@ function _rapierHighlightSegments(state) {
 		end = Math.max(start, Math.min(end, text.length));
 		while (start < end && /\s/.test(text.charAt(start))) start++;
 		while (end > start && /\s/.test(text.charAt(end - 1))) end--;
+		const selected = text.slice(start, end);
+		const liveStart = start, liveEnd = end;
+		const block = _rapierBoundBlock(wrapper);
+		const projected = _rapierProjectionText(block && block.raw);
+		if (projected != null) {
+			const mappedStart = _rapierProjectionOffset(text, projected, start);
+			const mappedEnd = _rapierProjectionOffset(text, projected, end);
+			start = mappedStart;
+			end = Math.max(mappedStart, mappedEnd);
+		}
 
 		// A picture in this block's own words refuses the mark. The block's chrome does not count (a heading's fold button, an
 		// svg after its words, is inside any selection that starts in the heading and runs on), so the selection is cut to the block first.
@@ -14414,7 +14532,7 @@ function _rapierHighlightSegments(state) {
 		if (!_nodeInside(live, range.startContainer)) clip.setStart(live, 0);
 		if (!_nodeInside(live, range.endContainer)) clip.setEnd(live, live.childNodes.length);
 		try { if (Array.from(clip.cloneContents().querySelectorAll('img,svg')).some(node => !node.closest('.callout__label'))) return null; } catch (_) { return null; }
-		segments.push({ wrapper, live, text, start, end, selected: text.slice(start, end) });
+		segments.push({ wrapper, live, text, start, end, liveStart, liveEnd, selected });
 	}
 	return segments;
 }
@@ -14617,7 +14735,7 @@ function rapierHighlight(requestedColor) {
 		for (const segment of segments) {
 			if (segment.start >= segment.end) continue;
 			if (segment.cells) { domPlanSafe = false; break; }
-			const html = _rapierPlanHighlight(segment.live, segment.start, segment.end, color);
+			const html = _rapierPlanHighlight(segment.live, segment.liveStart, segment.liveEnd, color);
 			if (html == null) { domPlanSafe = false; break; }
 			plans.push({ live: segment.live, html });
 		}
@@ -15192,7 +15310,8 @@ function _rapierTypingStyle(node) {
 
 // A mark's key or button with the caret strictly inside a word (a letter, digit, mark, underscore or apostrophe on both sides of it) marks the whole word and
 // leaves the caret where it was, as Word and Docs do; at a word's edge, or between spaces, it starts the typing state as it always did. This selects the word
-// and returns where the caret stood (its text offset in the open block), for _rapierRestoreWordCaret; null when the caret is not inside a word.
+// and returns where the caret stood, for _rapierRestoreWordCaret. The offset is the projection's: the live surface's count walked onto the rendering, so a
+// caret after replaceChildren (a typed hard break has no newline the rendering writes) is not one character short. Null when the caret is not inside a word.
 function _rapierSelectWordAroundCaret(selection) {
 	const editDiv = _rapierActiveEditDiv();
 	const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
@@ -15225,7 +15344,11 @@ function _rapierSelectWordAroundCaret(selection) {
 	};
 	const start = pointAt(from, true), end = pointAt(to, false), word = document.createRange();
 	if (!start || !end) return null;
-	const caret = _rapierStructuralOffsetForRangePoint(editDiv, node, range.startOffset);
+	const structural = _rapierStructuralOffsetForRangePoint(editDiv, node, range.startOffset);
+	const raw = _rapierRawForProjectionRoot(editDiv);
+	const rendered = raw == null ? null : _rapierProjectionText(raw);
+	// Caret after a successful replaceChildren uses the projected offset. A surface that already agrees with its rendering passes through.
+	const caret = rendered == null ? structural : _rapierProjectionOffset(String(editDiv.textContent || ''), rendered, structural);
 	try { word.setStart(start.node, start.offset); word.setEnd(end.node, end.offset); } catch (_) { return null; }
 	return _rapierInstallSelectionRange(selection, word, false) ? { caret } : null;
 }
@@ -15237,6 +15360,64 @@ function _rapierRestoreWordCaret(word) {
 	try { editDiv.focus({ preventScroll: true }); selection.collapse(point.node, point.offset); } catch (_) {}
 }
 
+function _rapierHtmlScriptProbe(raw, tag) {
+	const probe = _rapierRenderedMarkProbe(raw, 'bold');
+	return probe ? {text: probe.text, runs: _rapierMarkRuns(probe.root, tag)} : null;
+}
+function _rapierPlanHtmlScript(raw, selectedText, tag, targetStart, targetEnd) {
+	const source = String(raw || '');
+	const selected = String(selectedText || '').replace(/\u2060/g, '\n');
+	if (!selected || targetStart >= targetEnd) return null;
+	const before = _rapierHtmlScriptProbe(source, tag);
+	if (!before || before.text.slice(targetStart, targetEnd) !== selected) return null;
+	const open = '<' + tag + '>', close = '</' + tag + '>';
+	const exact = before.runs.some(run => run.start === targetStart && run.end === targetEnd);
+	const candidates = [];
+	if (exact) {
+		const wrapped = open + selected + close;
+		for (let at = source.indexOf(wrapped); at >= 0; at = source.indexOf(wrapped, at + wrapped.length))
+			candidates.push(source.slice(0, at) + selected + source.slice(at + wrapped.length));
+	} else {
+		for (let at = source.indexOf(selected); at >= 0; at = source.indexOf(selected, at + selected.length))
+			candidates.push(source.slice(0, at) + open + selected + close + source.slice(at + selected.length));
+	}
+	const valid = candidates.filter(next => {
+		const after = _rapierHtmlScriptProbe(next, tag);
+		if (!after || after.text !== before.text) return false;
+		return exact
+			? !after.runs.some(run => run.start < targetEnd && run.end > targetStart)
+			: after.runs.some(run => run.start === targetStart && run.end === targetEnd);
+	});
+	return valid.length === 1 ? valid[0] : null;
+}
+function _rapierApplyHtmlScript(tag) {
+	if (_rapierUserMutationBlocked()) return false;
+	const selection = window.getSelection && window.getSelection();
+	if (selection && selection.isCollapsed) _rapierSelectWordAroundCaret(selection);
+	const state = selection && !selection.isCollapsed ? _rapierFormatSelectionState({marks: true}) : null;
+	if (!state || !state.range) { showToast('select the words first', 'info'); return false; }
+	const segments = _rapierHighlightSegments(state);
+	if (!segments || !segments.some(segment => segment.start < segment.end)) return _rapierFormatCantGoHere();
+	const nextRaw = [];
+	for (let index = 0; index < segments.length; index++) {
+		const segment = segments[index], before = String(state.blocksBefore[index].raw || '');
+		if (segment.start >= segment.end) { nextRaw.push(before); continue; }
+		const planned = segment.cells
+			? _rapierPlanTableCells(before, segment.cells, (cell, words, start, end) => _rapierPlanHtmlScript(cell, words, tag, start, end))
+			: _rapierPlanHtmlScript(before, segment.selected, tag, segment.start, segment.end);
+		if (planned == null) return _rapierFormatCantGoHere();
+		nextRaw.push(planned);
+	}
+	const changed = _rapierApplyRawRange(state, nextRaw, {keepEditing: true, segments});
+	requestAnimationFrame(refreshFormatToolbar);
+	return changed;
+}
+function _rapierScriptCommands() {
+	return [
+		{id: 'format.superscript', label: 'Superscript', group: 'format', glyph: 'x\u00b2', keywords: ['superscript', 'sup', 'exponent'], mutates: true, run: () => _rapierApplyHtmlScript('sup')},
+		{id: 'format.subscript', label: 'Subscript', group: 'format', glyph: 'x\u2082', keywords: ['subscript', 'sub'], mutates: true, run: () => _rapierApplyHtmlScript('sub')},
+	];
+}
 function rapierFmt(cmd, value) {
 	if (_rapierUserMutationBlocked()) return false;
 	const viewport = _rapierCaptureEditorViewport();
@@ -19456,6 +19637,7 @@ function _bumpDocGeneration(options = null) {
 	const wasDirty = _rapierIsDirty();
 	rapier.revision.generation = (rapier.revision.generation || 0) + 1;
 	_rapierMarkSemanticFactsStale();
+	_rapierApplyDocumentSettings();
 	if (!wasDirty) _notifyDirtyState();
 	return rapier.revision.generation;
 }
@@ -21928,6 +22110,18 @@ function _rapierMarkTableCaptions(root) {
 		table.setAttribute('aria-describedby', existing ? existing + ' ' + id : id);
 	});
 }
+function _rapierMarkFigureCaptions(root) {
+	// Same path as a table caption: an ordinary paragraph after the picture, still the source line.
+	const figureCaption = /^Figure: /;
+	root.querySelectorAll('p').forEach(paragraph => {
+		if (!figureCaption.test(paragraph.textContent || '')) return;
+		const previous = paragraph.previousElementSibling;
+		if (!previous || previous.tagName !== 'P') return;
+		const images = previous.querySelectorAll('img');
+		if (images.length !== 1 || previous.textContent.trim()) return;
+		paragraph.classList.add('rapier-figure-caption');
+	});
+}
 
 function _rapierRenderSemanticRoot(canonical, metadata) {
 	const root = document.createElement('div');
@@ -21964,6 +22158,7 @@ function _rapierRenderSemanticRoot(canonical, metadata) {
 
 	root.querySelectorAll('pre > code').forEach(_rapierNormalizeCodeElement);
 	_rapierMarkTableCaptions(root);
+	_rapierMarkFigureCaptions(root);
 	_rapierMarkListContinuations(Array.from(root.children));
 	_rapierDecorateJumpLists(root);
 	return root;
@@ -23116,6 +23311,14 @@ function _rapierWillSentinelPlan(canonical, kind) {
 }
 
 async function _rapierBuildDocxHtml(context) {
+	// A quoted pair is text (spec/md-marks.mjs quotedWillSpan). Carrying it would govern a region the
+	// source only quoted. The words are the writer's own refusal, including a marker in the front matter.
+	if (typeof _rapierWillParse === 'function' && context.metadata && context.metadata.docKind === 'markdown') {
+		const will = _rapierWillParse(String(context.canonical == null ? '' : context.canonical));
+		if (will.present && globalThis.RapierMarkdownSpec.quotedWillSpan(context.canonical, will.blocks.map(block => [block.start, block.end]))) {
+			throw new Error('WILL LOST — the Word document could not carry every Will marker: a marker stands inside other content (a code block, raw HTML or a table cell). Take the quoted marker out, or export HTML, which keeps the source exact.');
+		}
+	}
 	const plan = _rapierWillSentinelPlan(context.canonical, context.metadata.docKind);
 	const semanticRoot = plan ? _rapierRenderSemanticRoot(plan.canonical, context.metadata) : context.semanticRoot.cloneNode(true);
 	if (plan) await globalThis.RapierEmbeddedImages.materialize(semanticRoot, plan.canonical);
@@ -23176,6 +23379,7 @@ async function _rapierBuildDocxHtml(context) {
 		blocks,
 		willMarkers: plan ? plan.markers : null,
 		willSentinel: plan ? plan.sentinel : null,
+		canonical: context.canonical,
 	};
 }
 
@@ -23266,7 +23470,7 @@ async function _rapierConvertPortableHtmlToDocx(prepared) {
 	// The Will markers ride in through the writer, which carries them into word/document.xml as it
 	// packs; the package is never unzipped again to take them.
 	const marked = prepared.willMarkers && prepared.willMarkers.length;
-	const packed = await docx.writeDocx(prepared.blocks, {convertImage: _rapierDocxRasterImage,
+	const packed = await docx.writeDocx(prepared.blocks, {convertImage: _rapierDocxRasterImage, canonical: prepared.canonical,
 		...(marked ? {rewriteDocument: xml => _rapierCarryWillMarkersXml(xml, prepared.willMarkers, prepared.willSentinel)} : {})});
 	return new Blob([packed], {type: RAPIER_DOCX_MIME});
 }
@@ -23512,6 +23716,33 @@ function _rapierAnnotateExportBoxPolygons(root) {
 	}
 }
 
+function _rapierDocumentSettingsOf(canonical) {
+	const spec = globalThis.RapierMarkdownSpec;
+	if (!spec || typeof spec.readDocumentSettings !== 'function') return null;
+	try { return spec.readDocumentSettings(String(canonical || '')); }
+	catch (_) { return null; }
+}
+function _rapierDocumentSettingsCss(settings) {
+	const spec = globalThis.RapierMarkdownSpec;
+	if (!settings || !spec || typeof spec.documentSettingsStyle !== 'function') return '';
+	const style = spec.documentSettingsStyle(settings) || '';
+	const page = typeof spec.documentSettingsPageRule === 'function' ? spec.documentSettingsPageRule(settings) : null;
+	return style && page ? style + '\n' + page : style || page || '';
+}
+function _rapierApplyDocumentSettings() {
+	const host = document.getElementById('editor-blocks');
+	if (!host) return;
+	const settings = _rapierDocumentSettingsOf(_rapierSourceText());
+	const set = (name, value) => value ? host.style.setProperty(name, value) : host.style.removeProperty(name);
+	set('--rapier-doc-size', settings && settings.fontsize ? settings.fontsize.css : '');
+	set('--rapier-doc-face', settings && settings.mainfont && settings.mainfont.css ? settings.mainfont.css : '');
+	// The factor is applied on .md-render, where --md-text-body is already the document size.
+	// A calc stored on this host would multiply the style pack's 1.1rem instead.
+	const leading = settings && settings.linestretch ? String(settings.linestretch.factor) : '';
+	set('--rapier-doc-leading', leading);
+	if (leading) host.setAttribute('data-doc-leading', leading);
+	else host.removeAttribute('data-doc-leading');
+}
 async function _rapierBuildArtifact(options, providedContext) {
 	const opts = options || {};
 	const context = providedContext || _rapierBuildInterchangeContext(opts);
@@ -23575,9 +23806,13 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// page, not the one it was made in). Its policy alone has font-src data:, which reaches no network, whether or not the page has a Will:
 	// with it only for a Will the same document would print in its faces with the Will and in the reader's own without (measured).
 	const willFont = opts.print && opts.willFont ? opts.willFont : null;
+	const settings = _rapierDocumentSettingsOf(context.canonical);
+	const settingsCss = _rapierDocumentSettingsCss(settings);
+	const pageTitle = settings && settings.title ? globalThis.RapierMarkdownSpec.documentTitle(settings) : metadata.filename;
 	const css = _rapierArtifactStyles(theme, !!opts.print, !!opts.print || opts.kind === 'standalone')
 		+ (opts.extraCss ? '\n\n' + opts.extraCss : '')
-		+ (willFont ? '\n\n@font-face{font-family:' + willFont.family + ';src:url(' + await _rapierBlobDataUrl(new Blob([willFont.bytes], { type: 'font/ttf' })) + ') format("truetype")}' : '');
+		+ (willFont ? '\n\n@font-face{font-family:' + willFont.family + ';src:url(' + await _rapierBlobDataUrl(new Blob([willFont.bytes], { type: 'font/ttf' })) + ') format("truetype")}' : '')
+		+ (settingsCss ? '\n' + settingsCss : '');
 	// Every written page is offline. Only the writer's nonce script may run; it, pictures,
 	// styles and other page resources get no network authority. Following an ordinary link
 	// is the reader's navigation, with no Referer, not a background resource request.
@@ -23604,7 +23839,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || lexerScript || inkScript ? nonce : '', !!opts.print) + '">\n'
 		+ '<meta name="referrer" content="no-referrer">\n'
 		+ '<meta name="generator" content="Rapier ' + escapeRapierHtmlText(version) + '">\n'
-		+ '<title>' + escapeRapierHtmlText(metadata.filename) + '</title>\n'
+		+ '<title>' + escapeRapierHtmlText(pageTitle) + '</title>\n'
 		+ '<style>' + css + '</style>\n</head>\n'
 		+ '<body class="' + bodyClass + '"><main class="' + docClass + '" data-md-theme="' + theme + '">'
 		+ bodyHtml + '</main>' + carrier + layoutScript + lexerScript + inkScript + '</body>\n</html>';
@@ -23615,6 +23850,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		bodyHtml,
 		docClass,
 		metadata,
+		documentTitle: settings && settings.title ? pageTitle : '',
 	};
 }
 
@@ -23668,8 +23904,9 @@ function _rapierPrintFailure(error) {
 // below: a reader that works on a plain text layer cannot tell it from a carried one, so the export fails closed. The standard's open
 // item (docs/will.md): once its binding says that visible text is never a marker, and readers are known to honour it, the refusal can go.
 function _rapierPrintWillAdmit(canonical, plan) {
-	const front = _rapierSplitOpeningFrontmatter(canonical).frontmatter;
-	if (front && _rapierWillParse(front).blocks.length) throw _rapierPrintWillLost('a marker stands in the front matter, which is not on the printed page', 'Take it out of the front matter');
+	const quoted = globalThis.RapierMarkdownSpec.quotedWillSpan(canonical, _rapierWillParse(canonical).blocks.map(block => [block.start, block.end]));
+	if (quoted && quoted.where === 'frontmatter') throw _rapierPrintWillLost('a marker stands in the front matter, which is not on the printed page', 'Take it out of the front matter');
+	if (quoted) throw _rapierPrintWillLost('a marker stands inside other content, where a reader of the PDF\'s text could not tell it from a carried marker', 'Take the quoted marker out');
 	for (const marker of plan.markers) {
 		const bad = /[\u0000\u0009\u000a\u000c\u000d\u1df8\u202b]/.exec(marker);
 		if (bad) throw _rapierPrintWillLost('U+' + bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0') + ' in a marker cannot be read back from a PDF', 'Take it out of the marker');
@@ -23934,6 +24171,7 @@ ${host} .rapier-page{
 }
 
 function _rapierPrintDocumentName(artifact) {
+	if (artifact && artifact.documentTitle) return String(artifact.documentTitle);
 	const raw = artifact && artifact.metadata && artifact.metadata.filename
 		? artifact.metadata.filename
 		: 'document';
@@ -32248,7 +32486,7 @@ const _RAPIER_COMMAND_ICONS = Object.freeze({
 	link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
 	clear: '<path d="M4 7V4h16v3"/><path d="M5 20h6"/><path d="M13 4 7 20"/><line x1="22" y1="2" x2="2" y2="22"/>',
 	grid: '<rect x="3" y="3" width="18" height="18"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="12" y1="3" x2="12" y2="21"/>',
-	will: '<path d="M3 5l3.6 14L12 8l5.4 11L21 5"/>',
+	will: _rapierWillG(),
 	'chevron-right': '<polyline points="9 18 15 12 9 6"/>',
 	'chevron-down': '<polyline points="6 9 12 15 18 9"/>',
 	'line-solid': '<line x1="3" y1="12" x2="21" y2="12"/>',
@@ -32290,6 +32528,15 @@ const RAPIER_COMMAND_FAMILIES = Object.freeze({
 	code: Object.freeze({ label: 'Code', icon: 'code' }),
 	diagram: Object.freeze({ label: 'Diagram', icon: 'diagram' }),
 });
+function _rapierWillG() {
+	return '<path d="M3 5l3.6 14L12 8l5.4 11L21 5"/>';
+}
+function _rapierIndents() {
+	return [
+		{ id: 'format.indent', label: 'Increase indent', group: 'format', glyph: '→', keywords: ['indent', 'increase indent', 'nest paragraph'], mutates: true, run: () => rapierIndent(1) },
+		{ id: 'format.outdent', label: 'Decrease indent', group: 'format', glyph: '←', keywords: ['outdent', 'decrease indent', 'unindent'], mutates: true, run: () => rapierIndent(-1) },
+	];
+}
 const RAPIER_COMMANDS = Object.freeze([
 	{ id: 'format.bold', label: 'Bold', group: 'format', icon: 'bold', glyph: 'B',
 		keywords: ['strong', 'emphasis'], mutates: true, run: () => rapierFmt('bold') },
@@ -32303,6 +32550,7 @@ const RAPIER_COMMANDS = Object.freeze([
 	{ id: 'format.align-center', label: 'Center', family: 'align', group: 'format', icon: 'align-center', glyph: '≡', keywords: ['alignment', 'paragraph', 'align center', 'centre', 'middle'], mutates: true, run: () => rapierAlign('center') },
 	{ id: 'format.align-right', label: 'Right', family: 'align', group: 'format', icon: 'align-right', glyph: '≡', keywords: ['alignment', 'paragraph', 'align right'], mutates: true, run: () => rapierAlign('right') },
 	{ id: 'format.align-justify', label: 'Justify', family: 'align', group: 'format', icon: 'align-justify', glyph: '≡', keywords: ['alignment', 'paragraph', 'justified'], mutates: true, run: () => rapierAlign('justify') },
+	..._rapierIndents(),
 	{ id: 'format.align-cycle', label: 'Cycle alignment', group: 'format', glyph: '≡', hidden: true, keywords: ['alignment'], mutates: true, run: () => rapierCycleAlignment() },
 	{ id: 'format.paragraph', label: 'Paragraph', family: 'size', group: 'turn into', glyph: 'P',
 		keywords: ['body', 'normal text', 'size', 'plain'], mutates: true, run: () => rapierFmt('p') },
@@ -33302,7 +33550,7 @@ function _rapierDocumentCommands() {
 
 // Every command the palette and the chords know: the table, then the document's two.
 function _rapierCommandList() {
-	return RAPIER_COMMANDS.concat(_rapierDocumentCommands());
+	return RAPIER_COMMANDS.concat(_rapierDocumentCommands(), _rapierScriptCommands());
 }
 
 function rapierRunCommand(commandId, event = null) {
@@ -35787,7 +36035,9 @@ function _rapierChordOf(e) {
 function _rapierChordCommands() {
 	return {
 		'Mod+B': 'format.bold', 'Mod+I': 'format.italic', 'Mod+U': 'format.underline', 'Mod+Shift+X': 'format.strikethrough',
-		'Mod+K': 'format.link', 'Mod+\\': 'format.clear', 'Mod+`': 'format.inline-code', 'Mod+Shift+M': 'format.highlight',
+		'Mod+.': 'format.superscript', 'Mod+,': 'format.subscript',
+		'Mod+K': 'format.link', 'Mod+\\': 'format.clear', 'Mod+`': 'format.inline-code',
+		'Mod+M': 'format.indent', 'Mod+Shift+M': 'format.outdent', 'Mod+Alt+H': 'format.highlight',
 		'Mod+Alt+0': 'format.paragraph', 'Mod+Alt+1': 'format.heading-1', 'Mod+Alt+2': 'format.heading-2', 'Mod+Alt+3': 'format.heading-3',
 		'Mod+Alt+4': 'format.heading-4', 'Mod+Alt+5': 'format.heading-5', 'Mod+Alt+6': 'format.heading-6',
 		'Mod+Shift+7': 'format.numbered-list', 'Mod+Shift+8': 'format.bullet-list', 'Mod+Shift+9': 'insert.checklist',
@@ -35854,7 +36104,7 @@ function _rapierChordRouter(e) {
 		else rapierSave({ forceSaveAs: e.shiftKey === true });
 		return;
 	}
-	if (chord === 'Mod+,') { e.preventDefault(); _rapierUiSetSettingsOpen(true); return; }
+	if (chord === 'Mod+Alt+,') { e.preventDefault(); _rapierUiSetSettingsOpen(true); return; }
 	if (command) {
 		// A command's chord runs it where the palette offers it, and does nothing elsewhere: the ones that change the document not
 		// while a field of its own has the keys, and with no block open, where the caret was last, in that block.
@@ -36011,6 +36261,47 @@ function _rapierRawWithoutLastLine(raw, kind, count) {
 	return lines.join('\n');
 }
 
+// A line selected upward from the start of the block below it ends at that block's start, so the boundary reader steps
+// back and the open block looks unselected: Delete and Backspace take the words and leave the empty shell, and Ctrl+X
+// copies and cuts nothing. The downward rule already takes a line whose selection runs from its start to the next
+// block's start. Seat this one the same way, on the block above, and let that rule act. A selection that does not
+// begin at that block's start is left as it is.
+function _rapierSeatMirrorSeam() {
+	const lower = _activeBlockEditContext();
+	const sel = window.getSelection && window.getSelection();
+	const range = sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null;
+	if (!lower || !range || _nodeInside(lower.editDiv, range.startContainer)) return false;
+	const end = range.cloneRange();
+	end.collapse(false);
+	if (!_rapierCaretAtSurfaceEdge(lower.editDiv, end, 'backward')) return false;
+	const prev = lower.wrapper.previousElementSibling;
+	if (!prev || !prev.classList.contains('block-wrapper') || !_nodeInside(prev, range.startContainer)) return false;
+	const read = prev.querySelector('.block-read, .block-edit') || prev;
+	const start = range.cloneRange();
+	start.collapse(true);
+	if (!_rapierCaretAtSurfaceEdge(read, start, 'backward')) return false;
+	const block = rapier.document.blocks.find(candidate => candidate.id === Number(prev.dataset.blockId));
+	if (!block) return false;
+	// The selection still touches the open block, so leaving it would wait and the shared edit host would
+	// move with that block's words still in it. Clear the selection first: the block below gets its own
+	// words back on its read surface, and the downward rule then runs on the block above.
+	sel.removeAllRanges();
+	enterBlockEdit(block, prev, {preserveScroll: true});
+	const edit = prev.querySelector(':scope > .block-edit');
+	const next = prev.nextElementSibling;
+	if (!edit || !next) return false;
+	const line = edit.querySelector('li') || edit.querySelector('blockquote > p') || edit.querySelector('p, h1, h2, h3, h4, h5, h6');
+	try {
+		const seated = document.createRange();
+		if (line) { seated.selectNodeContents(line); seated.collapse(true); }
+		else { seated.setStart(edit, 0); seated.collapse(true); }
+		seated.setEnd(next, 0);
+		sel.removeAllRanges();
+		sel.addRange(seated);
+		return true;
+	} catch (_) { return false; }
+}
+
 // A triple click on a paragraph, a heading, the last item of a list or the last paragraph of a quote, then Delete or Backspace (or Cut): Word takes the line with
 // its mark, so what follows moves up in one press, where the words alone went and an empty line stood. The selection holds the line's words from their first place and
 // the break after them, which ends at the very start of the next block: the case the clamp serves. (Inside a block the browser's own delete takes a line with its mark
@@ -36149,7 +36440,7 @@ function _rapierCrossBlockBeforeInput(e) {
 	if (!_rapierCrossBlockRange()) {
 		// A soft keyboard's Backspace or Delete over a whole line and its break, or over only the break, is what the keys are (_rapierGuardEditingKey).
 		// A delete nothing may cancel (an execCommand's) cannot be taken over here, and is left to the clamp below.
-		if (e.cancelable && /^deleteContent(?:Backward|Forward)$/.test(e.inputType || '') && (_rapierTakeSelectedBreak() || _rapierDeleteWholeLine())) {
+		if (e.cancelable && /^deleteContent(?:Backward|Forward)$/.test(e.inputType || '') && (_rapierSeatMirrorSeam(), _rapierTakeSelectedBreak() || _rapierDeleteWholeLine())) {
 			e.preventDefault();
 			e._rapierCrossBlockDone = true;
 			return;
@@ -36299,7 +36590,7 @@ function _rapierGuardEditingKey(e) {
 
 	// A selection that is only the break after the open block: Delete and Backspace take it as the join Delete makes at that end. One that is a
 	// whole line and the break after it (a triple click): they take the line with its mark, as Word does.
-	if (range && !range.collapsed && selectionInHost && /^(?:Backspace|Delete)$/.test(e.key) && (_rapierTakeSelectedBreak() || _rapierDeleteWholeLine())) { e.preventDefault(); return; }
+	if (range && !range.collapsed && selectionInHost && /^(?:Backspace|Delete)$/.test(e.key) && (_rapierSeatMirrorSeam(), _rapierTakeSelectedBreak() || _rapierDeleteWholeLine())) { e.preventDefault(); return; }
 	// Every key that acts on the selection takes it clamped to the open block (_rapierClampTouchingSelection): Backspace, Delete and Enter
 	// used to be dropped without a word after a triple click, the selection ending outside the open block.
 	if (range && !range.collapsed && selectionInHost && (e.key.length === 1 || /^(?:Backspace|Delete|Enter)$/.test(e.key))) range = _rapierClampTouchingSelection() || range;
@@ -37645,6 +37936,7 @@ document.addEventListener('cut', function _rapierCutDocumentSelection(e) {
 		// The clipboard carries what was selected, as Copy has it (a triple click's break with it); what goes is what the keys take
 		// (_rapierClampTouchingSelection): the words of the block, and of a selection that is only the break, the join Delete makes.
 		_clipboardReadRange(range, e.clipboardData);
+		_rapierSeatMirrorSeam();
 		if (!_rapierTakeSelectedBreak() && !_rapierDeleteWholeLine()) _rapierCutInBlock(_rapierClampTouchingSelection() || range, startWrapper);
 		return;
 	}
@@ -46358,11 +46650,14 @@ function _rapierRenderDocumentHead() {
 		title: 'Rapier commercial licence',
 		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
 	} : null;
+	const settingsTitle = !sheet && !rapier.compare.active ? _rapierDocumentSettingsOf(_rapierSourceText()) : null;
+	const titled = settingsTitle && settingsTitle.title ? globalThis.RapierMarkdownSpec.documentTitle(settingsTitle) + ' \u2014 Rapier' : '';
 	document.title = sheet ? sheet.title : rapier.compare.active ? 'Rapier \u2014 compare'
 		: _rapierIsBuiltInWelcomeDocument() && !_rapierEmbed.active ? head.title
-		: 'Rapier \u2014 ' + (_rapierEmbed.active && _rapierEmbed.title ? _rapierEmbed.title : _rapierUiFilenameParts().name);
+		: titled || ('Rapier \u2014 ' + (_rapierEmbed.active && _rapierEmbed.title ? _rapierEmbed.title : _rapierUiFilenameParts().name));
 	if (head.description) head.description.content = sheet ? sheet.description : head.descriptionValue;
 	if (head.canonical) head.canonical.setAttribute('href', sheet ? new URL(door, head.canonicalValue).href : head.canonicalValue);
+	_rapierApplyDocumentSettings();
 }
 
 function renderFilenameExtBaseline() {
@@ -49554,9 +49849,14 @@ function _rapierUiMount() {
 	const runAction = event => {
 		const control = event.target instanceof Element ? event.target.closest('[data-action]') : null;
 		const action = control && (_RAPIER_UI_ACTIONS[control.dataset.action] || privacyAction(control.dataset.action));
-		if (action) action(control, event);
+		if (action) {
+			event.rapierBound = true;
+			try { globalThis.__rapierFirstScreen?.performed?.push(control.dataset.action); } catch (_) {}
+			action(control, event);
+		}
 	};
-	document.addEventListener('click', runAction);
+	if (globalThis.__rapierFirstScreen && typeof globalThis.__rapierFirstScreen.install === 'function') globalThis.__rapierFirstScreen.install(runAction);
+	else document.addEventListener('click', runAction);
 	// About's Google Play review door, bound here rather than in _RAPIER_UI_ACTIONS: it is not a
 	// command, and the engine's unowned top level is ratcheted while this function's body is owned.
 	document.getElementById('about-name').addEventListener('click', _rapierUiReviewTapper());

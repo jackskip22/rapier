@@ -98,6 +98,16 @@ const plain = html => html
 // Under the page's own <h1>: the guide's title is a second-level heading, its sections third.
 const demoted = html => html.replace(/<(\/?)h([1-6])>/g, (_, close, level) => '<' + close + 'h' + Math.min(6, Number(level) + 1) + '>');
 
+// The welcome as the first paint draws it (tools/build.mjs, tools/runtime-loader.js): the page's own rendering of the words,
+// before the editor is live. The pictures' bytes are not in it, they arrive with the editor; the drop cap's letter goes back
+// onto its paragraph as above. Words and their markup only.
+export function welcomePaintHtml(engineSource) {
+	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
+	const html = parser.render(withoutPictures(welcomeMarkdown(engineSource)), {docId: 'welcome'});
+	if (/<(?:img|script|style|iframe|form)|data:|RAPIER_/i.test(html)) throw new Error('The welcome paint must be words and their markup');
+	return html;
+}
+
 export function seoSection(engineSource) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	const summary = plain(parser.render(SUMMARY, {docId: 'summary'}));

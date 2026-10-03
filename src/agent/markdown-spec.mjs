@@ -1,4 +1,5 @@
 import {splitOpeningFrontmatter as _rapierSplitOpeningFrontmatter} from '../spec/frontmatter.mjs';
+import {readDocumentSettings as _rapierReadDocumentSettings, documentTitle as _rapierDocumentTitle, documentSettingsStyle as _rapierDocumentSettingsStyle, documentSettingsPageRule as _rapierDocumentSettingsPageRule} from '../spec/document-settings.mjs';
 
 // One Markdown grammar serves the editor, parse worker and Node agent.
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -8,7 +9,7 @@ import {
 	formatColorOpen as rapierFormatColorOpen, formatColorRun as rapierFormatColorRun,
 	matchColorOpen as rapierMatchColorOpen, parseColorOpen as rapierParseColorOpen,
 	isColorClose as rapierIsColorClose, scanColorMarkers as rapierScanColorMarkers,
-	pairColorMarkers as rapierPairColorMarkers, pairMarkers as rapierPairMarkers,
+	pairColorMarkers as rapierPairColorMarkers, pairMarkers as rapierPairMarkers, quotedWillSpan as rapierQuotedWillSpan,
 	stripColorMarkers as rapierStripColorMarkers, hasColorMarker as rapierHasColorMarker,
 	INK_KINDS as RAPIER_INK_KINDS, INK_CLOSE as RAPIER_INK_CLOSE,
 	INK_PATH_MAX as RAPIER_INK_PATH_MAX, INK_INT_MAX as RAPIER_INK_INT_MAX,
@@ -406,13 +407,15 @@ export {
 	RAPIER_HIGHLIGHT_COLORS, RAPIER_MARKDOWN_SPEC, _rapierApplyMarkdownSpec as applyMarkdownSpec,
 	_rapierSourceCharEscaped as sourceCharEscaped, _rapierInstallMarkdownMath as installMarkdownMath,
 	_rapierSplitOpeningFrontmatter as splitOpeningFrontmatter,
+	_rapierReadDocumentSettings as readDocumentSettings, _rapierDocumentTitle as documentTitle,
+	_rapierDocumentSettingsStyle as documentSettingsStyle, _rapierDocumentSettingsPageRule as documentSettingsPageRule,
 	// The text-colour and page-break convention (spec/md-marks.mjs), passed through so the editor
 	// and its Pandoc-dialect export call the one owner instead of repeating its comment grammar.
 	RAPIER_TEXT_COLOR_NAMES, RAPIER_COLOR_CLOSE, RAPIER_PAGE_BREAK_MARKER,
 	rapierFormatColorOpen as formatColorOpen, rapierFormatColorRun as formatColorRun,
 	rapierMatchColorOpen as matchColorOpen, rapierParseColorOpen as parseColorOpen,
 	rapierIsColorClose as isColorClose, rapierScanColorMarkers as scanColorMarkers,
-	rapierPairColorMarkers as pairColorMarkers, rapierPairMarkers as pairMarkers,
+	rapierPairColorMarkers as pairColorMarkers, rapierPairMarkers as pairMarkers, rapierQuotedWillSpan as quotedWillSpan,
 	rapierStripColorMarkers as stripColorMarkers, rapierHasColorMarker as hasColorMarker,
 	RAPIER_INK_KINDS, RAPIER_INK_CLOSE, RAPIER_INK_PATH_MAX, RAPIER_INK_INT_MAX,
 	// The same four under the grammar's own names: the engine's exact-source doors and the parse Worker's plant read them so.
