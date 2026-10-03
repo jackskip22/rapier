@@ -2,6 +2,11 @@ import acorn from './vendor/acorn.mjs';
 import { structureRequest } from './structure-request.mjs';
 const self = {acorn};
 function _rapierStructureAnalyze(request) {
+	// The worker admits its own source; the caller's gate cannot bound a directly delivered job.
+	if (request && [request.source, request.before && request.before.source, request.after && request.after.source]
+		.some(value => typeof value === 'string' && value.length > 8 * 1024 * 1024)) {
+		return {ok: false, engine: 'acorn@8.18.0', status: 'unavailable', complete: false, unavailable: 'source_too_large'};
+	}
 	/* Receipt is two immutable roots but one question, one budget. Run the same index owner sequentially inside this Worker job; give the second root only what the first didn't spend. No second realm, queue position, timer or reset turns the pair into two answers. */
 	if (request && request.mode === 'receipt' && request.before && request.after) {
 		var pairLimits = request.limits || {};
