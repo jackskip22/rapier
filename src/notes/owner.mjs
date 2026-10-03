@@ -1,3 +1,4 @@
+import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from './import-storage.mjs';
 // Reads return the complete note listing, but only explicitly requested bodies. Transaction
 // results are listing-only; admission and recovery read their own affected files afresh. No body
 // cache survives a call, and a planner never owns the listing used to admit its operations.
@@ -53,9 +54,9 @@ function unpack(text) {
 function fileName(file, snapshot = false) {
 	const path = typeof file === 'string' ? file.split('/') : [];
 	const supported = snapshot && path.length && !/[\\\0]/.test(file) && path.every(part => part && part !== '.' && part !== '..') && file !== NOTES_INDEX_FILE && file !== OWNER_JOURNAL_FILE
-		&& (path.length === 1 || path.length === 2 && ['audio', 'attachments', 'thumbs'].includes(path[0]) || path.length === 3 && path[0] === 'history' && ['manifests', 'texts', 'blobs'].includes(path[1]));
+		&& (path.length === 1 || path.length === 2 && ['audio', 'attachments', 'thumbs', 'imports'].includes(path[0]) || path.length === 3 && path[0] === 'history' && ['manifests', 'texts', 'blobs'].includes(path[1]));
 	const history = typeof file === 'string' && /^history\/(?:manifests\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}![1-9][0-9]*\.json|(?:texts|blobs)\/[a-f0-9]{64})$/.test(file);
-	if (snapshot ? !supported : !syncStateFile(file) && !history && !isNoteFile(file) && !(typeof file === 'string' && /^(?:audio|attachments|thumbs)\/[^/\\\0]+$/.test(file) && !['.', '..'].includes(file.split('/')[1]))) throw fail('name', 'A transaction cannot write this folder path: ' + file + '.');
+	if (snapshot ? !supported : !syncStateFile(file) && !isImportReceiptFile(file) && !history && !isNoteFile(file) && !(typeof file === 'string' && /^(?:audio|attachments|thumbs)\/[^/\\\0]+$/.test(file) && !['.', '..'].includes(file.split('/')[1]))) throw fail('name', 'A transaction cannot write this folder path: ' + file + '.');
 	return file;
 }
 // Deltas retain extension keys literally. Traversal is through own JSON properties only;
@@ -156,10 +157,15 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 	};
 	channel?.addEventListener?.('message', receive);
 	const readBytes = async file => { const value = await store.read(file); return value == null ? null : exactBytes(value); };
+	const receiptFrom = async (index, id) => {
+		const rows = assertImportReferences(index).filter(row => row.id === id);
+		if (typeof id !== 'string' || rows.length !== 1) throw fail('import-undo', 'This import record is absent or duplicated: ' + String(id) + '. Nothing was undone.');
+		return readImportReceiptFile(rows[0], readBytes);
+	};
 	const removalDigest = file => file.startsWith('attachments/') ? storedFileDigest(store, file) : readBytes(file).then(digestOf);
 	const snapshotFiles = async () => {
 		const files = [];
-		for (const prefix of ['', 'audio', 'attachments', 'thumbs', 'history/manifests', 'history/texts', 'history/blobs'])
+		for (const prefix of ['', 'audio', 'attachments', 'thumbs', 'imports', 'history/manifests', 'history/texts', 'history/blobs'])
 			for (const name of await store.list(prefix)) files.push(prefix ? prefix + '/' + name : name);
 		return files;
 	};
@@ -387,6 +393,9 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 							!/^[a-f0-9]{64}$/.test(row.digest) || row.stage !== '.rapier-rename-stage-' + row.digest + '.tmp' || row.before !== null || row.data !== undefined || !Number.isSafeInteger(row.size) || row.size < 0 || !/^[a-f0-9]{64}$/.test(row.sourceDigest))
 							throw fail('corrupt', 'The staged case-only rename is unreadable; its bytes were kept.');
 						writes.push({...row, bytes: await stagedBytes(row)});
+					} else if (isImportReceiptFile(row.file)) {
+						if (!/^[a-f0-9]{64}$/.test(row.digest) || row.stage !== '.rapier-import-stage-' + row.digest + '.tmp' || row.data !== undefined || !Number.isSafeInteger(row.size) || row.size < 0) throw fail('corrupt', 'The staged import receipt is unreadable: ' + row.file + '.');
+						writes.push({...row, bytes: await stagedBytes(row)});
 					} else if (syncStateFile(row.file)) {
 						if (!/^\.rapier-sync-stage-[a-f0-9]{64}\.tmp$/.test(row.stage) || row.data !== undefined || !Number.isSafeInteger(row.size) || row.size < 0)
 							throw fail('corrupt', 'The staged sync checkpoint is unreadable; no local work was replaced.');
@@ -446,6 +455,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				// A file that changed under the pending work is the person's (R85b): its bytes stay, that
 				// write or removal is dropped, its entry says what is there, and the read reports it.
 				const drop = (file, digest) => {
+					if (isImportReceiptFile(file)) throw fail('changed', 'Import receipt ' + file + ' changed during publication. Its bytes and the pending transaction were kept.');
 					if (file.startsWith('history/')) throw fail('changed', 'The note history changed before replacement. Its words and pending history were kept.');
 					if (exact) throw fail('changed', 'The file ' + file + ' changed during exact restore. Its newer bytes and the pending restore were kept; keep the source backup.');
 					if (!dropped.includes(file)) dropped.push(file);
@@ -594,6 +604,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				index = fixed.index;
 				const published = await publish(index, [...[...journal.writes, ...journal.removes].map(row => row.file), ...kept.map(row => row.name), ...fixed.added, ...fixed.dropped], journal.kind || 'recovery', !!ours, journal);
 				index = published.index; dirty = published.notice; lastDropped = dropped; lastKept = kept;
+				for (const row of writes.filter(row => isImportReceiptFile(row.file))) try { const bytes = await readBytes(row.stage); if (bytes != null && await digestOf(bytes) === row.digest) await store.remove(row.stage); } catch (_) {}
 				for (const row of caseMoves) try { const bytes = await readBytes(row.stage); if (bytes && await digestOf(bytes) === row.digest) await store.remove(row.stage); } catch (_) {}
 				for (const row of writes.filter(row => syncStateFile(row.file))) for (const stage of new Set([row.stage, row.priorStage].filter(Boolean))) {
 					// Staging is inert and excluded from backups. Cleanup cannot undo a saved commit.
@@ -651,6 +662,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			// index (the widget's tick: by stable id, and only once it is known not to be protected).
 			// Same lease, same listing, same exact copies as `{bodies}`; nothing is read unasked.
 			const plan = typeof planner === 'function' ? await planner({index: copy(before.index), files: before.files.slice(), bodies: new Map([...before.bodies].map(([file, bytes]) => [file, bytes.slice()])),
+				readImportReceipt: id => receiptFrom(before.index, id),
 				readBodies: async names => {
 					const bodies = await readBodies(before.files, requestedBodies({bodies: names}));
 					for (const [file, bytes] of bodies) observed.set(file, bytes.slice());
@@ -686,6 +698,12 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					const digest = await sha256(bytes), stage = '.rapier-rename-stage-' + digest + '.tmp';
 					await writeVerified(stage, bytes, digest);
 					writes.push({file: row.file, caseSource, sourceDigest, stage, size: bytes.length, digest, before: null});
+				} else if (isImportReceiptFile(row.file)) {
+					const digest = await sha256(bytes), stage = '.rapier-import-stage-' + digest + '.tmp';
+					const held = await readBytes(stage);
+					if (held != null && await sha256(held) !== digest) throw fail('changed', 'The import receipt stage changed. Its bytes were kept.');
+					if (held == null) await writeVerified(stage, bytes);
+					writes.push({file: row.file, stage, size: bytes.length, digest, before: previousDigest});
 				} else if (syncStateFile(row.file)) {
 					const digest = await sha256(bytes), stage = '.rapier-sync-stage-' + digest + '.tmp';
 					// The checkpoint stays out of notes.json even while a transaction is pending.
@@ -778,7 +796,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			const result = jobs.catch(() => {}).then(() => fn(...args));
 			jobs = result; return result;
 		};
-		return {read: serial(read), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
+		return {read: serial(read), readImportReceipt: serial(async id => receiptFrom((await read()).index, id)), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
 			if (releasePromise) return releasePromise;
 			releaseStarted = true;
 			releasePromise = (async () => { await jobs.catch(() => {}); released = true; unlock(); await settled; })();
@@ -800,6 +818,18 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		try { lease = await acquire(scope); } catch (error) { if (error?.code === 'read-only' && store.writable === false) return read(scope, {bodies: requested}); throw error; }
 		try { return await lease.read({bodies: requested}); } finally { await lease.release(); }
 	}
-	return {acquire, read, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
+	async function readImportReceipt(scope, id) {
+		if (store.writable === false || isShared() && (!locks?.request || !channel?.postMessage)) {
+			const first = await readBytes(NOTES_INDEX_FILE), pending = await readBytes(OWNER_JOURNAL_FILE);
+			const snapshot = await read(scope), held = await receiptFrom(snapshot.index, id);
+			if (!equal(first, await readBytes(NOTES_INDEX_FILE)) || !equal(pending, await readBytes(OWNER_JOURNAL_FILE)))
+				throw fail('busy', 'The folder changed while its import receipt was read. Try again.');
+			return held;
+		}
+		let lease;
+		try { lease = await acquire(scope); } catch (error) { if (error?.code === 'read-only' && store.writable === false) return readImportReceipt(scope, id); throw error; }
+		try { return await lease.readImportReceipt(id); } finally { await lease.release(); }
+	}
+	return {acquire, read, readImportReceipt, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
 }
 

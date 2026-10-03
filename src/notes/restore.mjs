@@ -8,6 +8,7 @@ import {scanLinks, resolveAssetPath} from './links.mjs';
 import {manifestName, parseManifest, rekeyManifest, rewriteHistoryReferences, serializeManifest} from './history.mjs';
 import {attachmentSizeWords} from './size-words.mjs';
 import {SYNC_STATE_FILE} from './sync-state.mjs';
+import {importReceiptMembers, readImportReceiptFile} from './import-storage.mjs';
 
 export const BACKUP_MANIFEST_FILE = 'rapier-backup.json';
 export const BACKUP_INDEX_MAX_BYTES = 8 * 1024 * 1024;
@@ -68,6 +69,7 @@ export async function withBackupManifest(entries, {appVersion, stamp, subtle} = 
 	if (files.length >= 65534) throw new Error('a backup needs room for its manifest below the ZIP64 sentinel count');
 	if (files.some(file => file.name === BACKUP_MANIFEST_FILE)) throw new Error('the backup manifest is generated, not a folder file');
 	const manifest = backupManifestHeader(files, {appVersion, stamp});
+	await importReceiptMembers(indexFrom(files).index, row => readImportReceiptFile(row, name => files.find(file => file.name === name)?.bytes ?? null));
 	for (const file of files.slice().sort((a, b) => compare(a.name, b.name))) manifest.files.push({name: file.name, bytes: file.bytes.length, sha256: await sha256(file.bytes, {subtle})});
 	return {manifest, entries: [...files, {name: BACKUP_MANIFEST_FILE, bytes: exactBytes(JSON.stringify(manifest, null, 1) + '\n'), modified: stamp}]};
 }
@@ -228,6 +230,15 @@ export async function verifyBackupStream(archive, {subtle, signal, notes = false
 			if (!files.has(file.name)) { files.set(file.name, file); digests.set(file.name, digest); }
 		}
 	}
+	// Exact restore and complete additive snapshots prove every named receipt against its
+	// members before any destination write. Incomplete additive sets keep their missing-part
+	// warning and never adopt the source's receipt rows as this folder's Undo authority.
+	if (!partial || !missing.length && !manifest?.omitted?.length) await importReceiptMembers(first.index, row => readImportReceiptFile(row, async name => {
+		const file = files.get(name); if (!file) return null;
+		const bytes = await read(file);
+		if (await sha256(bytes, {subtle}) !== digests.get(name)) throw new Error('the backup source changed: ' + name);
+		return bytes;
+	}));
 	const verification = verificationOf(manifest);
 	if (set || manifest?.omitted?.length) Object.assign(verification, {parts: parts.length, partCount: set?.count || 1, missingParts: missing,
 		omitted: manifest.omitted || [], complete: !missing.length && !manifest.omitted?.length,

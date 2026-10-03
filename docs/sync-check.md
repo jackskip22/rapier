@@ -37,19 +37,19 @@ The vault key is `32` bytes. The recovery code is that key in Crockford's base32
 
 The header records how a wrapping key is derived from the passphrase: `scrypt` with N=`32768`, r=`8`, p=`1` and a `16`-byte salt. That key seals the vault key with AES-256-GCM. To change the passphrase, start a new vault. Rewrapping the same key would leave old headers and device codes usable with the old passphrase.
 
-The header is unsealed JSON: format version `1`, the derivation's name and iteration count, the salt, the wrapped vault key and a verifier. The salt and iteration count are public, and the wrapped key does nothing without the passphrase or the recovery code.
+The header is unsealed JSON: format version `1`, the derivation's name and parameters, the salt, the wrapped vault key and a verifier. The salt and parameters are public, and the wrapped key does nothing without the passphrase or the recovery code.
 
 The verifier is a seal of the text `rapier-notes-vault-v1` with additional data `vault.json`. A recovery code that cannot open it is refused; nothing else is decrypted.
 
 ## What the bucket holds
 
-Each name is its prefix followed by the SHA-256 of the object's bytes, in hex.
+Each header or object name is its prefix followed by the SHA-256 of its bytes, in hex.
 
 | Name | What it is |
 | --- | --- |
 | `keys/` and the header's SHA-256 | The header. Not sealed. |
 | `objects/` and the sealed bytes' SHA-256 | One sealed note or file. |
-| `heads/`, then a device, then a generation | A sealed list of names, parents and history. Not the text of a note. |
+| `heads/`, then a device, then a twelve-digit generation and the sealed head’s SHA-256 | A sealed list of names, parents and history. Not the text of a note. |
 
 ## What the bucket never holds
 

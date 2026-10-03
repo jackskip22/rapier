@@ -235,7 +235,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		const value = await getRecord(name); checkByteAbort(signal);
 		const record = chunkRecord(value);
 		if (record) {
-			onOpen?.({size: record.size, modified: null}); const hash = sha256State();
+			onOpen?.({size: record.size, modified: null, sha256: record.digest}); const hash = sha256State();
 			for await (const bytes of storedChunks(record, {signal, chunkBytes})) { hash.update(bytes); yield bytes; }
 			if (hash.finish() !== record.digest) throw fail('verify', 'The saved file no longer matches its verified bytes. Restore it from a backup.');
 		} else {
@@ -259,15 +259,15 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		const names = entry.db ? await readKeys(entry.db, table) : [...entry.memory.keys()];
 		return names.filter(n => typeof n === 'string' && within(n, prefix)).map(n => prefix ? n.slice(prefix.length + 1) : n);
 	};
-	// There is no file system mtime here, so `modified` is null rather than invented -- which the
-	// stamp rule reads as "no stamp", which means "always re-read". Exactly the page-memory store's
-	// answer today, and never "close enough".
+	// No invented mtime. A streamed file's immutable, write-verified chunk descriptor does
+	// carry an exact SHA-256; sync may compare that current source proof instead of rereading
+	// its chunks. Ordinary byte records and unfinished recordings provide no such proof.
 	const stat = async name => {
 		parts(name); await readable();
 		if (!entry.db) { const value = entry.memory.get(name); return value == null ? null : {size: value.length, modified: null}; }
 		const value = await run(entry.db, table, 'readonly', os => os.get(name)), header = isRecordingPartial(name) ? recordingHeader(value) : null;
 		const record = header ? null : chunkRecord(value), bytes = recordBytes(value);
-		return header ? {size: header.size, modified: null} : record ? {size: record.size, modified: null} : bytes == null ? null : {size: bytes.length, modified: null};
+		return header ? {size: header.size, modified: null} : record ? {size: record.size, modified: null, sha256: record.digest} : bytes == null ? null : {size: bytes.length, modified: null};
 	};
 	const statAll = async (prefix = '') => {
 		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');

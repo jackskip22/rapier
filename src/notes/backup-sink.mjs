@@ -19,6 +19,7 @@ export function createBackupSink(target) {
 	return {
 		get state() { return state; }, get bytes() { return bytes; }, get digest() { return digest; },
 		write(chunk) { return exclusive('writing', async () => { if (!(chunk instanceof Uint8Array)) throw new TypeError('backup staging needs bytes'); hash.update(chunk); await target.write(chunk); bytes += chunk.length; }); },
+		endMember(size) { return exclusive('writing', async () => target.endMember?.(size)); },
 		close({onProgress} = {}) { return exclusive('writing', async () => { await target.close(); closed = true; digest = hash.finish(); const file = await verifyBackupFile(await target.file(), {bytes, digest}, {onProgress}); state = 'sealed'; return file; }); },
 		abort(reason) {
 			if (aborting) return aborting;

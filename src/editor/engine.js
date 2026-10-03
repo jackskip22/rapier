@@ -6192,11 +6192,13 @@ function _tableRawFromEdit(blockId) {
 // The table's own reader: the source a table element reads as (the open surface's, or a copy of it with some cells' words taken out).
 function _tableRawFromDom(blockId, table) {
 	if (!table) return null;
-	const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+	const readRows = root => Array.from(root.querySelectorAll('tr')).map(tr =>
 		Array.from(tr.children)
 			.filter(cell => /^(TD|TH)$/.test(cell.tagName))
-			.map(cell => _markdownFromEditHTML(cell.innerHTML).replace(/\n{2,}/g, '<br>').replace(/\n/g, ' ').trim())
+			.map(cell => globalThis.RapierMarkdownSpec.cellBreaks(_markdownFromEditHTML(cell.innerHTML))
+				.replace(/\n{2,}/g, '<br>').replace(/\n/g, ' ').trim())
 	).filter(row => row.length);
+	const rows = readRows(table);
 	if (!rows.length) return null;
 	const cols = Math.max(1, ...rows.map(row => row.length));
 	const normalised = rows.map(row => row.concat(Array(Math.max(0, cols - row.length)).fill('')));
@@ -6206,6 +6208,24 @@ function _tableRawFromDom(blockId, table) {
 	// Exact: a row whose cells read as the source's own keeps the source's bytes (its spacing, its
 	// escapes), and the separator keeps its own (its widths) while the columns stay as many.
 	const lineOf = info && info.sepIdx >= 0 ? [info.rowIdxs.find(index => index < info.sepIdx), ...info.dataIdxs] : [];
+	// A planner's projection has no new source to write. Compare through this same reader,
+	// not raw == serialized: reference shells, code delimiters and source-token spellings need
+	// not be the writer's preferred form. An edit elsewhere replaces only its own cell span.
+	// Changed row/column structure still belongs to the existing table-shape writer below.
+	if (info && info.cols === cols && lineOf.length === rows.length) {
+		const projected = _rapierRenderedMarkProbe(block.raw, 'bold')?.root.querySelector('table');
+		const beforeRows = projected && readRows(projected), lines = String(block.raw).split('\n');
+		const spans = lineOf.map(at => Number.isInteger(at) ? _rapierTableCellSpans(lines[at]) : []);
+		if (beforeRows?.length === rows.length && spans.every((row, index) => row.length === cols &&
+				rows[index].length === cols && beforeRows[index].length === cols)) {
+			for (let row = 0; row < rows.length; row++) for (let col = cols - 1; col >= 0; col--) {
+				if (rows[row][col] === beforeRows[row][col]) continue;
+				const at = lineOf[row], [from, to] = spans[row][col];
+				lines[at] = lines[at].slice(0, from) + _tableEscapeCell(rows[row][col]) + lines[at].slice(to);
+			}
+			return lines.join('\n');
+		}
+	}
 	const rowLine = (row, index) => {
 		const built = _tableBuildRow(row);
 		const line = Number.isInteger(lineOf[index]) ? info.lines[lineOf[index]] : null;
@@ -11681,6 +11701,7 @@ function _rapierApplyExactBlockListItem(cmd, state, raw) {
 	const index = _rapierOutermostListItemIndexForRange(state.range);
 	if (index < 0 || index >= items.length) return null;
 	const item = items[index];
+	if (!item.continuationLines.length && item.checkbox != null && /^(h[1-6]|quote)$/.test(cmd)) return null;
 	if (item.continuationLines.length) {
 		const next = _rapierPlanListLeafBlock(raw, _rapierListLeafIndexForRange(state.range, _liveBlockEl(state.wrappers[0])), cmd);
 		return next == null ? null : next === raw ? true : _rapierApplyRawRange(state, [next], { keepEditing: true });
@@ -11732,6 +11753,7 @@ function _rapierPlanListLeafBlock(raw, leafIndex, cmd) {
 	const marker = /^( *)([-*+]|\d{1,9}[.)])( *)/.exec(lines[place.item.map[0]] || '');
 	if (!marker) return null;
 	const spaces = marker[3].length, width = marker[1].length + marker[2].length + (spaces >= 1 && spaces <= 4 ? spaces : 1);
+	if (/^(h[1-6]|quote)$/.test(cmd) && /^\[[ xX]\](?:[ \t]+|$)/.test(lines[place.item.map[0]].slice(width))) return null;
 	const prefixes = [], lazy = [], contents = [];
 	for (let at = from; at < to; at++) {
 		const line = lines[at], lead = /^ */.exec(line)[0].length;
@@ -12736,10 +12758,7 @@ function _rapierHeadingShape(raw) {
 function _rapierApplyCrossBlockStyle(cmd, state) {
 	if (!state || state.wrappers.length < 2) return false;
 	const bodies = state.blocksBefore.map(snapshot => _rapierSimpleBlockBody(snapshot.raw));
-	if (bodies.some(body => body == null)) {
-		showToast('format these blocks one at a time', 'error');
-		return true;
-	}
+	if (bodies.some(body => body == null)) return _rapierFormatCantGoHere();
 
 	const allQuoted = state.blocksBefore.every(snapshot => /^>\s?/m.test(String(snapshot.raw || '').trim()));
 	const level = /^h[1-6]$/.test(cmd) ? Number(cmd[1]) : 0;
@@ -13561,12 +13580,19 @@ function _rapierMarkRuns(root, selector, attrName) {
 	});
 	return runs;
 }
-function _rapierRenderedMarkProbe(raw, mark) {
+function _rapierRenderedMarkProbe(raw, mark, tableCell = false) {
 	const spec = RAPIER_EXACT_MARKS[mark];
 	if (!spec) return null;
 	try {
-		const root = document.createElement('div');
-		root.innerHTML = renderBlock(String(raw || ''));
+		let root = document.createElement('div');
+		const source = String(raw || '');
+		if (tableCell && /[\r\n]/.test(source)) return null;
+		root.innerHTML = renderBlock(tableCell ? '| ' + source + ' |\n| --- |' : source);
+		if (tableCell) {
+			const cells = root.querySelectorAll('th, td');
+			if (cells.length !== 1 || !root.querySelector('table')) return null;
+			root = cells[0];
+		}
 		_rapierTrimProjectionEdgeWhitespace(root);
 		return { text: String(root.textContent || '').replace(/\u2060/g, '\n'), runs: _rapierMarkRuns(root, spec.selector), nested: !!root.querySelector(spec.nested), root };
 	} catch (_) { return null; }
@@ -14303,6 +14329,28 @@ function _rapierTableCellSpans(line) {
 	if (cells.length && cells[0][0] === cells[0][1]) cells.shift();
 	if (cells.length > 1 && cells[cells.length - 1][0] === cells[cells.length - 1][1]) cells.pop();
 	return cells;
+}
+
+// The source capsule for one real cell: keep its table escape layer, delimiters, row spacing
+// and all other cells verbatim. Only the cell's original source span may be replaced.
+function _rapierExactCellSource(state, node) {
+	if (!state || state.wrappers.length !== 1) return null;
+	const wrapper = state.wrappers[0], live = _liveBlockEl(wrapper);
+	if (!wrapper.classList.contains('block-wrapper--table') || !live ||
+			wrapper.classList.contains('block-wrapper--source-edit')) return null;
+	const element = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
+	const cell = element && element.closest('td, th'), table = live.querySelector('table');
+	if (!cell || !table || cell.closest('table') !== table) return null;
+	const rows = Array.from(table.querySelectorAll('tr')), tr = cell.closest('tr');
+	const row = rows.indexOf(tr), col = Array.from(tr.children).filter(child => /^(?:TD|TH)$/.test(child.tagName)).indexOf(cell);
+	const before = String(state.blocksBefore[0].raw || ''), info = _tableInfo(before);
+	if (info.sepIdx < 0) return null;
+	const at = [info.rowIdxs.find(index => index < info.sepIdx), ...info.dataIdxs][row];
+	const lines = before.split('\n'), span = Number.isInteger(at) && _rapierTableCellSpans(lines[at])[col];
+	if (!span) return null;
+	const from = lines.slice(0, at).reduce((length, line) => length + line.length + 1, 0) + span[0];
+	const to = from + span[1] - span[0];
+	return { cell, row, col, raw: before.slice(from, to), write: raw => before.slice(0, from) + raw + before.slice(to) };
 }
 
 // A table's marks are planned cell by cell: each selected cell's own Markdown goes through the planner the paragraphs use (`plan(raw,
@@ -15201,13 +15249,14 @@ function rapierFmt(cmd, value) {
 	const inline = /^(bold|italic|strikethrough|underline|clear|highlight|color)$/.test(cmd);
 	if (!context || !_rapierSelectionActionableForFormat(context, inline)) {
 		hideFormatToolbar();
+		if (context && /^(h[1-6]|quote)$/.test(cmd)) return _rapierFormatCantGoHere();
 		// Words selected that nothing in them can take (a rule, a picture) are no one's mistake: the press does nothing, as Word's does.
 		// Code is the one place Word has no twin: words selected wholly inside it say why.
 		if (!(inline && selection && !selection.isCollapsed)) showToast('Place the cursor in a text block first.', 'info');
 		else if (_rapierRangeInsideCode(selection.rangeCount ? selection.getRangeAt(0) : null)) showToast(_rapierFormatRefusal(selection.getRangeAt(0)), 'info');
 		return false;
 	}
-	const refusal = _rapierFormatRefusal(inline && selection?.rangeCount ? selection.getRangeAt(0) : null);
+	const refusal = inline || cmd === 'code' ? _rapierFormatRefusal(selection?.rangeCount ? selection.getRangeAt(0) : null) : '';
 	if (refusal) { showToast(refusal, 'info'); return false; }
 	if ((cmd === 'highlight' || cmd === 'color') && !selection?.isCollapsed) return false; // selected runs belong to their exact planners
 	const state = selection && !selection.isCollapsed ? _rapierFormatSelectionState({ marks: inline }) : null;
@@ -15268,7 +15317,7 @@ function rapierFmt(cmd, value) {
 	if (!crossBlock && editDiv && /^(h[1-6]|p|quote|ul|ol)$/.test(cmd)) {
 		const single = _rapierSingleBlockFormatState();
 		const exact = single ? _rapierApplyExactBlock(cmd, single) : null;
-		if (exact != null) return exact;
+		if (exact != null) return exact || _rapierFormatCantGoHere();
 		// A GFM table cell holds inline text only, no block-level style: every block command
 		// refuses there the same way (miss 4, wysiwyg-lines-audit.md).
 		if (editDiv.closest('.block-wrapper--editing.block-wrapper--table')) {
@@ -16550,13 +16599,16 @@ function _rapierApplyExactNestedLink(url) {
 function _rapierApplyExactUnlink(anchor, clearMarks = false) {
 	if (!anchor || _rapierUserMutationBlocked(false)) return false;
 	const state = _rapierSingleBlockFormatState();
-	if (!state || !_rapierInlineFormatSafe(state)) return false;
-	const wrapper = state.wrappers[0], live = _liveBlockEl(wrapper);
+	if (!state) return false;
+	const cell = _rapierExactCellSource(state, anchor);
+	if (!cell && !_rapierInlineFormatSafe(state)) return false;
+	const wrapper = state.wrappers[0], live = cell ? cell.cell : _liveBlockEl(wrapper);
 	if (!live || !live.contains(anchor)) return false;
-	const beforeRaw = String(state.blocksBefore[0]?.raw || '');
+	const beforeRaw = cell ? cell.raw : String(state.blocksBefore[0]?.raw || '');
 	const text = String(anchor.textContent || ''), start = _rapierTextBefore(live, anchor), end = start + text.length;
 	let source = beforeRaw;
 	if (clearMarks) {
+		if (cell) return false;
 		if (!text) return false;
 		const cleared = _rapierPlanExactClear(source, text, start, end);
 		if (cleared != null) source = cleared;
@@ -16569,23 +16621,36 @@ function _rapierApplyExactUnlink(anchor, clearMarks = false) {
 		const highlight = _rapierRenderedHighlightProbe(source);
 		if (!highlight || _rapierMarkTouches(highlight.runs, start, end)) return false;
 	}
+	const next = _rapierPlanExactUnlink(source, String(live.textContent || '').replace(/\u2060/g, '\n'),
+		start, end, anchor.getAttribute('href'), { tableCell: !!cell });
+	return next != null && _rapierApplyRawRange(state, [cell ? cell.write(next) : next], { keepEditing: true });
+}
+
+function _rapierPlanExactUnlink(raw, visibleText, start, end, href, options = null) {
+	const source = String(raw || '');
+	if (typeof visibleText !== 'string' || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+			start < 0 || start > end || end > visibleText.length || source.length > RAPIER_EXACT_MARK_RAW_LIMIT) return null;
+	const text = visibleText.slice(start, end);
+
 	// The words on screen are the raw's own (checked here rather than the writer's round trip, which
 	// cannot spell a reference link's shell); the raw is what is planned.
-	const base = _rapierCutSemantics(source);
-	if (!base || base.text !== String(live.textContent || '').replace(/\u2060/g, '\n')) return false;
+	const base = _rapierCutSemantics(source, options);
+	if (!base || base.text !== visibleText) return null;
 	const key = runs => runs.map(run => run.start + ':' + run.end + ':' + (run.attr ?? '')).sort().join(' ');
-	const own = base.runs.link.filter(run => run.start === start && run.end === end && run.attr === anchor.getAttribute('href'));
-	const links = base.runs.link.slice();
-	if (own.length) links.splice(links.indexOf(own[0]), 1);
-	const count = raw => { try { return _rapierRenderedMarkProbe(raw, 'bold').root.querySelectorAll('a[href]').length; } catch (_) { return -1; } };
+	const root = _rapierRenderedMarkProbe(source, 'bold', !!options?.tableCell)?.root;
+	if (!root || Array.from(root.querySelectorAll('a[href]')).filter(anchor =>
+		_rapierTextBefore(root, anchor) === start && start + String(anchor.textContent || '').length === end &&
+		anchor.getAttribute('href') === href).length !== 1) return null;
+	const links = base.runs.link.filter(run => !(run.start === start && run.end === end && run.attr === href));
+	const count = raw => { try { return _rapierRenderedMarkProbe(raw, 'bold', !!options?.tableCell).root.querySelectorAll('a[href]').length; } catch (_) { return -1; } };
 	const anchors = count(source);
 	const proves = next => {
-		const after = next !== source && _rapierCutSemantics(next);
+		const after = next !== source && _rapierCutSemantics(next, options);
 		return !!after && after.text === base.text && count(next) === anchors - 1 && key(after.runs.link) === key(links) &&
 			Object.keys(base.runs).every(name => name === 'link' || key(after.runs[name]) === key(base.runs[name])) &&
-			JSON.stringify(after.pictures) === JSON.stringify(base.pictures);
+			JSON.stringify(after.pictures) === JSON.stringify(base.pictures) && JSON.stringify(after.breaks) === JSON.stringify(base.breaks);
 	};
-	const shell = /\[((?:[^[\]\n]|\[[^[\]\n]*\])*)\](?:\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"\n]*")?\)|\[[^\]\n]*\])|<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+)>/g;
+	const shell = /\[((?:[^[\]\n]|\[[^[\]\n]*\])*)\](?:\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"\n]*")?\)|\[[^\]\n]*\])?|<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+)>/g;
 	// A label that is itself an address re-links once its shell is gone (an autolink always does):
 	// the first of its characters that, escaped, keeps it words.
 	const escaped = (raw, at) => {
@@ -16602,12 +16667,12 @@ function _rapierApplyExactUnlink(anchor, clearMarks = false) {
 		if (kept) valid.add(kept);
 	}
 	if (!valid.size && text) {
-		const map = _rapierCutSourceMap(source, base.text, base.formulas), at = map && map.from[start];
+		const map = _rapierCutSourceMap(source, base.text, base.formulas, false, base.tokens), at = map && map.from[start];
 		const kept = at != null && source.startsWith(text, at) ? escaped(source, at) : null;
 		if (kept) valid.add(kept);
 	}
-	if (valid.size !== 1) return false;
-	return _rapierApplyRawRange(state, [Array.from(valid)[0]], { keepEditing: true });
+	if (valid.size !== 1) return null;
+	return Array.from(valid)[0];
 }
 function _rapierTextBefore(root, node) {
 	const range = document.createRange();
@@ -16680,21 +16745,24 @@ function _rapierRawOffsetsForTextOffset(source, target, limit = 4) {
 function _rapierApplyExactCut() {
 	if (_rapierUserMutationBlocked(false)) return false;
 	const state = _rapierSingleBlockFormatState();
-	if (!state || state.range.collapsed || !_rapierInlineFormatSafe(state)) return false;
-	const wrapper = state.wrappers[0], live = _liveBlockEl(wrapper);
+	if (!state || state.range.collapsed) return false;
+	const cell = _rapierExactCellSource(state, state.range.startContainer);
+	if (!cell && !_rapierInlineFormatSafe(state)) return false;
+	const wrapper = state.wrappers[0], live = cell ? cell.cell : _liveBlockEl(wrapper);
 	if (!live) return false;
-	const beforeRaw = String(state.blocksBefore[0]?.raw || '');
+	const beforeRaw = cell ? cell.raw : String(state.blocksBefore[0]?.raw || '');
 	if (!beforeRaw || beforeRaw.length > RAPIER_EXACT_MARK_RAW_LIMIT) return false;
 	const range = state.range;
 	if (!_nodeInside(live, range.startContainer) || !_nodeInside(live, range.endContainer)) return false;
-	let pictures = 0;
-	try { pictures = range.cloneContents().querySelectorAll('img').length; } catch (_) { return false; }
+	let pictures = 0, breaks = 0;
+	try { const selected = range.cloneContents(); pictures = selected.querySelectorAll('img').length; breaks = selected.querySelectorAll('br').length; } catch (_) { return false; }
+	const options = { tableCell: !!cell, breaks };
 	const text = String(live.textContent || '').replace(/\u2060/g, '\n');
 	const start = _rapierStructuralOffsetForRangePoint(live, range.startContainer, range.startOffset);
 	const end = _rapierStructuralOffsetForRangePoint(live, range.endContainer, range.endOffset);
-	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > text.length || start >= end) return false;
+	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > text.length || start > end || (start === end && !pictures && !breaks)) return false;
 	const blank = at => text[at] === ' ' || text[at] === '\t', edge = at => at < 0 || at >= text.length || text[at] === '\n';
-	let next = _rapierPlanExactCut(beforeRaw, text, start, end, pictures), from = start;
+	let next = _rapierPlanExactCut(beforeRaw, text, start, end, pictures, options), from = start;
 	if (next == null) {
 		// A cut that leaves white space at the edge of a line (the last words of a line, the first, a whole line's words but for the
 		// space beside them) does not prove: the renderer drops that space, so the words after are not the words before with the
@@ -16703,10 +16771,11 @@ function _rapierApplyExactCut() {
 		let low = start, high = end;
 		if (edge(end) && !edge(start - 1)) while (low > 0 && blank(low - 1)) low--;
 		else if (edge(start - 1) && !edge(end)) while (high < text.length && blank(high)) high++;
-		if (low !== start || high !== end) { next = _rapierPlanExactCut(beforeRaw, text, low, high, pictures); from = low; }
+		if (low !== start || high !== end) { next = _rapierPlanExactCut(beforeRaw, text, low, high, pictures, options); from = low; }
 	}
-	if (next == null || !_rapierApplyRawRange(state, [next], { keepEditing: true })) return false;
-	const surface = _liveBlockEl(wrapper);
+	if (next == null || !_rapierApplyRawRange(state, [cell ? cell.write(next) : next], { keepEditing: true })) return false;
+	let surface = _liveBlockEl(wrapper);
+	if (cell && surface) surface = surface.querySelectorAll('tr')[cell.row]?.children[cell.col] || null;
 	// The caret stays with the words it followed: after the last words of a line it is not carried on to the line below.
 	const point = surface ? _rapierPointForTextOffset(surface, from, !(edge(end) && !edge(start - 1))) : null;
 	if (point) {
@@ -16719,33 +16788,33 @@ function _rapierApplyExactCut() {
 	}
 	return true;
 }
-// A cut inside one block, once the clipboard carries the source: the exact planner above, or in a
-// block edited as its Markdown (its text is its source) or inside one table cell (whose own writer
-// reads the cell back, as it does every typed character) the selected characters leave that
-// surface and its input owner takes them as one edit. A selection over several cells loses each cell's own part
-// (RapierTables.cut). A cut the planner cannot prove (a whole item's words, a cut across a nested list) takes the route
-// Delete takes: the browser deletes the selection inside the block, as it does for the key, and the block's own reader
-// reads it back; the copy is kept either way.
+// The clipboard already carries the source. The exact owner handles a paragraph or one
+// table cell; raw editors delete raw characters through their input owner. Multi-cell cuts
+// keep their existing table owner. No proved single-surface plan means a notice, never a
+// native deletion or a cell-writer round trip that silently changes the authored Markdown.
 function _rapierCutInBlock(range, wrapper) {
 	if (_rapierApplyExactCut()) return true;
 	const editDiv = wrapper && wrapper.classList.contains('block-wrapper--editing') ? wrapper.querySelector(':scope > .block-edit') : null;
 	const refuse = () => { showToast('Copied, not cut. Cut a smaller part.', 'info'); return false; };
 	if (!editDiv || _rapierUserMutationBlocked(false) || !_nodeInside(editDiv, range.startContainer) || !_nodeInside(editDiv, range.endContainer)) return refuse();
 	const source = /\bblock-wrapper--(?:source-edit|math-source)\b/.test(wrapper.className);
-	const start = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
-	const cell = !source && wrapper.classList.contains('block-wrapper--table') ? start && start.closest('td, th') : null;
-	if (!source && !(cell && cell.contains(range.endContainer))) return globalThis.RapierTables?.cut() || document.execCommand('delete') || refuse();
+	if (!source) {
+		const start = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
+		const cell = wrapper.classList.contains('block-wrapper--table') && start && start.closest('td, th');
+		return cell && !cell.contains(range.endContainer) && globalThis.RapierTables?.cut() || refuse();
+	}
 	range.deleteContents();
 	editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteByCut' }));
 	return true;
 }
+
 // Which raw character each rendered character comes from (a formula is one atom of its rendered
 // length, a picture none), and every raw position a zero-width token starts or ends at. A picture,
 // a link's closing shell, a comment and an inline tag are read whole; every other raw character is
 // matched against the text in order, so a literal `_` or `*` stays a character; what does not
 // match is a token (_rapierZeroWidthTokenAt's width, else one character). Null when the text is not
 // reached exactly.
-function _rapierCutSourceMap(source, text, atoms = [], structural = false) {
+function _rapierCutSourceMap(source, text, atoms = [], structural = false, sourceTokens = []) {
 	const from = [], to = [], bounds = new Set([0, source.length]);
 	const whole = [
 		/!\[[^\]\n]*\](?:\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"\n]*")?\)|\[[^\]\n]*\])/y,
@@ -16756,6 +16825,17 @@ function _rapierCutSourceMap(source, text, atoms = [], structural = false) {
 	let at = 0, t = 0, atom = 0;
 	const token = size => { bounds.add(at); at += size; bounds.add(at); };
 	while (at < source.length) {
+		const kept = sourceTokens.find(token => token.start === t && token.raw && source.startsWith(token.raw, at));
+		const entity = !kept && /^&(?:#x[\da-f]+|#\d+|[a-z][a-z\d]+);/i.exec(source.slice(at));
+		const decoded = entity && md.utils.unescapeAll(entity[0]);
+		const value = kept ? { raw: kept.raw, length: kept.length } : decoded && decoded !== entity[0] && text.startsWith(decoded, t)
+			? { raw: entity[0], length: decoded.length } : null;
+		if (value) {
+			const end = at + value.raw.length;
+			bounds.add(at);
+			for (let k = 0; k < value.length; k++) { from.push(k ? end : at); to.push(end); }
+			t += value.length; at = end; bounds.add(at); continue;
+		}
 		let size = 0;
 		for (const re of whole) { re.lastIndex = at; if (re.test(source)) { size = re.lastIndex - at; break; } }
 		if (size) { token(size); continue; }
@@ -16780,8 +16860,8 @@ function _rapierCutSourceMap(source, text, atoms = [], structural = false) {
 	}
 	return t === text.length && from.length === text.length ? { from, to, bounds } : null;
 }
-function _rapierCutSemantics(raw) {
-	const probe = _rapierRenderedMarkProbe(raw, 'bold');
+function _rapierCutSemantics(raw, options = null) {
+	const probe = _rapierRenderedMarkProbe(raw, 'bold', !!options?.tableCell);
 	if (!probe) return null;
 	const root = probe.root, runs = {}, empty = [];
 	for (const [mark, spec] of Object.entries(RAPIER_EXACT_MARKS)) runs[mark] = _rapierMarkRuns(root, spec.selector);
@@ -16798,33 +16878,48 @@ function _rapierCutSemantics(raw) {
 		at: _rapierTextBefore(root, img),
 		src: img.getAttribute('src') || '',
 	}));
-	return { text: probe.text, runs, empty: empty.join(' '), pictures, formulas: Array.from(root.querySelectorAll('.math-rendered')).map(node => String(node.textContent || '').length) };
+	const breaks = Array.from(root.querySelectorAll('br')).map(node => _rapierTextBefore(root, node));
+	const tokens = Array.from(root.querySelectorAll('.rapier-source-token[data-rapier-source]')).map(node => ({
+		start: _rapierTextBefore(root, node), length: String(node.textContent || '').length,
+		raw: _rapierSourceTokenValue(node),
+	}));
+	return { text: probe.text, runs, empty: empty.join(' '), pictures, breaks, tokens, formulas: Array.from(root.querySelectorAll('.math-rendered')).map(node => String(node.textContent || '').length) };
 }
-function _rapierCutProves(before, after, start, end, pictures) {
+function _rapierCutProves(before, after, start, end, pictures, breaks = null) {
 	if (!before || !after) return false;
-	const length = end - start, expected = before.text.slice(0, start) + before.text.slice(end);
+	// The whole words of a first or last line cut (a list item's, say) leave the line empty, and the renderer's generated newline
+	// at that edge is trimmed from the projection as it is trimmed from every rendered root; the expectation trims the same
+	// and every position after it moves up with it.
+	const length = end - start, untrimmed = before.text.slice(0, start) + before.text.slice(end);
+	const lead = /^\n*/.exec(untrimmed)[0].length, expected = untrimmed.slice(lead).replace(/\n+$/, '');
 	if (after.text !== expected || after.empty !== before.empty) return false;
 	const mapRun = run => {
-		const from = run.start < start ? run.start : (run.start >= end ? run.start - length : start);
-		const to = run.end <= start ? run.end : (run.end >= end ? run.end - length : start);
+		const from = (run.start < start ? run.start : (run.start >= end ? run.start - length : start)) - lead;
+		const to = (run.end <= start ? run.end : (run.end >= end ? run.end - length : start)) - lead;
 		return to > from ? from + ':' + to + ':' + (run.attr ?? '') : null;
 	};
 	const key = runs => runs.map(run => run.start + ':' + run.end + ':' + (run.attr ?? '')).sort().join(' ');
 	for (const name of Object.keys(before.runs)) {
 		if (key(after.runs[name]) !== before.runs[name].map(mapRun).filter(Boolean).sort().join(' ')) return false;
 	}
-	const inside = before.pictures.filter(picture => picture.at > start && picture.at < end);
-	const edges = before.pictures.filter(picture => picture.at === start || picture.at === end);
-	const edgesGo = pictures - inside.length;
-	if (edgesGo !== 0 && edgesGo !== edges.length) return false;
-	const kept = before.pictures.filter(picture => !inside.includes(picture) && !(edgesGo && edges.includes(picture)))
-		.map(picture => (picture.at > start ? Math.max(start, picture.at - length) : picture.at) + ':' + picture.src);
-	return JSON.stringify(after.pictures.map(picture => picture.at + ':' + picture.src)) === JSON.stringify(kept);
+	const keepsAtoms = (beforeAtoms, afterAtoms, selected, position, identity) => {
+		const inside = beforeAtoms.filter(atom => position(atom) > start && position(atom) < end);
+		const edges = beforeAtoms.filter(atom => position(atom) === start || position(atom) === end);
+		const edgesGo = (selected == null ? inside.length : selected) - inside.length;
+		if (edgesGo !== 0 && edgesGo !== edges.length) return false;
+		const kept = beforeAtoms.filter(atom => !inside.includes(atom) && !(edgesGo && edges.includes(atom)))
+			.map(atom => ((position(atom) > start ? Math.max(start, position(atom) - length) : position(atom)) - lead) + ':' + identity(atom));
+		return JSON.stringify(afterAtoms.map(atom => position(atom) + ':' + identity(atom))) === JSON.stringify(kept);
+	};
+	return keepsAtoms(before.pictures, after.pictures, pictures, atom => atom.at, atom => atom.src) &&
+		keepsAtoms(before.breaks, after.breaks, breaks, at => at, () => 'br');
 }
-function _rapierPlanExactCut(raw, text, start, end, pictures = 0) {
-	const source = String(raw || ''), before = _rapierCutSemantics(source);
+function _rapierPlanExactCut(raw, text, start, end, pictures = 0, options = null) {
+	const source = String(raw || ''), before = _rapierCutSemantics(source, options);
+	const boundary = at => !(at > 0 && at < text.length && /[\ud800-\udbff]/.test(text[at - 1]) && /[\udc00-\udfff]/.test(text[at]));
+	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || end > text.length || !boundary(start) || !boundary(end)) return null;
 	if (!before || before.text !== text) return null;
-	const map = _rapierCutSourceMap(source, text, before.formulas) || _rapierCutSourceMap(source, text, before.formulas, true);
+	const map = _rapierCutSourceMap(source, text, before.formulas, false, before.tokens) || _rapierCutSourceMap(source, text, before.formulas, true, before.tokens);
 	if (!map) return null;
 	// A cut that begins where a line begins takes the words and not the line's own marker (a list's, a quote's, a heading's): the
 	// shortest source that proves the words is the one that drops the marker, and the item became a line of the one above it, the
@@ -16832,7 +16927,7 @@ function _rapierPlanExactCut(raw, text, start, end, pictures = 0) {
 	const marker = /^(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|#{1,6}[ \t]+)?/;
 	const offsets = (at, opening) => {
 		const lo = at > 0 ? map.to[at - 1] : 0, hi = at < map.from.length ? map.from[at] : source.length;
-		const floor = opening && (at === 0 || text[at - 1] === '\n') ? Math.min(hi, lo + marker.exec(source.slice(lo))[0].length) : lo;
+		const floor = !options?.tableCell && opening && (at === 0 || text[at - 1] === '\n') ? Math.min(hi, lo + marker.exec(source.slice(lo))[0].length) : lo;
 		return Array.from(new Set([floor, hi, ...Array.from(map.bounds).filter(p => p > lo && p < hi && p >= floor)])).sort((a, b) => a - b);
 	};
 	const visible = new Set();
@@ -16860,7 +16955,7 @@ function _rapierPlanExactCut(raw, text, start, end, pictures = 0) {
 		for (const middle of ['', keptOpen, keptAll]) candidates.add(source.slice(0, s) + middle + source.slice(e));
 	}
 	candidates.delete(source);
-	const valid = Array.from(candidates).filter(next => _rapierCutProves(before, _rapierCutSemantics(next), start, end, pictures));
+	const valid = Array.from(candidates).filter(next => _rapierCutProves(before, _rapierCutSemantics(next, options), start, end, pictures, options?.breaks));
 	return valid.length ? valid.sort((a, b) => a.length - b.length)[0] : null;
 }
 
@@ -16947,11 +17042,7 @@ function _insertLink() {
 		},
 		onClear: () => {
 			if (!existingAnchor || _rapierApplyExactUnlink(existingAnchor)) return;
-			// Inside a table cell the cell's own writer reads the words back, as it does every typed character.
-			const edit = existingAnchor.closest('.block-wrapper--table td, .block-wrapper--table th') && existingAnchor.closest('.block-edit');
-			if (!edit) { _rapierFormatCantGoHere(); return; }
-			existingAnchor.replaceWith(...existingAnchor.childNodes);
-			edit.dispatchEvent(new InputEvent('input', { bubbles: true }));
+			_rapierFormatCantGoHere();
 		},
 		onCancel: () => {},
 	});

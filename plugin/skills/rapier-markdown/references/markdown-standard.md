@@ -334,7 +334,7 @@ The last paragraph of a chapter.
 The first paragraph of the next.
 ```
 
-Other readers hide the comment and show both paragraphs unchanged. A PDF breaks the page there, and a Word export carries a real page-break-before paragraph.
+Other readers hide the comment and show both paragraphs unchanged. A PDF breaks the page there, and a Word export carries a real page-break run.
 
 ## Blank lines
 

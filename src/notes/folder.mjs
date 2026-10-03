@@ -1,3 +1,4 @@
+import {encodeImportReceipt, isImportReceiptFile, importReceiptMembers} from './import-storage.mjs';
 // Body reads are explicit: read({bodies}) loads only those notes; read(), metadata and create
 // load none. Save resolves its stable id in the index, then reads that one destination. Rename
 // reads its source plus `linking`; omitting `linking` deliberately scans all notes to preserve
@@ -20,7 +21,7 @@ import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, 
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
-import {importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections} from './import-receipt.mjs';
+import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
 import {manifestName, parseManifest, materialize} from './history.mjs';
 import {applyReminderActions} from './model.mjs';
@@ -31,7 +32,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
 const digest = value => value == null ? null : sha256(value);
-const reserved = new Set(['folderGeneration', 'folderDeviceId', 'ownerNotice', 'transaction', 'noteCounters', 'deletions', 'tombstones', 'assetTombstones', 'assetRevivals', 'missingFiles']);
+const reserved = new Set(['folderGeneration', 'folderDeviceId', 'ownerNotice', 'transaction', 'noteCounters', 'deletions', 'tombstones', 'assetTombstones', 'assetRevivals', 'missingFiles', 'imports']);
 
 // Rebase only requested fields. A stale whole sidecar is never a replacement plan.
 export function applyMetadata(base, wanted, fresh) {
@@ -532,10 +533,10 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		});
 	};
 	const asset = (file, bytes) => tracked(() => owner.transact(scope, async ({index}) => {
-		if (!/^(?:audio|attachments|thumbs)\//.test(file)) throw fail('name', 'This is not a local media file.');
+		if (!/^(?:audio|attachments|thumbs)\//.test(file) && !isImportReceiptFile(file)) throw fail('name', 'This is not a local media or import receipt file.');
 		const before = await store.read(file);
 		if (before != null && await digest(before) !== await digest(bytes)) throw fail('collision', 'A file with this name is already here; it was kept.');
-		return {kind: 'media', index: before == null ? reviveMedia(index, file, await digest(bytes)) : index, writes: before == null ? [{file, bytes, createOnly: true}] : []};
+		return {kind: 'media', index: before == null && !isImportReceiptFile(file) ? reviveMedia(index, file, await digest(bytes)) : index, writes: before == null ? [{file, bytes, createOnly: true}] : []};
 	}));
 	// THE ONE RECORDING-REACHABILITY ADMISSION (Astra R87j N02, R85b).
 	//
@@ -602,6 +603,37 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const proof = bytes == null ? null : expectedDigest ?? await digest(bytes);
 		return {kind: 'discard-recording', index: proof ? await forgetMedia(index, file, proof) : index, removes: bytes == null ? [] : [{file, expectedDigest: proof}]};
 	}, {bodies: before.files}));
+	// The caller carries the last checkpoint explicitly. A stale tab cannot continue a
+	// cancelled/retired import or replace a newer Undo record. No receipt cache is authority.
+	const receiptPlan = async (index, receipt, checkpoint, readReceipt) => {
+		const found = (index.imports || []).filter(row => row?.id === receipt.id), prior = found[0];
+		if (found.length > 1) throw fail('import-undo', 'The import receipt is duplicated: ' + receipt.id + '.');
+		const encoded = await encodeImportReceipt(receipt, {previous: checkpoint?.receipt, reference: checkpoint?.reference, generation: (index.folderGeneration || 0) + 1});
+		const row = encoded.reference;
+		if (prior && eq(prior, row)) {
+			await readReceipt(receipt.id);
+			return {index, writes: [], removes: [], receiptCheckpoint: {receipt: copy(receipt), reference: copy(row)}};
+		}
+		if (prior ? !checkpoint || !eq(prior, checkpoint.reference) : checkpoint)
+			throw fail('changed', 'Import receipt ' + receipt.id + ' changed or was retired. This landing stopped; its files were kept.');
+		let next = appendImportReceipt(index, row);
+		const removes = [], retained = new Set(next.imports.map(value => value.id));
+		for (const old of index.imports || []) {
+			if (retained.has(old.id) && !(old.id === row.id && old.journal && !row.journal)) continue;
+			const held = await readReceipt(old.id);
+			for (const member of held.members) if (member.file !== row.file) removes.push({file:member.file, expectedDigest:member.digest});
+		}
+		return {index: next, writes: [{file:row.file,bytes:encoded.bytes,...(prior?.file === row.file ? {expectedDigest:prior.digest,replace:true} : {createOnly:true})}], removes,
+			receiptCheckpoint:{receipt:copy(receipt),reference:copy(row)}};
+	};
+	const checkpointImportReceipt = (receipt, checkpoint) => owned(async lease => {
+		let planned;
+		const snapshot = await lease.transact(async ({index,readImportReceipt}) => {
+			planned = await receiptPlan(index,receipt,checkpoint,readImportReceipt);
+			return {kind:'import-receipt',index:planned.index,writes:planned.writes,removes:planned.removes};
+		});
+		return {...snapshot,receipt:copy(receipt),receiptCheckpoint:planned.receiptCheckpoint};
+	});
 	const importBatch = build => owned(async (lease, before) => {
 		const result = await build({index: copy(before.index), files: before.files.slice(), bodies: before.bodies, audioNames: await store.list('audio'), attachmentNames: await store.list('attachments'), ascii: store.ascii});
 		// An exact repeated export is a read, including the generation and durable receipt.
@@ -612,7 +644,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			names.add(note.file.toLowerCase());
 		}
 		for (const row of result.backupFiles || []) {
-			if (!isNoteFile(row.name) && !/^(?:audio|attachments|thumbs)\/[^/\\]+$/.test(row.name)) throw fail('name', 'This backup includes a file this Notes folder cannot safely restore: ' + row.name + '. Nothing from this pick was written.');
+			if (!isNoteFile(row.name) && !/^(?:audio|attachments|thumbs)\/[^/\\]+$/.test(row.name) && !isImportReceiptFile(row.name)) throw fail('name', 'This backup includes a file this Notes folder cannot safely restore: ' + row.name + '. Nothing from this pick was written.');
 		}
 		// Publish objects first under this same lease, then their Markdown links. A failed
 		// later import keeps earlier copies in Saved files, never half-owned by a note.
@@ -635,7 +667,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (row.name.startsWith('attachments/')) await keepAttachment(lease, row.name.slice(12), row.bytes, {exact: true});
 			else writes.set(row.name, {file: row.name, bytes: row.bytes, createOnly: true});
 		}
-		const snapshot = await lease.transact(async ({index}) => {
+		let receiptCommit;
+		const snapshot = await lease.transact(async ({index,readImportReceipt}) => {
 			if (result.index) { const generation = index.folderGeneration; index = copy(result.index); if (result.attachments?.length || result.backupFiles?.some(row => row.name.startsWith('attachments/'))) index.folderGeneration = generation; }
 			for (const section of result.sections || []) index = addSection(index, section);
 			for (const note of result.notes) {
@@ -646,11 +679,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (result.notes.length) index = createEntries(index, result.notes.map(note => ({name: note.file, extra: note.entry || {}})));
 			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));
-			return {kind: 'import', index, writes: [...writes.values()]};
+			if (result.importReceipt) { receiptCommit = await receiptPlan(index, result.importReceipt, result.receiptCheckpoint, readImportReceipt); index = receiptCommit.index; }
+			return {kind: 'import', index, writes: [...writes.values(), ...(receiptCommit?.writes || [])], removes: receiptCommit?.removes || []};
 		});
 		for (const row of writes.values()) if (/^audio\//.test(row.file) && !(snapshot.dropped || []).includes(row.file)) result.createdFiles.push({file: row.file, bytes: row.bytes});
 		result.createdSections = snapshot.index.sections.filter(section => !before.index.sections.some(old => old.name === section.name));
-		return {...snapshot, result};
+		return {...snapshot, result, ...(receiptCommit ? {receiptCheckpoint:receiptCommit.receiptCheckpoint} : {})};
 	});
 	const restoreSnapshot = async entries => {
 		// Full source verification precedes the lease and every destination effect. The
@@ -707,11 +741,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				if (!ids.has(id) || live.has(id) || !await matches(row)) kept.push(row.file);
 				else removes.push({file: row.file, expectedDigest: row.digest});
 			}
-			before = await lease.transact(({index}) => {
-				index.imports = index.imports.map(row => row.id === record.id ? {...row, undo: {...row.undo, historyCleanup: {requested: removes.map(row => row.file), kept}}} : row);
-				return {kind: 'import-undo-history', index, removes};
+			before = await lease.transact(async ({index,readImportReceipt}) => {
+				const held = await readImportReceipt(record.id);
+				record = {...held.receipt, undo: {...held.receipt.undo, historyCleanup: {requested: removes.map(row => row.file), kept}}};
+				const stored = await receiptPlan(index, record, held, readImportReceipt);
+				return {kind:'import-undo-history',index:stored.index,writes:stored.writes,removes:[...removes,...stored.removes]};
 			});
-			record = before.index.imports.find(row => row.id === record.id);
 		}
 		const refs = record.createdFiles?.length ? await scanReferences(before) : null, removes = [], kept = [], shared = new Set();
 		for (const leaf of await store.list('history/manifests')) {
@@ -731,12 +766,14 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			}
 			if (why) kept.push({file: row.file, why}); else removes.push({file: row.file, expectedDigest: row.digest});
 		}
-		return lease.transact(async ({index}) => {
+		return lease.transact(async ({index,readImportReceipt}) => {
+			const held = await readImportReceipt(record.id); record = held.receipt;
 			const sections = importUndoSections(record, index), removedSections = index.sections.filter(row => !sections.includes(row)).map(row => row.name);
 			index.sections = sections;
-			index.imports = index.imports.map(row => row.id === record.id ? {...row, undo: {...row.undo, cleanup: {requested: removes.map(row => row.file), kept, sections: removedSections}}} : row);
+			record = {...record, undo: {...record.undo, cleanup: {requested: removes.map(row => row.file), kept, sections: removedSections}}};
 			for (const row of removes) if (/^(?:attachments|audio)\//.test(row.file)) index = await forgetMedia(index, row.file, row.expectedDigest);
-			return {kind: 'import-undo-files', index, removes};
+			const stored = await receiptPlan(index,record,held,readImportReceipt);
+			return {kind:'import-undo-files',index:stored.index,writes:stored.writes,removes:[...removes,...stored.removes]};
 		});
 	};
 	// The stored receipt is authority, never the caller's copy or a list of filenames from the UI.
@@ -744,47 +781,56 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const importUndo = (receipt, {files, keep = []}, commit) => {
 		const id = receipt?.id, options = {files: files?.slice(), keep: keep.slice()};
 		return owned(async (lease, before) => {
-			const recorded = index => {
-				const found = (index.imports || []).filter(row => row?.id === id);
-				if (typeof id !== 'string' || !id || found.length !== 1) throw fail('import-undo', 'This import record is no longer in the folder. Nothing was undone.');
-				const row = found[0], why = importUndoReadiness(row);
-				if (why && why !== 'this import was already undone') throw fail('import-undo', why);
+			const recorded = held => {
+				let row = held.receipt;
+				// Explicit Undo stops a journaled import at its verified prefix. This is not
+				// automatic source replay: later/unverified arrivals remain the person's files.
+				if (held.reference.journal) row = finishImportReceipt(row,{status:'cancelled',why:'Stopped at the last durable import checkpoint; unverified arrivals were kept.'});
+				const why = importUndoReadiness(row);
+				if (why && why !== 'this import was already undone') throw fail('import-undo',why);
 				return row;
 			};
-			let record = recorded(before.index);
+			let held = await lease.readImportReceipt(id), record = recorded(held);
 			if (record.undo) {
-				const snapshot = commit ? await finishImportUndo(lease, before, record) : before;
-				return {...snapshot, receipt: copy(snapshot.index.imports.find(row => row.id === id)), plan: planImportUndo(record, before.index, new Map()), result: {removed: [], kept: copy(record.undo.kept), alreadyUndone: true}, history: []};
+				const snapshot = commit ? await finishImportUndo(lease,before,record) : before;
+				const current = (await lease.readImportReceipt(id)).receipt;
+				return {...snapshot,receipt:current,plan:planImportUndo(record,before.index,new Map()),result:{removed:[],kept:copy(record.undo.kept),alreadyUndone:true},history:[]};
 			}
-			const listed = new Set(before.files), names = record.written.map(row => row.file).filter(file => listed.has(file));
+			const listed = new Set(before.files), names = record.written.map(row=>row.file).filter(file=>listed.has(file));
 			if (!commit) {
-				const snapshot = await lease.read({bodies: names}); record = recorded(snapshot.index);
-				return {...snapshot, receipt: copy(record), plan: planImportUndo(record, snapshot.index, snapshot.bodies, options)};
+				const snapshot = await lease.read({bodies:names}); held = await lease.readImportReceipt(id); record = recorded(held);
+				return {...snapshot,receipt:copy(record),plan:planImportUndo(record,snapshot.index,snapshot.bodies,options)};
 			}
-			let plan, history;
-			let snapshot = await lease.transact(({index, bodies}) => {
-				record = recorded(index);
-				plan = planImportUndo(record, index, bodies, options);
-				if (plan.refuse) throw fail('import-undo', plan.refuse);
-				const proofs = new Map(record.written.map(row => [row.file, row]));
-				history = []; // Explicit Undo discards unchanged arrivals; it creates no new retained version.
+			let plan;
+			let snapshot = await lease.transact(async ({index,bodies,readImportReceipt}) => {
+				held = await readImportReceipt(id); record = recorded(held);
+				plan = planImportUndo(record,index,bodies,options);
+				if (plan.refuse) throw fail('import-undo',plan.refuse);
+				const proofs = new Map(record.written.map(row=>[row.file,row]));
 				index.notes = Object.fromEntries(plan.entries);
-				index.imports = index.imports.map(row => row.id === id ? recordImportUndo(record, plan, {stamp: clock()}) : row);
-				return {kind: 'import-undo', index, removes: plan.remove.map(file => ({file, expectedDigest: proofs.get(file).digest}))};
-			}, {bodies: names});
-			const present = new Set(snapshot.files), removed = plan.remove.filter(file => !present.has(file)), deleted = new Set(removed), kept = [...plan.kept,
-				...plan.remove.filter(file => present.has(file)).map(file => ({file, why: 'changed while undo was being committed; its current words were kept'}))];
-			history = history.filter(row => deleted.has(row.file));
-			snapshot = await finishImportUndo(lease, snapshot, snapshot.index.imports.find(row => row.id === id), history);
-			return {...snapshot, receipt: copy(snapshot.index.imports.find(row => row.id === id)), plan,
-				result: {removed, kept, alreadyUndone: false}, history};
+				const stored = await receiptPlan(index,recordImportUndo(record,plan,{stamp:clock()}),held,readImportReceipt);
+				return {kind:'import-undo',index:stored.index,writes:stored.writes,removes:[...plan.remove.map(file=>({file,expectedDigest:proofs.get(file).digest})),...stored.removes]};
+			},{bodies:names});
+			const present = new Set(snapshot.files), removed = plan.remove.filter(file=>!present.has(file)), kept = [...plan.kept,
+				...plan.remove.filter(file=>present.has(file)).map(file=>({file,why:'changed while undo was being committed; its current words were kept'}))];
+			record = (await lease.readImportReceipt(id)).receipt;
+			snapshot = await finishImportUndo(lease,snapshot,record);
+			return {...snapshot,receipt:(await lease.readImportReceipt(id)).receipt,plan,result:{removed,kept,alreadyUndone:false},history:[]};
 		});
 	};
 	const previewImportUndo = (receipt, options = {}) => importUndo(receipt, options, false);
 	const undoImport = (receipt, options = {}) => importUndo(receipt, options, true);
+	const receiptMembers = (index, lease) => importReceiptMembers(index, row => lease ? lease.readImportReceipt(row.id) : owner.readImportReceipt(scope, row.id));
+	const receiptMembersCurrent = async members => {
+		for (const member of members) {
+			const bytes = await store.read(member.file);
+			if (bytes == null || bytes.length !== member.byteLength || await digest(bytes) !== member.digest) return false;
+		}
+		return true;
+	};
 	const captureFiles = async () => {
 		const rows = [];
-		for (const prefix of ['', 'audio', 'attachments']) for (const name of await store.list(prefix)) {
+		for (const prefix of ['', 'audio', 'attachments', 'imports']) for (const name of await store.list(prefix)) {
 			if (name === OWNER_JOURNAL_FILE && !prefix) throw fail('pending', 'The notes folder has a pending save. Let it finish before making a backup.');
 			if (/^\..*\.tmp$/.test(name)) continue;
 			const path = prefix ? prefix + '/' + name : name, bytes = await store.read(path);
@@ -802,19 +848,22 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const snapshot = lease ? await lease.read() : await owner.read(scope);
 			const first = await store.read(NOTES_INDEX_FILE), pending = await store.read(OWNER_JOURNAL_FILE);
 			if (pending != null) throw fail('pending', 'A note is still being saved. Try Backup again when it has finished.');
+			const receipts = await receiptMembers(snapshot.index, lease);
 			let released = false;
 			return {index: snapshot.index, generation: snapshot.generation,
-				current: async () => !released && await digest(first) === await digest(await store.read(NOTES_INDEX_FILE)) && await store.read(OWNER_JOURNAL_FILE) == null,
+				current: async () => !released && await digest(first) === await digest(await store.read(NOTES_INDEX_FILE)) && await store.read(OWNER_JOURNAL_FILE) == null && await receiptMembersCurrent(receipts),
 				release: async () => { if (released) return; released = true; await lease?.release(); }};
 		} catch (error) { await lease?.release(); throw error; }
 	};
 	const capture = async () => {
 		if (store.writable === false || isShared() && (!locks?.request || !channel?.postMessage)) {
-			const first = await store.read(NOTES_INDEX_FILE), pending = await store.read(OWNER_JOURNAL_FILE); await read(); const entries = await captureFiles();
+			const first = await store.read(NOTES_INDEX_FILE), pending = await store.read(OWNER_JOURNAL_FILE), snapshot = await read();
+			const receipts = await receiptMembers(snapshot.index), entries = await captureFiles();
+			if (!await receiptMembersCurrent(receipts)) throw fail('changed', 'An import receipt changed during backup. Nothing was certified.');
 			if (await digest(first) !== await digest(await store.read(NOTES_INDEX_FILE)) || await digest(pending) !== await digest(await store.read(OWNER_JOURNAL_FILE))) throw fail('busy', 'The folder changed while the backup was collected. Try Backup again.');
 			return entries;
 		}
-		try { return await owned(async () => captureFiles()); }
+		try { return await owned(async (lease, snapshot) => { const members = await receiptMembers(snapshot.index, lease), entries = await captureFiles(); if (!await receiptMembersCurrent(members)) throw fail('changed', 'An import receipt changed during backup. Nothing was certified.'); return entries; }); }
 		catch (error) { if (error.code === 'read-only' && store.writable === false) return capture(); throw error; }
 	};
 	const readFile = async file => {
@@ -829,8 +878,9 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		try { return await owned(async () => store.read(file)); }
 		catch (error) { if (error.code === 'read-only' && store.writable === false) return readFile(file); throw error; }
 	};
+	const readImportReceipt = async id => (await owner.readImportReceipt(scope, id)).receipt;
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, rebuildIndex, metadata, reminderActions, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, rebuildIndex, metadata, reminderActions, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

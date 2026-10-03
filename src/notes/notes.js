@@ -524,6 +524,7 @@ const _rapierNotesStore = {
 	},
 	async audioDir(create) { return (await _rapierNotesDir()).getDirectoryHandle('audio', { create: !!create }); },
 	audioName(name) { if (!globalThis.RapierNotesAudio.validRecordingName(name)) throw new Error('This recording name is not a sibling file'); return 'audio/' + name; },
+	async importReceiptNames() { await this.kind(); return this.bytes.list('imports'); },
 	async audioNames() { await this.kind(); return (await this.bytes.list('audio')).filter(n => globalThis.RapierNotesAudio.validRecordingName(n)); },
 	async audioStat(name) { await this.kind(); return this.bytes.stat(this.audioName(name)); },
 	async readAudio(name) {
@@ -4440,9 +4441,10 @@ function _rapierNotesOpenSheet(file, mode) {
 // in _rapierNotesOpenSheet rather than inventing a selected note. Undo (Astra A34): the owner's
 // proof-bound removal of exactly what a receipt proves the import wrote; a note edited since is a
 // changed survivor, shown before confirming and kept; the review face is the pure module's.
-function _rapierNotesImportsSheet(toggle) {
+async function _rapierNotesImportsSheet(toggle) {
 	const state = _rapierNotes, Receipt = globalThis.RapierNotesImportReceipt, sheet = state.sheet; if (!sheet) return;
-	const receipts = Array.isArray(state.index?.imports) ? state.index.imports.slice().reverse() : [];
+	const receipts = Array.isArray(state.index?.imports) ? state.index.imports.slice().reverse() : [], readTurn = (state.importsReadTurn || 0) + 1;
+	state.importsReadTurn = readTurn;
 	state.importsOpen = toggle === undefined ? null : state.importsOpen === toggle ? null : toggle;
 	state.selected.clear(); state.sheetMode = 'imports';
 	_rapierNotesSnackHide(); sheet.replaceChildren();
@@ -4462,7 +4464,14 @@ function _rapierNotesImportsSheet(toggle) {
 		(sheet.querySelector('button:not([disabled])') || sheet.querySelector('button'))?.focus({ preventScroll: true });
 		return;
 	}
-	for (const receipt of receipts) {
+	for (const reference of receipts) {
+		let receipt;
+		try { receipt = await _rapierNotesStore.folder.readImportReceipt(reference.id); }
+		catch (error) {
+			if (state.sheetMode !== 'imports' || state.importsReadTurn !== readTurn) return;
+			sheet.appendChild(_rapierNotesEl('div', 'rapier-notes-import-row', String(error?.message || error))); continue;
+		}
+		if (state.sheetMode !== 'imports' || state.importsReadTurn !== readTurn) return;
 		const face = Receipt.describeImportReceipt(receipt, { now }), id = String(receipt?.id ?? ''), more = face.lines.slice(1), shown = more.length > 0 && state.importsOpen === id;
 		// A row with nothing more to show is a plain row, not a button that does nothing.
 		const el = _rapierNotesEl(more.length ? 'button' : 'div', (more.length ? 'rapier-notes-btn ' : '') + 'rapier-notes-import-row');
@@ -4470,7 +4479,7 @@ function _rapierNotesImportsSheet(toggle) {
 		el.append(_rapierNotesEl('span', 'rapier-notes-import-title', face.title), _rapierNotesEl('span', 'rapier-notes-import-when', face.when + ' · ' + face.lines[0]));
 		sheet.appendChild(el);
 		if (shown) { const list = _rapierNotesEl('ul', 'rapier-notes-import-lines'); for (const line of more) list.appendChild(_rapierNotesEl('li', '', line)); sheet.appendChild(list); }
-		if (face.undo?.eligible) { const undo = _rapierNotesEl('button', 'rapier-notes-btn', 'Undo import'); undo.type = 'button'; undo.dataset.notesAct = 'imports-undo-review'; undo.dataset.notesReceipt = id; undo.disabled = state.importUndoBusy; sheet.appendChild(undo); }
+		if (face.undo?.eligible || reference.journal && receipt.written?.length) { const undo = _rapierNotesEl('button', 'rapier-notes-btn', 'Undo import'); undo.type = 'button'; undo.dataset.notesAct = 'imports-undo-review'; undo.dataset.notesReceipt = id; undo.disabled = state.importUndoBusy; sheet.appendChild(undo); }
 	}
 	// R87: no CLOSE row here either (the founder). The scrim, the swipe and Escape close it.
 	sheet.classList.add('rapier-notes-sheet--open'); sheet.inert = false; _rapierNotesScrim(true);
@@ -4497,7 +4506,7 @@ async function _rapierNotesImportUndoReview(id) {
 		state.importUndoReview = {receipt: preview.receipt, files: preview.plan.remove.slice(), face: globalThis.RapierNotesImportUndoFace.describeImportUndo(preview.receipt, preview.plan)};
 	} catch (error) {
 		state.importUndoReview = null;
-		showToast('Import Undo could not be checked. Reopen Notes and try again.', 'error');
+		showToast(String(error?.message || 'Import Undo could not be checked. Reopen Notes and try again.'), 'error');
 	} finally { state.importUndoBusy = false; _rapierNotesImportsSheet(); }
 }
 async function _rapierNotesImportUndoConfirm() {
@@ -6099,7 +6108,8 @@ async function _rapierNotesImportFiles(files, source) {
 	const recordings = await _rapierNotesStore.audioNames();
 	const thumbnails = await _rapierNotesStore.thumbNames();
 	const attachmentNames = await _rapierNotesStore.attachmentNames();
-	const existing = [...Object.keys(state.index.notes), ...recordings.map(name => 'audio/' + name), ...thumbnails.map(name => 'thumbs/' + name), ...attachmentNames.map(name => 'attachments/' + name)];
+	const importFiles = await _rapierNotesStore.importReceiptNames();
+	const existing = [...Object.keys(state.index.notes), ...recordings.map(name => 'audio/' + name), ...thumbnails.map(name => 'thumbs/' + name), ...attachmentNames.map(name => 'attachments/' + name), ...importFiles.map(name => 'imports/' + name)];
 	const lastOrder = Object.values(state.index.notes).map(e => e.order).filter(Boolean).sort().at(-1) || '';
 	// The folder's own sidecar goes in with the pick, not just its file names. A Rapier backup
 	// carries the identity each note was written under, and without knowing which identities this
@@ -6135,15 +6145,18 @@ async function _rapierNotesImportFiles(files, source) {
 	if (result.repeatConflict) { showToast(result.skipped.map(row => row.name + ': ' + row.why).join('\n'), 'error'); return; }
 	const Landing = globalThis.RapierNotesImportPlan, Receipt = globalThis.RapierNotesImportReceipt;
 	if (!Landing || typeof Landing.planImportLanding !== 'function' || !Receipt?.createImportReceipt) throw new Error('The import landing and its record must load before any files can be written.');
-	let receiptError = null, importVerified = false, record = null;
+	let receiptError = null, importVerified = false, record = null, receiptCheckpoint = null;
+	const saveReceipt = async () => {
+		const saved = await _rapierNotesStore.folder.checkpointImportReceipt(record, receiptCheckpoint);
+		receiptCheckpoint = saved.receiptCheckpoint; _rapierNotesTake(saved);
+	};
 	if (notes.length || result.attachments?.length || result.audio?.length || result.backupFiles?.length) {
 		const stamp = Date.now(), key = await globalThis.RapierNotesIntegrity.sha256(new TextEncoder().encode(stamp + '\n' + notes.map(note => note.file).join('\n')));
 		record = Receipt.createImportReceipt(result, {stamp, id: 'import-' + stamp + '-' + key.slice(0, 12)});
 		// The record is durable BEFORE media or history publication. It is a plan, never a
 		// claim that these files landed; a later refusal can leave earlier attachments here.
 		record.publication = {phase: 'media', plannedFiles: [...(result.attachments || []).map(row => 'attachments/' + row.name), ...(result.audio || []).map(row => 'audio/' + row.name), ...(result.backupFiles || []).filter(row => !M.isNoteFile(row.name)).map(row => row.name)]};
-		state.index = Receipt.appendImportReceipt(state.index, record);
-		await _rapierNotesWriteIndex();
+		await saveReceipt();
 	}
 	const audioNames = new Map();
 	const recordingMap = rootId => {
@@ -6156,8 +6169,7 @@ async function _rapierNotesImportFiles(files, source) {
 	const recordFile = async (file, bytes) => {
 		if (!record) return;
 		record = await Receipt.verifyImportFile(record, file, bytes, await _rapierNotesStore.bytes.read(file));
-		state.index = Receipt.appendImportReceipt(state.index, record);
-		await _rapierNotesWriteIndex();
+		await saveReceipt();
 	};
 	for (const file of result.attachments || []) {
 		const name = await _rapierNotesStore.createAttachment(file.name, new Blob([file.bytes]), {exact: true});
@@ -6187,6 +6199,11 @@ async function _rapierNotesImportFiles(files, source) {
 	// The recordings land first, through the folder's own operation (its lease); then the notes'
 	// past lands under the history lease (B01): the owner is never asked for twice at once.
 	for (const file of backupFiles) {
+		// A source device's receipt remains byte-exact backup evidence. Add backup never
+		// adopts its old identity/path proofs as this device's Undo authority.
+		if (/^imports\/[^/\\]+\.json$/.test(file?.name || '') && file.bytes) {
+			await _rapierNotesStore.folder.asset(file.name, file.bytes); backupSavedFiles++; continue;
+		}
 		if (/^attachments\/[^/\\]+$/.test(file?.name || '') && file.bytes) {
 			await _rapierNotesStore.createAttachment(file.name.slice(12), new Blob([file.bytes]), {exact: true});
 			await recordFile(file.name, file.bytes);
@@ -6209,6 +6226,7 @@ async function _rapierNotesImportFiles(files, source) {
 	}
 	await _rapierNotesStore.historyCommit(async () => {
 	for (const file of backupFiles) {
+		if (/^imports\/[^/\\]+\.json$/.test(file?.name || '') && file.bytes) continue;
 		if (/^attachments\/[^/\\]+$/.test(file?.name || '') && file.bytes) continue;
 		if (/^audio\/(.+)$/.exec(file?.name || '')?.[1] && file.bytes) continue;
 		if (/^thumbs\/[^/\\]+$/.test(file?.name || '') && file.bytes) continue;
@@ -6265,8 +6283,7 @@ async function _rapierNotesImportFiles(files, source) {
 	} catch (error) {
 		if (record) {
 			record = Receipt.finishImportReceipt(record, {status: 'failed', why: 'Adding the files stopped: ' + String(error?.message || error) + '. Some may already be in the notes folder; keep your export.'});
-			state.index = Receipt.appendImportReceipt(state.index, record);
-			try { await _rapierNotesWriteIndex(); } catch (receiptFault) { console.warn('[rapier] attachment failure record', receiptFault); }
+			try { await saveReceipt(); } catch (receiptFault) { console.warn('[rapier] attachment failure record', receiptFault); }
 		}
 		throw error;
 	}
@@ -6305,7 +6322,8 @@ async function _rapierNotesImportFiles(files, source) {
 	const turn = () => typeof globalThis.scheduler?.yield === 'function' ? globalThis.scheduler.yield() : new Promise(resolve => setTimeout(resolve, 0));
 	let landing = Landing.createImportLanding(Landing.planImportLanding({notes: notes.map(note => ({file: note.file, text: note.text, ...(M.isCodeFile(note.file) ? {bytes: note.bytes} : {}), entry: note.entry})), receipts: record ? notes.map(note => ({file: note.file})) : []},
 		{batchCount: Landing.importBatchCount(Object.keys(state.index?.notes || {}).length, notes.length)}));
-	// The record as it stands goes into the folder with the next batch's transaction, and after the last.
+	// The journal checkpoint follows the next batch transaction; only a compact reference enters
+	// the sidecar. The complete file publishes after the final verification and arrival history.
 	const checkpoint = () => { if (!record) return; record = {...record, landing: {nextBatch: landing.cursor, status: landing.status, done: landing.done, ...(landing.stop ? {stop: landing.stop} : {}), ...(landing.position ? {position: landing.position} : {})}}; };
 	if (landing.batch) await turn();
 	while (landing.batch) {
@@ -6329,9 +6347,10 @@ async function _rapierNotesImportFiles(files, source) {
 						taken.add(file.toLowerCase()); names.push(file);
 						rows.push({ordinal: item.ordinal, file, text: item.text, ...(item.bytes ? {bytes: item.bytes} : {}), entry: item.entry});
 					}
-					return {notes: rows, sections: want, sectionsAdded: want.map(name => ({name, collapsed: added.get(name) === true})), index: receipt && Receipt ? Receipt.appendImportReceipt(index, receipt) : index};
+					return {notes: rows, sections: want, sectionsAdded: want.map(name => ({name, collapsed: added.get(name) === true})), index, ...(receipt ? {importReceipt: receipt, receiptCheckpoint} : {})};
 				});
 				_rapierNotesTake(snapshot);
+				if (snapshot.receiptCheckpoint) receiptCheckpoint = snapshot.receiptCheckpoint;
 				if (record) record = Receipt.recordImportSections(record, snapshot.result.createdSections || []);
 				for (const row of snapshot.result.notes) {
 					landedNames.set(row.ordinal, row.file); landedEntries.set(row.ordinal, JSON.parse(JSON.stringify(snapshot.index.notes[row.file])));
@@ -6394,15 +6413,25 @@ async function _rapierNotesImportFiles(files, source) {
 		}
 		if (landing.batch) await turn();
 	}
-	if (!notes.length) for (const name of sectionsToMake) { const grown = M.addSection(state.index, name); if (grown !== state.index) state.index.sections = grown.sections; }
+	if (!notes.length && sectionsToMake.length) {
+		// A section-only import has no body batch to carry its metadata. Commit it before
+		// checkpointing the receipt; changing the shell's cached index is not publication.
+		const snapshot = await _rapierNotesStore.folder.importBatch(() => ({notes: [], sections: sectionsToMake,
+			sectionsAdded: sectionsToMake.map(name => ({name, collapsed: added.get(name) === true})),
+			...(record ? {importReceipt: record, receiptCheckpoint} : {})}));
+		if (record) {
+			receiptCheckpoint = snapshot.receiptCheckpoint;
+			record = Receipt.recordImportSections(record, snapshot.result.createdSections || []);
+		}
+		_rapierNotesTake(snapshot);
+	}
 	const stopped = landing.status !== 'complete';
 	if (record) {
 		try {
 			const sectionsMade = (record.createdSections || []).map(section => section.name);
 			if (!stopped && record.written.length === record.notes.length) { importVerified = true; record = Receipt.finishImportReceipt(record, {status: 'complete', sections: sectionsMade}); }
 			else record = Receipt.finishImportReceipt(record, {status: landing.status === 'cancelled' ? 'cancelled' : 'failed', why: landing.stop?.why || String(receiptError?.message || receiptError || 'the landing stopped'), sections: sectionsMade});
-			state.index = Receipt.appendImportReceipt(state.index, record);
-			await _rapierNotesWriteIndex();
+			await saveReceipt();
 		} catch (error) {
 			console.warn('[rapier] notes import receipt', error);
 			receiptError = receiptError || error;

@@ -1,3 +1,4 @@
+import { validateInput } from './validate-input.mjs';
 import { VERSION } from '../version.mjs';
 import { VISUAL_LIMITS } from './visual.mjs';
 
@@ -197,37 +198,4 @@ export function mcpDescriptors({ uiResource } = {}) {
   });
 }
 
-export function validateInput(schema, value, path = 'arguments') {
-  const invalid = reason => { throw Object.assign(new Error(path + ': ' + reason), {code: 'invalid_arguments', path}); };
-  if (Array.isArray(schema.type)) {
-    if (value === null && schema.type.includes('null')) return value;
-    const type = Array.isArray(value) ? 'array' : Number.isSafeInteger(value) && schema.type.includes('integer') ? 'integer' : typeof value;
-    if (!schema.type.includes(type)) invalid('unexpected type');
-    return validateInput({...schema, type}, value, path);
-  }
-  if (schema.type === 'object') {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('expected an object');
-    for (const key of schema.required || []) if (!Object.hasOwn(value, key)) invalid('missing ' + key);
-    for (const key of Object.keys(value)) {
-      if (!Object.hasOwn(schema.properties || {}, key)) { if (schema.additionalProperties === false) invalid('unknown field ' + key); }
-      else validateInput(schema.properties[key], value[key], path + '.' + key);
-    }
-  } else if (schema.type === 'array') {
-    if (!Array.isArray(value)) invalid('expected an array');
-    if (value.length < (schema.minItems || 0) || value.length > (schema.maxItems ?? Infinity)) invalid('array length outside bounds (' + (schema.minItems || 0) + ' to ' + (schema.maxItems ?? 'any') + ')');
-    if (schema.uniqueItems && new Set(value).size !== value.length) invalid('duplicate item');
-    value.forEach((item, index) => validateInput(schema.items, item, path + '[' + index + ']'));
-  } else if (schema.type === 'string') {
-    if (typeof value !== 'string') invalid('expected a string');
-    if (value.length < (schema.minLength || 0)) invalid('string shorter than ' + schema.minLength);
-    if (schema.pattern && !new RegExp(schema.pattern).test(value)) invalid('string does not match ' + schema.pattern);
-    if (value.length > (schema.maxLength ?? Infinity)) invalid('string longer than ' + schema.maxLength);
-  } else if (schema.type === 'number') {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity)) invalid('number outside bounds');
-  } else if (schema.type === 'integer') {
-    if (!Number.isSafeInteger(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity)) invalid('integer outside bounds');
-  } else if (schema.type === 'boolean' && typeof value !== 'boolean') invalid('expected a boolean');
-  if (schema.enum && !schema.enum.includes(value)) invalid('unknown value');
-  if (Object.hasOwn(schema, 'const') && schema.const !== value) invalid('unexpected value');
-  return value;
-}
+export { validateInput };

@@ -39,17 +39,16 @@ that flows and dries, smudge, smear, blend and erase. A painting is a raster lay
 
 **Notes.** One Markdown file per note, pictures inside, recordings and attachments beside it. Sections, nine
 colours, pins, checklists, reminders (Android), links and backlinks, history, a recycle bin, and search by words
-and by the text in pictures (an optional on-device reader). Backup as one zip. Import from eighteen apps (Apple
+and by the text in pictures (an optional on-device reader). Backup as one zip or a numbered set. Import from eighteen apps (Apple
 Notes, Bear, Evernote, Google Keep, Joplin, Notion, Obsidian, OneNote, Samsung Notes, Simplenote, Standard Notes
-and more), and Markdown, text, HTML, DOCX and ZIP files. Encrypted sync with your own Cloudflare R2, S3-compatible
-storage, WebDAV, Google Drive, OneDrive or Dropbox.
+and more), and Markdown, text, HTML, DOCX and ZIP files. Encrypted sync with your own Cloudflare R2 bucket.
 
 **Files.** Open Markdown, text, code, DOCX (as a Markdown copy) and PDF (selectable text or page pictures, through
 a downloaded reader). Save writes editable source and refuses to overwrite a file changed elsewhere. Export DOCX
 with pictures, footnotes and page breaks; PDF through print; one offline HTML reading page with the source inside;
 HTML body or plain text. Compare with another file. Copy as formatted text, Markdown or plain text.
 
-**Privacy.** Everything runs on the device. Remote pictures load only when you say so, for that document. Active
+**Privacy.** The editor runs on the device. Remote pictures load only when you say so, for that document. Active
 content is stripped from Markdown, pasted HTML and diagrams; plugins are hash-checked. The document, undo history and your place stay on the device for recovery, which is not a save. The source is in `src/`;
 `node src/tools/build.mjs` rebuilds the page and [build.json](docs/build.json) records the build.
 
@@ -57,7 +56,7 @@ content is stripped from Markdown, pasted HTML and diagrams; plugins are hash-ch
 
 The agent and person share one editable page. Tools read structure (outline, search, passage,
 selection, code) and edit inspected text atomically; stale targets are refused and the person’s typing
-comes first. An edit to a long document costs about 1.5 KB of context. The Will marks what an agent may edit, only
+comes first. In a measured clause-edit workload, an edit cost about 1.5 KB of context. The Will marks what an agent may edit, only
 add to, or must leave alone ([Will/1](docs/will.md)). FREE, ASK and CHECK set the review policy; undoing an agent’s change keeps later work. Drawings are made by recipe.
 [llms.txt](llms.txt), [AGENT-TOOLS.json](AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the
 [skills](plugin/skills/README.md) say the rest.
@@ -76,7 +75,7 @@ npm install rapier-embed                         # the editor in your own app, s
 claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier
 ```
 
-In ChatGPT, add the door as a connector (Settings → Connectors → Create, no authentication). The shared document stays in that worker’s workspace until thirty days idle; **Disconnect agents** in the editor revokes access. Nothing on your device is read. Data handling and
+In ChatGPT, add the door as a connector (Settings → Connectors → Create, no authentication). The worker’s workspace expires after about thirty idle days and is cleared on its next request or deletion alarm; **Disconnect agents** in the editor revokes access. Nothing on your device is read. Data handling and
 terms: [rapier.website/privacy](https://rapier.website/privacy).
 
 ## In your own app

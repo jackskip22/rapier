@@ -11,7 +11,8 @@
 //   - Immutable objects and immutable head generations. A note version lives at objects/<sha-256 of the sealed
 //     bytes>; each device appends heads/<device>/<generation>-<sealed digest>. Each encrypted
 //     head names its exact predecessor. There is no mutable alias, timestamp winner, or remote
-//     deletion. A fork of one install identity refuses automatic sync; both branches stay kept.
+//     deletion during sync. Explicit head retirement is separate and off. A fork of one install
+//     identity refuses automatic sync; both branches stay kept.
 //   - plan() is a pure (async only for hashing) function of local + heads + capabilities: it reads
 //     no object bytes, only hashes and sidecars already inline in a head. execute() alone holds the
 //     vault key, so a genuine two-sided conflict is resolved there, once the words can be read.
@@ -37,7 +38,7 @@ import {manifestName, parseManifest, recordVersion} from './history.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {planSyncMedia, rewriteSyncMedia} from './sync-media.mjs';
 import {storedFileDigest} from './integrity.mjs';
-import {assetDigest, assetBytes, assetSize, captureAsset} from './sync-assets.mjs';
+import {assetDigest, assetBytes, assetSize, captureAsset, validateCapturedAsset} from './sync-assets.mjs';
 import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, updateSyncState} from './sync-state.mjs';
 
 export const HEAD_VERSION = 1;
@@ -738,15 +739,39 @@ async function sealUpload(item, vdk, store) {
 }
 
 export const UPLOAD_CONCURRENCY = 4;
+export const UPLOAD_WORKSPACE_BYTES = 64 * 1024 * 1024;
+// Count before allocating. A surrogate pair is four UTF-8 bytes; an unpaired one is U+FFFD.
+function uploadSize(item) {
+	if (item.bytes) return assetSize(item.bytes);
+	let size = 0;
+	for (const point of item.text || '') { const c = point.codePointAt(0); size += c < 128 ? 1 : c < 2048 ? 2 : c < 65536 ? 3 : 4; }
+	return size;
+}
 async function parallelUploads(items, run) {
-	let at = 0, failed;
-	await Promise.all(Array.from({length: Math.min(UPLOAD_CONCURRENCY, items.length)}, async () => {
-		while (!failed && at < items.length) {
-			const item = items[at++];
-			try { await run(item); } catch (error) { failed ||= error; }
+	// Four envelope-sized slots per admitted job cover source/materialization/seal or
+	// source/seal/readback/assembly. This bounds live transfer workspace, not VM/Fetch RSS
+	// or all immutable snapshot Blobs. An existing large file runs alone, never truncated.
+	const weights = items.map(item => {
+		const size = uploadSize(item), weight = 4 * (size + 29);
+		if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(weight)) refuse('incomplete', 'an upload has no exact byte count');
+		return weight;
+	});
+	let budget = UPLOAD_WORKSPACE_BYTES;
+	for (const weight of weights) budget = Math.max(budget, weight);
+	let at = 0, active = 0, held = 0, failed = false, failure;
+	await new Promise((resolve, reject) => {
+		function pump() {
+			while (!failed && at < items.length && active < UPLOAD_CONCURRENCY && held + weights[at] <= budget) {
+				const index = at++, weight = weights[index]; active++; held += weight;
+				Promise.resolve().then(() => run(items[index])).catch(error => { if (!failed) { failed = true; failure = error; } }).finally(() => {
+					active--; held -= weight; pump();
+				});
+			}
+			// Failure is reported only after every admitted seal, spool and readback has drained.
+			if (!active) { if (failed) reject(failure); else if (at === items.length) resolve(); }
 		}
-	}));
-	if (failed) throw failed;
+		pump();
+	});
 }
 
 export async function execute(inputPlan, transport, store, options = {}) {
@@ -809,12 +834,18 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	const assets = structuredClone(snapshot.assets || {});
 	for (const row of plan.assetRemoves || []) delete assets[row.file];
 	for (const copy of plan.assetCopies || []) assets[copy.file] = copy.bytes;
-	for (const item of plan.assetUploads || []) {
-		const {sealed: bytes, object: hash} = await sealUpload(item, vdk, store);
-		plan.head.assets[item.file].object = hash;
-		if (store.rememberObject) await store.rememberObject(item.content, hash, bytes);
-		await putVerified(transport, objectKey(hash), bytes);
-	}
+	// Media and notes share one admission queue and one byte budget. Completion order
+	// never assigns identities: each confirmed object updates only its own planned record.
+	await parallelUploads([...(plan.assetUploads || []).map(item => ({...item, media: true})), ...(plan.uploads || [])], async item => {
+		const {object, sealed} = await sealUpload(item, vdk, store);
+		if (store.rememberObject) await store.rememberObject(item.content, object, sealed);
+		await putVerified(transport, objectKey(object), sealed);
+		if (item.media) plan.head.assets[item.file].object = object;
+		else {
+			if (plan.head.notes[item.id]) Object.assign(plan.head.notes[item.id], {object, content: item.content});
+			sealedUploads.push(object);
+		}
+	});
 	for (const item of plan.assetDownloads || []) {
 		const got = await transport.get(objectKey(item.object));
 		if (!got) refuse('incomplete', 'a kept media object is missing');
@@ -824,18 +855,6 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		assets[item.file] = bytes;
 	}
 
-	await parallelUploads(plan.uploads || [], async item => {
-		const {object, sealed} = await sealUpload(item, vdk, store);
-		item.object = object;
-		item.key = objectKey(object);
-		if (plan.head && plan.head.notes[item.id]) {
-			plan.head.notes[item.id].object = object;
-			plan.head.notes[item.id].content = item.content;
-		}
-		if (store.rememberObject) await store.rememberObject(item.content, object, sealed);
-		await putVerified(transport, item.key, sealed);
-		sealedUploads.push(object);
-	});
 
 	for (const d of plan.downloads || []) {
 		const got = await transport.get(d.key);
@@ -1036,7 +1055,11 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	}
 	// The exact encrypted head is journaled WITH the owner's data commit, before publication.
 	// A lost response/restart can resend these bytes, not mint a second sibling generation.
-	for (const rec of [...Object.values(plan.head.notes), ...Object.values(plan.head.tombstones)]) if (rec.object) plan.head.ancestry[rec.object] = rec.parents || [];
+	// A kept whole copy can reuse a peer's ciphertext with no note-local parents. That
+	// copy must not erase the authenticated object's existing edges: otherwise a slow
+	// third device's unchanged ancestor becomes a spurious new conflict after the return.
+	for (const rec of [...Object.values(plan.head.notes), ...Object.values(plan.head.tombstones)]) if (rec.object)
+		plan.head.ancestry[rec.object] = [...new Set([...(plan.head.ancestry[rec.object] || []), ...(rec.parents || [])])];
 	// Retain only edges reachable from live/deleted versions: these are the merge bases still needed.
 	const needed = new Set(), queue = [...Object.values(plan.head.notes), ...Object.values(plan.head.tombstones)].flatMap(rec => [rec.object, ...(rec.parents || []), ...(rec.deletions || []).flatMap(deletion => [deletion.object, ...(deletion.parents || [])])]);
 	while (queue.length) { const object = queue.pop(); if (!object || needed.has(object)) continue; needed.add(object); queue.push(...(plan.head.ancestry[object] || [])); }
@@ -1118,6 +1141,8 @@ async function authenticateHeads(verified, deviceId, checkpoint, vdk = null) {
 // selects a reviewed retirement policy. The read frontier is one newest generation per device.
 export const HEADS_PER_DEVICE = 1;
 export const HEAD_RETENTION_GENERATIONS = Infinity;
+// Reviewed retirement policy, supplied explicitly by name; never a sync default.
+export const HEAD_RETIREMENT_WINDOW = 64;
 // An explicit window counts a writer's authenticated later generations, never wall time.
 // Infinity keeps every enrolled frontier. No provider or session enables a finite window.
 export const HEAD_RETENTION_WINDOW = Infinity;
@@ -1171,6 +1196,75 @@ export function headRetirementCandidates(keys, deviceId, keep = HEAD_RETENTION_G
 		.filter(at => at.device === deviceId).flatMap(at => [at.generation, at.generation - 1]));
 	return own.slice(keep).filter(key => { const generation = parseHeadKey(key).generation; return generation < protectFrom && !pinnedGenerations.has(generation); });
 }
+// Explicit, separately reviewed authority: not called by synchronize, a session or a provider.
+// The caller supplies its COMPLETE heads listing and every enrolled device's newest head.
+// Reauthenticate those frontiers and their exact predecessors before deciding any DELETE;
+// unlike the exploratory count selector, a still-published observation never ages out here.
+export async function retireHeadGenerations(transport, {vdk, deviceId, keys, heads, window, signal} = {}) {
+	if (window !== HEAD_RETIREMENT_WINDOW || !DEVICE_RE.test(deviceId) || !Array.isArray(keys) || !Array.isArray(heads)
+		|| !transport || !['get', 'list', 'delete'].every(name => typeof transport[name] === 'function')
+		|| signal != null && typeof signal.aborted !== 'boolean')
+		refuse('retention', 'head retirement needs an explicit reviewed window, complete listing and authenticated frontiers');
+	const check = () => { if (signal?.aborted) refuse('cancelled', 'head retirement stopped; no further generation was removed'); };
+	check();
+	keys = [...new Set(keys)];
+	// Capture the supplied view before the first await; caller mutation cannot shrink its pins.
+	heads = heads.map(head => {
+		if (!record(head)) refuse('retention', 'head retirement needs every enrolled device’s newest head');
+		return {...decodeHead(encodeHead(head)), _key: head._key};
+	});
+	const expected = new Set(keys), authenticated = new Map(), pinned = new Set();
+	const candidates = headRetirementCandidates(keys, deviceId, window, heads, window);
+	if (!heads.some(head => head.device === deviceId)) refuse('retention', 'this device has no authenticated published frontier');
+	async function read(key) {
+		check();
+		if (!expected.has(key)) refuse('retention', 'the complete listing omits an enrolled frontier or its required predecessor');
+		if (authenticated.has(key)) return authenticated.get(key);
+		const address = parseHeadKey(key), got = await transport.get(key);
+		check();
+		if (!(got?.bytes instanceof Uint8Array)) refuse('retention', 'an enrolled frontier or its predecessor is missing');
+		if (await sha256Hex(got.bytes) !== address.hash) refuse('ciphertext', 'the retirement frontier ciphertext does not match its address');
+		const plain = await open(vdk, headAAD(address), got.bytes);
+		let head;
+		try { head = decodeHead(plain); } finally { plain.fill(0); }
+		if (head.device !== address.device || head.generation !== address.generation)
+			refuse('retention', 'the authenticated retirement frontier disagrees with its address');
+		authenticated.set(key, head);
+		return head;
+	}
+	async function pin(key) {
+		const head = await read(key);
+		pinned.add(key);
+		if (head.previous) { await read(head.previous); pinned.add(head.previous); }
+	}
+	for (const claimed of heads) {
+		const head = await read(claimed._key);
+		if (!same(head, decodeHead(encodeHead(claimed)))) refuse('retention', 'a supplied retirement frontier is not its authenticated published head');
+		await pin(claimed._key);
+		for (const key of head.seen) await pin(key);
+	}
+	const planned = candidates.filter(key => !pinned.has(key)).reverse(), retired = [];
+	// Every page is read without a lower bound. Any new, omitted or reappearing head stops
+	// this run; never silently narrow the enrolled set or grow a plan across an await.
+	const listingTransport = {list: async (...args) => { check(); const page = await transport.list(...args); check(); return page; }};
+	async function confirm() {
+		const page = await listEvery(listingTransport, HEAD_PREFIX), found = new Set();
+		if (page.prefixes.length) refuse('listing', 'retirement needs a complete, ungrouped heads listing');
+		for (const item of page.keys) { parseHeadKey(item?.key); found.add(item.key); }
+		if (found.size !== expected.size || [...found].some(key => !expected.has(key)))
+			refuse('retention', 'the heads listing changed or still names a retired generation; rediscover before another retirement');
+	}
+	await confirm();
+	for (const key of planned) {
+		check();
+		await transport.delete(key);
+		expected.delete(key);
+		await confirm();
+		retired.push(key);
+	}
+	return {window, planned, retired};
+}
+
 async function listEvery(transport, prefix, options) {
 	const keys = [], prefixes = [], cursors = new Set(); let cursor = null;
 	for (;;) {
@@ -1371,7 +1465,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 				if (!stat || before && (before.size !== stat.size || before.modified !== stat.modified)) refuse('changed', 'the media changed during sync; its original bytes were kept');
 			}
 			const asset = media.get(file);
-			if (validateMedia && asset.content && asset.stamp?.modified == null && await storedFileDigest(folder.store, file) !== asset.content) refuse('changed', 'the media changed during sync; its original bytes were kept');
+			if (validateMedia && asset.content) await validateCapturedAsset(folder.store, file, asset);
 			assets[file] = asset;
 		}
 		for (const [name, bytes] of current.bodies) files[name] = fileBody(name, bytes);
@@ -1474,6 +1568,8 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 				const index = structuredClone(next.index);
 				index.folderGeneration = fresh.index.folderGeneration;
 				index.noteCounters = fresh.index.noteCounters;
+				// Import receipts are this folder's custody evidence, never head metadata or text.
+				if (fresh.index.imports) index.imports = structuredClone(fresh.index.imports); else delete index.imports;
 				index.tombstones = fresh.index.tombstones;
 				index.assetTombstones = {...fresh.index.assetTombstones, ...next.head.assetTombstones};
 				index.assetRevivals = next.head.assetRevivals;

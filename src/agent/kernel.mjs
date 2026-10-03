@@ -10,7 +10,7 @@ import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput } from './catalog.mjs';
 import { _rapierTransformSplices as transformSplices } from '../editor/journal-records.mjs';
 import { pairMarkers, pairInkSpans, scanInkMarkers, scanColorMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
-import { _rapierHiddenSourceRanges } from '../editor/visible-source.mjs';
+import { markdownSourcePositions } from '../spec/md-source.mjs';
 import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentUndoSplice, imageCommentTarget} from './comments.mjs';
 import {visualRequest, visualResult} from './visual.mjs';
 
@@ -335,14 +335,12 @@ function markerTextOffsets(markers) {
 // text no row wrote, is a pair severed (an opener cut into is no marker, and then its closer is what stands alone); the pair is
 // named by where it stands in the document. More empty pairs than the document held is a pair written empty, whoever wrote its
 // comments. A marker standing alone that the edit wrote is its author's own, and a stray that was one already is not the edit's.
-// The same Markdown owner used by visible editing distinguishes comments from literal code. A door edit
-// may change example words or marker characters without granting their comment-shaped bytes ink custody.
+// The standard's source-position owner distinguishes comment carriers from literal examples of any kind.
 function semanticMarkers(source, kind) {
   const markers = kind === 'ink' ? scanInkMarkers(source) : scanColorMarkers(source);
   if (!markers.length) return markers;
-  const comments = new Map(_rapierHiddenSourceRanges(source, markdownParser()).filter(range => range.kind === 'comment')
-    .map(range => [range.start, range.end]));
-  return markers.filter(marker => comments.get(marker.start) === marker.end);
+  const positions = markdownSourcePositions(source, markdownParser());
+  return markers.filter(marker => !positions.isText(marker.start) && positions.isComment(marker.start, marker.end));
 }
 
 function markerBroken(before, after, rows, kind) {

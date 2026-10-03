@@ -1,3 +1,5 @@
+import {assertImportReference, assertImportReferences, IMPORT_RECEIPT_LIMIT} from './import-storage.mjs';
+export {IMPORT_RECEIPT_LIMIT};
 // Plans are not saves. Only body read-back plus the committed identity can enter `written`.
 import {exactBytes, sha256 as digestBytes, sha256State} from './integrity.mjs';
 import {canonicalJSON} from './merge.mjs';
@@ -13,7 +15,6 @@ const historyFile = value => typeof value === 'string' && /^history\/(?:manifest
 const importedFile = value => typeof value === 'string' && (value.startsWith('attachments/') && isAttachmentName(value.slice(12)) || value.startsWith('audio/') && validRecordingName(value.slice(6)));
 const sha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const digestEntry = entry => { const hash = sha256State(); hash.update(bytesOf(canonicalJSON(entry))); return hash.finish(); };
-export const IMPORT_RECEIPT_LIMIT = 5;
 const metadata = rows => list(rows).map(row => {
 	const out = {};
 	for (const key of ['rootId', 'inputId', 'name', 'byteLength', 'status', 'why', 'code', 'attachment', 'files']) if (row?.[key] !== undefined) out[key] = copy(row[key]);
@@ -28,7 +29,7 @@ const metadata = rows => list(rows).map(row => {
 });
 
 // A source field no Rapier setting holds is named once per import, not on every note: the record
-// lives in the synced, backed-up sidecar and every folder transaction reads and writes it whole. One
+// is device-local, backed up beside the sidecar, and retained in the open import journal. One
 // row per source (`subject`), one field per source key, each distinct value kept once: `notes[i]`
 // lists the indexes, into this record's `notes`, of the notes that carried `values[i]`, so a
 // stylesheet a thousand pages share is one value. The importer's per-note rows are the plan's.
@@ -206,8 +207,8 @@ export function finishImportReceipt(receipt, {status, why, sections = []} = {}) 
 }
 
 export function appendImportReceipt(index, receipt) {
-	if (!Number.isSafeInteger(receipt.stamp) || receipt.stamp < 0 || typeof receipt.id !== 'string' || !receipt.id) throw new Error('durable import receipt needs an id and stamp');
-	const imports = list(index.imports).filter(row => row?.id !== receipt.id).slice(-(IMPORT_RECEIPT_LIMIT - 1));
+	assertImportReference(receipt);
+	const imports = assertImportReferences(index).filter(row => row?.id !== receipt.id).slice(-(IMPORT_RECEIPT_LIMIT - 1));
 	return {...index, imports: [...copy(imports), copy(receipt)]};
 }
 

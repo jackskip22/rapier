@@ -40,12 +40,12 @@ retained, and the person has a clear way to keep it and, when requested, return 
 With a shell, Node 22 or newer and the declared package release available on npm, `rapier-html` supplies the editor. If the pinned release is unavailable, use the installed page helper with the matching editor HTML when available; do not silently run a different release or claim a file was created:
 
 ```sh
-npx -- rapier-html@1.1.49 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.1.49 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
-npx -- rapier-html@1.1.49 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.1.49 proposal.md --base original.md    # opens on the diff, original against proposal
-npx -- rapier-html@1.1.49 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.1.49 notes.md out.html                 # a named output
+npx -- rapier-html@1.1.50 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.1.50 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
+npx -- rapier-html@1.1.50 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.1.50 proposal.md --base original.md    # opens on the diff, original against proposal
+npx -- rapier-html@1.1.50 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.1.50 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an output that exists is refused, so name a new one. The first `--` keeps npm from taking
@@ -101,7 +101,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Hand the file as well when the viewer
   blocks downloads started inside it; apply the host's actual sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.49` and hand the page as a file; it opens
+- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.50` and hand the page as a file; it opens
   in any browser.
 - **A host that shows MCP apps (ChatGPT among them):** `rapier.open` requests the editor in the chat
   (`rapier-agent-door`).
@@ -128,7 +128,7 @@ cannot reconstruct a source-exact file.
 ```js
 import {wrap, unwrap} from 'rapier-html';
 const page = wrap(rapierHtml, text, 'notes.md', {drawing, base, return: returnURL, return_expires_at: expiresAt});
-const {text, name, drawing, base, return: address, return_expires_at: expiresAt} = unwrap(pageBytes);
+const restored = unwrap(page);
 ```
 
 `wrap` places each text in a `<script>` block the browser never runs (`rapier-document`, `rapier-drawing`,

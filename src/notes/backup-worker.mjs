@@ -4,6 +4,9 @@ import {writeBackupStream} from './backup-stream.mjs';
 import {createBackupSink} from './backup-sink.mjs';
 import {backupStageRecord} from './backup-lifecycle.mjs';
 
+// One extra source-sized window, independent of archive/member size.
+const STAGING_WRITE_BYTES = 64 * 1024;
+
 const failure = error => ({name: String(error?.name || 'Error'), message: String(error?.message || error).slice(0, 1024),
 	...(error instanceof AggregateError ? {causes: error.errors.map(failure)} : {})});
 const cancelled = () => new Error('backup was cancelled');
@@ -51,16 +54,29 @@ export function createBackupWorker({postMessage, now = () => performance.now(), 
 			const path = await staging.resolve(archive);
 			if (path?.length !== 1 || path[0] !== archive.name || await directory.resolve(archive) !== null) throw new Error('backup staging must be its own entry outside the source folder');
 			access = await archive.createSyncAccessHandle();
+			const buffer = new Uint8Array(STAGING_WRITE_BYTES);
+			let buffered = 0, written = 0;
+			const flush = async () => {
+				for (let at = 0; at < buffered;) {
+					await pause();
+					const count = access.write(buffer.subarray(at, buffered), {at: written});
+					if (!Number.isSafeInteger(count) || count <= 0 || count > buffered - at) throw new Error('backup sync write did not complete');
+					at += count; written += count;
+				}
+				buffered = 0;
+			};
 			sink = createBackupSink({
 				async write(bytes) {
 					for (let at = 0; at < bytes.length;) {
-						await pause();
-						const count = access.write(bytes.subarray(at), {at: sink.bytes + at});
-						if (!Number.isSafeInteger(count) || count <= 0 || count > bytes.length - at) throw new Error('backup sync write did not complete');
-						at += count;
+						const count = Math.min(buffer.length - buffered, bytes.length - at);
+						buffer.set(bytes.subarray(at, at + count), buffered);
+						buffered += count; at += count;
+						if (buffered === buffer.length) await flush();
 					}
 				},
+				async endMember(size) { if (size >= buffer.length) await flush(); },
 				async close() {
+					await flush();
 					synchronous(access.truncate(sink.bytes), 'truncate'); synchronous(access.flush(), 'flush');
 					// Capture under the SAME exclusive lock as the verification. Never acquire a new
 					// post-close File and give it the certificate of this earlier snapshot.
@@ -68,7 +84,8 @@ export function createBackupWorker({postMessage, now = () => performance.now(), 
 					if (snapshot.size !== sink.bytes) throw new Error('backup snapshot size differs from staging');
 				},
 				async file() { return syncFile(access, 0, pause); },
-				async abort() { close(); },
+				// A failed/partial write is never replayed by cleanup. Only close drains the tail.
+				async abort() { buffered = 0; close(); },
 				async remove() { close(); await staging.removeEntry(archive.name); removed = true; }
 			});
 			async function* source() {

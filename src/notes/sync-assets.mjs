@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {sha256State} from './integrity.mjs';
+import {sha256State, storedFileDigest} from './integrity.mjs';
 const HASH = /^[a-f0-9]{64}$/;
 const fail = message => { throw Object.assign(new Error(message), {code: 'changed'}); };
 export const SEAL_OVERHEAD_BYTES = 29;
@@ -19,7 +19,7 @@ export async function assetBytes(value) {
 	return bytes;
 }
 // One pass through the source, bounded hash workspace, Blob parts outside JS number arrays.
-// AES-GCM's existing complete-object envelope is materialized only for the one upload in flight.
+// Complete-object materialization waits for the shared upload queue's byte reservation.
 export async function captureAsset(store, file, limit, {digestSkipped = false} = {}) {
 	const stat = typeof store.stat === 'function' ? await store.stat(file) : null;
 	const skipped = stat && stat.size + SEAL_OVERHEAD_BYTES > limit;
@@ -36,6 +36,23 @@ export async function captureAsset(store, file, limit, {digestSkipped = false} =
 		if (!(bytes instanceof Uint8Array)) fail('The media listing changed while taking the snapshot.');
 		size = bytes.length; hash.update(bytes); if (!skipped) parts.push(new Blob([bytes]));
 	}
-	return {content: hash.finish(), size, ...(skipped ? {} : {blob: new Blob(parts)}), stamp: stat || opened || null,
+	const content = hash.finish();
+	if (stat && stat.size !== size || HASH.test(stat?.sha256) && stat.sha256 !== content || HASH.test(opened?.sha256) && opened.sha256 !== content)
+		fail('The media changed while taking the snapshot.');
+	return {content, size, ...(skipped ? {} : {blob: new Blob(parts)}), stamp: stat || opened || null,
 		...(size + SEAL_OVERHEAD_BYTES > limit ? {skipped: true} : {})};
+}
+
+// sha256 is an explicit byte-store proof, never an ETag or a guessed timestamp.
+// The IndexedDB chunk writer can supply its verified immutable descriptor's digest.
+// Neither a different old publication nor matching edge samples proves that a source
+// stayed unchanged AFTER capture. Without exact current-source evidence, stream it again.
+export async function validateCapturedAsset(store, file, asset) {
+	const stat = typeof store.stat === 'function' ? await store.stat(file) : undefined;
+	if (stat === null || stat && stat.size !== asset.size) fail('The media changed during sync; its original bytes were kept.');
+	if (HASH.test(stat?.sha256)) {
+		if (stat.sha256 !== asset.content) fail('The media changed during sync; its original bytes were kept.');
+		return;
+	}
+	if (await storedFileDigest(store, file) !== asset.content) fail('The media changed during sync; its original bytes were kept.');
 }

@@ -19,6 +19,7 @@ async function* paths(store) {
 	for (const sub of ['manifests', 'texts', 'blobs']) {
 		for (const name of await store.historyNames(sub)) if (!temporary(name)) yield 'history/' + sub + '/' + name;
 	}
+	for (const name of await store.importReceiptNames()) if (!temporary(name)) yield 'imports/' + name;
 	for (const name of await store.thumbNames()) if (!temporary(name)) yield 'thumbs/' + name;
 }
 

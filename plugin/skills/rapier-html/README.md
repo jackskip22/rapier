@@ -4,19 +4,19 @@ Rapier, the offline Markdown editor, as one HTML page with your document inside 
 install, nothing fetched to open, edit or save. Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.1.49 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.1.49 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.1.49 notes.md --view notes             # opens on Notes: the document as cards
-npx -- rapier-html@1.1.49 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.1.49 proposal.md --base original.md    # opens on the diff of a proposed change
-npx -- rapier-html@1.1.49 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.1.49 notes.md out.html                 # a named output
-npm install rapier-html@1.1.49                              # as a library: wrap, unwrap
+npx -- rapier-html@1.1.50 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.1.50 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.1.50 notes.md --view notes             # opens the Notes library
+npx -- rapier-html@1.1.50 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.1.50 proposal.md --base original.md    # opens on the diff of a proposed change
+npx -- rapier-html@1.1.50 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.1.50 notes.md out.html                 # a named output
+npm install rapier-html@1.1.50                              # as a library: wrap, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
 
-The page is the whole editor: write, draw and paint, the document as Notes cards, Find and replace, Undo, a
+The page is the whole editor: write, draw and paint, the Notes library, Find and replace, Undo, a
 source view of the exact bytes; save to the device, share the page on, export Markdown or a web page, print; all
 offline. Opened with `--base` it shows the diff of a proposal against the original, and the person keeps or drops
 each change. Will markers in the Markdown say what an agent may change: `keep`, `append`, `edit`.

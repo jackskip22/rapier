@@ -107,6 +107,7 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 		if (finalSize > maxBytes || rawBytes + data.length > maxBytes) throw new Error('backup archive exceeds its byte bound');
 		const at = offset;
 		await put(localHeader(f)); await put(nameBytes); await put(data);
+		await sink.endMember?.(data.length);
 		central.push(centralHeader(f, at), nameBytes); centralBytes += 46 + nameBytes.length; rawBytes += data.length;
 	};
 	// Hash, CRC and archive receive the same acquired bytes. The descriptor puts the CRC after
@@ -133,6 +134,7 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 		}
 		if (length !== size) throw new Error('backup source changed size: ' + name);
 		await put(dataDescriptor(f));
+		await sink.endMember?.(size);
 		central.push(centralHeader(f, at), nameBytes); centralBytes += 46 + nameBytes.length; rawBytes += size;
 		return {digest: hash.finish(), index};
 	};

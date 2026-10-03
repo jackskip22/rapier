@@ -24,7 +24,7 @@ Notes kept in a browser can be cleared by that browser. Back them up from the No
 
 Use **BACKUP** in the Notes settings at the end of your session. Save it somewhere you control and check it arrived. A local save or an opened share sheet is not a separate backup. Without browser storage, notes can exist only until the page closes.
 
-Every press of BACKUP makes a dated, timed file without asking or replacing an earlier backup.
+Every new backup makes a dated, timed file without asking or replacing an earlier backup.
 
 **Sync with Cloudflare**, in the Notes settings, keeps an encrypted copy in your own Cloudflare R2 bucket; Rapier never sees it. Sync is not a backup: keep backing up.
 
