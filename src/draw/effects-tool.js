@@ -45,10 +45,98 @@ function _rapierDrawEffectsChange(effect, continuous = false) {
 	}, !sweeping, false);
 	if (ok && continuous) state.effectsSweep = state.undoStack.at(-1);
 	state.effectsCompare = false;
-	if (ok) _rapierDrawRenderAll();
+	if (ok && state.effectsPreviewHold) _rapierDrawEffectsPreviewSchedule();
+	else if (ok) _rapierDrawRenderAll();
 	_rapierDrawEffectsSync();
 	_rapierPaintSyncPaper();
 	return ok;
+}
+
+function _rapierDrawEffectsPreviewSource() {
+	const state = _rapierDrawState, recipe = state.recipe;
+	if (!recipe) return '';
+	const display = JSON.parse(JSON.stringify(recipe));
+	const defer = effect => { if (effect && effect.type === 'copier') effect.smear = 0; };
+	defer(display.effect);
+	for (const shape of display.shapes || []) defer(shape.effect);
+	return _rapierCopier._rapierDrawBuildSVG(display);
+}
+function _rapierDrawEffectsPreviewPlace(canvas) {
+	const state = _rapierDrawState, host = state.svgRoot?.parentElement;
+	if (!host) return;
+	let node = state.effectsPreviewNode;
+	if (!node) {
+		node = document.createElement('canvas');
+		node.className = 'rapier-draw-copy-preview';
+		node.setAttribute('aria-hidden', 'true');
+		node.style.position = 'absolute';
+		node.style.pointerEvents = 'none';
+		node.style.zIndex = '2';
+		host.append(node);
+		state.effectsPreviewNode = node;
+	}
+	const rect = state.svgRoot.getBoundingClientRect(), parent = host.getBoundingClientRect();
+	node.style.left = (rect.left - parent.left) + 'px';
+	node.style.top = (rect.top - parent.top) + 'px';
+	node.style.width = rect.width + 'px';
+	node.style.height = rect.height + 'px';
+	node.width = canvas.width;
+	node.height = canvas.height;
+	node.getContext('2d').drawImage(canvas, 0, 0);
+	node.hidden = false;
+}
+function _rapierDrawEffectsPreviewHideLive() {
+	const svg = _rapierDrawState.svg;
+	if (!svg) return;
+	for (const group of svg.querySelectorAll('[data-copy-filter]')) group.style.visibility = 'hidden';
+}
+async function _rapierDrawEffectsPreviewRaster() {
+	const state = _rapierDrawState;
+	const source = _rapierDrawEffectsPreviewSource();
+	const css = state.svgRoot?.getBoundingClientRect().width || 390;
+	const width = Math.max(1, Math.round(css / 2));
+	const view = source.match(/viewBox="([^"]+)"/);
+	if (!view) return;
+	const box = view[1].split(' ').map(Number);
+	const height = Math.max(1, Math.round(width * box[3] / box[2]));
+	const imageSource = source.replace(/(<svg[^>]*\bwidth=")[^"]+/, '$1' + width).replace(/(<svg[^>]*\bheight=")[^"]+/, '$1' + height);
+	const blob = new Blob([imageSource], { type: 'image/svg+xml' });
+	const url = URL.createObjectURL(blob);
+	try {
+		const img = new Image();
+		img.src = url;
+		await img.decode();
+		if (!state.effectsPreviewHold) return;
+		const canvas = document.createElement('canvas');
+		canvas.width = width;
+		canvas.height = height;
+		canvas.getContext('2d').drawImage(img, 0, 0);
+		_rapierDrawEffectsPreviewHideLive();
+		_rapierDrawEffectsPreviewPlace(canvas);
+	} finally { URL.revokeObjectURL(url); }
+}
+function _rapierDrawEffectsPreviewSchedule() {
+	const state = _rapierDrawState;
+	if (!state.effectsPreviewHold) return;
+	state.effectsPreviewPending = true;
+	if (state.effectsPreviewFlight) return;
+	const run = async () => {
+		while (state.effectsPreviewHold && state.effectsPreviewPending) {
+			state.effectsPreviewPending = false;
+			const job = _rapierDrawEffectsPreviewRaster();
+			state.effectsPreviewFlight = job;
+			try { await job; } catch (_) {}
+			state.effectsPreviewFlight = null;
+		}
+	};
+	void run();
+}
+function _rapierDrawEffectsPreviewRelease() {
+	const state = _rapierDrawState;
+	state.effectsPreviewHold = false;
+	state.effectsPreviewPending = false;
+	if (state.effectsPreviewNode) { state.effectsPreviewNode.remove(); state.effectsPreviewNode = null; }
+	if (state.recipe) _rapierDrawRenderAll();
 }
 function _rapierDrawEffectsValue() {
 	const targets = _rapierDrawEffectsTargets();
@@ -136,10 +224,11 @@ function _rapierDrawEffectsBuild(surface) {
 			input.type = 'range'; input.min = min; input.max = max; input.step = step; input.id = 'rapier-copy-' + key; input.dataset.copyKey = key;
 			label.htmlFor = input.id; output.htmlFor = input.id; output.dataset.copyOutput = key;
 			row.append(label, input, output); group.append(row);
-			const begin = () => { _rapierDrawState.effectsSweep = null; _rapierDrawState.settingEdit = {}; };
+			const begin = () => { _rapierDrawState.effectsSweep = null; _rapierDrawState.settingEdit = {}; _rapierDrawState.effectsPreviewHold = true; };
 			input.addEventListener('pointerdown', begin); input.addEventListener('keydown', event => { if (!event.repeat) begin(); });
 			input.addEventListener('input', () => { _rapierDrawEffectsChange({ ..._rapierDrawEffectsValue(), [key]: Number(input.value) }, true); });
-			for (const event of ['change', 'blur', 'keyup', 'pointercancel']) input.addEventListener(event, () => { _rapierDrawState.effectsSweep = null; _rapierDrawState.settingEdit = null; });
+			const release = () => { _rapierDrawEffectsPreviewRelease(); _rapierDrawState.effectsSweep = null; _rapierDrawState.settingEdit = null; };
+			for (const event of ['change', 'blur', 'keyup', 'pointerup', 'pointercancel']) input.addEventListener(event, release);
 		}
 		panel.append(group);
 	}

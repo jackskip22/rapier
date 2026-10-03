@@ -47,6 +47,13 @@ export function admitCopier(raw) {
 	return out;
 }
 
+// Transient slider preview only. The authored effect, including smear, is what Save, history and recovery keep.
+export function copierPreviewEffect(effect) {
+const admitted = admitCopier(effect);
+if (!admitted) return null;
+return { ...admitted, smear: 0 };
+}
+
 const fmt = n => String(Math.round(n * 100000) / 100000);
 function noise(seed, index) {
 	let n = Math.imul(seed ^ index, 0x45d9f3b); n = Math.imul(n ^ n >>> 16, 0x45d9f3b);

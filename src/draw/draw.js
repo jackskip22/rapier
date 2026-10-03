@@ -68,6 +68,7 @@ const RAPIER_DRAW_MEMORY = {
 	nib: ['rapier:draw.nib', RAPIER_DRAW_FRESH_NIB, _rapierDrawNibLevel],
 	shapeKind: ['rapier:draw.shapekind', 'rect', value => RAPIER_DRAW_SHAPE_KINDS.some(row => row[0] === value) ? value : 'rect'],
 	eraseSoftness: ['rapier:draw.eraseSoftness', 0, value => { const n = Number(value); return Number.isFinite(n) ? _rapierDrawClamp(Math.round(n), 0, 100) : 0; }],
+	eraseNib: ['rapier:draw.eraseNib', RAPIER_DRAW_FRESH_NIB, _rapierDrawNibLevel],
 	notesTool: ['rapier:notes.draw.tool', 'brush', value => RAPIER_DRAW_NOTES_TOOLS.includes(value) ? value : 'brush'],
 	notesNib: ['rapier:notes.draw.nib', RAPIER_DRAW_NOTES_NIB, _rapierDrawNibLevel],
 };
@@ -2271,7 +2272,7 @@ async function _rapierDrawSetTool(name) {
 const RAPIER_DRAW_ERASE_MIN_LEN = 4;
 
 function _rapierDrawEraseRadius() {
-	return Math.max(4, _rapierDrawNibLevel(_rapierDrawState.nib) * 0.9);
+	return Math.max(4, _rapierDrawNibLevel(_rapierDrawState.eraseNib ?? _rapierDrawState.nib) * 0.9);
 }
 
 function _rapierDrawSegmentEraseIntervals(a, b, path, radius) {
@@ -2357,10 +2358,11 @@ function _rapierDrawEraseWith(path) {
 		// appearance (the same one owner core.mjs's renderer reads, _rapierDrawEffectiveWidth) --
 		// never the render-time fallback's own literal, which would otherwise thin a cut piece of an
 		// actual ink mark down to the Shape-tool default the instant it lost its `.geom`.
-		const linePiece = (run, source, width = _rapierDrawEffectiveWidth(source), brush = source.brush) => {
+		const linePiece = (run, source, width = _rapierDrawEffectiveWidth(source), brush = source.brush, ends = null) => {
 			brush = _rapierDrawBrushesFor('ink').includes(brush) ? brush : 'ink';
 			const piece = { id: _rapierDrawNextId(), stroke: recipe.strokes.length + strokes.length, recognized: 'ink', asDrawn: true, brush, style: null, geom: null, smooth: 0, nib: _rapierDrawShapeNib(source, recipe) };
 			if (brush === 'ink') { piece.cut = true; if (width !== RAPIER_DRAW_INK_WIDTH) piece.cutWidth = width; }
+			if (brush === 'brush' && ends) { if (ends.cutStart) piece.cutStart = true; if (ends.cutEnd) piece.cutEnd = true; }
 			if (source.ink) piece.ink = source.ink;
 			if (source.dash) piece.dash = source.dash;
 			if (source.seed != null) piece.seed = source.seed;
@@ -2433,7 +2435,14 @@ function _rapierDrawEraseWith(path) {
 				next.push(kept);
 			} else {
 				const width = shape.cutWidth || _rapierDrawEffectiveWidth(shape, parts && (parts.headStart || parts.headEnd));
-				for (const run of cutRuns.flatMap((runs, index) => runs || [contours[index]])) linePiece(run, shape, width);
+				cutRuns.forEach((runs, index) => {
+				const sourceLine = contours[index];
+				const same = (p, q) => p && q && Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-4;
+				for (const run of runs || [sourceLine]) {
+					const ends = shape.brush === 'brush' ? { cutStart: !same(run[0], sourceLine[0]), cutEnd: !same(run.at(-1), sourceLine.at(-1)) } : null;
+					linePiece(run, shape, width, shape.brush, ends);
+				}
+			});
 			}
 			for (const { head, runs } of heads) {
 				if (runs) for (const run of runs) linePiece(run, shape, head.kind === 'arrow' ? 2 : 2.6, 'ink');
@@ -2735,7 +2744,7 @@ function _rapierDrawSyncSetting(which) {
 	// With shapes selected the row reads and sets theirs; with none it is the pen's own, what the next mark takes.
 	const state = _rapierDrawState, shapes = _rapierDrawSelectedShapes(), normalize = which === 'nib' ? _rapierDrawNibLevel : _rapierDrawSmoothLevel;
 	const shown = shape => normalize(shape[which] ?? state.recipe?.[which] ?? state[which]);
-	const level = shapes.length ? shown(shapes[0]) : normalize(state[which]);
+	const level = which === 'nib' && _rapierDrawTool() === 'erase' ? normalize(state.eraseNib) : shapes.length ? shown(shapes[0]) : normalize(state[which]);
 	const mixed = shapes.some(shape => shown(shape) !== level);
 	const input = row.querySelector('input'), word = row.querySelector('output');
 	if (which === 'nib') { input.min = String(RAPIER_DRAW_NIB_MIN); input.max = String(RAPIER_DRAW_NIB_MAX); }
@@ -2822,19 +2831,27 @@ function _rapierDrawSetSetting(which, value) {
 	if (which === 'nib' && _rapierDrawTool() === 'paint') { _rapierPaintSetSize(value); _rapierDrawSyncSetting('nib'); return; }
 	const n = (which === 'nib' ? _rapierDrawNibLevel : _rapierDrawSmoothLevel)(value);
 	const state = _rapierDrawState, recipe = state.recipe, shapes = _rapierDrawSelectedShapes();
+	// The eraser's width is its own remembered nib. It never writes the pen, and it never writes the drawing.
+	if (which === 'nib' && _rapierDrawTool() === 'erase') {
+		if (state.eraseNib !== n) { state.eraseNib = n; _rapierDrawRemember('eraseNib', n); }
+		_rapierDrawSyncSetting('nib');
+		return;
+	}
 	if (!shapes.length) {
 		if (state[which] !== n) { state[which] = n; _rapierDrawRemember(which === 'nib' && state.notes ? 'notesNib' : which, n); }
 		_rapierDrawSyncSetting(which);
 		return;
 	}
-	const ids = new Set(_rapierDrawGroupSelection(recipe, shapes.map(shape => shape.id)));
-	const changed = recipe.shapes.some(shape => ids.has(shape.id) && (shape[which] ?? recipe[which] ?? state[which]) !== n);
+	// A text or a painting has no outline width. Word ignores a line width on a text box; so does this.
+	const applicable = shapes.filter(shape => which !== 'nib' && which !== 'smooth' || (shape.recognized !== 'text' && shape.recognized !== 'paint'));
+	if (!applicable.length) { _rapierDrawSyncSetting(which); return; }
+	const ids = new Set(_rapierDrawGroupSelection(recipe, applicable.map(shape => shape.id)));
+	const changed = recipe.shapes.some(shape => ids.has(shape.id) && (shape.recognized !== 'text' && shape.recognized !== 'paint') && (shape[which] ?? recipe[which] ?? state[which]) !== n);
 	if (!changed) { _rapierDrawSyncSetting(which); return; }
 	const edit = state.settingEdit;
-	if (_rapierDrawCommand(() => { for (const shape of state.recipe.shapes) if (ids.has(shape.id)) shape[which] = n; }, !edit?.changed, false) && edit) edit.changed = true;
+	if (_rapierDrawCommand(() => { for (const shape of state.recipe.shapes) if (ids.has(shape.id) && (shape.recognized !== 'text' && shape.recognized !== 'paint')) shape[which] = n; }, !edit?.changed, false) && edit) edit.changed = true;
 	_rapierDrawSyncSetting(which);
 }
-
 const RAPIER_DRAW_TEXT_DEFAULT = Object.freeze({ textSize: 24, textFont: 'sans', lineHeight: 1.25, letterSpacing: 0, wordSpacing: 0, textBold: false, textItalic: false, textUnderline: false, textKern: true, textCase: '', textFigures: '', textEffect: '', effectFlower: '', effectStem: '', labelAlign: 'start' });
 // The type choices past weight and slant, each a recipe field on the text (docs/architecture.md, "Text
 // is one primitive"): the case the words are shown in, and the figure style an uploaded font carries.
@@ -4184,6 +4201,25 @@ function _rapierDrawApplyZoom(geom) {
 	_rapierDrawApplyView();
 	_rapierDrawUpdateHandles();
 }
+function _rapierDrawZoomAt(clientX, clientY, factor) {
+	const state = _rapierDrawState, v = state.view, rect = state.svgRoot?.getBoundingClientRect();
+	if (!v || !rect || !rect.width || !rect.height || !Number.isFinite(factor) || factor <= 0) return;
+	const base = _rapierDrawViewBase();
+	const start = { x: v.x, y: v.y, k: v.k };
+	const k = Math.min(RAPIER_DRAW_ZOOM_MAX, Math.max(RAPIER_DRAW_ZOOM_MIN, start.k * factor));
+	const span0 = { w: base.w / start.k, h: base.h / start.k };
+	const t0 = Math.min(rect.width / span0.w, rect.height / span0.h);
+	const off0 = { x: (rect.width - span0.w * t0) / 2, y: (rect.height - span0.h * t0) / 2 };
+	const anchor = [(clientX - rect.left - off0.x) / t0 + start.x, (clientY - rect.top - off0.y) / t0 + start.y];
+	const span1 = { w: base.w / k, h: base.h / k };
+	const t1 = Math.min(rect.width / span1.w, rect.height / span1.h);
+	const off1 = { x: (rect.width - span1.w * t1) / 2, y: (rect.height - span1.h * t1) / 2 };
+	v.k = k;
+	v.x = anchor[0] - (clientX - rect.left - off1.x) / t1;
+	v.y = anchor[1] - (clientY - rect.top - off1.y) / t1;
+	_rapierDrawApplyView();
+	_rapierDrawUpdateHandles();
+}
 function _rapierDrawEndGesture(cancel = false) {
 	const state = _rapierDrawState, gesture = state.gesture, pointers = [state.pointerId, state.secondPointerId];
 	if (gesture) {
@@ -4525,7 +4561,10 @@ function _rapierDrawBindTap(el, handler) {
 function _rapierDrawUpdateInkBtn(palette = true) {
 	const state = _rapierDrawState, btn = state.surface?.querySelector('[data-draw-act="ink"]');
 	// The palette reads the theme; finish those reads before replacing any button or panel nodes.
-	const colours = palette && state.colourOpen ? _rapierDrawPalette(state.ink, 'next') : '';
+	const selected = _rapierDrawTool() === 'select' ? _rapierDrawSelectedShapes() : [];
+	const colourScope = selected.length ? 'selection' : 'next';
+	const colourInk = selected.length ? (selected[0].ink || state.ink) : state.ink;
+	const colours = palette && state.colourOpen ? _rapierDrawPalette(colourInk, colourScope) : '';
 	if (btn) {
 		const was = btn.querySelector('.rapier-draw-ink-dot')?.style.background || '';
 		btn.innerHTML = '<span class="rapier-draw-ink-dot" style="background:' + _rapierDrawDisplayInk(_rapierDrawShapeInk({ ink: state.ink })) + '"></span><span class="rapier-draw-btn-name">colour</span>';
@@ -5256,6 +5295,11 @@ function _rapierDrawBuildSurface() {
 		else if (input.dataset.drawHex) _rapierDrawCommitHex(input);
 	});
 	surface.addEventListener('contextmenu', evt => { if (!evt.target.closest('input,textarea,select')) evt.preventDefault(); });
+	surface.addEventListener('wheel', evt => {
+		if (!(evt.ctrlKey || evt.metaKey) || !state.open || state.finishing) return;
+		evt.preventDefault();
+		_rapierDrawZoomAt(evt.clientX, evt.clientY, Math.exp(-evt.deltaY * 0.0015));
+	}, { passive: false });
 	surface.addEventListener('keydown', async evt => {
 		evt.stopPropagation();
 		if (evt.defaultPrevented || evt.isComposing || evt.keyCode === 229) return;
@@ -5284,7 +5328,15 @@ function _rapierDrawBuildSurface() {
 		if ((evt.key === 'Delete' || evt.key === 'Backspace') && !state.finishing && !evt.target.closest('input[type="text"],textarea,select') && _rapierDrawTool() === 'select' && _rapierDrawSelection().length && !_rapierDrawSelectionLocked()) { evt.preventDefault(); _rapierDrawEditSelection({ type: 'delete' }); return; }
 		// Choice buttons keep native Enter/Space and arrow-key scrolling; canvas shortcuts must
 		// not open a label editor or move the drawing while a property control owns focus.
-		if (evt.target.closest('input,textarea,select,[data-draw-menu-act="property"]') || state.finishing) return;
+		if (evt.key === 'Escape' && evt.target.matches?.('input[type="range"]')) {
+		evt.preventDefault();
+		const kept = evt.target.value;
+		evt.target.blur();
+		if (evt.target.value !== kept) evt.target.value = kept;
+		surface.focus({ preventScroll: true });
+		return;
+	}
+	if (evt.target.closest('input,textarea,select,[data-draw-menu-act="property"]') || state.finishing) return;
 		// Phone contract: a live gesture cancels; else an existing selection deselects; else Escape
 		// resolves exactly like Back (_rapierDrawHandleBack, wired into engine.js's rapierHandleBack
 		// for the hardware/browser case) -- commit as Done when the canvas differs from what Draw
@@ -5372,6 +5424,7 @@ function _rapierDrawOpenSurface(options) {
 	_rapierDrawSetHint();
 	Object.assign(state, _rapierDrawFreshSession());
 	state.eraseSoftness = _rapierDrawRemembered('eraseSoftness');
+	state.eraseNib = _rapierDrawNibLevel(_rapierDrawRemembered('eraseNib'));
 	_rapierDrawTextDefaults();
 	state.menuPane = null; state.menuColour = false;
 	state.paintBrush = _rapierPaintRememberedBrush(); state.paintSize = _rapierPaintRememberedSize(); state.paintStrength = _rapierPaintRememberedStrength(); state.paper = false; state.paperBlack = false; if (typeof _rapierPaintShownAs !== 'undefined') _rapierPaintShownAs.clear(); _rapierPaintCloseLayer(); state.surface.classList.remove('rapier-draw-surface--paper', 'rapier-draw-surface--black');

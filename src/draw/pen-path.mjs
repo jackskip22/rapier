@@ -38,7 +38,7 @@ export function strokeHasPressure(pts) {
 
 // Captured points are [x, y, time?, pressure?]. A fixed pressure serves coordinate-only marks:
 // their thickness must not change when source simplification or word reflow spaces samples out.
-export function penPath(pts, {size, last = true, fixedPressure = null, streamline = PEN_OPTIONS.streamline} = {}) {
+export function penPath(pts, {size, last = true, fixedPressure = null, streamline = PEN_OPTIONS.streamline, cutStart = false, cutEnd = false} = {}) {
 	if (!pts || pts.length < 2) return '';
 	const fixed = typeof fixedPressure === 'number';
 	const pressured = !fixed && strokeHasPressure(pts);
@@ -69,7 +69,33 @@ export function penPath(pts, {size, last = true, fixedPressure = null, streamlin
 	try {
 		outline = getStroke(input, { ...PEN_OPTIONS, size: nib, streamline,
 			simulatePressure: !fixed && !pressured && !clocked && length >= nib, last: !!last,
-			start: { taper, cap: true }, end: { taper, cap: true } });
+			start: { taper: cutStart ? 0 : taper, cap: !cutStart }, end: { taper: cutEnd ? 0 : taper, cap: !cutEnd } });
 	} catch (_) { return ''; }
 	return outlinePath(outline);
+}
+
+// Half-width at each end of the outline. A cut keeps the stroke's own pressure radius;
+// a fresh taper collapses toward a point, and a blunt cap stays at the full nib.
+export function endWidthProfile(pts, size, ends = {}) {
+const fixed = typeof ends.fixedPressure === 'number';
+const pressured = !fixed && strokeHasPressure(pts);
+const nib = size || PEN_SIZE;
+let length = 0;
+for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+const taper = length < nib ? 0 : nib * PEN_TAPER;
+const input = pts.map(p => fixed ? [p[0], p[1], ends.fixedPressure] : pressured ? [p[0], p[1], p[3]] : [p[0], p[1]]);
+let outline;
+try {
+outline = getStroke(input, { ...PEN_OPTIONS, size: nib, last: true,
+simulatePressure: !fixed && !pressured && length >= nib,
+start: { taper: ends.cutStart ? 0 : taper, cap: !ends.cutStart },
+end: { taper: ends.cutEnd ? 0 : taper, cap: !ends.cutEnd } });
+} catch (_) { return null; }
+if (!outline || outline.length < 4) return null;
+const radius = (at) => {
+let best = Infinity;
+for (const q of outline) best = Math.min(best, Math.hypot(q[0] - at[0], q[1] - at[1]));
+return best;
+};
+return { start: radius(pts[0]), end: radius(pts[pts.length - 1]), samples: outline.length };
 }
