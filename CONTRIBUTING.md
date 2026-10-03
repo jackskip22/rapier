@@ -22,8 +22,8 @@ request here is a proposal, not a merge target:
 
 1. Open an issue first, or link one. A pull request without an issue, a reason and a way to see the change is closed
    with a note asking for those.
-2. Sign the Contributor License Agreement (`CLA.md`) when the CLA check asks on your first pull request. It takes a
-   minute and you sign it once. It keeps your copyright and lets Rapier ship your work in every edition. Nothing is read
+2. Sign the Contributor License Agreement (`CLA.md`) when the CLA check asks on your first pull request, by commenting
+   the sentence it gives you. It takes a minute and you sign it once. It keeps your copyright and lets Rapier ship your work in every edition. Nothing is read
    until it is signed.
 3. The maintainers read it, run it against the rows, and fold what earns its place into the workstation, often
    rewritten to Rapier's shape (plain, minimal, exact source, no appearance tests). The next release carries it.

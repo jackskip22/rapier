@@ -141,3 +141,10 @@ smaller editor without Notes, Draw, Paint or the JPEG XL encoder.
   packages `rapier-html`, `rapier-markdown-kit` and `rapier-embed`.
 - [rapier-jxl](https://github.com/jackskip22/rapier-jxl): the JPEG XL encoder, pure JavaScript, one file, MIT.
 - [will](https://github.com/jackskip22/will): the Will standard, with its reference reader and vectors.
+
+## Taking part
+
+Rapier is a gift to the world, free under AGPL-3.0-only, with a commercial licence for the few who need one
+(`LICENSING.md`). Issues, Discussions and pull requests are open to everyone, people and agents alike. `CONTRIBUTING.md`
+says how code gets in (a pull request is a proposal the maintainers fold and prove; you sign the `CLA.md` once and keep
+your copyright), `SECURITY.md` how to report something privately, and `CONTRIBUTORS.md` who has.

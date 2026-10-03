@@ -320,7 +320,39 @@ A paragraph immediately after a table that begins `Table: ` (or a bare `: `) is 
 Table: quarterly figures, by region.
 ```
 
+A paragraph immediately after a picture that begins `Figure: ` is that picture's caption, the same way. Word writes
+it as a caption under the picture; the source keeps the line.
+
 Captions are optional. "Table" without a colon stays an ordinary paragraph, even after a table. Recognition changes only rendering; bytes stay exact, and other readers show a plain paragraph. A bare `: caption` line directly after an ordinary paragraph is claimed by the definition-list convention instead; after a table it is a caption.
+
+## Document-wide settings
+
+The opening front matter may carry the keys Pandoc and Quarto already name. Rapier reads them and never rewrites
+them; an unknown key, or a value that is not one of the steps below, is ignored and left in the file.
+
+```md
+---
+title: Shore
+subtitle: Night
+fontsize: 12pt
+mainfont: serif
+linestretch: 1.5
+papersize: a4
+geometry: margin=1in
+pagestyle: plain
+---
+```
+
+- `fontsize`: `10pt`, `11pt` or `12pt`. `mainfont`: `sans` (the page's own face), `serif`, `mono` or `system`.
+  `linestretch`: `single`, `one and a half` or `double` (also `1`, `1.5`, `2`).
+- `papersize`: `letter`, `a4`, `a5` or `legal`. `geometry`: `margin=` a length in `in`, `cm`, `mm` or `pt`.
+  `pagestyle`: `plain` (page numbers) or `empty`.
+- `title` and `subtitle`: the window's title, the exported page's `<title>`, Word's document title and subject, the
+  PDF's title. The visible title is still the document's first `# ` heading.
+
+The view applies the type keys and ignores the page keys, since a scroll has no page; the exported page applies the
+type keys and, when printed, the page keys; Word and the PDF apply all of them. Superscript and subscript are the
+standard's raw `<sup>` and `<sub>`.
 
 ## Page break
 

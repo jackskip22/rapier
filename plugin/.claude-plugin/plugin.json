@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.52+skills.5ae0691b5d4eeb0d4a8418c9046766177a0bcdebdb948fe785b7f62e31615536",
+  "version": "1.1.52+skills.5db58198d294564d83ae434d0a99f4c893a5e01bc24798903d17a8564075afa1",
   "description": "Rapier gives you a document you can read, edit and keep, with your agent editing beside you. It is a Markdown editor in one offline HTML file: no server, no account, nothing collected, fast on a phone even for long documents. Your agent hands you a document as one page that opens with one click and works offline, or works in it with you: it reads only the passage it needs, changes only that, and you keep or drop each change. Diagrams and drawings are editable SVG inside the Markdown: the agent draws one, you move its boxes, it changes it again. Code and plain text too; opens Word and PDF; saves as Markdown, Word, PDF or a web page; pictures, tables, checklists, footnotes, a table of contents, light and dark. What leaves your device is the document you share with the agent and the work on it, kept in a workspace that expires after thirty idle days; your assistant's host keeps the conversation under its own policy.",
   "author": {
     "name": "Jack Skipworth",

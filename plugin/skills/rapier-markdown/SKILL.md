@@ -61,7 +61,11 @@ whole (Rapier's `document.get_context` counts it under `layout.malformed`).
 - Colour a run: `Buy <!--c #2e7d32-->mushrooms<!--/c--> today`. The words survive in every reader; only the
   colour needs one that knows the mark.
 - Break a page: `<!--md-break:v1 page-->` on a line of its own with blank lines around it.
-- Caption a table: the paragraph directly under it, as the standard says.
+- Caption a table with `Table: ` and a picture with `Figure: `, the paragraph directly under it.
+- Set the whole document's type and page in the front matter, with the keys Pandoc already names: `fontsize`
+  (`10pt` to `12pt`), `mainfont` (`serif`, `sans`, `mono`, `system`), `linestretch` (`1`, `1.5`, `2`), `papersize`,
+  `geometry: margin=1in`, `pagestyle: plain` for page numbers, `title` and `subtitle`. Rapier's view, its exported
+  page, Word and the PDF all read them; other readers ignore them.
 
 ## The document as a web page
 

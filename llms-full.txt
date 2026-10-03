@@ -150,6 +150,13 @@ smaller editor without Notes, Draw, Paint or the JPEG XL encoder.
 - [rapier-jxl](https://github.com/jackskip22/rapier-jxl): the JPEG XL encoder, pure JavaScript, one file, MIT.
 - [will](https://github.com/jackskip22/will): the Will standard, with its reference reader and vectors.
 
+## Taking part
+
+Rapier is a gift to the world, free under AGPL-3.0-only, with a commercial licence for the few who need one
+(`LICENSING.md`). Issues, Discussions and pull requests are open to everyone, people and agents alike. `CONTRIBUTING.md`
+says how code gets in (a pull request is a proposal the maintainers fold and prove; you sign the `CLA.md` once and keep
+your copyright), `SECURITY.md` how to report something privately, and `CONTRIBUTORS.md` who has.
+
 # https://github.com/jackskip22/rapier/blob/main/docs/agents.md
 
 # Work with a document in Rapier
@@ -714,7 +721,39 @@ A paragraph immediately after a table that begins `Table: ` (or a bare `: `) is 
 Table: quarterly figures, by region.
 ```
 
+A paragraph immediately after a picture that begins `Figure: ` is that picture's caption, the same way. Word writes
+it as a caption under the picture; the source keeps the line.
+
 Captions are optional. "Table" without a colon stays an ordinary paragraph, even after a table. Recognition changes only rendering; bytes stay exact, and other readers show a plain paragraph. A bare `: caption` line directly after an ordinary paragraph is claimed by the definition-list convention instead; after a table it is a caption.
+
+## Document-wide settings
+
+The opening front matter may carry the keys Pandoc and Quarto already name. Rapier reads them and never rewrites
+them; an unknown key, or a value that is not one of the steps below, is ignored and left in the file.
+
+```md
+---
+title: Shore
+subtitle: Night
+fontsize: 12pt
+mainfont: serif
+linestretch: 1.5
+papersize: a4
+geometry: margin=1in
+pagestyle: plain
+---
+```
+
+- `fontsize`: `10pt`, `11pt` or `12pt`. `mainfont`: `sans` (the page's own face), `serif`, `mono` or `system`.
+  `linestretch`: `single`, `one and a half` or `double` (also `1`, `1.5`, `2`).
+- `papersize`: `letter`, `a4`, `a5` or `legal`. `geometry`: `margin=` a length in `in`, `cm`, `mm` or `pt`.
+  `pagestyle`: `plain` (page numbers) or `empty`.
+- `title` and `subtitle`: the window's title, the exported page's `<title>`, Word's document title and subject, the
+  PDF's title. The visible title is still the document's first `# ` heading.
+
+The view applies the type keys and ignores the page keys, since a scroll has no page; the exported page applies the
+type keys and, when printed, the page keys; Word and the PDF apply all of them. Superscript and subscript are the
+standard's raw `<sup>` and `<sub>`.
 
 ## Page break
 
@@ -1371,7 +1410,11 @@ whole (Rapier's `document.get_context` counts it under `layout.malformed`).
 - Colour a run: `Buy <!--c #2e7d32-->mushrooms<!--/c--> today`. The words survive in every reader; only the
   colour needs one that knows the mark.
 - Break a page: `<!--md-break:v1 page-->` on a line of its own with blank lines around it.
-- Caption a table: the paragraph directly under it, as the standard says.
+- Caption a table with `Table: ` and a picture with `Figure: `, the paragraph directly under it.
+- Set the whole document's type and page in the front matter, with the keys Pandoc already names: `fontsize`
+  (`10pt` to `12pt`), `mainfont` (`serif`, `sans`, `mono`, `system`), `linestretch` (`1`, `1.5`, `2`), `papersize`,
+  `geometry: margin=1in`, `pagestyle: plain` for page numbers, `title` and `subtitle`. Rapier's view, its exported
+  page, Word and the PDF all read them; other readers ignore them.
 
 ## The document as a web page
 

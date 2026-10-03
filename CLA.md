@@ -55,8 +55,8 @@ maintainers, except anything You conspicuously mark "Not a Contribution".
 7. **Tell us if this changes.** You agree to notify Rapier's owner of any facts or circumstances of which You become
    aware that would make these representations inaccurate in any respect.
 
-**How you sign.** You sign once, by the CLA check on your first pull request to a Rapier repository, which asks you to
-agree to this text. Your signature covers every later contribution. Until it is signed, a pull request stays open and
+**How you sign.** You sign once: on your first pull request to a Rapier repository the CLA check asks you to comment
+"I have read the CLA Document and I hereby sign the CLA", and records your GitHub name in `signatures/cla.json`. Your signature covers every later contribution. Until it is signed, a pull request stays open and
 unmerged; nothing else happens to it.
 
 **What this does not do.** It does not take your copyright. It does not stop you using your own contribution anywhere
