@@ -181,6 +181,9 @@ async function _rapierNotesDir() {
 // probe below), never inferred from whatever error a write happened to throw.
 const _rapierNotesStore = {
 	chains: new Map(),
+	// How many bodies this window has asked the folder for (rapierNotesFacts.store.reads): a witness's
+	// count of what an open or a sweep actually read, never a budget.
+	reads: 0,
 	// Where the folder is, decided once by asking. The native folder in the Android app; the
 	// browser's private file system where there is one; a page opened as a FILE (file://, Android's
 	// content:// through a browser) has no origin the browser gives one to -- getDirectory() throws a
@@ -382,6 +385,7 @@ const _rapierNotesStore = {
 		await this.kind();
 		// A failed byte read says nothing about the file's encoding: it stays the store's own fault,
 		// outside the decoder's catch, or a transient notes.json read could reset its metadata.
+		this.reads++;
 		const bytes = await this.bytes.read(name); if (bytes == null) return null;
 		if (raw) return bytes;
 		// Strict, not lossy: `.text()` would quietly turn bytes that are not UTF-8 into question
@@ -5240,13 +5244,22 @@ async function _rapierNotesDeleteForeverFiles(files, mode = 'confirmed', expecte
 	// A file nobody can read as text may still name a recording. Rather than guess, the recordings
 	// all stay: a note is deleted because the person asked, a recording is not swept up on a guess.
 	let unreadable = 0;
-	for (const name of await store.list()) {
-		if (!/\.md$/i.test(name)) continue;
-		let text = null;
-		try { text = await store.read(name); }
-		catch (error) { if (error?.code !== 'unreadable') throw error; unreadable++; continue; }
-		for (const row of A.recordingsOf(text)) (targets.has(name) ? owned : shared).add(row.name);
-	}
+	const census = async names => {
+		for (const name of names) {
+			let text = null;
+			try { text = await store.read(name); }
+			catch (error) { if (error?.code !== 'unreadable') throw error; unreadable++; continue; }
+			for (const row of A.recordingsOf(text)) (targets.has(name) ? owned : shared).add(row.name);
+		}
+	};
+	// The targets' own words first: they name every recording the targets could own. The rest of the
+	// folder is read only when there is one, to tell a recording shared with a surviving note from one
+	// owned outright; a bin that names no recording costs no other body a read. (The sweep on every
+	// open read all 5,000 notes before the first card, 79 s at a phone's CPU, for twenty notes that
+	// named nothing: the lead's probe, 3 October.)
+	const listed = (await store.list()).filter(name => /\.md$/i.test(name));
+	await census(listed.filter(name => targets.has(name)));
+	if (owned.size) await census(listed.filter(name => !targets.has(name)));
 	if (mode === 'confirmed' && files.includes(state.current)) await _rapierNotesBlankDocument();
 	await store.kind();
 	const outcome = _rapierNotesTake(await store.folder.trash({files, mode, expected}));
@@ -8310,7 +8323,7 @@ function _rapierNotesCurrentFile() {
 
 function _rapierNotesFacts() {
 	const state = _rapierNotes;
-	return { open: state.open, popup: state.popup, pictures: typeof _rapierOcrFacts === 'function' ? _rapierOcrFacts() : null, reading: state.reading ? {total: state.reading.total, done: state.reading.done, complete: state.reading.complete} : null, unread: [...state.readFailed.keys()], windows: Object.fromEntries(Object.entries(state.windows).map(([id, w]) => [id, {derived: w.masonry.next, total: w.masonry.items.length, complete: w.masonry.next === w.masonry.items.length, extent: w.masonry.extent}])), fabTop: state.fab ? parseFloat(state.fab.style.top) || 0 : null, sections: state.index ? _rapierNotesSectionIds() : null, collapsed: state.index ? Object.fromEntries(_rapierNotesSectionIds().map(id => [id, _rapierNotesClosed(id)])) : null, files: state.index ? Object.keys(state.index.notes) : null, current: state.current, index: state.index ? JSON.parse(JSON.stringify(state.index)) : null, drag: !!state.drag, held: !!state.drag?.held, selected: [...state.selected], snack: state.snack ? state.snack.message : null, dirty: typeof _rapierIsDirty === 'function' ? !!_rapierIsDirty() : null, asks: typeof _rapierConfirmDirtyTransition === 'function', lastBackup: state.lastBackup || null , backupPath: state.backupPath || null, savedGen: state.savedGen, savingGen: state.savingGen, generation: Number(rapier?.revision?.generation || 0), sheetMode: state.sheetMode, writes: _rapierNotesStore.chains.size + (_rapierNotesStore.folder?.pending || 0), store: {bytes: _rapierNotesStore.bytes?.kind ?? null, durable: _rapierNotesStore.durable ?? null}, asciiNames: state.asciiNames, storageKnown: state.storageKnown, thumbs: {known: state.thumbs.size, queue: state.thumbQueue.length, busy: state.thumbBusy, names: state.thumbNames ? [...state.thumbNames] : null}, mode: !!state.mode, compose: !!state.compose, library: typeof _rapierNotesLibraryFacts === 'function' ? _rapierNotesLibraryFacts() : null};
+	return { open: state.open, popup: state.popup, pictures: typeof _rapierOcrFacts === 'function' ? _rapierOcrFacts() : null, reading: state.reading ? {total: state.reading.total, done: state.reading.done, complete: state.reading.complete} : null, unread: [...state.readFailed.keys()], windows: Object.fromEntries(Object.entries(state.windows).map(([id, w]) => [id, {derived: w.masonry.next, total: w.masonry.items.length, complete: w.masonry.next === w.masonry.items.length, extent: w.masonry.extent}])), fabTop: state.fab ? parseFloat(state.fab.style.top) || 0 : null, sections: state.index ? _rapierNotesSectionIds() : null, collapsed: state.index ? Object.fromEntries(_rapierNotesSectionIds().map(id => [id, _rapierNotesClosed(id)])) : null, files: state.index ? Object.keys(state.index.notes) : null, current: state.current, index: state.index ? JSON.parse(JSON.stringify(state.index)) : null, drag: !!state.drag, held: !!state.drag?.held, selected: [...state.selected], snack: state.snack ? state.snack.message : null, dirty: typeof _rapierIsDirty === 'function' ? !!_rapierIsDirty() : null, asks: typeof _rapierConfirmDirtyTransition === 'function', lastBackup: state.lastBackup || null , backupPath: state.backupPath || null, savedGen: state.savedGen, savingGen: state.savingGen, generation: Number(rapier?.revision?.generation || 0), sheetMode: state.sheetMode, writes: _rapierNotesStore.chains.size + (_rapierNotesStore.folder?.pending || 0), store: {bytes: _rapierNotesStore.bytes?.kind ?? null, durable: _rapierNotesStore.durable ?? null, reads: _rapierNotesStore.reads}, asciiNames: state.asciiNames, storageKnown: state.storageKnown, thumbs: {known: state.thumbs.size, queue: state.thumbQueue.length, busy: state.thumbBusy, names: state.thumbNames ? [...state.thumbNames] : null}, mode: !!state.mode, compose: !!state.compose, library: typeof _rapierNotesLibraryFacts === 'function' ? _rapierNotesLibraryFacts() : null};
 }
 Object.defineProperty(globalThis, 'rapierNotesFacts', { enumerable: false, get: _rapierNotesFacts });
 // The agent's fence asks two things only -- are the cards over the document, and which note is open --

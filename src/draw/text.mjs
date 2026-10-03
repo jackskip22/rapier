@@ -50,10 +50,21 @@ function admitText(raw, kind) {
 		if (!number(raw.wordSpacing) || raw.wordSpacing < -.2 || raw.wordSpacing > 1) return null;
 		out.wordSpacing = raw.wordSpacing;
 	}
-	for (const [key, values] of [['textCase', ['upper', 'lower', 'small']], ['textFigures', ['oldstyle', 'lining', 'tabular']], ['textEffect', ['pressed']]]) {
+	for (const [key, values] of [['textCase', ['upper', 'lower', 'small']], ['textFigures', ['oldstyle', 'lining', 'tabular']], ['textEffect', ['pressed', 'garden']]]) {
 		if (raw[key] == null) continue;
 		if (!values.includes(raw[key]) || key === 'textEffect' && kind !== 'text') return null;
 		out[key] = raw[key];
+	}
+	// The garden's own fields, on a text alone: the integer the first application chose (it keeps the same garden
+	// growing from the same words) and the two colours, each a six-digit hex or absent for the paper's default.
+	if (raw.textEffectSeed != null) {
+		if (kind !== 'text' || !Number.isInteger(raw.textEffectSeed) || raw.textEffectSeed < 0 || raw.textEffectSeed > GARDEN_SEED_MAX) return null;
+		out.textEffectSeed = raw.textEffectSeed;
+	}
+	for (const key of ['effectFlower', 'effectStem']) {
+		if (raw[key] == null) continue;
+		if (kind !== 'text' || typeof raw[key] !== 'string' || !/^#[\da-f]{6}$/i.test(raw[key])) return null;
+		out[key] = raw[key].toLowerCase();
 	}
 	if (raw.textKern != null) {
 		if (typeof raw.textKern !== 'boolean') return null;
@@ -238,6 +249,198 @@ function pressed(shape, size, painted) {
 }
 
 
+// The garden: stems, leaves and roses grown out of a text's letters, as plain vector paths inside the text shape's own
+// markup, so a garden text stays a text shape and an SVG in every viewer. A pure function of the words as laid out, the
+// size and the integer seed the first application stored on the shape (`textEffectSeed`), so the same text grows the same
+// garden and Undo, Redo and a reopen show one drawing. Two colours only, the flower and the stem (`effectFlower`,
+// `effectStem`, else the defaults below, each a light-paper and a dark-paper tone); every other tone is one of the two at
+// a lesser opacity, so the dark-paper display, which re-inks the two hexes, re-inks the whole garden.
+// The stem is stroked in three runs thinning toward the tip, round caps. A leaf is an almond of two halves, the second
+// lighter, so the midrib is the seam. A rose is petals laid on the golden angle from the outside in, the outer wide and
+// pale, the inner small and full, over a calyx of sepals, a curl at its heart; a bud is a closed teardrop between two
+// sepals; a tendril is a thin curl. Stems stand on the letters' feet and climb behind the letterforms, a few cross in
+// front, thin. A word gets one stem to every two or three letters, a one-letter text one stem and one rose; a long line
+// is held to a hedge (a budget of stems for its letters, so a word may stand bare) that never hides the words.
+const GARDEN_COLOURS = Object.freeze({ flower: Object.freeze(['#b3202a', '#ee5a62']), stem: Object.freeze(['#2f5b3d', '#5a8fe0']) });
+const GARDEN_SEED_MAX = 2147483647;
+const gardenHash = text => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
+const gardenRandom = seed => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+// How tall a letter stands over its baseline (ems) and where on its width it stands on the line.
+function gardenLetter(ch) {
+	const c = ch[0];
+	if (/[A-Z]/.test(c)) return { top: .72, feet: /[IJLT]/.test(c) ? [.5] : /[MWNHKUAVXYZ]/.test(c) ? [.2, .8] : [.3, .7] };
+	if (/[0-9]/.test(c)) return { top: .7, feet: [.5] };
+	if (/[bdfhklt]/.test(c)) return { top: .74, feet: /[fklt]/.test(c) ? [.4] : [.3, .7] };
+	if (/[ij]/.test(c)) return { top: .72, feet: [.5] };
+	if (/[mnhru]/.test(c)) return { top: .52, feet: [.25, .75] };
+	if (/[a-z]/.test(c)) return { top: .52, feet: [.35, .65] };
+	return { top: .3, feet: [.5] };
+}
+// A smooth curve through points, as cubic Beziers (Catmull-Rom).
+function gardenCurve(points) {
+	let d = 'M' + fmt(points[0][0]) + ' ' + fmt(points[0][1]);
+	for (let i = 0; i < points.length - 1; i++) {
+		const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(points.length - 1, i + 2)];
+		d += 'C' + fmt(p1[0] + (p2[0] - p0[0]) / 6) + ' ' + fmt(p1[1] + (p2[1] - p0[1]) / 6) + ' ' + fmt(p2[0] - (p3[0] - p1[0]) / 6) + ' ' + fmt(p2[1] - (p3[1] - p1[1]) / 6) + ' ' + fmt(p2[0]) + ' ' + fmt(p2[1]);
+	}
+	return d;
+}
+// The point and heading of a Catmull-Rom curve at u in [0, 1].
+function gardenAt(points, u) {
+	const n = points.length - 1, i = Math.min(n - 1, Math.floor(u * n)), t = u * n - i;
+	const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(n, i + 2)];
+	const out = [0, 0].map((_, k) => {
+		const b1 = p1[k] + (p2[k] - p0[k]) / 6, b2 = p2[k] - (p3[k] - p1[k]) / 6, m = 1 - t;
+		return [m * m * m * p1[k] + 3 * m * m * t * b1 + 3 * m * t * t * b2 + t * t * t * p2[k], 3 * m * m * (b1 - p1[k]) + 6 * m * t * (b2 - b1) + 3 * t * t * (p2[k] - b2)];
+	});
+	return { x: out[0][0], y: out[1][0], angle: Math.atan2(out[1][1], out[0][1]) };
+}
+// A leaf of two halves from (x, y) along `angle`: one path each, in a matrix that stands it on its stem. It bends back
+// toward the way the stem is heading.
+function gardenLeaf(x, y, angle, length, width, bend, flip) {
+	const s = flip ? -1 : 1, k = Math.cos(angle), n = Math.sin(angle), L = length, W = width * length, B = -bend * length;
+	const at = (px, py) => fmt(L * px) + ' ' + fmt(py * W + B * px * px);
+	const half = side => 'M0 0C' + at(.2, side * 1.15) + ' ' + at(.62, side * 1.02) + ' ' + at(1, 0) + 'Q' + at(.5, 0) + ' 0 0Z';
+	return { matrix: 'matrix(' + fmt(k) + ' ' + fmt(n) + ' ' + fmt(-n * s) + ' ' + fmt(k * s) + ' ' + fmt(x) + ' ' + fmt(y) + ')', upper: half(-1), lower: half(1), rib: 'M' + at(.08, 0) + 'Q' + at(.5, 0) + ' ' + at(.93, 0) };
+}
+function garden(shape, size, painted, lines, lineHeight) {
+	const flower = shape.effectFlower || GARDEN_COLOURS.flower[0], stem = shape.effectStem || GARDEN_COLOURS.stem[0];
+	const rand = gardenRandom(gardenHash((shape.label || '') + '|' + Math.round(size)) ^ Math.imul((shape.textEffectSeed || 0) + 1, 2654435761));
+	const between = (a, b) => a + (b - a) * rand();
+	let minX = painted.minX, minY = painted.minY, maxX = painted.maxX, maxY = painted.maxY;
+	const touch = (x, y, pad = 0) => { minX = Math.min(minX, x - pad); minY = Math.min(minY, y - pad); maxX = Math.max(maxX, x + pad); maxY = Math.max(maxY, y + pad); };
+	const words = [];
+	lines.forEach((line, row) => {
+		let word = null;
+		for (const cell of line.cells || []) {
+			if (/^\s+$/.test(cell.ch)) { word = null; continue; }
+			if (!word) words.push(word = { row, y: line.y, cells: [] });
+			word.cells.push(cell);
+		}
+	});
+	const letters = words.reduce((sum, word) => sum + word.cells.length, 0);
+	if (!letters) return null;
+	const roseTips = [];
+	let quota = letters === 1 ? 1 : Math.max(1, Math.min(120, Math.ceil(letters * (letters > 60 ? .26 : letters > 24 ? .34 : .5)))), left = words.length, planted = 0;
+	const share = letters <= 12 ? 1 : clamp(12 / letters + .2, .35, 1);
+	const w0 = clamp(size * .05, 1, 9), WHITE = '#fff';
+	const ribs = [], frontLines = [], veins = [], stemTone = [], leafTone = [], leafPale = [], roseMarkup = [], frontStem = [], frontLeaf = [], frontLeafPale = [], frontRose = [], thin = [];
+	const leaf = (list, listPale, x, y, angle, length, width, bend, flip) => {
+		const l = gardenLeaf(x, y, angle, length, width, bend, flip);
+		// A leaf is one solid shape in the stem colour with a white midrib; white (#fff, which the dark display leaves alone) is the line
+		// colour of the whole garden, so a line never clashes with either fill.
+		list.push('<path transform="' + l.matrix + '" d="' + l.upper + l.lower + '"/>');
+		(list === frontLeaf ? frontLines : ribs).push('<path transform="' + l.matrix + '" d="' + l.rib + '" stroke-width="' + fmt(Math.max(.35, length * .04)) + '"/>');
+		touch(x + Math.cos(angle) * length, y + Math.sin(angle) * length, length * .3);
+	};
+	const rose = (list, x, y, heading, R) => {
+		const spin = rand() * Math.PI * 2, squash = between(.84, 1), tilt = heading + Math.PI / 2 + between(-.4, .4), cos = Math.cos(tilt), sin = Math.sin(tilt);
+		// The calyx: sepals pointing back down the stem, under the flower.
+		let out = '<g fill="' + stem + '">';
+		for (const side of [-1.2, -.5, .5, 1.2]) { const l = gardenLeaf(x, y, heading + Math.PI + side + between(-.12, .12), R * between(1.2, 1.5), .28, .12, side < 0); out += '<path transform="' + l.matrix + '" d="' + l.upper + l.lower + '"/>'; }
+		out += '</g>';
+		out += '<g transform="matrix(' + fmt(cos) + ' ' + fmt(sin * squash) + ' ' + fmt(-sin) + ' ' + fmt(cos * squash) + ' ' + fmt(x) + ' ' + fmt(y) + ')" fill="' + flower + '" stroke="' + WHITE + '" stroke-width="' + fmt(Math.max(.4, R * .032)) + '" stroke-opacity=".92" stroke-linejoin="round" stroke-linecap="round">';
+		// Rings of broad petals laid opaque from the outside in, each ring turned half a petal against the last and smaller, so
+		// the edge of the petal above is the only line that shows; each is shaded at its root in the stem's tone.
+		const rings = [[5, 1, .2], [5, .76, .24], [4, .54, .28], [3, .33, .3]];
+		let turn = spin;
+		for (const [n, r, shade] of rings) {
+			for (let i = 0; i < n; i++) {
+				const a = turn + i / n * Math.PI * 2 + between(-.05, .05), ca = Math.cos(a), sa = Math.sin(a), rr = R * r * between(.96, 1.03), w = rr * Math.sin(Math.PI / n) * 1.5, point = (px, py) => fmt(ca * px - sa * py) + ' ' + fmt(sa * px + ca * py);
+				out += '<path d="M0 0C' + point(rr * .12, -w * .5) + ' ' + point(rr * .55, -w * 1.1) + ' ' + point(rr * .84, -w) + 'C' + point(rr * 1.06, -w * .95) + ' ' + point(rr * 1.08, w * .95) + ' ' + point(rr * .84, w) + 'C' + point(rr * .55, w * 1.1) + ' ' + point(rr * .12, w * .5) + ' 0 0Z"/>' +
+					'<path stroke="none" fill="' + stem + '" fill-opacity="' + shade + '" d="M0 0C' + point(rr * .08, -w * .4) + ' ' + point(rr * .3, -w * .85) + ' ' + point(rr * .5, -w * .8) + 'C' + point(rr * .36, -w * .1) + ' ' + point(rr * .36, w * .1) + ' ' + point(rr * .5, w * .8) + 'C' + point(rr * .3, w * .85) + ' ' + point(rr * .08, w * .4) + ' 0 0Z"/>';
+			}
+			turn += Math.PI / n + .35;
+		}
+		const curl = []; for (let i = 0; i <= 18; i++) { const a = spin + i / 18 * Math.PI * 3.4, r = R * .3 * (1 - i / 19); curl.push([Math.cos(a) * r, Math.sin(a) * r]); }
+		out += '<path fill="none" stroke-opacity="1" stroke-width="' + fmt(Math.max(.4, R * .045)) + '" d="' + gardenCurve(curl) + '"/></g>';
+		list.push(out);
+		touch(x, y, R * 1.4);
+	};
+	const bud = (list, x, y, heading, size0) => {
+		const length = size0 * .24 * between(.85, 1.2), half = length * .36, ca = Math.cos(heading), sa = Math.sin(heading), point = (px, py) => fmt(x + ca * px - sa * py) + ' ' + fmt(y + sa * px + ca * py);
+		let out = '<g fill="' + stem + '">';
+		for (const side of [-.62, .62]) { const l = gardenLeaf(x, y, heading + side, length * .95, .3, .1, side < 0); out += '<path transform="' + l.matrix + '" d="' + l.upper + l.lower + '"/>'; }
+		out += '</g><path fill="' + flower + '" d="M' + point(-length * .05, 0) + 'C' + point(length * .1, -half * 1.3) + ' ' + point(length * .62, -half * 1.1) + ' ' + point(length, 0) + 'C' + point(length * .62, half * 1.1) + ' ' + point(length * .1, half * 1.3) + ' ' + point(-length * .05, 0) + 'Z"/>' +
+			'<path fill="none" stroke="' + WHITE + '" stroke-opacity=".92" stroke-linecap="round" stroke-width="' + fmt(Math.max(.35, length * .05)) + '" d="M' + point(length * .1, 0) + 'Q' + point(length * .5, half * .5) + ' ' + point(length * .9, 0) + '"/>';
+		list.push(out);
+		touch(x + ca * length, y + sa * length, length);
+	};
+	for (const word of words) {
+		left--;
+		const count = word.cells.length, want = count === 1 ? 1 : Math.min(6, Math.ceil(count / 1.7));
+		let take = Math.min(want, quota);
+		if (quota < left + 1 && rand() > quota / (left + 1)) take = 0;
+		if (!take) continue;
+		quota -= take;
+		const first = word.cells[0].x0, last = word.cells[count - 1].x1, centre = (first + last) / 2, span = Math.max(1, last - first);
+		let roses = 0;
+		for (let j = 0; j < take; j++) {
+			planted++;
+			const index = clamp(Math.floor((j + .5 + (rand() - .5) * .6) / take * count), 0, count - 1), cell = word.cells[index], info = gardenLetter(cell.ch);
+			const foot = info.feet[Math.floor(rand() * info.feet.length)], x0 = cell.x0 + (cell.x1 - cell.x0) * foot, y0 = word.y + size * .01;
+			const radius = Math.max(2.6, size * between(.26, .38)), band = word.row > 0 ? lineHeight - size * .94 : Infinity, roseR = band < size * .9 ? Math.min(radius, Math.max(2.2, band * .46)) : radius;
+			const outward = clamp((x0 - centre) / (span / 2), -1, 1), drift = outward * size * .22 + between(-.16, .16) * size, wave = size * between(.05, .12), phase = rand() * Math.PI * 2;
+			// Over the words a stem climbs until its flower clears the letters it stands among; on a lower line it stops in the band
+			// between that line's letters and the descenders above, so a flower never sits on the words.
+			let height;
+			if (word.row > 0) height = lineHeight - size * .2 - Math.min(band, size * .9) / 2 + between(-.05, .05) * size;
+			else {
+				const tipX = x0 + drift, near = word.cells.filter(c => c.x1 >= tipX - roseR && c.x0 <= tipX + roseR), over = Math.max(.3, ...(near.length ? near : [cell]).map(c => gardenLetter(c.ch).top));
+				height = over * size + roseR * .95 + size * between(.04, .55);
+			}
+			const front = planted > 1 && rand() < .2, width = front ? w0 * .72 : w0, pick = rand() / share;
+			let kind = front && word.row > 0 ? 1 : planted === 1 || pick < (roses ? .5 : .8) ? 0 : pick < .8 ? 1 : 2;
+			const build = h => { const out = []; for (let k = 0; k <= 4; k++) { const t = k / 4; out.push([x0 + drift * Math.pow(t, 1.35) + Math.sin(phase + t * Math.PI * 1.7) * wave * t, y0 - h * t]); } return out; };
+			const bloom = at => [at.x + Math.cos(at.angle) * roseR * .45, at.y + Math.sin(at.angle) * roseR * .45];
+			const clear = at => { const [bx, by] = bloom(at); return roseTips.every(q => Math.hypot(q.x - bx, q.y - by) > (q.r + roseR) * 1.05); };
+			let points = build(height);
+			// A rose that would sit on another is raised above it; one that cannot be raised (a lower line's) becomes a bud.
+			if (kind === 0) {
+				for (let tries = 0; tries < 4 && !clear(gardenAt(points, 1)) && word.row === 0; tries++) points = build(height += roseR * 1.1);
+				if (!clear(gardenAt(points, 1))) kind = 1;
+			}
+			const samples = []; for (let k = 0; k <= 15; k++) samples.push(gardenAt(points, k / 15));
+			const runs = [[0, 6, 1], [6, 11, .8], [11, 15, .62]];
+			for (const [a, b, scale] of runs) (front ? frontStem : stemTone).push('<path stroke-width="' + fmt(width * scale) + '" d="' + gardenCurve(samples.slice(a, b + 1).map(p => [p.x, p.y])) + '"/>');
+			for (const p of samples) touch(p.x, p.y, width);
+			if (width >= 2.6) (front ? frontLines : veins).push('<path stroke-width="' + fmt(width * .2) + '" stroke-opacity=".6" d="' + gardenCurve(samples.slice(1, 11).map(p => [p.x, p.y])) + '"/>');
+			const tip = samples[15], heading = tip.angle;
+			const leaves = front ? 1 : clamp(Math.floor(height / (size * .24)), 2, 6);
+			let side = rand() < .5 ? -1 : 1;
+			for (let i = 0; i < leaves; i++) {
+				const u = clamp(.2 + .66 * (i + .5) / leaves + between(-.05, .05), .12, .88), at = gardenAt(points, u), length = Math.max(3, size * (.32 - .1 * u) * between(.85, 1.2));
+				leaf(front ? frontLeaf : leafTone, front ? frontLeafPale : leafPale, at.x, at.y, at.angle + side * between(.7, 1.15), length, between(.3, .4), between(.06, .18), side < 0);
+				side = -side;
+			}
+			if (!front && rand() < .3) {
+				const u = between(.35, .75), at = gardenAt(points, u), turn = rand() < .5 ? -1 : 1, rr = size * between(.07, .11), curl = [];
+				for (let i = 0; i <= 20; i++) { const a = at.angle + turn * (Math.PI / 2 - i / 20 * Math.PI * 3.4), r = rr * (1 - i / 22); curl.push([at.x + Math.cos(at.angle + turn * Math.PI / 2) * rr + Math.cos(a - turn * Math.PI) * r, at.y + Math.sin(at.angle + turn * Math.PI / 2) * rr + Math.sin(a - turn * Math.PI) * r]); }
+				thin.push('<path d="' + gardenCurve(curl) + '"/>'); for (const p of curl) touch(p[0], p[1], width);
+			}
+			if (kind === 0) { roses++; const [bx, by] = bloom(tip); roseTips.push({ x: bx, y: by, r: roseR }); rose(front ? frontRose : roseMarkup, bx, by, heading, roseR); }
+			else if (kind === 1) bud(front ? frontRose : roseMarkup, tip.x, tip.y, heading, size);
+			else leaf(leafTone, leafPale, tip.x, tip.y, heading + between(-.2, .2), Math.max(3, size * between(.14, .2)), .36, .1, rand() < .5);
+			// A shoot off the side of a tall stem, ending in a small flower or a bud.
+			if (!front && word.row === 0 && height > size * .9 && rand() < .5) {
+				const at = gardenAt(points, between(.3, .6)), dir = rand() < .5 ? -1 : 1, a0 = at.angle + dir * between(.6, .95), up = ((-Math.PI / 2 - a0 + 3 * Math.PI) % (Math.PI * 2)) - Math.PI, a1 = a0 + up * .55, run = size * between(.28, .5);
+				const p1 = [at.x + Math.cos(a0) * run * .5, at.y + Math.sin(a0) * run * .5], p2 = [p1[0] + Math.cos(a1) * run * .5, p1[1] + Math.sin(a1) * run * .5];
+				const shoot = [[at.x, at.y], p1, p2], mid = gardenAt(shoot, .5), tipEnd = gardenAt(shoot, 1), small = roseR * .58, flowerAt = [tipEnd.x + Math.cos(tipEnd.angle) * small * .45, tipEnd.y + Math.sin(tipEnd.angle) * small * .45];
+				stemTone.push('<path stroke-width="' + fmt(w0 * .55) + '" d="' + gardenCurve(shoot) + '"/>');
+				leaf(leafTone, leafPale, mid.x, mid.y, mid.angle - dir * between(.7, 1), Math.max(3, size * between(.14, .2)), .34, .1, dir > 0);
+				touch(p2[0], p2[1], w0);
+				if (small >= 2.4 && roseTips.every(q => Math.hypot(q.x - flowerAt[0], q.y - flowerAt[1]) > (q.r + small) * 1.05)) { roseTips.push({ x: flowerAt[0], y: flowerAt[1], r: small }); rose(roseMarkup, flowerAt[0], flowerAt[1], tipEnd.angle, small); }
+				else bud(roseMarkup, tipEnd.x, tipEnd.y, tipEnd.angle, size * .8);
+			}
+		}
+	}
+	const group = (list, attrs) => list.length ? '<g ' + attrs + '>' + list.join('') + '</g>' : '';
+	const stems = 'fill="none" stroke="' + stem + '" stroke-linecap="round" stroke-linejoin="round"', white = 'fill="none" stroke="' + WHITE + '" stroke-opacity=".92" stroke-linecap="round"';
+	const back = '<g data-garden="back">' + group(thin, 'fill="none" stroke="' + stem + '" stroke-width="' + fmt(Math.max(.5, w0 * .45)) + '" stroke-linecap="round"') + group(stemTone, stems) + group(veins, white) + group(leafTone, 'fill="' + stem + '"') + group(ribs, white) + roseMarkup.join('') + '</g>';
+	const front = frontStem.length || frontRose.length ? '<g data-garden="front">' + group(frontStem, stems) + group(frontLeaf, 'fill="' + stem + '"') + group(frontLines, white) + frontRose.join('') + '</g>' : '';
+	return { back, front, reach: box(minX, minY, maxX - minX, maxY - minY) };
+}
+
 // One line in a letter set: each capital its path, placed at the pen by the set's advance and scaled from the em to
 // the size; spaces advance; any other character, and a capital whose outline this page has not got, is a serif <text>
 // held to its planned width.
@@ -389,6 +592,7 @@ function layoutText(shape, context = {}) {
 		let cx = 0;
 		for (const unit of clusters(line.text)) { cx += measure(unit.text); carets.push({ offset: line.start + unit.end, x: cx }); }
 		line.carets = carets;
+		if (shape.textEffect === 'garden') line.cells = clusters(line.text).map((unit, i) => ({ ch: display(unit.text) || unit.text, x0: line.x + carets[i].x, x1: line.x + carets[i + 1].x }));
 		line.text = display(line.text);
 		if (!line.text) continue;
 		if (lettered) markup += letterLine(line, letters, size, tracking, words, family, color);
@@ -407,8 +611,10 @@ function layoutText(shape, context = {}) {
 		markup = '<path d="' + monoFigures(figures, at, top + stepSize * .71, stepSize) + '" fill="' + escape(context.stepColor || color) + '"/>' + markup;
 	}
 	if (standalone && shape.textEffect === 'pressed' && markup) markup = pressed(shape, size, painted) + markup + '</g>';
+	let reach = null;
+	if (standalone && shape.textEffect === 'garden' && markup) { const grown = garden(shape, size, painted, lines, lineHeight); if (grown) { markup = grown.back + markup + grown.front; reach = grown.reach; } }
 	if (rotation && markup) markup = '<g transform="rotate(' + fmt(rotation * 180 / Math.PI) + ' ' + fmt(origin.x) + ' ' + fmt(origin.y) + ')">' + markup + '</g>';
-	return { markup, bounds, box: rect, polygon: transformed.polygon, center: { x: x + contentWidth / 2, y: y + height / 2 }, origin, rotation, width: contentWidth, height, wrapWidth: wrapped.wrapWidth, measuredWidth, measuredHeight: height,
+	return { markup, bounds, ...(reach ? { reach: rotatedBox(reach, origin, rotation).bounds } : {}), box: rect, polygon: transformed.polygon, center: { x: x + contentWidth / 2, y: y + height / 2 }, origin, rotation, width: contentWidth, height, wrapWidth: wrapped.wrapWidth, measuredWidth, measuredHeight: height,
 		requiredWidth: text ? wrapped.longest + insetLeft + insetRight : 0, requiredHeight: text || step ? height + insetTop + insetBottom : 0, lines, lineHeight, fontFamily: family, fontSize: size, cutout, labelRange, labelPos: fraction,
 		// `baseline` and `align` are additive for the label editor's overlay math (line top = line.y -
 		// baseline; `align` is the already-resolved 'start'|'middle'|'end' the markup above used) -- the
@@ -416,4 +622,4 @@ function layoutText(shape, context = {}) {
 		baseline, align, ...(step ? {stepBlock} : {}) };
 }
 
-export { DRAW_TEXT_MAX, admitText, layoutText, restoreLetters };
+export { DRAW_TEXT_MAX, GARDEN_COLOURS, admitText, layoutText, restoreLetters };

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-const {_rapierDrawShapePaintedBBoxIn,_rapierDrawInkView,_rapierDrawRouteChanges,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawRestoreSVGRecipe,_rapierDrawTextLayout,_rapierDrawShapeContours,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawEscapeAttr,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawApplyShapesPatch,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,RAPIER_DRAW_RASTER_MAX,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawShapeBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawDashActive,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH} = globalThis.RapierDrawCore;
+const {GARDEN_COLOURS,_rapierDrawShapePaintedBBoxIn,_rapierDrawInkView,_rapierDrawRouteChanges,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawRestoreSVGRecipe,_rapierDrawTextLayout,_rapierDrawShapeContours,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,_rapierDrawEscapeAttr,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawApplyShapesPatch,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,RAPIER_DRAW_RASTER_MAX,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawShapeBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawDashActive,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH} = globalThis.RapierDrawCore;
 const {_rapierDrawTranslateGeom,_rapierDrawTranslateShape,_rapierDrawReleaseBindings,_rapierDrawRotatePt,_rapierDrawResizeShape,_rapierDrawResizeShapeLocal,_rapierDrawRotateShape,_rapierDrawBindAnchorFor,_rapierDrawPruneUnusedStrokes,anchorResize:_rapierDrawAnchorResize,anchorResizeLocal:_rapierDrawAnchorResizeLocal,selectionFrame:_rapierDrawSelectionFrame,editDrawing:_rapierDrawEdit,selectionIds:_rapierDrawGroupSelection,snapMove:_rapierDrawSnapMove,snapResize:_rapierDrawSnapResize} = globalThis.RapierDrawEdit;
 
 const RAPIER_DRAW_INK_LABEL = Object.freeze({ green: 'Green', red: 'Red', blue: 'Blue', gold: 'Gold', purple: 'Purple' });
@@ -1851,6 +1851,7 @@ function _rapierDrawCreateText(a, b = a, initial = '') {
 	for (const key of ['textBold', 'textItalic', 'textUnderline']) if (textStyle[key]) shape[key] = true;
 	if (!textStyle.textKern) shape.textKern = false;
 	for (const key of ['textCase', 'textEffect']) if (textStyle[key]) shape[key] = textStyle[key];
+	if (shape.textEffect === 'garden') _rapierDrawPlantGarden(shape, textStyle);
 	if (fixed) shape.geom.w = Math.max(24, Math.abs(b[0] - a[0]));
 	if (state.ink) shape.ink = state.ink;
 	let base = state.recipe;
@@ -1989,6 +1990,8 @@ function _rapierDrawSourceGlyphBody(source) {
 }
 function _rapierDrawSourceGlyph(source, extra = '') { return RAPIER_DRAW_ICON_WRAP(_rapierDrawSourceGlyphBody(source), extra); }
 const RAPIER_DRAW_ICONS = {
+	// The garden: a rose at the head of a stem with a leaf, the sample's stand-in where it cannot be drawn.
+	garden: RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="7" r="4"/><path d="M10 7a2 2 0 1 1 3 1.5M12 11v10M12 16c-3 0-5-1.5-5-4 3 0 5 1.500 5 4zM12 18c3 0 5-1.500 5-4-3 0-5 1.500-5 4z"/>'),
 	none: RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="8"/><path d="m6 18 12-12"/>'),
 	// The pipette every drawing app draws: a barrel held at the working angle with a drop at its tip.
 	dropper: RAPIER_DRAW_ICON_WRAP('<path d="M14.5 3.5a2.8 2.8 0 0 1 4 4l-2.2 2.2 1 1-1.8 1.8-1-1L7 19h-4v-4l7.5-7.5-1-1L11.3 4.7l1 1z"></path>'),
@@ -2380,7 +2383,7 @@ function _rapierDrawEraseWith(path) {
 			const align = ['arrow', 'line'].includes(source.recognized) ? 'middle' : source.labelAlign || 'middle';
 			const piece = { id: _rapierDrawNextId(), stroke: null, recognized: 'text', asDrawn: false, brush: 'ink', style: null, label: source.label, labelAlign: align, textSize: source.textSize ?? 14,
 				geom: { cx: 0, cy: 0, w: old.wrapWidth || old.width } };
-			for (const key of ['textFont', 'textBold', 'textItalic', 'textUnderline', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textCase', 'textKern', 'textFigures', 'textEffect', 'ink', 'opacity']) if (source[key] != null) piece[key] = source[key];
+			for (const key of ['textFont', 'textBold', 'textItalic', 'textUnderline', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textCase', 'textKern', 'textFigures', 'textEffect', 'textEffectSeed', 'effectFlower', 'effectStem', 'ink', 'opacity']) if (source[key] != null) piece[key] = source[key];
 			if (old.wrapWidth >= 6) piece.labelWidth = old.wrapWidth;
 			const text = _rapierDrawTextLayout(piece, recipe);
 			if (text.lines.length !== old.lines.length || text.lines.some((line, i) => line.text !== old.lines[i].text || Math.abs(line.width - old.lines[i].width) > 1e-7) || Math.abs(text.height - old.height) > 1e-7) throw Object.assign(new RangeError('This label cannot be separated without changing its layout'), { code: 'drawing_geometry_limit' });
@@ -2831,15 +2834,22 @@ function _rapierDrawSetSetting(which, value) {
 	_rapierDrawSyncSetting(which);
 }
 
-const RAPIER_DRAW_TEXT_DEFAULT = Object.freeze({ textSize: 24, textFont: 'sans', lineHeight: 1.25, letterSpacing: 0, wordSpacing: 0, textBold: false, textItalic: false, textUnderline: false, textKern: true, textCase: '', textFigures: '', textEffect: '', labelAlign: 'start' });
+const RAPIER_DRAW_TEXT_DEFAULT = Object.freeze({ textSize: 24, textFont: 'sans', lineHeight: 1.25, letterSpacing: 0, wordSpacing: 0, textBold: false, textItalic: false, textUnderline: false, textKern: true, textCase: '', textFigures: '', textEffect: '', effectFlower: '', effectStem: '', labelAlign: 'start' });
 // The type choices past weight and slant, each a recipe field on the text (docs/architecture.md, "Text
 // is one primitive"): the case the words are shown in, and the figure style an uploaded font carries.
 const RAPIER_DRAW_TEXT_CASES = [['', 'Aa', 'As typed'], ['upper', 'AA', 'Capitals'], ['small', 'Aa', 'Small capitals'], ['lower', 'aa', 'Lowercase']];
 const RAPIER_DRAW_TEXT_FIGURES = { oldstyle: 'Old style', lining: 'Lining', tabular: 'Tabular' };
 // The pressed letter's live sample: a P in the ink the next text takes, drawn by the same writer
 // that draws the canvas (draw/text.mjs), so the chip can never disagree with the result.
-function _rapierDrawEffectGlyph() {
+function _rapierDrawEffectGlyph(effect = 'pressed', style = null) {
+	if (effect === 'garden') return _rapierDrawGlyph({ id: 'effect-sample', recognized: 'text', stroke: null, brush: 'ink', asDrawn: false, style: null, label: 'a', textSize: 22, textFont: 'serif', textBold: true, labelAlign: 'middle', textEffect: 'garden', textEffectSeed: 7, ...(style?.effectFlower ? { effectFlower: style.effectFlower } : {}), ...(style?.effectStem ? { effectStem: style.effectStem } : {}), geom: { cx: 20, cy: 32 } }) || RAPIER_DRAW_ICONS.garden;
 	return _rapierDrawGlyph({ id: 'effect-sample', recognized: 'text', stroke: null, brush: 'ink', asDrawn: false, style: null, label: 'P', textSize: 34, textFont: 'serif', textBold: true, labelAlign: 'middle', textEffect: 'pressed', geom: { cx: 20, cy: 20 } });
+}
+// The garden's two colours as the chips show them: the person's choice, else the default for the paper, lifted for a dark theme the way every ink is.
+function _rapierDrawGardenColour(kind, chosen) {
+	const [light, dark] = GARDEN_COLOURS[kind];
+	if (!_rapierDrawDarkChrome()) return chosen || light;
+	return chosen ? (typeof _rapierDeriveDarkColor === 'function' ? _rapierDeriveDarkColor(chosen) : chosen) : dark;
 }
 // The page carries one capital per set for discovery; using the alphabet still loads its pinned set.
 function _rapierDrawLetterSets() { const sets = globalThis.RapierDrawLetters?.LETTER_SETS || []; return ['field', 'leaf', 'arabesque', 'relief'].map(id => sets.find(set => set.id === id)).filter(Boolean); }
@@ -2965,7 +2975,9 @@ function _rapierDrawFontControls(style, selection = false, effects = true) {
 	return '<div class="rapier-draw-font-controls"><div class="rapier-draw-font-grid">' + [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']].map(([id, word]) => fontButton(id, word)).join('') +
 		(fonts.length ? '<details class="rapier-draw-my-fonts"><summary class="rapier-draw-chip"' + (fonts.some(font => font.id === chosen) ? ' aria-current="true"' : '') + '>My Fonts<span class="rapier-draw-font-chevron">' + RAPIER_DRAW_ICONS.chevron + '</span></summary><div class="rapier-draw-font-menu">' + fonts.map(font => fontButton(font.id, font.name)).join('') + add + '</div></details>' : add) + '</div>' +
 		(sets.length ? '<div class="rapier-draw-letters" role="group" aria-label="Letter sets"><span class="rapier-draw-chip-head">Letter sets</span>' + sets.map(set => '<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-letter" ' + attr('letters:' + set.id) + ' aria-label="' + _rapierDrawEscapeAttr(set.name) + '" aria-pressed="' + ('letters:' + set.id === chosen) + '">' + _rapierDrawLetterGlyph(set) + '<span class="rapier-draw-chip-name">' + _rapierDrawEscapeAttr(set.name) + '</span></button>').join('') + '</div>' : '') +
-		(effects ? '<div class="rapier-draw-effects" role="group" aria-label="Effects"><span class="rapier-draw-chip-head">Effects</span><button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" ' + (selection ? 'data-draw-menu-act="property" data-draw-property="textEffect" data-draw-value="' + (style.textEffect === 'pressed' ? '' : 'pressed') + '"' : 'data-draw-text-effect="pressed"') + ' aria-label="Pressed" aria-pressed="' + (style.textEffect === 'pressed') + '">' + _rapierDrawEffectGlyph() + '<span class="rapier-draw-chip-name">Pressed</span></button></div>' : '') + '</div>';
+		(effects ? '<div class="rapier-draw-effects" role="group" aria-label="Effects"><span class="rapier-draw-chip-head">Effects</span><button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" ' + (selection ? 'data-draw-menu-act="property" data-draw-property="textEffect" data-draw-value="' + (style.textEffect === 'pressed' ? '' : 'pressed') + '"' : 'data-draw-text-effect="pressed"') + ' aria-label="Pressed" aria-pressed="' + (style.textEffect === 'pressed') + '">' + _rapierDrawEffectGlyph() + '<span class="rapier-draw-chip-name">Pressed</span></button>' +
+		'<button type="button" class="rapier-draw-chip rapier-draw-chip--glyph rapier-draw-effect" ' + (selection ? 'data-draw-menu-act="property" data-draw-property="textEffect" data-draw-value="' + (style.textEffect === 'garden' ? '' : 'garden') + '"' : 'data-draw-text-effect="garden"') + ' aria-label="Garden" aria-pressed="' + (style.textEffect === 'garden') + '">' + _rapierDrawEffectGlyph('garden', style) + '<span class="rapier-draw-chip-name">Garden</span></button>' +
+		[['flower', 'Flower', style.effectFlower], ['stem', 'Stem', style.effectStem]].map(([kind, word, chosen]) => '<label class="rapier-draw-chip rapier-draw-effect rapier-draw-garden-colour" data-draw-garden-colour="' + kind + '"' + (style.textEffect === 'garden' ? '' : ' hidden') + '><span class="rapier-draw-garden-dot" style="background:' + _rapierDrawEscapeAttr(_rapierDrawGardenColour(kind, chosen)) + '"></span><input type="color" aria-label="' + word + ' colour" value="' + _rapierDrawEscapeAttr(chosen || GARDEN_COLOURS[kind][0]) + '" data-draw-colour="' + kind + '"><span class="rapier-draw-chip-name">' + word + '</span></label>').join('') + '</div>' : '') + '</div>';
 }
 function _rapierDrawRenderTextFontPanel() {
 	const state = _rapierDrawState, panel = state.surface?.querySelector('[data-draw-panel="textFont"]');
@@ -3009,6 +3021,7 @@ function _rapierDrawSyncTextEffect() {
 	const state = _rapierDrawState, panel = state.surface?.querySelector('[data-draw-panel="textFont"]');
 	if (!panel) return;
 	const targets = _rapierDrawEffectTargets(), style = _rapierDrawTextDefaults();
+	_rapierDrawSyncGardenColours(panel, targets, style);
 	for (const button of panel.querySelectorAll('[data-draw-text-effect]')) {
 		const id = button.dataset.drawTextEffect, on = targets.length ? targets.every(shape => shape.textEffect === id) : style.textEffect === id;
 		button.setAttribute('aria-pressed', String(on));
@@ -3016,14 +3029,43 @@ function _rapierDrawSyncTextEffect() {
 		// ink colours it through `color`, lifted for a dark theme the way every chrome sample is.
 		const ink = _rapierDrawShapeInk({ ink: targets.at(-1)?.ink || state.ink }), dark = _rapierDrawDarkChrome() && typeof _rapierDeriveDarkColor === 'function';
 		const sample = button.querySelector('.rapier-draw-glyph');
-		if (sample) sample.style.color = ink === _rapierDrawShapeInk({}) ? '' : dark ? _rapierDeriveDarkColor(ink) : ink;
+		if (sample && id !== 'garden') sample.style.color = ink === _rapierDrawShapeInk({}) ? '' : dark ? _rapierDeriveDarkColor(ink) : ink;
 	}
+}
+// The garden's colour chips show only while the garden is on, and show the colour the next garden takes: the text in hand's own,
+// else the default for the paper.
+function _rapierDrawSyncGardenColours(panel, targets, style) {
+	const on = targets.length ? targets.every(shape => shape.textEffect === 'garden') : style.textEffect === 'garden';
+	for (const chip of panel.querySelectorAll('[data-draw-garden-colour]')) {
+		const kind = chip.dataset.drawGardenColour, key = kind === 'flower' ? 'effectFlower' : 'effectStem', colour = _rapierDrawGardenColour(kind, targets.length ? targets.at(-1)[key] : style[key]);
+		chip.hidden = !on;
+		chip.querySelector('.rapier-draw-garden-dot').style.background = colour;
+		const input = chip.querySelector('input'), held = (targets.length ? targets.at(-1)[key] : style[key]) || GARDEN_COLOURS[kind][0];
+		if (input.value !== held) input.value = held;
+	}
+}
+// A garden's seed is chosen once, by the first application, and kept; its colours are the next text's own when set.
+function _rapierDrawPlantGarden(shape, style) {
+	if (!Number.isInteger(shape.textEffectSeed)) shape.textEffectSeed = Math.floor(Math.random() * 1e9);
+	for (const key of ['effectFlower', 'effectStem']) if (style[key] && !shape[key]) shape[key] = style[key];
+}
+function _rapierDrawSetGardenColour(scope, ink, continuous) {
+	const state = _rapierDrawState, key = scope === 'flower' ? 'effectFlower' : 'effectStem', hex = _rapierDrawReadHex(ink);
+	if (!hex || state.finishing) return;
+	const targets = _rapierDrawEffectTargets(), style = _rapierDrawTextDefaults();
+	style[key] = hex;
+	if (targets.length && !_rapierDrawSelectionLocked(targets) && targets.some(shape => shape[key] !== hex)) {
+		if (_rapierDrawCommand(() => { for (const shape of _rapierDrawEffectTargets()) shape[key] = hex; }, !continuous || !state.colourEdit, !continuous) && continuous) state.colourEdit = true;
+	}
+	// A committed colour redraws the panel, so the chip's sample is drawn again by the canvas's own writer in it.
+	if (!continuous) _rapierDrawRenderTextFontPanel();
+	_rapierDrawSyncTextEffect();
 }
 function _rapierDrawToggleTextEffect(id) {
 	const state = _rapierDrawState, targets = _rapierDrawEffectTargets(), style = _rapierDrawTextDefaults();
 	const on = !(targets.length ? targets.every(shape => shape.textEffect === id) : style.textEffect === id);
 	style.textEffect = on ? id : '';
-	if (targets.length) _rapierDrawCommand(() => { for (const shape of _rapierDrawEffectTargets()) { if (on) shape.textEffect = id; else delete shape.textEffect; } });
+	if (targets.length) _rapierDrawCommand(() => { for (const shape of _rapierDrawEffectTargets()) { if (on) { shape.textEffect = id; if (id === 'garden') _rapierDrawPlantGarden(shape, style); } else delete shape.textEffect; } });
 	_rapierDrawSyncTextEffect();
 	return state;
 }
@@ -4496,6 +4538,7 @@ function _rapierDrawUpdateInkBtn(palette = true) {
 function _rapierDrawSetColour(scope, ink, continuous = false) {
 	const state = _rapierDrawState;
 	if (state.finishing) return;
+	if (scope === 'flower' || scope === 'stem') { _rapierDrawSetGardenColour(scope, ink, continuous); return; }
 	if (scope === 'next') { state.ink = ink || null; state.inkChosen = true; _rapierDrawUpdateInkBtn(!continuous); if (!continuous) _rapierPaintUpdateStrip(); return; }
 	const shapes = _rapierDrawSelectedShapes();
 	if (_rapierDrawSelectionLocked(shapes)) return;
@@ -4561,7 +4604,7 @@ function _rapierDrawSetProperty(key, value, asked = false) {
 
 		for (const shape of _rapierDrawSelectedShapes()) {
 			if (['textSize', 'lineHeight', 'letterSpacing', 'wordSpacing', 'labelPos'].includes(key)) shape[key] = Number(value);
-			else if (['textCase', 'textFigures', 'textEffect'].includes(key)) { if (key === 'textEffect' && shape.recognized !== 'text') continue; if (value) shape[key] = value; else delete shape[key]; }
+			else if (['textCase', 'textFigures', 'textEffect'].includes(key)) { if (key === 'textEffect' && shape.recognized !== 'text') continue; if (value) shape[key] = value; else delete shape[key]; if (key === 'textEffect' && value === 'garden') _rapierDrawPlantGarden(shape, _rapierDrawTextDefaults()); }
 			else if (key === 'textKern') { if (value === 'off') shape.textKern = false; else delete shape.textKern; }
 			else if (key === 'inner') { if (shape.recognized === 'star') shape.geom.inner = Number(value); }
 			else if (key === 'headStart' || key === 'headEnd') { shape[key] = value; delete shape['trim' + key.slice(4)]; delete shape.cutWidth; }
