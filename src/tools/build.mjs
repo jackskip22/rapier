@@ -526,7 +526,10 @@ if (PROFILE === 'full') {
   MODULES.set(path, MODULES.get(path).replace(marker, key));
 }
 // File and backup workers share one retained factory per dependency. Each source projects
-// only its own closure, dependencies first; shared hashing/paths are not packed twice.
+// only its own closure, dependencies first; shared hashing/paths are not packed twice. A worker's closure may
+// carry a module with a retained ink factory (the mark grammar under notes/model.mjs), whose text registers that
+// factory in artifactFactories; the worker declares the registry too, read by nothing there, so the module loads
+// (the Notes backup worker died at load without it: check-shipped-capabilities, the 1.1.35 candidate, 3 October).
 const workerClosure = entry => { const seen = new Set(); const visit = path => { if (seen.has(path)) return; seen.add(path); for (const dep of DEPS.get(path) || []) visit(dep); }; visit(entry); return [...MODULES.keys()].filter(path => seen.has(path)); };
 const workerEntries = [['notes/backup-worker.mjs', 'installBackupWorker'], ['notes/opfs-worker.mjs', 'installOPFSWorker']].filter(([entry]) => MODULES.has(entry));
 const workerPaths = new Set(workerEntries.flatMap(([entry]) => workerClosure(entry)));
@@ -536,7 +539,7 @@ for (const path of workerPaths) {
   MODULES.set(path, head + `workerFactories[${JSON.stringify(path)}] = ` + MODULES.get(path).slice(head.length));
 }
 const workerSource = workerEntries.map(([entry, install]) => `
-Object.defineProperty(modules[${JSON.stringify(entry)}], 'workerSource', {value: () => '(() => {\\nconst modules = {};\\n' +
+Object.defineProperty(modules[${JSON.stringify(entry)}], 'workerSource', {value: () => '(() => {\\nconst modules = {}, artifactFactories = {};\\n' +
   ${JSON.stringify(workerClosure(entry))}.map(path => 'modules[' + JSON.stringify(path) + '] = (' + workerFactories[path].toString() + ')();').join('\\n') +
   '\\nmodules[${JSON.stringify(entry)}].${install}(self);\\n})();\\n'});`).join('');
 const pretextLicense = await read('agent/vendor/pretext/LICENSE');
