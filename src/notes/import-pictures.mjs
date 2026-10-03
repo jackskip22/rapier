@@ -1,12 +1,14 @@
-// A local image belongs to its picked container and the referring note's path, never a basename.
+// A local image belongs to its picked container and resolved source path. Wiki paths use the
+// shared resolver's documented vault lookup, with ambiguous matches refused.
 // Discovery and appendix grammar stay with the shared link and asset owners; this module plans
 // source changes only. Unresolved imports are receipt facts, never replacement prose.
-import {scanLinks, resolveAssetPath, normalizeSourcePath} from './links.mjs';
+import {scanLinks, resolveAssetPath, normalizeSourcePath, resolveLink} from './links.mjs';
 import {createAsset} from '../images/assets.mjs';
 import {keepImportCharacters, finishImportCharacters} from './import-characters.mjs';
 import {appendAssetText, documentAssets, normalizeLabel, markdownParser, escapeImageAlt} from '../spec/md-assets.mjs';
 
 const IMAGE_PATH = /\.(?:png|jpe?g|jxl|webp|svg|gif|bmp|ico|avif|heic|heif)(?:\?|$)/i;
+const WIKI_DIMENSIONS = /^[1-9]\d*x[1-9]\d*$/;
 const SUPPORTED = new Set(['image/png', 'image/jpeg', 'image/jxl', 'image/webp', 'image/svg+xml']);
 const rootOf = row => typeof row?.rootId === 'string' ? row.rootId : '';
 const nameOf = row => typeof row?.sourceName === 'string' ? row.sourceName : typeof row?.name === 'string' ? row.name : '';
@@ -14,12 +16,14 @@ const bytesOf = value => value instanceof Uint8Array ? value : value instanceof 
 const identity = (rootId, name) => JSON.stringify([rootId, name]);
 
 function picturePool(pictures) {
-  const paths = new Map(), aliases = new Map();
+  const paths = new Map(), aliases = new Map(), files = new Map();
   for (const picture of Array.isArray(pictures) ? pictures : []) {
     const name = nameOf(picture), path = normalizeSourcePath(name);
     if (!name || !path.path || path.outside) continue;
     const key = identity(rootOf(picture), path.path), rows = paths.get(key) || [];
     rows.push(picture); paths.set(key, rows);
+    if (!files.has(rootOf(picture))) files.set(rootOf(picture), new Set());
+    files.get(rootOf(picture)).add(path.path);
     // Joplin's resource identifier is supplied by its importer, never inferred from a basename.
     for (const alias of new Set(Array.isArray(picture.sourceAliases) ? picture.sourceAliases : [])) {
       if (typeof alias !== 'string' || !/^:\/[^\s]+$/.test(alias)) continue;
@@ -27,13 +31,13 @@ function picturePool(pictures) {
       matching.push(picture); aliases.set(aliasKey, matching);
     }
   }
-  return {paths, aliases};
+  return {paths, aliases, files};
 }
 
 function imageAlt(source, link) {
   if (link.kind === 'embed') {
     const alias = link.alias || '';
-    return /^[1-9]\d{0,3}$/.test(alias) ? '|' + alias : escapeImageAlt(alias);
+    return /^[1-9]\d{0,3}$/.test(alias) || WIKI_DIMENSIONS.test(alias) ? '|' + alias : escapeImageAlt(alias);
   }
   if (typeof link.rawAlt === 'string') return link.rawAlt;
   if (Number.isInteger(link.altStart) && Number.isInteger(link.altEnd)) return source.slice(link.altStart, link.altEnd);
@@ -85,7 +89,14 @@ export async function importPictures(source, options = {}) {
     const aliased = pool.aliases.get(identity(rootId, link.dest));
     const resolved = aliased ? {} : resolveAssetPath(sourceName, link.dest);
     if (resolved.outside) { warn(link, 'external', 'The external picture link was kept; no network request was made.'); continue; }
-    const found = aliased || pool.paths.get(identity(rootId, resolved.path || '')) || [];
+    let found = aliased || pool.paths.get(identity(rootId, resolved.path || '')) || [];
+    if (!aliased && link.kind === 'embed') {
+      // Obsidian writes the shortest unique path in a vault. The shared link owner decides
+      // that path exactly as it decides note links; ambiguity never becomes a guessed image.
+      const wiki = resolveLink(link, {from: sourceName, files: pool.files.get(rootId), sourceFiles: true});
+      if (wiki.unresolved === 'ambiguous') { warn(link, 'ambiguous', 'More than one picked picture matches this wiki path in this container.'); continue; }
+      if (wiki.file) found = pool.paths.get(identity(rootId, wiki.file)) || [];
+    }
     if (!found.length) { warn(link, 'missing', 'The picture was not among the files picked for this container.'); continue; }
     if (found.length !== 1) { warn(link, 'ambiguous', 'More than one picked picture has this path in this container.'); continue; }
     // HTML's width, controls and other authored attributes stay byte-exact. The attachment
@@ -113,6 +124,8 @@ export async function importPictures(source, options = {}) {
       const appended = appendAvailable(text, asset);
       text = appended.source;
       edits.push({start: link.start, end: link.end, text: '![' + alt + '][' + appended.reference + ']'});
+      if (link.kind === 'embed' && WIKI_DIMENSIONS.test(link.alias || '')) warnings.push({code: 'picture_dimensions', rootId, name: sourceName, dest: link.dest, value: link.alias,
+        message: 'The original width and height remain in the picture\'s Markdown source. Fixed width and height are not applied by this reader.'});
       const embeddedKey = JSON.stringify([key, appended.id]), previous = embeddedByKey.get(embeddedKey);
       if (previous) previous.uses++;
       else {

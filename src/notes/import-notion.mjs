@@ -122,11 +122,15 @@ export async function importNotion(entries, options) {
 		const headers = rows[0].map(h => trimPropertySpace(h));
 		if (!headers.length || !headers[0]) { skipped.push({name: csv.name, why: 'no column to use as a title'}); continue; }
 		const dbTitle = stripId(splitExt(basename(csv.name))[0]);
+		const lineWarnings = [];
+		// The source-wide change is identical for every row. Read it once, then retain
+		// that same diagnostic on each row without rescanning a workspace-sized CSV.
+		reportCharacterChange(csv.text, csv.text.replace(/\r\n?/g, '\n'), lineWarnings, 'CSV line endings');
 		for (const [rowIndex, values] of rows.slice(1).entries()) {
 			if (!values.some(value => trimPropertySpace(value))) continue;
 			const title = trimPropertySpace(values[0] || '') || 'Untitled row ' + (rowIndex + 2);
 			const warnings = [...(csv.characterWarnings || []), ...(trimPropertySpace(values[0] || '') ? [] : [{code: 'row_untitled', message: 'Row has no title; its remaining values were kept in a separately named note.'}])];
-			reportCharacterChange(csv.text, csv.text.replace(/\r\n?/g, '\n'), warnings, 'CSV line endings');
+			warnings.push(...lineWarnings);
 			warnings.push({code: 'database_properties', message: 'Database properties are plain text in this note, not live relations, formulas or database views. Date columns without a timezone remain text.'});
 			const lines = [], tags = [];
 			for (let i = 1; i < Math.max(headers.length, values.length); i++) { const v = values[i] || ''; if (v) lines.push(literalLine(headers[i] || 'Column ' + (i + 1)) + ': ' + v.split('\n').map(literalLine).join('  \n')); }
@@ -137,7 +141,9 @@ export async function importNotion(entries, options) {
 			const created = dateFromRow(headers, values, CREATED_HEADER), modified = dateFromRow(headers, values, MODIFIED_HEADER);
 			const queue = mdByTitle.get(title) || [];
 			const directory = csv.name.replace(/\.csv$/i, '') + '/';
-			const candidates = queue.filter(page => page.name.startsWith(directory));
+			// A row's own subpages are descendants of its directory, not other rows in the
+			// database. A repeated child title must not detach the parent's CSV properties.
+			const candidates = queue.filter(page => page.name.slice(0, page.name.lastIndexOf('/') + 1) === directory);
 			const md = candidates.length === 1 ? candidates[0] : null;
 			if (md) queue.splice(queue.indexOf(md), 1);
 			if (md) claims.set(md, {lines, tags, created, modified, sourceName: csv.sourceName, warnings});

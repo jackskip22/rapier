@@ -47,9 +47,8 @@ export async function importSimplenote(entries, options) {
 	const skipped = [];
 	const named = await unwrap(list, skipped);
 
-	// The JSON is the one authoritative source; a note's own .txt twin beside it is the same words
-	// with none of tags/pinned/timestamps, so it is never read once the JSON is found (the same
-	// "ignore the twin" rule takeout.mjs applies to its own source's .html twin).
+	// The JSON is authoritative. Native root/trash TXT twins append a Tags block but carry no
+	// pin or timestamp fields; the import door admits only proved twins as duplicate representations.
 	const sources = [], recovered = [];
 	const pool = existing.slice();
 	for (const e of named) {
@@ -95,7 +94,7 @@ export async function importSimplenote(entries, options) {
 		}
 	} else {
 		// No notes.json among the picked files: fall back to whatever loose .txt notes were picked
-		// (tags, pinned and timestamps are not in a bare .txt file, so none is carried).
+		// (an appended Tags block is plain source here; no metadata field is guessed from prose).
 		for (const e of named) {
 			if (!/\.txt$/i.test(e.name) || typeof e.text !== 'string') continue;
 			try {

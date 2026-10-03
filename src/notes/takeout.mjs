@@ -69,7 +69,16 @@ function textOf(data, warnings) {
 		reportCharacterChange(data.textContent, body, warnings, 'Keep body'); blocks.push(body);
 	}
 	const items = Array.isArray(data.listContent) ? data.listContent : [];
-	if (items.length) blocks.push(items.map(i => '- [' + (i && i.isChecked ? 'x' : ' ') + '] ' + literalInline(i && typeof i.text === 'string' ? i.text.replace(/\r\n?/g, '\n') : '').replace(/\n/g, '  \n  ')).join('\n'));
+	if (items.length) blocks.push(items.map(item => {
+		let body;
+		if (item && Object.hasOwn(item, 'textHtml')) {
+			if (typeof item.textHtml !== 'string') throw new TypeError('Keep checklist HTML is not a string.');
+			// Takeout rich checklist items carry their own HTML, independently of the note body.
+			// Keep converted blocks inside this task; the one HTML owner accounts for lost fields.
+			body = htmlToMarkdown(item.textHtml, {warnings, plainText: item.text}).replace(/\n+$/, '').replace(/\n/g, '\n  ');
+		} else body = literalInline(item && typeof item.text === 'string' ? item.text.replace(/\r\n?/g, '\n') : '').replace(/\n/g, '  \n  ');
+		return '- [' + (item && item.isChecked ? 'x' : ' ') + '] ' + body;
+	}).join('\n'));
 	// Attachments read like part of the note (a photo, a drawing); the caller copies the bytes over
 	// under the same basename, this module only has to agree on the name.
 	const attachments = (Array.isArray(data.attachments) ? data.attachments : []).filter(a => a && typeof a.filePath === 'string' && a.filePath && !audioMime(a.mimetype || a.mimeType, a.filePath));
@@ -136,7 +145,7 @@ export function importTakeout(files, options) {
 				text = mapped.text; audio.push(mapped.audio); audioPool.push(mapped.audio.name);
 			}
 			importMetadata(data, ['title','textContent','textContentHtml','listContent','attachments','annotations','labels','color','isPinned','isArchived','isTrashed','createdTimestampUsec','userEditedTimestampUsec'], warnings, 'Keep fields');
-			for (const item of data.listContent || []) importMetadata(item, ['text','isChecked'], warnings, 'Keep checklist fields');
+			for (const item of data.listContent || []) importMetadata(item, ['text','textHtml','isChecked'], warnings, 'Keep checklist fields');
 			for (const item of data.attachments || []) importMetadata(item, ['filePath','mimetype','mimeType'], warnings, 'Keep attachment fields');
 			for (const item of data.labels || []) importMetadata(item, ['name'], warnings, 'Keep label fields');
 			for (const item of data.annotations || []) importMetadata(item, item?.source === 'WEBLINK' ? ['source','url','title'] : [], warnings, 'Keep link fields');

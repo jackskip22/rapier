@@ -50,7 +50,7 @@ function parseXmlAttrs(raw, strict = false) {
 	if (strict && raw.slice(end).replace(/\/\s*$/, '').trim()) throw new Error('ENEX attribute is malformed');
 	return attrs;
 }
-function parseXml(src) {
+function parseXml(src, enml = false) {
 	const s = String(src), n = s.length, root = {tag: '#root', attrs: {}, children: []}, stack = [root];
 	let i = 0;
 	while (i < n) {
@@ -63,7 +63,8 @@ function parseXml(src) {
 			const e = s.indexOf('>', lt); if (e < 0) throw new Error('ENEX declaration is incomplete');
 			const declaration = s.slice(lt, e + 1);
 			// A declaration is admitted only here, outside comments and CDATA. It is never fetched.
-			if (!/^<\?xml\s[^?]*\?>$/i.test(declaration) && !/^<!DOCTYPE\s+en-export\s+SYSTEM\s+["']https?:\/\/xml\.evernote\.com\/pub\/evernote-export\d+\.dtd["']\s*>$/i.test(declaration)) throw new Error('ENEX declaration is not supported');
+			const allowedDoctype = enml ? /^<!DOCTYPE\s+en-note\s+SYSTEM\s+["']https?:\/\/xml\.evernote\.com\/pub\/enml2?\.dtd["']\s*>$/i : /^<!DOCTYPE\s+en-export\s+SYSTEM\s+["']https?:\/\/xml\.evernote\.com\/pub\/evernote-export\d+\.dtd["']\s*>$/i;
+			if (!/^<\?xml\s[^?]*\?>$/i.test(declaration) && !allowedDoctype.test(declaration)) throw new Error('ENEX declaration is not supported');
 			i = e + 1; continue;
 		}
 		let j = lt + 1, close = false;
@@ -78,7 +79,7 @@ function parseXml(src) {
 		if (j === n || quote) throw new Error('ENEX element is incomplete');
 		i = j + 1;
 		if (close) { if (stack.length === 1 || stack.at(-1).tag !== name || attrsRaw.trim()) throw new Error('ENEX closing element does not match'); stack.pop(); continue; }
-		const node = {tag: name, attrs: parseXmlAttrs(attrsRaw, true), children: []};
+		const node = {tag: name, attrs: parseXmlAttrs(attrsRaw, true), children: [], start: lt, openEnd: i};
 		stack[stack.length - 1].children.push(node);
 		if (!/\/\s*$/.test(attrsRaw)) stack.push(node);
 	}
@@ -88,6 +89,55 @@ function parseXml(src) {
 const child = (node, tag) => (node?.children || []).find(c => c && typeof c === 'object' && c.tag === tag) || null;
 const allChildren = (node, tag) => (node?.children || []).filter(c => c && typeof c === 'object' && c.tag === tag);
 const textOf = node => !node ? '' : (node.children || []).map(c => typeof c === 'string' ? c : textOf(c)).join('');
+
+// DTD v4 adds nested, repeating task reminders; resources can also carry recognition XML.
+// Preserve their structure and repeated values instead of flattening them to their last child.
+function xmlValue(node) {
+	const children = (node?.children || []).filter(value => typeof value === 'object');
+	if (!children.length && !Object.keys(node.attrs || {}).length) return textOf(node);
+	const value = Object.create(null);
+	if (Object.keys(node.attrs || {}).length) value.attributes = {...node.attrs};
+	const names = new Map();
+	for (const child of children) { if (!names.has(child.tag)) names.set(child.tag, []); names.get(child.tag).push(xmlValue(child)); }
+	for (const [name, values] of names) value[name] = values.length === 1 ? values[0] : values;
+	const text = (node.children || []).filter(value => typeof value === 'string').join('');
+	if (text.trim()) value.text = text;
+	return value;
+}
+
+// Current Evernote also stores checklist state in list/item custom properties, without
+// en-todo nodes. The XML reader supplies spans so only those flags and checkbox markers
+// change; nested ordinary lists, comments and text remain outside this projection.
+function projectEnmlChecklists(source, prefix, warnings) {
+	if (!source.includes('--en-todo') || !source.includes('--en-checked')) return source;
+	let tree;
+	try { tree = parseXml(source, true); }
+	catch (_) { warnings.push({code: 'task_structure', message: 'The ENML checklist structure could not be read. Its original state remains in the source export and retained style fields.'}); return source; }
+	const edits = [], pending = [{node: tree, checklist: false}];
+	const flag = (style, name) => new RegExp('(?:^|;)\\s*' + name + '\\s*:\\s*(true|false)\\s*(?:;|$)', 'i').exec(style || '')?.[1].toLowerCase();
+	const removeFlag = (node, name) => {
+		const before = source.slice(node.start, node.openEnd);
+		const after = before.replace(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, (whole, name, double, single) => {
+			if (name.toLowerCase() !== 'style') return whole;
+			const quote = double !== undefined ? '"' : "'", style = double ?? single;
+			const kept = style.split(';').filter(part => !new RegExp('^\\s*' + name + '\\s*:\\s*(?:true|false)\\s*$', 'i').test(part)).join(';');
+			return kept.trim() ? 'style=' + quote + kept + quote : '';
+		});
+		if (after !== before) edits.push({start: node.start, end: node.openEnd, text: after});
+	};
+	while (pending.length) {
+		const row = pending.pop(), node = row.node;
+		let checklist = row.checklist;
+		if (node.tag === 'ul' || node.tag === 'ol') { checklist = flag(node.attrs.style, '--en-todo') === 'true'; if (checklist) removeFlag(node, '--en-todo'); }
+		if (node.tag === 'li' && checklist) {
+			const checked = flag(node.attrs.style, '--en-checked');
+			if (checked !== undefined) { removeFlag(node, '--en-checked'); edits.push({start: node.openEnd, end: node.openEnd, text: prefix + (checked === 'true' ? 'TODO1' : 'TODO0') + '\x01'}); }
+		}
+		for (const child of node.children || []) if (typeof child === 'object') pending.push({node: child, checklist});
+	}
+	for (const edit of edits.sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
+	return source;
+}
 
 // Non-ENML title and source-URL fields use the shared literal import grammar.
 // "20260916T120000Z" -> ms. Evernote's own timestamp form (DTD: created/updated are ISO 8601, and
@@ -177,6 +227,7 @@ function contentToMarkdown(enml, resources, warnings) {
 		return prefix + 'KEPT' + (kept.length - 1) + '\x01';
 	};
 	xml = xml.replace(/<en-crypt\b[^>]*\/>|<en-crypt\b[^>]*>[\s\S]*?<\/en-crypt>/gi, raw => keep(raw, 'encrypted_block', 'Encrypted block kept as literal source; it was not decrypted.'));
+	xml = projectEnmlChecklists(xml, prefix, warnings);
 	xml = xml.replace(/<en-todo\b([^>]*)\/?>/gi, (_, attrs) =>
 		prefix + (/^true$/i.test(parseXmlAttrs(attrs).checked || '') ? 'TODO1' : 'TODO0') + '\x01');
 	const media = [];
@@ -250,6 +301,11 @@ export async function importEnex(entries, options) {
 						try { resolved = resourceOf(r, usedPictureNames); } catch (_) { resolved = null; }
 						if (resolved) {
 							resources.set(resolved.hash, resolved);
+							const fields = xmlValue(r);
+							// Decoded data, its MIME and exported filename already have byte custody.
+							// Recognition, source links and resource attributes have no native target.
+							if (fields['resource-attributes'] && typeof fields['resource-attributes'] === 'object') delete fields['resource-attributes']['file-name'];
+							importMetadata(fields, ['data', 'mime'], warnings, 'Evernote resource fields', {at: resolved.name});
 							if (!audioMime(resolved.mime, resolved.name)) {
 								const asset = {...resolved, rootId, sourceName: resourcePrefix + resolved.name};
 								(/^image\//i.test(resolved.mime) ? pictures : attachments).push(asset);
@@ -263,6 +319,21 @@ export async function importEnex(entries, options) {
 					try { body = contentNode ? contentToMarkdown(textOf(contentNode), resources, warnings) : ''; }
 					catch (_) { body = textOf(contentNode); warnings.push({code: 'unsupported_block', message: 'Unparsed ENML retained as source.'}); }
 					if (trimHtmlSpace(body)) blocks.push(trimHtmlSpace(body));
+					const tasks = allChildren(note, 'task');
+					if (tasks.length) {
+						const lines = [];
+						for (const [taskIndex, task] of tasks.entries()) {
+							const fields = xmlValue(task), status = textOf(child(task, 'taskStatus'));
+							const raw = textOf(child(task, 'title')), title = trimHtmlSpace(raw.replace(/[ \t\r\n\f]+/g, ' '));
+							reportCharacterChange(raw, title, warnings, 'Evernote task title');
+							// An unknown state stays source metadata; it must not silently become open.
+							if (status === 'open' || status === 'completed') lines.push('- [' + (status === 'completed' ? 'x' : ' ') + '] ' + literalInline(title));
+							else lines.push(literalInline(title));
+							importMetadata(fields, status === 'open' || status === 'completed' ? ['title', 'taskStatus'] : ['title'], warnings, 'Evernote task fields', {at: 'task ' + (taskIndex + 1)});
+						}
+						blocks.push(lines.join('\n'));
+						warnings.push({code: 'task_projection', message: 'Evernote tasks were kept at the end of this note. Their original placement, dates, reminders and recurrence were not applied; their values stay in the original export and in this import record.'});
+					}
 					const attrsNode = child(note, 'note-attributes');
 					const sourceUrl = attrsNode && textOf(child(attrsNode, 'source-url')).trim();
 					if (sourceUrl) blocks.push('Source: ' + literalInline(sourceUrl));

@@ -119,6 +119,12 @@ export function createImportReceipt(result, {stamp = null, id = null} = {}) {
 			warnings: copy(list(note.warnings).filter(row => !fieldRow(row) && !databaseRow(row))), unresolvedLinks: copy(list(note.unresolvedLinks)),
 			unresolvedPictures: copy(list(note.unresolvedPictures))})),
 		plannedFiles: list(result.notes).map(note => note.file), written: [], sections: [], createdFiles: [], createdHistory: [], createdSections: []};
+	// A repeat publishes nothing, but its returned receipt must still explain the decision.
+	// The shell keeps the original durable record and stops before any second publication.
+	if (result.alreadyImported || result.repeatConflict) {
+		out.repeat = {kind: result.alreadyImported ? 'already-imported' : 'conflict', matchedNotes: result.repeatedNotes};
+		out.status = result.alreadyImported ? 'complete' : 'failed';
+	}
 	const unapplied = unappliedFields(list(result.notes));
 	if (unapplied.length) out.unapplied = unapplied;
 	const warnings = foldedImportWarnings(result);
@@ -239,6 +245,10 @@ function inputName(receipt, row, i) {
 function receiptProblem(receipt) {
 	if (!object(receipt) || receipt.version !== 1 || !['planned', 'writing', 'complete', 'cancelled', 'failed'].includes(receipt.status)
 		|| !['notes', 'written', 'plannedFiles', 'sections', 'picked', 'refused', 'accounting', 'createdFiles', 'createdHistory', 'createdSections'].every(key => Array.isArray(receipt[key]))) return 'this import record is incomplete';
+	if (receipt.repeat !== undefined && (!object(receipt.repeat) || !['already-imported', 'conflict'].includes(receipt.repeat.kind)
+		|| !Number.isSafeInteger(receipt.repeat.matchedNotes) || receipt.repeat.matchedNotes < 1
+		|| receipt.status !== (receipt.repeat.kind === 'already-imported' ? 'complete' : 'failed')
+		|| receipt.plannedFiles.length || receipt.written.length || receipt.createdFiles.length || receipt.createdHistory.length || receipt.createdSections.length)) return 'this import record is incomplete';
 	const planned = new Set(), written = new Set(), ids = new Set();
 	for (const file of receipt.plannedFiles) { if (!noteFile(file) || planned.has(file)) return 'this import record is incomplete'; planned.add(file); }
 	const described = new Set();
@@ -384,6 +394,9 @@ function unappliedFact(row) {
 export function describeImportReceipt(receipt, {now} = {}) {
 	const when = whenWords(receipt?.stamp, now), problem = receiptProblem(receipt);
 	if (problem) return {when, title: problem, lines: ['the imported notes cannot be checked from this record'], undo: {eligible: false, why: problem}};
+	if (receipt.repeat) return {when, title: receipt.repeat.kind === 'already-imported' ? 'this export is already in notes' : 'part of this export is already in notes',
+		lines: [count(receipt.repeat.matchedNotes, 'note') + ' matched the exact source; nothing was imported'],
+		undo: {eligible: false, why: 'this attempt did not import any notes'}};
 	const n = receipt.written.length, total = receipt.plannedFiles.length, stopped = closed(receipt.status);
 	const title = stopped ? (n < total ? n + ' of ' + count(total, 'note') + ' imported' : count(n, 'note') + ' imported') : count(n, 'note') + ' written; import not finished';
 	const sources = object(receipt.sources) ? Object.keys(receipt.sources).filter(key => Number.isSafeInteger(receipt.sources[key]) && receipt.sources[key] >= 0) : [];

@@ -388,6 +388,44 @@ function importCode(entries, {lastOrder = ''} = {}) {
 
 // A family runs once per root when cross-note metadata matters. Self-contained export payloads
 // run separately, so an importer that reads one JSON cannot silently swallow a second JSON.
+function simplenoteTwins(entries, classified) {
+	const twins = new Map();
+	for (const entry of entries) {
+		if (classified.get(entry) !== 'simplenote' || !/(?:^|\/)source\/notes\.json$/i.test(entry.name)) continue;
+		const source = jsonValue(entry).value, prefix = entry.name.replace(/source\/notes\.json$/i, '');
+		for (const [key, directory] of [['activeNotes', ''], ['trashedNotes', 'trash/']]) {
+			const names = new Map();
+			for (const note of Array.isArray(source?.[key]) ? source[key] : []) {
+				if (typeof note?.content !== 'string' || note.tags != null && (!Array.isArray(note.tags) || note.tags.some(tag => typeof tag !== 'string'))) continue;
+				let text = note.content;
+				if (note.tags) {
+					const lines = []; let line = '';
+					for (const tag of note.tags) {
+						if (line.length + tag.length > 75) { lines.push(line); line = tag; }
+						else line += ', ' + tag;
+					}
+					lines.push(line);
+					text += '\n\nTags:\n  ' + lines.map(value => value.replace(/^, /, '')).join('\n  ');
+				}
+				// Native export uses sanitize-filename, its first usable line, then 40 UTF-16
+				// units and duplicate counters. Exact path AND text prove a twin, never its
+				// directory alone; a separate picked .txt keeps its own words.
+				const title = text.split('\n').map(value => value.trim()
+					.replace(/[<>:"/\\|?*\u0000-\u001f\u0080-\u009f]/g, '')
+					.replace(/^\.+$|^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i, '')
+					.replace(/[. ]+$/, '')).find(Boolean)?.slice(0, 40) || 'untitled';
+				const count = names.get(title) || 0; names.set(title, count + 1);
+				// A 40-unit cut can split an astral character. ZIP UTF-8 writes that lone
+				// surrogate as U+FFFD, while the full body remains exact in JSON and TXT.
+				const name = (prefix + directory + title + (count ? ' (' + count + ')' : '') + '.txt').toWellFormed();
+				if (!twins.has(name)) twins.set(name, new Set());
+				twins.get(name).add(text);
+			}
+		}
+	}
+	return entry => twins.get(entry.name)?.has(entry.text) === true;
+}
+
 export function sniff(entries) {
 	const roots = new Map(), batches = [], unread = [], attachments = [];
 	for (const entry of entries || []) {
@@ -417,7 +455,7 @@ export function sniff(entries) {
 			continue;
 		}
 		const shared = list.filter(e => classified.get(e) === 'picture' || (!classified.get(e) && !e.unreadable));
-		const simple = list.some(e => classified.get(e) === 'simplenote');
+		const simpleTwin = simplenoteTwins(list, classified);
 		const standard = list.filter(e => classified.get(e) === 'standardnotes').flatMap(e => {
 			const items = jsonValue(e).value?.items;
 			return Array.isArray(items) ? items : [];
@@ -431,7 +469,7 @@ export function sniff(entries) {
 		};
 		for (const e of list) {
 			let source = classified.get(e);
-			const twin = source === 'markdown' && (simple && /(?:^|\/)source\/.+\.(?:txt|text)$/i.test(e.name) || standardTwin(e));
+			const twin = source === 'markdown' && (simpleTwin(e) || standardTwin(e));
 			const htmlTwin = source === 'html' && list.some(j => classified.get(j) === 'keep' && j.name.replace(/\.json$/i, '') === e.name.replace(/\.html?$/i, ''));
 			if (twin || htmlTwin) { unread.push({...e, why: 'duplicate text representation; the richer JSON in this root is authoritative'}); continue; }
 			if (!source || source === 'picture') {

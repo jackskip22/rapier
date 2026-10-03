@@ -37,6 +37,20 @@ const SN_APP_OFF = new Set(['locked', 'prefersPlainEditor']);
 const SN_LABELS = {created_at_timestamp: 'creation time in microseconds', updated_at_timestamp: 'edit time in microseconds', duplicate_of: 'duplicate of',
 	preview_plain: 'preview', preview_html: 'preview html', hidePreview: 'hidden preview', editorIdentifier: 'editor', client_updated_at: 'client edit time', locked: 'edit lock'};
 
+// Tags have authored settings of their own (TagContent/TagPreferences). Admit only those
+// documented scalar preferences: the backup may also hold extension data and account keys.
+const TAG_BOOLEAN_PREFERENCES = new Set(['sortReverse', 'showArchived', 'showTrashed', 'hideProtected', 'hidePinned', 'hideNotePreview', 'hideDate', 'hideTags', 'hideEditorIcon', 'useTableView']);
+const TAG_STRING_PREFERENCES = new Set(['sortBy', 'newNoteTitleFormat', 'customNoteTitleFormat', 'editorIdentifier', 'entryMode']);
+function tagFields(content) {
+	const fields = {};
+	if (content?.expanded === true) fields.expanded = true;
+	if (typeof content?.iconString === 'string') fields.iconString = content.iconString;
+	const preferences = Object.fromEntries(Object.entries(content?.preferences && typeof content.preferences === 'object' ? content.preferences : {}).filter(([key, value]) =>
+		TAG_BOOLEAN_PREFERENCES.has(key) && typeof value === 'boolean' || TAG_STRING_PREFERENCES.has(key) && typeof value === 'string' || key === 'panelWidth' && Number.isFinite(value)));
+	if (Object.keys(preferences).length) fields.preferences = preferences;
+	return fields;
+}
+
 
 // Super is Lexical JSON. Its supported nodes become HTML for the one HTML-to-Markdown owner;
 // unknown nodes retain their complete source instead of flattening away authored structure.
@@ -143,19 +157,28 @@ export async function importStandardNotes(entries, options) {
 	// A tag's own references name its notes; a note may also carry the reverse reference, since a
 	// real account keeps both sides current for local queries -- both directions are read and
 	// unioned, tag-file order first, so which side happened to carry a given link never matters.
-	const tagTitle = new Map(), noteTags = new Map();
-	const addTag = (noteUuid, title) => { if (!noteTags.has(noteUuid)) noteTags.set(noteUuid, []); if (!noteTags.get(noteUuid).includes(title)) noteTags.get(noteUuid).push(title); };
+	const tagTitle = new Map(), noteTags = new Map(), noteTagIds = new Map(), tagWarnings = new Map(), appliedTags = new Set();
+	const addTag = (noteUuid, title, tagUuid) => {
+		if (typeof title !== 'string') return;
+		if (!noteTags.has(noteUuid)) noteTags.set(noteUuid, []);
+		if (!noteTags.get(noteUuid).includes(title)) noteTags.get(noteUuid).push(title);
+		if (!noteTagIds.has(noteUuid)) noteTagIds.set(noteUuid, new Set());
+		noteTagIds.get(noteUuid).add(tagUuid);
+	};
 	for (const it of items) {
 		if (!it || it.content_type !== 'Tag' || !it.content || typeof it.content.title !== 'string') continue;
 		tagTitle.set(it.uuid, it.content.title);
+		const rows = [];
+		importMetadata(tagFields(it.content), [], rows, 'Standard Notes tag fields', {at: 'tags.' + it.uuid});
+		tagWarnings.set(it.uuid, rows);
 	}
 	for (const it of items) {
 		if (!it || it.content_type !== 'Tag' || !it.content) continue;
-		for (const ref of Array.isArray(it.content.references) ? it.content.references : []) if (ref && ref.content_type === 'Note' && typeof ref.uuid === 'string') addTag(ref.uuid, it.content.title);
+		for (const ref of Array.isArray(it.content.references) ? it.content.references : []) if (ref && ref.content_type === 'Note' && typeof ref.uuid === 'string') addTag(ref.uuid, it.content.title, it.uuid);
 	}
 	for (const it of items) {
 		if (!it || it.content_type !== 'Note' || !it.content) continue;
-		for (const ref of Array.isArray(it.content.references) ? it.content.references : []) if (ref && ref.content_type === 'Tag' && typeof ref.uuid === 'string' && tagTitle.has(ref.uuid)) addTag(it.uuid, tagTitle.get(ref.uuid));
+		for (const ref of Array.isArray(it.content.references) ? it.content.references : []) if (ref && ref.content_type === 'Tag' && typeof ref.uuid === 'string' && tagTitle.has(ref.uuid)) addTag(it.uuid, tagTitle.get(ref.uuid), ref.uuid);
 	}
 
 	items.forEach((it, i) => {
@@ -182,7 +205,7 @@ export async function importStandardNotes(entries, options) {
 			const title = typeof content.title === 'string' ? trimTitleSpace(content.title) : '';
 			const raw = typeof content.text === 'string' ? content.text : '';
 			if (!title && !raw.trim()) { skipped.push({name: label, why: 'empty note'}); return; }
-			const warnings = [...(source.characterWarnings || [])];
+			const warnings = [...(source.characterWarnings || []), ...[...(noteTagIds.get(it.uuid) || [])].flatMap(uuid => tagWarnings.get(uuid) || [])];
 			const modified = importDate(it.updated_at, Date.parse(it.updated_at), warnings, 'Standard Notes edit date');
 			const created = importDate(it.created_at, Date.parse(it.created_at), warnings, 'Standard Notes creation date');
 			importMetadata(it, ['uuid','content_type','content','created_at','updated_at'], warnings, 'Standard Notes fields', {labels: SN_LABELS,
@@ -229,8 +252,16 @@ export async function importStandardNotes(entries, options) {
 			// A tag is its own item in the backup, never part of the note's text: the names both
 			// directions agree on are written into the note's own metadata block, in that same order.
 			built.push({file, text: importTags(text, tags, warnings, label), entry, sourceName: source.name, rootId: source.rootId ?? '', sourceItem: label, sourceAliases: typeof it.uuid === 'string' ? ['standardnotes://note/' + it.uuid] : [], warnings, created: Number.isFinite(created) ? created : -Infinity});
+			for (const uuid of noteTagIds.get(it.uuid) || []) appliedTags.add(uuid);
 		} catch (_) { skipped.push({name: typeof it.uuid === 'string' ? it.uuid : 'items[' + i + ']', why: 'could not be read'}); }
 	});
+	// An empty/orphan tag cannot become note frontmatter. Its name still belongs to the
+	// export, including a backup with no notes, so the source-scoped receipt must account for it.
+	for (const [uuid, name] of tagTitle) if (!appliedTags.has(uuid)) {
+		warnings.push({code: 'source_item', rootId: source.rootId ?? '', sourceName: source.name, sourceItem: uuid, item: {uuid, content_type: 'Tag', name},
+			message: 'Standard Notes tag "' + name + '" had no imported note. Its name is kept in this import record.'});
+		for (const row of tagWarnings.get(uuid) || []) warnings.push({...row, rootId: source.rootId ?? '', sourceName: source.name, sourceItem: uuid});
+	}
 
 	}
 	// Order: chained orderAfter keys after lastOrder, newest first -- see takeout.mjs's own comment on

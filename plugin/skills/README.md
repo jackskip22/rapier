@@ -18,10 +18,10 @@ agent at it.
 
 | Skill | Use it when |
 |---|---|
-| [`rapier-html`](rapier-html/SKILL.md) | The person asks for a document, a page, notes or a drawing, or should see a change: `npx rapier-html@1.1.43` makes one page that opens with one click in the chat, offline, no account. |
+| [`rapier-html`](rapier-html/SKILL.md) | The person asks for a document, a page, notes or a drawing, or should see a change: `npx rapier-html@1.1.44` makes one page that opens with one click in the chat, offline, no account. |
 | [`rapier-agent-door`](rapier-agent-door/SKILL.md) | An explanation, plan, creative sketch or revision benefits from a shared editable page. Recognise the need without a product name; work through the door under the person's review. |
 | [`rapier-markdown`](rapier-markdown/SKILL.md) | Any document is written: Self-contained Markdown, so pictures, alignment, colour and drawings travel in the one file and read everywhere. |
-| [`embed-rapier`](embed-rapier/SKILL.md) | A site or app wants the Rapier editor inside it, with its own storage and identity (`npm install rapier-embed@1.1.43`). |
+| [`embed-rapier`](embed-rapier/SKILL.md) | A site or app wants the Rapier editor inside it, with its own storage and identity (`npm install rapier-embed@1.1.44`). |
 
 The words follow one rule: what it does and when to use it, said once, in the positive.
 

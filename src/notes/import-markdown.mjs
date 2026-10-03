@@ -8,7 +8,7 @@ import {noteFileName, orderAfter} from './model.mjs';
 import {readZipEntries, zipOversizeSkip} from './zip.mjs';
 import {headingAnchors, linkMask} from './links.mjs';
 import {propertiesOf, tagsOf, parseFrontMatter} from './frontmatter.mjs';
-import {importTags, literalInline, literalBlock} from './import.mjs';
+import {importTags, importDate, literalInline, literalBlock} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
 const ENCODER = new TextEncoder();
@@ -58,9 +58,14 @@ function applyPatches(text, patches) {
 
 // The metadata block is read by its one owner (notes/frontmatter.mjs), which reads the block and
 // nothing else: no second reader here, and no fence guessed at by a regular expression.
-// Joplin's and Obsidian's dates both parse under Date.parse; anything it cannot read leaves the
-// field off rather than guessing.
-function fmTime(properties, keys) { for (const key of keys) { const value = properties.get(key); if (typeof value === 'string') { const n = Date.parse(value); if (Number.isFinite(n)) return n; } } }
+// A projected date must fit the folder's non-negative integer time. The original frontmatter
+// remains exact; a supplied value that cannot become a date also earns its receipt entry.
+function fmTime(properties, keys, warnings) {
+	for (const key of keys) {
+		const value = properties.get(key), time = importDate(value, typeof value === 'string' ? Date.parse(value) : NaN, warnings, key);
+		if (time !== undefined) return time;
+	}
+}
 
 // A hashtag is metadata only for the explicit Bear/Obsidian row. Scanner ranges exclude every
 // protected region, including YAML; a tag-looking Python comment is never an import command.
@@ -110,7 +115,7 @@ export async function importMarkdown(entries, options) {
 	const list = Array.isArray(entries) ? entries : [], opts = options && typeof options === 'object' ? options : {};
 	const pool = Array.isArray(opts.existing) ? opts.existing.filter(n => typeof n === 'string').slice() : [];
 	const lastOrder = typeof opts.lastOrder === 'string' ? opts.lastOrder : '';
-	const notes = [], skipped = [], pictures = [], sections = [], spelled = new Map();
+	const notes = [], skipped = [], pictures = [], sections = [], spelled = new Map(), formatWarnings = [];
 	for (const value of Array.isArray(opts.sections) ? opts.sections : []) { const name = typeof value === 'string' ? value : value?.name; if (typeof name === 'string' && name && !spelled.has(name.toLowerCase())) spelled.set(name.toLowerCase(), name); }
 	const flat = [];
 	for (let i = 0; i < list.length; i++) {
@@ -142,6 +147,10 @@ export async function importMarkdown(entries, options) {
 		if (/(^|\/)(\.obsidian|\.trash|__MACOSX)(\/|$)/i.test(name) || /(^|\/)\.DS_Store$/i.test(name)) { refuse('application or archive metadata is not note text'); continue; }
 		const ext = extOf(name), bundle = /^(.*\/)?([^/]+)\.textbundle\/(.+)$/i.exec(name);
 		if (PICTURE_MIME[ext] && e.bytes instanceof Uint8Array) { pictures.push({name, sourceName: name, rootId, bytes: e.bytes, mime: PICTURE_MIME[ext]}); continue; }
+		if (ext === 'canvas') {
+			formatWarnings.push({code: 'canvas_preserved', name, rootId, message: 'The canvas remains an original attachment. Its cards, connections and file paths are not converted into editable notes.'});
+			refuse('canvas source is an attachment, not Markdown note text'); continue;
+		}
 		if (bundle && /^info\.json$/i.test(bundle[3])) { refuse('package metadata is not note text'); continue; }
 		if (!['md', 'markdown', 'txt', 'text'].includes(ext)) { refuse('not Markdown, plain text, or a supported picture'); continue; }
 		try {
@@ -195,7 +204,7 @@ export async function importMarkdown(entries, options) {
 				if (!spelled.has(key)) { spelled.set(key, category); sections.push(category); }
 				entry.category = spelled.get(key);
 			}
-			const created = fmTime(properties, ['created', 'date']), modified = fmTime(properties, ['updated', 'modified']) ?? created;
+			const created = fmTime(properties, ['created', 'date'], warnings), modified = fmTime(properties, ['updated', 'modified'], warnings) ?? created;
 			if (created !== undefined) entry.created = Math.round(created);
 			if (modified !== undefined) entry.modified = Math.round(modified);
 			notes.push({file, title, text, bytes: text === raw ? original.bytes : ENCODER.encode(text), entry, sourceName: name, rootId, flavour, warnings});
@@ -204,5 +213,5 @@ export async function importMarkdown(entries, options) {
 	let last = lastOrder;
 	const byNewest = notes.slice().sort((a, b) => (b.entry.created ?? -Infinity) - (a.entry.created ?? -Infinity));
 	for (const n of byNewest) { last = orderAfter(last); n.entry.order = last; }
-	return finishImportCharacters({notes, skipped, sections, pictures});
+	return finishImportCharacters({notes, skipped, sections, pictures, warnings: formatWarnings});
 }

@@ -137,7 +137,7 @@ export async function importJoplin(entries, options) {
 
 	// Pass 1: every item, generically, by its own type_ -- folders, tags and note_tag links are all
 	// needed before a single note can be placed, so nothing is emitted until every file is read once.
-	const metadataWarnings = [];
+	const metadataWarnings = [], resourceWarnings = [];
 	for (const e of named) if (/\.md$/i.test(e.name)) {
 		e.characterWarnings = [...(e.characterWarnings || [])];
 		try { e.text = readImportText(e, e.characterWarnings); }
@@ -163,7 +163,14 @@ export async function importJoplin(entries, options) {
 		else if (type === 2) folders.set(item.fields.id, {title: item.title, parent: item.fields.parent_id || ''});
 		else if (type === 5) tags.set(item.fields.id, item.title);
 		else if (type === 6) noteTagPairs.push({note: item.fields.note_id, tag: item.fields.tag_id});
-		else if (type === 4) resources.set(item.fields.id, {title: item.title, mime: item.fields.mime || '', ext: item.fields.file_extension || '', rootId: e.rootId ?? ''});
+		else if (type === 4) {
+			resources.set(item.fields.id, {title: item.title, mime: item.fields.mime || '', ext: item.fields.file_extension || '', rootId: e.rootId ?? ''});
+			// Resource records contain authored OCR and other source-only data as well as
+			// the fields that identify their bytes. Keep it once, including unlinked resources.
+			const warnings = [];
+			importMetadata(item.fields, ['id', 'type_', 'mime', 'file_extension', 'filename', 'size'], warnings, 'Joplin resource fields', {at: item.fields.id});
+			resourceWarnings.push(...warnings.map(warning => ({...warning, sourceName: e.name, rootId: e.rootId ?? ''})));
+		}
 		else skipped.push({name: e.name, rootId: e.rootId ?? '', bytes: e.bytes, text: e.text, why: 'unsupported Joplin metadata retained in source export', attachment: true});
 		if ([2, 4, 5, 6].includes(type)) consumed.push({name: e.name, rootId: e.rootId ?? ''});
 	}
@@ -308,5 +315,5 @@ export async function importJoplin(entries, options) {
 
 	// Joplin has no per-note colour of its own (docs/notes-import-sources.md section 3), so colour
 	// stays '' for every note here -- a true mapping, not a lossy one.
-	return finishImportCharacters({notes: built.map(({created, ...note}) => note), skipped, sections, pictures, attachments, consumed, audio});
+	return finishImportCharacters({notes: built.map(({created, ...note}) => note), skipped, sections, pictures, attachments, consumed, audio, warnings: resourceWarnings});
 }

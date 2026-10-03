@@ -758,6 +758,17 @@ function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} 
 	if (asset && !sourceFiles) return {unresolved: 'notNote'};
 	const list = files instanceof Set ? files : new Set(files || []);
 	const wiki = link.kind === 'wikilink' || link.kind === 'embed';
+	// Obsidian folder paths start at the vault root; shortest names can be relative.
+	// Explicit ./ and ../ keep their authored relative-file meaning.
+	const vaultPath = () => {
+		if (!wiki || !sourceFiles || /^(?:\.{1,2})(?:[\\/]|$)/.test(dest)) return null;
+		const rootPath = normalizeSourcePath(dest).path;
+		const names = unique([rootPath, /\.md$/i.test(rootPath) || asset ? rootPath : rootPath + '.md']);
+		for (const name of names) if (list.has(name)) return {file: name, anchor: link.anchor || ''};
+		const matches = [...list].filter(file => names.some(name => file.toLowerCase() === name.toLowerCase() || file.toLowerCase().endsWith('/' + name.toLowerCase())));
+		return matches.length === 1 ? {file: matches[0], anchor: link.anchor || ''} : matches.length > 1 ? {unresolved: 'ambiguous'} : null;
+	};
+	if (/[\\/]/.test(dest)) { const target = vaultPath(); if (target) return target; }
 	const want = wiki
 		? unique([path, /\.md$/i.test(path) ? path : path + '.md'])
 		: unique([path]);
@@ -770,6 +781,7 @@ function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} 
 	}
 	if (hits.length === 1) return {file: hits[0], anchor: link.anchor || ''};
 	if (hits.length > 1) return {unresolved: 'ambiguous'};
+	if (!/[\\/]/.test(dest)) { const target = vaultPath(); if (target) return target; }
 	if (asset) return {unresolved: 'notNote'};
 	// A bare wikilink may name a note by one of the names it declares for itself. A path or a
 	// file name is a path, so only a plain name looks here, and only after real files have missed.
