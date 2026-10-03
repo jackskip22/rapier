@@ -269,11 +269,20 @@ function _rapierPairSplices(source, accepted, replacement, pairs) {
 	});
 }
 
+// A Find session may reuse this reading only for the same source and parser.
+function _rapierVisibleSourceProjection(sourceText, parser, prior = null) {
+	const source = String(sourceText == null ? '' : sourceText);
+	if (prior && prior.source === source && prior.parser === parser) return prior;
+	const hidden = _rapierHiddenSourceRanges(source, parser);
+	return { source, parser, hidden, read: _rapierVisibleMarkText(source, hidden) };
+}
+
 // Plan before touching the canonical source. Original match identity and one-word reasons let
 // callers explain a refusal without keeping another source or silently re-targeting a stale match.
-function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdown = true, parser = null) {
+function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdown = true, parser = null, projection = null) {
 	const source = String(sourceText == null ? '' : sourceText);
-	const hidden = markdown ? _rapierHiddenSourceRanges(source, parser) : [];
+	const hidden = markdown ? (projection && projection.source === source && projection.parser === parser
+		? projection.hidden : _rapierHiddenSourceRanges(source, parser)) : [];
 	const pairs = markdown ? _rapierHiddenMarkPairs(source, hidden) : [];
 	const markers = new Map(_rapierPairMarks(pairs).map(mark => [mark.start, mark]));
 	const accepted = [], refused = [];
@@ -307,4 +316,4 @@ function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdow
 
 // Shared with the document kernel: the engine binds these original declarations from the same published owner.
 export { _rapierHiddenSourceRanges, _rapierInlineSourceRanges, _rapierVisibleHits, _rapierHiddenMarkPairs,
-	_rapierPairMarks, _rapierVisibleMarkText, _rapierPairSplices, _rapierPlanVisibleReplacement };
+	_rapierPairMarks, _rapierVisibleMarkText, _rapierVisibleSourceProjection, _rapierPairSplices, _rapierPlanVisibleReplacement };

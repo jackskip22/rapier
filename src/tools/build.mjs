@@ -815,7 +815,9 @@ walk(parse(extensions), node => {
     throw new Error('Missing browser export in ' + path + ': ' + (row.key.name || row.key.value));
 });
 insertSource('\nreturn shellPort;\n', '\n' + extensions + '\nreturn shellPort;\n');
-source = await lean(source, 'rapier-editor.js');
+// The loader holds the interface until this external classic script actually executes. Its
+// top-level listeners still see their elements, without painting controls during compilation.
+source = await lean('document.currentScript._rapierMountInterface();\n' + source, 'rapier-editor.js');
 
 const safeScript = value => value.replace(/<\/script/gi, '<\\/script');
 // A declaration, not a const: deriveVendorGroup above the search-cache key reads it before this line runs.
@@ -912,7 +914,8 @@ new vm.Script(runtimeLoader, {filename: 'rapier-runtime-loader.js'});
 const runtimeScript = '<!-- RAPIER_RUNTIME_BEGIN -->\n' +
   await packedScript('rapier-styles-runtime', 'application/rapier-runtime', 'rapier-styles.json', JSON.stringify(styles.map(({id, css}) => ({id, css})))) +
   await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', ui) +
-  await packedSpans('rapier-editor-runtime', 'application/rapier-runtime', [{name: 'rapier-shared.js', source: bundleText}, {name: 'rapier-editor.js', source}]) +
+  await packedScript('rapier-shared-runtime', 'application/rapier-runtime', 'rapier-shared.js', bundleText) +
+  await packedScript('rapier-editor-runtime', 'application/rapier-runtime', 'rapier-editor.js', source) +
   '<script data-rapier-owned>\n' + safeScript(runtimeLoader) + '\n</script>\n<!-- RAPIER_RUNTIME_END -->\n';
 const bodyEnd = html.lastIndexOf('</body>');
 if (bodyEnd < 0) throw new Error('Editor body is missing');

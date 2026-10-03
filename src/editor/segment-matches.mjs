@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-function _rapierBodySegmentSpans(rows, prefix) {
+function _rapierBodySegmentSpans(rows, prefix, blockIds = null) {
 	const spans = [];
 	const list = Array.isArray(rows) ? rows : [];
+	const wanted = blockIds == null ? null : new Set(Array.from(blockIds, Number));
+	if (wanted && !wanted.size) return spans;
 	let cursor = String(prefix == null ? '' : prefix).length;
 	for (let index = 0; index < list.length; index++) {
 		const row = list[index];
 		if (index > 0) cursor += String(row.leading == null ? '\n\n' : row.leading).length;
 		const start = cursor;
 		const end = start + String(row.raw || '').length;
-		spans.push({ id: row.id, start, end });
+		if (!wanted || wanted.delete(Number(row.id))) {
+			spans.push({ id: row.id, start, end });
+			if (wanted && !wanted.size) break;
+		}
 		cursor = end;
 	}
 	return spans;

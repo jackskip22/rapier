@@ -110,7 +110,7 @@
     const heldWrapper = held?.closest('.block-wrapper');
     const heldBlock = heldWrapper && _rapierBoundBlock(heldWrapper);
     if (heldBlock) {
-      const span = _rapierExcerptCanonicalBlockSpans().get(heldBlock.id);
+      const span = _rapierExcerptCanonicalBlockSpans([heldBlock.id]).get(heldBlock.id);
       if (span) return {selection: null, focus: {start: span.start, end: span.end, active: false}};
     }
     const selection = window.getSelection();
@@ -121,7 +121,10 @@
     const first = _rangeBoundaryWrapper(range, false) || wrappers[0];
     const last = _rangeBoundaryWrapper(range, true) || wrappers[wrappers.length - 1];
     const a = _rapierBoundBlock(first), b = _rapierBoundBlock(last);
-    const spans = _rapierExcerptCanonicalBlockSpans();
+    if (!a || !b) return {selection: null, focus: null};
+    // A keystroke needs its two endpoints, not a span object and Map row for every
+    // block. The source owner walks the prefix and stops once both are known.
+    const spans = _rapierExcerptCanonicalBlockSpans([a.id, b.id]);
     const sa = a && spans.get(a.id), sb = b && spans.get(b.id);
     if (!sa || !sb) return {selection: null, focus: null};
     const start = _rapierRenderedBoundaryToCanonical(first, a, range.startContainer, range.startOffset, sa);

@@ -2985,6 +2985,8 @@ function _rapierDrawRenderTextFontPanel() {
 	if (!panel) return;
 	const style = _rapierDrawTextDefaults(), available = _rapierDrawAvailableFonts();
 	if (!['sans', 'serif', 'mono'].includes(style.textFont) && !available.some(font => font.id === style.textFont) && !_rapierDrawLetterFont(style.textFont)) style.textFont = 'sans';
+	// Defaults are kept valid while closed; the shelf's glyphs are needed when it opens.
+	if (panel.hidden) return;
 	panel.innerHTML = _rapierDrawFontControls(style) + _rapierDrawFiguresRow(style.textFont, available, style.textFigures, id => '<button type="button" class="rapier-draw-chip rapier-draw-text-choice" data-draw-text-figures="' + id + '" aria-pressed="' + (id === style.textFigures) + '">' + (id ? RAPIER_DRAW_TEXT_FIGURES[id] : 'Default') + '</button>');
 }
 // The figure styles a font carries (an uploaded font's own substitution features; a built-in family

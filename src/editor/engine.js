@@ -3111,8 +3111,8 @@ function _rapierMarkSemanticFactsStale() {
 
 /* RAPIER_BODY_SEGMENT_SPANS_MODULE */
 
-function _rapierCurrentBodyBlockSpans() {
-	return _rapierBodySegmentSpans(rapier.document.blocks, rapier.document.markdownPrefix);
+function _rapierCurrentBodyBlockSpans(blockIds = null) {
+	return _rapierBodySegmentSpans(rapier.document.blocks, rapier.document.markdownPrefix, blockIds);
 }
 
 /* RAPIER_SOURCE_FACT_INDEX_MODULE */
@@ -7307,8 +7307,17 @@ function _rapierInitBlockInteractionRouter() {
 	// when you're done" while a block is open; the gap always goes to the words of a block not being edited.
 	const nearestSurface = (clientX, clientY) => {
 		let best = null;
+		const virtualized = host.classList.contains('editor-area--virtualized');
 		for (const wrapper of host.children) {
 			if (!wrapper.classList?.contains('block-wrapper') || wrapper.hidden || wrapper.classList.contains('block-wrapper--metadata')) continue;
+			// A virtual wrapper's flow-root box holds its surface and its gap. Reading the
+			// surface of a distant content-visibility placeholder forces its skipped layout.
+			// Keep the same 40px nearest-line rule, but only measure nearby contents.
+			// Pictures are uncontained and may overflow their wrapper; retain their full read.
+			if (virtualized && !wrapper.classList.contains('block-wrapper--image') && !wrapper.classList.contains('block-wrapper--editing')) {
+				const box = wrapper.getBoundingClientRect();
+				if (clientY < box.top - 40 || clientY > box.bottom + 40) continue;
+			}
 			const surface = wrapper.classList.contains('block-wrapper--editing') ? wrapper.querySelector(':scope > .block-edit') : wrapper.querySelector(':scope > .block-read');
 			if (!surface) continue;
 			const rect = surface.getBoundingClientRect();
@@ -20691,6 +20700,10 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			openedState.documentRevision === Number(rapier.revision.settled || 0) &&
 			openedFilename === String(rapier.document.filename || '');
 
+		// An ordinary Open ends in reading mode. Choose it while this exact load is
+		// still current, before binding toggles the new document's editing host twice.
+		// A preserved view or a human edit that superseded the load keeps its mode.
+		if (!viewContinuity && stillOpened()) rapierSetMode('read');
 		bindingTransitionToken = _rapierBeginBindingTransitionBusy();
 		if (payload.transient === true) {
 			rapier.revision.savedGeneration = -1;
@@ -24452,7 +24465,7 @@ function _findRevealCurrent(epoch) {
 
 	if (match && match.blockId != null) {
 		_rapierRevealSectionForWrapper(
-			document.querySelector('.block-wrapper[data-block-id="' + match.blockId + '"]'));
+			_rapierWysiwygLedger.entries.get(String(match.blockId))?.wrapper);
 	}
 }
 
@@ -24498,19 +24511,14 @@ function _findRevealRange(range) {
 	const wrapper = node?.closest?.('.block-wrapper');
 	_rapierRevealSectionForWrapper(wrapper);
 	const editorRect = editor.getBoundingClientRect();
-
-	if (wrapper) {
-		const wrapperRect = wrapper.getBoundingClientRect();
-		const wrapperTarget = editor.scrollTop + wrapperRect.top - editorRect.top -
-			Math.max(0, (editor.clientHeight - Math.min(wrapperRect.height, editor.clientHeight)) / 2);
-		editor.scrollTop = Math.max(0, wrapperTarget);
-	}
-
 	const rect = range.getBoundingClientRect();
-	if (rect.width || rect.height) {
-		const freshEditorRect = editor.getBoundingClientRect();
-		const target = editor.scrollTop + rect.top - freshEditorRect.top -
-			Math.max(0, (editor.clientHeight - Math.min(rect.height, editor.clientHeight)) / 2);
+	// Read the live target before the scroll write. A dormant/skipped range uses its
+	// wrapper for this reveal; the existing stable-reveal turns then see the live range.
+	const targetRect = rect.width || rect.height ? rect : wrapper?.getBoundingClientRect();
+	if (targetRect && (targetRect.width || targetRect.height)) {
+		const height = editor.clientHeight;
+		const target = editor.scrollTop + targetRect.top - editorRect.top -
+			Math.max(0, (height - Math.min(targetRect.height, height)) / 2);
 		editor.scrollTop = Math.max(0, target);
 	} else if (wrapper) {
 		wrapper.scrollIntoView({ block: 'center', behavior: 'auto' });
@@ -24565,10 +24573,10 @@ function _rapierFindFlexibleSeparatorHits(textValue, queryValue, limit = _RAPIER
 	return { hits, overflow, flexible: hits.length > 0 };
 }
 
-function _rapierFindBlockProjection(blockId) {
+function _rapierFindBlockProjection(blockId, prior = null) {
 
 	const wrapper = _rapierWysiwygWake(
-		document.querySelector('.block-wrapper[data-block-id="' + blockId + '"]'));
+		_rapierWysiwygLedger.entries.get(String(blockId))?.wrapper);
 	const el = wrapper && (wrapper.querySelector('.block-edit') || wrapper.querySelector('.block-read'));
 	if (!el) return null;
 	const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
@@ -24578,6 +24586,19 @@ function _rapierFindBlockProjection(blockId) {
 				? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
 		}
 	});
+	// A source generation does not describe DOM identity. Validate the complete
+	// accepted sequence, including new nodes and changed control ancestry, before
+	// reusing offsets through lexer rewrites or virtual-window parking and waking.
+	if (prior && prior.root === el) {
+		let index = 0, same = true, current;
+		while ((current = walker.nextNode())) {
+			if (!current.data.length) continue;
+			const kept = prior.nodes[index++];
+			if (!kept || kept.node !== current || kept.text !== current.data) { same = false; break; }
+		}
+		if (same && index === prior.nodes.length) return prior;
+		walker.currentNode = el;
+	}
 	const nodes = [];
 	const parts = [];
 	let cursor = 0;
@@ -24585,11 +24606,11 @@ function _rapierFindBlockProjection(blockId) {
 	while ((node = walker.nextNode())) {
 		const length = node.textContent.length;
 		if (!length) continue;
-		nodes.push({ node, start: cursor, end: cursor + length });
+		nodes.push({ node, start: cursor, end: cursor + length, text: node.textContent });
 		parts.push(node.textContent);
 		cursor += length;
 	}
-	return nodes.length ? { text: parts.join(''), nodes } : null;
+	return nodes.length ? { text: parts.join(''), nodes, root: el } : null;
 }
 
 function _rapierFindProjectionRange(projection, start, end) {
@@ -24616,12 +24637,18 @@ function _rapierFindProjectionRange(projection, start, end) {
 	} catch (_) { return null; }
 }
 
-function _rapierFindIndexHits(source, query, surface = 'rendered') {
+function _rapierFindIndexHits(source, query, surface = 'rendered', memo = null) {
 	// Admit visible matches before the hit cap and the flexible-separator decision. Hidden
 	// payload bytes must neither exhaust Find's budget nor suppress a visible flexible hit.
-	const hidden = surface === 'source' ? null : _rapierHiddenSourceRanges(source, md);
+	const visible = surface === 'source' ? null : _rapierVisibleSourceProjection(source, md, memo?.visible);
+	if (memo && memo.visible !== visible) {
+		memo.visible = visible;
+		memo.spans = null;
+		memo.blocks = new Map();
+	}
+	const hidden = visible?.hidden || null;
 	// The words colour and ink mark read across paired hidden comments; a hit comes back in source offsets.
-	const read = hidden && _rapierVisibleMarkText(source, hidden);
+	const read = visible?.read || null;
 	const result = read ? _rapierFindFlexibleSeparatorHits(read.text, query, _RAPIER_FIND_MATCH_LIMIT, read.hidden)
 		: _rapierFindFlexibleSeparatorHits(source, query, _RAPIER_FIND_MATCH_LIMIT, hidden);
 	const found = read ? result.hits.map(read.hit) : result.hits;
@@ -24635,9 +24662,11 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 			flexible: !!result.flexible,
 		};
 	}
-	const spans = _rapierCurrentBodyBlockSpans();
+	const spans = memo?.spans || _rapierCurrentBodyBlockSpans();
+	if (memo) memo.spans = spans;
 	const projections = new Map();
 	const ordinals = new Map();
+	const shownHits = new Map();
 	const records = found.map(hit => {
 		const bodyStart = _rapierBodyOffsetOfCanonical(hit.start);
 		const bodyEnd = _rapierBodyOffsetOfCanonical(hit.end);
@@ -24655,7 +24684,11 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 		const blockId = index >= 0 ? spans[index].id : null;
 		const record = { start: hit.start, end: hit.end, blockId, surface: 'rendered', range: null };
 		if (blockId == null) return record;
-		if (!projections.has(blockId)) projections.set(blockId, _rapierFindBlockProjection(blockId));
+		if (!projections.has(blockId)) {
+			const projection = _rapierFindBlockProjection(blockId, memo?.blocks?.get(blockId));
+			projections.set(blockId, projection);
+			if (memo?.blocks) memo.blocks.set(blockId, projection);
+		}
 		const projection = projections.get(blockId);
 		if (!projection) return record;
 		const literal = hit.shown ?? source.slice(hit.start, hit.end);
@@ -24663,7 +24696,8 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 		const key = blockId + '\u0000' + literal.toLowerCase();
 		const ordinal = ordinals.get(key) || 0;
 		ordinals.set(key, ordinal + 1);
-		const shown = _rapierFindLiteralHits(projection.text, literal, _RAPIER_FIND_MATCH_LIMIT).hits;
+		if (!shownHits.has(key)) shownHits.set(key, _rapierFindLiteralHits(projection.text, literal, _RAPIER_FIND_MATCH_LIMIT).hits);
+		const shown = shownHits.get(key);
 		const target = shown[ordinal];
 		if (target) record.range = _rapierFindProjectionRange(projection, target.start, target.end);
 		return record;
@@ -24673,6 +24707,7 @@ function _rapierFindIndexHits(source, query, surface = 'rendered') {
 
 function rapierFindRun() {
 	const query = document.getElementById('find-input').value;
+	const projection = _rapierFindOwnsCurrentDocument() ? _rapierFindRuntime.documentGuard.projection : {};
 	rapierFindClear();
 	_setFindCount(0, 0);
 	if (!query) return;
@@ -24681,6 +24716,7 @@ function rapierFindRun() {
 		..._rapierMutationStamp(),
 		mode: String(rapier.view.mode || ''),
 		docKind: String(rapier.document.docKind || ''),
+		projection,
 	});
 
 	if (rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown') {
@@ -24696,7 +24732,7 @@ function rapierFindRun() {
 		return;
 	}
 
-	const indexed = _rapierFindIndexHits(_rapierGetCanonicalText(), query);
+	const indexed = _rapierFindIndexHits(_rapierGetCanonicalText(), query, 'rendered', projection);
 	rapier.find.overflow = indexed.overflow;
 	rapier.find.flexible = indexed.flexible;
 	rapier.find.ranges = indexed.records;
@@ -24769,13 +24805,14 @@ function _rapierEscapeRegExp(value) {
 
 /* RAPIER_VISIBLE_SOURCE_MODULE */
 
-function _rapierReplaceAllOccurrences(text, query, replacement, markdown = true) {
+function _rapierReplaceAllOccurrences(text, query, replacement, markdown = true, projection = null) {
 	const source = String(text);
-	const hidden = markdown ? _rapierHiddenSourceRanges(source, md) : null;
-	const read = hidden && _rapierVisibleMarkText(source, hidden);
+	const visible = markdown ? _rapierVisibleSourceProjection(source, md, projection) : null;
+	const hidden = visible?.hidden || null;
+	const read = visible?.read || null;
 	const matches = read ? _rapierFindFlexibleSeparatorHits(read.text, query, Number.MAX_SAFE_INTEGER, read.hidden).hits.map(read.hit)
 		: _rapierFindFlexibleSeparatorHits(source, query, Number.MAX_SAFE_INTEGER, hidden).hits;
-	const plan = _rapierPlanVisibleReplacement(source, matches, replacement, markdown, md);
+	const plan = _rapierPlanVisibleReplacement(source, matches, replacement, markdown, md, visible);
 	let value = '', cursor = 0;
 	for (const splice of plan.splices) {
 		value += source.slice(cursor, splice.pos) + splice.inserted;
@@ -24878,16 +24915,17 @@ async function rapierReplaceAll(currentOnly = false) {
 	if (!_rapierCommitPendingHistory()) return;
 
 	const before = _rapierSourceText();
+	const projection = _rapierFindOwnsCurrentDocument() ? _rapierFindRuntime.documentGuard.projection?.visible : null;
 
 	let result;
 	if (currentOnly) {
 		if (!_rapierFindOwnsCurrentDocument()) { rapierFindRun(); return; }
 		const match = rapier.find.ranges[rapier.find.current];
-		const plan = _rapierPlanVisibleReplacement(before, match ? [match] : [], replacement, rapier.document.docKind === 'markdown', md);
+		const plan = _rapierPlanVisibleReplacement(before, match ? [match] : [], replacement, rapier.document.docKind === 'markdown', md, projection);
 		const splice = plan.splices[0];
 		result = { ...plan, count: plan.splices.length, value: splice ? before.slice(0, splice.pos) +
 			splice.inserted + before.slice(splice.pos + splice.removed.length) : before };
-	} else result = _rapierReplaceAllOccurrences(before, query, replacement, rapier.document.docKind === 'markdown');
+	} else result = _rapierReplaceAllOccurrences(before, query, replacement, rapier.document.docKind === 'markdown', projection);
 	if (!result.count || result.value === before) {
 		showToast('no replacements', 'error');
 		return;
@@ -35517,6 +35555,9 @@ async function _rapierVendorsReady() {
 }
 
 async function _rapierBoot() {
+	// External scripts may finish after DOMContentLoaded. Native intake and the Apps bridge
+	// must be installed before the editor consumes its first document, just as in the one-turn loader.
+	if (!await _rapierRuntimeReady) return;
 	_rapierBootWatch.timer = setTimeout(_rapierBootStalled, _RAPIER_BOOT_WATCHDOG_MS);
 	if (!await _rapierVendorsReady()) return;
 	if (!_rapierFrameAuthoritySideEffectsAllowed(_rapierEmbed.refused)) {
@@ -40470,9 +40511,9 @@ function _rapierExcerptAuthoritySnapshot() {
 	return { authority, revision, generation, canonicalLength };
 }
 
-function _rapierExcerptCanonicalBlockSpans() {
+function _rapierExcerptCanonicalBlockSpans(blockIds = null) {
 	const map = new Map();
-	for (const span of _rapierCurrentBodyBlockSpans()) {
+	for (const span of _rapierCurrentBodyBlockSpans(blockIds)) {
 		map.set(Number(span.id), {
 			start: _rapierCanonicalOffsetOfBody(span.start),
 			end: _rapierCanonicalOffsetOfBody(span.end),
