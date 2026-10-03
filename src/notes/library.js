@@ -264,6 +264,8 @@ function _rapierNotesLibraryLinkIndex() {
 }
 // One note changed; `gone` drops it. No index is built here.
 function _rapierNotesLibraryTouch(file, gone) {
+	// A sidecar change still reaches the switcher after this note's body was let go.
+	if (typeof _rapierSwitcherForget === 'function') _rapierSwitcherForget();
 	const lib = _rapierNotesLib, state = _rapierNotes;
 	if (lib.from !== state.texts) return; // a load is replacing everything; the next question rebuilds
 	const text = gone ? null : state.texts.get(file);

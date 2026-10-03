@@ -14,7 +14,7 @@ https://rapier.website/embed/rapier-document.html; permanent versions are at
 https://rapier.website/embed/1.1.33/rapier-document.html. Allow the chosen origin in your `frame-src`.
 Optional services, plugins and downloads can make requests when used.
 
-Install `npm install rapier-embed@1.1.45`, or copy this package's `embed.mjs` into your app. Import
+Install `npm install rapier-embed@1.1.46`, or copy this package's `embed.mjs` into your app. Import
 it from your app's own bundle or assets; no runtime CDN is needed.
 
 ```js
@@ -131,6 +131,6 @@ review; approving, declining or invalidating it updates the same review record. 
 change IDs/statuses and a decision receipt. It never receives excerpts, positions, proposed
 source or a vault key in that event. Receiving a review event grants no power to approve it.
 
-For documents outside an app, `npx rapier-html@1.1.45 notes.md` hands a person the complete editor
+For documents outside an app, `npx rapier-html@1.1.46 notes.md` hands a person the complete editor
 around their document as one offline file; drawings and SVGs work the same way. The Rapier agent
 door can open, read, edit, compare, draw and save in its connected document.

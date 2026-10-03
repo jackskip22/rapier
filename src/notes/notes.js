@@ -428,7 +428,7 @@ const _rapierNotesStore = {
 			let existing;
 			try { existing = await dir.getFileHandle(name); } catch (error) { if (!this.missing(error)) throw error; }
 			// An existing name is not proof of its content. A read failure here is not absence.
-			if (existing) { await this.verifyFile(existing, data); return; }
+			if (existing) { await this.verifyFile(existing, data); return false; }
 		}
 		const tmp = '.rapier-history-' + crypto.randomUUID() + '.tmp';
 		const handle = await this.scratchFile(dir, tmp);
@@ -459,6 +459,7 @@ const _rapierNotesStore = {
 			}
 			throw error;
 		}
+		return true; // The name was published here, not an existing immutable object.
 	},
 	// A note's words into the folder, through the owner: a note the index knows is saved against the
 	// words this window holds (a kept copy if another window wrote first); a name it does not know is
@@ -612,6 +613,8 @@ const _rapierNotesStore = {
 		if (pending) await pending;
 		await this.kind(); return this.bytes.read(key);
 	},
+	// An immutable write answers true for a new object, false for an existing verified one.
+	// Under the folder lease this is creation evidence, without a separate absence read.
 	writeHistory(path, bytes, {immutable = false} = {}) {
 		bytes = globalThis.RapierNotesIntegrity.exactBytes(bytes);
 		const key = this.historyKey(path), [sub, name] = String(path).split('/');
@@ -622,9 +625,9 @@ const _rapierNotesStore = {
 			// went into a page-memory Map and never reached the durable store at all).
 			if (await this.port()) {
 				const held = immutable ? await this.bytes.read(key) : null;
-				if (held) { if (held.length !== bytes.length || held.some((b, i) => b !== bytes[i])) throw new Error('The retained history object has different bytes; this version is not verified'); }
-				else await this.bytes.write(key, bytes);
-			} else await this.commitFile(await this.historyDir(true, sub), name, bytes, {immutable});
+				if (held) { if (held.length !== bytes.length || held.some((b, i) => b !== bytes[i])) throw new Error('The retained history object has different bytes; this version is not verified'); return false; }
+				await this.bytes.write(key, bytes); return true;
+			} else return this.commitFile(await this.historyDir(true, sub), name, bytes, {immutable});
 		});
 	},
 	removeHistory(path) {
@@ -3817,7 +3820,7 @@ function _rapierNotesWhen(time) {
 // a blob is named by its own content; an existing object is verified, not trusted by name),
 // the manifest last. Applied in that order, an interruption anywhere leaves objects nothing points
 // at yet -- never a manifest pointing at bytes that are not there.
-async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', restoredFrom} = {}) {
+async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', restoredFrom} = {}, underLease = false) {
 	const H = globalThis.RapierNotesHistory, state = _rapierNotes;
 	if (!H || typeof H.recordVersion !== 'function') return null;
 	const id = entry?.id;
@@ -3826,7 +3829,8 @@ async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', re
 	// identity would be lost by the first rename, which is the whole point of having an identity.
 	if (!id) return null;
 	// manifestName already names its own part of the folder ('manifests/<id>.json').
-	return _rapierNotesStore.historyCommit(async () => {
+	// The import holds the folder lease for its whole landed batch; ordinary saves acquire it.
+	const record = async () => {
 		const path = H.manifestName(id);
 		let manifest;
 		const held = await _rapierNotesStore.readHistory(path);
@@ -3838,16 +3842,23 @@ async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', re
 			try { manifest = H.parseManifest(held, {noteId: id, now: Date.now()}); }
 			catch (error) { throw Object.assign(new Error('this note\'s history could not be read, so this save was not recorded in it'), {cause: error}); }
 		}
-		const createdFiles = [];
+		const createdFiles = [], readBack = new Map();
 		const result = await H.recordVersion(manifest, {file, text, entry, reason, now: Date.now(), ...(restoredFrom === undefined ? {} : {restoredFrom})});
 		for (const write of result.writes) if (write.immutable) {
-			const absent = held == null && await _rapierNotesStore.readHistory(write.name) == null;
-			await _rapierNotesStore.writeHistory(write.name, write.bytes, {immutable: true});
-			if (absent) createdFiles.push({file: 'history/' + write.name, bytes: write.bytes, actual: await _rapierNotesStore.readHistory(write.name)});
+			// The immutable writer checks absence or verifies equality under this same lease. Its
+			// result, not a second absence read, distinguishes new files from shared retained objects.
+			const created = await _rapierNotesStore.writeHistory(write.name, write.bytes, {immutable: true});
+			if (held == null && created) {
+				const actual = await _rapierNotesStore.readHistory(write.name);
+				createdFiles.push({file: 'history/' + write.name, bytes: write.bytes, actual});
+				readBack.set(write.name, actual);
+			}
 		}
 		// A manifest can remember an object that has since disappeared or changed. Verify even an
 		// unchanged event before acknowledging it; publish the manifest only after its new event reads.
-		await H.materialize(result.manifest, result.version.id, name => _rapierNotesStore.readHistory(name));
+		// Reuse only actual read-back bytes, never planned bytes. The lease still excludes Tidy
+		// and other writers; shared/previous objects not read back here are read from the store.
+		await H.materialize(result.manifest, result.version.id, name => readBack.has(name) ? readBack.get(name) : _rapierNotesStore.readHistory(name));
 		for (const write of result.writes) if (!write.immutable) {
 			await _rapierNotesStore.writeHistory(write.name, write.bytes);
 			if (held == null) createdFiles.push({file: 'history/' + write.name, bytes: write.bytes, actual: await _rapierNotesStore.readHistory(write.name)});
@@ -3855,7 +3866,8 @@ async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', re
 		result.createdFiles = createdFiles;
 		state.historyAt = result.version?.id ?? state.historyAt;
 		return result;
-	});
+	};
+	return underLease ? record() : _rapierNotesStore.historyCommit(record);
 }
 // A complete save owns body, sidecar, and history together. Re-entry cannot take the same-text
 // shortcut while a preceding save is still recording its version.
@@ -6359,15 +6371,25 @@ async function _rapierNotesImportFiles(files, source) {
 			// arriving here is a thing that happened to it. A failed incoming past is not replaced with a
 			// brand-new history: that would conceal the missing versions. Arrival failures are said too.
 			await turn();
-			for (const item of batch.items.slice(0, outcome.completed)) {
-				const file = landedNames.get(item.ordinal);
-				if (failedPastIds.has(state.index.notes[file]?.id)) continue;
-				try {
-					const text = item.bytes ? new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(item.bytes) : item.text;
-					const arrival = await _rapierNotesRecordVersion({file, text, entry: state.index.notes[file], reason: 'import'});
-					if (record && arrival?.createdFiles?.length) record = await Receipt.verifyImportHistory(record, arrival.createdFiles);
-				}
-				catch (error) { arrivalFailed++; console.warn('[rapier] notes history', error); }
+			const arrivals = batch.items.slice(0, outcome.completed).filter(item => !failedPastIds.has(landedEntries.get(item.ordinal)?.id));
+			let remaining = arrivals.length;
+			if (remaining) try {
+				await _rapierNotesStore.historyCommit(async () => {
+					for (const item of arrivals) {
+						const file = landedNames.get(item.ordinal);
+						try {
+							const text = item.bytes ? new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(item.bytes) : item.text;
+							const arrival = await _rapierNotesRecordVersion({file, text, entry: landedEntries.get(item.ordinal), reason: 'import'}, true);
+							if (!arrival) throw new Error('The imported note could not be recorded in History');
+							if (record && arrival.createdFiles?.length) record = await Receipt.verifyImportHistory(record, arrival.createdFiles);
+						}
+						catch (error) { arrivalFailed++; console.warn('[rapier] notes history', error); }
+						finally { remaining--; }
+					}
+				});
+			} catch (error) {
+				// An unavailable lease fails the still-unattempted arrivals, never the note landing.
+				arrivalFailed += remaining; console.warn('[rapier] notes history', error);
 			}
 		}
 		if (landing.batch) await turn();

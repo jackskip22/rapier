@@ -915,7 +915,9 @@ async function _rapierPaintEncodeJXL(surface, box, options = {lossless: true}) {
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options}); // witness seam (paint-auto-set-lossless)
 	if (globalThis.__rapierPaintEncodeHold) await globalThis.__rapierPaintEncodeHold; // witness seam (paint-auto-set-lossless): the encoder held so a press can land while a Set settles
 	const px = surface.toRGBA8(box);
-	const data = new Uint8Array(px.data.buffer.slice(0));
+	// A captured whole picture is also the source of lossless retries/pieces. Only that borrowed
+	// buffer needs copying; a fresh surface read or cut piece is handed to the codec once.
+	const data = px.shared ? new Uint8Array(px.data) : new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength);
 	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options});
 	return {url: 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out), options};
 }
@@ -992,7 +994,7 @@ async function _rapierPaintEncodeCanvasBox(canvas, box, options = {lossless: tru
 	const b = box || { x0: 0, y0: 0, x1: canvas.width - 1, y1: canvas.height - 1 };
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options}); // witness seam
 	const px = canvas.getContext('2d').getImageData(b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1);
-	const data = new Uint8Array(px.data.buffer.slice(0));
+	const data = new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength);
 	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options});
 	return {url: 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out), options};
 }
@@ -1048,13 +1050,13 @@ async function _rapierPaintSplitShape(shapes, shape, pieces) { return _rapierPai
 function _rapierPaintPixelsSurface(px) {
 	return {width: px.width, height: px.height, toRGBA8(b) {
 		// The whole captured picture is already immutable straight RGBA; only a cut piece needs a copy.
-		if (!b || (b.x0 === 0 && b.y0 === 0 && b.x1 === px.width - 1 && b.y1 === px.height - 1)) return px;
+		if (!b || (b.x0 === 0 && b.y0 === 0 && b.x1 === px.width - 1 && b.y1 === px.height - 1)) return {...px, shared: true};
 		const width = b.x1 - b.x0 + 1, height = b.y1 - b.y0 + 1, data = new Uint8ClampedArray(width * height * 4);
 		for (let y = 0; y < height; y++) data.set(px.data.subarray(((b.y0 + y) * px.width + b.x0) * 4, ((b.y0 + y) * px.width + b.x1 + 1) * 4), y * width * 4);
 		return {width, height, data};
 	}};
 }
-async function _rapierPaintKeepAsJXL(recipe) {
+async function _rapierPaintKeepAsJXL(recipe, defer = false) {
 	// One owner for which codec a picture is written in: `_rapierDefaultImageProfile`. A painting is
 	// a picture and follows the same rule, so it never disagrees with the rest of the document.
 	if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return [];
@@ -1068,19 +1070,29 @@ async function _rapierPaintKeepAsJXL(recipe) {
 	// a later stroke cannot change the requested pixels. Closed layers use their exact working PNG.
 	const current = state.paintLayer, frozenShape = recipe?.shapes.find(shape => shape.id === current?.id);
 	const frozenBox = frozenShape && frozenShape.raster === current.raster && current.checkpoint?.revision === current.surface.revision ? current.surface.bounds() : null;
-	const frozenPixels = frozenBox ? current.surface.toRGBA8(frozenBox) : null;
-	for (const shape of ((recipe || state.recipe)?.shapes || []).slice()) {
+	const liveBox = defer && layer?.surface ? layer.surface.bounds() : null, readBox = frozenBox || liveBox;
+	const shapes = ((recipe || state.recipe)?.shapes || []).slice();
+	let frozenPixels = null;
+	if (readBox && defer) {
+		const surface = current.surface;
+		frozenPixels = await _rapierPaintCaptureSnapshot(current, null, {surface, box: readBox, revision: surface.revision, session: state.session, width: surface.width, height: surface.height})();
+		if (!frozenPixels) throw Object.assign(new Error('The painting changed before its recovery readout finished'), {code: 'PAINT_CAPTURE_CHANGED'});
+	} else if (frozenBox) frozenPixels = current.surface.toRGBA8(frozenBox);
+	// Routine recovery captures once, before the first codec await. Every lossless retry then
+	// cuts these immutable channels, never the live material a later stroke may have changed.
+	const captured = defer && layer && frozenPixels ? _rapierPaintPixelsSurface(frozenPixels) : null;
+	for (const shape of shapes) {
 		if (shape.recognized !== 'paint' || !shape.raster || shape.raster.startsWith('data:image/jxl')) continue;
 		// The live surface holds the exact pixels and is preferred; a painting whose layer has been
 		// closed is re-encoded from its own committed bytes rather than left as an oversized PNG.
 		// One restored from a file already carries its author's JPEG XL and never reaches here.
 		const live = layer && layer.id === shape.id && layer.surface ? layer : null;
-		const box = live ? live.surface.bounds() : null;
+		const box = live ? (defer ? liveBox : live.surface.bounds()) : null;
 		if (live && !box) continue;
 		const was = shape.raster.length;
 		let pieces;
 		if (encodes.has(shape.raster)) pieces = await encodes.get(shape.raster);
-		else if (live) pieces = await _rapierPaintLosslessPieces(b => _rapierPaintEncodeJXL(live.surface, b, { lossless: true }), box, budget);
+		else if (live) pieces = await _rapierPaintLosslessPieces(b => _rapierPaintEncodeJXL(captured || live.surface, b, { lossless: true }), captured ? {x0: 0, y0: 0, x1: frozenPixels.width - 1, y1: frozenPixels.height - 1} : box, budget);
 		else {
 			const exact = shape === frozenShape && frozenPixels ? frozenPixels : await _rapierPaintPNG.decode(shape.raster);
 			if (exact) {
@@ -1096,7 +1108,7 @@ async function _rapierPaintKeepAsJXL(recipe) {
 		if (pieces.length === 1) { shape.raster = pieces[0].url; continue; }
 		// Several pieces: the shape becomes one shape per piece. A live layer's box is the surface's
 		// own coordinates; the shape's raster pixels are that box, so the pieces are rebased onto it.
-		const origin = live ? { x: box.x0, y: box.y0 } : { x: 0, y: 0 };
+		const origin = live && !captured ? { x: box.x0, y: box.y0 } : { x: 0, y: 0 };
 		const made = await _rapierPaintSplitShape((recipe || state.recipe).shapes, shape, pieces.map(piece => ({ url: piece.url, box: { x0: piece.box.x0 - origin.x, y0: piece.box.y0 - origin.y, x1: piece.box.x1 - origin.x, y1: piece.box.y1 - origin.y } })));
 		if (made) split.push({ shape, was, pieces: made.length });
 	}
@@ -1489,7 +1501,7 @@ function _rapierPaintEncodeRevision(layer, px, keep, frozen, capture = null) {
 // A cap freezes its departed sheet; an ordinary lift keeps its live sheet behind the same capture
 // barrier until the next stroke. Relief reads the neighbouring rows of that whole material, so
 // band boundaries cannot change a normal or a straight RGBA channel.
-function _rapierPaintReadRevision(layer, job, transfer = true) {
+function _rapierPaintReadRevision(layer, job, transfer = true, bounded = transfer) {
 	const capture = job.capture;
 	if (!capture) return;
 	const {box, surface} = capture, width = job.px.width;
@@ -1502,7 +1514,7 @@ function _rapierPaintReadRevision(layer, job, transfer = true) {
 		job.px.data.set(part.data, offset);
 		capture.y = end + 1;
 		if (transfer) job.worker.postMessage({id: job.id, stored: job.stored, px: {width, height: job.px.height}, band: part.data, offset, done: end === box.y1}, [part.data.buffer]);
-		if (transfer) break;
+		if (bounded) break;
 	}
 	if (capture.y <= box.y1) return;
 	job.capture = null;
@@ -1534,18 +1546,20 @@ function _rapierPaintTask(update, failed = null) {
 	if (globalThis.scheduler?.postTask) { const task = globalThis.scheduler.postTask(update, {priority: 'user-visible'}); if (failed) void task.catch(failed); return 0; }
 	return setTimeout(update, 0);
 }
-// Recovery shares the PNG worker but never enters the stroke's revision/history queue. The
-// solver pauses only while these exact row bands are copied, then continues during compression.
+// Recovery shares the PNG worker but never enters the stroke's revision/history queue. A null
+// worker owner returns the same exact bands as immutable RGBA for lossless JXL normalization.
+// The solver pauses only while the bands are copied, then continues during compression.
 function _rapierPaintDropSnapshots(layer) {
 	let dropped = false;
+	if (layer?.recoveryCapture?.cancel) { dropped = true; layer.recoveryCapture.cancel(); }
 	for (const job of layer?.pngWorker?.snapshots?.values() || []) { dropped = true; job.finish(null); }
 	return dropped;
 }
 function _rapierPaintCaptureSnapshot(layer, owner, held) {
 	const state = _rapierDrawState, {surface, box, revision, session, width, height} = held;
 	// A held solver pass can already have written material before its final revision touch.
-	const current = () => state.open && state.session === session && state.paintLayer === layer && layer.surface === surface && surface.revision === revision && !surface._wetWork && surface.width === width && surface.height === height && !state.gesture && layer.pngWorker === owner && !(typeof document !== 'undefined' && document.hidden);
-	const capture = {surface, box, y: box.y0, timer: 0};
+	const current = () => state.open && state.session === session && state.paintLayer === layer && layer.surface === surface && surface.revision === revision && !surface._wetWork && surface.width === width && surface.height === height && !state.gesture && (!owner || layer.pngWorker === owner) && !(typeof document !== 'undefined' && document.hidden);
+	const capture = {surface, box, y: box.y0, timer: 0, frame: 0};
 	let started = false, finished = false, paused = false, resolve;
 	const promise = new Promise(ok => { resolve = ok; });
 	const release = () => {
@@ -1555,24 +1569,32 @@ function _rapierPaintCaptureSnapshot(layer, owner, held) {
 		// whose release does not call Paint's ScheduleDry as a paint stroke's release does.
 		if (paused && state.open && state.session === session && state.paintLayer === layer && !layer.dryRaf && (surface.wetState || layer.dryFinishing)) layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer));
 	};
-	const job = {id: layer.pngSerial = (layer.pngSerial || 0) + 1, worker: owner.worker, stored: false, capture, px: {width: box.x1 - box.x0 + 1, height: box.y1 - box.y0 + 1, data: null}};
+	const job = {id: layer.pngSerial = (layer.pngSerial || 0) + 1, worker: owner?.worker, stored: false, capture, px: {width: box.x1 - box.x0 + 1, height: box.y1 - box.y0 + 1, data: null}};
 	job.finish = raster => {
 		if (finished) return;
-		finished = true; owner.snapshots.delete(job.id); clearTimeout(job.timer); clearTimeout(capture.timer);
+		finished = true; owner?.snapshots.delete(job.id); clearTimeout(job.timer); clearTimeout(capture.timer);
+		if (capture.frame) cancelAnimationFrame(capture.frame);
 		job.capture = null; capture.surface = null; release();
-		if (!raster) { try { owner.worker.postMessage({id: job.id, cancel: true}); } catch (_) {} }
+		if (!raster) { try { owner?.worker.postMessage({id: job.id, cancel: true}); } catch (_) {} }
 		resolve(raster);
 	};
-	owner.snapshots.set(job.id, job);
+	capture.cancel = () => job.finish(null);
+	owner?.snapshots.set(job.id, job);
 	job.timer = setTimeout(() => job.finish(null), 15000);
 	const read = () => {
 		if (finished) return;
 		if (!current()) { job.finish(null); return; }
 		try {
-			_rapierPaintReadRevision(layer, job);
-			if (job.capture) capture.timer = _rapierPaintTask(read, () => job.finish(null));
-			else release();
+			_rapierPaintReadRevision(layer, job, !!owner, true);
+			if (job.capture) soon();
+			else if (owner) release();
+			else job.finish(job.px);
 		} catch (_) { job.finish(null); }
+	};
+	const soon = () => {
+		if (!owner && globalThis.scheduler?.yield) void globalThis.scheduler.yield().then(read, () => job.finish(null));
+		else if (!owner && typeof requestAnimationFrame === 'function') capture.frame = requestAnimationFrame(read);
+		else capture.timer = _rapierPaintTask(read, () => job.finish(null));
 	};
 	// Register before the IO owner yields; urgent close can cancel even an unstarted capture.
 	return () => {
@@ -1583,7 +1605,7 @@ function _rapierPaintCaptureSnapshot(layer, owner, held) {
 				paused = !!layer.dryRaf;
 				if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
 				layer.recoveryCapture = capture;
-				try { capture.timer = _rapierPaintTask(read, () => job.finish(null)); }
+				try { soon(); }
 				catch (_) { job.finish(null); }
 			}
 		}

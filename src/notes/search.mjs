@@ -1093,13 +1093,15 @@ export function switcherCatalogue(index, documents = []) {
 	const notes = index && index.notes;
 	if (notes && typeof notes.entries === 'function') {
 		for (const [id, note] of notes) {
-			if (!note || note.trashed === true) continue;
+			// A released body need not be reprojected to follow Trash or recency.
+			const entry = index.sidecar?.notes?.[id] || note;
+			if (!note || entry.trashed === true) continue;
 			rows.push({
 				kind: 'note',
 				id,
 				title: typeof note.title === 'string' ? note.title : '',
 				first: typeof note.excerpt === 'string' ? note.excerpt : '',
-				modified: Number.isFinite(note.modified) ? note.modified : 0,
+				modified: Number.isFinite(entry.modified) ? entry.modified : 0,
 			});
 		}
 	}

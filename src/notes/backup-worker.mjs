@@ -72,8 +72,12 @@ export function createBackupWorker({postMessage, now = () => performance.now(), 
 				async remove() { close(); await staging.removeEntry(archive.name); removed = true; }
 			});
 			async function* source() {
-				for (const name of names) {
-					await pause();
+				// Keep the next source handles ready while this member streams. Only metadata is
+				// prefetched: at most four locked sources, one payload chunk, and original order.
+				// A failed/cancelled consumer drains every admitted acquisition before the page
+				// can release its folder lease. No source handle outlives this generator.
+				const acquire = async name => {
+					check(signal);
 					if (typeof name !== 'string' || !name || /[\\\0]/.test(name) || name.split('/').some(p => !p || p === '.' || p === '..')) throw new Error('backup path is not relative');
 					const parts = name.split('/'), leaf = parts.pop(); let dir = directory;
 					for (const part of parts) dir = await dir.getDirectoryHandle(part);
@@ -81,9 +85,39 @@ export function createBackupWorker({postMessage, now = () => performance.now(), 
 					try {
 						const file = await fileHandle.getFile(), view = syncFile(handle, file.lastModified || 0, pause);
 						if (view.size !== file.size) throw new Error('a backup source changed size: ' + name);
-						yield* folderBackupSource(null, {inventory: [{name, size: view.size, modified: view.lastModified, file: view}], stamp: options.stamp, signal});
-						if (handle.getSize() !== file.size) throw new Error('a backup source changed size: ' + name);
-					} finally { synchronous(handle.close(), 'close'); }
+						return {name, file, view, handle};
+					} catch (error) {
+						try { synchronous(handle.close(), 'close'); }
+						catch (cleanup) { throw new AggregateError([error, cleanup], 'backup source release failed'); }
+						throw error;
+					}
+				};
+				const pending = []; let next = 0, failure;
+				// Rejections become outcomes immediately, including a later member that fails
+				// while an earlier member is still being read. Cleanup owns those outcomes too.
+				const admit = () => pending.push(acquire(names[next++]).then(value => ({value}), error => ({error})));
+				try {
+					while (next < Math.min(4, names.length)) admit();
+					while (pending.length) {
+						const result = await pending.shift();
+						if (result.error) throw result.error;
+						const {name, file, view, handle} = result.value;
+						try {
+							await pause();
+							yield* folderBackupSource(null, {inventory: [{name, size: view.size, modified: view.lastModified, file: view}], stamp: options.stamp, signal});
+							if (handle.getSize() !== file.size) throw new Error('a backup source changed size: ' + name);
+						} finally { synchronous(handle.close(), 'close'); }
+						if (next < names.length) admit();
+					}
+				} catch (error) { failure = error; }
+				finally {
+					const errors = failure ? [failure] : [];
+					for (const result of await Promise.all(pending)) {
+						if (result.error) errors.push(result.error);
+						else try { synchronous(result.value.handle.close(), 'close'); } catch (error) { errors.push(error); }
+					}
+					if (errors.length > 1) throw new AggregateError(errors, 'backup source preparation or release failed');
+					if (errors.length) throw errors[0];
 				}
 			}
 			const result = await writeBackupStream(source(), sink, {...options, signal, onProgress: progress, assertCurrent: () => new Promise(resolve => {

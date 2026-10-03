@@ -32808,17 +32808,43 @@ function _rapierSwitcherDocuments() {
 	return out;
 }
 
-function _rapierSwitcherJumps(queryValue) {
-	if (!String(queryValue || '').trim()) return [];
+function _rapierSwitcherForget() {
+	const state = _rapierCommandRuntime.palette;
+	if (state) state.switcher = null;
+}
+
+function _rapierSwitcherCatalogue() {
 	const search = globalThis.RapierNotesSearch;
-	if (!search || typeof search.switcherCatalogue !== 'function' || typeof search.rankSwitcher !== 'function') return [];
+	if (!search || typeof search.switcherCatalogue !== 'function') return null;
 	let index = null;
 	if (typeof _rapierNotesLibrarySearchIndex === 'function') {
 		try { index = _rapierNotesLibrarySearchIndex(); } catch (_) { index = null; }
 	}
+	const state = _rapierCommandRuntime.palette;
+	let kept = state && state.switcher;
+	// The library publishes a new index after an edit, arrival, hydrate or folder change,
+	// even when its maps grow in place. A metadata-only touch also forgets this cache.
+	if (!kept || kept.index !== index) {
+		const rows = search.switcherCatalogue(index);
+		kept = {index, rows, notes: rows.length};
+		if (state) state.switcher = kept;
+	}
+	return kept;
+}
+
+function _rapierSwitcherJumps(queryValue) {
+	if (!String(queryValue || '').trim()) return [];
+	const search = globalThis.RapierNotesSearch;
+	if (!search || typeof search.switcherCatalogue !== 'function' || typeof search.rankSwitcher !== 'function') return [];
 	let ranked;
-	try { ranked = search.rankSwitcher(search.switcherCatalogue(index, _rapierSwitcherDocuments()), queryValue); }
-	catch (_) { return []; }
+	try {
+		const kept = _rapierSwitcherCatalogue();
+		if (!kept) return [];
+		// Notes stay for this open; the current document and platform recents remain live.
+		kept.rows.length = kept.notes;
+		for (const row of search.switcherCatalogue(null, _rapierSwitcherDocuments())) kept.rows.push(row);
+		ranked = search.rankSwitcher(kept.rows, queryValue);
+	} catch (_) { return []; }
 	if (!Array.isArray(ranked)) return [];
 	const jumps = [];
 	for (const hit of ranked) {
@@ -33001,6 +33027,7 @@ function _rapierRenderCommandPalette() {
 function _rapierCloseCommandPalette(restoreTarget = true) {
 	const state = _rapierCommandRuntime.palette;
 	if (!state) return false;
+	state.switcher = null;
 	_rapierCommandRuntime.palette = null;
 	delete document.documentElement.dataset.commandPalette;
 	if (state.overlay.parentNode) state.overlay.remove();
@@ -33062,6 +33089,7 @@ function rapierOpenCommandPalette(initialQuery = '') {
 		documentGuard: Object.freeze(_rapierMutationStamp()),
 		results: [], activeIndex: -1, inputMethod: 'keyboard', expanded: '', variantIndex: 0,
 	};
+	try { _rapierSwitcherCatalogue(); } catch (_) {}
 	document.documentElement.dataset.commandPalette = 'open';
 	_rapierRenderCommandPalette();
 

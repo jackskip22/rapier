@@ -5734,12 +5734,14 @@ async function _rapierDrawBackupRemove(store, files, owner, { quiet = false } = 
 async function _rapierDrawBackupWrite(closing = false) {
 	const state = _rapierDrawState;
 	const urgent = closing || (typeof document !== 'undefined' && document.hidden);
+	const readoutEpoch = state.backupReadoutEpoch || 0;
+	if (urgent) state.backupReadoutEpoch = readoutEpoch + 1;
 	// An urgent checkpoint must not queue behind row tasks that a paused page may never run.
 	if (urgent && typeof _rapierPaintDropSnapshots === 'function') {
 		let dropped = false;
 		for (const layer of _rapierPaintRevisionLayers()) dropped = _rapierPaintDropSnapshots(layer) || dropped;
 		const pendingOwner = state.backupRecovery;
-		if (dropped && pendingOwner?.session === state.session && pendingOwner.revision > pendingOwner.cleared) state.backupDirty = true;
+		if ((dropped || pendingOwner?.writing) && pendingOwner?.session === state.session && pendingOwner.revision > pendingOwner.cleared) state.backupDirty = true;
 	}
 	if (!state.open || !state.backupDirty) return;
 	const session = state.session;
@@ -5803,7 +5805,10 @@ async function _rapierDrawBackupWrite(closing = false) {
 			// Working PNGs may exceed the file recipe's limits. Use the existing lossless encoder on
 			// this captured recipe, inside its registered IO ticket, before replacing any recovery.
 			if (!_rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts || record.recipe.fonts })) {
-				await _rapierPaintKeepAsJXL(record.recipe);
+				// Close may have arrived while this ticket was awaiting its PNG or lock, before
+				// its JXL bands existed to cancel. Never start a new frame wait in front of it.
+				if (!urgent && readoutEpoch !== (state.backupReadoutEpoch || 0)) throw Object.assign(new Error('Recovery readout superseded by an urgent checkpoint'), {code: 'PAINT_CAPTURE_CHANGED'});
+				await _rapierPaintKeepAsJXL(record.recipe, !urgent);
 				if (!_rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts || record.recipe.fonts })) {
 					failure = 'This drawing is too large for its backup copy. Download it before you leave.';
 					throw new Error(failure);
@@ -5816,7 +5821,12 @@ async function _rapierDrawBackupWrite(closing = false) {
 			failure = 'This drawing could not be backed up: storage is full or unavailable. Add it or download it before you leave.';
 			store = await _rapierDrawBackupStore();
 			await store.write(name, JSON.stringify(record));
-		} catch (_) {
+		} catch (error) {
+			if (error?.code === 'PAINT_CAPTURE_CHANGED') {
+				owner.files.delete(name);
+				if (state.open && state.backupRecovery === owner && state.session === owner.session && record.revision === owner.revision && record.revision > owner.cleared) _rapierDrawBackupTouch();
+				return false;
+			}
 			// Only this failed attempt is disposable; never make room by deleting a kept checkpoint.
 			if (store) await _rapierDrawBackupRemove(store, [name], owner, { quiet: true });
 			else owner.files.delete(name);
