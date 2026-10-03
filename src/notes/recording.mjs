@@ -91,7 +91,9 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 	};
 	const recover = async ({snapshot} = {}) => {
 		ensure();
-		const ids = [...new Set((await store.list()).map(recordingStem).filter(Boolean))].sort(), offers = [];
+		// The caller's fresh folder listing can only delay discovery of a later recording; each
+		// discovered marker and its bytes are still inspected under their own locks below.
+		const ids = [...new Set((snapshot?.listing || await store.list()).map(recordingStem).filter(Boolean))].sort(), offers = [];
 		for (const id of ids) {
 			let release;
 			try { release = await acquire(id); }

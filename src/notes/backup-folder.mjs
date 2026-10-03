@@ -24,7 +24,8 @@ async function* paths(store) {
 
 // The caller holds folder.backupSnapshot through inventory and all streamed passes.
 // Only the store owns paths; global order comes from backupNames.
-export async function backupInventory(store, {signal, onProgress} = {}) {
+export async function backupInventory(store, {signal, onProgress, concurrency = 1} = {}) {
+	if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new RangeError('backup inventory concurrency must be within 1..4');
 	check(signal);
 	const names = await backupNames(store, {signal}), limit = 65534;
 	// Count directory names before acquiring any File/native stat; reserve the generated manifest.
@@ -32,13 +33,24 @@ export async function backupInventory(store, {signal, onProgress} = {}) {
 	if (names.length + 1 > limit) throw backupLimitError(names, 'need ' + (names.length + 1).toLocaleString('en')
 		+ ' files counting history and saved files; one backup holds ' + limit.toLocaleString('en'));
 	const rows = [];
-	for (const name of names) {
+	for (let at = 0; at < names.length; at += concurrency) {
 		check(signal);
-		const file = await store.backupFile(name, {stream: true});
-		if (!file || !Number.isSafeInteger(file.size) || file.size < 0) throw new Error('a backup file disappeared: ' + name);
-		rows.push({name, size: file.size, modified: file.lastModified || 0, file});
-		onProgress?.({phase: 'Reading folder', files: rows.length});
+		// Only lazy File acquisition opts into overlap. Drain every admitted read before an
+		// error or cancellation can release the caller's folder lease; keep the names' order.
+		const batch = await Promise.allSettled(names.slice(at, at + concurrency).map(async name => {
+			check(signal);
+			const file = await store.backupFile(name, {stream: true});
+			if (!file || !Number.isSafeInteger(file.size) || file.size < 0) throw new Error('a backup file disappeared: ' + name);
+			return {name, size: file.size, modified: file.lastModified || 0, file};
+		}));
+		check(signal);
+		for (const result of batch) {
+			if (result.status === 'rejected') throw result.reason;
+			rows.push(result.value);
+			onProgress?.({phase: 'Reading folder', files: rows.length});
+		}
 	}
+	check(signal);
 	return rows;
 }
 // Names additionally catch foreign filesystem changes outside Rapier's writer lease.

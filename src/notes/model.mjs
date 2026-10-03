@@ -229,15 +229,19 @@ export function codeFileName(wanted, existing = [], {ascii = false} = {}) {
 export function reconcile(index, files) {
 	const present = new Set(files.filter(isNoteFile));
 	const out = {...index, notes: {}}, added = [], dropped = [];
+	let last = '';
 	// Sections and collapse memory survive a scan untouched.
 	out.sections = cleanSections(index.sections);
 	out.collapsed = cleanCollapsed(index.collapsed);
 	for (const [file, entry] of Object.entries(index.notes)) {
-		if (present.has(file)) out.notes[file] = entry.order ? entry : {...entry}; else dropped.push(file);
+		if (present.has(file)) {
+			out.notes[file] = entry.order ? entry : {...entry};
+			if (entry.order > last) last = entry.order;
+			present.delete(file);
+		} else dropped.push(file);
 	}
-	let last = Object.values(out.notes).map(e => e.order).filter(Boolean).sort().at(-1) || '';
+	// Only arrivals need name order; existing notes keep the person's ranks without sorting them.
 	for (const file of [...present].sort()) {
-		if (out.notes[file]) continue;
 		last = orderAfter(last);
 		out.notes[file] = {order: last, pinned: false, skill: false, archived: false, trashed: false, colour: ''};
 		added.push(file);
@@ -304,6 +308,8 @@ export function admitIdentities(index, namespace) {
 	if (typeof namespace !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(namespace)) throw Object.assign(new Error('a note identity needs a namespace'), {code: 'identity'});
 	let next = index.noteCounters?.[namespace] ?? 1;
 	if (!Number.isSafeInteger(next) || next < 1) throw Object.assign(new Error('note identity counter is not readable'), {code: 'corrupt'});
+	const files = Object.keys(index.notes).filter(file => !index.notes[file].id);
+	if (!files.length) return [];
 	for (const entry of [...Object.values(index.notes), ...Object.keys(index.tombstones || {}).map(id => ({id}))]) {
 		const id = entry && typeof entry.id === 'string' ? entry.id : '';
 		if (!id.startsWith(namespace + ':')) continue;
@@ -311,8 +317,7 @@ export function admitIdentities(index, namespace) {
 		if (Number.isSafeInteger(counter) && counter >= next) next = counter + 1;
 	}
 	const assigned = [];
-	for (const file of Object.keys(index.notes).sort()) {
-		if (index.notes[file].id) continue;
+	for (const file of files.sort()) {
 		if (!Number.isSafeInteger(next) || next === Number.MAX_SAFE_INTEGER) throw Object.assign(new Error('note identity counter exhausted'), {code: 'identity'});
 		const id = namespace + ':' + next++;
 		index.notes[file].id = id;

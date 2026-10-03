@@ -424,7 +424,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					if (exact.base == null) { await store.remove(NOTES_INDEX_FILE); if (await readBytes(NOTES_INDEX_FILE) != null) throw fail('verify', 'The original empty sidecar could not be restored.'); }
 					else await writeVerified(NOTES_INDEX_FILE, unpack(exact.base));
 					await clearJournal();
-					return base;
+					return {index: base};
 				}
 				for (const row of journal.removes) { fileName(row.file); if (seen.has(row.file) || isNoteFile(row.file) && own(journal.after.notes, row.file) || !/^[0-9a-f]{64}$/.test(row.digest)) throw fail('corrupt', 'The pending removal is not readable.'); seen.add(row.file); }
 				const byFile = new Map(writes.map(row => [row.file, row]));
@@ -523,7 +523,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					await writeVerified(NOTES_INDEX_FILE, exactBytesAfter, journal.publicationDigest);
 					await clearJournal();
 					dirty = notice(scope, exactIndexAfter, writes.map(row => row.file), 'restore');
-					return exactIndexAfter;
+					return {index: exactIndexAfter};
 				}
 				for (const row of journal.removes) {
 					if (caseMoves.some(move => move.caseSource === row.file)) continue;
@@ -603,13 +603,15 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			if (repair) {
 				const result = await repair({store, index, commitIndex});
 				if (result?.index) index = result.index;
+				return {index, listing: result?.listing};
 			}
-			return index;
+			return {index};
 		};
 		const read = async options => {
 			const requested = requestedBodies(options);
-			let index = await recover();
-			const files = (await store.list()).filter(isNoteFile).sort();
+			const recovered = await recover(), listing = recovered.listing || await store.list();
+			let index = recovered.index;
+			const files = listing.filter(isNoteFile).sort();
 			const fixed = repairListing(index, files, clock);
 			if (fixed.added.length || fixed.dropped.length) {
 				const committed = await commitIndex(fixed.index, {changed: [...fixed.added, ...fixed.dropped], kind: 'reconcile'});
@@ -617,7 +619,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			}
 			const bodies = await readBodies(files, requested);
 			const reported = lastDropped, keptReported = lastKept; lastDropped = []; lastKept = [];
-			return {index, files, bodies, generation: folderGeneration(index), readOnly: false, notice: dirty, dropped: reported, kept: keptReported};
+			return {index, files, listing, bodies, generation: folderGeneration(index), readOnly: false, notice: dirty, dropped: reported, kept: keptReported};
 		};
 		const rebuildIndex = async backup => {
 			active();
@@ -764,7 +766,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				journal.exactIndex.phase = 'ready';
 				await writeJournal(journal);
 			}
-			const recovered = await recover({index: before.index, journal});
+			const {index: recovered} = await recover({index: before.index, journal});
 			// The committed bytes were read back and hashed. Return that admitted index and
 			// listing without reparsing the whole sidecar; every fresh owned read still does.
 			const dropped = lastDropped, kept = lastKept; lastDropped = []; lastKept = [];
@@ -776,7 +778,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			const result = jobs.catch(() => {}).then(() => fn(...args));
 			jobs = result; return result;
 		};
-		return {read: serial(read), rebuildIndex: serial(rebuildIndex), recover: serial(() => recover()), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
+		return {read: serial(read), rebuildIndex: serial(rebuildIndex), recover: serial(async () => (await recover()).index), commitIndex: serial(commitIndex), transact: serial(transact), release: () => {
 			if (releasePromise) return releasePromise;
 			releaseStarted = true;
 			releasePromise = (async () => { await jobs.catch(() => {}); released = true; unlock(); await settled; })();
@@ -790,9 +792,9 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			// pending journal before touching a body, so this is an honest read-only snapshot.
 			const pending = await readBytes(OWNER_JOURNAL_FILE), first = await readBytes(NOTES_INDEX_FILE), index = parseIndex(first == null ? null : decode(first));
 			if (pending != null || index.transaction || index.deletions && Object.keys(index.deletions).length) throw fail('read-only', 'This notes folder needs a browser with Web Locks to finish a pending operation.');
-			const files = (await store.list()).filter(isNoteFile).sort(), bodies = await readBodies(files, requested);
+			const listing = await store.list(), files = listing.filter(isNoteFile).sort(), bodies = await readBodies(files, requested);
 			if (!equal(first, await readBytes(NOTES_INDEX_FILE)) || !equal(pending, await readBytes(OWNER_JOURNAL_FILE))) throw fail('busy', 'The notes folder is changing. Try opening it again.');
-			return {index: reconcile(index, files).index, files, bodies, generation: folderGeneration(index), readOnly: true, notice: null};
+			return {index: reconcile(index, files).index, files, listing, bodies, generation: folderGeneration(index), readOnly: true, notice: null};
 		}
 		let lease;
 		try { lease = await acquire(scope); } catch (error) { if (error?.code === 'read-only' && store.writable === false) return read(scope, {bodies: requested}); throw error; }

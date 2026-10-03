@@ -8,13 +8,30 @@ import {packLinkProjection, unpackLinkProjection} from './links.mjs';
 // Replaced from the assembled dependency graph, shell and verified parser identities by build.mjs.
 // Direct, unbuilt imports fail closed unless a witness supplies the identity of the code it runs.
 export const SEARCH_CACHE_VERSION = '__RAPIER_SEARCH_CACHE_VERSION__';
-// Budget 872 bytes/row (D09): about 47,702 rows. A charge, not a disk claim, never a note limit.
+// A logical cache charge, not a disk claim or a note limit.
 export const SEARCH_CACHE_LIMITS = Object.freeze({bytes: 50_000 * 832, batchBytes: 256 * 832, batchRows: 256});
 const DATABASE = 'rapier-notes-search', STORE = 'rows', META = 'account';
 const uint = n => Number.isSafeInteger(n) && n >= 0;
 const validFile = file => typeof file === 'string' && file.length > 0;
 export function searchCacheRowBytes(row) {
-	return 2 * (JSON.stringify(row.key).length + row.scope.length + row.encoded.length) + 8;
+	return 2 * (JSON.stringify(row.key).length + row.scope.length + row.version.length + (row.title || '').length + row.encoded.length) + 24;
+}
+
+// Planning needs the stamp and title alone. Both projections are admitted together when their
+// idle slice takes the row, and the encoded copy leaves as soon as the indexes can own it.
+export function takeSearchCacheProjection(row) {
+	const pending = row?.projection;
+	if (!pending) return null;
+	const encoded = pending.encoded;
+	delete pending.encoded;
+	if (typeof encoded !== 'string' || !stampFor(row)) return null;
+	try {
+		const value = JSON.parse(encoded);
+		if (!Array.isArray(value) || value.length !== 2) return null;
+		const search = unpackSearchProjection(value[0]), links = unpackLinkProjection(value[1], row.size);
+		if (!search || !links || pending.title !== undefined && typeof pending.title !== 'string') return null;
+		return {search, links, ...(pending.title === undefined ? {} : {title: pending.title})};
+	} catch (_) { return null; }
 }
 
 // Scheduling moves IDB puts out of the indexing call; marshalling a bounded row is STILL main-
@@ -91,10 +108,10 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 		const account = rows.get(META);
 		account.onsuccess = guard(() => {
 			let head = account.result;
-			if (!head || !uint(head.bytes) || !uint(head.clock) || head.clock > Number.MAX_SAFE_INTEGER - batch.length) {
+			if (!head || head.version !== version || !uint(head.bytes) || !uint(head.clock) || head.clock > Number.MAX_SAFE_INTEGER - batch.length) {
 				// Missing accounting (cleared origin), malformed accounting, or exhausted exact
 				// integer space: discard this cache, never adapt unknown rows.
-				rows.clear(); head = {key: META, bytes: 0, clock: 0};
+				rows.clear(); head = {key: META, version, bytes: 0, clock: 0};
 			} else head = {...head};
 			const finish = () => {
 				if (!uint(head.bytes)) throw new Error('invalid cache accounting');
@@ -163,8 +180,13 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 	const drop = file => validFile(file) && queue({key: [scope, file], scope, encoded: null});
 	const read = async () => {
 		const read = await transaction('readonly', (rows, result, guard) => {
-			const request = rows.index('scope').getAll(scope);
-			request.onsuccess = guard(() => result(request.result));
+			const account = rows.get(META);
+			account.onsuccess = guard(() => {
+				const head = account.result;
+				if (!head || head.version !== version || !uint(head.bytes) || !uint(head.clock)) { result([]); return; }
+				const request = rows.index('scope').getAll(scope);
+				request.onsuccess = guard(() => result(request.result));
+			});
 		});
 		const found = new Map();
 		if (!read) return found;
@@ -173,25 +195,24 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 			for (const row of read.value) {
 				if (!row || row.scope !== scope || !Array.isArray(row.key) || row.key.length !== 2 || row.key[0] !== scope ||
 					!validFile(row.key[1]) || typeof row.encoded !== 'string' || !uint(row.age)) continue;
+				const stamp = stampFor(row), title = row.title;
+				if (row.version !== version || !stamp || title !== null && typeof title !== 'string') { drop(row.key[1]); continue; }
 				bytes += searchCacheRowBytes(row);
 				if (bytes > bound.bytes) { fail(); return new Map(); }
-				let value;
-				try { value = JSON.parse(row.encoded); } catch (_) { drop(row.key[1]); continue; }
-				if (!Array.isArray(value) || value.length !== 6 || value[0] !== version) { drop(row.key[1]); continue; }
-				const stamp = stampFor({size: value[1], modified: value[2]}), search = unpackSearchProjection(value[3]);
-				const links = stamp && unpackLinkProjection(value[4], stamp.size);
-				// A row earns coverage for BOTH owners or neither. A valid search half is not a hit.
-				if (!stamp || !search || !links) { drop(row.key[1]); continue; }
-				// R87i I06: `null` is a row from before titles, distinct from '' (a real untitled note).
-				const title = value[5];
-				if (title !== null && typeof title !== 'string') { drop(row.key[1]); continue; }
-				found.set(row.key[1], {...stamp, projection: {search, links, ...(title === null ? {} : {title})}});
+				// These are reuse candidates, not coverage. The hydrate admits both owners before
+				// counting a row; a malformed projection returns to the exact body-read path.
+				found.set(row.key[1], {...stamp, projection: {encoded: row.encoded, ...(title === null ? {} : {title})}});
 			}
 			return active ? found : new Map();
 		} catch (_) { fail(); return new Map(); }
 	};
 	return {
 		read,
+		take(row) {
+			const projection = takeSearchCacheProjection(row);
+			if (!projection) drop(row.file);
+			return projection;
+		},
 		async plan(folder) {
 			const plan = planIndexReuse(folder, await read());
 			for (const file of plan.drop) drop(file);
@@ -209,8 +230,8 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 				const search = packSearchProjection(projection.search), links = packLinkProjection(projection.links, stamp.size);
 				// I06: the CARD's title, never search's; unknown writes null.
 				const title = typeof projection.title === 'string' ? projection.title : null;
-				const encoded = JSON.stringify([version, stamp.size, stamp.modified, search, links, title]);
-				return queue({key: [scope, file], scope, encoded});
+				const encoded = JSON.stringify([search, links]);
+				return queue({key: [scope, file], scope, version, ...stamp, title, encoded});
 			} catch (_) { return false; }
 		},
 		drop,

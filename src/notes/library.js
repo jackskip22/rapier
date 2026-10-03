@@ -3,7 +3,7 @@
 // (bare _rapierNotes, _rapierNotesStore, rapierLoad); dropped from the document profile. createElement/textContent only, never innerHTML.
 const RAPIER_NOTES_LIB_LIMIT = 400, RAPIER_NOTES_LIB_RECENT = 8, RAPIER_NOTES_LIB_MENTION_MIN = 4;
 const _rapierNotesLib = {
-	sidx: null, lidx: null, from: null, query: null, results: null, build: null, slice: null, partial: null, painted: 0, job: null, snips: null,
+	sidx: null, lidx: null, from: null, query: null, results: null, build: null, slice: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
 	chips: null, bar: null, picker: null, renamed: null, connections: null, secs: null, trustedPaint: false,
 	// A33/A48: this question's run, whether its first exact hit happened, and the run count. The run id changes with the question.
 	run: null, runs: 0, hit: false, said: null,
@@ -23,25 +23,83 @@ function _rapierNotesLibraryBegin() {
 	_rapierNotesLibrarySearchIndex(); _rapierNotesLibraryLinkIndex();
 	// Unchanged notes join from the one cached row holding both projections, without a read (D08/D09); others take the read path.
 	const state = _rapierNotes, plan = state.cachePlan;
-	if (!plan || !plan.reuse?.length) return;
+	if (!plan || !plan.reuse?.length) return Promise.resolve(true);
 	const S = _rapierNotesSearchModule(), L = _rapierNotesLinksModule(), lib = _rapierNotesLib;
 	// Reuse needs both owners; a missing method is a cache miss, never permission to count cached rows complete.
-	if (!lib.build || !lib.lidx || typeof S?.hydrateSearchIndex !== 'function' || typeof L?.hydrateLinkIndex !== 'function') {
+	if (!lib.build || !lib.lidx || typeof S?.hydrateSearchIndex !== 'function' || typeof L?.hydrateLinkIndex !== 'function' || typeof state.searchCache?.take !== 'function') {
 		state.cachePlan = null;
-		return;
+		return Promise.resolve(true);
 	}
-	try {
-		// Links stream in place; completion resolves them once after every note has joined.
-		lib.build = S.hydrateSearchIndex(lib.build, plan.reuse, {own: true});
-		lib.sidx = lib.build.index;
-		lib.lidx = L.hydrateLinkIndex(lib.lidx, plan.reuse, {stream: true});
-		// I06: the warm titles were set by the load (notes.js _rapierNotesLoad), before the first card.
-	} catch (_) {
-		// One failed owner invalidates the whole reuse: retire both projections and the plan before ReadRest chooses bodies.
-		state.cachePlan = null;
-		lib.from = null;
-		_rapierNotesLibrarySearchIndex(); _rapierNotesLibraryLinkIndex();
-	}
+	if (lib.hydrate?.plan === plan) return lib.hydrate.promise;
+	lib.hydrate?.stop();
+	const from = state.texts, gen = state.loadGen, large = plan.total > 200;
+	const task = {plan, cancel: null, stop: null, promise: null};
+	let at = 0, resolve, settled = false;
+	task.promise = new Promise(done => { resolve = done; });
+	const finish = ok => {
+		if (settled) return; settled = true;
+		task.cancel?.(); task.cancel = null;
+		if (ok) {
+			// An edit can remove or rename a note between slices. Only names still owned by
+			// this folder count; a new name takes the ordinary held-text/read path.
+			const notes = state.index?.notes || {};
+			for (const file of plan.ready) if (!notes[file]) plan.ready.delete(file);
+			plan.reused = plan.ready.size;
+			plan.reread = Object.keys(notes).filter(file => !plan.ready.has(file));
+		} else plan.ready.clear();
+		// Only the live indexes retain a consumed projection. A cancelled folder also releases
+		// every candidate it had yet to decode, without touching the new folder's plan.
+		plan.reuse = [];
+		if (lib.hydrate === task) lib.hydrate = null;
+		resolve(ok);
+	};
+	task.stop = () => finish(false);
+	lib.hydrate = task; plan.reused = 0; plan.ready = new Set();
+	const live = () => lib.hydrate === task && lib.from === from && state.texts === from && state.loadGen === gen;
+	const arm = () => { task.cancel = _rapierNotesLibraryIdle(run); };
+	const run = deadline => {
+		if (!live()) { finish(false); return; }
+		task.cancel = null;
+		if (large && typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked()) { arm(); return; }
+		const started = globalThis.performance?.now() ?? Date.now();
+		let taken = 0;
+		try {
+			do {
+				const row = plan.reuse[at]; plan.reuse[at++] = null;
+				const present = !!state.index?.notes?.[row.file];
+				const projection = present && state.searchCache.take(row);
+				if (projection) {
+					const admitted = [{...row, projection}];
+					// Queued/read human text outranks an idle cache arrival at both owners.
+					lib.build = S.hydrateSearchIndex(lib.build, admitted, {own: true});
+					lib.sidx = lib.build.index;
+					lib.lidx = L.hydrateLinkIndex(lib.lidx, admitted, {stream: true, pending: lib.build.pending});
+					plan.ready.add(row.file); plan.reused++;
+				} else if (present) plan.reread.push(row.file);
+				taken++;
+			} while (at < plan.reuse.length && (!large || taken < 64 &&
+				(globalThis.performance?.now() ?? Date.now()) - started < 4 &&
+				(!deadline || deadline.timeRemaining() > 1) &&
+				!(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked())));
+		} catch (_) {
+			// An owner refusal retires both indexes before ReadRest chooses bodies. No half of
+			// a joint row can become coverage, even if the other owner installed it first.
+			state.cachePlan = null; finish(true); lib.from = null;
+			_rapierNotesLibrarySearchIndex(); _rapierNotesLibraryLinkIndex();
+			return;
+		}
+		lib.results = null; lib.query = null;
+		if (state.open && state.query && Date.now() - lib.painted > 250 &&
+			!(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked())) {
+			lib.painted = Date.now(); lib.trustedPaint = true;
+			try { _rapierNotesRender(); } finally { lib.trustedPaint = false; }
+		}
+		if (at < plan.reuse.length) arm(); else finish(true);
+	};
+	// Small folders retain their immediate hydrate. Large folders spend only idle slices on
+	// the encoded projections; the load already restored their titles before the first card.
+	if (large) arm(); else run(null);
+	return task.promise;
 }
 function _rapierNotesLibraryTaken(file) {
 	const lib = _rapierNotesLib;
@@ -51,8 +109,14 @@ function _rapierNotesLibraryBacklog() { const b = _rapierNotesLib.build; return 
 function _rapierNotesLibraryFresh() {
 	const state = _rapierNotes, lib = _rapierNotesLib;
 	if (lib.from === state.texts) return true;
+	lib.slice?.cancel?.(); lib.hydrate?.stop();
 	lib.from = state.texts; lib.linksPending = null; lib.slice = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
 	return false;
+}
+function _rapierNotesLibraryIdle(run) {
+	if (typeof requestIdleCallback === 'function') { const id = requestIdleCallback(run, {timeout: 100}); return () => globalThis.cancelIdleCallback?.(id); }
+	if (typeof setTimeout === 'function') { const id = setTimeout(() => run(null), 0); return () => globalThis.clearTimeout?.(id); }
+	run(null); return null;
 }
 // ---- The search index, in slices (A18) ----
 // Built a bounded number of notes per idle slice, byte-equal to the whole build; an early answer is partial and says so. One slice per folder generation.
@@ -68,19 +132,24 @@ function _rapierNotesLibrarySearchIndex() {
 	return lib.sidx;
 }
 function _rapierNotesLibraryScheduleSlice() {
-	const lib = _rapierNotesLib, state = _rapierNotes, from = state.texts;
+	const lib = _rapierNotesLib, state = _rapierNotes, from = state.texts, gen = state.loadGen;
 	if (lib.slice) return;
+	const task = lib.slice = {cancel: null};
 	const run = deadline => {
 		// A retired callback must not clear the replacement folder’s scheduled slice.
-		if (lib.from !== from) return;
+		if (lib.slice !== task || lib.from !== from || state.loadGen !== gen) return;
 		lib.slice = null;
 		if (!lib.build || lib.build.done) return;
+		if (typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked()) { _rapierNotesLibraryScheduleSlice(); return; }
 		const S = _rapierNotesSearchModule();
+		const large = state.sizes?.size > 200, started = globalThis.performance?.now() ?? Date.now();
 		let stepped = 0;
 		// The build grows in place, so the queue's keys say what a slice took.
 		const queued = [...lib.build.pending.keys()];
-		do { lib.build = S.stepSearchIndex(lib.build, {notes: 16, own: true}); stepped += 16; }
-		while (!lib.build.done && stepped < 256 && deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() > 8);
+		do { const notes = large ? 1 : 16; lib.build = S.stepSearchIndex(lib.build, {notes, own: true}); stepped += notes; }
+		while (!lib.build.done && stepped < 256 && deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() > (large ? 1 : 8) &&
+			(!large || (globalThis.performance?.now() ?? Date.now()) - started < 4 &&
+			!(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked())));
 		lib.sidx = lib.build.index; lib.results = null; lib.query = null;
 		// Let a slice's words go (#257) and remember the note's row here, the one moment both owners hold it. A missing or disagreeing bracket declines.
 		if (typeof _rapierNotesLetGo === 'function') for (const file of queued) if (!lib.build.pending.has(file)) {
@@ -91,12 +160,10 @@ function _rapierNotesLibraryScheduleSlice() {
 		// A read-sized queue emptying is not completion: answer at most four times a second while reads remain, then after the final slice.
 		const now = Date.now();
 		// Search progress paint only: see _rapierNotesLibrarySortedSection.
-		if (state.open && state.query && ((lib.build.done && (!state.reading || state.reading.complete)) || now - lib.painted > 250)) { lib.painted = now; lib.trustedPaint = true; try { _rapierNotesRender(); } finally { lib.trustedPaint = false; } }
+		if (state.open && state.query && ((lib.build.done && (!state.reading || state.reading.complete)) || now - lib.painted > 250) &&
+			!(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked())) { lib.painted = now; lib.trustedPaint = true; try { _rapierNotesRender(); } finally { lib.trustedPaint = false; } }
 	};
-	// requestIdleCallback, else a macrotask, else (Node) run to completion now.
-	if (typeof requestIdleCallback === 'function') lib.slice = requestIdleCallback(run, {timeout: 100});
-	else if (typeof setTimeout === 'function') lib.slice = setTimeout(() => run(null), 0);
-	else { lib.slice = true; run(null); }
+	task.cancel = _rapierNotesLibraryIdle(run);
 }
 // ---- Section order, cached for a search's own paints ----
 // sortedSection walks every note per call. Every sidecar write is followed at once by its own plain render, which re-walks; only the renders this

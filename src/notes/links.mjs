@@ -11,7 +11,8 @@ import {parseFrontMatter, aliasesOf} from './frontmatter.mjs';
 //
 // Fences, indented/inline code and HTML comments are text, never links. A raw-HTML block
 // keeps its Markdown-looking text literal, but its tags' URL attributes are links.
-// Updating one note costs that note, never the library.
+// Updating words scans that note; changing a filename or alias re-resolves the library with one
+// pass over its name lookup, so an arrival can still shadow an earlier target.
 import {noteFileName, projectCard} from './model.mjs';
 import {markdownParser, escapeImageAlt} from '../spec/md-assets.mjs';
 
@@ -727,7 +728,20 @@ function unique(arr) {
 	return out;
 }
 
-export function resolveLink(link, {from, files, sourceFiles = false, aliases} = {}) {
+export function resolveLink(link, context = {}) { return resolveLinkWithNames(link, context); }
+
+// A bulk resolve owns this lookup for one unchanged set of filenames and aliases. It is never
+// retained across an arrival, removal or alias edit, where yesterday's unique target can be wrong.
+function resolutionNames(files, aliases) {
+	const folded = new Map(), named = new Map();
+	for (const file of files) { const key = file.toLowerCase(), values = folded.get(key) || []; values.push(file); folded.set(key, values); }
+	for (const [file, names] of aliases || []) if (files.has(file)) for (const key of new Set(names.map(name => name.normalize('NFC').toLowerCase()))) {
+		const values = named.get(key) || []; values.push(file); named.set(key, values);
+	}
+	return {folded, named};
+}
+
+function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} = {}, names = null) {
 	if (!link) return {unresolved: 'missing'};
 	if (link.unresolvedDecode) return {unresolved: 'entity_decoder_unavailable'};
 	if (link.kind === 'autolink') return {unresolved: 'outside'};
@@ -749,7 +763,9 @@ export function resolveLink(link, {from, files, sourceFiles = false, aliases} = 
 		: unique([path]);
 	for (const w of want) if (list.has(w)) return {file: w, anchor: link.anchor || ''};
 	const hits = [];
-	for (const f of list) {
+	if (names) {
+		for (const w of want) for (const f of names.folded.get(w.toLowerCase()) || []) if (!hits.includes(f)) hits.push(f);
+	} else for (const f of list) {
 		for (const w of want) if (f.toLowerCase() === w.toLowerCase() && !hits.includes(f)) hits.push(f);
 	}
 	if (hits.length === 1) return {file: hits[0], anchor: link.anchor || ''};
@@ -758,8 +774,8 @@ export function resolveLink(link, {from, files, sourceFiles = false, aliases} = 
 	// A bare wikilink may name a note by one of the names it declares for itself. A path or a
 	// file name is a path, so only a plain name looks here, and only after real files have missed.
 	if (wiki && !/[\\/]/.test(dest) && !/\.md$/i.test(dest)) {
-		const name = dest.normalize('NFC').toLowerCase(), targets = [];
-		for (const [file, names] of aliases || []) if (list.has(file) && names.some(alias => alias.normalize('NFC').toLowerCase() === name)) targets.push(file);
+		const name = dest.normalize('NFC').toLowerCase(), targets = names ? names.named.get(name) || [] : [];
+		if (!names) for (const [file, aliasesOfFile] of aliases || []) if (list.has(file) && aliasesOfFile.some(alias => alias.normalize('NFC').toLowerCase() === name)) targets.push(file);
 		if (targets.length === 1) return {file: targets[0], anchor: link.anchor || '', via: 'alias'};
 		if (targets.length > 1) return {unresolved: 'ambiguous'};
 	}
@@ -842,11 +858,11 @@ export function unpackLinkProjection(value, sourceBytes = Number.MAX_SAFE_INTEGE
 export function buildLinkIndex(texts) {
 	const map = asMap(texts);
 	const files = new Set(map.keys()), aliases = new Map([...map].map(([file, text]) => [file, aliasesOf(text)]));
-	const out = new Map(), inn = new Map();
+	const out = new Map(), inn = new Map(), names = resolutionNames(files, aliases);
 	for (const [file, text] of map) {
 		const links = scanLinks(text);
 		const resolved = links.map(L => {
-			const r = resolveLink(L, {from: file, files, aliases});
+			const r = resolveLinkWithNames(L, {from: file, files, aliases}, names);
 			return {...kept(L), resolved: r};
 		});
 		out.set(file, resolved);
@@ -867,10 +883,10 @@ function installLinks(out, inn, from, links) {
 	for (const L of links || []) if (L.resolved.file) inn.set(L.resolved.file, (inn.get(L.resolved.file) || []).concat({from, start: L.start, end: L.end}));
 }
 
-function resolvedLinks(links, from, files, aliases) {
+function resolvedLinks(links, from, files, aliases, names) {
 	let changed = false;
 	const next = links.map(L => {
-		const resolved = resolveLink(L, {from, files, aliases}), old = L.resolved;
+		const resolved = resolveLinkWithNames(L, {from, files, aliases}, names), old = L.resolved;
 		if (resolved.file === old.file && resolved.anchor === old.anchor && resolved.unresolved === old.unresolved && resolved.via === old.via) return L;
 		changed = true; return {...L, resolved};
 	});
@@ -896,9 +912,10 @@ function installLinkProjection(index, file, projection, stream) {
 	if (projection == null) { files.delete(file); aliases.delete(file); }
 	else { files.add(file); aliases.set(file, names); }
 	installLinks(out, inn, file, projection == null ? null : projection.out.map(L => ({...L, resolved: resolveLink(L, {from: file, files, aliases})})));
-	if (changedNames && !stream) for (const [other, links] of out) {
+	const resolution = changedNames && !stream ? resolutionNames(files, aliases) : null;
+	if (resolution) for (const [other, links] of out) {
 		if (other === file) continue;
-		const next = resolvedLinks(links, other, files, aliases);
+		const next = resolvedLinks(links, other, files, aliases, resolution);
 		if (next) installLinks(out, inn, other, next);
 	}
 	return stream ? index : {out, in: inn, files, aliases};
@@ -918,9 +935,9 @@ export function hydrateLinkIndex(index, reuse, {stream = false, pending = new Se
 
 // After a stream: every link resolved once more against every name now known, in place.
 export function resolveLinkIndex(index) {
-	const {out, in: inn, files, aliases} = index;
+	const {out, in: inn, files, aliases} = index, names = resolutionNames(files, aliases);
 	for (const [from, links] of out) {
-		const next = resolvedLinks(links, from, files, aliases);
+		const next = resolvedLinks(links, from, files, aliases, names);
 		if (next) installLinks(out, inn, from, next);
 	}
 	return index;

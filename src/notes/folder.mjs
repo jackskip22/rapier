@@ -16,7 +16,7 @@ import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, en
 import {createRecordings} from './recording.mjs';
 import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf, attachmentLine} from './attachments.mjs';
 import {exactBytes, sha256, storedFileDigest, checkByteAbort, blobByteChunks, digestByteChunks} from './integrity.mjs';
-import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, serializeIndex, addSection, setCollapsed} from './model.mjs';
+import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, addSection, setCollapsed} from './model.mjs';
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
@@ -130,18 +130,29 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const isShared = () => typeof shared === 'function' ? !!shared() : !!shared;
 	let deviceId = '';
 	const identify = index => {
+		const previous = index.folderDeviceId;
 		deviceId = index.folderDeviceId || namespace();
 		index.folderDeviceId = deviceId;
-		admitIdentities(index, deviceId);
-		return index;
+		const assigned = admitIdentities(index, deviceId);
+		return previous !== deviceId || assigned.length > 0;
 	};
 	const owner = createOwner({store, locks, channel, shared, timeoutMs, clock, onInvalidate, recover: async args => {
 		// The open-note guard belongs to the folder, including ordinary reads and crash recovery.
 		const repaired = await recoverTrash({...args, clock, keep});
-		const names = [...new Set([...Object.keys(repaired.index.notes), ...(await store.list()).filter(isNoteFile)])];
-		const index = identify(reconcile(copy(repaired.index), names).index);
-		if (serializeIndex(index) !== serializeIndex(repaired.index)) return args.commitIndex(index, {kind: 'identity', reconcileFiles: true});
-		return {index};
+		const listing = await store.list();
+		const names = [...new Set([...Object.keys(repaired.index.notes), ...listing.filter(isNoteFile)])];
+		const fixed = reconcile(repaired.index, names), index = fixed.index;
+		// Reconciliation owns the notes map; only an entry gaining an identity needs a private copy.
+		// Warm reads keep the admitted metadata without copying or serializing the whole sidecar.
+		let ranks = false;
+		for (const [file, entry] of Object.entries(index.notes)) {
+			if (!entry.id) index.notes[file] = {...entry};
+			if (entry.order !== repaired.index.notes[file]?.order) ranks = true;
+		}
+		const identities = identify(index);
+		if (fixed.added.length || ranks || identities) return args.commitIndex(index, {kind: 'identity', reconcileFiles: true});
+		// This exact listing belongs only to this recovered read. A commit takes its own fresh listing.
+		return {index, listing};
 	}});
 	// Transactions in flight, for the shell's facts: a witness's settle() waits for zero.
 	let pending = 0;
@@ -168,11 +179,28 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		if (isCodeFile(wanted)) { const name = codeFileName(wanted, names, {ascii: store.ascii}); if (name) return name; }
 		return noteFileName(text, names, {ascii: store.ascii});
 	};
-	const read = async options => { const snapshot = await owner.read(scope, options); if (snapshot?.index) identify(snapshot.index);
-		return {...snapshot, recordings: await recordingCustody.recover({snapshot})}; };
-	const rebuildIndex = backup => tracked(async () => {
+	// A display snapshot borrows the already-held lease; sync's independent read still takes its own.
+	// An unreadable checkpoint must not hide notes. The Sync owner retains that refusal at its door.
+	const withSyncState = async snapshot => {
+		try { snapshot.syncState = (await readSyncStateBytes(store)).state; }
+		catch (_) { snapshot.syncState = null; }
+		return snapshot;
+	};
+	const read = async options => {
+		let snapshot;
+		if (options?.syncState) {
+			try { snapshot = await underLease(async lease => withSyncState(await lease.read(options))); }
+			catch (error) { if (error?.code !== 'read-only') throw error; }
+		}
+		// Read-only folders keep the owner's sidecar/journal bracket and have no sync authority.
+		snapshot ||= await owner.read(scope, options);
+		if (snapshot?.index) identify(snapshot.index);
+		return {...snapshot, recordings: await recordingCustody.recover({snapshot})};
+	};
+	const rebuildIndex = (backup, options) => tracked(async () => {
 		const lease = await owner.acquire(scope);
-		try { return await lease.rebuildIndex(backup); } finally { await lease.release(); }
+		try { const snapshot = await lease.rebuildIndex(backup); return options?.syncState ? await withSyncState(snapshot) : snapshot; }
+		finally { await lease.release(); }
 	});
 	// Renew the writer, not the notes: existing IDs still identify their history and peers.
 	// A metadata-only transaction across both owner-managed files -- folderDeviceId lives in

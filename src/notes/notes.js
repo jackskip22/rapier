@@ -27,6 +27,7 @@ const RAPIER_NOTES_DIR = 'notes', RAPIER_NOTES_HOLD_MS = 500, RAPIER_NOTES_HOLD_
 const _rapierNotes = {
 	surface: null, scroll: null, grids: {}, windows: {}, sheet: null, open: false,
 	index: null, texts: new Map(), titles: new Map(), hold: new Set(), sizes: new Map(), readFailed: new Map(), reading: null, reads: null, loadGen: 0, popup: null, sheetSwiped: false, fabDrag: null,
+	backgroundTouches: new Set(), backgroundInput: false, backgroundComposing: false,
 	query: '', current: null, currentProof: null, savedGen: -1, savingGen: -1, savingText: null, autosave: 0, asciiNames: null, drag: null, selected: new Set(), snack: null, loading: null, indexing: null, persistAsked: false, persistReported: false, storageKnown: null, audioBytes: null, capturing: null, renderAfterDrag: false, saveFailed: false, attempted: new Map(), sheetFocus: false, sheetOpener: null, sheetMode: 'actions', importsOpen: null, importUndoReview: null, importUndoBusy: false, historyRows: null, historyOne: null, pastBytes: null, pastVersions: 0, untitled: new Set(), renaming: null, swallowClick: 0, unfolded: new Set(), thumbs: new Map(), thumbNames: null, thumbQueue: [], thumbBusy: false, remindTimer: 0, remindQueue: [], mode: false, compose: false, opened: new Set(), retaking: null, readerSaid: false, captureToken: null, capturePreparing: false, captured: new Set(), captureChain: Promise.resolve(), unlocking: null, remindSyncedKey: undefined, remindChain: Promise.resolve(),
 	// The Title field (task #369): the empty paragraph standing for it (`slot`), the empty paragraph this
 	// shell last made for a field (`fresh`), the two rows a note without a title or a body shows.
@@ -825,7 +826,7 @@ async function _rapierNotesLoad() {
 	// first, the index reconciled with the files, every note given its identity, and this window's
 	// picture of the folder is exactly what the owner would admit a write against.
 	let snapshot, damaged = null;
-	const read = async () => { try { return await store.folder.read(); }
+	const read = async () => { try { return await store.folder.read({syncState: true}); }
 		catch (error) {
 			if (error?.code === 'newer') throw new Error('This notes folder was written by a newer Rapier (index version ' + error.version + '). Open it with that Rapier, so nothing in it is lost.');
 			throw error;
@@ -836,11 +837,10 @@ async function _rapierNotesLoad() {
 		// The sidecar fails closed (notes/model.mjs parseIndex): bytes that cannot be read are kept
 		// aside under a dated name, said once, and the owner rebuilds the index from the notes.
 		const backup = 'notes.damaged-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
-		snapshot = await store.folder.rebuildIndex(backup);
+		snapshot = await store.folder.rebuildIndex(backup, {syncState: true});
 		damaged = snapshot.damaged;
 	}
-	let syncState = null;
-	try { syncState = await globalThis.RapierNotesSyncSession?.readSyncState(store.folder); } catch (_) { /* An unreadable sync checkpoint must never block the notes. The Sync sheet names its refusal. */ }
+	const syncState = snapshot.syncState ?? null;
 	const index = snapshot.index, files = snapshot.files;
 	// R5: the recordings the folder kept when a page went away, read here, shown by the recorder
 	// (notes/recorder.js _rapierRecorderOfferRecovery) once the cards are up. Reading is not offering.
@@ -901,11 +901,14 @@ async function _rapierNotesLoad() {
 	// its surface for 5.6 s at a phone's CPU (the lead's probe, 3 October). The opener fires this once the
 	// surface is up and drawn; every other load fires it at once (_rapierNotesIndexingBegin). A load that
 	// was overtaken never fires: the newer load's own closure stands in its place.
-	state.indexing = () => {
+	state.indexing = async () => {
 		if (state.loadRequest !== request) return;
 		state.indexing = null;
-		if (typeof _rapierNotesLibraryBegin === 'function') _rapierNotesLibraryBegin();
-		_rapierNotesReadRest();
+		// Deferred cache candidates are not yet coverage; an early search must stay partial.
+		state.reading = {total: state.sizes.size, done: 0, complete: false};
+		if (typeof _rapierNotesLibraryBegin === 'function' && await _rapierNotesLibraryBegin() === false) return;
+		if (state.loadRequest !== request) return;
+		return _rapierNotesReadRest();
 	};
 	// Title order is the one order that needs every note's words before the first card.
 	// Said, never silent (keep-references.md, the data-loss class): an entry whose file is gone is
@@ -914,7 +917,14 @@ async function _rapierNotesLoad() {
 	if (dropped.length) showToast(dropped.length === 1 ? 'One note on Rapier’s list is not in the notes folder, so it was taken off the list.' : dropped.length + ' notes on Rapier’s list are not in the notes folder, so they were taken off the list.', 'info');
 }
 
-function _rapierNotesIndexingBegin() { const begin = _rapierNotes.indexing; if (begin) begin(); }
+function _rapierNotesIndexingBegin() { const begin = _rapierNotes.indexing; if (begin) return begin(); }
+// Large folders yield derivation and background reads to the same live input boundary. Touch
+// lifetime is separate from pointercancel: native scrolling cancels the pointer before release.
+function _rapierNotesBackgroundBlocked() {
+	const state = _rapierNotes;
+	return state.sizes.size > 200 && (state.backgroundTouches.size > 0 || state.backgroundInput || state.backgroundComposing ||
+		!!navigator.scheduling?.isInputPending?.({includeContinuous: true}));
+}
 // ---- The reads (#257, the reads half) ------------------------------------------------------------
 // notes/library-reads.mjs (Astra A11-b, its A11-6) schedules the reads of the cards about to be
 // drawn: two at a time, bytes reserved, a window that moved on no longer waited for, a note over
@@ -1027,8 +1037,11 @@ function _rapierNotesReadRest() {
 	// the plan says is genuinely unknown -- everything the cache missed, everything that moved, and
 	// everything on a page with no cache, which is all of them. Coverage stays whole-folder honest:
 	// `total` is still every note, and the hydrated ones are counted as done because they ARE done.
-	const plan = state.cachePlan, hydrated = plan ? plan.reuse.length : 0;
-	const files = plan ? plan.reread : all;
+	const plan = state.cachePlan;
+	// The sidecar may have changed during hydration: removed names leave the queue and new
+	// names join it. The plan retains only admitted names, never decoded projections.
+	const files = plan ? all.filter(file => !plan.ready?.has(file)) : all, hydrated = all.length - files.length;
+	state.cachePlan = null;
 	const reading = state.reading = {total: all.length, done: hydrated, complete: false};
 	// Four reads in flight: a note's read is five awaits of the folder's own latency, and one at a
 	// time that latency was the wall on five thousand notes (33 a second under the 4x throttle, the
@@ -1039,7 +1052,8 @@ function _rapierNotesReadRest() {
 			const file = files[at++];
 			if (state.loadGen !== gen) return;
 			// The slices take the words in idle time; the read waits for them rather than running ahead.
-			while (typeof _rapierNotesLibraryBacklog === 'function' && _rapierNotesLibraryBacklog() > 64) await new Promise(resolve => setTimeout(resolve, 16));
+			while (state.loadGen === gen && (_rapierNotesBackgroundBlocked() ||
+				typeof _rapierNotesLibraryBacklog === 'function' && _rapierNotesLibraryBacklog() > 64)) await new Promise(resolve => setTimeout(resolve, 16));
 			if (state.loadGen !== gen) return;
 			if (!state.texts.has(file) && (!state.readFailed.has(file) || state.readFailed.get(file) === 'too large to preview')) await _rapierNotesReadOne(file, {search: true});
 			reading.done++;
@@ -6637,7 +6651,7 @@ async function _rapierNotesContinueBackupSet(prepared, {again = false, inventory
 		if (!inventory) {
 			await _rapierNotesFlush(); await _rapierNotesStore.settle();
 			snapshot = await _rapierNotesStore.folder.backupSnapshot();
-			inventory = await B.backupInventory(_rapierNotesStore, {signal, onProgress});
+			inventory = await B.backupInventory(_rapierNotesStore, {signal, onProgress, concurrency: (await _rapierNotesStore.port()) ? 1 : 4});
 			const names = inventory.map(row => row.name).join('\n');
 			assertCurrent = async () => await snapshot.current() && names === (await B.backupNames(_rapierNotesStore)).join('\n');
 			const declared = new Map([...prepared.plan.manifest.files, ...prepared.plan.omitted].map(row => [row.name, row.bytes]));
@@ -6803,7 +6817,7 @@ async function _rapierNotesBackup() {
 		snapshot = await _rapierNotesStore.folder.backupSnapshot();
 		const indexText = _rapierNotesModel().serializeIndex(snapshot.index);
 		progress.update({phase: 'Reading folder', files: 0});
-		const inventory = await B.backupInventory(_rapierNotesStore, {signal, onProgress: progress.update});
+		const inventory = await B.backupInventory(_rapierNotesStore, {signal, onProgress: progress.update, concurrency: (await _rapierNotesStore.port()) ? 1 : 4});
 		if (!inventory.length) { showToast('The notes folder is empty; nothing to back up', 'info'); return; }
 		const stamp = new Date(), name = _rapierNotesBackupName(stamp, [earlier?.stamp, state.lastBackup?.stamp]);
 		const backupOptions = {appVersion: document.querySelector('meta[name="rapier-version"]')?.content || 'unknown', stamp: stamp.getTime(),
@@ -7466,6 +7480,25 @@ function _rapierNotesBind(surface, search) {
 		if (!searchComposing && (changed || state.query !== searchPainted)) paintSearch();
 	});
 	search.addEventListener('compositionend', () => { state.query = search.value; searchComposing = false; paintSearch(); });
+	// A typed mutation gets its next frame before background projection resumes. IME composition
+	// and a finger scrolling either Notes surface keep the gate until their own end event.
+	document.addEventListener('beforeinput', () => {
+		if (state.sizes.size <= 200 || state.backgroundInput) return;
+		state.backgroundInput = true;
+		requestAnimationFrame(() => { state.backgroundInput = false; });
+	}, true);
+	document.addEventListener('compositionstart', () => { state.backgroundComposing = true; }, true);
+	document.addEventListener('compositionend', () => { state.backgroundComposing = false; }, true);
+	document.addEventListener('touchstart', evt => {
+		if ((!state.mode && !state.open) || state.sizes.size <= 200) return;
+		for (const touch of evt.changedTouches) state.backgroundTouches.add(touch.identifier);
+	}, {capture: true, passive: true});
+	const released = evt => { for (const touch of evt.changedTouches) state.backgroundTouches.delete(touch.identifier); };
+	document.addEventListener('touchend', released, {capture: true, passive: true});
+	document.addEventListener('touchcancel', released, {capture: true, passive: true});
+	const interrupted = () => { state.backgroundTouches.clear(); state.backgroundInput = false; state.backgroundComposing = false; };
+	window.addEventListener('blur', interrupted);
+	document.addEventListener('visibilitychange', () => { if (document.hidden) interrupted(); });
 	document.addEventListener('click', evt => { const at = state.swallowClick; if (!at) return; state.swallowClick = 0; if (performance.now() - at < 700) { evt.stopPropagation(); evt.preventDefault(); } }, true);
 	// R87: while reorder is on, a finger on a section head is the reorder's, not a card's.
 	surface.addEventListener('pointerdown', evt => { if (_rapierNotesReorderDown(evt)) return; _rapierNotesPointerDown(evt); });
