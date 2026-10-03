@@ -1,5 +1,6 @@
 // Plans are not saves. Only body read-back plus the committed identity can enter `written`.
 import {exactBytes, sha256 as digestBytes, sha256State} from './integrity.mjs';
+import {canonicalJSON} from './merge.mjs';
 import {isNoteFile, isCodeFile, isAttachmentName, projectCard} from './model.mjs';
 import {validRecordingName} from './audio.mjs';
 import {finishImportCharacters} from './import-characters.mjs';
@@ -11,6 +12,7 @@ const bytesOf = value => exactBytes(value ?? '');
 const historyFile = value => typeof value === 'string' && /^history\/(?:manifests\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}![1-9][0-9]*\.json|(?:texts|blobs)\/[a-f0-9]{64})$/.test(value);
 const importedFile = value => typeof value === 'string' && (value.startsWith('attachments/') && isAttachmentName(value.slice(12)) || value.startsWith('audio/') && validRecordingName(value.slice(6)));
 const sha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const digestEntry = entry => { const hash = sha256State(); hash.update(bytesOf(canonicalJSON(entry))); return hash.finish(); };
 export const IMPORT_RECEIPT_LIMIT = 5;
 const metadata = rows => list(rows).map(row => {
 	const out = {};
@@ -118,7 +120,7 @@ export function createImportReceipt(result, {stamp = null, id = null} = {}) {
 			title: typeof note.text === 'string' ? projectCard('', note.text).title : '',
 			warnings: copy(list(note.warnings).filter(row => !fieldRow(row) && !databaseRow(row))), unresolvedLinks: copy(list(note.unresolvedLinks)),
 			unresolvedPictures: copy(list(note.unresolvedPictures))})),
-		plannedFiles: list(result.notes).map(note => note.file), written: [], sections: [], createdFiles: [], createdHistory: [], createdSections: []};
+		written: [], sections: [], createdFiles: [], createdHistory: [], createdSections: []};
 	// A repeat publishes nothing, but its returned receipt must still explain the decision.
 	// The shell keeps the original durable record and stops before any second publication.
 	if (result.alreadyImported || result.repeatConflict) {
@@ -173,7 +175,7 @@ export function recordImportSections(receipt, sections) {
 }
 
 async function recordWrite(receipt, note, observed, {digest}) {
-	if (!['planned', 'writing'].includes(receipt.status) || !receipt.plannedFiles.includes(note.file)) throw new Error('note is not pending in this import');
+	if (!['planned', 'writing'].includes(receipt.status) || !receipt.notes.some(row => row.file === note.file)) throw new Error('note is not pending in this import');
 	if (receipt.written.some(row => row.file === note.file)) throw new Error('note was already recorded');
 	const expected = bytesOf(note.bytes ?? note.text), actual = observed?.bytes;
 	if (!(actual instanceof Uint8Array) || actual.length !== expected.length || actual.some((byte, i) => byte !== expected[i])) throw new Error('import read-back differs: ' + note.file);
@@ -182,18 +184,20 @@ async function recordWrite(receipt, note, observed, {digest}) {
 	if (id !== null && (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id))) throw new Error('import read-back has an invalid note identity');
 	if (note.entry?.id && note.entry.id !== id) throw new Error('import read-back has a different identity');
 	if (typeof digest !== 'function') throw new Error('import verification needs SHA-256');
+	const entryDigest = digestEntry(observed.entry), trashed = observed.entry.trashed === true, trashedAt = observed.entry.trashedAt ?? null;
+	const source = observed.entry.importSource === undefined ? {} : {importSource: copy(observed.entry.importSource)};
 	const hash = await digest(actual);
 	if (!sha256(hash)) throw new Error('invalid SHA-256 result');
 	const out = copy(receipt);
 	out.status = 'writing';
 	out.written.push({file: note.file, id, digest: hash, byteLength: actual.length, created: observed.created === true,
-		trashed: observed.entry.trashed === true, trashedAt: observed.entry.trashedAt ?? null, entry: copy(observed.entry)});
+		trashed, trashedAt, entryDigest, ...source});
 	return out;
 }
 
 export function finishImportReceipt(receipt, {status, why, sections = []} = {}) {
 	if (!['complete', 'cancelled', 'failed'].includes(status)) throw new Error('invalid import outcome');
-	if (status === 'complete' && receipt.written.length !== receipt.plannedFiles.length) throw new Error('import still has unwritten notes');
+	if (status === 'complete' && receipt.written.length !== receipt.notes.length) throw new Error('import still has unwritten notes');
 	const out = copy(receipt);
 	out.status = status;
 	out.sections = copy(sections);
@@ -234,7 +238,7 @@ function titledNote(note, ordinal) {
 }
 function noteName(receipt, file) {
 	const at = list(receipt?.notes).findIndex(note => note?.file === file);
-	return titledNote(receipt?.notes?.[at], list(receipt?.plannedFiles).indexOf(file) + 1 || 1);
+	return titledNote(receipt?.notes?.[at], at + 1 || 1);
 }
 function inputName(receipt, row, i) {
 	const picked = list(receipt.picked), at = picked.findIndex(one => one?.name === row?.name && (!row?.rootId || one?.rootId === row.rootId));
@@ -244,19 +248,16 @@ function inputName(receipt, row, i) {
 }
 function receiptProblem(receipt) {
 	if (!object(receipt) || receipt.version !== 1 || !['planned', 'writing', 'complete', 'cancelled', 'failed'].includes(receipt.status)
-		|| !['notes', 'written', 'plannedFiles', 'sections', 'picked', 'refused', 'accounting', 'createdFiles', 'createdHistory', 'createdSections'].every(key => Array.isArray(receipt[key]))) return 'this import record is incomplete';
+		|| !['notes', 'written', 'sections', 'picked', 'refused', 'accounting', 'createdFiles', 'createdHistory', 'createdSections'].every(key => Array.isArray(receipt[key]))) return 'this import record is incomplete';
 	if (receipt.repeat !== undefined && (!object(receipt.repeat) || !['already-imported', 'conflict'].includes(receipt.repeat.kind)
 		|| !Number.isSafeInteger(receipt.repeat.matchedNotes) || receipt.repeat.matchedNotes < 1
 		|| receipt.status !== (receipt.repeat.kind === 'already-imported' ? 'complete' : 'failed')
-		|| receipt.plannedFiles.length || receipt.written.length || receipt.createdFiles.length || receipt.createdHistory.length || receipt.createdSections.length)) return 'this import record is incomplete';
+		|| receipt.notes.length || receipt.written.length || receipt.createdFiles.length || receipt.createdHistory.length || receipt.createdSections.length)) return 'this import record is incomplete';
 	const planned = new Set(), written = new Set(), ids = new Set();
-	for (const file of receipt.plannedFiles) { if (!noteFile(file) || planned.has(file)) return 'this import record is incomplete'; planned.add(file); }
-	const described = new Set();
 	for (const note of receipt.notes) {
-		if (!object(note) || !planned.has(note.file) || described.has(note.file) || !['warnings', 'unresolvedLinks', 'unresolvedPictures'].every(key => Array.isArray(note[key]))) return 'this import record is incomplete';
-		described.add(note.file);
+		if (!object(note) || !noteFile(note.file) || planned.has(note.file) || !['warnings', 'unresolvedLinks', 'unresolvedPictures'].every(key => Array.isArray(note[key]))) return 'this import record is incomplete';
+		planned.add(note.file);
 	}
-	if (described.size !== planned.size) return 'this import record is incomplete';
 	// Each unapplied value names the notes that carried it; a row that does not add up is not a record.
 	if (receipt.unapplied !== undefined) {
 		if (!Array.isArray(receipt.unapplied)) return 'this import record is incomplete';
@@ -397,7 +398,7 @@ export function describeImportReceipt(receipt, {now} = {}) {
 	if (receipt.repeat) return {when, title: receipt.repeat.kind === 'already-imported' ? 'this export is already in notes' : 'part of this export is already in notes',
 		lines: [count(receipt.repeat.matchedNotes, 'note') + ' matched the exact source; nothing was imported'],
 		undo: {eligible: false, why: 'this attempt did not import any notes'}};
-	const n = receipt.written.length, total = receipt.plannedFiles.length, stopped = closed(receipt.status);
+	const n = receipt.written.length, total = receipt.notes.length, stopped = closed(receipt.status);
 	const title = stopped ? (n < total ? n + ' of ' + count(total, 'note') + ' imported' : count(n, 'note') + ' imported') : count(n, 'note') + ' written; import not finished';
 	const sources = object(receipt.sources) ? Object.keys(receipt.sources).filter(key => Number.isSafeInteger(receipt.sources[key]) && receipt.sources[key] >= 0) : [];
 	const named = sources.filter(key => own(IMPORT_SOURCE_WORDS, key)).map(key => IMPORT_SOURCE_WORDS[key]);
@@ -409,7 +410,7 @@ export function describeImportReceipt(receipt, {now} = {}) {
 	for (const [i, row] of skipped.entries()) lines.push(inputName(receipt, row, i) + ' skipped: ' + fact(row, 'the importer did not record a reason'));
 	for (const row of list(receipt.warnings)) lines.push(warningFact(row));
 	for (const row of list(receipt.unapplied)) lines.push(unappliedFact(row));
-	const written = new Set(receipt.written.map(row => row.file)), ordinals = new Map(receipt.plannedFiles.map((file, i) => [file, i + 1]));
+	const written = new Set(receipt.written.map(row => row.file)), ordinals = new Map(receipt.notes.map((note, i) => [note.file, i + 1]));
 	for (const note of receipt.notes) {
 		const name = titledNote(note, ordinals.get(note.file)) + (written.has(note.file) ? '' : ' (not recorded as written)'), warnings = list(note.warnings);
 		const pictureWarnings = new Set(warnings.map(row => JSON.stringify([row?.code, row?.dest])));
@@ -429,8 +430,8 @@ export function describeImportReceipt(receipt, {now} = {}) {
 	return {when, title, lines, undo: {eligible: why === null, why: why || 'the notes will be checked before undo'}};
 }
 
-// Receipt entries are exact JSON metadata proofs, not just identities. Object key order is not
-// an edit; every value (including a pin, colour, category or future field) is.
+// Section creation keeps its small metadata record; note arrivals keep its canonical digest.
+// Object key order is not an edit; every value (including a pin, colour or future field) is.
 function sameValue(a, b) {
 	if (a === b) return true;
 	return a !== null && b !== null && typeof a === 'object' && typeof b === 'object'
@@ -466,8 +467,10 @@ export function planImportUndo(receipt, index, texts, {files, keep = []} = {}) {
 	const ids = identities(current), selected = files === undefined ? null : new Set(files), protectedFiles = new Set(keep), remove = [], kept = [];
 	for (const row of receipt.written) {
 		let why = protectedFiles.has(row.file) ? 'is open with work to keep' : writeProblem(row, current.get(row.file), ids);
-		if (!why && (!object(row.entry) || row.entry.id !== row.id)) why = 'has no verified metadata';
-		if (!why && !sameValue(row.entry, index.notes[row.file])) why = 'has different metadata since this import';
+		if (!why && !sha256(row.entryDigest)) why = 'has no verified metadata';
+		if (!why) try {
+			if (row.entryDigest !== digestEntry(index.notes[row.file])) why = 'has different metadata since this import';
+		} catch (_) { why = 'has no verified metadata'; }
 		if (!why && selected && !selected.has(row.file)) why = 'was not selected in this confirmation';
 		if (why) kept.push({file: row.file, why}); else remove.push(row.file);
 	}
@@ -481,9 +484,9 @@ export function planImportUndo(receipt, index, texts, {files, keep = []} = {}) {
 	for (const row of receipt.written) if (isCodeFile(row.file)) {
 		const at = remove.indexOf(row.file);
 		if (at >= 0) { remove.splice(at, 1); kept.push({file: row.file, why: 'code bytes stay; only import bookkeeping is undone'}); }
-		if (!row.created || !identity(row.id) || row.entry?.id !== row.id || !sha256(row.entry.importSource)) continue;
+		if (!row.created || !identity(row.id) || !sha256(row.entryDigest) || !sha256(row.importSource)) continue;
 		const matches = entries.filter(([, entry]) => entry.id === row.id);
-		if (matches.length === 1 && isCodeFile(matches[0][0]) && matches[0][1].importSource === row.entry.importSource) {
+		if (matches.length === 1 && isCodeFile(matches[0][0]) && matches[0][1].importSource === row.importSource) {
 			delete matches[0][1].importSource; released.push(matches[0][0]);
 		}
 	}

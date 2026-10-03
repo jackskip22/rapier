@@ -6399,7 +6399,7 @@ async function _rapierNotesImportFiles(files, source) {
 	if (record) {
 		try {
 			const sectionsMade = (record.createdSections || []).map(section => section.name);
-			if (!stopped && record.written.length === record.plannedFiles.length) { importVerified = true; record = Receipt.finishImportReceipt(record, {status: 'complete', sections: sectionsMade}); }
+			if (!stopped && record.written.length === record.notes.length) { importVerified = true; record = Receipt.finishImportReceipt(record, {status: 'complete', sections: sectionsMade}); }
 			else record = Receipt.finishImportReceipt(record, {status: landing.status === 'cancelled' ? 'cancelled' : 'failed', why: landing.stop?.why || String(receiptError?.message || receiptError || 'the landing stopped'), sections: sectionsMade});
 			state.index = Receipt.appendImportReceipt(state.index, record);
 			await _rapierNotesWriteIndex();

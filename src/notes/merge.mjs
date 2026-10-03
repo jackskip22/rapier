@@ -432,7 +432,8 @@ function ixValidate(index, ids = false) {
 }
 
 // Compact sorted JSON + LF; never clean away a field before deciding its bytes.
-export function canonicalIndex(index) { ixValidate(index); return ixJSON(index) + '\n'; }
+export function canonicalJSON(value) { return ixJSON(value) + '\n'; }
+export function canonicalIndex(index) { ixValidate(index); return canonicalJSON(index); }
 
 export function admitIndex(index, {deviceId, nextCounter} = {}) {
 	ixValidate(index);
