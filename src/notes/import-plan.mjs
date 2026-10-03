@@ -3,6 +3,14 @@ import {isNoteFile} from './model.mjs';
 
 // The 200-note stall motivates small turns, not a milliseconds-per-byte estimate.
 export const IMPORT_LANDING_DEFAULTS = Object.freeze({batchBytes: 64 * 1024, batchCount: 8});
+// Every batch commits the whole sidecar and the import's receipt, so the work a batch costs grows with
+// the folder and with what has landed. A count that grows with both keeps the number of those commits
+// proportional (item 63: eight a batch made a 10,000-note import rewrite a 25 MB record 1,250 times).
+// The byte limit still bounds a batch; eight stays the floor so a small import lands as it did.
+export function importBatchCount(existing, planned) {
+	need(integer(existing) && existing >= 0 && integer(planned) && planned >= 0, 'import batch count needs the folder\'s and the import\'s note counts');
+	return Math.max(IMPORT_LANDING_DEFAULTS.batchCount, Math.min(256, Math.ceil((existing + planned) / 64)));
+}
 const freeze = Object.freeze;
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 // A plain object from ANY realm: the shell evaluates in a Node VM under the preservation harness and

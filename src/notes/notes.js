@@ -6291,7 +6291,8 @@ async function _rapierNotesImportFiles(files, source) {
 	// folder has changed under the import and what was not yet written is safest still in the export.
 	const landed = [], landedNames = new Map(), landedEntries = new Map();
 	const turn = () => typeof globalThis.scheduler?.yield === 'function' ? globalThis.scheduler.yield() : new Promise(resolve => setTimeout(resolve, 0));
-	let landing = Landing.createImportLanding(Landing.planImportLanding({notes: notes.map(note => ({file: note.file, text: note.text, ...(M.isCodeFile(note.file) ? {bytes: note.bytes} : {}), entry: note.entry})), receipts: record ? notes.map(note => ({file: note.file})) : []}));
+	let landing = Landing.createImportLanding(Landing.planImportLanding({notes: notes.map(note => ({file: note.file, text: note.text, ...(M.isCodeFile(note.file) ? {bytes: note.bytes} : {}), entry: note.entry})), receipts: record ? notes.map(note => ({file: note.file})) : []},
+		{batchCount: Landing.importBatchCount(Object.keys(state.index?.notes || {}).length, notes.length)}));
 	// The record as it stands goes into the folder with the next batch's transaction, and after the last.
 	const checkpoint = () => { if (!record) return; record = {...record, landing: {nextBatch: landing.cursor, status: landing.status, done: landing.done, ...(landing.stop ? {stop: landing.stop} : {}), ...(landing.position ? {position: landing.position} : {})}}; };
 	if (landing.batch) await turn();

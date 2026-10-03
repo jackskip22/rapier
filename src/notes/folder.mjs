@@ -16,7 +16,7 @@ import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, en
 import {createRecordings} from './recording.mjs';
 import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf, attachmentLine} from './attachments.mjs';
 import {exactBytes, sha256, storedFileDigest, checkByteAbort, blobByteChunks, digestByteChunks} from './integrity.mjs';
-import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, addSection, setCollapsed} from './model.mjs';
+import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, addSection, setCollapsed, orderAfter} from './model.mjs';
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
@@ -169,6 +169,26 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		// past is keyed by (notes/restore.mjs has already moved any that this folder holds).
 		const arrived = typeof extra.id === 'string' && extra.id && !Object.entries(next.notes).some(([other, entry]) => other !== name && entry.id === extra.id);
 		if (!arrived) delete next.notes[name].id;
+		identify(next);
+		return next;
+	};
+	// A batch of arrivals in one scan, not one scan per arrival (item 63: an import's batch reconciled the
+	// whole folder once per note, so a 10,000-note import cost hours at a phone's CPU). The result is the
+	// one createEntry gives when called for each row in turn: ranks in landing order after the folder's
+	// last and an arriving identity kept only while no other note holds it; the identities are admitted
+	// once for the batch, in the model's own name order (one at a time they followed the landing).
+	const createEntries = (index, rows) => {
+		const fresh = new Set(rows.map(row => row.name)), scanned = reconcile(index, [...Object.keys(index.notes), ...fresh]).index, notes = {};
+		let last = '';
+		for (const [file, entry] of Object.entries(scanned.notes)) if (!fresh.has(file)) { notes[file] = entry; if (entry.order > last) last = entry.order; }
+		const held = new Set(Object.values(notes).map(entry => entry.id).filter(Boolean));
+		for (const {name, extra = {}} of rows) {
+			const entry = {...scanned.notes[name], order: orderAfter(last), ...extra};
+			if (typeof extra.id === 'string' && extra.id && !held.has(extra.id)) held.add(extra.id); else delete entry.id;
+			if (entry.order > last) last = entry.order;
+			notes[name] = entry;
+		}
+		const next = {...scanned, notes};
 		identify(next);
 		return next;
 	};
@@ -620,10 +640,10 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			for (const section of result.sections || []) index = addSection(index, section);
 			for (const note of result.notes) {
 				if (note.entry?.category) index = addSection(index, note.entry.category);
-				index = createEntry(index, note.file, note.entry || {});
 				if (!note.exactBackup && !isCodeFile(note.file)) note.text = rewriteRecordingNames(note.text, audioMap);
 				if (!note.exactBackup || !writes.has(note.file)) writes.set(note.file, {file: note.file, bytes: (note.exactBackup || isCodeFile(note.file)) && note.bytes ? note.bytes : exactBytes(note.text), createOnly: true});
 			}
+			if (result.notes.length) index = createEntries(index, result.notes.map(note => ({name: note.file, extra: note.entry || {}})));
 			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));
 			return {kind: 'import', index, writes: [...writes.values()]};
