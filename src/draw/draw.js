@@ -887,7 +887,7 @@ function _rapierDrawPatchShapeNodes(ids) {
 	for (const id of _rapierDrawRouteChanges(state.recipe, ids, !!state.gesture)) patch.add(id);
 	for (const shape of state.recipe.shapes) {
 		if (!patch.has(shape.id)) continue;
-		const html = _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(shape, state.recipe));
+		const html = _rapierDrawShapeMarkup(_rapierDrawDisplayShape(shape), state.recipe);
 		_rapierDrawNoteColours(html);
 		const next = _rapierDrawParseSvgNode(html);
 		if (!next) continue;
@@ -901,7 +901,8 @@ function _rapierDrawAdoptShapeNodes() {
 	const state = _rapierDrawState, host = state.svg;
 	_rapierDrawRerouteBoundArrows(state.recipe);
 	if (state.recipe.effect || state.recipe.shapes.some(shape => shape.effect && shape.paint?.group) || host.querySelector('[data-rapier-copy-scene],[data-rapier-copy-layer]')) {
-		const html = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(state.recipe, false, true));
+		const display = { ...state.recipe, shapes: state.recipe.shapes.map(_rapierDrawDisplayShape) };
+		const html = _rapierDrawSceneMarkup(display, false, true);
 		const scene = _rapierDrawParseSvgNode('<g>' + html + '</g>');
 		host.replaceChildren(...scene.childNodes);
 		if (typeof _rapierPaintReattachLive === 'function') _rapierPaintReattachLive();
@@ -916,7 +917,7 @@ function _rapierDrawAdoptShapeNodes() {
 	}
 	state.darkUsed = new Set(); state.darkCurrentColor = false; state.darkPaint = false;
 	for (const shape of state.recipe.shapes) {
-		const html = _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(shape, state.recipe));
+		const html = _rapierDrawShapeMarkup(_rapierDrawDisplayShape(shape), state.recipe);
 		_rapierDrawNoteColours(html);
 		let node = previous.get(shape.id);
 		if (!node || node.outerHTML !== html) {
@@ -3130,6 +3131,13 @@ function _rapierDrawDisplayInk(hex) {
 }
 // A shape's markup keeps its light attributes on every paper: on dark paper the canvas's own style (below) turns
 // them, so a diagram's grey boxes, quiet numbers and accent read on black as the page shows them.
+// Resolve the display twin before serializing its large source. A twin may itself be a map key,
+// so this view takes one hop only; its raster must never replace the recipe's or history's bytes.
+function _rapierDrawDisplayShape(shape) {
+	if (shape.recognized !== 'paint' || typeof _rapierPaintShownAs === 'undefined') return shape;
+	const raster = _rapierPaintShownAs.get(shape.raster);
+	return raster ? { ...shape, raster } : shape;
+}
 function _rapierDrawDisplayMarkup(html) {
 	if (typeof _rapierPaintShowable === 'function') html = _rapierPaintShowable(html);
 	return html;

@@ -2919,6 +2919,14 @@ export class PaintSurface {
 		this._each(box, (p, o, D) => { let a = o * opacity; const ab = 1 - a; a *= D[p + 3]; D[p] = a * r + ab * D[p]; D[p + 1] = a * g + ab * D[p + 1]; D[p + 2] = a * b + ab * D[p + 2]; });
 	}
 	_blendNormalPaint(box, r, g, b, opacity) {
+		// Read the fixed basis once per dab. Keeping these scalars outside the pixel walk removes
+		// repeated array reads without changing either Float32 rounding point or the sum order.
+		const sR0 = SPECTRAL_R[0], sG0 = SPECTRAL_G[0], sB0 = SPECTRAL_B[0], sR1 = SPECTRAL_R[1], sG1 = SPECTRAL_G[1], sB1 = SPECTRAL_B[1], sR2 = SPECTRAL_R[2], sG2 = SPECTRAL_G[2], sB2 = SPECTRAL_B[2], sR3 = SPECTRAL_R[3];
+		const sG3 = SPECTRAL_G[3], sB3 = SPECTRAL_B[3], sR4 = SPECTRAL_R[4], sG4 = SPECTRAL_G[4], sB4 = SPECTRAL_B[4], sR5 = SPECTRAL_R[5], sG5 = SPECTRAL_G[5], sB5 = SPECTRAL_B[5], sR6 = SPECTRAL_R[6], sG6 = SPECTRAL_G[6];
+		const sB6 = SPECTRAL_B[6], sR7 = SPECTRAL_R[7], sG7 = SPECTRAL_G[7], sB7 = SPECTRAL_B[7], sR8 = SPECTRAL_R[8], sG8 = SPECTRAL_G[8], sB8 = SPECTRAL_B[8], sR9 = SPECTRAL_R[9], sG9 = SPECTRAL_G[9], sB9 = SPECTRAL_B[9];
+		const tR0 = T_MATRIX_SMALL[0][0], tG0 = T_MATRIX_SMALL[1][0], tB0 = T_MATRIX_SMALL[2][0], tR1 = T_MATRIX_SMALL[0][1], tG1 = T_MATRIX_SMALL[1][1], tB1 = T_MATRIX_SMALL[2][1], tR2 = T_MATRIX_SMALL[0][2], tG2 = T_MATRIX_SMALL[1][2], tB2 = T_MATRIX_SMALL[2][2], tR3 = T_MATRIX_SMALL[0][3];
+		const tG3 = T_MATRIX_SMALL[1][3], tB3 = T_MATRIX_SMALL[2][3], tR4 = T_MATRIX_SMALL[0][4], tG4 = T_MATRIX_SMALL[1][4], tB4 = T_MATRIX_SMALL[2][4], tR5 = T_MATRIX_SMALL[0][5], tG5 = T_MATRIX_SMALL[1][5], tB5 = T_MATRIX_SMALL[2][5], tR6 = T_MATRIX_SMALL[0][6], tG6 = T_MATRIX_SMALL[1][6];
+		const tB6 = T_MATRIX_SMALL[2][6], tR7 = T_MATRIX_SMALL[0][7], tG7 = T_MATRIX_SMALL[1][7], tB7 = T_MATRIX_SMALL[2][7], tR8 = T_MATRIX_SMALL[0][8], tG8 = T_MATRIX_SMALL[1][8], tB8 = T_MATRIX_SMALL[2][8], tR9 = T_MATRIX_SMALL[0][9], tG9 = T_MATRIX_SMALL[1][9], tB9 = T_MATRIX_SMALL[2][9];
 		const body = this.body > 0;
 		rgbToSpectral(r, g, b, specA);
 		opacity = Math.max(opacity, 150 / 32768);
@@ -2975,54 +2983,54 @@ export class PaintSurface {
 				const offset = 1 - WGM_EPSILON, rr = sr * offset + WGM_EPSILON, gg = sg * offset + WGM_EPSILON, bb = sb * offset + WGM_EPSILON;
 				let red = 0, green = 0, blue = 0;
 				{
-					const reflectance = Math.fround(SPECTRAL_R[0] * rr + SPECTRAL_G[0] * gg + SPECTRAL_B[0] * bb);
+					const reflectance = Math.fround(sR0 * rr + sG0 * gg + sB0 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[0] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][0] * mixed; green += T_MATRIX_SMALL[1][0] * mixed; blue += T_MATRIX_SMALL[2][0] * mixed;
+					red += tR0 * mixed; green += tG0 * mixed; blue += tB0 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[1] * rr + SPECTRAL_G[1] * gg + SPECTRAL_B[1] * bb);
+					const reflectance = Math.fround(sR1 * rr + sG1 * gg + sB1 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[1] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][1] * mixed; green += T_MATRIX_SMALL[1][1] * mixed; blue += T_MATRIX_SMALL[2][1] * mixed;
+					red += tR1 * mixed; green += tG1 * mixed; blue += tB1 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[2] * rr + SPECTRAL_G[2] * gg + SPECTRAL_B[2] * bb);
+					const reflectance = Math.fround(sR2 * rr + sG2 * gg + sB2 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[2] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][2] * mixed; green += T_MATRIX_SMALL[1][2] * mixed; blue += T_MATRIX_SMALL[2][2] * mixed;
+					red += tR2 * mixed; green += tG2 * mixed; blue += tB2 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[3] * rr + SPECTRAL_G[3] * gg + SPECTRAL_B[3] * bb);
+					const reflectance = Math.fround(sR3 * rr + sG3 * gg + sB3 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[3] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][3] * mixed; green += T_MATRIX_SMALL[1][3] * mixed; blue += T_MATRIX_SMALL[2][3] * mixed;
+					red += tR3 * mixed; green += tG3 * mixed; blue += tB3 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[4] * rr + SPECTRAL_G[4] * gg + SPECTRAL_B[4] * bb);
+					const reflectance = Math.fround(sR4 * rr + sG4 * gg + sB4 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[4] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][4] * mixed; green += T_MATRIX_SMALL[1][4] * mixed; blue += T_MATRIX_SMALL[2][4] * mixed;
+					red += tR4 * mixed; green += tG4 * mixed; blue += tB4 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[5] * rr + SPECTRAL_G[5] * gg + SPECTRAL_B[5] * bb);
+					const reflectance = Math.fround(sR5 * rr + sG5 * gg + sB5 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[5] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][5] * mixed; green += T_MATRIX_SMALL[1][5] * mixed; blue += T_MATRIX_SMALL[2][5] * mixed;
+					red += tR5 * mixed; green += tG5 * mixed; blue += tB5 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[6] * rr + SPECTRAL_G[6] * gg + SPECTRAL_B[6] * bb);
+					const reflectance = Math.fround(sR6 * rr + sG6 * gg + sB6 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[6] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][6] * mixed; green += T_MATRIX_SMALL[1][6] * mixed; blue += T_MATRIX_SMALL[2][6] * mixed;
+					red += tR6 * mixed; green += tG6 * mixed; blue += tB6 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[7] * rr + SPECTRAL_G[7] * gg + SPECTRAL_B[7] * bb);
+					const reflectance = Math.fround(sR7 * rr + sG7 * gg + sB7 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[7] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][7] * mixed; green += T_MATRIX_SMALL[1][7] * mixed; blue += T_MATRIX_SMALL[2][7] * mixed;
+					red += tR7 * mixed; green += tG7 * mixed; blue += tB7 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[8] * rr + SPECTRAL_G[8] * gg + SPECTRAL_B[8] * bb);
+					const reflectance = Math.fround(sR8 * rr + sG8 * gg + sB8 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[8] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][8] * mixed; green += T_MATRIX_SMALL[1][8] * mixed; blue += T_MATRIX_SMALL[2][8] * mixed;
+					red += tR8 * mixed; green += tG8 * mixed; blue += tB8 * mixed;
 				}
 				{
-					const reflectance = Math.fround(SPECTRAL_R[9] * rr + SPECTRAL_G[9] * gg + SPECTRAL_B[9] * bb);
+					const reflectance = Math.fround(sR9 * rr + sG9 * gg + sB9 * bb);
 					const mixed = Math.fround(Math.exp(facA * logA[9] + facB * Math.log(reflectance)));
-					red += T_MATRIX_SMALL[0][9] * mixed; green += T_MATRIX_SMALL[1][9] * mixed; blue += T_MATRIX_SMALL[2][9] * mixed;
+					red += tR9 * mixed; green += tG9 * mixed; blue += tB9 * mixed;
 				}
 				D[p + 3] = na; D[p] = clamp((red - WGM_EPSILON) / offset, 0, 1) * na; D[p + 1] = clamp((green - WGM_EPSILON) / offset, 0, 1) * na; D[p + 2] = clamp((blue - WGM_EPSILON) / offset, 0, 1) * na;
 			}

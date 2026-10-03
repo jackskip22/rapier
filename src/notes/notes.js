@@ -27,7 +27,7 @@ const RAPIER_NOTES_DIR = 'notes', RAPIER_NOTES_HOLD_MS = 500, RAPIER_NOTES_HOLD_
 const _rapierNotes = {
 	surface: null, scroll: null, grids: {}, windows: {}, sheet: null, open: false,
 	index: null, texts: new Map(), titles: new Map(), hold: new Set(), sizes: new Map(), readFailed: new Map(), reading: null, reads: null, loadGen: 0, popup: null, sheetSwiped: false, fabDrag: null,
-	query: '', current: null, currentProof: null, savedGen: -1, savingGen: -1, savingText: null, autosave: 0, asciiNames: null, drag: null, selected: new Set(), snack: null, loading: null, persistAsked: false, persistReported: false, storageKnown: null, audioBytes: null, capturing: null, renderAfterDrag: false, saveFailed: false, attempted: new Map(), sheetFocus: false, sheetOpener: null, sheetMode: 'actions', importsOpen: null, importUndoReview: null, importUndoBusy: false, historyRows: null, historyOne: null, pastBytes: null, pastVersions: 0, untitled: new Set(), renaming: null, swallowClick: 0, unfolded: new Set(), thumbs: new Map(), thumbNames: null, thumbQueue: [], thumbBusy: false, remindTimer: 0, remindQueue: [], mode: false, compose: false, opened: new Set(), retaking: null, readerSaid: false, captureToken: null, capturePreparing: false, captured: new Set(), captureChain: Promise.resolve(), unlocking: null, remindSyncedKey: undefined, remindChain: Promise.resolve(),
+	query: '', current: null, currentProof: null, savedGen: -1, savingGen: -1, savingText: null, autosave: 0, asciiNames: null, drag: null, selected: new Set(), snack: null, loading: null, indexing: null, persistAsked: false, persistReported: false, storageKnown: null, audioBytes: null, capturing: null, renderAfterDrag: false, saveFailed: false, attempted: new Map(), sheetFocus: false, sheetOpener: null, sheetMode: 'actions', importsOpen: null, importUndoReview: null, importUndoBusy: false, historyRows: null, historyOne: null, pastBytes: null, pastVersions: 0, untitled: new Set(), renaming: null, swallowClick: 0, unfolded: new Set(), thumbs: new Map(), thumbNames: null, thumbQueue: [], thumbBusy: false, remindTimer: 0, remindQueue: [], mode: false, compose: false, opened: new Set(), retaking: null, readerSaid: false, captureToken: null, capturePreparing: false, captured: new Set(), captureChain: Promise.resolve(), unlocking: null, remindSyncedKey: undefined, remindChain: Promise.resolve(),
 	// The Title field (task #369): the empty paragraph standing for it (`slot`), the empty paragraph this
 	// shell last made for a field (`fresh`), the two rows a note without a title or a body shows.
 	head: {observer: null, scheduled: false, bound: null, slot: null, fresh: null, rows: null}
@@ -694,7 +694,7 @@ async function _rapierNotesSave(file, text) {
 async function _rapierNotesFolderChanged() {
 	const state = _rapierNotes;
 	if (state.reloading) return state.reloading;
-	state.reloading = (async () => { try { await _rapierNotesLoad(); if (state.open) _rapierNotesRender(); } catch (error) { console.warn('[rapier] notes: the folder changed and could not be read again', error); } finally { state.reloading = null; } })();
+	state.reloading = (async () => { try { await _rapierNotesLoad(); if (state.open) _rapierNotesRender(); _rapierNotesIndexingBegin(); } catch (error) { console.warn('[rapier] notes: the folder changed and could not be read again', error); } finally { state.reloading = null; } })();
 	return state.reloading;
 }
 // Persistence is asked for once, and the answer is shown plainly in the notes information pop-up
@@ -891,9 +891,22 @@ async function _rapierNotesLoad() {
 			state.cachePlan = plan;
 		} catch (_) { state.cachePlan = null; }
 	}
-	if (typeof _rapierNotesLibraryBegin === 'function') _rapierNotesLibraryBegin();
+	// I06: a warm note's card title returns with its cached projections, before any card is drawn, so a title
+	// order holds from the first render; the indexes themselves begin behind the first cards.
+	for (const row of state.cachePlan?.reuse || []) if (typeof row.projection?.title === 'string') state.titles.set(row.file, row.projection.title);
 	if (state.current && index.notes[state.current]) await _rapierNotesTexts([state.current]);
-	_rapierNotesReadRest();
+	if (state.loadRequest !== request) return;
+	// The indexes' begin (the cache's hydrate, then the idle slices) and the rest of the folder's reads come
+	// AFTER the first cards: begun here, on a warm 5,000-note folder the slices stood between the opener and
+	// its surface for 5.6 s at a phone's CPU (the lead's probe, 3 October). The opener fires this once the
+	// surface is up and drawn; every other load fires it at once (_rapierNotesIndexingBegin). A load that
+	// was overtaken never fires: the newer load's own closure stands in its place.
+	state.indexing = () => {
+		if (state.loadRequest !== request) return;
+		state.indexing = null;
+		if (typeof _rapierNotesLibraryBegin === 'function') _rapierNotesLibraryBegin();
+		_rapierNotesReadRest();
+	};
 	// Title order is the one order that needs every note's words before the first card.
 	// Said, never silent (keep-references.md, the data-loss class): an entry whose file is gone is
 	// dropped because the folder is the truth, and the person hears that it happened.
@@ -901,6 +914,7 @@ async function _rapierNotesLoad() {
 	if (dropped.length) showToast(dropped.length === 1 ? 'One note on Rapier’s list is not in the notes folder, so it was taken off the list.' : dropped.length + ' notes on Rapier’s list are not in the notes folder, so they were taken off the list.', 'info');
 }
 
+function _rapierNotesIndexingBegin() { const begin = _rapierNotes.indexing; if (begin) begin(); }
 // ---- The reads (#257, the reads half) ------------------------------------------------------------
 // notes/library-reads.mjs (Astra A11-b, its A11-6) schedules the reads of the cards about to be
 // drawn: two at a time, bytes reserved, a window that moved on no longer waited for, a note over
@@ -3498,7 +3512,7 @@ globalThis.RapierNotesKeep = Object.freeze({
 	},
 	async keep(text, name) {
 		await _rapierNotesReady();
-		if (!_rapierNotes.indexBase) await _rapierNotesLoad();
+		if (!_rapierNotes.indexBase) { await _rapierNotesLoad(); _rapierNotesIndexingBegin(); }
 		const M = _rapierNotesModel(), code = M.isCodeFile(name);
 		const wanted = code || M.isMarkdownNote(name) ? name : String(name || 'document').replace(/\.[^./\\]*$/, '') + '.md';
 		const file = await _rapierNotesWriteNew(text, wanted, {..._rapierNotesPlaceFirst(), ...(code ? {} : {kind: 'document'})});
@@ -5294,9 +5308,27 @@ async function _rapierNotesDeleteForeverFiles(files, mode = 'confirmed', expecte
 // days having passed is not on its own permission to destroy a file; the protocol above weighs each
 // note against its proof. The note the person is looking at is never swept out from under them.
 async function _rapierNotesSweepTrash() {
-	const state = _rapierNotes;
+	const state = _rapierNotes, M = _rapierNotesModel();
 	const candidates = Object.keys(state.index.notes).filter(file => state.index.notes[file].trashed && file !== state.current);
 	if (!candidates.length) return;
+	// Whether the owner could act at all, read from this window's own fresh picture of the folder and the
+	// bin's own bytes: a note past seven days, one with no proof (its clock restarts), one the folder no
+	// longer answers for, one whose bytes changed (it comes back). None of those: nothing to found a
+	// transaction on, and the folder is not taken under its lease (two folder reads and the trash run,
+	// 4.9 s before the first card at 5,000 notes at a phone's CPU; the lead's probe, 3 October). The
+	// decision itself is still the owner's, under the lease, from its own fresh read, whenever this says
+	// it could act; a stale view here can only delay a sweep to the next open, never make one.
+	const expired = new Set(M.expiredTrash(state.index, Date.now()));
+	// An unfinished removal on the index is the owner's to finish (trash.mjs recoverTrash): always act.
+	let acts = Object.keys(state.index.deletions || {}).length > 0;
+	if (!acts) for (const file of candidates) {
+		const evidence = M.trashEvidence(state.index.notes[file]);
+		if (expired.has(file) || !evidence) { acts = true; break; }
+		let bytes = null;
+		try { bytes = await _rapierNotesStore.read(file, {bytes: true}); } catch (_) { acts = true; break; }
+		if (bytes == null || await globalThis.RapierNotesIntegrity.sha256(bytes) !== evidence.digest || state.index.notes[file].revision !== evidence.revision) { acts = true; break; }
+	}
+	if (!acts) return;
 	let outcome;
 	try { outcome = await _rapierNotesDeleteForeverFiles(candidates, 'expiry'); }
 	catch (error) { showToast('Notes past seven days could not be removed from the recycle bin: ' + String(error?.message || error), 'error'); return; }
@@ -6030,7 +6062,7 @@ async function _rapierNotesImportFiles(files, source) {
 	const opened = backupParts || await D.openContainers(entries);
 	if (state.loading) await state.loading;
 
-	await _rapierNotesLoad();
+	await _rapierNotesLoad(); _rapierNotesIndexingBegin();
 	const M = _rapierNotesModel();
 	const A = globalThis.RapierNotesAudio;
 	// What the folder already holds, under the names a backup of it would use: the notes by their
@@ -8171,7 +8203,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
 	else {
 		state.loading = _rapierNotesLoad().then(() => true).catch(error => { console.warn('[rapier] notes', error); showToast('The notes folder could not be read: ' + String(error?.message || error), 'error'); return false; });
 		const loaded = await state.loading; state.loading = null;
-		if (!loaded || !state.index) { lift?.end(); return; }
+		if (!loaded || !state.index) { lift?.end(); _rapierNotesIndexingBegin(); return; }
 	}
 	await _rapierNotesSweepTrash();
 	await _rapierNotesDiscardEmpty(unseen);
@@ -8188,6 +8220,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
 	_rapierNotesFence(true);
 	_rapierNotesLayout();
 	_rapierNotesRender();
+	_rapierNotesIndexingBegin();
 	_rapierNotesHistory('cards');
 	if (!warm && typeof _rapierRecorderOfferRecovery === 'function') _rapierRecorderOfferRecovery();
 	if (lift) void _rapierNotesLiftShrink(lift, state.current);
@@ -8498,7 +8531,7 @@ globalThis.rapierNotesWidgetOpen = function rapierNotesWidgetOpen(file, id = nul
 			const fresh = await _rapierNotesStore.folder.read();
 			const matches = Object.keys(fresh.index.notes).filter(name => fresh.index.notes[name].id === id && !fresh.index.notes[name].trashed);
 			if (matches.length !== 1) { showToast('This note moved or was removed. Refresh the widget.', 'info'); return false; }
-			if (_rapierNotes.index.notes[matches[0]]?.id !== id) await _rapierNotesLoad();
+			if (_rapierNotes.index.notes[matches[0]]?.id !== id) { await _rapierNotesLoad(); _rapierNotesIndexingBegin(); }
 			return await _rapierNotesOpenNote(matches[0], false, id);
 		} catch (error) { showToast('This note could not be opened. Your current work was kept.', 'error'); return false; }
 	});

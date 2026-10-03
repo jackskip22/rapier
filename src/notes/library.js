@@ -35,8 +35,7 @@ function _rapierNotesLibraryBegin() {
 		lib.build = S.hydrateSearchIndex(lib.build, plan.reuse, {own: true});
 		lib.sidx = lib.build.index;
 		lib.lidx = L.hydrateLinkIndex(lib.lidx, plan.reuse, {stream: true});
-		// I06: a warm note's card title returns with its projections; an old row has none. Never read a body for it; never use search's title field.
-		for (const row of plan.reuse) if (typeof row.projection?.title === 'string') state.titles.set(row.file, row.projection.title);
+		// I06: the warm titles were set by the load (notes.js _rapierNotesLoad), before the first card.
 	} catch (_) {
 		// One failed owner invalidates the whole reuse: retire both projections and the plan before ReadRest chooses bodies.
 		state.cachePlan = null;

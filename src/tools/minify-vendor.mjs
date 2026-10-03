@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// BROWSER-MINIFY.json vendors ship minified: whitespace and local names only; function, class and property names and licence comments kept.
-// Both ends pinned to the pair a probe proved (tools/probes/vendor-minify-equivalence.mjs, tools/probes/acorn-engine-regexp.mjs).
+// BROWSER-MINIFY.json vendors ship minified: local bindings, including function and class names, shorten; export/property names and licence comments stay.
+// Both ends pinned to a measured equivalent pair; the retained parsing and paste rows are named in BROWSER-MINIFY.json.
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';

@@ -1,5 +1,5 @@
 {
-  "description": "The browser vendors shipped minified by tools/minify-vendor.mjs: whitespace and local names only. Terser compression is off, function and class names are kept, property names are untouched, comments carrying a licence or copyright stay; the upstream file stays the source. A vendor with a standIn has it applied to the upstream text first (tools/minify-vendor.mjs STAND_INS). Each vendor pins the upstream bytes and the derived bytes a probe proved -- tools/probes/vendor-minify-equivalence.mjs for the pass alone, the vendor's standIn probe for a stand-in; a different upstream, Terser, option or stand-in is refused until it is proved and pinned again. Every vendor's full notice is also in agent/vendor/NOTICE.txt and the application's licences.",
+  "description": "The browser vendors shipped minified by tools/minify-vendor.mjs: whitespace and local bindings, including function and class names. Terser compression is off, export and property names are untouched, comments carrying a licence or copyright stay; the upstream file stays the source. A vendor with a standIn has it applied to the upstream text first (tools/minify-vendor.mjs STAND_INS). Each vendor pins the upstream and derived bytes; a different upstream, Terser, option or stand-in is refused until equivalence is measured and the pair is pinned again. The retained agent-door-keeps-whole-characters row owns Acorn parsing and structure; select-all-delete-recovery owns the browser's Turndown paste-to-source path. Every vendor's full notice is also in agent/vendor/NOTICE.txt and the application's licences.",
   "tool": {
     "name": "terser",
     "version": "5.51.2",
@@ -7,8 +7,6 @@
       "ecma": 2022,
       "compress": false,
       "mangle": true,
-      "keep_fnames": true,
-      "keep_classnames": true,
       "format": {
         "comments": "/@license|@preserve|^!|copyright/i"
       }
@@ -26,14 +24,13 @@
         "what": "The RegExp validator gives way to the engine the structure Worker runs on: a regexp literal is valid iff new RegExp(pattern, flags) accepts it, or -- when the engine refuses -- iff it accepts the pattern with every \\p{..}/\\P{..} value Acorn's own tables know written as one every engine knows; refused at the pattern's start with the engine's message. Acorn's Unicode property and script tables and its identifier tables stay: the grammar is the engine's, the Unicode data is Acorn's (tasks #311 and #328).",
         "probe": "tools/probes/acorn-engine-regexp.mjs",
         "rows": [
-          "agent-door-keeps-whole-characters",
-          "profile-document-boots"
+          "agent-door-keeps-whole-characters"
         ]
       },
       "derived": {
         "name": "acorn-8.18.0.dist.acorn.rapier-engine.min.js",
-        "bytes": 105071,
-        "sha256": "fce931f50faf1277f52631f851f4ba1796f2af531c31e4a30fc302664877bf19"
+        "bytes": 103832,
+        "sha256": "bd7583e88331fb48b42f363aa27ea7c05765a165082aede60f0ee8d6258c0c1a"
       }
     },
     {
@@ -45,8 +42,8 @@
       },
       "derived": {
         "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
-        "bytes": 14006,
-        "sha256": "6fde04c5c1f9034c8d03fbd268819b4725222fbf2167458eb28536a86181f576"
+        "bytes": 12864,
+        "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
       }
     }
   ]

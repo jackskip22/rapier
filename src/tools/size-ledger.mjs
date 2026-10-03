@@ -58,6 +58,14 @@ export function omitLoader(source, path) {
   });
   return edits(source, [one(found, 'platform entry for ' + path)]);
 }
+// Keep vendor derivation and parser inputs intact; the full profile's build-derived search-cache
+// identity still changes, as for other omissions. The selected packed element alone is omitted.
+export function omitVendor(source, id) {
+  const node = one(find(source, n => n.type === 'AwaitExpression' &&
+    n.argument.callee?.name === 'packedSpans' && n.argument.arguments[0]?.name === 'id' &&
+    n.argument.arguments[1]?.value === 'text/rapier-vendor'), 'vendor packing call');
+  return edits(source, [[node.start, node.end, `id === ${JSON.stringify(id)} ? '' : ${source.slice(node.start, node.end)}`]]);
+}
 export function omitPdf(source) {
   const calls = [], props = [];
   walk(parse(source), node => {
@@ -230,10 +238,23 @@ export const GROUPS = [
   {id: 'styles', name: 'Styles (every editor/styles.json row but the fonts sheet, which is the fonts row)', edits: {[STYLES]: omitStyles},
     inputs: (a, ctx) => JSON.parse(a.text('rapier-styles.json')).map(row => one(ctx.styles.filter(s => s.id === row.id), 'style row ' + row.id).path).filter(path => path !== FONTS_SHEET),
     carries: a => JSON.parse(a.text('rapier-styles.json') || '[]').some(row => fontRules(row.css).length === 0)},
+  ...[
+    ['lib-markdownit', 'Markdown-it and its shipped extensions'],
+    ['lib-gpu-lexer', 'GPU syntax lexer'],
+    ['lib-acorn', 'Acorn JavaScript parser (the browser derivation)'],
+    ['lib-dompurify', 'DOMPurify HTML sanitizer'],
+    ['lib-turndown', 'Turndown HTML-to-Markdown reader (the browser derivation)'],
+  ].map(([id, name]) => ({id, name, edits: {'tools/build.mjs': source => omitVendor(source, id)},
+    inputs: (a, ctx) => ctx.vendors[id].map(name => 'shell/vendor/' + name),
+    carries: a => a.elements.some(element => element.id === id)})),
 ];
 export async function context(root) {
   const scripts = JSON.parse(await readFile(join(root, SCRIPTS), 'utf8')).filter(path => path.startsWith('draw/'));
-  return {styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')),
+  const buildSource = await readFile(join(root, 'tools/build.mjs'), 'utf8');
+  const vendors = one(find(buildSource, node => node.type === 'VariableDeclarator' && node.id?.name === 'VENDOR_GROUPS'), 'vendor groups').init;
+  assert.equal(vendors.type, 'ObjectExpression', 'vendor groups are an explicit inventory');
+  return {vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
+    styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')),
     drawScripts: await Promise.all(scripts.map(async path => ({path, functions: scriptFunctions(await readFile(join(root, path), 'utf8'))})))};
 }
 // What a without-build must show before its bytes count: the payload gone, every other payload the
@@ -373,6 +394,7 @@ export function report(r) {
     '- The partition does add up, and it is the only table that does. A payload that crosses parts -- Draw lives in the editor runtime and the shared runtime -- is not another part to add to them.',
     '- The encoder build ships the worker the document profile ships (adapter and refusal, no encoder); the Draw build drops both classic scripts and every draw/ factory and keeps their callers, the Draw CSS and the notices; the styles build keeps the critical boot style and the fonts sheet; the PDF build drops the module and its global, not the export caller; the plug-in loader is the loader and its two manifests, not the MathJax and Mermaid engines fetched on demand.',
     '- A zero where a profile ships none of a payload (the document profile has no encoder) is a measurement: that omission build is byte-identical to its baseline.',
+    '- Each vendor omission removes its packed element after the normal pinned derivation; the parser identities used by the search cache and all callers stay. The input column names the upstream files; the marginal measures the shipped derivation, not the upstream source size.',
     '- The gzip -9 column concatenates the listed inputs in the listed order: a proxy, not an allocation of the file.',
     '- Prior dated receipts are in [size-ledger-history.md](size-ledger-history.md); they describe their own trees and packings.', '');
   return lines.join('\n');
