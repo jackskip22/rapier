@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.47+skills.a134a61c4a447f765f40ac8810a20b3aca17cd237a450854e7108934cf33ec83",
+  "version": "1.1.48+skills.fa2c432affa32d6fc0df11844d0e33569aa7443801f68eec55d797d53ca5b3b0",
   "description": "Rapier is a very fast Markdown editor in one HTML file: no server, no account, nothing collected, running on your device in any browser. Long documents open and scroll fast on a phone, so whatever your agent writes you can read, edit and keep. It edits code and plain text too, opens Word and PDF, and saves as Markdown, Word, PDF or a web page. Draw and paint with your agent on the same page: diagrams and drawings are editable SVG inside the Markdown, so the agent draws one, you move its boxes, and it changes it again. Pictures, tables, checklists, footnotes, a table of contents, light and dark. With this plugin the agent hands you a document as one page that opens with one click and works offline, or edits beside you, reading only the passage it needs and changing only that, and you keep or drop every change. The only thing that leaves your device is the document you share with the agent, kept for that chat and deleted after thirty idle days.",
   "author": {
     "name": "Jack Skipworth",

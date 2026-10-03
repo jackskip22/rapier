@@ -6,7 +6,7 @@ import {JPEG_XL_LIMITS, codecError, byteView, boundedDimensions} from './header.
 // The encoder's modules, in dependency order; each imports only the ones before it.
 export const JPEG_XL_MODULES = ['jxl/bits.mjs', 'jxl/admit.mjs', 'jxl/prefix.mjs', 'jxl/modular.mjs', 'jxl/frame.mjs', 'jxl/squeeze.mjs', 'jxl/lossless.mjs', 'jxl/lossy.mjs',
   'jxl/jfif.mjs', 'jxl/entropy.mjs', 'jxl/vardct.mjs', 'jxl/effort-level.mjs', 'jxl/coefficient-effort.mjs',
-  'jxl/weighted.mjs', 'jxl/local.mjs', 'jxl/effort.mjs', 'jxl/jpeg.mjs', 'jxl/photo-dct.mjs', 'jxl/photo-quant.mjs', 'jxl/photo.mjs', 'encoder.mjs'];
+  'jxl/weighted.mjs', 'jxl/local.mjs', 'jxl/effort.mjs', 'jxl/jpeg-job.mjs', 'jxl/jpeg.mjs', 'jxl/photo-dct.mjs', 'jxl/photo-quant.mjs', 'jxl/photo-job.mjs', 'jxl/photo.mjs', 'encoder.mjs'];
 
 // A module's own export lists go (a door may rename a binding for its readers); every other `export` keyword too.
 const plain = source => source.replace(/^import .*;\n/gm, '').replace(/^export \{[^\n]+\};\n/gm, '').replace(/^export /gm, '');

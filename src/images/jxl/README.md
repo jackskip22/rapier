@@ -34,6 +34,8 @@ The doors (`package.json`'s exports, each with its declaration beside it):
   error can increase. DC and alpha do not change.
 - `writer.mjs`, for a module's author: the layers beneath the doors, readable only, changed only with the package's
   major version.
+- `jpeg-ans.mjs` and `photo-ans.mjs`: the corresponding checked door with an optional shared ANS candidate at
+  effort 2. Their default remains prefix effort 1. The ordinary doors and page do not import ANS.
 
 Every pixel door takes `{colorSpace: 'srgb' | 'display-p3'}`, declared in the header by enumeration (`frame.mjs`, 21
 bits for Display P3), the samples written as they are; the carrier reads a JPEG's ICC profile by what it does
@@ -44,6 +46,16 @@ budget at creation cost 160; 4 also tries one coefficient order learned from int
 the smaller complete stream. These entropy rungs preserve exactly the same reconstructed pixels.
 Their search uses `coefficient-effort.mjs`; the broader measured DC-bucket and cluster-budget searches stay
 outside the package.
+
+The optional doors share admission in `jpeg-job.mjs` and `photo-job.mjs`, and search in `coefficient-ans.mjs`.
+`ans.mjs` normalizes integer frequencies to 4,096, writes the histogram, and reverses tokens within one bounded
+group. Its group buffer is 1,376,256 bytes; neither the core nor the ordinary doors carry it. A completed prefix
+floor survives hurry and candidate size or allocation failure. The final group's yield already owns a completed
+candidate and cannot discard it on a late hurry. Higher efforts include the ordinary prefix candidates.
+
+The 2.1.0 photo fit changes only the existing quantiser's luma/chroma/DC constants (10, 18, 0.25); its arithmetic
+series, DCT8 basis and runtime mechanism stay the same. Existing lossy photo seed hashes were regenerated with
+their old hashes and measurement in the S/4 return. The core and carrier's unhurried bytes do not change.
 
 Each door has a twin that does its work in steps (`encodeSteps`, `transcodeSteps`, `encodePhotoSteps`): a job
 (`admit.mjs`) whose steps are one group of one pass (`lossless.mjs`, `lossy.mjs`, `vardct.mjs` as generators), the

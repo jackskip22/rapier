@@ -13,6 +13,9 @@ JavaScript or WebAssembly JPEG XL encoder among the payloads [we measured](ENCOD
   quantisation per block and keeps a candidate only when its complete stream is smaller.
 - **A JPEG carried as its coefficients**: `rapier-jxl/jpeg`, one call, no decode, the way libjxl transcodes. Not
   carried: the reconstruction data (the JPEG file cannot be rebuilt), the ICC bytes, Exif beyond the orientation, XMP.
+- **Optional ANS entropy coding**: import `transcode` from `rapier-jxl/jpeg-ans` or `encodePhoto` from
+  `rapier-jxl/photo-ans` and pass `{effort: 2}`. Each tries ANS after writing the prefix-coded floor and keeps
+  the smaller complete stream, with identical reconstructed pixels. These imports leave the core unchanged.
 - **sRGB or Display P3.** `{colorSpace: 'display-p3'}` declares a wide-gamut canvas's samples. A JPEG's profile is
   read by what it does, not what it says: sRGB and Display P3 are carried and declared.
 
@@ -36,7 +39,8 @@ const {bytes, width: w, height: h, orientation} = transcode(new Uint8Array(await
 holding a bare JPEG XL codestream; `encodePhoto` takes the same. `transcode(jpeg)` returns
 `{bytes, width, height, orientation}`: the size as shown, the orientation kept in the header.
 
-Doors: `rapier-jxl` (the core), `rapier-jxl/effort`, `rapier-jxl/jpeg`, `rapier-jxl/photo`, each readable, so a
+Doors: `rapier-jxl` (the core), `rapier-jxl/effort`, `rapier-jxl/jpeg`, `rapier-jxl/photo`, and the two optional
+ANS doors above, each readable, so a
 bundler carries their shared modules once; `rapier-jxl/min` is the core as one minified file. `rapier-jxl/writer`
 gives a module's author the layers beneath the doors (readable only; they change only with the major version).
 TypeScript declarations sit beside each door, and a worker and a page are under `public/examples/`. Quality numbers
@@ -80,6 +84,16 @@ half; through effort 4 the photo job first makes coefficients, then writes that 
 quarter. At effort 5, its first half finishes the preceding stream and its second half searches quantisation,
 keeping the completed floor on a hurry.
 
+The optional ANS doors keep default effort 1's prefix bytes. Effort 2 adds one ANS candidate; efforts 3 and 4
+also retain the ordinary prefix searches, and photo effort 5 retains its quantisation search. ANS uses a bounded
+group buffer of 1,376,256 bytes plus histogram tables; encoding both candidates costs more CPU and may raise peak
+RSS. Hurry keeps a completed candidate even when it arrives at the final group's yield.
+
+Version 2.1.0 fits the photo door's existing quantisation constants across thumbnail and source-sized photos.
+Lossy photo bytes change deliberately; lossless and ordinary JPEG streams retain their hashes. Pin a package
+version when exact lossy output bytes matter. Quality numbers remain a setting, not a guarantee of equal
+perceptual quality on every image.
+
 ### Limits and errors
 
 One picture at a time, at most 16,384 pixels a side and a 16 MiB stream. Each door's `LIMITS` sets its pixels by its
@@ -115,6 +129,8 @@ New: `rapier-jxl/effort`, each door's twin in steps with `hurry`, `colorSpace: '
 | `effort.min.mjs`: `encode` with effort | __EFFORT_BYTES__ | __EFFORT_GZIP__ | __EFFORT_BROTLI__ | __EFFORT_ADDED__ |
 | `jpeg.min.mjs`: `transcode` | __JPEG_BYTES__ | __JPEG_GZIP__ | __JPEG_BROTLI__ | __JPEG_ADDED__ |
 | `photo.min.mjs`: `encodePhoto` | __PHOTO_BYTES__ | __PHOTO_GZIP__ | __PHOTO_BROTLI__ | __PHOTO_ADDED__ |
+| `jpeg-ans.min.mjs`: optional ANS carrier | __JPEG_ANS_BYTES__ | __JPEG_ANS_GZIP__ | __JPEG_ANS_BROTLI__ | __JPEG_ANS_ADDED__ |
+| `photo-ans.min.mjs`: optional ANS photo | __PHOTO_ANS_BYTES__ | __PHOTO_ANS_GZIP__ | __PHOTO_ANS_BROTLI__ | __PHOTO_ANS_ADDED__ |
 | every door in one bundle | __ALL_BYTES__ | __ALL_GZIP__ | __ALL_BROTLI__ | |
 | all readable modules | __RAW_BYTES__ | __RAW_GZIP__ | | |
 
@@ -124,7 +140,7 @@ and is proved at staging to write the same bytes as its readable source; the las
 bundle that already holds the core. `effort`'s `encode` is the core's at effort 1, so it takes the core's place, in
 that column and in the bundle of every door.
 
-What it writes: bare codestreams, 8-bit, prefix codes (never ANS), one frame, no preview, animation, ICC (sRGB or
+What it writes: bare codestreams, 8-bit, prefix codes (or ANS in the optional doors), one frame, no preview, animation, ICC (sRGB or
 Display P3 is declared), XYB, chroma-from-luma or filters. Lossless in modular mode, a palette of up to 2,048
 colours weighed against direct coding by actual length, groups of 256, reversible YCoCg, a predictor chosen per
 channel; at effort 2 and 3 also the weighted predictor, its contexts split by its own error; at 4 local modelling of
