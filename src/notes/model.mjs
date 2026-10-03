@@ -117,7 +117,7 @@ const REMIND_MAX_DATE = 8_640_000_000_000_000, REMIND_MAX_STEP = 2_147_483_647;
 export function cleanRemind(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	if (!Number.isSafeInteger(raw.at) || raw.at < 1 || raw.at > REMIND_MAX_DATE) return null;
-	const repeat = raw.repeat === 'none' ? undefined : raw.repeat;
+	const repeat = raw.repeat;
 	if (repeat !== undefined && !REMIND_REPEATS.includes(repeat)) return null;
 	if (repeat === 'custom' && (!['days', 'weeks'].includes(raw.unit) || !Number.isSafeInteger(raw.every) || raw.every < 1 || raw.every > Math.floor(REMIND_MAX_STEP / (raw.unit === 'weeks' ? 7 : 1)))) return null;
 	if (raw.snoozeMinutes !== undefined && (!Number.isSafeInteger(raw.snoozeMinutes) || raw.snoozeMinutes < 1 || raw.snoozeMinutes > REMIND_MAX_STEP)) return null;
@@ -525,7 +525,7 @@ function currentOccurrence(remind, now) {
 }
 // A binding to another definition cannot suppress this schedule.
 function remindDoneAt(entry) {
-	return entry.remindDoneFor === undefined || entry.remindDoneFor === JSON.stringify(cleanRemind(entry.remind)) ? (entry.remindDone || 0) : 0;
+	return entry.remindDoneFor === JSON.stringify(cleanRemind(entry.remind)) ? (entry.remindDone || 0) : 0;
 }
 function remindSnoozedAt(entry) {
 	return entry.remindDoneFor === JSON.stringify(cleanRemind(entry.remind)) ? (entry.remindSnoozedUntil || 0) : 0;

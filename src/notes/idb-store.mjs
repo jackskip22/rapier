@@ -6,22 +6,9 @@
 // a fault leaves the store unadmitted for writes and unopened databases refuse reads. Memory is the store only after an honest NO.
 import {exactBytes, BYTE_CHUNK_BYTES, sha256State, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial, recordingStem, recordingStorageError} from './recording-files.mjs';
+import {FOLDERS, parts} from './opfs-paths.mjs';
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
-
-// Same path space as opfs.mjs `parts` and native-store.mjs `prefixes`; the three are held to one answer by rows.
-const HISTORY_SUBS = ['manifests', 'texts', 'blobs'];
-// The same six folders the other adapters admit; refusing a history prefix would make a note's past unreachable.
-const FOLDERS = new Set(['', 'audio', 'attachments', 'thumbs', ...HISTORY_SUBS.map(sub => 'history/' + sub)]);
-const parts = name => {
-	if (typeof name !== 'string' || !name || name.includes('\\') || name.includes('\0')) throw fail('name', 'This file does not belong to the notes folder.');
-	const value = name.split('/');
-	const admitted = value.length === 1
-		|| value.length === 2 && ['audio', 'attachments', 'thumbs'].includes(value[0])
-		|| value.length === 3 && value[0] === 'history' && HISTORY_SUBS.includes(value[1]);
-	if (!admitted || value.some(p => !p || p === '.' || p === '..')) throw fail('name', 'This file does not belong to the notes folder.');
-	return value;
-};
 
 // A key no note can ever have: `parts` refuses a name containing NUL, so the probe can never
 // collide with somebody's file and can never be listed as one.
@@ -89,10 +76,7 @@ const readKeys = (db, table) => run(db, table, 'readonly', os => os.getAllKeys()
 
 // Whatever the database gave back, as bytes, or null when the name is simply not there. A record
 // that is not bytes is not a note: it is passed over rather than guessed at.
-const recordBytes = value => value instanceof Uint8Array ? value
-	: value instanceof ArrayBuffer ? new Uint8Array(value)
-	: ArrayBuffer.isView(value) ? new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength))
-	: null;
+const recordBytes = value => value instanceof Uint8Array ? value : null;
 
 // A recording is one visible virtual file, with immutable chunks at NUL-prefixed private keys.
 // No schema upgrade and no per-append whole-recording clone. Backup/read join exactly this file's
@@ -257,9 +241,9 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		} else {
 			// The last-resort Map holds the exact bytes `write` gave it; the reader always gets its own
 			// copy. A database record that is not bytes is passed over, never guessed at.
-			const bytes = value instanceof Blob ? value : entry.db ? recordBytes(value) : value == null ? null : exactBytes(value);
-			onOpen?.(bytes == null ? null : {size: bytes instanceof Blob ? bytes.size : bytes.length, modified: null});
-			if (bytes != null) yield* blobByteChunks(bytes instanceof Blob ? bytes : new Blob([bytes]), {signal, chunkBytes});
+			const bytes = entry.db ? recordBytes(value) : value == null ? null : exactBytes(value);
+			onOpen?.(bytes == null ? null : {size: bytes.length, modified: null});
+			if (bytes != null) yield* blobByteChunks(new Blob([bytes]), {signal, chunkBytes});
 		}
 	}
 	const read = async name => {
@@ -275,13 +259,12 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		const names = entry.db ? await readKeys(entry.db, table) : [...entry.memory.keys()];
 		return names.filter(n => typeof n === 'string' && within(n, prefix)).map(n => prefix ? n.slice(prefix.length + 1) : n);
 	};
-	const sizeOf = value => value instanceof Blob ? value.size : value instanceof Uint8Array ? value.length : exactBytes(value).length;
 	// There is no file system mtime here, so `modified` is null rather than invented -- which the
 	// stamp rule reads as "no stamp", which means "always re-read". Exactly the page-memory store's
 	// answer today, and never "close enough".
 	const stat = async name => {
 		parts(name); await readable();
-		if (!entry.db) { const value = entry.memory.get(name); return value == null ? null : {size: sizeOf(value), modified: null}; }
+		if (!entry.db) { const value = entry.memory.get(name); return value == null ? null : {size: value.length, modified: null}; }
 		const value = await run(entry.db, table, 'readonly', os => os.get(name)), header = isRecordingPartial(name) ? recordingHeader(value) : null;
 		const record = header ? null : chunkRecord(value), bytes = recordBytes(value);
 		return header ? {size: header.size, modified: null} : record ? {size: record.size, modified: null} : bytes == null ? null : {size: bytes.length, modified: null};
@@ -300,7 +283,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 			if (header) { out.set(name, {size: header.size, modified: null}); continue; }
 			const record = entry.db ? chunkRecord(values[i]) : null, value = entry.db ? recordBytes(values[i]) : values[i];
 			if (value == null && !record) continue;
-			out.set(prefix ? name.slice(prefix.length + 1) : name, {size: record ? record.size : sizeOf(value), modified: null});
+			out.set(prefix ? name.slice(prefix.length + 1) : name, {size: record ? record.size : value.length, modified: null});
 		}
 		return out;
 	};

@@ -1,15 +1,9 @@
 import {exactBytes, sha256, blobByteChunks, digestByteChunks, checkByteAbort, byteCopyError} from './integrity.mjs';
 import {isRecordingPartial, recordingStorageError, recordingStem} from './recording-files.mjs';
+import {FOLDERS, parts} from './opfs-paths.mjs';
 
 const CHUNK = 48 * 1024;
 const fail = (code, message) => Object.assign(new Error(message), {code});
-const prefixes = new Set(['', 'audio', 'attachments', 'thumbs', 'history/manifests', 'history/texts', 'history/blobs']);
-function nameOf(name) {
-	if (typeof name !== 'string' || !name || name.startsWith('/') || /[\\\0]/.test(name)) throw fail('name', 'This file does not belong to Notes.');
-	const parts = name.split('/'), leaf = parts.pop();
-	if (!leaf || leaf === '.' || leaf === '..' || !prefixes.has(parts.join('/'))) throw fail('name', 'This file does not belong to Notes.');
-	return name;
-}
 // Bytes cross as args.bytes and result.bytes; the platform's transport seam carries them.
 const received = value => ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
 
@@ -28,7 +22,7 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 	};
 	// One native read-transfer owner serves both whole-file readers and the backup stream.
 	async function* readChunks(name, {chunkBytes = CHUNK, signal, onOpen} = {}) {
-		nameOf(name);
+		parts(name);
 		if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 1) throw fail('protocol', 'The native read chunk needs a positive exact size.');
 		const step = Math.min(chunkBytes, CHUNK);
 		await beforeStep('read', name);
@@ -56,7 +50,7 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 		return bytes;
 	};
 	const write = async (name, value) => {
-		nameOf(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
+		parts(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
 		const bytes = exactBytes(value), id = token();
 		await beforeStep('write', name, bytes);
 		try {
@@ -73,7 +67,7 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 	// The existing native protocol asks for its digest at begin; compute it from bounded
 	// slices first, then send bounded slices. NativeNotesStore owns temporary-file readback.
 	const writeBlob = async (name, blob, {signal, onProgress} = {}) => {
-		nameOf(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
+		parts(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
 		if (!(blob instanceof Blob)) throw new TypeError('A file copy needs an original Blob.');
 		checkByteAbort(signal); await beforeStep('write', name, blob);
 		if (await stat(name) !== null) throw fail('collision', 'Another file already uses ' + name + '. It was kept.');
@@ -102,19 +96,19 @@ export function createNativeByteStore({call, token = () => crypto.randomUUID(), 
 	};
 
 	const remove = async name => {
-		nameOf(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
+		parts(name); if (!writable) throw fail('read-only', reason || 'These notes are read-only here.');
 		await beforeStep('remove', name); await request('remove', {name}); await afterStep('remove', name);
 	};
 	const list = async (prefix = '') => {
-		if (!prefixes.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
+		if (!FOLDERS.has(prefix)) throw fail('name', 'This folder is not part of Notes.');
 		const result = await request('list', {prefix});
 		if (!Array.isArray(result.names)) throw fail('protocol', 'The native folder did not return a file listing.');
-		for (const name of result.names) { if (typeof name !== 'string' || name.includes('/')) throw fail('protocol', 'The native folder returned a non-sibling name.'); nameOf(prefix ? prefix + '/' + name : name); }
+		for (const name of result.names) { if (typeof name !== 'string' || name.includes('/')) throw fail('protocol', 'The native folder returned a non-sibling name.'); parts(prefix ? prefix + '/' + name : name); }
 		return result.names;
 	};
 	// Stat without bytes; null means absent. No mtime gives `modified: null`: "no stamp", always re-read.
 	const stat = async name => {
-		nameOf(name); const result = await request('stat', {name});
+		parts(name); const result = await request('stat', {name});
 		if (result?.missing === true) return null;
 		if (!Number.isSafeInteger(result?.size) || result.size < 0) throw fail('protocol', 'The native folder returned an invalid file size.');
 		return {size: result.size, modified: Number.isSafeInteger(result.modified) ? result.modified : null};

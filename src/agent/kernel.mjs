@@ -1100,18 +1100,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const base = state.revision, target = incoming.revision;
       let evidence = null;
       if (Array.isArray(incoming.journal) && safeInt(target) && target > base) {
-        const entries = incoming.journal.filter(row => Number(row.revision ?? row.transaction?.revision) > base &&
-          Number(row.revision ?? row.transaction?.revision) <= target).map(row => {
-          const tx = row.transaction || row, actor = typeof tx.actor === 'object' ? tx.actor.kind : tx.actor;
-          const principal = tx.principal || (typeof tx.actor === 'object' ? tx.actor.id : '') || 'local';
-          return { ...row, revision: Number(tx.revision), baseRevision: Number(tx.baseRevision),
-            id: String(tx.id || tx.transactionId || mintId('change_')), actor: actor || 'human',
-            principal: String(principal), transport: String(tx.transport || 'platform'),
-            operation: String(tx.operation || 'document.human_edit'), splices: row.splices };
-        }).sort((a, b) => a.revision - b.revision);
+        const entries = incoming.journal.filter(row => row?.revision > base && row.revision <= target)
+          .sort((a, b) => a.revision - b.revision);
         let replay = state.text, revision = base, valid = true;
         for (const row of entries) {
-          if (row.baseRevision !== revision || row.revision !== revision + 1 || !Array.isArray(row.splices)) { valid = false; break; }
+          if (!safeInt(row.revision) || !safeInt(row.baseRevision) || row.baseRevision !== revision ||
+              row.revision !== revision + 1 || !Array.isArray(row.splices) || typeof row.id !== 'string' || !row.id ||
+              !['human', 'agent', 'system'].includes(row.actor) || typeof row.principal !== 'string' ||
+              !row.principal || row.principal.length > 160 || typeof row.transport !== 'string' || !row.transport ||
+              typeof row.operation !== 'string' || !row.operation) { valid = false; break; }
           replay = transformSplices(replay, row.splices);
           if (replay == null) { valid = false; break; }
           revision = row.revision;

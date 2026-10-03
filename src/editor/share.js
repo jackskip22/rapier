@@ -134,7 +134,7 @@ function _rapierSharedResolve(text, ids, images, definitions) {
 	const definition = new RegExp('(^ {0,3}\\[((?:\\\\.|[^\\]\\\\])+)\\]:[ \\t]*(?:(?:\\r\\n|\\r|\\n)[ \\t]*)?(?:&lt;)?)#' + id + '(?=>?[ \\t]*$|>?[ \\t]+["\'(])', 'gm');
 	const swapInline = (match, lead, value) => { const found = src(value); return found == null ? match : lead + found; };
 	const swapDefinition = (match, lead, label, value) => {
-		if (definitions && !definitions.has(md.utils.normalizeReference(_rapierSharedDecode(label)))) return match;
+		if (!definitions.has(md.utils.normalizeReference(_rapierSharedDecode(label)))) return match;
 		const found = src(value);
 		return found == null ? match : lead + found;
 	};
@@ -151,13 +151,12 @@ async function _rapierReadSharedDocument(text, filename) {
 	const carriers = template.content.querySelectorAll('script[type="' + _RAPIER_SHARED_SOURCE_TYPE + '"]');
 	if (carriers.length !== 1) return invalid();
 	const carrier = carriers[0];
-	const name = carrier.getAttribute('data-filename') || '', kind = carrier.getAttribute('data-kind') || 'markdown', sha256 = carrier.getAttribute('data-sha256') || '';
+	const name = carrier.getAttribute('data-filename') || '', kind = carrier.getAttribute('data-kind'), sha256 = carrier.getAttribute('data-sha256') || '';
 	const ids = (carrier.getAttribute('data-images') || '').split(/\s+/).filter(Boolean);
 	const definitionTokens = (carrier.getAttribute('data-image-definitions') || '').split(/\s+/).filter(Boolean);
 	if (!_rapierDocumentNameIsAdmissible(name) || !['markdown', 'text', 'code'].includes(kind) || !/^[0-9a-f]{64}$/.test(sha256) ||
 			ids.some(id => !_RAPIER_SHARED_ID.test(id)) || definitionTokens.some(token => !_RAPIER_SHARED_DEFINITION.test(token))) return invalid();
-	// The declaration is the law: only a definition the page declares is an image definition. (No
-	// public page predates the declaration; there is nothing older to infer for.)
+	// Only a definition the page declares is an image definition.
 	let definitions;
 	try { definitions = new Set(definitionTokens.map(decodeURIComponent)); } catch (_) { return invalid(); }
 	let source = carrier.textContent;
@@ -196,23 +195,11 @@ function _rapierSharedPageFallbackCss() {
 `;
 }
 
-// A picture-only paragraph, for the one wrap-owner rule below: exactly one meaningful child,
-// either the image itself or a single link wrapping only the image (mirrors layout/interchange.js's
-// imageOnly, which a static export cannot reach — that copy lives inside a function serialized
-// standalone into styled HTML, private to that closure).
-function _rapierShareWrapPicture(element, image) {
-	const meaningful = node => [...node.childNodes].filter(child => child.nodeType !== 8 &&
-		!(child.nodeType === 3 && !child.textContent.trim()));
-	const children = meaningful(element);
-	return children.length === 1 && (children[0] === image || children[0].nodeType === 1 &&
-		children[0].tagName === 'A' && meaningful(children[0]).length === 1 && meaningful(children[0])[0] === image);
-}
-
 // The live editor, export and Share use the same eligible text blocks, including controls.
 function _rapierShareWrapKind(element) {
 	if (globalThis.RapierMarkdownLayout.wrapTextBlock(element)) return 'prose';
 	const image = element.tagName === 'P' ? element.querySelector('img') : null;
-	if (image && _rapierShareWrapPicture(element, image)) return 'picture';
+	if (image && globalThis.RapierImageLayout.imageOnly(element, image)) return 'picture';
 	// An empty paragraph is transparent to the owner search (R75), as in the editor and the export.
 	if (element.tagName === 'P' && !element.textContent.trim() && !image) return 'metadata';
 	return null;
@@ -220,7 +207,7 @@ function _rapierShareWrapKind(element) {
 
 // Astra-R75 X04: the picture-only paragraph a positioned picture (any of the four wrap values)
 // actually occupies -- its own occurrence, either the bare image or a single link wrapping only
-// it (mirrors _rapierShareWrapPicture/imageOnly above and in layout/interchange.js), and that
+// it (the layout model's imageOnly), and that
 // occurrence's own owning paragraph. One owner for the check every positioning pass below needs.
 function _rapierSharePictureParagraph(image) {
 	const occurrence = image.parentElement.tagName === 'A' ? image.parentElement : image;

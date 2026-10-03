@@ -538,6 +538,7 @@ for (const path of workerPaths) {
   if (!MODULES.get(path).startsWith(head)) throw new Error('Worker module is not an ordinary factory: ' + path);
   MODULES.set(path, head + `workerFactories[${JSON.stringify(path)}] = ` + MODULES.get(path).slice(head.length));
 }
+// Shared ink readers register retained factories inside their module closure, including in a worker.
 const workerSource = workerEntries.map(([entry, install]) => `
 Object.defineProperty(modules[${JSON.stringify(entry)}], 'workerSource', {value: () => '(() => {\\nconst modules = {}, artifactFactories = {};\\n' +
   ${JSON.stringify(workerClosure(entry))}.map(path => 'modules[' + JSON.stringify(path) + '] = (' + workerFactories[path].toString() + ')();').join('\\n') +

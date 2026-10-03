@@ -2585,7 +2585,9 @@ function _rapierDrawStripRasters(recipe) {
 	return recipe.shapes.some(shape => shape.raster) ? { ...recipe, shapes: recipe.shapes.map(shape => shape.raster ? { ...shape, raster: undefined } : shape) } : recipe;
 }
 function _rapierDrawRestorePaint(recipe, svg) {
-	if (!recipe || !Array.isArray(recipe.shapes) || !recipe.shapes.some(shape => shape && shape.recognized === 'paint' && shape.raster == null)) return recipe;
+	if (!recipe || !Array.isArray(recipe.shapes) || !recipe.shapes.some(shape => shape && shape.recognized === 'paint')) return recipe;
+	// SVG image resources own the pixels; metadata must not introduce a different editable painting.
+	if (recipe.shapes.some(shape => shape && shape.recognized === 'paint' && shape.raster != null)) throw Object.assign(new Error('The drawing contains paint outside its image resources.'), { code: 'drawing_restore_failed' });
 	if (typeof svg !== 'string') return recipe;
 	const rasters = new Map(), pattern = /<image\b((?:"[^"]*"|'[^']*'|[^<>"'])*)\/?>/g;
 	for (let match; (match = pattern.exec(svg));) {
@@ -2595,7 +2597,7 @@ function _rapierDrawRestorePaint(recipe, svg) {
 		if (rasters.has(key)) throw Object.assign(new Error('The drawing contains duplicate paint layers.'), { code: 'drawing_restore_failed' });
 		rasters.set(key, value);
 	}
-	return { ...recipe, shapes: recipe.shapes.map(shape => shape && shape.recognized === 'paint' && shape.raster == null && rasters.has(shape.id) ? { ...shape, raster: rasters.get(shape.id) } : shape) };
+	return { ...recipe, shapes: recipe.shapes.map(shape => shape && shape.recognized === 'paint' ? { ...shape, raster: rasters.get(shape.id) } : shape) };
 }
 
 const RAPIER_DRAW_VIEW_PAD = 8;
@@ -3436,6 +3438,12 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 function _rapierDrawLowerFigures(figures, existing = [], direction = 'down') { return _rapierDrawLowerFiguresOrFault(figures, existing, direction).shapes || null; }
 function _rapierDrawFigureFault(figures, existing = [], direction = 'down') { return _rapierDrawLowerFiguresOrFault(figures, existing, direction).fault || null; }
 
+function _rapierDrawRestoreSVGRecipe(raw, svg) {
+	const recipe = _rapierDrawAdmitRecipe(_rapierDrawRestorePaint(restoreFonts(restoreLetters(raw, svg), svg), svg));
+	if (!recipe) throw new Error('Invalid drawing recipe');
+	return recipe;
+}
+
 // The pure counterpart of draw.js's _rapierDrawReadSVGRecipe for doors without a DOM: reads the
 // recipe a Rapier drawing carries in its own <metadata id="rapier-draw"> (the same text the writer
 // above emits), restores embedded font bytes from the SVG's own @font-face resources and the capitals of a
@@ -3449,9 +3457,7 @@ function _rapierDrawReadRecipeFromSVGText(svg) {
 	try {
 		if (matches.length !== 1) throw new Error('Invalid drawing metadata');
 		const text = matches[0][1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-		const recipe = _rapierDrawAdmitRecipe(_rapierDrawRestorePaint(restoreFonts(restoreLetters(JSON.parse(text), svg), svg), svg));
-		if (!recipe) throw new Error('Invalid drawing recipe');
-		return recipe;
+		return _rapierDrawRestoreSVGRecipe(JSON.parse(text), svg);
 	} catch (error) {
 		throw Object.assign(new Error('Drawing could not be read: ' + String(error.message || error)), { code: 'drawing_restore_failed' });
 	}
@@ -3460,10 +3466,10 @@ function _rapierDrawReadRecipeFromSVGText(svg) {
 function _rapierDrawNormalizeAgentRecipe(input) {
 	if (input?.shapes?.some?.(shape => shape?.labelBeside != null)) return null;
 	if (!input || typeof input !== 'object') return null;
-	const { figures, ...rest } = input;
+	const { figures, version = RAPIER_DRAW_VERSION, ...rest } = input;
 	const shapes = Array.isArray(rest.shapes) ? rest.shapes : Array.isArray(figures) ? _rapierDrawLowerFigures(figures, [], input.direction) : null;
 	if (!Array.isArray(shapes) || !shapes.length || shapes.length > 128) return null;
-	const recipe = _rapierDrawAdmitRecipe({ ...rest, shapes, version: RAPIER_DRAW_VERSION, canvas: rest.canvas || { w: 4096, h: 4096 }, strokes: rest.strokes || [] });
+	const recipe = _rapierDrawAdmitRecipe({ ...rest, shapes, version, canvas: rest.canvas || { w: 4096, h: 4096 }, strokes: rest.strokes || [] });
 	if (!recipe) return null;
 	if (!rest.canvas) {
 		_rapierDrawSceneWork(recipe);
@@ -3597,9 +3603,10 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		}
 		if (kind === 'ink' && stroke === null) return null;
 		const line = kind === 'line' || kind === 'arrow';
-		const styles = _rapierDrawStylesFor(kind);
+		const styles = _rapierDrawStylesFor(kind), brushes = _rapierDrawBrushesFor(kind, stroke !== null);
+		if (raw.brush != null && !brushes.includes(raw.brush)) return null;
 		const shape = { id, stroke, recognized: kind, asDrawn: stroke !== null && (kind === 'ink' || raw.asDrawn === true),
-			brush: _rapierDrawBrushesFor(kind, stroke !== null).includes(raw.brush === 'pen' ? 'brush' : raw.brush) ? (raw.brush === 'pen' ? 'brush' : raw.brush) : 'ink', style: styles.includes(raw.style) ? raw.style : _rapierDrawDefaultStyle(kind), geom };
+			brush: raw.brush || 'ink', style: styles.includes(raw.style) ? raw.style : _rapierDrawDefaultStyle(kind), geom };
 		const traits = _rapierDrawFigureTraits(raw, kind);
 		if (!traits || traits.authorStyle?.fill && shape.style !== 'solid') return null;
 		Object.assign(shape, traits);
@@ -3823,4 +3830,4 @@ function _rapierDrawShapeContours(shape, recipe) {
 	return path?.length ? [path, ...marks.map(points => points.map(p => p.concat(0)))] : [];
 }
 
-export {COPIER_PRESETS,copierPreset,admitCopier,copierBounds,copierMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestorePaint,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots,restoreLetters};
+export {COPIER_PRESETS,copierPreset,admitCopier,copierBounds,copierMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawFitCircleTo,_rapierDrawFitEllipseTo,_rapierDrawFitRegularTo,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestoreSVGRecipe,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots};

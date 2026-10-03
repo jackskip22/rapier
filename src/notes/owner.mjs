@@ -644,12 +644,16 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			// reconcile metadata. Exact restore may replace only an unused sidecar.
 			const restoring = options?.exactRestore === true;
 			if (restoring) await emptyDestination();
-			const before = await read(options), baseBytes = indexReceipt, baseDigest = await digestOf(baseBytes);
+			const before = await read(options), baseBytes = indexReceipt, baseDigest = await digestOf(baseBytes), observed = new Map(before.bodies);
 			// `readBodies` is for a planner that can only name its note after finding it in this fresh
 			// index (the widget's tick: by stable id, and only once it is known not to be protected).
 			// Same lease, same listing, same exact copies as `{bodies}`; nothing is read unasked.
 			const plan = typeof planner === 'function' ? await planner({index: copy(before.index), files: before.files.slice(), bodies: new Map([...before.bodies].map(([file, bytes]) => [file, bytes.slice()])),
-				readBodies: names => readBodies(before.files, requestedBodies({bodies: names}))}) : planner;
+				readBodies: async names => {
+					const bodies = await readBodies(before.files, requestedBodies({bodies: names}));
+					for (const [file, bytes] of bodies) observed.set(file, bytes.slice());
+					return bodies;
+				}}) : planner;
 			if (!plan?.index || plan.index.transaction) throw fail('plan', 'A notes transaction needs its complete resulting sidecar.');
 			if (!restoring && folderGeneration(plan.index) !== before.generation) throw fail('stale', 'The notes folder changed; reload it before saving.');
 			if (restoring && (plan.kind !== 'restore' || !plan.exactIndex || plan.removes?.length)) throw fail('plan', 'Exact restore needs the complete original sidecar and only new files.');
@@ -706,6 +710,9 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				// Redelivery earned no new transaction. Still check the admitted sidecar:
 				// a foreign writer may have changed it while an async planner was reading.
 				if (await readJournal()) throw fail('pending', 'A pending notes journal must finish before another starts.');
+				// No write means no journal body proof. Recheck the planner's private receipts
+				// so an intervening file edit cannot be acknowledged as an unchanged save.
+				for (const [file, bytes] of observed) if (!equal(bytes, await readBytes(file))) throw fail('changed', 'The note changed before the transaction was admitted.');
 				if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
 				return {...before, bodies: new Map()};
 			}

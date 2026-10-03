@@ -143,15 +143,14 @@ export async function verifyImportFile(receipt, file, expected, actual) {
 	if (!['planned', 'writing'].includes(receipt.status) || !importedFile(file)) throw new Error('invalid imported file proof');
 	const wanted = bytesOf(expected), got = bytesOf(actual);
 	if (wanted.length !== got.length || wanted.some((byte, i) => byte !== got[i])) throw new Error('import file read-back differs: ' + file);
-	if (list(receipt.createdFiles).some(row => row.file === file)) throw new Error('import file was already recorded');
-	return {...copy(receipt), createdFiles: [...copy(list(receipt.createdFiles)), {file, byteLength: got.length, digest: await digestBytes(got)}]};
+	if (receipt.createdFiles.some(row => row.file === file)) throw new Error('import file was already recorded');
+	return {...copy(receipt), createdFiles: [...copy(receipt.createdFiles), {file, byteLength: got.length, digest: await digestBytes(got)}]};
 }
 
 // The arrival writer supplies only paths that were absent under its history lease. The receipt
 // keeps their read-back proof; an existing immutable shared object earns no deletion authority.
 export async function verifyImportHistory(receipt, rows) {
-	const out = copy(receipt), found = new Set(list(out.createdHistory).map(row => row.file));
-	out.createdHistory ||= [];
+	const out = copy(receipt), found = new Set(out.createdHistory.map(row => row.file));
 	for (const row of rows) {
 		if (!['planned', 'writing'].includes(out.status) || !historyFile(row.file) || found.has(row.file)) throw new Error('invalid imported history proof');
 		const bytes = bytesOf(row.bytes), actual = bytesOf(row.actual);
@@ -162,7 +161,7 @@ export async function verifyImportHistory(receipt, rows) {
 }
 
 export function recordImportSections(receipt, sections) {
-	const found = new Map(list(receipt.createdSections).map(row => [row.name, row]));
+	const found = new Map(receipt.createdSections.map(row => [row.name, row]));
 	for (const section of sections) if (!found.has(section.name)) found.set(section.name, copy(section));
 	return {...copy(receipt), createdSections: [...found.values()]};
 }
@@ -239,7 +238,7 @@ function inputName(receipt, row, i) {
 }
 function receiptProblem(receipt) {
 	if (!object(receipt) || receipt.version !== 1 || !['planned', 'writing', 'complete', 'cancelled', 'failed'].includes(receipt.status)
-		|| !['notes', 'written', 'plannedFiles', 'sections', 'picked', 'refused', 'accounting'].every(key => Array.isArray(receipt[key]))) return 'this import record is incomplete';
+		|| !['notes', 'written', 'plannedFiles', 'sections', 'picked', 'refused', 'accounting', 'createdFiles', 'createdHistory', 'createdSections'].every(key => Array.isArray(receipt[key]))) return 'this import record is incomplete';
 	const planned = new Set(), written = new Set(), ids = new Set();
 	for (const file of receipt.plannedFiles) { if (!noteFile(file) || planned.has(file)) return 'this import record is incomplete'; planned.add(file); }
 	const described = new Set();
@@ -262,8 +261,7 @@ function receiptProblem(receipt) {
 		}
 	}
 	if (groupedWarningProblem(receipt)) return 'this import record is incomplete';
-	if (receipt.createdFiles !== undefined) {
-		if (!Array.isArray(receipt.createdFiles)) return 'this import record is incomplete';
+	{
 		const names = new Set();
 		for (const row of receipt.createdFiles) {
 			if (!object(row) || !importedFile(row.file) || names.has(row.file)
@@ -271,16 +269,15 @@ function receiptProblem(receipt) {
 			names.add(row.file);
 		}
 	}
-	if (receipt.createdHistory !== undefined) {
-		if (!Array.isArray(receipt.createdHistory)) return 'this import record is incomplete';
+	{
 		const seen = new Set();
 		for (const row of receipt.createdHistory) {
 			if (!object(row) || !historyFile(row.file) || seen.has(row.file) || !sha256(row.digest) || !Number.isSafeInteger(row.byteLength) || row.byteLength < 0) return 'this import record is incomplete';
 			seen.add(row.file);
 		}
 	}
-	if (receipt.createdSections !== undefined && (!Array.isArray(receipt.createdSections) || receipt.createdSections.some(row => !object(row) || typeof row.name !== 'string' || !row.name)
-		|| new Set(receipt.createdSections.map(row => row.name)).size !== receipt.createdSections.length)) return 'this import record is incomplete';
+	if (receipt.createdSections.some(row => !object(row) || typeof row.name !== 'string' || !row.name)
+		|| new Set(receipt.createdSections.map(row => row.name)).size !== receipt.createdSections.length) return 'this import record is incomplete';
 	for (const row of receipt.written) {
 		if (!object(row) || !planned.has(row.file) || written.has(row.file) || typeof row.created !== 'boolean'
 			|| !sha256(row.digest) || !Number.isSafeInteger(row.byteLength) || row.byteLength < 0) return 'this import record is incomplete';

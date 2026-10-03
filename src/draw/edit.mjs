@@ -483,9 +483,8 @@ function applyOperations(input, operations) {
 			for (const shape of shapes) {
 				_rapierDrawReleaseAuthorPaint(shape, operation);
 				if (brush !== undefined) {
-					const want = brush === 'pen' ? 'brush' : brush;
-					if (typeof want !== 'string' || !_rapierDrawBrushesFor(shape.recognized, shape.stroke != null).includes(want)) fail('drawing_look_invalid');
-					shape.brush = want;
+					if (typeof brush !== 'string' || !_rapierDrawBrushesFor(shape.recognized, shape.stroke != null).includes(brush)) fail('drawing_look_invalid');
+					shape.brush = brush;
 				}
 				if (style !== undefined) {
 					if (typeof style !== 'string' || !_rapierDrawStylesFor(shape.recognized).includes(style)) fail('drawing_look_invalid');

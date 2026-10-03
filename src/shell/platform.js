@@ -651,7 +651,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				}));
 			} catch (_) {}
 		}
-		if (payload && _rapierBootstrapRuntime.complete && (!payload.purpose || payload.purpose === 'external' || payload.purpose === 'share')) {
+		if (payload && _rapierBootstrapRuntime.complete && (payload.purpose === 'external' || payload.purpose === 'share')) {
 			try {
 				window.dispatchEvent(new CustomEvent('rapier:platform-open', { detail: payload }));
 			} catch (_) {}
@@ -688,6 +688,10 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			return;
 		}
 		if (type === 'begin') {
+			if (typeof message.purpose !== 'string' || !message.purpose) {
+				_nativeIntakeReject({id: message.id}, new Error('native document transfer named no purpose'));
+				return;
+			}
 			_nativeHostRuntime.state.pendingIntake = true;
 			_nativeIntakeRuntime.generation += 1;
 			_nativeIntakeRuntime.failure = null;
@@ -700,7 +704,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				path: message.path == null ? null : String(message.path),
 				documentAuthority: message.documentAuthority == null ? '' : String(message.documentAuthority),
 				fileGeneration: message.fileGeneration == null ? null : message.fileGeneration,
-				purpose: String(message.purpose || 'external'),
+				purpose: message.purpose,
 				transient: message.transient === true,
 				contentType: String(message.contentType || ''),
 				decoder: message.binary === true ? null : new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }),
@@ -1339,10 +1343,10 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			begun = true;
 			var generation = begin && typeof begin.generation === 'string' ? begin.generation : '';
 			if (!generation) throw new Error('native transfer named no generation');
-			var chunkBytes = Math.max(16 * 1024, Math.min(
-				NATIVE_TRANSFER_CHUNK_BYTES,
-				Number(begin && begin.chunkBytes) || NATIVE_TRANSFER_CHUNK_BYTES
-			));
+			var chunkBytes = begin.chunkBytes;
+			if (!Number.isSafeInteger(chunkBytes) || chunkBytes <= 0 || chunkBytes > NATIVE_TRANSFER_CHUNK_BYTES) {
+				throw new Error('native transfer named no valid chunk byte limit');
+			}
 			var sequence = 0;
 			for (var offset = 0; offset < blob.size; offset += chunkBytes) {
 				var part = new Uint8Array(await blob.slice(offset, offset + chunkBytes).arrayBuffer());
@@ -1378,7 +1382,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			pending.reject(new Error('native save acknowledgement did not match the intended document'));
 			return;
 		}
-		var status = String(detail.status || (detail.ok === true ? 'confirmed' : 'failed'));
+		var status = detail.status;
 		if (status === 'confirmed' && detail.ok === true && detail.verified === true) {
 			if (String(detail.purpose || '') !== 'export') {
 				if (detail.bindingPublished === true) {
@@ -1659,13 +1663,9 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	function _normalizeProState(raw) {
 		if (!_nativeProAuthority()) return _defaultProState;
 		var value = raw;
-		if (typeof value === 'string') {
-			try { value = JSON.parse(value); } catch (_) { value = null; }
-		}
 		if (!value || typeof value !== 'object') return _defaultProState;
 		var explicitlyAvailable = value.available === true;
-		var explicitLocked = explicitlyAvailable &&
-			(value.unlocked === false || String(value.state || '').toLowerCase() === 'locked');
+		var explicitLocked = explicitlyAvailable && value.unlocked === false;
 		var price = String(value.priceLabel || '');
 		return {
 			available: explicitlyAvailable,
@@ -1990,9 +1990,8 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		if (!metadata || typeof metadata !== 'object' || !metadata.snapshot || typeof metadata.snapshot !== 'object') {
 			throw new Error('Invalid Rapier recovery metadata.');
 		}
-		var integritySchema = Number(metadata.integritySchema);
-		if (integritySchema !== 1) {
-			throw new Error('Unsupported Rapier recovery integrity schema.');
+		if (metadata.schemaVersion !== 4 || metadata.integritySchema !== 1) {
+			throw new Error('Unsupported Rapier recovery schema.');
 		}
 		if (!_srRecoveryStateIntegrityMatches(metadata)) {
 			throw new Error('Rapier recovery metadata failed integrity verification.');
@@ -2005,16 +2004,21 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			throw new Error('Rapier recovery content failed integrity verification.');
 		}
 		metadata.snapshot = Object.assign({}, metadata.snapshot, { canonicalText: canonicalText });
-		var filename = String(metadata.snapshot.filename || 'untitled.md');
-		var filenameAdmissible = _rapierDocumentNameIsAdmissible(filename);
+		var snapshot = metadata.snapshot;
+		var snapshotAdmissible = typeof snapshot.filename === 'string' && _rapierDocumentNameIsAdmissible(snapshot.filename) &&
+			typeof snapshot.documentAuthority === 'string' && !!snapshot.documentAuthority &&
+			(snapshot.virtualDocumentKind === '' || snapshot.virtualDocumentKind === 'welcome') &&
+			typeof snapshot.saveAsRequired === 'boolean' &&
+			['markdown', 'text', 'code'].indexOf(snapshot.docKind) >= 0;
 		var countersAdmissible = Number.isSafeInteger(metadata.generation) && metadata.generation >= 0 &&
-			(metadata.documentRevision == null ||
-				(Number.isSafeInteger(metadata.documentRevision) && metadata.documentRevision >= 0)) &&
-			(metadata.nextBlockId == null ||
-				(Number.isSafeInteger(metadata.nextBlockId) && metadata.nextBlockId >= 1)) &&
-			(metadata.savedGeneration == null ||
+			Number.isSafeInteger(metadata.documentRevision) && metadata.documentRevision >= 0 &&
+			Number.isSafeInteger(metadata.nextBlockId) && metadata.nextBlockId >= 1 &&
+			(metadata.savedGeneration === null ||
 				(Number.isSafeInteger(metadata.savedGeneration) && metadata.savedGeneration >= -1));
-		if (!filenameAdmissible || !countersAdmissible) {
+		if (!snapshotAdmissible || !countersAdmissible || typeof metadata.historyComplete !== 'boolean' ||
+				typeof metadata.dirty !== 'boolean' || typeof metadata.checkpointId !== 'string' || !metadata.checkpointId ||
+				typeof metadata.sourceRootId !== 'string' || !metadata.sourceRootId ||
+				(metadata.baseFileGeneration !== null && typeof metadata.baseFileGeneration !== 'string')) {
 			throw new Error('Rapier recovery metadata is inadmissible.');
 		}
 		metadata.integrityVerified = true;
@@ -2034,11 +2038,6 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		if (!filePayload || !base) return 'recovery-transient';
 		if (current != null && base === current) return 'recovery-bound';
 		return 'recovery-conflict';
-	}
-	function _srEscapeHtml(value) {
-		return String(value == null ? '' : value).replace(/[&<>"']/g, function (character) {
-			return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character];
-		});
 	}
 	function _srFileTypes(includeImports) {
 		var types = ['text/markdown', 'text/plain', 'text/*', 'application/json', 'application/xml'];
@@ -2304,18 +2303,18 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		_srState.undoVersion = _srVersion(records[4]);
 		if (_srState.recovery && _srState.recovery.integrityVerified === true && _srState.undo
 				&& _srUndoIntegrityMatches(_srState.undo)
-				&& Number(_srState.recovery.schemaVersion) === 4
-				&& Number(_srState.undo.schemaVersion) === 4
-				&& String(_srState.undo.checkpointId || '') === String(_srState.recovery.checkpointId || '')
-				&& String(_srState.undo.sourceRootId || '') === String(_srState.recovery.sourceRootId || '')
-				&& Number(_srState.undo.generation) === Number(_srState.recovery.generation)
-				&& Number(_srState.undo.documentRevision) === Number(_srState.recovery.documentRevision)
+				&& _srState.undo.schemaVersion === 4
+				&& _srState.undo.checkpointId === _srState.recovery.checkpointId
+				&& _srState.undo.sourceRootId === _srState.recovery.sourceRootId
+				&& _srState.undo.generation === _srState.recovery.generation
+				&& _srState.undo.documentRevision === _srState.recovery.documentRevision
 				&& _srState.recovery.historyComplete === true
 				&& _srState.undo.historyComplete === true
-				&& String(_srState.undo.documentAuthority || '') === String(_srState.recovery.snapshot && _srState.recovery.snapshot.documentAuthority || '')
-				&& String(_srState.undo.virtualDocumentKind || '') === String(_srState.recovery.snapshot && _srState.recovery.snapshot.virtualDocumentKind || '')
-				&& (_srState.undo.saveAsRequired === true) === (_srState.recovery.snapshot && _srState.recovery.snapshot.saveAsRequired === true)
-				&& String(_srState.undo.filename || '') === String(_srState.recovery.snapshot && _srState.recovery.snapshot.filename || '')) {
+				&& _srState.undo.documentAuthority === _srState.recovery.snapshot.documentAuthority
+				&& _srState.undo.virtualDocumentKind === _srState.recovery.snapshot.virtualDocumentKind
+				&& _srState.undo.saveAsRequired === _srState.recovery.snapshot.saveAsRequired
+				&& _srState.undo.docKind === _srState.recovery.snapshot.docKind
+				&& _srState.undo.filename === _srState.recovery.snapshot.filename) {
 			_srState.recovery = Object.assign({}, _srState.recovery, {
 				undo: _srState.undo,
 			});
@@ -2639,11 +2638,8 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				var print = _srNamespace('print');
 				if (!_srCapabilityReady('print/v1') || !print || typeof print.open !== 'function') return false;
 				var filename = String(artifact.filename || 'document.pdf');
-				var html = String(artifact.html || '');
-				if (!html) {
-					var docClass = String(artifact.docClass || 'rapier-page md-render').replace(/[^a-z0-9 _-]/gi, '');
-					html = '<!doctype html><html><head><meta charset="utf-8"><title>' + _srEscapeHtml(filename) + '</title></head><body><main class="' + docClass + '">' + String(artifact.bodyHtml || '') + '</main></body></html>';
-				}
+				var html = artifact.html;
+				if (typeof html !== 'string' || !html) return false;
 				var result = await print.open({ name: filename, contentType: 'text/html', content: new Blob([html], { type: 'text/html' }) });
 				return !(result && result.cancelled === true);
 			},

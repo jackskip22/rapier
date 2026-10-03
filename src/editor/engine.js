@@ -11024,7 +11024,7 @@ function _rapierScheduleSelectionVirtualization() {
 	_rapierSelectionVirtualizationFrame = requestAnimationFrame(_rapierSyncSelectionVirtualization);
 }
 
-document.addEventListener('selectionchange', () => {
+document.addEventListener('selectionchange', function _rapierProjectDocumentSelection() {
 	_rapierScheduleSelectionVirtualization();
 	_rapierScheduleDeferredProjectionRefresh();
 	const selection = window.getSelection();
@@ -12488,7 +12488,7 @@ function _rapierClearRestoredLedger(reason = 'identity_unproven') {
 // A refusal's trim reason is `identity_unproven:N`, N its ordinal here, for the console.
 function _rapierInstallRestoredHistory(envelope) {
 	const documentAuthority = String(rapier.identity.authority || '');
-	if (!envelope || Number(envelope.schemaVersion) !== 4 ||
+	if (!envelope || envelope.schemaVersion !== 4 ||
 			String(envelope.documentAuthority || '') !== documentAuthority ||
 			Number(envelope.documentRevision) !== Number(rapier.revision.settled || 0) ||
 			!Array.isArray(envelope.ledger) || !Array.isArray(envelope.branch) ||
@@ -20815,11 +20815,11 @@ async function _rapierOpenSvgBlob(blob, name, opts) {
 	return await _rapierPasteVectorImage(file, {});
 }
 
-window.addEventListener('rapier:platform-open', (event) => {
+window.addEventListener('rapier:platform-open', function _rapierOpenHostDocument(event) {
 	if (!_rapierBootstrapRuntime.complete) return;
 	rapierOpenPlatformPayload(event && event.detail);
 });
-window.addEventListener('rapier:platform-open-failed', (event) => {
+window.addEventListener('rapier:platform-open-failed', function _rapierReportHostOpenFailure(event) {
 	if (!_rapierBootstrapRuntime.complete) return;
 	const detail = event && event.detail || {};
 	const name = String(detail.name || '').trim();
@@ -20828,12 +20828,11 @@ window.addEventListener('rapier:platform-open-failed', (event) => {
 	try { console.warn('[rapier-platform] platform open failed', detail.error || 'unknown error'); } catch (_) {}
 });
 
-window.addEventListener('rapier:file-changed', async (event) => {
+window.addEventListener('rapier:file-changed', async function _rapierReconcileChangedFile(event) {
 	if (!_rapierBootstrapRuntime.complete || !window.RapierPlatform) return;
 	const detail = event && event.detail || {};
-	const changedAuthority = String(detail.documentAuthority || '').trim();
-	const eventAuthority = changedAuthority || String(rapier.identity.authority || '');
-	if (eventAuthority !== String(rapier.identity.authority || '')) return;
+	const eventAuthority = String(detail.documentAuthority || '').trim();
+	if (!eventAuthority || eventAuthority !== String(rapier.identity.authority || '')) return;
 	if (detail.missing === true) {
 		if (window.RapierPlatform.files.detach) {
 			try { await window.RapierPlatform.files.detach(eventAuthority); } catch (_) {}
@@ -25253,7 +25252,7 @@ function _rapierSuppressMutationEvent(event) {
 }
 
 window.addEventListener('beforeinput', _rapierSuppressMutationEvent, true);
-window.addEventListener('keydown', event => {
+window.addEventListener('keydown', function _rapierGuardPendingMutation(event) {
 	if (!event.isTrusted || !_rapierMutationBarrierActive() || !_rapierTrustedMutationKey(event)) return;
 	event.preventDefault();
 	event.stopImmediatePropagation();
@@ -25325,11 +25324,7 @@ function _rapierCreatePersistenceSnapshot(options = null) {
 		docKind: String(rapier.document.docKind || 'markdown'),
 		canonicalText: source,
 		sourceRootId: rapier.document.source.rootId,
-		sourceAuthoritative: true,
 		segmentIdentity: _rapierCurrentSegmentIdentity(),
-		blocks: [],
-		blockIds: [],
-		blockCount: 0,
 	};
 }
 
@@ -25377,8 +25372,6 @@ function _rapierIntegrityMatches(expected, value) {
 function _rapierRecoveryStateManifest(value) {
 	const state = value && typeof value === 'object' ? value : {};
 	const filename = String(state.filename || 'untitled.md');
-	const savedValue = Object.prototype.hasOwnProperty.call(state, 'savedGeneration')
-		? state.savedGeneration : state.lastSavedGeneration;
 	const fields = [
 		filename,
 		String(state.documentAuthority || ''),
@@ -25387,7 +25380,7 @@ function _rapierRecoveryStateManifest(value) {
 		String(state.docKind || _classifyDocKind(filename)),
 		Number(state.generation || 0),
 		Number(state.documentRevision || 0),
-		typeof savedValue === 'number' ? savedValue : null,
+		typeof state.savedGeneration === 'number' ? state.savedGeneration : null,
 		Number(state.nextBlockId || 1),
 		state.historyComplete === true,
 	];
@@ -25400,7 +25393,10 @@ function _rapierRecoveryStateIntegrity(value) {
 }
 
 function _rapierRecoveryStateIntegrityMatches(value) {
-	return !!value && _rapierIntegrityMatches(value.stateIntegrity, _rapierRecoveryStateManifest(value));
+	return !!value && Number.isSafeInteger(value.documentRevision) && value.documentRevision >= 0
+		&& Number.isSafeInteger(value.nextBlockId) && value.nextBlockId >= 1
+		&& (value.savedGeneration === null || Number.isSafeInteger(value.savedGeneration) && value.savedGeneration >= -1)
+		&& _rapierIntegrityMatches(value.stateIntegrity, _rapierRecoveryStateManifest(value));
 }
 
 function _rapierDbTransaction(db, stores, mode, durability) {
@@ -25667,7 +25663,6 @@ function rapierFlushDirty(opts) {
 							authorityIntegrity,
 							stateIntegrity,
 							integritySchema: 4,
-							lastSavedGeneration: savedGeneration,
 							updatedAt: Date.now(),
 						});
 						if (opts.durable || opts.snapshot) {
@@ -25798,18 +25793,11 @@ function _rapierParseLocalSnapshot(raw) {
 		if (!parsed || parsed.docId !== RAPIER_DOC_ID) return null;
 		if (typeof parsed.markdown !== 'string' ||
 				!Number.isSafeInteger(parsed.generation) || parsed.generation < 0 ||
-				(parsed.documentRevision != null &&
-					(!Number.isSafeInteger(parsed.documentRevision) || parsed.documentRevision < 0)) ||
-				(parsed.nextBlockId != null &&
-					(!Number.isSafeInteger(parsed.nextBlockId) || parsed.nextBlockId < 1)) ||
-				(parsed.savedGeneration != null &&
-					(!Number.isSafeInteger(parsed.savedGeneration) || parsed.savedGeneration < -1)) ||
 				(parsed.segmentIdentity != null &&
 					!_rapierSegmentIdentity(parsed.segmentIdentity, Number(parsed.nextBlockId || 1)))) return null;
 		if (parsed.charCount !== parsed.markdown.length) return null;
 		if (!_rapierIntegrityMatches(parsed.integrity, parsed.markdown)) return null;
-		const integritySchema = Number(parsed.integritySchema);
-		if (integritySchema !== 4) return null;
+		if (parsed.integritySchema !== 4) return null;
 		const stateVerified = _rapierRecoveryStateIntegrityMatches(parsed);
 		if (!stateVerified) return null;
 		const filenameAdmissible = _rapierDocumentNameIsAdmissible(
@@ -25947,10 +25935,9 @@ function _rapierReadDbState(db) {
 
 function _rapierValidateIdbDocument(meta) {
 	const canonical = _canonicalFromIdb(meta);
-	const shapeOk = !!meta && Number(meta.integritySchema) === 4 &&
+	const shapeOk = !!meta && meta.integritySchema === 4 &&
 		typeof canonical === 'string' &&
 		Number.isSafeInteger(meta.generation) && meta.generation >= 0 &&
-		Number.isSafeInteger(meta.documentRevision) && meta.documentRevision >= 0 &&
 		(meta.segmentIdentity == null ||
 			!!_rapierSegmentIdentity(meta.segmentIdentity, Number(meta.nextBlockId || 1))) &&
 		_rapierDocumentNameIsAdmissible(String(meta.filename || 'untitled.md')) &&
@@ -25961,7 +25948,6 @@ function _rapierValidateIdbDocument(meta) {
 		verified: shapeOk,
 		stateVerified: shapeOk,
 		canonical,
-		sorted: [],
 	};
 }
 
@@ -25976,7 +25962,7 @@ const _RAPIER_SEEN_LOST_LINE = 'changes since your last look could not be recove
 function _rapierInstallRestoredSeenBaseline(record, candidate) {
 	if (!record || typeof record !== 'object') return { installed: false, lost: false };
 	const authority = String((candidate && candidate.documentAuthority) || '');
-	const proven = !!authority
+	const proven = record.integritySchema === 4 && !!authority
 		&& typeof record.canonicalText === 'string'
 		&& String(record.documentAuthority || '') === authority
 		&& _rapierTrustedDocumentAuthority(record) === authority
@@ -26012,15 +25998,8 @@ function _rapierCheckpointCandidate(record) {
 	if (!record || record.docId !== RAPIER_DOC_ID
 			|| typeof record.canonicalText !== 'string'
 			|| !Number.isSafeInteger(record.generation) || record.generation < 0
-			|| (record.documentRevision != null &&
-				(!Number.isSafeInteger(record.documentRevision) || record.documentRevision < 0))
-			|| (record.nextBlockId != null &&
-				(!Number.isSafeInteger(record.nextBlockId) || record.nextBlockId < 1))
-			|| (record.savedGeneration != null &&
-				(!Number.isSafeInteger(record.savedGeneration) || record.savedGeneration < -1))
 			|| !_rapierIntegrityMatches(record.integrity, record.canonicalText)) return null;
-	const integritySchema = Number(record.integritySchema);
-	if (integritySchema !== 4) return null;
+	if (record.integritySchema !== 4) return null;
 	const stateVerified = _rapierRecoveryStateIntegrityMatches(record);
 	if (!stateVerified) return null;
 	const originalFilename = String(record.filename || 'untitled.md');
@@ -26064,15 +26043,14 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			nextBlockId: Number(dbState.meta.nextBlockId || 1),
 			segmentIdentity: _rapierSegmentIdentity(dbState.meta.segmentIdentity),
 			docKind: String(dbState.meta.docKind || _classifyDocKind(dbState.meta.filename)),
-			savedGeneration: typeof dbState.meta.lastSavedGeneration === 'number'
-				? dbState.meta.lastSavedGeneration : null,
+			savedGeneration: typeof dbState.meta.savedGeneration === 'number'
+				? dbState.meta.savedGeneration : null,
 			documentAuthority: _rapierTrustedDocumentAuthority(dbState.meta),
 			virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(dbState.meta.virtualDocumentKind),
 			saveAsRequired: dbState.meta.saveAsRequired === true,
 			ts: Number(dbState.meta.updatedAt || 0),
 			verified: !!idb.verified,
 			metadataVerified: !!idb.stateVerified,
-			atomicOnly: !!idb.atomicOnly,
 			checkpointId: String(dbState.meta.checkpointId || ''),
 			sourceRootId: String(dbState.meta.sourceRootId || ''),
 		});
@@ -26101,7 +26079,8 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 		});
 	}
 
-	const primaryAuthority = _rapierTrustedDocumentAuthority(dbState.meta) ||
+	const currentMeta = dbState.meta?.integritySchema === 4 ? dbState.meta : null;
+	const primaryAuthority = _rapierTrustedDocumentAuthority(currentMeta) ||
 		(snapshot ? _rapierTrustedDocumentAuthority(snapshot) : '');
 	(dbState.checkpoints || []).forEach(record => {
 		if (_rapierIsHeldSlot(record.slot)) return;
@@ -26112,8 +26091,7 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 		if (candidate) candidates.push(candidate);
 	});
 
-	if (!candidates.length && idb.canonical != null && dbState.meta &&
-			Number(dbState.meta.integritySchema) === 4) {
+	if (!candidates.length && idb.canonical != null && currentMeta) {
 		const salvageGeneration = Number.isSafeInteger(dbState.meta.generation) &&
 			dbState.meta.generation >= 0 ? dbState.meta.generation : 0;
 		candidates.push({
@@ -26136,11 +26114,7 @@ function _rapierAdmitRecoveryRecords(dbState, snapshot) {
 			metadataVerified: false,
 		});
 	}
-	const idbEvidence = dbState.meta ? {
-		generation: Number.isSafeInteger(dbState.meta.generation) && dbState.meta.generation >= 0
-			? dbState.meta.generation : null,
-		integritySchema: Number(dbState.meta.integritySchema),
-	} : null;
+	const idbEvidence = !!currentMeta;
 	return { candidates, idb, idbEvidence };
 }
 
@@ -26346,7 +26320,7 @@ async function rapierTryRestore(context) {
 		}
 		const undoMatches = !!undo
 			&& undoIntegrityOk
-			&& Number(undo.schemaVersion) === 4
+			&& undo.schemaVersion === 4
 			&& candidate.historyComplete === true
 			&& undo.historyComplete === true
 			&& String(undo.checkpointId || '') === String(candidate.checkpointId || '')
@@ -26374,7 +26348,6 @@ async function rapierTryRestore(context) {
 			&& rapier.review.seen.text !== candidate.text;
 
 		const directVerifiedIdb = candidate.kind === 'idb' && candidate.verified && !selection.integrityIssue;
-		const directAtomicIdb = candidate.kind === 'idb' && candidate.atomicOnly && !selection.integrityIssue;
 		let restoredTier = directVerifiedIdb ? 1 : (selection.integrityIssue ? 3 : 2);
 
 		if (!directVerifiedIdb) {
@@ -26391,7 +26364,7 @@ async function rapierTryRestore(context) {
 				title: stamp ? 'last edited: ' + stamp : 'recovered document',
 				subtitle: '',
 			};
-		} else if (restoredTier === 2 && !directAtomicIdb) {
+		} else if (restoredTier === 2) {
 			/* One line, centred: where the bytes came from is Rapier's business, not the person's. */
 			const edited = candidate.ts ? 'last edited: ' + _fmtRelativeTs(candidate.ts) : '';
 			routineNotice = {
@@ -26413,7 +26386,7 @@ async function rapierTryRestore(context) {
 			const cursorAuthority = cursor && String(cursor.documentAuthority || '');
 			const authorityMatches = !!cursorAuthority &&
 				cursorAuthority === String(rapier.identity.authority || '');
-			const identityMatches = cursor && Number(cursor.version) === 4 &&
+			const identityMatches = cursor && cursor.version === 4 &&
 				cursor.docId === RAPIER_DOC_ID && authorityMatches &&
 				String(cursor.filename || '') === String(candidate.filename || '') &&
 				Number(cursor.generation) === Number(candidate.generation) &&
@@ -26562,7 +26535,7 @@ if (_rapierRestoreScroller) {
 	_rapierRestoreScroller.addEventListener('scroll', () => _rapierScheduleRestoreCursor(700), { passive: true });
 }
 
-document.addEventListener('selectionchange', () => {
+document.addEventListener('selectionchange', function _rapierRememberDocumentSelection() {
 	if (!_rapierBootstrapRuntime.complete || rapier.document.docKind !== 'markdown') return;
 	const selection = window.getSelection && window.getSelection();
 	const node = selection && selection.anchorNode;
@@ -26653,7 +26626,7 @@ function _rapierDepartureFlush() {
 	if (!captured) completion.then(kept => { if (!kept && _rapierPersistenceRuntime.departureFlush === receipt) _rapierPersistenceRuntime.departureFlush = null; });
 	return receipt;
 }
-document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', function _rapierKeepHiddenDocument() {
 	if (document.visibilityState === 'hidden') {
 		clearTimeout(rapier.autosave.debounceTimer);
 		_writeRestoreCursor();
@@ -26672,7 +26645,7 @@ window.addEventListener('rapier:checkpoint-requested', () => {
 	_writeRestoreCursor();
 	_rapierDepartureFlush();
 });
-window.addEventListener('pagehide', event => {
+window.addEventListener('pagehide', function _rapierKeepDepartingDocument(event) {
 	clearTimeout(rapier.autosave.debounceTimer);
 	_writeRestoreCursor();
 	const departure = _rapierDepartureFlush();
@@ -33820,8 +33793,7 @@ function _rapierEmbedReadDraft(revision = _rapierEmbed.baseRevision) {
 		const raw = storage ? storage.getItem(key) : null;
 		const value = JSON.parse(raw || 'null');
 		const age = value && Number(value.timestamp);
-		const integritySchema = Number(value && value.integritySchema);
-		const integrityInvalid = integritySchema !== 1 ||
+		const integrityInvalid = value?.integritySchema !== 1 ||
 			!_rapierIntegrityMatches(
 				value && value.integrity,
 				_rapierEmbedDraftManifest(value),
@@ -37437,7 +37409,7 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 	if (seated && _rapierRawIsBlank(rapier.document.blocks.find(candidate => candidate.id === caretBlockId)?.raw)) _rapierCarryTypingMarks(seated, carry);
 }
 
-document.addEventListener('drop', e => {
+document.addEventListener('drop', function _rapierImportDroppedDocument(e) {
 	const host = _editorHostEl();
 	const source = document.getElementById('source-textarea');
 	const target = e.target && (e.target.nodeType === Node.TEXT_NODE ? e.target.parentElement : e.target);
@@ -37483,7 +37455,7 @@ function _rapierClipboardOutsideDocument(event, sourceAllowed = false) {
 	return false;
 }
 
-document.addEventListener('copy', e => {
+document.addEventListener('copy', function _rapierCopyDocumentSelection(e) {
 	if (!e.clipboardData || e.defaultPrevented || _rapierClipboardOutsideDocument(e)) return;
 	const sel = window.getSelection();
 	if (!sel || !sel.rangeCount || sel.isCollapsed) return;
@@ -37493,7 +37465,7 @@ document.addEventListener('copy', e => {
 	_clipboardReadRange(range, e.clipboardData);
 });
 
-document.addEventListener('cut', e => {
+document.addEventListener('cut', function _rapierCutDocumentSelection(e) {
 	if (!e.clipboardData || e.defaultPrevented || _rapierClipboardOutsideDocument(e)) return;
 	const sel = window.getSelection();
 	if (!sel || !sel.rangeCount || sel.isCollapsed) return;
@@ -38395,7 +38367,9 @@ function _rapierPasteLineIntoContainer(editDiv, payload) {
 			!/^ {0,3}(?:[-*+]\s|\d+[.)]\s|>)/.test(String(context.block.raw || '')) || _rapierPasteCaretInCode(editDiv, range)) return false;
 	const content = _rapierResolvePastePayload(payload);
 	const text = content ? String(content.markdown || '').replace(/\r\n?/g, '\n') : '';
-	const lines = text.split('\n').map(line => line.replace(/\s+$/, '')).filter(line => line.trim());
+	// renderBlock keeps a word's trailing separator through its existing space owner. Trimming
+	// here joined the pasted word to the item's first word before that owner could preserve it.
+	const lines = text.split('\n').filter(line => line.trim());
 	const inItem = !!_listItemAtCaret(editDiv, range, _nodeAsElement(range.startContainer));
 	const inQuote = !inItem && !!_nodeAsElement(range.startContainer)?.closest('blockquote');
 	if (!lines.length || lines.length > 200 || (lines.length > 1 && !inItem && !inQuote) ||
@@ -39017,7 +38991,7 @@ function _rapierSourceClipboardCut(e) {
 	ta.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteByCut'}));
 }
 
-(function () {
+(function _rapierBindSourceSelection() {
 	const ta = document.getElementById('source-textarea');
 	if (!ta) return;
 	ta.addEventListener('compositionstart', () => { _rapierHeavyRuntime.composing = true;  });
@@ -46027,14 +46001,14 @@ function _rapierReviewAcceptThenSetSpanText(target, finalText, deltaData, origin
 // sequence impossible to witness at all.
 const _rapierReviewComposition = { target: null, originalText: '' };
 
-document.addEventListener('compositionstart', () => {
+document.addEventListener('compositionstart', function _rapierCaptureReviewComposition() {
 	const target = _rapierReviewInputTarget();
 	if (!target) return;
 	_rapierReviewComposition.target = target;
 	_rapierReviewComposition.originalText = String(target.span.textContent || '');
 }, true);
 
-document.addEventListener('compositionend', event => {
+document.addEventListener('compositionend', function _rapierCommitReviewComposition(event) {
 	const watch = _rapierReviewComposition.target;
 	_rapierReviewComposition.target = null;
 	if (!watch || !watch.span.isConnected) return;
@@ -46051,7 +46025,7 @@ document.addEventListener('compositionend', event => {
 // Astra R75 E03's own witness kind, not a rewrite of paste itself: a multi-line or rich payload
 // falls through to the ordinary paste pipeline exactly as before this pass, the same documented
 // boundary this file already draws elsewhere for a paste it does not specially own.
-document.addEventListener('paste', event => {
+document.addEventListener('paste', function _rapierPasteIntoReview(event) {
 	const target = _rapierReviewInputTarget();
 	if (!target) return;
 	const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
@@ -46063,7 +46037,7 @@ document.addEventListener('paste', event => {
 	_rapierReviewAcceptThenSetSpanText(target, finalText, text, undefined, _rapierReviewCaretInFinal(target, 'insertText', text));
 }, true);
 
-document.addEventListener('beforeinput', event => {
+document.addEventListener('beforeinput', function _rapierEditReviewInput(event) {
 	if (event.isTrusted !== true) return;
 	const inputType = String(event.inputType || '');
 	// insertCompositionText is never intercepted here (not cancelable, and owned by the

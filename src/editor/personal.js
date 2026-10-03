@@ -14,11 +14,12 @@ const _rapierPersonal = (() => {
 	// Immutable font/brush bodies are separate records: a slider change writes only the small
 	// manifest. One read/write transaction serializes changes made in different open tabs.
 	const bodies = new Map();
-	function hydrate(store, metadata, done) {
+	function hydrate(store, metadata, done, refuse) {
 		if (!metadata) { done(null); return; }
-		const blobs = {}, missing = (metadata.blobKeys || []).filter(key => !bodies.has(key));
+		if (!Array.isArray(metadata.blobKeys)) { refuse(Object.assign(new Error('Personal settings have no saved asset list.'), {code: 'personal_invalid'})); return; }
+		const blobs = {}, missing = metadata.blobKeys.filter(key => !bodies.has(key));
 		let left = missing.length;
-		const finish = () => { for (const key of metadata.blobKeys || []) blobs[key] = bodies.get(key); const {blobKeys, ...rest} = metadata; done({...rest, blobs}); };
+		const finish = () => { for (const key of metadata.blobKeys) blobs[key] = bodies.get(key); const {blobKeys, ...rest} = metadata; done({...rest, blobs}); };
 		if (!left) { finish(); return; }
 		for (const key of missing) { const get = store.get('asset/' + key); get.onsuccess = () => { bodies.set(key, get.result); if (!--left) finish(); }; }
 	}
@@ -27,7 +28,7 @@ const _rapierPersonal = (() => {
 			const db = await database();
 			return new Promise((resolve, reject) => {
 				const tx = db.transaction('personal', 'readonly'), store = tx.objectStore('personal'), read = store.get('profile');
-				read.onsuccess = () => hydrate(store, read.result, resolve);
+				read.onsuccess = () => hydrate(store, read.result, resolve, error => { reject(error); tx.abort(); });
 				tx.onerror = tx.onabort = () => reject(tx.error || new Error('Personal settings could not be read.'));
 			});
 		},
@@ -36,14 +37,15 @@ const _rapierPersonal = (() => {
 			return new Promise((resolve, reject) => {
 				const tx = db.transaction('personal', 'readwrite'), store = tx.objectStore('personal'), read = store.get('profile');
 				let next, error;
+				const refuse = caught => { error = caught; tx.abort(); };
 				read.onsuccess = () => hydrate(store, read.result, current => {
 					try {
 						next = change(current);
 						const known = new Set(read.result?.blobKeys || []), {blobs, ...metadata} = next;
 						for (const [key, body] of Object.entries(blobs)) if (!known.has(key)) store.put(body, 'asset/' + key);
 						store.put({...metadata, blobKeys: Object.keys(blobs)}, 'profile');
-					} catch (caught) { error = caught; tx.abort(); }
-				});
+					} catch (caught) { refuse(caught); }
+				}, refuse);
 				tx.oncomplete = () => { for (const [key, body] of Object.entries(next.blobs)) bodies.set(key, body); resolve(next); };
 				tx.onerror = tx.onabort = () => reject(error || tx.error || new Error('Personal settings could not be saved.'));
 			});

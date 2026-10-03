@@ -2659,7 +2659,7 @@ function _rapierPaintFlipAtCap(layer, paint, p) {
 		const box = layer.surface.bounds();
 		if (!box) { for (const q of carried) { q.x -= origin[0]; q.y -= origin[1]; } return layer; }
 		const frozen = _rapierPaintGeomOf(layer, box);
-		const px = typeof layer.surface.readCommitted === 'function' ? layer.surface.readCommitted(box) : layer.surface.toRGBA8(box);
+		const px = layer.surface.readCommitted(box);
 		for (const key of ['raf', 'holdRaf', 'dryRaf']) { if (layer[key]) cancelAnimationFrame(layer[key]); layer[key] = 0; }
 		// Closing the view would flush its encoder. Detach it instead: its overlay stays underneath
 		// the clean sheet until the immutable revision owns a picture, then its view can be released.
@@ -2975,7 +2975,7 @@ function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 		return;
 	}
 	if (!kept && !keep) {
-		const px = typeof layer.surface.readCommitted === 'function' ? layer.surface.readCommitted(box) : layer.surface.toRGBA8(box);
+		const px = layer.surface.readCommitted(box);
 		const frozen = _rapierPaintGeomOf(layer, box);
 		if (_rapierPaintEncodeRevision(layer, px, keep, frozen)) return;
 	}

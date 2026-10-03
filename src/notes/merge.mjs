@@ -485,7 +485,7 @@ function ixReminders(context, base, ours, theirs, out, path) {
 		const value = ixGet(entry, 'remindDone');
 		if (value === IX_MISSING) return IX_MISSING;
 		const definition = definitions[i], binding = ixGet(entry, 'remindDoneFor');
-		const bound = definition !== IX_MISSING && (binding === IX_MISSING ? definitions[0] !== IX_MISSING && ixEqual(definition, definitions[0]) : binding === ixJSON(definition));
+		const bound = definition !== IX_MISSING && binding === ixJSON(definition);
 		if (!bound || !ixEqual(definition, remind)) {
 			if (i && (binding !== IX_MISSING || !ixEqual(value, ixGet(base, 'remindDone')) || !ixEqual(definition, definitions[0]))) unsafe = true;
 			return IX_MISSING;

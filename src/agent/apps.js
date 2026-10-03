@@ -613,10 +613,10 @@
     if (!object(result)) throw new Error('INVALID_RESULT');
     if (!result.isError) return true;
     const code = result.structuredContent?.code;
-    const latest = metadata(result).snapshot;
-    if (snapshot(latest) && (!base || latest.documentId === base.documentId)) {
+    const latest = metadata(result).snapshot, latestVersion = viewVersion(result.structuredContent?.version);
+    if (snapshot(latest) && latestVersion !== null && (!base || latest.documentId === base.documentId)) {
       incoming = latest;
-      incomingVersion = viewVersion(result.structuredContent?.version) ?? version;
+      incomingVersion = latestVersion;
     }
     if (code === 'REVISION_CONFLICT') {
       conflict = true;
@@ -1953,7 +1953,7 @@
       else { clearTimeout(timer); void publishHumanContext(true); void flush(); }
     }, {signal: listeners.signal});
     window.addEventListener('beforeunload', event => { if (dirty || flight || decisionFlight || policyQueued || reviewQueued || strandedDrafts.length > 0 || fileDirty() || uploadRunning || fileHydrations.size) { event.preventDefault(); event.returnValue = ''; } }, {signal: listeners.signal});
-    unsubscribe = host.subscribe(event => { if (event?.actor?.kind === 'human' || event?.actor === 'human') humanEdit(); });
+    unsubscribe = host.subscribe(event => { if (event?.actor === 'human') humanEdit(); });
     unsubscribeContext = host.subscribeContext(contextChanged);
     observer = new ResizeObserver(notifySize);
     observer.observe(document.documentElement);

@@ -46,7 +46,7 @@ export function personalAsset(key) { return assetKey(key); }
 // A choice this shelf wrote that a received one replaced is kept in the shelf's own ledger, never
 // in a head, on the note history's policy: everything for a week, then the newest per key per day.
 const choiceOf = (key, value) => assetKey(key) && value ? value.content : value;
-function admitLedger(rows = []) {
+function admitLedger(rows) {
 	if (!Array.isArray(rows)) fail('The kept earlier choices are not readable.');
 	for (const row of rows) if (!row || typeof row !== 'object' || !keyShape.test(row.key) || !writer.test(row.by) || !Number.isSafeInteger(row.n) || row.n < 1 ||
 		!Number.isSafeInteger(row.at) || row.at < 0 || !row.over || !writer.test(row.over.by) || !Number.isSafeInteger(row.over.n) ||
@@ -69,9 +69,10 @@ export function createPersonalOwner({storage, apply = () => {}, validateAsset = 
 	let state = null, tail = Promise.resolve();
 	const fresh = () => ({writer: crypto.randomUUID().replaceAll('-', ''), records: {}, blobs: {}, ledger: []});
 	const check = value => {
-		value ||= fresh();
+		value ??= fresh();
 		if (!writer.test(value.writer)) fail('Personal settings have no local writer.');
-		value.records = admitPersonal(value.records, {local: true}); value.blobs ||= {}; value.ledger = admitLedger(value.ledger);
+		if (!value.records || !value.blobs || typeof value.blobs !== 'object' || Array.isArray(value.blobs) || !Array.isArray(value.ledger)) fail('Personal settings have no complete local record.');
+		value.records = admitPersonal(value.records, {local: true}); value.ledger = admitLedger(value.ledger);
 		return value;
 	};
 	const schedule = work => { const job = tail.then(work); tail = job.catch(() => {}); return job; };

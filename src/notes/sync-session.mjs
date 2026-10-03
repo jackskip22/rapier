@@ -2,7 +2,7 @@
 // owns every local publication. Neither a folder, a filename nor a vault key is a transport argument.
 import {CLOUDFLARE_SYNC, SYNC_UNAVAILABLE, SYNC_CONSENT, syncAvailability, r2KeyAvailability} from './sync-config.mjs';
 import {createVerifier, challengeFor, authorizeUrl, readRedirect, createOAuthClient} from './cloudflare-oauth.mjs';
-import {createVault, unlockVault, unlockVaultWithRecovery, vaultId, headerObject, headerDigest, decodeHeader, HEADER_MAX_BYTES, seal, open, decodeRecovery} from './vault.mjs';
+import {createVault, validateCreationPassphrase, unlockVault, unlockVaultWithRecovery, vaultId, headerObject, headerDigest, decodeHeader, HEADER_MAX_BYTES, seal, open, decodeRecovery} from './vault.mjs';
 import {createR2Transport} from './transport-r2.mjs';
 import {createCloudflareSetup, storageDashboard} from './cloudflare-setup.mjs';
 export {storageDashboard};
@@ -203,10 +203,10 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			savedKey = value?.key;
 			const registration = restored.binding ? JSON.parse(restored.binding).registration : null;
 			const clientId = registration?.[0] || config.clientId;
-			if (custody && (!Array.isArray(custody.credentials) || custody.credentials.some(row => !Array.isArray(row) || row.length < 2 || row.length > 3 || typeof row[0] !== 'string' || !row[0] || !['access_token', 'refresh_token'].includes(row[1])))) throw fail('device', 'the saved sign-in cannot be read.');
+			if (custody && (!Array.isArray(custody.credentials) || custody.credentials.some(row => !Array.isArray(row) || row.length !== 3 || typeof row[0] !== 'string' || !row[0] || !['access_token', 'refresh_token'].includes(row[1])))) throw fail('device', 'the saved sign-in cannot be read.');
 			for (const [token, hint, details] of custody?.credentials || []) {
-				if (details != null && (details.hint !== hint || typeof details.clientId !== 'string' || !details.clientId || details.expiresAt != null && !Number.isFinite(details.expiresAt))) throw fail('device', 'the saved sign-in cannot be read.');
-				credentials.set(token, {hint, clientId, ...details});
+				if (!details || details.hint !== hint || typeof details.clientId !== 'string' || !details.clientId || details.expiresAt != null && !Number.isFinite(details.expiresAt)) throw fail('device', 'the saved sign-in cannot be read.');
+				credentials.set(token, {...details});
 			}
 			const saved = custody?.grant;
 			if (saved) {
@@ -535,7 +535,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			await readLocal(); active(ticket);
 			if (rejoinRequired) throw fail('connection', 'this restored folder must join its vault again, or leave it before starting a new vault.');
 			if (connection) throw fail('connection', 'this folder already has a vault: unlock it instead.');
-			if (typeof passphrase !== 'string' || [...passphrase].length < 16) throw fail('passphrase', 'use at least 16 characters for your sync passphrase.');
+			validateCreationPassphrase(passphrase);
 			staged?.vdk?.fill(0); staged = null;
 			const made = await createVault(passphrase);
 			try { active(ticket); staged = made; return {recovery: made.recovery}; }
@@ -607,7 +607,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 					confirmRecovery(recoveryCode);
 					made = staged;
 				} else {
-					if (typeof passphrase !== 'string' || [...passphrase].length < 16) throw fail('passphrase', 'use at least 16 characters for your sync passphrase.');
+					validateCreationPassphrase(passphrase);
 					made = await createVault(passphrase);
 				}
 				active(ticket);
@@ -823,4 +823,3 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		},
 	});
 }
-

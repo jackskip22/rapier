@@ -23,12 +23,10 @@ function _rapierSelectRestoreCandidate(admission) {
 		item.historyComplete !== candidate.historyComplete ||
 		item.virtualDocumentKind !== candidate.virtualDocumentKind ||
 		item.saveAsRequired !== candidate.saveAsRequired);
-	const invalidNewerIdb = !!(idbEvidence && idbEvidence.generation !== null
-		&& idbEvidence.generation > candidate.generation && !idb.valid);
 	const metadataUnverified = candidate.metadataVerified !== true;
-	const integrityIssue = divergentPeers || invalidNewerIdb || metadataUnverified
+	const integrityIssue = divergentPeers || metadataUnverified
 		|| candidate.kind === 'idb-salvage'
-		|| (!!idbEvidence && idbEvidence.integritySchema >= 2 && !idb.valid);
+		|| (idbEvidence && !idb.valid);
 	if (integrityIssue) {
 
 		return {

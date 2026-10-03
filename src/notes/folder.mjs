@@ -260,6 +260,9 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const bodies = destination ? await readBodies([destination]) : new Map();
 			const before = destination ? bodies.get(destination) : null, actual = await digest(before);
 			const stale = !destination || !admitted.includes(actual);
+			// An already saved live note keeps its timestamp, generation and bytes. A stale
+			// caller whose exact words landed still succeeds; restoring Trash is a real edit.
+			if (destination && actual === nextDigest && !index.notes[destination].trashed) return {index};
 			if (stale && !(destination && actual === nextDigest)) {
 				if (!preserveConflict) throw fail('changed', 'The note changed since this edit was prepared. Its newer words were kept.');
 				// A stale code file is kept beside the newer one as code: "script kept.py".

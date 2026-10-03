@@ -36,7 +36,7 @@ export function startWidgetRuntime(host, {Channel = globalThis.BroadcastChannel,
 	globalThis.rapierWidgetRun = async request => {
 		if (busy) return false;
 		busy = true;
-		let folder, channel;
+		let folder, channel, result;
 		try {
 			await ready;
 			if (typeof Channel !== 'function') throw Object.assign(new Error('This Android WebView cannot coordinate widget edits. Open Notes in Rapier.'), {code: 'unsupported'});
@@ -48,10 +48,13 @@ export function startWidgetRuntime(host, {Channel = globalThis.BroadcastChannel,
 			if (request?.kind === 'tick') await widget.tick(request.action);
 			else if (request?.kind !== 'refresh') throw Object.assign(new Error('Unknown widget action.'), {code: 'action'});
 			const snapshot = await widget.snapshot();
-			await call('widget.complete', {snapshot});
+			result = {snapshot};
 		} catch (error) {
-			await call('widget.complete', {error: {code: error.code || 'storage', message: error.message || 'Open Notes to check this folder.'}});
+			result = {error: {code: error.code || 'storage', message: error.message || 'Open Notes to check this folder.'}};
 		} finally { folder?.close(); channel?.close(); busy = false; }
+		// Kotlin can request a fresh projection immediately when the epoch changed. Release this
+		// request's owner/channel and its busy flag before giving it that completion boundary.
+		await call('widget.complete', result);
 		return true;
 	};
 	ready.catch(() => {});

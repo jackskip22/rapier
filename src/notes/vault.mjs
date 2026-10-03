@@ -51,6 +51,12 @@ function passphraseText(value) {
 	if (typeof value !== 'string' || value.length === 0) refuse('invalid', 'a nonempty passphrase is required');
 	return value; // Deliberately no trimming or case folding; the forms an unlock also tries are below.
 }
+// The public wrapped header permits offline guesses, even by a compromised transport. Enforce
+// the creation policy here as well as in sessions; low-level header callers have the same risk.
+export function validateCreationPassphrase(value) {
+	if (typeof value !== 'string' || [...value].length < 16) refuse('passphrase', 'use at least 16 characters for your sync passphrase.');
+	return value;
+}
 // The passphrase as typed, then its NFC and NFD forms when they differ from it: the forms an
 // unlock tries, in that order, each a key derivation of its own.
 function passphraseForms(value) {
@@ -240,7 +246,7 @@ async function checkVerifier(vdk, verifier) {
 }
 
 export async function createVault(passphrase, options = {}) {
-	passphraseText(passphrase);
+	validateCreationPassphrase(passphrase);
 	const vdk = options.vdk ? requireBytes(options.vdk, VDK_BYTES, 'the vault key') : generateVdk();
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
 	const kek = await deriveWrappingKey(passphrase, salt);
@@ -290,7 +296,7 @@ export async function unlockVaultWithRecovery(headerBytes, code) {
 export async function rewrapVault(headerBytes, vdk, passphrase, options = {}) {
 	const header = readHeader(headerBytes);
 	requireBytes(vdk, VDK_BYTES, 'the vault key');
-	passphraseText(passphrase);
+	validateCreationPassphrase(passphrase);
 	await checkVerifier(vdk, header.verifier);
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
 	const kek = await deriveWrappingKey(passphrase, salt);

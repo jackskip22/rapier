@@ -2896,7 +2896,7 @@ function _rapierNotesSorted(files) {
 	return files;
 }
 function _rapierNotesPref(field, fallback) { try { const v = RapierPreferences.read(field); return v == null ? fallback : v; } catch (_) { return fallback; } }
-function _rapierNotesSetPref(field, value) { try { RapierPreferences.write(field, value); } catch (_) { try { localStorage.setItem('rapier.' + field, String(value)); } catch (_) {} } }
+function _rapierNotesSetPref(field, value) { try { RapierPreferences.write(field, value); } catch (_) {} }
 
 // ---- Notes' own chrome while a note is open (R86i) ------------------------------------------------
 // docs/intent.md "R86i laws": a note is composed INSIDE Notes. The editor is the one editor -- same

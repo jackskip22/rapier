@@ -75,8 +75,7 @@ export async function sha256Hex(bytes) {
 export function canonicalText(text) { return String(text ?? ''); } // Byte fidelity, including CRLF and BOM.
 export async function contentHash(text) { return sha256Hex(te.encode(canonicalText(text))); }
 export function objectKey(hash) { return OBJECT_PREFIX + hash; }
-// A generation is written in twelve digits, so discovery lists a device's heads from the last it saw. A vault
-// published before wrote it unpadded: still read, sealed as written, and listed after every padded one.
+// A generation is written in twelve digits, so discovery lists a device's heads from the last it saw.
 const GENERATION_DIGITS = 12;
 export const headGeneration = generation => String(generation).padStart(GENERATION_DIGITS, '0');
 export function headKey(deviceId, generation, hash) {
@@ -86,7 +85,7 @@ export function headKey(deviceId, generation, hash) {
 const HASH_RE = /^[a-f0-9]{64}$/;
 const MEDIA_OP_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}:[a-f0-9-]{36}$/;
 const DEVICE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const HEAD_RE = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/([0-9]{12}|[1-9][0-9]{0,10})-([a-f0-9]{64})$/;
+const HEAD_RE = /^heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/([0-9]{12})-([a-f0-9]{64})$/;
 const safeFile = file => isNoteFile(file) && !/[\0-\x1f\x7f]/.test(file);
 // Provenance a person reads (docs/sync-design.md §1.2): the shelf's writer (notes/personal.mjs `by`) and a coarse label
 // for the device ("Android phone", "Windows, Edge"), sealed in the head beside its device id. Display alone: a head
@@ -95,12 +94,12 @@ const WRITER_RE = /^[a-f0-9]{32}$/;
 export const headLabel = value => typeof value === 'string' && value.length > 0 && value.length <= 64 && value.trim() === value && !/[\0-\x1f\x7f]/.test(value) ? value : null;
 const safeAsset = file => typeof file === 'string' && /^(?:audio|attachments)\/[^/\\\x00-\x1f\x7f]+$/.test(file) && !file.split('/')[1].startsWith('.');
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
-const headAAD = head => `${HEAD_PREFIX}${head.device}/${head.written ?? headGeneration(head.generation)}`;
+const headAAD = head => `${HEAD_PREFIX}${head.device}/${headGeneration(head.generation)}`;
 const portableIndex = index => ({version: 1, notes: {}, sections: index?.sections || [], collapsed: index?.collapsed || {}});
 function parseHeadKey(key) {
 	const m = typeof key === 'string' && HEAD_RE.exec(key);
 	if (!m || !(Number(m[2]) >= 1)) refuse('corrupt', 'invalid immutable head address');
-	return {device: m[1], generation: Number(m[2]), hash: m[3], written: m[2]};
+	return {device: m[1], generation: Number(m[2]), hash: m[3]};
 }
 export async function snapshotToken(snapshot) {
 	const assets = {};
@@ -108,7 +107,7 @@ export async function snapshotToken(snapshot) {
 	// Owner bookkeeping moves while upload intents/checkpoints land; the person's content does not.
 	const {ownerNotice, ...index} = snapshot.index || {};
 	return sha256Hex(te.encode(JSON.stringify(sortObject({deviceId: snapshot.deviceId, assets,
-		files: snapshot.files, index, personal: snapshot.personal?.records || {}, forgotten: snapshot.forgotten || [], head: snapshot.head || null, pending: snapshot.pending || null}))));
+		files: snapshot.files, index, personal: snapshot.personal?.records || {}, head: snapshot.head || null, pending: snapshot.pending || null}))));
 }
 
 export function mintDeviceId() {
@@ -171,11 +170,11 @@ export function decodeHead(bytes) {
 			names.add(name);
 		} else if (!Number.isFinite(r.at) || r.at < 0) refuse('corrupt', 'the tombstone has no explicit deletion time');
 		if (kind === 'tombstone' && r.observed !== undefined) { if (!Array.isArray(r.observed)) refuse('corrupt', 'a deletion has no readable observed frontier'); for (const key of r.observed) parseHeadKey(key); }
-		if (kind === 'tombstone' && r.deletions !== undefined) {
+		if (kind === 'tombstone') {
 			if (!Array.isArray(r.deletions) || !r.deletions.length) refuse('corrupt', 'the deletion set is empty');
-			for (const t of r.deletions) if (!record(t) || !safeFile(t.file) || t.priorFile !== undefined && !safeFile(t.priorFile) ||
+			for (const t of r.deletions) if (!record(t) || !safeFile(t.file) || !safeFile(t.priorFile) ||
 				!(t.object === null || HASH_RE.test(t.object)) || !HASH_RE.test(t.content) || !Array.isArray(t.parents) || t.parents.some(p => !HASH_RE.test(p)) ||
-				!Number.isSafeInteger(t.at) || t.at < 0 || t.baseEntry !== undefined && (!record(t.baseEntry) || t.baseEntry.id !== id) || t.opId !== undefined && (!validId(t.opId) || !DEVICE_RE.test(t.device))) refuse('corrupt', 'a deletion has no exact identity and content proof');
+				!Number.isSafeInteger(t.at) || t.at < 0 || t.baseEntry !== undefined && (!record(t.baseEntry) || t.baseEntry.id !== id) || !validId(t.opId) || typeof t.device !== 'string' || !DEVICE_RE.test(t.device)) refuse('corrupt', 'a deletion has no exact identity and content proof');
 			for (const t of r.deletions) if (t.observed !== undefined) { if (!Array.isArray(t.observed)) refuse('corrupt', 'a deletion has no readable observed frontier'); for (const key of t.observed) parseHeadKey(key); }
 		}
 		if (kind === 'tombstone' && Object.hasOwn(raw.notes, id)) refuse('corrupt', 'a head cannot both keep and forget the same identity');
@@ -190,8 +189,9 @@ export function decodeHead(bytes) {
 	if (!record(raw.ancestry)) refuse('corrupt', 'the head has no authenticated causal graph');
 	for (const [object, parents] of Object.entries(raw.ancestry)) if (!HASH_RE.test(object) || !Array.isArray(parents) || parents.some(parent => !HASH_RE.test(parent) || parent === object)) refuse('corrupt', 'the head has an invalid causal graph');
 	if (!record(raw.metadata) || !Array.isArray(raw.metadata.sections) || !record(raw.metadata.collapsed)) refuse('corrupt', 'the head has no readable portable metadata');
-	raw.personal = admitPersonal(raw.personal || {});
-	// A head written before provenance, or with a label this engine does not admit, is read without it.
+	if (!record(raw.personal)) refuse('corrupt', 'the head has no readable personal settings map');
+	raw.personal = admitPersonal(raw.personal);
+	// Optional display provenance does not change admission of the person's synced work.
 	if (raw.writer !== undefined && !(typeof raw.writer === 'string' && WRITER_RE.test(raw.writer))) delete raw.writer;
 	if (raw.label !== undefined && headLabel(raw.label) === null) delete raw.label;
 	return raw;
@@ -345,10 +345,10 @@ function collectById(localRows, heads) {
 	for (const row of localRows) touch(row.id, {source: 'local', ...row});
 	for (const head of heads) {
 		for (const [id, rec] of Object.entries(head.notes || {})) {
-			touch(id, {source: 'head', device: head.device, key: head._key || null, id, file: rec.file, object: rec.object, content: rec.content, entry: rec.sidecar || rec.entry || {}, parents: rec.parents || [], conflicts: rec.conflicts || [], revivals: rec.revivals || []});
+			touch(id, {source: 'head', device: head.device, key: head._key || null, id, file: rec.file, object: rec.object, content: rec.content, entry: rec.sidecar, parents: rec.parents, conflicts: rec.conflicts || [], revivals: rec.revivals || []});
 		}
 		for (const [id, rec] of Object.entries(head.tombstones || {})) {
-			for (const t of rec.deletions || [rec]) touch(id, {source: 'head', ...t, device: t.device || head.device, id, tombstone: true});
+			for (const t of rec.deletions) touch(id, {source: 'head', ...t, id, tombstone: true});
 		}
 	}
 	return byId;
@@ -426,24 +426,16 @@ export async function plan(local, heads, capabilities) {
 	const byId = collectById(locals, graphHeads);
 	for (const row of locals) if (!byId.has(row.id)) byId.set(row.id, {versions: [{source: 'local', ...row}], tombstones: []});
 
-	const forgotten = Array.isArray(local.forgotten) ? local.forgotten : [];
-	for (const f of forgotten) {
-		if (!validId(f.id)) continue;
-		if (!byId.has(f.id)) byId.set(f.id, {versions: [], tombstones: []});
-		const known = ourHead.notes[f.id] || ourHead.tombstones[f.id];
-		byId.get(f.id).tombstones.push({source: 'local', tombstone: true, ...f, content: f.content || (known?.object === f.object ? known.content : null)});
-	}
-
 	// Absence alone never deletes. Only completed operations from Trash's own durable ledger
 	// publish intent; an unsynced last edit still covers its previously published ancestors.
 	for (const [id, rows] of Object.entries(local.index?.tombstones || {})) for (const row of rows) {
 		if (row.pending || row.revivedAt !== undefined || !Number.isSafeInteger(row.deletedAt)) continue;
-		if (!validId(id) || !HASH_RE.test(row.digest)) refuse('corrupt', 'a completed note deletion has no exact proof');
+		if (!validId(id) || !validId(row.opId) || !HASH_RE.test(row.digest) || typeof row.device !== 'string' || !DEVICE_RE.test(row.device) || !Number.isSafeInteger(row.at) || row.at < 0) refuse('corrupt', 'a completed note deletion has no exact proof');
 		if (!byId.has(id)) byId.set(id, {versions: [], tombstones: []});
 		if (byId.get(id).tombstones.some(t => t.opId === row.opId)) continue;
 		const known = ourHead.notes[id] || ourHead.tombstones[id];
 		byId.get(id).tombstones.push({source: 'local', tombstone: true, id, file: row.file,
-			opId: row.opId, device: row.device || deviceId, at: row.at ?? row.deletedAt,
+			opId: row.opId, device: row.device, at: row.at,
 			// Only the authenticated checkpoint captured when deletion was issued can
 			// attest that an older peer name/metadata was already observed, never a new listing.
 			...(row.checkpoint && row.checkpoint === ourHead._key ? {observed: [...new Set([ourHead._key, ...(ourHead.seen || [])])].sort()} : {}),
@@ -481,22 +473,22 @@ export async function plan(local, heads, capabilities) {
 		const revivals = new Set(slot.versions.flatMap(v => v.revivals || []));
 		// A local Restore of Trash is intent even when the original bytes are unchanged.
 		if (localRow && (ourHead.tombstones[id] || ourHead.notes[id]?.sidecar.trashed === true && localRow.entry.trashed !== true)) {
-			for (const t of tombs) if (t.opId) revivals.add(t.opId);
+			for (const t of tombs) revivals.add(t.opId);
 		}
 		if (localRow) localRow.revivals = [...revivals].sort();
 		revivalById.set(id, [...revivals].sort());
-		const activeTombs = tombs.filter(t => !t.opId || !revivals.has(t.opId));
+		const activeTombs = tombs.filter(t => !revivals.has(t.opId));
 
 		if (activeTombs.length && tombstoneWins(localRow, activeTombs, remoteVersions, parents)) {
 			const t = activeTombs.slice().sort((a, b) => String(a.file || '').localeCompare(String(b.file || '')))[0];
-			if (localRow) localTrash.push({id, file: localRow.file, content: localRow.content, at: t.at || 0});
-			const clean = row => ({file: row.file, ...(row.observed ? {observed: row.observed} : {}), priorFile: row.priorFile || row.file, ...(row.baseEntry ? {baseEntry: row.baseEntry} : {}), at: row.at || 0, object: row.object || null, content: row.content, parents: row.parents || [], ...(row.opId ? {opId: row.opId, device: row.device} : {})});
+			if (localRow) localTrash.push({id, file: localRow.file, content: localRow.content, at: t.at});
+			const clean = row => ({file: row.file, ...(row.observed ? {observed: row.observed} : {}), priorFile: row.priorFile, ...(row.baseEntry ? {baseEntry: row.baseEntry} : {}), at: row.at, object: row.object, content: row.content, parents: row.parents, opId: row.opId, device: row.device});
 			tombstonesOut[id] = {...clean(t), deletions: [...new Map(activeTombs.map(row => [JSON.stringify(clean(row)), clean(row)])).entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, row]) => row)};
 			continue;
 		}
 		if (activeTombs.length && (localRow || remoteVersions.length)) {
-			deletionConflicts.push({kind: 'delete-edit', path: ['notes', id], deletions: activeTombs.map(t => ({opId: t.opId || null, device: t.device, at: t.at, content: t.content}))});
-			for (const t of activeTombs) if (t.opId) revivals.add(t.opId);
+			deletionConflicts.push({kind: 'delete-edit', path: ['notes', id], deletions: activeTombs.map(t => ({opId: t.opId, device: t.device, at: t.at, content: t.content}))});
+			for (const t of activeTombs) revivals.add(t.opId);
 			revivalById.set(id, [...revivals].sort());
 		}
 		if (!localRow && !remoteVersions.length) continue;
@@ -1002,7 +994,6 @@ export async function execute(inputPlan, transport, store, options = {}) {
 		if (store.rememberObject) await store.rememberObject(content, object, sealed);
 	}
 
-	const forgotten = (snapshot.forgotten || []).filter(f => !(plan.head && plan.head.tombstones && plan.head.tombstones[f.id]));
 	if (plan.head && plan.head.notes) {
 		for (const [nid, rec] of Object.entries(plan.head.notes)) {
 			if (rec && rec.file && files[rec.file]) {
@@ -1033,7 +1024,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	}
 	// An expired reader must publish its renewed frontier even if the words returned to exactly
 	// what it already held; otherwise every other device still sees its abandoned observation.
-	if (!plan.returned && snapshot.head && same(headPayload(snapshot.head), headPayload(plan.head)) && same(files, snapshot.files) && same(index, snapshot.index) && same(forgotten, snapshot.forgotten || [])) {
+	if (!plan.returned && snapshot.head && same(headPayload(snapshot.head), headPayload(plan.head)) && same(files, snapshot.files) && same(index, snapshot.index)) {
 		if (typeof store.validate === 'function') await store.validate(plan.expected);
 		if (typeof store.observe === 'function') {
 			const {proof, ...previous} = snapshot.verified || {};
@@ -1060,7 +1051,7 @@ export async function execute(inputPlan, transport, store, options = {}) {
 	verified.digests = Object.fromEntries(verified.keys.map(key => [key, parseHeadKey(key).hash]));
 	// The next run trusts its own checkpoint by this sealed digest instead of downloading it.
 	verified.head = await sha256Hex(encodeHead(plan.head));
-	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, forgotten, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
+	const next = {files, assets, index, personal, personalBase: snapshot.personal, renames: plan.renames, deletions: plan.localTrash, assetRemoves: plan.assetRemoves, trashedAt, head: plan.head, pending, observed: plan.observed, assetAliases: plan.assetAliases, verified: await authenticateHeads(verified, snapshot.deviceId, key, vdk)};
 	await store.commit(next, {expected: plan.expected});
 	await resumePending(transport, store, {vdk});
 	const current = await store.snapshot();
@@ -1388,7 +1379,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 		if (state.deviceId && state.deviceId !== deviceId) refuse('identity', 'this folder sync state belongs to a different install identity');
 		const writer = typeof personal?.writer === 'function' ? await personal.writer() : null;
 		return {deviceId, files, assets, personal: personal ? await personal.snapshot() : undefined, writer: typeof writer === 'string' && WRITER_RE.test(writer) ? writer : null, label,
-			assetAliases: state.assetAliases || {}, index: current.index, forgotten: state.forgotten || [],
+			assetAliases: state.assetAliases || {}, index: current.index,
 			verified: state.verified || null, head: state.head || null, pending: state.pending || null, observed: state.observed || [],
 			byContent: Object.fromEntries([...byContent].map(([content, hashes]) => [content, hashes.at(-1)]))};
 	}
@@ -1522,7 +1513,7 @@ export function createOwnerSyncStore({folder, deviceId, personal = null, label =
 				for (const row of next.assetRemoves || []) if (fresh.assets[row.file]) removes.push({file: row.file, expectedDigest: row.content});
 				const previous = await readSyncStateBytes(folder.store);
 				const state = {...previous.state, deviceId, assetAliases: next.assetAliases, verified: next.verified, head: next.head, pending: next.pending,
-					observed: [...(next.observed || []).filter(key => parseHeadKey(key).device !== deviceId), next.pending.key], forgotten: next.forgotten};
+					observed: [...(next.observed || []).filter(key => parseHeadKey(key).device !== deviceId), next.pending.key]};
 				if (personal && next.personal) await personal.commit(next.personal, next.personalBase, assertActive);
 				writes.set(SYNC_STATE_FILE, await syncStateWrite(state, previous.bytes));
 				const result = await lease.transact(() => {

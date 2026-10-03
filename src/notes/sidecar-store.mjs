@@ -21,14 +21,15 @@ function changes(before, after, path = [], rows = []) {
  } else if (JSON.stringify(before) !== JSON.stringify(after)) rows.push(after === undefined ? {path,remove:true} : {path,value:after});
  return rows;
 }
-function replay(base, rows) {
+function replay(base, rows, orders) {
  if (!Array.isArray(rows)) throw fail('The notes metadata changes are unreadable. Their files were kept.');
  for (const row of rows) {
-  if (!object(row) || !Array.isArray(row.path) || row.path.some(k=>typeof k !== 'string') || !row.keys && ((row.remove === true) === own(row,'value') || row.remove !== undefined && row.remove !== true)) throw fail('The notes metadata change has no exact path. Its files were kept.');
-  if (row.keys) {
+  if (!object(row) || !Array.isArray(row.path) || row.path.some(k=>typeof k !== 'string') || row.order === undefined && ((row.remove === true) === own(row,'value') || row.remove !== undefined && row.remove !== true)) throw fail('The notes metadata change has no exact path. Its files were kept.');
+  if (row.order !== undefined) {
    let at=base; for(const key of row.path) { if(!own(at,key)||!object(at[key])) throw fail('The notes metadata order has no base. Its files were kept.'); at=at[key]; }
-   if(!Array.isArray(row.keys)||row.keys.some(k=>typeof k!=='string'||!own(at,k))||new Set(row.keys).size!==Object.keys(at).length||row.keys.length!==Object.keys(at).length) throw fail('The notes metadata order is unreadable. Its files were kept.');
-   const values=row.keys.map(k=>at[k]); for(const key of row.keys)delete at[key]; row.keys.forEach((key,i)=>put(at,key,values[i])); continue;
+   const keys=Number.isSafeInteger(row.order)&&row.order>=0&&Array.isArray(orders)?orders[row.order]:null;
+   if(!Array.isArray(keys)||keys.some(k=>typeof k!=='string'||!own(at,k))||new Set(keys).size!==Object.keys(at).length||keys.length!==Object.keys(at).length) throw fail('The notes metadata order is unreadable. Its files were kept.');
+   const values=keys.map(k=>at[k]); for(const key of keys)delete at[key]; keys.forEach((key,i)=>put(at,key,values[i])); continue;
   }
   if (!row.path.length) { if (row.remove || !object(row.value)) throw fail('The notes metadata root is unreadable. Its files were kept.'); base=row.value; continue; }
   let at = base;
@@ -75,7 +76,7 @@ function sidecarView(state, active = null) {
   if (digest === record.after) return {full,bytes:full,record:null,stale:true};
   if (digest !== record.base) throw Object.assign(new Error('The notes metadata base changed. Both files were kept.'),{code:'changed'});
   let bytes;
-  try { bytes = record.replacement!==undefined ? enc.encode(record.replacement) : enc.encode(canonical(replay(JSON.parse(dec.decode(full)),record.changes.map(row => row.order === undefined ? row : {...row,keys:record.orders?.[row.order]})))); } catch (e) { if (e.code === 'corrupt') throw e; throw fail('The notes metadata changes cannot be replayed. Their files were kept.'); }
+  try { bytes = record.replacement!==undefined ? enc.encode(record.replacement) : enc.encode(canonical(replay(JSON.parse(dec.decode(full)),record.changes,record.orders))); } catch (e) { if (e.code === 'corrupt') throw e; throw fail('The notes metadata changes cannot be replayed. Their files were kept.'); }
   if (await sha256(bytes) !== record.after) throw fail('The notes metadata changes failed verification. Their files were kept.');
   return {full,bytes,record};
  };
