@@ -18,7 +18,7 @@ export { createPaintPNGCodec };
 // Nothing here touches the DOM: draw/draw.js owns the canvas, the pointer and the PNG encoder;
 // witnesses and agents can run the same engine in Node.
 
-import {paper as makePaper, wetBytes, createWetState, deposit, suspend, step as stepWet, settle, rewindowWetState, setGravity, toothAt, createBrushStore, loadBrush, holdAmount, HOLD_N, HOLD_TRAVEL} from './paper.mjs';
+import {paper as makePaper, wetBytes, createWetState, deposit, suspend, stepWork, settle, settleWork, finishWetWork as finishWetIterator, rewindowWetState, setGravity, toothAt, createBrushStore, loadBrush, holdAmount, HOLD_N, HOLD_TRAVEL} from './paper.mjs';
 
 const GRID_SIZE = 256;
 // The most simulated time ONE call into the solver may advance: paper.mjs's own
@@ -117,7 +117,7 @@ export class PaintRng {
 function modArith(a, n) { return a - n * Math.floor(a / n); }
 function smallestAngularDifference(a, b) { let d = modArith(b - a + 180, 360) - 180; d += d > 180 ? -360 : d < -180 ? 360 : 0; return d; }
 function expDecay(T, t) { return T <= 0.001 ? 0 : Math.exp(-t / T); }
-export function rgbToHsv(r, g, b) {
+export function rgbToHsv(r, g, b, out = [0, 0, 0]) {
 	r = clamp(r, 0, 1); g = clamp(g, 0, 1); b = clamp(b, 0, 1);
 	const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
 	let h = 0, s = 0;
@@ -128,19 +128,24 @@ export function rgbToHsv(r, g, b) {
 		else h = 4 + (r - g) / delta;
 		h /= 6;
 	}
-	return [h, s, max];
+	out[0] = h; out[1] = s; out[2] = max; return out;
 }
-export function hsvToRgb(h, s, v) {
+export function hsvToRgb(h, s, v, out = [0, 0, 0]) {
 	h = h - Math.floor(h); s = clamp(s, 0, 1); v = clamp(v, 0, 1);
-	if (s === 0) return [v, v, v];
+	if (s === 0) { out[0] = v; out[1] = v; out[2] = v; return out; }
 	let hue = h === 1 ? 0 : h; hue *= 6;
 	const i = Math.trunc(hue), f = hue - i, w = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
 	switch (i) {
-		case 0: return [v, t, w]; case 1: return [q, v, w]; case 2: return [w, v, t];
-		case 3: return [w, q, v]; case 4: return [t, w, v]; default: return [v, w, q];
+		case 0: out[0] = v; out[1] = t; out[2] = w; break;
+		case 1: out[0] = q; out[1] = v; out[2] = w; break;
+		case 2: out[0] = w; out[1] = v; out[2] = t; break;
+		case 3: out[0] = w; out[1] = q; out[2] = v; break;
+		case 4: out[0] = t; out[1] = w; out[2] = v; break;
+		default: out[0] = v; out[1] = w; out[2] = q;
 	}
+	return out;
 }
-function rgbToHsl(r, g, b) {
+function rgbToHsl(r, g, b, out = [0, 0, 0]) {
 	r = clamp(r, 0, 1); g = clamp(g, 0, 1); b = clamp(b, 0, 1);
 	const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
 	let h = 0, s = 0;
@@ -150,7 +155,7 @@ function rgbToHsl(r, g, b) {
 		if (r === max) h = (g - b) / delta; else if (g === max) h = 2 + (b - r) / delta; else h = 4 + (r - g) / delta;
 		h /= 6; if (h < 0) h += 1;
 	}
-	return [h, s, l];
+	out[0] = h; out[1] = s; out[2] = l; return out;
 }
 function hslValue(n1, n2, hue) {
 	if (hue > 6) hue -= 6; else if (hue < 0) hue += 6;
@@ -159,11 +164,11 @@ function hslValue(n1, n2, hue) {
 	if (hue < 4) return n1 + (n2 - n1) * (4 - hue);
 	return n1;
 }
-function hslToRgb(h, s, l) {
+function hslToRgb(h, s, l, out = [0, 0, 0]) {
 	h = h - Math.floor(h); s = clamp(s, 0, 1); l = clamp(l, 0, 1);
-	if (s === 0) return [l, l, l];
+	if (s === 0) { out[0] = l; out[1] = l; out[2] = l; return out; }
 	const m2 = l <= 0.5 ? l * (1 + s) : l + s - l * s, m1 = 2 * l - m2;
-	return [hslValue(m1, m2, h * 6 + 2), hslValue(m1, m2, h * 6), hslValue(m1, m2, h * 6 - 2)];
+	out[0] = hslValue(m1, m2, h * 6 + 2); out[1] = hslValue(m1, m2, h * 6); out[2] = hslValue(m1, m2, h * 6 - 2); return out;
 }
 const T_MATRIX_SMALL = [
 	[0.026595621243689, 0.049779426257903, 0.022449850859496, -0.218453689278271, -0.256894883201278, 0.445881722194840, 0.772365886289756, 0.194498761382537, 0.014038157587820, 0.007687264480513],
@@ -190,13 +195,6 @@ export function spectralToRgb(spec, out) {
 const specA = new Float32Array(10), specB = new Float32Array(10), specMix = new Float32Array(10), logA = new Float64Array(10), rgbTmp = [0, 0, 0];
 // The operators' own scratch (R86i): one sampled pixel, one mean log-reflectance.
 const opPix = new Float32Array(4), opMean = new Float64Array(10);
-// The wet compose's per-cell coverage, kept across calls (see `_wetCompose`).
-let wetCellCover = new Float32Array(0);
-// Bilinear corners for one compose, filled once per call. The inner loop used to rebuild
-// cover, floor and delta at every pixel; the values are a function of the cell, so the
-// pixel loop reads them. Floor and delta are the closures' own float64, not a float32
-// store: rounding the subtract changed kept pixels by one ulp.
-let wetCornerCover = new Float32Array(0), wetCornerFloor = new Float64Array(0), wetCornerDelta = new Float64Array(0);
 // How far a wet dab may reach back for material it is about to move. Wet flat is a wet operator
 // (`_opWet`): the founder's reading of it as a dry raster carry was exact, "it doesn't have a
 // realistic wet effect". The dry drag (`_opDrag`, Smudge and Smear) does resample the canvas, one
@@ -450,6 +448,11 @@ export class PaintBrush {
 		// every dab was pure repetition. Both are exact: every slot of the vector is written on every
 		// update, and a constant mapping's value is written once wherever a base value can change.
 		this.inputs = new Float32Array(PAINT_INPUTS.length);
+		// These are the dab's own doubles, carried until the next dab overwrites them.
+		this.dabColor = new Float64Array(3); this.dabColorSpace = new Float64Array(3);
+		this.loadPoint = new Float64Array(2); this.holdPoint = new Float64Array(2);
+		this.bristlePoint = new Float64Array(2); this.bristleDirection = new Float64Array(2);
+		this.holdDab = { store: null, velocity: 0, strength: 0, col0: 0, col1: 0, initial: 0, stepped: false };
 		this.dynamicMappings = [];
 		this.buckets = new Float32Array(NUM_BUCKETS * SMUDGE_BUCKET_SIZE);
 		this.minBucket = -1; this.maxBucket = -1;
@@ -651,7 +654,7 @@ export class PaintBrush {
 		if (!this.holdStore) return;
 		if (!this.holdAt) this.holdVelocity = 1;
 		else this.holdVelocity = Math.hypot(x - this.holdAt[0], y - this.holdAt[1]);
-		this.holdAt = [x, y];
+		const at = this.holdPoint; at[0] = x; at[1] = y; this.holdAt = at;
 	}
 	_holdOn(surface, u, width) {
 		if (!this.holdStore) return;
@@ -663,7 +666,10 @@ export class PaintBrush {
 			col0 = clamp(col - (span >> 1), 0, n - 1); col1 = clamp(col0 + span, 1, n);
 		}
 		if (surface.hold && surface.hold.store === this.holdStore) { surface.hold.col0 = col0; surface.hold.col1 = col1; return; }
-		surface.hold = { store: this.holdStore, velocity: this.holdVelocity, strength: this.rapier.rapier_hold, col0, col1, initial: this.holdInitial, stepped: false };
+		const dab = this.holdDab;
+		dab.store = this.holdStore; dab.velocity = this.holdVelocity; dab.strength = this.rapier.rapier_hold;
+		dab.col0 = col0; dab.col1 = col1; dab.initial = this.holdInitial; dab.stepped = false;
+		surface.hold = dab;
 	}
 	_drawBristles(surface, x, y, radius, cr, cg, cb, opaque, hardness, softness, targetAlpha, aspect, angle, lockAlpha, colorize, posterize, posterizeNum, paintFactor) {
 		const list = this.bristles, ST_ = this.states, depth = this.rapier.rapier_bristle_depth ?? .5;
@@ -676,7 +682,7 @@ export class PaintBrush {
 		// a flick between two samples must not spend a whole stroke's paint or skip the hairs'
 		// rise and fall past a full cycle.
 		if (this.bristleAt) { step = Math.min(4, Math.hypot(x - this.bristleAt[0], y - this.bristleAt[1]) / Math.max(.5, radius)); this.bristleTravel += step; }
-		this.bristleAt = [x, y];
+		const at = this.bristlePoint; at[0] = x; at[1] = y; this.bristleAt = at;
 		const width = clamp(this.rapier.rapier_bristle_width ?? .4, .05, 1);
 		// R81, the single largest "this is not paint" signal: the belly used to seat itself across the
 		// CURRENT direction, so it presented its whole width whichever way the hand went and every
@@ -699,7 +705,7 @@ export class PaintBrush {
 		const prev = this.bristleDir, moved = Math.max(1e-3, step * Math.max(.5, radius));
 		if (prev) this.bristleTurn = this.bristleTurn * (1 - RAPIER_BRISTLE_TURN_EASE) + ((prev[0] * dy - prev[1] * dx) / moved * radius) * RAPIER_BRISTLE_TURN_EASE;
 		else this.bristleTurn = 0;
-		this.bristleDir = [dx, dy];
+		const direction = this.bristleDirection; direction[0] = dx; direction[1] = dy; this.bristleDir = direction;
 		// `rapier_bristle_turn` is how much of that a preset's belly answers: absent is all of it. A loaded
 		// round (Oil) carries its paint as one body through a bend -- R81's fanned its outer hairs apart
 		// nowhere -- so it answers a third, and its curve stays as dense as its straight pull.
@@ -912,7 +918,7 @@ export class PaintBrush {
 		inputs[I.tilt_declinationy] = ST_[ST.declinationy];
 		inputs[I.custom] = ST_[ST.custom_input];
 		inputs[I.barrel_rotation] = modArith(ST_[ST.barrel_rotation], 360);
-		for (const i of this.dynamicMappings) V[i] = M[i].calculate(inputs);
+		for (let k = 0; k < this.dynamicMappings.length; k++) { const i = this.dynamicMappings[k]; V[i] = M[i].calculate(inputs); }
 		// The wet loads read the same inputs at the same moment as every other setting (R80).
 		if (this.wetStroke) { const WM = this.wetMappings;
 			this.wetStroke.water = clamp(WM.rapier_water.calculate(inputs), 0, 4);
@@ -975,7 +981,8 @@ export class PaintBrush {
 			if (recentness === 0) updateFactor = 0;
 			B[at + PREV_COL_RECENTNESS] = 1;
 			const smudgeRadius = clamp(radius * Math.exp(V[S.smudge_radius_log]), ACTUAL_RADIUS_MIN, ACTUAL_RADIUS_MAX);
-			[r, g, b, a] = surface.getColor(px, py, smudgeRadius, legacy ? -1 : paintFactor, this.rng);
+			const sampled = surface.getColor(px, py, smudgeRadius, legacy ? -1 : paintFactor, this.rng);
+			r = sampled[0]; g = sampled[1]; b = sampled[2]; a = sampled[3];
 			const lim = V[S.smudge_transparency];
 			if ((lim > 0 && a < lim) || (lim < 0 && a > -lim)) return true;
 			B[at + PREV_COL_R] = r; B[at + PREV_COL_G] = g; B[at + PREV_COL_B] = b; B[at + PREV_COL_A] = a;
@@ -1021,8 +1028,8 @@ export class PaintBrush {
 		}
 		let x = ST_[ST.actual_x], y = ST_[ST.actual_y];
 		const baseRadius = Math.exp(M[S.radius_logarithmic].base);
-		const [ox, oy] = this._directionalOffsets(baseRadius, ST_[ST.flip]);
-		x += ox; y += oy;
+		const offset = this._directionalOffsets(baseRadius, ST_[ST.flip]);
+		x += offset[0]; y += offset[1];
 		const viewZoom = ST_[ST.viewzoom], offsetBySpeed = V[S.offset_by_speed];
 		if (offsetBySpeed) { x += ST_[ST.norm_dx_slow] * offsetBySpeed * 0.1 / viewZoom; y += ST_[ST.norm_dy_slow] * offsetBySpeed * 0.1 / viewZoom; }
 		const offsetByRandom = V[S.offset_by_random];
@@ -1044,10 +1051,10 @@ export class PaintBrush {
 			const lx = ST_[ST.actual_x], ly = ST_[ST.actual_y];
 			if (this.loadAt) { const d = Math.hypot(lx - this.loadAt[0], ly - this.loadAt[1]) / Math.max(.5, radius);
 				this.loadFuel = Math.max(0, (this.loadFuel ?? 1) - Math.min(4, d) / whole); }
-			this.loadAt = [lx, ly];
+			const at = this.loadPoint; at[0] = lx; at[1] = ly; this.loadAt = at;
 		}
 		const paintFactor = this.smudgeOnly ? 0 : V[S.paint_mode], paintConstant = M[S.paint_mode].constant, legacy = this.smudgeOnly || paintFactor <= 0 && paintConstant;
-		const color = hsvToRgb(M[S.color_h].base, M[S.color_s].base, M[S.color_v].base);
+		const color = hsvToRgb(M[S.color_h].base, M[S.color_s].base, M[S.color_v].base, this.dabColor);
 		const smudgeLength = V[S.smudge_length];
 		if (smudgeLength < 1 && (V[S.smudge] !== 0 || !M[S.smudge].constant)) {
 			const at = this._bucket();
@@ -1075,18 +1082,20 @@ export class PaintBrush {
 		if (V[S.eraser]) targetAlpha *= 1 - V[S.eraser];
 		const usingHsv = V[S.change_color_h] || V[S.change_color_hsv_s] || V[S.change_color_v];
 		const usingHsl = V[S.change_color_l] || V[S.change_color_hsl_s];
-		let [cr, cg, cb] = color;
+		let cr = color[0], cg = color[1], cb = color[2];
 		if (usingHsv || usingHsl) {
 			if (linear) { cr = Math.pow(cr, 1 / 2.2); cg = Math.pow(cg, 1 / 2.2); cb = Math.pow(cb, 1 / 2.2); }
 			if (usingHsv) {
-				let [h, s, v] = rgbToHsv(cr, cg, cb);
+				const hsv = rgbToHsv(cr, cg, cb, this.dabColorSpace);
+				let h = hsv[0], s = hsv[1], v = hsv[2];
 				h += V[S.change_color_h]; s += s * v * V[S.change_color_hsv_s]; v += V[S.change_color_v];
-				[cr, cg, cb] = hsvToRgb(h, s, v);
+				hsvToRgb(h, s, v, color); cr = color[0]; cg = color[1]; cb = color[2];
 			}
 			if (usingHsl) {
-				let [h, s, l] = rgbToHsl(cr, cg, cb);
+				const hsl = rgbToHsl(cr, cg, cb, this.dabColorSpace);
+				let h = hsl[0], s = hsl[1], l = hsl[2];
 				l += V[S.change_color_l]; s += s * Math.min(Math.abs(1 - l), Math.abs(l)) * 2 * V[S.change_color_hsl_s];
-				[cr, cg, cb] = hslToRgb(h, s, l);
+				hslToRgb(h, s, l, color); cr = color[0]; cg = color[1]; cb = color[2];
 			}
 			if (linear) { cr = Math.pow(cr, 2.2); cg = Math.pow(cg, 2.2); cb = Math.pow(cb, 2.2); }
 		}
@@ -1295,12 +1304,18 @@ function copyPaintMaterial(value, seen = new Map()) {
 	return out;
 }
 export class PaintSurface {
-	constructor(width, height, {wet = {}} = {}) {
+	constructor(width, height, {wet = {}, trackedGrowth = false} = {}) {
 		this.width = Math.max(1, Math.trunc(width)); this.height = Math.max(1, Math.trunc(height));
 		this.data = new Float32Array(this.width * this.height * 4);
-		this.boundsDirty = null; this.boundsTiles = new Map(); this.revision = 0;
+		// The tool's blank sheets write through _touch, so their untouched margins are exact zeros.
+		// Raw surfaces also expose their buffers to callers and must copy those buffers in full.
+		this.growBox = trackedGrowth ? null : undefined;
+		this.boundsDirty = null; this.boundsTiles = new Map(); this.boundsOX = 0; this.boundsOY = 0; this.revision = 0;
 		this.dirty = null; // {x0, y0, x1, y1} inclusive pixel bounds changed since the last takeDirty()
 		this.mask = new Float32Array(0);
+		// The box expires with its mask at the next render; callers consume both together.
+		this.maskBox = { x0: 0, y0: 0, w: 0, h: 0, mask: this.mask, spans: null };
+		this.holdColor = new Float64Array(4);
 		// Scratch the hot loops reuse instead of allocating per dab: the wet dab's coarse mask and the
 		// smudge probe's two spectral accumulators. Every element is written before it is read.
 		this.wetCoarse = new Float32Array(0);
@@ -1331,10 +1346,11 @@ export class PaintSurface {
 		this.scale = 1;
 	}
 	beginStroke() {
+		this._finishWetWork();
 		if (this.strokeCheckpoint) throw new Error('A paint stroke is already open');
 		const material = {};
 		for (const key of Object.keys(this)) if (key.startsWith('wet') || ['opDefer', 'opOwed', 'hold', 'drawDab', 'body', 'bite'].includes(key)) material[key] = this[key];
-		const checkpoint = {data: this.data, volume: this.volume, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY, material: copyPaintMaterial(material), tiles: new Map()};
+		const checkpoint = {data: this.data, volume: this.volume, width: this.width, height: this.height, growBox: this.growBox && {...this.growBox}, toothOX: this.toothOX, toothOY: this.toothOY, toothTiles: this.toothTiles, toothTilesW: this.toothTilesW, material: copyPaintMaterial(material), tiles: new Map()};
 		this.strokeCheckpoint = checkpoint;
 		return checkpoint;
 	}
@@ -1361,15 +1377,18 @@ export class PaintSurface {
 			if (volume) checkpoint.volume.set(volume.subarray(row * w, (row + 1) * w), at);
 		}
 		this.data = checkpoint.data; this.volume = checkpoint.volume; this.width = checkpoint.width; this.height = checkpoint.height;
-		this.toothOX = checkpoint.toothOX; this.toothOY = checkpoint.toothOY; this.toothTiles = null; this.toothTilesW = 0;
+		// Relief readout uses this paper field too; cancelling must restore its presence as well
+		// as its origin, or unchanged material would encode differently after a cancelled mark.
+		this.toothOX = checkpoint.toothOX; this.toothOY = checkpoint.toothOY; this.toothTiles = checkpoint.toothTiles; this.toothTilesW = checkpoint.toothTilesW;
 		delete this.drawDab; delete this.hold;
 		Object.assign(this, checkpoint.material);
-		this.boundsTiles.clear(); this._readout = null; this.sinceRead = null;
+		this.boundsTiles.clear(); this.boundsOX = this.boundsOY = 0; this.preparedGrowth = null; this._readout = null; this.sinceRead = null;
 		this._touch(0, 0, this.width - 1, this.height - 1);
+		this.growBox = checkpoint.growBox;
 		return true;
 	}
 
-	clear() { this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
+	clear() { this._finishWetWork(); this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
 	// R79: the wet state is a WINDOW over the stroke, on a COARSE grid, stepped AFTER the finger.
 	// A phone's live layer is 2.4 Mpx and the dense state is 128 bytes a pixel, and the reference
 	// step over that at every dab took seconds. So: the window opens around the first wet dab with
@@ -1414,6 +1433,7 @@ export class PaintSurface {
 		return out;
 	}
 	beginWet(seed, box) {
+		this._finishWetWork();
 		// A dab keeps `wetFlow` cells of window beyond its box, so water has somewhere to bloom;
 		// growth adds the full margin, so the window is not re-cut at every dab near an edge.
 		const state = this.wetState, win = this.wetWindow, F = this.wetCell * 8;
@@ -1464,26 +1484,32 @@ export class PaintSurface {
 	// picture is. It costs one extra pass over the window at the moment of commit and nothing at all
 	// while the finger is down (the founder: "if we had to sacrifice some real time rendering stuff
 	// in the name of final quality, I feel people doing art on a phone would appreciate that").
-	_wetCompose(rect, fine) {
+	_wetCompose(rect, fine) { return finishWetIterator(this._wetComposeWork(rect, fine)); }
+	*_wetComposeWork(rect, fine) {
+		let cells = 0;
+		// Scratch belongs to this surface: another drying sheet may run while this one yields.
+		// Corner differences stay float64; rounding them changes the kept raster.
+		const scratch = this._wetScratch || (this._wetScratch = {cellCover: new Float32Array(0), cornerCover: new Float32Array(0), cornerFloor: new Float64Array(0), cornerDelta: new Float64Array(0)});
 		const state = this.wetState, win = this.wetWindow, C = this.wetCell, P = state.pixels, B = state.base, RB = this.wetRasterBase, D = this.data, W = this.width, H = this.height, cw = win.cw, ch = win.ch, cover = this.wetCover;
 		const px0 = Math.max(0, rect.x0 - 1) * C, py0 = Math.max(0, rect.y0 - 1) * C, px1 = Math.min(win.w, (rect.x1 + 2) * C) - 1, py1 = Math.min(win.h, (rect.y1 + 2) * C) - 1;
 		this._keepStrokePixels(win.x0 + px0, win.y0 + py0, win.x0 + px1, win.y0 + py1);
 		// The cell's own coverage: the mean of the fine plane over it (0 where only flow reached). Only the
 		// rectangle's cells and a margin of two are ever written or read, so the plane is kept across
 		// calls: a fresh one per call was the whole window's worth of zeroed memory for every dab.
-		if (wetCellCover.length < cw * ch) wetCellCover = new Float32Array(cw * ch);
-		const cellCover = wetCellCover;
-		for (let cy = Math.max(0, rect.y0 - 2); cy <= Math.min(ch - 1, rect.y1 + 2); cy++) for (let cx = Math.max(0, rect.x0 - 2); cx <= Math.min(cw - 1, rect.x1 + 2); cx++) { let sum = 0, n = 0; for (let y = 0; y < C; y++) { const yy = cy * C + y; if (yy >= win.h) break; for (let x = 0; x < C; x++) { const xx = cx * C + x; if (xx >= win.w) break; sum += cover[yy * win.w + xx]; n++; } } cellCover[cy * cw + cx] = n ? sum / n : 0; }
+		if (scratch.cellCover.length < cw * ch) scratch.cellCover = new Float32Array(cw * ch);
+		const cellCover = scratch.cellCover;
+		for (let cy = Math.max(0, rect.y0 - 2); cy <= Math.min(ch - 1, rect.y1 + 2); cy++) for (let cx = Math.max(0, rect.x0 - 2); cx <= Math.min(cw - 1, rect.x1 + 2); cx++) { if (!(++cells & 127)) yield; let sum = 0, n = 0; for (let y = 0; y < C; y++) { const yy = cy * C + y; if (yy >= win.h) break; for (let x = 0; x < C; x++) { const xx = cx * C + x; if (xx >= win.w) break; sum += cover[yy * win.w + xx]; n++; } } cellCover[cy * cw + cx] = n ? sum / n : 0; }
 		// Every pixel of this rectangle samples the same four corners. Fill those once; the lookups
 		// below are the closures' clamp and the same subtract, so the floats do not move.
 		const cxA = Math.floor((px0 + .5) / C - .5), cxB = Math.floor((px1 + .5) / C - .5) + 1;
 		const cyA = Math.floor((py0 + .5) / C - .5), cyB = Math.floor((py1 + .5) / C - .5) + 1;
 		const gw = Math.max(0, cxB - cxA + 1), gh = Math.max(0, cyB - cyA + 1), corners = gw * gh;
-		if (wetCornerCover.length < corners) { wetCornerCover = new Float32Array(corners); wetCornerFloor = new Float64Array(corners); wetCornerDelta = new Float64Array(corners * 4); }
-		const coverG = wetCornerCover, floorG = wetCornerFloor, deltaG = wetCornerDelta, dep = this.wetDeposited;
+		if (scratch.cornerCover.length < corners) { scratch.cornerCover = new Float32Array(corners); scratch.cornerFloor = new Float64Array(corners); scratch.cornerDelta = new Float64Array(corners * 4); }
+		const coverG = scratch.cornerCover, floorG = scratch.cornerFloor, deltaG = scratch.cornerDelta, dep = this.wetDeposited;
 		for (let cy = cyA; cy <= cyB; cy++) {
 			const ccy = cy < 0 ? 0 : cy > ch - 1 ? ch - 1 : cy;
 			for (let cx = cxA; cx <= cxB; cx++) {
+				if (!(++cells & 127)) yield;
 				const ccx = cx < 0 ? 0 : cx > cw - 1 ? cw - 1 : cx;
 				const i = (cy - cyA) * gw + (cx - cxA), o = ccy * cw + ccx, p4 = o * 4;
 				coverG[i] = cellCover[o];
@@ -1520,6 +1546,7 @@ export class PaintSurface {
 				const sy = y + win.y0; if (sy >= H) break;
 				const fy = (y + .5) / C - .5, cy0 = Math.floor(fy);
 				for (let x = px0; x <= px1; x++) {
+					if (!(++cells & 127)) yield;
 					const sx = x + win.x0; if (sx >= W) break;
 					const fx = (x + .5) / C - .5, cx0 = Math.floor(fx);
 					const da = Math.abs(delta(cx0, cy0, 3)); if (!(da > 0)) continue;
@@ -1533,6 +1560,7 @@ export class PaintSurface {
 			const sy = y + win.y0; if (sy >= H) break;
 			const fy = (y + .5) / C - .5, cy0 = Math.floor(fy), ty = fy - cy0;
 			for (let x = px0; x <= px1; x++) {
+				if (!(++cells & 127)) yield;
 				const sx = x + win.x0; if (sx >= W) break;
 				const fx = (x + .5) / C - .5, cx0 = Math.floor(fx), tx = fx - cx0, i = (sy * W + sx) * 4, j = (y * win.w + x) * 4;
 				// Guided by coverage: inside touched cells the delta is scaled by fine/cell coverage
@@ -1597,14 +1625,16 @@ export class PaintSurface {
 	// digital. Three 1-2-1 averages over the band around the front is a Gaussian of about one cell:
 	// the scale the solver could not resolve, and nothing finer. The band is a few thousand pixels
 	// around a mark, so it costs almost nothing, and the interior keeps its granulation untouched.
-	_wetFinish(rect) {
+	_wetFinish(rect) { return finishWetIterator(this._wetFinishWork(rect)); }
+	*_wetFinishWork(rect) {
+		let cells = 0;
 		const win = this.wetWindow, C = this.wetCell, D = this.data, W = this.width, H = this.height;
 		const px0 = Math.max(0, (rect.x0 - 1) * C), py0 = Math.max(0, (rect.y0 - 1) * C);
 		const px1 = Math.min(win.w, (rect.x1 + 2) * C) - 1, py1 = Math.min(win.h, (rect.y1 + 2) * C) - 1;
 		const w = px1 - px0 + 1, h = py1 - py0 + 1;
 		if (w < 5 || h < 5) return;
 		const src = new Float32Array(w * h * 4);
-		for (let y = 0; y < h; y++) { const sy = win.y0 + py0 + y; if (sy >= H) break; const from = (sy * W + win.x0 + px0) * 4, n = Math.min(w, W - win.x0 - px0); src.set(D.subarray(from, from + n * 4), y * w * 4); }
+		for (let y = 0; y < h; y++) { yield; const sy = win.y0 + py0 + y; if (sy >= H) break; const from = (sy * W + win.x0 + px0) * 4, n = Math.min(w, W - win.x0 - px0); src.set(D.subarray(from, from + n * 4), y * w * 4); }
 		const at = (x, y, c) => src[((y < 0 ? 0 : y > h - 1 ? h - 1 : y) * w + (x < 0 ? 0 : x > w - 1 ? w - 1 : x)) * 4 + c];
 		// The band: every pixel whose own cell-wide neighbourhood disagrees with itself, widened by a
 		// cell so the average has somewhere to reach from.
@@ -1614,6 +1644,7 @@ export class PaintSurface {
 		// bleed softens that in the water instead.
 		const edge = new Uint8Array(w * h);
 		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+			if (!(++cells & 127)) yield;
 			let lo = 1, hi = 0;
 			for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const v = at(x + dx, y + dy, 3); if (v < lo) lo = v; if (v > hi) hi = v; }
 			if (hi - lo >= .06) edge[y * w + x] = 1;
@@ -1632,6 +1663,7 @@ export class PaintSurface {
 		};
 		const band = [];
 		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+			if (!(++cells & 127)) yield;
 			if (!wetCell(x, y)) continue;
 			let near = 0;
 			for (let dy = -C; dy <= C && !near; dy++) for (let dx = -C; dx <= C; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < h && xx >= 0 && xx < w && edge[yy * w + xx]) { near = 1; break; } }
@@ -1641,6 +1673,7 @@ export class PaintSurface {
 		const n = band.length, hold = new Float32Array(n * 4);
 		for (let pass = 0; pass < 3; pass++) {
 			for (let k = 0; k < n; k++) {
+				if (!(++cells & 127)) yield;
 				const p = band[k], x = p % w, y = (p - x) / w;
 				for (let c = 0; c < 4; c++) {
 					let sum = 0;
@@ -1648,9 +1681,10 @@ export class PaintSurface {
 					hold[k * 4 + c] = sum / 16;
 				}
 			}
-			for (let k = 0; k < n; k++) src.set(hold.subarray(k * 4, k * 4 + 4), band[k] * 4);
+			for (let k = 0; k < n; k++) { if (!(++cells & 127)) yield; src.set(hold.subarray(k * 4, k * 4 + 4), band[k] * 4); }
 		}
 		for (let k = 0; k < n; k++) {
+			if (!(++cells & 127)) yield;
 			const p = band[k], x = p % w, y = (p - x) / w, sy = win.y0 + py0 + y, sx = win.x0 + px0 + x;
 			if (sy >= H || sx >= W) continue;
 			const i = (sy * W + sx) * 4;
@@ -1666,13 +1700,15 @@ export class PaintSurface {
 	// every three pixels. Two 1-2-1 averages of the wet DELTA over the cells where alpha is still
 	// climbing. The state is spent straight after, so this is the last thing that reads it; the base
 	// is held out and added back, so no pigment is created.
-	_wetSmoothCells(rect) {
+	_wetSmoothCells(rect) { return finishWetIterator(this._wetSmoothCellsWork(rect)); }
+	*_wetSmoothCellsWork(rect) {
+		let cells = 0;
 		const state = this.wetState, win = this.wetWindow; if (!state || !win) return;
 		const cw = win.cw, ch = win.ch, P = state.pixels, B = state.base;
 		const x0 = Math.max(0, rect.x0 - 2), y0 = Math.max(0, rect.y0 - 2), x1 = Math.min(cw - 1, rect.x1 + 2), y1 = Math.min(ch - 1, rect.y1 + 2);
 		const w = x1 - x0 + 1, h = y1 - y0 + 1; if (w < 3 || h < 3) return;
 		const d = new Float32Array(w * h * 4);
-		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = ((y0 + y) * cw + x0 + x) * 4, j = (y * w + x) * 4; for (let c = 0; c < 4; c++) d[j + c] = P[o + c] - B[o + c]; }
+		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (!(++cells & 127)) yield; const o = ((y0 + y) * cw + x0 + x) * 4, j = (y * w + x) * 4; for (let c = 0; c < 4; c++) d[j + c] = P[o + c] - B[o + c]; }
 		const at = (x, y, c) => d[((y < 0 ? 0 : y > h - 1 ? h - 1 : y) * w + (x < 0 ? 0 : x > w - 1 ? w - 1 : x)) * 4 + c];
 		// Only where the wash's own ALPHA is still climbing -- its front. Granulation varies a cell's
 		// PIGMENT and barely its coverage, so testing alpha alone leaves the middle of a wash exactly
@@ -1680,7 +1716,7 @@ export class PaintSurface {
 		// the band where the mark begins and ends. A colour boundary at full alpha is not the front
 		// and is not smoothed here: bleed softens it in the water, which is where it belongs.
 		const band = [];
-		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (!(++cells & 127)) yield;
 			let lo = 1, hi = -1;
 			for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const v = at(x + dx, y + dy, 3); if (v < lo) lo = v; if (v > hi) hi = v; }
 			if (hi - lo >= .04) band.push(y * w + x);
@@ -1688,11 +1724,11 @@ export class PaintSurface {
 		if (!band.length) return;
 		const m = band.length, hold = new Float32Array(m * 4);
 		for (let pass = 0; pass < 2; pass++) {
-			for (let k = 0; k < m; k++) { const p = band[k], x = p % w, y = (p - x) / w;
+			for (let k = 0; k < m; k++) { if (!(++cells & 127)) yield; const p = band[k], x = p % w, y = (p - x) / w;
 				for (let c = 0; c < 4; c++) { let sum = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) sum += at(x + dx, y + dy, c) * ((dx ? 1 : 2) * (dy ? 1 : 2)); hold[k * 4 + c] = sum / 16; } }
-			for (let k = 0; k < m; k++) d.set(hold.subarray(k * 4, k * 4 + 4), band[k] * 4);
+			for (let k = 0; k < m; k++) { if (!(++cells & 127)) yield; d.set(hold.subarray(k * 4, k * 4 + 4), band[k] * 4); }
 		}
-		for (let k = 0; k < m; k++) { const p = band[k], x = p % w, y = (p - x) / w, o = ((y0 + y) * cw + x0 + x) * 4;
+		for (let k = 0; k < m; k++) { if (!(++cells & 127)) yield; const p = band[k], x = p % w, y = (p - x) / w, o = ((y0 + y) * cw + x0 + x) * 4;
 			for (let c = 0; c < 4; c++) { const v = B[o + c] + d[p * 4 + c]; P[o + c] = v < 0 ? 0 : v > 1 ? 1 : v; }
 			if (P[o + 3] > 0) for (let c = 0; c < 3; c++) if (P[o + c] > P[o + 3]) P[o + c] = P[o + 3]; }
 	}
@@ -1707,6 +1743,47 @@ export class PaintSurface {
 		if (t.x0 < 0) t.x0 = 0; if (t.y0 < 0) t.y0 = 0; if (t.x1 > win.cw - 1) t.x1 = win.cw - 1; if (t.y1 > win.ch - 1) t.y1 = win.ch - 1;
 	}
 	advanceWet(dt, limit = Infinity) { const changed = this.stepWet(dt, limit); this.composeWet(); return changed; }
+	// A frame owns one suspended operation, never a second material state. Mutations finish that
+	// operation before taking a checkpoint or changing its inputs; the next feed is still owed.
+	_finishWetWork() {
+		if (this._wetRunning) return;
+		const work = this._wetWork;
+		this._wetWork = null; this._wetDryPhase = null;
+		if (!work) return;
+		this._wetRunning = true;
+		try { finishWetIterator(work.iterator); work.resolve?.(); }
+		catch (error) { work.reject?.(error); throw error; }
+		finally { this._wetRunning = false; }
+	}
+	// Recovery can wait for the operation already under way without forcing a whole pass onto
+	// its timer task. No new feed starts before that waiter has read the resulting material.
+	pendingWetWork() {
+		const work = this._wetWork; if (!work) return null;
+		return work.promise || (work.promise = new Promise((resolve, reject) => { work.resolve = resolve; work.reject = reject; }));
+	}
+	dryWet(until, feed = 8, slice = 8, inputWaiting = null) {
+		if (!this.wetState && !this._wetWork) return true;
+		while (performance.now() < until && !inputWaiting?.()) {
+			if (!this._wetWork) {
+				const compose = this._wetDryPhase === 'compose';
+				const step = !compose && (this.wet || this.wetPending);
+				this._wetWork = {iterator: compose ? this._composeWetWork(true) : step ? this._stepWetWork(feed, feed + slice) : this._settleWetWork(), next: step ? 'compose' : null};
+			}
+			const work = this._wetWork;
+			let part;
+			this._wetRunning = true;
+			try { part = work.iterator.next(); }
+			catch (error) { work.reject?.(error); throw error; }
+			finally { this._wetRunning = false; }
+			if (part.done) {
+				this._wetWork = null; this._wetDryPhase = work.next;
+				work.resolve?.();
+				if (!this.wetState) return true;
+				if (work.promise) return false;
+			}
+		}
+		return false;
+	}
 	// One bounded slice of the owed projection, for a caller that owes the hand a frame.
 	// R81. A drying tick cost 107.5 ms FIXED plus 0.454 ms per simulated ms (fitted from two measured
 	// budgets), and the fixed part is three O(active-area) passes charged per call however little time
@@ -1716,12 +1793,15 @@ export class PaintSurface {
 	// Pigment that flowed out of a cell is no longer that cell's dabs'. Time moving mass is what
 	// makes that true, so the record is trimmed here, on the physics clock -- not while composing,
 	// where the number of frames would decide the painting.
-	_wetLineage() {
+	_wetLineage() { return finishWetIterator(this._wetLineageWork()); }
+	*_wetLineageWork() {
+		let cells = 0;
 		const state = this.wetState, dep = this.wetDeposited; if (!state || !dep) return;
 		const win = this.wetWindow, w = state.composeBox || state.wetBox || state.active; if (!w) return;
 		const cw = win.cw, A = state.amount, S = state.settledAmount;
 		const x0 = Math.max(0, w.x0), x1 = Math.min(cw - 1, w.x1), y1 = Math.min(win.ch - 1, w.y1);
 		for (let y = Math.max(0, w.y0); y <= y1; y++) for (let o = y * cw + x0, e = y * cw + x1; o <= e; o++) {
+			if (!(++cells & 127)) yield;
 			const mass = A[o] + S[o]; if (dep[o] > mass) dep[o] = mass;
 		}
 	}
@@ -1743,23 +1823,26 @@ export class PaintSurface {
 	// real work is bounded by the paper's drying time, not by the debt -- once the wash is dry the
 	// remaining chunks cost one add each. Nothing is clamped, nothing is dropped, no external event's
 	// allowance is widened, a long drawing stays a valid gesture, and nothing is allocated per dab.
-	_drainWet(state, owed) {
+	_drainWet(state, owed) { return finishWetIterator(this._drainWetWork(state, owed)); }
+	*_drainWetWork(state, owed) {
 		if (!(owed > 0)) return false;
-		if (owed <= RAPIER_WET_STEP_MAX) return stepWet(state, owed);
+		if (owed <= RAPIER_WET_STEP_MAX) return yield* stepWork(state, owed);
 		const h = state.hMax > 0 ? state.hMax : 8;
 		const chunk = h >= RAPIER_WET_STEP_MAX ? RAPIER_WET_STEP_MAX : Math.floor(RAPIER_WET_STEP_MAX / h) * h;
 		let left = owed, changed = false;
-		while (left > 0) { const take = left > chunk ? chunk : left; left -= take; if (stepWet(state, take)) changed = true; }
+		while (left > 0) { const take = left > chunk ? chunk : left; left -= take; if (yield* stepWork(state, take)) changed = true; }
 		return changed;
 	}
-	stepWet(dt, limit = Infinity) {
+	stepWet(dt, limit = Infinity) { this._finishWetWork(); return finishWetIterator(this._stepWetWork(dt, limit)); }
+	*_stepWetWork(dt, limit = Infinity) {
 		const state = this.wetState; if (!state) { this.wetPending = 0; return false; }
+		setGravity(state, this.wetGravity[0], this.wetGravity[1]);
 		const owed = (dt || 0) + (this.wetPending || 0), step = Math.min(owed, limit); this.wetPending = owed - step;
 		// A compose between steps drops this box. Dropping it here too means a frame that fits two
 		// steps lineages the same cells as two frames: the schedule is not an input.
 		if (state.composeBox) state.composeBox = null;
-		const changed = this._drainWet(state, step);
-		this._wetLineage();
+		const changed = yield* this._drainWetWork(state, step);
+		yield* this._wetLineageWork();
 		this._wetGrowForFlow();
 		this.wetOwedBox = true;
 		return changed;
@@ -1775,7 +1858,8 @@ export class PaintSurface {
 	// bands: a bounded slice a frame, the cursor carried, wrapping when it reaches the bottom. The
 	// wash updates over a few frames instead of freezing one, and `settleWet` still does the whole
 	// thing exactly at commit.
-	composeWet(band = false) {
+	composeWet(band = false) { this._finishWetWork(); return finishWetIterator(this._composeWetWork(band)); }
+	*_composeWetWork(band = false) {
 		this.opCompose();
 		const live = this.wetState;
 		if (!this.wetOwedBox || !live) return false;
@@ -1802,12 +1886,12 @@ export class PaintSurface {
 		let y = band ? this.wetBandY : top;
 		if (!(y >= top && y <= bottom)) y = top;
 		const yEnd = Math.min(bottom, y + rows - 1);
-		const box = settle(live, {rect: {x0, y0: y, x1, y1: yEnd}});
+		const box = yield* settleWork(live, {rect: {x0, y0: y, x1, y1: yEnd}});
 		// NOT `_touchWet`: what is kept at commit is decided by where paint and water went, never by
 		// which rectangles happened to be drawn on the way. Letting compose widen it made the number
 		// of frames move the committed region -- and with it the rim's conserving pre-pass, which
 		// measures over exactly the pixels being composed.
-		if (box) this._wetCompose(box);
+		if (box) yield* this._wetComposeWork(box);
 		// The debt is only discharged when the whole of it has been drawn -- and only the debt this
 		// pass took. Anything the solver added while it walked is still owed.
 		if (yEnd >= bottom) { this.wetBandY = 0; this.wetBandBox = null; this.wetOwedBox = !!live.composeBox; } else this.wetBandY = yEnd + 1;
@@ -1823,24 +1907,27 @@ export class PaintSurface {
 		if (this._wetBytes(next) > (this.wetOptions.maxBytes ?? 96000000)) return; // no room: it dries at the wall
 		this.beginWet(this.wetSeed, box);
 	}
-	settleWet() {
+	settleWet() { this._finishWetWork(); return finishWetIterator(this._settleWetWork()); }
+	*_settleWetWork() {
 		this.opCompose();
 		this.wetOwedBox = false;
 		const state = this.wetState; if (!state) { this.wetPending = 0; return false; }
-		if (this.wetPending) { this._drainWet(state, this.wetPending); this.wetPending = 0; this._wetLineage(); }
-		const box = settle(state, {finish: true});
+		setGravity(state, this.wetGravity[0], this.wetGravity[1]);
+		if (this.wetPending) { yield* this._drainWetWork(state, this.wetPending); this.wetPending = 0; yield* this._wetLineageWork(); }
+		const box = yield* settleWork(state, {finish: true});
 		if (box) this._touchWet(box);
 		// R80 -- the whole wash, not the solver's last dirty box. Composing only the cells that moved
 		// last left the rest of the mark carrying the live pass, and the two met along that box's
 		// wall: the hard rectangular colour band across a crossing. One pass over the whole mark.
 		const whole = this.wetTouched;
-		if (whole) { this._wetSmoothCells(whole); this._wetCompose(whole, true); this._wetFinish(whole); }
+		if (whole) { yield* this._wetSmoothCellsWork(whole); yield* this._wetComposeWork(whole, true); yield* this._wetFinishWork(whole); }
 		this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetTouched = null; this.wetBandBox = null; delete this.drawDab;
 		return true;
 	}
 	get wet() { return !!this.wetState?.wet; }
-	// The tool calls this as the phone turns; a live wash feels it from the next tick.
-	tilt(gx, gy) { this.wetGravity = [gx || 0, gy || 0]; if (this.wetState) setGravity(this.wetState, gx, gy); }
+	// Sensor events never force a held pass to run on the input task. The next logical physics
+	// step takes the latest tilt; an accepted step keeps the gravity it began with throughout.
+	tilt(gx, gy) { this.wetGravity = [gx || 0, gy || 0]; if (this.wetState && !this._wetWork) setGravity(this.wetState, gx, gy); }
 	_drawAfterWet(...args) { this.settleWet(); return this.drawDab(...args); }
 	drawWetDab(seed, loads, x, y, radius, r, g, b, opaque, hardness, softness, alpha, aspect, angle) {
 		x *= this.scale; y *= this.scale; radius *= this.scale;
@@ -1915,6 +2002,17 @@ export class PaintSurface {
 		x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(this.width - 1, x1); y1 = Math.min(this.height - 1, y1);
 		if (x1 < x0 || y1 < y0) return;
 		this.revision++;
+		if (this.growBox !== undefined) {
+			const box = this.growBox;
+			if (box) { box.x0 = Math.min(box.x0, x0); box.y0 = Math.min(box.y0, y0); box.x1 = Math.max(box.x1, x1); box.y1 = Math.max(box.y1, y1); }
+			else this.growBox = {x0, y0, x1, y1};
+		}
+		const prepared = this.preparedGrowth;
+		if (prepared) {
+			const changed = prepared.changed;
+			if (changed) { changed.x0 = Math.min(changed.x0, x0); changed.y0 = Math.min(changed.y0, y0); changed.x1 = Math.max(changed.x1, x1); changed.y1 = Math.max(changed.y1, y1); }
+			else prepared.changed = {x0, y0, x1, y1};
+		}
 		const b = this.boundsDirty;
 		if (b) { b.x0 = Math.min(b.x0, x0); b.y0 = Math.min(b.y0, y0); b.x1 = Math.max(b.x1, x1); b.y1 = Math.max(b.y1, y1); }
 		else this.boundsDirty = { x0, y0, x1, y1 };
@@ -2013,7 +2111,10 @@ export class PaintSurface {
 				}
 			}
 		}
-		return any ? { x0, y0, w, h, mask, spans } : null;
+		if (!any) return null;
+		const box = this.maskBox;
+		box.x0 = x0; box.y0 = y0; box.w = w; box.h = h; box.mask = mask; box.spans = spans;
+		return box;
 	}
 	// R81: THE reason every dry mark was a tube. A dry medium does not meet a smooth plane -- it
 	// catches the sheet's peaks and skips its valleys, and that, not the brush, is where the
@@ -2847,7 +2948,9 @@ export class PaintSurface {
 		if (!(remain > .02)) return null;
 		for (let k = 0; k < 10; k++) specA[k] = Math.exp(specMix[k] / massB);
 		spectralToRgb(specA, rgbTmp);
-		return [rgbTmp[0], rgbTmp[1], rgbTmp[2], opacity * remain];
+		const out = this.holdColor;
+		out[0] = rgbTmp[0]; out[1] = rgbTmp[1]; out[2] = rgbTmp[2]; out[3] = opacity * remain;
+		return out;
 	}
 	// The toothed walker. `_each` plus `_ceil` cost a modulo, a division and a call for every pixel,
 	// which is most of a toothed dab's arithmetic; here x and y come straight from the loop and the
@@ -3175,23 +3278,55 @@ export class PaintSurface {
 	//   - A live wet window is TRANSLATED (its cells are already relocatable -- see rewindowWetState);
 	//     nothing is resampled there either.
 	// Returns the offset the content moved by, so a caller can keep its own origin in step.
+	// A detached stride can be allocated and copied before the hand reaches it. Changes made
+	// while its rows are copied stay on the current surface and are copied again at adoption.
+	prepareGrowth(left, top, right, bottom) {
+		const width = this.width + left + right, height = this.height + top + bottom;
+		const data = new Float32Array(width * height * 4), volume = this.volume && new Uint8Array(width * height);
+		const box = this.growBox === undefined ? {x0: 0, y0: 0, x1: this.width - 1, y1: this.height - 1} : this.growBox && {...this.growBox};
+		return this.preparedGrowth = {left, top, right, bottom, width, height, data, volume, source: this.data, sourceVolume: this.volume, box, y: box?.y0 || 0, changed: null};
+	}
+	copyGrowth(pixels = 65536) {
+		const next = this.preparedGrowth;
+		if (!next || next.source !== this.data || next.sourceVolume !== this.volume) { this.preparedGrowth = null; return false; }
+		const box = next.box;
+		if (!box) return true;
+		const W = this.width, count = box.x1 - box.x0 + 1, end = Math.min(box.y1 + 1, next.y + Math.max(1, Math.floor(pixels / count)));
+		for (; next.y < end; next.y++) {
+			const from = next.y * W + box.x0, to = (next.y + next.top) * next.width + next.left + box.x0;
+			next.data.set(this.data.subarray(from * 4, (from + count) * 4), to * 4);
+			if (next.volume) next.volume.set(this.volume.subarray(from, from + count), to);
+		}
+		return next.y > box.y1;
+	}
 	grow(left = 0, top = 0, right = 0, bottom = 0) {
 		left = Math.max(0, Math.ceil(left)); top = Math.max(0, Math.ceil(top));
 		right = Math.max(0, Math.ceil(right)); bottom = Math.max(0, Math.ceil(bottom));
 		if (!(left || top || right || bottom)) return { dx: 0, dy: 0 };
+		this._finishWetWork();
 		const W = this.width, H = this.height, nw = W + left + right, nh = H + top + bottom;
-		const data = new Float32Array(nw * nh * 4);
-		for (let y = 0; y < H; y++) data.set(this.data.subarray(y * W * 4, (y + 1) * W * 4), ((y + top) * nw + left) * 4);
-		let volume = null;
-		if (this.volume) {
-			volume = new Uint8Array(nw * nh);
-			for (let y = 0; y < H; y++) volume.set(this.volume.subarray(y * W, (y + 1) * W), (y + top) * nw + left);
+		const next = this.preparedGrowth;
+		const prepared = next && next.source === this.data && next.sourceVolume === this.volume && next.left === left && next.top === top && next.right === right && next.bottom === bottom;
+		const data = prepared ? next.data : new Float32Array(nw * nh * 4);
+		const volume = this.volume ? (prepared ? next.volume : new Uint8Array(nw * nh)) : null;
+		if (prepared) this.copyGrowth(Infinity);
+		const changed = prepared ? next.changed : this.growBox === undefined ? {x0: 0, y0: 0, x1: W - 1, y1: H - 1} : this.growBox;
+		if (changed) for (let y = changed.y0; y <= changed.y1; y++) {
+			const from = y * W + changed.x0, to = (y + top) * nw + left + changed.x0, count = changed.x1 - changed.x0 + 1;
+			data.set(this.data.subarray(from * 4, (from + count) * 4), to * 4);
+			if (volume) volume.set(this.volume.subarray(from, from + count), to);
 		}
 		// Publish the new stride and both buffers only after every allocation and copy succeeds.
 		this.data = data;
+		this.preparedGrowth = null;
 		if (volume) this.volume = volume;
 		this.width = nw; this.height = nh;
-		this.boundsTiles.clear(); this.boundsDirty = { x0: 0, y0: 0, x1: nw - 1, y1: nh - 1 }; this.revision++;
+		if (this.growBox) { this.growBox.x0 += left; this.growBox.x1 += left; this.growBox.y0 += top; this.growBox.y1 += top; }
+		// Cached alpha bounds live on the paper's tile grid, so empty growth needs no rescan.
+		this.boundsOX += left; this.boundsOY += top;
+		for (const b of this.boundsTiles.values()) { b.x0 += left; b.x1 += left; b.y0 += top; b.y1 += top; }
+		if (this.boundsDirty) { this.boundsDirty.x0 += left; this.boundsDirty.x1 += left; this.boundsDirty.y0 += top; this.boundsDirty.y1 += top; }
+		this.revision++;
 		this._readout = null; this.sinceRead = null;
 		// The grain follows the paper, not the buffer.
 		this.toothOX -= left; this.toothOY -= top;
@@ -3214,9 +3349,10 @@ export class PaintSurface {
 		if (threshold !== 1 / 512) return scan(0, 0, W - 1, H - 1);
 		// Display consumes dirty rectangles on every frame. Bounds has its own invalidation so a
 		// lift scans only tiles touched since the previous commit, including erasure at an edge.
-		const d = this.boundsDirty, tiles = this.boundsTiles, cols = Math.ceil(W / 64);
-		if (d) for (let ty = Math.floor(d.y0 / 64); ty <= Math.floor(d.y1 / 64); ty++) for (let tx = Math.floor(d.x0 / 64); tx <= Math.floor(d.x1 / 64); tx++) {
-			const key = ty * cols + tx, b = scan(tx * 64, ty * 64, Math.min(W - 1, tx * 64 + 63), Math.min(H - 1, ty * 64 + 63));
+		const d = this.boundsDirty, tiles = this.boundsTiles, ox = this.boundsOX, oy = this.boundsOY;
+		if (d) for (let ty = Math.floor((d.y0 - oy) / 64); ty <= Math.floor((d.y1 - oy) / 64); ty++) for (let tx = Math.floor((d.x0 - ox) / 64); tx <= Math.floor((d.x1 - ox) / 64); tx++) {
+			const x = ox + tx * 64, y = oy + ty * 64;
+			const key = ty + ':' + tx, b = scan(Math.max(0, x), Math.max(0, y), Math.min(W - 1, x + 63), Math.min(H - 1, y + 63));
 			if (b) tiles.set(key, b); else tiles.delete(key);
 		}
 		this.boundsDirty = null;
@@ -3289,6 +3425,7 @@ export class PaintSurface {
 	// Load straight 8-bit sRGB pixels (a decoded PNG) at an offset: how a saved paint layer is
 	// picked up again for more strokes.
 	fromRGBA8(pixels, width, height, x0 = 0, y0 = 0, linear = true) {
+		this._finishWetWork();
 		this._keepStrokePixels(x0, y0, x0 + width - 1, y0 + height - 1);
 		this.settleWet();
 		// Pixels arriving from outside already carry whatever relief they were shaded with, so the

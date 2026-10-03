@@ -846,7 +846,7 @@ function _rapierPaintFacts() {
 		// A watcher that only read `setting`/`pendingOverflow` to know the layer is idle (the automatic
 		// Set is the same wait, just later) would see both false while this worker round trip is still
 		// outstanding -- the commit has not reached the recipe yet. Expose it as its own fact.
-		committing: _rapierPaintRevisionLayers(layer).some(sheet => !!sheet.pendingCommit), flips: state.paintFlips || 0, timing: state.paintTiming ? { ...state.paintTiming } : null, surface: layer?.surface ? layer.surface.width + 'x' + layer.surface.height : null, brush: layer?.brushId || null, brushChosen: state.paintBrush || null, size: _rapierPaintSize(), strength: state.paintStrength || null, dirty: !!layer?.surface?.dirty, scale: layer?.scale || null, showing: !!layer && layer.canvas.style.visibility !== 'hidden',
+		committing: _rapierPaintRevisionLayers(layer).some(sheet => !!(sheet.pendingLift || sheet.pendingCommit)), flips: state.paintFlips || 0, timing: state.paintTiming ? { ...state.paintTiming } : null, surface: layer?.surface ? layer.surface.width + 'x' + layer.surface.height : null, brush: layer?.brushId || null, brushChosen: state.paintBrush || null, size: _rapierPaintSize(), strength: state.paintStrength || null, dirty: !!layer?.surface?.dirty, scale: layer?.scale || null, showing: !!layer && layer.canvas.style.visibility !== 'hidden',
 		// What the seven operators did on this surface (draw/paint.mjs applyOp): dabs run, dabs that
 		// changed anything, total travel handed to them, total dab radius. Reset by a witness with
 		// `surface.opStats = null`.
@@ -1414,6 +1414,7 @@ function _rapierPaintRevisionLayers(layer = _rapierPaintLayer()) {
 function _rapierPaintRetireRevisionLayer(layer) {
 	const next = layer.nextFlip;
 	if (!next) return;
+	_rapierPaintDropSnapshots(layer);
 	if (next.previousFlip === layer) next.previousFlip = layer.previousFlip || null;
 	if (layer.previousFlip) layer.previousFlip.nextFlip = next;
 	layer.previousFlip = layer.nextFlip = null;
@@ -1434,37 +1435,45 @@ function _rapierPaintSealRevision(layer, stroke, priorShift, grown) {
 	const shape = _rapierDrawShapeById(layer.id);
 	if (shape) layer.geom = JSON.stringify(shape.geom);
 }
-function _rapierPaintEncodeRevision(layer, px, keep, frozen, capture = null) {
-	if (typeof Worker !== 'function' && !capture) return false;
+function _rapierPaintWorker(layer) {
+	if (typeof Worker !== 'function') return null;
 	let owner = layer.pngWorker;
 	if (!owner) {
 		let url;
 		try {
 			// The stored form keeps cap custody outside the final-file budget. Its exact compressed
 			// display twin avoids parsing a many-megabyte href every time the live SVG is rebuilt.
-			url = URL.createObjectURL(new Blob(['const codec = (' + globalThis.RapierDrawPaint.createPaintPNGCodec.toString() + ')(); const captures = new Map(); self.onmessage = async e => { const {id, stored, band, offset, done} = e.data; let px = e.data.px; try { if (band) { let held = captures.get(id); if (!held) { held = {width: px.width, height: px.height, data: new Uint8ClampedArray(px.width * px.height * 4)}; captures.set(id, held); } held.data.set(band, offset); if (!done) return; captures.delete(id); px = held; } const raster = stored ? codec.encode(px) : await codec.compressed(px); let shown = null; if (stored) { try { shown = await codec.compressed(px); } catch (_) {} } self.postMessage({id, raster, shown}); } catch (e) { captures.delete(id); self.postMessage({id, error: String(e.message || e)}); } };'], {type: 'text/javascript'}));
-			owner = layer.pngWorker = {worker: new Worker(url), url, serial: 0};
-		} catch (_) { if (url) URL.revokeObjectURL(url); if (!capture) return false; }
+			url = URL.createObjectURL(new Blob(['const codec = (' + globalThis.RapierDrawPaint.createPaintPNGCodec.toString() + ')(); const captures = new Map(); self.onmessage = async e => { const {id, stored, band, offset, done, cancel} = e.data; if (cancel) { captures.delete(id); return; } let px = e.data.px; try { if (band) { let held = captures.get(id); if (!held) { held = {width: px.width, height: px.height, data: new Uint8ClampedArray(px.width * px.height * 4)}; captures.set(id, held); } held.data.set(band, offset); if (!done) return; captures.delete(id); px = held; } const raster = stored ? codec.encode(px) : await codec.compressed(px); let shown = null; if (stored) { try { shown = await codec.compressed(px); } catch (_) {} } self.postMessage({id, raster, shown}); } catch (e) { captures.delete(id); self.postMessage({id, error: String(e.message || e)}); } };'], {type: 'text/javascript'}));
+			owner = layer.pngWorker = {worker: new Worker(url), url, snapshots: new Map()};
+		} catch (_) { if (url) URL.revokeObjectURL(url); return null; }
 		if (owner) {
 			const worker = owner.worker;
 			worker.onmessage = event => {
+				const snapshot = owner.snapshots.get(event.data.id);
+				if (snapshot) { snapshot.finish(!snapshot.capture && event.data.raster || null); return; }
 				const job = (layer.revisions || []).find(item => item.id === event.data.id);
 				if (!job || job.raster) return;
 				try { if (!event.data.raster) _rapierPaintReadRevision(layer, job, false); job.raster = event.data.raster || _rapierPaintPNG.encode(job.px); }
 				catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); return; }
-				if (event.data.shown) _rapierPaintKeepShown([{url: job.raster, shown: event.data.shown}]);
+				job.shown = event.data.shown || null;
 				_rapierPaintDrainRevisions(layer);
 			};
-			worker.onerror = worker.onmessageerror = () => { try { _rapierPaintFlushRevision(layer); } catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); } };
+			worker.onerror = worker.onmessageerror = () => { _rapierPaintDropSnapshots(layer); try { _rapierPaintFlushRevision(layer); } catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); } };
 		}
 	}
+	return owner;
+}
+function _rapierPaintEncodeRevision(layer, px, keep, frozen, capture = null) {
+	const owner = _rapierPaintWorker(layer);
+	if (!owner && !capture) return false;
 	const worker = owner?.worker;
 	let resolve;
 	// The queued capture owns its frozen material before any full readout allocation is tried.
 	// An allocation failure can therefore remain pending and be retried by the authority barrier.
 	const held = { width: px.width, height: px.height, data: capture ? null : new Uint8ClampedArray(px.data) };
 	layer.pngSerial = (layer.pngSerial || 0) + 1;
-	const job = {id: layer.pngSerial, px: held, keep, frozen, capture, stroke: layer.flipStroke, brushId: layer.brushId, worker, url: owner?.url, session: _rapierDrawState.session, revision: layer.surface.revision, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve()};
+	if (capture) capture.retire = !!layer.nextFlip;
+	const job = {id: layer.pngSerial, px: held, keep, frozen, capture, stored: !!layer.nextFlip, stroke: layer.flipStroke, brushId: layer.brushId, worker, url: owner?.url, session: _rapierDrawState.session, revision: layer.surface.revision, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve()};
 	layer.revisions = layer.revisions || [];
 	layer.revisions.push(job);
 	layer.pendingCommit = layer.revisions[0];
@@ -1477,8 +1486,9 @@ function _rapierPaintEncodeRevision(layer, px, keep, frozen, capture = null) {
 	catch (_) { try { _rapierPaintFlushRevision(layer); } catch (error) { if (!capture) throw error; layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); } }
 	return true;
 }
-// The material is frozen before this job is queued. Relief still reads the neighbouring rows of
-// that whole sheet, so band boundaries cannot change a normal or a straight RGBA channel.
+// A cap freezes its departed sheet; an ordinary lift keeps its live sheet behind the same capture
+// barrier until the next stroke. Relief reads the neighbouring rows of that whole material, so
+// band boundaries cannot change a normal or a straight RGBA channel.
 function _rapierPaintReadRevision(layer, job, transfer = true) {
 	const capture = job.capture;
 	if (!capture) return;
@@ -1491,7 +1501,7 @@ function _rapierPaintReadRevision(layer, job, transfer = true) {
 		const offset = (y - box.y0) * width * 4;
 		job.px.data.set(part.data, offset);
 		capture.y = end + 1;
-		if (transfer) job.worker.postMessage({id: job.id, stored: true, px: {width, height: job.px.height}, band: part.data, offset, done: end === box.y1}, [part.data.buffer]);
+		if (transfer) job.worker.postMessage({id: job.id, stored: job.stored, px: {width, height: job.px.height}, band: part.data, offset, done: end === box.y1}, [part.data.buffer]);
 		if (transfer) break;
 	}
 	if (capture.y <= box.y1) return;
@@ -1499,9 +1509,11 @@ function _rapierPaintReadRevision(layer, job, transfer = true) {
 	capture.surface = null;
 	clearTimeout(capture.timer);
 	// A lifted stroke no longer needs its rollback. A still-held stroke retains only the baseline.
-	const rollback = _rapierDrawState.gesture?.paintRollback;
-	if (rollback?.layer === layer) { surface.endStroke(rollback.pixels, true); rollback.restored = true; }
-	else layer.surface = null;
+	if (capture.retire) {
+		const rollback = _rapierDrawState.gesture?.paintRollback;
+		if (rollback?.layer === layer) { surface.endStroke(rollback.pixels, true); rollback.restored = true; }
+		else layer.surface = null;
+	}
 }
 function _rapierPaintReadRevisionSoon(layer, job) {
 	const capture = job.capture;
@@ -1509,33 +1521,102 @@ function _rapierPaintReadRevisionSoon(layer, job) {
 	const read = () => {
 		if (job.capture !== capture || !(layer.revisions || []).includes(job)) return;
 		if (_rapierDrawState.session !== job.session || !_rapierPaintRevisionLayers().includes(layer)) {
-			capture.surface = null; layer.surface = null; job.capture = null; _rapierPaintFinishRevision(layer, null, true); return;
+			capture.surface = null; if (capture.retire) layer.surface = null; job.capture = null; _rapierPaintFinishRevision(layer, null, true); return;
 		}
 		try { _rapierPaintReadRevision(layer, job); if (job.capture) _rapierPaintReadRevisionSoon(layer, job); }
 		catch (_) { try { _rapierPaintFlushRevision(layer); } catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); } }
 	};
 	// postTask yields to input without the nested-timer delay. The token also invalidates an
 	// already queued task on cancel; older browsers use the same cancellation with a timer.
-	if (globalThis.scheduler?.postTask) void globalThis.scheduler.postTask(read, {priority: 'user-visible'});
-	else capture.timer = setTimeout(read, 0);
+	capture.timer = _rapierPaintTask(read);
+}
+function _rapierPaintTask(update, failed = null) {
+	if (globalThis.scheduler?.postTask) { const task = globalThis.scheduler.postTask(update, {priority: 'user-visible'}); if (failed) void task.catch(failed); return 0; }
+	return setTimeout(update, 0);
+}
+// Recovery shares the PNG worker but never enters the stroke's revision/history queue. The
+// solver pauses only while these exact row bands are copied, then continues during compression.
+function _rapierPaintDropSnapshots(layer) {
+	let dropped = false;
+	for (const job of layer?.pngWorker?.snapshots?.values() || []) { dropped = true; job.finish(null); }
+	return dropped;
+}
+function _rapierPaintCaptureSnapshot(layer, owner, held) {
+	const state = _rapierDrawState, {surface, box, revision, session, width, height} = held;
+	// A held solver pass can already have written material before its final revision touch.
+	const current = () => state.open && state.session === session && state.paintLayer === layer && layer.surface === surface && surface.revision === revision && !surface._wetWork && surface.width === width && surface.height === height && !state.gesture && layer.pngWorker === owner && !(typeof document !== 'undefined' && document.hidden);
+	const capture = {surface, box, y: box.y0, timer: 0};
+	let started = false, finished = false, paused = false, resolve;
+	const promise = new Promise(ok => { resolve = ok; });
+	const release = () => {
+		if (layer.recoveryCapture !== capture) return;
+		layer.recoveryCapture = null;
+		// DryTick already waits through a gesture. Keeping that owner queued matters for pan/zoom,
+		// whose release does not call Paint's ScheduleDry as a paint stroke's release does.
+		if (paused && state.open && state.session === session && state.paintLayer === layer && !layer.dryRaf && (surface.wetState || layer.dryFinishing)) layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer));
+	};
+	const job = {id: layer.pngSerial = (layer.pngSerial || 0) + 1, worker: owner.worker, stored: false, capture, px: {width: box.x1 - box.x0 + 1, height: box.y1 - box.y0 + 1, data: null}};
+	job.finish = raster => {
+		if (finished) return;
+		finished = true; owner.snapshots.delete(job.id); clearTimeout(job.timer); clearTimeout(capture.timer);
+		job.capture = null; capture.surface = null; release();
+		if (!raster) { try { owner.worker.postMessage({id: job.id, cancel: true}); } catch (_) {} }
+		resolve(raster);
+	};
+	owner.snapshots.set(job.id, job);
+	job.timer = setTimeout(() => job.finish(null), 15000);
+	const read = () => {
+		if (finished) return;
+		if (!current()) { job.finish(null); return; }
+		try {
+			_rapierPaintReadRevision(layer, job);
+			if (job.capture) capture.timer = _rapierPaintTask(read, () => job.finish(null));
+			else release();
+		} catch (_) { job.finish(null); }
+	};
+	// Register before the IO owner yields; urgent close can cancel even an unstarted capture.
+	return () => {
+		if (!started && !finished) {
+			started = true;
+			if (!current()) job.finish(null);
+			else {
+				paused = !!layer.dryRaf;
+				if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
+				layer.recoveryCapture = capture;
+				try { capture.timer = _rapierPaintTask(read, () => job.finish(null)); }
+				catch (_) { job.finish(null); }
+			}
+		}
+		return promise;
+	};
 }
 function _rapierPaintDrainRevisions(layer) {
 	if (layer.previousFlip?.pendingCommit) return;
-	const queue = layer.revisions || [];
-	while (queue[0]?.raster && layer.revisions === queue) _rapierPaintFinishRevision(layer, queue[0].raster);
+	const job = layer.revisions?.[0];
+	if (!job?.raster || layer.publicationTask) return;
+	layer.publicationTask = job;
+	_rapierPaintTask(() => {
+		if (layer.publicationTask !== job) return;
+		layer.publicationTask = null;
+		if (layer.revisions?.[0] !== job || layer.previousFlip?.pendingCommit) return;
+		try { _rapierPaintFinishRevision(layer, job.raster); }
+		catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); }
+	});
 }
 function _rapierPaintFinishRevision(layer, raster, cancel = false) {
 	const queue = layer.revisions || [];
 	const job = queue[0] || (!queue.length ? layer.pendingCommit : null);
 	if (!job) return;
+	if (layer.publicationTask === job) layer.publicationTask = null;
 	if (queue[0] === job) queue.shift();
 	layer.revisions = queue;
 	layer.pendingCommit = queue[0] || null;
 	clearTimeout(job.timer);
 	if (job.capture) { clearTimeout(job.capture.timer); job.capture.surface = null; job.capture = null; }
-	if (cancel && !queue.length) { try { job.worker.terminate(); } catch (_) {} try { URL.revokeObjectURL(job.url); } catch (_) {} layer.pngWorker = null; }
+	if (cancel && !queue.length) { _rapierPaintDropSnapshots(layer); try { job.worker.terminate(); } catch (_) {} try { URL.revokeObjectURL(job.url); } catch (_) {} layer.pngWorker = null; }
 	try {
 		if (_rapierDrawState.session !== job.session || !_rapierPaintRevisionLayers().includes(layer)) {
+			_rapierPaintDropSnapshots(layer);
 			for (const abandoned of queue) { clearTimeout(abandoned.timer); abandoned.resolve(); }
 			queue.length = 0; layer.pendingCommit = null;
 			if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
@@ -1543,7 +1624,8 @@ function _rapierPaintFinishRevision(layer, raster, cancel = false) {
 			if (next) _rapierPaintDrainRevisions(next);
 			return;
 		}
-		const live = !layer.nextFlip && layer.surface.revision === job.revision && !_rapierDrawState.gesture && !queue.length;
+		if (job.shown) _rapierPaintKeepShown([{url: raster, shown: job.shown}]);
+		const live = !layer.nextFlip && layer.surface?.revision === job.revision && !_rapierDrawState.gesture && !queue.length;
 		if (live) _rapierPaintCommit(job.keep, raster);
 		else _rapierPaintPublishFrozen(layer, job, raster);
 	} catch (error) { queue.unshift(job); layer.pendingCommit = job; layer.pendingOverflow = true; throw error; }
@@ -1551,7 +1633,7 @@ function _rapierPaintFinishRevision(layer, raster, cancel = false) {
 	if (!queue.length && layer.nextFlip) {
 		const next = _rapierPaintRetireRevisionLayer(layer);
 		if (next) _rapierPaintDrainRevisions(next);
-	}
+	} else _rapierPaintDrainRevisions(layer);
 }
 // The stroke was already lifted. Its pixels and its place were taken then. Publishing them now
 // must not settle the wash a newer stroke is still in, must not hide that stroke's overlay, and
@@ -1607,6 +1689,8 @@ function _rapierPaintFollowGrowth(layer, grown) {
 }
 function _rapierPaintFlushRevision(layer = _rapierPaintLayer()) {
 	for (const pending of _rapierPaintRevisionLayers(layer)) {
+		_rapierPaintDropSnapshots(pending);
+		_rapierPaintFlushLift(pending);
 		const owner = pending.pngWorker;
 		if (owner) {
 			owner.worker.onmessage = owner.worker.onerror = owner.worker.onmessageerror = null;
@@ -1794,8 +1878,10 @@ function _rapierPaintLayerValid(forMaterialTool = false, geom = null) {
 function _rapierPaintCloseLayer() {
 	_rapierPaintFlushRevision();
 	const state = _rapierDrawState, layer = state.paintLayer;
+	_rapierPaintDropSnapshots(layer);
 	_rapierPaintDropNextSheet(layer);
-	if ((layer?.pendingOverflow || layer?.surface?.wetState) && !state.paintClosing) {
+	_rapierPaintDropGrowth(layer);
+	if ((layer?.pendingOverflow || layer?.surface?.wetState || layer?.dryFinishing) && !state.paintClosing) {
 		state.paintClosing = true;
 		try { _rapierPaintCommit(true); } catch (error) { showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); throw error; }
 		finally { state.paintClosing = false; }
@@ -1882,7 +1968,7 @@ function _rapierPaintStageUnion(recipe, pad = RAPIER_PAINT_EDGE_PAD) {
 	return { x0: x0 - pad, y0: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
 }
 function _rapierPaintBlankSheet(w, h, scale, prepared = null) {
-	const surface = prepared?.surface || new PaintSurface(w, h, {wet: RAPIER_PAINT_WET});
+	const surface = prepared?.surface || new PaintSurface(w, h, {wet: RAPIER_PAINT_WET, trackedGrowth: true});
 	if (prepared) { surface.width = w; surface.height = h; surface.data = surface.data.subarray(0, w * h * 4); }
 	surface.paper = RAPIER_PAINT_PAPER; surface.scale = scale / RAPIER_PAINT_GRAIN;
 	const canvas = prepared?.canvas || document.createElement('canvas');
@@ -1931,7 +2017,7 @@ function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = nul
 	const mount = _rapierPaintMountLive(canvas, atShapeId);
 	if (!Object.getOwnPropertyDescriptor(state.surface, 'rapierPaintFacts')) Object.defineProperty(state.surface, 'rapierPaintFacts', { enumerable: false, get: _rapierPaintFacts });
 	surface.tilt(_rapierPaintTilt.gx, _rapierPaintTilt.gy); _rapierPaintTiltOn();
-	const layer = { session: state.session, surface, canvas, mount, ctx, scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: null, origin: [union.x0, union.y0], setPending: true };
+	const layer = { session: state.session, surface, canvas, mount, ctx, scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: null, origin: [union.x0, union.y0], setPending: true, liveBox: null };
 	state.paintLayer = layer;
 	_rapierPaintWatchOverlay(layer);
 	_rapierPaintPlaceLive();
@@ -1950,7 +2036,7 @@ function _rapierPaintOpenLocalLayer(frame, atShapeId = null) {
 	const mount = _rapierPaintMountLive(canvas, atShapeId);
 	if (!Object.getOwnPropertyDescriptor(state.surface, 'rapierPaintFacts')) Object.defineProperty(state.surface, 'rapierPaintFacts', { enumerable: false, get: _rapierPaintFacts });
 	surface.tilt(_rapierPaintTilt.gx, _rapierPaintTilt.gy); _rapierPaintTiltOn();
-	const layer = { session: state.session, surface, canvas, mount, ctx, scale: frame.scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: { ...frame, pad }, setPending: true };
+	const layer = { session: state.session, surface, canvas, mount, ctx, scale: frame.scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: { ...frame, pad }, setPending: true, liveBox: null };
 	state.paintLayer = layer;
 	_rapierPaintWatchOverlay(layer);
 	_rapierPaintPlaceLive();
@@ -1982,8 +2068,12 @@ function _rapierPaintPlaceLive(layer = _rapierDrawState.paintLayer) {
 // to go and paint, the whole painting disappears until you lift your finger again"). While the store is gone the
 // kept picture does not step aside (`_rapierPaintShowLive`); when it returns, the whole layer is painted again.
 function _rapierPaintWatchOverlay(layer) {
-	layer.canvas.addEventListener('contextlost', () => { layer.lost = true; _rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer); });
-	layer.canvas.addEventListener('contextrestored', () => {
+	const canvas = layer.canvas;
+	// Growth replaces only this display store. A delayed event from the retired canvas must
+	// never hide or repaint the new store now owned by the same material layer.
+	canvas.addEventListener('contextlost', () => { if (layer.canvas !== canvas) return; layer.lost = true; _rapierPaintShowLive(canvas.style.visibility !== 'hidden', layer); });
+	canvas.addEventListener('contextrestored', () => {
+		if (layer.canvas !== canvas) return;
 		layer.lost = false;
 		if (_rapierDrawState.paintLayer !== layer) return;
 		const surface = layer.surface;
@@ -1993,6 +2083,19 @@ function _rapierPaintWatchOverlay(layer) {
 	});
 }
 function _rapierPaintOverlayLost(layer) { return !!layer?.lost || !!layer?.ctx?.isContextLost?.(); }
+function _rapierPaintRecordLiveBox(layer, box) {
+	// A cleared canvas may receive a full transparent rollback readout. Its known material
+	// extent, including zero-alpha channels and relief, also bounds every nonzero display byte.
+	const material = layer.surface.growBox;
+	if (material === null) return;
+	if (material) {
+		box = {x0: Math.max(box.x0, material.x0), y0: Math.max(box.y0, material.y0), x1: Math.min(box.x1, material.x1), y1: Math.min(box.y1, material.y1)};
+		if (box.x1 < box.x0 || box.y1 < box.y0) return;
+	}
+	const b = layer.liveBox;
+	if (b) { b.x0 = Math.min(b.x0, box.x0); b.y0 = Math.min(b.y0, box.y0); b.x1 = Math.max(b.x1, box.x1); b.y1 = Math.max(b.y1, box.y1); }
+	else layer.liveBox = {...box};
+}
 function _rapierPaintBlit() {
 	const layer = _rapierPaintLayer();
 	if (!layer) return;
@@ -2001,6 +2104,9 @@ function _rapierPaintBlit() {
 	if (!box) return;
 	const px = layer.surface.toRGBA8(box);
 	layer.ctx.putImageData(new ImageData(px.data, px.width, px.height), box.x0, box.y0);
+	_rapierPaintRecordLiveBox(layer, box);
+	// Keep the exact alpha index current over this frame's changed region, before a cap needs it.
+	layer.surface.bounds();
 	if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
 	const timing = _rapierDrawState.paintTiming;
 	if (timing && timing.seat && !timing.blit) timing.blit = performance.now();
@@ -2024,42 +2130,61 @@ function _rapierPaintAfterFrame(update) {
 // step. Every path that would end the layer (Undo, a tool change, Done, closing Draw, the canvas
 // following the stage) flushes first, so a drying stroke is committed rather than lost.
 function _rapierPaintScheduleDry(layer) {
-	if (!layer || layer.dryRaf || !layer.surface.wetState) return;
+	if (!layer || !layer.surface.wetState) return;
+	// The lift's pending live write now belongs to the same bounded readout as the wash.
+	if (layer.raf) { cancelAnimationFrame(layer.raf); layer.raf = 0; }
+	if (layer.dryRaf || layer.recoveryCapture) return;
+	layer.dryFinishing = true;
 	layer.dryAt = performance.now();
 	layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer));
+}
+// Readout keeps the surface's dirty box until its last band. Another stroke, growth or a full
+// blit invalidates this cursor; a partly shown frame can never discharge newer material.
+function _rapierPaintDryBlit(layer, until, inputWaiting = null) {
+	const surface = layer.surface;
+	if (surface.dirty && (layer.dryBox !== surface.dirty || layer.dryRevision !== surface.revision)) {
+		layer.dryBox = surface.dirty; layer.dryRevision = surface.revision; layer.dryX = surface.dirty.x0; layer.dryY = surface.dirty.y0;
+	}
+	while (surface.dirty && performance.now() < until && !inputWaiting?.()) {
+		const box = surface.dirty;
+		if (layer.dryBox !== box || layer.dryRevision !== surface.revision) {
+			layer.dryBox = box; layer.dryRevision = surface.revision; layer.dryX = box.x0; layer.dryY = box.y0;
+		}
+		const x = layer.dryX, y = layer.dryY, width = box.x1 - box.x0 + 1;
+		const x1 = Math.min(box.x1, x + 2047), rows = width <= 2048 ? Math.max(1, Math.floor(2048 / width)) : 1;
+		const y1 = Math.min(box.y1, y + rows - 1), band = {x0: x, y0: y, x1, y1};
+		const px = surface.toRGBA8(band);
+		layer.ctx.putImageData(new ImageData(px.data, px.width, px.height), x, y);
+		_rapierPaintRecordLiveBox(layer, band);
+		if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
+		const timing = _rapierDrawState.paintTiming;
+		if (timing && timing.seat && !timing.blit) timing.blit = performance.now();
+		if (x1 < box.x1) layer.dryX = x1 + 1;
+		else { layer.dryX = box.x0; layer.dryY = y1 + 1; }
+		if (layer.dryY > box.y1) { surface.takeDirty(); layer.dryBox = null; }
+	}
+	if (!surface.dirty) layer.dryBox = null;
+	return !surface.dirty;
 }
 function _rapierPaintDryTick(layer) {
 	const state = _rapierDrawState;
 	layer.dryRaf = 0;
-	if (state.paintLayer !== layer || !layer.surface.wetState) return;
-	// A finger is down: that stroke owns the layer. Wait for it rather than dropping the loop -- the
-	// paper is still wet either way, and a dropped loop is a wash that never commits itself.
+	if (state.paintLayer !== layer || (!layer.surface.wetState && !layer.dryFinishing)) return;
+	if (layer.recoveryCapture) return;
+	// A new stroke owns the layer and drains a suspended operation at its checkpoint.
 	if (state.gesture) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
 	const now = performance.now();
 	layer.dryAt = now;
-	// Drying time is fed at a fixed rate, not taken from the clock: a budget under the real frame
-	// time used to grow a backlog that never committed. A slow phone simply dries slower.
-	// A pointer already queued owns the frame. One solver step is not sliced, but it is not started,
-	// and the paper is not settled, while the finger is waiting. Where the host cannot say, the
-	// budget is the slice.
-	const inputWaiting = () => { try { return !!navigator.scheduling?.isInputPending?.({includeContinuous: true}); } catch (_) { return false; } };
 	const until = now + RAPIER_PAINT_DRY_BUDGET;
-	if (!inputWaiting()) {
-		do {
-			if (inputWaiting()) break;
-			layer.surface.stepWet(RAPIER_PAINT_DRY_FEED, RAPIER_PAINT_DRY_FEED + RAPIER_PAINT_DRY_SLICE);
-			if (inputWaiting()) break;
-		} while ((layer.surface.wet || layer.surface.wetPending) && performance.now() < until);
-	}
-	if (inputWaiting()) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
-	layer.surface.composeWet(true);
-	_rapierPaintBlit();
-	if (inputWaiting()) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
-	if (layer.surface.wet || layer.surface.wetPending) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
-	if (inputWaiting()) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
-	layer.surface.settleWet();
-	_rapierPaintBlit();
-	_rapierPaintCommit();
+	const inputWaiting = () => { try { return !!navigator.scheduling?.isInputPending?.({includeContinuous: true}); } catch (_) { return false; } };
+	// Fixed simulated feeds and all pass barriers are unchanged. A frame may stop inside a
+	// feed, projection or final refinement, carrying its exact loop state to the next frame.
+	if (layer.dryBox) _rapierPaintDryBlit(layer, until, inputWaiting);
+	const done = !layer.dryBox && layer.surface.dryWet(until, RAPIER_PAINT_DRY_FEED, RAPIER_PAINT_DRY_SLICE, inputWaiting);
+	_rapierPaintDryBlit(layer, until, inputWaiting);
+	if (!done || layer.surface.dirty || inputWaiting()) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
+	layer.dryFinishing = false;
+	_rapierPaintCommitSoon(layer);
 }
 // Dry the paper now and commit what is on it: the settlement every path that ends a live layer owes
 // a stroke still drying on it. `settleWet` finishes the physics exactly (every suspended band
@@ -2067,9 +2192,10 @@ function _rapierPaintDryTick(layer) {
 function _rapierPaintFlushWet() {
 	_rapierPaintFlushRevision();
 	const layer = _rapierPaintLayer();
-	if (!layer?.surface?.wetState) return false;
+	if (!layer?.surface?.wetState && !layer?.dryFinishing) return false;
 	if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
 	layer.surface.settleWet();
+	layer.dryBox = null; layer.dryFinishing = false;
 	_rapierPaintBlit();
 	_rapierPaintCommit();
 	_rapierPaintFlushRevision();
@@ -2312,7 +2438,12 @@ function _rapierPaintAdmitSettings(erasing) {
 // return to their exact pre-stroke state; no encode of the abandoned pixels may arrive later.
 function _rapierPaintStrokeCheckpoint(gesture, layer) {
 	const state = _rapierDrawState;
+	layer.surface._finishWetWork?.();
+	if (layer.dryFinishing && !layer.surface.wetState) _rapierPaintFlushWet();
 	_rapierPaintFlushRevision(layer);
+	// Finishing an empty wash or an erased lifted revision can retire this view. Resolve the
+	// next stroke against the remaining drawing before taking a rollback or touching pixels.
+	if (_rapierPaintLayer() !== layer) return false;
 	// The earlier stroke is now sealed, including every cap sheet. This gesture gets its own step.
 	layer.flipStroke = null;
 	const props = {};
@@ -2325,13 +2456,16 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	if (!saved) return;
 	delete gesture.paintRollback;
 	_rapierPaintDropNextSheet(saved.layer); _rapierPaintDropNextSheet(state.paintLayer);
+	_rapierPaintDropGrowth(saved.layer); _rapierPaintDropGrowth(state.paintLayer);
 	if (!cancel) { if (!saved.restored) saved.layer.surface.endStroke(saved.pixels); if (saved.layer !== state.paintLayer) saved.layer.surface = null; return; }
 	const layers = new Set([saved.layer, ..._rapierPaintRevisionLayers()].filter(Boolean));
 	for (const layer of layers) {
 		_rapierPaintDropNextSheet(layer);
+		_rapierPaintDropGrowth(layer);
 		for (const key of ['raf', 'holdRaf', 'dryRaf']) { if (layer[key]) cancelAnimationFrame(layer[key]); layer[key] = 0; }
 		for (const job of layer.revisions || []) { clearTimeout(job.timer); if (job.capture) { clearTimeout(job.capture.timer); job.capture.surface = null; job.capture = null; } job.resolve(); }
 		layer.revisions = []; layer.pendingCommit = null;
+		_rapierPaintDropSnapshots(layer);
 		if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
 		layer.previousFlip = layer.nextFlip = null; layer.flipStroke = null;
 		layer.mount?.remove();
@@ -2344,13 +2478,22 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	state.paintLayer = layer; state.recipe = _rapierDrawRestoreRecipe(saved.recipe);
 	state.undoStack = saved.undo; state.redoStack = saved.redo; state.view = saved.view;
 	layer.canvas.width = layer.surface.width; layer.canvas.height = layer.surface.height;
+	layer.liveBox = null;
 	layer.mount = _rapierPaintMountLive(layer.canvas, layer.id);
 	_rapierPaintPlaceLive(); _rapierPaintScheduleBlit();
 	if (layer.surface.wetState) _rapierPaintScheduleDry(layer);
 }
 function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	let layer = _rapierDrawState.paintLayer;
-	_rapierPaintStrokeCheckpoint(gesture, layer);
+	if (!layer || _rapierPaintStrokeCheckpoint(gesture, layer) === false) {
+		layer = _rapierPaintLayer();
+		if (!_rapierPaintLayerValid(_rapierPaintIsMaterialTool(settings.brushId), geom)) {
+			const target = _rapierPaintTarget();
+			if (target) { _rapierPaintQueueGesture(target, evt, gesture, settings, geom); return; }
+			layer = _rapierPaintOpenLayer();
+		}
+		_rapierPaintStrokeCheckpoint(gesture, layer);
+	}
 	// The warm view is spent the instant a real gesture takes it: from here it is an ordinary layer.
 	delete layer.warmView;
 	const id = settings.brushId, brush = _rapierPaintBrushFor(layer, id);
@@ -2582,9 +2725,22 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 }
 // A lifted finger is completed work even while its target image is still decoding. Keep the
 // existing decode as the barrier for Done, recovery and tool changes, not a second sample queue.
-function _rapierPaintPendingStroke() {
+function _rapierPaintPendingStroke(finishWet = false) {
 	const state = _rapierDrawState;
-	for (const layer of _rapierPaintRevisionLayers()) if (layer.pendingCommit) return layer.pendingCommit.promise;
+	for (const layer of _rapierPaintRevisionLayers()) {
+		// Pagehide and native pause can stop animation frames. Their urgent checkpoint finishes
+		// only an already accepted operation; a visible routine backup awaits its bounded driver.
+		if (finishWet || (typeof document !== 'undefined' && document.hidden)) { _rapierPaintDropSnapshots(layer); layer.surface?._finishWetWork?.(); }
+		const wet = layer.surface?.pendingWetWork?.();
+		if (wet) return wet;
+		if (layer.pendingCommit) return layer.pendingCommit.promise;
+		if (layer.pendingLift) {
+			// Recovery also runs while the page is hidden, when animation frames can stop. Its
+			// existing wait starts the same deferred owner without depending on another frame.
+			_rapierPaintWakeLift(layer, layer.pendingLift);
+			return layer.pendingLift.promise;
+		}
+	}
 	return state.paintRehydrateWaiters?.some(g => g.paint?.pending && g.paint.ended && !g.paint.discarded)
 		? state.paintRehydrateTask : null;
 }
@@ -2607,7 +2763,12 @@ function _rapierPaintBegin(evt, gesture) {
 	const timing = _rapierDrawState.paintTiming = { begin: performance.now(), layer: 0, brush: 0, seat: 0, blit: 0, opened: false };
 	// Resolve a new gesture's target after earlier cap sheets have reached the recipe. Otherwise a
 	// material tool on the clean sheet could start decoding the picture from before that flip.
-	if (_rapierPaintLayer()?.previousFlip) _rapierPaintFlushRevision();
+	if (_rapierPaintLayer()?.previousFlip || _rapierPaintLayer()?.pendingLift) _rapierPaintFlushRevision();
+	const drying = _rapierPaintLayer();
+	if (drying?.dryFinishing) {
+		drying.surface._finishWetWork?.();
+		if (!drying.surface.wetState) _rapierPaintFlushWet();
+	}
 	// Admitted once, here, for both paths below (P03): the fast synchronous path uses it at once: the
 	// queued path (a decode still in flight) carries it through unread until replay.
 	const settings = _rapierPaintAdmitSettings(gesture.eraseInk), geom = _rapierDrawPointerGeometry();
@@ -2642,6 +2803,57 @@ function _rapierPaintBegin(evt, gesture) {
 // A transformed target grows on the same native pixel grid. Moving that grid's origin through its
 // affine basis keeps every retained pixel at the same world point; rotation is never resampling.
 const RAPIER_PAINT_GROW_MARGIN = 96;
+function _rapierPaintDropGrowth(layer) {
+	if (!layer) return;
+	if (layer.nextGrowth) clearTimeout(layer.nextGrowth.timer);
+	layer.nextGrowth = null;
+	if (layer.surface) layer.surface.preparedGrowth = null;
+}
+function _rapierPaintPrepareGrowth(layer, paint, p) {
+	const surface = layer.surface;
+	if (!paint || !surface?.prepareGrowth || typeof _rapierDrawState === 'undefined') return;
+	const reach = (paint.reach || 0) * layer.scale + RAPIER_PAINT_GROW_MARGIN + 256;
+	const x = p.x * layer.scale, y = p.y * layer.scale;
+	let left = x < reach ? 256 : 0, top = y < reach ? 256 : 0;
+	let right = x + reach > surface.width - 1 ? 256 : 0, bottom = y + reach > surface.height - 1 ? 256 : 0;
+	// Held samples already name the next exact stride, including a short final stride at the cap.
+	// Prefer that admitted path to the nearby-edge prediction used before a sample arrives.
+	for (const held of paint.tail || []) {
+		const growth = _rapierPaintGrowthAt(layer, paint, held.p);
+		if (growth) { ({left, top, right, bottom} = growth); break; }
+	}
+	if (!(left || top || right || bottom) || (surface.width + left + right) * (surface.height + top + bottom) > RAPIER_PAINT_AREA_MAX * 2) return;
+	const key = [surface.width, surface.height, left, top, right, bottom].join(':');
+	if (layer.nextGrowth?.key === key) return;
+	_rapierPaintDropGrowth(layer);
+	const state = _rapierDrawState, next = layer.nextGrowth = {key, session: state.session, timer: 0};
+	const copy = () => {
+		if (layer.nextGrowth !== next || !state.open || state.session !== next.session || state.paintLayer !== layer || state.gesture?.paint !== paint) return;
+		try {
+			if (!surface.preparedGrowth) surface.prepareGrowth(left, top, right, bottom);
+			const deadline = performance.now() + 4;
+			let done;
+			do { done = surface.copyGrowth(); } while (!done && performance.now() < deadline);
+			if (!done) queue();
+		} catch (_) { _rapierPaintDropGrowth(layer); }
+	};
+	const queue = () => {
+		if (globalThis.scheduler?.postTask) void globalThis.scheduler.postTask(copy, {priority: 'user-visible'});
+		else next.timer = setTimeout(copy, 0);
+	};
+	queue();
+}
+function _rapierPaintGrowthAt(layer, paint, p) {
+	const surface = layer.surface, k = layer.scale, reach = (paint?.reach || 0) * k + RAPIER_PAINT_GROW_MARGIN;
+	const x = p.x * k, y = p.y * k;
+	const left = Math.max(0, Math.ceil(reach - x)), top = Math.max(0, Math.ceil(reach - y));
+	const right = Math.max(0, Math.ceil(x + reach - (surface.width - 1))), bottom = Math.max(0, Math.ceil(y + reach - (surface.height - 1)));
+	if (!(left || top || right || bottom)) return null;
+	const quantise = globalThis.RapierDrawPaint.paintGrowStep;
+	const L = quantise ? quantise(left) : left, T = quantise ? quantise(top) : top, R = quantise ? quantise(right) : right, B = quantise ? quantise(bottom) : bottom;
+	return (surface.width + L + R) * (surface.height + T + B) > RAPIER_PAINT_AREA_MAX * 2
+		? {left, top, right, bottom} : {left: L, top: T, right: R, bottom: B};
+}
 // This is the cap's exact empty footprint, on the old sheet's integer grid. Keeping it shared
 // with preparation means a ready allocation can never narrow the triggering segment.
 function _rapierPaintFlipBox(layer, paint, p) {
@@ -2691,20 +2903,16 @@ function _rapierPaintGrowToHold(layer, paint, p) {
 	_rapierPaintPrepareNextSheet(layer, paint, p);
 	// Where this sample reaches, in surface pixels: the brush's own half-width plus a margin, so a
 	// hand running along an edge grows in strides rather than on every single dab.
-	const reach = (paint?.reach || 0) * k + RAPIER_PAINT_GROW_MARGIN;
-	const x = p.x * k, y = p.y * k;
-	let left = Math.ceil(reach - x), top = Math.ceil(reach - y);
-	let right = Math.ceil(x + reach - (surface.width - 1)), bottom = Math.ceil(y + reach - (surface.height - 1));
-	left = Math.max(0, left); top = Math.max(0, top); right = Math.max(0, right); bottom = Math.max(0, bottom);
-	if (!(left || top || right || bottom)) return layer;
-	const quantise = globalThis.RapierDrawPaint.paintGrowStep;
-	let L = quantise ? quantise(left) : left, T = quantise ? quantise(top) : top, R = quantise ? quantise(right) : right, B = quantise ? quantise(bottom) : bottom;
-	if ((surface.width + L + R) * (surface.height + T + B) > RAPIER_PAINT_AREA_MAX * 2) { L = left; T = top; R = right; B = bottom; }
+	const growth = _rapierPaintGrowthAt(layer, paint, p);
+	if (!growth) { _rapierPaintPrepareGrowth(layer, paint, p); return layer; }
+	const {left: L, top: T, right: R, bottom: B} = growth;
 	const w = surface.width + L + R, h = surface.height + T + B;
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) return _rapierPaintFlipAtCap(layer, paint, p);
+	if (layer.dryBox) _rapierPaintDryBlit(layer, Infinity);
 	const { dx, dy } = surface.grow(L, T, R, B);
+	_rapierPaintDropGrowth(layer);
 	if (paint && layer.frame) paint.reached = true;
-	if (!(dx || dy)) { _rapierPaintResizeLive(layer, 0, 0); return layer; }
+	if (!(dx || dy)) { _rapierPaintResizeLive(layer, 0, 0); _rapierPaintPrepareGrowth(layer, paint, p); return layer; }
 	// The buffer moved under the paint, so everything that names a point in LAYER coordinates moves
 	// with it: the origin (which is how future events are mapped), the hand's own running position,
 	// every sample the lift lag is still holding -- those were mapped through the old origin -- and
@@ -2724,6 +2932,7 @@ function _rapierPaintGrowToHold(layer, paint, p) {
 	if (paint) { points.add(paint); for (const s of paint.tail) points.add(s.p); if (paint.drawn) points.add(paint.drawn.p); }
 	for (const q of points) { q.x += ux; q.y += uy; }
 	_rapierPaintResizeLive(layer, dx, dy);
+	_rapierPaintPrepareGrowth(layer, paint, p);
 	return layer;
 }
 // R86e. The surface has met the one hard stop, memory: growing to hold this sample would pass
@@ -2749,6 +2958,7 @@ function _rapierPaintFlipAtCap(layer, paint, p) {
 	state.paintFlipping = true;
 	try {
 		for (const q of carried) { q.x += origin[0]; q.y += origin[1]; }
+		if (layer.dryBox) _rapierPaintDryBlit(layer, Infinity);
 		layer.surface.settleWet();
 		_rapierPaintBlit();
 		const box = layer.surface.bounds();
@@ -2811,6 +3021,9 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 	try {
 		if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return;
 		task = (async () => {
+			// Register custody now, including for recovery, but let input run between the display's
+			// publication and handing these same immutable channels to the final codec.
+			await new Promise(ok => _rapierPaintTask(ok));
 			const pixels = captured || await _rapierPaintPNG.decode(was), surface = pixels ? _rapierPaintPixelsSurface(pixels) : null;
 			const canvas = surface ? null : await _rapierPaintRasterCanvas(was), source = surface || canvas;
 			const encode = async box => {
@@ -2858,20 +3071,43 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 // translated -- is converted. The new margins are transparent on both sides, so they need nothing.
 function _rapierPaintResizeLive(layer, dx = 0, dy = 0) {
 	const surface = layer.surface, canvas = layer.canvas, was = { w: canvas.width, h: canvas.height };
-	let carried = null;
-	if (was.w > 0 && was.h > 0 && !_rapierPaintOverlayLost(layer)) {
-		try {
-			carried = document.createElement('canvas');
-			carried.width = was.w; carried.height = was.h;
-			carried.getContext('2d').drawImage(canvas, 0, 0);
-		} catch (_) { carried = null; }
+	const box = layer.liveBox, x = Math.max(0, box?.x0 || 0), y = Math.max(0, box?.y0 || 0);
+	const w = box === null ? 0 : Math.max(0, Math.min(was.w - 1, box?.x1 ?? was.w - 1) - x + 1), h = box === null ? 0 : Math.max(0, Math.min(was.h - 1, box?.y1 ?? was.h - 1) - y + 1);
+	let next = null, ctx = null, carried = false;
+	try {
+		next = document.createElement('canvas');
+		next.width = surface.width; next.height = surface.height;
+		ctx = next.getContext('2d');
+		if (!ctx) throw new Error('The painting display is unavailable');
+		if (w > 0 && h > 0 && !_rapierPaintOverlayLost(layer)) {
+			ctx.drawImage(canvas, x, y, w, h, x + dx, y + dy, w, h);
+			carried = true;
+		}
+		if (ctx.isContextLost?.()) throw new Error('The painting display was released');
+		next.className = canvas.className; next.style.cssText = canvas.style.cssText;
+		next.setAttribute('aria-hidden', 'true');
+		// The mount owns the affine map, opacity and z-slot. Replace its display child only after
+		// the one exact integer-grid copy succeeds; material and every pending layer keep custody.
+		layer.mount.replaceChild(next, canvas);
+	} catch (_) {
+		try { if (next) next.width = next.height = 0; } catch (_) {}
+		next = null; carried = false;
 	}
-	canvas.width = surface.width; canvas.height = surface.height;
-	if (carried) layer.ctx.drawImage(carried, dx, dy);
+	if (next) {
+		layer.canvas = next; layer.ctx = ctx; layer.lost = false;
+		_rapierPaintWatchOverlay(layer);
+		canvas.width = canvas.height = 0;
+	} else {
+		// Allocation or copying can fail under memory pressure. The material remains authoritative,
+		// so retain the existing display owner and refill it rather than losing its earlier marks.
+		canvas.width = surface.width; canvas.height = surface.height;
+	}
 	// Without the carry there is nothing on the overlay: everything must be converted again.
-	else surface.dirty = { x0: 0, y0: 0, x1: surface.width - 1, y1: surface.height - 1 };
-	_rapierPaintPlaceLive();
+	if (!carried && box !== null) surface.dirty = { x0: 0, y0: 0, x1: surface.width - 1, y1: surface.height - 1 };
+	if (box) { box.x0 += dx; box.x1 += dx; box.y0 += dy; box.y1 += dy; }
+	_rapierPaintPlaceLive(layer);
 	_rapierPaintBlit();
+	_rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer);
 }
 function _rapierPaintSample(paint, layer, s, lift) {
 	// The live layer, not the one the caller captured: a flip at the cap may have replaced it.
@@ -2906,6 +3142,7 @@ function _rapierPaintMove(events, gesture) {
 		while (paint.tail.length && (paint.travel - paint.tail[0].at > paint.lift || paint.tail.length > RAPIER_PAINT_TAIL_MAX)) {
 			_rapierPaintSample(paint, layer, paint.tail.shift(), 1); paint.drained = true;
 		}
+		_rapierPaintPrepareGrowth(_rapierPaintLayer() || layer, paint, p);
 	}
 	_rapierPaintScheduleBlit();
 	if (paint.holdNeeded) _rapierPaintScheduleHold(gesture);
@@ -2941,7 +3178,41 @@ function _rapierPaintEnd(evt, gesture) {
 	// Wet media: the stroke is not finished when the finger is. It dries in view and commits itself; Undo
 	// takes it back meanwhile, so the head's undo has something to do from now (_rapierDrawRenderHistory).
 	if (ended.surface.wetState && !_rapierDrawState.paintSetting?.auto) { _rapierPaintScheduleBlit(); _rapierPaintScheduleDry(ended); _rapierDrawRenderHistory(); return; }
-	_rapierPaintCommit();
+	_rapierPaintCommitSoon(ended);
+}
+// The exact held tail belongs to pointer-up. Readout, encoding and recipe/history publication
+// follow its next frame. Until then this token owns the completed surface: every existing
+// authority barrier drains it before a new stroke, Undo, close or recovery can overtake it.
+function _rapierPaintCommitSoon(layer = _rapierPaintLayer()) {
+	if (!layer || layer.pendingLift) return layer?.pendingLift?.promise;
+	let resolve;
+	const held = {session: _rapierDrawState.session, raf: 0, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve()};
+	layer.pendingLift = held;
+	_rapierPaintScheduleBlit();
+	_rapierDrawRenderHistory();
+	held.raf = requestAnimationFrame(() => {
+		held.raf = 0;
+		_rapierPaintWakeLift(layer, held);
+	});
+	return held.promise;
+}
+function _rapierPaintWakeLift(layer, held) {
+	if (layer.pendingLift !== held || held.queued) return;
+	held.queued = true;
+	_rapierPaintTask(() => {
+		held.queued = false;
+		try { _rapierPaintFlushLift(layer, held); }
+		catch (error) { layer.pendingOverflow = true; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); }
+	});
+}
+function _rapierPaintFlushLift(layer, held = layer?.pendingLift) {
+	if (!held || layer.pendingLift !== held) return;
+	if (held.raf) cancelAnimationFrame(held.raf);
+	layer.pendingLift = null;
+	try {
+		if (_rapierDrawState.session === held.session && _rapierPaintLayer() === layer) _rapierPaintCommit();
+	} catch (error) { layer.pendingLift = held; throw error; }
+	finally { if (layer.pendingLift !== held) held.resolve(); }
 }
 // The sibling of `_rapierPaintDiscardOverflow`'s law for the opposite failure: not too many pixels
 // to keep, but no pixel ever reachable at all (Astra-R75 P06, "every admitted mark survives or is
@@ -3004,10 +3275,15 @@ function _rapierPaintDiscardOverflow() {
 // painted through, so its position, rotation and scale survive exactly; a simple (untransformed)
 // layer keeps the plain cx/cy/w/h form.
 // A picture of the live layer as the shape it would become, for the backup (R86g law 11): the same
-// geometry _rapierPaintCommit computes, the pixels as the working PNG; nothing of the layer or the
-// recipe is touched, and a layer with nothing on it is nothing.
-function _rapierPaintLayerSnapshot() {
+// geometry _rapierPaintCommit computes, the pixels as the working PNG; the recipe is untouched,
+// and a layer with nothing on it is nothing. A suspended material pass
+// completes before the read; an intermediate reconstruction never becomes a recovery picture.
+function _rapierPaintLayerSnapshot(defer = false) {
 	const layer = _rapierPaintLayer(); if (!layer || !layer.surface) return null;
+	if (!defer) _rapierPaintDropSnapshots(layer);
+	// Routine recovery already awaited an operation boundary. A no-op drain would also erase
+	// the compose phase owed by that step, so leave that scheduling state intact for the driver.
+	if (!defer || layer.surface._wetWork) layer.surface._finishWetWork?.();
 	const box = layer.surface.bounds();
 	if (!box) return null;
 	const pw = box.x1 - box.x0 + 1, ph = box.y1 - box.y0 + 1, s = layer.scale;
@@ -3023,8 +3299,17 @@ function _rapierPaintLayerSnapshot() {
 	}
 	// A settled stroke already owns this exact encode. A live wash is read without settling it;
 	// its checkpoint preserves the visible straight RGBA without altering the material's physics.
-	const raster = layer.checkpoint?.revision === layer.surface.revision ? layer.checkpoint.raster : _rapierPaintSurfaceToDataURL(layer.surface, box);
-	return { id: layer.id != null ? layer.id : null, geom, raster, paint: { brush: layer.brushId, px: [pw, ph], scale: s }, retire: layer.retire?.slice() };
+	const cached = layer.checkpoint?.revision === layer.surface.revision;
+	// A routine backup fixes the material revision and geometry before its IO ticket yields. Its
+	// bands are read only while that revision is still held; a later stroke makes the attempt retry.
+	// The existing worker compresses the captured bytes. Without workers, retain the exact codec
+	// fallback; urgent close always keeps the synchronous path.
+	const owner = defer && !cached ? _rapierPaintWorker(layer) : null;
+	const surface = layer.surface, held = owner ? {surface, box, revision: surface.revision, session: _rapierDrawState.session, width: surface.width, height: surface.height} : null;
+	const pixels = defer && !cached && !owner ? surface.toRGBA8(box) : null;
+	const raster = cached ? layer.checkpoint.raster : defer ? null : _rapierPaintSurfaceToDataURL(surface, box);
+	const encode = owner ? _rapierPaintCaptureSnapshot(layer, owner, held) : pixels ? () => _rapierPaintPNG.compressed(pixels).catch(() => _rapierPaintPNG.encode(pixels)) : null;
+	return { id: layer.id != null ? layer.id : null, geom, raster, encode, paint: { brush: layer.brushId, px: [pw, ph], scale: s }, retire: layer.retire?.slice() };
 }
 function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 	// An ordinary lift queues its revision and returns to the finger. Undo, Close, Done and a
@@ -3039,6 +3324,7 @@ function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 	// Whatever is still wet dries exactly here, so the pixels written are the settled ones.
 	if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
 	if (layer.surface.wetState) layer.surface.settleWet();
+	layer.dryFinishing = false; layer.dryBox = null;
 	// R81 impasto: the kept mark is lit -- but the lighting has lived in `shadeInto`, at read-out,
 	// since R82 (baking it into the stored pixels made every later stroke re-light every earlier one).
 	// What stood here was a call to `lightVolume`, whose body could not light anything (`any` is a
@@ -3057,9 +3343,10 @@ function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 		return;
 	}
 	if (!kept && !keep) {
-		const px = layer.surface.readCommitted(box);
 		const frozen = _rapierPaintGeomOf(layer, box);
-		if (_rapierPaintEncodeRevision(layer, px, keep, frozen)) return;
+		const capture = typeof Worker === 'function' ? {surface: layer.surface, box, y: box.y0, timer: 0} : null;
+		const px = capture ? {width: frozen.pw, height: frozen.ph} : layer.surface.readCommitted(box);
+		if (_rapierPaintEncodeRevision(layer, px, keep, frozen, capture)) return;
 	}
 	const budget0 = _rapierPaintRasterBudget();
 	// `kept`: a raster already encoded from this very version of the surface (the automatic settle's

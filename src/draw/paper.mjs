@@ -283,7 +283,14 @@ function movePhase(s, i, fraction) {
 	const m = fromMass[i] * fraction; fromMass[i] -= m; intoMass[i] += m;
 	for (let k = 0; k < BANDS; k++) { const j = i * BANDS + k, p = from[j] * fraction; from[j] -= p; into[j] += p; }
 }
-export function step(s, dt) {
+// The frame caller resumes this same arithmetic between cells. Synchronous owners drain it;
+// yielding never splits a transfer, changes a substep, or crosses a parity barrier out of order.
+export function finishWetWork(work) {
+	let part; do { part = work.next(); } while (!part.done); return part.value;
+}
+export function step(s, dt) { return finishWetWork(stepWork(s, dt)); }
+export function* stepWork(s, dt) {
+	let cells = 0;
 	bounded(dt, 0, 60000, 'Wet time'); s.elapsed += dt;
 	if (!dt || !s.wet || !s.active) return false;
 	let remaining = dt;
@@ -302,10 +309,11 @@ export function step(s, dt) {
 		s.composeBox = cb ? { x0: Math.min(cb.x0, x0), y0: Math.min(cb.y0, y0), x1: Math.max(cb.x1, x1), y1: Math.max(cb.y1, y1) } : { x0, y0, x1, y1 };
 		// Four non-overlapping face passes. Their order is part of the reference; GPU passes
 		// may run a parity in parallel, but must preserve these four barriers.
-		for (let parity = 0; parity < 2; parity++) for (let y = y0; y <= y1; y++) for (let x = x0 + ((x0 + parity) % 2); x < x1; x += 2) transfer(s, y * W + x, y * W + x + 1, s.vx, h, damping);
-		for (let parity = 0; parity < 2; parity++) for (let y = y0 + ((y0 + parity) % 2); y < y1; y += 2) for (let x = x0; x <= x1; x++) transfer(s, y * W + x, (y + 1) * W + x, s.vy, h, damping);
+		for (let parity = 0; parity < 2; parity++) for (let y = y0; y <= y1; y++) for (let x = x0 + ((x0 + parity) % 2); x < x1; x += 2) { if (!(++cells & 127)) yield; transfer(s, y * W + x, y * W + x + 1, s.vx, h, damping); }
+		for (let parity = 0; parity < 2; parity++) for (let y = y0 + ((y0 + parity) % 2); y < y1; y += 2) for (let x = x0; x <= x1; x++) { if (!(++cells & 127)) yield; transfer(s, y * W + x, (y + 1) * W + x, s.vy, h, damping); }
 		// Every cell reads the same post-flow water state for border evaporation.
 		for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+			if (!(++cells & 127)) yield;
 			const i = y * W + x, water = s.w[i];
 			// How exposed this cell is: R80 counts each dry face CONTINUOUSLY. A step at half the
 			// neighbour's water made the tideline jump by a whole face between one cell and the next,
@@ -317,6 +325,7 @@ export function step(s, dt) {
 		}
 		let left = W, top = H, right = -1, bottom = -1, anyWet = false, wl = W, wt = H, wr = -1, wb = -1;
 		for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+			if (!(++cells & 127)) yield;
 			const i = y * W + x, water = s.w[i];
 			if (water > 0) {
 				s.w[i] = s.nextWater[i];
@@ -340,11 +349,14 @@ export function step(s, dt) {
 }
 // `rect` (R79) settles only those cells -- the live preview of one dab while the finger is down;
 // `finish` dries everything: every suspended band settles, the water goes, the state is spent.
-export function settle(s, { finish = false, rect = null } = {}) {
+export function settle(s, options) { return finishWetWork(settleWork(s, options)); }
+export function* settleWork(s, { finish = false, rect = null } = {}) {
+	let cells = 0;
 	const a = rect || s.active; if (!a) return null;
 	const { pixels, base, ground, mix, rgb } = s;
 	let whiteGround = false;
 	for (let y = a.y0; y <= a.y1; y++) for (let x = a.x0; x <= a.x1; x++) {
+		if (!(++cells & 127)) yield;
 		const i = y * s.width + x, p = i * 4;
 		if (finish) { movePhase(s, i, 1); s.w[i] = 0; s.vx[i] = s.vy[i] = 0; }
 		const mass = s.amount[i] + s.settledAmount[i];

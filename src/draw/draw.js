@@ -1041,7 +1041,7 @@ function _rapierDrawDialButton(act) {
 function _rapierDrawRenderHistory() {
 	const state = _rapierDrawState, [undo, redo] = state.surface?.querySelectorAll('.rapier-draw-head .rapier-dial') || [], layer = state.paintLayer;
 	if (!undo || !redo) return;
-	_rapierDialSay(undo, 'undo change', state.finishing || !(state.undoStack.length || layer?.pendingOverflow || layer?.pendingCommit || layer?.previousFlip?.pendingCommit || layer?.surface?.wetState));
+	_rapierDialSay(undo, 'undo change', state.finishing || !(state.undoStack.length || layer?.pendingOverflow || layer?.pendingLift || layer?.pendingCommit || layer?.previousFlip?.pendingCommit || layer?.surface?.wetState || layer?.dryFinishing));
 	_rapierDialSay(redo, 'redo change', state.finishing || !state.redoStack.length);
 }
 // False when there was nothing to take back or bring back: the head's arrow presses in rather than
@@ -1491,7 +1491,7 @@ function _rapierDrawReplayPatch(patch, options = {}) {
 function _rapierDrawEditingAsset() {
 	const state = _rapierDrawState;
 	if (!state.open || !state.editing || state.finishing) return '';
-	if (state.gesture || state.textEdit || state.settingEdit || state.paintLayer?.pendingCommit) return '';
+	if (state.gesture || state.textEdit || state.settingEdit || state.paintLayer?.pendingLift || state.paintLayer?.pendingCommit) return '';
 	// The surface is not ready to take a patch until it knows what the SOURCE holds. openSnapshot
 	// is taken a frame after the canvas opens (_rapierDrawOpenSurface's own measurement frame), and
 	// until it exists there is no baseline to apply the agent's patch to and nothing to prove the
@@ -5733,21 +5733,29 @@ async function _rapierDrawBackupRemove(store, files, owner, { quiet = false } = 
 }
 async function _rapierDrawBackupWrite(closing = false) {
 	const state = _rapierDrawState;
+	const urgent = closing || (typeof document !== 'undefined' && document.hidden);
+	// An urgent checkpoint must not queue behind row tasks that a paused page may never run.
+	if (urgent && typeof _rapierPaintDropSnapshots === 'function') {
+		let dropped = false;
+		for (const layer of _rapierPaintRevisionLayers()) dropped = _rapierPaintDropSnapshots(layer) || dropped;
+		const pendingOwner = state.backupRecovery;
+		if (dropped && pendingOwner?.session === state.session && pendingOwner.revision > pendingOwner.cleared) state.backupDirty = true;
+	}
 	if (!state.open || !state.backupDirty) return;
 	const session = state.session;
-	let record, editing, owner;
+	let record, editing, owner, encode;
 	try {
 		// The revision is already off this thread. Wait for it; do not encode it here. A worker that
 		// never answers keeps the checkpoint dirty so the next write carries the stroke.
-		let pending = typeof _rapierPaintPendingStroke === 'function' ? _rapierPaintPendingStroke() : null;
+		let pending = typeof _rapierPaintPendingStroke === 'function' ? _rapierPaintPendingStroke(closing) : null;
 		while (pending) {
 			await pending;
 			if (!state.open || state.session !== session) return;
-			pending = _rapierPaintPendingStroke();
+			pending = _rapierPaintPendingStroke(closing);
 		}
 		if (!_rapierDrawBackupHere()) { _rapierDrawBackupTouch(); return; }
 		owner = _rapierDrawBackupOwner();
-		if (owner.writing && !closing) return;
+		if (owner.writing && !urgent) return;
 		// Cancelled transactions must not become the recovery. Flush has already settled the gesture.
 		// A running replay is the same category: the shapes on the paper mid-replay are a VIEW of a
 		// change that has already landed, and a recovery written from one would keep half an agent's
@@ -5757,11 +5765,12 @@ async function _rapierDrawBackupWrite(closing = false) {
 		state.backupDirty = false;
 		const recipe = _rapierDrawHistoryCopy({ ...state.recipe, fonts: undefined });
 		recipe.tool = state.tool;
-		const live = typeof _rapierPaintLayerSnapshot === 'function' ? _rapierPaintLayerSnapshot() : null;
+		const live = typeof _rapierPaintLayerSnapshot === 'function' ? _rapierPaintLayerSnapshot(!urgent) : null;
 		if (live) {
 			const id = live.id || ('s' + (state.seq + 1)), at = recipe.shapes.findIndex(existing => existing.id === id);
 			const previous = at >= 0 ? recipe.shapes[at] : null;
 			const shape = { id, stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, ...previous, geom: live.geom, raster: live.raster, paint: { ...previous?.paint, ...live.paint } };
+			if (live.encode) encode = async () => { shape.raster = await live.encode(); return !!shape.raster; };
 			if (at >= 0) recipe.shapes[at] = shape; else recipe.shapes.push(shape);
 			if (live.retire?.length) {
 				const gone = new Set(live.retire);
@@ -5784,6 +5793,13 @@ async function _rapierDrawBackupWrite(closing = false) {
 		let store, failure = 'This drawing could not be backed up. Download it before you leave.';
 		try {
 			await owner.ready;
+			// The pending filename was registered before compression. A concurrent clear owns it,
+			// and the encoded bytes belong to this captured recipe, never a later live layer.
+			if (encode && !await encode()) {
+				owner.files.delete(name);
+				if (state.open && state.backupRecovery === owner && state.session === owner.session && record.revision === owner.revision && record.revision > owner.cleared) _rapierDrawBackupTouch();
+				return false;
+			}
 			// Working PNGs may exceed the file recipe's limits. Use the existing lossless encoder on
 			// this captured recipe, inside its registered IO ticket, before replacing any recovery.
 			if (!_rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts || record.recipe.fonts })) {
