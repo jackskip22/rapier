@@ -1,58 +1,43 @@
 # Optional integer kernels
 
-The small `index.mjs` and `effort.mjs` doors remain JavaScript. To opt in, import
-`encode` / `encodeSteps` from `rapier-jxl/wasm` instead of `rapier-jxl/effort`.
-This door keeps the effort API, automatically tries SIMD, and falls back to the
-reference JavaScript if WebAssembly or SIMD is absent or blocked by policy.
-It changes neither lossless bytes nor the hurry rule. Rapier's full image worker
-opts in automatically; the document-only worker still ships no encoder.
+`rapier-jxl/wasm` is the `effort` door with WebAssembly kernels under the lossless hot loops. It has the same API and
+writes the same bytes. It tries SIMD, and falls back to JavaScript if WebAssembly or SIMD is absent or blocked. The
+core and `effort` stay JavaScript. `dist/wasm.min.mjs` is the same door as one self-contained file. Both entry modules
+are marked side-effectful in `package.json`, so bundlers keep their automatic backend configuration.
 
-The public repository also builds **`wasm.min.mjs`**, one self-contained module.
-The package marks these two entry modules as side-effectful so bundlers retain
-their automatic backend configuration.
-Do not combine `kernels.min.mjs` with a separately bundled core: each bundle would
-own different hooks. There is deliberately no separate minified control door.
-Readable modules can share controls through `rapier-jxl/kernels`:
+Readable modules share controls through `rapier-jxl/kernels`:
 
 ```js
 import {encode, configureKernels, kernelMode} from 'rapier-jxl/wasm';
-configureKernels('auto'); // 'off', 'scalar', or 'simd' are explicit alternatives
+configureKernels('auto'); // 'off', 'scalar' or 'simd' are explicit alternatives
 const bytes = encode(rgba, width, height, {effort: 3, quality: 100});
-console.log(kernelMode()); // the actual backend, not merely the requested one
+console.log(kernelMode()); // the backend actually running, not the one requested
 ```
 
-Configure once before an encode, not inside its progress callback. Controls are
-per JavaScript realm; workers have independent arenas. A second argument selects
-kernels for deterministic benchmarks, for example `{channel: true, weighted:
-false, fill: false}`. This only changes where arithmetic runs, never its result.
+Configure once before an encode, not inside a progress callback. Controls are per JavaScript realm, and workers have
+independent arenas. Do not combine `wasm.min.mjs` with a separately bundled core: each bundle owns its own hooks. A
+second argument selects kernels for benchmarks, for example `{channel: true, weighted: false, fill: false}`; it moves
+where arithmetic runs, never its result.
 
-## What ships
+## What is in them
 
-`kernels-scalar.wat` implements prediction, weighted prediction and property
-extraction, token histograms and a bulk bit writer. `kernels-simd.wat` implements
-four-pixel average/gradient prediction and RGBA-to-planar conversion; rows and
-odd tails take an explicit scalar path. Weighted prediction stays scalar: its
-west-error state is sequential. Both modules use bounded integer arithmetic,
-including signed i64 floor division for the weighted average. No relaxed SIMD,
-floating-point WASM, imports other than private memory, network access, shared
-memory, threads, or runtime dependencies are used.
+`kernels/kernels-scalar.wat` implements prediction, weighted prediction and property extraction, token histograms and a
+bulk bit writer. `kernels/kernels-simd.wat` implements four-pixel average and gradient prediction and RGBA-to-planar
+conversion; rows and odd tails take a scalar path. Weighted prediction stays scalar because its west-error state is
+sequential. Both use bounded integer arithmetic. There is no floating-point WebAssembly, relaxed SIMD, import other than
+private memory, shared memory, threads or network access.
 
-The private arena is 3 MiB per enabled realm, reused synchronously. No views escape.
-Groups are at most 65,536 samples; Int16 planes, unit multipliers and bounded
-offsets are admitted. Other planes and custom writers keep the JavaScript path.
-Non-little-endian hosts keep JavaScript as well. The existing input and output
-limits remain in force. SIMD detection calls `WebAssembly.validate` on the tiny
-`kernels-probe.wat` module; failure does not disable the encoder.
+The private arena is 3 MiB per enabled realm, reused synchronously; no views escape. Groups of at most 65,536 samples
+with Int16 planes, unit multipliers and bounded offsets are admitted; anything else, custom writers and big-endian
+hosts keep the JavaScript path. Input and output limits are unchanged. SIMD support is detected by validating
+`kernels/kernels-probe.wat`; failure never disables the encoder.
 
 ## Rebuild
 
-The checked-in `kernels-bytes.mjs` contains generated base64 bytes, not source to
-edit. In the Rapier tree run `node repo/images/build-jxl-kernels.mjs`; in a staged
-public repository run `node build-jxl-kernels.mjs`. Install **wabt 1.0.37** only as
-a build tool. `WABT_MODULE` may point to its `index.js` outside the source tree.
-Add `--check` to reject a generated file that differs. No compiler ships in the
-inline encoder. Source and build script are retained in the public package.
+`src/kernels-bytes.mjs` holds the generated base64 modules; edit the `.wat` files, never that file. Install
+**wabt 1.0.37** as a build tool (`WABT_MODULE` may point to its `index.js`), then:
 
-The kernels were first compiled with a bootstrap compiler in a network-restricted
-sandbox; an independent wabt rebuild is outstanding. Do not describe the
-build as wabt-certified until `--check` has been run with wabt.
+```sh
+npm run build:kernels            # regenerate src/kernels-bytes.mjs
+npm run build:kernels -- --check # fail if it differs from the sources
+```

@@ -498,7 +498,7 @@
         if (_rapierWillProofFails(proof)) throw Object.assign(new Error('document_law'), {code: 'document_law'});
         if (!restorePlace(place, request.splices)) throw Object.assign(new Error('selection_restore_failed'), {code: 'selection_restore_failed'});
         abort(request);
-      }, {changeSet, sourceTransactionId: request.sourceTransactionId, carriedLedger: request.carriedLedger});
+      }, {changeSet, sourceTransactionId: request.sourceTransactionId, carriedLedger: request.carriedLedger, signal: request.signal});
       committed = {ok: true, revision: result.commitReceipt.documentRevision,
         documentId: result.commitReceipt.documentAuthority, transactionId: result.transaction?.id};
       if (committed.transactionId && !request.carriedLedger) {
@@ -1422,8 +1422,10 @@
   }
 
   function retire() {
-    for (const entry of registrations.values()) entry.abort();
+    const retired = [...registrations.values()];
     registrations.clear(); failures.clear(); registrationOwner = null; registrationExposure = '';
+    // Abort listeners may install a new owner synchronously; only retire this snapshot.
+    for (const entry of retired) entry.abort();
   }
 
   async function register() {
@@ -1441,6 +1443,9 @@
     for (const tool of PAGE_TOOLS) {
       if (registrations.has(tool.name) || failures.has(tool.name)) continue;
       const controller = new AbortController();
+      // Own the callback before handing it to the host: registration itself can yield
+      // or re-enter, and retire() must reach calls made before its acknowledgement.
+      registrations.set(tool.name, controller);
       try {
         await owner.registerTool({name: tool.name, title: tool.title, description: tool.description,
           inputSchema: tool.inputSchema, annotations: annotations(tool.effect, 'webmcp'),
@@ -1461,10 +1466,15 @@
               for (const signal of signals) signal.removeEventListener('abort', cancel);
             }
           }}, {signal: controller.signal, ...(exposure ? {exposedTo: [exposure]} : {})});
-        if (admission() || registrationOwner !== owner || registrationExposure !== exposure) controller.abort();
-        else registrations.set(tool.name, controller);
+        if (controller.signal.aborted || admission() || registrationOwner !== owner || registrationExposure !== exposure) {
+          controller.abort();
+          if (registrations.get(tool.name) === controller) registrations.delete(tool.name);
+          return;
+        }
       } catch (error) {
-        controller.abort(); failures.set(tool.name, String(error?.name || 'registration_failed'));
+        controller.abort();
+        if (registrations.get(tool.name) !== controller) return;
+        registrations.delete(tool.name); failures.set(tool.name, String(error?.name || 'registration_failed'));
       }
     }
   }

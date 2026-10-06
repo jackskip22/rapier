@@ -529,28 +529,29 @@ body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 /* Paper is the saved canvas; the neutral surround only belongs to the camera. */
 .rapier-draw-paper{fill:var(--draw-paper,var(--color-bg));pointer-events:none}
 /* The canvas background panel (draw/background-tool.js): kinds, starting points, the band bar, the wave and glow controls. */
-.rapier-draw-bgpanel{flex:none;display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-2) var(--space-3) var(--space-3);background:var(--color-surface-2)}
+.rapier-draw-bgpanel{flex:none;display:flex;flex-direction:column;gap:var(--space-2);max-height:min(46vh,380px);overflow-y:auto;overscroll-behavior:contain;padding:var(--space-2) var(--space-3) var(--space-3);background:var(--color-surface-2)}
 .rapier-draw-bgpanel[hidden],.rapier-draw-bgpanel [hidden]{display:none}
-.rapier-draw-bgpanel-kinds,.rapier-draw-bgpanel-presets{display:flex;gap:var(--space-1);overflow-x:auto;scrollbar-width:none}
-.rapier-draw-bgpanel-kinds .rapier-draw-chip[aria-checked="true"]{background:var(--color-text);color:var(--color-bg)}
+/* Rows keep their height; the panel scrolls when a kind has more controls than fit. */
+.rapier-draw-bgpanel>*{flex:none}
+.rapier-draw-bgpanel-kinds,.rapier-draw-bgpanel-presets,.rapier-draw-bgpanel-forms{display:flex;flex-wrap:nowrap;gap:var(--space-1);overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--space-3));padding:0 var(--space-3)}
+.rapier-draw-bgpanel-kinds::-webkit-scrollbar,.rapier-draw-bgpanel-presets::-webkit-scrollbar,.rapier-draw-bgpanel-forms::-webkit-scrollbar{display:none}
+.rapier-draw-bgpanel .rapier-draw-chip{flex:none}
+.rapier-draw-bgpanel .rapier-draw-chip[aria-checked="true"]{background:var(--color-surface-hover);color:var(--color-text)}
+.rapier-draw-bgpanel-wave,.rapier-draw-bgpanel-glow,.rapier-draw-bgpanel-rails,.rapier-draw-bgpanel-shape{display:flex;flex-direction:column;align-items:stretch;gap:0}
+.rapier-draw-bgpanel-wave>.rapier-draw-chip,.rapier-draw-bgpanel-glow>.rapier-draw-chip{align-self:flex-start}
+.rapier-draw-bgpanel .rapier-draw-control--seek{flex:none;width:100%;max-width:36rem}
+.rapier-draw-bgpanel-word{flex:none;width:6.5em;text-transform:uppercase;white-space:nowrap}
 .rapier-draw-bgpanel-preset{flex:none;width:64px;height:40px;padding:0;border:0;background:none;cursor:pointer}
 .rapier-draw-bgpanel-preset svg{display:block;width:100%;height:100%}
 .rapier-draw-bgpanel-bar{position:relative;height:44px;margin:0 22px;touch-action:none;cursor:copy}
 .rapier-draw-bgpanel-strip{position:absolute;left:0;right:0;top:12px;width:100%;height:20px}
 .rapier-draw-bgpanel-handle{position:absolute;top:6px;width:22px;height:32px;margin-left:-11px;padding:0;border:2px solid var(--color-bg);outline:2px solid var(--color-text);border-radius:0;background:var(--bg-stop);cursor:grab;touch-action:none}
-.rapier-draw-bgpanel-wave,.rapier-draw-bgpanel-glow,.rapier-draw-bgpanel-solid{display:flex;align-items:center;gap:var(--space-3)}
-.rapier-draw-bgpanel-wave label,.rapier-draw-bgpanel-glow label{display:flex;align-items:center;gap:var(--space-2);flex:1}
-.rapier-draw-bgpanel-wave input,.rapier-draw-bgpanel-glow input{flex:1;min-width:0}
+.rapier-draw-bgpanel-solid{display:flex}
 .rapier-draw-bgpanel-colour{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .rapier-draw-bg-handle{fill:var(--color-bg);stroke:var(--color-text);cursor:grab;touch-action:none}
 .rapier-draw-bg-handle--on{stroke:var(--color-accent,var(--color-text));stroke-dasharray:none}
 .rapier-draw-bg-guide{stroke:var(--color-text);opacity:.6;pointer-events:none}
 .rapier-draw-bg-ring{stroke:var(--color-text);opacity:.35;cursor:ew-resize;touch-action:none;pointer-events:stroke}
-.rapier-draw-bgpanel-rails{display:flex;flex-direction:column;gap:var(--space-1)}
-.rapier-draw-bgpanel-rails label{display:flex;align-items:center;gap:var(--space-2)}
-.rapier-draw-bgpanel-rails input{flex:1;min-width:0}
-.rapier-draw-bgpanel-forms{display:flex;gap:var(--space-1)}
-.rapier-draw-bgpanel-forms .rapier-draw-chip[aria-checked="true"]{background:var(--color-text);color:var(--color-bg)}
 
 /* Resizing the canvas: the stage dims outside the frame; a thick cap at the middle of each edge and an L at each corner, each on a 44 px target.
    Resting (adaptive off, not resizing) it is the frame's dim alone. */

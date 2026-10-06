@@ -73,12 +73,12 @@ export function normalizeBackground(input) {
 	if (input.kind === 'linear') {
 		const stops = admitStops(input.stops);
 		if (!stops || ![input.x1, input.y1, input.x2, input.y2].every(span)) return null;
-		if (input.x1 === input.x2 && input.y1 === input.y2) return null;
+		if (round(input.x1) === round(input.x2) && round(input.y1) === round(input.y2)) return null;
 		return {kind: 'linear', x1: round(input.x1), y1: round(input.y1), x2: round(input.x2), y2: round(input.y2), stops};
 	}
 	if (input.kind === 'wave') {
 		const stops = admitStops(input.stops);
-		if (!stops || ![input.x1, input.y1, input.x2, input.y2].every(span) || (input.x1 === input.x2 && input.y1 === input.y2)) return null;
+		if (!stops || ![input.x1, input.y1, input.x2, input.y2].every(span) || (round(input.x1) === round(input.x2) && round(input.y1) === round(input.y2))) return null;
 		if (!unit(input.flow) || !unit(input.size) || !Number.isInteger(input.seed) || input.seed < 0 || input.seed > 9999) return null;
 		return {kind: 'wave', x1: round(input.x1), y1: round(input.y1), x2: round(input.x2), y2: round(input.y2), flow: round(input.flow), size: round(input.size), seed: input.seed, stops};
 	}
@@ -136,7 +136,7 @@ export function normalizeBackground(input) {
 		if (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 9999) return null;
 		const color = input.color === undefined ? null : hex(input.color);
 		if (input.color !== undefined && !color) return null;
-		const out = {kind: 'texture', texture: input.texture, scale: round(input.scale, 5), strength: round(input.strength), seed: input.seed};
+		const out = {kind: 'texture', texture: input.texture, scale: Math.max(1 / 512, round(input.scale, 5)), strength: round(input.strength), seed: input.seed};
 		if (color) out.color = color;
 		return out;
 	}
@@ -154,7 +154,7 @@ export function normalizeBackground(input) {
 	}
 	if (input.kind === 'radial') {
 		const stops = admitStops(input.stops);
-		if (!stops || !span(input.cx) || !span(input.cy) || !(typeof input.r === 'number' && input.r > 0 && input.r <= 3)) return null;
+		if (!stops || !span(input.cx) || !span(input.cy) || !(typeof input.r === 'number' && round(input.r) > 0 && input.r <= 3)) return null;
 		return {kind: 'radial', cx: round(input.cx), cy: round(input.cy), r: round(input.r), stops};
 	}
 	const points = input.points;
@@ -490,7 +490,7 @@ function shapesSVG(bg, rect, id, dark) {
 		// seed, its colour the authored curve at the cell's place along the axis, bent by a slow wave. Marks are paths,
 		// not text, so the field needs no font and stays exact at any size.
 		const cols = bg.cols, cell = w / cols, rows = Math.ceil(h / cell), ax = bg.x2 - bg.x1, ay = bg.y2 - bg.y1, len2 = ax * ax + ay * ay || 1;
-		const hash = (i, j) => { let v = (i * 374761393 + j * 668265263 + bg.seed * 2246822519) >>> 0; v = Math.imul(v ^ (v >>> 13), 1274126177) >>> 0; return (v ^ (v >>> 16)) / 4294967296; };
+		const hash = (i, j) => { let v = (i * 374761393 + j * 668265263 + bg.seed * 2246822519) >>> 0; v = Math.imul(v ^ (v >>> 13), 1274126177) >>> 0; return ((v ^ (v >>> 16)) >>> 0) / 4294967296; };
 		const r = cell * 0.32, sw = cell * 0.12, groups = new Map();
 		for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
 			const u = (i + 0.5) / cols, v = Math.min(1, (j + 0.5) * cell / h), hsh = hash(i, j);

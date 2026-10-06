@@ -23,8 +23,8 @@ const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 
 test('the accelerated entry keeps its configuration through package tree shaking', () => {
   const manifest=JSON.parse(readFileSync(new URL('../../package.json',import.meta.url)));
   assert.ok(Array.isArray(manifest.sideEffects));
-  assert.ok(manifest.sideEffects.includes('./wasm.mjs'));
-  assert.ok(manifest.sideEffects.includes('./wasm.min.mjs'));
+  assert.ok(manifest.sideEffects.some(file => file.endsWith('/wasm.mjs')));
+  assert.ok(manifest.sideEffects.some(file => file.endsWith('/wasm.min.mjs')));
 });
 
 test('generated modules validate and import only private memory', {skip: !supportsSIMD}, () => {

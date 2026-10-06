@@ -508,7 +508,7 @@ function _rapierDrawHistoryDelta(before, after) {
 	// a font that side's recipe.fonts never gained. Fonts are immutable per id, so a shallow slice
 	// of the array is enough; comparing by id list avoids restringifying font bytes on every command.
 	const fontsChanged = (before.fonts || []).map(font => font.id).join('\0') !== (after.fonts || []).map(font => font.id).join('\0');
-	const metaKeys = ['canvas', 'smooth', 'nib', 'angle', 'light', 'paper', 'effect', 'frame'];
+	const metaKeys = ['canvas', 'smooth', 'nib', 'angle', 'light', 'paper', 'effect', 'frame', 'background'];
 	const beforeMeta = {}, afterMeta = {};
 	let metaChanged = false;
 	for (const key of metaKeys) {
@@ -5790,7 +5790,7 @@ function _rapierDrawFollowStage() {
 	// (device rotated) is a reason for a still-empty canvas to move; the canvas never moves for a
 	// keyboard.
 	if (innerWidth === state.openWindow.w && innerHeight === state.openWindow.h) return;
-	if (recipe.strokes.length || recipe.shapes.length || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
+	if (recipe.strokes.length || _rapierDrawHasContent(recipe) || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
 	state.openWindow = { w: innerWidth, h: innerHeight };
 	const rect = state.svgRoot.getBoundingClientRect(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height - (state.viewInset || 0)));
 	if (w === recipe.canvas.w && h === recipe.canvas.h) return;
@@ -6075,7 +6075,7 @@ async function _rapierDrawBackupWrite(closing = false) {
 				if (shape.paint.group != null && !recipe.shapes.some(row => row !== shape && row.paint?.group === shape.paint.group)) delete shape.paint.group;
 			}
 		}
-		if (!recipe.shapes.length) { await _rapierDrawBackupClear(); return; }
+		if (!_rapierDrawHasContent(recipe)) { await _rapierDrawBackupClear(); return; }
 		editing = state.editing ? { ...state.editing } : null;
 		record = { version: 1, drawing: owner.drawing, revision: ++owner.revision, at: Date.now(), authority: owner.authority, filename: owner.filename, editing: editing ? { blockId: editing.blockId, imageIndex: editing.imageIndex, title: editing.title, asset: editing.asset, sourceHash: editing.sourceHash } : null, recipe, fonts: state.recipe.fonts?.slice() };
 	} catch (_) {
@@ -6374,6 +6374,8 @@ function _rapierDrawAssetBudget() {
 	const test = typeof window !== 'undefined' ? window.__rapierDrawAssetMaxTest : undefined;
 	return Number.isFinite(test) ? test : globalThis.RapierImageAssets.IMAGE_LIMITS.bytes;
 }
+// A drawing is content when it has a shape or a background: a background alone is the person's work.
+function _rapierDrawHasContent(recipe) { return !!(recipe && (recipe.shapes.length || recipe.background)); }
 async function _rapierDrawFinish({ back = false } = {}) {
 	const state = _rapierDrawState;
 	if (state.finishing || !_rapierDrawFinishText()) return;
@@ -6396,7 +6398,7 @@ async function _rapierDrawFinish({ back = false } = {}) {
 	// function (_rapierDrawHandleBack below), so "looked, changed nothing, pressed Back" and "looked,
 	// changed nothing, tapped Done anyway" behave identically for free.
 	if (state.editing && !_rapierDrawChangedSinceOpen()) { void _rapierDrawBackupClear(); _rapierDrawClose(); return; }
-	const empty = !state.recipe?.shapes.length;
+	const empty = !_rapierDrawHasContent(state.recipe);
 	// A brand-new drawing that never gained a mark stays a no-op close -- there is nothing to delete
 	// because nothing was ever saved (only an edited EXISTING drawing's emptying is a deletion).
 	if (empty && !state.editing) { void _rapierDrawBackupClear(); _rapierDrawClose(); return; }
@@ -6805,15 +6807,21 @@ function _rapierDrawRunsAtY(covers, y) {
 	const runs = [];
 	for (const cover of covers) {
 		if (cover.poly) {
+			// Nonzero winding, as the ink is filled: a stroke's outline crosses itself wherever the stroke does,
+			// and pairing crossings even-odd would cancel the ink there.
 			const poly = cover.poly, xs = [];
 			for (let i = 0; i < poly.length; i++) {
 				const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
 				if ((y1 <= y) === (y2 <= y)) continue;
-				xs.push(x1 + (y - y1) / (y2 - y1) * (x2 - x1));
+				xs.push([x1 + (y - y1) / (y2 - y1) * (x2 - x1), y2 > y1 ? 1 : -1]);
 			}
-
-			xs.sort((a, b) => a - b);
-			for (let i = 0; i + 1 < xs.length; i += 2) runs.push([xs[i], xs[i + 1]]);
+			xs.sort((a, b) => a[0] - b[0]);
+			let winding = 0, start = 0;
+			for (const [x, turn] of xs) {
+				if (!winding) start = x;
+				winding += turn;
+				if (!winding) runs.push([start, x]);
+			}
 			continue;
 		}
 		const pts = cover.line, half = cover.half ?? RAPIER_DRAW_OPEN_HALF;
@@ -6850,13 +6858,14 @@ function _rapierDrawBandProfile(bands) {
 // alpha fallback for label/text shapes, already resolved by the caller since it needs real pixels.
 function _rapierDrawShapeProfileFor(recipe, glyphs) {
 	const w = recipe?.canvas?.w, h = recipe?.canvas?.h;
-	if (!recipe || !recipe.shapes.length || !(w > 0) || !(h > 0)) return null;
+	if (!_rapierDrawHasContent(recipe) || !(w > 0) || !(h > 0)) return null;
 	const saved = recipe.view;
 	const view = saved && saved.w > 0 && saved.h > 0
 		? { x: +saved.x || 0, y: +saved.y || 0, w: +saved.w, h: +saved.h } : { x: 0, y: 0, w, h };
 	// The scene filter paints paper and impressions beyond every source silhouette. The
 	// document and shared page must reserve its saved viewport, even without decoded pixels.
-	if (recipe.effect?.strength) return { spanAt() { return [0, 1]; }, runsAt() { return [[0, 1]]; } };
+	// A background fills the picture, so words wrap around its whole box.
+	if (recipe.effect?.strength || recipe.background) return { spanAt() { return [0, 1]; }, runsAt() { return [[0, 1]]; } };
 
 	if (recipe.shapes.length === 1 && recipe.shapes[0] && typeof recipe.shapes[0] === 'object' && !recipe.shapes[0].label && !recipe.shapes[0].effect?.strength) {
 		const shape = recipe.shapes[0], g = shape.geom || {};

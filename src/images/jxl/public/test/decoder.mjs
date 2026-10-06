@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// The decoder the tests check against, or none: jxl-oxide-wasm installed beside these tests, or Rapier's own vendored
-// copy; a test that needs it says so instead of failing on a missing install. The PNG it renders is read back here.
+// The decoder the tests check against, or none: jxl-oxide-wasm installed beside these tests, or a vendored copy of its
+// two files; a test that needs it says so instead of failing on a missing install. The PNG it renders is read back here.
 import {inflateSync} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 import {readFile} from 'node:fs/promises';

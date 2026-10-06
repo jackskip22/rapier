@@ -1908,7 +1908,7 @@ function _buildParseWorkerSource() {
 		// Ink's four (spec/md-marks.mjs, "Relocated into the parse Worker"): the constants they read, planted first. The
 		// html rule asks matchInkOpen whether a line or a run that starts with "<" is an ink opener (an opener at a
 		// paragraph's start is a paragraph, not an HTML block); unplanted, the Worker's first "<" was a ReferenceError and
-		// every formatted view fell back to source (found by the pen's row, 2 October).
+		// every formatted view fell back to source.
 		+ '\n;self.INK_CLOSE=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_CLOSE) + ';'
 		+ '\n;self.INK_OPEN_PATTERN=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_OPEN_PATTERN) + ';'
 		+ '\n;self.INK_PATH_MAX=' + JSON.stringify(globalThis.RapierMarkdownSpec.INK_PATH_MAX) + ';'
@@ -3009,7 +3009,7 @@ let turndown;
 // actually reopens the same mark around the same words; if it would not, keep the source element
 // as inline HTML instead (every Markdown reader already parses raw HTML, so nothing is lost).
 // Mirrors notes/html-md.mjs's own `marked()` check -- same question, independently answered, since
-// paste and import are two doors with their own DOM-or-not walkers (task #336, #337 is not this).
+// paste and import are two doors with their own DOM-or-not walkers.
 // `before`/`after` are the characters the marker will stand beside once written. Letters are the
 // paste door's worst case, but `_word_` never opens inside a word and `**Note:**` never closes
 // against one, so the rendered-edit door asks with the real neighbours (_rapierDelimiterNeighbour):
@@ -3047,7 +3047,7 @@ function _rapierMarkHtml(node) {
 // CommonMark's ordered list has one number (its `start`) and counts up by one; it cannot spell
 // `reversed`, a `type` letter/roman marker, or a value that skips or runs backward. Rendering one
 // of those as plain "1. 2. 3." throws the authored order away with nothing to say so happened
-// (task #336). `items` is each <li>'s own `value` attribute, in source order.
+// `items` is each <li>'s own `value` attribute, in source order.
 function _rapierOrderedListExpressible({reversed, typed, start, items}) {
 	return !reversed && !typed && Number.isInteger(start) && start >= 0 && start + items.length - 1 <= 999999999 &&
 		items.every((item, index) => !item.hasValue || item.value === start + index);
@@ -3458,7 +3458,7 @@ function createTurndown() {
 
 	// A reversed list, a lettered/roman `type`, or a value that skips or counts down cannot be
 	// written as CommonMark digits: keep the list as the HTML it already is rather than silently
-	// renumber it 1, 2, 3 (task #336). Content is still walked first (the recursion above), but a
+	// renumber it 1, 2, 3. Content is still walked first (the recursion above), but a
 	// filter match here replaces it with the untouched original markup.
 	turndown.addRule('rapierOrderedListRaw', {
 		filter: node => {
@@ -4102,7 +4102,7 @@ async function _loadFlatDoc(content, filename, kind, loadToken, options) {
 		_syncNextBlockId([], restoredRevisionState.nextBlockId);
 	} else if (!options.restore) {
 		_bumpDocGeneration({ preserveVirtualDocumentKind: true });
-		if (options.opensClean === true) rapier.revision.savedGeneration = Number(rapier.revision.generation || 0); // task #338, as _loadMarkdownDoc
+		if (options.opensClean === true) rapier.revision.savedGeneration = Number(rapier.revision.generation || 0); // as _loadMarkdownDoc
 	}
 
 	const srcTA = document.getElementById('source-textarea');
@@ -7493,7 +7493,7 @@ function _rapierLiveEditRaw(editDiv, wrapper) {
 		let surface = editDiv;
 		if (projected) { surface = editDiv.cloneNode(false); surface.append(projected); }
 		edited = _rapierTidyNestedListLines(_markdownFromEditHTML(_rapierEditHtmlKeepingSpaceRuns(surface)).split(_RAPIER_SPACE_RUN_MARK).join(' '));
-		// Leading spaces a person typed into a paragraph stay a paragraph (sedfred, 21 September: four
+		// Leading spaces a person typed into a paragraph stay a paragraph (four
 		// of them made an indented code block on commit, the words "disappeared into a malformed
 		// block which loses all line wrapping", and Undo did not bring them back). Written as the
 		// entity every Markdown reader shows as a space; typing never changes a block's kind.
@@ -11784,6 +11784,9 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 	try {
 		_rapierApplyReadOnlyDom();
 		const result = await action(compound);
+		// The action may finish before an abort microtask runs. Check again at publication,
+		// while the source and Undo snapshot can still be rolled back together.
+		config.signal?.throwIfAborted();
 		if (!_rapierUndoSnapshotMatches(snapshot, rapier.identity.authority, rapier.identity.epoch,
 				rapier.revision.settled, rapier.undo.ledger.length)) {
 			throw Object.assign(new Error('Rapier transaction ownership changed before commit.'), {
@@ -20255,7 +20258,7 @@ async function rapierOpenPlatformPayload(payload, opts = {}) {
 			virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(opts.virtualDocumentKind),
 			  documentKind: opts.documentKind,
 			saveAsRequired: payload.transient === true,
-			// The file as read is the saved text (task #338): clean from the first paint; a binding
+			// The file as read is the saved text: clean from the first paint; a binding
 			// that fails below sets saveAsRequired and the mark follows.
 			opensClean: payload.transient !== true,
 			// This opener resumes the file's reading point below; until it has, nothing writes it.
@@ -27919,7 +27922,7 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 // `data-md-color` span). Same colour math as the highlight detector beside it, minus the hue
 // search: near-black and near-white are the ordinary "no colour was really meant" case (most
 // pasted paragraphs carry an explicit but unremarkable color:#000000), so they stay plain rather
-// than wrapping every paragraph in an invisible marker (task #336).
+// than wrapping every paragraph in an invisible marker.
 function _rapierPasteTextColor(style) {
 	const source = String(style || '');
 	const match = /(?:^|;)\s*color\s*:\s*([^;]+)/i.exec(source);
@@ -27981,7 +27984,7 @@ function _normalizeStyleFormatting(htmlString) {
 		el.appendChild(node);
 	});
 	// <font color="red"> with no style attribute is the legacy tag's only spelling of a text
-	// colour; the pass above only looks at `style`, so it needs its own small pass here (task #336).
+	// colour; the pass above only looks at `style`, so it needs its own small pass here.
 	tmp.querySelectorAll('font[color]:not([style])').forEach(el => {
 		const hex = _rapierPasteTextColor('color:' + (el.getAttribute('color') || ''));
 		if (!hex || el.closest('[data-md-color]') || el.querySelector('[data-md-color]')) return;
@@ -32272,7 +32275,7 @@ function _bindScrollFab(fab, host, virtual) {
 		if (!v && max <= 40 && !fab.dataset.presence) { fab.classList.remove('visible'); return false; }
 		// A connected agent's circle stands on a document that may not scroll at all: max is 0 there, and
 		// 0 / 0 is NaN, which the browser refuses as a transform while the top of 0 it was given stays --
-		// the circle then sat over the top bar's own buttons (review-survives-restart, 1 October). A page
+		// the circle then sat over the top bar's own buttons. A page
 		// that cannot scroll has nothing to show progress on: the circle rests at the top of its track.
 		const progress = v
 			? virtual().frac()
@@ -34041,7 +34044,7 @@ function _rapierBootPathAndQuery() {
 	return location.pathname + (query ? '?' + query : '');
 }
 function _rapierCleanBootPath() {
-	// The clean path keeps the document's own address (task #413): a shortcut's or a share-target's
+	// The clean path keeps the document's own address: a shortcut's or a share-target's
 	// token leaves the address bar, the name of the document that is open does not.
 	return _rapierBootPathAndQuery() + _rapierDocumentUrlBase();
 }

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Build-time only. npm install --no-save wabt@1.0.37 (or set WABT_MODULE to its index.js).
-// node repo/images/build-jxl-kernels.mjs [--check]
+// Build-time only: regenerates kernels-bytes.mjs from the kernels-*.wat sources. Needs wabt@1.0.37
+// (npm install --no-save wabt@1.0.37, or set WABT_MODULE to its index.js). Run with node; --check compares without writing.
 import {readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {existsSync} from 'node:fs';
-const directory = new URL(existsSync(new URL('jxl/kernels-scalar.wat', import.meta.url)) ? 'jxl/' : './', import.meta.url);
+// Beside the module directory in the workstation, beside the build script and the source directory in the package.
+const here = new URL('./', import.meta.url), flat = existsSync(new URL('jxl/kernels-scalar.wat', here));
+const directory = flat ? new URL('jxl/', here) : here;
 const specifier = process.env.WABT_MODULE ? pathToFileURL(resolve(process.env.WABT_MODULE)).href : 'wabt';
 let factory;
 try { ({default: factory} = await import(specifier)); }
@@ -23,7 +25,7 @@ for (const [name, symbol] of [['scalar','SCALAR'], ['simd','SIMD'], ['probe','SI
     console.log(`${name}: ${buffer.length} WebAssembly bytes`);
   } finally { wat.destroy(); }
 }
-const target = new URL('kernels-bytes.mjs', directory);
+const target = new URL(flat ? 'jxl/kernels-bytes.mjs' : '../src/kernels-bytes.mjs', here);
 if (process.argv.includes('--check')) {
   if (text !== await readFile(target, 'utf8')) throw new Error('kernels-bytes.mjs differs from the WAT build');
 } else await writeFile(target, text);

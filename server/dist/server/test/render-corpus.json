@@ -117,7 +117,7 @@
   },
   {
     "name": "profile-frontmatter",
-    "text": "---\ntitle: A note\nowner: Jack\n---\n\n# Visible heading\n\nBody."
+    "text": "---\ntitle: A note\nowner: Sam\n---\n\n# Visible heading\n\nBody."
   },
   {
     "name": "profile-indented-code",
@@ -381,7 +381,7 @@
   },
   {
     "name": "seed-75a10001-7",
-    "text": "﻿~~~ text\r# code heading\r![code][image]\r~~~\r\r# Real heading\r\r---\rtitle: A note\rowner: Jack\r---\r\r# Visible heading\r\rBody.\r\r> [!NOTE]\r> A quoted note.\r\r> [!TIP]\r> A useful tip.\r\r* outer\r    * inner\r        * deepest\r\rTail.\r\rHTML on paper.\r\r*[HTML]: Hyper Text Markup Language\r\rFirst line.  \rSecond line.   \rThird line.\r"
+    "text": "﻿~~~ text\r# code heading\r![code][image]\r~~~\r\r# Real heading\r\r---\rtitle: A note\rowner: Sam\r---\r\r# Visible heading\r\rBody.\r\r> [!NOTE]\r> A quoted note.\r\r> [!TIP]\r> A useful tip.\r\r* outer\r    * inner\r        * deepest\r\rTail.\r\rHTML on paper.\r\r*[HTML]: Hyper Text Markup Language\r\rFirst line.  \rSecond line.   \rThird line.\r"
   },
   {
     "name": "seed-75a10001-8",
@@ -405,7 +405,7 @@
   },
   {
     "name": "seed-dead75a1-1",
-    "text": "﻿---\r\ntitle: A note\r\nowner: Jack\r\n---\r\n\r\n# Visible heading\r\n\r\nBody.\r\n\r\n~~~~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~~~~\r\n\r\n# Real heading\r\n\r\nTerm\r\n: First definition.\r\n: Second definition.\r\n\r\nNext term\r\n: Definition with **bold**.\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\n| Fruit | Count |\r\n| --- | --- |\r\n| Apple | 2 |\r\n\r\nTable: orchard count."
+    "text": "﻿---\r\ntitle: A note\r\nowner: Sam\r\n---\r\n\r\n# Visible heading\r\n\r\nBody.\r\n\r\n~~~~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~~~~\r\n\r\n# Real heading\r\n\r\nTerm\r\n: First definition.\r\n: Second definition.\r\n\r\nNext term\r\n: Definition with **bold**.\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\n| Fruit | Count |\r\n| --- | --- |\r\n| Apple | 2 |\r\n\r\nTable: orchard count."
   },
   {
     "name": "seed-dead75a1-2",

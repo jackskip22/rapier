@@ -1,5 +1,5 @@
 {
-  "release": "1.1.69",
+  "release": "1.1.70",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -233,7 +233,7 @@
       "name": "document.comment",
       "title": "Discuss inspected work",
       "description": "Creates, replies to, resolves or reopens a discussion on the person's work, anchored to an inspected passage, drawing object or the whole document.",
-      "effect": "write",
+      "effect": "create",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3322,8 +3322,8 @@
     {
       "name": "notes.propose",
       "title": "Propose a note",
-      "description": "Leaves a note in the person's Notes for them to keep or drop: a new note, or with of a change to a listed note. Use it to hand over a finding or a draft.",
-      "effect": "write",
+      "description": "Leaves a note in the person's Notes for them to keep or drop: a new note, or a change to the listed note named in `of`. Use it to hand over a finding or a draft.",
+      "effect": "create",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3874,7 +3874,7 @@
       "annotations": {
         "title": "Discuss inspected work",
         "readOnlyHint": false,
-        "destructiveHint": true,
+        "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -7383,7 +7383,7 @@
     {
       "name": "notes.propose",
       "title": "Propose a note",
-      "description": "Leaves a note in the person's Notes for them to keep or drop: a new note, or with of a change to a listed note. Use it to hand over a finding or a draft.",
+      "description": "Leaves a note in the person's Notes for them to keep or drop: a new note, or a change to the listed note named in `of`. Use it to hand over a finding or a draft.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -7484,7 +7484,7 @@
       "annotations": {
         "title": "Propose a note",
         "readOnlyHint": false,
-        "destructiveHint": true,
+        "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -7682,13 +7682,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.69.html",
+          "resourceUri": "ui://rapier/editor-1.1.70.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.69.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.70.html",
         "openai/ui": {
           "entrypoints": [
             {

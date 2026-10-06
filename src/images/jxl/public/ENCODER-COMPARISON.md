@@ -21,7 +21,7 @@ A bounded survey, not proof of a global minimum; the encoders differ in what the
 
 Bytes are decimal. JavaScript is minified with Terser 5.51.2 (two compress passes, mangling, licence comments
 kept), WASM is unchanged, each resource is gzipped alone at level 9, then summed: delivery bytes, not tarball
-sizes. Every file, URL, npm integrity and SHA-256 is in [`public/encoder-sizes.json`](public/encoder-sizes.json).
+sizes. Every file, URL, npm integrity and SHA-256 is in [`bench/encoder-sizes.json`](../bench/encoder-sizes.json).
 The jSquash, fork, squoosh-kit and icodec rows count the encoder factory and its WASM only, without wrappers,
 workers or decoders, which favours them. Size says nothing about correctness or compression quality.
 
@@ -29,27 +29,25 @@ workers or decoders, which favours them. Size says nothing about correctness or 
 
 ```sh
 npm install --ignore-scripts
-node public/measure-encoders.mjs .encoder-size-cache encoder-sizes.json
+node bench/measure-encoders.mjs .encoder-size-cache encoder-sizes.json
 ```
 
-The script fetches the pinned npm archives in `public/encoders.json`, checks their integrity, reads the listed
-members in memory and minifies them. It never runs downloaded code. Rapier's own bytes come from its stager.
+The script fetches the pinned npm archives in `bench/encoders.json`, checks their integrity, reads the listed
+members in memory and minifies them. It never runs downloaded code. Rapier JXL's own bytes are in [`dist/sizes.json`](../dist/sizes.json).
 
 ## Quality at matched bytes
 
-A small encoder does not mean small or good pictures. This measures Rapier's readable source against the
+A small encoder does not mean small or good pictures. This compares Rapier JXL's readable source with the
 [libjxl v0.12.0 reference](https://github.com/libjxl/libjxl/releases/tag/v0.12.0) (`cjxl`, `djxl` and
-`butteraugli_main` from the official Linux x86-64 static archive, SHA-256
-`5318a1ea40adad76d023e0c17a03d4627f8282f83cb2b575e69be8e74f1ff456`) on eleven inputs: four synthetic
-textures, the bundled Grace Hopper JPEG, three generated drawings and three generated paintings. It is not a
-representative collection. Each Rapier stream sets a byte budget; the native encoder, at effort 7 with its mode
-left to `cjxl`, is searched over distances for the largest stream within that budget (a gap of at most 0.5%
-counts as matched). Where native distance 0 already fits, the row is marked **†**: an exact stream in fewer
-bytes, not a match. Both outputs are decoded by the same pinned `djxl` to 8-bit sRGB; alpha is byte-exact in
-every selected decode. PSNR and RGB SSIM are computed over the three RGB channels (single-scale SSIM, 11 × 11
-Gaussian, no downsampling); alpha-bearing inputs are matted on white for the table. Butteraugli is the
-reference tool at 80 nits, the worse of the white and black mattes for alpha inputs. Higher PSNR and SSIM and
-lower Butteraugli are that metric's preference, not a human verdict. **R / N** is Rapier / native.
+`butteraugli_main` from the official Linux x86-64 static archive) on eleven inputs: four synthetic textures, a
+public-domain photograph (Grace Hopper), three generated drawings and three generated paintings. It is not a
+representative collection. Each Rapier JXL stream sets a byte budget; `cjxl` at effort 7, its mode left to the
+encoder, is searched over distances for the largest stream within that budget (a gap of at most 0.5% counts as
+matched). Where distance 0 already fits, the row is marked **†**: an exact stream in fewer bytes, not a match. Both
+outputs are decoded by the same `djxl` to 8-bit sRGB; alpha is byte-exact in every decode. PSNR and RGB SSIM are
+computed over the three RGB channels (single-scale SSIM, 11 × 11 Gaussian, no downsampling); inputs with alpha are
+matted on white. Butteraugli is the reference tool at 80 nits. Higher PSNR and SSIM and lower Butteraugli are that
+metric's preference, not a human verdict. **R / N** is Rapier JXL / native.
 
 ### The photo door
 
@@ -82,36 +80,9 @@ Butteraugli).
 
 ### The core's lossy modular on drawings and paintings
 
-Fourteen rows are matched within 0.127%. In the ten **†** rows an exact native stream fits in 3.052% to
-51.144% fewer bytes. Native SSIM and Butteraugli are better in all 24 rows; PSNR favours Rapier for paint-0001
-and paint-0002 at q80 and q90.
-
-| Input · Rapier q | Rapier bytes | Native bytes | Native d | PSNR dB R / N ↑ | RGB SSIM R / N ↑ | Butteraugli R / N ↓ |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| recipe-0000 · 50 | 14,972 | 14,953 | 1.102 | 37.276 / 45.992 | 0.989901 / 0.996956 | 3.9870 / 1.0352 |
-| recipe-0000 · 80 | 20,051 | 19,439† | 0 | 42.493 / ∞ | 0.995389 / 1.000000 | 2.6508 / 0.0000 |
-| recipe-0000 · 90 | 25,232 | 19,439† | 0 | 46.614 / ∞ | 0.997777 / 1.000000 | 1.4840 / 0.0000 |
-| recipe-0000 · 99 | 39,788 | 19,439† | 0 | 58.188 / ∞ | 0.999803 / 1.000000 | 0.5505 / 0.0000 |
-| recipe-0001 · 50 | 31,284 | 31,279 | 1.642 | 44.663 / 51.571 | 0.998111 / 0.999252 | 3.6761 / 0.9379 |
-| recipe-0001 · 80 | 37,226 | 35,491† | 0 | 49.928 / ∞ | 0.999293 / 1.000000 | 2.1718 / 0.0000 |
-| recipe-0001 · 90 | 43,439 | 35,491† | 0 | 53.998 / ∞ | 0.999699 / 1.000000 | 0.7681 / 0.0000 |
-| recipe-0001 · 99 | 60,225 | 35,491† | 0 | 63.163 / ∞ | 0.999953 / 1.000000 | 0.2608 / 0.0000 |
-| recipe-0002 · 50 | 18,746 | 18,736 | 1.651 | 34.484 / 40.065 | 0.978619 / 0.992176 | 5.0667 / 1.4144 |
-| recipe-0002 · 80 | 27,036 | 27,025 | 0.749 | 39.856 / 43.976 | 0.990765 / 0.995802 | 2.5048 / 1.0876 |
-| recipe-0002 · 90 | 35,330 | 35,306 | 0.425 | 44.044 / 46.482 | 0.995583 / 0.997393 | 1.7128 / 0.6129 |
-| recipe-0002 · 99 | 59,624 | 36,102† | 0 | 55.523 / ∞ | 0.999602 / 1.000000 | 0.5762 / 0.0000 |
-| paint-0000 · 50 | 45,505 | 45,498 | 1.336 | 36.020 / 40.143 | 0.975668 / 0.991663 | 4.7640 / 1.5576 |
-| paint-0000 · 80 | 54,652 | 54,618 | 0.684 | 39.900 / 43.518 | 0.988270 / 0.995770 | 2.7126 / 0.9569 |
-| paint-0000 · 90 | 65,877 | 65,843 | 0.289 | 43.809 / 47.922 | 0.994447 / 0.998212 | 1.5637 / 0.6630 |
-| paint-0000 · 99 | 97,769 | 74,658† | 0 | 54.474 / ∞ | 0.999312 / 1.000000 | 0.5388 / 0.0000 |
-| paint-0001 · 50 | 61,462 | 61,442 | 1.680 | 33.606 / 34.830 | 0.956089 / 0.972432 | 7.1021 / 1.8314 |
-| paint-0001 · 80 | 75,929 | 75,926 | 0.830 | 37.751 / 37.312 | 0.980393 / 0.982498 | 3.5325 / 1.1308 |
-| paint-0001 · 90 | 93,451 | 93,451 | 0.343 | 41.285 / 40.730 | 0.990186 / 0.990973 | 1.9406 / 0.8474 |
-| paint-0001 · 99 | 143,736 | 124,100† | 0 | 51.793 / ∞ | 0.998622 / 1.000000 | 0.6179 / 0.0000 |
-| paint-0002 · 50 | 81,312 | 81,304 | 2.020 | 32.334 / 34.083 | 0.937986 / 0.962754 | 5.7590 / 2.1400 |
-| paint-0002 · 80 | 98,676 | 98,622 | 1.055 | 36.749 / 36.598 | 0.972358 / 0.976745 | 3.1658 / 1.3790 |
-| paint-0002 · 90 | 119,652 | 119,651 | 0.472 | 40.420 / 39.711 | 0.986313 / 0.987143 | 1.8052 / 1.1247 |
-| paint-0002 · 99 | 187,934 | 170,069† | 0 | 50.304 / ∞ | 0.997853 / 1.000000 | 0.5696 / 0.0000 |
+On the six drawings and paintings, at four qualities each, native is better on SSIM and Butteraugli in all 24 rows.
+Native matches the byte budget within 0.127% in 14 rows; in the other ten (**†**) an exact native stream fits in 3% to
+51% fewer bytes. PSNR favours Rapier JXL on two of the paintings at quality 80 and 90.
 
 ### The JPEG carrier against reversible recompression
 
@@ -131,26 +102,7 @@ Grace is the one photograph.
 | reconstruction-difference.jpg | 925 | 510 | 676 | yes |
 | grace-hopper.jpg | 86,089 | 60,543 | 58,773 | yes |
 
-### Inputs and commands
-
-Textures are the first four `synthetic-photo` seeds of `tools/corpus/jxl-images.mjs` at 512 × 384; drawings and
-paintings the first three seeds of each kind at the same size, through the real Draw and Paint owners with the
-bundled Geist fonts and pinned `@napi-rs/canvas` 0.1.100. Grace is the public-domain fixture in
-`public/test/photo-corpus/`, decoded once with `ffmpeg -pix_fmt rgba` at its native size.
-
-| Input | Dimensions | Seed | Pixels with alpha < 255 | RGBA SHA-256 |
-| --- | ---: | ---: | ---: | --- |
-| Wood grain | 512 × 384 | 3399228925 | 0 | `cfc2495231eb53c4d423ab5ea7692e3cafce6160f07cc51942b910a89d5ffab7` |
-| Landscape | 512 × 384 | 1351084136 | 0 | `c6c33cc695b19538ec6780647e32fd4f22b24872292d22707f26ab9ad1a0cef2` |
-| Folded texture | 512 × 384 | 3597906643 | 0 | `57a0f40e8e14eb0b9fe5286dbfec7bc7783b1e748c6888ea44791f088b0ea106` |
-| Lit surface | 512 × 384 | 1549761854 | 0 | `d998747e1c427144424c4d59f6795f88a2d2983a341dcba54b5a6b346e4f0a0d` |
-| Grace Hopper | 512 × 600 | — | 0 | `af6a4dc548da3797b814f4be1b4489effe658ad13ba842d839628d01ba3ee39f` |
-| recipe-0000 | 512 × 384 | 2385324683 | 23,538 | `6d8240cac5db3c3db509125658ba32cb919537b113ae9f0877856fe6c091e67f` |
-| recipe-0001 | 512 × 384 | 337179894 | 163,701 | `7a5acaf7274bbadfabaa351f0dd3a7931818a438424d17ae555a2c2f72338b9f` |
-| recipe-0002 | 512 × 384 | 2584002401 | 20,928 | `08ce520f30a10897b4acbb630e8d39aeeb97d53e02b50ac721ad80260fd2484c` |
-| paint-0000 | 512 × 384 | 744793156 | 194,804 | `ad9467838000b99434d7f7cb041111cd0bad8f64fe2511ce98d0d106ebd147a3` |
-| paint-0001 | 512 × 384 | 2991615663 | 193,919 | `a3af498e21cade0969d0b3fa63118316a18601aa23bd1b35ffc561e70a123237` |
-| paint-0002 | 512 × 384 | 943470874 | 191,708 | `d2c586460a91e5bcb4c213080f46e4945d674ed6920230f50b2ab396076ea3c1` |
+### Commands
 
 ```sh
 cjxl INPUT.pam OUTPUT.jxl --distance=D --effort=7 --num_threads=0 \
@@ -162,10 +114,7 @@ cjxl INPUT.jpg OUTPUT.jxl --lossless_jpeg=1 --effort=7 --num_threads=0 --quiet
 djxl OUTPUT.jxl RECONSTRUCTED.jpg --reconstruct_jpeg --num_threads=0 --quiet
 ```
 
-From `repo/` in the development checkout, `tools/probes/jxl-quality.mjs --section=photo|modular|jpeg` makes
-the inputs, encodes, runs the bracket search and writes `photo.json`, `modular.json` and `jpeg.json`;
-`tools/probes/jxl-quality-metrics.py` computes the metrics (Python 3.12, NumPy 2.3, SciPy 1.17). The full
-candidate pools, byte brackets, hashes and metric components are in the development receipts.
+The Grace Hopper photograph is `test/photo-corpus/grace-hopper.jpg`.
 
 ## Found but not ranked
 
@@ -181,5 +130,4 @@ candidate pools, byte brackets, hashes and metric components are in the developm
 | webcvt's jsquash-jxl adapter | The jSquash encoder, already measured |
 | sharp, libvips, the `cjxl` npm wrapper | Native binaries |
 
-Searched: npm's `jpeg-xl`, `jpegxl`, `jxl` and `jixel` results, upstream repositories, the web. A smaller usable
-encoder published later belongs in this table, and the claim changes with it.
+Searched: npm's `jpeg-xl`, `jpegxl`, `jxl` and `jixel` results and the encoders' upstream repositories.

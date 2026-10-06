@@ -323,12 +323,9 @@ export function pictureSlices(profile, x, y, width, height, scale = 1) {
         return span ? [span] : [];
       }).filter(run => Number.isFinite(run[0]) && Number.isFinite(run[1]) && run[1] > run[0])
         .sort((a, b) => a[0] - b[0]);
-      const merged = [];
-      for (const run of runs) {
-        const last = merged.at(-1);
-        if (last && run[0] <= last[1]) last[1] = Math.max(last[1], run[1]);
-        else merged.push([...run]);
-      }
+      // Words wrap the outer contour: a band reserves from its leftmost ink to its rightmost, so no word lands
+      // inside a hollow outline or between two strokes of one picture.
+      const merged = runs.length ? [[runs[0][0], Math.max(...runs.map(run => run[1]))]] : [];
       const current = new Map();
       for (const [left, right] of merged) {
         const key = left + ':' + right;

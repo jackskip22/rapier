@@ -62,6 +62,10 @@ function _rapierDrawBackgroundSync() {
 	_rapierBgSyncHandles();
 }
 
+// One slider row in the house form: the word, then the seek track, as in the shape menu.
+function _rapierBgSeek(word, attrs) {
+	return '<label class="rapier-draw-control rapier-draw-control--seek"><span class="rapier-draw-bgpanel-word">' + word + '</span><input type="range" ' + attrs + ' aria-label="' + word + '"></label>';
+}
 function _rapierBgPanel() { return _rapierDrawState.surface?.querySelector('[data-draw-panel="background"]'); }
 function _rapierBgEnsurePanel() {
 	const surface = _rapierDrawState.surface;
@@ -78,20 +82,21 @@ function _rapierBgEnsurePanel() {
 		'<div class="rapier-draw-bgpanel-presets" role="group" aria-label="Starting points"></div>' +
 		'<div class="rapier-draw-bgpanel-bar" data-draw-bg-bar aria-label="Colours. Drag a handle along to move a colour, tap it to choose, drag it away to remove; tap the strip to add a colour"><svg class="rapier-draw-bgpanel-strip" preserveAspectRatio="none" aria-hidden="true"></svg></div>' +
 		'<div class="rapier-draw-bgpanel-solid"><button type="button" class="rapier-draw-chip" data-draw-bg-pick>Colour</button></div>' +
-		'<div class="rapier-draw-bgpanel-wave"><label class="rapier-draw-smooth-label">Flow<input type="range" min="0" max="1" step="0.01" data-draw-bg-flow></label>' +
-		'<label class="rapier-draw-smooth-label">Size<input type="range" min="0" max="1" step="0.01" data-draw-bg-size></label>' +
+		'<div class="rapier-draw-bgpanel-wave">' + _rapierBgSeek('Flow', 'min="0" max="1" step="0.01" data-draw-bg-flow') +
+		_rapierBgSeek('Size', 'min="0" max="1" step="0.01" data-draw-bg-size') +
 		'<button type="button" class="rapier-draw-chip" data-draw-bg-shuffle>Shuffle</button></div>' +
 		'<div class="rapier-draw-bgpanel-rails"><div class="rapier-draw-bgpanel-forms" role="radiogroup" aria-label="Rails form">' + [['lines', 'Lines'], ['fan', 'Fan'], ['spiral', 'Spiral'], ['burst', 'Burst']].map(([f, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-form="' + f + '" aria-checked="false">' + word + '</button>').join('') + '</div>' +
-		'<label class="rapier-draw-smooth-label">Count<input type="range" min="4" max="96" step="1" data-draw-bg-rails="count"></label>' +
-		'<label class="rapier-draw-smooth-label">Glow<input type="range" min="0" max="1" step="0.01" data-draw-bg-rails="glow"></label>' +
-		'<label class="rapier-draw-smooth-label">Bend<input type="range" min="0" max="1" step="0.01" data-draw-bg-rails="bend"></label></div>' +
+		_rapierBgSeek('Count', 'min="4" max="96" step="1" data-draw-bg-rails="count"') +
+		_rapierBgSeek('Glow', 'min="0" max="1" step="0.01" data-draw-bg-rails="glow"') +
+		_rapierBgSeek('Bend', 'min="0" max="1" step="0.01" data-draw-bg-rails="bend"') + '</div>' +
 		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-styles" role="radiogroup" aria-label="Glyph style">' + [['marks', 'Marks'], ['halftone', 'Halftone'], ['blocks', 'Blocks'], ['rain', 'Rain'], ['circuit', 'Circuit']].map(([v, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-style="' + v + '" aria-checked="false">' + word + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-textures" role="radiogroup" aria-label="Texture">' + [['weave', 'Weave'], ['linen', 'Linen'], ['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['grain', 'Grain']].map(([v, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-texture="' + v + '" aria-checked="false">' + word + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-glowmodes" role="radiogroup" aria-label="Glow">' + RAPIER_BG_GLOW_MODES.map(([v, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-glowmode="' + v + '" aria-checked="false">Glow ' + word + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-shape" data-draw-bg-shape></div>' +
-		'<div class="rapier-draw-bgpanel-glow"><label class="rapier-draw-smooth-label">Glow<input type="range" min="0.05" max="1.5" step="0.01" data-draw-bg-glow></label>' +
+		'<div class="rapier-draw-bgpanel-glow">' + _rapierBgSeek('Glow', 'min="0.05" max="1.5" step="0.01" data-draw-bg-glow') +
 		'<button type="button" class="rapier-draw-chip" data-draw-bg-remove-point>Remove</button></div>' +
 		'<input type="color" class="rapier-draw-bgpanel-colour" data-draw-bg-colour tabindex="-1" aria-hidden="true">';
+	for (const input of panel.querySelectorAll('input[type="range"]')) _rapierDrawSeekWrap(input);
 	anchor.after(panel);
 	_rapierBgBindPanel(panel);
 	return panel;
@@ -201,9 +206,10 @@ function _rapierBgSyncPanel() {
 		shapeBox.dataset.kind = bg?.kind || '';
 		shapeBox.textContent = '';
 		for (const [key, word, min, max, step] of sliders) {
-			const label = document.createElement('label'); label.className = 'rapier-draw-smooth-label'; label.textContent = word;
-			const input = document.createElement('input'); input.type = 'range'; input.min = min; input.max = max; input.step = step; input.dataset.drawBgKey = key;
-			label.appendChild(input); shapeBox.appendChild(label);
+			const label = document.createElement('label'); label.className = 'rapier-draw-control rapier-draw-control--seek';
+			const name = document.createElement('span'); name.className = 'rapier-draw-bgpanel-word'; name.textContent = word;
+			const input = document.createElement('input'); input.type = 'range'; input.min = min; input.max = max; input.step = step; input.dataset.drawBgKey = key; input.setAttribute('aria-label', word);
+			label.append(name, input); shapeBox.appendChild(label); _rapierDrawSeekWrap(input);
 		}
 	}
 	for (const input of shapeBox.querySelectorAll('[data-draw-bg-key]')) input.value = String(bg[input.dataset.drawBgKey]);
@@ -225,6 +231,7 @@ function _rapierBgSyncPanel() {
 	const point = bg?.kind === 'freeform' && _rapierDrawState.bgPoint != null ? bg.points[_rapierDrawState.bgPoint] : null;
 	panel.querySelector('.rapier-draw-bgpanel-glow').hidden = !point;
 	if (point) panel.querySelector('[data-draw-bg-glow]').value = String(point.spread);
+	for (const input of panel.querySelectorAll('input[type="range"]')) _rapierDrawSeekSync(input);
 }
 
 // The colour chooser is the platform's own (the same one a phone offers anywhere); `then` receives the hex.

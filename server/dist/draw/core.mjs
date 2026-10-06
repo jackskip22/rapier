@@ -2687,11 +2687,22 @@ function _rapierDrawSerializeSVG(recipe, measure, keepRasters = false) {
 	const body = _rapierDrawSceneMarkup(recipe, true, keepRasters);
 	let measured = null;
 	if (typeof measure === 'function') try { measured = measure(body, recipe.canvas.w, recipe.canvas.h); } catch (_) {}
-	const view = _rapierDrawInkView(recipe, measured) || { x: 0, y: 0, w: recipe.canvas.w, h: recipe.canvas.h };
+	let view = _rapierDrawInkView(recipe, measured) || { x: 0, y: 0, w: recipe.canvas.w, h: recipe.canvas.h };
+	// A background fills the paper the person saw (the canvas, or the frame they resized to), exactly as Draw shows it,
+	// so the saved picture keeps its proportions and its glow; the view grows only to keep ink beyond the paper.
+	const paper = recipe.frame || { x: 0, y: 0, w: recipe.canvas.w, h: recipe.canvas.h };
+	if (recipe.background) {
+		const x = Math.min(paper.x, view.x), y = Math.min(paper.y, view.y);
+		view = { x, y, w: Math.max(paper.x + paper.w, view.x + view.w) - x, h: Math.max(paper.y + paper.h, view.y + view.h) - y };
+	}
 	recipe.view = view;
-	// The background fills exactly the saved view, under everything else; its ids follow the drawing's content so two
-	// drawings on one page never share a gradient.
-	const background = recipe.background ? backgroundSVG(recipe.background, view, 'rapier-bg-' + _rapierDrawBackgroundKey(recipe), recipe.paper === 'black') : '';
+	// Its ids follow the drawing's content so two drawings on one page never share a gradient.
+	// Paper that follows the theme carries both grounds and shows the one for the page's scheme, as Draw does.
+	const bgId = 'rapier-bg-' + _rapierDrawBackgroundKey(recipe);
+	const background = !recipe.background ? '' : recipe.paper ? backgroundSVG(recipe.background, paper, bgId, recipe.paper === 'black')
+		: '<style>.' + bgId + '-d{display:none}@media (prefers-color-scheme:dark){.' + bgId + '-l{display:none}.' + bgId + '-d{display:inline}}</style>'
+			+ '<g class="' + bgId + '-l">' + backgroundSVG(recipe.background, paper, bgId + '-l', false) + '</g>'
+			+ '<g class="' + bgId + '-d">' + backgroundSVG(recipe.background, paper, bgId + '-d', true) + '</g>';
 	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + [view.x, view.y, view.w, view.h].map(_rapierDrawFmt).join(' ') + '" width="' + _rapierDrawFmt(view.w) + '" height="' + _rapierDrawFmt(view.h) + '" color="' + RAPIER_DRAW_INK + '"><metadata id="rapier-draw">' + _rapierDrawEscapeXML(JSON.stringify(_rapierDrawStripRasters(recipe.fonts?.length ? { ...recipe, fonts: fontMetadata(recipe.fonts) } : recipe))) + '</metadata>' + _rapierDrawDiagramDark(body, recipe) + background + body + '</svg>';
 }
 
