@@ -460,11 +460,6 @@
 			}
 		},
 		"kit/render.mjs": {
-			"_rapierBuildArtifact": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "styledRoot.innerHTML = sanitizeRapierHtml(styledRoot.innerHTML, 'export'), re-sanitizing the styled export root in place."
-			},
 			"_rapierProjectStyledRoot": {
 				"count": 1,
 				"kind": "sanitized-document",

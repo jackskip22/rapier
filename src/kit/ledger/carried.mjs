@@ -76,7 +76,7 @@ export function readBase(value) {
     throw fault('proposal base SHA-256 differs from its text');
   if (typeof value.revision !== 'string' || !value.revision || value.revision.length > 256 || /[\u0000-\u001f\u007f]/.test(value.revision))
     throw fault('invalid proposal base revision');
-  if (typeof value.name !== 'string' || !value.name || value.name.length > 255 || /[\\/\u0000-\u001f\u007f]/.test(value.name))
+  if (typeof value.name !== 'string' || !value.name || [...value.name].length > 256 || /[\\/\u0000-\u001f\u007f]/.test(value.name))
     throw fault('invalid proposal base name');
   if (typeof value.by !== 'string' || !value.by.trim() || value.by.length > 96 || /[\u0000-\u001f\u007f]/.test(value.by))
     throw fault('a proposal needs its proposer name');

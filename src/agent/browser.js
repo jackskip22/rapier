@@ -1408,7 +1408,7 @@
       // The kernel painted `add` before `replace`, in order; each `{kind: 'paint'}` takes its layer back, under the id it named.
       const painted = paintedLayers.slice(), laid = list => list?.map(row => row?.kind === 'paint' && painted.length ? {...painted.shift(), ...(row.id != null ? {id: row.id} : {})} : row);
       const patch = {...args.shapes, ...(args.shapes.add ? {add: laid(args.shapes.add)} : {}), ...(args.shapes.replace ? {replace: laid(args.shapes.replace)} : {})};
-      try { _rapierDrawAgentPatch(patch, {asset: result.replaced, reference: result.asset?.reference, name: doorName}); }
+      try { _rapierDrawAgentPatch(patch, {asset: result.replaced, reference: result.asset?.reference, transactionId: result.changeId, name: doorName}); }
       catch (_) {}
     }
     // Any call can be the first thing to relocate a pending review's changes through

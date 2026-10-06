@@ -43,7 +43,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 		print: !!opts.print,
 		baseName: base,
 	});
-	styledRoot.innerHTML = sanitizeRapierHtml(styledRoot.innerHTML, 'export');
+	// _rapierProjectStyledRoot already returns the sanitized projection.
 	// Print never emits the layout reflow script (see below), so a print artifact has no use for
 	// this annotation -- skip it there rather than pay the cost for numbers nothing will read.
 	if (!opts.print) _rapierAnnotateExportBoxPolygons(styledRoot);
@@ -750,6 +750,8 @@ function _rapierImageSources(tokens) {
 }
 
 function _rapierImageDestinations(source, accepts) {
+  // Only a rendered Markdown image consumes a definition; unused definitions stay literal source.
+  if (!source.includes('![')) return [];
   const env = {}, tokens = md.parse(source, env), offsets = _rapierLineStartOffsets(source);
   const hrefs = _rapierImageSources(tokens), labels = new Set(), destinations = [], seen = new Set();
   const visit = rows => { for (const token of rows || []) {

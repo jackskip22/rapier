@@ -6,7 +6,7 @@ import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, guideResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap } from '../skills/rapier-html/wrap.mjs';
-import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
+import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor } from '../agent/door-identity.mjs';
@@ -105,7 +105,9 @@ async function exportFile(env, { format, filename, docKind, text }) {
       const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html'));
       if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) return { reason: 'export_page_unavailable' };
       const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE');
-      file = { name: filename.replace(/\.(md|markdown|txt)$/i, '') + '.rapier.html', mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename)) };
+      const suffix = '.rapier.html';
+      const stem = [...filename.replace(/\.(md|markdown|txt)$/i, '')].slice(0, MAX_FILENAME_CHARS - suffix.length).join('');
+      file = { name: stem + suffix, mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename)) };
     } catch (error) {
       return error?.code === 'EXPORT_PAGE_TOO_LARGE' ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES } : { reason: 'export_page_unavailable' };
     }
@@ -377,7 +379,12 @@ async function callTool(name, args, env, request, hostAgent = null) {
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
   const rawArgs = args;
   try { args = validateInput(descriptor.inputSchema, args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
-  catch (error) { if (error.code === 'invalid_arguments') error[PUBLIC_FAILURE] = true; throw error; }
+  catch (error) {
+    if (error.code !== 'invalid_arguments') throw error;
+    const result = toolError(failure('invalid_arguments', error.message, {path: error.path}));
+    // Input feedback is not an instance of the tool's declared successful output.
+    return {isError: true, content: [{type: 'text', text: JSON.stringify(result.structuredContent)}]};
+  }
   if (name === 'rapier.guide') return envelope(guideResult());
   for (const field of ['text', 'query']) if (typeof args[field] === 'string' && contentBytes(args[field]) > MAX_TEXT_BYTES) return toolError(failure('TEXT_TOO_LARGE', `${field} exceeds the UTF-8 text limit.`, { limitBytes: MAX_TEXT_BYTES }));
   const verdict = deployment(env);
@@ -614,7 +621,7 @@ async function handleRequest(request, env) {
       default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
   } catch (error) {
-    if (error?.[PUBLIC_FAILURE] && (error.code === 'invalid_arguments' || error.code === 'UNKNOWN_TOOL')) return rpcError(id, -32602, error.code === 'invalid_arguments' ? error.message + '. Every argument was checked; correct the named fields against the tool\'s inputSchema before resending.' : error.message, 200, error.path ? { path: error.path } : undefined);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'UNKNOWN_TOOL') return rpcError(id, -32602, error.message);
     if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return rpcError(id, modern ? -32602 : -32002, error.message, 200,
       typeof params.uri === 'string' ? {uri: params.uri} : undefined);
     if (error?.[PUBLIC_FAILURE] && ['UI_NOT_BUILT', 'INVALID_UI_CONFIGURATION', 'UI_RESOURCE_TOO_LARGE', 'SKILLS_NOT_BUILT'].includes(error.code)) return rpcError(id, -32603, error.message, 200, error.details);
@@ -849,7 +856,7 @@ export class RapierDocument {
       if (grant.expiresAt <= Date.now() || grant.owner !== head.capabilityHash) return returnRefused('This return address has expired.', 410);
       let name;
       try { name = decodeURIComponent(request.headers.get('X-Rapier-Name') || 'document.md'); } catch { return returnRefused('The document name is not valid URI-encoded text.', 400); }
-      if (!name || name.length > 255 || /[\\/\x00-\x1f\x7f]/.test(name)) return returnRefused('The document name must be a filename of at most 255 characters.', 400);
+      if (!name || [...name].length > MAX_FILENAME_CHARS || /[\\/\x00-\x1f\x7f]/.test(name)) return returnRefused(`The document name must be a filename of at most ${MAX_FILENAME_CHARS} characters.`, 400);
       const text = await readTextBody(request, MAX_TEXT_BYTES, 'returned document', 'RETURN_TOO_LARGE', true);
       if (grant.expiresAt <= Date.now() || head.expiresAt <= Date.now()) return returnRefused('This return address has expired.', 410);
       const bytes = contentBytes(text);

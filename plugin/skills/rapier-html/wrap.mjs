@@ -16,7 +16,7 @@ const SEARCH_WORDS = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n
 export {encodeCarried, decodeCarried};
 
 function safeName(name, fallback) {
-	return String(name || fallback).replace(/[\\/\0"<>&]/g, '-').slice(0, 255).replace(/[\uD800-\uDBFF]$/, '') || fallback;
+	return [...String(name || fallback).replace(/[\\/\0"<>&]/g, '-')].slice(0, 256).join('').replace(/[\uD800-\uDBFF]$/, '') || fallback;
 }
 
 export function wrap(pageHtml, text, name, options) {

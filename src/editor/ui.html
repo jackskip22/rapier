@@ -858,9 +858,12 @@
 					editing. Its workspace keeps the document, edit history, inspected passages, proposals, decisions, presence,
 					selections and tool records; secret keys control workspace access. Active use renews workspace expiry to
 					about 30 days; unchanged sync does not. Expired workspaces are cleared on their next request or deletion
-					alarm. In the editor, delete the workspace or end assistant access. The door keeps a network-address hash
-					and creation records for one hour to limit new workspaces. Your assistant's host handles the conversation
+					alarm. In the editor, delete the workspace or end assistant access. The door keeps creation records
+					for one hour to limit new workspaces. Your assistant's host handles the conversation
 					under its policy.</p>
+				<p>Hosted exports keep an unchanged file copy. Its download link expires after 24 hours and is revoked when
+					you delete the workspace or end assistant access. Expired copies are cleared on the next workspace update
+					or deletion.</p>
 				<p>Cloudflare serves the page and door and sees what web requests show. No cookies.</p>
 				<h3 class="licenses-given">terms</h3>
 				<p>Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper.
@@ -1611,8 +1614,8 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 			<h3 class="licenses-subtitle">third-party software</h3>
 			<div class="licenses-list">
 <!-- Codec, Pretext and perfect-freehand notices are assembled from their vendor sources. -->
-<details class="license-entry"><summary><span class="license-name">DOMPurify 3.4.13</span><span class="license-id">Apache-2.0 OR MPL-2.0</span></summary>
-					<pre class="license-text">DOMPurify 3.4.13
+<details class="license-entry"><summary><span class="license-name">DOMPurify 3.4.16</span><span class="license-id">Apache-2.0 OR MPL-2.0</span></summary>
+					<pre class="license-text">DOMPurify 3.4.16
 	Copyright (c) Cure53 and other contributors.
 
 Released under the Apache License 2.0 OR the Mozilla Public
@@ -1826,7 +1829,7 @@ https://www.mozilla.org/MPL/2.0/
 				<details class="license-entry"><summary><span class="license-name">Turndown 7.2.4</span><span class="license-id">MIT</span></summary>
 					<pre class="license-text" data-license="rapier-mit"></pre>
 				</details>
-				<details class="license-entry"><summary><span class="license-name">markdown-it 15.0.0 · task-lists 2.1.1 · emoji 3.1.0 · deflist 4.0.0</span><span class="license-id">MIT · ISC</span></summary>
+				<details class="license-entry"><summary><span class="license-name">markdown-it 15.0.2 · task-lists 2.1.1 · emoji 3.1.0 · deflist 4.0.0</span><span class="license-id">MIT · ISC</span></summary>
 					<pre class="license-text" data-license="rapier-mit"></pre>
 					<pre class="license-text">ISC License — markdown-it-task-lists 2.1.1
 

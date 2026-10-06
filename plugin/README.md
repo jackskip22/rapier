@@ -1,10 +1,11 @@
 # Rapier, the Claude plugin
 
 [Rapier](https://rapier.website) is a very fast Markdown editor in one offline HTML file: writing, drawing, painting,
-pictures, Notes and the diff of a change, on a phone or any browser, with no server, no account and nothing collected.
-Long documents open and scroll fast. An assistant gets two things.
+pictures, Notes and the diff of a change, on a phone or any browser. The offline editor runs on your device; the
+connector keeps shared work in a hosted workspace. Neither requires a Rapier account. Long documents open and scroll
+fast. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.73 notes.md` makes one HTML file that is the whole editor with the
+**A file to hand a person.** `npx rapier-html@1.1.74 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it with one click, edit, draw and paint in it, review a proposed change as a diff, save it
 and send it back exactly.
 
@@ -12,6 +13,9 @@ and send it back exactly.
 by structure and changes the passage or drawing object it inspected; the person sees each change land, keeps or drops
 it, and can undo an agent's change without losing their own. Diagrams are drawn by recipe: name the boxes and arrows,
 and Rapier places and routes them.
+
+The hosted tools export Markdown or an offline HTML page through download links that expire after 24 hours. Word and
+PDF export, and device Notes, are available in the full editor. The hosted tools cannot access device Notes.
 
 Portable comment threads attach to passages, pictures and drawing objects. An explicit Ask action sends a
 request; ordinary comments remain document content. Visual inspection returns the current rendered region
@@ -64,7 +68,7 @@ The repository must be public before the plugin listing goes live. See the Claud
 
 ## What it sends
 
-The skills run in the host's file and tool environment and upload nothing; the declared package command downloads its
-pinned package from npm when needed. The connector sends the document you share with the assistant to the door, which
+The skills are instructions and helpers for the host's file and tool environment. The declared package command
+downloads its pinned package from npm when needed. The connector sends the document you share with the assistant to the door, which
 keeps it, with the work on it, in a workspace that expires after thirty idle days. No account, no telemetry; the person ends the
 assistant's access from the editor at any moment. In full: [PRIVACY.md](PRIVACY.md).

@@ -500,9 +500,9 @@ const shakenExports = {};
 // Content-address the assembled modules, shell scripts, parser identities and assembly. Vendor files live under shell/vendor/,
 // pinned in shell/vendor/PROVENANCE.json: a changed byte without its record refuses. The page is output only.
 const VENDOR_GROUPS = {
-  'lib-dompurify': ['dompurify-3.4.13.dist.purify.min.js'],
+  'lib-dompurify': ['dompurify-3.4.16.dist.purify.min.js'],
   'lib-turndown': ['turndown-7.2.4.lib.turndown.browser.umd.js'],
-  'lib-markdownit': ['markdown-it-15.0.0.umd.min.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
+  'lib-markdownit': ['markdown-it-15.0.2.umd.min.js', 'markdown-it-task-lists-2.1.1.min.js', 'markdown-it-footnote-4.0.0.min.js',
     'markdown-it-mark-4.0.0.min.js', 'markdown-it-sub-2.0.0.min.js', 'markdown-it-sup-2.0.0.min.js', 'markdown-it-emoji-3.1.0-light.min.js',
     'markdown-it-abbr-2.0.0.min.js', 'markdown-it-ins-4.0.0.min.js', 'markdown-it-deflist-4.0.0.min.js'],
   // The GPU lexer: deflated until WebGPU colours a block; editor/code-tokens.mjs reads the same nine types.

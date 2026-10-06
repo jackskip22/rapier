@@ -594,7 +594,7 @@ function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 	// An agent's contribution is one Draw step AND one document.draw transaction. Seal must carry the
 	// stamp so Undo of the delta still knows to walk the document journal. Selection and shift
 	// already travel this way.
-	if (before.agent) entry.agent = { before: String(before.agent.before || ''), after: String(before.agent.after || ''),
+	if (before.agent) entry.agent = { before: String(before.agent.before || ''), after: String(before.agent.after || ''), transactionId: before.agent.transactionId,
 		savedBefore: before.agent.savedBefore || null, savedAfter: before.agent.savedAfter || null };
 	const at = state.undoStack.lastIndexOf(before);
 	if (at >= 0) state.undoStack[at] = entry;
@@ -846,16 +846,19 @@ function _rapierDrawUndoStep(redo) {
 	let journal = null;
 	if (prior.agent) {
 		const asset = redo ? prior.agent.after : prior.agent.before;
-		if (state.editing && asset) state.editing = { ...state.editing, asset: String(asset) };
 		// The exact source baseline this journal step moves to, stamped when the patch landed --
 		// never the whole restored surface (DRA-01 repair item 5). The document journal has just
 		// put the saved drawing back WITHOUT the person's own unwritten edit; the restored surface
 		// still has it, and calling that committed is the same loss Done's no-op close was.
 		// Independent unsaved human deltas stay dirty, so Done still writes them.
 		const baseline = redo ? prior.agent.savedAfter : prior.agent.savedBefore;
-		journal = _rapierDrawFollowAgentJournal(redo);
+		const session = state.session;
+		journal = _rapierDrawFollowAgentJournal(redo, prior.agent);
 		if (journal) journal = Promise.resolve(journal).then(ok => {
-			if (ok && state.open) state.openSnapshot = baseline || _rapierDrawHistoryRecipe();
+			if (ok && state.open && state.session === session) {
+				if (state.editing && asset) state.editing = { ...state.editing, asset: String(asset) };
+				if (baseline) state.openSnapshot = baseline;
+			}
 			return ok;
 		}).catch(() => false);
 	}
@@ -863,19 +866,24 @@ function _rapierDrawUndoStep(redo) {
 	return journal;
 }
 // Walk the editor journal for the agent document.draw that this Draw history entry is the surface
-// of. The next history step must be that operation, by an agent: Draw being open is itself the
-// fence against any other document edit, but we still refuse to walk a different top than the one
-// we stamped, so a missed stamp cannot eat a person's own typing. Returns the walk's promise, or
+// of. Edits elsewhere can land while Draw is open, so the next step must be the exact transaction
+// stamped on this contribution. Returns the walk's promise, or
 // null when there is no journal to follow (Node recovery harness, document profile without undo).
-function _rapierDrawFollowAgentJournal(redo) {
+function _rapierDrawFollowAgentJournal(redo, agent) {
 	if (typeof rapier === 'undefined' || !rapier.undo?.branch) return null;
 	const index = redo ? rapier.undo.cursor : rapier.undo.cursor - 1;
 	const target = rapier.undo.branch[index];
 	const tx = target?.transaction;
-	if (!tx || tx.operation !== 'document.draw' || tx.actor?.kind !== 'agent') return null;
+	if (!tx || tx.id !== agent?.transactionId || tx.operation !== 'document.draw' || tx.actor?.kind !== 'agent') return null;
 	const walk = redo ? (typeof rapierRedo === 'function' ? rapierRedo : null)
 		: (typeof rapierUndo === 'function' ? rapierUndo : null);
-	return walk ? walk() : null;
+	if (!walk) return null;
+	const session = _rapierDrawState.session;
+	const splices = redo ? target.splices : target.splices.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed}));
+	return Promise.resolve(walk()).then(ok => {
+		if (ok && _rapierDrawState.open && _rapierDrawState.session === session) _rapierDrawFollow(splices);
+		return ok;
+	});
 }
 function _rapierDrawClearAll() {
 	_rapierDrawCancelGesture();
@@ -1331,7 +1339,7 @@ function _rapierDrawReplayPatch(patch, options = {}) {
 	// rather than calling the whole restored surface committed (DRA-01, repair item 5). Both are
 	// the same openSnapshot objects the surface already holds -- referenced, never copied.
 	// Copied through SealHistory onto the delta.
-	if (options.asset) entry.agent = { before: String(options.asset), after: String(options.reference || options.asset),
+	if (options.asset) entry.agent = { before: String(options.asset), after: String(options.reference || options.asset), transactionId: options.transactionId,
 		savedBefore: options.savedBefore || null, savedAfter: options.savedAfter || null };
 	state.recipe = target;
 	if (!steps.length) { _rapierDrawRenderShapes(); _rapierDrawSealHistory(entry); _rapierDrawBackupTouch(); return false; }
@@ -1361,6 +1369,7 @@ function _rapierDrawReplayPatch(patch, options = {}) {
 function _rapierDrawEditingAsset() {
 	const state = _rapierDrawState;
 	if (!state.open || !state.editing || state.finishing) return '';
+	if (!Number.isSafeInteger(state.editing.position) || state.heldRoot !== rapier.document.source?.rootId) return '';
 	if (state.gesture || state.textEdit || state.settingEdit || state.paintLayer?.pendingLift || state.paintLayer?.pendingCommit) return '';
 	// The surface is not ready to take a patch until it knows what the SOURCE holds. openSnapshot is
 	// taken a frame after the canvas opens (_rapierDrawOpenSurface's own measurement frame), and
@@ -1401,11 +1410,33 @@ function _rapierDrawMoveRanges(ranges, splices) {
 	}
 	return moved;
 }
-// An edit has landed elsewhere while Draw is open: the place a new drawing lands moves with it. A picture being edited
-// and a block-anchored place need nothing; their block ids outlive an edit that does not touch them.
+// Follow the exact occurrence through committed splices. A changed reference gives its block a new id;
+// references can be shared by several occurrences, so finding the first matching asset is not a binding.
 function _rapierDrawFollow(splices) {
 	const state = _rapierDrawState, target = state.insertTarget;
 	if (!state.open) return;
+	if (state.editing) {
+		const editing = state.editing;
+		let position = editing.position;
+		if (!Number.isSafeInteger(position)) return;
+		for (const row of splices) {
+			if (position < row.pos) continue;
+			if (position >= row.pos + row.removed.length) position += row.inserted.length - row.removed.length;
+			else if (position !== row.pos || !row.inserted.startsWith('![')) {
+				state.editing = { ...editing, blockId: null, imageIndex: null, position: null };
+				return;
+			}
+		}
+		const spans = _rapierExcerptCanonicalBlockSpans();
+		const block = rapier.document.blocks.find(row => { const span = spans.get(row.id); return span && span.start <= position && position < span.end; });
+		const image = block && _rapierScanMarkdownImages(block.raw).find(row => spans.get(block.id).start + row.start === position);
+		if (!image || _rapierSourceText().slice(position, position + image.end - image.start) !== block.raw.slice(image.start, image.end)) {
+			state.editing = { ...editing, blockId: null, imageIndex: null, position: null }; return;
+		}
+		const assets = globalThis.RapierImageAssets, renamed = assets.normalizeLabel(image.reference || '') !== assets.normalizeLabel(editing.asset || '');
+		state.editing = { ...editing, blockId: block.id, imageIndex: image.renderIndex, position,
+			...(renamed ? { sourceUrl: assets.documentAssets(_rapierSourceText()).assets.get(assets.normalizeLabel(image.reference || ''))?.url, sourceHash: undefined } : {}) };
+	}
 	const form = !state.editing && target ? (target.sourceSplit ? 'sourceSplit' : target.sourceSelection ? 'sourceSelection' : '') : '';
 	if (form) {
 		const range = _rapierDrawMoveRanges([target[form]], splices)?.[0];
@@ -1421,6 +1452,9 @@ function _rapierDrawAgentPatch(patch, options = {}) {
 	const asset = String(options.asset || ''), open = _rapierDrawEditingAsset();
 	if (!asset || !open || asset !== open) return false;
 	const state = _rapierDrawState;
+	// A different occurrence may share the old asset. Replay only the occurrence this commit renamed.
+	const record = _rapierImageRecord(state.editing.blockId, state.editing.imageIndex), assets = globalThis.RapierImageAssets;
+	if (!record || !options.reference || assets.normalizeLabel(record.image.reference || '') !== assets.normalizeLabel(options.reference)) return false;
 	// DRA-01. openSnapshot is the recipe the SOURCE holds for this drawing -- set from the document's
 	// own original when the surface opened, and advanced only by a committed source transaction.
 	// That is exactly the baseline the kernel just patched (held.recipeJSON), so running the same
@@ -5678,7 +5712,12 @@ function _rapierDrawOpenSurface(options) {
 	state.smooth = _rapierDrawSmoothLevel(_rapierDrawRemembered('smooth'));
 	state.nib = _rapierDrawNibLevel(_rapierDrawRemembered(opts.notes ? 'notesNib' : 'nib'));
 	recipe.smooth ??= opts.recipe ? RAPIER_DRAW_SMOOTH_DEFAULT : state.smooth; recipe.nib ??= opts.recipe ? RAPIER_DRAW_NIB_DEFAULT : state.nib;
-	state.editing = opts.editing || null; state.insertTarget = opts.target || null; state.notes = opts.notes || null;
+	state.editing = opts.editing ? { ...opts.editing } : null; state.insertTarget = opts.target || null; state.notes = opts.notes || null;
+	if (state.editing) {
+		const record = _rapierImageRecord(state.editing.blockId, state.editing.imageIndex);
+		const span = record && _rapierExcerptCanonicalBlockSpans([record.block.id]).get(record.block.id);
+		state.editing.position = span ? span.start + record.image.start : null;
+	}
 	state.heldRoot = rapier.document.source?.rootId;
 	// A NEW drawing opens in Paint. Re-opening an EXISTING drawing opens on the tool it was last
 	// edited with (`recipe.tool`, written by Done and the backup), so somebody halfway through a
@@ -6443,7 +6482,7 @@ async function _rapierDrawFinish() {
 	// Done adds the drawing: no question. Back is Done too: one Undo in the document takes either back, and the file is
 	// one tap away on the picture's own toolbar (Download). Nothing is kept or dropped on a guess, and nothing is asked.
 	const session = state.session, sameSession = () => state.session === session, notes = state.notes;
-	const editing = state.editing;
+	let editing = state.editing;
 	let insertTarget = state.insertTarget, loadToken = rapier.identity.loadToken;
 	state.finishing = true; state.surface.setAttribute('aria-busy', 'true');
 	for (const control of state.surface.querySelectorAll('button:not(.rapier-dial),input,textarea,select')) control.disabled = true;
@@ -6466,6 +6505,7 @@ async function _rapierDrawFinish() {
 		const deadline = Date.now() + 650;
 		while (_rapierUserMutationBlocked(false) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 40));
 		if (_rapierUserMutationBlocked(false)) throw new Error('Document is still busy; try Done again');
+		editing = state.editing;
 		// An edit that landed elsewhere while the person drew has moved the place (_rapierDrawFollow), so it is read now. A
 		// change Draw did not follow leaves no offset to trust: the drawing goes after the line the person was on.
 		if (!notes?.fresh) {

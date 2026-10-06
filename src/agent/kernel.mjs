@@ -3280,7 +3280,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         break;
       }
       case 'document.draw': result = await drawPicture(input, who, context); break;
-      // A read: the host builds the file from the settled source; nothing here touches the document, its revision or its journal.
+      // The host retains a file from settled source; document source, revision and edit history stay unchanged.
       case 'document.export': {
         if (typeof host.exportFile !== 'function') { result = failure('export_unavailable'); break; }
         const file = await host.exportFile({ format: input.format, filename: state.filename, docKind: state.docKind, text: state.text, signal: context.signal });

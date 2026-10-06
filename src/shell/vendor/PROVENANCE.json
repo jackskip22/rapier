@@ -2,13 +2,15 @@
   "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS) into the text/rapier-vendor elements of rapier.html. Each file is the published build of its package at the named version, byte for byte as it was first vendored; the build refuses a file whose bytes or SHA-256 differ from this record. The path is the file inside the published package as far as the vendoring record names it; the digests here are the identities the packed spans carry.",
   "movedFrom": "These bytes once lived only as the packed groups inside rapier.html, and every build re-read its own output to pack them again.",
   "files": {
-    "dompurify-3.4.13.dist.purify.min.js": {
+    "dompurify-3.4.16.dist.purify.min.js": {
       "package": "dompurify",
-      "version": "3.4.13",
+      "version": "3.4.16",
       "path": "dist/purify.min.js",
       "license": "Apache-2.0 OR MPL-2.0 (the notice is the file's own first comment)",
-      "bytes": 29435,
-      "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+      "bytes": 28885,
+      "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2",
+      "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
+      "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ=="
     },
     "turndown-7.2.4.lib.turndown.browser.umd.js": {
       "package": "turndown",
@@ -18,13 +20,15 @@
       "bytes": 26946,
       "sha256": "cdf933e0a2085df3c64d6c763331f04345f6c3b25746216e8f1426c9c5253045"
     },
-    "markdown-it-15.0.0.umd.min.js": {
+    "markdown-it-15.0.2.umd.min.js": {
       "package": "markdown-it",
-      "version": "15.0.0",
-      "path": "dist/markdown-it.min.js",
+      "version": "15.0.2",
+      "path": "dist/browser/markdown-it.umd.min.js",
       "license": "MIT (agent/vendor/NOTICE.txt; linkify-it inside it)",
-      "bytes": 114128,
-      "sha256": "8d0f6aca8f4de3321b6d07e03286176c59ec19b7b84abb6eb31f0fa795e83abc"
+      "bytes": 115080,
+      "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5",
+      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
+      "integrity": "sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw=="
     },
     "markdown-it-task-lists-2.1.1.min.js": {
       "package": "markdown-it-task-lists",

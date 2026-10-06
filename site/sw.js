@@ -27,7 +27,7 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'ccf0d4ba2488f79099e5b4fca8cfe80c5a1104cdf45f38abfe2931afef23382d';
+const SHELL_RELEASE_SHA256 = '13c765af2de0ffd73a441c1ce05be51ff80b1307c37106724d3dec5e48178c51';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */

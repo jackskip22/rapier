@@ -4,7 +4,9 @@ Rapier has no accounts, analytics or advertising. Your files stay on your device
 
 The Android editor has no Internet permission. It records audio only when you press Record, into your notes. Google Play handles purchases and optional plugin downloads under its policy.
 
-Using an assistant sends your document to the agent door (mcp.rapier.website) for shared reading and editing. Its workspace keeps the document, edit history, inspected passages, proposals, decisions, presence, selections and tool records; secret keys control workspace access. Active use renews workspace expiry to about 30 days; unchanged sync does not. Expired workspaces are cleared on their next request or deletion alarm. In the editor, delete the workspace or end assistant access. The door keeps a network-address hash and creation records for one hour to limit new workspaces. Your assistant's host handles the conversation under its policy.
+Using an assistant sends your document to the agent door (mcp.rapier.website) for shared reading and editing. Its workspace keeps the document, edit history, inspected passages, proposals, decisions, presence, selections and tool records; secret keys control workspace access. Active use renews workspace expiry to about 30 days; unchanged sync does not. Expired workspaces are cleared on their next request or deletion alarm. In the editor, delete the workspace or end assistant access. The door keeps creation records for one hour to limit new workspaces. Your assistant's host handles the conversation under its policy.
+
+Hosted exports keep an unchanged file copy. Its download link expires after 24 hours and is revoked when you delete the workspace or end assistant access. Expired copies are cleared on the next workspace update or deletion.
 
 Cloudflare serves the page and door and sees what web requests show. No cookies.
 

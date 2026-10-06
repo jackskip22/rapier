@@ -169,7 +169,7 @@ function initMarkdownIt() {
 			return key.startsWith('data-') || key === 'for' || key === 'id' && _rapierChromeOwnsId(attributeText(value)) ? '' : whole;
 		}) : tag;
 		md.renderer.rules.html_inline = (tokens, idx) => cleanTag(tokens[idx].content);
-		md.renderer.rules.html_block = (tokens, idx) => _rapierRawHtmlFragment(tokens[idx].content, cleanTag, md) + '\n';
+		md.renderer.rules.html_block = (tokens, idx) => _rapierRawHtmlFragment(tokens[idx].content, cleanTag, md);
 	}
 
 	const _ulOpenDefault = md.renderer.rules.bullet_list_open
@@ -778,8 +778,9 @@ function _rapierNormalizeCodeElement(code) {
 
 function _rapierLanguageClass(element) {
 	if (!element || !element.classList) return '';
-	const found = Array.from(element.classList).find(name => /^language-[a-z0-9_-]+$/i.test(name));
-	return found ? found.slice(9).toLowerCase() : '';
+	// CommonMark's first info word is an identifier, including Unicode and punctuation.
+	const found = Array.from(element.classList).find(name => /^language-.+/i.test(name));
+	return found ? found.slice(9) : '';
 }
 
 function _relabelFootnoteHtml(html, labels) {

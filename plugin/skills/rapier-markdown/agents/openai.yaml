@@ -1,7 +1,17 @@
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "rapier"
-      description: "Explain, draw, plan and revise with a person on an editable page."
-      transport: "streamable_http"
-      url: "https://mcp.rapier.website/mcp"
+{
+  "interface": {
+    "display_name": "Rapier Markdown",
+    "short_description": "Write portable Markdown."
+  },
+  "dependencies": {
+    "tools": [
+      {
+        "type": "mcp",
+        "value": "rapier",
+        "description": "Explain, draw, plan and revise with a person on an editable page.",
+        "transport": "streamable_http",
+        "url": "https://mcp.rapier.website/mcp"
+      }
+    ]
+  }
+}

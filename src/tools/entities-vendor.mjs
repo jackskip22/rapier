@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // markdown-it's entity table re-encoded: the 2,125 names as plain text read into a Map, with a strict decoder for the inline rule and unescapeAll.
 // Read from the upstream trie, so it cannot drift. Deliberately does not decode non-names (`&pm1;`) as the upstream walk did.
-// Both ends pinned in agent/vendor/BROWSER-ENTITIES.json (tools/probes/markdown-it-entities.mjs). agent/vendor/markdownit.mjs embeds the derived bytes.
+// Both ends pinned in agent/vendor/BROWSER-ENTITIES.json. agent/vendor/markdownit.mjs embeds the derived bytes.
 // node tools/entities-vendor.mjs [--write]
 import {readFileSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -15,7 +15,7 @@ const sha256 = text => createHash('sha256').update(text).digest('hex');
 // between the two halves of TRIE; DECODER runs from the first of the decoder's declarations to the last.
 const TRIE = ['function ce(e){let t=atob(e),n=t.length&-2,r=new Uint16Array(n/2);for(let e=0,i=0;e<n;e+=2){let n=t.charCodeAt(e),a=t.charCodeAt(e+1);r[i++]=n|a<<8}return r}var le=ce(`',
   '`),C;(function(e){e[e.VALUE_LENGTH=49152]=`VALUE_LENGTH`,e[e.FLAG13=8192]=`FLAG13`,e[e.BRANCH_LENGTH=8064]=`BRANCH_LENGTH`,e[e.JUMP_TABLE=127]=`JUMP_TABLE`})(C||(C={}));'];
-const DECODER = ['var E;(function(e){e[e.NUM=35]=`NUM`', 'function be(e){return ye(e,k.Strict)}'];
+const DECODER = ['var E;(function(e){e[e.NUM=35]=`NUM`', 'function xe(e){return be(e,O.Strict)}'];
 function once(text, anchor) {
   const at = text.indexOf(anchor);
   if (at < 0 || text.indexOf(anchor, at + 1) >= 0) throw new Error('markdown-it entity derivation: expected exactly one ' + JSON.stringify(anchor.slice(0, 48)));
@@ -84,7 +84,7 @@ export function deriveEntities(source, {drop = null} = {}) {
   const order = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   const list = [...byValue.keys()].sort(order).map(value => value + byValue.get(value).sort(order).join(' ')).join('');
   const table = 'var le=new Map(' + (seeded.length ? JSON.stringify(seeded) : '') + ');{let e=/([^A-Za-z\\d ]+)|[A-Za-z\\d]+/g,t,n,r=`' + templateText(list) + '`;for(;n=e.exec(r);)n[1]?t=n[1]:le.set(n[0],t)}';
-  const decoder = 'function be(e){return e.replace(/&(?:#(?:[xX]([\\dA-Fa-f]+)|(\\d+))|([A-Za-z\\d]+));/g,(e,t,n,r)=>r?le.has(r)?le.get(r):e:String.fromCodePoint(se(t?parseInt(t,16):+n)))}';
+  const decoder = 'function xe(e){return e.replace(/&(?:#(?:[xX]([\\dA-Fa-f]+)|(\\d+))|([A-Za-z\\d]+));/g,(e,t,n,r)=>r?le.has(r)?le.get(r):e:String.fromCodePoint(se(t?parseInt(t,16):+n)))}';
   const trieFrom = once(source, TRIE[0]), trieTo = once(source, TRIE[1]) + TRIE[1].length;
   const decoderFrom = once(source, DECODER[0]), decoderTo = once(source, DECODER[1]) + DECODER[1].length;
   if (!(trieTo <= decoderFrom)) throw new Error('markdown-it entity derivation: the trie must precede its decoder');
@@ -96,11 +96,11 @@ export function deriveEntities(source, {drop = null} = {}) {
 export function entitiesVendor(name, source) {
   const pin = BROWSER_ENTITIES.vendors.find(row => row.upstream.name === name);
   if (!pin) return null;
-  if (sha256(source) !== pin.upstream.sha256) throw new Error(name + ' is not the upstream agent/vendor/BROWSER-ENTITIES.json pins: prove it with tools/probes/markdown-it-entities.mjs, then pin both ends');
+  if (sha256(source) !== pin.upstream.sha256) throw new Error(name + ' is not the upstream agent/vendor/BROWSER-ENTITIES.json pins: prove its entity and parser equivalence, then pin both ends');
   const {names, legacy} = entityTable(source);
   if (names.size !== pin.entities.names || legacy.size !== pin.entities.legacy) throw new Error(name + ': the trie holds ' + names.size + ' names and ' + legacy.size + ' legacy forms, not the pinned ' + pin.entities.names + ' and ' + pin.entities.legacy);
   const text = deriveEntities(source);
-  if (sha256(text) !== pin.derived.sha256 || Buffer.byteLength(text) !== pin.derived.bytes) throw new Error(pin.derived.name + ' came out as bytes nobody proved: prove them with tools/probes/markdown-it-entities.mjs, then pin them');
+  if (sha256(text) !== pin.derived.sha256 || Buffer.byteLength(text) !== pin.derived.bytes) throw new Error(pin.derived.name + ' came out as bytes nobody proved: prove their entity and parser equivalence, then pin them');
   return {name: pin.derived.name, source: text};
 }
 

@@ -172,10 +172,19 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 		},
 		_send(entries, extra, transfer = []) {
 			flying++;
+			let completed = 0;
+			const apply = (reply, final = false) => {
+				const end = reply.completed;
+				if (!Number.isSafeInteger(end) || end < completed || end > entries.length || (final && end !== entries.length)) {
+					throw remote._fail(new Error('The painter acknowledged a different command prefix'));
+				}
+				remote._reply(entries.slice(completed, end), reply);
+				completed = end;
+			};
 			const request = {commands: entries.map(entry => entry.wire), ...extra};
-			return client.request('batch', request, transfer).then(reply => {
+			return client.request('batch', request, transfer, reply => apply(reply)).then(reply => {
 				flying--;
-				remote._reply(entries, reply);
+				apply(reply, true);
 				if (remote._queue.length) remote.requestFrame();
 				return reply;
 			}, error => { flying--; throw remote._fail(error); });

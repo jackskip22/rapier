@@ -1,21 +1,21 @@
 {
-  "description": "markdown-it's HTML entity table re-encoded by tools/entities-vendor.mjs: the 2,125 names of the upstream bundle's own decode trie as a plain list read into a Map, and the strict decoder markdown-it's two callers ask for in place of the trie walker. Every name decodes to the same characters, every numeric reference through the same code-point rules; a string that is not a name stays as written, as CommonMark and every other reader leave it (the upstream walk decoded some of those). Everything else is the upstream's bytes. Each vendor pins the upstream bytes and the derived bytes tools/probes/markdown-it-entities.mjs proved; a different upstream or derivation is refused until it is proved and pinned again.",
+  "description": "markdown-it's HTML entity table re-encoded by tools/entities-vendor.mjs: the 2,125 names of the upstream bundle's own decode trie as a plain list read into a Map, and the strict decoder markdown-it's two callers ask for in place of the trie walker. Every name decodes to the same characters, every numeric reference through the same code-point rules; a string that is not a name stays as written, as CommonMark and every other reader leave it (the upstream walk decoded some of those). Everything else is the upstream's bytes. Each vendor pins the upstream bytes and the derived bytes after measuring entity and parser equivalence; a different upstream or derivation is refused until it is proved and pinned again.",
   "vendors": [
     {
       "id": "lib-markdownit",
       "upstream": {
-        "name": "markdown-it-15.0.0.umd.min.js",
-        "bytes": 114128,
-        "sha256": "8d0f6aca8f4de3321b6d07e03286176c59ec19b7b84abb6eb31f0fa795e83abc"
+        "name": "markdown-it-15.0.2.umd.min.js",
+        "bytes": 115080,
+        "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5"
       },
       "entities": {
         "names": 2125,
         "legacy": 106
       },
       "derived": {
-        "name": "markdown-it-15.0.0.umd.rapier.min.js",
-        "bytes": 95319,
-        "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+        "name": "markdown-it-15.0.2.umd.rapier.min.js",
+        "bytes": 96267,
+        "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
       }
     }
   ]

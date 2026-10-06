@@ -8,9 +8,9 @@ package; this notice is the standard MIT text for its declared licence.
 	Copyright (c) 2026 Vercel, Inc.
 acorn 8.19.0
 	Copyright (C) 2012-2022 by various contributors (see AUTHORS)
-markdown-it 15.0.0
+markdown-it 15.0.2
 	Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
-linkify-it 5.0.0, bundled inside the markdown-it build
+linkify-it 6.1.0, bundled inside the markdown-it build
 	Copyright (c) 2015 Vitaly Puzrin.
 markdown-it-emoji 3.1.0
 	Copyright (c) 2014 Vitaly Puzrin.

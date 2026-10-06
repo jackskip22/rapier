@@ -11,6 +11,14 @@ const brushMethods = new Set(['seed','setColor','setBaseValue','reset','newStrok
 const properties = new Set(['paper','scale','toothOX','toothOY','wetPending']);
 const idOf = id => { if(!Number.isSafeInteger(id)||id<1) throw new Error('Paint identity must be a positive integer'); return id; };
 const need = (map,id) => { const value=map.get(idOf(id)); if(!value) throw new Error('Paint identity is not live'); return value; };
+const PAINT_SLICE_MS = 12, PAINT_PREVIEW_MS = 120;
+// A message gives another task a turn without nesting timers. Close both ports after each yield
+// so the in-process painter does not retain a live channel when its work is finished.
+const yieldPaint = () => new Promise(resolve => {
+ const channel=new MessageChannel();
+ channel.port1.onmessage=()=> { channel.port1.close(); channel.port2.close(); resolve(); };
+ channel.port2.postMessage(null);
+});
 export function createPaintWorker({postMessage, spawnRows, isolated = false} = {}) {
  const surfaces=new Map(), brushes=new Map(), runs=new Map(), checkpoints=new Map();
  let lastId=0, failed=null, pool=null, chain=Promise.resolve();
@@ -46,13 +54,16 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(operation==='brush') { const id=idOf(request.brushId); if(brushes.has(id)) throw new Error('Brush identity already live'); brushes.set(id,new PaintBrush(request.definition)); return {}; }
   if(operation==='batch') {
    if(!Array.isArray(request.commands)||request.commands.length>32768) throw new Error('Invalid paint batch');
-   const changed=new Map(), values=[], used=new Set();
-   for(const c of request.commands) {
+   const changed=new Map(), used=new Set();
+   let values=[], completed=0, turn=performance.now(), shown=turn-PAINT_PREVIEW_MS;
+   const reply = async final => ({completed,surfaces:await Promise.all([...changed].map(([id,full])=>state(id,full,final))),values,
+    brushes:Object.fromEntries([...used].map(id=>[id,{loadFuel:brushes.get(id)?.loadFuel ?? null}])),stats:pool?.stats || null});
+   const apply = c => {
     const args=c.args || [];
-    if(c.target==='brush') { if(!brushMethods.has(c.method)) throw new Error('Unknown brush command'); need(brushes,c.id)[c.method](...args); continue; }
+    if(c.target==='brush') { if(!brushMethods.has(c.method)) throw new Error('Unknown brush command'); need(brushes,c.id)[c.method](...args); return; }
     if(c.target==='stroke') {
      if(args.length<3||args.length>11||args.some((v,i)=> i<10 ? !Number.isFinite(v) : typeof v!=='boolean')) throw new Error('Invalid input sample');
-     const surface=need(surfaces,c.surfaceId); need(brushes,c.brushId).strokeTo(surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId); continue;
+     const surface=need(surfaces,c.surfaceId); need(brushes,c.brushId).strokeTo(surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId); return;
     }
     if(c.target!=='surface') throw new Error('Unknown paint command target');
     const surface=need(surfaces,c.id); let full=changed.get(c.id)||false, value;
@@ -62,10 +73,23 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     else if(c.method==='dryWet') { value=surface.dryWet(performance.now() + 8,args[0]??8,args[1]??8); }
     else { if(!surfaceMethods.has(c.method)) throw new Error('Unknown surface command'); value=surface[c.method](...args); if(c.method==='grow') full=true; }
     values.push(value); changed.set(c.id,full);
+   };
+   for(const c of request.commands) {
+    apply(c); completed++;
+    if(request.progress===true && completed<request.commands.length && performance.now()-turn>=PAINT_SLICE_MS) {
+     // Publish only completed commands. Readout has its own cadence so a costly brush spends
+     // its time painting. The serial chain remains owned across every yield and preview.
+     if(performance.now()-shown>=PAINT_PREVIEW_MS) {
+      const value=await reply(false); postMessage({id:request.id,progress:true,value},transfer(value));
+      values=[]; for(const id of changed.keys()) changed.set(id,false);
+      shown=performance.now();
+     }
+     await yieldPaint(); turn=performance.now();
+    }
    }
    // A surface the page asked about is answered even when nothing in the batch touched it (a barrier).
    for(const id of request.include || []) if(!changed.has(id)) changed.set(id,false);
-   return {surfaces:await Promise.all([...changed].map(([id,full])=>state(id,full,request.final===true))),values,brushes:Object.fromEntries([...used].map(id=>[id,{loadFuel:brushes.get(id)?.loadFuel ?? null}])),stats:pool?.stats || null};
+   return reply(request.final===true);
   }
   if(operation==='read') {
    // The whole surface, a box of it, or (`bounds`) its painted box: the box and its pixels are read at this point of
@@ -127,9 +151,15 @@ export function createPaintWorkerClient({postMessage,terminate=()=>{}}) {
  const pending=new Map();
  const fail=error=> { failure=error instanceof Error ? error : new Error(String(error)); for(const job of pending.values()) job.reject(failure); pending.clear(); };
  return {
-  request(operation,payload={},transfer=[]) { if(failure||closed) return Promise.reject(failure||new Error('Paint worker is closed')); const id=++serial;
-   return new Promise((resolve,reject)=> { pending.set(id,{resolve,reject}); try { postMessage({...payload,id,operation},transfer); } catch(error) { fail(error); } }); },
-  receive(message) { const job=pending.get(message?.id); if(!job) return false; pending.delete(message.id); if(message.error) { const error=new Error(message.error.message); job.reject(error); fail(error); } else job.resolve(message.value); return true; },
+  request(operation,payload={},transfer=[],onProgress=null) { if(failure||closed) return Promise.reject(failure||new Error('Paint worker is closed')); const id=++serial;
+   return new Promise((resolve,reject)=> { pending.set(id,{resolve,reject,onProgress}); try { postMessage({...payload,id,operation,progress:typeof onProgress==='function'},transfer); } catch(error) { fail(error); } }); },
+  receive(message) {
+   const job=pending.get(message?.id); if(!job) return false;
+   if(message.error) { fail(new Error(message.error.message)); }
+   else if(message.progress===true) { try { job.onProgress?.(message.value); } catch(error) { fail(error); } }
+   else { pending.delete(message.id); job.resolve(message.value); }
+   return true;
+  },
   fail, async close() { closed=true; fail(new Error('Paint worker is closed')); await terminate(); }
  };
 }

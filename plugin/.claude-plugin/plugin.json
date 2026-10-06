@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.73+skills.98f13c0f398d6e31bb26d0eae2354227ffba8cab84687d517654c3d57affcc6b",
+  "version": "1.1.74+skills.c21e6c3184bd61a3129801ce28c76f16a9716f29ca385f48386ef06ca939269a",
   "description": "Rapier is a fast Markdown editor that Claude works in beside you. Ask for a document, a plan, a diagram or a drawing and Claude puts it on a page you can read and edit while it works. Claude reads only the passage it needs and changes only that, and you keep or drop each change. Your own typing always comes first. Diagrams and drawings stay editable: move the boxes yourself, then ask Claude to change them again. Everything is plain Markdown with its pictures inside, so you can save it, share it or open it in any Markdown app. Export as Word, PDF or a web page that works offline. No account, no ads, no tracking. What you share with Claude stays in a workspace that expires after 30 idle days.",
   "author": {
     "name": "Jack Skipworth",

@@ -11341,9 +11341,14 @@ function _rapierCommitBlockLayoutInPlace(blockId, before, after, operation) {
 		leading: typeof block.leading === 'string' ? block.leading : null };
 	const blockRange = blockIndex > -1 ? { startIndex: blockIndex,
 		blocksBefore: [{ ...rowShape, raw: before }], blocksAfter: [{ ...rowShape, raw: after }] } : null;
-	const transaction = _rapierCommitBlockEdit(blockId, before, after,
-		{ operation, ...(blockRange ? { blockRange } : {}) });
-	if (!transaction) return false;
+	const span = _rapierCurrentBodyBlockSpans().find(row => row.id === blockId);
+	if (!span) return false;
+	// Layout changes do not replace the untouched picture occurrence: doing so invalidates its
+	// comment anchors and asks image retirement to parse the whole document. Keep the full row for Undo.
+	const diff = _rapierPrefixSuffixDiff(before, after);
+	const committed = _rapierCommitSplices([{ ...diff, pos: _rapierCanonicalOffsetOfBody(span.start) + diff.pos }],
+		{ operation, affectedBlockIds: [blockId], ...(blockRange ? { blockRange } : {}) });
+	if (!committed) return false;
 	block.raw = after;
 	block.rendered = renderBlock(after);
 	_rapierRefreshEditedBlock(block, wrapper);
@@ -21605,7 +21610,9 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 	root.querySelectorAll('*').forEach(element => {
 		if (nativeElements.has(element)) return;
 		const lang = element.tagName === 'CODE' ? _rapierLanguageClass(element) : '';
-		const alignment = globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-md-layout'))?.align;
+		const columnAlignment = /^(TH|TD)$/.test(element.tagName) && /^(left|center|right)$/.test(element.style.textAlign)
+			? element.style.textAlign : '';
+		const alignment = globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-md-layout'))?.align || columnAlignment;
 		const imageLayout = element.tagName === 'IMG' ? globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-rapier-image-layout')) : null;
 
 		const colorHex = element.tagName === 'SPAN' ? element.getAttribute('data-md-color') : null;
@@ -34154,7 +34161,7 @@ function _rapierDecodeCarried(text) {
 function _rapierCarriedDocument() {
 	const el = document.getElementById('rapier-document');
 	if (!el || el.tagName !== 'SCRIPT' || String(el.type || '').toLowerCase() !== 'text/markdown') return null;
-	const name = String(el.dataset.name || 'document.md').replace(/[\\/\0]/g, '-').slice(0, 255) || 'document.md';
+	const name = [...String(el.dataset.name || 'document.md').replace(/[\\/\0]/g, '-')].slice(0, 256).join('') || 'document.md';
 	let text = _rapierDecodeCarried(el.textContent);
 	// The byte-order mark is a fact of the file, kept and written back on save, exactly as
 	// RapierTextCodec.readDocumentRecord keeps it for a file opened from disk -- not a character
@@ -34177,7 +34184,7 @@ function _rapierCarriedDocument() {
 function _rapierCarriedDrawing() {
 	const el = document.getElementById('rapier-drawing');
 	if (!el || el.tagName !== 'SCRIPT' || String(el.type || '').toLowerCase() !== 'text/plain') return null;
-	const name = String(el.dataset.name || 'drawing.svg').replace(/[\\/\0]/g, '-').slice(0, 255) || 'drawing.svg';
+	const name = [...String(el.dataset.name || 'drawing.svg').replace(/[\\/\0]/g, '-')].slice(0, 256).join('') || 'drawing.svg';
 	return {text: _rapierDecodeCarried(el.textContent), name};
 }
 // The text a carried document was proposed against: a third block, never executed, read once at boot.
@@ -47515,9 +47522,9 @@ package; this notice is the standard MIT text for its declared licence.
 	Copyright (c) 2026 Vercel, Inc.
 acorn 8.19.0
 	Copyright (C) 2012-2022 by various contributors (see AUTHORS)
-markdown-it 15.0.0
+markdown-it 15.0.2
 	Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
-linkify-it 5.0.0, bundled inside the markdown-it build
+linkify-it 6.1.0, bundled inside the markdown-it build
 	Copyright (c) 2015 Vitaly Puzrin.
 markdown-it-emoji 3.1.0
 	Copyright (c) 2014 Vitaly Puzrin.

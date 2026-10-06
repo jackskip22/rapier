@@ -87,6 +87,20 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	instance.renderer.rules.s_open = (tokens, index, _options, _env, renderer) =>
 		'<del' + renderer.renderAttrs(tokens[index]) + '>';
 	instance.renderer.rules.s_close = () => '</del>';
+	const strikeRule = instance.inline.ruler.__rules__.find(rule => rule.name === 'strikethrough').fn;
+	instance.inline.ruler.at('strikethrough', function rapierStrikeDelimiter(state, silent) {
+		if (!silent && state.src.charCodeAt(state.pos) === 0x7e) {
+			let end = state.pos + 1;
+			while (state.src.charCodeAt(end) === 0x7e) end++;
+			// GFM excludes whole runs of three or more; the single-tilde subscript rule remains available.
+			if (end - state.pos > 2) {
+				state.push('text', '', 0).content = state.src.slice(state.pos, end);
+				state.pos = end;
+				return true;
+			}
+		}
+		return strikeRule(state, silent);
+	});
 	// Rendered chrome only: source tokens and their offsets stay untouched.
 	const render = instance.renderer.render;
 	instance.renderer.render = function (tokens, options, env) {
@@ -296,7 +310,102 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 			token.meta = { ...token.meta, rapierFenceClosed: token.map[1] - token.map[0] === lines + 2 };
 		}
 	});
-	if (spec.linkify) instance.linkify.set(spec.linkify);
+	if (spec.linkify) {
+		const linkify = instance.linkify;
+		linkify.set(spec.linkify);
+		// A fuzzy host needs a period followed by a non-space; email needs '@'.
+		// Registered schemes use the recognizer's own search, including later add() calls.
+		const fuzzyCandidate = /@|\.[^ \t\n\v\f\r]/;
+		const nativeTest = linkify.test;
+		linkify.test = function (source) {
+			if (!fuzzyCandidate.test(source)) {
+				const schema = this.re.get_schema_search();
+				schema.lastIndex = 0;
+				if (!schema.test(source)) return false;
+			}
+			return nativeTest.call(this, source);
+		};
+		const allowedStart = (source, index) => index === 0 || /[ \t\n\v\f\r*_~(]/.test(source[index - 1]);
+		linkify.add('www.', {
+			validate(source, start) {
+				const host = /^[\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]+)+/u.exec(source.slice(start - 4));
+				if (!host || host[0].split('.').slice(-2).some(label => label.includes('_'))) return 0;
+				return host[0].length - 4;
+			},
+			normalize(match) { match.url = 'http://' + match.raw; },
+		});
+		linkify.add('xmpp:', {
+			validate(source, start) {
+				const address = /^[a-z\d._+-]+@([a-z\d_-]+(?:\.[a-z\d_-]+)+)/i.exec(source.slice(start));
+				if (!address || /[-_]$/.test(address[1]) || source[start + address[0].length] === '+') return 0;
+				const resource = /^\/[a-z\d@.]+/i.exec(source.slice(start + address[0].length));
+				return address[0].length + (resource ? resource[0].length : 0);
+			},
+		});
+		// Refine the native recognizer's spans, within the inline/text nodes it already owns.
+		// GFM 6.9 ends paths at whitespace or '<', then removes only specified trailing delimiters.
+		const refineLink = (match, source) => {
+			if (!match) return match;
+			const www = match.schema === 'www.' || (!match.schema && /^www\./i.test(match.raw));
+			const web = www || match.schema === 'http:' || match.schema === 'https:';
+			const email = match.schema === 'mailto:' || match.schema === 'xmpp:';
+			if ((web || email) && !allowedStart(source, match.index)) return null;
+			if (email && match.raw.slice(match.raw.indexOf('@') + 1).split('/')[0].includes('+')) return null;
+			if (!web) return match;
+			let end = match.index;
+			while (end < source.length && !/[ \t\n\v\f\r<]/.test(source[end])) end++;
+			while (end > match.index && /[?!.,:*_~]/.test(source[end - 1])) end--;
+			let raw = source.slice(match.index, end);
+			if (raw.endsWith(')')) {
+				let extra = 0;
+				for (const character of raw) extra += character === ')' ? 1 : character === '(' ? -1 : 0;
+				while (extra > 0 && raw.endsWith(')')) { raw = raw.slice(0, -1); extra--; }
+			}
+			raw = raw.replace(/&[a-z\d]+;$/i, '');
+			match.lastIndex = match.index + raw.length;
+			match.raw = match.text = raw;
+			match.url = www ? 'http://' + raw : raw;
+			return match;
+		};
+		const nativeMatch = linkify.match;
+		linkify.match = function (source) {
+			const matches = nativeMatch.call(this, source);
+			if (!matches) return matches;
+			const result = [];
+			let end = 0;
+			for (const match of matches) {
+				if (match.index < end) continue;
+				const refined = refineLink(match, source);
+				if (refined) { result.push(refined); end = refined.lastIndex; }
+			}
+			return result;
+		};
+		const nativeMatchAtStart = linkify.matchAtStart;
+		linkify.matchAtStart = function (source) { return refineLink(nativeMatchAtStart.call(this, source), source); };
+		// The inline rule passes a slice beginning at the scheme, so check its source boundary here.
+		const inlineLinkify = instance.inline.ruler.__rules__.find(rule => rule.name === 'linkify').fn;
+		instance.inline.ruler.at('linkify', function rapierInlineLinkify(state, silent) {
+			if (state.src.charCodeAt(state.pos) === 0x3a) {
+				const prefix = state.src.slice(Math.max(0, state.pos - 5), state.pos).toLowerCase();
+				const width = prefix.endsWith('https') ? 5 : prefix.endsWith('http') ? 4 : 0;
+				if (width && !allowedStart(state.src, state.pos - width)) return false;
+			}
+			return inlineLinkify(state, silent);
+		});
+	}
+	// GFM 6.11: raw-text elements must not capture the rest of the document before sanitization.
+	const disallowedTag = /<\/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)(?=[ \t\n\v\f\r/>])/gi;
+	instance.core.ruler.push('rapier-tagfilter', function rapierTagfilter(state) {
+		const filter = token => {
+			if (token.type === 'html_inline' || token.type === 'html_block') {
+				token.content = token.content.replace(disallowedTag, tag => '&lt;' + tag.slice(1));
+			}
+		};
+		for (const token of state.tokens) {
+			filter(token);
+			if (token.type === 'inline') for (const child of token.children || []) filter(child);
+		}
+	});
 	if (spec.core && spec.core.retainReferenceDefinitions) {
 		instance.core.ruler.disable('strip_references');
 	}

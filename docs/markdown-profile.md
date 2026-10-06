@@ -17,6 +17,8 @@ Rapier parses and renders every syntax below. Exact round-trip means byte for by
 | Task lists `- [ ]`/`- [x]` | established extension (GFM) | Checklist command, tap to toggle | yes | yes | literal `[ ]`/`[x]` text |
 | Pipe tables | established extension (GFM) | Insert Table, cell editing | yes | yes | pipes/dashes as plain text |
 | Strikethrough `~~x~~` | established extension (GFM) | Toolbar S | yes | yes | literal `~~` |
+| Extended autolinks: `https://…`, `www.…`, email, `mailto:` and `xmpp:` | established extension (GFM); bare domains and FTP are also read | Typed address | yes | verbatim | plain text in core CommonMark |
+| Opening `---` front matter | established extension (Pandoc/Quarto and note formats) | Document settings and note metadata | yes | verbatim | thematic breaks and ordinary Markdown in a reader without front matter |
 | Underline `++x++` | reappropriated extension (markdown-it-ins) | Toolbar U | yes | yes | shown as insertion by readers with the extension, literal `++` elsewhere |
 | Footnotes `[^1]` | established extension (PHP Markdown Extra) | Insert Footnote | yes | yes | literal `[^1]`, list as plain text |
 | Highlight `==x==`, `==🟢x==` | established extension (Bear) | Highlight picker (5 colours + default) | yes, byte for byte | yes | literal `==` and circle-emoji characters |
@@ -41,13 +43,15 @@ Pandoc/Quarto export forms are write-only: Rapier never reads `[x]{style="color:
 
 ## What a document's own HTML may do
 
-A document's raw HTML renders as HTML and presses nothing of Rapier's. Every block goes through the sanitizer's `raw` profile (`sanitizeRapierHtml` in `editor/engine.js`, the render profile without `data-*`, applied by the `html_block` renderer rule) and every inline tag through the same law on CommonMark's own tag grammar (`html_inline`). Three things are refused:
+A document's raw HTML renders as HTML and presses nothing of Rapier's. The renderer admits complete tags through CommonMark's inline HTML grammar, removes editor-control attributes, then sanitizes the complete document without independently closing each raw fragment. An unrecognized or unfinished tag opener stays literal. This safety policy also applies inside raw HTML blocks: it prevents HTML error recovery from turning malformed source into editor controls. The parser still retains CommonMark's original raw-block tokens and the file keeps every byte. Three kinds of attributes are refused:
 
 - any `data-*` attribute (Rapier's handlers read `data-action`, `data-plugin`, `data-notes-act` and `data-rapier-remote-allow` as their own controls);
 - `for` on a label;
 - any `id` the shell's own markup owns.
 
-Rapier's own rendering keeps its `data-*` (a picture's layout, a page break, the remote-picture placeholder with its "Load all remote content" button), and a document's `<a id="anchor">` keeps its anchor. Forms, `<style>`, `<dialog>`, `<template>` and `<iframe>` never render (`RAPIER_SANITIZE_FORBID_TAGS`). A remote `url()` in any style is dropped until the person loads remote content. A heading's own id yields to any id already in the page (`_rapierAssignHeadingSlugs`).
+GFM's [disallowed raw HTML rule](https://github.github.com/gfm/#disallowed-raw-html-extension-) escapes the opening angle bracket of `title`, `textarea`, `style`, `xmp`, `iframe`, `noembed`, `noframes`, `script` and `plaintext` tags, including closing tags, without changing their source. These tag spellings remain visible text and cannot absorb the rest of the document as raw text. Code examples remain code. Rapier uses CommonMark 0.31.2's HTML-comment grammar, which differs from the older grammar in GFM 0.29.
+
+Rapier's own rendering keeps its `data-*` (a picture's layout, a page break, the remote-picture placeholder with its "Load all remote content" button), and a document's `<a id="anchor">` keeps its anchor. Forms, `<style>`, `<dialog>`, `<template>` and `<iframe>` never become active document elements (`RAPIER_SANITIZE_FORBID_TAGS`). A remote `url()` in any style is dropped until the person loads remote content. A heading's own id yields to any id already in the page (`_rapierAssignHeadingSlugs`).
 
 ## What other renderers show (checked 13 September 2026)
 

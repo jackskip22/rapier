@@ -1,6 +1,6 @@
 {
-  "release": "1.1.73",
-  "builtAt": "2026-10-06T11:37:49.473Z",
+  "release": "1.1.74",
+  "builtAt": "2026-10-06T13:28:24.777Z",
   "node": "v22.22.2",
   "mode": "release",
   "packing": "zopfli",
@@ -9,8 +9,8 @@
   "profiles": {
     "document": {
       "path": "rapier-document.html",
-      "bytes": 1266061,
-      "sha256": "8e523904303c2f753dbc8580bf6f3e1a4197d2ba89f28b6520a541ccd33d11d1",
+      "bytes": 1268408,
+      "sha256": "9be5a14357a57fd05803dad000fa4b052698e2c386ac770712783a4ea782b373",
       "budget": {
         "warn": 2079000,
         "refuse": 2100000
@@ -18,9 +18,9 @@
       "spans": [
         {
           "element": "lib-dompurify",
-          "name": "dompurify-3.4.13.dist.purify.min.js",
-          "bytes": 29435,
-          "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+          "name": "dompurify-3.4.16.dist.purify.min.js",
+          "bytes": 28885,
+          "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
         },
         {
           "element": "lib-turndown",
@@ -30,9 +30,9 @@
         },
         {
           "element": "lib-markdownit",
-          "name": "markdown-it-15.0.0.umd.rapier.min.js",
-          "bytes": 95319,
-          "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+          "name": "markdown-it-15.0.2.umd.rapier.min.js",
+          "bytes": 96267,
+          "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
         },
         {
           "element": "lib-markdownit",
@@ -139,20 +139,20 @@
         {
           "element": "rapier-ui-runtime",
           "name": "rapier-ui.html",
-          "bytes": 113371,
-          "sha256": "c40071fa8ca84f0c03b4df044c6abdc5edaae53c2d131645b7e457322aff6426"
+          "bytes": 113575,
+          "sha256": "840824903b5643056e2c0b946d4c22ce7a54838271d61fc3b7422448ff912d78"
         },
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 893640,
-          "sha256": "417559e0ca1729771289d9fdb737113f284e93d396389525bc3b4b3574fdd0fa"
+          "bytes": 896342,
+          "sha256": "936b738963d62ae6b97d20e92bff5fe8672aecb83d9fa59dfd025f808ccaab25"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 1656085,
-          "sha256": "aa08097eab18e9a6181ad33ec92be24f197fbf4630aba137f46e43b87aa85145"
+          "bytes": 1656343,
+          "sha256": "17dc16e48b4b62da7d2e2c47a63ac0cec935efc14b183eba0c965597ca86605c"
         }
       ],
       "shakenExports": {
@@ -200,7 +200,7 @@
           "endRecord"
         ]
       },
-      "builtAt": "2026-10-06T11:36:01.323Z",
+      "builtAt": "2026-10-06T13:26:26.834Z",
       "node": "v22.22.2",
       "mode": "release",
       "packing": "zopfli",
@@ -208,8 +208,8 @@
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 1927231,
-      "sha256": "6767b227a2914fc95939e08872c42edbd029133d060ae75105a2c4c5b184f591",
+      "bytes": 1929942,
+      "sha256": "da381feda471d451f73375d64c4a0f1211d0a03c664e3db7720970ca19c4741f",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -217,9 +217,9 @@
       "spans": [
         {
           "element": "lib-dompurify",
-          "name": "dompurify-3.4.13.dist.purify.min.js",
-          "bytes": 29435,
-          "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+          "name": "dompurify-3.4.16.dist.purify.min.js",
+          "bytes": 28885,
+          "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
         },
         {
           "element": "lib-turndown",
@@ -229,9 +229,9 @@
         },
         {
           "element": "lib-markdownit",
-          "name": "markdown-it-15.0.0.umd.rapier.min.js",
-          "bytes": 95319,
-          "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+          "name": "markdown-it-15.0.2.umd.rapier.min.js",
+          "bytes": 96267,
+          "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
         },
         {
           "element": "lib-markdownit",
@@ -338,20 +338,20 @@
         {
           "element": "rapier-ui-runtime",
           "name": "rapier-ui.html",
-          "bytes": 129443,
-          "sha256": "dcf93e1aab39d166f6ac0e56b89192ad189df474e15f6b8fc77e896359ff02da"
+          "bytes": 129647,
+          "sha256": "c2e1a516892a60d27d787acb211b23985d4531b5df920bddd165171568689108"
         },
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 1928121,
-          "sha256": "bddf0cb5e1c9014b808f252bc1c116448e1ba3c481d77aa86cefeffd1abdd3d6"
+          "bytes": 1931612,
+          "sha256": "5b4cb0c77e26c0658cce284f9f4539d45f8daec131bfa949446ae0b921d1e18f"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2438568,
-          "sha256": "2a3d9c5af7d53bdfc902b4bdf7414cf2050c7d519516d7df7614e127f8187012"
+          "bytes": 2440466,
+          "sha256": "47a5524197a5fcff58cb7f10f65ebe4a1ad5268e73d86a67418cc3c77878f9e3"
         }
       ],
       "shakenExports": {
@@ -478,7 +478,7 @@
           "COMPANION_MAX_BYTES"
         ]
       },
-      "builtAt": "2026-10-06T11:37:49.473Z",
+      "builtAt": "2026-10-06T13:28:24.777Z",
       "node": "v22.22.2",
       "mode": "release",
       "packing": "zopfli",
@@ -487,19 +487,19 @@
   },
   "editor": {
     "path": "rapier.html",
-    "bytes": 1927231,
-    "sha256": "6767b227a2914fc95939e08872c42edbd029133d060ae75105a2c4c5b184f591"
+    "bytes": 1929942,
+    "sha256": "da381feda471d451f73375d64c4a0f1211d0a03c664e3db7720970ca19c4741f"
   },
   "apps": {
     "path": "dist/chatgpt/rapier-app.html",
-    "bytes": 1927735,
-    "sha256": "c9b930f38b7cd01c12ae292c99aba8304f8379ca3140bf0ede3275d27a297ea1",
+    "bytes": 1930480,
+    "sha256": "2d8555f4e96568337c54d321af80e5ae9312d8ef388356fe60d1cd7317f4dde0",
     "spans": [
       {
         "element": "lib-dompurify",
-        "name": "dompurify-3.4.13.dist.purify.min.js",
-        "bytes": 29435,
-        "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+        "name": "dompurify-3.4.16.dist.purify.min.js",
+        "bytes": 28885,
+        "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
       },
       {
         "element": "lib-turndown",
@@ -509,9 +509,9 @@
       },
       {
         "element": "lib-markdownit",
-        "name": "markdown-it-15.0.0.umd.rapier.min.js",
-        "bytes": 95319,
-        "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+        "name": "markdown-it-15.0.2.umd.rapier.min.js",
+        "bytes": 96267,
+        "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
       },
       {
         "element": "lib-markdownit",
@@ -624,28 +624,28 @@
       {
         "element": "rapier-ui-runtime",
         "name": "rapier-ui.html",
-        "bytes": 127892,
-        "sha256": "e447e6ef88358e649a0c1ca8b1619662df907e1f4c93e16da561b9ab8d5f42b0"
+        "bytes": 128096,
+        "sha256": "51ee15594b136e8a81e762b36a890ba4b4de940fee5127ce1e7d6fe428a37307"
       },
       {
         "element": "rapier-shared-runtime",
         "name": "rapier-shared.js",
-        "bytes": 1928121,
-        "sha256": "bddf0cb5e1c9014b808f252bc1c116448e1ba3c481d77aa86cefeffd1abdd3d6"
+        "bytes": 1931612,
+        "sha256": "5b4cb0c77e26c0658cce284f9f4539d45f8daec131bfa949446ae0b921d1e18f"
       },
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-editor.js",
-        "bytes": 2438568,
-        "sha256": "2a3d9c5af7d53bdfc902b4bdf7414cf2050c7d519516d7df7614e127f8187012"
+        "bytes": 2440466,
+        "sha256": "47a5524197a5fcff58cb7f10f65ebe4a1ad5268e73d86a67418cc3c77878f9e3"
       }
     ]
   },
   "shell": {
-    "sha256": "ccf0d4ba2488f79099e5b4fca8cfe80c5a1104cdf45f38abfe2931afef23382d"
+    "sha256": "13c765af2de0ffd73a441c1ce05be51ff80b1307c37106724d3dec5e48178c51"
   },
   "htmlSinks": {
-    "named": 123,
+    "named": 122,
     "files": 13,
     "inventory": "security/html-sinks.json"
   },

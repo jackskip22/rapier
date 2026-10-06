@@ -1,5 +1,5 @@
 {
-  "release": "1.1.73",
+  "release": "1.1.74",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -244,7 +244,7 @@
       "name": "document.comment",
       "title": "Discuss inspected work",
       "description": "Creates, replies to, resolves or reopens a discussion on the person's work, anchored to an inspected passage, drawing object or the whole document.",
-      "effect": "create",
+      "effect": "write",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2875,7 +2875,7 @@
       "name": "document.export",
       "title": "Export the document",
       "description": "Returns a file link the person can keep or send: markdown is the exact source; html is one offline Rapier page with the source inside. The file is limited to 8 MiB and stays unchanged for 24 hours; workspace deletion or capability rotation revokes the link. Does not change the document.",
-      "effect": "read",
+      "effect": "create",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2906,7 +2906,8 @@
               "ok",
               "invalid",
               "refused",
-              "uncertain"
+              "uncertain",
+              "replayed"
             ]
           },
           "reason": {
@@ -2945,7 +2946,7 @@
           },
           "filename": {
             "type": "string",
-            "maxLength": 268
+            "maxLength": 256
           },
           "mimeType": {
             "type": "string",
@@ -4155,7 +4156,7 @@
       "annotations": {
         "title": "Discuss inspected work",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -7116,7 +7117,8 @@
               "ok",
               "invalid",
               "refused",
-              "uncertain"
+              "uncertain",
+              "replayed"
             ]
           },
           "reason": {
@@ -7155,7 +7157,7 @@
           },
           "filename": {
             "type": "string",
-            "maxLength": 268
+            "maxLength": 256
           },
           "mimeType": {
             "type": "string",
@@ -7185,9 +7187,9 @@
       },
       "annotations": {
         "title": "Export the document",
-        "readOnlyHint": true,
+        "readOnlyHint": false,
         "destructiveHint": false,
-        "idempotentHint": true,
+        "idempotentHint": false,
         "openWorldHint": false
       },
       "securitySchemes": [
@@ -8206,13 +8208,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.73.html",
+          "resourceUri": "ui://rapier/editor-1.1.74.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.73.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.74.html",
         "openai/ui": {
           "entrypoints": [
             {

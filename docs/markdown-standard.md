@@ -21,7 +21,11 @@ lists, tables, pictures and layouts, colour, highlights, diagrams and math as Ra
 
 ## Measured against the specification
 
-Rapier's parser passes 648 of 652 CommonMark 0.31.2 examples (99.39%) and 650 of 672 GFM examples (96.73%; 17 of the 24 extension-section examples), and the editor's source model round-trips all 1,324 specification sources byte for byte with no normalization. This is parser output, not a claim of complete CommonMark conformance. The deliberate difference is interactive task-list controls (GFM examples 279 and 280).
+The pinned suites contain all 652 [CommonMark 0.31.2](https://spec.commonmark.org/0.31.2/) examples and all 677 examples from the published [GFM 0.29 specification](https://github.github.com/gfm/), including its 28 extension-section examples. The editor's source model keeps all 1,329 sources byte for byte through opening, saving, a middle edit, Undo and Redo; it performs no source normalization.
+
+With every Rapier extension enabled and the official HTML normalization applied, parser output agrees with 643 of 652 CommonMark examples (98.62%) and 663 of 677 GFM examples (97.93%). These are unadjusted official-output comparisons, not a claim of complete core CommonMark conformance. GFM's extended autolinks and disallowed-tag filter also operate in examples illustrating the core grammar; a task remains interactive, table-column alignment uses equivalent CSS, single tildes mean subscript, and HTML comments follow CommonMark 0.31.2 rather than GFM's older grammar.
+
+The Node conformance witness also calls the actual semantic renderer and styled HTML writer for every example. Both preserve all 1,329 specified document meanings under the [documented profile](markdown-profile.md). The comparison keeps words, structure, code content and language identifiers, link destinations, image descriptions, checked state and authored column alignment. It excludes generated presentation metadata and applies the document's HTML safety policy. Opening front matter and the complete-tag rule for raw HTML are explicit renderer differences; no example is skipped or accepted without a concrete expected meaning. Agreement with the unadjusted official meaning is 638 of 652 CommonMark examples (97.85%) and 661 of 677 GFM examples (97.64%) in each renderer path.
 
 ## Layout
 
