@@ -444,13 +444,33 @@ const _rapierEmbeddedImages = (() => {
     const own = /<style>@media \(prefers-color-scheme:dark\)\{([^<]*)\}<\/style>/.exec(text);
     const named = new Set([...(own?.[1] || '').matchAll(/\[(fill|stroke|color|stop-color)="(#[0-9a-f]{6})"\]/g)].map(m => m[1] + m[2]));
     let out = own ? text.replace(own[0], '<style>' + own[1] + '</style>') : text;
+    // A background is a finished picture with its own colours: it keeps them on either paper, as Draw shows it.
+    const kept = [];
+    out = keepBackgrounds(out, kept);
     out = out.replace(/<[^>]+>/g, tag => tag.replace(/\b(fill|stroke|color|stop-color)="(#[0-9a-fA-F]{6})"/g, (match, attr, hex) => {
       const low = hex.toLowerCase();
       return named.has(attr + low) ? match : attr + '="' + (low === '#121212' && paperInk ? paperInk : _rapierDeriveDarkColor(low)) + '"';
     }));
     if (out.includes('data-rapier-paint=') && !own?.[1].includes('[data-rapier-paint]')) out = out.replace(/<\/metadata>/, '</metadata>' + PAINT_INK_FILTER)
       .replace(/<image data-rapier-paint=/g, '<image filter="url(#rapier-paint-ink)" data-rapier-paint=');
-    return out;
+    return out.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]);
+  }
+  // Each <g data-rapier-background> subtree, to its matching </g>, set aside behind a placeholder.
+  function keepBackgrounds(text, kept) {
+    let out = '', at = 0;
+    for (let start = text.indexOf('<g data-rapier-background=', at); start >= 0; start = text.indexOf('<g data-rapier-background=', at)) {
+      const tags = /<\/?g\b[^>]*>/g; tags.lastIndex = start;
+      let depth = 0, end = -1;
+      for (let tag; (tag = tags.exec(text));) {
+        if (tag[0][1] === '/') depth--; else if (!tag[0].endsWith('/>')) depth++;
+        if (depth === 0) { end = tags.lastIndex; break; }
+      }
+      if (end < 0) break;
+      out += text.slice(at, start) + '\u0000' + kept.length + '\u0000';
+      kept.push(text.slice(start, end));
+      at = end;
+    }
+    return out + text.slice(at);
   }
   function presentUrl(row) {
     if (!darkPaper() || row.type !== 'image/svg+xml' || typeof _rapierDeriveDarkColor !== 'function') return row.url;

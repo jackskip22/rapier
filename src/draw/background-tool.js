@@ -22,7 +22,8 @@ const RAPIER_BG_SLIDERS = {
 // Glow modes, one row for every kind that glows: the slider below still sets any value in between.
 const RAPIER_BG_GLOW_MODES = [['off', 'Off', 0], ['soft', 'Soft', 0.35], ['neon', 'Neon', 0.85]];
 const RAPIER_BG_GLOWS = new Set(['rails', 'bloom', 'ribbon', 'rays', 'glyphs', 'grid', 'flow', 'topo', 'aurora']);
-const RAPIER_BG_KINDS = [['none', 'None'], ['solid', 'Solid'], ['linear', 'Linear'], ['radial', 'Radial'], ['freeform', 'Free'], ['wave', 'Wave'], ['rails', 'Rails'], ['bloom', 'Bloom'], ['ribbon', 'Ribbon'], ['echo', 'Echo'], ['rays', 'Rays'], ['glyphs', 'Glyphs'], ['grid', 'Grid'], ['flow', 'Flow'], ['topo', 'Topo'], ['aurora', 'Aurora'], ['texture', 'Texture']];
+// The most striking first: topo, aurora, texture, flow, grid.
+const RAPIER_BG_KINDS = [['none', 'None'], ['topo', 'Topo'], ['aurora', 'Aurora'], ['texture', 'Texture'], ['flow', 'Flow'], ['grid', 'Grid'], ['solid', 'Solid'], ['linear', 'Linear'], ['radial', 'Radial'], ['freeform', 'Free'], ['wave', 'Wave'], ['rails', 'Rails'], ['bloom', 'Bloom'], ['ribbon', 'Ribbon'], ['echo', 'Echo'], ['rays', 'Rays'], ['glyphs', 'Glyphs']];
 
 function _rapierBgOpen() { const panel = _rapierBgPanel(); return !!panel && !panel.hidden; }
 function _rapierBgCurrent() { const state = _rapierDrawState; return state.bgDraft !== undefined ? state.bgDraft : (state.recipe?.background || null); }

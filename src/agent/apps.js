@@ -770,7 +770,7 @@
     const title = document.createElement('h2'), text = document.createElement('p'), actions = document.createElement('div');
     title.textContent = store.file.name;
     text.textContent = resource
-      ? 'The file changed outside this editor. Keep my version replaces the file; Use file version replaces this draft. Save a copy first if you want both.'
+      ? 'The file changed outside this editor. Keep my version replaces the file and keeps its version for Copy draft; Use file version replaces this draft.'
       : 'Your draft is safe in this editor. Save a new copy to ChatGPT Files or download it, or retry saving the original.';
     const act = (label, action) => button(label, async event => {
       if (event?.isTrusted !== true || activeFile() !== store) return;
@@ -781,16 +781,26 @@
     actions.append(act(object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft', downloadDraft));
     if (canUpload()) actions.append(act('Save to ChatGPT Files', uploadCurrent));
     if (resource) {
-      actions.append(act('Keep my version', async () => {
-        if (!await flush() || activeFile() !== store || store.incoming !== resource || !store.accept(resource)) return false;
-        return saveHostFile();
-      }), act('Use file version', () => useHostFileVersion(store, resource)));
+      actions.append(act('Keep my version', () => keepMyVersion(store, resource)), act('Use file version', () => useHostFileVersion(store, resource)));
     } else actions.append(act('Retry save', saveHostFile));
     actions.append(button('Keep editing', () => sheet.close()));
     sheet.append(title, text, actions);
     sheet.addEventListener('close', () => sheet.remove(), {once: true});
     document.body.append(sheet);
     sheet.showModal();
+  }
+
+  // Keep my version: the file's version is kept before the editor's is written over it, as a switch keeps a stranded
+  // draft (offered for download where the host allows, listed for Copy draft either way); then the editor's is saved.
+  async function keepMyVersion(store, resource) {
+    if (!await flush() || activeFile() !== store || store.incoming !== resource) return false;
+    if (typeof resource.text === 'string') {
+      const name = store.file.name, record = {text: resource.text, filename: name, docKind: /\.(?:md|markdown)$/i.test(name) ? 'markdown' : 'text', delivered: false};
+      strandedDrafts.push(record);
+      record.delivered = !!(object(capabilities.downloadFile) && await exportFile(new Blob([resource.text], {type: 'text/plain;charset=utf-8'}), name));
+    }
+    if (!store.accept(resource)) return false;
+    return saveHostFile();
   }
 
   function resumeOpen() {

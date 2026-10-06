@@ -552,20 +552,20 @@ export function sampleStops(stops, t) {
 	return oklabToRgb(hexToOklab(s.at(-1).color));
 }
 
-// A few starting points for the panel, chosen by eye on white and black paper.
+// A few starting points for the panel, chosen by eye on white and black paper; the most striking first.
 export const BACKGROUND_PRESETS = [
+	{kind: 'topo', seed: 8, lines: 96, scale: 0.4, swirl: 0.3, weight: 0.3, glow: 0, stops: [{at: 0, color: '#2a9d8f'}, {at: 0.5, color: '#e9c46a'}, {at: 1, color: '#e76f51'}]},
+	{kind: 'aurora', seed: 3, curtains: 3, height: 0.6, sway: 0.5, rays: 0.6, stars: 0.5, glow: 0.4, stops: [{at: 0, color: '#3dffb0'}, {at: 0.55, color: '#19c8ff'}, {at: 1, color: '#b45cff'}]},
 	{kind: 'texture', texture: 'weave', scale: 0.025, strength: 0.6, seed: 1},
 	{kind: 'texture', texture: 'grain', scale: 0.004, strength: 0.45, seed: 3},
 	{kind: 'texture', texture: 'linen', scale: 0.025, strength: 0.7, seed: 1, color: '#8a6d4b'},
 	{kind: 'texture', texture: 'dots', scale: 0.05, strength: 0.55, seed: 1},
-	{kind: 'aurora', seed: 3, curtains: 3, height: 0.6, sway: 0.5, rays: 0.6, stars: 0.5, glow: 0.4, stops: [{at: 0, color: '#3dffb0'}, {at: 0.55, color: '#19c8ff'}, {at: 1, color: '#b45cff'}]},
 	{kind: 'flow', seed: 4, lines: 220, scale: 0.35, swirl: 0.4, weight: 0.3, glow: 0, stops: [{at: 0, color: '#ff7a59'}, {at: 0.5, color: '#ffd166'}, {at: 1, color: '#3a86ff'}]},
-	{kind: 'topo', seed: 8, lines: 96, scale: 0.4, swirl: 0.3, weight: 0.3, glow: 0, stops: [{at: 0, color: '#2a9d8f'}, {at: 0.5, color: '#e9c46a'}, {at: 1, color: '#e76f51'}]},
+	{kind: 'grid', lines: 20, horizon: 0.35, sun: 0.6, glow: 0.7, tilt: 0.3, stops: [{at: 0, color: '#19e6ff'}, {at: 0.5, color: '#ff3ea5'}, {at: 1, color: '#ffb347'}]},
 	{kind: 'glyphs', style: 'rain', cols: 36, seed: 11, x1: 0.5, y1: 0, x2: 0.5, y2: 1, density: 0.9, wobble: 0.6, stops: [{at: 0, color: '#d6ffe4'}, {at: 0.4, color: '#22ff88'}, {at: 1, color: '#0a5c36'}]},
 	{kind: 'glyphs', style: 'circuit', cols: 22, seed: 5, x1: 0, y1: 0, x2: 1, y2: 1, density: 0.7, wobble: 0.5, stops: [{at: 0, color: '#19e6ff'}, {at: 1, color: '#b16bff'}]},
 	{kind: 'glyphs', style: 'halftone', cols: 30, seed: 2, x1: 0, y1: 0.5, x2: 1, y2: 0.5, density: 1, wobble: 0.7, stops: [{at: 0, color: '#ff3ea5'}, {at: 1, color: '#ffb347'}]},
 	{kind: 'glyphs', style: 'blocks', cols: 26, seed: 9, x1: 0, y1: 1, x2: 1, y2: 0, density: 0.75, wobble: 0.8, stops: [{at: 0, color: '#3d7bff'}, {at: 1, color: '#19e6ff'}]},
-	{kind: 'grid', lines: 20, horizon: 0.35, sun: 0.6, glow: 0.7, tilt: 0.3, stops: [{at: 0, color: '#19e6ff'}, {at: 0.5, color: '#ff3ea5'}, {at: 1, color: '#ffb347'}]},
 	{kind: 'glyphs', cols: 28, seed: 3, x1: 0.1, y1: 0.1, x2: 0.9, y2: 0.9, density: 0.8, wobble: 0.9, stops: [{at: 0, color: '#19e6ff'}, {at: 0.5, color: '#3d7bff'}, {at: 1, color: '#ff3ea5'}]},
 	{kind: 'rays', form: 'hourglass', count: 26, cx: 0.5, cy: 0.5, spread: 0.85, curve: 0.6, stops: [{at: 0, color: '#1d4fa8'}, {at: 0.4, color: '#2ef0a8'}, {at: 0.7, color: '#f2ffd2'}, {at: 1, color: '#1d7a8a'}]},
 	{kind: 'rays', form: 'perspective', count: 14, cx: 0.5, cy: 0, spread: 0.8, curve: 0.2, stops: [{at: 0, color: '#141a5a'}, {at: 0.6, color: '#8a7aa8'}, {at: 1, color: '#3f6ef0'}]},
