@@ -25,7 +25,6 @@ function rapierConfirm(options) {
 function rapierResolveConfirm(requestId, accepted) {
 	const resolve = _rapierConfirmRuntime.pending.get(String(requestId || ''));
 	if (!resolve) return false;
-	_rapierLifecycleRuntime.exitArmed = false;
 	_rapierConfirmRuntime.pending.delete(String(requestId));
 	resolve(accepted === 'secondary' ? 'secondary' : !!accepted);
 	return true;
@@ -3153,6 +3152,21 @@ function createTurndown() {
 		filter:      ['math'],
 		replacement: (_c, node) => node.outerHTML,
 	});
+	// Only a complete formula is raw TeX: an edited fallback can become ordinary words again.
+	turndown.addRule('mathSource', {
+		filter: node => node.nodeName === 'SPAN' && node.hasAttribute('data-rapier-math-source'),
+		replacement: (content, node) => {
+			try {
+				const source = decodeURIComponent(node.getAttribute('data-rapier-math-source') || '');
+				const tokens = md.parseInline(source, {})[0]?.children || [], token = tokens[0];
+				return tokens.length === 1 && (token.type === 'math_inline' || token.type === 'math_block') &&
+					token.markup + token.content + token.markup === source ? source : content;
+			} catch (_) { return content; }
+		},
+	});
+	// Capture live source before Turndown's whitespace pass; the sanitizer owns inert parsing.
+	const writeMarkdown = turndown.turndown.bind(turndown);
+	turndown.turndown = input => writeMarkdown(globalThis.RapierRenderSanitizer.prepareMathSource(input, window.DOMParser));
 	turndown.addRule('mathIsland', {
 		filter: (node) => node.nodeName === 'SPAN' &&
 			node.classList && node.classList.contains('math-rendered') &&
@@ -4612,9 +4626,11 @@ function _rapierCodeHoldsSelection(el) {
 function _rapierColourCodeElement(el) {
 	const source = el.textContent || '';
 	if (source.length > RAPIER_CODE_COLOUR_MAX_CHARS || !_rapierHighlightAdmitted(source) || _rapierCodeHoldsSelection(el)) return;
-	const lang = _rapierLanguageClass(el), reading = _rapierCodeReading(lang);
+	// A block with no language name (an unlabelled fence, an indented block) is plain text, as on GitHub:
+	// people fence prose, output and sketches as often as code.
+	const lang = _rapierLanguageClass(el) || 'text', reading = _rapierCodeReading(lang);
 	// A fence markdown-it already coloured keeps its spans, and a plain-text fence has none to gain;
-	// anything else still plain (an indented block, a diagram's source) is painted now.
+	// anything else still plain (a diagram's source) is painted now.
 	if (el.firstElementChild || reading === 'plain') el.classList.add('tok');
 	else _rapierPaintCode(el, _rapierCodeHtml(source, lang));
 	if (reading === 'code') void _rapierColourCodeGpu(el, source);
@@ -4665,7 +4681,7 @@ function _drainCodeColourQueue() {
 	_rapierHighlightRuntime.queued.delete(el);
 	if (el.isConnected) {
 		if (!el.classList.contains('tok')) _rapierColourCodeElement(el);
-		else if (!el.classList.contains('tok-lexed') && _rapierCodeReading(_rapierLanguageClass(el)) === 'code') void _rapierColourCodeGpu(el, el.textContent || '');
+		else if (!el.classList.contains('tok-lexed') && _rapierCodeReading(_rapierLanguageClass(el) || 'text') === 'code') void _rapierColourCodeGpu(el, el.textContent || '');
 	}
 	if (_rapierHighlightRuntime.queue.length) { _rapierHighlightRuntime.scheduled = true; _yieldToIdle(_drainCodeColourQueue); }
 }
@@ -20442,16 +20458,10 @@ window.addEventListener('rapier:file-changed', async function _rapierReconcileCh
 		stamp: Object.freeze(_rapierMutationStamp()),
 	}), { quiet: true });
 	if (!observed.settled || !observed.value || observed.value.authority !== eventAuthority) return;
-	const dirtyAtPrompt = observed.value.dirty;
+	const dirtyAtEvent = observed.value.dirty;
 	const decisionStamp = observed.value.stamp;
-	const accepted = await rapierConfirm({
-		title: 'file changed',
-		message: dirtyAtPrompt
-			? '• The file changed elsewhere.\n• Compare with your changes?'
-			: '• The file changed elsewhere.\n• Reload it?',
-		confirmLabel: dirtyAtPrompt ? 'compare' : 'reload',
-	});
-	if (!accepted || eventAuthority !== String(rapier.identity.authority || '')) return;
+	// Nothing is asked: unsaved words go to Compare, a clean document reloads, and the reload refuses (requireClean) a document
+	// that took a change since this read.
 	try {
 		const payload = await window.RapierPlatform.files.readCurrent(eventAuthority);
 		if (!payload || eventAuthority !== String(rapier.identity.authority || '')) return;
@@ -20462,7 +20472,7 @@ window.addEventListener('rapier:file-changed', async function _rapierReconcileCh
 			viewContinuity: _rapierCaptureViewContinuity(),
 		}), { quiet: true });
 		if (!current.settled || !current.value || eventAuthority !== String(rapier.identity.authority || '')) return;
-		const compareInstead = dirtyAtPrompt || current.value.dirty || !current.value.decisionCurrent;
+		const compareInstead = dirtyAtEvent || current.value.dirty || !current.value.decisionCurrent;
 		if (compareInstead) {
 			try { await _rapierCompareReadPayload(payload); }
 			finally {
@@ -20470,12 +20480,12 @@ window.addEventListener('rapier:file-changed', async function _rapierReconcileCh
 					try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
 				}
 			}
-		} else await rapierOpenPlatformPayload(payload, {
+		} else if (await rapierOpenPlatformPayload(payload, {
 			outgoingSettled: true,
 			requireClean: true,
 			preserveView: true,
 			viewContinuity: current.value.viewContinuity,
-		});
+		})) showToast('reloaded: the file changed elsewhere', 'info');
 	} catch (error) {
 		console.warn('[rapier] changed file could not be read', error);
 		showToast('could not read the changed file', 'error');
@@ -20486,9 +20496,8 @@ const _rapierLifecycleRuntime = Object.seal({
 	externalFileCheckPending: false,
 	externalFileCheckAuthority: '',
 	externalFileCheckQueuedAuthority: '',
-	closePromptActive: false,
+	departing: false,
 
-	exitArmed: false,
 	reloadAfterBfcache: false,
 });
 async function _rapierCheckExternalBoundFile() {
@@ -20529,30 +20538,23 @@ document.addEventListener('visibilitychange', () => {
 	if (document.visibilityState === 'visible') _rapierCheckExternalBoundFile();
 });
 
-function _rapierCloseQuestion() {
-	// The close box's question. CLOSE closes and the recovery keeps the changes for the next launch, so the
-	// words say what is kept and name what is not -- the file -- and no answer says DISCARD, a loss that does
-	// not happen (the editor's LEAVE question).
-	return {title: 'close rapier?', message: 'your changes stay here for next time; ' + String(rapier.document.filename || 'the file') + ' is not saved yet.', discardLabel: 'close'};
-}
-
+// The document is settled: no edit, composition or history step is half done. An agent working or waiting never holds a
+// departure back (_rapierWaitAbortPending).
 function _rapierGuestQuiescent() {
 	return !_rapierMutationBarrierActive() && !rapier.composition.block && !rapier.composition.source &&
-		_rapierHistoryIsComplete() && !_rapierWaitRuntime.pending && _rapierAgentBar.running === 0;
+		_rapierHistoryIsComplete();
 }
-// The close box (a host's window close, or the app's Back with nothing left to answer it): a clean, quiet
-// editor closes at once; a dirty one is asked _rapierCloseQuestion, and its CLOSE -- or a second Back
-// over it -- keeps the document the way LEAVE does before the host may close (_rapierKeptForDeparture):
-// the question promises "your changes stay here for next time" (one rule for leaving).
+// The close box (a host's window close, or the app's Back with nothing left to answer it): nothing is asked. A clean,
+// settled editor closes at once; any other keeps the document the way LEAVE does and then closes (_rapierKeepThenGo).
 async function _rapierPlatformCloseRequested() {
 	const platform = window.RapierPlatform;
-	if (!platform || !platform.host.approveClose || _rapierLifecycleRuntime.closePromptActive) return;
-	_rapierLifecycleRuntime.closePromptActive = true;
+	if (!platform || !platform.host.approveClose || _rapierLifecycleRuntime.departing) return;
+	_rapierLifecycleRuntime.departing = true;
 	try {
 		await _rapierEndOpenComposition();
 		const state = await _rapierWithSettledExternalDocument(() => {
-			if (_rapierIsDirty()) return { outcome: 'dirty' };
-			if (!_rapierGuestQuiescent()) return { outcome: 'not_quiescent' };
+			if (_rapierIsDirty() || !_rapierGuestQuiescent()) return { outcome: 'keep' };
+			_rapierWaitAbortPending();
 			platform.host.approveClose();
 			return { outcome: 'approved' };
 		}, { quiet: true });
@@ -20561,30 +20563,15 @@ async function _rapierPlatformCloseRequested() {
 			return;
 		}
 		if (state.value.outcome === 'approved') return;
-		if (state.value.outcome === 'not_quiescent') {
-			showToast('an agent is still working or waiting; let it finish, then close again', 'info');
-			return;
-		}
-
-		_rapierLifecycleRuntime.exitArmed = true;
-		const transitionGuard = await _rapierConfirmDirtyTransition(_rapierCloseQuestion());
-		if (!transitionGuard || (_rapierIsDirty() && !await _rapierKeptForDeparture('close'))) return;
-		const approved = await _rapierWithSettledExternalDocument(() => {
-			if (!_rapierMutationStampIsCurrent(transitionGuard)) return 'stale';
-			if (!_rapierGuestQuiescent()) return 'not_quiescent';
-			platform.host.approveClose();
-			return 'approved';
-		}, { quiet: true });
-		if (!approved.settled) {
+		const departure = await _rapierKeepThenGo('close', () => { platform.host.approveClose(); return 'approved'; });
+		if (!departure.kept) return;
+		if (!departure.settled) {
 			showToast('finish the current edit, then close again', 'info');
-		} else if (approved.value === 'not_quiescent') {
-			showToast('an agent is still working or waiting; let it finish, then close again', 'info');
-		} else if (approved.value !== 'approved') {
+		} else if (departure.value === 'stale') {
 			showToast('new edits arrived; review them before closing', 'info');
 		}
 	} finally {
-		_rapierLifecycleRuntime.exitArmed = false;
-		_rapierLifecycleRuntime.closePromptActive = false;
+		_rapierLifecycleRuntime.departing = false;
 	}
 }
 window.addEventListener('rapier:platform-close-requested', _rapierPlatformCloseRequested);
@@ -40431,9 +40418,8 @@ function _rapierDialogsHandleBack() {
 }
 
 function rapierHandleBack() {
-	// What stands on top answers first: a dialog -- the house's confirm among them, where Draw asks
-	// its question and the editor asks before it leaves -- takes the Back before the canvas under it,
-	// so a second Back puts a question away rather than asking it again over itself.
+	// What stands on top answers first: a dialog -- the house's confirm among them -- takes the Back
+	// before the canvas under it, so a second Back puts a question away rather than asking it again over itself.
 	if (_rapierDialogsHandleBack()) return true;
 	// Draw checked directly, ahead of every _rapierUiSurfaces entry: Draw is drawn on top of
 	// everything else, and its own Back/Done decision is async (an ink commit awaits font/asset
@@ -40443,7 +40429,7 @@ function rapierHandleBack() {
 	// ordinary dialogs and pickers. Draw also already owns and gates its own open state and its
 	// own in-surface Escape handling (draw/draw.js's keydown listener), so stretching the shared
 	// registry for the one surface that disagrees with its contract would cost more than this
-	// direct call. See draw/draw.js's _rapierDrawHandleBack for the actual ask-or-close logic.
+	// direct call. See draw/draw.js's _rapierDrawHandleBack: Back keeps the drawing as Done does.
 	if (_rapierDrawPresent() && _rapierDrawHandleBack()) return true;
 	// Notes cards and sheets stand over the editor. A note delegates its editor
 	// surfaces before returning to the cards (notes/notes.js).
@@ -40461,33 +40447,19 @@ function rapierHandleBack() {
 	}
 
 	if (_rapierTravelGo(-1)) return true;
-	// Nothing stands over the editor: Back would leave Rapier, so it asks first.
+	// Nothing stands over the editor: Back leaves Rapier, the document kept first.
 	return _rapierLeaveAsk();
 }
 
-// On the editor, with nothing over it, Back asks before it leaves Rapier, so an accidental Back
-// never closes the app and loses work, in words honest about what is kept. The document is kept on
-// the way out and the boot restores it (_rapierLeave below, rapierTryRestore), so the question never
-// threatens a loss that will not happen; a file that does not have the latest changes yet is named,
-// so none is hidden either. A second Back puts the question away (the dialogs answer Back first), as
-// a tap beside it does; its LEAVE is the one way out. Where Rapier cannot leave -- a framed or
-// hosted editor, or before the boot is done -- the Back is not Rapier's (false).
+// On the editor, with nothing over it, Back leaves Rapier and asks nothing: the document is kept on the way
+// out and the boot restores it (_rapierLeave below, rapierTryRestore). Where Rapier cannot leave -- a framed
+// or hosted editor, or before the boot is done -- the Back is not Rapier's (false).
 function _rapierLeaveAsk() {
 	const platform = window.RapierPlatform;
 	const app = !!platform && typeof platform.host.approveClose === 'function';
 	const web = !app && typeof _rapierBackEntriesArmed === 'function' && _rapierBackEntriesArmed();
 	if ((!app && !web) || !_rapierBootstrapRuntime.complete || _rapierBootstrapRuntime.failed || !_rapierUi.refs) return false;
-	// A document with nothing changed (no mark by its name) has nothing to lose, so Back leaves at once;
-	// the question is for unsaved work alone.
-	if (!_rapierIsDirty()) { void _rapierLeave(); return true; }
-	const file = typeof platform.files.hasWritable === 'function' &&
-		platform.files.hasWritable(String(rapier.identity.authority || ''));
-	void rapierConfirm({
-		title: 'leave rapier?',
-		message: file ? 'your changes stay here for next time; ' + String(rapier.document.filename || 'the file') + ' is not saved yet.'
-			: 'your document stays here for next time.',
-		confirmLabel: 'leave',
-	}).then(choice => { if (choice === true) void _rapierLeave(); });
+	void _rapierLeave();
 	return true;
 }
 
@@ -40523,30 +40495,54 @@ async function _rapierKeptForDeparture(verb) {
 	return kept;
 }
 
+// Kept first, then Rapier goes (LEAVE and the close box). The keep may wait on disk while the person types or an
+// agent edits, so the departure is read in one settled turn against the stamp taken before the keep: a document
+// that moved meanwhile is kept again (up to three times) before Rapier goes, never left behind. A keep that fails
+// leaves Rapier open (_rapierKeptForDeparture says why) and an agent's pending wait is cancelled only when Rapier goes.
+// Resolves {kept: false} when nothing could be kept, else {kept: true, settled, value}: value is what `go` returned,
+// or 'stale' when the document would not hold still.
+async function _rapierKeepThenGo(verb, go) {
+	let departure = { settled: true, value: 'stale' };
+	for (let attempt = 0; attempt < 3 && departure.settled && departure.value === 'stale'; attempt++) {
+		await _rapierEndOpenComposition();
+		// An agent's call already running may still commit: it lands, and is kept, before Rapier goes (a wait commits nothing).
+		for (const until = Date.now() + 2000; _rapierAgentBar.running > (_rapierWaitRuntime.pending ? 1 : 0) && Date.now() < until;) {
+			await new Promise(resolve => setTimeout(resolve, 25));
+		}
+		const guard = _rapierMutationStamp();
+		if (!await _rapierKeptForDeparture(verb)) return { kept: false };
+		departure = await _rapierWithSettledExternalDocument(() => {
+			if (!_rapierMutationStampIsCurrent(guard) || !_rapierGuestQuiescent()) return 'stale';
+			_rapierWaitAbortPending();
+			return go();
+		}, { quiet: true });
+	}
+	return { kept: true, settled: departure.settled, value: departure.value };
+}
+
 // LEAVE: kept first, then Rapier goes: the app finishes through the bridge it already has
 // (MainActivity.kt approveClose); the web goes back past the page's own entries
 // (shell/platform.js _rapierBackEntriesLeave).
+// A second Back while the keep is written is the same departure, not another one (the page's entries go once).
 async function _rapierLeave() {
 	const platform = window.RapierPlatform;
-	await _rapierEndOpenComposition();
-	const guard = _rapierMutationStamp();
-	if (!await _rapierKeptForDeparture('leave')) return;
-	// Like the close box: the keep may have waited on disk while typing, a load or an agent
-	// changed the document. Check and leave in one settled turn, never on an older receipt.
-	const departure = await _rapierWithSettledExternalDocument(() => {
-		if (!_rapierMutationStampIsCurrent(guard)) return 'stale';
-		if (!_rapierGuestQuiescent()) return 'not_quiescent';
-		if (platform && typeof platform.host.approveClose === 'function') { platform.host.approveClose(); return 'approved'; }
-		return typeof _rapierBackEntriesLeave === 'function' ? _rapierBackEntriesLeave() : 'approved';
-	}, { quiet: true });
-	if (!departure.settled) {
-		showToast('finish the current edit, then leave again', 'info');
-	} else if (departure.value === 'stale') {
-		showToast('new edits arrived; review them before leaving', 'info');
-	} else if (departure.value === 'not_quiescent') {
-		showToast('an agent is still working or waiting; let it finish, then leave again', 'info');
-	} else if (departure.value === 'last') {
-		showToast(window.matchMedia?.('(pointer: coarse)')?.matches ? 'press back again to leave' : 'nothing to go back to; close the tab to leave', 'info');
+	if (_rapierLifecycleRuntime.departing) return;
+	_rapierLifecycleRuntime.departing = true;
+	try {
+		const departure = await _rapierKeepThenGo('leave', () => {
+			if (platform && typeof platform.host.approveClose === 'function') { platform.host.approveClose(); return 'approved'; }
+			return typeof _rapierBackEntriesLeave === 'function' ? _rapierBackEntriesLeave() : 'approved';
+		});
+		if (!departure.kept) return;
+		if (!departure.settled) {
+			showToast('finish the current edit, then leave again', 'info');
+		} else if (departure.value === 'stale') {
+			showToast('new edits arrived; review them before leaving', 'info');
+		} else if (departure.value === 'last') {
+			showToast(window.matchMedia?.('(pointer: coarse)')?.matches ? 'press back again to leave' : 'nothing to go back to; close the tab to leave', 'info');
+		}
+	} finally {
+		_rapierLifecycleRuntime.departing = false;
 	}
 }
 
@@ -41326,6 +41322,12 @@ function _rapierWaitNoticeDocumentReplaced() {
 	state.settleReplaced();
 }
 
+// The person is leaving: an agent's pending wait is cancelled (its caller is told so), never a reason to refuse the person.
+function _rapierWaitAbortPending() {
+	const state = _rapierWaitRuntime.pending;
+	if (state && typeof state.abort === 'function') state.abort();
+}
+
 function _rapierWaitTargetProjection(record) {
 	const target = record.target;
 	return {
@@ -41589,6 +41591,7 @@ function _rapierWaitDispose(state) {
 	state.watch = null;
 	state.reply = null;
 	state.settleReplaced = null;
+	state.abort = null;
 	if (_rapierWaitRuntime.pending === state) {
 		_rapierWaitRuntime.pending = null;
 		_rapierAgentBarRender();
@@ -41660,7 +41663,7 @@ async function _rapierWaitForUser(input, ctx) {
 		baseRevision: 0, evaluatedRevision: 0, identity: _rapierDocumentIdentity(),
 		flatSurface: _rapierFlatSurface(), baselineFlat: null, baselineBlocks: null,
 		prompt: event === 'message' ? (request.prompt || '') : '',
-		reply: null, settleReplaced: null,
+		reply: null, settleReplaced: null, abort: null,
 		watch: null, evaluate: () => null, timer: 0, frame: 0, marker: null, listeners: [],
 	};
 
@@ -41692,6 +41695,10 @@ async function _rapierWaitForUser(input, ctx) {
 		};
 
 		state.settleReplaced = () => finish({ outcome: 'document_replaced', reason: 'document_replaced' });
+		state.abort = () => {
+			_rapierWaitDispose(state);
+			reject(new DOMException('The wait was cancelled: the person is leaving.', 'AbortError'));
+		};
 		const listen = (node, type, handler, options) => {
 			node.addEventListener(type, handler, options);
 			state.listeners.push({ node, type, handler, options });
@@ -45238,12 +45245,15 @@ function renderFilename() {
 	refs.filenameNormal.hidden = rapier.compare.active;
 	refs.filenameBtn.hidden = editing === 'base';
 	refs.filenameBtn.textContent = embedded && _rapierEmbed.title ? _rapierEmbed.title : base;
+	// A screen reader hears which file is open, whole, with its extension, and what the button does.
+	refs.filenameBtn.setAttribute('aria-label', 'rename ' + (embedded && _rapierEmbed.title ? _rapierEmbed.title : name));
 	refs.filenameBtn.disabled = locked;
 	refs.filenameInput.hidden = editing !== 'base';
 	refs.filenameDirty.hidden = !dirty;
 	refs.filenameExtBtn.hidden = embedded || editing !== '';
 	refs.filenameExtBtn.disabled = locked;
 	refs.filenameExtText.textContent = extension.toUpperCase();
+	refs.filenameExtBtn.setAttribute('aria-label', 'change extension ' + extension);
 	refs.filenameExtWrap.hidden = editing !== 'ext';
 
 	_rapierRenderDocumentHead();
@@ -45596,9 +45606,7 @@ function _rapierUiSurfaces() {
 			close: () => closeDialog(refs.infoOverlay) },
 		{ overlay: () => refs.confirmOverlay,
 			open: () => _rapierUiDialogIsOpen(refs.confirmOverlay), question: true,
-			// A second Back over the close box's question answers it CLOSE, the one way out, which keeps the
-			// document before the host may close (_rapierPlatformCloseRequested); any other answer is cancel.
-			close: intent => _rapierUiResolveConfirm(intent.back && _rapierLifecycleRuntime.exitArmed ? 'secondary' : false) },
+			close: () => _rapierUiResolveConfirm(false) },
 		{ overlay: () => refs.embedFailureOverlay,
 			open: () => _rapierUiDialogIsOpen(refs.embedFailureOverlay), question: true, answerOnly: true,
 			blocking: () => _rapierUi.embedFailure.purpose === 'connection',

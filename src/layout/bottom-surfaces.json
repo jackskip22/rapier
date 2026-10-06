@@ -1214,9 +1214,9 @@
         ]
       },
       "role": "overlay",
-      "interactive": true,
+      "interactive": false,
       "edge": "bottom",
-      "reason": "The fixed bottom-reaching edge-swipe region is an interactive gesture target, not a button."
+      "reason": "The edge-swipe zone takes no pointer events: the touch router reads its rectangle by coordinates, so a notice over it covers no control."
     },
     {
       "id": "restore-modal-panel",

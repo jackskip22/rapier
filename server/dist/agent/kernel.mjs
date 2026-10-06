@@ -11,7 +11,7 @@ import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdown
 import { _rapierDrawNormalizeAgentRecipe, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
 import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
-import { getTool, validateInput } from './catalog.mjs';
+import { getTool, validateInput, MAX_EXPORT_BYTES } from './catalog.mjs';
 import { _rapierTransformSplices as transformSplices } from '../kit/ledger/journal-records.mjs';
 import { pairMarkers, pairInkSpans, scanInkMarkers, scanColorMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
 import { markdownSourcePositions } from '../spec/md-source.mjs';
@@ -72,6 +72,7 @@ const HINTS = {
   search_changed: 'The document changed during the call; call find again.',
   read_snapshot_changed: 'The document changed during the call; read_context again.',
   comment_missing: 'Call list_comments for the current thread ids before replying or resolving.',
+  comments_record: 'That range holds the document\'s comment threads; edit the text around it, and use document.comment for discussions.',
   comment_text_invalid: 'Send a nonempty comment of at most 4096 UTF-8 bytes.',
   comment_anchor_invalid: 'Read the exact passage or drawing again, then use that handle and an existing object id.',
   comments_appendix_unavailable: 'Finish the unclosed Markdown block at the end of the document before adding a comment.',
@@ -273,6 +274,15 @@ export function createState({ id, documentId, filename = 'Untitled.md', text = '
 
 function journalBytes(entry) {
   return entry.splices.reduce((sum, row) => sum + bytes(row.removed) + bytes(row.inserted), 0);
+}
+
+// The comment record is one line of the threads' own data, written only through document.comment. A text edit that
+// reaches into it, or glues text onto either end of its line, would rewrite or orphan the threads.
+function touchesCommentRecord(text, splices) {
+  const record = text.includes('md-comments:') ? parseComments(text).record : null;
+  if (!record) return false;
+  return splices.some(row => row.pos < record.end && row.pos + row.removed.length > record.start ||
+    row.pos > record.start && row.pos <= record.end || row.pos === record.start && !/[\r\n]$/.test(row.inserted));
 }
 
 function regionVerdict(will, splice) {
@@ -1735,6 +1745,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (!mapped.outcome) sectionEntries = mapped.entries;
     }
     sectionEntries = (sectionEntries || []).filter(row => safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end));
+    // The comment record is data the comment tools read; a match inside it is never offered as editable text.
+    const record = state.docKind === 'markdown' && state.text.includes('md-comments:') ? parseComments(state.text).record : null;
+    if (record) found = found.filter(row => row.end <= record.start || row.start >= record.end);
     const sectionRefs = new Map();
     const localOffset = windowed ? 0 : offset;
     const page = found.slice(localOffset, localOffset + limit), matches = [];
@@ -1939,7 +1952,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return { text, splices, authoredSplices, derivedCommentIndex };
   }
 
-  // The host's one fence over every commit path, asked before a review exists. `fact` lets a Draw fence admit an edit to the open drawing.
+  // The host's one fence over every commit path, asked before a review exists. `fact` carries the edit's splices, so a host
+  // refuses only what it holds (Draw: the open picture, or where a new one lands), and lets a Draw fence admit a patch to the
+  // open drawing. Asked bare, it says whether a fence stands at all.
   function commitFenceRefusal(fact) {
     const fence = typeof host.commitFence === 'function' ? host.commitFence(fact) : '';
     return fence ? failure(fence, 'refused') : null;
@@ -1976,7 +1991,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       restores: options.restores === true, reviewedRegion, referenceCheck: host.referenceCheck });
     let reviewToken = approved ? context.reviewToken || null : null;
     // Same fence as commit(): asked for every path before a review exists.
-    const fenced = commitFenceRefusal(options.fence);
+    const fenced = commitFenceRefusal({...options.fence, splices});
     if (fenced) return fenced;
     // An agent's edit never leaves a colour or ink marker standing alone or an empty pair: each pair stays whole or goes whole, or the edit is
     // refused with the source exact.
@@ -1986,6 +2001,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const broken = markerBroken(beforeText, text, splices, kind);
         if (broken) return failure(kind + '_pair_broken', 'refused', broken);
       }
+      if (operation !== 'document.comment' && touchesCommentRecord(beforeText, authoredSplices)) return failure('comments_record');
     }
     // On the drawing the person has OPEN, an agent draws immediately (one Undo step). options.watched is remembered, so it is
     // re-established here from both halves: the patch is admitted and ordinary commits are fenced. Otherwise the posture applies.
@@ -2766,7 +2782,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const early = commitGate([{ pos: position, removed: '', inserted: '' }], who);
     if (early && early.reason !== 'human_review_required') return early;
     if (early?.reviewKind === 'check') {
-      const fenced = commitFenceRefusal();
+      const fenced = commitFenceRefusal({ splices: [{ pos: position, removed: '', inserted: '' }] });
       if (fenced) return fenced;
       return stageReview('check', [], who, context, 'document.draw', { label: input.label || 'Draw a picture' });
     }
@@ -2860,7 +2876,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const watched = !!commitFenceRefusal() && !commitFenceRefusal(editingFence);
     // A CHECK draw on the open drawing lands immediately; elsewhere unchanged.
     if (early?.reviewKind === 'check' && !watched) {
-      const fenced = commitFenceRefusal();
+      const fenced = commitFenceRefusal({ ...editingFence, splices: [{ pos: range.start, removed: held.text, inserted: '' }] });
       if (fenced) return fenced;
       return stageReview('check', [], who, context, 'document.draw', { label: input.label || 'Edit a drawing' });
     }
@@ -3255,6 +3271,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         break;
       }
       case 'document.draw': result = await drawPicture(input, who, context); break;
+      // A read: the host builds the file from the settled source; nothing here touches the document, its revision or its journal.
+      case 'document.export': {
+        if (typeof host.exportFile !== 'function') { result = failure('export_unavailable'); break; }
+        const file = await host.exportFile({ format: input.format, filename: state.filename, docKind: state.docKind, text: state.text, signal: context.signal });
+        cancelled(context);
+        result = !file?.bytes ? failure(file?.reason || 'export_unavailable')
+          : file.bytes.byteLength > MAX_EXPORT_BYTES ? failure('export_too_large', 'refused', { limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength })
+          : accepted({ format: input.format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength });
+        break;
+      }
       case 'notes.list': result = await notesList(input, who, context); break;
       case 'notes.read': result = await notesRead(input, who, context); break;
       case 'notes.propose': result = await notesPropose(input, who, context); break;

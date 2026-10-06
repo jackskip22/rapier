@@ -185,9 +185,19 @@ call whatever a host allows. WebMCP harnesses pass `executeTool` arguments as ob
 
 ## The worker
 
-The hosted worker keeps one anonymous document per Durable Object, expiring after thirty idle days. Its own alarm reads that workspace's head once, and expired workspaces delete their own keys; there is no folder-wide sweep or global workspace listing. Creation uses fixed-hour budgets: twenty per hashed network address and six hundred per deployment. A budget denial writes no record; an active budget reads its three retained fields once, and a successful take remains retryable. The two budgets are a sequential pair: an address take can remain spent if the deployment take is refused.
+The hosted worker keeps one anonymous document per Durable Object, expiring after thirty idle days. Its own alarm reads that workspace's head once, and expired workspaces delete their own keys; there is no folder-wide sweep or global workspace listing. Creation uses one fixed-hour budget per deployment, five thousand workspaces; no network address is kept. A budget denial writes no record; an active budget reads its three retained fields once, and a successful take remains retryable.
 
 The editor key is a reusable one-day page capability; its nonce is not a request nonce. Its fixed-size canonical tag is checked by WebCrypto's HMAC verifier. There is no single-use nonce protocol or per-editor-key rate policy: the named request identities distinguish exact retries from changed-input reuse, and stale human-context sequences cannot replace newer ones.
+
+## What each tool changes
+
+| Class | Tools |
+| --- | --- |
+| Read: changes nothing | `rapier.guide`, `document.get_context`, `document.get_outline`, `document.read_context`, `document.find`, `document.list_comments`, `document.inspect_visual`, `document.export`, `notes.list`, `notes.read` |
+| Write: changes the workspace, and every change can be undone | `rapier.open`, `document.apply_edits`, `document.draw`, `document.propose_edits`, `document.propose`, `document.comment`, `document.undo_agent_change`, `document.show_changes`, `document.compare`, `document.reveal`, `document.create_return`, `document.wait_for_user`, `document.save`, `notes.propose` |
+| Sensitive write: replaces the whole document | `document.open_text` |
+
+The editor's own operations (`document.sync`, `document.commit`, decisions, the person's context, `document.rotate_capability`, `document.delete`) are called by the Rapier page with its editor key, never by an agent.
 
 ## Install Rapier in Claude
 

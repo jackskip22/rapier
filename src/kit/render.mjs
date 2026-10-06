@@ -143,8 +143,9 @@ function _rapierProjectStyledRoot(semanticRoot, options) {
 		}
 	} else {
 		root.querySelectorAll('pre > code').forEach(code => {
-			_rapierPaintCode(code, _rapierArtifactHighlight(code.textContent || '', _rapierLanguageClass(code)));
-			_rapierArtifactMarkLexed(code, _rapierLanguageClass(code));
+			const lang = _rapierLanguageClass(code) || 'text';
+			_rapierPaintCode(code, _rapierArtifactHighlight(code.textContent || '', lang));
+			_rapierArtifactMarkLexed(code, lang);
 		});
 
 		root.querySelectorAll('table').forEach(table => {

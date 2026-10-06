@@ -23,6 +23,26 @@ const RAPIER_SANITIZE_OPTIONS = Object.freeze({
 		FORBID_ATTR: RAPIER_SANITIZE_FORBID_ATTR,
 	}),
 });
+
+// Snapshot current math text before a Markdown writer collapses whitespace. The parsed copy
+// stays inert; the writer still admits raw source through its shared math grammar.
+function prepareMathSource(input, DOMParser) {
+	const html = typeof input === 'string';
+	const MARK = 'span[data-rapier-math-source]';
+	if (html ? !/data-rapier-math-source/i.test(input) : typeof input?.cloneNode !== 'function' ||
+		!(input.matches?.(MARK) || input.querySelector?.(MARK))) return input;
+	const root = html ? new DOMParser().parseFromString(
+		'<x-turndown id="turndown-root">' + input + '</x-turndown>', 'text/html').getElementById('turndown-root') : input.cloneNode(true);
+	const nodes = Array.from(root.querySelectorAll(MARK));
+	const sourceRoot = root.nodeName === 'SPAN' && root.hasAttribute('data-rapier-math-source');
+	if (sourceRoot) nodes.push(root);
+	for (const node of nodes) {
+		try { node.setAttribute('data-rapier-math-source', encodeURIComponent(node.textContent || '')); }
+		catch (_) { node.removeAttribute('data-rapier-math-source'); }
+	}
+	return sourceRoot ? root.outerHTML : root;
+}
+
 // The document's renderer. DOM, codecs and host state are explicit inputs.
 function createRenderSanitizer(runtime) {
   const {CSSStyleSheet, DOMPurify, RAPIER_RASTER_DATA_URL_RE, URL, _rapierCssDeclaration, _rapierDropRemoteDeclarations, _rapierRemoteContent, _rapierRuleDescriptorIsRemote, _rapierSanitizeRuntime, _rapierVerifyRasterBytes, document, globalThis, location} = runtime;
@@ -219,4 +239,4 @@ function _rapierDropRemoteRules(rules, owner) {
 
   return {_rapierInstallSanitizeHooks, sanitizeRapierHtml, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
 }
-export {RAPIER_SANITIZE_FORBID_TAGS as forbidTags, RAPIER_SANITIZE_FORBID_ATTR as forbidAttributes, createRenderSanitizer, RAPIER_SANITIZE_OPTIONS as options};
+export {RAPIER_SANITIZE_FORBID_TAGS as forbidTags, RAPIER_SANITIZE_FORBID_ATTR as forbidAttributes, createRenderSanitizer, RAPIER_SANITIZE_OPTIONS as options, prepareMathSource};

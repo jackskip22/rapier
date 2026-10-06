@@ -88,7 +88,7 @@ Close each Mermaid block with the same marker character and at least its opening
    after which the requested edit must be sent again. `pending` means this requested edit is unapplied.
    Its `cause` distinguishes `will`, `ask`, `check` and an explicit `proposal`. Resolve one review
    before opening another. Showing a diff does not accept it or count as human review.
-5. Keep `changeId`. Use `show_changes({change_id})` when inspecting a meaningful revision helps, and
+5. Keep `changeId`. Use `show_changes({change_id})` when the person asks to see what changed, and
    `undo_agent_change({change_id})` to reverse it while preserving later human work. Accept a comparison
    only when the person's instructions and current policy authorize it, after reading its changes.
 6. When the person edits, reread the affected passage or drawing rather than recreate the document.

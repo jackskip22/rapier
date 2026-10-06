@@ -3341,7 +3341,14 @@ async function _rapierNotesOpenById(id) {
 }
 // `under`: a lift already standing for this open (the + bar's DRAW door's), which the cards close
 // under once it covers them, as they do under a card's own.
-async function _rapierNotesOpenNote(file, capture = false, expectedId = null, under = null) {
+// While a note opens, the cards' fence stays up for agents (rapierNotesStanding's busy): the open certifies the
+// document under the cards and refuses itself if that document moves.
+async function _rapierNotesOpenNote(...args) {
+	const state = _rapierNotes;
+	state.noteOpening = (state.noteOpening || 0) + 1;
+	try { return await _rapierNotesOpenNoteNow(...args); } finally { state.noteOpening--; }
+}
+async function _rapierNotesOpenNoteNow(file, capture = false, expectedId = null, under = null) {
 	// A note opened by anything but a followed link, or the way back along one, starts a trail of its own (_rapierNotesBackFromNote).
 	if (_rapierNotes.trailKeep !== true) _rapierNotes.noteTrail = [];
 	_rapierNotes.trailKeep = false;
@@ -8477,9 +8484,12 @@ function _rapierNotesFacts() {
 	return { open: state.open, popup: state.popup, pictures: typeof _rapierOcrFacts === 'function' ? _rapierOcrFacts() : null, reading: state.reading ? {total: state.reading.total, done: state.reading.done, complete: state.reading.complete} : null, unread: [...state.readFailed.keys()], windows: Object.fromEntries(Object.entries(state.windows).map(([id, w]) => [id, {derived: w.masonry.next, total: w.masonry.items.length, complete: w.masonry.next === w.masonry.items.length, extent: w.masonry.extent}])), fabTop: state.fab ? parseFloat(state.fab.style.top) || 0 : null, sections: state.index ? _rapierNotesSectionIds() : null, collapsed: state.index ? Object.fromEntries(_rapierNotesSectionIds().map(id => [id, _rapierNotesClosed(id)])) : null, files: state.index ? Object.keys(state.index.notes) : null, current: state.current, index: state.index ? JSON.parse(JSON.stringify(state.index)) : null, drag: !!state.drag, held: !!state.drag?.held, selected: [...state.selected], snack: state.snack ? state.snack.message : null, dirty: typeof _rapierIsDirty === 'function' ? !!_rapierIsDirty() : null, asks: typeof _rapierConfirmDirtyTransition === 'function', lastBackup: state.lastBackup || null , backupPath: state.backupPath || null, savedGen: state.savedGen, savingGen: state.savingGen, generation: Number(rapier?.revision?.generation || 0), sheetMode: state.sheetMode, writes: _rapierNotesStore.chains.size + (_rapierNotesStore.folder?.pending || 0), store: {bytes: _rapierNotesStore.bytes?.kind ?? null, durable: _rapierNotesStore.durable ?? null, reads: _rapierNotesStore.reads}, asciiNames: state.asciiNames, storageKnown: state.storageKnown, thumbs: {known: state.thumbs.size, queue: state.thumbQueue.length, busy: state.thumbBusy, names: state.thumbNames ? [...state.thumbNames] : null}, mode: !!state.mode, compose: !!state.compose, library: typeof _rapierNotesLibraryFacts === 'function' ? _rapierNotesLibraryFacts() : null};
 }
 Object.defineProperty(globalThis, 'rapierNotesFacts', { enumerable: false, get: _rapierNotesFacts });
-// The agent's fence asks two things only -- are the cards over the document, and which note is open. This
-// is the owner's own standing, and costs nothing (the diagnostic getter above copies the whole index).
-Object.defineProperty(globalThis, 'rapierNotesStanding', { enumerable: false, get: () => ({ open: !!_rapierNotes.open, current: _rapierNotes.current || null }) });
+// The agent's fence asks three things only -- are the cards over the document, which note is open, and is Notes
+// swapping or certifying the document under them (a note opening, the cards opening, the way back, a rename), when an
+// edit landing would make the person's own step refuse. This is the owner's own standing, and costs nothing (the
+// diagnostic getter above copies the whole index).
+Object.defineProperty(globalThis, 'rapierNotesStanding', { enumerable: false, get: () => ({ open: !!_rapierNotes.open, current: _rapierNotes.current || null,
+	busy: !!(_rapierNotes.noteOpening || _rapierNotes.opening || _rapierNotes.returning || _rapierNotes.renaming) }) });
 // ---- The agent's door
 // ---------------------------------------------------------------------------
 // notes.list and notes.read (agent/kernel.mjs, injected as host.notesList/host.notesRead by

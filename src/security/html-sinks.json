@@ -488,6 +488,13 @@
 				"reason": "root.innerHTML = sanitizeRapierHtml(rendered, 'export'), the markdown-it render output passed through DOMPurify."
 			}
 		},
+		"kit/render-sanitize.mjs": {
+			"prepareMathSource": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "DOMParser reads writer input into a detached document only to snapshot current math text before whitespace normalization; its nodes are never attached. Snapshot metadata is overwritten from live text, and raw TeX requires one complete token from the shared grammar. Other content follows the existing writer and render sanitization."
+			}
+		},
 		"draw/background-tool.js": {
 			"_rapierBgEnsurePanel": {
 				"count": 1,

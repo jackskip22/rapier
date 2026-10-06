@@ -3,6 +3,8 @@ import { VERSION } from '../version.mjs';
 import { VISUAL_LIMITS } from './visual.mjs';
 
 export const MAX_TEXT_BYTES = 25 * 1024 * 1024;
+// A file the door hands over travels base64 inside one reply: the file, its encoding and the reply share one isolate's memory.
+export const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
 // The MCP UI resource's address: names a release, not a deployment. mcp/worker.mjs re-exports it; tools/build.mjs's manifest check reads it.
 export const UI_RESOURCE = `ui://rapier/editor-${VERSION}.html`;
 const string = (maxLength = 256, description) => ({type: 'string', maxLength, ...(description ? {description} : {})});
@@ -95,6 +97,7 @@ const resultProperties = {
   'document.reveal': {revealed: flag},
   'document.wait_for_user': {text: string(1500), selection: record, truncated: flag, returned: record},
   'document.create_return': {return_url: string(512), return_id: ref, return_expires_at: string(64), max_bytes: count},
+  'document.export': {format: {enum: ['markdown', 'html']}, filename: string(256), mimeType: string(64), bytes: count, limitBytes: count},
   'document.save': {saved: flag, verified: flag, filename: string(256)},
   'document.draw': {...change, asset: record, width: count, height: count, recipe_handle: nullableRef},
   'document.rotate_capability': {rotated: flag, rotations: count, rotatedAt: string(64), sealed: string(512)},
@@ -126,7 +129,7 @@ export const TOOLS = Object.freeze([
       by: {...string(96, 'Your name, not a role instruction.'), minLength: 1}}, ['text', 'by'])),
   documentTool('document.propose_edits', 'Propose inspected edits', 'Stages inspected passage edits when the person should approve or decline the change before application.', 'view', editBatch),
   documentTool('document.undo_agent_change', 'Undo your change', 'Reverses a requested agent change while preserving later human work. Select change_id or the latest change under this call\'s agent name.', 'write', object({change_id: string(128, 'The changeId to reverse. Omit it to reverse the latest change under this call\'s agent name.')})),
-  documentTool('document.show_changes', 'Inspect your changes', 'Shows the diff of an applied agent revision when the person needs to inspect what changed. The review decision remains separate.', 'view', object({change_id: string(128, 'The changeId to show (default: your latest).')})),
+  documentTool('document.show_changes', 'Inspect your changes', 'Replaces the open comparison with the diff of an applied agent revision when the person needs to inspect what changed. Document text and review approval stay unchanged.', 'view', object({change_id: string(128, 'The changeId to show (default: your latest).')})),
   documentTool('document.compare', 'Compare a complete alternative', 'Compares a complete alternative document when the person wants to review a rewrite, then accepts or rejects inspected differences or closes the comparison.', 'view',
     object({action: {type: 'string', enum: ['open', 'accept', 'reject', 'close'], description: 'open (default), accept, reject or close.'}, text: string(MAX_TEXT_BYTES, 'open: the whole alternative document.'), name: string(256, 'open: a name for the comparison.'), change_ids: described(ids, 'accept or reject: the differences; none means every remaining one.')})),
   documentTool('document.open_text', 'Replace the working document', 'Replaces the working document when the person requests a new document here, retiring old handles and comparisons.', 'destructive', object({text: string(MAX_TEXT_BYTES, 'The whole new document.'), filename: string(256, 'Its name; the extension sets the kind.'), docKind: kinds}, ['text'])),
@@ -134,6 +137,8 @@ export const TOOLS = Object.freeze([
   documentTool('document.create_return', 'Create a page return', 'Creates a one-use return URL when the person should edit an offline page and send it back, valid for 24 hours within the workspace lifetime.', 'create'),
   documentTool('document.wait_for_user', 'Receive the person’s reply', 'Waits for the person\'s next selection, message or returned page when the next step is theirs, up to timeout_ms.', 'view', object({mode: {type: 'string', enum: ['selection', 'message'], description: 'What to wait for: a selection or a message.'}, after_return_id: string(128, 'Message mode: wait after this received return; absent, the latest retained return answers immediately.'), timeout_ms: integer(1000, 120000, 'How long to wait, in milliseconds.')})),
   documentTool('document.save', 'Save the document', 'Saves to the person\'s chosen local destination, or confirms durable workspace storage on the hosted door, when work should be kept. The receipt reports verification.', 'durable'),
+  documentTool('document.export', 'Export the document', 'Returns the document as a file the person can keep or send, as an embedded resource: markdown is the exact source; html is one offline Rapier page with the source inside. Over 8 MiB is refused. Does not change the document.', 'read',
+    object({format: {type: 'string', enum: ['markdown', 'html'], description: 'markdown or html.'}}, ['format'])),
   // The short contract an agent reads each call (one registry). The exhaustive recipe/shape contract is the admitting code (draw/core.mjs
   // _rapierDrawAdmitRecipe, _rapierDrawLowerFigures); never copy it into prose here. A refused figure names its field.
   documentTool('document.draw', 'Draw a picture', 'Creates or edits SVG figures for an editable diagram, spatial sketch or brush painting in the active document. Paint figures accept authored brush strokes. Use native figures for movable objects and document source for Mermaid.',
@@ -171,12 +176,13 @@ export const HOST_TOOLS = Object.freeze([
 
 export const getTool = name => TOOLS.find(entry => entry.name === name) || HOST_TOOLS.find(entry => entry.name === name);
 // Page and embed adapters expose the public guide beside the document kernel's tools.
-export const PAGE_TOOLS = Object.freeze([...TOOLS, getTool('rapier.guide')]);
+// The page's own Share and Export make the files document.export hands over, so the page does not register it.
+export const PAGE_TOOLS = Object.freeze([...TOOLS.filter(entry => entry.name !== 'document.export'), getTool('rapier.guide')]);
 
 export function annotations(effect, host = 'mcp', name = '') {
   if (!['read', 'view', 'write', 'durable', 'destructive', 'create'].includes(effect)) throw new Error('Undeclared tool effect');
   if (host === 'webmcp') return {readOnlyHint: effect === 'read', untrustedContentHint: true, consequentialHint: ['durable', 'destructive'].includes(effect)};
-  return {readOnlyHint: effect === 'read', destructiveHint: ['write', 'durable', 'destructive'].includes(effect) || name === 'document.compare', idempotentHint: effect === 'read', openWorldHint: false};
+  return {readOnlyHint: effect === 'read', destructiveHint: ['write', 'durable', 'destructive'].includes(effect) || ['document.compare', 'document.show_changes'].includes(name), idempotentHint: effect === 'read', openWorldHint: false};
 }
 
 // The mark a host shows beside Rapier (the ChatGPT extensions' icon guidelines: an SVG, monochrome in currentColor, 20 px, 1.33 px strokes):

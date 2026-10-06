@@ -1,5 +1,5 @@
 {
-  "release": "1.1.70",
+  "release": "1.1.71",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -2057,7 +2057,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Shows the diff of an applied agent revision when the person needs to inspect what changed. The review decision remains separate.",
+      "description": "Replaces the open comparison with the diff of an applied agent revision when the person needs to inspect what changed. Document text and review approval stay unchanged.",
       "effect": "view",
       "inputSchema": {
         "type": "object",
@@ -2729,6 +2729,97 @@
           "filename": {
             "type": "string",
             "maxLength": 256
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "document.export",
+      "title": "Export the document",
+      "description": "Returns the document as a file the person can keep or send, as an embedded resource: markdown is the exact source; html is one offline Rapier page with the source inside. Over 8 MiB is refused. Does not change the document.",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "markdown or html."
+          },
+          "agent": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "This assistant's display name."
+          }
+        },
+        "required": [
+          "format"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The MCP document capability from rapier.open. Keep it private and pass it to later calls."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "format": {
+            "enum": [
+              "markdown",
+              "html"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "mimeType": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limitBytes": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -5811,7 +5902,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Shows the diff of an applied agent revision when the person needs to inspect what changed. The review decision remains separate.",
+      "description": "Replaces the open comparison with the diff of an applied agent revision when the person needs to inspect what changed. Document text and review approval stay unchanged.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5934,7 +6025,7 @@
       "annotations": {
         "title": "Inspect your changes",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -6693,6 +6784,127 @@
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Working in Rapier.",
+        "openai/toolInvocation/invoked": "Rapier has replied."
+      }
+    },
+    {
+      "name": "document.export",
+      "title": "Export the document",
+      "description": "Returns the document as a file the person can keep or send, as an embedded resource: markdown is the exact source; html is one offline Rapier page with the source inside. Over 8 MiB is refused. Does not change the document.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The MCP document capability from rapier.open. Keep it private and pass it to later calls."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
+            "minLength": 22,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "markdown or html."
+          },
+          "agent": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "This assistant's display name."
+          }
+        },
+        "required": [
+          "document",
+          "operation_id",
+          "format"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The MCP document capability from rapier.open. Keep it private and pass it to later calls."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "format": {
+            "enum": [
+              "markdown",
+              "html"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "mimeType": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limitBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Export the document",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
         "openWorldHint": false
       },
       "securitySchemes": [
@@ -7682,13 +7894,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.70.html",
+          "resourceUri": "ui://rapier/editor-1.1.71.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.70.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.71.html",
         "openai/ui": {
           "entrypoints": [
             {

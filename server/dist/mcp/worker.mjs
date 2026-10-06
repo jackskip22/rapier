@@ -4,6 +4,7 @@ import { paintAgentStrokes, agentPaintSheetHolds } from '../draw/agent-paint.mjs
 import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, guideResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
+import { wrap } from '../skills/rapier-html/wrap.mjs';
 import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
@@ -48,8 +49,8 @@ export function deployment(env) {
   }
   return { ready: !missing.length && !invalid.length && !development, development, missing, invalid, documents: !missing.includes('DOCUMENTS'), assets: !missing.includes('ASSETS'), budget, editorKey: secret.usable, editorSecret: secret.usable ? secret.form : null, unmeteredCreate: development };
 }
-// Creates per address and per deployment per hour, metered by RapierBudget.
-const CREATE_BUDGET_PER_ADDRESS = 20, CREATE_BUDGET_PER_DEPLOYMENT = 600, CREATE_BUDGET_WINDOW_MS = 60 * 60 * 1000;
+// Creates per deployment per hour, metered by RapierBudget. Not per address: a host's many people share its addresses.
+const CREATE_BUDGET_PER_DEPLOYMENT = 5000, CREATE_BUDGET_WINDOW_MS = 60 * 60 * 1000;
 const CAPABILITY = /^rpr_[A-Za-z0-9_-]{43}$/;
 const RETURN_CAPABILITY = /^rpret_([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/;
 const MAX_RETURNS = 16;
@@ -93,6 +94,14 @@ async function digest(value) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+const base64 = bytes => { let binary = ''; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000)); return btoa(binary); };
+// The finished file for document.export: the source as it stands, or the offline page (the built editor page, with the source carried inside).
+async function exportFile(env, { format, filename, docKind, text }) {
+  if (format === 'markdown') return { name: filename, mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
+  const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html'));
+  if (!response?.ok) return { reason: 'export_page_unavailable' };
+  return { name: filename.replace(/\.(md|markdown|txt)$/i, '') + '.rapier.html', mimeType: 'text/html', bytes: encoder.encode(wrap(await response.text(), text, filename)) };
+}
 const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 function newCapability() {
   return 'rpr_' + base64url(crypto.getRandomValues(new Uint8Array(32))).slice(0, 43);
@@ -325,9 +334,9 @@ function listedTools(env, appsClient) {
 
 // 'ok', 'exceeded', 'uncertain' or 'no-binding'. No binding refuses creation, never unmetered. The two takes are a sequential pair, not one transaction;
 // a successful take holds for its window and a retry reuses it. An authorized reopen never calls this.
-async function takeCreateBudget(env, { address, takeId }) {
+async function takeCreateBudget(env, { takeId }) {
   if (!env.BUDGET?.get || !env.BUDGET?.idFromName) return env.ALLOW_UNMETERED_CREATE === 'true' ? 'ok' : 'no-binding';
-  const keys = [['address:' + address, CREATE_BUDGET_PER_ADDRESS], ['deployment', CREATE_BUDGET_PER_DEPLOYMENT]];
+  const keys = [['deployment', CREATE_BUDGET_PER_DEPLOYMENT]];
   for (const [key, limit] of keys) {
     let response;
     try {
@@ -367,8 +376,7 @@ async function callTool(name, args, env, request, hostAgent = null) {
   }
   if (!create && args.createToken !== undefined) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'createToken belongs to a create. Reopening uses the document capability you already hold.'));
   const minted = create ? (createToken !== null ? await tokenCapability(createToken, env) : newCapability()) : null;
-  const address = create ? request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0].trim() || 'unknown' : null;
-  const createBudget = create ? { address: await digest(address), takeId: await takeIdOf(minted), retryable: createToken !== null } : null;
+  const createBudget = create ? { takeId: await takeIdOf(minted), retryable: createToken !== null } : null;
   if (!create && name === 'rapier.open' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with document.open_text.'));
   const humanTool = ['document.comment', 'document.read_context'].includes(name) && args.editorKey !== undefined;
   if (EDITOR_ONLY_TOOLS.has(name) || humanTool) {
@@ -390,9 +398,16 @@ async function callTool(name, args, env, request, hostAgent = null) {
   // Only pending observations follow client disconnects. Once a durable operation
   // starts, its receipt must finish even if the caller has stopped listening.
   const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(name === 'document.wait_for_user' || name === 'document.inspect_visual' ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: name, args: input, create, capabilityHash, ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
-  if (!response.ok) return toolError(failure('WORKSPACE_UNACKNOWLEDGED', 'The workspace did not acknowledge this operation. Retry an unacknowledged editor commit with the same commitId.'));
+  if (!response.ok) {
+    const identity = ['operation_id', 'commitId', 'decisionId', 'createToken'].find(key => args[key] !== undefined);
+    const recovery = identity ? `Retry unchanged arguments with the same ${identity}.`
+      : create ? 'Creation may have succeeded; without createToken a retry creates another workspace.'
+      : 'Retry with unchanged arguments.';
+    return toolError(failure('WORKSPACE_UNACKNOWLEDGED', 'The workspace did not acknowledge this operation. ' + recovery,
+      {retryable: Boolean(identity) || !create, ...(identity ? {retryIdentity: identity} : {})}));
+  }
   const result = await response.json();
-  if (create && result.isError) return result;
+  if (result.isError) return result;
   if (successor && result.structuredContent?.rotated === true) {
     result.structuredContent = { ...result.structuredContent, sealed: await sealForEditor(args.editorKey, successor) };
     return result;
@@ -547,9 +562,15 @@ async function handleRequest(request, env) {
         if (!skill) return rpcError(id, -32602, 'Unknown skill URI.');
         result = cacheable({skill}, 3600000, 'public'); break;
       }
-      case 'resources/list':
+      case 'resources/list': {
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its resources in one page.');
-        result = cacheable({ resources: [{ uri: UI_RESOURCE, name: 'rapier-editor', title: 'Rapier document workspace', mimeType: UI_MIME, description: 'The full Rapier editor, connected to the canonical document through the MCP Apps bridge.' }] }, 3600000, 'public'); break;
+        // The skills' own files are resources too (resources/read serves them), so a host that knows no skills/list still
+        // finds them. A snapshot that cannot load leaves the editor listed alone.
+        const skills = await skillsBundle(request, env).then(bundle => bundle.skills.flatMap(skill => skill.resources.map(entry => ({
+          uri: entry.uri, name: entry.uri.slice('skill://rapier/'.length), mimeType: bundle.contents[entry.uri].mimeType || 'text/markdown',
+          ...(entry.uri === skill.uri ? { description: skill.frontmatter.description } : {}) }))), () => []);
+        result = cacheable({ resources: [{ uri: UI_RESOURCE, name: 'rapier-editor', title: 'Rapier document workspace', mimeType: UI_MIME, description: 'The full Rapier editor, connected to the canonical document through the MCP Apps bridge.' }, ...skills] }, 3600000, 'public'); break;
+      }
       case 'resources/read': result = cacheable(await resource(request, env, params.uri), 0, 'private'); break;
       default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
@@ -563,7 +584,7 @@ async function handleRequest(request, env) {
   // Some clients expose only content to the model. Mirror the final public result, after the
   // document capability is attached. Never serialize _meta (editor snapshots) or app-only results.
   if (message.method === 'tools/call' && !EDITOR_ONLY_TOOLS.has(params.name) && plain(result.structuredContent)) {
-    result = { ...result, content: [{ type: 'text', text: JSON.stringify(result.structuredContent) }, ...(result.content || []).filter(item => item.type === 'image')] };
+    result = { ...result, content: [{ type: 'text', text: JSON.stringify(result.structuredContent) }, ...(result.content || []).filter(item => item.type === 'image' || item.type === 'resource')] };
   }
   if (modern) result = { ...result, resultType: 'complete', _meta: { ...(plain(result._meta) ? result._meta : {}), [META_SERVER]: serverInfo(env) } };
   return json({ jsonrpc: '2.0', id, result }, 200, headers);
@@ -571,7 +592,7 @@ async function handleRequest(request, env) {
 
 export default { fetch: handleMcp };
 
-// One fixed window per key from its first take; successes kept to its end, capped (20 address / 600 deployment). Denials store nothing.
+// One fixed window per key from its first take; successes kept to its end, capped (5000 per deployment). Denials store nothing.
 // Rollover is checked before replay.
 export class RapierBudget {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
@@ -729,7 +750,7 @@ export class RapierDocument {
       if (request.method !== 'POST' || path !== '/operation') return new Response(null, { status: 404 });
       const input = await request.json();
       if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || typeof input.operation !== 'string' || !plain(input.args) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && typeof input.operationId !== 'string') || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress))) return new Response(null, { status: 400 });
-      if (input.create === true && (!plain(input.createBudget) || !/^[a-f0-9]{64}$/.test(input.createBudget.address || '') || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
+      if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
       if (input.operation === 'document.wait_for_user') return await this.waitForReturn(input, request.signal);
       if (input.operation === 'document.inspect_visual') return await this.inspectVisual(input, request.signal);
       return await this.exclusive(async () => json(await this.operate(input)));
@@ -988,7 +1009,8 @@ export class RapierDocument {
       return { pending: true, viewId: head.viewIntent.id };
     };
     // Seed from the persisted journal, or a DO retry finds an empty one and acts twice.
-    const kernel = createKernel({ state, host: { proposalPage: UI_RESOURCE, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, paint: paintAgentStrokes, paintSheet: agentPaintSheetHolds,
+    let exported = null;
+    const kernel = createKernel({ state, host: { proposalPage: UI_RESOURCE, exportFile: async request => exported = await exportFile(this.env, request), markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, paint: paintAgentStrokes, paintSheet: agentPaintSheetHolds,
       // Names are disclosed by wait/read; repeating 16 maximum names can overflow context's result bound.
       returns: () => receivedReturns(head).map(row => { const { name, ...listed } = returnMetadata(row); return listed; }),
       readReturn: input => this.readReturn(head, input),
@@ -1144,6 +1166,12 @@ export class RapierDocument {
     if (operation === 'document.save' && value.saved) Object.assign(value, { verified: true, destination: 'workspace', durable: true });
     const result = envelope(value, head, {}, { modelFacing: true });
     if (operation === 'document.inspect_visual' && value.outcome === 'ok' && visual?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: visual.fact.image.data});
+    if (operation === 'document.export' && value.outcome === 'ok') {
+      // A retry replays the recorded receipt without calling the host: the file is built again from the source as it stands.
+      const file = exported || await exportFile(this.env, { format: args.format, filename: state.filename, docKind: state.docKind, text: state.text });
+      if (!file.bytes) return envelope({ outcome: 'refused', reason: file.reason }, head, {}, { modelFacing: true });
+      result.content.push({ type: 'resource', resource: { uri: 'file:///' + encodeURIComponent(file.name), mimeType: file.mimeType, blob: base64(file.bytes) } });
+    }
     return result;
   }
 

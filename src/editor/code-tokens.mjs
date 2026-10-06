@@ -5,9 +5,9 @@
 // whole text, so code colours on every browser, offline, with nothing fetched, the moment a block
 // renders. Where WebGPU exists the lexer repaints the same classes afterwards (editor/engine.js,
 // _rapierColourCodeGpu). No language grammars: one set of heuristics for the fences people write, one
-// shared word table. The fence's language name decides only two things -- a plain-text fence stays
-// plain, a Markdown fence (and the Markdown source view) reads as Markdown. Deterministic, linear in
-// the text, and it never throws on a string.
+// shared word table. The fence's language name decides only two things -- a plain-text fence (and,
+// as on GitHub, one with no name) stays plain, a Markdown fence (and the Markdown source view) reads
+// as Markdown. Deterministic, linear in the text, and it never throws on a string.
 
 const _RAPIER_CODE_WORDS = new Set(('abstract alias alignas alignof and as assert associatedtype async auto await begin break ' +
 	'callable cascade case catch chan class clone co_await co_return co_yield companion concept const const_cast consteval ' +
@@ -271,7 +271,7 @@ function _rapierDiffTokens(text) {
 }
 
 // The Markdown source view and Markdown fences: headings, list markers, quotes, links, HTML comments
-// and tags, front matter and fenced code (read as code, by its own language name). Emphasis has no
+// and tags, front matter and fenced code (read by its own language name; none is plain text). Emphasis has no
 // class of its own among the nine and stays plain.
 function _rapierMarkdownTokens(text, depth) {
 	const n = text.length, {colour, finish, next, lineEnd} = _rapierCodeSpanList(text);
@@ -346,7 +346,7 @@ function _rapierMarkdownTokens(text, depth) {
 		if (fence) {
 			const shut = /^ {0,3}(`+|~+)[ \t]*\r?$/.exec(line);
 			if (shut && shut[1][0] === fence.mark && shut[1].length >= fence.size) {
-				embed(fence.body, at, fence.info);
+				embed(fence.body, at, fence.info || 'text');
 				colour(at, end, 'comment');
 				fence = null;
 			}
@@ -376,7 +376,7 @@ function _rapierMarkdownTokens(text, depth) {
 		midLine = stop > end;
 		at = midLine ? stop : after;
 	}
-	if (fence) embed(fence.body, n, fence.info);
+	if (fence) embed(fence.body, n, fence.info || 'text');
 	return finish();
 }
 

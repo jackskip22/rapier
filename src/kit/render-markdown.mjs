@@ -11,7 +11,7 @@ function initMarkdownIt() {
 	md = window.markdownit({
 		...RAPIER_MARKDOWN_SPEC.options,
 		// The first paint is coloured: the CPU reading, synchronously, for every admitted fence.
-		highlight: (code, lang) => _rapierHighlightAdmitted(code) ? _rapierCodeHtml(code, lang) : '',
+		highlight: (code, lang) => lang && _rapierHighlightAdmitted(code) ? _rapierCodeHtml(code, lang) : '',
 	});
 
 	_rapierApplyMarkdownSpec(md, window);
@@ -301,21 +301,22 @@ function initMarkdownIt() {
 		let _mathPromptedOnce = false;
 		const _renderMath = (src, displayMode) => {
 			const marker = displayMode ? '$$' : '$';
+			const source = marker + src + marker, literal = md.utils.escapeHtml(source);
 			const mathProvider = _rapierProviders.math;
 			if (!mathProvider || mathProvider.status !== 'ready' || typeof mathProvider.renderToString !== 'function') {
 				if (!_mathPromptedOnce) {
 					_mathPromptedOnce = true;
 					try { _rapierUiMath.request(); } catch (_) {}
 				}
-				return '<span class="math-placeholder" title="Install the math plug-in in Settings to show this equation.">'
-						 + md.utils.escapeHtml(marker + src + marker) + '</span>';
+				return '<span class="math-placeholder" data-rapier-math-source="" title="Install the math plug-in in Settings to show this equation.">'
+						 + literal + '</span>';
 			}
 			try {
 				const rendered = mathProvider.renderToString(src, { displayMode });
 				return '<span class="math-rendered" data-math-src="'
-						 + encodeURIComponent(marker + src + marker) + '">' + rendered + '</span>';
+						 + encodeURIComponent(source) + '">' + rendered + '</span>';
 			}
-			catch (_) { return md.utils.escapeHtml(marker + src + marker); }
+			catch (_) { return '<span data-rapier-math-source="">' + literal + '</span>'; }
 		};
 		md.renderer.rules.math_inline = (tokens, idx) => _renderMath(tokens[idx].content, false);
 		md.renderer.rules.math_block  = (tokens, idx) => wrapDisplayMath(_renderMath(tokens[idx].content, true)) + '\n';

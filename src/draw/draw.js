@@ -114,7 +114,7 @@ const _rapierDrawState = {
 	open: false, surface: null, svgRoot: null, svg: null, live: null, menu: null, closeBtn: null,
 	recipe: null, undoStack: [], redoStack: [], seq: 0, pointerId: null, stroke: null, strokeStartT: 0,
 	strokeHead: null, strokeChunks: null, strokeTail: null, strokeLast: null,
-	menuShapeId: null, editing: null, insertTarget: null,
+	menuShapeId: null, editing: null, insertTarget: null, heldRoot: null,
 	// The canvas opened in Notes (notes/notes.js _rapierNotesDrawFor), null for the editor's own Draw:
 	// {label, fresh, alt, closed} -- the note it is for, by the name its card shows, or a new note; the
 	// new drawing's caption; and, for the + bar's new note, what to do when it closes keeping nothing.
@@ -892,23 +892,18 @@ function _rapierDrawClearAll() {
 	catch (error) { refused(error); return; }
 	return settled ? settled.then(clear, refused) : clear();
 }
+// Clear is taken back by Undo, so it asks nothing.
 async function _rapierDrawRequestClear() {
 	const state = _rapierDrawState;
+	const session = state.session;
 	const flushing = _rapierPaintFlushRevision();
 	if (flushing) await flushing;
 	// A first stroke still live and drying, with nothing committed to the recipe yet, is content too. The painted box is the
 	// painter's: it is read once everything asked of the painter has run.
 	const live = state.paintLayer?.surface;
 	if (live && !live.settled && !live.failure) await live.sync().catch(() => {});
-	if (state.finishing || !state.recipe?.shapes?.length && !state.paintLayer?.surface?.bounds()) return;
-	const session = state.session;
-	const accepted = await rapierConfirm({
-		title: 'Clear canvas?',
-		message: '• Everything on the canvas goes.',
-		confirmLabel: 'Clear',
-		destructive: true,
-	});
-	if (accepted === true && state.open && state.session === session && !state.finishing) await _rapierDrawClearAll();
+	if (state.finishing || !state.open || state.session !== session || !state.recipe?.shapes?.length && !state.paintLayer?.surface?.bounds()) return;
+	await _rapierDrawClearAll();
 }
 function _rapierDrawShapeById(id) { return _rapierDrawState.recipe.shapes.find(s => s.id === id) || null; }
 
@@ -1376,6 +1371,48 @@ function _rapierDrawEditingAsset() {
 	// have to refuse to show.
 	if (!state.openSnapshot) return '';
 	return String(state.editing.asset || '');
+}
+// What Draw holds in the document while it is open, as canonical source ranges: the block of the picture it is editing,
+// or the place a new drawing will land. An edit that touches none of them lands while the person draws (agent/browser.js
+// drawFence) and the place moves with it (_rapierDrawFollow). null while Done is writing, or once the source has moved
+// in a way Draw did not follow: the door then refuses, as it always did.
+function _rapierDrawHeldRanges() {
+	const state = _rapierDrawState;
+	if (!state.open) return [];
+	if (state.finishing || state.heldRoot !== rapier.document.source?.rootId) return null;
+	// The + bar's canvas lands in a note that does not exist yet; its place is picked at Done.
+	if (state.notes?.fresh) return [];
+	const spans = _rapierExcerptCanonicalBlockSpans();
+	const block = id => { const span = spans.get(id); return span ? [{ start: span.start, end: span.end }] : null; };
+	if (state.editing) return block(state.editing.blockId);
+	const target = state.insertTarget || {}, at = target.sourceSplit || target.sourceSelection;
+	if (at) return [{ start: at.start, end: at.end }];
+	return target.afterId != null ? block(target.afterId) : [];
+}
+// The ranges moved through splices in the kernel's sequential form, or null when a splice touches one.
+function _rapierDrawMoveRanges(ranges, splices) {
+	const moved = ranges.map(range => ({ ...range }));
+	for (const row of splices) {
+		const from = row.pos, to = row.pos + row.removed.length, delta = row.inserted.length - row.removed.length;
+		for (const range of moved) {
+			if (from <= range.end && to >= range.start) return null;
+			if (to < range.start) { range.start += delta; range.end += delta; }
+		}
+	}
+	return moved;
+}
+// An edit has landed elsewhere while Draw is open: the place a new drawing lands moves with it. A picture being edited
+// and a block-anchored place need nothing; their block ids outlive an edit that does not touch them.
+function _rapierDrawFollow(splices) {
+	const state = _rapierDrawState, target = state.insertTarget;
+	if (!state.open) return;
+	const form = !state.editing && target ? (target.sourceSplit ? 'sourceSplit' : target.sourceSelection ? 'sourceSelection' : '') : '';
+	if (form) {
+		const range = _rapierDrawMoveRanges([target[form]], splices)?.[0];
+		if (!range) return;
+		state.insertTarget = { ...target, [form]: Object.freeze({ ...target[form], start: range.start, end: range.end }) };
+	}
+	state.heldRoot = rapier.document.source?.rootId;
 }
 // The door's own hand-off: Draw takes an agent's patch only when it is open on that same drawing.
 // A patch for a picture the person is not looking at is simply not a replay -- the document keeps
@@ -5642,6 +5679,7 @@ function _rapierDrawOpenSurface(options) {
 	state.nib = _rapierDrawNibLevel(_rapierDrawRemembered(opts.notes ? 'notesNib' : 'nib'));
 	recipe.smooth ??= opts.recipe ? RAPIER_DRAW_SMOOTH_DEFAULT : state.smooth; recipe.nib ??= opts.recipe ? RAPIER_DRAW_NIB_DEFAULT : state.nib;
 	state.editing = opts.editing || null; state.insertTarget = opts.target || null; state.notes = opts.notes || null;
+	state.heldRoot = rapier.document.source?.rootId;
 	// A NEW drawing opens in Paint. Re-opening an EXISTING drawing opens on the tool it was last
 	// edited with (`recipe.tool`, written by Done and the backup), so somebody halfway through a
 	// vector figure is not dragged into Paint every time they come back; a drawing that names no tool
@@ -5651,7 +5689,7 @@ function _rapierDrawOpenSurface(options) {
 	if (!_rapierDrawToolAllowed(state.tool)) state.tool = _rapierEmbedFeatureAllowed('draw') ? 'brush' : 'paint';
 	state.pen = state.tool === 'pen';
 	// A canvas a Notes door opened shows no note title (the person knows they are in a note); the note's
-	// name is the canvas's accessible name alone, and Back's question speaks of it.
+	// name is the canvas's accessible name alone.
 	state.surface.setAttribute('aria-label', state.notes ? 'Draw, ' + state.notes.label : 'Draw');
 	state.shapeKind = _rapierDrawRemembered('shapeKind');
 	_rapierDrawSetHint();
@@ -6376,7 +6414,7 @@ function _rapierDrawAssetBudget() {
 }
 // A drawing is content when it has a shape or a background: a background alone is the person's work.
 function _rapierDrawHasContent(recipe) { return !!(recipe && (recipe.shapes.length || recipe.background)); }
-async function _rapierDrawFinish({ back = false } = {}) {
+async function _rapierDrawFinish() {
 	const state = _rapierDrawState;
 	if (state.finishing || !_rapierDrawFinishText()) return;
 	// Done writes the finished drawing, not the frame the replay happened to be on.
@@ -6402,35 +6440,9 @@ async function _rapierDrawFinish({ back = false } = {}) {
 	// A brand-new drawing that never gained a mark stays a no-op close -- there is nothing to delete
 	// because nothing was ever saved (only an edited EXISTING drawing's emptying is a deletion).
 	if (empty && !state.editing) { void _rapierDrawBackupClear(); _rapierDrawClose(); return; }
-	// Done asks first, past the no-op checks just above (nothing to add stays a no-op close,
-	// unasked). The house confirm offers three answers: add it to the document (the path below,
-	// `true`), download it as a file and touch nothing (`'secondary'` -- _rapierDrawDownload, the
-	// same bytes this function itself would write, never the write), or its own
-	// Cancel/Escape/backdrop (`false`), back to the painting with nothing touched. `rapierConfirm`
-	// (editor/engine.js) is the house's own dialog; `_rapierUiOpenConfirm`/`_rapierUiResolveConfirm`
-	// there resolve it exactly this way.
-	// That question is the editor's. A canvas a Notes door opened is for its note, so there DONE is
-	// one act -- the drawing goes into the note -- and the file stays within reach on the picture's
-	// own toolbar, which a hold on the drawing brings up.
-	// Back is not DONE: it can mean "get me out", so it asks whether to keep the drawing or discard
-	// it, in the note's words inside a note. KEEP is DONE's own act below; DISCARD writes nothing and
-	// lets the drawing's backup go; Cancel, a tap beside it or a second Back leave the canvas as it
-	// was. Work is never kept or dropped on a guess.
+	// Done adds the drawing: no question. Back is Done too: one Undo in the document takes either back, and the file is
+	// one tap away on the picture's own toolbar (Download). Nothing is kept or dropped on a guess, and nothing is asked.
 	const session = state.session, sameSession = () => state.session === session, notes = state.notes;
-	if (back || !notes) {
-		const choice = await rapierConfirm(back ? _rapierDrawBackQuestion(notes, state.editing, empty) : {
-			title: 'done',
-			message: '• Add to the document, or save as a file?',
-			confirmLabel: 'Add to Rapier document',
-			secondaryLabel: 'Download',
-		});
-		// The confirm is itself an await: re-check the surface is still this same open session before
-		// acting on its answer, the same caution every later await in this function already takes.
-		if (!sameSession() || !state.open) return;
-		if (choice === 'secondary' && back) { void _rapierDrawBackupClear(); _rapierDrawClose(); return; }
-		if (choice === 'secondary') { await _rapierDrawDownload(session); return; }
-		if (choice !== true) return;
-	}
 	const editing = state.editing;
 	let insertTarget = state.insertTarget, loadToken = rapier.identity.loadToken;
 	state.finishing = true; state.surface.setAttribute('aria-busy', 'true');
@@ -6454,6 +6466,12 @@ async function _rapierDrawFinish({ back = false } = {}) {
 		const deadline = Date.now() + 650;
 		while (_rapierUserMutationBlocked(false) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 40));
 		if (_rapierUserMutationBlocked(false)) throw new Error('Document is still busy; try Done again');
+		// An edit that landed elsewhere while the person drew has moved the place (_rapierDrawFollow), so it is read now. A
+		// change Draw did not follow leaves no offset to trust: the drawing goes after the line the person was on.
+		if (!notes?.fresh) {
+			insertTarget = state.insertTarget;
+			if (!editing && state.heldRoot !== rapier.document.source?.rootId) insertTarget = _rapierDrawLineTarget();
+		}
 		if (empty) {
 			await _rapierDrawRemoveEditedEmpty(editing);
 			void _rapierDrawBackupClear(); if (sameSession()) _rapierDrawClose();
@@ -6481,12 +6499,12 @@ async function _rapierDrawFinish({ back = false } = {}) {
 			} catch (error) { console.warn('[rapier] paint keep', error); }
 		}
 		// Prepare the whole live drawing, then apply only the document's admission limits to Add.
-		// Download (above) never reduces quality to fit: the file exit carries all of it without these
+		// The file exit (_rapierDrawTooLarge) never reduces quality to fit: it carries all of it without these
 		// byte caps. Add is bound by the document's own picture cap, and a size limit is a limit on a
 		// FORM, never a licence to delete the content: before Add is refused, Rapier changes the form --
 		// quality 95, asked by name with both sizes, never silent, never the default.
 		if (!_rapierDrawAdmitRecipe(recipe)) {
-			showToast('This drawing is too large to add to the document. Download the drawing.', 'info');
+			await _rapierDrawTooLarge(session);
 			return;
 		}
 		let svgText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true);
@@ -6500,11 +6518,11 @@ async function _rapierDrawFinish({ back = false } = {}) {
 			await _rapierPaintReencodeQuality95(recipe);
 			const smallerText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true), smallerBytes = new TextEncoder().encode(smallerText);
 			if (smallerBytes.length > _rapierDrawAssetBudget()) {
-				showToast('This drawing is too large to add to the document. Download the drawing.', 'info');
+				await _rapierDrawTooLarge(session);
 				return;
 			}
 			if (!await _rapierPaintOfferQuality95(before, smallerBytes.length)) {
-				showToast('This drawing is too large to add to the document. Download the drawing.', 'info');
+				await _rapierDrawTooLarge(session);
 				return;
 			}
 			svgText = smallerText; svgBytes = smallerBytes;
@@ -6513,7 +6531,7 @@ async function _rapierDrawFinish({ back = false } = {}) {
 		// No quality-95 to offer here (no JPEG XL profile): the drawing's own asset ceiling still
 		// refuses by name rather than falling through to createAsset's own dead-end error.
 		if (svgBytes.length > _rapierDrawAssetBudget()) {
-			showToast('This drawing is too large to add to the document. Download the drawing.', 'info');
+			await _rapierDrawTooLarge(session);
 			return;
 		}
 		const assetTitle = editing?.title || _rapierDrawNextName();
@@ -6564,6 +6582,11 @@ function _rapierDrawReadyForWords(label) {
 // Download keeps the entire live drawing, losslessly, without document picture/aggregate byte
 // limits. Geometry, raster signatures and vector work are still checked by the same SVG owner.
 // Only a confirmed file write clears the recovery ticket for the exact exported snapshot.
+// Too large for the document: Done still keeps the work, as a file at full quality, and says so.
+async function _rapierDrawTooLarge(session) {
+	showToast('This drawing is too large for the document, so it is saved as a file instead.', 'info');
+	await _rapierDrawDownload(session);
+}
 async function _rapierDrawDownload(session) {
 	const state = _rapierDrawState;
 	try {
@@ -6590,11 +6613,15 @@ async function _rapierDrawDownload(session) {
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		const svgBytes = new TextEncoder().encode(svgText);
 		const saved = await _download(new Blob([svgBytes], { type: 'image/svg+xml' }), name);
-		if (saved === true) await _rapierDrawBackupClear(recovery);
+		if (saved === true) {
+			await _rapierDrawBackupClear(recovery);
+			// The file holds the work: Draw closes as Done does, and the notice that waited under it shows.
+			if (state.open && state.session === session) _rapierDrawClose();
+		}
 		// The shared download owner returns null on a writer failure, false on cancellation.
-		else if (saved !== false && state.open && state.session === session) showToast('The drawing could not be downloaded. It is still open; try Download again.', 'error');
+		else if (saved !== false && state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('The drawing could not be saved as a file. It is still open; try Done again.', 'error'); }
 	} catch (error) {
-		if (state.open && state.session === session) showToast('The drawing could not be downloaded. It is still open: ' + String(error?.message || error), 'error');
+		if (state.open && state.session === session) { _rapierDrawShowCloseOnFailure(); showToast('The drawing could not be saved as a file. It is still open: ' + String(error?.message || error), 'error'); }
 	}
 }
 // Android hardware Back and browser history Back both reach here through engine.js's
@@ -6604,7 +6631,7 @@ async function _rapierDrawDownload(session) {
 // one more _rapierUiSurfaces entry). Draw's own in-surface Escape falls through to this too, once a
 // live gesture and an existing selection are already accounted for (see the keydown handler above).
 // Both cancel any live gesture, then let _rapierDrawFinish decide: an untouched canvas (an empty new
-// one, or an existing one unchanged) closes without writing, and anything else asks keep or discard.
+// one, or an existing one unchanged) closes without writing, and anything else is kept as Done keeps it.
 // Returns true when Draw consumed the Back press, so the caller does not also fall through to
 // whatever surface sits beneath it.
 function _rapierDrawHandleBack() {
@@ -6625,25 +6652,8 @@ function _rapierDrawHandleBack() {
 	}
 	if (!_rapierDrawFinishText()) return true;
 	_rapierDrawCancelGesture();
-	void _rapierDrawFinish({ back: true });
+	void _rapierDrawFinish();
 	return true;
-}
-// Back's question, in the house's confirm and its words (short and plain): KEEP puts the drawing where
-// DONE would -- the document, the note, a new note from the + bar -- or keeps the changes to a drawing
-// reopened, which for one emptied takes it out (said); DISCARD throws a new drawing away and leaves a
-// reopened one as it was. Inside a note the note is named and the document never is.
-function _rapierDrawBackQuestion(notes, editing, empty) {
-	const where = notes ? (notes.fresh ? '' : notes.label) : 'your document';
-	if (editing) return {
-		title: 'keep your changes?',
-		message: empty && where ? 'keep takes the drawing out of ' + where + '; discard leaves it as it was.' : 'discard leaves the drawing as it was.',
-		confirmLabel: 'keep', secondaryLabel: 'discard', destructive: true,
-	};
-	return {
-		title: 'keep this drawing?',
-		message: (where ? 'keep adds it to ' + where : 'keep makes it a new note') + '; discard throws it away.',
-		confirmLabel: 'keep', secondaryLabel: 'discard', destructive: true,
-	};
 }
 // A drawing in a note lands on its own line where the person was: at the block the caret is in --
 // after it, or before it when the caret stands at the block's very start or on a line still empty

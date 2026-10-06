@@ -227,16 +227,21 @@
     _rapierPostureRender();
   }
 
-  // Notes' cards over the document: the fact goes into the agent's context, and no edit, open or
-  // drawing reaches the document behind them. The visual `inert` fence is not an authority fence; this
-  // is.
+  // Notes' cards over the document: the fact goes into the agent's context. An edit (a fact with
+  // splices) reaches the document behind the cards as it would a hidden page, except while Notes is
+  // swapping or certifying that document (`busy`: a note opening, the way back, a rename), where a
+  // landed edit would make the person's own tap refuse. An open, a save, a comparison or a picture
+  // of the page does not reach it at all. The visual `inert` fence is not an authority fence; this is.
   // Read from the owner's standing (notes.js publishes it beside the diagnostic facts getter, whose
   // deep copy of the index this fence must never cost a checkpoint); undefined without Notes on the
   // page.
-  const notesFact = () => { const f = globalThis.rapierNotesStanding; return f && typeof f === 'object' ? {open: !!f.open, current: f.current || null} : null; };
-  const notesFence = () => { const f = notesFact(); return f && f.open ? 'notes_library_open' : ''; };
+  const notesFact = () => { const f = globalThis.rapierNotesStanding; return f && typeof f === 'object' ? {open: !!f.open, current: f.current || null, busy: !!f.busy} : null; };
+  const notesFence = fact => { const f = notesFact(); return f && f.open && !(Array.isArray(fact?.splices) && !f.busy) ? 'notes_library_open' : ''; };
   // Draw's session (body.rapier-draw-open is the public fact): the person is painting, not looking
-  // at the markdown. The canvas is not an authority fence; this is.
+  // at the markdown. The canvas is not an authority fence; this is, and it fences only what Draw
+  // holds (draw/draw.js _rapierDrawHeldRanges: the open picture's block, or the place a new drawing
+  // lands). An edit that touches none of it lands while the person draws, and Draw's place moves with
+  // it (commit, below). Anything without splices -- an open, a save, a comparison -- is refused.
   // The one exception, and the reason for it: an edit to the very drawing the person has open is
   // not an edit to the markdown behind the canvas -- it is the one change that is ABOUT what they
   // are looking at, and they watch it arrive (the replay). Narrow on purpose, and on three facts
@@ -251,9 +256,13 @@
   const drawFence = fact => {
     if (typeof document === 'undefined' || !document.body?.classList?.contains('rapier-draw-open')) return '';
     const open = typeof _rapierDrawEditingAsset === 'function' ? _rapierDrawEditingAsset() : '';
-    return fact?.shapesOnly && open && fact.drawingAsset && String(fact.drawingAsset) === open ? '' : 'draw_session_open';
+    if (open && fact?.drawingAsset && String(fact.drawingAsset) === open) return fact.shapesOnly ? '' : 'draw_session_open';
+    const held = Array.isArray(fact?.splices) && typeof _rapierDrawHeldRanges === 'function' ? _rapierDrawHeldRanges() : null;
+    return held && _rapierDrawMoveRanges(held, fact.splices) ? '' : 'draw_session_open';
   };
-  const hostFence = fact => notesFence() || drawFence(fact);
+  const hostFence = fact => notesFence(fact) || drawFence(fact);
+  // Draw or the cards stand over the editor: the person's place is theirs, not the editor's.
+  const covered = () => typeof document !== 'undefined' && (!!document.body?.classList?.contains('rapier-draw-open') || !!notesFact()?.open);
   let carriedRecovery = null;
   // The original a portable proposal was written over, for one document authority only. The adapter holds it, not
   // the engine's sealed document record: every read checks its authority, so a record for another document is never used.
@@ -427,7 +436,7 @@
   }
 
   function commitAdmission(request) {
-    const reason = admission() || hostFence(request.fence);
+    const reason = admission() || hostFence({...request.fence, splices: request.splices});
     if (reason) return reason;
     if (!matches(request)) return 'document_changed';
     if (rapier.access.readOnly) return 'document_read_only';
@@ -456,7 +465,7 @@
     const refused = commitAdmission(request);
     if (refused) { reviews.delete(request.reviewToken); return fail(refused, refused === 'document_changed' ? 'conflict' : 'refused'); }
     reviews.delete(request.reviewToken);
-    const place = capturePlace();
+    const place = capturePlace(), hidden = covered();
     const ctx = context(request, request.operation);
     const resolved = request.splices.map(row => ({text: row.inserted,
       resolved: {kind: 'document-range', source: request.beforeText, start: row.pos, end: row.pos + row.removed.length}}));
@@ -496,9 +505,11 @@
           }
         });
         if (_rapierWillProofFails(proof)) throw Object.assign(new Error('document_law'), {code: 'document_law'});
-        if (!restorePlace(place, request.splices)) throw Object.assign(new Error('selection_restore_failed'), {code: 'selection_restore_failed'});
+        if (!hidden && !restorePlace(place, request.splices)) throw Object.assign(new Error('selection_restore_failed'), {code: 'selection_restore_failed'});
         abort(request);
       }, {changeSet, sourceTransactionId: request.sourceTransactionId, carriedLedger: request.carriedLedger, signal: request.signal});
+      // Before any other task runs: Draw's Done reads the place it lands at after its own wait for this commit.
+      if (typeof _rapierDrawFollow === 'function') _rapierDrawFollow(request.splices);
       committed = {ok: true, revision: result.commitReceipt.documentRevision,
         documentId: result.commitReceipt.documentAuthority, transactionId: result.transaction?.id};
       if (committed.transactionId && !request.carriedLedger) {
@@ -522,7 +533,7 @@
       if (error?.name === 'AbortError' || request.signal?.aborted) throw error;
       return fail(error?.code || 'commit_failed', 'conflict');
     } finally {
-      try { if (!done) restorePlace(place, []); } catch (_) {}
+      try { if (!done && !hidden) restorePlace(place, []); } catch (_) {}
       try { restoreViewport(place); } catch (_) { if (committed) committed.presentation = 'failed'; }
     }
   }
@@ -1392,6 +1403,7 @@
     if (name === 'document.apply_edits' && ['applied', 'rebased'].includes(result.outcome)) {
       _rapierAgentNoteSet(typeof args.note === 'string' ? args.note : '');
       _rapierAgentNoteShow();
+      try { agentCaret(result.changeId, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
     }
     // The agent's edit has landed in the document. If the person happens to be looking at that same
     // drawing in Draw right now, they watch it arrive in the order it was written instead of in one
@@ -1596,6 +1608,80 @@
       principal: 'mcp', actor: 'agent', transport: 'platform'});
     if (result.ok) remoteComparison = compare.id;
     return {...result, visible: result.ok === true};
+  }
+
+  // The agent's caret: once an edit has landed, a thin caret with the agent's name glides from where it last wrote to
+  // the end of this change, rests, and fades. It traces committed work only: nothing waits for it, a target off screen
+  // or under Draw or the Notes cards shows nothing (the page never scrolls to animate), reduced motion places it at
+  // once, and scrolling, hiding or leaving the page puts it away. One caret, one change at a time; the same change
+  // never traces twice.
+  const caret = {el: null, from: null, frame: 0, rest: 0, last: null};
+  function caretPut() {
+    cancelAnimationFrame(caret.frame); clearTimeout(caret.rest); caret.frame = caret.rest = 0;
+    if (caret.el) caret.el.remove();
+    caret.el = null; caret.from = null;
+  }
+  for (const [target, type] of [[window, 'scroll'], [window, 'resize'], [window, 'pagehide'], [document, 'visibilitychange']]) {
+    target.addEventListener(type, () => { if (caret.el) caretPut(); }, {capture: true, passive: true});
+  }
+  function caretTarget() {
+    if (covered()) return null;
+    const ledger = rapier.undo.ledger;
+    for (let i = ledger.length - 1; i >= 0; i--) {
+      if (ledger[i].transaction?.actor?.kind !== 'agent') continue;
+      const rows = _rapierRecordSplices(ledger[i], ledger);
+      const lastRow = rows && rows[rows.length - 1];
+      if (!lastRow) return null;
+      const region = _rapierMarkdownRangeBlockIndices(...Array(2).fill(_rapierBodyOffsetOfCanonical(lastRow.pos + lastRow.inserted.length)));
+      const block = region && rapier.document.blocks[region.last];
+      const host = block && document.querySelector('[data-block-id="' + block.id + '"] .block-read');
+      if (!host) return null;
+      const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+      let text = null; for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.data.trim()) text = node;
+      const range = document.createRange();
+      if (text) { range.setStart(text, text.data.length); range.collapse(true); } else range.selectNodeContents(host);
+      const rects = range.getClientRects(), box = rects.length ? rects[rects.length - 1] : host.getBoundingClientRect();
+      const height = Math.max(14, Math.min(40, box.height || 18));
+      const point = {x: text ? box.right : box.left, y: box.top + (box.height - height) / 2, height};
+      return point.y >= 0 && point.y + height <= window.innerHeight && point.x >= 0 && point.x <= window.innerWidth ? point : null;
+    }
+    return null;
+  }
+  function agentCaret(change, label) {
+    if (!change || change === caret.last || document.visibilityState === 'hidden') return;
+    caret.last = change;
+    const target = caretTarget();
+    if (!target) { caretPut(); return; }
+    if (!document.getElementById('rapier-agent-caret-style')) {
+      const style = document.createElement('style');
+      style.id = 'rapier-agent-caret-style';
+      style.textContent = '.rapier-agent-caret{position:fixed;left:0;top:0;z-index:150;pointer-events:none;width:2px;background:var(--color-accent,#12A594);transition:opacity .4s}' +
+        '.rapier-agent-caret span{position:absolute;left:0;bottom:100%;padding:2px 4px;white-space:nowrap;background:var(--color-accent,#12A594);color:#fff;font:700 9px/1.2 Geist,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}' +
+        '.rapier-agent-caret[data-fading]{opacity:0}@media (prefers-reduced-motion:reduce){.rapier-agent-caret{transition:none}}';
+      document.head.append(style);
+    }
+    if (!caret.el) {
+      caret.el = document.createElement('div'); caret.el.className = 'rapier-agent-caret'; caret.el.setAttribute('aria-hidden', 'true');
+      caret.el.append(document.createElement('span'));
+      document.body.append(caret.el);
+    }
+    caret.el.removeAttribute('data-fading');
+    caret.el.firstChild.textContent = String(label || 'agent').slice(0, 24);
+    caret.el.style.height = target.height + 'px';
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const motion = globalThis.RapierCursorMotion.createCursorMotion(caret.from || target, target, 'arc', {reducedMotion: reduced || !caret.from});
+    const place = point => { caret.el.style.transform = 'translate(' + point.x + 'px,' + point.y + 'px)'; };
+    cancelAnimationFrame(caret.frame); clearTimeout(caret.rest);
+    const started = performance.now();
+    const step = now => {
+      const {position} = motion.at(now - started);
+      place(position);
+      if (now - started < motion.durationMs) { caret.frame = requestAnimationFrame(step); return; }
+      caret.from = target;
+      caret.rest = setTimeout(() => { if (!caret.el) return; caret.el.dataset.fading = ''; caret.rest = setTimeout(caretPut, 450); }, 2600);
+    };
+    place(motion.at(0).position);
+    caret.frame = requestAnimationFrame(step);
   }
 
   // A server revision is not a local revision. Match an exact replay suffix, then mint local
