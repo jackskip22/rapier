@@ -157,10 +157,11 @@ async function aesGcmDecrypt(rawKey, nonce, cipher, aad) {
 	}
 }
 
-export async function wrapVdk(wrappingKey, vdk, options = {}) {
+// The nonce is always drawn here: a nonce reused under one wrapping key would break AES-GCM.
+export async function wrapVdk(wrappingKey, vdk) {
 	const kek = requireBytes(wrappingKey, VDK_BYTES, 'the wrapping key');
 	const key = requireBytes(vdk, VDK_BYTES, 'the vault key');
-	const nonce = options.nonce ? requireBytes(options.nonce, NONCE_BYTES, 'a wrap nonce') : globalThis.crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
+	const nonce = globalThis.crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
 	const ct = await aesGcmEncrypt(kek, nonce, key, te.encode('vdk'));
 	const out = new Uint8Array(NONCE_BYTES + ct.length);
 	out.set(nonce, 0);
@@ -250,7 +251,7 @@ export async function createVault(passphrase, options = {}) {
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
 	const kek = await deriveWrappingKey(passphrase, salt);
 	let wrapped;
-	try { wrapped = await wrapVdk(kek, vdk, options.wrapNonce ? {nonce: options.wrapNonce} : {}); }
+	try { wrapped = await wrapVdk(kek, vdk); }
 	finally { kek.fill(0); }
 	const verifier = await makeVerifier(vdk);
 	const header = {
@@ -300,7 +301,7 @@ export async function rewrapVault(headerBytes, vdk, passphrase, options = {}) {
 	const salt = options.salt ? requireBytes(options.salt, SALT_BYTES, 'salt') : generateSalt();
 	const kek = await deriveWrappingKey(passphrase, salt);
 	let wrapped;
-	try { wrapped = await wrapVdk(kek, vdk, options.wrapNonce ? {nonce: options.wrapNonce} : {}); }
+	try { wrapped = await wrapVdk(kek, vdk); }
 	finally { kek.fill(0); }
 	const next = {
 		v: VAULT_VERSION,

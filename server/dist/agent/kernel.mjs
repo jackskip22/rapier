@@ -67,6 +67,10 @@ const HINTS = {
   presentation_already_pending: 'A reveal is already pending; check its view status in get_context before another.',
   wait_already_pending: 'One wait at a time; the earlier wait must finish first.',
   notes_folder_unreadable: 'Notes could not answer just now; try again later.',
+  notes_not_read: 'Read the whole note first, then propose again to write the change at once. Until then it waits for the person to keep or drop.',
+  notes_changed: 'The note changed after your read, so the change waits for the person to keep or drop. Read it again to write at once.',
+  notes_open: 'The person has this note open, so the change waits for them to keep or drop.',
+  notes_history_unavailable: 'The note\'s History could not take the person\'s words first, so the change waits for them to keep or drop.',
   world_changed: 'The document changed during the call; call again.',
   outline_changed: 'The document changed during the call; call get_outline again.',
   search_changed: 'The document changed during the call; call find again.',
@@ -1464,7 +1468,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(!sorted.length ? {message: 'Notes has nothing yet.'} : {}) });
   }
 
-  // A note the agent leaves for the person to keep or drop, new or as a change to a listed note (`of`); never written as theirs.
+  // What each caller has read of each note, whole: the SHA-256 of its words when the read reached the end having started at the beginning.
+  // notes.propose writes a change at once only over words the caller read; the host compares this with the note as it stands.
+  const noteReads = new Map();
+  const rememberNote = (who, file, text) => {
+    const key = ownerOf(who) + '\u0000' + file;
+    noteReads.delete(key); noteReads.set(key, sha256(text));
+    while (noteReads.size > 64) noteReads.delete(noteReads.keys().next().value);
+  };
+  // A new note lands in the person's Notes at once, marked as the agent's. A change to a listed note (`of`) is written at once over words the
+  // caller read whole; otherwise it waits as a proposal for the person to keep or drop, and `reason` says why.
   async function notesPropose(input, who, context) {
     const text = typeof input.text === 'string' ? input.text : '';
     const invalid = text.trim() ? admissibleText(text) : 'notes_text_required';
@@ -1472,13 +1485,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const unavailable = () => accepted({ availability: 'unavailable', reason: 'notes_not_configured', message: 'Notes is not set up on this host.', file: null });
     if (typeof host.notesPropose !== 'function') return unavailable();
     cancelled(context);
-    const got = await host.notesPropose({ text, title: typeof input.title === 'string' ? input.title : '', of: typeof input.of === 'string' ? input.of : '',
+    const of = typeof input.of === 'string' ? input.of : '';
+    const got = await host.notesPropose({ text, title: typeof input.title === 'string' ? input.title : '', of, base: of ? noteReads.get(ownerOf(who) + '\u0000' + of) : undefined,
       by: agentLabel(who.agent) || 'An agent', ...who, signal: context.signal });
     cancelled(context);
     if (got === undefined) return unavailable();
     if (got?.refused) return failure(got.refused, 'invalid');
     if (typeof got?.file !== 'string') return failure('notes_folder_unwritable');
-    return accepted({ availability: 'available', file: got.file });
+    if (got.applied === true && typeof got.saved === 'string') rememberNote(who, got.file, got.saved);
+    return accepted({ availability: 'available', file: got.file, applied: got.applied === true,
+      ...(typeof got.reason === 'string' ? { reason: got.reason, ...(HINTS[got.reason] ? { hint: HINTS[got.reason] } : {}) } : {}) });
   }
   async function notesRead(input, who, context) {
     const file = typeof input.file === 'string' ? input.file : '';
@@ -1516,7 +1532,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       page = text.slice(offset, end);
     }
     const complete = end >= text.length;
-    const next = !complete ? mint('cursors', 'notes_read_', { kind: 'notes-read', file, offset: end, version }, who) : null;
+    const whole = offset === 0 || cursor?.whole === true;
+    if (complete && whole) rememberNote(who, file, text);
+    const next = !complete ? mint('cursors', 'notes_read_', { kind: 'notes-read', file, offset: end, version, whole }, who) : null;
     if (input.cursor) delete state.cursors[input.cursor];
     return accepted({ availability: 'available', found: true, file, text: page, start: offset, end, complete, remaining: Math.max(0, text.length - end), next_cursor: next?.id || null });
   }

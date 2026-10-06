@@ -4300,7 +4300,7 @@ function _rapierRemoveBlockWrapper(wrapper) {
 function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	const container = document.getElementById('editor-blocks');
 	if (!container || !fragment) return;
-	if (container.hasAttribute('data-rapier-welcome-paint')) { container.removeAttribute('data-rapier-welcome-paint'); globalThis.RapierFirstScreenHold?.take(container); container.replaceChildren(); }
+	if (container.hasAttribute('data-rapier-welcome-paint')) { container.removeAttribute('data-rapier-welcome-paint'); globalThis.RapierFirstScreenHold?.take(container, () => String(rapier.identity.authority) + '|' + rapier.document.source.rootId); container.replaceChildren(); }
 	const sameDocument = options?.sameDocument === true;
 	if (document.activeElement === container) {
 		try { container.blur(); } catch (_) {}

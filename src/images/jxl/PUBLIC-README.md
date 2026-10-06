@@ -44,7 +44,7 @@ the loop to cancel, set `job.hurry = true` to finish with the smallest stream wr
 | --- | --- |
 | `rapier-jxl` | `encode`: 8-bit grey, grey with alpha, RGB and RGBA. Quality 100 is lossless; 1 to 99 is lossy, for flat-colour rasters. |
 | `rapier-jxl/min` | The core as one minified file. |
-| `rapier-jxl/effort` | The same `encode` with `{effort: 2, 3, 4 or 6}`: smaller exact files, more time, never larger than the effort below. Effort 1 is the core. |
+| `rapier-jxl/effort` | The same `encode` with `{effort: 2, 3, 4 or 6}`: smaller exact files, more time, never larger than the effort below. Effort 1 is the core. From effort 3, screenshots, text and drawings also get exact palettes, repeated-run matching and a repeated-glyph dictionary, often half the size or less. See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md). |
 | `rapier-jxl/wasm` | The effort door with integer WebAssembly SIMD kernels; the same bytes, JavaScript when SIMD is unavailable. See [docs/KERNELS.md](docs/KERNELS.md). |
 | `rapier-jxl/photo` | `encodePhoto`: DCT compression for photographs, exact alpha. |
 | `rapier-jxl/jpeg` | `transcode`: a JPEG carried as its coefficients, no decode. The JPEG file itself cannot be rebuilt; ICC bytes, Exif beyond orientation and XMP are not carried. |

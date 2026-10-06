@@ -124,18 +124,22 @@ export function cleanRemind(raw) {
 	return {at: raw.at, ...(repeat === 'custom' ? {every: raw.every} : {}), ...(repeat ? {repeat} : {}),
 		...(raw.snoozeMinutes !== undefined ? {snoozeMinutes: raw.snoozeMinutes} : {}), ...(repeat === 'custom' ? {unit: raw.unit} : {})};
 }
-// A note an agent left for the person to keep or drop (notes.propose): who proposed it, when, and the note it would change, if any.
-export function cleanProposed(raw) {
+// Who an agent was and when, on a note it made (notes.propose): index data, never a word of the note.
+export function cleanAgent(raw) {
 	if (!raw || typeof raw !== 'object' || typeof raw.by !== 'string' || !raw.by.trim() || raw.by.length > 64 || !Number.isSafeInteger(raw.at) || raw.at < 0) return null;
-	if (raw.of !== undefined && !isNoteFile(raw.of)) return null;
-	return {by: raw.by.trim(), at: raw.at, ...(raw.of !== undefined ? {of: raw.of} : {})};
+	return {by: raw.by.trim(), at: raw.at};
+}
+// A change an agent left for the person to keep or drop (notes.propose): who proposed it, when, and the note it would change.
+export function cleanProposed(raw) {
+	const mark = cleanAgent(raw);
+	return mark && isNoteFile(raw.of) ? {...mark, of: raw.of} : null;
 }
 export function validNoteId(id) { return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id.slice(id.lastIndexOf(':') + 1))); }
 function cleanEntry(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	// Written in this function's field order, then unknown fields in their order: a round trip is byte-identical and keeps other owners' data.
 	const entry = {};
-	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created', 'proposed']);
+	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created', 'proposed', 'agent']);
 	if (raw.id !== undefined && !validNoteId(raw.id)) throw Object.assign(new Error('invalid note identity'), {code: 'corrupt'});
 	if (raw.revision !== undefined && (typeof raw.revision !== 'string' || !raw.revision)) throw Object.assign(new Error('invalid note revision'), {code: 'corrupt'});
 	if (raw.id !== undefined) entry.id = raw.id;
@@ -161,6 +165,8 @@ function cleanEntry(raw) {
 	if (Number.isFinite(raw.created)) entry.created = raw.created;
 	const proposed = cleanProposed(raw.proposed);
 	if (proposed) entry.proposed = proposed;
+	const agent = cleanAgent(raw.agent);
+	if (agent) entry.agent = agent;
 	for (const key of Object.keys(raw)) if (!known.has(key)) Object.defineProperty(entry, key, {value: raw[key], enumerable: true, configurable: true, writable: true});
 	return entry;
 }

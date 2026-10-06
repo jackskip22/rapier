@@ -1,5 +1,5 @@
 {
-  "release": "1.1.71",
+  "release": "1.1.72",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -3413,7 +3413,7 @@
     {
       "name": "notes.propose",
       "title": "Propose a note",
-      "description": "Leaves a note in the person's Notes for them to keep or drop: a new note, or a change to the listed note named in `of`. Use it to hand over a finding or a draft.",
+      "description": "Adds a note to the person's Notes, marked as made by you, or writes a change into the listed note named in `of`, their words kept in its History. A change to a note you have not read whole, or that the person has open or has changed since your read, waits for them to keep or drop and returns `applied: false`. Use it to hand over a finding or a draft.",
       "effect": "create",
       "inputSchema": {
         "type": "object",
@@ -3491,6 +3491,9 @@
               "null"
             ],
             "maxLength": 256
+          },
+          "applied": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -7595,7 +7598,7 @@
     {
       "name": "notes.propose",
       "title": "Propose a note",
-      "description": "Leaves a note in the person's Notes for them to keep or drop: a new note, or a change to the listed note named in `of`. Use it to hand over a finding or a draft.",
+      "description": "Adds a note to the person's Notes, marked as made by you, or writes a change into the listed note named in `of`, their words kept in its History. A change to a note you have not read whole, or that the person has open or has changed since your read, waits for them to keep or drop and returns `applied: false`. Use it to hand over a finding or a draft.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -7686,6 +7689,9 @@
               "null"
             ],
             "maxLength": 256
+          },
+          "applied": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -7894,13 +7900,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.71.html",
+          "resourceUri": "ui://rapier/editor-1.1.72.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.71.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.72.html",
         "openai/ui": {
           "entrypoints": [
             {

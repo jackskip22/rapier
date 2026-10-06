@@ -1222,7 +1222,7 @@
     // empty listing (this build has no Notes). undefined is the kernel's "no door" signal; the door
     // itself still returns null when the folder cannot answer.
     notesList: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.list !== 'function') return undefined; return door.list({signal: request?.signal}); },
-    notesPropose: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.propose !== 'function') return undefined; return door.propose({text: request.text, title: request.title, of: request.of, by: request.by}, {signal: request?.signal}); },
+    notesPropose: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.propose !== 'function') return undefined; return door.propose({text: request.text, title: request.title, of: request.of, by: request.by, base: request.base}, {signal: request?.signal}); },
     notesRead: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.read !== 'function') return undefined; return door.read(String(request?.file || ''), {signal: request?.signal}); },
     // Declares the capability decide's own commit branch reads (capability negotiation): this door
     // can present a review inline, at the exact edit, not only through the Compare-panel proposal
@@ -1657,7 +1657,7 @@
       style.id = 'rapier-agent-caret-style';
       style.textContent = '.rapier-agent-caret{position:fixed;left:0;top:0;z-index:150;pointer-events:none;width:2px;background:var(--color-accent,#12A594);transition:opacity .4s}' +
         '.rapier-agent-caret span{position:absolute;left:0;bottom:100%;padding:2px 4px;white-space:nowrap;background:var(--color-accent,#12A594);color:#fff;font:700 9px/1.2 Geist,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}' +
-        '.rapier-agent-caret[data-fading]{opacity:0}@media (prefers-reduced-motion:reduce){.rapier-agent-caret{transition:none}}';
+        '.rapier-agent-caret[data-flip] span{left:auto;right:0}.rapier-agent-caret[data-fading]{opacity:0}@media (prefers-reduced-motion:reduce){.rapier-agent-caret{transition:none}}';
       document.head.append(style);
     }
     if (!caret.el) {
@@ -1670,7 +1670,11 @@
     caret.el.style.height = target.height + 'px';
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const motion = globalThis.RapierCursorMotion.createCursorMotion(caret.from || target, target, 'arc', {reducedMotion: reduced || !caret.from});
-    const place = point => { caret.el.style.transform = 'translate(' + point.x + 'px,' + point.y + 'px)'; };
+    // Near the right edge the tag stands to the left of the caret instead of running off the screen.
+    const place = point => {
+      caret.el.style.transform = 'translate(' + point.x + 'px,' + point.y + 'px)';
+      if (point.x + caret.el.firstChild.offsetWidth > window.innerWidth - 2) caret.el.setAttribute('data-flip', ''); else caret.el.removeAttribute('data-flip');
+    };
     cancelAnimationFrame(caret.frame); clearTimeout(caret.rest);
     const started = performance.now();
     const step = now => {
@@ -1737,6 +1741,8 @@
       if (!expectedCurrent(expected)) return fail('document_changed', 'conflict');
     }
     replacing = true;
+    // The agent change this projection brought into the page, if any: its transaction, for the caret.
+    let landed = null;
     try {
       if (value.documentId !== before.documentId) {
         const stamp = _rapierMutationStamp();
@@ -1748,10 +1754,15 @@
         let carriedLedger;
         try { carriedLedger = remoteLedger(value, before); }
         catch (_) { return fail('snapshot_history_invalid', 'invalid'); }
+        const tip = rapier.undo.ledger.at(-1)?.transaction?.id;
         const committed = await commit({documentId: before.documentId, baseRevision: before.revision,
           beforeText: before.text, text: value.text, splices: [row], actor: 'system', principal: 'mcp',
           transport: 'platform', operation: 'document.remote_edit', label: 'Remote edit', carriedLedger});
         if (!committed.ok) return committed;
+        // Only rows after the page's former tip arrived with this projection; an older agent row is not its news.
+        const rows = rapier.undo.ledger;
+        landed = rows.slice(rows.findLastIndex(entry => entry.transaction?.id === tip) + 1)
+          .findLast(entry => entry.transaction?.actor?.kind === 'agent')?.transaction || null;
       }
       if (value.filename !== String(rapier.document.filename) || value.docKind !== rapier.document.docKind) {
         if (_rapierSourceText() !== value.text || String(rapier.identity.authority) !== value.documentId) return fail('document_changed', 'conflict');
@@ -1767,6 +1778,11 @@
       const comparison = !exact ? {...fail('document_changed'), visible: false} : remoteReview
         ? {ok: true, visible: true, review: remoteReview.review.id} : await syncComparison(value);
       await refresh();
+      // The same caret as a local agent edit: the name is the one the ledger row carries ("door/name"), else the door's.
+      if (landed && exact) {
+        const named = String(landed.actor.id), slash = named.indexOf('/');
+        try { agentCaret(landed.id, (slash > 0 && named.slice(slash + 1)) || doorName); } catch (_) {}
+      }
       return {ok: true, outcome: 'applied', comparison, snapshot: await snapshot()};
     } finally { replacing = false; }
   }

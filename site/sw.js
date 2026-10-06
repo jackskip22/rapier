@@ -27,7 +27,7 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '82acf8020fc029ece4d7e7d71d06b40851ad3fd5f7e43812bf95c25aa934fcde';
+const SHELL_RELEASE_SHA256 = '75430dd4f6f58308ca35fd732872bd28177af0e62d7b53379d8f2f1ff1ca5545';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */
@@ -343,8 +343,8 @@ async function handleShareTarget(request) {
     /* No provenance is knowable here: the browser adds its Fetch Metadata headers
        (Sec-Fetch-Site and its siblings) at the network layer, after a worker's fetch
        event, so a worker never sees them on any request — a guard on them refuses
-       every share, the OS share sheet's included (proved in Chrome 152 four ways,
-       docs/evidence/lane-share/). What bounds this door instead is what the worker
+       every share, the OS share sheet's included (proved in Chrome 152 four ways).
+       What bounds this door instead is what the worker
        can see: the payload is capped, one-shot, scope-qualified and short-lived, and
        the landing opens the incoming document through the same recovery question as
        every other door — never over unsaved work, never silently. */

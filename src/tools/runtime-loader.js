@@ -191,11 +191,16 @@ async function _rapierRevealFirstScreen() {
 // The editor takes the first screen over in stages (its blocks are laid, then the pictures and the wrapped lines), and
 // each stage is a frame a person sees. The first screen stays over it, as it was painted, until the editor's own
 // blocks stand where it does (or a bound passes), then goes: the words never move. Taps pass through it to the editor.
+// It covers the document the editor took over, and only that one: `identity` answers which document and which words the
+// editor holds. When the answer is no longer the one it was taken with (an agent's edit, a typed letter, another document
+// opened) the editor's own blocks are what the person must see, and the cover goes at once.
 globalThis.RapierFirstScreenHold = Object.freeze({
-  take(container) {
+  take(container, identity) {
     try {
       const kept = [...container.children];
       if (!kept.length || !container.parentNode) return;
+      const standing = () => { try { return typeof identity === 'function' ? String(identity()) : ''; } catch (_) { return ''; } };
+      const covered = standing();
       const box = container.getBoundingClientRect();
       const cover = document.createElement('div');
       cover.id = 'rapier-first-cover';
@@ -215,7 +220,7 @@ globalThis.RapierFirstScreenHold = Object.freeze({
       const look = () => {
         const live = tops(container), same = live.length >= wanted.length && wanted.every((top, at) => Math.abs(top - live[at]) <= 1);
         agreed = same ? agreed + 1 : 0;
-        if (agreed >= 2 || performance.now() - since > 2500 || !cover.isConnected) cover.remove();
+        if (agreed >= 2 || performance.now() - since > 2500 || !cover.isConnected || standing() !== covered) cover.remove();
         else requestAnimationFrame(look);
       };
       requestAnimationFrame(look);

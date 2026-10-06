@@ -2130,10 +2130,12 @@ function _rapierNotesCard(file) {
 	}
 	for (const block of el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote')) block.dir = 'auto';
 	if (entry.pinned) { const pin = _rapierNotesGlyph('pin'); pin.setAttribute('class', 'rapier-notes-mark'); el.appendChild(pin); }
-	// A note an agent proposed is the person's to keep or drop: who proposed it, and the two answers.
+	// A note an agent made says so: who, from the index, never from the person's words.
+	if (entry.agent) el.appendChild(_rapierNotesEl('div', 'rapier-notes-proposal', 'Made by ' + entry.agent.by));
+	// A change an agent proposed is the person's to keep or drop: who proposed it, and the two answers.
 	if (entry.proposed) {
 		el.classList.add('rapier-notes-card--proposed');
-		const row = _rapierNotesEl('div', 'rapier-notes-proposal', (entry.proposed.of ? 'Change proposed by ' : 'Proposed by ') + entry.proposed.by);
+		const row = _rapierNotesEl('div', 'rapier-notes-proposal', 'Change proposed by ' + entry.proposed.by);
 		for (const [act, word] of [['proposal-keep', 'Keep'], ['proposal-drop', 'Drop']]) {
 			const b = _rapierNotesEl('button', 'rapier-notes-proposal-btn', word); b.type = 'button'; b.dataset.notesAct = act; row.appendChild(b);
 		}
@@ -4825,23 +4827,14 @@ async function _rapierNotesSectionEdit(act, arg) {
 	try { await _rapierNotesWriteIndex(); }
 	catch (error) { undo(); _rapierNotesRender(); showToast('The section change was not written to the notes folder: ' + String(error?.message || error), 'error'); }
 }
-// Keep or Drop on a proposed note (notes.propose). Keep on a new note takes its mark off; Keep on a change writes its words into
-// the note it changes through that note's own save (its history keeps what was there) and puts the proposal in Trash. Drop puts
-// the proposal in Trash, where it can still be restored.
+// Keep or Drop on a change an agent proposed (notes.propose). Keep writes its words into the note it changes through that note's own
+// save (its history keeps what was there) and puts the proposal in Trash. Drop puts the proposal in Trash, where it can still be restored.
 async function _rapierNotesProposal(file, keep) {
 	const state = _rapierNotes, entry = state.index?.notes[file], proposal = entry?.proposed;
 	// Answered once: a pointer-up and its click (or a second tap) find nothing left to answer.
 	if (!proposal || entry.trashed || state.keyBusy) return;
 	state.keyBusy = true;
 	try {
-		if (keep && !proposal.of) {
-			// The pending decision remains the live state until its metadata is
-			// durably accepted. A refusal must leave the same proposal retryable.
-			const wanted = _rapierNotesCopyIndex(state.index);
-			delete wanted.notes[file].proposed;
-			await _rapierNotesWriteIndex(wanted);
-			return;
-		}
 		if (keep) {
 			const target = state.index.notes[proposal.of];
 			if (!target || target.trashed) { showToast('The note this change was for is no longer in your notes', 'info'); return; }
@@ -8513,21 +8506,57 @@ async function _rapierNotesHostIndex(signal) {
 	catch (error) { if (error?.code !== 'corrupt') throw error; parsed = M.emptyIndex(); }
 	return M.reconcile(parsed, files).index;
 }
+// A change an agent wrote over a note, with nothing of the person's lost. It is written only when the note is not open in the editor,
+// still holds the words the agent read whole (`base`, their SHA-256) and its History took the person's words first; the owner's save
+// refuses the write if the note moved after that. Otherwise `{reason}` says why it was not written; null when the call was withdrawn.
+async function _rapierNotesAgentChange(file, next, base, signal) {
+	const state = _rapierNotes, store = _rapierNotesStore, sha = globalThis.RapierNotesIntegrity.sha256;
+	if (!base) return {reason: 'notes_not_read'};
+	if (state.current === file) return {reason: 'notes_open'};
+	await store.kind();
+	if (!state.index) _rapierNotesTake(await store.folder.read());
+	const entry = state.index.notes[file], was = await store.queue(file, () => store.read(file));
+	if (typeof was !== 'string' || await sha(was) !== base) return {reason: 'notes_changed'};
+	let past = null;
+	if (entry?.id) { try { past = await _rapierNotesRecordVersion({file, text: was, entry, reason: 'save'}); } catch (error) { console.warn('[rapier] notes history', error); } }
+	if (!past) return {reason: 'notes_history_unavailable'};
+	if (signal?.aborted) return null;
+	if (state.current === file) return {reason: 'notes_open'};
+	let saved;
+	try { saved = await store.folder.save({file, id: entry.id, expectedDigest: [base], text: next, preserveConflict: false}); }
+	catch (error) { if (error?.code === 'changed') return {reason: 'notes_changed'}; throw error; }
+	_rapierNotesTake(saved);
+	const kept = saved.file;
+	try { await _rapierNotesRecordVersion({file: kept, text: next, entry: state.index.notes[kept], reason: 'save'}); }
+	catch (error) { console.warn('[rapier] notes history', error); }
+	_rapierNotesHold(kept, next);
+	if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(kept);
+	return {file: kept};
+}
 globalThis.rapierNotesHost = Object.freeze({
-	// notes.propose: the agent's note lands as a card marked with who proposed it, never as the person's own words.
-	async propose({text, title = '', of = '', by}, {signal} = {}) {
+	// notes.propose: a new note lands at once as the person's own, marked in the index as the agent's. A change is written at once over a
+	// note the agent read whole and the person has not touched (their words go into History first); any other change is left as a card
+	// to keep or drop, and `reason` says why. `saved` is the words as stored, for the kernel's next base.
+	async propose({text, title = '', of = '', by, base}, {signal} = {}) {
 		try {
 			const bytes = _rapierNotesStore.bytes;
 			await _rapierNotesReady();
 			const M = _rapierNotesModel(), index = await _rapierNotesHostIndex(signal);
 			if (!index || signal?.aborted || bytes && _rapierNotesStore.bytes !== bytes || typeof text !== 'string') return null;
 			if (of && (!M.isNoteFile(of) || !index.notes[of] || index.notes[of].trashed)) return {refused: 'notes_target_missing'};
-			const proposed = M.cleanProposed({by, at: Date.now(), ...(of ? {of} : {})});
-			if (!proposed) return null;
-			const body = title && !/^#\s/.test(text) ? '# ' + title + '\n\n' + text : text;
-			const file = await _rapierNotesWriteNew(body, title || '', {proposed}, undefined, {signal});
+			const at = Date.now(), body = title && !/^#\s/.test(text) ? '# ' + title + '\n\n' + text : text;
+			let waiting = null;
+			if (of) {
+				const change = await _rapierNotesAgentChange(of, text, base, signal);
+				if (change?.file) { if (_rapierNotes.open) _rapierNotesRender(); return {file: change.file, applied: true, saved: text}; }
+				if (!change || signal?.aborted) return null;
+				waiting = change.reason;
+			}
+			const mark = of ? {proposed: M.cleanProposed({by, at, of})} : {agent: M.cleanAgent({by, at})};
+			if (!Object.values(mark)[0]) return null;
+			const file = await _rapierNotesWriteNew(body, title || '', mark, undefined, {signal});
 			if (_rapierNotes.open) _rapierNotesRender();
-			return {file};
+			return {file, applied: !of, ...(waiting ? {reason: waiting} : {saved: body})};
 		} catch (error) { console.warn('[rapier] notes: the agent\'s proposal was refused', error); return null; }
 	},
 	async list({signal} = {}) {
