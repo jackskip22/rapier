@@ -1,0 +1,85 @@
+{
+  "package": "@chenglou/pretext",
+  "version": "0.0.9",
+  "releaseDate": "2026-09-07",
+  "repository": "https://github.com/chenglou/pretext",
+  "sourceSnapshot": "User-supplied pretext-main archive; no commit identifier included",
+  "license": "MIT",
+  "licenseSha256": "e9355cb16457e81acd97dac2e50f2f8bbf2a9a464025f9c46db3680cf9598846",
+  "exports": {
+    ".": "./layout.js",
+    "./rich-inline": "./rich-inline.js"
+  },
+  "compiler": {
+    "runtime": "v24.19.0",
+    "api": "node:module.stripTypeScriptTypes",
+    "mode": "transform"
+  },
+  "changes": "TypeScript erased by the Node built-in transform; attribution header added. Runtime semantics and module imports preserved.",
+  "files": [
+    {
+      "source": "src/analysis.ts",
+      "sourceBytes": 47015,
+      "sourceSha256": "45d06ff67f5e7c8334fd3188bc6e3d13c582c36714cbf584aca5c4280587f571",
+      "output": "analysis.js",
+      "outputBytes": 44912,
+      "outputSha256": "68f7c705892b03c6b2e93b5f86ec4216231246607aac11c2dab98ed06f0f602b"
+    },
+    {
+      "source": "src/bidi.ts",
+      "sourceBytes": 6034,
+      "sourceSha256": "70f7f01dcd866076b68dbf2a3c398364aceaba2ccf98037e77e0b3b8bcfbeaa5",
+      "output": "bidi.js",
+      "outputBytes": 5176,
+      "outputSha256": "f69a132df81d5ad666bd35a295e10bf2549f8f0bc6470ab37fe361eafd0162b5"
+    },
+    {
+      "source": "src/generated/bidi-data.ts",
+      "sourceBytes": 21681,
+      "sourceSha256": "745211b804d907af78afb6c1ed87eff6d7454a5e85152a6129eb7b3bf0f6f262",
+      "output": "generated/bidi-data.js",
+      "outputBytes": 44541,
+      "outputSha256": "2f3fd15a0dbc1df87fefc53e23d261419b392feab32e1288a3d7d568cd368fea"
+    },
+    {
+      "source": "src/layout.ts",
+      "sourceBytes": 22096,
+      "sourceSha256": "2b44bcc39ecf287de621d40dbc443815cf2faa8c976a98de8a02f1639b782b9d",
+      "output": "layout.js",
+      "outputBytes": 13886,
+      "outputSha256": "ed52968b68a8d7fb3726333ff522f41f10a779d2c072ba05eb9aa841a6daf469"
+    },
+    {
+      "source": "src/line-break.ts",
+      "sourceBytes": 30545,
+      "sourceSha256": "f226213c179d65adea48b849040719349c8c3928519348d03d38b7b41f344796",
+      "output": "line-break.js",
+      "outputBytes": 29515,
+      "outputSha256": "30d83886d6e681fec3da72073749d14f7d01e5371cc907554596782df9c3de7c"
+    },
+    {
+      "source": "src/line-text.ts",
+      "sourceBytes": 2234,
+      "sourceSha256": "5e21684d995df8c30324c03a14b8a0bc3a579ce169a0e10b6d579b6aeee577dc",
+      "output": "line-text.js",
+      "outputBytes": 1994,
+      "outputSha256": "d7485c43086420e37418b68a49bf42acc45c13a6045d170eecbf37df4738a03c"
+    },
+    {
+      "source": "src/measurement.ts",
+      "sourceBytes": 8430,
+      "sourceSha256": "7768e0452c9dcc027182a3ed8131ed4a26d1d6099c9642ed93389a1c52342b01",
+      "output": "measurement.js",
+      "outputBytes": 7468,
+      "outputSha256": "58d8827d10367319d667c54056ef1200b0850a4ef6d298eaad486217cc84277e"
+    },
+    {
+      "source": "src/rich-inline.ts",
+      "sourceBytes": 15398,
+      "sourceSha256": "5a7e5d339e1f703d52928913e3b7d6a5f5df04bdfdd365f47c1890dde3b61964",
+      "output": "rich-inline.js",
+      "outputBytes": 11352,
+      "outputSha256": "60b7d96428236a8f12f7d6fdbd7d402c8c3b39e4da9cd4bf83b1d3dee27a7418"
+    }
+  ]
+}

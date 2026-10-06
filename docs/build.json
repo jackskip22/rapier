@@ -1,0 +1,684 @@
+{
+  "release": "1.1.69",
+  "builtAt": "2026-10-06T04:52:26.272Z",
+  "node": "v22.22.2",
+  "mode": "release",
+  "packing": "zopfli",
+  "validation": "JavaScript syntax and source assembly only; no runtime or host verification",
+  "profile": "full",
+  "profiles": {
+    "document": {
+      "path": "rapier-document.html",
+      "bytes": 1259676,
+      "sha256": "fe66e85e73ff3b3a49c521d763e340dd5e374f1e10524a98b44e85c1a4625c40",
+      "budget": {
+        "warn": 2079000,
+        "refuse": 2100000
+      },
+      "spans": [
+        {
+          "element": "lib-dompurify",
+          "name": "dompurify-3.4.13.dist.purify.min.js",
+          "bytes": 29435,
+          "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+        },
+        {
+          "element": "lib-turndown",
+          "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+          "bytes": 12864,
+          "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-15.0.0.umd.rapier.min.js",
+          "bytes": 95319,
+          "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-task-lists-2.1.1.min.js",
+          "bytes": 2702,
+          "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-footnote-4.0.0.min.js",
+          "bytes": 5624,
+          "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-mark-4.0.0.min.js",
+          "bytes": 1621,
+          "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sub-2.0.0.min.js",
+          "bytes": 967,
+          "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sup-2.0.0.min.js",
+          "bytes": 965,
+          "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-emoji-3.1.0-light.min.js",
+          "bytes": 6394,
+          "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-abbr-2.0.0.min.js",
+          "bytes": 2419,
+          "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-ins-4.0.0.min.js",
+          "bytes": 1601,
+          "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-deflist-4.0.0.min.js",
+          "bytes": 2376,
+          "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+        },
+        {
+          "element": "lib-gpu-lexer",
+          "name": "gpu-lexer-0.0.1.js",
+          "bytes": 59967,
+          "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+        },
+        {
+          "element": "lib-acorn",
+          "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+          "bytes": 104387,
+          "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+        },
+        {
+          "element": "rapier-jxl-worker",
+          "name": "rapier-jxl-worker.js",
+          "bytes": 3845,
+          "sha256": "782fe1a57642395fa0aca98d61e1009c64315fbd82170c06a13b5fed5dcc27b3"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-platform.js",
+          "bytes": 93201,
+          "sha256": "6513c334dbe4085442bb4aec14c62814da77d82b01a43ca3f4a857411a8bc668"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundle-io.js",
+          "bytes": 4659,
+          "sha256": "a73926e64363405d508ceea89404ccfbe18067406c8c1390e6b43298dc5d7e28"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-plugin-loader.js",
+          "bytes": 15467,
+          "sha256": "cd05711202bbfd9fc12893c012dbfe3f27b16d8661113f593c4ac6816b02bb5f"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-styles.json",
+          "bytes": 197860,
+          "sha256": "56fe466fda65e1cc87a7f22585d0e1ed2a93ea8f0de73714c939c93f5749d83f"
+        },
+        {
+          "element": "rapier-style-rest-runtime",
+          "name": "rapier-styles-rest.json",
+          "bytes": 60326,
+          "sha256": "3a80613474dc5189c63c1f9de78b454238a14338d63fb52846574847450817ba"
+        },
+        {
+          "element": "rapier-ui-runtime",
+          "name": "rapier-ui.html",
+          "bytes": 113496,
+          "sha256": "d59011c1326a1034f50b6cde15b7396d0533920681067c818d9d63f2e0241aed"
+        },
+        {
+          "element": "rapier-shared-runtime",
+          "name": "rapier-shared.js",
+          "bytes": 879763,
+          "sha256": "5dadec956cc102ce107f51d229a87ce572c6b63cf19302e9086fe0e6a57cda7f"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-editor.js",
+          "bytes": 1657032,
+          "sha256": "2a84365e75ca6461b08f7ded4a88611f1d03680edbb4c548dd593e720f266d5a"
+        }
+      ],
+      "shakenExports": {
+        "kit/ledger/text-merge.mjs": [
+          "canonicalNote",
+          "inspectTextConflicts",
+          "mapTextConflictVariants",
+          "resolveTextConflict"
+        ],
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "BitWriter",
+          "complete",
+          "scaled",
+          "packSigned",
+          "floorLog2",
+          "ceilLog2",
+          "float16Bits"
+        ],
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
+        ],
+        "draw/backgrounds.mjs": [
+          "BACKGROUND_KINDS",
+          "TEXTURES",
+          "GLYPH_STYLES",
+          "RAYS_FORMS",
+          "RAILS_FORMS",
+          "BACKGROUND_EASINGS",
+          "hexToOklab",
+          "oklabToRgb",
+          "invertColour"
+        ],
+        "spec/html-reading.mjs": [
+          "htmlBlockLines"
+        ],
+        "notes/zip-records.mjs": [
+          "dosDateTime",
+          "localHeader",
+          "centralHeader",
+          "dataDescriptor",
+          "commentBytes",
+          "endRecord"
+        ]
+      },
+      "builtAt": "2026-10-06T04:50:19.156Z",
+      "node": "v22.22.2",
+      "mode": "release",
+      "packing": "zopfli",
+      "canonical": true
+    },
+    "full": {
+      "path": "rapier.html",
+      "bytes": 1909435,
+      "sha256": "6d77edf4679937d61ee1018d89445e0a111539a8af66cd0fa2fc0efac557678c",
+      "budget": {
+        "warn": 2980000,
+        "refuse": 3000000
+      },
+      "spans": [
+        {
+          "element": "lib-dompurify",
+          "name": "dompurify-3.4.13.dist.purify.min.js",
+          "bytes": 29435,
+          "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+        },
+        {
+          "element": "lib-turndown",
+          "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+          "bytes": 12864,
+          "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-15.0.0.umd.rapier.min.js",
+          "bytes": 95319,
+          "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-task-lists-2.1.1.min.js",
+          "bytes": 2702,
+          "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-footnote-4.0.0.min.js",
+          "bytes": 5624,
+          "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-mark-4.0.0.min.js",
+          "bytes": 1621,
+          "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sub-2.0.0.min.js",
+          "bytes": 967,
+          "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sup-2.0.0.min.js",
+          "bytes": 965,
+          "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-emoji-3.1.0-light.min.js",
+          "bytes": 6394,
+          "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-abbr-2.0.0.min.js",
+          "bytes": 2419,
+          "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-ins-4.0.0.min.js",
+          "bytes": 1601,
+          "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-deflist-4.0.0.min.js",
+          "bytes": 2376,
+          "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+        },
+        {
+          "element": "lib-gpu-lexer",
+          "name": "gpu-lexer-0.0.1.js",
+          "bytes": 59967,
+          "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+        },
+        {
+          "element": "lib-acorn",
+          "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+          "bytes": 104387,
+          "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+        },
+        {
+          "element": "rapier-jxl-worker",
+          "name": "rapier-jxl-worker.js",
+          "bytes": 89927,
+          "sha256": "d4e19f8ee4d61a7d32a87a7b6a659db13c08fea1b8595db026283bb543afeb28"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-platform.js",
+          "bytes": 93201,
+          "sha256": "6513c334dbe4085442bb4aec14c62814da77d82b01a43ca3f4a857411a8bc668"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundle-io.js",
+          "bytes": 4659,
+          "sha256": "a73926e64363405d508ceea89404ccfbe18067406c8c1390e6b43298dc5d7e28"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-plugin-loader.js",
+          "bytes": 15467,
+          "sha256": "cd05711202bbfd9fc12893c012dbfe3f27b16d8661113f593c4ac6816b02bb5f"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-styles.json",
+          "bytes": 197860,
+          "sha256": "56fe466fda65e1cc87a7f22585d0e1ed2a93ea8f0de73714c939c93f5749d83f"
+        },
+        {
+          "element": "rapier-style-rest-runtime",
+          "name": "rapier-styles-rest.json",
+          "bytes": 170349,
+          "sha256": "676810224ca95189078f96d0a4d8426600821771f463189537a8b70ad433ecde"
+        },
+        {
+          "element": "rapier-ui-runtime",
+          "name": "rapier-ui.html",
+          "bytes": 129568,
+          "sha256": "f21529730ebc6c78fc50aa5912f65467af1b355661ba10b620d38550d7473dc7"
+        },
+        {
+          "element": "rapier-shared-runtime",
+          "name": "rapier-shared.js",
+          "bytes": 1914291,
+          "sha256": "d8a67a8da803d2984d94707f64b0b2dd1febbd6bcff1f88c49a964dcbe250b68"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-editor.js",
+          "bytes": 2438017,
+          "sha256": "e5e8c8df7387a00fcd5e4dd8df92f6fa1f3d940b2571f18da51a6bbe5ae90070"
+        }
+      ],
+      "shakenExports": {
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "BitWriter",
+          "complete",
+          "scaled",
+          "packSigned",
+          "floorLog2",
+          "ceilLog2",
+          "float16Bits"
+        ],
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
+        ],
+        "draw/backgrounds.mjs": [
+          "BACKGROUND_KINDS",
+          "TEXTURES",
+          "GLYPH_STYLES",
+          "RAYS_FORMS",
+          "RAILS_FORMS",
+          "BACKGROUND_EASINGS",
+          "hexToOklab",
+          "oklabToRgb",
+          "invertColour"
+        ],
+        "draw/paper.mjs": [
+          "step",
+          "XFER_FRACTION",
+          "MAX_XFER_QUANTITY",
+          "EQUAL_PAINT_CUTOFF",
+          "brushTotals"
+        ],
+        "notes/zip-walk.mjs": [
+          "ZIP_NESTING_LIMIT"
+        ],
+        "notes/import-storage.mjs": [
+          "importReceiptFile"
+        ],
+        "notes/recording-files.mjs": [
+          "RECORDING_STORAGE_NOTICE"
+        ],
+        "notes/search-store.mjs": [
+          "verifyOrder"
+        ],
+        "notes/transport-drive.mjs": [
+          "DRIVE_API_ORIGIN",
+          "PUT_MAX_BYTES",
+          "UPLOAD_CHUNK_BYTES"
+        ],
+        "notes/transport-onedrive.mjs": [
+          "ONEDRIVE_API_ORIGIN",
+          "PUT_MAX_BYTES"
+        ],
+        "notes/transport-dropbox.mjs": [
+          "DROPBOX_API_ORIGIN",
+          "DROPBOX_CONTENT_ORIGIN",
+          "PUT_MAX_BYTES"
+        ],
+        "notes/provider-oauth.mjs": [
+          "verifierCheck",
+          "redirectCheck",
+          "clientCheck"
+        ],
+        "notes/drive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "SCOPES",
+          "SETUP_NOTICE"
+        ],
+        "notes/onedrive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "LOGOUT_ENDPOINT",
+          "SCOPES"
+        ],
+        "notes/dropbox-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "SCOPES"
+        ],
+        "notes/sync-providers.mjs": [
+          "PROVIDER_ORIGINS",
+          "providerConnectOrigins"
+        ],
+        "notes/transport-r2.mjs": [
+          "PUT_MAX_BYTES",
+          "RETRY_CAP",
+          "RETRY_BASE_MS",
+          "RETRY_MAX_MS",
+          "encodeObjectKey",
+          "objectUrl"
+        ],
+        "notes/cloudflare-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "ISSUER",
+          "CODE_CHALLENGE_METHOD",
+          "isOAuthRefusal"
+        ],
+        "notes/transport-s3.mjs": [
+          "PUT_MAX_BYTES",
+          "LIST_MAX_BYTES",
+          "RETRY_CAP",
+          "EMPTY_SHA256",
+          "encodeObjectKey",
+          "canonicalQuery",
+          "signV4",
+          "readS3XML",
+          "s3XMLScalar"
+        ],
+        "notes/cloudflare-setup.mjs": [
+          "NOTES_BUCKET"
+        ],
+        "notes/transport-companion.mjs": [
+          "COMPANION_CHUNK",
+          "COMPANION_MAX_BYTES"
+        ]
+      },
+      "builtAt": "2026-10-06T04:52:26.272Z",
+      "node": "v22.22.2",
+      "mode": "release",
+      "packing": "zopfli",
+      "canonical": true
+    }
+  },
+  "editor": {
+    "path": "rapier.html",
+    "bytes": 1909435,
+    "sha256": "6d77edf4679937d61ee1018d89445e0a111539a8af66cd0fa2fc0efac557678c"
+  },
+  "apps": {
+    "path": "dist/chatgpt/rapier-app.html",
+    "bytes": 1909758,
+    "sha256": "75f023dd3fbdcd1f15e4aa9a748178389b563a9f12871904f9cade1e15c45c43",
+    "spans": [
+      {
+        "element": "lib-dompurify",
+        "name": "dompurify-3.4.13.dist.purify.min.js",
+        "bytes": 29435,
+        "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+      },
+      {
+        "element": "lib-turndown",
+        "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+        "bytes": 12864,
+        "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-15.0.0.umd.rapier.min.js",
+        "bytes": 95319,
+        "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-task-lists-2.1.1.min.js",
+        "bytes": 2702,
+        "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-footnote-4.0.0.min.js",
+        "bytes": 5624,
+        "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-mark-4.0.0.min.js",
+        "bytes": 1621,
+        "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-sub-2.0.0.min.js",
+        "bytes": 967,
+        "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-sup-2.0.0.min.js",
+        "bytes": 965,
+        "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-emoji-3.1.0-light.min.js",
+        "bytes": 6394,
+        "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-abbr-2.0.0.min.js",
+        "bytes": 2419,
+        "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-ins-4.0.0.min.js",
+        "bytes": 1601,
+        "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-deflist-4.0.0.min.js",
+        "bytes": 2376,
+        "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+      },
+      {
+        "element": "lib-gpu-lexer",
+        "name": "gpu-lexer-0.0.1.js",
+        "bytes": 59967,
+        "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+      },
+      {
+        "element": "lib-acorn",
+        "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+        "bytes": 104387,
+        "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+      },
+      {
+        "element": "rapier-jxl-worker",
+        "name": "rapier-jxl-worker.js",
+        "bytes": 89927,
+        "sha256": "d4e19f8ee4d61a7d32a87a7b6a659db13c08fea1b8595db026283bb543afeb28"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-platform.js",
+        "bytes": 93201,
+        "sha256": "6513c334dbe4085442bb4aec14c62814da77d82b01a43ca3f4a857411a8bc668"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-bundle-io.js",
+        "bytes": 4659,
+        "sha256": "a73926e64363405d508ceea89404ccfbe18067406c8c1390e6b43298dc5d7e28"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-plugin-loader.js",
+        "bytes": 15467,
+        "sha256": "cd05711202bbfd9fc12893c012dbfe3f27b16d8661113f593c4ac6816b02bb5f"
+      },
+      {
+        "element": "rapier-apps-runtime",
+        "name": "rapier-apps.js",
+        "bytes": 60473,
+        "sha256": "68e239ce47a645c1d902d56f66e2a9ad8c502541acdf800478b111ed16cb294a"
+      },
+      {
+        "element": "rapier-styles-runtime",
+        "name": "rapier-styles.json",
+        "bytes": 197860,
+        "sha256": "56fe466fda65e1cc87a7f22585d0e1ed2a93ea8f0de73714c939c93f5749d83f"
+      },
+      {
+        "element": "rapier-style-rest-runtime",
+        "name": "rapier-styles-rest.json",
+        "bytes": 170349,
+        "sha256": "676810224ca95189078f96d0a4d8426600821771f463189537a8b70ad433ecde"
+      },
+      {
+        "element": "rapier-ui-runtime",
+        "name": "rapier-ui.html",
+        "bytes": 128017,
+        "sha256": "d700e5c5d34a3328489a21497bc0aaed434fb0627ebab093d7986235bc1a934e"
+      },
+      {
+        "element": "rapier-shared-runtime",
+        "name": "rapier-shared.js",
+        "bytes": 1914291,
+        "sha256": "d8a67a8da803d2984d94707f64b0b2dd1febbd6bcff1f88c49a964dcbe250b68"
+      },
+      {
+        "element": "rapier-editor-runtime",
+        "name": "rapier-editor.js",
+        "bytes": 2438017,
+        "sha256": "e5e8c8df7387a00fcd5e4dd8df92f6fa1f3d940b2571f18da51a6bbe5ae90070"
+      }
+    ]
+  },
+  "shell": {
+    "sha256": "099ee0bf47a3e8b7ada7b0f72dc714fa1631863610f2290189c18f9745fb89cc"
+  },
+  "htmlSinks": {
+    "named": 122,
+    "files": 12,
+    "inventory": "security/html-sinks.json"
+  },
+  "tools": [
+    "document.inspect_visual",
+    "document.list_comments",
+    "document.comment",
+    "document.get_context",
+    "document.get_outline",
+    "document.read_context",
+    "document.find",
+    "document.apply_edits",
+    "document.propose",
+    "document.propose_edits",
+    "document.undo_agent_change",
+    "document.show_changes",
+    "document.compare",
+    "document.open_text",
+    "document.reveal",
+    "document.create_return",
+    "document.wait_for_user",
+    "document.save",
+    "document.draw",
+    "notes.list",
+    "notes.read",
+    "notes.propose"
+  ],
+  "toolchain": {
+    "canonical": true,
+    "node": {
+      "expected": "v22.22.2",
+      "actual": "v22.22.2"
+    }
+  },
+  "unchecked": []
+}

@@ -1,0 +1,509 @@
+{
+	"law": "Every direct HTML sink names its owner and why its input is safe; a sink not listed here fails the build (tools/build.mjs).",
+	"sinks": {
+		"draw/draw.js": {
+			"_rapierDrawMeasuredView": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "host.innerHTML = body is the drawing engine's own escaped/geometry SVG markup (from _rapierDrawSceneMarkup), attached off-screen (visibility:hidden) only to call getBBox(), then removed in a finally block."
+			},
+			"_rapierDrawReplayPaint": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "The replay's nib layer: one write clears it to '' between steps, the other assigns _rapierDrawReplayNibMarkup, a fixed SVG template whose only interpolations are _rapierDrawFmt numbers and two colours passed through _rapierDrawEscapeAttr. The agent's name never reaches HTML: the tag's text is set via textContent."
+			},
+			"_rapierDrawReplayEnd": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "nib.innerHTML = '' clears the replay's nib layer when the replay ends; no input at all."
+			},
+			"_rapierDrawParseSvgNode": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Both callers pass _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(...)), the drawing engine's own escaped shape markup, into a detached <svg> host purely to obtain an Element."
+			},
+			"_rapierDrawEditLabelInPlace": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "actions.innerHTML is a fixed two-button string whose glyphs are the app's own (RAPIER_DRAW_ICONS.close and .check, which _rapierDrawSourceGlyph reads from the editor's static markup and its constant command table); the label text itself is set via textarea.value, not concatenated into HTML."
+			},
+			"applyChange": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "state.svg.innerHTML = markup where markup = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(candidate,false)), the drawing engine's own escaped/geometry SVG serialization."
+			},
+			"renderStyleRow": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "Alignment/action markup uses the fixed icon table; the separate size row interpolates admitted numeric size/range values. User text remains textarea.value."
+			},
+			"_rapierDrawUpdatePenBtn": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "btn.innerHTML is looked up from the RAPIER_DRAW_ICONS table: constant markup, or a glyph the editor or Notes also draws, read from its one source (the editor's static markup, _RAPIER_COMMAND_ICONS, RAPIER_NOTES_ICONS) by _rapierDrawSourceGlyph -- never document text; the second site clears a colour row to '' when hiding it."
+			},
+			"_rapierDrawUpdateShapeRow": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "row.innerHTML is built by mapping the constant RAPIER_DRAW_SHAPE_KINDS array through fixed markup plus _rapierDrawKindGlyph, no external text."
+			},
+			"_rapierDrawUpdateMenu": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "menu.innerHTML is either cleared ('' when nothing is selected, L1814) or built from _rapierDrawIconChip/_rapierDrawSelectControl, which escape all interpolated text via _rapierDrawEscapeAttr (L1894)."
+			},
+			"_rapierDrawPaintLive": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "state.preview.innerHTML is built from _rapierDrawFmt-formatted numeric coordinates (text-drag preview) or _rapierDrawDisplayMarkup(_rapierDrawShapeMarkup(...)) (shape-drag preview), both the drawing engine's own escaped/geometry markup."
+			},
+			"_rapierDrawClearLivePaint": {
+				"count": 1,
+				"kind": "empty",
+				"reason": "state.preview.innerHTML = '' clears the live drag preview."
+			},
+			"_rapierDrawUpdateHandles": {
+				"count": 3,
+				"kind": "static-template",
+				"reason": "layer.innerHTML is either cleared ('' when no selection, L2085) or built from _rapierDrawFmt-formatted numeric coordinates and constant handle labels (L2120, L2156); no document text is interpolated."
+			},
+			"_rapierDrawPaintGuides": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "guidesEl.innerHTML is built entirely from _rapierDrawFmt-formatted numeric guide coordinates via _rapierDrawXMark/path strings."
+			},
+			"_rapierDrawCommand": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "state.svg.innerHTML = markup where markup = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(admitted,false)), the drawing engine's own escaped/geometry SVG serialization."
+			},
+			"_rapierDrawUpdateInkBtn": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "btn.innerHTML embeds only _rapierDrawDisplayInk's regex-validated #hex output in a style attribute; row.innerHTML is either '' or _rapierDrawPalette(...), which escapes its interpolated labels."
+			},
+			"_rapierDrawBuildSurface": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "surface.innerHTML is a fixed template interpolating only RAPIER_DRAW_ICONS entries: constant markup, or a glyph the editor or Notes also draws, read from its one source (the editor's static markup in editor/ui.html, _RAPIER_COMMAND_ICONS, _RAPIER_WILL_LAW_GLYPH, RAPIER_NOTES_ICONS) by _rapierDrawSourceGlyph; no document text."
+			},
+			"_rapierDrawBrushExtent": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "group.innerHTML = markup is the drawing engine's own brush markup (_rapierDrawBrushMarkup), attached off-screen only to call getBBox(), removed in a finally block."
+			},
+			"_rapierDrawUpdateKindsChip": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "btn.innerHTML receives _rapierDrawKindGlyph(kind)'s own fixed SVG for one of the eleven built-in shape kinds; the kind is read from internal state and matched against RAPIER_DRAW_SHAPE_KINDS, and no document or person-supplied text reaches it."
+			},
+			"_rapierDrawRefreshColourRow": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "row.innerHTML receives _rapierDrawPalette's own fixed template -- the same one the colour row is built from everywhere else; its only interpolated values are the eleven built-in ink ids and this device's own remembered colours, each admitted by _rapierDrawValidInk and escaped with _rapierDrawEscapeAttr."
+			},
+			"_rapierDrawOpenDropper": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "pad.innerHTML is fixed markup -- the dropper's swatch, the hex button with its chip, the copy glyph and the check it turns to (RAPIER_DRAW_ICONS.copy and .check, read from Notes' and the editor's constant tables), the hint, Use colour and Cancel -- with nothing else interpolated. The sampled colour reaches the DOM only through style.background, textContent and an aria-label attribute."
+			},
+			"_rapierDrawRenderTextFontPanel": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "panel.innerHTML is built from built-in font labels or admitted embedded font records; every interpolated id/name is escaped with _rapierDrawEscapeAttr, and the Add control interpolates only the constant RAPIER_DRAW_ICONS.upload glyph."
+			}
+		},
+		"draw/paint-tool.js": {
+			"_rapierPaintUpdateStrip": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "row.innerHTML is built from the internal brush entry list with every interpolated field (id, name, notes) passed through _rapierDrawEscapeAttr; glyph <img> src is a locally rendered canvas data URL."
+			},
+			"_rapierPaintDipSyncButton": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "btn.innerHTML is a fixed <svg> of two <rect>s; the only interpolated values are numbers this module computed (the dip's own two axes) and two rgb() strings built from integers read out of getComputedStyle -- no brush, document or person-supplied text reaches it."
+			}
+		},
+		"editor/engine.js": {
+			"_rapierFinishSanitizedBlock": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "box.innerHTML receives sanitizeRapierHtml()'s own output, only re-serialized after wrapping tables/math nodes."
+			},
+			"_rapierApplyDiagramSvg": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "An inert template receives sanitizeRapierHtml(svg, 'diagram'); its one SVG has its stylesheet projected and removed and its references renamed there, and only then replaces the host's children. Never the library's raw output."
+			},
+			"_rapierRenderedHtmlWithTrailingSpace": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "Only caller is _rapierFinishSanitizedBlock, which passes its already-sanitized `sanitized` string as the html argument."
+			},
+			"_loadFlatDoc": {
+				"count": 1,
+				"kind": "empty",
+				"reason": "blocksHost.innerHTML = '' clears the editor host when loading a fresh document."
+			},
+			"_createTableToolbar": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Fixed SVG/button markup plus the block's numeric id and numeric row/col stats; no document text is concatenated in."
+			},
+			"_createBlockReadSurface": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "readDiv.innerHTML is block.rendered or renderBlock(block.raw), both DOMPurify-sanitized markdown output."
+			},
+			"_rapierEnsureBreakUi": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Fixed toolbar markup (constant SVG/button strings) built once and cached, no interpolated document content."
+			},
+			"enterBlockEdit": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "editDiv.innerHTML falls back to block.rendered || renderBlock(block.raw) || an escapeRapierHtmlText-wrapped <p>, all sanitized/escaped."
+			},
+			"_rapierSetReadProjection": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "Both call sites pass block.rendered || renderBlock(block.raw) as `html`, i.e. DOMPurify-sanitized markdown output."
+			},
+			"_writeBlockDOM": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "editDiv.innerHTML = html where html = block.rendered || renderBlock(block.raw), sanitized markdown output."
+			},
+			"_markdownFromEditHTML": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div parses already-rendered/edited block HTML (itself sanitizer output or live contenteditable content) solely to extract markdown text via textContent; never attached to the page."
+			},
+			"_rapierStripInlineMarks": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div parses markdown-it inline output restricted to an allowlist of safe token types (no links/images/raw html) purely to read back textContent; never attached."
+			},
+			"_rapierHighlightPlanRoundTrips": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div's innerHTML is renderBlock(raw) (sanitized) used only to compare projections for a round-trip safety check; never attached to the page."
+			},
+			"_rapierRenderedHighlightProbe": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div's innerHTML is renderBlock(raw) (sanitized) used only to read back text/run positions for highlight planning; never attached."
+			},
+			"_rapierRenderedMarkProbe": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div's innerHTML is renderBlock(raw) (sanitized) used only to read back text/run positions for an exact-mark plan; never attached."
+			},
+			"_rapierRenderedColorProbe": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div's innerHTML is renderBlock(raw) (sanitized) used only to compute colour run positions; never attached to the page."
+			},
+			"_rapierOtherSemanticsFingerprint": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div's innerHTML is renderBlock(raw) (sanitized) used only to read back the runs of every mark/code/link/highlight/colour not being planned, to prove a mark candidate left them untouched; never attached."
+			},
+			"_rapierSyncSectionFoldControl": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "button.innerHTML is a fixed inline SVG chevron string, no interpolated content."
+			},
+			"_rapierWillPopoverOpen": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Dialog markup is built from the internal _RAPIER_PROTECTION_CHOICES/_RAPIER_WILL_LAW_GLYPH constants; the user's free-text intent is set via input.value, never concatenated into HTML."
+			},
+			"_rapierPlanExactNestedLink": {
+				"count": 2,
+				"kind": "probe",
+				"reason": "beforeRendered/afterRendered are detached divs holding renderBlock() (sanitized) output, used only to verify the link plan round-trips before _rapierApplyExactNestedLink commits it; never attached."
+			},
+			"_rapierApplyExactNestedLink": {
+				"count": 3,
+				"kind": "sanitized-document",
+				"reason": "live.innerHTML is set from plan.html (a round-trip-verified renderBlock() serialization) or, on fallback, renderBlock(beforeRaw) directly; both sanitized."
+			},
+			"_openFieldDialog": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Dialog markup is built with _escHtml/_escAttr escaping every interpolated field label/value/placeholder."
+			},
+			"_openLinkDialog": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Dialog markup is a fixed template with only _escHtml(title) interpolated."
+			},
+			"_rapierRemoveCalloutMarker": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "first.innerHTML is a regex-stripped copy of its own already-sanitized innerHTML (removes a leading [!NOTE]-style marker); introduces no new markup."
+			},
+			"_rapierProjectPortableRoot": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "clean.innerHTML = sanitizeRapierHtml(root.innerHTML, 'export'), re-sanitizing the exported root before return."
+			},
+			"_rapierClipboardFallbackPayload": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "host.innerHTML = sanitizeRapierHtml(data.html || escaped-plain-text-<pre>, 'export')."
+			},
+			"_rapierWriteFormattedClipboard": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "root.innerHTML = sanitizeRapierHtml(html, 'export') before embedding images and writing to the clipboard."
+			},
+			"_rapierCreatePrintHost": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "main.innerHTML = artifact.bodyHtml, which is styledRoot.innerHTML captured immediately after _rapierBuildArtifact's sanitizeRapierHtml('export') pass."
+			},
+			"_syncEmptyDocPrompt": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "prompt.innerHTML is a fixed constant SVG/button string with no interpolation."
+			},
+			"_setFindCount": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "el.innerHTML concatenates only the numeric cur/total search counts inside fixed spans."
+			},
+			"_rapierEnsureImageUi": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "Both the image toolbar and lightbox innerHTML are fixed constant SVG/button strings, built once and cached."
+			},
+			"_rangeInsertHTML": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "Only caller builds '<a href=\"'+escaped+'\">'+text.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</a>' -- href is %22-escaped and link text is &lt;/&gt;-escaped before concatenation."
+			},
+			"_normalizeStyleFormatting": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "Only caller (_rapierPreparePasteHtml) passes `clean`, the result of sanitizeRapierHtml(html,'paste'), before this function trims wrapper markup."
+			},
+			"_isHtmlInlineSafe": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div parses htmlString (always _rapierPreparePasteHtml's DOMPurify-'paste'-sanitized output at its call sites) only to count/query element shapes; never attached to the page."
+			},
+			"_hasRealInlineFormatting": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "Detached div parses already-sanitized paste HTML only to query for inline-formatting tags; never attached to the page."
+			},
+			"_stripBrowserPasteWrapper": {
+				"count": 2,
+				"kind": "sanitized-document",
+				"reason": "Only caller (_rapierPreparePasteHtml) invokes this after sanitizeRapierHtml(html,'paste'); both sites (initial parse and the unwrap loop) operate on that already-sanitized markup in a detached div."
+			},
+			"cloneFull": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "div.innerHTML = el.innerHTML copies an already-live (previously sanitized/rendered) block element's markup into a detached scratch node; the scratch tree is re-sanitized via sanitizeRapierHtml('render') before use."
+			},
+			"fullBlockClone": {
+				"count": 3,
+				"kind": "sanitized-document",
+				"reason": "div.innerHTML is set from the live editable element's innerHTML or renderBlock(b.raw), both sanitized/already-rendered; the assembled scratch tree is re-sanitized via sanitizeRapierHtml('render') before use."
+			},
+			"_rapierRenderPastePlan": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "scratch.innerHTML = renderBlock(plan.caretRaw, ...) (sanitized) in a detached div used only to measure caret text length; never attached."
+			},
+			"_rapierPreparePastePlan": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "scratch.innerHTML = renderBlock(plan.caretRaw, ...) (sanitized) in a detached div used only to measure caret text length; never attached."
+			},
+			"_rapierCommandGlyph": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "glyph.innerHTML = _rapierCommandIconMarkup(source.icon) is looked up from the internal _RAPIER_COMMAND_ICONS constant table, gated by an `in` check."
+			},
+			"rapierOpenCommandPalette": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "overlay.innerHTML is a fixed constant dialog template with no interpolated document/user content."
+			},
+			"_rapierMergeableSurface": {
+				"count": 2,
+				"kind": "sanitized-document",
+				"reason": "holder.innerHTML is set from liveEditDiv.innerHTML, readDiv.innerHTML, or renderBlock(block.raw) -- all already-sanitized/rendered block content -- in a detached holder used only to inspect mergeability."
+			},
+			"_rapierMergeBoundaryPair": {
+				"count": 2,
+				"kind": "sanitized-document",
+				"reason": "mergedRoot/suffix innerHTML are the .innerHTML values returned by _rapierMergeableSurface (already-sanitized block content), assembled in detached nodes before being parsed back to markdown."
+			},
+			"_rapierPasteTextIntoSource": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "root.innerHTML = _rapierPreparePasteHtml(flavors.html), which sanitizes via sanitizeRapierHtml(html,'paste') before this assignment."
+			},
+			"_rapierChunkPasteHtml": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "template.innerHTML = source parses the raw, not-yet-sanitized clipboard HTML into a <template> element; template.content is inert (no script/style execution), and only text/outerHTML is read back for chunking before the real sanitizeRapierHtml('paste') pass runs on each chunk downstream."
+			},
+			"_rapierResolveLargeFlatPastePayload": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "root.innerHTML = _rapierPreparePasteHtml(chunk), which sanitizes via sanitizeRapierHtml(chunk,'paste') before this assignment."
+			},
+			"_rapierTabularPasteGrid": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "root.innerHTML = _rapierPreparePasteHtml(html), sanitized via sanitizeRapierHtml(html,'paste') before this assignment."
+			},
+			"_refreshCodeHighlight": {
+				"count": 3,
+				"kind": "static-template",
+				"reason": "out.innerHTML is either cleared ('') or built from _rapierHighlightedSlabInner/_rapierPlainSlab, which escape source-textarea text via _rapierEscapeHtml or the tokenizer's own escaping (_rapierCodeHtml) before wrapping it in span markup."
+			},
+			"buildTail": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "tpl.innerHTML = _rapierBuildSlabPlaceholder(...), which escapes the source-textarea slab text via _rapierEscapeHtml (through _rapierPlainSlab) before wrapping it in span markup."
+			},
+			"_rapierPromoteVisibleSlabs": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "el.innerHTML = _rapierHighlightedSlabInner(...): source-textarea text escaped by the tokenizer (_rapierCodeHtml) inside fixed token and line span markup."
+			},
+			"_rapierSyncSingleLineHighlight": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "target.innerHTML is the line's text through _rapierCodeHtml or _rapierEscapeHtml, both escaping it before any span markup, wrapped via _rapierLineHtml."
+			},
+			"rapierHighlight": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "plan.live.innerHTML receives the highlight-mark plan's html, which _rapierHighlightPlanRoundTrips has already round-tripped through the sanitizer and verified against the live block before the write."
+			},
+			"rapierNewDocument": {
+				"count": 1,
+				"kind": "empty",
+				"reason": "blocksHost.innerHTML = '' clears the editor host for a new document."
+			},
+			"_rapierRenderCommandPalette": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "chevron.innerHTML is _rapierCommandIconMarkup('chevron-down'), a constant icon from the editor's own icon table; no document text."
+			},
+			"_rapierWillReviewPeekControls": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "button.innerHTML = _rapierCommandIconMarkup(icon) with icon one of the two literal names 'check'/'cross' from the editor's own icon table; no document text."
+			}
+		},
+		"editor/lexer.js": {
+			"paint": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "artifactRunner's paint: code.innerHTML = html, where html is tokensHtml(source, spans), runs only inside an EXPORTED page (the runner travels there as its own source): the block's own text escaped for &, < and > inside the same fixed `<span class=\"tok-<type>\">` markup _rapierPaintCode writes, produced by the page's carried copy of _rapierTokensHtml (which refuses spans out of order or not covering the source), only while the block still holds the text it was asked about, and never while it holds the selection (the runner waits on selectionchange and paints through this same function once the selection has left the block)."
+			}
+		},
+		"images/interchange.js": {
+			"_rapierAssertTextPackResources": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "template.innerHTML = sanitizeRapierHtml(md.render(markdown, {}), 'export'); the template's content is additionally inert and only queried for img/data-rapier-remote-src elements, never attached."
+			}
+		},
+		"interchange/browser.js": {
+			"_rapierReadImportedDocument": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "inert.innerHTML = result.html parses docx/pdf reader markup from an untrusted uploaded file into a detached template, never attached; the following custody walk resolves image labels or embedded data URLs and verifies whole-table source tokens before reading them."
+			},
+			"visit": {
+				"count": 2,
+				"kind": "untrusted-parse",
+				"reason": "The image-custody visitors parse either a whole-table source accepted by _rapierSourceTokenValue or Markdown HTML tokens containing img into detached template.content. Neither fragment is attached or executed. Only image source/order is read, and each source must be an admitted embedded data image or an asset label resolved through the existing map."
+			}
+		},
+		"layout/browser.js": {
+			"controls": {
+				"count": 4,
+				"kind": "static-template",
+				"reason": "wrap.innerHTML and each wrap-row button's innerHTML are fixed constant inline SVG icon strings (the row's icon comes from the hardcoded WRAP_PLACEMENTS table, not from document or user data); fade.innerHTML is the Transparency button's fixed SVG icon and fadeRow.innerHTML its row's fixed slider template, whose only variable is the constant FADE_MAX."
+			},
+			"select": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "moveHandle.innerHTML and rotateGrip.innerHTML are both fixed constant inline SVG icon strings."
+			}
+		},
+		"notes/notes.js": {
+			"_rapierNotesCardBody": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "el.innerHTML receives rapierRenderPreview()'s own output, which is sanitizeRapierHtml(md.render(...), 'export'); a hostile note's markup never reaches the card unsanitized, and card links have their href stripped before the element is attached."
+			}
+		},
+		"tools/runtime-loader.js": {
+			"(top level)": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "template.innerHTML receives the build's own packed UI source (the editor/ui.html the build embedded and verified by digest), inflated at boot; no document or network text ever reaches it."
+			}
+		},
+		"kit/render.mjs": {
+			"_rapierBuildArtifact": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "styledRoot.innerHTML = sanitizeRapierHtml(styledRoot.innerHTML, 'export'), re-sanitizing the styled export root in place."
+			},
+			"_rapierProjectStyledRoot": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "clean.innerHTML = sanitizeRapierHtml(root.innerHTML,'export'): the styled root, its code already painted through _rapierPaintCode, is re-sanitized before use."
+			},
+			"_rapierPaintCode": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "el.innerHTML is _rapierTokensHtml's output and nothing else: the element's own text (the CPU reading of editor/code-tokens.mjs, or the GPU lexer's spans once they are checked for order and coverage) escaped for &, < and >, inside fixed `<span class=\"tok-<type>\">` markup whose type is one of eight fixed names. Callers: the idle colour queue, the GPU pass, and the export projection, whose whole styled root is then re-sanitized."
+			},
+			"_rapierReadSharedDocument": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "template.innerHTML = html parses a fetched shared page's full HTML (pictures and scripts included) into an inert <template>; only its one expected <script type=...> carrier element is read back, per the adjoining comment."
+			}
+		},
+		"kit/render-markdown.mjs": {
+			"_rapierRenderSemanticRoot": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "root.innerHTML = sanitizeRapierHtml(rendered, 'export'), the markdown-it render output passed through DOMPurify."
+			}
+		},
+		"draw/background-tool.js": {
+			"_rapierBgEnsurePanel": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "The panel's fixed markup: constant strings and the kind words from the constant RAPIER_BG_KINDS table; nothing from a person or a file."
+			},
+			"_rapierBgSyncPanel": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "The preset swatches and the band bar's strip: The engine's own background SVG (draw/backgrounds.mjs backgroundSVG): it renders only a background that normalizeBackground admitted (kinds from a fixed list, hex colours matched by /^#[0-9a-f]{6}$/, numbers range-checked), formatted numbers and fixed element names; ids are sanitised to [A-Za-z0-9_-]. Preset indexes are integers from the constant preset list."
+			},
+			"_rapierBgSyncHandles": {
+				"count": 2,
+				"kind": "static-template",
+				"reason": "The on-canvas handles: cleared to '' or fixed circle/line markup whose only interpolations are numbers computed here and colours taken from an admitted background's points (hex only)."
+			}
+		}
+	}
+}

@@ -1,0 +1,28 @@
+{
+  "name": "rapier-server",
+  "version": "1.1.69",
+  "description": "Display, search and export local Markdown, with the Rapier agent door on a business's own filesystem.",
+  "author": "Jack Skipworth",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {},
+  "bin": {
+    "rapier-server": "./dist/server/cli.mjs"
+  },
+  "exports": {
+    ".": "./dist/server/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "BUILD.json"
+  ],
+  "scripts": {
+    "test": "node ./dist/server/test/run.mjs"
+  }
+}

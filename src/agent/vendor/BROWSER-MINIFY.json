@@ -1,0 +1,50 @@
+{
+  "description": "The browser vendors shipped minified by tools/minify-vendor.mjs: whitespace and local bindings, including function and class names. Terser compression is off, export and property names are untouched, comments carrying a licence or copyright stay; the upstream file stays the source. A vendor with a standIn has it applied to the upstream text first (tools/minify-vendor.mjs STAND_INS). Each vendor pins the upstream and derived bytes; a different upstream, Terser, option or stand-in is refused until equivalence is measured and the pair is pinned again. The retained agent-door-keeps-whole-characters row owns Acorn parsing and structure; select-all-delete-recovery owns the browser's Turndown paste-to-source path. Every vendor's full notice is also in agent/vendor/NOTICE.txt and the application's licences.",
+  "tool": {
+    "name": "terser",
+    "version": "5.51.2",
+    "options": {
+      "ecma": 2022,
+      "compress": false,
+      "mangle": true,
+      "format": {
+        "comments": "/@license|@preserve|^!|copyright/i"
+      }
+    }
+  },
+  "vendors": [
+    {
+      "id": "lib-acorn",
+      "upstream": {
+        "name": "acorn-8.19.0.dist.acorn.js",
+        "bytes": 246643,
+        "sha256": "b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df"
+      },
+      "standIn": {
+        "what": "The RegExp validator gives way to the engine the structure Worker runs on: a regexp literal is valid iff new RegExp(pattern, flags) accepts it, or -- when the engine refuses -- iff it accepts the pattern with every \\p{..}/\\P{..} value Acorn's own tables know written as one every engine knows; refused at the pattern's start with the engine's message. Acorn's Unicode property and script tables and its identifier tables stay: the grammar is the engine's, the Unicode data is Acorn's (tasks #311 and #328).",
+        "probe": "tools/probes/acorn-engine-regexp.mjs",
+        "rows": [
+          "agent-door-keeps-whole-characters"
+        ]
+      },
+      "derived": {
+        "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+        "bytes": 104387,
+        "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+      }
+    },
+    {
+      "id": "lib-turndown",
+      "upstream": {
+        "name": "turndown-7.2.4.lib.turndown.browser.umd.js",
+        "bytes": 26946,
+        "sha256": "cdf933e0a2085df3c64d6c763331f04345f6c3b25746216e8f1426c9c5253045"
+      },
+      "derived": {
+        "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+        "bytes": 12864,
+        "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+      }
+    }
+  ]
+}

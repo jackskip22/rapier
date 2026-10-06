@@ -1,0 +1,7 @@
+# Build output and staging; the committed rapier.html is the release.
+.wrangler/
+node_modules/
+src/dist/
+src/node_modules/
+src/AGENT-TOOLS.json
+src/rapier-document.html

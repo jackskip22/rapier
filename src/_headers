@@ -1,0 +1,23 @@
+# Inline application code, verified optional plugins and offline Workers.
+# Keep this origin-trial token and the HTML meta token together when renewing.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src data:; connect-src 'self' https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://mcp.rapier.website; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors https: http://localhost:* http://127.0.0.1:*
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), geolocation=(), microphone=(self)
+  Origin-Agent-Cluster: ?1
+  Origin-Trial: AtFuTRsj1SOJpqIO0IrTpfvZjWjm61v47tsWw+RpPlMP3J1ZpZr895WYl81B5uRkO6X9sjAtQN/yp0SrhKNZ9QkAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==
+
+# The embeddable copies are for other sites' frames: the site's own page is the one a search engine lists.
+/embed/*
+  X-Robots-Tag: noindex
+
+# Matching rules combine headers; remove the inherited cache policy before setting this one.
+/embed/rapier-document.html
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/embed/:version/rapier-document.html
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable

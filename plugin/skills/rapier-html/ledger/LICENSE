@@ -1,0 +1,51 @@
+MIT License
+
+Copyright (c) 2026 Jack Skipworth
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files under this licence carry `SPDX-License-Identifier: MIT` in their first lines: the standard's
+grammar, marks and reference style (`spec/md-layout.mjs`, `spec/md-marks.mjs`, `spec/flowchart.mjs`, `spec/markdown-style.css`), the layout model and line planner
+(`layout/model.mjs`, `layout/line-plan.mjs`), the Will grammar (`agent/will.mjs`), the picture appendix reader and writer
+(`spec/md-assets.mjs`), the two shared-page reference readers (`tools/read-shared-page.mjs`,
+`tools/read-shared-page.py`), and the host helper `packages/rapier-embed/embed.mjs` with its
+contract owner `packages/rapier-embed/contract.mjs`. The vendored Pretext (`agent/vendor/pretext`) and micromark carry their
+own MIT notices. The edit-ledger module (`kit/rapier-ledger.mjs`, `kit/ledger/*.mjs`) and
+its editor compatibility import (`editor/journal-records.mjs`) are also covered. The
+record validator/replayer and text-only conflict merger were moved, not copied,
+into that module; the Notes index merger and the rest of the agent/editor remain
+AGPL-3.0-only. The wrapper's carrier-staging helper
+(`skills/rapier-html/package-files.mjs`) is MIT. The kit's MIT-marked facades,
+`kit/render-entry.mjs`, `kit/render*.mjs`, `kit/stage.mjs` and MIT-marked conformance
+modules are covered too. These names describe the Rapier-owned files carrying the
+MIT notice, not a grant over the editor or third-party code. Other Rapier-owned
+files retain their stated licence; the editor is AGPL-3.0-only (see `LICENSE`).
+Third-party components retain their own copyright and licence notices.
+
+The picture appendix reader and writer used to be part of `images/assets.mjs`, a file that also
+holds JPEG XL/raster header inspection and SVG sanitizing -- both of which reach the editor's own
+AGPL-3.0-only decoders (`images/raster.mjs`, `draw/font.mjs`), so the whole file could not honestly
+sit in this list. The appendix logic (`parseAssets`, `documentAssets`, `imageEnvironment`,
+`mayRetireImageDefinitions`, `retireDeletedImageDefinitions`, `assetOmissions`, `isAssetBlock`,
+`serializeAsset`, `appendAssetText`, `appendAsset`, and the small markdown-it plumbing they share)
+depends on nothing but a markdown-it factory, so it lives in `spec/md-assets.mjs`; `images/assets.mjs`
+re-imports and re-exports that surface unchanged (one owner, no copy) and keeps everything that
+needs the AGPL decoders, so it is AGPL-3.0-only like the rest of the editor. The `rapier-markdown-kit`
+package re-exports `spec/md-assets.mjs` directly, never `images/assets.mjs`, so its import graph
+never touches AGPL code.

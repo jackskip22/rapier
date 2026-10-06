@@ -1,0 +1,447 @@
+{
+  "version": 1,
+  "limits": {
+    "mutableRoots": 109,
+    "domSinks": 67,
+    "storageKeys": 7,
+    "remainderBytes": 78858
+  },
+  "engineRoots": {
+    "_pendingLeaves@module/iife1": {
+      "name": "_pendingLeaves",
+      "reason": "The live editor tracks deferred block leaves against their DOM elements in one WeakMap."
+    },
+    "_RAPIER_NAMES@module/iife1": {
+      "name": "_RAPIER_NAMES",
+      "reason": "The engine owns named context, outline and focus lifetimes and their registry rows."
+    },
+    "_rapierAdmissionRuntime@module/iife1": {
+      "name": "_rapierAdmissionRuntime",
+      "reason": "The document-admission owner owns its generation fence."
+    },
+    "_rapierAgentBar@module/iife1": {
+      "name": "_rapierAgentBar",
+      "reason": "The agent interaction surface owns its visible state and pending actions."
+    },
+    "_rapierAgentNote@module/iife1": {
+      "name": "_rapierAgentNote",
+      "reason": "The agent note surface owns the unsent text and document identity."
+    },
+    "_rapierAgentNoteComposing@module/iife1": {
+      "name": "_rapierAgentNoteComposing",
+      "reason": "The agent note's input owner tracks IME composition before accepting Enter."
+    },
+    "_rapierApproachFrame@module/iife1": {
+      "name": "_rapierApproachFrame",
+      "reason": "The viewport owner coalesces approach hydration into one animation frame."
+    },
+    "_rapierBlockOutlineMemo@module/iife1": {
+      "name": "_rapierBlockOutlineMemo",
+      "reason": "The outline projection owns its cached block list and resulting entries."
+    },
+    "_rapierBootWatch@module/iife1": {
+      "name": "_rapierBootWatch",
+      "reason": "The engine boot owner owns its current phase and watchdog timer."
+    },
+    "_rapierBreakRuntime@module/iife1": {
+      "name": "_rapierBreakRuntime",
+      "reason": "The editor owns the live break marker and its control surface."
+    },
+    "_rapierCommandRecents@module/iife1": {
+      "name": "_rapierCommandRecents",
+      "reason": "The command palette owns its local recency ordering."
+    },
+    "_rapierCommandRuntime@module/iife1": {
+      "name": "_rapierCommandRuntime",
+      "reason": "The command palette owner retains the active palette element."
+    },
+    "_rapierCompareActionBarRuntime@module/iife1": {
+      "name": "_rapierCompareActionBarRuntime",
+      "reason": "The comparison view owns its action-bar positioning frame."
+    },
+    "_rapierCompareRestore@module/iife1": {
+      "name": "_rapierCompareRestore",
+      "reason": "The comparison view owns the pending restoration ticket."
+    },
+    "_rapierCompareRuntime@module/iife1": {
+      "name": "_rapierCompareRuntime",
+      "reason": "The comparison view owns its local presentation and interaction lifecycle."
+    },
+    "_rapierConfirmRuntime@module/iife1": {
+      "name": "_rapierConfirmRuntime",
+      "reason": "The dialog owner correlates confirmation request IDs with pending resolvers."
+    },
+    "_rapierCssScratch@module/iife1": {
+      "name": "_rapierCssScratch",
+      "reason": "The DOM style projection owns its reusable scratch element."
+    },
+    "_rapierDeriveDarkColorCache@module/iife1": {
+      "name": "_rapierDeriveDarkColorCache",
+      "reason": "Theme-dependent dark-colour derivation and its cache stay at the engine owner in A2."
+    },
+    "_rapierDiagramObserver@module/iife1": {
+      "name": "_rapierDiagramObserver",
+      "reason": "The diagram surface owns the viewport observer that fills only on-screen blocks."
+    },
+    "_rapierDiagramSvgCache@module/iife1": {
+      "name": "_rapierDiagramSvgCache",
+      "reason": "The diagram surface owns the sanitised SVG cache keyed by fence source."
+    },
+    "_rapierDialogRuntime@module/iife1": {
+      "name": "_rapierDialogRuntime",
+      "reason": "The dialog owner owns modal isolation, baseline focus and the active dialog."
+    },
+    "_rapierDocxRuntime@module/iife1": {
+      "name": "_rapierDocxRuntime",
+      "reason": "The DOCX export owner coordinates its preparation and presentation lifecycle."
+    },
+    "_rapierDocxWarningResolvers@module/iife1": {
+      "name": "_rapierDocxWarningResolvers",
+      "reason": "The DOCX surface correlates its warning decisions with waiting export work."
+    },
+    "_rapierEditingRuntime@module/iife1": {
+      "name": "_rapierEditingRuntime",
+      "reason": "The editing owner retains the current paste job and selected highlight colour."
+    },
+    "_rapierEmbed@module/iife1": {
+      "name": "_rapierEmbed",
+      "reason": "The embed door owns its document binding, frame handshake and message lifecycle."
+    },
+    "_rapierEmbedDraftRefusedFor@module/iife1": {
+      "name": "_rapierEmbedDraftRefusedFor",
+      "reason": "The embed lifecycle owner remembers which draft refusal it has already presented."
+    },
+    "_rapierFileLaunchRuntime@module/iife1": {
+      "name": "_rapierFileLaunchRuntime",
+      "reason": "The Open owner retains the current external file launch."
+    },
+    "_rapierFindRuntime@module/iife1": {
+      "name": "_rapierFindRuntime",
+      "reason": "The live search surface owns query, result, reveal and input state."
+    },
+    "_rapierForegroundIntentRuntime@module/iife1": {
+      "name": "_rapierForegroundIntentRuntime",
+      "reason": "The foreground interaction owner tracks the human intent serial and signature."
+    },
+    "_rapierFormatToolbarFadeSurface@module/iife1": {
+      "name": "_rapierFormatToolbarFadeSurface",
+      "reason": "The toolbar owner updates the one fade surface returned by FT."
+    },
+    "_rapierFormatToolbarPan@module/iife1": {
+      "name": "_rapierFormatToolbarPan",
+      "reason": "The toolbar gesture owner retains one active pan and fling state."
+    },
+    "_rapierHeavyRuntime@module/iife1": {
+      "name": "_rapierHeavyRuntime",
+      "reason": "The editor owns deferred heavy-work scheduling and cancellation state."
+    },
+    "_rapierHighlightRuntime@module/iife1": {
+      "name": "_rapierHighlightRuntime",
+      "reason": "The live renderer owns syntax-highlighting work and its pending element set."
+    },
+    "_rapierImagePress@module/iife1": {
+      "name": "_rapierImagePress",
+      "reason": "The active picture press belongs to the editor gesture owner."
+    },
+    "_rapierImageRuntime@module/iife1": {
+      "name": "_rapierImageRuntime",
+      "reason": "The editor picture integration owns pending decodes, gestures and live presentation state."
+    },
+    "_rapierInteractionRuntime@module/iife1": {
+      "name": "_rapierInteractionRuntime",
+      "reason": "The editor interaction owner tracks recent pointer modality and its expiry."
+    },
+    "_rapierKeyboardRuntime@module/iife1": {
+      "name": "_rapierKeyboardRuntime",
+      "reason": "The viewport owner coordinates keyboard occlusion and reveal frames."
+    },
+    "_rapierLifecycleRuntime@module/iife1": {
+      "name": "_rapierLifecycleRuntime",
+      "reason": "The engine owns document exit, unload and lifecycle coordination."
+    },
+    "_rapierLoadLap@module/iife1": {
+      "name": "_rapierLoadLap",
+      "reason": "The document-load owner retains the current asynchronous load lap."
+    },
+    "_rapierMessageQueue@module/iife1": {
+      "name": "_rapierMessageQueue",
+      "reason": "The engine agent door owns document-fenced queued messages and their sequence."
+    },
+    "_rapierMutationBarrierWaiters@module/iife1": {
+      "name": "_rapierMutationBarrierWaiters",
+      "reason": "The document mutation barrier owns its pending continuation set."
+    },
+    "_rapierNativeSelectionEpoch@module/iife1": {
+      "name": "_rapierNativeSelectionEpoch",
+      "reason": "Selection freshness belongs to the native-selection interaction owner."
+    },
+    "_rapierNavigatorRuntime@module/iife1": {
+      "name": "_rapierNavigatorRuntime",
+      "reason": "The navigator surface owns its current request and visible navigation generation."
+    },
+    "_rapierOutlineLevelMemo@module/iife1": {
+      "name": "_rapierOutlineLevelMemo",
+      "reason": "The outline projection owns cached heading levels for live block objects."
+    },
+    "_rapierOverflowRuntime@module/iife1": {
+      "name": "_rapierOverflowRuntime",
+      "reason": "The live viewport owns its overflow observer and last observed width."
+    },
+    "_rapierOverflowSweepFrame@module/iife1": {
+      "name": "_rapierOverflowSweepFrame",
+      "reason": "One pending overflow sweep belongs to the live editor's layout scheduling."
+    },
+    "_rapierParseRuntime@module/iife1": {
+      "name": "_rapierParseRuntime",
+      "reason": "The editor owns parse scheduling and parser integration state; the grammar remains shared."
+    },
+    "_rapierPersistenceRuntime@module/iife1": {
+      "name": "_rapierPersistenceRuntime",
+      "reason": "The canonical document persistence owner coordinates recovery and durable writes."
+    },
+    "_rapierPlatformRuntime@module/iife1": {
+      "name": "_rapierPlatformRuntime",
+      "reason": "The shell integration owns its scheduled native-selection frame."
+    },
+    "_rapierPrintRuntime@module/iife1": {
+      "name": "_rapierPrintRuntime",
+      "reason": "The print surface owns the cleanup callback for its current presentation."
+    },
+    "_rapierProjectionRefreshRuntime@module/iife1": {
+      "name": "_rapierProjectionRefreshRuntime",
+      "reason": "The live document projection owns its pending block set and refresh frame."
+    },
+    "_rapierProtectionPress@module/iife1": {
+      "name": "_rapierProtectionPress",
+      "reason": "The Will gesture owner owns the active long-press timing and coordinates."
+    },
+    "_rapierRemoteContent@module/iife1": {
+      "name": "_rapierRemoteContent",
+      "reason": "The engine owns whether external document content may be loaded."
+    },
+    "_rapierRevealRuntime@module/iife1": {
+      "name": "_rapierRevealRuntime",
+      "reason": "The viewport owner retains cleanup for the currently revealed agent target."
+    },
+    "_rapierReviewComposition@module/iife1": {
+      "name": "_rapierReviewComposition",
+      "reason": "The review input contract owns the in-flight IME composition over a pending span, so a cancelled composition is never a decision."
+    },
+    "_rapierReviewContinuationRuntime@module/iife1": {
+      "name": "_rapierReviewContinuationRuntime",
+      "reason": "The type-over continuation owns its \"attention moved elsewhere\" stamp (navGeneration), bumped where attention really moves: entering a block edit, opening Find, opening an engine dialog."
+    },
+    "_rapierReviewProjectionGeneration@module/iife1": {
+      "name": "_rapierReviewProjectionGeneration",
+      "reason": "The review decorations own the projection/hydration generation their freshness invalidates on, bumped at the three DOM-rebuild sites so a dormant block waking is redecorated."
+    },
+    "_rapierReviewSpans@module/iife1": {
+      "name": "_rapierReviewSpans",
+      "reason": "The review presentation owner owns its active inline markers and stale cleanup."
+    },
+    "_rapierSanitizeRuntime@module/iife1": {
+      "name": "_rapierSanitizeRuntime",
+      "reason": "The editor's existing sanitizer call path owns its active rendering context."
+    },
+    "_rapierSaveRuntime@module/iife1": {
+      "name": "_rapierSaveRuntime",
+      "reason": "The document owner serializes native/browser saves and their current request state."
+    },
+    "_rapierScrollRuntime@module/iife1": {
+      "name": "_rapierScrollRuntime",
+      "reason": "The viewport owner coalesces scroll refresh and suppression timing."
+    },
+    "_rapierSeenDelivery@module/iife1": {
+      "name": "_rapierSeenDelivery",
+      "reason": "The agent door owns delivery deduplication and its current document fence."
+    },
+    "_rapierSelectionRuntime@module/iife1": {
+      "name": "_rapierSelectionRuntime",
+      "reason": "The live selection owner fences selection authority minting."
+    },
+    "_rapierSelectionVirtualizationFrame@module/iife1": {
+      "name": "_rapierSelectionVirtualizationFrame",
+      "reason": "The editor owns the scheduled selection virtualization frame."
+    },
+    "_rapierSelectionVirtualizedBlocks@module/iife1": {
+      "name": "_rapierSelectionVirtualizedBlocks",
+      "reason": "The editor owns the current DOM blocks participating in selection virtualization."
+    },
+    "_rapierSemanticRuntime@module/iife1": {
+      "name": "_rapierSemanticRuntime",
+      "reason": "The editor owns semantic refresh timing and the active presentation facts."
+    },
+    "_rapierShellSheet@module/iife1": {
+      "name": "_rapierShellSheet",
+      "reason": "The engine owns its constructed stylesheet for dormant block shell heights."
+    },
+    "_rapierSinceOpen@module/iife1": {
+      "name": "_rapierSinceOpen",
+      "reason": "The canonical document owner tracks edits and undo relationships since the last Open."
+    },
+    "_rapierSlabCache@module/iife1": {
+      "name": "_rapierSlabCache",
+      "reason": "The source projection owner caches the document slabs it materializes."
+    },
+    "_rapierSourceRuntime@module/iife1": {
+      "name": "_rapierSourceRuntime",
+      "reason": "The canonical source integration owns projection, edit and hydration state."
+    },
+    "_rapierStatsRuntime@module/iife1": {
+      "name": "_rapierStatsRuntime",
+      "reason": "The document statistics projection owns its scheduled update and idle generation."
+    },
+    "_rapierStructureBuilding@module/iife1": {
+      "name": "_rapierStructureBuilding",
+      "reason": "The editor owns the current structural-analysis build and its lifetime."
+    },
+    "_rapierStructureRuntime@module/iife1": {
+      "name": "_rapierStructureRuntime",
+      "reason": "The engine owns its structural-analysis worker and in-flight request lifecycle."
+    },
+    "_rapierToastLiftFrame@module/iife1": {
+      "name": "_rapierToastLiftFrame",
+      "reason": "The engine owns the toast position's coalesced layout frame."
+    },
+    "_rapierToolbarRuntime@module/iife1": {
+      "name": "_rapierToolbarRuntime",
+      "reason": "The toolbar owner retains its display frame and current editor selection."
+    },
+    "_rapierTransactionRuntime@module/iife1": {
+      "name": "_rapierTransactionRuntime",
+      "reason": "The editor owns one formatting/compound transaction context."
+    },
+    "_rapierTravelRuntime@module/iife1": {
+      "name": "_rapierTravelRuntime",
+      "reason": "The viewport owner owns reading-point travel and restoration state."
+    },
+    "_rapierUi@module/iife1": {
+      "name": "_rapierUi",
+      "reason": "The UI owner retains mounted surface references and current shell presentation state."
+    },
+    "_rapierUiDiagram@module/iife1": {
+      "name": "_rapierUiDiagram",
+      "reason": "The diagram install surface owns its active prompt and rendered preview state."
+    },
+    "_rapierUiDialogs@module/iife1": {
+      "name": "_rapierUiDialogs",
+      "reason": "The dialog owner owns the registry of mounted dialog surfaces."
+    },
+    "_rapierUiGesture@module/iife1": {
+      "name": "_rapierUiGesture",
+      "reason": "The UI gesture owner owns the active drawer gesture and transition state."
+    },
+    "_rapierUiHighlightPointerType@module/iife1": {
+      "name": "_rapierUiHighlightPointerType",
+      "reason": "The highlight surface owns the pointer modality used by its controls."
+    },
+    "_rapierUiMath@module/iife1": {
+      "name": "_rapierUiMath",
+      "reason": "The math input surface owns its active edit and rendered preview state."
+    },
+    "_rapierUiNavigator@module/iife1": {
+      "name": "_rapierUiNavigator",
+      "reason": "The navigator surface owns its filter, selected tab and mounted controls."
+    },
+    "_rapierUiPlatform@module/iife1": {
+      "name": "_rapierUiPlatform",
+      "reason": "The platform surface owns its recent-file presentation and Windows request state."
+    },
+    "_rapierUiPro@module/iife1": {
+      "name": "_rapierUiPro",
+      "reason": "The Android entitlement surface owns its displayed purchase state."
+    },
+    "_rapierUiSettingsReturnState@module/iife1": {
+      "name": "_rapierUiSettingsReturnState",
+      "reason": "The settings surface owns the view state restored when it closes."
+    },
+    "_rapierUiViewTransition@module/iife1": {
+      "name": "_rapierUiViewTransition",
+      "reason": "The UI transition owner owns its serial and busy state."
+    },
+    "_rapierViewIntent@module/iife1": {
+      "name": "_rapierViewIntent",
+      "reason": "The engine records human view intent to reject stale convenience navigation."
+    },
+    "_rapierViewportWrites@module/iife1": {
+      "name": "_rapierViewportWrites",
+      "reason": "The viewport owner counts its own writes to distinguish fresh human navigation."
+    },
+    "_rapierWaitRuntime@module/iife1": {
+      "name": "_rapierWaitRuntime",
+      "reason": "The agent interaction surface owns its currently pending wait."
+    },
+    "_rapierWillCache@module/iife1": {
+      "name": "_rapierWillCache",
+      "reason": "The document Will owner caches parsed regions by exact source and space."
+    },
+    "_rapierWillDrafts@module/iife1": {
+      "name": "_rapierWillDrafts",
+      "reason": "The Will UI owns private unsaved intent drafts while choices change."
+    },
+    "_rapierWillPlateProvenance@module/iife1": {
+      "name": "_rapierWillPlateProvenance",
+      "reason": "The Will presentation owner retains the provenance of its current plate."
+    },
+    "_rapierWillPopover@module/iife1": {
+      "name": "_rapierWillPopover",
+      "reason": "The engine owns the live Will popover element and its lifecycle."
+    },
+    "_rapierWillReviewSlot@module/iife1": {
+      "name": "_rapierWillReviewSlot",
+      "reason": "The human review owner owns the pending and settling Will decisions."
+    },
+    "_rapierWillRuntime@module/iife1": {
+      "name": "_rapierWillRuntime",
+      "reason": "The Will UI owner retains active presentation and interaction state."
+    },
+    "_rapierWillTestGate@module/iife1": {
+      "name": "_rapierWillTestGate",
+      "reason": "The editor's existing Will witness seam owns its pending test continuation."
+    },
+    "_rapierWriterRuntime@module/iife1": {
+      "name": "_rapierWriterRuntime",
+      "reason": "The persistence owner coordinates the one writer lease and promotion lifecycle."
+    },
+    "_rapierWysiwygHeightMemo@module/iife1": {
+      "name": "_rapierWysiwygHeightMemo",
+      "reason": "The live viewport owns cached block-height measurements."
+    },
+    "_rapierWysiwygHeightWidth@module/iife1": {
+      "name": "_rapierWysiwygHeightWidth",
+      "reason": "The live viewport owns the width that validates its height estimates."
+    },
+    "_rapierWysiwygLedger@module/iife1": {
+      "name": "_rapierWysiwygLedger",
+      "reason": "The live viewport owns block-shell hydration and measured height bookkeeping."
+    },
+    "ABBR_DEF_RE@module/iife1": {
+      "name": "ABBR_DEF_RE",
+      "reason": "The abbreviation scan resets this shared regular expression's lastIndex before parsing."
+    },
+    "FT@module/iife1": {
+      "name": "FT",
+      "reason": "Formatting-toolbar DOM surfaces and state are coordinated by the editor's interaction owner."
+    },
+    "md@module/iife1": {
+      "name": "md",
+      "reason": "The editor's configured Markdown renderer, installed after its deferred vendor becomes ready."
+    },
+    "RAPIER_PANDOC_MARK_RE@module/iife1": {
+      "name": "RAPIER_PANDOC_MARK_RE",
+      "reason": "The export dialect projection owns this reusable scanner and its lastIndex."
+    },
+    "rapier@module/iife1": {
+      "name": "rapier",
+      "reason": "Canonical document, identity, revision, selection and transaction state; the engine remains its one owner."
+    },
+    "rows@module/iife1/iife1": {
+      "name": "rows",
+      "reason": "The shell-height ladder's anonymous initializer constructs this array, then freezes it before publication."
+    },
+    "turndown@module/iife1": {
+      "name": "turndown",
+      "reason": "The editor's HTML-to-Markdown converter, installed with the existing conversion rules."
+    }
+  }
+}

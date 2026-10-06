@@ -1,0 +1,506 @@
+[
+  {
+    "name": "profile-task-lists",
+    "text": "- [ ] pending\n- [x] done\n- [X] done again\n- [ ]"
+  },
+  {
+    "name": "profile-pipe-tables",
+    "text": "| Left | Right |\n| :--- | ---: |\n| one | two |\n| escaped \\| pipe | **bold** |"
+  },
+  {
+    "name": "profile-strikethrough",
+    "text": "Before ~~removed words~~ after."
+  },
+  {
+    "name": "profile-underline",
+    "text": "Before ++underlined words++ after."
+  },
+  {
+    "name": "profile-footnotes",
+    "text": "A note[^n].\n\n[^n]: First note line.\n\n    Second note paragraph."
+  },
+  {
+    "name": "profile-highlight",
+    "text": "==plain== ==🟢green== ==🔴red== ==🔵blue== ==🟡yellow== ==🟣purple=="
+  },
+  {
+    "name": "profile-subscript-superscript",
+    "text": "H~2~O and x^2^; ~no spaces~ and ^no spaces^."
+  },
+  {
+    "name": "profile-bear-underline-read",
+    "text": "~deadline~ and ~underlined phrase~ stay as authored."
+  },
+  {
+    "name": "profile-emoji",
+    "text": ":smile: :heart: 👩🏽‍🌾 🧑‍🤝‍🧑"
+  },
+  {
+    "name": "profile-abbreviations",
+    "text": "HTML on paper.\n\n*[HTML]: Hyper Text Markup Language"
+  },
+  {
+    "name": "profile-definition-lists",
+    "text": "Term\n: First definition.\n: Second definition.\n\nNext term\n: Definition with **bold**."
+  },
+  {
+    "name": "profile-math",
+    "text": "Inline $x^2 + y^2$ and display:\n\n$$\nx = \\frac{1}{2}\n$$"
+  },
+  {
+    "name": "profile-callouts",
+    "text": "> [!NOTE]\n> A quoted note.\n\n> [!TIP]\n> A useful tip."
+  },
+  {
+    "name": "profile-colour-comments",
+    "text": "<!--c green-->Green **words**<!--/c--> plain."
+  },
+  {
+    "name": "profile-page-break",
+    "text": "Before.\n\n<!--md-break:v1 page-->\n\nAfter."
+  },
+  {
+    "name": "profile-table-captions",
+    "text": "| Fruit | Count |\n| --- | --- |\n| Apple | 2 |\n\nTable: orchard count."
+  },
+  {
+    "name": "profile-will-markers",
+    "text": "<!-- will/1 edit: Keep the meaning. -->\nWords.\n<!-- /will -->\n\n<!-- will/1 append -->\nLog.\n<!-- /will -->\n\n<!-- will/1 keep -->\nLocked words.\n<!-- /will -->"
+  },
+  {
+    "name": "profile-layout-comments",
+    "text": "A centred paragraph. <!--md-layout:v1 align=center-->\n\n![small][pixel] <!--md-layout:v1 width=40% wrap=around x=60% y=1.2em-->\n\n[pixel]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII="
+  },
+  {
+    "name": "profile-obsidian-width-read",
+    "text": "![pixel|320](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=)"
+  },
+  {
+    "name": "profile-image-data-definitions",
+    "text": "![first][a]\n\n![second][B]\n\n[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\n[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\""
+  },
+  {
+    "name": "profile-pandoc-copy-only",
+    "text": "[coloured]{style=\"color: #123456;\"} and [marked]{.mark}.\n\n\\newpage"
+  },
+  {
+    "name": "profile-html-blocks",
+    "text": "<details>\n<summary>More words</summary>\n\nAn ordinary **paragraph**.\n</details>"
+  },
+  {
+    "name": "profile-inline-marks",
+    "text": "**strong** __strong__ *emphasis* _emphasis_ ***both*** `code` ``a ` b``"
+  },
+  {
+    "name": "profile-links",
+    "text": "[label](https://example.test/path \"title\") [reference][manual] <https://example.test/>\n\n[manual]: https://example.test/manual"
+  },
+  {
+    "name": "profile-hard-break-spaces",
+    "text": "First line.  \nSecond line.   \nThird line."
+  },
+  {
+    "name": "profile-hard-break-backslash",
+    "text": "First line.\\\nSecond line.\\\nThird line."
+  },
+  {
+    "name": "profile-rtl-mixed",
+    "text": "مرحبا بالعالم.\n\nEnglish שלום 123 العربية words.\n\nשורה בעברית."
+  },
+  {
+    "name": "profile-unicode-combining-joiners",
+    "text": "é é क्‍ष 👩🏽‍🌾 a‍b a‌b."
+  },
+  {
+    "name": "profile-trailing-whitespace",
+    "text": "First paragraph. \t \n\nSecond paragraph.\t\t"
+  },
+  {
+    "name": "profile-frontmatter",
+    "text": "---\ntitle: A note\nowner: Jack\n---\n\n# Visible heading\n\nBody."
+  },
+  {
+    "name": "profile-indented-code",
+    "text": "    code\n    another line\n\n\tcode after a tab"
+  },
+  {
+    "name": "profile-thematic-breaks",
+    "text": "Above.\n\n***\n\n---\n\n___\n\nBelow."
+  },
+  {
+    "name": "atx-level-1",
+    "text": "# Heading 1 ###\n\nBody."
+  },
+  {
+    "name": "atx-level-2",
+    "text": "## Heading 2 ###\n\nBody."
+  },
+  {
+    "name": "atx-level-3",
+    "text": "### Heading 3 ###\n\nBody."
+  },
+  {
+    "name": "atx-level-4",
+    "text": "#### Heading 4 ###\n\nBody."
+  },
+  {
+    "name": "atx-level-5",
+    "text": "##### Heading 5 ###\n\nBody."
+  },
+  {
+    "name": "atx-level-6",
+    "text": "###### Heading 6 ###\n\nBody."
+  },
+  {
+    "name": "setext-level-1",
+    "text": "Heading\n====\n\nBody."
+  },
+  {
+    "name": "setext-level-2",
+    "text": "Heading\n----\n\nBody."
+  },
+  {
+    "name": "fence-backtick-3",
+    "text": "``` text\n# code heading\n![code][image]\n```\n\n# Real heading"
+  },
+  {
+    "name": "fence-backtick-4",
+    "text": "```` text\n# code heading\n![code][image]\n````\n\n# Real heading"
+  },
+  {
+    "name": "fence-backtick-7",
+    "text": "``````` text\n# code heading\n![code][image]\n```````\n\n# Real heading"
+  },
+  {
+    "name": "fence-tilde-3",
+    "text": "~~~ text\n# code heading\n![code][image]\n~~~\n\n# Real heading"
+  },
+  {
+    "name": "fence-tilde-4",
+    "text": "~~~~ text\n# code heading\n![code][image]\n~~~~\n\n# Real heading"
+  },
+  {
+    "name": "fence-tilde-7",
+    "text": "~~~~~~~ text\n# code heading\n![code][image]\n~~~~~~~\n\n# Real heading"
+  },
+  {
+    "name": "nested-minus-2",
+    "text": "- outer\n  - inner\n    - deepest\n\nTail."
+  },
+  {
+    "name": "nested-minus-3",
+    "text": "- outer\n   - inner\n      - deepest\n\nTail."
+  },
+  {
+    "name": "nested-minus-4",
+    "text": "- outer\n    - inner\n        - deepest\n\nTail."
+  },
+  {
+    "name": "nested-star-2",
+    "text": "* outer\n  * inner\n    * deepest\n\nTail."
+  },
+  {
+    "name": "nested-star-3",
+    "text": "* outer\n   * inner\n      * deepest\n\nTail."
+  },
+  {
+    "name": "nested-star-4",
+    "text": "* outer\n    * inner\n        * deepest\n\nTail."
+  },
+  {
+    "name": "nested-plus-2",
+    "text": "+ outer\n  + inner\n    + deepest\n\nTail."
+  },
+  {
+    "name": "nested-plus-3",
+    "text": "+ outer\n   + inner\n      + deepest\n\nTail."
+  },
+  {
+    "name": "nested-plus-4",
+    "text": "+ outer\n    + inner\n        + deepest\n\nTail."
+  },
+  {
+    "name": "nested-dot-2",
+    "text": "1. outer\n  1. inner\n    1. deepest\n\nTail."
+  },
+  {
+    "name": "nested-dot-3",
+    "text": "1. outer\n   1. inner\n      1. deepest\n\nTail."
+  },
+  {
+    "name": "nested-dot-4",
+    "text": "1. outer\n    1. inner\n        1. deepest\n\nTail."
+  },
+  {
+    "name": "nested-paren-2",
+    "text": "1) outer\n  1) inner\n    1) deepest\n\nTail."
+  },
+  {
+    "name": "nested-paren-3",
+    "text": "1) outer\n   1) inner\n      1) deepest\n\nTail."
+  },
+  {
+    "name": "nested-paren-4",
+    "text": "1) outer\n    1) inner\n        1) deepest\n\nTail."
+  },
+  {
+    "name": "one-byte",
+    "text": "x"
+  },
+  {
+    "name": "encoding-crlf-bom",
+    "text": "﻿# Title\r\n\r\nWords.  \r\nNext.\t"
+  },
+  {
+    "name": "encoding-lone-cr",
+    "text": "# First\r\r## Second\r\rText"
+  },
+  {
+    "name": "seed-41535452-0",
+    "text": "é é क्‍ष 👩🏽‍🌾 a‍b a‌b.\r\r``````` text\r# code heading\r![code][image]\r```````\r\r# Real heading\r\r    code\r    another line\r\r\tcode after a tab\r\rFirst line.\\\rSecond line.\\\rThird line.\r\r> [!NOTE]\r> A quoted note.\r\r> [!TIP]\r> A useful tip.\r\rBefore ++underlined words++ after.\r\r1. outer\r  1. inner\r    1. deepest\r\rTail."
+  },
+  {
+    "name": "seed-41535452-1",
+    "text": "﻿## Heading 2 ###\r\n\r\nBody.\r\n\r\n:smile: :heart: 👩🏽‍🌾 🧑‍🤝‍🧑\r\n\r\n[label](https://example.test/path \"title\") [reference][manual] <https://example.test/>\r\n\r\n[manual]: https://example.test/manual\r\n\r\n| Left | Right |\r\n| :--- | ---: |\r\n| one | two |\r\n| escaped \\| pipe | **bold** |\r\n\r\n1) outer\r\n  1) inner\r\n    1) deepest\r\n\r\nTail.\r\n\r\n﻿# Title\r\n\r\nWords.  \r\nNext.\t"
+  },
+  {
+    "name": "seed-41535452-2",
+    "text": "x\r\n\r\nAbove.\r\n\r\n***\r\n\r\n---\r\n\r\n___\r\n\r\nBelow.\r\n\r\nBefore.\r\n\r\n<!--md-break:v1 page-->\r\n\r\nAfter.\r\n"
+  },
+  {
+    "name": "seed-41535452-3",
+    "text": "﻿* outer\r\n   * inner\r\n      * deepest\r\n\r\nTail.\r\n\r\nInline $x^2 + y^2$ and display:\r\n\r\n$$\r\nx = \\frac{1}{2}\r\n$$\r\n\r\n![first][a]\r\n\r\n![second][B]\r\n\r\n[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\r\n[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\"\r\n\r\n- [ ] pending\r\n- [x] done\r\n- [X] done again\r\n- [ ]\r\n\r\n[coloured]{style=\"color: #123456;\"} and [marked]{.mark}.\r\n\r\n\\newpage"
+  },
+  {
+    "name": "seed-41535452-4",
+    "text": "﻿![first][a]\r\r![second][B]\r\r[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\r[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\"\r\r- [ ] pending\r- [x] done\r- [X] done again\r- [ ]\r"
+  },
+  {
+    "name": "seed-41535452-5",
+    "text": "<details>\r<summary>More words</summary>\r\rAn ordinary **paragraph**.\r</details>\r\rA centred paragraph. <!--md-layout:v1 align=center-->\r\r![small][pixel] <!--md-layout:v1 width=40% wrap=around x=60% y=1.2em-->\r\r[pixel]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\r\rBefore.\r\r<!--md-break:v1 page-->\r\rAfter.\r\r# First\r\r## Second\r\rText\r"
+  },
+  {
+    "name": "seed-41535452-6",
+    "text": "﻿| Left | Right |\r\n| :--- | ---: |\r\n| one | two |\r\n| escaped \\| pipe | **bold** |\r\n\r\n~~~~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~~~~\r\n\r\n# Real heading\r\n\r\nInline $x^2 + y^2$ and display:\r\n\r\n$$\r\nx = \\frac{1}{2}\r\n$$"
+  },
+  {
+    "name": "seed-41535452-7",
+    "text": "- outer\r\n   - inner\r\n      - deepest\r\n\r\nTail.\r\n\r\n1. outer\r\n    1. inner\r\n        1. deepest\r\n\r\nTail.\r\n\r\n~~~ text\r\n# code heading\r\n![code][image]\r\n~~~\r\n\r\n# Real heading\r\n"
+  },
+  {
+    "name": "seed-41535452-8",
+    "text": "﻿1. outer\r   1. inner\r      1. deepest\r\rTail.\r"
+  },
+  {
+    "name": "seed-41535452-9",
+    "text": "﻿- [ ] pending\n- [x] done\n- [X] done again\n- [ ]\n\n- outer\n    - inner\n        - deepest\n\nTail.\n\n==plain== ==🟢green== ==🔴red== ==🔵blue== ==🟡yellow== ==🟣purple==\n\n![first][a]\n\n![second][B]\n\n[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\n[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\"\n\n* outer\n  * inner\n    * deepest\n\nTail."
+  },
+  {
+    "name": "seed-41535452-10",
+    "text": "![first][a]\r\r![second][B]\r\r[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\r[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\""
+  },
+  {
+    "name": "seed-41535452-11",
+    "text": "* outer\r\n  * inner\r\n    * deepest\r\n\r\nTail.\r\n\r\n```` text\r\n# code heading\r\n![code][image]\r\n````\r\n\r\n# Real heading\r\n\r\nHTML on paper.\r\n\r\n*[HTML]: Hyper Text Markup Language\r\n\r\n| Left | Right |\r\n| :--- | ---: |\r\n| one | two |\r\n| escaped \\| pipe | **bold** |\r\n\r\n~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~\r\n\r\n# Real heading\r\n\r\n:smile: :heart: 👩🏽‍🌾 🧑‍🤝‍🧑\r\n"
+  },
+  {
+    "name": "seed-20260912-0",
+    "text": "﻿Above.\r\r***\r\r---\r\r___\r\rBelow.\r\r# Heading 1 ###\r\rBody.\r\r1) outer\r    1) inner\r        1) deepest\r\rTail.\r"
+  },
+  {
+    "name": "seed-20260912-1",
+    "text": "﻿x\r\n\r\nTerm\r\n: First definition.\r\n: Second definition.\r\n\r\nNext term\r\n: Definition with **bold**.\r\n\r\n> [!NOTE]\r\n> A quoted note.\r\n\r\n> [!TIP]\r\n> A useful tip.\r\n\r\né é क्‍ष 👩🏽‍🌾 a‍b a‌b.\r\n\r\n> [!NOTE]\r\n> A quoted note.\r\n\r\n> [!TIP]\r\n> A useful tip."
+  },
+  {
+    "name": "seed-20260912-2",
+    "text": "Term\n: First definition.\n: Second definition.\n\nNext term\n: Definition with **bold**.\n"
+  },
+  {
+    "name": "seed-20260912-3",
+    "text": "﻿![first][a]\n\n![second][B]\n\n[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\n[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\"\n\n**strong** __strong__ *emphasis* _emphasis_ ***both*** `code` ``a ` b``\n"
+  },
+  {
+    "name": "seed-20260912-4",
+    "text": "- outer\r   - inner\r      - deepest\r\rTail."
+  },
+  {
+    "name": "seed-20260912-5",
+    "text": "﻿+ outer\n  + inner\n    + deepest\n\nTail.\n"
+  },
+  {
+    "name": "seed-20260912-6",
+    "text": "## Heading 2 ###\r\rBody.\r\rمرحبا بالعالم.\r\rEnglish שלום 123 العربية words.\r\rשורה בעברית.\r\r1. outer\r   1. inner\r      1. deepest\r\rTail.\r\r# Heading 1 ###\r\rBody.\r\r~deadline~ and ~underlined phrase~ stay as authored.\r\rHTML on paper.\r\r*[HTML]: Hyper Text Markup Language\r"
+  },
+  {
+    "name": "seed-20260912-7",
+    "text": "1. outer\r\n   1. inner\r\n      1. deepest\r\n\r\nTail.\r\n\r\n~~~~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~~~~\r\n\r\n# Real heading\r\n\r\nFirst paragraph. \t \r\n\r\nSecond paragraph.\t\t\r\n\r\nx\r\n\r\n| Fruit | Count |\r\n| --- | --- |\r\n| Apple | 2 |\r\n\r\nTable: orchard count."
+  },
+  {
+    "name": "seed-20260912-8",
+    "text": "﻿| Left | Right |\r| :--- | ---: |\r| one | two |\r| escaped \\| pipe | **bold** |"
+  },
+  {
+    "name": "seed-20260912-9",
+    "text": "﻿> [!NOTE]\n> A quoted note.\n\n> [!TIP]\n> A useful tip.\n\n1. outer\n    1. inner\n        1. deepest\n\nTail.\n\nFirst paragraph. \t \n\nSecond paragraph.\t\t\n"
+  },
+  {
+    "name": "seed-20260912-10",
+    "text": "``` text\r\n# code heading\r\n![code][image]\r\n```\r\n\r\n# Real heading"
+  },
+  {
+    "name": "seed-20260912-11",
+    "text": "﻿![first][a]\r\n\r\n![second][B]\r\n\r\n[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\r\n[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\"\r\n\r\nAbove.\r\n\r\n***\r\n\r\n---\r\n\r\n___\r\n\r\nBelow.\r\n\r\n| Left | Right |\r\n| :--- | ---: |\r\n| one | two |\r\n| escaped \\| pipe | **bold** |\r\n\r\nAbove.\r\n\r\n***\r\n\r\n---\r\n\r\n___\r\n\r\nBelow.\r\n\r\nمرحبا بالعالم.\r\n\r\nEnglish שלום 123 العربية words.\r\n\r\nשורה בעברית.\r\n"
+  },
+  {
+    "name": "seed-75a10001-0",
+    "text": "﻿# Title\n\nWords.  \nNext.\t\n\n**strong** __strong__ *emphasis* _emphasis_ ***both*** `code` ``a ` b``\n\n1) outer\n    1) inner\n        1) deepest\n\nTail.\n\nAbove.\n\n***\n\n---\n\n___\n\nBelow.\n"
+  },
+  {
+    "name": "seed-75a10001-1",
+    "text": "1. outer\r  1. inner\r    1. deepest\r\rTail.\r\r    code\r    another line\r\r\tcode after a tab\r\rInline $x^2 + y^2$ and display:\r\r$$\rx = \\frac{1}{2}\r$$\r\r:smile: :heart: 👩🏽‍🌾 🧑‍🤝‍🧑\r\r**strong** __strong__ *emphasis* _emphasis_ ***both*** `code` ``a ` b``\r"
+  },
+  {
+    "name": "seed-75a10001-2",
+    "text": "﻿+ outer\n   + inner\n      + deepest\n\nTail.\n\n:smile: :heart: 👩🏽‍🌾 🧑‍🤝‍🧑\n\n### Heading 3 ###\n\nBody.\n\nFirst paragraph. \t \n\nSecond paragraph.\t\t\n\n###### Heading 6 ###\n\nBody.\n"
+  },
+  {
+    "name": "seed-75a10001-3",
+    "text": "﻿```` text\n# code heading\n![code][image]\n````\n\n# Real heading\n\n- outer\n  - inner\n    - deepest\n\nTail.\n\n+ outer\n  + inner\n    + deepest\n\nTail."
+  },
+  {
+    "name": "seed-75a10001-4",
+    "text": "<!--c green-->Green **words**<!--/c--> plain.\r\r###### Heading 6 ###\r\rBody.\r\r1) outer\r   1) inner\r      1) deepest\r\rTail."
+  },
+  {
+    "name": "seed-75a10001-5",
+    "text": "- outer\n   - inner\n      - deepest\n\nTail.\n\nTerm\n: First definition.\n: Second definition.\n\nNext term\n: Definition with **bold**.\n\n| Left | Right |\n| :--- | ---: |\n| one | two |\n| escaped \\| pipe | **bold** |\n\n## Heading 2 ###\n\nBody.\n\n**strong** __strong__ *emphasis* _emphasis_ ***both*** `code` ``a ` b``\n"
+  },
+  {
+    "name": "seed-75a10001-6",
+    "text": "- [ ] pending\n- [x] done\n- [X] done again\n- [ ]\n\nHeading\n----\n\nBody.\n\nFirst paragraph. \t \n\nSecond paragraph.\t\t\n\n+ outer\n    + inner\n        + deepest\n\nTail.\n\n- outer\n    - inner\n        - deepest\n\nTail."
+  },
+  {
+    "name": "seed-75a10001-7",
+    "text": "﻿~~~ text\r# code heading\r![code][image]\r~~~\r\r# Real heading\r\r---\rtitle: A note\rowner: Jack\r---\r\r# Visible heading\r\rBody.\r\r> [!NOTE]\r> A quoted note.\r\r> [!TIP]\r> A useful tip.\r\r* outer\r    * inner\r        * deepest\r\rTail.\r\rHTML on paper.\r\r*[HTML]: Hyper Text Markup Language\r\rFirst line.  \rSecond line.   \rThird line.\r"
+  },
+  {
+    "name": "seed-75a10001-8",
+    "text": "| Left | Right |\r| :--- | ---: |\r| one | two |\r| escaped \\| pipe | **bold** |\r\r#### Heading 4 ###\r\rBody.\r\rInline $x^2 + y^2$ and display:\r\r$$\rx = \\frac{1}{2}\r$$\r\r| Fruit | Count |\r| --- | --- |\r| Apple | 2 |\r\rTable: orchard count.\r\r##### Heading 5 ###\r\rBody.\r\rمرحبا بالعالم.\r\rEnglish שלום 123 العربية words.\r\rשורה בעברית.\r\r~~~~~~~ text\r# code heading\r![code][image]\r~~~~~~~\r\r# Real heading"
+  },
+  {
+    "name": "seed-75a10001-9",
+    "text": "+ outer\r   + inner\r      + deepest\r\rTail.\r"
+  },
+  {
+    "name": "seed-75a10001-10",
+    "text": "- outer\n   - inner\n      - deepest\n\nTail.\n\n### Heading 3 ###\n\nBody.\n\n1. outer\n   1. inner\n      1. deepest\n\nTail.\n\n<details>\n<summary>More words</summary>\n\nAn ordinary **paragraph**.\n</details>"
+  },
+  {
+    "name": "seed-75a10001-11",
+    "text": "﻿- outer\r\n    - inner\r\n        - deepest\r\n\r\nTail.\r\n\r\n~~~~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~~~~\r\n\r\n# Real heading\r\n\r\n~deadline~ and ~underlined phrase~ stay as authored.\r\n\r\nمرحبا بالعالم.\r\n\r\nEnglish שלום 123 العربية words.\r\n\r\nשורה בעברית."
+  },
+  {
+    "name": "seed-dead75a1-0",
+    "text": "﻿Inline $x^2 + y^2$ and display:\r\n\r\n$$\r\nx = \\frac{1}{2}\r\n$$\r\n\r\nTerm\r\n: First definition.\r\n: Second definition.\r\n\r\nNext term\r\n: Definition with **bold**."
+  },
+  {
+    "name": "seed-dead75a1-1",
+    "text": "﻿---\r\ntitle: A note\r\nowner: Jack\r\n---\r\n\r\n# Visible heading\r\n\r\nBody.\r\n\r\n~~~~~~~ text\r\n# code heading\r\n![code][image]\r\n~~~~~~~\r\n\r\n# Real heading\r\n\r\nTerm\r\n: First definition.\r\n: Second definition.\r\n\r\nNext term\r\n: Definition with **bold**.\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\n| Fruit | Count |\r\n| --- | --- |\r\n| Apple | 2 |\r\n\r\nTable: orchard count."
+  },
+  {
+    "name": "seed-dead75a1-2",
+    "text": "- outer\n    - inner\n        - deepest\n\nTail."
+  },
+  {
+    "name": "seed-dead75a1-3",
+    "text": "##### Heading 5 ###\r\n\r\nBody.\r\n\r\n~~~ text\r\n# code heading\r\n![code][image]\r\n~~~\r\n\r\n# Real heading\r\n\r\n~~~ text\r\n# code heading\r\n![code][image]\r\n~~~\r\n\r\n# Real heading\r\n"
+  },
+  {
+    "name": "seed-dead75a1-4",
+    "text": "### Heading 3 ###\r\n\r\nBody.\r\n\r\n    code\r\n    another line\r\n\r\n\tcode after a tab\r\n\r\nFirst line.  \r\nSecond line.   \r\nThird line.\r\n\r\n| Left | Right |\r\n| :--- | ---: |\r\n| one | two |\r\n| escaped \\| pipe | **bold** |\r\n\r\nHeading\r\n====\r\n\r\nBody.\r\n\r\n<details>\r\n<summary>More words</summary>\r\n\r\nAn ordinary **paragraph**.\r\n</details>"
+  },
+  {
+    "name": "seed-dead75a1-5",
+    "text": "﻿First line.\\\nSecond line.\\\nThird line.\n"
+  },
+  {
+    "name": "seed-dead75a1-6",
+    "text": "﻿1. outer\r   1. inner\r      1. deepest\r\rTail.\r\r![first][a]\r\r![second][B]\r\r[a]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII=\r[B]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3WQAAAAASUVORK5CYII= \"A title\"\r"
+  },
+  {
+    "name": "seed-dead75a1-7",
+    "text": "﻿##### Heading 5 ###\n\nBody.\n\né é क्‍ष 👩🏽‍🌾 a‍b a‌b.\n\n- [ ] pending\n- [x] done\n- [X] done again\n- [ ]\n\n<!--c green-->Green **words**<!--/c--> plain."
+  },
+  {
+    "name": "seed-dead75a1-8",
+    "text": "﻿First line.  \nSecond line.   \nThird line.\n\nHeading\n----\n\nBody."
+  },
+  {
+    "name": "seed-dead75a1-9",
+    "text": "First line.\\\nSecond line.\\\nThird line."
+  },
+  {
+    "name": "seed-dead75a1-10",
+    "text": "﻿~~~~ text\n# code heading\n![code][image]\n~~~~\n\n# Real heading\n\n# Heading 1 ###\n\nBody.\n\nHTML on paper.\n\n*[HTML]: Hyper Text Markup Language\n\n``` text\n# code heading\n![code][image]\n```\n\n# Real heading\n\n1) outer\n   1) inner\n      1) deepest\n\nTail.\n\n    code\n    another line\n\n\tcode after a tab\n\n+ outer\n  + inner\n    + deepest\n\nTail."
+  },
+  {
+    "name": "seed-dead75a1-11",
+    "text": "﻿# Title\r\rWords.  \rNext.\t\r\r**strong** __strong__ *emphasis* _emphasis_ ***both*** `code` ``a ` b``"
+  },
+  {
+    "name": "kit-01-inline.md",
+    "text": "\n# Inline, no layout comment\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A plain inline picture][opaque]\n\nThis paragraph comes after the picture and is its ordinary anchor whenever nothing else stands in the way, wrapping beside it line by line the way the fixture is built to show plainly.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-02-width-x-align.md",
+    "text": "\n# Width, x and align\n\n## A right-aligned heading <!--md-layout:v1 align=right-->\n\nA centered paragraph of its own. <!--md-layout:v1 align=center-->\n\n![A sized, positioned picture][opaque] <!--md-layout:v1 width=40% x=70%-->\n\nThis paragraph comes after the picture and is its ordinary anchor whenever nothing else stands in the way, wrapping beside it line by line the way the fixture is built to show plainly.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-03-wrap-around-silhouette.md",
+    "text": "\n# Wrap around a silhouette\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A silhouette picture][diamond] <!--md-layout:v1 width=35% wrap=around x=20%-->\n\nThis anchor paragraph carries enough ordinary prose that, once it wraps beside the picture at the column width this fixture records, it produces several distinct lines for the conformance runner to compare rather than only one.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[diamond]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAA40lEQVR42u3bSQ6DMBAAQZ7N7zvXSNmAYHuWPtQ9akUJ2DPbvu9bZ5sB1n8IOgfgSbsAvNEmAF+UD8ABZQNwQrkAXFAmAH9IH4AbpA3AjdIFYIA0ARgofAAmCBuAicIFYIEwAVhoeQACWBaAQKYHIKBpAQhseAASGBaARG4PQEK3BSCxvwNQwOUAFHI6AAUdDkBhPwPQwMcANPISgIb8Bvgb4L+AzwE+Cfou4Nug5wGeCHkm6Kmw9wLeDHk36O2w8wFOiDgj5JSYc4JOijor7LS4+wJujLgz5NaYe4Nujro73MEDip6/b+F9FD0AAAAASUVORK5CYII=\n"
+  },
+  {
+    "name": "kit-04-wrap-box.md",
+    "text": "\n# Wrap box\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A tight-box picture][opaque] <!--md-layout:v1 width=35% wrap=box x=75%-->\n\nThis anchor paragraph carries enough ordinary prose that, once it wraps beside the picture at the column width this fixture records, it produces several distinct lines for the conformance runner to compare rather than only one.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-05-behind.md",
+    "text": "\n# Behind\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A behind picture][opaque] <!--md-layout:v1 width=35% wrap=behind x=50%-->\n\nThis anchor paragraph carries enough ordinary prose that, once it wraps beside the picture at the column width this fixture records, it produces several distinct lines for the conformance runner to compare rather than only one.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-06-front.md",
+    "text": "\n# Front\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A front picture][opaque] <!--md-layout:v1 width=35% wrap=front x=50%-->\n\nThis anchor paragraph carries enough ordinary prose that, once it wraps beside the picture at the column width this fixture records, it produces several distinct lines for the conformance runner to compare rather than only one.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-07-rotate-raster.md",
+    "text": "\n# Rotate a raster\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A turned raster picture][opaque] <!--md-layout:v1 width=35% wrap=box x=75% rotate=25deg-->\n\nThis anchor paragraph carries enough ordinary prose that, once it wraps beside the picture at the column width this fixture records, it produces several distinct lines for the conformance runner to compare rather than only one.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-08-drawing-rotation.md",
+    "text": "\n# A drawing with its own rotation\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A drawing already turned in its own bytes][rotated] <!--md-layout:v1 width=35% wrap=around x=75%-->\n\nThis anchor paragraph carries enough ordinary prose that, once it wraps beside the picture at the column width this fixture records, it produces several distinct lines for the conformance runner to compare rather than only one.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[rotated]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMTAwIiB2aWV3Qm94PSIwIDAgMTQwIDEwMCI+PHJlY3QgeD0iMjAiIHk9IjMwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjM2EzYTNhIiB0cmFuc2Zvcm09InJvdGF0ZSgyMCA3MCA1MCkiLz48L3N2Zz4K\n"
+  },
+  {
+    "name": "kit-09-drawing-ring-interior.md",
+    "text": "\n# An unfilled circle's interior\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A ring drawing with an empty interior][ring] <!--md-layout:v1 width=45% wrap=around x=25%-->\n\nA ring drawing reserves an outer band and leaves its own inside empty, so this long paragraph of ordinary prose, wrapping beside its silhouette line by line, eventually reaches a band low enough for a line to enter the drawing through its own unfilled centre rather than stopping at its outer edge the way an opaque picture would, which is exactly the fact this fixture exists to show the runner.\n\nA second sentence of plain reading prose, long enough on its own that a narrow column wraps it into more than a single line, keeps this paragraph a fair test of the line planner rather than a trivial one-line case that proves very little indeed.\n\n[ring]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSI3MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM2EzYTNhIiBzdHJva2Utd2lkdGg9IjI0Ii8+PC9zdmc+Cg==\n"
+  },
+  {
+    "name": "kit-10-both-sides.md",
+    "text": "\n# Both-sides wrapping\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![A centred picture][opaque] <!--md-layout:v1 width=22% wrap=around x=50%-->\n\nThe picture sits at the centre of the column here, narrow enough that this long run of ordinary reading prose must wrap into lines on its left side and, further down where the picture ends, spill back out to the column edge on both sides as it clears the reserved obstacle entirely, giving the runner lines to compare on each side of the centred picture in turn.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-11-neighbour-skips-image.md",
+    "text": "\n# The neighbour search skips another image paragraph\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![The picture under test][diamond] <!--md-layout:v1 width=35% wrap=around x=20%-->\n\n![An unrelated second picture right after it][opaque]\n\nThis paragraph comes after the picture and is its ordinary anchor whenever nothing else stands in the way, wrapping beside it line by line the way the fixture is built to show plainly.\n\n[diamond]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAA40lEQVR42u3bSQ6DMBAAQZ7N7zvXSNmAYHuWPtQ9akUJ2DPbvu9bZ5sB1n8IOgfgSbsAvNEmAF+UD8ABZQNwQrkAXFAmAH9IH4AbpA3AjdIFYIA0ARgofAAmCBuAicIFYIEwAVhoeQACWBaAQKYHIKBpAQhseAASGBaARG4PQEK3BSCxvwNQwOUAFHI6AAUdDkBhPwPQwMcANPISgIb8Bvgb4L+AzwE+Cfou4Nug5wGeCHkm6Kmw9wLeDHk36O2w8wFOiDgj5JSYc4JOijor7LS4+wJujLgz5NaYe4Nujro73MEDip6/b+F9FD0AAAAASUVORK5CYII=\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-12-heading-barrier.md",
+    "text": "\n# The neighbour search stops at a heading\n\nThis paragraph comes before the picture and stays the anchor whenever the block right after the picture cannot be one -- another image paragraph, or a heading -- so the words below keep their own separate life.\n\n![The picture under test][opaque] <!--md-layout:v1 width=35% wrap=around x=75%-->\n\n## A heading right after the picture\n\nThis paragraph comes after the picture and is its ordinary anchor whenever nothing else stands in the way, wrapping beside it line by line the way the fixture is built to show plainly.\n\n[opaque]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAYAAACiu5n/AAAAQ0lEQVR42u3PMQEAAAQAMHl0095PC48dC7DI6vkkhIWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFby0f7s8anCQmZQAAAABJRU5ErkJggg==\n"
+  },
+  {
+    "name": "kit-13-rtl-text.md",
+    "text": "\n# RTL text wrapping around a picture\n\n![صورة][diamond] <!--md-layout:v1 width=35% wrap=around x=20%-->\n\nهذه فقرة قصيرة باللغة العربية تلتف حول الصورة المجاورة لها في هذا المستند، وتُستخدم للتحقق من أن اتجاه الكتابة من اليمين إلى اليسار يُحترم عند التفاف النص حول صورة موضوعة بعرض جزئي من العمود.\n\n[diamond]: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAA40lEQVR42u3bSQ6DMBAAQZ7N7zvXSNmAYHuWPtQ9akUJ2DPbvu9bZ5sB1n8IOgfgSbsAvNEmAF+UD8ABZQNwQrkAXFAmAH9IH4AbpA3AjdIFYIA0ARgofAAmCBuAicIFYIEwAVhoeQACWBaAQKYHIKBpAQhseAASGBaARG4PQEK3BSCxvwNQwOUAFHI6AAUdDkBhPwPQwMcANPISgIb8Bvgb4L+AzwE+Cfou4Nug5wGeCHkm6Kmw9wLeDHk36O2w8wFOiDgj5JSYc4JOijor7LS4+wJujLgz5NaYe4Nujro73MEDip6/b+F9FD0AAAAASUVORK5CYII=\n"
+  },
+  {
+    "name": "welcome",
+    "text": "# rapier\n\n![The rapier logo][rapier-logo] <!--md-layout:v1 width=14% wrap=around x=93%-->\n\nA very fast Markdown editor in one file. Write, draw, paint and keep notes on your phone or computer, offline, with no account. Long documents open and scroll fast. Nothing leaves your device unless you share it.\n\n> [!TIP]\n> **Tap any paragraph** to edit it. **Drag the circle** at the right edge to move through a long document, or **tap it** for the headings.\n\n**Contents**\n\n- [Start here](#start-here)\n- [Writing](#writing)\n- [Lists](#lists)\n- [Pictures](#pictures)\n- [Drawing](#drawing)\n- [Paint](#paint)\n- [Tables](#tables)\n- [Code](#code)\n- [Notes](#notes)\n- [Open, save and export](#open-save-and-export)\n- [Compare](#compare)\n- [Agents](#agents)\n- [Where it runs](#where-it-runs)\n- [Keyboard](#keyboard)\n- [For developers and agents](#for-developers-and-agents)\n- [Will](#will)\n\n## Start here\n\n1. **Tap this line** to edit it in place.\n   1. The formatting bar comes up with the everyday tools. Its **+** has every other command.\n   2. You can type Markdown too; Rapier shows it formatted as you go.\n   3. Tap outside the text when you're done.\n2. **Tap a line in the contents above** to jump there. Every heading is a link, and **+** → **Table of contents** adds a line like those to any document.\n3. **Tick a box.**\n   - [x] Open Rapier\n   - [ ] Change these words\n   - [ ] Tick this box\n4. This guide is yours to play with. **Undo** is on the formatting bar if you need it.\n\n## Writing\n\n**Bold**, *italic*, ~~struck through~~, ++underlined++, `code`, ==highlighted==, ==🟢green==, ==🔴red==, ==🔵blue==, H~2~O and 1^st^. It's all plain Markdown, so other Markdown apps open the file too.[^1]\n\n> A good sentence is a place to begin.\n\n> [!NOTE]\n> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show it as a quote.\n\n<details>\n<summary>An expanding section</summary>\n\nIt keeps a long page tidy. Tap the title to open or close it; **+** → **Expanding section** adds one.\n\n</details>\n\nFind and replace is behind the magnifier. **+** → **Line** adds a page break for PDF and Word; **Footnote**, **Divider** and **Table of contents** are there too.\n\n## Lists\n\n1. A numbered list keeps its numbers as you add, move and delete lines.\n2. Put the cursor in an item and tap **Nest** to indent it; **Resume** brings it back.\n   1. Numbers restart inside.\n   2. Bullets and numbers mix freely.\n      - A bullet inside a number\n      - Another one\n   3. And back out again.\n3. **Tab** and **Shift Tab** do the same from a keyboard.\n4. A checklist is a list with boxes:\n   - [x] one you tick from the page\n   - [ ] one still to do\n5. Paste a list from Word or a web page and it stays a list.\n\n## Pictures\n\nAdd a picture (PNG, JPEG, WebP or JPEG XL), then drag to move or resize it. The words wrap around its outline, not its box. Tap the picture for its controls: the **brush** opens it in Draw, **T** changes its description, and you can turn it or fade it. Pictures live inside this Markdown file; nothing is uploaded. New pictures are stored as JPEG XL, which keeps them small.\n\n## Drawing\n\nThe brush on the formatting bar starts a new drawing. **SVG Brush** follows your pressure and speed, and a stroke that looks like a circle, box, line or arrow becomes that shape with one tap. **SVG Pen (Testing)** draws an even line. Tap a shape to move, resize, label or restyle it, or to bind an arrow that stays attached as things move. The drawing is saved in the file as SVG, and an agent can edit it later.\n\n![W][leaf-w] <!--md-layout:v1 width=18% wrap=around x=9%-->\n\nith a decorative letter, an ordinary paragraph can feel like a page from an old book. Draw has four letter sets, traced from the British Library's public scans. This W is a drawing too: tap it, then the brush, to make it your own.\n\nDraw an SVG line, choose **Select**, tap the line, then **Style → Look** to turn it into a spring, rope or tube. For when your meeting notes need more tension.\n\n![An editable spring made from a drawn line][draw-spring] <!--md-layout:v1 width=75%-->\n\n## Paint\n\n**Raster Brush** opens the painting brushes: oil, bristle, marker, pencil, pen and watercolour, run by Rapier's own engine, so a MyPaint preset behaves as its author tuned it. Watercolour keeps spreading after you lift your finger, then dries. Smudge, smear, blend and erase work on paint that's already down. A painting is one picture inside the drawing, saved losslessly, and you can paint into it again.\n\n## Tables\n\n| Make a little room for | What goes here |\n|---|---|\n| A plan | The next step |\n| An idea | A few words |\n| A list | Whatever you need |\n\nTap a cell to edit it; **Tab** moves to the next. Add or remove rows and columns from the cell's controls. Paste cells from a spreadsheet and the table grows to fit them.\n\n## Code\n\n```js\nexport function twice(x) {\n  return x + x;\n}\n```\n\nCode is highlighted offline. Text and code files open in the source editor, where the circle takes you to a line or a declaration. The eye/code switch in Settings shows the Markdown behind this page.\n\n## Notes\n\nOpen **Notes** from the three dots. Each note is a Markdown file shown as a card you can pin, colour and sort into sections. A note can hold a checklist you tick from its card, a reminder, a voice recording, drawings and attached files. **Import** brings in notes from Google Keep, Apple Notes, Evernote, Notion, Obsidian and a dozen more apps; **Backup** saves them all as one zip. **Sync** keeps them in your own Cloudflare account, encrypted with a key that never leaves your devices.\n\n> [!TIP]\n> Keep a backup of notes you care about. A browser can clear its stored data; the Android app keeps notes in its own files.\n\n## Open, save and export\n\nOpen Markdown, text, code, Word, TextPack or PDF files. A Word document becomes an editable page with its pictures; a PDF comes in as text or as pictures of its pages.\n\nRapier keeps a draft as you work, so a closed tab comes back. **Save** writes the file and, where it can, reads it back to check. Your Markdown stays readable in every other app.\n\nUnder the three dots, **Copy**, **Share** and **Export** send your work as text, a web page, PDF or Word. A shared web page opens offline in any browser, and Rapier can open it again for editing.\n\n## Compare\n\n**Compare**, under the three dots, shows what changed between this document and another file, with the unchanged parts folded away. Neither file changes.\n\n```diff\n- A first thought.\n+ A better way to say it.\n```\n\n## Agents\n\nUse Rapier with Claude, ChatGPT or any AI agent that speaks MCP, on the same document you have open. Ask for an explanation, a rewrite, a plan or a diagram. The agent reads only the parts it needs, so it works fast and cheaply on a long document. It changes exactly the passage it read and can't overwrite what you're typing. Each change shows where it lands, to keep or drop, and undoing it never undoes your own work. While it's connected, the circle says so; tap it for status, messages and changes. Select a passage and use **Ask** to talk about that part.\n\nTo connect, add `https://mcp.rapier.website/mcp` as a connector in Claude, ChatGPT or any app that takes MCP. It needs no account and no key. In Claude Code, the Rapier plugin sets it up for you.\n\nTry asking: **“Draw how this works, then leave room for my notes.”** The diagram is laid out for you, with numbered steps and arrows that find their way around the boxes, in light and dark. Every box stays a shape you can move, relabel or recolour.\n\n![An editable diagram: ask, make it together, keep what works][agent-diagram] <!--md-layout:v1 width=100%-->\n\n## Where it runs\n\nMade for your phone, and the same in any browser: use it at rapier.website, install it as an app, or keep `rapier.html` on a USB stick. On Android, the Rapier app keeps your notes in its own files and never touches the internet. The whole editor is one file, under 2 MB.\n\n## Keyboard\n\nHold **Ctrl** (**Cmd** on a Mac), then:\n\n| Key | Action |\n|---|---|\n| `K` | Every command (Link, with words selected) |\n| `F` · `H` | Find · Replace |\n| `S` · `Shift S` | Save · Save as |\n| `Z` · `Shift Z` | Undo · Redo |\n| `B` · `I` · `U` | Bold · Italic · Underline |\n| `.` · `,` | Superscript · Subscript |\n| `Alt 1` to `Alt 6` · `Alt 0` | Heading · Paragraph |\n| `M` · `Shift M` | Indent · Outdent |\n| `Alt H` | Highlight |\n| `Enter` | Page break |\n| `Alt ,` | Settings |\n\n`Tab` and `Shift Tab` nest a list item, indent code or move through a table. `Esc` closes what's open.\n\n## For developers and agents\n\n```sh\nnpx rapier-html notes.md\nnpx rapier-html notes.md --view draw\nnpm install rapier-markdown-kit\nnpm install rapier-embed\n```\n\nGive someone the whole editor around their document with `rapier-html`, read and write Markdown with the kit, or embed Rapier in your own app. The agent tools are described in `llms.txt` and `agents.md`; the hosted connection is `https://mcp.rapier.website/mcp`.\n\nRapier is free software under AGPL-3.0-only. The Markdown kit uses the MIT licence.\n\n[^1]: Footnotes work too. Tap the arrow to return.\n\n## Will\n\nIf you work with an agent, you can tell it what it may do with each part of a document: type an intent on a section, or lock it. Select the section and tap **W** on the formatting bar. Rapier writes that into the document as invisible HTML comments, which agents see when they work on it and people never do. It travels with the file: Markdown, Word, PDF and Rapier's own web pages.\n\n[draw-spring]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjEgMyAzNDAgNTgiIHdpZHRoPSIzNDAiIGhlaWdodD0iNTgiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozNDIsImgiOjY0fSwic3Ryb2tlcyI6W3sicHRzIjpbWzI0LDMyLDBdLFszOCwzMy44LDE4XSxbNTIsMzUuNCwzNl0sWzY2LDM2LjcsNTRdLFs4MCwzNy42LDcyXSxbOTQsMzgsOTBdLFsxMDgsMzcuOCwxMDhdLFsxMjIsMzcuMiwxMjZdLFsxMzYsMzYuMSwxNDRdLFsxNTAsMzQuNiwxNjJdLFsxNjQsMzIuOCwxODBdLFsxNzgsMzEuMSwxOThdLFsxOTIsMjkuMywyMTZdLFsyMDYsMjcuOSwyMzRdLFsyMjAsMjYuOCwyNTJdLFsyMzQsMjYuMSwyNzBdLFsyNDgsMjYsMjg4XSxbMjYyLDI2LjQsMzA2XSxbMjc2LDI3LjQsMzI0XSxbMjkwLDI4LjcsMzQyXSxbMzA0LDMwLjMsMzYwXSxbMzE4LDMyLjEsMzc4XV19XSwic2hhcGVzIjpbeyJpZCI6InNwcmluZyIsInN0cm9rZSI6MCwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoic3ByaW5nIiwic3R5bGUiOm51bGwsImdlb20iOm51bGwsIm5pYiI6OX1dLCJ0b29sIjoic2VsZWN0IiwidmlldyI6eyJ4IjoxLCJ5IjozLCJ3IjozNDAsImgiOjU4fX08L21ldGFkYXRhPjxzdHlsZT5AbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOmRhcmspe1tzdHJva2U9IiMxMjEyMTIiXXtzdHJva2U6I2ZhZmFmYX19PC9zdHlsZT48ZyBkYXRhLXNoYXBlLWlkPSJzcHJpbmciIGRhdGEtYnJ1c2g9InNwcmluZyI+PHBhdGggZD0iTTI0IDMyIEwyNS41NiAzNy4xNCBMMjcuNDIgMzkuOTcgTDI5LjczIDM5LjI5IEwzMi40MyAzNS41NCBMMzUuMjggMzAuNjUgTDM3LjkzIDI3LjA3IEw0MC4xNiAyNi42IEw0Mi4wMSAyOS42MSBMNDMuNjQgMzQuOCBMNDUuMjggMzkuODMgTDQ3LjIgNDIuNDIgTDQ5LjU0IDQxLjQ3IEw1Mi4yMiAzNy41MyBMNTQuOTEgMzIuNTYgTDU3LjQ1IDI5LjA1IEw1OS42OSAyOC43NiBMNjEuNjEgMzEuOTQgTDYzLjMzIDM3LjE2IEw2NS4xNiA0Mi4wNiBMNjcuMjkgNDQuMzUgTDY5LjYgNDMuMDUgTDcyLjA4IDM4Ljg1IEw3NC42MSAzMy44MyBMNzcuMDMgMzAuNDIgTDc5LjE5IDMwLjMxIEw4MS4xNCAzMy41OSBMODMuMTYgMzguNzUgTDg1LjIzIDQzLjQxIEw4Ny4zNyA0NS4zOCBMODkuNjIgNDMuNzYgTDkxLjk2IDM5LjM1IEw5NC4yMiAzNC4yNiBMOTYuMyAzMC44NiBMOTguNSAzMC44MyBMMTAwLjc1IDM0LjE3IEwxMDMuMDMgMzkuMjggTDEwNS4zIDQzLjczIEwxMDcuNiA0NS4zNyBMMTA5Ljg0IDQzLjM4IEwxMTEuODYgMzguNyBMMTEzLjg0IDMzLjUxIEwxMTUuOTEgMzAuMjMgTDExOC4xMiAzMC4zOCBMMTIwLjQ1IDMzLjg0IEwxMjIuOTQgMzguODkgTDEyNS40OSA0My4wNSBMMTI3LjggNDQuMzIgTDEyOS44MyA0Mi4wMiBMMTMxLjY2IDM3LjE1IEwxMzMuNDYgMzEuOTUgTDEzNS4zMiAyOC44MSBMMTM3LjQ2IDI5LjA3IEwxNDAuMDUgMzIuNTUgTDE0Mi43OSAzNy40OSBMMTQ1LjQzIDQxLjQzIEwxNDcuNzUgNDIuNCBMMTQ5LjcyIDM5LjgyIEwxNTEuMzcgMzQuNzggTDE1Mi45MiAyOS41NyBMMTU0Ljc1IDI2LjUzIEwxNTcuMDMgMjYuOTcgTDE1OS43MSAzMC41NSBMMTYyLjU2IDM1LjQ0IEwxNjUuMjQgMzkuMTkgTDE2Ny41MyAzOS44OSBMMTY5LjQgMzcuMDggTDE3MSAzMS45NSBMMTcyLjYgMjYuODIgTDE3NC40NyAyNC4wMSBMMTc2Ljc2IDI0LjcxIEwxNzkuNDQgMjguNDYgTDE4Mi4yOSAzMy4zNSBMMTg0Ljk3IDM2LjkzIEwxODcuMjUgMzcuMzcgTDE4OS4wOCAzNC4zMyBMMTkwLjYzIDI5LjEyIEwxOTIuMyAyNC4wOCBMMTk0LjMgMjEuNTEgTDE5Ni42MiAyMi41IEwxOTkuMjMgMjYuNDcgTDIwMS45NCAzMS40MiBMMjA0LjUgMzQuOTEgTDIwNi42NiAzNS4xOSBMMjA4LjU1IDMyLjA1IEwyMTAuMzUgMjYuODUgTDIxMi4xOCAyMS45OCBMMjE0LjIxIDE5LjY4IEwyMTYuNTIgMjAuOTUgTDIxOS4wNyAyNS4xMSBMMjIxLjU4IDMwLjE1IEwyMjMuOTQgMzMuNTkgTDIyNi4xNSAzMy43MiBMMjI4LjE5IDMwLjQzIEwyMzAuMTQgMjUuMjMgTDIzMi4xNCAyMC41MyBMMjM0LjQyIDE4LjUzIEwyMzYuNzUgMjAuMTkgTDIzOC45OSAyNC42NSBMMjQxLjIzIDI5Ljc4IEwyNDMuNDUgMzMuMTQgTDI0NS42NiAzMy4xMiBMMjQ3Ljc4IDI5LjczIEwyNTAuMDUgMjQuNjUgTDI1Mi4zOCAyMC4yNCBMMjU0LjYzIDE4LjYyIEwyNTYuNzggMjAuNTkgTDI1OC44NSAyNS4yNSBMMjYwLjg2IDMwLjQxIEwyNjIuNzggMzMuNjkgTDI2NC45MiAzMy42IEwyNjcuMzcgMzAuMjEgTDI2OS45NCAyNS4yIEwyNzIuNDUgMjEuMDMgTDI3NC43NiAxOS43NCBMMjc2Ljg2IDIyLjA0IEwyNzguNjcgMjYuOTQgTDI4MC4zOSAzMi4xNiBMMjgyLjMxIDM1LjM0IEwyODQuNTUgMzUuMDUgTDI4Ny4wOSAzMS41NCBMMjg5Ljc4IDI2LjU3IEwyOTIuNDYgMjIuNjMgTDI5NC44IDIxLjY4IEwyOTYuNzIgMjQuMjcgTDI5OC4zNiAyOS4zIEwyOTkuOTkgMzQuNDkgTDMwMS44NCAzNy41IEwzMDQuMDcgMzcuMDMgTDMwNi43MiAzMy40NSBMMzA5LjU3IDI4LjU2IEwzMTIuMjcgMjQuODEgTDMxNC41OCAyNC4xMyBMMzE2LjQ0IDI2Ljk2IEwzMTggMzIuMSAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvZz48L3N2Zz4=\n[rapier-logo]: data:image/jxl;base64,/wr4BX6BBcWNCAgQAHgJWUCoAEmimIhjGMcBQEDJJEiQaFnLAjy5F/VxJtghJgHANu3f17alSqptCuWkaYNef9Gm07elXDbkgwaFMocwJEhKYo6TyX6w3sdbs+7b4fjQ6My9h7mN5riuz8m67saHk5nxHTVrjHEs6koX/ZLuLoqyn6GAorm8bKjLaguKsm2gbYridZoqi6IoC2VRWckECcYRhDBsDSIr8iwhqATR1CIEEZFv/9N9Sf7KWX7HrDNq4k/+bcXGTQor3R8vOX7NbqwqRj0d7tnqGea6nf5E95X5OM92R6NDyTN9Zs81jPMlYug/E7s5Pl4bHXQ5QOgyG24Lwzx7vsBlDXw83CQGCL1aJgba8BW6s+XHRMNECqFjiz6K4+fC5gCCulrD95mKGUFhneFbU43myk6L0noDJlKYUVofLHI4htZamBpMCFpriW5AI2+xcKbHxfN5PnBDI9sdi9Hj1HAHz37diPAcr6kvhfMs/DmHizDOSfqsXz3P8eLMY/no8RqPxfNqcSjgHI3y6MwOhPttLctZruhmMMJzSHAfbxuvQD/N4nh0m7iv25tEQ090WVe+oqLGCq8hv6Cjk+HVbkNLhVfZd0JxZapb0dw2URTX1gQ0N3o0guamcmjudeuC5haPo7ohvqK4Ln5Gc9e0oLmRFKq75B2aGymhusvNobmSRncni+aaE6prETTX8G/qN9iQtPSY8Xxe3mhzhn5Te1dGvNSksFg6FH4Xod/1dJwhj18NA1hBbGXE54wwglNgyGeG0ArCiJuFIZwYc2MYQRHGXPjL0/d+mzRf/+UijHkVI2j57zcC\n[leaf-w]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQ5IDM4IDIwMyAyMDQiIHdpZHRoPSIyMDMiIGhlaWdodD0iMjA0IiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6MzAwLCJoIjozMDB9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImMxIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoidGV4dCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjpudWxsLCJnZW9tIjp7ImN4IjoxNTAsImN5IjoxNTB9LCJpbmsiOiIjYjMyNjFlIiwibGFiZWwiOiJXIiwidGV4dFNpemUiOjIwMCwidGV4dEZvbnQiOiJsZXR0ZXJzOmxlYWYifV0sInZpZXciOnsieCI6NDksInkiOjM4LCJ3IjoyMDMsImgiOjIwNH19PC9tZXRhZGF0YT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDUwLjQgNDApIiBkPSJNNzgzIDc4Yy02LTEyIDAtMjgtNi00MC0xMCA4LTggMjQtMTcgMzQtNS0xMi0xLTI3LTYtMzktMTggNS0yIDM0LTIwIDQ1LTUtMTEgMC0yMi0zLTM0LTE3IDAtMjQgNzUtMTUgODcgMy0xIDQtMSA2LTMgOC0xMi00LTM0IDktNDEgMTAtNSAyNDgtOSAyNTMtNiA5IDUgOCAxOSA3IDI3LTIgMTktMTE1IDMzLTExNiAxMTcgNi0xIDExLTQgMTctOCAxNSAxMiA3MS0zNCA1Mi0zOS0xOC01LTI5IDktNDAgMTkgMTMtNTMgOTgtMjUgMzcgMTggMTMgMzEgNzggNTIgMjkgOTItNyA1LTIyIDE0LTIwIDIzIDYgNTIgMTAyIDEwOCA0IDIwMi0xMjggMTIzLTE2MC0xMjMtNzYtNjEtOSAxNy00OSAxMy0zNSA0NyA0MyAxMDEgMTQ3LTE0OS0xMS0xNDMtMTMgMS0xNSAyMy0xOCAzMy0xNCA0NC03MCAxNjYtNjMgMjA2IDkxLTYgMTQ5LTExOCAxMjUgNzYgMTQgMiAyOC00IDQyLTcgMTcyLTQwLTg5LTE0NCAyNi00NS01NCA1MC00NC0xMTQgMjktNDIgNTYgNTYtMjMgODUtNjAgMTAzIDIyIDIyIDEwNSAzNiA4MCA5NS0zIDYtNjYtOC04MS0yLTg3IDM3LTEzNyAxMzUtMjQ3IDgyLTEyIDE0LTEwIDMyLTI1IDQzLTE3LTE0LTExLTQyLTI0LTYxLTExLTE1LTM3LTE3LTQ5LTMyLTM1LTQ0LTIwLTk5LTM4LTE0OC04LTIzLTU4LTM0LTU4LTQxIDItMzIgNDAtMzEgNjEtMzQgMi0yNS0yMS0xMDItNDAtMTE3LTEyIDIyLTc3IDIyNi03MyAyNDAgMyA4IDYxIDEwIDc0IDIzIDMxIDMwIDMwIDc5IDYyIDEwNyAxNiAxNCA0MyAzIDU1IDE0LTc1IDY2LTk3LTEzOS0xNzAtMTIzLTY4IDE1LTYxIDE5Mi0xMDkgMTc3LTIxIDIwLTQzIDMyLTY2IDQ3IDI0IDcgMzQtMTIgNTQtMTYgNCA1IDYgOCA5IDE0IDc2LTIgNTItMTAwIDc4LTExMSAxOSAyNSAyNCA2MyA2OSA1NSAxLTE2LTQ2LTY5LTYtNzQgNTAgMTEwIDMxIDk5IDE1MCA2MCAzMyA0NC05NyAzNy0xMTggMzItNy0xLTEwLTEtMTUgMiAxNCAxNyA0MSAyMyA2MiAyOSAxNTggNDcgMjAyLTYzIDMxOC05OCAzMS05IDU3LTggODYgNiA2MSAzMSAyNCAxNDgtNDYgMTIzLTExNC00MCA4MS0zOCAxNC03MS01NS0yNy0xNjAgNjQtMjE4IDc0LTcyIDEzLTE0NCA2LTIwNy0zMi0xNS05LTI5LTI1LTQ2LTI5IDkgNjktMzYgOTAtNjYgMzItMTcgMC0zMiAxNS00OSAxOS02MyAxNS0xMDQtNy0xNTktMjQtMTMgMjQtMjggMzYtNTcgMzctMTA2IDYtNjYtMTE1LTgzLTE3NS01LTE5LTIxLTI1LTI3LTQwIDIxLTI1IDQ3IDAgNzAtMyA4LTI0LTItNTIgOC03OCAyMy02MyA4Ni0xMTQgNjMtMTg3LTQtMTMtMTgtMTktMjItMzEgNDEtNDUgNzYgNzIgNzggOTVsMSAxMSAxIDktMSA2IDAgMiAwIDMtMSA2Yy01IDQzLTIzIDg1LTUgMTI3IDUgOSAxNiAxNCAyNCA2IDEyLTEzLTE4LTQzLTUtNjAgMjMgMTQgNDUgNTcgNjYgNzcgNi0xNC0xMDUtMzk2LTEyNC00MjAtMTAgMjYtNiA1OC0xNyA4Mi0xMyAyNy03NiA5OC0xMDcgODMtMTItNy0yNS0yMC0yNC0zMyA4LTQgMzctMiAzOS0xNCAyLTE4LTMxLTI4LTMzLTQ3LTMtMjUgMzItMzQgMzYtNTQgMi0xMC0xMi0xNC0xNC0yMy0xMy01MSAyLTEzMiA1Ny0xNTEtNiA0OC03NCAxMjQtMjYgMTc3IDYzIDY5IDk5LTU3IDM2LTM4IDIgMTEgMTIgMTMgMTcgMjMtMjkgNDYtNzQtOTMtMTAtMTI5IDUgMjktMjQgNTctMTQgODkgMjEgNCAzNCA1IDU0IDE0LTMtMzgtMzAtMTMyLTU0LTE1NS0zNS0zMy0xMTYtMjEtOTgtODcgMzgtMiA3OSAxMCAxMTUgMiA1LTI1LTM5LTE2LTU1LTE2bC05IDE0Yy00NC0zLTczLTUyLTIwLTcwIDIyLTggNDggNDMgODQgMzYgNDItOCA4Ny00NiAxMzItNDQgMjcgMiA1NSA0OCA3MiA0NSA4NC0xNiAxMDgtNjAgMjEzLTQwIDU3IDEyIDk1IDcwIDEzMSA3NiA0IDE4LTYgMzkgMTAgNTIgOS01MiAxMi0xNDkgOTgtMTI1IDExIDMgMjMgMTkgMzUgMTggMTYtMyAyOC0yMyA0MC0yOSAxNi03IDEyMiAxNyAxMDkgMzgtOCAxNC01OC0xMy03NS0xMi00NCAzLTY0IDM2LTEwMCA1MXpNMTc1IDY5Yy00LTctNy0xMC0xNC0xMy0yNSAyNyAxMyAzOSAzNiAyNyAwLTEzLTMtMjYgNy0zMyA2IDkgNCAyMSA2IDMyIDIyIDMgNy0zMSAyMC00MiA1IDExLTIgMzMgNSA0MyAxIDAgMjkyIDM1IDIwMi01OC0xMCA0LTM4IDUyLTg2IDUyIDktMjAgMzctMjUgNTUtMzUtMjItMTYtNzggMzAtMTA3IDMwIDItMTEgMy0xNi01LTI0LTEyIDUtOSAxNy0xNSAyOC0xMS0xMiA0LTM1LTgtNDUtMzItMjgtODYgMTItOTYgMzh6TTQ2MCA3OWM1MS0xNSA2OC0zMiAxMjgtMjUtMTUtMzctMTM2LTMxLTEyOCAyNXpNNDc4IDgzYzMxIDE0IDczLTQgMTA2IDgtMzcgMjctMTYwIDExLTIwNCAxLTEgMTMgMTEgMTIgMjMgMTggNTAgMjYgNjUgNjggODEgMTE5IDI5IDk4IDE0MyA1MzcgMTc4IDU5MSAzNS0zOCAxNTctNDc5IDE4Mi01NjIgMTMtNDIgMTktODggNDUtMTIzIDEwLTEzIDQwLTI1IDQxLTM4LTI0LTUtMTAxLTktMTE5IDMgMTQgMTYgNDEgMTcgNDIgNDYgMSAyOC0xNDMgNDg4LTE1NCA0OTktMjYtMTUtMzktMTExLTUwLTE0Mi0yNC03MS0xMTgtMjk3LTk5LTM1OSA5LTMzIDUxLTUwIDc3LTU5LTQwLTE3LTExNy00Ni0xNDktMnpNNzA1IDE2NGM0LTE3IDctODAtMy05My0xNiAxNi0xNiA4MyAzIDkzek04NSAxMDNjMTggMTUgNDYgMjYgNjAgNDYgNzYgMTA5IDE0MyA0MTggMTg2IDU1OCAxMiAzOSAxNSA5MiAzNCAxMjYgMjItMzcgMTI2LTM4NyAxMTMtNDA2LTI2IDQxLTUwIDE5OS03NSAyMTYtOS05LTE1MS00NDYtMTUzLTQ3NC0xLTI5IDI3LTUwIDQ1LTY2LTgtNi0yMDAtNi0yMTAgMHpNNjAwIDE5NWMyMi0xNiA0NiA0IDY4IDEyIDMxLTQ2LTQ0LTEyMS05Ni00Ny0xNiAyMyAzOCAyMjYgNzQgMTI3IDQtMTIgMTEtMjIgNS0zNS0xMC0yMi00Ny0zOC01MS01N3pNNzA4IDM5NmMxMS03IDQyLTMyIDQ3LTQzIDEyLTI1LTI2LTU2LTktODkgMTYtMzMgODQtNjggNTktMTEyLTgtMTUtMjAtMjEtMzctMjMtOCAwLTE4LTktMjYtNS0zMSAxOC0zNiAxNDItMzQgMTcyIDMgMzItNyA2OCAwIDEwMHpNMjgyIDIyMmM4LTggMTYtNDUgMzQtMzggMTQgNS0yMCA1My0yMSA2OCAwIDM0IDI3IDEyMyA3MyAxMTAtOTQtMTA4IDM5LTEzOC02LTIxOS0yMi0zOS0xMTkgMTEtODAgNzl6TTM5MiAyOTNjNDUtMjkgNjYgNjIgMTEgODItMjQgOC00OC00LTY5IDEgNyAxOSA1MyAyNSA2OSA0NyAxMSAxNiAxMiA2Ny0xNiA1MSAxNi0zMi00LTc3LTQ1LTcwIDAgMTYgNDUgMTU5IDUyIDE2MyAyMy0zNCA2Ny0xODYgNjctMjI4LTEtNDQtMzYtMTYyLTc2LTE4My03IDEyIDMgMjYtMSA0Mi0xMSA0NC03MCA5MS0yNCAxMzggMTcgMTggNzMgMjUgNjYtMTUtNC0xOS0yOS0xMi0zNC0yOHpNODYzIDM2M2M2LTcgNy0xNSAxMi0yMyA1IDEzLTUgMjYgNiAzNSAxMy0xMCA5LTQwIDIzLTU0IDEzLTEzIDMzLTcgNDgtMjAgMjQtMjEgMjItMzYtMy01Ny02MS01My0xNjEgMTA2LTg2IDExOXpNNjc5IDQzNmMxNy0zNiAyOC0xMTYgOS0xNTEtMzAgMTAtMjUgMTI5LTkgMTUxek02MTggMzQyYy0yIDIzIDI4IDEzMyA0NyAxNDYgNC0xNC03LTE1Ni0xMi0xNjUtMTIgNS0yMyAxMy0zNSAxOXpNODk0IDM4MmM2IDIgOSAyIDE1IDAgMSA2IDEgMTEgMyAxNyA4IDAgOSAwIDE1LTUgMSAxMC0zIDIwIDAgMzBsMTIgMWMtNCAxMi04IDIyLTQgMzRsMTEgMWMtNiAxOS0xNSAzNy0xOSA1NyAzMS0xMiA1Ni01MiA0NS05MmwtNy0zYzItMTYgMTAtMzQtOS00MCAwLTEwIDItMTgtMy0yNi02IDEtNyAwLTEyIDUtOC00OS01NS0xOS00NyAyMXpNNTcgMzc5Yy00NCAyMyAxNyA5OCA2NCA2NCA3LTUgMTMtMTcgMTItMjctMS0yNS0zNCAyNS01NCAxMi0xNC05IDItNjEtMjItNDl6TTY4NSA1NTVjMTAtNiA2Mi0xNjEgNTktMTc2LTM1IDUtNzkgMTQ3LTU5IDE3NnpNNDMgNDkxYzMwIDI5IDQzLTYwIDAgMHpNMTU4IDQ5N2MwIDE4IDE1IDM0IDEzIDU1LTUgNzUtNjYgMTI2LTc4IDIwMS00IDI4IDQ2IDEwNSAzMyAxMTQtMjAtMTEtNDktMTAxLTg2LTc2IDkgNDgtMiAxODggNjkgMTg1IDEzIDAgMzEtMyA0MC0xMiAyMy0yNC00MS02My0yMy02OCAzNS0xMCA0NSA1NiA3OSA1Ni0yLTE3LTIxLTI2LTIyLTQ2IDAtMTcgNzcgMiA5NS0yOSAxOC0zMyAxOC0xMjktMzQtMTM3LTE2LTIgNCA2OC0yIDgxLTEzLTEwIDAtODEtNDQtNTgtMTIgNyAxOSAxMzMtMjAgNzktNTgtODAgNjUtMzEwLTIwLTM0NXpNODQ5IDU4NmMtMzAgMjAtMzkgNzAtNjYgOTcgNy0yMyAzNS00OCAzNC03Mi00MS00LTQ1IDE1LTY2IDQwbC01LTEzYy0xNCA1LTE3IDQ3LTE1IDYxIDIwIDMgMTktMjAgMzMtMjYtMyA5LTggMTctMTEgMjYgMjMgMjggMjAgMTMgNDYgMi0yIDctMyAxMi0yIDE5IDc3IDIzIDk0LTEwNyA1Mi0xMzR6TTUwMyA2MjRjNSA0IDcgNSAxNSA0bDkgMTNjMzgtMTEtMTYtNDUtMjQtMTd6TTg1MiA2MThjLTYgMjctMzEgNjQtNTIgODMgMy0yMCAzNy03NSA1Mi04M3pNNjk2IDgwMGMtMi0zMyA0OS00OSA1Ny03Ni00NC00OC04MiAxMTAtODUgMTM2IDI4IDAgNDItNDUgNjktMzgtNiAxNS0yNCAyNC0yOSAzOSA2LTEgMTEtMyAxNy02LTEgNSAwIDkgMSAxMyAyNS0yIDM4LTQgNjQtMTdsNCA3YzcxLTUgNzEtOTQgMTgyLTgyIDEtMTMtNi0yMy0xNS0zMy02NS03OC0xMDIgMTMtMTUyIDIyLTIyIDUtMS00NC00NS0yNi0yNiAxMC00MyA2My02OCA2MXpNMTgxIDczM2MtMTEgMTYtMTEgNDYtNSA2MyAxNi01IDE4LTUwIDUtNjN6TTU1OSA3NzNsMTIgM2MtMiAxMi03IDE4LTEgMjggNyAwIDEwLTIgMTctNy0zIDIwIDEgMzIgMjAgNDAgMy0xOS0xMS02Ny0yOC03NSAzLTEyIDQtMTctNC0yNy0xNCA3LTIwIDIzLTE2IDM4ek0zMDggODMzYy0yMiA1My0zNiA5OC0xMDcgNzgtMzMgNDMgMTg3IDg5IDEwNy03OHpNNzM0IDk1OGM1NiAxNiAxNTAtMTA0IDIwMS00MCAyNiAzMS0yMCAzNC0zNCA0OCAzOSAyOCA4Mi0zMyA2MC02OS00Mi03Mi0xOTAgMTctMjI3IDYxek00MTEgOTExYy01IDktOCAyMS0xMCAzMmw5IDZjMCA5LTEgMTYgMSAyNSAyOS00IDI0LTUzIDAtNjN6Ii8+PC9nPjwvZz48L3N2Zz4=\n[agent-diagram]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjMwIDMwIDUwOCA2NzIiIHdpZHRoPSI1MDgiIGhlaWdodD0iNjcyIiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6NTcwLCJoIjo3MzR9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImFzayIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6Mjg0LCJjeSI6ODcuNSwidyI6MTU0LCJoIjo5NX0sInNlZWQiOjc4NDI0NTkzNSwiaW5rIjoiI2YwZjBmMCIsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiQXNrIHlvdXIgYWdlbnQgZm9yIGEgZGlhZ3JhbSIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6MTA0LCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6MX0seyJpZCI6ImxheSIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6Mjg0LCJjeSI6MjYyLjUsInciOjEyMSwiaCI6OTV9LCJzZWVkIjoxMjk5NjcyOTY0LCJpbmsiOiIjZjBmMGYwIiwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJSYXBpZXIgbGF5cyBpdCBvdXQiLCJ0ZXh0U2l6ZSI6MTQsImxhYmVsV2lkdGgiOjgwLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6Mn0seyJpZCI6ImtlZXAiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJkaWFtb25kIiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjI4NCwiY3kiOjQ0NC41LCJ3IjoyMDAsImgiOjEwOX0sInNlZWQiOjEwNDQ1MzAxMDEsImluayI6IiNmMGYwZjAiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IktlZXAgaXQ/IiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjo3MiwidGV4dEJvbGQiOnRydWUsImxhYmVsSW4iOnRydWV9LHsiaWQiOiJ5b3VycyIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6OTYsImN5Ijo2MzUuNSwidyI6MTEyLCJoIjo5NX0sInNlZWQiOjE2MzcxNzM3MDQsImluayI6IiMxMmE1OTQiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IllvdXJzIHRvIGVkaXQiLCJ0ZXh0U2l6ZSI6MTQsImxhYmVsV2lkdGgiOjcyLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6M30seyJpZCI6ImRyb3AiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJyZWN0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjQ3MiwiY3kiOjYzNS41LCJ3IjoxMTIsImgiOjExM30sInNlZWQiOjIxODI3MzgxMDEsImluayI6IiNmMGYwZjAiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IkdvbmUsIG5vdGhpbmcgY2hhbmdlZCIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6OTEsImxhYmVsQWxpZ24iOiJzdGFydCIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlLCJzdGVwIjo0fSx7ImlkIjoiZzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjoyODQsInkxIjoxMzUsIngyIjoyODQsInkyIjoyMTV9LCJzZWVkIjo1NTM2NDQyMTYsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJhc2siLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6ImxheSIsImF4IjowLjUsImF5IjowfX19LHsiaWQiOiJnMiIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6ImFycm93IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJhcnJvdyIsImdlb20iOnsieDEiOjI4NCwieTEiOjMxMCwieDIiOjI4NCwieTIiOjM5MH0sInNlZWQiOjM1MzY2NDU1NDMsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJsYXkiLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6ImtlZXAiLCJheCI6MC41LCJheSI6MH19fSx7ImlkIjoiZzMiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjoxODQsInkxIjo0NDQuNSwieDIiOjk2LCJ5MiI6NTg4fSwic2VlZCI6MjYwMTczMjY2OSwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJLZWVwIiwidGV4dFNpemUiOjEwLCJsZXR0ZXJTcGFjaW5nIjowLjEyLCJsYWJlbFdpZHRoIjoxNjAsImxhYmVsUG9zIjowLjY2MjYzNDk4OTIwMDg2MzgsInRleHRGb250IjoibW9ubyIsInRleHRDYXNlIjoidXBwZXIiLCJyb3V0ZSI6ImF1dG8iLCJiaW5kIjp7InN0YXJ0Ijp7InRvIjoia2VlcCIsImF4IjowLCJheSI6MC41fSwiZW5kIjp7InRvIjoieW91cnMiLCJheCI6MC41LCJheSI6MH19fSx7ImlkIjoiZzQiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjozODQsInkxIjo0NDQuNSwieDIiOjQ3MiwieTIiOjU3OX0sInNlZWQiOjIzODk2MTA1NzAsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiRHJvcCIsInRleHRTaXplIjoxMCwibGV0dGVyU3BhY2luZyI6MC4xMiwibGFiZWxXaWR0aCI6MTYwLCJsYWJlbFBvcyI6MC42NjkyMTM0ODMxNDYwNjczLCJ0ZXh0Rm9udCI6Im1vbm8iLCJ0ZXh0Q2FzZSI6InVwcGVyIiwicm91dGUiOiJhdXRvIiwiYmluZCI6eyJzdGFydCI6eyJ0byI6ImtlZXAiLCJheCI6MSwiYXkiOjAuNX0sImVuZCI6eyJ0byI6ImRyb3AiLCJheCI6MC41LCJheSI6MH19fV0sInZpZXciOnsieCI6MzAsInkiOjMwLCJ3Ijo1MDgsImgiOjY3Mn19PC9tZXRhZGF0YT48c3R5bGU+QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXtbZmlsbD0iIzEyMTIxMiJde2ZpbGw6I2ZhZmFmYX1bc3Ryb2tlPSIjMTIxMjEyIl17c3Ryb2tlOiNmYWZhZmF9W2ZpbGw9IiNmMGYwZjAiXXtmaWxsOiMxZDFkMWR9W2ZpbGw9IiMxMmE1OTQiXXtmaWxsOiMxMmE1OTR9W2ZpbGw9IiMwMDAwMDAiXXtmaWxsOiMwMDAwMDB9W2ZpbGw9IiM2NjY2NjYiXXtmaWxsOiM5OTk5OTl9fTwvc3R5bGU+PGcgZGF0YS1zaGFwZS1pZD0iYXNrIiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjIwNyIgeT0iNDAiIHdpZHRoPSIxNTQiIGhlaWdodD0iOTUiIGZpbGw9IiNmMGYwZjAiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik0yMjMuMzIgNjYuNzc2TDIyOS40OCA1NS41NTZMMjMxLjI0IDU1LjY0NEwyMjUuMDggNjYuODY0Wk0yMjcuMjggNjkuMzcyUTIyNS41ODYgNjkuMzcyIDIyNC4zMzIgNjguMzgyUTIyMy4xIDY3LjM5MiAyMjIuNDQgNjUuNTY2UTIyMS43OCA2My43NCAyMjEuNzggNjEuMjMyUTIyMS43OCA1OC43MDIgMjIyLjQ0IDU2Ljg3NlEyMjMuMSA1NS4wNSAyMjQuMzMyIDU0LjA2UTIyNS41ODYgNTMuMDQ4IDIyNy4yOCA1My4wNDhRMjI4Ljk5NiA1My4wNDggMjMwLjIyOCA1NC4wNlEyMzEuNDYgNTUuMDUgMjMyLjEyIDU2Ljg3NlEyMzIuNzggNTguNzAyIDIzMi43OCA2MS4yMzJRMjMyLjc4IDYzLjc0IDIzMi4xMiA2NS41NjZRMjMxLjQ2IDY3LjM5MiAyMzAuMjI4IDY4LjM4MlEyMjguOTk2IDY5LjM3MiAyMjcuMjggNjkuMzcyWk0yMjcuMjggNjcuNTI0UTIyOC4zOCA2Ny41MjQgMjI5LjE3MiA2Ni43NTRRMjI5Ljk0MiA2NS45ODQgMjMwLjM2IDY0LjU3NlEyMzAuOCA2My4xNDYgMjMwLjggNjEuMjMyUTIzMC44IDU5LjI3NCAyMzAuMzYgNTcuODQ0UTIyOS45NDIgNTYuNDM2IDIyOS4xNzIgNTUuNjY2UTIyOC4zOCA1NC44OTYgMjI3LjI4IDU0Ljg5NlEyMjYuMjAyIDU0Ljg5NiAyMjUuNDEgNTUuNjY2UTIyNC42MTggNTYuNDM2IDIyNC4yIDU3Ljg0NFEyMjMuNzYgNTkuMjc0IDIyMy43NiA2MS4yMzJRMjIzLjc2IDYzLjE0NiAyMjQuMiA2NC41NzZRMjI0LjYxOCA2NS45ODQgMjI1LjQxIDY2Ljc1NFEyMjYuMjAyIDY3LjUyNCAyMjcuMjggNjcuNTI0Wk0yNDAuMTI4IDY5LjAyTDI0MC4xMjggNTcuNDQ4TDIzNi4wMzYgNTcuNDQ4TDIzNi4wMzYgNTUuODJMMjM4LjE0OCA1NS44MlEyMzguOTg0IDU1LjgyIDIzOS41MTIgNTUuNTc4UTI0MC4wMTggNTUuMzM2IDI0MC4yNiA1NC44MDhRMjQwLjQ4IDU0LjI4IDI0MC40OCA1My40TDI0Mi4wMiA1My40TDI0Mi4wMiA2OS4wMlpNMjM1LjIgNjkuMDJMMjM1LjIgNjcuMTcyTDI0NS43NiA2Ny4xNzJMMjQ1Ljc2IDY5LjAyWiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjIyMC42OCIgeT0iOTQuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSIxMDEuMzM4IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPkFzayB5b3VyIGFnZW50PC90ZXh0Pjx0ZXh0IHg9IjIyMC42OCIgeT0iMTEyLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iOTAuNTYzIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPmZvciBhIGRpYWdyYW08L3RleHQ+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImxheSIgZGF0YS1icnVzaD0iaW5rIj48cmVjdCB4PSIyMjMuNSIgeT0iMjE1IiB3aWR0aD0iMTIxIiBoZWlnaHQ9Ijk1IiBmaWxsPSIjZjBmMGYwIiBzdHJva2U9Im5vbmUiLz48cGF0aCBkPSJNMjM5LjgyIDI0MS43NzZMMjQ1Ljk4IDIzMC41NTZMMjQ3Ljc0IDIzMC42NDRMMjQxLjU4IDI0MS44NjRaTTI0My43OCAyNDQuMzcyUTI0Mi4wODYgMjQ0LjM3MiAyNDAuODMyIDI0My4zODJRMjM5LjYgMjQyLjM5MiAyMzguOTQgMjQwLjU2NlEyMzguMjggMjM4Ljc0IDIzOC4yOCAyMzYuMjMyUTIzOC4yOCAyMzMuNzAyIDIzOC45NCAyMzEuODc2UTIzOS42IDIzMC4wNSAyNDAuODMyIDIyOS4wNlEyNDIuMDg2IDIyOC4wNDggMjQzLjc4IDIyOC4wNDhRMjQ1LjQ5NiAyMjguMDQ4IDI0Ni43MjggMjI5LjA2UTI0Ny45NiAyMzAuMDUgMjQ4LjYyIDIzMS44NzZRMjQ5LjI4IDIzMy43MDIgMjQ5LjI4IDIzNi4yMzJRMjQ5LjI4IDIzOC43NCAyNDguNjIgMjQwLjU2NlEyNDcuOTYgMjQyLjM5MiAyNDYuNzI4IDI0My4zODJRMjQ1LjQ5NiAyNDQuMzcyIDI0My43OCAyNDQuMzcyWk0yNDMuNzggMjQyLjUyNFEyNDQuODggMjQyLjUyNCAyNDUuNjcyIDI0MS43NTRRMjQ2LjQ0MiAyNDAuOTg0IDI0Ni44NiAyMzkuNTc2UTI0Ny4zIDIzOC4xNDYgMjQ3LjMgMjM2LjIzMlEyNDcuMyAyMzQuMjc0IDI0Ni44NiAyMzIuODQ0UTI0Ni40NDIgMjMxLjQzNiAyNDUuNjcyIDIzMC42NjZRMjQ0Ljg4IDIyOS44OTYgMjQzLjc4IDIyOS44OTZRMjQyLjcwMiAyMjkuODk2IDI0MS45MSAyMzAuNjY2UTI0MS4xMTggMjMxLjQzNiAyNDAuNyAyMzIuODQ0UTI0MC4yNiAyMzQuMjc0IDI0MC4yNiAyMzYuMjMyUTI0MC4yNiAyMzguMTQ2IDI0MC43IDIzOS41NzZRMjQxLjExOCAyNDAuOTg0IDI0MS45MSAyNDEuNzU0UTI0Mi43MDIgMjQyLjUyNCAyNDMuNzggMjQyLjUyNFpNMjUxLjQ4IDI0NC4wMlEyNTEuNDggMjQyLjM3IDI1Mi4wMDggMjQxLjAyOFEyNTIuNTE0IDIzOS43MDggMjUzLjgxMiAyMzguNDk4UTI1NS4xMzIgMjM3LjI4OCAyNTcuNDY0IDIzNi4wNTZRMjU4LjU0MiAyMzUuNDg0IDI1OS4yMDIgMjM1UTI1OS44NjIgMjM0LjUxNiAyNjAuMTcgMjMzLjk2NlEyNjAuNDc4IDIzMy40MTYgMjYwLjQ3OCAyMzIuNjI0UTI2MC40NzggMjMxLjgxIDI2MC4xMjYgMjMxLjIxNlEyNTkuNzc0IDIzMC42IDI1OS4wOTIgMjMwLjI0OFEyNTguMzg4IDIyOS44OTYgMjU3LjM1NCAyMjkuODk2UTI1NS43MDQgMjI5Ljg5NiAyNTQuNzM2IDIzMC43NTRRMjUzLjc5IDIzMS42MTIgMjUzLjU0OCAyMzMuMTk2TDI1MS41NjggMjMzLjA2NFEyNTEuODMyIDIzMC43NzYgMjUzLjMyOCAyMjkuNDEyUTI1NC44MjQgMjI4LjA0OCAyNTcuMzU0IDIyOC4wNDhRMjU4Ljk2IDIyOC4wNDggMjYwLjEwNCAyMjguNjJRMjYxLjI0OCAyMjkuMTkyIDI2MS44NjQgMjMwLjIwNFEyNjIuNDU4IDIzMS4yMzggMjYyLjQ1OCAyMzIuNThRMjYyLjQ1OCAyMzMuNzY4IDI2Mi4wNjIgMjM0LjY0OFEyNjEuNjY2IDIzNS41MDYgMjYwLjcyIDIzNi4yNTRRMjU5Ljc5NiAyMzcuMDAyIDI1OC4xNjggMjM3Ljg2UTI1Ni43NiAyMzguNjA4IDI1NS43OTIgMjM5LjM3OFEyNTQuODQ2IDI0MC4xNDggMjU0LjM0IDI0MC44NTJRMjUzLjg1NiAyNDEuNTc4IDI1My44MTIgMjQyLjE3MkwyNjIuNDggMjQyLjE3MkwyNjIuNDggMjQ0LjAyWiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjIzNy4xOCIgeT0iMjY5LjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNDMuMDk4IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPlJhcGllcjwvdGV4dD48dGV4dCB4PSIyMzcuMTgiIHk9IjI4Ny4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjY4LjQzMiIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5sYXlzIGl0IG91dDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0ia2VlcCIgZGF0YS1icnVzaD0iaW5rIj48cG9seWdvbiBwb2ludHM9IjI4NCwzOTAgMzg0LDQ0NC41IDI4NCw0OTkgMTg0LDQ0NC41IiBmaWxsPSIjZjBmMGYwIiBzdHJva2U9Im5vbmUiLz48dGV4dCB4PSIyNTYuMTkiIHk9IjQ0OC43IiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjU1LjYxOSIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5LZWVwIGl0PzwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0ieW91cnMiIGRhdGEtYnJ1c2g9ImluayI+PHJlY3QgeD0iNDAiIHk9IjU4OCIgd2lkdGg9IjExMiIgaGVpZ2h0PSI5NSIgZmlsbD0iIzEyYTU5NCIgc3Ryb2tlPSJub25lIi8+PHBhdGggZD0iTTU2LjMyIDYxNC43NzZMNjIuNDggNjAzLjU1Nkw2NC4yNCA2MDMuNjQ0TDU4LjA4IDYxNC44NjRaTTYwLjI4IDYxNy4zNzJRNTguNTg2IDYxNy4zNzIgNTcuMzMyIDYxNi4zODJRNTYuMSA2MTUuMzkyIDU1LjQ0IDYxMy41NjZRNTQuNzggNjExLjc0IDU0Ljc4IDYwOS4yMzJRNTQuNzggNjA2LjcwMiA1NS40NCA2MDQuODc2UTU2LjEgNjAzLjA1IDU3LjMzMiA2MDIuMDZRNTguNTg2IDYwMS4wNDggNjAuMjggNjAxLjA0OFE2MS45OTYgNjAxLjA0OCA2My4yMjggNjAyLjA2UTY0LjQ2IDYwMy4wNSA2NS4xMiA2MDQuODc2UTY1Ljc4IDYwNi43MDIgNjUuNzggNjA5LjIzMlE2NS43OCA2MTEuNzQgNjUuMTIgNjEzLjU2NlE2NC40NiA2MTUuMzkyIDYzLjIyOCA2MTYuMzgyUTYxLjk5NiA2MTcuMzcyIDYwLjI4IDYxNy4zNzJaTTYwLjI4IDYxNS41MjRRNjEuMzggNjE1LjUyNCA2Mi4xNzIgNjE0Ljc1NFE2Mi45NDIgNjEzLjk4NCA2My4zNiA2MTIuNTc2UTYzLjggNjExLjE0NiA2My44IDYwOS4yMzJRNjMuOCA2MDcuMjc0IDYzLjM2IDYwNS44NDRRNjIuOTQyIDYwNC40MzYgNjIuMTcyIDYwMy42NjZRNjEuMzggNjAyLjg5NiA2MC4yOCA2MDIuODk2UTU5LjIwMiA2MDIuODk2IDU4LjQxIDYwMy42NjZRNTcuNjE4IDYwNC40MzYgNTcuMiA2MDUuODQ0UTU2Ljc2IDYwNy4yNzQgNTYuNzYgNjA5LjIzMlE1Ni43NiA2MTEuMTQ2IDU3LjIgNjEyLjU3NlE1Ny42MTggNjEzLjk4NCA1OC40MSA2MTQuNzU0UTU5LjIwMiA2MTUuNTI0IDYwLjI4IDYxNS41MjRaTTczLjM0OCA2MTcuMzcyUTcwLjgxOCA2MTcuMzcyIDY5LjQ1NCA2MTYuMTRRNjguMDkgNjE0LjkzIDY3Ljk4IDYxMi45OTRMNjkuOTM4IDYxMi44NjJRNzAuMDcgNjE0LjI5MiA3MS4wMTYgNjE0LjkwOFE3MS45NCA2MTUuNTI0IDczLjM0OCA2MTUuNTI0UTc0LjI5NCA2MTUuNTI0IDc1LjEzIDYxNS4yNlE3NS45NjYgNjE0Ljk3NCA3Ni40NzIgNjE0LjMzNlE3NyA2MTMuNzIgNzcgNjEyLjY2NFE3NyA2MTEuNjMgNzYuNTM4IDYxMC45NDhRNzYuMDc2IDYxMC4yODggNzUuMjg0IDYwOS45OFE3NC40NyA2MDkuNjUgNzMuNDU4IDYwOS42NUw3Mi4yMjYgNjA5LjY1TDcyLjIyNiA2MDcuODAyTDczLjQ1OCA2MDcuODAyUTc0LjI3MiA2MDcuODAyIDc0Ljk1NCA2MDcuNTZRNzUuNjM2IDYwNy4zMTggNzYuMDMyIDYwNi43NjhRNzYuNDUgNjA2LjI0IDc2LjQ1IDYwNS4zNlE3Ni40NSA2MDQuMTUgNzUuNjggNjAzLjUxMlE3NC45MSA2MDIuODk2IDczLjQ1OCA2MDIuODk2UTcxLjk4NCA2MDIuODk2IDcxLjIzNiA2MDMuNDlRNzAuNDY2IDYwNC4wODQgNzAuMzEyIDYwNS4xMThMNjguMzMyIDYwNC45ODZRNjguNTUyIDYwMy4yMjYgNjkuODcyIDYwMi4xNDhRNzEuMTkyIDYwMS4wNDggNzMuNDU4IDYwMS4wNDhRNzQuOTc2IDYwMS4wNDggNzYuMDk4IDYwMS41NzZRNzcuMjIgNjAyLjA4MiA3Ny44MzYgNjAzLjAyOFE3OC40MyA2MDMuOTc0IDc4LjQzIDYwNS4yNzJRNzguNDMgNjA2LjcyNCA3Ny41MjggNjA3LjYwNFE3Ni42MDQgNjA4LjUwNiA3NC44MjIgNjA4LjgzNkw3NC44MjIgNjA4LjQ0UTc2LjczNiA2MDguNjYgNzcuODU4IDYwOS44MDRRNzguOTggNjEwLjk0OCA3OC45OCA2MTIuNjY0UTc4Ljk4IDYxNC4xNiA3OC4yNTQgNjE1LjIxNlE3Ny41MjggNjE2LjI3MiA3Ni4yNTIgNjE2LjgyMlE3NC45NzYgNjE3LjM3MiA3My4zNDggNjE3LjM3MloiIGZpbGw9IiMwMDAwMDAiLz48dGV4dCB4PSI1My42OCIgeT0iNjQyLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMzkuMDIxIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPllvdXJzPC90ZXh0Pjx0ZXh0IHg9IjUzLjY4IiB5PSI2NjAuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMDAwMDAwIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI0My45NzEiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+dG8gZWRpdDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZHJvcCIgZGF0YS1icnVzaD0iaW5rIj48cmVjdCB4PSI0MTYiIHk9IjU3OSIgd2lkdGg9IjExMiIgaGVpZ2h0PSIxMTMiIGZpbGw9IiNmMGYwZjAiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik00MzIuMzIgNjA1Ljc3Nkw0MzguNDggNTk0LjU1Nkw0NDAuMjQgNTk0LjY0NEw0MzQuMDggNjA1Ljg2NFpNNDM2LjI4IDYwOC4zNzJRNDM0LjU4NiA2MDguMzcyIDQzMy4zMzIgNjA3LjM4MlE0MzIuMSA2MDYuMzkyIDQzMS40NCA2MDQuNTY2UTQzMC43OCA2MDIuNzQgNDMwLjc4IDYwMC4yMzJRNDMwLjc4IDU5Ny43MDIgNDMxLjQ0IDU5NS44NzZRNDMyLjEgNTk0LjA1IDQzMy4zMzIgNTkzLjA2UTQzNC41ODYgNTkyLjA0OCA0MzYuMjggNTkyLjA0OFE0MzcuOTk2IDU5Mi4wNDggNDM5LjIyOCA1OTMuMDZRNDQwLjQ2IDU5NC4wNSA0NDEuMTIgNTk1Ljg3NlE0NDEuNzggNTk3LjcwMiA0NDEuNzggNjAwLjIzMlE0NDEuNzggNjAyLjc0IDQ0MS4xMiA2MDQuNTY2UTQ0MC40NiA2MDYuMzkyIDQzOS4yMjggNjA3LjM4MlE0MzcuOTk2IDYwOC4zNzIgNDM2LjI4IDYwOC4zNzJaTTQzNi4yOCA2MDYuNTI0UTQzNy4zOCA2MDYuNTI0IDQzOC4xNzIgNjA1Ljc1NFE0MzguOTQyIDYwNC45ODQgNDM5LjM2IDYwMy41NzZRNDM5LjggNjAyLjE0NiA0MzkuOCA2MDAuMjMyUTQzOS44IDU5OC4yNzQgNDM5LjM2IDU5Ni44NDRRNDM4Ljk0MiA1OTUuNDM2IDQzOC4xNzIgNTk0LjY2NlE0MzcuMzggNTkzLjg5NiA0MzYuMjggNTkzLjg5NlE0MzUuMjAyIDU5My44OTYgNDM0LjQxIDU5NC42NjZRNDMzLjYxOCA1OTUuNDM2IDQzMy4yIDU5Ni44NDRRNDMyLjc2IDU5OC4yNzQgNDMyLjc2IDYwMC4yMzJRNDMyLjc2IDYwMi4xNDYgNDMzLjIgNjAzLjU3NlE0MzMuNjE4IDYwNC45ODQgNDM0LjQxIDYwNS43NTRRNDM1LjIwMiA2MDYuNTI0IDQzNi4yOCA2MDYuNTI0Wk00NTEuNDE2IDYwOC4wMkw0NTEuNDE2IDYwNC42MzJMNDQzLjc2IDYwNC42MzJMNDQzLjc2IDYwMi45MTZMNDUxLjI4NCA1OTIuNEw0NTMuMzA4IDU5Mi40TDQ1My4zMDggNjAyLjc4NEw0NTUuMiA2MDIuNzg0TDQ1NS4yIDYwNC42MzJMNDUzLjMwOCA2MDQuNjMyTDQ1My4zMDggNjA4LjAyWk00NDUuNjk2IDYwMi43ODRMNDUxLjQxNiA2MDIuNzg0TDQ1MS40MTYgNTk1LjA0WiIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjQyOS42OCIgeT0iNjMzLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMzcuMjc0IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPkdvbmUsPC90ZXh0Pjx0ZXh0IHg9IjQyOS42OCIgeT0iNjUxLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNDkuMjEzIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPm5vdGhpbmc8L3RleHQ+PHRleHQgeD0iNDI5LjY4IiB5PSI2NjkuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI1NS4wMzciIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+Y2hhbmdlZDwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzEiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTI4NCAxMzVMMjg0IDIwMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjI3OSwyMDEgMjg0LDIxNSAyODksMjAxIiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzIiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTI4NCAzMTBMMjg0IDM3NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjI3OSwzNzYgMjg0LDM5MCAyODksMzc2IiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzMiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTE4NCA0NDQuNUwxMjAuOSA0NDQuNUw5NiA0NDQuNUw5NiA0OTMuMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iMTM2LjYiLz48cGF0aCBkPSJNOTYgNTI2LjdMOTYgNTc0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI0Ny4zIi8+PHBvbHlnb24gcG9pbnRzPSI5MSw1NzQgOTYsNTg4IDEwMSw1NzQiIGZpbGw9IiMxMjEyMTIiIHN0cm9rZT0ibm9uZSIvPjx0ZXh0IHg9IjgxLjYiIHk9IjUxMi45IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgbGV0dGVyLXNwYWNpbmc9IjAuMTJlbSIgdGV4dExlbmd0aD0iMjguOCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5LRUVQPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJnNCIgZGF0YS1icnVzaD0iaW5rIj48cGF0aCBkPSJNMzg0IDQ0NC41TDQ0Ny4xIDQ0NC41TDQ3MiA0NDQuNUw0NzIgNDg4LjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHBhdGhMZW5ndGg9IjEzMi4xIi8+PHBhdGggZD0iTTQ3MiA1MjIuMkw0NzIgNTY1IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI0Mi44Ii8+PHBvbHlnb24gcG9pbnRzPSI0NjcsNTY1IDQ3Miw1NzkgNDc3LDU2NSIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PHRleHQgeD0iNDU3LjYiIHk9IjUwOC40IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgbGV0dGVyLXNwYWNpbmc9IjAuMTJlbSIgdGV4dExlbmd0aD0iMjguOCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5EUk9QPC90ZXh0PjwvZz48L3N2Zz4="
+  }
+]

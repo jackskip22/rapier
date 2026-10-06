@@ -1,0 +1,15 @@
+{
+  "name": "rapier",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": false,
+  // door-worker.js answers rapier.website/privacy, /commercial, /notes and /draw with the page and each door's own head (a search engine
+  // reads a title, description and canonical address per address). It runs first on those eight paths and no other, and
+  // serves the plain page on any doubt. Every other address, "/" included, is the static asset alone.
+  "main": "door-worker.js",
+  "assets": {
+    "directory": "./site",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "run_worker_first": ["/privacy", "/privacy/", "/commercial", "/commercial/", "/notes", "/notes/", "/draw", "/draw/"]
+  }
+}

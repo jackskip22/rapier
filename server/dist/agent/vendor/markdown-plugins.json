@@ -1,0 +1,51 @@
+{
+  "origin": "Exact decoded vendor spans in repo/rapier.html",
+  "sourceModification": "None; one isolated ESM wrapper owns UMD globals. The task-lists span is pinned as 2.1.1 and carries an upstream 2.1.0 banner.",
+  "components": [
+    {
+      "source": "markdown-it-task-lists-2.1.1.min.js",
+      "bytes": 2702,
+      "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+    },
+    {
+      "source": "markdown-it-footnote-4.0.0.min.js",
+      "bytes": 5624,
+      "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+    },
+    {
+      "source": "markdown-it-mark-4.0.0.min.js",
+      "bytes": 1621,
+      "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+    },
+    {
+      "source": "markdown-it-sub-2.0.0.min.js",
+      "bytes": 967,
+      "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+    },
+    {
+      "source": "markdown-it-sup-2.0.0.min.js",
+      "bytes": 965,
+      "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+    },
+    {
+      "source": "markdown-it-emoji-3.1.0-light.min.js",
+      "bytes": 6394,
+      "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+    },
+    {
+      "source": "markdown-it-abbr-2.0.0.min.js",
+      "bytes": 2419,
+      "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+    },
+    {
+      "source": "markdown-it-ins-4.0.0.min.js",
+      "bytes": 1601,
+      "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+    },
+    {
+      "source": "markdown-it-deflist-4.0.0.min.js",
+      "bytes": 2376,
+      "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+    }
+  ]
+}

@@ -1,0 +1,2205 @@
+
+
+.linenum-label {
+
+	position: absolute; left: 0; top: 0;
+	width: calc(var(--editor-h-pad) + 20px);
+	padding: 2px 3px !important;
+	margin: 0;
+	font: var(--fw-medium) 0.72rem/1.05 var(--font-mono);
+	color: var(--color-text);
+	pointer-events: auto;
+	display: none;
+	z-index: 4;
+	background: transparent;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	direction: ltr;
+	unicode-bidi: plaintext;
+	white-space: normal;
+	word-break: normal;
+	overflow: hidden;
+	cursor: pointer;
+}
+.linenum-popup {
+	position: absolute;
+	z-index: 5;
+	padding: 2px 6px;
+	background: var(--color-accent);
+	color: var(--color-accent-foreground, #fff);
+	font: var(--fw-medium) 0.72rem/1.1 var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.02em;
+	border: none; border-radius: 0; box-shadow: none;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack > .source-textarea {
+	padding-left: calc(var(--editor-h-pad) + 32px);
+}
+
+
+.filename-ext-btn {
+	min-width: 40px;
+	height: 48px;
+	min-height: 48px;
+	max-width: 88px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 0;
+	margin-left: 0;
+	padding: 2px 10px 0 1px;
+	overflow: visible;
+	border: none;
+	background: none;
+	color: var(--color-text-secondary);
+
+	font: var(--fw-regular) calc(var(--text-sm) * .8)/48px var(--font-mono);
+	white-space: nowrap;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.filename-ext-wrap {
+	height: 48px;
+	display: inline-flex;
+	align-items: center;
+	gap: 0;
+	padding: 2px var(--space-1) 0 0;
+	background: var(--color-surface-2);
+}
+.filename-ext-dot {
+	margin-right: -.2em;
+	color: var(--color-text-subtle);
+	font: var(--fw-regular) calc(var(--text-sm) * .8)/48px var(--font-mono);
+	user-select: none;
+}
+.filename-ext-input {
+	width: 60px;
+	min-width: 40px;
+	font: var(--fw-regular) calc(var(--text-sm) * .8) var(--font-mono);
+	background: transparent;
+	border: none;
+	color: var(--color-text);
+	padding: var(--space-1);
+	height: 48px;
+	outline: none;
+}
+
+
+.embed-status,
+.embed-refused {
+	position: fixed;
+	inset: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px))) 0 0;
+	z-index: 145;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	padding: var(--space-6);
+	text-align: center;
+	background: var(--color-bg);
+	color: var(--color-text-muted);
+}
+.embed-status strong,
+.embed-refused strong {
+	color: var(--color-text);
+	font: var(--fw-medium) var(--text-lg) var(--font-sans);
+}
+.embed-status span,
+.embed-refused span {
+	max-width: 36rem;
+	line-height: 1.5;
+}
+.embed-refused[hidden] { display: none; }
+
+
+.scroll-fab {
+	position: fixed;
+	/* DESIGN RULE: the document is full width; the circle overhangs the edge. */
+	right: -9px;
+	/* TOP-BAR LAW: the circle never stands over the top bar. Until the engine places it on its
+		 track, it rests one gutter below the bar — the same place the track begins — so a circle
+		 shown before any scroll (a presence state, a forced class) is never drawn over the bar. */
+	top: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 16px);
+	width: 60px;
+	height: 60px;
+	border-radius: 50%;
+	background: var(--color-accent);
+	border: 0;
+	padding: 0;
+	opacity: 0;
+	pointer-events: none;
+	z-index: 150;
+	transition: opacity var(--dur-micro) var(--ease-micro);
+	touch-action: none;
+	cursor: pointer;
+}
+.scroll-fab.visible {
+	opacity: 0.5;
+	pointer-events: auto;
+}
+.scroll-fab.tracking,
+.scroll-fab:focus-visible { opacity: 0.82; }
+.scroll-fab[data-checks="issues"] { background: var(--color-error); }
+.scroll-fab:focus-visible { outline: none; }
+
+.scroll-fab[data-presence].visible {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 46%, transparent);
+}
+/* DESIGN RULE: a connected agent breathes the circle — its resting half to full and back — not only while it works. */
+.scroll-fab[data-presence].visible {
+	animation: rapier-fab-breathe 2800ms ease-in-out infinite;
+}
+@keyframes rapier-fab-breathe {
+	0%, 100% { opacity: 0.5; }
+	50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.scroll-fab[data-presence].visible {
+		animation: none;
+		opacity: 0.78;
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 72%, transparent);
+	}
+}
+/* The circle overhangs the right edge, so its tip opens inward — a tip that opened above it would
+	 hang off the page. */
+@media (hover:hover) and (pointer:fine) {
+	.scroll-fab[data-tip]::after {
+		left: auto; right: calc(100% + 8px);
+		bottom: auto; top: 50%;
+		width: 190px; white-space: normal;
+		transform: translateY(-50%) translateX(3px);
+	}
+	.scroll-fab[data-tip]:hover::after,
+	.scroll-fab[data-tip]:focus-visible::after { transform: translateY(-50%) translateX(0); }
+}
+/* It sits at the ring's inner edge, in the crescent the gutter leaves visible once the ring is
+	 drawn — that inner edge is why left:1px, not centered. */
+/* The acorn fills the circle when it is worn: a symbol, not a badge. */
+.scroll-fab__acorn {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 58%;
+	height: 58%;
+	transform: translate(-50%, -50%);
+	color: var(--color-text);
+	pointer-events: none;
+}
+.scroll-fab__acorn[hidden] { display: none; }
+/* While a call is using Acorn the mark breathes; the linger holds still. */
+@keyframes rapier-acorn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.scroll-fab__acorn[data-active="true"] { animation: rapier-acorn-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .scroll-fab__acorn[data-active="true"] { animation: none; } }
+.scroll-fab__acorn svg { display: block; width: 100%; height: 100%; }
+.scroll-fab-label {
+	position: fixed;
+	right: calc(51px + var(--space-4));
+	z-index: 151;
+	max-width: min(calc(100% - 96px), 22rem);
+	overflow: hidden;
+	padding: 7px 10px;
+	border: none;
+	border-radius: 0;
+	background: var(--color-surface-2);
+	box-shadow: 0 1px 0 var(--color-border, rgb(0 0 0 / .12));
+	color: var(--color-text);
+	font: var(--fw-medium) var(--text-xs)/1.25 var(--font-sans);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0;
+	pointer-events: none;
+	transform: translateY(-50%) translateX(4px);
+	transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out);
+}
+body.light .scroll-fab-label {
+	background: var(--color-surface);
+}
+.scroll-fab-label.visible {
+	opacity: 1;
+	transform: translateY(-50%) translateX(0);
+}
+/* THE AGENT'S LINE, at the circle. It borrows the heading pill's geometry — the gutter, the
+	 circle's own vertical centre — and none of its identity: never that class, never its slide,
+	 because a heading is where the person already is and this is what somebody else said. What it
+	 wears instead is the agent row's mark, so the line outside and the row inside are one voice. */
+.agent-note {
+	position: fixed;
+	right: calc(51px + var(--space-4));
+	z-index: 151;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	max-width: min(calc(100% - 96px), 22rem);
+	overflow: hidden;
+	padding: 7px 10px;
+	border: 0;
+	border-radius: 0;
+	/* OPAQUE, and the one place this line departs from the heading pill's look as well as its
+		 class: a scrim lets the document's own words read through the agent's, which is the one
+		 thing a note may never do — it never dresses as the person's text or as a heading. */
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	text-align: left;
+	cursor: pointer;
+	opacity: 0;
+	pointer-events: none;
+	transform: translateY(-50%);
+	transition: opacity var(--dur-enter) var(--ease-out);
+}
+.agent-note[hidden] { display: none; }
+/* THE DECISION STANDS BESIDE THE CHANGE. A flat line just above the first changed block: the fact,
+   then the two acts a person has — the same acts the agent row offers one tap away, so nobody has
+   to know which button opens what. No hairline, no shadow: a surface with the accent bar the
+   agent's own line wears, riding the scroller, gone with the lens. */
+.change-line {
+	position: fixed;
+	right: calc(51px + var(--space-4));
+	z-index: 151;
+	display: flex;
+	align-items: center;
+	gap: 0;
+	padding: 0 2px 0 10px;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--dur-enter) var(--ease-out);
+}
+.change-line[hidden] { display: none; }
+.change-line.visible { opacity: 1; pointer-events: auto; }
+.change-line__status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding-right: 6px;
+	opacity: .72;
+	font: var(--fw-semibold) 10px/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+}
+.change-line__status::before { content: ""; width: 2px; height: 14px; background: var(--color-accent); }
+.change-line__verb {
+	min-width: 44px;
+	height: 40px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	font: var(--fw-semibold) 11px/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+	white-space: nowrap;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.change-line__verb:disabled { opacity: .4; cursor: default; }
+@media (hover:hover) and (pointer:fine) { .change-line__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
+
+/* The inline review bar (change peeking's inline surface): the same fixed bottom-corner surface
+   the agent's own change-line wears, so "how many pending changes remain" reads in the same place
+   as every other agent fact. */
+.review-track {
+	position: fixed;
+	right: calc(51px + var(--space-4));
+	bottom: calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + 51px);
+	z-index: 151;
+	display: flex;
+	align-items: center;
+	gap: 0;
+	padding: 0 2px 0 10px;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+}
+.review-track[hidden] { display: none; }
+.review-track__status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding-right: 6px;
+	opacity: .72;
+	font: var(--fw-semibold) 10px/1 var(--font-mono);
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+}
+.review-track__status::before { content: ""; width: 2px; height: 14px; background: var(--color-accent); }
+.review-track__verb {
+	min-width: 44px;
+	height: 40px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	font: var(--fw-semibold) 11px/1 var(--font-mono);
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+	white-space: nowrap;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.review-track__verb:disabled { opacity: .4; cursor: default; }
+@media (hover:hover) and (pointer:fine) { .review-track__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
+
+/* A pending change drawn inline in the read surface: removed text struck and dimmed, inserted text
+	 marked, both live text -- never an image of the change, so it can carry a real caret for
+	 type-over. */
+.rapier-review-change { cursor: pointer; }
+.rapier-review-change__removed {
+	color: var(--color-text-muted);
+	text-decoration: line-through;
+	background: color-mix(in srgb, var(--color-error) 14%, transparent);
+}
+.rapier-review-change__inserted {
+	background: color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+.rapier-review-stale {
+	display: inline-block;
+	margin-left: .3em;
+	color: var(--color-text-subtle);
+	font-size: .7em;
+	vertical-align: super;
+	cursor: pointer;
+}
+/* The two-word keep/drop strip under a tapped span: all-caps Geist Mono on --track-caps, the
+   design language's own notice/plate tracking. */
+.review-strip {
+	display: inline-flex;
+	gap: var(--space-3);
+	margin: 2px 0;
+	padding: 2px 0;
+}
+.review-strip__verb {
+	min-height: 32px;
+	padding: 0 var(--space-2);
+	border: 1px solid var(--color-border);
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	font: var(--fw-semibold) 11px/1 var(--font-mono);
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.review-strip__verb:disabled { opacity: .4; cursor: default; }
+@media (hover:hover) and (pointer:fine) { .review-strip__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
+
+.agent-note.visible {
+	opacity: 1;
+	pointer-events: auto;
+}
+.agent-note__who {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 0;
+	opacity: .72;
+	font: var(--fw-semibold) 10px/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+}
+.agent-note__who::before {
+	content: "";
+	width: 2px;
+	height: 14px;
+	background: var(--color-accent);
+}
+.agent-note__said {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font: var(--fw-regular) 12px/1.2 var(--font-sans);
+}
+
+
+
+.top-bar__actions-set {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	gap: 2px;
+}
+.filename-normal {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	display: flex;
+	/* The name and its extension share one baseline. Every box in this row is 48px tall with a 48px
+	   line, centred; the residual between the two baselines is then MEASURED as rendered and the
+	   extension moved by it (renderFilenameExtBaseline) — arithmetic on one font and one engine
+	   answered differently under a host's fallback face, zoom or minimum type size. */
+	align-items: center;
+	gap: 0;
+}
+.filename-tail {
+	flex: 0 0 auto;
+	min-width: 0;
+	height: 48px;
+	display: inline-flex;
+	align-items: center;
+	gap: 0;
+}
+.compare-top-title {
+	padding: var(--space-1) var(--space-2);
+	color: var(--color-text);
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing: .04em;
+	text-transform: lowercase;
+}
+.compare-top-count {
+	min-width: 48px;
+	color: var(--color-text-muted);
+	font: var(--fw-medium) var(--text-xs) var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+}
+
+html[data-compare="on"] #editor-blocks,
+html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mode { display: none !important; }
+.compare-mode {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	overscroll-behavior-y: contain;
+	scrollbar-width: none;
+	padding: var(--space-6) 0
+		calc(var(--space-8) + var(--rapier-compare-action-space, 0px) + var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
+	background: var(--color-bg);
+	color: var(--color-text);
+}
+.compare-mode::-webkit-scrollbar { display: none; }
+.compare-summary {
+	padding: 0 var(--editor-h-pad) var(--space-5);
+}
+.compare-summary__names {
+	overflow: hidden;
+	color: var(--color-text);
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	line-height: 1.45;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.compare-summary__counts {
+	margin-top: var(--space-2);
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-xs) var(--font-mono);
+	letter-spacing: .03em;
+}
+.compare-law-review {
+	display: none;
+	position: fixed;
+	left: var(--editor-h-pad);
+	right: var(--editor-h-pad);
+	bottom: var(--native-inset-bottom, env(safe-area-inset-bottom, 0px));
+	z-index: 61;
+	grid-template-columns: 1fr;
+	/* The bar is opaque over the whole of itself, gap included: a hole in a floating surface is a
+		 window the document scrolls through. It floats on the same bottom edge as the format
+		 toolbar and stacks directly above it, both through _rapierPositionCompareActionBar. */
+	background: var(--color-bg);
+}
+.compare-law-review[data-visible="true"] { display: grid; }
+/* Continuing the agent's write is the answer letting it run out would not give, so it stands
+	 the exclusion radius clear of the answer that keeps the hold. */
+.compare-law-review__action--allow { margin-top: var(--thumb-exclusion); }
+.compare-law-review__action {
+	min-height: 48px;
+	padding: 0 var(--space-3);
+	border: 0;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	font: var(--fw-semibold) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+}
+
+.compare-law-review__status {
+	margin: 0;
+	padding: var(--space-2) var(--space-3);
+	text-align: center;
+	color: var(--color-text);
+	font: var(--fw-semibold) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+}
+.compare-law-review__action--primary {
+	background: var(--color-accent);
+	color: var(--color-bg);
+}
+/* How many places the one write lands in, worn by the verb that admits it. */
+.compare-law-review__action--allow[data-places]::after {
+	content: attr(data-places);
+	margin-left: var(--space-2);
+	padding: 0 var(--space-2);
+	background: var(--color-text);
+	color: var(--color-bg);
+}
+.compare-law-review__action:disabled { cursor: wait; opacity: .45; }
+.compare-law-review__action:focus-visible { background: var(--color-surface-hover); }
+.compare-state {
+	display: none;
+	padding: var(--space-8) var(--editor-h-pad);
+	min-height: 42dvh;
+	align-items: flex-start;
+	justify-content: center;
+	flex-direction: column;
+}
+.compare-state[data-visible="true"] { display: flex; }
+.compare-state__message {
+	margin: 0;
+	color: var(--color-text);
+	font: var(--fw-semibold) var(--text-xl) var(--font-sans);
+	letter-spacing: -.02em;
+}
+.compare-state__details {
+	margin: var(--space-3) 0 0;
+	color: var(--color-text-secondary);
+	font: var(--fw-regular) var(--text-sm) var(--font-sans);
+	line-height: 1.55;
+}
+.compare-state__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin-top: var(--space-5);
+}
+.compare-state__action {
+	min-height: 48px;
+	padding: 0 var(--space-3);
+	border: 0;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	font: var(--fw-medium) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+}
+.compare-content { min-width: 0; touch-action: pan-y; } /* a horizontal swipe steps between changes (change peeking) */
+.compare-hunk {
+	border-left: 3px solid transparent;
+	content-visibility: auto;
+	contain-intrinsic-size: auto 360px;
+}
+.compare-hunk[data-current="true"] { border-left-color: var(--color-accent); }
+.compare-hunk__peek { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
+.compare-hunk__peek-btn { width: 36px; height: 36px; }
+.compare-hunk__peek-btn[aria-pressed="true"] { background: var(--color-surface-hover); }
+.compare-hunk--dropped .compare-row { opacity: .38; }
+.compare-hunk--dropped .compare-row--add .compare-row__text { text-decoration: line-through; }
+.compare-hunk__label {
+	padding: var(--space-4) var(--editor-h-pad) var(--space-2);
+	color: var(--color-text-muted);
+	font: var(--fw-medium) var(--text-2xs) var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+}
+.compare-row {
+	position: relative;
+	display: grid;
+	grid-template-columns: 42px 42px 20px minmax(0, 1fr);
+	min-height: 28px;
+	align-items: stretch;
+	font: var(--fw-regular) var(--text-xs) / 1.55 var(--font-mono);
+}
+.compare-row--add { background: color-mix(in srgb, var(--color-success) 11%, transparent); }
+.compare-row--remove { background: color-mix(in srgb, var(--color-error) 11%, transparent); }
+.compare-row__line,
+.compare-row__op {
+	padding-top: 4px;
+	color: var(--color-text-subtle);
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	user-select: none;
+}
+.compare-row__op {
+	padding-right: 5px;
+	color: var(--color-text-muted);
+}
+.compare-row--add .compare-row__op { color: var(--color-success); }
+.compare-row--remove .compare-row__op { color: var(--color-error); }
+.compare-row__text {
+	min-width: 0;
+	padding: 4px var(--editor-h-pad) 4px 4px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	tab-size: 2;
+	user-select: text;
+	-webkit-user-select: text;
+}
+.compare-row__control { font-size: .7em; padding: 0 2px; border: 1px solid currentColor; user-select: none; }
+.compare-row__text--long {
+	overflow-x: auto;
+	white-space: pre;
+	overflow-wrap: normal;
+	scrollbar-width: thin;
+}
+.compare-row--overflow-right::after {
+	content: '';
+	position: absolute;
+	inset: 0 0 0 auto;
+	width: 18px;
+	background: linear-gradient(to right, transparent, var(--color-bg));
+	pointer-events: none;
+}
+.compare-word--add,
+.compare-word--remove {
+	color: var(--color-text);
+	font-weight: var(--fw-semibold);
+}
+.compare-word--add { background: color-mix(in srgb, var(--color-success) 32%, transparent); }
+.compare-word--remove { background: color-mix(in srgb, var(--color-error) 32%, transparent); }
+
+.since-open-hunk {
+	margin: 10px 0;
+	border-left: 2px solid var(--color-accent);
+	user-select: none;
+	-webkit-user-select: none;
+}
+.since-open-hunk .compare-row { grid-template-columns: 24px minmax(0, 1fr); min-height: 22px; }
+.since-open-hunk .compare-row__line { display: none; }
+.since-open-hunk .compare-row__text { user-select: none; -webkit-user-select: none; }
+#editor-blocks > .block-wrapper[data-since-open-changed] {
+	background: color-mix(in srgb, var(--color-success) 7%, transparent);
+}
+.compare-omitted {
+	width: 100%;
+	min-height: 48px;
+	padding: 0 var(--editor-h-pad);
+	border: 0;
+	background: transparent;
+	color: var(--color-text-subtle);
+	font: var(--fw-medium) var(--text-xs) var(--font-mono);
+	text-align: left;
+	cursor: pointer;
+}
+.compare-omitted:focus-visible{color:var(--color-text)}
+@media (hover:hover) and (pointer:fine){.compare-omitted:hover{color:var(--color-text)}}
+.compare-omitted--static { cursor: default; }
+.compare-pro-gate {
+	position: relative;
+	min-height: 220px;
+	padding: 112px var(--editor-h-pad) var(--space-8);
+}
+.compare-pro-gate::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto;
+	height: 112px;
+	pointer-events: none;
+	background: linear-gradient(to bottom, transparent, var(--color-bg) 86%);
+}
+.compare-pro-gate__button {
+	position: relative;
+	width: min(100%, 680px);
+	display: grid;
+	grid-template-columns: 3px minmax(0, 1fr);
+	column-gap: var(--space-4);
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	text-align: left;
+	cursor: pointer;
+}
+.compare-pro-gate__button::before {
+	content: "";
+	grid-row: 1 / span 3;
+	width: 3px;
+	min-height: 100%;
+	background: var(--color-border-focus);
+}
+.compare-pro-gate__button:focus-visible::before{background:var(--color-accent)}
+@media (hover:hover) and (pointer:fine){.compare-pro-gate__button:hover::before{background:var(--color-accent)}}
+.compare-pro-gate__title {
+	color: var(--color-text);
+	font: var(--fw-semibold) var(--text-lg)/1.25 var(--font-sans);
+	text-transform: lowercase;
+}
+.compare-pro-gate__copy {
+	margin-top: var(--space-2);
+	color: var(--color-text-secondary);
+	font: var(--fw-regular) var(--text-sm)/1.55 var(--font-sans);
+}
+.compare-pro-gate__action {
+	margin-top: var(--space-2);
+	color: var(--color-text);
+	font: var(--fw-semibold) var(--text-sm)/1.4 var(--font-sans);
+}
+
+
+/* A closed sheet is not only transparent but hidden: a reader that extracts the page's text (a search engine's
+	 renderer took the licence notice for the page's description) sees nothing of a sheet nobody opened. The fade stays:
+	 visibility turns on at once when the sheet opens and off only after the opacity has gone. */
+.settings-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	background: var(--color-scrim);
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity var(--dur-enter) var(--ease-out), visibility 0s linear var(--dur-enter);
+}
+.settings-overlay.open {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+	transition: opacity var(--dur-enter) var(--ease-out), visibility 0s;
+}
+.settings-panel {
+	position: fixed;
+	inset: var(--native-inset-top, env(safe-area-inset-top, 0px)) var(--native-inset-right, env(safe-area-inset-right, 0px)) var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) auto;
+	width: min(360px, calc(100vw - var(--native-inset-left, env(safe-area-inset-left, 0px)) - var(--native-inset-right, env(safe-area-inset-right, 0px))));
+	max-height: calc(100dvh - var(--native-inset-top, env(safe-area-inset-top, 0px)) - var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
+	background: var(--color-surface);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	transform: translate3d(100%, 0, 0);
+	transition: transform var(--dur-enter) var(--ease-out);
+	touch-action: pan-y;
+	will-change: transform;
+}
+.settings-overlay.open .settings-panel {
+	transform: translate3d(0, 0, 0);
+}
+
+
+.settings-panel,
+.settings-panel * { touch-action: pan-y!important; }
+/* Every sheet that stands centred or at the bottom leaves downward: a downward finger is the sheet
+   gesture's, an upward one is still the list's. In CSS touch-action the direction names the way
+   the content pans, not the finger: `pan-down` is the finger moving up (reading on), which the
+   browser keeps; the finger moving down is left to the sheet gesture. (`pan-up` would leave a
+   sheet unreadable past its top.) */
+.restore-modal-overlay .settings-panel,
+.restore-modal-overlay .settings-panel *,
+.pro-sheet, .pro-sheet *,
+.link-dialog, .link-dialog * { touch-action: pan-down!important; }
+/* That holds only at the list's top. Once it is scrolled, the finger moving down is the list's
+   again: the gesture begins only from the top (_rapierUiSheetAtScrollStart), so `pan-down` alone
+   would leave a scrolled sheet with nothing to take that finger and a person stuck at the bottom. A
+   scroller says it is scrolled as it scrolls (_rapierUiInstallTouchRouter), because touch-action is
+   read when the finger lands. */
+.restore-modal-overlay .settings-panel [data-rapier-scrolled],
+.restore-modal-overlay .settings-panel [data-rapier-scrolled] *,
+.pro-sheet[data-rapier-scrolled], .pro-sheet[data-rapier-scrolled] *,
+.pro-sheet [data-rapier-scrolled], .pro-sheet [data-rapier-scrolled] *,
+.link-dialog[data-rapier-scrolled], .link-dialog[data-rapier-scrolled] *,
+.link-dialog [data-rapier-scrolled], .link-dialog [data-rapier-scrolled] * { touch-action: pan-y!important; }
+.link-dialog input:not([type="checkbox"]):not([type="radio"]),
+.link-dialog select,
+.link-dialog textarea { touch-action: auto!important; }
+.settings-panel input[type="range"],
+.settings-panel .range-wrap,
+.settings-panel .range-wrap *,
+.restore-modal-overlay .settings-panel [data-rapier-scrolled] :is(input[type="range"], .range-wrap, .range-wrap *) { touch-action: none!important; }
+.settings-panel.rapier-settings-gesture-active .settings-panel__body,/* While the finger owns the sheet, nothing inside it scrolls under that finger. */
+.pro-sheet.rapier-settings-gesture-active,
+.command-palette.rapier-settings-gesture-active .command-palette__list{
+	overflow:hidden!important;
+	overscroll-behavior:none;
+}
+
+
+.settings-edge-swipe {
+	position: fixed;
+	top: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)));
+	right: var(--native-inset-right, env(safe-area-inset-right, 0px));
+	bottom: var(--native-inset-bottom, env(safe-area-inset-bottom, 0px));
+	z-index: 149;
+	width: 22px;
+	pointer-events: none;
+	touch-action: pan-y;
+}
+/* The zone is a rectangle the touch router reads, not a target: a tap there falls through to the words and the ground beneath it. */
+.settings-edge-swipe.active { pointer-events: none; }
+
+
+.restore-modal-overlay {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-5);
+}
+.restore-modal-overlay .settings-panel {
+	position: static;
+	inset: auto;
+	width: 100%;
+	max-height: 90vh;
+	border-radius: 0;
+	transform: none;
+	box-shadow: none;
+}
+.restore-modal-overlay.open .settings-panel {
+	transform: none;
+}
+
+.pro-status {
+	margin: 0 0 var(--space-4);
+}
+.pro-sheet-overlay {
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding: 0 var(--native-inset-right, env(safe-area-inset-right, 0px))
+		var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))
+		var(--native-inset-left, env(safe-area-inset-left, 0px));
+	background: color-mix(in srgb, var(--color-bg) 68%, transparent);
+}
+.pro-sheet {
+	position: relative;
+	width: min(100%, 640px);
+	max-height: min(72dvh, 560px);
+	overflow-y: auto;
+	padding: var(--space-5) var(--editor-h-pad) var(--space-5);
+	background: var(--color-bg);
+	border-top: 1px solid var(--color-border);
+	transform: translate3d(0, 20px, 0);
+	opacity: 0;
+	transition: transform var(--dur-enter) var(--ease-out), opacity var(--dur-enter) var(--ease-out);
+}
+.pro-sheet-overlay.open .pro-sheet { transform: translate3d(0, 0, 0); opacity: 1; }
+.pro-sheet__body {
+	border-left: 3px solid var(--color-border-focus);
+	padding-left: var(--space-4);
+}
+.pro-sheet__feature {
+	margin: 0;
+	color: var(--color-text);
+	font: var(--fw-semibold) var(--text-lg)/1.25 var(--font-sans);
+	text-transform: none;
+}
+.pro-sheet__copy {
+	margin: var(--space-2) 0 0;
+	color: var(--color-text-secondary);
+	font: var(--fw-regular) var(--text-sm)/1.55 var(--font-sans);
+}
+.pro-sheet__list {
+	list-style: disc;
+	margin: var(--space-2) 0 0;
+	padding: 0 0 0 var(--space-4);
+	color: var(--color-text-secondary);
+	font: var(--fw-regular) var(--text-sm)/1.55 var(--font-sans);
+}
+.pro-sheet__buy {
+	display: block;
+	width: 100%;
+	margin-top: var(--space-3);
+	padding: var(--space-2) 0;
+	color: var(--color-text);
+	text-align: left;
+	font: var(--fw-semibold) var(--text-sm)/1.4 var(--font-sans);
+}
+.pro-sheet__buy:disabled { opacity: .45; cursor: default; }
+.pro-sheet__secondary {
+	display: inline-block;
+	margin-top: var(--space-2);
+	padding: 0;
+	color: var(--color-text-muted);
+	font: var(--fw-medium) var(--text-xs)/1.5 var(--font-sans);
+}
+.pro-sheet__secondary + .pro-sheet__secondary { margin-left: var(--space-4); }
+.pro-sheet__status {
+	margin: var(--space-3) 0 0;
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-xs)/1.5 var(--font-sans);
+}
+
+
+.export-choice-panel {
+	max-width: 520px;
+	max-height: min(86dvh, 720px) !important;
+}
+.export-choice-panel .settings-panel__body { padding-top: var(--space-5); }
+/* Share: the web page is the one large action; the editable source stands right under it, plainly
+   secondary, one tap away. The primary one is marked by SIZE and FILL and by nothing else --
+   Rapier draws no outlines and no hairlines around surfaces, ever (flat boxes;
+   `tools/check-flat-surfaces.mjs` refuses a new one). A 1px `--color-text` rule around this card
+   would read as a stray white rectangle. */
+#share-overlay .export-choice-card {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	background: var(--color-surface-hover);
+	color: var(--color-text);
+}
+#share-overlay .export-choice-card .export-choice,
+#share-overlay .export-choice-card .export-choice-toggle { background: transparent; }
+#share-overlay .export-choice-card .export-choice {
+	min-height: 0;
+	justify-content: flex-start;
+	padding-bottom: var(--space-2);
+}
+#share-overlay .export-choice-card .export-choice-toggle { padding-top: var(--space-2); }
+#share-overlay .export-choice { min-height: 96px; }
+#share-overlay .export-choice[data-value="web"] .export-choice__label { font-size: var(--text-xl, 1.35rem); }
+#share-overlay .export-choice[data-value="source"] { min-height: 76px; }
+#share-overlay .export-choice[data-value="source"] .export-choice__label { font-size: var(--text-base, 1rem); }
+/* The information button sits beside the title, as it does in the settings panel -- never stacked
+	 above it -- and the close stays hard against the top right corner. */
+#share-overlay .navigator-title-row { align-items: center; margin-bottom: var(--space-3); }
+#share-overlay .navigator-title-row .settings-info-btn { margin-right: auto; }
+.export-choice-list { display: grid; gap: var(--space-3); }
+/* The import sheet lists nineteen apps, so its rows are slim: one line of label, one of description. */
+.export-choice-list--compact { gap: var(--space-2); }
+.export-choice--compact { min-height: 0; padding: var(--space-3) var(--space-4); gap: 2px; }
+.export-choice {
+	width: 100%;
+	/* A choice is as tall as its words: one label alone (the copy pop-up) is one line with the padding, a label
+	   with its description two; 56px keeps a finger's target. */
+	min-height: 56px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+	gap: var(--space-2);
+	padding: var(--space-4);
+	border: 0;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	text-align: left;
+	cursor: pointer;
+}
+.export-choice:focus-visible{background:var(--color-surface-hover)}
+.export-choice:disabled{opacity:.6;cursor:wait}
+@media (hover:hover) and (pointer:fine){.export-choice:hover{background:var(--color-surface-hover)}}
+.export-choice__label {
+	font: var(--fw-semibold) var(--text-lg) var(--font-sans);
+	letter-spacing: -0.01em;
+	text-transform: lowercase;
+}
+.export-choice__description {
+	color: var(--color-text-secondary);
+	font: var(--fw-regular) var(--text-sm)/1.5 var(--font-sans);
+}
+/* A note of the card's own, outside its buttons, keeps the buttons' inset. */
+.export-choice-card > .export-choice__description {
+	margin: 0;
+	padding: var(--space-1) var(--space-4) var(--space-3);
+}
+.export-choice-card > .export-choice__description:empty { display: none; }
+.export-choice__meta {
+	color: var(--color-text-secondary);
+	font: var(--fw-medium) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+}
+
+/* The one toggle row proposal 1 adds, scoped to "copy markdown" alone -- a slim strip, not a full
+	 export-choice card, off by default. */
+.export-choice-toggle {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	padding: var(--space-3) var(--space-4);
+	border: 0;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	text-align: left;
+	cursor: pointer;
+}
+.export-choice-toggle:focus-visible{background:var(--color-surface-hover)}
+@media (hover:hover) and (pointer:fine){.export-choice-toggle:hover{background:var(--color-surface-hover)}}
+.export-choice-toggle__text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.export-choice-toggle__label {
+	font: var(--fw-semibold) var(--text-sm) var(--font-sans);
+	letter-spacing: -0.01em;
+	text-transform: lowercase;
+}
+.export-choice-toggle__hint {
+	color: var(--color-text-secondary);
+	font: var(--fw-regular) var(--text-xs)/1.4 var(--font-sans);
+}
+.export-choice-toggle__state {
+	flex: none;
+	color: var(--color-text-secondary);
+	font: var(--fw-semibold) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+}
+.export-choice-toggle[aria-pressed="true"] .export-choice-toggle__state { color: var(--color-accent); }
+/* The copy sheet's last row (the Pandoc/Quarto dialect): no card behind it, the secondary colour, one
+   line. Non-obtrusive, at the bottom, because few will want it. */
+.export-choice-toggle--quiet {
+	padding: var(--space-2) var(--space-4) 0;
+	background: transparent;
+	color: var(--color-text-secondary);
+}
+.export-choice-toggle--quiet .export-choice-toggle__label { font-weight: var(--fw-regular); }
+.export-choice-toggle--quiet:focus-visible { background: transparent; color: var(--color-text); }
+@media (hover:hover) and (pointer:fine){ .export-choice-toggle--quiet:hover { background: transparent; color: var(--color-text); } }
+
+.navigator-panel {
+	max-width: 440px;
+	max-height: min(78dvh, 720px) !important;
+}
+.navigator-panel .settings-panel__body {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+/* The person's chain, drawn as one row of equal columns: none of the three is a recommendation,
+	 so none of them is wider. The target is `--thumb-exclusion` in both axes at every width, and
+	 it is that token rather than a number because the number is the same fact: one 48px target
+	 plus the row unit, the width of the miss it exists to survive. A control a thumb misses is a
+	 protection a person stops reaching for, and this one has to be reachable before the first
+	 write rather than after it. Every 48px control in this panel keeps its own floor. */
+.posture-row {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	margin: 0 0 var(--space-4);
+	padding: 0 0 var(--space-3);
+}
+/* The three words span the row; the i stands beneath them, at the right. */
+.posture-row__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.posture-row__words { flex: 1 1 100%; min-width: 0; }
+.theme-switcher__btn.posture-row__word {
+	flex: 1 1 0;
+	min-width: var(--thumb-exclusion);
+	width: auto;
+	height: var(--thumb-exclusion);
+	font: var(--fw-medium) var(--text-sm)/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+}
+.posture-row__agents { gap: var(--space-2); }
+.posture-row__agents .posture-row__agent-btn { flex: 1 1 auto; font-size: var(--text-xs); letter-spacing:var(--track-caps); padding: 0 var(--space-3); }
+.agent-row {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin: 0 0 var(--space-4);
+	padding: 0 0 var(--space-3);
+}
+.agent-row[hidden] { display: none; }
+.agent-row__line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	min-height: 32px;
+}
+.agent-row__state {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--color-text);
+	font: var(--fw-semibold) 10px/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+}
+.agent-row__state::before {
+	content: "";
+	width: 2px;
+	height: 14px;
+	background: var(--color-accent);
+}
+.agent-row__under {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	opacity: .72;
+	font: var(--fw-regular) 12px/1.2 var(--font-sans);
+}
+.agent-row__queued {
+	flex: 0 0 auto;
+	color: var(--color-text);
+	font: var(--fw-semibold) 10px/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+	opacity: .72;
+}
+.agent-row__queued[hidden] { display: none; }
+.agent-row__verb {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* The touch target is square and never smaller than the floor; a count wider than one digit
+		 grows the box rather than shrinking the number. */
+	min-width: 48px;
+	height: 48px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	/* Words, not a glyph: they wrap to their own line rather than crushing the heading beside them. */
+	font: var(--fw-semibold) 11px/1 var(--font-mono);
+	letter-spacing:var(--track-caps);
+	white-space: nowrap;
+	cursor: pointer;
+	touch-action: manipulation;
+	opacity: .75;
+}
+.agent-row__verb[hidden] { display: none; }
+.agent-row__verb[data-on="true"] { color: var(--color-accent); opacity: 1; }
+.agent-row__lens {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+}
+.agent-row__lens[hidden] { display: none; }
+.agent-row__lens-status {
+	flex: 1 1 auto;
+	min-width: 0;
+	color: var(--color-text);
+	font: var(--fw-semibold) 10px/1.4 var(--font-mono);
+	letter-spacing:var(--track-caps);
+}
+.agent-row__lens-actions { flex: 0 0 auto; display: flex; align-items: center; }
+.agent-row__verb:disabled { opacity: .35; cursor: default; }
+.agent-row__note { display: flex; gap: var(--space-2); }
+.agent-row__note-input:disabled { opacity: .55; cursor: not-allowed; }
+/* Flat boxes, no hairlines: the field and the send are surfaces, not outlines. */
+.navigator-outline-filter.agent-row__note-input,
+.navigator-outline-filter.agent-row__note-input:focus,
+.navigator-outline-filter.agent-row__note-input:focus-visible {
+	border: 0;
+	background: var(--color-surface-2);
+}
+.settings-action-btn.agent-row__send {
+	flex: 0 0 auto;
+	width: auto;
+	height: 48px;
+	justify-content: center;
+	background: var(--color-surface-2);
+	border: 0;
+}
+.agent-row__said {
+	margin: 0;
+	color: var(--color-text);
+	font: var(--fw-regular) 12px/1.45 var(--font-sans);
+}
+.agent-row__said[hidden] { display: none; }
+.navigator-title-row {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--space-4);
+	margin-bottom: var(--space-4);
+}
+.navigator-title-row .settings-section__title { margin: 0; padding: 0; }
+.navigator-title-row:has(> .settings-info-btn--hang) { justify-content: flex-start; gap: 0; }
+.navigator-title-row:has(> .settings-info-btn--hang) > .navigator-close { margin-left: auto; }
+.navigator-close {
+	width: 52px;
+	height: 52px;
+	flex: 0 0 auto;
+	display: grid;
+	place-items: center;
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	cursor: pointer;
+}
+.navigator-outline {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-width: none;
+}
+.navigator-outline::-webkit-scrollbar { display: none; }
+.navigator-outline-tools {
+	display: flex;
+	gap: var(--space-2);
+	margin: 0 0 var(--space-3);
+}
+.navigator-outline-filter {
+	min-width: 0;
+	flex: 1 1 auto;
+	height: 48px;
+	padding: 0 var(--space-3);
+	border: 1px solid var(--color-border);
+	border-radius: 0;
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: var(--fw-regular) var(--text-base) var(--font-sans);
+}
+.navigator-outline-filter:focus,
+.navigator-outline-filter:focus-visible {
+	outline: 0;
+	outline-offset: 0;
+	border-color: var(--color-border);
+	box-shadow: none;
+}
+
+/* Sync holds long device codes and the bucket's CORS rule; keep both selectable on a phone. */
+.notes-sync-body .navigator-outline-filter {
+	width: 100%;
+	border: 0;
+}
+.notes-sync-body textarea.navigator-outline-filter {
+	height: auto;
+	min-height: 8rem;
+	padding-block: var(--space-2);
+	resize: vertical;
+	font-family: var(--font-mono);
+}
+
+.navigator-outline-filter::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.settings-action-btn.navigator-outline-action {
+	flex: 0 0 auto;
+	width: auto;
+	min-width: 112px;
+	justify-content: center;
+}
+
+.settings-action-btn.navigator-outline-action[hidden] { display: none; }
+
+.navigator-outline__item {
+	--outline-level: 1;
+	position: relative;
+	width: 100%;
+	min-height: 48px;
+	display: block;
+	padding: var(--space-2) var(--space-2) var(--space-2)
+					 calc(var(--space-2) + (var(--outline-level) - 1) * 18px);
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	font: 300 var(--text-base) var(--font-sans);
+	line-height: 1.3;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.navigator-outline__item[hidden] { display: none; }
+.navigator-outline__item:focus-visible{background:var(--color-surface-hover)}
+@media (hover:hover) and (pointer:fine){.navigator-outline__item:hover{background:var(--color-surface-hover)}}
+
+.navigator-outline__item[data-current="true"] {
+	font-weight: var(--fw-semibold);
+	padding-left: calc(var(--space-5) + (var(--outline-level) - 1) * 18px);
+}
+.navigator-outline__item[data-current="true"]::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--color-accent);
+}
+.navigator-empty {
+	margin: 0;
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-sm) var(--font-mono);
+	text-transform: lowercase;
+}
+.navigator-checks {
+	flex: 0 0 auto;
+	margin: 0 0 var(--space-4);
+}
+.navigator-checks__title {
+	margin: 0 0 var(--space-2);
+	color: var(--color-error);
+	font: var(--fw-medium) var(--text-xs) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+}
+.navigator-checks__item {
+	width: 100%;
+	min-height: 52px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	padding: var(--space-2);
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	text-align: left;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.navigator-checks__item:focus-visible{background:var(--color-surface-hover)}
+@media (hover:hover) and (pointer:fine){.navigator-checks__item:hover{background:var(--color-surface-hover)}}
+.navigator-checks__message {
+	min-width: 0;
+	font: var(--fw-regular) var(--text-sm)/1.35 var(--font-sans);
+}
+.navigator-checks__location {
+	flex: 0 0 auto;
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-xs) var(--font-mono);
+	white-space: nowrap;
+}
+.goto-line-form {
+	display: flex;
+	align-items: stretch;
+	gap: var(--space-2);
+}
+.goto-line-form[data-composite="true"] {
+	flex: 0 0 auto;
+	margin-top: var(--space-3);
+	padding-top: var(--space-3);
+	border-top: 1px solid var(--color-border);
+}
+.navigator-expand-submit {
+	min-width: 92px;
+}
+.goto-line-input {
+	flex: 1;
+	min-width: 0;
+	height: 52px;
+	border: 0;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	font: var(--fw-regular) var(--text-xl) var(--font-mono);
+	padding: 0 var(--space-4);
+	outline: none;
+	appearance: textfield;
+}
+.goto-line-input::-webkit-inner-spin-button,
+.goto-line-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.goto-line-submit {
+	min-width: 78px;
+	border: 0;
+	background: var(--color-accent);
+	color: var(--color-accent-foreground);
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+}
+.goto-line-range {
+	margin: var(--space-3) 0 0;
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-xs) var(--font-mono);
+	text-transform: uppercase;
+	letter-spacing:var(--track-caps);
+}
+
+
+.settings-panel__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	height: 52px;
+	flex-shrink: 0;
+	padding: 0 var(--space-6);
+}
+.settings-panel__title {
+	font: var(--fw-regular) calc(var(--text-xs) * 1.7) var(--font-mono);
+	line-height: 1;
+	letter-spacing: 0.02em;
+	text-transform: lowercase;
+	color: var(--color-text);
+}
+.settings-panel__foot {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-2);
+	margin-top: var(--space-6);
+}
+.settings-panel__attribution {
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-xs) var(--font-mono);
+	line-height: 1;
+	text-decoration: none;
+}
+.settings-panel__attribution:focus-visible { color: var(--color-accent-text); }
+
+
+.settings-stats-row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-4);
+	margin-bottom: calc(var(--space-8) + var(--space-6));
+}
+.settings-stats-row .settings-stats { flex: 1; margin: 2px 0 0; }
+
+
+.settings-view-toggle {
+	flex-shrink: 0;
+	gap: 0;
+	padding: 0;
+}
+.settings-view-toggle .theme-switcher__btn {
+	width: 58px;
+	height: 58px;
+}
+.settings-view-toggle .theme-switcher__btn svg {
+	width: 29px;
+	height: 29px;
+}
+
+
+.theme-switcher--joined {
+	gap: 0;
+	padding: 0;
+}
+.settings-view-toggle .theme-switcher__btn,
+.theme-switcher--joined .theme-switcher__btn {
+	margin: 0;
+	border: none;
+	box-shadow: none;
+}
+.settings-view-toggle .theme-switcher__btn + .theme-switcher__btn,
+.theme-switcher--joined .theme-switcher__btn + .theme-switcher__btn {
+	margin-left: 0;
+}
+.theme-switcher--joined .theme-switcher__btn[data-sz] {
+	height: 48px;
+	font: var(--fw-medium) 0.95rem/1 var(--font-mono);
+	letter-spacing:var(--track-caps-ui);
+	text-transform: uppercase;
+	color: var(--color-text);
+}
+
+.theme-switcher--onoff .onoff-btn {
+	height: 48px;
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps-ui);
+	text-transform: uppercase;
+	line-height: 1;
+}
+
+.code-toggle-group {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.settings-disclosure-shell {
+	width: 100%;
+	border-bottom: 2px solid var(--color-text);
+	margin-bottom: var(--space-4);
+}
+.settings-disclosure-title {
+	width: 100%;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) .72em;
+	align-items: baseline;
+	column-gap: var(--space-3);
+	padding-inline: 0;
+	background: transparent;
+	border: 0;
+	text-align: left;
+	cursor: pointer;
+	touch-action: manipulation;
+	min-height:48px;
+}
+
+/* A disclosure title that carries an information circle. The word is the toggle, the plus at the
+   right is the same toggle for the finger (the row toggles everywhere but on the circle), and the
+   circle hangs off the top right of the word's last letter. */
+.settings-disclosure-title--split {
+	display: flex;
+	align-items: baseline;
+	column-gap: 0;
+	cursor: default;
+}
+.settings-disclosure-word {
+	width: auto;
+	flex: none;
+	padding: 0;
+	margin: 0;
+	background: transparent;
+	border: 0;
+	text-align: left;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+/* Every disclosure title's plus sits on its word's baseline, identically. Not `align-self:
+   stretch`: stretch overrides the row's baseline alignment, so this button would grow to the title
+   row's whole 68px; its single auto grid row would stretch with it; and the glyph -- the only item
+   in that row, where `baseline` degenerates to `start` -- would be pinned to the row's top, 11.17px
+   above where a plain title's glyph sits against its word. A plain title has no such nesting: its
+   glyph is a grid item in the SAME row as the word, so the two share one baseline group and the
+   glyph's synthesized baseline (its bottom edge) lands on the word's baseline. Aligning this button
+   on the baseline reproduces exactly that. The padding gives a finger-sized target over the
+   right-hand half of the row, and it cannot move the glyph, because the baseline, not the box, is
+   what is anchored. */
+.settings-disclosure-glyph-btn {
+	flex: 1 1 auto;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) .72em;
+	align-items: baseline;
+	align-self: baseline;
+	min-width: .72em;
+	padding: var(--space-2) 0;
+	margin: 0;
+	border: 0;
+	background: transparent;
+	color: var(--color-text);
+	font: var(--fw-regular) 3.5rem var(--font-sans);
+	line-height: 1;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.settings-disclosure-glyph-btn .settings-disclosure-title__glyph { grid-column: 2; }
+.settings-disclosure-title--split:has(> [aria-expanded="true"]) .settings-disclosure-title__glyph::before { opacity: 0; }
+.settings-disclosure-title--split:has(> [aria-expanded="true"]) .settings-disclosure-title__glyph::after { opacity: 1; }
+.settings-disclosure-title__glyph {
+	position: relative;
+	width: 100%;
+	height: 1em;
+	align-self: baseline;
+	transform: translateY(.08em);
+	color: currentColor;
+	font: var(--fw-regular) .64em/1 var(--font-sans);
+	letter-spacing: 0;
+}
+.settings-disclosure-title__glyph::before,
+.settings-disclosure-title__glyph::after {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	transition: opacity 110ms ease-out;
+}
+.settings-disclosure-title__glyph::before { content: "+"; opacity: 1; }
+.settings-disclosure-title__glyph::after  { content: "−"; opacity: 0; }
+.settings-disclosure-title[aria-expanded="true"] .settings-disclosure-title__glyph::before { opacity: 0; }
+.settings-disclosure-title[aria-expanded="true"] .settings-disclosure-title__glyph::after  { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+	.settings-disclosure-title__glyph::before,
+	.settings-disclosure-title__glyph::after { transition: none; }
+}
+.settings-disclosure {
+	display: grid;
+	grid-template-rows: 0fr;
+	opacity: 0;
+	transition:
+		grid-template-rows var(--dur-enter) var(--ease-out),
+		opacity var(--dur-micro) var(--ease-micro);
+}
+.settings-disclosure[data-open="true"] {
+	grid-template-rows: 1fr;
+	opacity: 1;
+}
+.settings-disclosure__inner {
+	min-height: 0;
+	overflow: hidden;
+}
+
+.code-toggle-group .onoff-btn {
+	font-size: calc(var(--text-sm) * 0.9);
+	letter-spacing: 0.03em;
+	padding: 0 3px;
+	line-height: 1.05;
+	white-space: normal;
+	text-align: center;
+}
+
+/* The adaptive interface: a strip whose choices only mean something while the control above it is on joins that
+   control's underside, one box with a hairline seam, and folds away with it. */
+.settings-switch-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+}
+.settings-switch-stack__under .theme-switcher {
+	border-top: 0;
+}
+
+/* One named On/Off button; the existing dependent disclosure is flush underneath. */
+.code-toggle-group .theme-switcher[data-switch-label] > .theme-switcher__btn {
+	width: 100%;
+	justify-content: flex-start;
+	padding: 0 var(--space-4);
+	text-align: left;
+	transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+	.code-toggle-group .theme-switcher[data-switch-label] > .theme-switcher__btn { transition: none; }
+}
+/* Both the real buttons and their existing sliding ink clones carry these same words. */
+#switch-line-numbers .onoff-btn {
+	min-width: 0;
+	flex-basis: 0;
+	white-space: normal;
+	line-height: 1.1;
+}
+
+/* The same row gap as .code-toggle-group; hidden native-only rows leave no empty space. */
+.pro-settings-actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin-bottom: var(--space-4);
+}
+.pro-settings-actions > .settings-action-row { margin: 0; }
+.pro-settings-actions > [hidden] { display: none; }
+
+
+
+.settings-close-btn {
+	width: 52px;
+	height: 52px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--color-text);
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	flex-shrink: 0;
+	touch-action: manipulation;
+}
+@media (hover:hover) and (pointer:fine){.settings-close-btn:hover{opacity:.7}}
+
+.settings-panel__body {
+	flex: 1;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--color-text) 24%, transparent) transparent;
+	scrollbar-gutter: stable;
+	padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.settings-stats {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	row-gap: 2px;
+	column-gap: var(--space-3);
+	margin-bottom: var(--space-5);
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps-ui);
+	text-transform: uppercase;
+}
+.settings-stats__label { color: var(--color-text-secondary); }
+.settings-stats__val   { color: var(--color-text); }
+.settings-section__title {
+	font: var(--fw-regular) 3.5rem var(--font-sans);
+	color: var(--color-text);
+	letter-spacing: -0.03em;
+	line-height: 1;
+	padding: var(--space-6) 0 var(--space-3);
+}
+.settings-section__title:first-child { padding-top: 0; }
+
+/* One measure of air above every title in this panel, whatever shape the title is. A plain title
+   takes it as padding; a disclosure title cannot (its padding is zeroed so the shell's rule sits
+   under the word), so its shell takes it as a margin, and the layout row -- whose title's padding
+   is zeroed so the information circle can hang off the word -- takes it the same way. Scoped to
+   #settings-panel on purpose: the Notes settings panel builds the same class and is fitted to a
+   phone without scrolling, so it must not inherit this. */
+#settings-panel { --settings-air: 40px; }
+#settings-panel .settings-section__title { padding-top: var(--settings-air); }
+#settings-panel .settings-disclosure-title,
+#settings-panel .settings-disclosure-word,
+#settings-panel .navigator-title-row .settings-section__title { padding-top: 0; }
+/* Padding, not margin: a margin here collapses with the switcher above it in some places and not
+   others, which would set two such gaps 16px apart. Padding never collapses, so every title gets
+   the same air whatever sits above it. */
+#settings-panel .settings-disclosure-shell,
+#settings-panel .navigator-title-row { padding-top: var(--settings-air); }
+#settings-panel .settings-panel__foot { margin-top: var(--settings-air); }
+
+.settings-action-row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin-bottom: var(--space-3);
+}
+/* The Draw door under compare: one box tall, centred, the same air above (the actions' own 20px margin plus 20px) as the
+   export title keeps above its word (--settings-air, 40px), wider than the 8px between boxes. */
+.settings-draw-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	margin: var(--space-5) auto 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--color-text);
+	cursor: pointer;
+	border-radius: 8px;
+}
+.settings-draw-btn[hidden] { display: none; }
+.settings-draw-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.settings-action-pair {
+	display: flex;
+	gap: var(--space-2);
+	width: 100%;
+}
+.settings-action-pair > .settings-action-btn,
+.settings-action-pair > .settings-action-cell {
+	flex: 1 1 0;
+	min-width: 0;
+	width: auto;
+}
+.settings-action-cell .settings-action-btn,
+.settings-action-cell .open-group { width: 100%; }
+
+.settings-primary-actions {
+	margin-bottom: var(--space-5);
+}
+.settings-primary-actions .settings-action-pair {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.settings-primary-actions .settings-action-pair:has(> [hidden]),
+.settings-primary-actions .settings-action-pair--single {
+	grid-template-columns: minmax(0, 1fr);
+}
+.settings-primary-actions .settings-action-pair > .settings-action-btn,
+.settings-primary-actions .settings-action-pair > .settings-action-cell {
+	width: 100%;
+	min-width: 0;
+}
+.settings-primary-actions .settings-action-btn {
+	justify-content: center;
+	text-align: center;
+}
+.settings-action-btn {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	width: 100%;
+	height: 48px;
+	padding: 0 var(--space-4);
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps-ui);
+	text-transform: uppercase;
+	color: var(--color-text);
+	background: var(--color-surface-2);
+	border: none;
+	cursor: pointer;
+	touch-action: manipulation;
+	transition: background var(--dur-micro) var(--ease-micro);
+}
+@media (hover: hover) and (pointer: fine) {
+	.settings-action-btn:hover { background: var(--color-surface-hover); }
+}
+.settings-action-btn:focus-visible,
+.link-dialog__btn:focus-visible {
+	outline: none;
+	background: var(--color-surface-hover);
+}
+.settings-action-btn:disabled {
+	opacity: .72;
+	cursor: wait;
+}
+/* The row's own gap already separates safe verbs; the destructive one is pushed the rest of
+	 the way to the exclusion radius, and is last in document order so focus and the reading
+	 order reach it after both safe answers. */
+
+/* The destructive verb stands the thumb-exclusion radius from every other tappable box; last in reading order. */
+.settings-action-btn--apart { margin-top: calc(var(--thumb-exclusion) - var(--space-2)); }
+
+/* ONE LAYOUT FOR EVERY POP-UP THAT ASKS (editor/pop.js owns which box is which). Top to bottom: the title; the words; the
+   affirmative boxes; a big space; the destructive or Cancel box at the bottom, a flat box in a slightly darkened red with
+   white text in both themes. The gap is one measure on the left, the right and the bottom. No positioning: the panel is a
+   column and the bottom box takes the rest of the room above it as margin. */
+.rapier-pop { min-height: min(72dvh, 32rem); }
+.rapier-pop .settings-panel__body { display: flex; flex-direction: column; padding: var(--space-5); }
+.rapier-pop p { overflow-wrap: anywhere; }
+.rapier-pop__actions { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: flex-start; gap: var(--space-2); margin: 0; padding-top: var(--space-6); }
+.rapier-pop__actions[hidden] { display: none; }
+.rapier-pop__actions > [data-pop-bottom] { margin-top: auto; background: var(--color-pop-negative); color: #fff; }
+.rapier-pop__actions > [data-pop-bottom]:focus-visible { background: color-mix(in srgb, var(--color-pop-negative) 88%, #000); }
+@media (hover: hover) and (pointer: fine) {
+	.rapier-pop__actions > [data-pop-bottom]:hover { background: color-mix(in srgb, var(--color-pop-negative) 88%, #000); }
+}
+
+.settings-text-action {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--space-3);
+	width: 100%;
+	min-height: 48px;
+	padding: 0 var(--space-4);
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps-ui);
+	text-transform: uppercase;
+	text-align: left;
+	color: var(--color-text);
+	background: transparent;
+	border: 0;
+}
+button.settings-text-action {
+	cursor: pointer;
+	touch-action: manipulation;
+	transition: opacity var(--dur-micro) var(--ease-micro);
+}
+@media (hover:hover) and (pointer:fine){button.settings-text-action:hover{opacity:.68}}
+button.settings-text-action:disabled { opacity: .6; cursor: wait; }
+/* A plugin row is a button like every row around it: the same field, the same air before the next title (the 1.1.63 walk). */
+#settings-plugins-title ~ .settings-action-row > .settings-text-action { background: var(--color-surface-2); }
+.settings-text-action--status {
+	justify-content: flex-start;
+	gap: var(--space-2);
+	cursor: default;
+}
+.settings-text-action__check {
+	width: 18px;
+	height: 18px;
+	flex: 0 0 auto;
+	color: currentColor;
+}
+
+
+.restore-modal-overlay .settings-panel.licenses-panel {
+	width: min(520px, 100%);
+	max-width: 520px;
+	max-height: min(86dvh, 720px);
+	margin: auto;
+}
+.licenses-panel .settings-panel__body {
+	min-width: 0;
+	overflow-x: hidden;
+}
+.licenses-panel .navigator-title-row {
+	min-width: 0;
+	align-items: center;
+}
+.commercial-panel .navigator-close { margin-inline-start: auto; }
+.licenses-title {
+	min-width: 0;
+	font-size: clamp(1.25rem, 5.5vw, 2.25rem);
+	white-space: nowrap;
+}
+.licenses-app { display:grid; gap:var(--space-2); margin-bottom:var(--space-5); }
+.licenses-app > strong { font:var(--fw-medium) var(--text-xs)/1.5 var(--font-mono); color:var(--color-text); }
+.licenses-given { margin:var(--space-3) 0 0; font:var(--fw-semibold) clamp(1.5rem, 7vw, 2rem)/1.1 var(--font-sans); letter-spacing:-0.02em; color:var(--color-text); }
+.licenses-given-list { margin:0; padding-inline-start:1.25em; list-style:disc; display:grid; gap:var(--space-1); line-height:1.4; }
+.licenses-app p { margin:0; line-height:1.5; }
+.licenses-link { width:max-content; color:var(--color-accent-text); text-decoration:underline; text-underline-offset:3px; }
+.licenses-link {
+	min-width:48px;
+	min-height:48px;
+	margin-block:-13px;
+	padding:13px 2px;
+	border:0;
+	background:none;
+	font:inherit;
+	cursor:pointer;
+	display:inline-flex;
+	align-items:center;
+}
+.licenses-link:focus-visible,
+.licenses-full summary:focus-visible { outline:none; color:var(--color-accent-text); }
+.licenses-links { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-4); align-items:baseline; }
+.licenses-full { border-top:1px solid var(--color-border); padding-top:var(--space-3); }
+.licenses-full summary { cursor:pointer; color:var(--color-text); font-weight:var(--fw-medium); }
+.licenses-full pre, .license-text { margin:var(--space-3) 0 0; padding:var(--space-3); max-height:48vh; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:var(--color-surface); color:var(--color-text-secondary); font:0.72rem/1.5 var(--font-mono); }
+.licenses-subtitle { margin:0 0 var(--space-3); font:var(--fw-medium) var(--text-sm) var(--font-mono); text-transform:uppercase; letter-spacing:var(--track-caps); }
+.licenses-note {
+	margin: var(--space-4) 0 0;
+	color: var(--color-text-muted);
+	font-size: var(--text-xs);
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+.licenses-list {
+	display: grid;
+	gap: var(--space-3);
+	min-width: 0;
+	margin: 0;
+}
+.license-entry { min-width: 0; }
+.license-entry > summary,
+.license-row {
+	display: grid;
+	grid-template-columns: 1ch minmax(0, 1fr) auto;
+	column-gap: var(--space-2);
+	row-gap: 2px;
+	min-width: 0;
+	align-items: baseline;
+}
+.license-entry > summary { cursor: pointer; list-style: none; }
+.license-entry > summary::-webkit-details-marker { display: none; }
+.license-entry > summary::before {
+	content: '+';
+	color: var(--color-text-muted);
+	font: var(--fw-regular) var(--text-xs) var(--font-mono);
+}
+.license-entry[open] > summary::before { content: '\2212'; }
+.license-row::before { content: ''; }
+.license-text { margin-inline-start: calc(1ch + var(--space-2)); }
+.license-name,
+.license-id {
+	min-width: 0;
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+.license-name {
+	font: var(--fw-medium) var(--text-sm) var(--font-mono);
+	color: var(--color-text);
+}
+.license-id {
+	font: var(--fw-regular) var(--text-xs) var(--font-mono);
+	color: var(--color-text-muted);
+	text-align: right;
+}
+
+@media (max-width: 420px) {
+	.license-entry > summary,
+	.license-row {
+		grid-template-columns: 1ch minmax(0, 1fr);
+	}
+	.license-id { text-align: left; grid-column: 2; }
+}
+
+
+.open-group {
+	position: relative;
+	display: block;
+	width: 100%;
+}
+.open-group .settings-action-btn {
+	width: 100%;
+	padding-inline: 56px;
+}
+.open-chevron {
+	position: absolute;
+	inset-block: 0;
+	right: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	min-width: 48px;
+	padding: 0;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: none;
+	outline: none;
+	cursor: pointer;
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+.open-chevron:active,
+.open-chevron:focus,
+.open-chevron:focus-visible,
+.open-chevron[data-open="true"] {
+	color: var(--color-text-muted);
+	background: transparent;
+	outline: none;
+}
+.open-chevron svg {
+	width: 18px; height: 18px;
+	transition: transform var(--dur-turn) var(--ease-turn);
+}
+@media (prefers-reduced-motion: reduce) { .open-chevron svg { transition: none; } }
+.open-chevron[data-open="true"] svg { transform: rotate(-90deg); }
+
+/* Closed, the drawer is not a flex item at all: a zero-height item in the column still earns the column's gap on
+   both sides, which would double the gap between the open and save rows. The slide open starts from nothing through
+   @starting-style; an engine without it shows the open drawer at once. */
+.recent-drawer {
+	display: none;
+	background: var(--color-surface-2);
+	overflow: hidden;
+	max-height: 0;
+	transition: max-height var(--dur-micro) var(--ease-micro);
+}
+.recent-drawer[data-open="true"] {
+	display: block;
+	max-height: 240px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+@starting-style {
+	.recent-drawer[data-open="true"] { max-height: 0; }
+}
+.recent-drawer__list {
+	display: flex;
+	flex-direction: column;
+	padding: var(--space-1) 0;
+	margin: 0;
+	list-style: none;
+}
+.recent-drawer__item {
+	display: block;
+	width: 100%;
+	height: 48px;
+	padding: 0 var(--space-4);
+	font: var(--fw-regular) var(--text-sm) var(--font-mono);
+	letter-spacing: 0.04em;
+	text-transform: lowercase;
+	color: var(--color-text);
+	background: transparent;
+	border: none;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	touch-action: manipulation;
+	transition: background var(--dur-micro) var(--ease-micro);
+}
+@media (hover:hover) and (pointer:fine){.recent-drawer__item:hover{background:var(--color-surface-hover)}}
+.recent-drawer__empty {
+	padding: var(--space-3) var(--space-4);
+	font: var(--fw-regular) var(--text-sm) var(--font-mono);
+	color: var(--color-text-muted);
+	text-transform: lowercase;
+}
+
+
+.editor-area--read .block-read { cursor: default; border-color: transparent !important; }
+
+
+
+.table-scroll-wrap {
+	/* Document overflow and table sizing are owned by spec/markdown-style.css. */
+	overscroll-behavior-x: contain;
+}
+/* The live editor expands wide tables; a saved page retains the document's 100% width. */
+.table-scroll-wrap table { width: max-content; }
+/* A table that scrolls sideways is pinched by two fingers (editor/tables.js); the browser keeps its one-finger pans there. */
+.table-scroll-wrap[data-rapier-wide] { touch-action: pan-x pan-y; }
+
+
+.rapier-hscroll{position:relative;display:block;min-width:0}
+/* The shell carries the block's line (the surface's own margin is zeroed below): a code block and a table end one line down, display math inside a paragraph a quarter line in. */
+.rapier-hscroll--code,.rapier-hscroll--table{margin:0 0 var(--md-line)}
+.rapier-hscroll--math{margin:calc(var(--md-line) / 4) 0 var(--md-line)}
+.rapier-hscroll>.rapier-hscroll__surface{margin:0!important}
+.rapier-hscroll>.rapier-hscroll__surface:focus-visible{outline:none}
+.rapier-hscroll::after{
+	content:"";position:absolute;z-index:2;pointer-events:none;top:0;right:0;bottom:0;width:22px;
+	opacity:0;transition:opacity var(--dur-micro) var(--ease-micro);
+	background:linear-gradient(to right,transparent,var(--rapier-hscroll-edge,var(--color-bg)))
+}
+.rapier-hscroll--code{--rapier-hscroll-edge:var(--color-surface-2)}
+.rapier-hscroll[data-overflow-right="true"]::after{opacity:1}
+
+
+@keyframes rapier-command-overlay-in{from{opacity:0}to{opacity:1}}
+@keyframes rapier-command-sheet-in{from{transform:translate3d(0,100%,0)}to{transform:translate3d(0,0,0)}}
+.command-palette__overlay{
+	position:fixed;z-index:420;inset:0;display:flex;align-items:flex-end;
+	background:var(--color-scrim);backdrop-filter:none;
+	padding:0;overscroll-behavior:contain;
+	animation:rapier-command-overlay-in var(--dur-enter) var(--ease-out) both
+}
+.command-palette{
+
+	width:100%;height:min(78vh,700px);height:min(78dvh,700px);
+	display:flex;flex-direction:column;min-height:0;overflow:hidden;
+	color:var(--color-text);background:var(--color-surface);
+	border:0;border-radius:0;box-shadow:none;
+	animation:rapier-command-sheet-in var(--dur-enter) var(--ease-out) both
+}
+
+@media (min-width: 900px){.command-palette__overlay{justify-content:center}.command-palette{width:min(34rem,100%)}}
+.command-palette__header{display:flex;align-items:center;gap:8px;padding:10px 12px 8px;touch-action:pan-down}
+.command-palette__search-wrap{
+	min-width:0;flex:1;display:flex;align-items:center;gap:9px;padding:0 12px;
+	background:var(--color-surface-2);border:0;border-radius:0;
+	border-bottom:1px solid transparent
+}
+
+.command-palette__search-wrap:focus-within{border-bottom-color:var(--color-accent)}
+.command-palette__search-icon{flex:0 0 auto;opacity:.6}
+.command-palette__input{
+	width:100%;height:48px;min-width:0;border:0;border-radius:0;outline:0;padding:0;
+	appearance:none;
+	color:inherit;background:transparent;font:500 15px/1.2 var(--font-sans)
+}
+.command-palette__input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+
+.command-palette__input:focus-visible{outline:none!important;outline-offset:0!important}
+.command-palette__input::placeholder{color:var(--color-text-muted)}
+.command-palette__close{
+	flex:0 0 48px;width:48px;height:48px;display:grid;place-items:center;
+	border:0;border-radius:0;color:inherit;background:transparent;cursor:pointer
+}
+.command-palette__close:focus-visible{color:var(--color-accent-text);background:transparent;outline:none}
+@media (hover:hover) and (pointer:fine){.command-palette__close:hover{color:var(--color-accent-text);background:transparent}}
+.command-palette__list{
+	min-height:88px;overflow:auto;overscroll-behavior:contain;
+	padding:2px 12px calc(12px + var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
+	display:grid;align-content:start;gap:6px;scrollbar-width:none
+}
+.command-palette__list::-webkit-scrollbar{display:none;width:0;height:0}
+.command-palette__option{
+	width:100%;min-height:62px;display:grid;grid-template-columns:48px minmax(0,1fr);
+	align-items:center;gap:10px;padding:6px 12px;border:0;border-radius:0;
+	color:inherit;background:var(--color-surface-2);text-align:left;font:inherit;cursor:pointer
+}
+.command-palette__option[aria-selected="true"]{background:var(--color-surface-hover)}
+.command-palette__option:focus-visible{outline:none;background:var(--color-surface-hover)}
+.command-palette__option[aria-disabled="true"]{opacity:.42;cursor:default}
+.command-palette__glyph{
+	width:48px;height:48px;display:grid;place-items:center;
+	border:0;border-radius:0;color:var(--color-text);background:transparent;
+	font:650 24px/1 var(--font-mono);letter-spacing:-.02em
+}
+.command-palette__copy{min-width:0;display:flex;flex-direction:column;gap:2px}
+.command-palette__label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:17px;font-weight:600;text-transform:lowercase}
+.command-palette__option--jump .command-palette__label,.command-palette__option--jump .command-palette__meta{text-transform:none;letter-spacing:0}
+.command-palette__status:not(.sr-only){display:block;padding:8px 16px;color:var(--color-text-muted);font:var(--text-sm)/1.4 var(--font-sans)}
+.command-palette__meta:empty{display:none}
+.command-palette__meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.055em}
+.command-palette__empty{padding:28px 18px 34px;text-align:center;color:var(--color-text-muted);font-size:13px}
+/* The plus list: an icon beside every word; a family row opens its choices in its own place. */
+.command-palette__glyph svg{width:26px;height:26px}
+.command-palette__glyph--text{font:650 22px/1 var(--font-mono);letter-spacing:-.02em}
+.command-palette__option--family{grid-template-columns:48px minmax(0,1fr) 28px}
+.command-palette__chevron{width:28px;height:28px;display:grid;place-items:center;color:var(--color-text-muted)}
+.command-palette__chevron svg{width:18px;height:18px}
+.command-palette__variants{display:grid;grid-template-columns:repeat(auto-fit,minmax(68px,1fr));gap:4px;padding:4px;background:var(--color-surface-hover)}
+.command-palette__variant{
+	min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+	padding:6px 2px;border:0;border-radius:0;color:inherit;background:var(--color-surface-2);
+	font:600 11px/1.15 var(--font-sans);text-transform:lowercase;cursor:pointer;touch-action:manipulation
+}
+.command-palette__variant[aria-selected="true"],.command-palette__variant:focus-visible{background:var(--color-surface);outline:none;box-shadow:inset 0 0 0 1px var(--color-accent)}
+.command-palette__variant[aria-disabled="true"]{opacity:.42;cursor:default}
+.command-palette__variant-glyph{display:grid;place-items:center;width:28px;height:28px}
+.command-palette__variant-glyph svg{width:24px;height:24px}
+.command-palette__variant-glyph--text{font:650 15px/1 var(--font-mono);letter-spacing:-.02em}
+.command-palette__variant-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.command-palette__variant .highlight-swatch,.command-palette__glyph .highlight-swatch{
+	position:relative;display:grid;place-items:center;width:22px;height:22px;border:0;border-radius:50%;
+	background:var(--highlight-swatch)
+}
+.command-palette__variant .highlight-swatch--remove,.command-palette__glyph .highlight-swatch--remove{background:transparent;box-shadow:inset 0 0 0 2px var(--color-text-muted)}
+.command-palette__variant .highlight-swatch--remove::after{width:22px;transform:rotate(-45deg)}
+.command-palette__variant .color-swatch,.command-palette__glyph .color-swatch{width:22px;height:22px}
+.command-palette__variant .color-swatch--remove{background:transparent;box-shadow:inset 0 0 0 2px var(--color-text-muted)}
+
+
+/* There was a selector list here naming the editing chrome under html[data-readonly="on"] -- the
+   format toolbar, the three pickers, the hr-style picker and the table toolbar -- and it ended in a
+   comma with no declaration block. CSS then read the @media below as the next item in that list, so
+   the whole rule went invalid and took the reduced-motion block with it: somebody who had asked
+   their phone to stop moving things still got every animation at full length. Measured in Chromium
+   against this file -- matchMedia said reduce:true and animation-duration stayed 2s.
+
+   The list is removed rather than completed, because the declaration it wanted does not exist.
+   `display:none` would be wrong for at least `.table-toolbar`: engine.js's _rapierApplyReadOnlyDom
+   deliberately KEEPS `[data-table-action="copy"]` enabled while read-only, so that toolbar is meant
+   to be on screen with only copy usable. Read-only chrome is owned in JS, and that is where any
+   change to it belongs. What engine.js's own comment promises -- "html[data-readonly] keys
+   descendant rules" -- is now true of no rule at all; the four pickers have no standing guard, only
+   a one-shot hideFormatToolbar() for the toolbar. That is written up as an open question, not
+   guessed at here. */
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-delay: 0ms !important;
+		transition-duration: 0.01ms !important;
+		transition-delay: 0ms !important;
+		scroll-behavior: auto !important;
+	}
+}

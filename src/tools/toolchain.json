@@ -1,0 +1,42 @@
+{
+  "_comment": "The one owner of Rapier's canonical release inputs. tools/build.mjs and tools/witness.mjs read this file and record canonical:true|false against the runtime that actually built or witnessed; tools/release-truth.mjs prints the comparison as release.md's \"Toolchain\" row; tools/release-gate.mjs refuses a receipt whose browser is not chromium.product. A development run on a different Node or browser still builds, but the harness refuses to run witnesses unless RAPIER_WITNESS_ANY_BROWSER=1 is set, in which case every result line and the receipt carry (unpinned browser: <product>) instead of staying silent. Advancing the pin: unzip the new Chrome for Testing into <PLAYWRIGHT_BROWSERS_PATH or /opt/pw-browsers>/chrome-for-testing-<version>/ so chromePath() finds it first; run a sweep on it; write the new product string here in this one place, the same day the release intentionally moves. Never a headless shell. The floor check in build.mjs remains the only hard Node refusal.",
+  "node": {
+    "version": "v22.22.2",
+    "why": "the exact Node the last release (docs/build.json `node`) was built and witnessed on"
+  },
+  "nodeFloor": {
+    "major": 22,
+    "why": "tools/build.mjs refuses to build below this major; the receipt names the actual version regardless"
+  },
+  "chromium": {
+    "product": "Chrome/154.0.8037.57",
+    "protocol": "1.3",
+    "why": "Chrome for Testing, installed at <PLAYWRIGHT_BROWSERS_PATH or /opt/pw-browsers>/chrome-for-testing-154.0.8037.57/chrome-linux64/chrome, the first place chromePath() looks; started with --enable-features=JXLImageFormat it reads JPEG XL natively, so the rows that reopen, share or convert a JPEG XL picture judge its real bytes (Chromium 141 read no JPEG XL under any flag). RAPIER_CHROME may launch a different one for development"
+  },
+  "java": {
+    "version": "17",
+    "distribution": "temurin",
+    "why": "android/app/build.gradle.kts sourceCompatibility/targetCompatibility/jvmTarget are JavaVersion.VERSION_17; .github/workflows/rapier.yml pins actions/setup-java to the same major"
+  },
+  "gradle": {
+    "version": "9.5.0",
+    "why": "pinned in .github/workflows/rapier.yml's gradle/actions/setup-gradle step; android/ ships no wrapper, so this is the one Gradle version Android packaging runs on"
+  },
+  "android": {
+    "platform": "android-37.0",
+    "buildTools": "36.0.0",
+    "compileSdk": 37,
+    "minSdk": 26,
+    "why": "platform/build-tools installed by .github/workflows/rapier.yml's sdkmanager step; compileSdk/minSdk from android/app/build.gradle.kts must match"
+  },
+  "windows": {
+    "platformToolset": "v143",
+    "windowsTargetPlatformVersion": "10.0",
+    "webview2": "1.0.4078.44",
+    "why": "windows/Rapier.vcxproj's PlatformToolset, WindowsTargetPlatformVersion and pinned WebView2PackageVersion (restored by .github/workflows/rapier.yml before MSBuild)"
+  },
+  "setupNodeActionSha": {
+    "held": true,
+    "why": "The setup-node commit-SHA pin is held until it can be looked up on the network; invented here it would be worse than absent. Write it in beside the other pinned actions in .github/workflows/*.yml the day it can be looked up, and record the exact node-version pin alongside it -- it should read this file's `node.version`, not a second hand-typed copy."
+  }
+}

@@ -1,0 +1,123 @@
+Draw's letter sets are traced from the British Library's scanned book images, released by British Library Labs
+("1 Million Images from Scanned Books", Flickr Commons, 2013; the British Library's Research Repository deposit
+"Digitised Books. c. 1510 - c. 1900. JPG", 2014) with no known copyright restrictions, and read from the CC0 1.0
+mirror biglam/british-library-book-images (Hugging Face, revision ceb28b9cbdb06ab33b90072cf38d2f4a0c813ea0).
+The selection and the traces are Rapier's own and are dedicated to the public domain under CC0 1.0
+(https://creativecommons.org/publicdomain/zero/1.0/). Each glyph below names the dataset row it was traced from
+and its file name as the dataset gives it: the British Library system number, volume, page, image and title.
+
+Field (field)
+
+  A  embellishments row 142871  000103877_04_000405_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  B  embellishments row 143957  000103877_03_000203_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  C  embellishments row 145880  000103877_06_000151_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  D  embellishments row 145299  000103877_04_000619_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  E  embellishments row 142658  000103877_02_000249_2_An English Garner  Ingatherings from our history and literature_1877.jpg
+  F  embellishments row 142964  000103877_04_000529_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  G  embellishments row 146815  000103877_04_000659_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  H  embellishments row 145578  000103877_04_000539_2_An English Garner  Ingatherings from our history and literature_1877.jpg
+  I  embellishments row 149937  000103877_04_000461_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  J  embellishments row 149926  000103877_06_000554_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  K  embellishments row 143807  000103877_02_000386_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  L  embellishments row 143028  000103877_04_000623_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  M  embellishments row 149863  000103877_02_000185_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  N  embellishments row 147252  000103877_04_000508_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  O  embellishments row 146918  000103877_04_000624_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  P  embellishments row 181589  003154888_0_000029_1_A Modern Pilgrim in Jerusalem      Second     edition_1898.jpg
+  Q  embellishments row 148112  000103877_02_000065_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  R  embellishments row 142434  000103877_04_000047_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  S  embellishments row 147664  000103877_02_000269_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  T  embellishments row 142461  000103877_03_000197_2_An English Garner  Ingatherings from our history and literature_1877.jpg
+  U  embellishments row 148185  000103877_03_000033_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  V  embellishments row 72404  002496295_01_000215_1_Olde Leeke  historical  biographical  anecdotal  and arch ological  Edited by M  H  Miller  Reprinted from the  Leek Times    Second Series   L P_1891.jpg
+  W  embellishments row 144515  000103877_03_000207_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  X  embellishments row 155655  003140639_0_000299_2_Dictionnaire des appellations ethniques de la France et de ses colonies_1889.jpg
+  Y  embellishments row 144018  000103877_04_000409_1_An English Garner  Ingatherings from our history and literature_1877.jpg
+  Z  embellishments row 250662  003300888_0_000344_1_Die frankfurter Landgemeinden  Herausgegeben     von Dr  R  Jung_1895.jpg
+
+Relief (relief)
+
+  A  embellishments row 161603  002041369_0_000029_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  B  embellishments row 161857  002041369_0_000058_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  C  embellishments row 162215  002041369_0_000104_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  D  embellishments row 161820  002041369_0_000168_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  E  embellishments row 161465  002041369_0_000184_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  F  embellishments row 162151  002041369_0_000204_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  G  embellishments row 161599  002041369_0_000224_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  H  embellishments row 162006  002041369_0_000247_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  I  embellishments row 162271  002041369_0_000262_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  J  embellishments row 161611  002041369_0_000267_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  K  embellishments row 161845  002041369_0_000285_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  L  embellishments row 161970  002041369_0_000286_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  M  embellishments row 161827  002041369_0_000311_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  N  embellishments row 161826  002041369_0_000367_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  O  embellishments row 162278  002041369_0_000392_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  P  embellishments row 162282  002041369_0_000402_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  Q  embellishments row 161921  002041369_0_000450_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  R  embellishments row 161954  002041369_0_000452_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  S  embellishments row 162203  002041369_0_000473_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  T  embellishments row 161812  002041369_0_000491_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  U  embellishments row 161799  002041369_0_000512_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  V  embellishments row 161961  002041369_0_000514_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  W  embellishments row 162168  002041369_0_000535_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  X  embellishments row 162252  002041369_0_000535_2_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  Y  embellishments row 161955  002041369_0_000536_1_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+  Z  embellishments row 161748  002041369_0_000536_2_Dictionnaire historique et topographique de Paris      Par J  A  L[eleux ]_1838.jpg
+
+Leaf (leaf)
+
+  A  embellishments row 402156  002310005_03_000268_2_St  George and St  Michael  [A novel ]_1876.jpg
+  B  embellishments row 57370  000914791_02_000277_1_Freville Chase_1880.jpg
+  C  embellishments row 372772  003365401_01_000055_1_ Made in Heaven   A novel  [By F  W  Shepherd ]_1873.jpg
+  D  embellishments row 53425  000914791_01_000216_1_Freville Chase_1880.jpg
+  E  embellishments row 55986  000914791_01_000458_1_Freville Chase_1880.jpg
+  F  embellishments row 205027  003968158_03_000280_2_Within the Maze  A novel_1872.jpg
+  G  embellishments row 384054  001610801_03_000053_2_The Works of Gabriel Harvey      collected and edited     by     A  B  Grosart_1884.jpg
+  H  embellishments row 58763  000914791_02_000152_1_Freville Chase_1880.jpg
+  I  embellishments row 4905  001194397_01_000197_2_Love me or love me not_1875.jpg
+  J  embellishments row 92034  003895320_03_000112_2_Larry Lohengrin  [A novel ]_1881.jpg
+  K  embellishments row 120616  002672114_03_000119_2_The Rogue  A novel_1888.jpg
+  L  embellishments row 375435  003365401_01_000087_1_ Made in Heaven   A novel  [By F  W  Shepherd ]_1873.jpg
+  M  embellishments row 309421  000161413_01_000270_1_As Innocent as a Baby  A novel  [By William Clark Russell ]_1874.jpg
+  N  embellishments row 132095  000581490_02_000141_2_A Life s Mistake  etc_1886.jpg
+  O  embellishments row 391127  000895941_03_000025_2_The Non Dramatic Works of Thomas Dekker     For the first time collected and edited  with memorial introduction  notes and illustrations  etc   by the Rev  Alexander B  Grosart_1884.jpg
+  P  embellishments row 53950  000914791_01_000357_1_Freville Chase_1880.jpg
+  Q  embellishments row 97400  001769909_01_000246_1_The Wards of Plotinus  [A novel ]_1881.jpg
+  R  embellishments row 387791  003508365_03_000038_2_Between the Acts  A novel_1884.jpg
+  S  embellishments row 201367  000490306_02_000021_2_ Good Bye  Sweetheart   A tale_1872.jpg
+  T  embellishments row 121204  000582257_0_000288_2_The History of Arthur Penreath  sometime Gentleman of Sir Walter Raleigh  from his own writings  etc  [A tale ]_1888.jpg
+  U  embellishments row 14071  001315937_02_000045_2_Freda  A novel  By the author of  Mrs  Jerningham s Journal  [Mrs  Hart]_1878.jpg
+  V  embellishments row 132338  001655948_0_000059_1_Duke s Winton  a chronicle of Sedgemoor_1886.jpg
+  W  embellishments row 57693  000914791_02_000077_1_Freville Chase_1880.jpg
+  X  embellishments row 274078  001513614_0_000025_1_The English Village  an old man s tale of the castle of Quatford  [In verse ]_1847.jpg
+  Y  embellishments row 381826  002420401_01_000261_2_Eyre s Acquittal  A sequel to  Story of a Sin  _1884.jpg
+  Z  embellishments row 243862  003567317_07_000149_2_A magyar nemzet tortenete  Szerkeszti Szila gyi S  [With maps and illustrations ]_1895.jpg
+
+Arabesque (arabesque)
+
+  A  embellishments row 95676  001264120_07_000168_1_Histoire universelle_1881.jpg
+  B  embellishments row 95820  001264120_05_000063_1_Histoire universelle_1881.jpg
+  C  embellishments row 91892  001264120_07_000198_1_Histoire universelle_1881.jpg
+  D  embellishments row 100570  001264120_05_000271_1_Histoire universelle_1881.jpg
+  E  embellishments row 97095  001264120_05_000304_1_Histoire universelle_1881.jpg
+  F  embellishments row 94669  001264120_07_000404_1_Histoire universelle_1881.jpg
+  G  embellishments row 92400  001264120_10_000112_1_Histoire universelle_1881.jpg
+  H  embellishments row 93543  001264120_05_000381_1_Histoire universelle_1881.jpg
+  I  embellishments row 99492  001264120_07_000333_1_Histoire universelle_1881.jpg
+  J  embellishments row 98864  001264120_06_000245_1_Histoire universelle_1881.jpg
+  K  embellishments row 395147  000047805_03_000053_2_Her Dearest Foe  A novel_1876.jpg
+  L  embellishments row 98551  001264120_02_000234_1_Histoire universelle_1881.jpg
+  M  embellishments row 98039  001264120_01_000312_1_Histoire universelle_1881.jpg
+  N  embellishments row 92127  001264120_04_000354_1_Histoire universelle_1881.jpg
+  O  embellishments row 96972  001264120_07_000262_1_Histoire universelle_1881.jpg
+  P  embellishments row 94947  001264120_04_000078_1_Histoire universelle_1881.jpg
+  Q  embellishments row 98734  001264120_05_000242_1_Histoire universelle_1881.jpg
+  R  embellishments row 92733  001264120_05_000011_2_Histoire universelle_1881.jpg
+  S  embellishments row 97848  001264120_05_000107_1_Histoire universelle_1881.jpg
+  T  embellishments row 92755  001264120_06_000131_1_Histoire universelle_1881.jpg
+  U  embellishments row 99385  001264120_07_000391_1_Histoire universelle_1881.jpg
+  V  embellishments row 99939  001264120_06_000116_1_Histoire universelle_1881.jpg
+  W  embellishments row 74097  001738929_0_000112_2_Tahiti  the Garden of the Pacific  etc_1891.jpg
+  X  embellishments row 93169  001264120_06_000042_1_Histoire universelle_1881.jpg
+  Y  embellishments row 163249  001568600_02_000011_2_The Flight of Faith  A story_1869.jpg
+  Z  embellishments row 92150  001264120_02_000118_1_Histoire universelle_1881.jpg

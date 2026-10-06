@@ -1,0 +1,2524 @@
+{
+  "version": 1,
+  "scope": {
+    "css": "editor/styles/**/*.css",
+    "script": "layout/browser.js static style-element writes",
+    "policy": "All fixed/sticky rules and physical/logical inset declarations are reviewed. Local offsets are named separately, not silently counted as viewport surfaces."
+  },
+  "surfaces": [
+    {
+      "id": "toast-container",
+      "file": "editor/styles/rapier-app.css",
+      "selector": ".toast-container",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + var(--rapier-toast-lift, 0px))",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "transient",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The container owns dismiss and optional action buttons; notices cannot cover another active surface."
+    },
+    {
+      "id": "paste-overlay",
+      "file": "editor/styles/rapier-app.css",
+      "selector": "html[data-pasting=\"on\"] body::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The fixed pseudo-element intercepts pointers during paste even though it has no button."
+    },
+    {
+      "id": "link-dialog-overlay",
+      "file": "editor/styles/rapier-app.css",
+      "selector": ".link-dialog__overlay",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--rapier-keyboard-occlusion, 0px)",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The dialog scrim and its panel own input while the field dialog is open."
+    },
+    {
+      "id": "import-progress",
+      "file": "editor/styles/rapier-app.css",
+      "selector": ".rapier-import-progress",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "50%",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)))",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateX(-50%)",
+            "important": false
+          }
+        ]
+      },
+      "role": "transient",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The fixed import progress surface has a cancel action and must remain reachable."
+    },
+    {
+      "id": "image-tools",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".rapier-image-tools",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset-inline",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom,env(safe-area-inset-bottom,0px))",
+            "important": false
+          }
+        ]
+      },
+      "role": "bar",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The image tools are pinned above the native bottom inset and carry the picture actions."
+    },
+    {
+      "id": "image-lightbox",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".rapier-image-lightbox",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The full-screen preview owns its close action and the backdrop dismissal."
+    },
+    {
+      "id": "draw-surface",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-surface",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "Draw owns the stage and its controls; a document toast cannot take taps from the drawing."
+    },
+    {
+      "id": "draw-stage",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-stage",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--draw-safe-left)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--draw-safe-right)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--draw-safe-bottom)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The stage is the viewport under the head: it fills the surface to the bottom edge and the settings row floats over it, so folding the row never resizes the canvas."
+    },
+    {
+      "id": "draw-menu",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-menu",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The fixed Draw menu owns a set of controls and can intersect the toast band."
+    },
+    {
+      "id": "draw-menu-sheet",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-menu--sheet",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "left",
+            "value": "var(--draw-safe-left)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--draw-safe-right)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "none",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The sheet variant inherits fixed positioning from the Draw menu and anchors at the bottom."
+    },
+    {
+      "id": "draw-handles-root",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-handles",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": false,
+      "edge": "all",
+      "reason": "This full-screen pointer-transparent container is not an obstacle; its handle children are separate declarations."
+    },
+    {
+      "id": "draw-selection-box",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-selection-box",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": false,
+      "edge": "floating",
+      "reason": "The selection outline is pointer-transparent paint, not a control."
+    },
+    {
+      "id": "draw-handle-ghost",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-handle-ghost",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": false,
+      "edge": "floating",
+      "reason": "The resize ghost is pointer-transparent paint, not a control."
+    },
+    {
+      "id": "draw-handle",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-handle",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The fixed 44-pixel handle is an actual drag target, even when it reaches the bottom band."
+    },
+    {
+      "id": "draw-text-editor",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-text-editor",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The pointer-transparent text layer contains an editable text control, so its occupied surface is conservatively protected."
+    },
+    {
+      "id": "draw-text-controls",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-text-controls",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The fixed text-format controls must not be covered while text is being changed."
+    },
+    {
+      "id": "draw-dropper",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-dropper",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The dropper layer contains interactive controls; the dropper bar is also declared on its own."
+    },
+    {
+      "id": "draw-dropper-bar",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-dropper-bar",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "bar",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The dropper action bar sits at the bottom of the full-screen Draw layer."
+    },
+    {
+      "id": "top-bar",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".top-bar",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "sticky",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "top",
+      "reason": "The sticky top bar is included conservatively so moving a notice upward cannot cover its controls."
+    },
+    {
+      "id": "find-overlay",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".rapier-find-overlay",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": false,
+      "edge": "all",
+      "reason": "The find-highlight layer is pointer-transparent; its marks are paint, not tap targets."
+    },
+    {
+      "id": "find-current-mark",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".rapier-find-current-mark",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": false,
+      "edge": "floating",
+      "reason": "The current-match rectangle is fixed pointer-transparent paint."
+    },
+    {
+      "id": "format-toolbar",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".format-toolbar-stack",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset-inline",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            "important": false
+          }
+        ]
+      },
+      "role": "bar",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The format stack reserves its full box including the toolbar it contains."
+    },
+    {
+      "id": "info-action-overlay",
+      "file": "editor/styles/rapier-info.css",
+      "selector": ".info-action-overlay",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0 0 var(--bottom) 0",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The fixed information action overlay owns the viewport while its actions are open."
+    },
+    {
+      "id": "notes-surface",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-surface",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "Notes owns the cards and chrome; document notices must wait instead of floating above it."
+    },
+    {
+      "id": "notes-popup",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-popup",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The Notes popup is an absolute scrim inside a fixed surface and intercepts dismissal taps."
+    },
+    {
+      "id": "notes-lift",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-lift",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The lift is a layer over the whole screen for the 400 ms a card travels into its note or back; while a note opens it takes the taps so a second card cannot be tapped under it, then it is removed."
+    },
+    {
+      "id": "notes-ground",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-ground",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": false,
+      "edge": "all",
+      "reason": "The whole-page colour: a pointer-transparent layer of an open coloured note's colour under the whole screen, z-index -1, below the bar and the editor that stand clear over it; paint, never a control or an obstacle."
+    },
+    {
+      "id": "notes-snack",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-snack",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--notes-safe-left)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--notes-safe-right)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--notes-safe-bottom)",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(calc(100% + var(--space-3)))",
+            "important": false
+          }
+        ]
+      },
+      "role": "transient",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The Notes snackbar owns Undo or reminder actions; neither another notice nor a sheet may consume them."
+    },
+    {
+      "id": "notes-sheet",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-sheet",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate3d(0,100%,0)",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The absolute action sheet sits on the bottom of the fixed Notes surface; it rides in and out on its own transform."
+    },
+    {
+      "id": "notes-picker",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-picker",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The fixed Notes picker can meet either edge and owns selection actions."
+    },
+    {
+      "id": "recording-sheet",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-recording-sheet",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "auto var(--notes-safe-right) 0 var(--notes-safe-left)",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The native-dialog recording surface is pinned at the bottom and owns recording controls."
+    },
+    {
+      "id": "embed-status",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".embed-status",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px))) 0 0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The embed loading surface reserves the document area; host state decides when it leaves."
+    },
+    {
+      "id": "embed-refused",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".embed-refused",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px))) 0 0",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The refused-embed surface owns recovery actions rather than exposing the editor beneath it."
+    },
+    {
+      "id": "scroll-fab",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".scroll-fab",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "-9px",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 16px)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The movable scroll circle is a control whose fixed rectangle can reach the bottom band."
+    },
+    {
+      "id": "scroll-fab-label",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".scroll-fab-label",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(-50%) translateX(4px)",
+            "important": false
+          }
+        ]
+      },
+      "role": "transient",
+      "interactive": false,
+      "edge": "floating",
+      "reason": "The heading label is fixed pointer-transparent information beside the scroll circle."
+    },
+    {
+      "id": "agent-note",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".agent-note",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(-50%)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The agent note is a fixed clickable line, not a decorative heading."
+    },
+    {
+      "id": "change-line",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".change-line",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The fixed change line owns review verbs and cannot be covered by a notice."
+    },
+    {
+      "id": "review-track",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".review-track",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + 51px)",
+            "important": false
+          }
+        ]
+      },
+      "role": "bar",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The fixed review track is anchored above the native inset and owns pending-change actions."
+    },
+    {
+      "id": "compare-law-review",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".compare-law-review",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--editor-h-pad)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--editor-h-pad)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            "important": false
+          }
+        ]
+      },
+      "role": "bar",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The comparison decision row is a bottom-anchored control surface."
+    },
+    {
+      "id": "settings-overlay",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".settings-overlay",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The settings scrim owns pointer input while the panel is open; document notices wait."
+    },
+    {
+      "id": "settings-panel",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".settings-panel",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "var(--native-inset-top, env(safe-area-inset-top, 0px)) var(--native-inset-right, env(safe-area-inset-right, 0px)) var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate3d(100%, 0, 0)",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The settings panel fills its safe-area bounds and contains controls all the way to the bottom."
+    },
+    {
+      "id": "settings-edge-swipe",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".settings-edge-swipe",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)))",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--native-inset-right, env(safe-area-inset-right, 0px))",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "bottom",
+      "reason": "The fixed bottom-reaching edge-swipe region is an interactive gesture target, not a button."
+    },
+    {
+      "id": "restore-modal-panel",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".restore-modal-overlay .settings-panel",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "static",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "none",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The restore modal overrides the settings panel inset; it still owns restoration decisions."
+    },
+    {
+      "id": "command-palette",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".command-palette__overlay",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "role": "sheet",
+      "interactive": true,
+      "edge": "all",
+      "reason": "The fixed command-palette overlay seats its sheet at the viewport bottom."
+    },
+    {
+      "id": "image-grip",
+      "file": "layout/browser.js",
+      "selector": ".rapier-image-grip",
+      "rule": {
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The picture resize grip is a fixed drag target and can enter the bottom band."
+    },
+    {
+      "id": "image-move",
+      "file": "layout/browser.js",
+      "selector": ".rapier-image-move",
+      "rule": {
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The picture move grip is a fixed drag target and can enter the bottom band."
+    },
+    {
+      "id": "image-rotate",
+      "file": "layout/browser.js",
+      "selector": ".rapier-image-rotate",
+      "rule": {
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The picture rotation grip is a fixed drag target and can enter the bottom band."
+    },
+    {
+      "id": "image-wrap-row",
+      "file": "layout/browser.js",
+      "selector": ".rapier-image-wrap-row",
+      "rule": {
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "100%",
+            "important": false
+          }
+        ]
+      },
+      "role": "storey",
+      "interactive": true,
+      "edge": "support",
+      "reason": "The absolute wrap row stands on image-tools; it outranks only that support chain.",
+      "on": "image-tools"
+    }
+  ],
+  "localRules": [
+    {
+      "id": "draw-replay-bar",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-replay-bar",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--space-2)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--space-2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-stage",
+      "reason": "Skip and fast forward sit inside the Draw stage while an agent's replay runs; they are contained by it and never position a viewport surface."
+    },
+    {
+      "id": "restore-timer",
+      "file": "editor/styles/rapier-app.css",
+      "selector": ".restore-notice__timer svg",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "17px 6px",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "rotate(-90deg)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".restore-notice",
+      "reason": "The timer SVG is contained by the restore notice; its inset does not position another viewport surface."
+    },
+    {
+      "id": "control-tooltip",
+      "file": "editor/styles/rapier-app.css",
+      "selector": "[data-tip]::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [
+          {
+            "name": "media",
+            "params": "(hover:hover) and (pointer:fine)"
+          }
+        ],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(100% + 6px)",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "50%",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateX(-50%) translateY(3px)",
+            "important": false
+          }
+        ]
+      },
+      "owner": "[data-tip]",
+      "reason": "The hover-only pseudo-element belongs to its control, has no action, and is not a separate viewport surface."
+    },
+    {
+      "id": "unordered-marker",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ul>li::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(-1*var(--md-space-4))",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": ".66em",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "A list marker uses a logical inline inset inside its list item, not the viewport bottom."
+    },
+    {
+      "id": "ordered-marker",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ol>li::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(-2.75 * var(--md-unit))",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(calc(0.15 * var(--md-unit)) + (var(--md-line) - calc(2 * var(--md-unit))) / 2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "A list marker uses a logical inline inset inside its list item, not the viewport bottom."
+    },
+    {
+      "id": "ordered-connector",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ol>li:not(:last-child)::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(calc(-1.75 * var(--md-unit)) - 1.5px)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(2.2 * var(--md-unit))",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--md-line) / -4)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "The connector is a decorative pseudo-element between list items, not a bottom surface."
+    },
+    {
+      "id": "ordered-continued-connector-1",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ol[data-rapier-list-continues]>li:last-child::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(calc(-1.75 * var(--md-unit)) - 1.5px)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(2.2 * var(--md-unit))",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--md-line) / -4)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "A numbered list that a heading interrupts carries its dotted connector on past its last item, decoration inside the list block."
+    },
+    {
+      "id": "ordered-continued-connector-2",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ol[data-rapier-list-continues]>li:last-child::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 2,
+        "declarations": [
+          {
+            "property": "bottom",
+            "value": "calc(-1 * var(--md-line))",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render li",
+      "reason": "A numbered list that a heading interrupts carries its dotted connector on past its last item, decoration inside the list block."
+    },
+    {
+      "id": "ordered-continued-heading",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render :is(h1,h2,h3,h4,h5,h6)[data-rapier-list-through]::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(calc(1 * var(--md-unit)) - 1.5px)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--md-line) / -2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render h2",
+      "reason": "The dotted connector of a numbered list runs down the heading that interrupts it, decoration inside the heading block."
+    },
+    {
+      "id": "jump-marker",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ul.rapier-jump-list>li::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "var(--md-jump-marker-inline-start)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--md-jump-marker-center) - 5px)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-jump-list li",
+      "reason": "The marker is contained by its list item; a logical inline inset is not a viewport pin."
+    },
+    {
+      "id": "jump-connector",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render ul.rapier-jump-list>li:not(:last-child)::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-inline-start",
+            "value": "calc(var(--md-jump-marker-inline-start) + 4px)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "var(--md-jump-marker-center)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(0px - var(--md-jump-gap) - var(--md-jump-marker-center))",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-jump-list li",
+      "reason": "The connector extends between list items, not from a fixed viewport edge."
+    },
+    {
+      "id": "draw-hint",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-hint",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-stage",
+      "reason": "The empty-stage hint fills its stage and receives no pointer events; the Draw surface owns that area."
+    },
+    {
+      "id": "draw-tool-list-scrim",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-surface--choosing::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-surface",
+      "reason": "While Draw's tool list is open the surface dims everything outside the list with the settings panel's scrim; a tap on it closes the list."
+    },
+    {
+      "id": "seek-track",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-seek-track",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-seek",
+      "reason": "The decorative track fills a seek control; its parent menu owns the surface."
+    },
+    {
+      "id": "seek-input",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-seek input[type=\"range\"]",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-seek",
+      "reason": "The range input fills a seek control inside a declared menu, rather than making a viewport surface."
+    },
+    {
+      "id": "dip-field",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-dip-field",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-dip",
+      "reason": "The paint field fills a colour control inside the menu; the menu owns its reserved area."
+    },
+    {
+      "id": "dip-knob",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-dip-knob::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "6px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-dip-knob",
+      "reason": "The inset draws the knob interior, not an independently positioned surface."
+    },
+    {
+      "id": "dip-water-label",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-dip-edge--water",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "right",
+            "value": "8px",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "6px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-dip",
+      "reason": "The water label is positioned in the dip control, not at the viewport edge."
+    },
+    {
+      "id": "draw-colour-input",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-colour-custom input",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-colour-custom",
+      "reason": "The native colour input fills a menu control; it is checked with its containing menu."
+    },
+    {
+      "id": "section-fold-control",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-block-start",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "inset-inline-end",
+            "value": "calc(0px - var(--editor-h-pad))",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "This logical-inline-end offset seats the fold control beside its heading, not on a viewport-bottom surface."
+    },
+    {
+      "id": "section-fold-control-h1",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".block-wrapper--heading[data-heading-level=\"1\"] > .section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-block-start",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "The fold control's block-start offset centres it on its heading's first line, not on a viewport-bottom surface."
+    },
+    {
+      "id": "section-fold-control-h2-h3",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".block-wrapper--heading:is([data-heading-level=\"2\"], [data-heading-level=\"3\"]) > .section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-block-start",
+            "value": "calc((var(--md-line) * 1.5 - 44px) / 2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "The fold control's block-start offset centres it on its heading's first line, not on a viewport-bottom surface."
+    },
+    {
+      "id": "section-fold-control-h4-h6",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".block-wrapper--heading:is([data-heading-level=\"4\"], [data-heading-level=\"5\"], [data-heading-level=\"6\"]) > .section-fold-btn",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "inset-block-start",
+            "value": "calc((var(--md-line) - 44px) / 2)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "The fold control's block-start offset centres it on its heading's first line, not on a viewport-bottom surface."
+    },
+    {
+      "id": "will-choice-input",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".will-controls__choice input",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".will-controls__choice",
+      "reason": "The transparent input fills its choice label inside a panel; it does not create another surface."
+    },
+    {
+      "id": "format-plus",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".format-toolbar .fmt-btn--plus",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "sticky",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".format-toolbar",
+      "reason": "The sticky plus control stays inside the declared toolbar scroll strip, not the viewport itself."
+    },
+    {
+      "id": "source-stack-fill",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".source-stack > *",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".source-stack",
+      "reason": "The editor layers fill their document stack, which is in the page layout rather than a bottom-edge surface."
+    },
+    {
+      "id": "notes-card-fade",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-card-body--clamped::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-card-body",
+      "reason": "The fade is a non-interactive pseudo-element on one card, not a fixed surface."
+    },
+    {
+      "id": "notes-lift-ground",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-lift-ground",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-lift",
+      "reason": "The plate inside the lift: a non-interactive full-screen layer of the card's colour that only transforms -- scaled from the card's box to the bar's, or to the whole screen for a plain note, and back -- so the motion runs on the compositor while the note loads."
+    },
+    {
+      "id": "notes-lift-glide",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-lift-glide",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-lift",
+      "reason": "A copy of one of the heads' controls, non-interactive, standing where the control stands while a note opens or closes: the three both heads have glide onto their partners, the others fade in place; removed when the lift lands."
+    },
+    {
+      "id": "notes-lift-page",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-lift-page",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-lift",
+      "reason": "The page's own ground inside the lift: a non-interactive full-screen layer whose opacity alone changes, dissolving the cards as a note opens and the note as it closes, then giving way to what arrives."
+    },
+    {
+      "id": "notes-foot",
+      "file": "editor/styles/rapier-notes.css",
+      "selector": ".rapier-notes-surface::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-notes-surface",
+      "reason": "The fade at the foot of the cards is drawn inside the Notes surface, over its cards and under its sheets and snackbar; it takes no touch and owns no edge of its own."
+    },
+    {
+      "id": "scroll-fab-tooltip",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".scroll-fab[data-tip]::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [
+          {
+            "name": "media",
+            "params": "(hover:hover) and (pointer:fine)"
+          }
+        ],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "left",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(100% + 8px)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "50%",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(-50%) translateX(3px)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".scroll-fab",
+      "reason": "The hover tooltip is local to the scroll control and cancels its inherited bottom placement."
+    },
+    {
+      "id": "compare-overflow-fade",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".compare-row--overflow-right::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0 0 0 auto",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".compare-row",
+      "reason": "The fade is contained by one comparison row; it neither owns the viewport nor receives taps."
+    },
+    {
+      "id": "compare-preview-fade",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".compare-pro-gate::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0 0 auto",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".compare-pro-gate",
+      "reason": "The preview fade is contained by its comparison panel, not an additional viewport surface."
+    },
+    {
+      "id": "disclosure-before",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".settings-disclosure-title__glyph::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".settings-disclosure-title__glyph",
+      "reason": "The pseudo-element draws one line of a disclosure glyph inside a declared settings panel."
+    },
+    {
+      "id": "disclosure-after",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".settings-disclosure-title__glyph::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".settings-disclosure-title__glyph",
+      "reason": "The pseudo-element draws one line of a disclosure glyph inside a declared settings panel."
+    },
+    {
+      "id": "open-chevron",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".open-chevron",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-block",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".open-chevron parent",
+      "reason": "The logical block inset fills the Open row chevron, not a viewport-bottom surface."
+    },
+    {
+      "id": "horizontal-fade",
+      "file": "editor/styles/rapier-source.css",
+      "selector": ".rapier-hscroll::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-hscroll",
+      "reason": "The non-interactive edge fade belongs to its scroll container and creates no viewport surface."
+    },
+    {
+      "id": "link-dialog-toggle-thumb",
+      "file": "editor/styles/rapier-app.css",
+      "selector": ".link-dialog__toggle input::before",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "3px auto 3px 3px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".link-dialog__toggle input",
+      "reason": "The switch thumb is positioned inside its own relative input; it creates no viewport surface."
+    },
+    {
+      "id": "footnote-backref-reach",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render .footnote-backref::after",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "-12px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render .footnote-backref",
+      "reason": "An invisible reach around the footnote's back arrow, inside its own relative link; it draws nothing and pins nothing to the viewport."
+    },
+    {
+      "id": "table-header",
+      "file": "spec/markdown-style.css",
+      "selector": ".md-render thead",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [
+          {
+            "name": "media",
+            "params": "screen"
+          }
+        ],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "sticky",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "var(--md-table-header-top,0px)",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".md-render table",
+      "reason": "The header stays inside its table at the top of the document's vertical scroller; it creates no bottom surface and does not stick in print."
+    },
+    {
+      "id": "draw-resize",
+      "file": "editor/styles/rapier-draw.css",
+      "selector": ".rapier-draw-resize",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-draw-stage",
+      "reason": "The resize layer fills the Draw stage and passes touches through; it dims outside the frame and carries the caps, and positions no viewport surface."
+    }
+  ]
+}

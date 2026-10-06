@@ -1,0 +1,16 @@
+# Deploy the finished page, document embeds, optional installation companions and crawler files.
+/*
+!/rapier.html
+!/sw.js
+!/manifest.json
+!/icon-192.png
+!/icon-512.png
+!/robots.txt
+!/sitemap.xml
+!/llms.txt
+!/llms-full.txt
+!/og.png
+!/og-notes.png
+!/og-draw.png
+!/embed/
+!/embed/**

@@ -1,0 +1,1795 @@
+{
+  "version": 1,
+  "viewports": [
+    {
+      "width": 360,
+      "height": 780
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "contract": "An on-screen, enabled control that is not aria-hidden receives a centre tap; a notice preserves its size and waits when no legal rectangle remains.",
+  "componentPolicy": "Use the declared production CSS in an isolated same-origin iframe. Only component state/content and JS-owned geometry are fixture inputs. Place through the pure model; do not call this a live integration receipt.",
+  "cases": [
+    {
+      "id": "toast-container",
+      "selector": ".toast-container",
+      "rule": {
+        "file": "editor/styles/rapier-app.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + var(--rapier-toast-lift, 0px))",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "existing-toast",
+        "classes": "toast-container",
+        "controlClass": "toast__action",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "paste-overlay",
+      "selector": "html[data-pasting=\"on\"] body::after",
+      "rule": {
+        "file": "editor/styles/rapier-app.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "paste-pseudo",
+        "classes": "",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "link-dialog-overlay",
+      "selector": ".link-dialog__overlay",
+      "rule": {
+        "file": "editor/styles/rapier-app.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--rapier-keyboard-occlusion, 0px)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "link-dialog__overlay",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "import-progress",
+      "selector": ".rapier-import-progress",
+      "rule": {
+        "file": "editor/styles/rapier-app.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "50%",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)))",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateX(-50%)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-import-progress",
+        "controlClass": "",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "image-tools",
+      "selector": ".rapier-image-tools",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset-inline",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom,env(safe-area-inset-bottom,0px))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-image-tools",
+        "controlClass": "rapier-image-tools__btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "image-lightbox",
+      "selector": ".rapier-image-lightbox",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-image-lightbox open",
+        "controlClass": "rapier-image-lightbox__close",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "draw-surface",
+      "selector": ".rapier-draw-surface",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-surface",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "draw-stage",
+      "selector": ".rapier-draw-stage",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--draw-safe-left)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--draw-safe-right)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--draw-safe-bottom)",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--draw-safe-top) + var(--draw-cell) + 2 * var(--space-1))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-stage",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "draw-menu",
+      "selector": ".rapier-draw-menu",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-menu",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "draw-menu-sheet",
+      "selector": ".rapier-draw-menu--sheet",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "left",
+            "value": "var(--draw-safe-left)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--draw-safe-right)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "none",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-menu rapier-draw-menu--sheet",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "draw-handles-root",
+      "selector": ".rapier-draw-handles",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-handles",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "draw-selection-box",
+      "selector": ".rapier-draw-selection-box",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-selection-box",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "draw-handle-ghost",
+      "selector": ".rapier-draw-handle-ghost",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-handle-ghost",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "draw-handle",
+      "selector": ".rapier-draw-handle",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-draw-handle",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 64,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "draw-text-editor",
+      "selector": ".rapier-draw-text-editor",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-text-editor",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "textInput": true
+      }
+    },
+    {
+      "id": "draw-text-controls",
+      "selector": ".rapier-draw-text-controls",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-text-controls",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "draw-dropper",
+      "selector": ".rapier-draw-dropper",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-dropper",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "draw-dropper-bar",
+      "selector": ".rapier-draw-dropper-bar",
+      "rule": {
+        "file": "editor/styles/rapier-draw.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-draw-dropper-bar",
+        "controlClass": "rapier-draw-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "top-bar",
+      "selector": ".top-bar",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "sticky",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "top-bar",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "find-overlay",
+      "selector": ".rapier-find-overlay",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-find-overlay",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "find-current-mark",
+      "selector": ".rapier-find-current-mark",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-find-current-mark",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "format-toolbar",
+      "selector": ".format-toolbar-stack",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset-inline",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "format-toolbar",
+        "classes": "format-toolbar-stack",
+        "controlClass": "fmt-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "info-action-overlay",
+      "selector": ".info-action-overlay",
+      "rule": {
+        "file": "editor/styles/rapier-info.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0 0 var(--bottom) 0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "info-action-overlay open",
+        "controlClass": "icon-button close-button",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "notes-surface",
+      "selector": ".rapier-notes-surface",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-surface",
+        "controlClass": "rapier-notes-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "notes-popup",
+      "selector": ".rapier-notes-popup",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-popup rapier-notes-popup--up",
+        "controlClass": "rapier-notes-row",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "notes-lift",
+      "selector": ".rapier-notes-lift",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-lift",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "true"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "notes-ground",
+      "selector": ".rapier-notes-ground",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-ground",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "true"
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "notes-snack",
+      "selector": ".rapier-notes-snack",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--notes-safe-left)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--notes-safe-right)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--notes-safe-bottom)",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(calc(100% + var(--space-3)))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-snack rapier-notes-snack--open",
+        "controlClass": "rapier-notes-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "notes-sheet",
+      "selector": ".rapier-notes-sheet",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate3d(0,100%,0)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-sheet rapier-notes-sheet--open",
+        "controlClass": "rapier-notes-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "notes-picker",
+      "selector": ".rapier-notes-picker",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-notes-picker",
+        "controlClass": "rapier-notes-row",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "recording-sheet",
+      "selector": ".rapier-recording-sheet",
+      "rule": {
+        "file": "editor/styles/rapier-notes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "auto var(--notes-safe-right) 0 var(--notes-safe-left)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "dialog",
+        "classes": "rapier-recording-sheet",
+        "controlClass": "rapier-notes-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "embed-status",
+      "selector": ".embed-status",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px))) 0 0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "embed-status",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "embed-refused",
+      "selector": ".embed-refused",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px))) 0 0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "embed-refused",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "scroll-fab",
+      "selector": ".scroll-fab",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "-9px",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 16px)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "scroll-fab visible",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "scroll-fab-label",
+      "selector": ".scroll-fab-label",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(-50%) translateX(4px)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "scroll-fab-label visible",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "agent-note",
+      "selector": ".agent-note",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translateY(-50%)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "agent-note visible",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 64,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "change-line",
+      "selector": ".change-line",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "change-line visible",
+        "controlClass": "change-line__verb",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "review-track",
+      "selector": ".review-track",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "calc(51px + var(--space-4))",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + 51px)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "review-track",
+        "controlClass": "review-track__verb",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "compare-law-review",
+      "selector": ".compare-law-review",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--editor-h-pad)",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--editor-h-pad)",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "compare-law-review",
+        "controlClass": "compare-law-review__action",
+        "attributes": {
+          "aria-hidden": "false",
+          "data-visible": "true"
+        }
+      }
+    },
+    {
+      "id": "settings-overlay",
+      "selector": ".settings-overlay",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "settings-overlay open",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "settings-panel",
+      "selector": ".settings-panel",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "var(--native-inset-top, env(safe-area-inset-top, 0px)) var(--native-inset-right, env(safe-area-inset-right, 0px)) var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate3d(100%, 0, 0)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "settings-panel open",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "settings-edge-swipe",
+      "selector": ".settings-edge-swipe",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)))",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "var(--native-inset-right, env(safe-area-inset-right, 0px))",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "settings-edge-swipe",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "noControl": true
+      }
+    },
+    {
+      "id": "restore-modal-panel",
+      "selector": ".restore-modal-overlay .settings-panel",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "static",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "auto",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "none",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "restore-panel",
+        "classes": "settings-panel",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "command-palette",
+      "selector": ".command-palette__overlay",
+      "rule": {
+        "file": "editor/styles/rapier-source.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "command-palette__overlay",
+        "controlClass": "command-palette__close",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "image-grip",
+      "selector": ".rapier-image-grip",
+      "rule": {
+        "file": "layout/browser.js",
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-image-grip",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 64,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "image-move",
+      "selector": ".rapier-image-move",
+      "rule": {
+        "file": "layout/browser.js",
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-image-move",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 64,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "image-rotate",
+      "selector": ".rapier-image-rotate",
+      "rule": {
+        "file": "layout/browser.js",
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "transform",
+            "value": "translate(-50%,-50%)",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-image-rotate",
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 64,
+          "height": 56
+        }
+      }
+    },
+    {
+      "id": "image-wrap-row",
+      "selector": ".rapier-image-wrap-row",
+      "rule": {
+        "file": "layout/browser.js",
+        "origin": "style:sheet:1",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "right",
+            "value": "0",
+            "important": false
+          },
+          {
+            "property": "bottom",
+            "value": "100%",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "wrap-row",
+        "classes": "rapier-image-wrap-row",
+        "controlClass": "rapier-image-tools__btn",
+        "attributes": {
+          "aria-hidden": "false"
+        },
+        "support": "image-tools"
+      }
+    }
+  ],
+  "liveCases": [
+    {
+      "id": "live-format",
+      "open": "format",
+      "surfaces": [
+        "format-toolbar"
+      ],
+      "phase": "toast before opening"
+    },
+    {
+      "id": "live-wrap",
+      "open": "wrap",
+      "surfaces": [
+        "image-tools",
+        "image-wrap-row"
+      ],
+      "phase": "toast before opening the wrap storey"
+    },
+    {
+      "id": "live-settings",
+      "open": "settings",
+      "surfaces": [
+        "settings-overlay",
+        "settings-panel"
+      ],
+      "phase": "toast before opening"
+    },
+    {
+      "id": "live-command",
+      "open": "command",
+      "surfaces": [
+        "command-palette"
+      ],
+      "phase": "toast before opening"
+    },
+    {
+      "id": "live-notes",
+      "open": "notes",
+      "surfaces": [
+        "notes-surface"
+      ],
+      "phase": "toast before opening"
+    },
+    {
+      "id": "live-notes-sheet",
+      "open": "notes-sheet",
+      "surfaces": [
+        "notes-sheet"
+      ],
+      "phase": "toast before opening the sheet; the sheet is modal, so the surface's own controls sit under its scrim until it is down"
+    },
+    {
+      "id": "live-draw",
+      "open": "draw",
+      "surfaces": [
+        "draw-surface"
+      ],
+      "phase": "toast before opening"
+    }
+  ]
+}

@@ -1,0 +1,728 @@
+.link-dialog__toggle{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.5rem 0}
+.link-dialog__toggle input{appearance:none;width:38px;height:22px;margin:0;background:#777;cursor:pointer;position:relative;flex-shrink:0;border:0;border-radius:0}
+.link-dialog__toggle input::before{content:"";position:absolute;inset:3px auto 3px 3px;width:16px;background:#fff;transition:transform .15s}
+.link-dialog__toggle input:checked{background:var(--accent,#668cff)}
+.link-dialog__toggle input:checked::before{transform:translateX(16px)}
+.link-dialog__toggle input:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+
+.link-dialog__description { font-size:13px; line-height:1.5; margin:0 0 16px; opacity:.8; }
+img[data-rapier-asset]:not([data-rapier-asset-state="ready"]) { min-width:96px; min-height:32px; }
+img[data-rapier-asset-state="error"] { outline:1px solid var(--color-error); padding:8px; }
+
+
+:root {
+
+	--color-bg:#000000;
+	--color-surface:#0d0d0d;
+	--color-surface-2:#121212;
+	--color-surface-hover:#1a1a1a;
+	--color-border:#1c1c1c;
+	--color-border-focus:#2a2a2a;
+	--color-line:#ffffff;
+	--color-inset:#1d1d1d;
+	--color-scrim:color-mix(in srgb,var(--color-surface) 80%,transparent);
+
+	--color-text:#fafafa;
+	--color-text-secondary:#a1a1a1;
+	--color-text-muted:#878787;
+	--color-text-subtle:#858585;
+
+	--color-accent:#12A594;
+
+	--color-accent-text:color-mix(in srgb,var(--color-accent) 80%,#ffffff);
+	--color-accent-foreground:#000000; --color-focus:var(--color-accent);
+
+	--color-icon:#ffffff;
+	--format-toolbar-bg:rgba(0,0,0,0.75);
+
+	--color-error:#ec5156;
+	--color-error-foreground:#000;
+	--color-pop-negative:color-mix(in srgb,var(--color-error) 80%,#000); /* the pop-up's bottom box, white text on it in both themes */
+	--color-error-muted:rgba(236,81,86,0.10);
+	--color-success:#45d483;
+	--color-success-muted:rgba(69,212,131,0.10);
+	--color-warning:#f5a623;
+	--color-warning-muted:rgba(245,166,35,0.10);
+
+	--font-sans:'Geist',system-ui,sans-serif;
+	--font-mono:'Geist Mono',monospace;
+	/* Tracking for all-caps Geist Mono, one owner: editorial spacing, not the wide letter-spacing
+	   that reads as generated. Notices, toasts, dialogs, plates and agent lines take --track-caps;
+	   the settings panel's controls sit a touch wider on --track-caps-ui. */
+	--track-caps:.035em;
+	--track-caps-ui:.055em;
+
+	--space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+	--space-5:20px; --space-6:24px; --space-7:28px; --space-8:32px;
+
+	/* THE THUMB LAW. A control that stops, discards, or cannot be undone stands this far
+		 edge-to-edge from every other box a finger can tap. One 48px target — the width of the
+		 miss it exists to survive — plus the 8px row unit the chrome already separates rows by. */
+	--thumb-exclusion:56px;
+
+	--text-2xs:0.625rem;
+	--text-xs:0.75rem;
+	--text-sm:0.875rem;
+	--text-base:1rem;
+	--text-lg:1.125rem;
+	--text-xl:1.25rem;
+	--fw-regular:400; --fw-medium:500; --fw-semibold:600;
+
+
+	--dur-micro:100ms;
+	--dur-enter:250ms;
+	--dur-ceiling:300ms;
+	--ease-out:cubic-bezier(0.16,1,0.3,1);
+	--ease-micro:ease;
+	/* A glyph that turns to say a state changed (the Notes plus into its cross, a chevron): one slow, eased turn, never a bounce. */
+	--dur-turn:var(--dur-ceiling);
+	--ease-turn:cubic-bezier(.4,0,.2,1);
+
+}
+
+
+:root {
+
+	--top-bar-h: 52px;
+	--find-bar-h: 48px;
+	--editor-h-pad: max(var(--space-4), var(--native-inset-left, env(safe-area-inset-left, 0px)), var(--native-inset-right, env(safe-area-inset-right, 0px)));
+}
+
+
+*,*::before,*::after{box-sizing:border-box;border-radius:0;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{font-size:100%;-webkit-text-size-adjust:100%;color-scheme:dark;scroll-behavior:smooth}
+/* The first screen's wrapper claims the page's spare height (flex:1) as long as it stands. A text or code file puts the source
+   editor, another flex:1 sibling, beside it, and the two split the page: the document began halfway down under the head.
+   Once the editor is up the wrapper takes no box of its own, so the head and the editor areas are the body's children again. */
+#rapier-first-screen{display:contents}
+body{background:var(--color-bg);color:var(--color-text);font:400 var(--text-sm)/1.5 var(--font-sans);min-height:100dvh;-webkit-font-smoothing:antialiased;overflow-x:hidden;text-wrap:pretty}
+:where(h1,h2,h3,h4,h5,h6):not(.editor-area *){text-wrap:balance}
+a{color:var(--color-accent-text);text-decoration:none}
+img{display:block;max-width:100%}
+ul,ol{list-style:none}
+button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;border:none;background:none;touch-action:manipulation}
+input,textarea,select{font-family:inherit;font-size:inherit;color:inherit}
+:focus,/* DESIGN RULE: never a box around a control. Focus is the component's own tint or opacity. */
+:focus-visible{outline:none}
+button:focus-visible,a:focus-visible,summary:focus-visible{
+	text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
+.icon-btn:focus-visible svg,.theme-switcher__btn:focus-visible svg,
+.navigator-close:focus-visible svg,.settings-close-btn:focus-visible svg,
+.restore-notice__close:focus-visible svg{stroke-width:3;transform:scale(.85)}
+.swatch-wrap:focus-visible{opacity:1;transform:scale(.85)}
+[hidden]{display:none!important}
+/* Selection is the accent, the same wash the source view paints in code (rapier-editor.css). */
+::selection{background:color-mix(in srgb,var(--color-accent) 48%,transparent)}
+
+html.rapier-engine-modal-locked{overflow:hidden!important;overscroll-behavior:contain}html.rapier-engine-modal-locked body{overflow:hidden;overscroll-behavior:contain}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+
+
+
+body.light{
+	--color-bg:#ffffff;
+	--color-surface:#f7f6f3;
+	--color-surface-2:#f1f0ee;
+	--color-surface-hover:#e6e4e0;
+	--color-border:#dbdad7;
+	--color-border-focus:#c4c2bc;
+	--color-line:#000000;
+	--color-inset:#f2f1ef;
+	--color-scrim:color-mix(in srgb,var(--color-surface) 60%,transparent);
+	--color-text:#121212;
+	--color-text-secondary:#444444;
+	--color-text-muted:#606060;
+	--color-text-subtle:#636363;
+
+	--color-accent-text:color-mix(in srgb,var(--color-accent) 50%,#000000);
+	--color-focus:var(--color-accent-text);
+
+	--color-icon:#000000;
+	--format-toolbar-bg:rgba(255,255,255,0.65);
+	--color-error:#c00;
+	--color-pop-negative:color-mix(in srgb,var(--color-error) 80%,#000);
+	--color-error-foreground:#fff;
+	--color-error-muted:rgba(204,0,0,0.10);
+	--color-success:#188844;
+	--color-success-muted:rgba(24,136,68,0.10);
+	--color-warning:#b26105;
+	--color-warning-muted:rgba(178,97,5,0.10);
+
+	color-scheme:light;
+}
+
+/* A diagram's look is the style pack's own (spec/markdown-style.css, "--md-diagram-*": one ink for words and
+   lines, the grey box, the accent for meaning), so the editor, an export and Share draw one diagram. What stays
+   here are the quiet steps a diagram's inner structure takes from the theme's own ink mixed into its own paper:
+   a divider, a structural outline, a quiet word. ON BODY, NOT ON :root: a var() inside a custom property is
+   substituted where the property is DECLARED, and body is the element that carries the theme. */
+body{
+	--diagram-inner-line:color-mix(in srgb,var(--color-text) 12%,var(--color-bg));
+	--diagram-node-line:color-mix(in srgb,var(--color-text) 20%,var(--color-bg));
+	--diagram-quiet:color-mix(in srgb,var(--color-text) 60%,var(--color-bg));
+}
+
+
+
+input[type="text"],input[type="password"],input[type="email"],
+input[type="number"],input[type="url"],textarea,select{
+	display:block;width:100%;background:transparent;border:none;
+	color:var(--color-text);padding:var(--space-2) var(--space-3);
+	font:var(--fw-regular) var(--text-sm) var(--font-sans);outline:none;appearance:none;
+	transition:background-color var(--dur-micro) var(--ease-micro)}
+
+input[type="text"],input[type="password"],input[type="email"],
+input[type="number"],input[type="url"],select{height:48px;padding:0 var(--space-3)}
+input:focus,textarea:focus,select:focus{background:var(--color-surface-2)}
+input::placeholder,textarea::placeholder{color:var(--color-text-subtle)}
+textarea{resize:none;min-height:48px;max-height:160px}
+select{
+	background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='1.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+	background-repeat:no-repeat;background-position:right var(--space-2) center;
+	padding-right:var(--space-6);cursor:pointer}
+@media(max-width:768px){input,textarea,select{font-size:1rem}}
+
+
+
+.accent-swatch{width:100%;height:100%;border-radius:0;cursor:pointer;display:block}
+
+
+
+.theme-switcher{
+	position:relative;display:inline-flex;align-items:center;
+	background:var(--color-surface-2);
+	border-radius:0;
+	padding:5px;gap:5px;flex-shrink:0}
+.theme-switcher__btn{
+	display:inline-flex;align-items:center;justify-content:center;
+	width:48px;height:48px;
+	border-radius:0;
+	border:none;
+	background:transparent;
+	color:var(--color-text);
+	cursor:pointer;
+	transition:background-color var(--dur-micro) var(--ease-micro),color var(--dur-micro) var(--ease-micro);
+	touch-action:manipulation}
+.theme-switcher__btn svg{width:18px;height:18px}
+.theme-switcher__btn[data-active]{
+	background:var(--color-text);
+	color:var(--color-bg)}
+.theme-switcher__btn:not([data-active]){opacity:1}
+@media (hover:hover) and (pointer:fine){.theme-switcher__btn:hover:not([data-active]){opacity:.85}}
+.theme-switcher__btn:not([data-theme-val]):not([data-sz]){pointer-events:auto}
+.theme-switcher__btn[disabled]{
+	opacity:.25;pointer-events:none;cursor:not-allowed}
+.theme-switcher__btn[disabled][data-active]{opacity:.7}
+
+/* Stationary labels, one moving selection edge. Its inverse text has exactly the same flex
+   geometry as the live controls, including differently sized options. */
+.theme-switcher__selection{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;box-sizing:border-box;padding:inherit;gap:inherit;background:var(--color-text);pointer-events:none;clip-path:inset(0 100% 0 0);transition:clip-path 230ms var(--ease-out)}
+.theme-switcher.theme-switcher--sliding>.theme-switcher__btn{background:transparent;color:var(--color-text);opacity:1;transition:none}
+.theme-switcher.theme-switcher--sliding .theme-switcher__selection>.theme-switcher__btn{background:transparent;color:var(--color-bg);opacity:1;transition:none;pointer-events:none}
+.theme-switcher__btn:focus-visible svg{transform:none}
+@media(prefers-reduced-motion:reduce){.theme-switcher__selection{transition:none}}
+
+
+
+.swatches{
+	display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3)}
+.swatch-wrap{
+	position:relative;width:100%;aspect-ratio:1;box-sizing:border-box;
+	cursor:pointer;transition:opacity var(--dur-micro) var(--ease-micro);
+	border:0;background:transparent;padding:0}
+@media(hover:hover) and (pointer:fine){.swatch-wrap:hover{opacity:.85}}
+.swatch-wrap[data-active]{box-shadow:inset 0 0 0 4px var(--color-icon)}
+
+
+.toast-container{
+	position:fixed;
+	bottom:calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + var(--rapier-toast-lift, 0px));
+	left:0;
+	right:0;
+	/* Below every sheet (200): a sheet owns the screen while it is up, and a notice under it is
+	   visibly under it rather than an inert card a finger falls through. */
+	z-index:160;display:flex;flex-direction:column;align-items:stretch;gap:var(--space-2);
+	pointer-events:none}
+.toast-container[data-rapier-transient-state="waiting"]{visibility:hidden}
+.toast-container > *{pointer-events:auto}
+.toast,
+.restore-notice{
+	transform:translate3d(0,0,0);
+	opacity:1;
+	will-change:transform,opacity;
+	touch-action:none;
+	user-select:none;-webkit-user-select:none;
+	animation:rapier-popup-enter 180ms var(--ease-micro) both;
+}
+@keyframes rapier-popup-enter{
+	from{transform:translate3d(0,12px,0);opacity:0}
+	to{transform:translate3d(0,0,0);opacity:1}
+}
+.toast{
+	display:flex;align-items:center;gap:var(--space-2);
+	padding:0 0 0 16px;
+	min-height:48px;min-width:0;width:100%;box-sizing:border-box;
+	align-self:stretch}
+.toast .toast__msg{
+	flex:1;min-width:0;
+	/* Toasts wrap: a message is read whole on a phone, never cut to an ellipsis. */
+	white-space:normal;overflow-wrap:anywhere;
+	padding:12px 0;
+	color:inherit}
+.toast__close{
+	align-self:flex-start;
+	display:inline-flex;align-items:center;justify-content:center;
+	background:none;border:none;border-radius:0;
+	width:48px;height:48px;padding:0;margin:0;
+	color:inherit;opacity:.9;flex-shrink:0;cursor:pointer;
+	font:var(--fw-medium) 1.5rem/1 var(--font-mono)}
+@media (hover:hover) and (pointer:fine){.toast__close:hover{opacity:1}}
+.toast__action{
+	margin:0;padding:0 16px;align-self:stretch;
+	display:inline-flex;align-items:center;
+	font:var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps);text-transform:uppercase;
+	color:inherit;border:none;border-radius:0;background:transparent;cursor:pointer;
+	white-space:nowrap;flex-shrink:0}
+@media (hover:hover) and (pointer:fine){.toast__action:hover{opacity:.85}}
+
+html[data-pasting="on"] body::after{
+	content:"Pasting…  Esc to cancel";
+	position:fixed;inset:0;z-index:450;
+	display:grid;place-items:center;
+	background:color-mix(in srgb,var(--color-bg) 72%,transparent);
+	color:var(--color-text);pointer-events:all;
+	font:var(--fw-medium) var(--text-sm) var(--font-mono);
+	letter-spacing:var(--track-caps);text-transform:uppercase}
+
+
+.toast,.restore-notice,.rapier-notes-snack{
+	background:rgb(0 0 0 / .5);color:#fff;border:0;border-radius:0;box-shadow:none;
+	font:var(--fw-medium) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
+}
+body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack{background:rgb(255 255 255 / .5);color:#000}
+@media(prefers-reduced-motion:reduce){.toast,.restore-notice{animation:none}}
+
+.restore-notice{
+	display:flex;flex-direction:column;align-items:stretch;
+	min-height:66px;width:auto;max-width:none;align-self:stretch;
+}
+
+/* The lease card is not a notice that expires: nothing on it counts down and nothing pushes it away. */
+.restore-notice[data-lease="true"] .restore-notice__timer,
+.restore-notice[data-lease="true"] .restore-notice__close{display:none}
+.restore-notice__status{display:flex;align-items:stretch;min-height:66px}
+.restore-notice__body{
+	flex:1 1 auto;min-width:0;
+	display:flex;flex-direction:column;justify-content:center;gap:3px;
+	padding:9px 8px 9px 16px;
+	color:inherit;outline:none;
+}
+.restore-notice__line{
+	display:block;min-width:0;
+	white-space:normal;overflow-wrap:anywhere;
+	color:inherit}
+.restore-notice__line--sub{
+	opacity:.72;font-size:var(--text-xs);letter-spacing:var(--track-caps)}
+.restore-notice__actions{
+	flex:0 0 auto;display:flex;align-items:center;align-self:stretch}
+.restore-notice__timer{
+	position:relative;display:inline-flex;align-items:center;justify-content:center;
+	width:44px;height:66px;flex:0 0 44px;color:inherit;
+	font:var(--fw-medium) 10px/1 var(--font-mono);
+	font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+.restore-notice__timer svg{
+	position:absolute;width:32px;height:32px;inset:17px 6px;
+	transform:rotate(-90deg);overflow:visible}
+.restore-notice__timer-track,
+.restore-notice__timer-progress{fill:none;stroke:currentColor;stroke-width:1.5}
+.restore-notice__timer-track{opacity:.22}
+.restore-notice__timer-progress{stroke-linecap:butt;transition:stroke-dashoffset 90ms linear}
+.restore-notice__timer-number{position:relative;z-index:1;transform:translateY(.5px)}
+.restore-notice__close{
+	flex:0 0 52px;align-self:stretch;
+	width:52px;height:66px;padding:0;margin:0;
+	background:none;border:none;border-radius:0;
+	color:inherit;opacity:.95;cursor:pointer;
+	display:inline-flex;align-items:center;justify-content:center}
+.restore-notice__close svg{width:23px;height:23px}
+@media (hover:hover) and (pointer:fine){.restore-notice__close:hover{opacity:1}}
+.restore-notice__close:focus-visible{opacity:1;outline:none}
+.restore-notice__resume:focus-visible{outline:none;background:rgb(255 255 255 / .14)}
+body.light .restore-notice__resume:focus-visible{background:rgb(0 0 0 / .11)}
+.restore-notice__resume{
+	width:100%;min-height:48px;margin:0;padding:0 16px;
+	display:flex;align-items:center;justify-content:flex-start;gap:12px;
+	border:0;background:rgb(255 255 255 / .09);color:inherit;
+	font:var(--fw-medium) var(--text-sm)/1 var(--font-mono);
+	letter-spacing:var(--track-caps);text-transform:uppercase;text-align:left;
+	cursor:pointer;touch-action:pan-y}
+body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
+@media (hover:hover) and (pointer:fine){
+	.restore-notice__resume:hover{background:rgb(255 255 255 / .14)}
+	body.light .restore-notice__resume:hover{background:rgb(0 0 0 / .11)}
+}
+.restore-notice__resume svg{width:20px;height:20px;flex:0 0 20px}
+
+
+
+.link-dialog__overlay{
+	position:fixed;inset:0;z-index:2000;
+	bottom:var(--rapier-keyboard-occlusion, 0px);
+	background:var(--color-scrim);
+	display:flex;align-items:center;justify-content:center;
+	padding:var(--space-4);
+}
+.link-dialog{
+	background:var(--color-surface);
+	color:var(--color-text);
+	min-width:280px;max-width:min(420px, calc(100vw - var(--space-8)));
+	width:100%;
+	max-height:100%;overflow-y:auto;overscroll-behavior:contain;
+	padding:var(--space-4);
+	display:flex;flex-direction:column;gap:var(--space-3);
+	font:var(--fw-medium) var(--text-sm) var(--font-mono);
+}
+.link-dialog__title{
+	text-transform:uppercase;letter-spacing:var(--track-caps);
+	font-size:var(--text-sm);color:var(--color-text-muted);
+}
+.link-dialog__label{
+	text-transform:uppercase;letter-spacing:var(--track-caps);
+	font:var(--fw-regular) var(--text-xs) var(--font-mono);
+	color:var(--color-text-muted);
+	margin-bottom:calc(var(--space-2) * -0.5);
+}
+.link-dialog__input{
+	width:100%;box-sizing:border-box;
+	background:var(--color-surface-2);
+	color:var(--color-text);
+	border:none;
+	padding:10px 12px;
+	font:var(--fw-regular) var(--text-sm) var(--font-mono);
+	border-radius:0;outline:none;
+	min-height:48px;
+}
+.link-dialog__input:focus{ background:var(--color-surface-hover) }
+/* §12, the note field's rows. The rows themselves are the `[[` picker's own
+   (.rapier-notes-picker-row, rapier-notes.css): one list, wearing one look. Only the box that
+   scrolls them inside the popup is this field's own. */
+.link-dialog__notes{max-height:min(34vh,176px);overflow-y:auto;overscroll-behavior:contain;background:var(--color-surface-2);margin-top:calc(var(--space-2) * -1)}
+.link-dialog .settings-disclosure-shell{margin:0;border-bottom:1px solid var(--color-text-muted)}
+.link-dialog .link-dialog__advanced-toggle{display:grid;grid-template-columns:minmax(0,1fr) 20px;align-items:center;padding:0;color:var(--color-text-muted);font:var(--fw-regular) var(--text-xs)/1 var(--font-mono);text-transform:uppercase;letter-spacing:var(--track-caps)}
+.link-dialog__advanced-toggle .settings-disclosure-title__glyph{font-size:20px;align-self:center;transform:none}
+.link-dialog__advanced-content{display:flex;flex-direction:column;gap:var(--space-3);padding-block:var(--space-2) var(--space-3)}
+.link-dialog__toggle,.link-dialog__choice{display:flex;align-items:center;gap:var(--space-3);min-height:48px;cursor:pointer}
+.link-dialog__toggle{font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans)}
+.link-dialog__toggle input,.link-dialog__choice input{accent-color:var(--color-accent-text);flex:none;width:20px;height:20px;margin:0}
+.link-dialog__choices{min-width:0;margin:0;padding:0;border:0}
+.link-dialog__choices legend{margin-bottom:var(--space-2)}
+.link-dialog__choice>span{display:flex;flex-direction:column;gap:4px;font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans)}
+.link-dialog__choice small{color:var(--color-text-muted);font-size:var(--text-xs);overflow-wrap:anywhere}
+.link-dialog__choice small[data-error]{color:var(--color-error)}
+@media (prefers-reduced-motion:reduce){.link-dialog .settings-disclosure{transition:none}}
+.link-dialog__actions{
+	display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);
+	flex-shrink:0;
+}
+.link-dialog__description,.link-dialog__status{margin:0;font:var(--fw-regular) var(--text-sm)/1.5 var(--font-sans);overflow-wrap:anywhere}
+.link-dialog__status[data-error]{color:var(--color-error)}
+.link-dialog__btn:disabled{opacity:.55;cursor:wait}
+.link-dialog__spacer{ flex:1 }
+.link-dialog__btn{
+	background:var(--color-surface-2);border:none;
+	color:var(--color-text);
+	min-height:48px;max-width:100%;overflow-wrap:anywhere;padding:8px 14px;cursor:pointer;
+	text-transform:uppercase;letter-spacing:var(--track-caps);
+	font:var(--fw-medium) var(--text-sm) var(--font-mono);
+	border-radius:0;
+}
+@media (hover:hover) and (pointer:fine){.link-dialog__btn:hover{background:var(--color-surface-hover)}}
+.link-dialog__btn--primary{
+	background:var(--color-accent);
+	color:var(--color-accent-foreground, #fff);
+}
+@media (hover:hover) and (pointer:fine){.link-dialog__btn--primary:hover{opacity:.92;background:var(--color-accent)}}
+.link-dialog__btn--danger{
+	color:var(--color-error, #e33);
+}
+@media (hover:hover) and (pointer:fine){.link-dialog__btn--danger:hover{background:color-mix(in srgb,currentColor 12%,transparent)}}
+.check-dialog__message {
+	margin: 0;
+	color: var(--color-text);
+	font: var(--fw-regular) var(--text-sm)/1.5 var(--font-sans);
+}
+.check-heading-list {
+	max-height: min(48dvh, 420px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+.check-heading-list .navigator-outline__item { white-space: normal; }
+
+
+.block-wrapper--metadata{display:none!important}
+.rapier-source-token{color:inherit;background:none;border:0;padding:0;font:inherit}
+.rapier-source-token--softbreak::after{content:' '}
+/* The soft break after a callout's label opens the body's first line: its space would indent that line by one space (4 px on a phone) where the lines below start at the margin. */
+.callout__label + .rapier-source-token--softbreak::after{content:none}
+
+
+
+
+/* A tip is a hover affordance whole: a pointer that cannot hover never reveals one, so on
+	 touch the containing block and the pseudo-element are not built either. The glyph is what
+	 carries the control there, and the command search names the ones a glyph cannot. */
+@media (hover:hover) and (pointer:fine){
+	[data-tip]{position:relative}
+	[data-tip]::after{
+		content:attr(data-tip);
+		position:absolute;bottom:calc(100% + 6px);left:50%;
+		transform:translateX(-50%) translateY(3px);
+		background:var(--color-surface-2);
+		color:var(--color-text);font:var(--fw-regular) var(--text-xs) var(--font-sans);
+		letter-spacing:0;padding:5px var(--space-2);white-space:nowrap;
+		opacity:0;pointer-events:none;z-index:400;
+		transition:opacity var(--dur-micro) var(--ease-micro),transform var(--dur-micro) var(--ease-micro)}
+	[data-tip]:hover::after,[data-tip]:focus-visible::after{
+		opacity:1;transform:translateX(-50%) translateY(0)}
+}
+
+
+.icon-btn{
+	display:inline-flex;align-items:center;justify-content:center;
+	width:48px;height:48px;flex-shrink:0;
+	color:var(--color-icon);
+	border:none;background:transparent;cursor:pointer;
+	transition:background-color var(--dur-micro) var(--ease-micro),
+						 color var(--dur-micro) var(--ease-micro),
+						 transform 100ms var(--ease-micro)}
+.icon-btn svg,
+.navigator-close svg,
+.settings-close-btn svg{width:24px;height:24px}
+@media (hover:hover) and (pointer:fine){.icon-btn:hover{background:var(--color-surface-2)}}
+#btn-overflow:active{background:transparent}
+@media (hover:hover) and (pointer:fine){#btn-overflow:hover{background:transparent}}
+
+.icon-btn[data-active]{background:var(--color-icon);color:var(--color-bg)}
+#btn-read-aloud[data-active]{background:transparent;color:var(--color-accent-text)}
+
+@media (hover:hover) and (pointer:fine){#btn-find:hover{background:none}}
+#btn-find[data-active]{position:relative;height:var(--top-bar-h);background:var(--color-icon);color:var(--color-bg);z-index:30}
+
+
+/* The table in edit, phone first (editor/tables.js). The bar is flat, seven 48 px glyphs that fit a
+   390 px phone, directly under the table. What it acts on is shown in the table itself: the
+   caret's cell, its row and its column, by fill. */
+.table-toolbar {
+	display: none;
+	align-items: center;
+	gap: 0;
+	min-height: 48px;
+	background: var(--color-surface-2);
+	padding: 0 var(--space-1);
+	flex-shrink: 0;
+	user-select: none;
+	-webkit-user-select: none;
+}
+.block-wrapper--editing.block-wrapper--table .table-toolbar { display: flex; }
+/* The table's own box is its frame: no focus border beside the thick one. */
+.block-wrapper--editing.block-wrapper--table > .block-edit { padding-bottom: 0; border-color: transparent; }
+.block-wrapper--editing.block-wrapper--table .block-edit table,
+.block-wrapper--editing.block-wrapper--table .block-edit .rapier-hscroll--table { margin-bottom: 0; }
+.block-wrapper--editing.block-wrapper--table .block-edit .table-scroll-wrap { padding-bottom: 0; }
+.table-toolbar-sep {
+	width: 1px; height: 24px;
+	background: var(--color-border);
+	margin: 0 2px;
+	flex-shrink: 0;
+}
+.table-toolbar .table-toolbar-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	min-width: 48px;
+	height: 48px;
+	padding: 0;
+	color: var(--color-icon);
+	flex-shrink: 0;
+}
+.table-toolbar .table-toolbar-btn svg { width: 22px; height: 22px; display: block; }
+/* A cell is a 44 px target even empty, read or edited alike (so a tap lands where it was aimed);
+   the header says it is one before a word is in it. */
+#editor-blocks .block-wrapper--table :is(.block-read, .block-edit) :is(th, td) { height: 44px; box-sizing: border-box; }
+.block-wrapper--editing.block-wrapper--table .block-edit th:empty { position: relative; }
+.block-wrapper--editing.block-wrapper--table .block-edit th:empty::before {
+	content: 'Heading';
+	position: absolute;
+	left: var(--space-3);
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--color-text-subtle);
+	font-weight: var(--fw-regular);
+	pointer-events: none;
+}
+/* An empty cell of the caret's row says whose it is (its column's heading), as an empty heading does. */
+.block-wrapper--editing.block-wrapper--table .block-edit td[data-rapier-hint]:empty { position: relative; }
+.block-wrapper--editing.block-wrapper--table .block-edit td[data-rapier-hint]:empty::before {
+	content: attr(data-rapier-hint);
+	position: absolute;
+	left: var(--space-3);
+	right: var(--space-3);
+	top: 50%;
+	transform: translateY(-50%);
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	color: var(--color-text-subtle);
+	pointer-events: none;
+}
+/* Numbers line up: a column of them is set in tabular numerals, to the right unless its separator says. */
+#editor-blocks .rapier-cell--num { font-variant-numeric: tabular-nums; }
+#editor-blocks .rapier-cell--num:not([style*="text-align"]):not([align]) { text-align: right; }
+/* Motion: the table arrives from the caret; a row or a column arrives in its place; the rows under a
+   removed one close the gap. */
+@keyframes rapier-table-arrive { from { opacity: 0; transform: scale(.94); } }
+@keyframes rapier-row-arrive { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes rapier-col-arrive { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes rapier-row-close { from { transform: translateY(44px); } }
+@keyframes rapier-col-widen { from { transform: translateX(var(--rapier-widen-from, 0)); } }
+#editor-blocks table.rapier-table--arrive { transform-origin: 0 0; animation: rapier-table-arrive var(--dur-enter) var(--ease-out) both; }
+#editor-blocks .rapier-cell--arrive { animation: rapier-row-arrive var(--dur-enter) var(--ease-out) both; }
+#editor-blocks .rapier-cell--arrive-col { animation: rapier-col-arrive var(--dur-enter) var(--ease-out) both; }
+#editor-blocks .rapier-cell--close { animation: rapier-row-close var(--dur-enter) var(--ease-out) both; }
+#editor-blocks .rapier-cell--widen { animation: rapier-col-widen var(--dur-enter) var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+	#editor-blocks :is(table.rapier-table--arrive, .rapier-cell--arrive, .rapier-cell--arrive-col, .rapier-cell--close, .rapier-cell--widen) { animation: none; }
+}
+/* The grips ride the caret's row (its start edge) and column (above it); a finger drags one. */
+.table-grip {
+	display: none;
+	position: absolute;
+	z-index: 4;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	touch-action: none;
+	cursor: grab;
+}
+.block-wrapper--editing > .table-grip:not([hidden]) { display: block; }
+/* The drag handle every app draws: six dots in the page's ink, two columns for a row, two rows for a column. */
+.table-grip::before {
+	content: '';
+	position: absolute;
+	left: 17px;
+	top: 14px;
+	width: 10px;
+	height: 16px;
+	background: radial-gradient(circle, var(--color-text) 1.6px, transparent 1.9px) 0 0 / 5px 5.33px;
+}
+.table-grip--col::before { left: 14px; top: 17px; width: 16px; height: 10px; background-size: 5.33px 5px; }
+/* A column's edge: the resize handle, one short upright bar in the ink. */
+.table-align-glyph { display: none; }
+.table-toolbar-btn:not([data-table-align-shown]) .table-align-glyph[data-align-glyph="left"],
+.table-toolbar-btn[data-table-align-shown="left"] .table-align-glyph[data-align-glyph="left"],
+.table-toolbar-btn[data-table-align-shown="center"] .table-align-glyph[data-align-glyph="center"],
+.table-toolbar-btn[data-table-align-shown="right"] .table-align-glyph[data-align-glyph="right"] { display: inline; }
+.table-grip--edge { cursor: col-resize; }
+.table-grip--edge::before { left: 20.5px; top: 14px; width: 3px; height: 16px; border-radius: 1.5px; background: var(--color-text-subtle); }
+.table-drop { position: absolute; z-index: 4; background: var(--color-text); pointer-events: none; }
+/* Picked cells: one fill in the ink, the browser's own selection paint hidden under it. */
+.block-edit .rapier-cell--picked { background-image: linear-gradient(color-mix(in srgb, var(--color-text) 14%, transparent), color-mix(in srgb, var(--color-text) 14%, transparent)); }
+.block-edit .rapier-cell--picked::selection, .block-edit .rapier-cell--picked ::selection { background: transparent; }
+/* The caret's cell: a quiet tint, nothing else. */
+.block-edit .rapier-cell--caret { background-image: linear-gradient(color-mix(in srgb, var(--color-text) 6%, transparent), color-mix(in srgb, var(--color-text) 6%, transparent)); }
+
+.rapier-import-progress {
+	position: fixed;
+	left: 50%;
+	bottom: calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)));
+	transform: translateX(-50%);
+	z-index: 9990;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	width: max-content;
+	max-width: calc(100% - 32px);
+	padding: 12px 16px;
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	border: 0;
+	font: var(--fw-regular) var(--text-sm)/1.5 var(--font-sans);
+}
+.rapier-import-progress button {
+	flex: none;
+	border: 0;
+	padding: 4px;min-width:44px;min-height:44px;
+	background: transparent;
+	color: var(--color-accent-text);
+	font: inherit;
+	cursor: pointer;
+}
+
+/* Each light layer holds still while the shared theme owner changes its exposure. */
+html.rapier-theme-light::view-transition-old(*),html.rapier-theme-light::view-transition-new(*){animation:none;mix-blend-mode:normal}
+html.rapier-theme-light::view-transition-group(*){animation:none}
+html.rapier-pinch-swap::view-transition-old(root),html.rapier-pinch-swap::view-transition-new(root){animation-duration:200ms}
+html.rapier-theme-light :is(button,input,textarea,select,.block-read,.recent-drawer__item,.swatch-wrap,.scroll-fab){transition:none!important}
+
+/* The dial alone owns its transform, in every surface. Focus remains visible through the stroke. */
+.icon-btn.rapier-dial{transition:none}
+.rapier-dial svg{transform-origin:center;transform-box:view-box}
+.rapier-dial:focus-visible svg{transform:none;stroke-width:3}
+@media (max-width:359px){.icon-btn.rapier-dial{width:44px}}
+@media (hover:hover) and (pointer:fine){.rapier-dial:hover{background:none}}
+
+/* The app theme owns its documents; the MIT reference sheet needs no app tokens. */
+.md-render{
+	color-scheme:inherit;
+	--md-font-mono:var(--font-mono);
+	--md-font-sans:var(--font-sans);
+	--md-text-sm:var(--text-sm);
+	--md-color-text:var(--color-text);
+	--md-fw-medium:var(--fw-medium);
+	--md-color-bg:var(--color-bg);
+	--md-text-xs:var(--text-xs);
+	--md-color-inset:var(--color-inset);
+	--md-color-surface:var(--color-surface);
+	--md-text-base:var(--text-base);
+	--md-fw-semibold:var(--fw-semibold);
+	--md-fw-regular:var(--fw-regular);
+	--md-space-6:var(--space-6);
+	--md-space-4:var(--space-4);
+	--md-space-3:var(--space-3);
+	--md-color-border:var(--color-border);
+	--md-space-5:var(--space-5);
+	--md-space-2:var(--space-2);
+	--md-space-1:var(--space-1);
+	--md-color-line:var(--color-line);
+	--md-color-accent-text:var(--color-accent-text);
+	--md-track-caps:var(--track-caps);
+	--md-color-surface-2:var(--color-surface-2);
+	--md-color-border-focus:var(--color-border-focus);
+	--md-color-text-secondary:var(--color-text-secondary);
+	--md-color-text-muted:var(--color-text-muted);
+	--md-color-success:var(--color-success);
+	--md-color-warning:var(--color-warning);
+	--md-color-error:var(--color-error);
+	--md-space-8:var(--space-8);
+	--md-space-7:var(--space-7);
+	--md-color-accent:var(--color-accent);
+	--md-color-text-subtle:var(--color-text-subtle);
+	--md-diagram-inner-line:var(--diagram-inner-line);
+	--md-diagram-node-line:var(--diagram-node-line);
+	--md-diagram-quiet:var(--diagram-quiet);
+}
+body.light .md-render{--md-heading-color:#000000;--md-heading-muted-color:#000000}
+
+/* The host chooses existing features for this session, never personal preferences.
+   Download/copy recovery and already-authored document content remain available. */
+html[data-rapier-host-features]:not([data-rapier-host-features~="draw"]):not([data-rapier-host-features~="paint"]) [data-command="insert.draw"],
+html[data-rapier-host-features]:not([data-rapier-host-features~="draw"]):not([data-rapier-host-features~="paint"]) .rapier-image-tools__draw,
+html[data-rapier-host-features]:not([data-rapier-host-features~="notes"]) [data-action="notes-open"],
+html[data-rapier-host-features]:not([data-rapier-host-features~="notes"]) #settings-notes-section,
+html[data-rapier-host-features]:not([data-rapier-host-features~="readAloud"]) [data-action="read-aloud"],
+html[data-rapier-host-features]:not([data-rapier-host-features~="share"]) [data-action="open-share-menu"],
+html[data-rapier-host-features]:not([data-rapier-host-features~="find"]) [data-action="find"] { display:none !important; }

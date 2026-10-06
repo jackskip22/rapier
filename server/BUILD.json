@@ -1,0 +1,918 @@
+{
+  "version": "1.1.69",
+  "development": false,
+  "chromium": "supplied and exactly pinned by the administrator",
+  "profiles": {
+    "document": {
+      "path": "rapier-document.html",
+      "bytes": 1259676,
+      "sha256": "fe66e85e73ff3b3a49c521d763e340dd5e374f1e10524a98b44e85c1a4625c40",
+      "budget": {
+        "warn": 2079000,
+        "refuse": 2100000
+      },
+      "spans": [
+        {
+          "element": "lib-dompurify",
+          "name": "dompurify-3.4.13.dist.purify.min.js",
+          "bytes": 29435,
+          "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+        },
+        {
+          "element": "lib-turndown",
+          "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+          "bytes": 12864,
+          "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-15.0.0.umd.rapier.min.js",
+          "bytes": 95319,
+          "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-task-lists-2.1.1.min.js",
+          "bytes": 2702,
+          "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-footnote-4.0.0.min.js",
+          "bytes": 5624,
+          "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-mark-4.0.0.min.js",
+          "bytes": 1621,
+          "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sub-2.0.0.min.js",
+          "bytes": 967,
+          "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sup-2.0.0.min.js",
+          "bytes": 965,
+          "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-emoji-3.1.0-light.min.js",
+          "bytes": 6394,
+          "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-abbr-2.0.0.min.js",
+          "bytes": 2419,
+          "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-ins-4.0.0.min.js",
+          "bytes": 1601,
+          "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-deflist-4.0.0.min.js",
+          "bytes": 2376,
+          "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+        },
+        {
+          "element": "lib-gpu-lexer",
+          "name": "gpu-lexer-0.0.1.js",
+          "bytes": 59967,
+          "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+        },
+        {
+          "element": "lib-acorn",
+          "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+          "bytes": 104387,
+          "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+        },
+        {
+          "element": "rapier-jxl-worker",
+          "name": "rapier-jxl-worker.js",
+          "bytes": 3845,
+          "sha256": "782fe1a57642395fa0aca98d61e1009c64315fbd82170c06a13b5fed5dcc27b3"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-platform.js",
+          "bytes": 93201,
+          "sha256": "6513c334dbe4085442bb4aec14c62814da77d82b01a43ca3f4a857411a8bc668"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundle-io.js",
+          "bytes": 4659,
+          "sha256": "a73926e64363405d508ceea89404ccfbe18067406c8c1390e6b43298dc5d7e28"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-plugin-loader.js",
+          "bytes": 15467,
+          "sha256": "cd05711202bbfd9fc12893c012dbfe3f27b16d8661113f593c4ac6816b02bb5f"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-styles.json",
+          "bytes": 197860,
+          "sha256": "56fe466fda65e1cc87a7f22585d0e1ed2a93ea8f0de73714c939c93f5749d83f"
+        },
+        {
+          "element": "rapier-style-rest-runtime",
+          "name": "rapier-styles-rest.json",
+          "bytes": 60326,
+          "sha256": "3a80613474dc5189c63c1f9de78b454238a14338d63fb52846574847450817ba"
+        },
+        {
+          "element": "rapier-ui-runtime",
+          "name": "rapier-ui.html",
+          "bytes": 113496,
+          "sha256": "d59011c1326a1034f50b6cde15b7396d0533920681067c818d9d63f2e0241aed"
+        },
+        {
+          "element": "rapier-shared-runtime",
+          "name": "rapier-shared.js",
+          "bytes": 879763,
+          "sha256": "5dadec956cc102ce107f51d229a87ce572c6b63cf19302e9086fe0e6a57cda7f"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-editor.js",
+          "bytes": 1657032,
+          "sha256": "2a84365e75ca6461b08f7ded4a88611f1d03680edbb4c548dd593e720f266d5a"
+        }
+      ],
+      "shakenExports": {
+        "kit/ledger/text-merge.mjs": [
+          "canonicalNote",
+          "inspectTextConflicts",
+          "mapTextConflictVariants",
+          "resolveTextConflict"
+        ],
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "BitWriter",
+          "complete",
+          "scaled",
+          "packSigned",
+          "floorLog2",
+          "ceilLog2",
+          "float16Bits"
+        ],
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
+        ],
+        "draw/backgrounds.mjs": [
+          "BACKGROUND_KINDS",
+          "TEXTURES",
+          "GLYPH_STYLES",
+          "RAYS_FORMS",
+          "RAILS_FORMS",
+          "BACKGROUND_EASINGS",
+          "hexToOklab",
+          "oklabToRgb",
+          "invertColour"
+        ],
+        "spec/html-reading.mjs": [
+          "htmlBlockLines"
+        ],
+        "notes/zip-records.mjs": [
+          "dosDateTime",
+          "localHeader",
+          "centralHeader",
+          "dataDescriptor",
+          "commentBytes",
+          "endRecord"
+        ]
+      },
+      "builtAt": "2026-10-06T04:50:19.156Z",
+      "node": "v22.22.2",
+      "mode": "release",
+      "packing": "zopfli",
+      "canonical": true
+    },
+    "full": {
+      "path": "rapier.html",
+      "bytes": 1909435,
+      "sha256": "6d77edf4679937d61ee1018d89445e0a111539a8af66cd0fa2fc0efac557678c",
+      "budget": {
+        "warn": 2980000,
+        "refuse": 3000000
+      },
+      "spans": [
+        {
+          "element": "lib-dompurify",
+          "name": "dompurify-3.4.13.dist.purify.min.js",
+          "bytes": 29435,
+          "sha256": "fe4a729cd3b7d538fa3bef155e07fa56d9862508a31856268e5e255a080f3c73"
+        },
+        {
+          "element": "lib-turndown",
+          "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+          "bytes": 12864,
+          "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-15.0.0.umd.rapier.min.js",
+          "bytes": 95319,
+          "sha256": "b53b4651c46cac37b23a111fa74a290cc362c57f0d02b5cf36084f2199de4ce3"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-task-lists-2.1.1.min.js",
+          "bytes": 2702,
+          "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-footnote-4.0.0.min.js",
+          "bytes": 5624,
+          "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-mark-4.0.0.min.js",
+          "bytes": 1621,
+          "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sub-2.0.0.min.js",
+          "bytes": 967,
+          "sha256": "fffa57742043f3012ee57a4d5b337f04222a459e7a8d0892a9755b5c6b16bca8"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sup-2.0.0.min.js",
+          "bytes": 965,
+          "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-emoji-3.1.0-light.min.js",
+          "bytes": 6394,
+          "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-abbr-2.0.0.min.js",
+          "bytes": 2419,
+          "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-ins-4.0.0.min.js",
+          "bytes": 1601,
+          "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-deflist-4.0.0.min.js",
+          "bytes": 2376,
+          "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+        },
+        {
+          "element": "lib-gpu-lexer",
+          "name": "gpu-lexer-0.0.1.js",
+          "bytes": 59967,
+          "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+        },
+        {
+          "element": "lib-acorn",
+          "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+          "bytes": 104387,
+          "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+        },
+        {
+          "element": "rapier-jxl-worker",
+          "name": "rapier-jxl-worker.js",
+          "bytes": 89927,
+          "sha256": "d4e19f8ee4d61a7d32a87a7b6a659db13c08fea1b8595db026283bb543afeb28"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-platform.js",
+          "bytes": 93201,
+          "sha256": "6513c334dbe4085442bb4aec14c62814da77d82b01a43ca3f4a857411a8bc668"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundle-io.js",
+          "bytes": 4659,
+          "sha256": "a73926e64363405d508ceea89404ccfbe18067406c8c1390e6b43298dc5d7e28"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-plugin-loader.js",
+          "bytes": 15467,
+          "sha256": "cd05711202bbfd9fc12893c012dbfe3f27b16d8661113f593c4ac6816b02bb5f"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-styles.json",
+          "bytes": 197860,
+          "sha256": "56fe466fda65e1cc87a7f22585d0e1ed2a93ea8f0de73714c939c93f5749d83f"
+        },
+        {
+          "element": "rapier-style-rest-runtime",
+          "name": "rapier-styles-rest.json",
+          "bytes": 170349,
+          "sha256": "676810224ca95189078f96d0a4d8426600821771f463189537a8b70ad433ecde"
+        },
+        {
+          "element": "rapier-ui-runtime",
+          "name": "rapier-ui.html",
+          "bytes": 129568,
+          "sha256": "f21529730ebc6c78fc50aa5912f65467af1b355661ba10b620d38550d7473dc7"
+        },
+        {
+          "element": "rapier-shared-runtime",
+          "name": "rapier-shared.js",
+          "bytes": 1914291,
+          "sha256": "d8a67a8da803d2984d94707f64b0b2dd1febbd6bcff1f88c49a964dcbe250b68"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-editor.js",
+          "bytes": 2438017,
+          "sha256": "e5e8c8df7387a00fcd5e4dd8df92f6fa1f3d940b2571f18da51a6bbe5ae90070"
+        }
+      ],
+      "shakenExports": {
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "BitWriter",
+          "complete",
+          "scaled",
+          "packSigned",
+          "floorLog2",
+          "ceilLog2",
+          "float16Bits"
+        ],
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
+        ],
+        "draw/backgrounds.mjs": [
+          "BACKGROUND_KINDS",
+          "TEXTURES",
+          "GLYPH_STYLES",
+          "RAYS_FORMS",
+          "RAILS_FORMS",
+          "BACKGROUND_EASINGS",
+          "hexToOklab",
+          "oklabToRgb",
+          "invertColour"
+        ],
+        "draw/paper.mjs": [
+          "step",
+          "XFER_FRACTION",
+          "MAX_XFER_QUANTITY",
+          "EQUAL_PAINT_CUTOFF",
+          "brushTotals"
+        ],
+        "notes/zip-walk.mjs": [
+          "ZIP_NESTING_LIMIT"
+        ],
+        "notes/import-storage.mjs": [
+          "importReceiptFile"
+        ],
+        "notes/recording-files.mjs": [
+          "RECORDING_STORAGE_NOTICE"
+        ],
+        "notes/search-store.mjs": [
+          "verifyOrder"
+        ],
+        "notes/transport-drive.mjs": [
+          "DRIVE_API_ORIGIN",
+          "PUT_MAX_BYTES",
+          "UPLOAD_CHUNK_BYTES"
+        ],
+        "notes/transport-onedrive.mjs": [
+          "ONEDRIVE_API_ORIGIN",
+          "PUT_MAX_BYTES"
+        ],
+        "notes/transport-dropbox.mjs": [
+          "DROPBOX_API_ORIGIN",
+          "DROPBOX_CONTENT_ORIGIN",
+          "PUT_MAX_BYTES"
+        ],
+        "notes/provider-oauth.mjs": [
+          "verifierCheck",
+          "redirectCheck",
+          "clientCheck"
+        ],
+        "notes/drive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "SCOPES",
+          "SETUP_NOTICE"
+        ],
+        "notes/onedrive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "LOGOUT_ENDPOINT",
+          "SCOPES"
+        ],
+        "notes/dropbox-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "SCOPES"
+        ],
+        "notes/sync-providers.mjs": [
+          "PROVIDER_ORIGINS",
+          "providerConnectOrigins"
+        ],
+        "notes/transport-r2.mjs": [
+          "PUT_MAX_BYTES",
+          "RETRY_CAP",
+          "RETRY_BASE_MS",
+          "RETRY_MAX_MS",
+          "encodeObjectKey",
+          "objectUrl"
+        ],
+        "notes/cloudflare-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "ISSUER",
+          "CODE_CHALLENGE_METHOD",
+          "isOAuthRefusal"
+        ],
+        "notes/transport-s3.mjs": [
+          "PUT_MAX_BYTES",
+          "LIST_MAX_BYTES",
+          "RETRY_CAP",
+          "EMPTY_SHA256",
+          "encodeObjectKey",
+          "canonicalQuery",
+          "signV4",
+          "readS3XML",
+          "s3XMLScalar"
+        ],
+        "notes/cloudflare-setup.mjs": [
+          "NOTES_BUCKET"
+        ],
+        "notes/transport-companion.mjs": [
+          "COMPANION_CHUNK",
+          "COMPANION_MAX_BYTES"
+        ]
+      },
+      "builtAt": "2026-10-06T04:52:26.272Z",
+      "node": "v22.22.2",
+      "mode": "release",
+      "packing": "zopfli",
+      "canonical": true
+    }
+  },
+  "files": {
+    "dist/server/cli.mjs": {
+      "bytes": 4012,
+      "sha256": "81f303814ca28a8b87ba3c9038a37fa916650872aa2e220443117ee32b63a709"
+    },
+    "dist/server/index.mjs": {
+      "bytes": 13368,
+      "sha256": "fb0987f9faa1d7d44edb91148552fd28c175cf95da0491f66de68eb773fa41af"
+    },
+    "dist/server/store.mjs": {
+      "bytes": 28480,
+      "sha256": "c1b489e93f09785941c86eb870a78e0f22f8567f288644a0549db91bf29205a1"
+    },
+    "dist/mcp/worker.mjs": {
+      "bytes": 94083,
+      "sha256": "3acb74c06eb1d1963e39b021260469cb31c32a4147ed40ed3195daf365935652"
+    },
+    "dist/kit/ledger/format.mjs": {
+      "bytes": 9063,
+      "sha256": "59c13ed458e26782d4a681d6e7877811febad672534e5e77a55aa7487968e61e"
+    },
+    "dist/kit/ledger/journal-records.mjs": {
+      "bytes": 8451,
+      "sha256": "c5b769f115d8b04fea8569676a8034a79e1ebc9f3b2ea406065850c2718e964b"
+    },
+    "dist/kit/ledger/hash.mjs": {
+      "bytes": 2852,
+      "sha256": "438df7e97f4545cb09971fad80d3cf71d9c3c9494edf4774412807a1ec7610ea"
+    },
+    "dist/kit/ledger/data.mjs": {
+      "bytes": 2669,
+      "sha256": "ce3dfeafd44733330dbcb03912d003b77141da962e60f3e653e59f134e568766"
+    },
+    "dist/agent/kernel.mjs": {
+      "bytes": 212529,
+      "sha256": "669a19467bc37c70af2c76db5d0b374f72c2849ee4e86ac24edf6c9cd5e7005e"
+    },
+    "dist/kit/ledger/carried.mjs": {
+      "bytes": 7796,
+      "sha256": "cbad7125e9c2306cd6af4d6b9ed6a0956882bc03704951c76d6c56278666d538"
+    },
+    "dist/kit/ledger/authorship.mjs": {
+      "bytes": 3463,
+      "sha256": "ddca4d0d55996a3dbe50ef883d72913e055fd396cbdc6ead780f6c83e8c5d57a"
+    },
+    "dist/kit/ledger/merge.mjs": {
+      "bytes": 6431,
+      "sha256": "0c59e45c74452dedcf6654b16bdf4d21b205f9db12166c10bb5a443b85540ac5"
+    },
+    "dist/kit/ledger/text-merge.mjs": {
+      "bytes": 18227,
+      "sha256": "07c8b8c572ece815673c87daab33be37afba8370db546611f7cebae7211f5a78"
+    },
+    "dist/agent/will.mjs": {
+      "bytes": 7063,
+      "sha256": "384cba633b864898087ccd1f3e134a2751456de312ef66921a53611a10ad7b51"
+    },
+    "dist/agent/diff.mjs": {
+      "bytes": 7942,
+      "sha256": "8103b367679d6a6c2f3b8aa14fa768b9902ec90352ec86775bb4dd5ce7a034db"
+    },
+    "dist/agent/markdown.mjs": {
+      "bytes": 12508,
+      "sha256": "9c34876aafa7e9b7eef9f576f22946ab6d381da3badb88928c64f374807608b5"
+    },
+    "dist/layout/markdown.mjs": {
+      "bytes": 13275,
+      "sha256": "5851d460bfa2067ebc1136e66865c05a1c13b73def5f909a64e9ef27e7dc7114"
+    },
+    "dist/spec/md-layout.mjs": {
+      "bytes": 8925,
+      "sha256": "55918a943a656c37a149c6f31c6c3e6fdac36ad3f8146da07f09b740748b7ec7"
+    },
+    "dist/images/assets.mjs": {
+      "bytes": 14998,
+      "sha256": "36898176616962f7efbdf3d684c2f3a16fc1204a601ca16de11c754af9aa44fb"
+    },
+    "dist/images/header.mjs": {
+      "bytes": 5740,
+      "sha256": "9449c78a754579932db61e944e5ac0ce9fe82cd5e41ca24771db5cc5afcfeaf7"
+    },
+    "dist/images/jxl/bits.mjs": {
+      "bytes": 5859,
+      "sha256": "c4ac58309df066aef5f4bfd4f3a4a9cb1f938b01025cd03f4f4159a2150764bf"
+    },
+    "dist/images/raster.mjs": {
+      "bytes": 8505,
+      "sha256": "addeffafee75d2453bc0a48bedea660850842966cbc1976059e6e0dedbd40e53"
+    },
+    "dist/draw/font.mjs": {
+      "bytes": 19776,
+      "sha256": "a010ee050b33de1c7551c191d9e5cc161698e3ae7b350fe36864a58a96a69838"
+    },
+    "dist/spec/md-assets.mjs": {
+      "bytes": 22982,
+      "sha256": "e7569a7c93e6b1b94ee83f8da1fce72ad60a2bf66aaa4a8e6a3a2310553432b4"
+    },
+    "dist/agent/references.mjs": {
+      "bytes": 5343,
+      "sha256": "8ab36a403b84a259efe54c0022cd4a31fd35a3e450a77efe332464d0f262b659"
+    },
+    "dist/draw/core.mjs": {
+      "bytes": 261699,
+      "sha256": "febb21b32ff76f41d2da5b3778da10a1c33b9ee2507e601825714164c26fce6a"
+    },
+    "dist/draw/freehand.mjs": {
+      "bytes": 14325,
+      "sha256": "7bb2f496d1fc25b084d8700f3e2d5aec203fedaf1aa29c3e6e00df683455c51c"
+    },
+    "dist/draw/pen-path.mjs": {
+      "bytes": 4561,
+      "sha256": "dbf6ab972927a51e51eb99ddf49191bf55d14aabd7b63b379bfe5e745f762630"
+    },
+    "dist/draw/text.mjs": {
+      "bytes": 53772,
+      "sha256": "e0f8b898bcb83461b57997259035edf1086c361e0436d5397fe47c9491e04f07"
+    },
+    "dist/draw/grain.mjs": {
+      "bytes": 476,
+      "sha256": "7cb7e724edc3a25224b12cab103be7931fdb30cdf79b35e986c7fd2d8f677334"
+    },
+    "dist/draw/letter-font.mjs": {
+      "bytes": 5130,
+      "sha256": "a4005224379be08a285be6d8627a7130c1bb49f184c33cff198e332e370fb7ef"
+    },
+    "dist/draw/letters.mjs": {
+      "bytes": 26611,
+      "sha256": "0bf003c116f194f63a93aefefaa7f5be007e1e7a133e6fb675bfc89f99054018"
+    },
+    "dist/layout/line-plan.mjs": {
+      "bytes": 14673,
+      "sha256": "49f3a0807a3e0b646d8e526de02fc0fdfe0470b01f705efc80efaaf4c6fe38b5"
+    },
+    "dist/draw/rough.mjs": {
+      "bytes": 6951,
+      "sha256": "aa6b3fe9e5060ad4b4355569959d015e8b55cd18de10cb7715e18237c0d19b25"
+    },
+    "dist/draw/effects.mjs": {
+      "bytes": 11708,
+      "sha256": "d33c4e7c4ed9f008cff3e63d981e3617fd4cfc2f5dda13f3fb080cfc7edd6557"
+    },
+    "dist/editor/colour-math.mjs": {
+      "bytes": 3934,
+      "sha256": "6bb0e32e88b26bceb71bf3b5664c1da88c123ff3bba3a381d300cd838906edc8"
+    },
+    "dist/draw/backgrounds.mjs": {
+      "bytes": 53625,
+      "sha256": "babf6d55cf7554d67fb581a4f834b0e91d176ea8d4f5183e1814a5aaba79b4fc"
+    },
+    "dist/draw/edit.mjs": {
+      "bytes": 50902,
+      "sha256": "579c323f51f655f790c1a7112b0e0c6b29329b661f0e88ae64da9049ccd68b10"
+    },
+    "dist/agent/catalog.mjs": {
+      "bytes": 34506,
+      "sha256": "5f324229f7cacf81eab394480ce103cf89bc25d909cd88ec7f2ada42ec89f9c8"
+    },
+    "dist/agent/validate-input.mjs": {
+      "bytes": 3351,
+      "sha256": "817c66f776fb3b034535446f020880ce19e013b961c95b1f4c00bde69b8d1348"
+    },
+    "dist/version.mjs": {
+      "bytes": 33,
+      "sha256": "ace222e65fee00a4c6522b5d38f4ea8fcfe6e060d4b41bdae45706c0828c022f"
+    },
+    "dist/agent/visual.mjs": {
+      "bytes": 5588,
+      "sha256": "5baa623271d65a6f57d49c0659815a779afebeb491c491ae05b98e5b93ae8a1d"
+    },
+    "dist/spec/md-marks.mjs": {
+      "bytes": 27418,
+      "sha256": "391ec5afbe636adcc335137504c113eed2b418a7695290a921e705bc88cf25ea"
+    },
+    "dist/spec/md-source.mjs": {
+      "bytes": 6148,
+      "sha256": "d5b9d266a280986902530df7169414d16e6de35ce6cf591df0f3bf870c923cc3"
+    },
+    "dist/spec/frontmatter.mjs": {
+      "bytes": 1289,
+      "sha256": "df69f75d69327ea5b770e8a6ceda97a06d989265571cce0352dc965e8bb9a486"
+    },
+    "dist/agent/comments.mjs": {
+      "bytes": 19827,
+      "sha256": "07e018efc15b58088d498097039429c8ecf57b1cdd9514c9b2196b98955a0bff"
+    },
+    "dist/agent/comment-drafts.mjs": {
+      "bytes": 2087,
+      "sha256": "7e587b7ddaffb994aa38a32733792b5890d9ef14be41b74e25506e49870f962a"
+    },
+    "dist/draw/agent-paint.mjs": {
+      "bytes": 9756,
+      "sha256": "3321f0a5818970b4dee8fdfd9b6cf8115c0493d260a899abbd233f01515107ee"
+    },
+    "dist/draw/paint.mjs": {
+      "bytes": 274909,
+      "sha256": "af886119fff558946d3aa45dca195a6ce71489f95ff25bfc55181ad2dc8b4675"
+    },
+    "dist/draw/paint-png.mjs": {
+      "bytes": 6174,
+      "sha256": "61c4632ba63ce4b65971b5df86b95113355f5e71cc225a1ceb32d4d612de6aa8"
+    },
+    "dist/draw/paper.mjs": {
+      "bytes": 35932,
+      "sha256": "7ad344ab612cbb2777e030b40f31521ca0e0546ced814fdcd02b7e07907dc08e"
+    },
+    "dist/draw/brushes.mjs": {
+      "bytes": 80669,
+      "sha256": "34b1fcf55212c74781bcd450925d95b31c77c1c4ea2c4bbe88a2f2b16e206150"
+    },
+    "dist/agent/guide.mjs": {
+      "bytes": 3169,
+      "sha256": "17d440804c638df6b7abb863c300946de07c562c7f5fb85933afbfdb5b001d0c"
+    },
+    "dist/skills/rapier-html/return-address.mjs": {
+      "bytes": 1656,
+      "sha256": "45a28413c664c1b6ca4aa4cb734fa61ed8a4cf3216f23c79e8a674f970431af5"
+    },
+    "dist/agent/structure.mjs": {
+      "bytes": 88998,
+      "sha256": "fdfd6c626e3129f751792629b6077b41ac60a65170109febdc74139024345e87"
+    },
+    "dist/agent/vendor/acorn.mjs": {
+      "bytes": 246782,
+      "sha256": "ed0170be9788e44dd625209d72b1f1b8278ea24ed7312036f4505cc77eda71b0"
+    },
+    "dist/agent/structure-request.mjs": {
+      "bytes": 1060,
+      "sha256": "4adef50f7d6e0f066078b76bb12691e39994a5c4b5aef173871cd6a90dc12fef"
+    },
+    "dist/agent/markdown-server.mjs": {
+      "bytes": 986,
+      "sha256": "d58a24e327f6c0c801a047f2e3acdf4cbe9ef3fd7279bef37d1b2e85e3962ba0"
+    },
+    "dist/agent/vendor/markdownit.mjs": {
+      "bytes": 95494,
+      "sha256": "45a82b5eb7ce731bb0dbc8ae47df4a91253192c99cbf5e85e9af4b400f38d6d5"
+    },
+    "dist/agent/vendor/markdown-plugins.mjs": {
+      "bytes": 24987,
+      "sha256": "d1de9cb45c301a011d4a097e8d48218c69f49d616d588043a8bddeb0cdac418e"
+    },
+    "dist/agent/markdown-spec.mjs": {
+      "bytes": 22085,
+      "sha256": "d926e117be7b373cdfccf3641c2ae621e75136e8af2b437eff66a2a9927925b9"
+    },
+    "dist/spec/document-settings.mjs": {
+      "bytes": 7113,
+      "sha256": "a93d23667bafac4f7395ce323c0dafe78bb73a4ee251eaf2d9e687e66848a7fb"
+    },
+    "dist/spec/html-reading.mjs": {
+      "bytes": 17495,
+      "sha256": "6be4b909c2e123240d98478a9d732a81704bd49c7749f2285fed3822fad04e2e"
+    },
+    "dist/agent/door-identity.mjs": {
+      "bytes": 4859,
+      "sha256": "f77481f4b9722b80f8f97a9e102acb476ffd41370b5e7fd4f0fa622a6c252c17"
+    },
+    "dist/mcp/editor-keys.mjs": {
+      "bytes": 4058,
+      "sha256": "f949fb61bf6e70ee93d5f861b625233e1c778c75be71144698267fb749f56df6"
+    },
+    "dist/mcp/request-lifetime.mjs": {
+      "bytes": 875,
+      "sha256": "796b327930cf1e2b36ba8d4d84891b9e75c602f33dc5347337e72c2e8e2172d4"
+    },
+    "dist/server/bucket-store.mjs": {
+      "bytes": 10535,
+      "sha256": "91fcf162bc979ff383dcda8c25da1ea4875a9783e9a0dc45a2e52c8f2dac80f6"
+    },
+    "dist/server/s3.mjs": {
+      "bytes": 8380,
+      "sha256": "d888389ca14cb85c853ea0d2624700165e5d8ac18bb94ece64d02ebdcf879b82"
+    },
+    "dist/notes/transport-s3.mjs": {
+      "bytes": 30337,
+      "sha256": "83ed9e199d702cc05d0dcf6e5b4fc3e0e1b36be347c0ace9f02637a6b3f092ad"
+    },
+    "dist/notes/provider-http.mjs": {
+      "bytes": 12100,
+      "sha256": "ecce4610c67a3e614b8bda54e31e8374470cd123d808ef36319215234e3870be"
+    },
+    "dist/notes/provider-objects.mjs": {
+      "bytes": 4942,
+      "sha256": "41a6f531daaff47459d782f993cd736b6f9f0221de39b5e90883021c37e109ec"
+    },
+    "dist/server/chromium.mjs": {
+      "bytes": 17110,
+      "sha256": "a2a5baa64a2d0850b2bb35f698ad82249460d876228fce416a0de99428ba5cd8"
+    },
+    "dist/server/search.mjs": {
+      "bytes": 3270,
+      "sha256": "e3c6fe542ebaa382776adc6affa84902582bdce4fb6bbad3e755ddd342cdbe58"
+    },
+    "dist/notes/search.mjs": {
+      "bytes": 57685,
+      "sha256": "3862f56a2457859ff4b8fb0588a6fa8f9e048570da4b96bab85e2956035cb045"
+    },
+    "dist/notes/frontmatter.mjs": {
+      "bytes": 13493,
+      "sha256": "91cf53eaf2ec265e93aa38e74b60c19d7790a6f05711b01ff7ee53385bc8326d"
+    },
+    "dist/notes/model.mjs": {
+      "bytes": 49239,
+      "sha256": "438d43becbf4552da4475bca597a1b0797e0851d4dc0b48bfba1d6cb63798da1"
+    },
+    "dist/notes/audio.mjs": {
+      "bytes": 7377,
+      "sha256": "820f3586415a8e0d4859d96694b5ae686e98d2af33debafeee9f26e14173c168"
+    },
+    "dist/notes/links.mjs": {
+      "bytes": 55929,
+      "sha256": "fb89aa5d8608a656695fdb11a1c9ae8cd3592fd18960c554bc454e7c5963570f"
+    },
+    "dist/notes/sibling-links.mjs": {
+      "bytes": 1491,
+      "sha256": "694a73f49703f65f94ba4e45fba30f6644465556054ee11cd32b7faede303842"
+    },
+    "dist/notes/recording-container.mjs": {
+      "bytes": 10029,
+      "sha256": "44335fbb3052ce41ad50a4a28cef8729ff011c92998151ffdcf7da71894036ab"
+    },
+    "dist/notes/attachments.mjs": {
+      "bytes": 10677,
+      "sha256": "4cd28483e1c0beaedcfbb6c1ec51486c93dd81ce62b522ee946c48b24735bff1"
+    },
+    "dist/notes/zip.mjs": {
+      "bytes": 16354,
+      "sha256": "e9cd768fe27ad43e0c9e72924ee55e8cfd15c667ed247b37e69c75e7db81e1f4"
+    },
+    "dist/images/crc32.mjs": {
+      "bytes": 501,
+      "sha256": "b29c4d30b05ff911a745baf66d4d9fa42ea9dd8b62c134bd2857700663e9ef24"
+    },
+    "dist/notes/size-words.mjs": {
+      "bytes": 539,
+      "sha256": "4d733fa16b8ebffbde4da9ef634f998f44c681f493031e69e240302bc86deeb4"
+    },
+    "dist/notes/zip-records.mjs": {
+      "bytes": 5531,
+      "sha256": "4f8ce2c9d1b530176fbedf1ad201ce9c5d9ebca33f7bf11334c2477323711cd3"
+    },
+    "dist/notes/library-reads.mjs": {
+      "bytes": 7254,
+      "sha256": "7d3e759ba35cc2713d2a407e8d189506810ea07c1b08df473d5863cee5a15d72"
+    },
+    "dist/tools/search-cache-version.mjs": {
+      "bytes": 620,
+      "sha256": "0ee46adc16131bfacc9751005e6ec33a03e8298966028eb2f104336240117ece"
+    },
+    "dist/server/test/run.mjs": {
+      "bytes": 478,
+      "sha256": "6e4e420e36df03baf94d1ff8e04f7bf1ca7d250c7ea1cfcec7bebbc53a4cb154"
+    },
+    "dist/server/test/preservation.mjs": {
+      "bytes": 6406,
+      "sha256": "4e20a2040546f371adf7ff76fd04b545474b90cdd8cae0920d1f5e334a8d2bc1"
+    },
+    "dist/server/test/integration.mjs": {
+      "bytes": 14084,
+      "sha256": "75a098e613482ecf86291c3d69b5030a8f03d37e7675e04854b930908b775d00"
+    },
+    "dist/server/test/render-corpus.mjs": {
+      "bytes": 3298,
+      "sha256": "8f34632092613d20a431529c81469f0df3df0fed41834e6d82a9dadb8d90e256"
+    },
+    "dist/server/test/bucket.mjs": {
+      "bytes": 16615,
+      "sha256": "17fac8642e133c847bde00dc7bbe1f224c10838141e921b22a72f7c4ed87972f"
+    },
+    "dist/server/test/fake-s3.mjs": {
+      "bytes": 7613,
+      "sha256": "9ddb2656b4e17f7638a22f891ea0bb5277ca8ad62dd0a9641c1616df384e093c"
+    },
+    "dist/tools/read-shared-page.mjs": {
+      "bytes": 3297,
+      "sha256": "82529918a785b1b88b5fae082b6dc8e8436428763b43578d1882ad779e123980"
+    },
+    "dist/server/test/render-corpus.json": {
+      "bytes": 74817,
+      "sha256": "150edb1122adfbef1e281aa194e07e527efd741aacbf4fdcfb3f0ab0f3326d74"
+    },
+    "dist/server/test/render-baseline.json": {
+      "bytes": 16802,
+      "sha256": "746991c576c5f774e82ff63a2b59668d1fa25b79d7e3f624204374c3ef65fa8d"
+    },
+    "dist/rapier-document.html": {
+      "bytes": 1259676,
+      "sha256": "fe66e85e73ff3b3a49c521d763e340dd5e374f1e10524a98b44e85c1a4625c40"
+    },
+    "dist/dist/chatgpt/rapier-app.html": {
+      "bytes": 1909758,
+      "sha256": "75f023dd3fbdcd1f15e4aa9a748178389b563a9f12871904f9cade1e15c45c43"
+    },
+    "dist/dist/chatgpt/icon-192.png": {
+      "bytes": 1541,
+      "sha256": "f78d6560280506eee32fb93a62e68f3446b7bb09e27e3f49908330fdb68f51d3"
+    },
+    "dist/dist/chatgpt/icon-512.png": {
+      "bytes": 4210,
+      "sha256": "50b8aa84b051df09cf11b99afc00f160aad6baa43cc7a523f1b49cc3d6f6a75a"
+    },
+    "dist/LICENSE": {
+      "bytes": 34253,
+      "sha256": "b6d2eebf0cbcd6f2cdd173cd835efd54257904ceb683a33cae22adbb4b41d13b"
+    },
+    "dist/LICENSE-MIT": {
+      "bytes": 3638,
+      "sha256": "0e89612079b2324ba64a1cf074b753f6c576e0c45ea38622a49f10e17fe7d513"
+    },
+    "dist/agent/vendor/NOTICE.txt": {
+      "bytes": 2893,
+      "sha256": "b0fc895786f875c417a38630cb6885f775072b73be9f3474d4e10a7f8269f103"
+    },
+    "dist/agent/vendor/markdown-plugins.json": {
+      "bytes": 1749,
+      "sha256": "e5ead75edc764383d9e6cd346c3ed6784e4763510c6e46f64fa3f1f1c5098adf"
+    },
+    "dist/agent/vendor/pretext/LICENSE": {
+      "bytes": 1077,
+      "sha256": "e9355cb16457e81acd97dac2e50f2f8bbf2a9a464025f9c46db3680cf9598846"
+    },
+    "dist/agent/vendor/pretext/NOTICE": {
+      "bytes": 692,
+      "sha256": "254b696efc3e9a4ddbd7912d58019ad6415343dcdccff519efcf34ec21df1e76"
+    },
+    "dist/agent/vendor/pretext/SOURCE.json": {
+      "bytes": 3235,
+      "sha256": "659a850252b533a40f31d220550a3332d7c7055f2284c23786916b705246def2"
+    },
+    "dist/dist/chatgpt/rapier-skills.json": {
+      "bytes": 720483,
+      "sha256": "39ea6420450c30e7d48bcb520eb35776de7790223b5ea966cd0af8dcc997cda0"
+    }
+  }
+}
