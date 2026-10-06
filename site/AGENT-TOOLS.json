@@ -1,5 +1,5 @@
 {
-  "release": "1.1.72",
+  "release": "1.1.73",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -27,20 +27,26 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "expectedRevision"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -49,7 +55,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -140,18 +145,25 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -160,7 +172,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -279,20 +290,31 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "action"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -301,7 +323,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -394,18 +415,24 @@
         "properties": {
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -414,7 +441,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -464,7 +490,6 @@
               "mode": {
                 "enum": [
                   "read_only",
-                  "yield",
                   "review_pending",
                   "review_required",
                   "blocked",
@@ -474,13 +499,10 @@
               "reason": {
                 "enum": [
                   "document_read_only",
-                  "human_edit_in_progress",
                   "will",
                   "ask",
-                  "check",
                   "proposal",
                   "document_law",
-                  "review_history_unavailable",
                   "inspect_target"
                 ]
               }
@@ -552,7 +574,6 @@
           "posture": {
             "enum": [
               "free",
-              "check",
               "ask"
             ]
           },
@@ -673,7 +694,6 @@
               "posture": {
                 "enum": [
                   "free",
-                  "check",
                   "ask"
                 ]
               },
@@ -700,8 +720,7 @@
                   "kind": {
                     "enum": [
                       "proposal",
-                      "inline",
-                      "check"
+                      "inline"
                     ]
                   },
                   "status": {
@@ -716,7 +735,6 @@
                     "enum": [
                       "will",
                       "ask",
-                      "check",
                       "proposal"
                     ]
                   },
@@ -1023,23 +1041,32 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 32,
-            "description": "Items per page."
+            "maximum": 9007199254740991,
+            "description": "Items per page. Clamped to 32."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -1048,7 +1075,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -1211,23 +1237,31 @@
           "limit": {
             "type": "integer",
             "minimum": 256,
-            "maximum": 4096,
-            "description": "Units per page."
+            "maximum": 9007199254740991,
+            "description": "Units per page. Clamped to 4096."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -1236,7 +1270,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -1403,8 +1436,8 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 16,
-            "description": "Matches per page."
+            "maximum": 9007199254740991,
+            "description": "Matches per page. Clamped to 16."
           },
           "kind": {
             "type": "string",
@@ -1422,20 +1455,29 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "query"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -1444,7 +1486,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -1605,35 +1646,45 @@
                 "context_handle",
                 "text"
               ],
-              "additionalProperties": false
+              "additionalProperties": true
             }
           },
           "label": {
             "type": "string",
-            "maxLength": 120,
             "description": "A short name the person sees for this change."
           },
           "note": {
             "type": "string",
-            "maxLength": 240,
             "description": "A sentence for the person about this change."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "edits"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "rebased",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -1642,7 +1693,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -1751,7 +1801,6 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
@@ -1759,13 +1808,23 @@
           "text",
           "by"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -1774,7 +1833,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -1855,35 +1913,43 @@
                 "context_handle",
                 "text"
               ],
-              "additionalProperties": false
+              "additionalProperties": true
             }
           },
           "label": {
             "type": "string",
-            "maxLength": 120,
             "description": "A short name the person sees for this change."
           },
           "note": {
             "type": "string",
-            "maxLength": 240,
             "description": "A sentence for the person about this change."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "edits"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -1892,7 +1958,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -1986,18 +2051,28 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2006,7 +2081,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2069,18 +2143,26 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2089,7 +2171,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2205,18 +2286,29 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "applied",
+              "unchanged",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2225,7 +2317,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2348,20 +2439,30 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "text"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "unchanged",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2370,7 +2471,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2446,20 +2546,30 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "context_handle"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2468,7 +2578,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2510,18 +2619,24 @@
         "properties": {
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2530,7 +2645,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2604,18 +2718,28 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "message",
+              "selection",
+              "timeout",
+              "document_replaced",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2624,7 +2748,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2678,18 +2801,30 @@
         "properties": {
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "saved",
+              "unchanged",
+              "conflict",
+              "cancelled",
+              "unacknowledged",
+              "failed",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2698,7 +2833,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2740,7 +2874,7 @@
     {
       "name": "document.export",
       "title": "Export the document",
-      "description": "Returns the document as a file the person can keep or send, as an embedded resource: markdown is the exact source; html is one offline Rapier page with the source inside. Over 8 MiB is refused. Does not change the document.",
+      "description": "Returns a file link the person can keep or send: markdown is the exact source; html is one offline Rapier page with the source inside. The file is limited to 8 MiB and stays unchanged for 24 hours; workspace deletion or capability rotation revokes the link. Does not change the document.",
       "effect": "read",
       "inputSchema": {
         "type": "object",
@@ -2755,20 +2889,25 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "format"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -2777,7 +2916,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -2807,7 +2945,7 @@
           },
           "filename": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 268
           },
           "mimeType": {
             "type": "string",
@@ -2820,6 +2958,14 @@
           "limitBytes": {
             "type": "integer",
             "minimum": 0
+          },
+          "exportId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "exportExpiresAt": {
+            "type": "string",
+            "maxLength": 64
           }
         },
         "required": [
@@ -2896,7 +3042,7 @@
               }
             },
             "required": [],
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "A patch to an existing drawing."
           },
           "operations": {
@@ -3049,7 +3195,7 @@
               "required": [
                 "type"
               ],
-              "additionalProperties": false
+              "additionalProperties": true
             }
           },
           "recipe_handle": {
@@ -3064,29 +3210,39 @@
           },
           "alt": {
             "type": "string",
-            "maxLength": 240,
             "description": "The caption, as the person reads it (required on create). With recipe_handle it can be edited alone.",
             "minLength": 1
           },
           "label": {
             "type": "string",
-            "maxLength": 120,
             "description": "A short name the person sees for this change."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "rebased",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3095,7 +3251,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3178,23 +3333,30 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 64,
-            "description": "Notes per page."
+            "maximum": 9007199254740991,
+            "description": "Notes per page. Clamped to 64."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3203,7 +3365,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3308,25 +3469,32 @@
           "limit": {
             "type": "integer",
             "minimum": 256,
-            "maximum": 12288,
-            "description": "Units per page."
+            "maximum": 9007199254740991,
+            "description": "Units per page. Clamped to 12288."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "file"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3335,7 +3503,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3435,20 +3602,26 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "text"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3457,7 +3630,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3519,9 +3691,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "expectedRevision": {
             "type": "integer",
@@ -3541,22 +3712,27 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "expectedRevision"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3565,7 +3741,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3661,9 +3836,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "status": {
             "type": "string",
@@ -3684,21 +3858,27 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3707,7 +3887,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3808,9 +3987,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "editorKey": {
             "type": "string",
@@ -3859,22 +4037,32 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "action"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -3883,7 +4071,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -3998,27 +4185,31 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -4027,7 +4218,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -4077,7 +4267,6 @@
               "mode": {
                 "enum": [
                   "read_only",
-                  "yield",
                   "review_pending",
                   "review_required",
                   "blocked",
@@ -4087,13 +4276,10 @@
               "reason": {
                 "enum": [
                   "document_read_only",
-                  "human_edit_in_progress",
                   "will",
                   "ask",
-                  "check",
                   "proposal",
                   "document_law",
-                  "review_history_unavailable",
                   "inspect_target"
                 ]
               }
@@ -4165,7 +4351,6 @@
           "posture": {
             "enum": [
               "free",
-              "check",
               "ask"
             ]
           },
@@ -4286,7 +4471,6 @@
               "posture": {
                 "enum": [
                   "free",
-                  "check",
                   "ask"
                 ]
               },
@@ -4313,8 +4497,7 @@
                   "kind": {
                     "enum": [
                       "proposal",
-                      "inline",
-                      "check"
+                      "inline"
                     ]
                   },
                   "status": {
@@ -4329,7 +4512,6 @@
                     "enum": [
                       "will",
                       "ask",
-                      "check",
                       "proposal"
                     ]
                   },
@@ -4647,9 +4829,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "within": {
             "type": "string",
@@ -4664,26 +4845,34 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 32,
-            "description": "Items per page."
+            "maximum": 9007199254740991,
+            "description": "Items per page. Clamped to 32."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -4692,7 +4881,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -4844,9 +5032,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "editorKey": {
             "type": "string",
@@ -4888,26 +5075,33 @@
           "limit": {
             "type": "integer",
             "minimum": 256,
-            "maximum": 4096,
-            "description": "Units per page."
+            "maximum": 9007199254740991,
+            "description": "Units per page. Clamped to 4096."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -4916,7 +5110,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -5085,9 +5278,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "query": {
             "type": "string",
@@ -5111,8 +5303,8 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 16,
-            "description": "Matches per page."
+            "maximum": 9007199254740991,
+            "description": "Matches per page. Clamped to 16."
           },
           "kind": {
             "type": "string",
@@ -5130,22 +5322,30 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "query"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -5154,7 +5354,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -5307,9 +5506,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "edits": {
             "type": "array",
@@ -5343,37 +5541,46 @@
                 "context_handle",
                 "text"
               ],
-              "additionalProperties": false
+              "additionalProperties": true
             }
           },
           "label": {
             "type": "string",
-            "maxLength": 120,
             "description": "A short name the person sees for this change."
           },
           "note": {
             "type": "string",
-            "maxLength": 240,
             "description": "A sentence for the person about this change."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "edits"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "rebased",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -5382,7 +5589,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -5489,9 +5695,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "context_handle": {
             "type": "string",
@@ -5519,23 +5724,31 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "text",
           "by"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -5544,7 +5757,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -5617,9 +5829,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "edits": {
             "type": "array",
@@ -5653,37 +5864,44 @@
                 "context_handle",
                 "text"
               ],
-              "additionalProperties": false
+              "additionalProperties": true
             }
           },
           "label": {
             "type": "string",
-            "maxLength": 120,
             "description": "A short name the person sees for this change."
           },
           "note": {
             "type": "string",
-            "maxLength": 240,
             "description": "A sentence for the person about this change."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "edits"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -5692,7 +5910,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -5803,9 +6020,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "change_id": {
             "type": "string",
@@ -5814,21 +6030,30 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -5837,7 +6062,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -5917,9 +6141,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "change_id": {
             "type": "string",
@@ -5928,21 +6151,28 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -5951,7 +6181,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6058,9 +6287,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "action": {
             "type": "string",
@@ -6095,21 +6323,31 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "applied",
+              "unchanged",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6118,7 +6356,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6244,9 +6481,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "text": {
             "type": "string",
@@ -6269,22 +6505,31 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "text"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "unchanged",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6293,7 +6538,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6386,9 +6630,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "context_handle": {
             "type": "string",
@@ -6397,22 +6640,31 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "context_handle"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6421,7 +6673,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6485,27 +6736,31 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6514,7 +6769,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6591,9 +6845,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "mode": {
             "type": "string",
@@ -6616,21 +6869,30 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "message",
+              "selection",
+              "timeout",
+              "document_replaced",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6639,7 +6901,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6715,27 +6976,37 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "saved",
+              "unchanged",
+              "conflict",
+              "cancelled",
+              "unacknowledged",
+              "failed",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6744,7 +7015,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6803,7 +7073,7 @@
     {
       "name": "document.export",
       "title": "Export the document",
-      "description": "Returns the document as a file the person can keep or send, as an embedded resource: markdown is the exact source; html is one offline Rapier page with the source inside. Over 8 MiB is refused. Does not change the document.",
+      "description": "Returns a file link the person can keep or send: markdown is the exact source; html is one offline Rapier page with the source inside. The file is limited to 8 MiB and stays unchanged for 24 hours; workspace deletion or capability rotation revokes the link. Does not change the document.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -6815,9 +7085,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "format": {
             "type": "string",
@@ -6829,22 +7098,26 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "format"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -6853,7 +7126,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -6883,7 +7155,7 @@
           },
           "filename": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 268
           },
           "mimeType": {
             "type": "string",
@@ -6896,6 +7168,14 @@
           "limitBytes": {
             "type": "integer",
             "minimum": 0
+          },
+          "exportId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "exportExpiresAt": {
+            "type": "string",
+            "maxLength": 64
           }
         },
         "required": [
@@ -6936,9 +7216,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "recipe": {
             "type": "object",
@@ -7000,7 +7279,7 @@
               }
             },
             "required": [],
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "A patch to an existing drawing."
           },
           "operations": {
@@ -7153,7 +7432,7 @@
               "required": [
                 "type"
               ],
-              "additionalProperties": false
+              "additionalProperties": true
             }
           },
           "recipe_handle": {
@@ -7168,32 +7447,41 @@
           },
           "alt": {
             "type": "string",
-            "maxLength": 240,
             "description": "The caption, as the person reads it (required on create). With recipe_handle it can be edited alone.",
             "minLength": 1
           },
           "label": {
             "type": "string",
-            "maxLength": 120,
             "description": "A short name the person sees for this change."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "applied",
+              "rebased",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -7202,7 +7490,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -7301,9 +7588,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "cursor": {
             "type": "string",
@@ -7313,26 +7599,32 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 64,
-            "description": "Notes per page."
+            "maximum": 9007199254740991,
+            "description": "Notes per page. Clamped to 64."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
-          "document",
-          "operation_id"
+          "document"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -7341,7 +7633,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -7451,9 +7742,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "file": {
             "type": "string",
@@ -7474,27 +7764,33 @@
           "limit": {
             "type": "integer",
             "minimum": 256,
-            "maximum": 12288,
-            "description": "Units per page."
+            "maximum": 9007199254740991,
+            "description": "Units per page. Clamped to 12288."
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "file"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -7503,7 +7799,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -7610,9 +7905,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "A fresh random id for this call (a UUID works). Resend it only to retry this call; the retry replays the recorded result.",
-            "minLength": 22,
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "description": "Optional retry identity. Reuse only with unchanged arguments; absent calls never replay.",
+            "minLength": 1
           },
           "text": {
             "type": "string",
@@ -7631,22 +7925,27 @@
           },
           "agent": {
             "type": "string",
-            "maxLength": 64,
             "description": "This assistant's display name."
           }
         },
         "required": [
           "document",
-          "operation_id",
           "text"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -7655,7 +7954,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -7725,13 +8023,16 @@
         "type": "object",
         "properties": {},
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "const": "ok"
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
           },
           "instructions": {
             "type": "string"
@@ -7793,7 +8094,7 @@
               "name",
               "resourceUri"
             ],
-            "additionalProperties": false
+            "additionalProperties": true
           },
           "text": {
             "type": "string",
@@ -7821,13 +8122,19 @@
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "created",
+              "current",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -7836,7 +8143,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -7900,13 +8206,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.72.html",
+          "resourceUri": "ui://rapier/editor-1.1.73.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.72.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.73.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -7965,7 +8271,12 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "current",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -7974,7 +8285,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8028,7 +8338,7 @@
     {
       "name": "document.commit",
       "title": "Save the person’s edits",
-      "description": "Commits the editor's exact text against its last acknowledged revision. A conflict keeps the server's revision.",
+      "description": "Rebases the editor's source edits from its acknowledged revision over concurrent changes. Neither author's inserts are lost.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8050,6 +8360,35 @@
           "text": {
             "type": "string",
             "maxLength": 26214400
+          },
+          "splices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pos": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 26214400
+                },
+                "removed": {
+                  "type": "string",
+                  "maxLength": 26214400
+                },
+                "inserted": {
+                  "type": "string",
+                  "maxLength": 26214400
+                }
+              },
+              "required": [
+                "pos",
+                "removed",
+                "inserted"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 32000,
+            "description": "Exact sequential local journal from the acknowledged source to text; at most the retained 500 records of 64 splices."
           },
           "filename": {
             "type": "string",
@@ -8082,7 +8421,12 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "committed",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8091,7 +8435,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8211,7 +8554,18 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "applied",
+              "unchanged",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8220,7 +8574,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8370,7 +8723,14 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "conflict",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8379,7 +8739,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8433,7 +8792,7 @@
     {
       "name": "document.set_policy",
       "title": "Set collaboration controls",
-      "description": "Sets the person's choice of FREE, CHECK, ASK or read-only on this workspace version.",
+      "description": "Sets the person's choice of FREE, ASK or read-only on this workspace version.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8461,7 +8820,6 @@
             "type": "string",
             "enum": [
               "free",
-              "check",
               "ask"
             ]
           },
@@ -8486,7 +8844,13 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "invalid",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8495,7 +8859,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8549,7 +8912,7 @@
     {
       "name": "document.review_decide",
       "title": "Decide the exact review",
-      "description": "Records the person's decision on this pending review. Approving a proposal applies its edits; approving CHECK acknowledges shown work; apply and drop leave the review open.",
+      "description": "Records the person's decision on this pending review. Approving a proposal applies its edits; apply and drop leave the review open.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8617,7 +8980,20 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "applied",
+              "rebased",
+              "unchanged",
+              "target_gone",
+              "conflict",
+              "pending",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8626,7 +9002,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8811,7 +9186,12 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8820,7 +9200,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -8926,7 +9305,12 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "ok",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -8935,7 +9319,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -9014,7 +9397,12 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "rotated",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -9023,7 +9411,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },
@@ -9117,7 +9504,12 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "deleted",
+              "refused",
+              "uncertain"
+            ]
           },
           "reason": {
             "type": "string"
@@ -9126,7 +9518,6 @@
             "enum": [
               "will",
               "ask",
-              "check",
               "proposal"
             ]
           },

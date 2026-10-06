@@ -11,7 +11,7 @@ For a portable full-text proposal, read the document with document.read_context,
 
 Use document.draw for movable figures, show_changes when the person asks to see what changed, propose_edits only when the person asked to decide first, and undo_agent_change to preserve later human work. Host context updates are hints, not continuous attention or edit authority. Keep document capabilities private.
 
-Each document call needs a fresh random operation_id, reused only for that exact retry. Send agent as your display label. FREE applies. ASK stages. CHECK requires acknowledgment of earlier work before retrying the requested edit. Pending is not applied. Human typing and Will hold at commit. Showing a diff is not approval.
+MCP operation_id is optional (1–128 characters); unchanged retries reuse it. Unnamed calls never replay. Agent tools ignore unknown fields and clip label/note/agent/alt; rapier.open ignores operation_id/agent. FREE applies. ASK stages. Pending is unapplied. Overlapping typing and Will hold at commit. A diff is not approval.
 
 get_context reports editor presence. Headless means deliver a Rapier page through a file surface, not repeated reveal or wait. Notes on the person's device are unavailable to the hosted door. Keep optional continuation context current without turning suggestions into decisions. Workspaces expire when idle; export what matters. A named refusal requires a focused correction, not an unchanged retry.`;
 

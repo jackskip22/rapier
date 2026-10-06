@@ -22,11 +22,19 @@ The doors (`package.json`'s exports, each with its declaration beside it):
   the two rungs' plans are both written when their prices lie within what padding and the table of contents can
   move. Rung 4 adds per-group trees for palette indices (`local.mjs`) and a search of the 42 reversible colour
   transforms ranked on three small samples, written in full only for the best of them and kept only when that
-  complete stream is smaller (`rct-search.mjs`); rung 6 also models direct and palette planes
+  complete stream is smaller (`rct-search.mjs`). From rung 3, screen palettes, repeated residual runs and a glyph
+  dictionary also compete. Rung 5 adds 1,024-pixel groups, exact row-match hints, predictor prices after matching
+  and broader atlas and palette searches (`screen*.mjs`); rung 6 also models direct and palette planes
   with splits on the unclamped gradient and the west-minus-northwest difference. Every complete candidate competes
-  against the smaller streams already written. Effort 5 uses rung 4. A stream is never larger than the effort below,
+  against the smaller streams already written. Efforts 7 through 9 use rung 6. A stream is never larger than the effort below,
   effort 1's on a tie. A lossy request is effort 1's. The
   core stays rung 1 until a rung's table shows every importer gains.
+- `{treeLearning: 'sampled'}` on `effort.mjs` selects bounded deterministic tree learning (`sampled.mjs`): efforts
+  2/3 share a model sampled across the image (1,024 samples per channel, eight leaves); 4..9 also try group models
+  (2,048 samples per channel, sixteen leaves, weighted prediction and reference properties). Each model is priced
+  against its one-context alternative using the actual tokens. Complete streams compete against effort 1, and the
+  richer rung keeps the cheaper sampled result. A hurry at any step returns effort 1 exactly. Effort 1 and lossy
+  requests keep their ordinary paths; omitting the option keeps the ordinary search.
 - `jpeg.mjs`: `transcode(jpeg, {effort})`, a JPEG carried as its coefficients into a VarDCT frame the way libjxl transcodes one
   (`jfif.mjs` reads the scans: baseline, extended and progressive, restarts, 8-bit, grey or three components, an Exif
   orientation; `vardct.mjs` and `entropy.mjs` write the frame, contexts clustered into prefix codes). A JPEG it does
@@ -69,7 +77,7 @@ at least.
 
 Every core: `pool.mjs` runs the effort door's exact work (`effort-job.mjs`) over a pool of workers the caller
 starts, with the same bytes for any number of them. Each pass over a frame's groups is a function of the pass's
-setup and one group's pixels (`planGroup`, `searchGroup`, `localGroup`, frame.mjs `groupPass`); a worker keeps its
+setup and one group's pixels (`planGroup`, `searchGroup`, `localGroup`, `sampledGroup`, frame.mjs `groupPass`); a worker keeps its
 groups' pixels for the whole picture, counts are added and sections placed in group order, and every choice stays
 in the calling thread, which codes groups too and takes over a worker that fails. `encodePool(data, width, height,
 options, {spawn, workers})` is an async job (`for await`, `hurry`, `bytes`); a worker's script hands each message to

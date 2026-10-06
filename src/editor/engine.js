@@ -16658,7 +16658,6 @@ function _rapierApplyModalIsolation() {
 	}
 	document.documentElement.classList.toggle('rapier-engine-modal-locked', !!top);
 	if (!stack.length) _rapierDialogRuntime.baseline = null;
-	if (!top) _rapierSeenSweep();
 }
 
 function _rapierCaptureEngineDialogTarget() {
@@ -41604,8 +41603,8 @@ async function _rapierWaitForUser(input, ctx) {
 	const owns = key => Object.prototype.hasOwnProperty.call(request, key);
 	const event = request.event;
 	if (typeof event !== 'string' ||
-			(event !== 'selection' && event !== 'edit' && event !== 'message' && event !== 'delivery')) {
-		return { outcome: 'invalid', reason: 'invalid_event', message: 'event must be "selection", "edit", "message", or "delivery"; call wait_for_user again with one of those.' };
+			(event !== 'selection' && event !== 'edit' && event !== 'message')) {
+		return { outcome: 'invalid', reason: 'invalid_event', message: 'event must be "selection", "edit", or "message"; call wait_for_user again with one of those.' };
 	}
 	if (owns('context_handle') && (typeof request.context_handle !== 'string' ||
 			!request.context_handle.length || request.context_handle.length > _RAPIER_WAIT_HANDLE_LIMIT)) {
@@ -41635,15 +41634,6 @@ async function _rapierWaitForUser(input, ctx) {
 		return { outcome: 'refused', reason: 'read_only', event, timeoutMs };
 	}
 
-	const deliveryScope = event === 'delivery' ? _rapierCallerScopeLenient(ctx) : null;
-	if (event === 'delivery' && !deliveryScope) {
-		return { outcome: 'refused', reason: 'caller_unnamed', message: 'Your calling channel could not be identified for this wait; call wait_for_user again from an ordinary call.', event, timeoutMs };
-	}
-
-	if (event === 'delivery' && _rapierSeenUndelivered(deliveryScope) === 0) {
-		return { outcome: 'delivery', reason: '', event, timeoutMs, waitedMs: 0 };
-	}
-
 	if (event === 'message') {
 		const spoken = _rapierMessageQueueTake();
 		if (spoken) {
@@ -41658,7 +41648,6 @@ async function _rapierWaitForUser(input, ctx) {
 	const state = {
 		event, timeoutMs, startedAt, deadline: startedAt + timeoutMs,
 		quietMs: event === 'selection' ? _RAPIER_WAIT_SELECTION_QUIET_MS : _RAPIER_WAIT_EDIT_QUIET_MS,
-		deliveryScope,
 		lastActivityAt: startedAt, pointerActive: false, selectionMoved: false,
 		baseRevision: 0, evaluatedRevision: 0, identity: _rapierDocumentIdentity(),
 		flatSurface: _rapierFlatSurface(), baselineFlat: null, baselineBlocks: null,
@@ -41669,7 +41658,7 @@ async function _rapierWaitForUser(input, ctx) {
 
 	_rapierWaitRuntime.pending = state;
 
-	if (event !== 'message' && event !== 'delivery') {
+	if (event !== 'message') {
 		const read = await _rapierWithSettledExternalDocument(
 			() => _rapierWaitCaptureBaseline(state, handleId), { quiet: true }).catch(error => {
 				_rapierWaitDispose(state);
@@ -41719,12 +41708,7 @@ async function _rapierWaitForUser(input, ctx) {
 				return;
 			}
 
-			if (state.event === 'delivery') {
-				if (_rapierSeenUndelivered(state.deliveryScope) === 0) {
-					finish({ outcome: 'delivery', reason: '' });
-					return;
-				}
-			} else if (state.pointerActive || !_rapierWaitDocumentSettled()) activity();
+			if (state.pointerActive || !_rapierWaitDocumentSettled()) activity();
 			else if (_rapierNow() - state.lastActivityAt >= state.quietMs) {
 				const value = state.evaluate();
 				if (value) { finish(value); return; }
@@ -41741,7 +41725,7 @@ async function _rapierWaitForUser(input, ctx) {
 			});
 		} else if (event === 'selection') listen(document, 'selectionchange', selectionActivity, false);
 		else if (event === 'edit') listen(document, 'input', activity, true);
-		if (event !== 'message' && event !== 'delivery') {
+		if (event !== 'message') {
 			listen(window, 'pointerdown', pointerDown, { capture: true, passive: true });
 			listen(window, 'pointerup', pointerRelease, { capture: true, passive: true });
 			listen(window, 'pointercancel', pointerRelease, { capture: true, passive: true });
@@ -42684,44 +42668,39 @@ function _rapierWillReviewActions(ready, places = 0) {
 	if (!holder || !pending || pending.done) return;
 	holder.replaceChildren();
 	holder.dataset.visible = 'true';
-	const check = pending.presentation?.kind === 'check';
 	const status = document.createElement('p');
 	status.className = 'compare-law-review__status';
-	status.textContent = check
-		? 'CHANGES SINCE REVISION ' + pending.presentation.baseRevision +
-			(pending.presentation.includesHumanChanges ? ' · INCLUDES HUMAN EDITS' : '')
-		: pending.byPosture ? 'PROPOSED · NOT APPLIED' : 'HELD BY THIS DOCUMENT · NOT APPLIED';
+	status.textContent = pending.byPosture ? 'PROPOSED · NOT APPLIED' : 'HELD BY THIS DOCUMENT · NOT APPLIED';
 	const keep = document.createElement('button');
 	keep.type = 'button';
 	keep.className = 'compare-law-review__action compare-law-review__action--primary';
-	keep.textContent = check ? 'NOT YET' : 'KEEP HELD';
+	keep.textContent = 'KEEP HELD';
 	keep.addEventListener('click', event => {
 		if (event.isTrusted === true) {
-			_rapierSeenWitnessDecision(pending, false);
+			_rapierSinceOpenDecision(pending, false);
 			_rapierWillReviewDecide(pending, false, _RAPIER_WILL_TRUSTED_DECISION);
 		}
 	});
 	const allow = document.createElement('button');
 	allow.type = 'button';
 	allow.className = 'compare-law-review__action compare-law-review__action--allow';
-	allow.textContent = check ? 'REVIEWED' : 'ALLOW THIS ONCE';
+	allow.textContent = 'ALLOW THIS ONCE';
 	allow.disabled = ready !== true;
 	allow.setAttribute('aria-disabled', ready === true ? 'false' : 'true');
 	if (Number(places) > 1) {
 
 		allow.dataset.places = String(places);
-		allow.setAttribute('aria-label', check ? 'reviewed, ' + places + ' changes'
-			: 'allow this once, in ' + places + ' places');
+		allow.setAttribute('aria-label', 'allow this once, in ' + places + ' places');
 	}
 	allow.addEventListener('click', event => {
 		if (event.isTrusted !== true) return;
 		const kept = _rapierWillReviewKeptIds(pending);
 		if (kept && !kept.length) {
-			_rapierSeenWitnessDecision(pending, false);
+			_rapierSinceOpenDecision(pending, false);
 			_rapierWillReviewDecide(pending, false, _RAPIER_WILL_TRUSTED_DECISION);
 			return;
 		}
-		_rapierSeenWitnessDecision(pending, true);
+		_rapierSinceOpenDecision(pending, true);
 		_rapierWillReviewDecide(pending, true, _RAPIER_WILL_TRUSTED_DECISION, kept && pending.dropped?.size ? kept : null);
 	});
 	holder.append(status, keep, allow);
@@ -42853,7 +42832,7 @@ function _rapierWillReviewPeekRefresh(pending) {
 		}
 	}
 	const allow = document.querySelector('#compare-law-review .compare-law-review__action--allow');
-	if (allow && total > 1 && !pending?.presentation) {
+	if (allow && total > 1) {
 		const keptCount = total - droppedCount;
 		allow.textContent = droppedCount ? (keptCount ? 'ALLOW ' + keptCount + ' OF ' + total : 'KEEP HELD') : 'ALLOW THIS ONCE';
 		allow.setAttribute('aria-label', droppedCount ? (keptCount ? 'allow ' + keptCount + ' of ' + total + ' changes' : 'keep all held') : 'allow this once, in ' + total + ' places');
@@ -42862,7 +42841,7 @@ function _rapierWillReviewPeekRefresh(pending) {
 
 function _rapierWillReviewPeekControls(section, index) {
 	const pending = _rapierWillReviewSlot.pending;
-	if (!_rapierCompareRuntime.lawReview || !pending || pending.presentation || !pending.hunkChanges || _rapierWillReviewDecidableHunks(pending) < 2 || !pending.hunkChanges[index]?.length) return;
+	if (!_rapierCompareRuntime.lawReview || !pending || !pending.hunkChanges || _rapierWillReviewDecidableHunks(pending) < 2 || !pending.hunkChanges[index]?.length) return;
 	const row = document.createElement('div');
 	row.className = 'compare-hunk__peek';
 	for (const [peek, label, icon] of [['keep', 'keep this change', 'check'], ['drop', 'drop this change', 'cross']]) {
@@ -42907,12 +42886,6 @@ function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, pr
 	const currentText = _rapierWillReviewCurrentText(resolved);
 	if (currentText == null) return Promise.resolve({ allowed: false, reason: 'target_changed' });
 	const proposedText = String(replacement == null ? '' : replacement);
-	const check = presentation?.kind === 'check';
-	if (check && (typeof presentation.baseline !== 'string' || proposedText !== currentText ||
-			!Number.isSafeInteger(presentation.baseRevision) || presentation.baseRevision < 0)) {
-		return Promise.resolve({ allowed: false, reason: 'review_evidence_unavailable' });
-	}
-	const baseline = check ? presentation.baseline : currentText;
 	let resolve;
 	const decision = new Promise(done => { resolve = done; });
 	const signal = ctx && ctx.signal;
@@ -42928,8 +42901,6 @@ function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, pr
 		interval: _rapierWillReviewIntervalKey(resolved),
 
 		byPosture: byPosture === true,
-		presentation: check ? {kind: 'check', baseline, baseRevision: presentation.baseRevision,
-			includesHumanChanges: presentation.includesHumanChanges === true} : null,
 		scope: byPosture === true ? _rapierCallerScopeLenient(ctx) : null,
 		currentText,
 		replacement: proposedText,
@@ -42943,8 +42914,8 @@ function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, pr
 	c.lens = 'law';
 	c.changeId = null;
 	try {
-		_rapierCompareStart(baseline, check ? 'EARLIER' : 'CURRENT · HELD', pending.replacement,
-			check ? 'CURRENT' : presentation?.base ? String(rapier.document.filename || 'document.md') + ' · proposed by ' + presentation.base.by + ', ' + new Date(presentation.base.at).toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : 'PROPOSED · AGENT', { lawReview: true });
+		_rapierCompareStart(currentText, 'CURRENT · HELD', pending.replacement,
+			presentation?.base ? String(rapier.document.filename || 'document.md') + ' · proposed by ' + presentation.base.by + ', ' + new Date(presentation.base.at).toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : 'PROPOSED · AGENT', { lawReview: true });
 	} catch (_) {
 
 		_rapierWillReviewSettle(pending, false, 'diff_failed', true);
@@ -43257,8 +43228,8 @@ function _rapierSinceOpenWanted() {
 function _rapierSinceOpenClear() {
 	document.querySelectorAll('#editor-blocks > .since-open-hunk')
 		.forEach(node => node.remove());
-	document.querySelectorAll('#editor-blocks > .block-wrapper[data-seen-unit]')
-		.forEach(node => { delete node.dataset.sinceOpenChanged; delete node.dataset.seenUnit; });
+	document.querySelectorAll('#editor-blocks > .block-wrapper[data-since-open-changed]')
+		.forEach(node => { delete node.dataset.sinceOpenChanged; });
 }
 
 function _rapierSinceOpenAnchored(render) {
@@ -43287,7 +43258,6 @@ function _rapierSinceOpenClose() {
 	const wasActive = _rapierSinceOpen.active;
 	_rapierSinceOpen.active = false;
 	_rapierSinceOpenSettle(null);
-	_rapierSeenRelease();
 	_rapierSinceOpenAnchored(_rapierSinceOpenClear);
 	if (wasActive) _rapierAgentBarRender();
 }
@@ -43311,8 +43281,10 @@ function _rapierSinceOpenLineOffsets(text) {
 
 function _rapierSinceOpenDone() {
 	if (!_rapierSinceOpen.active || !(_rapierSinceOpen.units instanceof Map)) return false;
-	const units = _rapierSinceOpen.units;
-	for (const unit of [...units.keys()]) _rapierSeenDeliver(unit);
+	// A completed look acknowledges only the exact revision the lens finished comparing.
+	if (_rapierSinceOpen.revision !== Number(rapier.revision.settled || 0) ||
+			_rapierSinceOpen.text !== _rapierSourceText()) { _rapierSinceOpenRefresh(); return false; }
+	for (const [id, digest] of _rapierSinceOpen.units) _rapierSinceOpenAcknowledge([id], digest);
 	_rapierSinceOpenClose();
 	return true;
 }
@@ -43361,15 +43333,12 @@ function _rapierSinceOpenRender(result) {
 			const to = firstAdd ? blockIndexOfLine(lastAdd) : index;
 			const change = rows.map(row => row.type + '\u0000' + String(row.text == null ? '' : row.text))
 				.join('\n');
-			let unit = '';
 			for (let at = from; at >= 0 && at <= to && at < wrappers.length; at++) {
 				const id = wrappers[at].dataset.blockId;
 				if (!id) continue;
 				raw.set(id, raw.has(id) ? raw.get(id) + '\n' + change : change);
-				if (!unit) unit = id;
 				if (!firstAdd) continue;
 
-				wrappers[at].dataset.seenUnit = id;
 				if (draw) wrappers[at].dataset.sinceOpenChanged = '';
 			}
 			if (!draw) continue;
@@ -43378,7 +43347,6 @@ function _rapierSinceOpenRender(result) {
 			strip.setAttribute('contenteditable', 'false');
 			strip.setAttribute('aria-label', 'changed since your last look');
 
-			if (unit && !firstAdd) strip.dataset.seenUnit = unit;
 			for (const row of rows) strip.appendChild(_rapierCompareRow(row));
 			host.insertBefore(strip, index < 0 ? null : wrappers[index] || null);
 		}
@@ -43386,7 +43354,6 @@ function _rapierSinceOpenRender(result) {
 		for (const [id, change] of raw) units.set(id, _rapierSeenDigest(change));
 		_rapierSinceOpen.units = units;
 	});
-	_rapierSeenObserve();
 
 	_rapierAgentBarRender();
 }
@@ -43486,12 +43453,11 @@ function _rapierSinceOpenRefresh() {
 	}, _RAPIER_SINCE_OPEN_REFRESH_MS);
 }
 
-const _RAPIER_SEEN_DWELL_MS = 1000;
 const _RAPIER_SEEN_LEDGER_LIMIT = 4096;
 
 const _RAPIER_SEEN_UNNAMED = '';
 
-const _RAPIER_POSTURES = Object.freeze(['free', 'check', 'ask']);
+const _RAPIER_POSTURES = Object.freeze(['free', 'ask']);
 
 function _rapierPosture() {
 	const held = rapier.review.posture;
@@ -43520,26 +43486,13 @@ function _rapierSeenSpend() {
 	rapier.review.decided = null;
 }
 
-function _rapierSeenWitnessBlocks(ids, digest) {
+function _rapierSinceOpenAcknowledge(ids, digest) {
 	for (const id of ids) {
 		rapier.review.moved.delete(String(id));
 		rapier.review.shown.delete(String(id));
-		rapier.review.shown.set(String(id), { digest: digest == null ? null : String(digest), at: Date.now() });
+		rapier.review.shown.set(String(id), { digest: digest == null ? null : String(digest) });
 	}
 	_rapierSeenBound(rapier.review.shown);
-	globalThis.RapierAgentBrowser?.contextChanged('review');
-}
-
-function _rapierSeenHandSaw(ids) {
-	const root = document.getElementById('editor-blocks');
-	const view = root && root.getBoundingClientRect();
-	if (!view || view.height <= 0) return true;
-	return ids.every(id => {
-		const wrapper = root.querySelector(':scope > [data-block-id="' + id + '"]');
-		if (!wrapper) return false;
-		const shown = _rapierSeenShown(wrapper, view);
-		return _rapierSeenWhole([[shown.lo, shown.hi]], shown.height);
-	});
 }
 
 function _rapierSeenRecordTransaction(transaction) {
@@ -43548,26 +43501,22 @@ function _rapierSeenRecordTransaction(transaction) {
 	rapier.review.decided = null;
 	if (transaction.actor.kind === 'human') {
 
-		if (_rapierSeenHandSaw(ids)) _rapierSeenWitnessBlocks(ids, null);
+		_rapierSinceOpenAcknowledge(ids, null);
 		return;
 	}
 
 	const admitted = decided ? ids.filter(id => decided.includes(id)) : [];
-	if (admitted.length) _rapierSeenWitnessBlocks(admitted, null);
-	const owner = Object.freeze({
-		actor: transaction.actor,
-		transport: transaction.transport === 'webmcp' ? 'webmcp' : 'platform',
-	});
+	if (admitted.length) _rapierSinceOpenAcknowledge(admitted, null);
 	if (ids.length) {
 		for (const id of ids) {
 			if (admitted.includes(id)) continue;
 			rapier.review.shown.delete(id);
 			rapier.review.moved.delete(id);
-			rapier.review.moved.set(id, owner);
+			rapier.review.moved.set(id, true);
 		}
 		_rapierSeenBound(rapier.review.moved);
 	} else {
-		rapier.review.moved.set(_RAPIER_SEEN_UNNAMED, owner);
+		rapier.review.moved.set(_RAPIER_SEEN_UNNAMED, true);
 	}
 
 	_rapierSinceOpenRefresh();
@@ -43588,202 +43537,28 @@ function _rapierSeenBlockIdsOfResolved(resolved) {
 	return blocks.slice(first, last + 1).map(block => String(block.id));
 }
 
-function _rapierSeenWitnessDecision(pending, allowed) {
+function _rapierSinceOpenDecision(pending, allowed) {
 	const ids = _rapierSeenBlockIdsOfResolved(pending && pending.resolved);
 	if (!ids.length) return;
-	_rapierSeenWitnessBlocks(ids, null);
+	_rapierSinceOpenAcknowledge(ids, null);
 	rapier.review.decided = allowed ? ids : null;
 	_rapierAgentBarRender();
 }
 
-function _rapierSeenUndelivered(scope = null) {
-	if (!_rapierSinceOpenAvailable()) return null;
-	const units = _rapierSinceOpen.units;
-
-	if (!units) {
-		if (!scope || (rapier.review.seen && rapier.review.seen.restored)) return null;
-		for (const owner of rapier.review.moved.values()) {
-			if (_rapierScopeOwns(scope, owner.actor, owner.transport)) return null;
-		}
-		return 0;
-	}
+function _rapierSinceOpenCount() {
+	if (!_rapierSinceOpenAvailable() || !_rapierSinceOpen.units) return null;
 	let count = 0;
-	for (const [id, digest] of units) {
-		const witness = rapier.review.shown.get(id);
-		if (witness && (witness.digest === null || witness.digest === digest)) continue;
-		if (scope) {
-
-			const owner = rapier.review.moved.get(id);
-
-			if (!owner) { if (rapier.review.seen && rapier.review.seen.restored) return null; continue; }
-			if (!_rapierScopeOwns(scope, owner.actor, owner.transport)) continue;
-		}
-		count++;
+	for (const [id, digest] of _rapierSinceOpen.units) {
+		const shown = rapier.review.shown.get(id);
+		if (!shown || (shown.digest !== null && shown.digest !== digest)) count++;
 	}
 	return count;
 }
 
 function _rapierSeenAwaiting() {
 	if (!rapier.review.moved.size) return false;
-	const count = _rapierSeenUndelivered();
+	const count = _rapierSinceOpenCount();
 	return count == null ? true : count > 0;
-}
-
-const _rapierSeenDelivery = Object.seal({
-	observer: null, watched: new Map(), timer: 0, moved: false, hands: null,
-});
-
-function _rapierSeenDrop() {
-	for (const cover of _rapierSeenDelivery.watched.values()) cover.since = 0;
-	clearTimeout(_rapierSeenDelivery.timer);
-	_rapierSeenDelivery.timer = 0;
-}
-
-function _rapierSeenViewMovedByAgent() {
-	_rapierSeenDelivery.moved = true;
-	_rapierSeenDrop();
-}
-
-function _rapierSeenShown(element, view) {
-	const box = element.getBoundingClientRect();
-	return {
-		lo: Math.max(box.top, view.top) - box.top,
-		hi: Math.min(box.bottom, view.bottom) - box.top,
-		height: box.height,
-	};
-}
-
-const _RAPIER_SEEN_EDGE_PX = 1;
-
-function _rapierSeenWhole(spans, height) {
-	return spans.some(span => span[0] <= _RAPIER_SEEN_EDGE_PX &&
-		span[1] >= height - _RAPIER_SEEN_EDGE_PX);
-}
-
-function _rapierSeenHeld(cover, lo, hi) {
-	cover.held = cover.held.concat([[lo, hi]]).sort((a, b) => a[0] - b[0])
-		.reduce((held, span) => {
-			const last = held[held.length - 1];
-			if (last && span[0] <= last[1] + _RAPIER_SEEN_EDGE_PX) last[1] = Math.max(last[1], span[1]);
-			else held.push(span.slice());
-			return held;
-		}, []);
-}
-
-function _rapierSeenPending(unit) {
-	const units = _rapierSinceOpen.units;
-	if (!units || !units.has(unit)) return false;
-	const witness = rapier.review.shown.get(unit);
-	return !witness || (witness.digest !== null && witness.digest !== units.get(unit));
-}
-
-function _rapierSeenSweep() {
-	const root = document.getElementById('editor-blocks');
-	if (!root) return;
-	clearTimeout(_rapierSeenDelivery.timer);
-	_rapierSeenDelivery.timer = 0;
-
-	if (document.documentElement.classList.contains('rapier-engine-modal-locked') ||
-			_rapierSeenDelivery.moved) { _rapierSeenDrop(); return; }
-	const view = root.getBoundingClientRect();
-	const now = _rapierNow();
-	const whole = new Map();
-	let wait = 0;
-	for (const [element, cover] of _rapierSeenDelivery.watched) {
-		const unit = element.dataset.seenUnit;
-		if (!element.isConnected || !_rapierSeenPending(unit)) { cover.since = 0; continue; }
-		const shown = _rapierSeenShown(element, view);
-		const digest = _rapierSinceOpen.units.get(unit);
-
-		if (cover.digest !== digest || cover.height !== shown.height) {
-			cover.digest = digest;
-			cover.height = shown.height;
-			cover.held = [];
-			cover.since = 0;
-		}
-		if (shown.hi > shown.lo) {
-			const lo = Math.max(cover.lo, shown.lo);
-			const hi = Math.min(cover.hi, shown.hi);
-			if (cover.since && hi > lo) { cover.lo = lo; cover.hi = hi; }
-			else { cover.lo = shown.lo; cover.hi = shown.hi; cover.since = now; }
-			if (now - cover.since >= _RAPIER_SEEN_DWELL_MS) {
-				_rapierSeenHeld(cover, cover.lo, cover.hi);
-				cover.lo = shown.lo;
-				cover.hi = shown.hi;
-				cover.since = now;
-			}
-		} else {
-			cover.since = 0;
-		}
-		if (_rapierSeenWhole(cover.held, cover.height)) {
-			if (!whole.has(unit)) whole.set(unit, true);
-			continue;
-		}
-		whole.set(unit, false);
-		if (cover.since) {
-			const left = cover.since + _RAPIER_SEEN_DWELL_MS - now;
-			wait = wait ? Math.min(wait, left) : left;
-		}
-	}
-	for (const [unit, covered] of whole) if (covered) _rapierSeenDeliver(unit);
-	if (wait > 0) _rapierSeenDelivery.timer = setTimeout(_rapierSeenSweep, wait);
-}
-
-function _rapierSeenDeliver(unit) {
-	if (!_rapierSeenPending(unit)) return false;
-	rapier.review.moved.delete(unit);
-	rapier.review.shown.delete(unit);
-	rapier.review.shown.set(unit, { digest: _rapierSinceOpen.units.get(unit), at: _rapierNow() });
-	_rapierSeenBound(rapier.review.shown);
-	_rapierAgentBarRender();
-	globalThis.RapierAgentBrowser?.contextChanged('review');
-	return true;
-}
-
-function _rapierSeenObserve() {
-	const host = document.getElementById('editor-blocks');
-	if (!host) return;
-	if (_rapierSeenDelivery.observer && _rapierSeenDelivery.observer.root !== host) {
-		_rapierSeenDelivery.observer.disconnect();
-		_rapierSeenDelivery.observer = null;
-	}
-	if (!_rapierSeenDelivery.observer) {
-		_rapierSeenDelivery.observer = new IntersectionObserver(_rapierSeenSweep,
-			{ root: host, threshold: [0, 0.5] });
-	}
-	if (!_rapierSeenDelivery.hands) {
-
-		const acted = event => {
-			if (event.isTrusted !== true) return;
-			_rapierSeenDelivery.moved = false;
-			_rapierSeenSweep();
-		};
-		const options = { capture: true, passive: true };
-
-		const kinds = ['pointerdown', 'wheel', 'keydown', 'touchstart'];
-		for (const kind of kinds) window.addEventListener(kind, acted, options);
-		_rapierSeenDelivery.hands = () => {
-			for (const kind of kinds) window.removeEventListener(kind, acted, options);
-		};
-	}
-	_rapierSeenDelivery.observer.disconnect();
-
-	const previous = _rapierSeenDelivery.watched;
-	_rapierSeenDelivery.watched = new Map();
-	for (const element of host.querySelectorAll(':scope > [data-seen-unit]')) {
-		_rapierSeenDelivery.watched.set(element, previous.get(element) ||
-			{ digest: null, height: 0, held: [], lo: 0, hi: 0, since: 0 });
-		_rapierSeenDelivery.observer.observe(element);
-	}
-	_rapierSeenSweep();
-}
-
-function _rapierSeenRelease() {
-	if (_rapierSeenDelivery.observer) _rapierSeenDelivery.observer.disconnect();
-	if (_rapierSeenDelivery.hands) { _rapierSeenDelivery.hands(); _rapierSeenDelivery.hands = null; }
-	_rapierSeenDelivery.moved = false;
-	_rapierSeenDrop();
-	_rapierSeenDelivery.watched.clear();
 }
 
 const _rapierAgentBar = Object.seal({
@@ -44140,7 +43915,7 @@ function _rapierAgentBarRender() {
 	if (delta) {
 		const lens = _rapierSinceOpen.active;
 
-		const owed = _rapierSeenUndelivered();
+		const owed = _rapierSinceOpenCount();
 
 		delta.hidden = !_rapierSinceOpenAvailable() || !(lens || owed > 0);
 		delta.dataset.on = lens ? 'true' : 'false';

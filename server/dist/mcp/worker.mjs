@@ -1,11 +1,12 @@
 import {agentActorId} from '../kit/ledger/format.mjs';
-import { createKernel, createState, admissibleText, LIMITS } from '../agent/kernel.mjs';
+import { createKernel, createState, admissibleText, minimalSplice, transformSplices, LIMITS } from '../agent/kernel.mjs';
+import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, guideResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap } from '../skills/rapier-html/wrap.mjs';
-import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
+import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor } from '../agent/door-identity.mjs';
@@ -53,6 +54,7 @@ export function deployment(env) {
 const CREATE_BUDGET_PER_DEPLOYMENT = 5000, CREATE_BUDGET_WINDOW_MS = 60 * 60 * 1000;
 const CAPABILITY = /^rpr_[A-Za-z0-9_-]{43}$/;
 const RETURN_CAPABILITY = /^rpret_([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/;
+const EXPORT_CAPABILITY = /^rpexp_([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/;
 const MAX_RETURNS = 16;
 const RETURN_CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Rapier-Name' };
 const returnReply = (value, status = 200) => json(value, status, RETURN_CORS);
@@ -94,15 +96,29 @@ async function digest(value) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-const base64 = bytes => { let binary = ''; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000)); return btoa(binary); };
 // The finished file for document.export: the source as it stands, or the offline page (the built editor page, with the source carried inside).
 async function exportFile(env, { format, filename, docKind, text }) {
-  if (format === 'markdown') return { name: filename, mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
-  const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html'));
-  if (!response?.ok) return { reason: 'export_page_unavailable' };
-  return { name: filename.replace(/\.(md|markdown|txt)$/i, '') + '.rapier.html', mimeType: 'text/html', bytes: encoder.encode(wrap(await response.text(), text, filename)) };
+  let file;
+  if (format === 'markdown') file = { name: filename, mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
+  else {
+    try {
+      const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html'));
+      if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) return { reason: 'export_page_unavailable' };
+      const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE');
+      file = { name: filename.replace(/\.(md|markdown|txt)$/i, '') + '.rapier.html', mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename)) };
+    } catch (error) {
+      return error?.code === 'EXPORT_PAGE_TOO_LARGE' ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES } : { reason: 'export_page_unavailable' };
+    }
+  }
+  return file.bytes.byteLength > MAX_EXPORT_BYTES
+    ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES, byteLength: file.bytes.byteLength } : file;
 }
 const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function exportToken(address, grant, env) {
+  const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-export-v1:'), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(grant.id + ':' + grant.owner)));
+  return 'rpexp_' + address + '.' + base64url(mac);
+}
 function newCapability() {
   return 'rpr_' + base64url(crypto.getRandomValues(new Uint8Array(32))).slice(0, 43);
 }
@@ -120,8 +136,7 @@ const ROTATE = 'document.rotate_capability';
 
 // The JSON-RPC id is never creation authority. A client-secret createToken derives one capability; degenerate tokens are refused.
 const CREATE_TOKEN = /^[A-Za-z0-9_-]{22,128}$/;
-// A value a client generates to name something (createToken, operation_id) needs a spread of
-// characters: a counter, or a run of one character, is the value another client would choose too.
+// A createToken is a secret: a counter or one-character run is guessable.
 const fewDistinct = token => new Set(token).size < 8;
 function createTokenRefusal(token) {
   if (!CREATE_TOKEN.test(token)) return 'A createToken must be 22 to 128 url-safe characters (A-Z a-z 0-9 _ -) that you generated at random.';
@@ -170,7 +185,7 @@ function reviewChangesFingerprint(review) {
 }
 
 function viewChanged(before, after) {
-  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision || before.posture !== after.posture || before.readOnly !== after.readOnly || before.review?.id !== after.review?.id || before.review?.status !== after.review?.status || before.reviewedRevision !== after.reviewedRevision) return true;
+  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision || before.posture !== after.posture || before.readOnly !== after.readOnly || before.review?.id !== after.review?.id || before.review?.status !== after.review?.status) return true;
   // Per-change status moves without review.id/status changing: fingerprint the changes too, or a partial drop reads unchanged.
   if (reviewChangesFingerprint(before.review) !== reviewChangesFingerprint(after.review)) return true;
   const left = before.compare?.changes || [], right = after.compare?.changes || [];
@@ -238,7 +253,11 @@ const readBody = async request => JSON.parse(await readTextBody(request));
 
 function allowedOrigin(request, env) {
   const origin = request.headers.get('Origin');
-  const allowed = new Set([new URL(request.url).origin, ...(env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)]);
+  const url = new URL(request.url);
+  // Host is caller controlled. Browser origins for secondary deployments must be configured explicitly.
+  const allowed = new Set([RETURN_ORIGIN, ...(env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)]);
+  const loopback = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?$/i;
+  if (loopback.test(url.host) && loopback.test(request.headers.get('Host') || url.host)) allowed.add(url.origin);
   return validateOrigin(origin, allowed);
 }
 
@@ -256,12 +275,14 @@ async function skillsBundle(request, env) {
       const admitted = new Set();
       for (const skill of bundle.skills) {
         const prefix = 'skill://rapier/' + skill.frontmatter?.name + '/';
-        if (!/^[a-z0-9-]+$/.test(skill.frontmatter?.name || '') || skill.uri !== prefix + 'SKILL.md' ||
+        if (typeof skill.frontmatter?.name !== 'string' || !/^[a-z0-9-]+$/.test(skill.frontmatter.name) ||
+            typeof skill.frontmatter.description !== 'string' || !skill.frontmatter.description.trim() || skill.uri !== prefix + 'SKILL.md' ||
             !Array.isArray(skill.resources) || !skill.resources.some(row => row.uri === skill.uri)) throw failure('SKILLS_NOT_BUILT', 'The skill manifest is incomplete.');
         for (const entry of skill.resources) {
           const content = Object.hasOwn(bundle.contents, entry.uri) ? bundle.contents[entry.uri] : null;
           if (!entry.uri.startsWith(prefix) || admitted.has(entry.uri) || content?.uri !== entry.uri || typeof content.text !== 'string' ||
-              entry.digest !== 'sha256:' + await digest(content.text)) throw failure('SKILLS_NOT_BUILT', 'The skill resource failed its package digest.');
+              typeof content.mimeType !== 'string' || !content.mimeType || !Number.isSafeInteger(entry.size) || entry.size !== contentBytes(content.text) ||
+              entry.digest !== 'sha256:' + await digest(content.text)) throw failure('SKILLS_NOT_BUILT', 'The skill resource failed its package size or digest.');
           admitted.add(entry.uri);
         }
       }
@@ -354,12 +375,10 @@ async function takeCreateBudget(env, { takeId }) {
 async function callTool(name, args, env, request, hostAgent = null) {
   const descriptor = TOOL_BY_NAME.get(name);
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
-  try { validateInput(descriptor.inputSchema, args); }
+  const rawArgs = args;
+  try { args = validateInput(descriptor.inputSchema, args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
   catch (error) { if (error.code === 'invalid_arguments') error[PUBLIC_FAILURE] = true; throw error; }
   if (name === 'rapier.guide') return envelope(guideResult());
-  // The operation's own name: the schema has bounded its length and alphabet; what it cannot say
-  // is that a padded counter is still a counter.
-  if (typeof args.operation_id === 'string' && fewDistinct(args.operation_id)) return toolError(failure('INVALID_OPERATION_ID', 'Generate operation_id at random for each new call (a UUID works); this one has too few distinct characters to be unique.'));
   for (const field of ['text', 'query']) if (typeof args[field] === 'string' && contentBytes(args[field]) > MAX_TEXT_BYTES) return toolError(failure('TEXT_TOO_LARGE', `${field} exceeds the UTF-8 text limit.`, { limitBytes: MAX_TEXT_BYTES }));
   const verdict = deployment(env);
   if (!verdict.documents) return toolError(failure('STORAGE_UNAVAILABLE', 'The document storage binding is unavailable.'));
@@ -386,9 +405,10 @@ async function callTool(name, args, env, request, hostAgent = null) {
   }
   const document = create ? minted : args.document;
   const capabilityHash = await digest(document);
-  // operation_id leaves the arguments here, like the capability: it names the call, it is not part of
-  // what the call asks, so the kernel digests the operation's own input and derives its key from the name.
-  const { document: ignored, editorKey: ignoredKey, createToken: ignoredToken, operation_id: operationName, ...input } = args;
+  // Credentials stay outside the workspace; operation_id names the call. Preserve raw operational
+  // arguments so changed ignored fields or clipped tails cannot replay. Admission above uses declared fields.
+  const { document: ignored, editorKey: ignoredKey, createToken: ignoredToken, operation_id: operationName, ...input } =
+    name === 'rapier.open' || EDITOR_ONLY_TOOLS.has(name) ? args : rawArgs;
   const file = name === 'rapier.open' ? input.file : undefined;
   if (file) { delete input.file; Object.assign(input, {text: '', filename: file.name}); }
   // Rotation mints the successor here (the workspace never sees a capability, only digests) and
@@ -397,14 +417,15 @@ async function callTool(name, args, env, request, hostAgent = null) {
   const documentAddress = await workspaceAddress(document);
   // Only pending observations follow client disconnects. Once a durable operation
   // starts, its receipt must finish even if the caller has stopped listening.
-  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(name === 'document.wait_for_user' || name === 'document.inspect_visual' ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: name, args: input, create, capabilityHash, ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
+  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(name === 'document.wait_for_user' || name === 'document.inspect_visual' ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: name, args: input, create, capabilityHash, ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(name === 'document.export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
   if (!response.ok) {
     const identity = ['operation_id', 'commitId', 'decisionId', 'createToken'].find(key => args[key] !== undefined);
+    const retryable = Boolean(identity) || !create && (EDITOR_ONLY_TOOLS.has(name) || descriptor.annotations.readOnlyHint);
     const recovery = identity ? `Retry unchanged arguments with the same ${identity}.`
       : create ? 'Creation may have succeeded; without createToken a retry creates another workspace.'
-      : 'Retry with unchanged arguments.';
+      : retryable ? 'Retry with unchanged arguments.' : 'This call may have succeeded; read current state before another operation.';
     return toolError(failure('WORKSPACE_UNACKNOWLEDGED', 'The workspace did not acknowledge this operation. ' + recovery,
-      {retryable: Boolean(identity) || !create, ...(identity ? {retryIdentity: identity} : {})}));
+      {retryable, ...(identity ? {retryIdentity: identity} : {})}));
   }
   const result = await response.json();
   if (result.isError) return result;
@@ -419,7 +440,10 @@ async function callTool(name, args, env, request, hostAgent = null) {
 
 // Mcp-Name and Mcp-Param-* header values may arrive in the base64 sentinel form
 // (`=?base64?...?=`, MCP 2026-07-28 Streamable HTTP "Value Encoding"); decode before comparing.
+// RFC 9110 section 5.5 excludes raw field SP/HTAB. Decoded metadata whitespace is data.
+const headerField = value => value === null ? null : value.replace(/^[ \t]+|[ \t]+$/g, '');
 function headerValue(value) {
+  value = headerField(value);
   if (value === null) return null;
   const sentinel = /^=\?base64\?([A-Za-z0-9+/=]*)\?=$/.exec(value);
   if (!sentinel) return value;
@@ -449,6 +473,18 @@ export async function handleMcp(request, env) {
 
 async function handleRequest(request, env) {
   const url = new URL(request.url);
+  if (url.pathname.startsWith('/export/')) {
+    const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'};
+    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405, headers: {...headers, Allow: 'GET, HEAD'}});
+    const token = url.pathname.slice('/export/'.length), match = EXPORT_CAPABILITY.exec(token);
+    if (!match || url.search || url.hash) return new Response(null, {status: 404, headers});
+    if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return new Response(null, {status: 503, headers});
+    try {
+      return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(new Request('https://rapier.internal/export', {
+        method: request.method, headers: {'X-Rapier-Export-Hash': await digest(token)},
+      }));
+    } catch { return new Response(null, {status: 503, headers}); }
+  }
   if (url.pathname.startsWith('/return/')) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...RETURN_CORS, 'Cache-Control': 'no-store' } });
     if (request.method !== 'POST') return returnRefused('Use POST to send this document back.', 405);
@@ -486,18 +522,19 @@ async function handleRequest(request, env) {
   if (!plain(message) || Object.keys(message).some(key => !['jsonrpc', 'id', 'method', 'params'].includes(key)) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || (message.params !== undefined && !plain(message.params)) || (Object.hasOwn(message, 'id') && !(typeof message.id === 'string' || Number.isSafeInteger(message.id)))) return rpcError(null, -32600, 'Expected one JSON-RPC 2.0 request or notification.', 400);
   const id = message.id;
   const params = message.params || {};
-  if (params._meta !== undefined && !plain(params._meta)) return rpcError(id ?? null, -32602, 'params._meta: expected an object.');
+  const header = headerField(request.headers.get('MCP-Protocol-Version'));
+  if (params._meta !== undefined && !plain(params._meta)) return rpcError(id ?? null, -32602, 'params._meta: expected an object.', header === MODERN_PROTOCOL_VERSION ? 400 : 200);
   const meta = params._meta || {};
-  const header = request.headers.get('MCP-Protocol-Version');
-  // Era: a request carrying the modern per-request version is served statelessly by this revision;
-  // `initialize`, or a request without it, is the legacy handshake era.
-  const modern = typeof meta[META_VERSION] === 'string';
+  // Either modern version declaration selects per-request admission, including malformed metadata.
+  const modern = header === MODERN_PROTOCOL_VERSION || Object.hasOwn(meta, META_VERSION);
   let appsClient;
   if (modern) {
     const requested = meta[META_VERSION];
+    if (typeof requested !== 'string') return rpcError(id ?? null, -32602, `${META_VERSION} must be a string in every request's _meta.`, 400);
+    if (!plain(meta[META_CLIENT])) return rpcError(id ?? null, -32602, `${META_CLIENT} must be an object in every request's _meta.`, 400);
     if (header !== requested) return rpcError(id ?? null, HEADER_MISMATCH, `Header mismatch: MCP-Protocol-Version header value '${header}' does not match body value '${requested}'.`, 400);
     if (requested !== MODERN_PROTOCOL_VERSION) return rpcError(id ?? null, UNSUPPORTED_VERSION, 'Unsupported protocol version', 400, { supported: PROTOCOL_VERSIONS, requested });
-    const method = request.headers.get('Mcp-Method');
+    const method = headerField(request.headers.get('Mcp-Method'));
     if (method !== message.method) return rpcError(id ?? null, HEADER_MISMATCH, method === null ? 'Header mismatch: Mcp-Method header is missing.' : `Header mismatch: Mcp-Method header value '${method}' does not match body value '${message.method}'.`, 400);
     const named = message.method === 'tools/call' ? params.name : message.method === 'resources/read' ? params.uri : message.method === 'prompts/get' ? params.name : undefined;
     if (named !== undefined) {
@@ -505,8 +542,6 @@ async function handleRequest(request, env) {
       if (name !== named) return rpcError(id ?? null, HEADER_MISMATCH, name === null ? 'Header mismatch: Mcp-Name header is missing or malformed.' : `Header mismatch: Mcp-Name header value '${name}' does not match body value '${named}'.`, 400);
     }
     if (!Object.hasOwn(message, 'id')) return new Response(null, { status: 202, headers: { 'Cache-Control': 'no-store' } });
-    // A modern request without a well-formed capabilities record is malformed.
-    if (!plain(meta[META_CLIENT])) return rpcError(id ?? null, -32600, `${META_CLIENT} must be an object in every request's _meta.`, 400);
     const client = meta['io.modelcontextprotocol/clientInfo'];
     if (client !== undefined && (!plain(client) || typeof client.name !== 'string' || typeof client.version !== 'string'))
       return rpcError(id, -32602, 'io.modelcontextprotocol/clientInfo: expected name and version strings.');
@@ -524,7 +559,7 @@ async function handleRequest(request, env) {
   // instead of appearing to honor them (especially write retries carrying requestState).
   const fields = {initialize: ['protocolVersion', 'capabilities', 'clientInfo'], 'server/discover': [],
     ping: [], 'tools/list': ['cursor'], 'tools/call': ['name', 'arguments'],
-    'resources/list': ['cursor'], 'resources/read': ['uri'], 'skills/list': ['cursor'], 'skills/get': ['uri']};
+    'resources/list': ['cursor'], 'resources/templates/list': ['cursor'], 'resources/read': ['uri'], 'skills/list': ['cursor'], 'skills/get': ['uri']};
   const methodFields = Object.hasOwn(fields, message.method) ? fields[message.method] : null;
   if (methodFields) for (const key of Object.keys(params)) {
     if (key !== '_meta' && !methodFields.includes(key)) return rpcError(id, -32602, 'params: unsupported field ' + key, 200, {path: 'params.' + key});
@@ -565,18 +600,23 @@ async function handleRequest(request, env) {
       case 'resources/list': {
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its resources in one page.');
         // The skills' own files are resources too (resources/read serves them), so a host that knows no skills/list still
-        // finds them. A snapshot that cannot load leaves the editor listed alone.
-        const skills = await skillsBundle(request, env).then(bundle => bundle.skills.flatMap(skill => skill.resources.map(entry => ({
-          uri: entry.uri, name: entry.uri.slice('skill://rapier/'.length), mimeType: bundle.contents[entry.uri].mimeType || 'text/markdown',
-          ...(entry.uri === skill.uri ? { description: skill.frontmatter.description } : {}) }))), () => []);
+        // finds them. A damaged package is a failed listing, never a cacheable partial catalog.
+        const bundle = await skillsBundle(request, env);
+        const skills = bundle.skills.flatMap(skill => skill.resources.map(entry => ({
+          uri: entry.uri, name: entry.uri === skill.uri ? skill.frontmatter.name : entry.uri.slice('skill://rapier/'.length), mimeType: bundle.contents[entry.uri].mimeType,
+          ...(entry.uri === skill.uri ? { description: skill.frontmatter.description } : {}) })));
         result = cacheable({ resources: [{ uri: UI_RESOURCE, name: 'rapier-editor', title: 'Rapier document workspace', mimeType: UI_MIME, description: 'The full Rapier editor, connected to the canonical document through the MCP Apps bridge.' }, ...skills] }, 3600000, 'public'); break;
       }
+      case 'resources/templates/list':
+        if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'The empty resource template catalog has no continuation.');
+        result = cacheable({resourceTemplates: []}, 3600000, 'public'); break;
       case 'resources/read': result = cacheable(await resource(request, env, params.uri), 0, 'private'); break;
       default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
   } catch (error) {
     if (error?.[PUBLIC_FAILURE] && (error.code === 'invalid_arguments' || error.code === 'UNKNOWN_TOOL')) return rpcError(id, -32602, error.code === 'invalid_arguments' ? error.message + '. Every argument was checked; correct the named fields against the tool\'s inputSchema before resending.' : error.message, 200, error.path ? { path: error.path } : undefined);
-    if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return rpcError(id, modern ? -32602 : -32002, error.message);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return rpcError(id, modern ? -32602 : -32002, error.message, 200,
+      typeof params.uri === 'string' ? {uri: params.uri} : undefined);
     if (error?.[PUBLIC_FAILURE] && ['UI_NOT_BUILT', 'INVALID_UI_CONFIGURATION', 'UI_RESOURCE_TOO_LARGE', 'SKILLS_NOT_BUILT'].includes(error.code)) return rpcError(id, -32603, error.message, 200, error.details);
     if (message.method === 'tools/call') result = toolError(failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry an editor commit only with the same commitId.'));
     else return rpcError(id, -32603, 'The server could not complete this request.');
@@ -584,7 +624,7 @@ async function handleRequest(request, env) {
   // Some clients expose only content to the model. Mirror the final public result, after the
   // document capability is attached. Never serialize _meta (editor snapshots) or app-only results.
   if (message.method === 'tools/call' && !EDITOR_ONLY_TOOLS.has(params.name) && plain(result.structuredContent)) {
-    result = { ...result, content: [{ type: 'text', text: JSON.stringify(result.structuredContent) }, ...(result.content || []).filter(item => item.type === 'image' || item.type === 'resource')] };
+    result = { ...result, content: [{ type: 'text', text: JSON.stringify(result.structuredContent) }, ...(result.content || []).filter(item => item.type === 'image' || item.type === 'resource' || item.type === 'resource_link')] };
   }
   if (modern) result = { ...result, resultType: 'complete', _meta: { ...(plain(result._meta) ? result._meta : {}), [META_SERVER]: serverInfo(env) } };
   return json({ jsonrpc: '2.0', id, result }, 200, headers);
@@ -696,9 +736,13 @@ export class RapierDocument {
     return this.cachedJournal;
   }
 
-  async persist(head, state, journal, contextOnly = false) {
+  async persist(head, state, journal, contextOnly = false, exported = null) {
     let text, human, journalText;
+    const expired = (head.exports || []).filter(row => row.expiresAt <= Date.now() || row.owner !== head.capabilityHash);
+    if (expired.length) head.exports = head.exports.filter(row => !expired.includes(row));
+    head.exportBytes = (head.exports || []).reduce((sum, row) => sum + row.bytes, 0);
     if (state) {
+      if (state.commitResults) state.commitResults = state.commitResults.filter(row => head.receipts.some(receipt => receipt.id === row.id));
       const { humanContexts, contextSequences, clock, ...canonical } = state;
       human = JSON.stringify({ humanContexts, contextSequences, clock });
       head.contextBytes = contentBytes(human);
@@ -711,16 +755,22 @@ export class RapierDocument {
         journalText = JSON.stringify(journal);
         head.journalBytes = contentBytes(journalText);
       }
-      if (!Number.isSafeInteger(head.stateBytes) || head.stateBytes + head.contextBytes + (head.journalBytes || 0) > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Export the document, or open the alternative as a separate workspace.', { limitBytes: this.maxStateBytes });
+      if (!Number.isSafeInteger(head.stateBytes) || head.stateBytes + head.contextBytes + (head.journalBytes || 0) + head.exportBytes + contentBytes(JSON.stringify(head.exports || [])) > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Open the alternative as a separate workspace or let temporary exports expire.', { limitBytes: this.maxStateBytes });
     }
     const expiresAt = Date.now() + this.retention;
     const renew = !(head.expiresAt > expiresAt - 60000);
-    if (!state && !renew) return;
+    if (!state && !renew && !expired.length && !exported) return;
     // Alarm after the transaction (from the committed head); a crash before setAlarm recovers from head.expiresAt.
     if (renew) head.expiresAt = expiresAt;
     const previousParts = head.parts || 0;
     if (text !== undefined) head.parts = Math.ceil(text.length / CHUNK_CHARS);
+    // SQLite limits a key and value together to 2 MB; leave room for the key and serialization.
+    if (contentBytes(JSON.stringify(head)) > 2_000_000 - 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The workspace metadata is full. Let temporary exports expire before creating another.', {limitBytes: this.maxStateBytes});
     this.ctx.storage.transactionSync(() => {
+      for (const row of expired) for (let index = 0; index < row.parts; index++) this.ctx.storage.kv.delete('export:' + row.id + ':' + index);
+      if (exported) for (let index = 0; index < exported.grant.parts; index++) {
+        this.ctx.storage.kv.put('export:' + exported.grant.id + ':' + index, exported.bytes.slice(index * CHUNK_CHARS, (index + 1) * CHUNK_CHARS));
+      }
       if (text !== undefined) {
         for (let index = 0; index < head.parts; index++) {
           const key = 'state:' + index, chunk = text.slice(index * CHUNK_CHARS, (index + 1) * CHUNK_CHARS);
@@ -746,11 +796,14 @@ export class RapierDocument {
   async fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === '/return' && request.method === 'POST') return this.exclusive(() => this.acceptReturn(request));
+    if (path === '/export' && ['GET', 'HEAD'].includes(request.method)) return this.exclusive(() => this.readExport(request));
     try {
       if (request.method !== 'POST' || path !== '/operation') return new Response(null, { status: 404 });
       const input = await request.json();
-      if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || typeof input.operation !== 'string' || !plain(input.args) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && typeof input.operationId !== 'string') || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress))) return new Response(null, { status: 400 });
+      if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || typeof input.operation !== 'string' || !plain(input.args) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
+      // Mint once per incoming call, before any observation continuation can re-enter operate().
+      input.operationId ??= crypto.randomUUID();
       if (input.operation === 'document.wait_for_user') return await this.waitForReturn(input, request.signal);
       if (input.operation === 'document.inspect_visual') return await this.inspectVisual(input, request.signal);
       return await this.exclusive(async () => json(await this.operate(input)));
@@ -761,6 +814,28 @@ export class RapierDocument {
       const inputVerdict = error instanceof TypeError && ['filename_invalid', 'document_kind_invalid'].includes(error.message);
       return json(toolError(inputVerdict ? failure('INVALID_DOCUMENT_INPUT', error.message) : error));
     }
+  }
+
+  async readExport(request) {
+    const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox', 'Referrer-Policy': 'no-referrer'};
+    try {
+      const head = this.ctx.storage.kv.get('head');
+      if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 410, headers});
+      const row = head.exports?.find(row => row.hash === request.headers.get('X-Rapier-Export-Hash'));
+      if (!row) return new Response(null, {status: 404, headers});
+      if (row.expiresAt <= Date.now() || row.owner !== head.capabilityHash) return new Response(null, {status: 410, headers});
+      const bytes = new Uint8Array(row.bytes);
+      for (let index = 0; index < row.parts; index++) {
+        const part = this.ctx.storage.kv.get('export:' + row.id + ':' + index);
+        if (!(part instanceof Uint8Array) || part.length !== Math.min(CHUNK_CHARS, row.bytes - index * CHUNK_CHARS)) throw new Error('export incomplete');
+        bytes.set(part, index * CHUNK_CHARS);
+      }
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+      if (hash !== row.sha256) throw new Error('export changed');
+      const name = encodeURIComponent(row.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
+      return new Response(request.method === 'HEAD' ? null : bytes, {headers: {...headers, 'Content-Type': row.mimeType + '; charset=utf-8',
+        'Content-Length': String(row.bytes), 'Content-Disposition': "attachment; filename*=UTF-8''" + name}});
+    } catch { return new Response(null, {status: 503, headers}); }
   }
 
   async acceptReturn(request) {
@@ -1010,7 +1085,12 @@ export class RapierDocument {
     };
     // Seed from the persisted journal, or a DO retry finds an empty one and acts twice.
     let exported = null;
-    const kernel = createKernel({ state, host: { proposalPage: UI_RESOURCE, exportFile: async request => exported = await exportFile(this.env, request), markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, paint: paintAgentStrokes, paintSheet: agentPaintSheetHolds,
+    const kernel = createKernel({ state, host: { proposalPage: UI_RESOURCE, exportFile: async request => {
+      if (!editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
+      const file = await exportFile(this.env, request);
+      exported = file.bytes && file.bytes.byteLength <= MAX_EXPORT_BYTES ? {...file, id: mintId('export_')} : file;
+      return exported;
+    }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, paint: paintAgentStrokes, paintSheet: agentPaintSheetHolds,
       // Names are disclosed by wait/read; repeating 16 maximum names can overflow context's result bound.
       returns: () => receivedReturns(head).map(row => { const { name, ...listed } = returnMetadata(row); return listed; }),
       readReturn: input => this.readReturn(head, input),
@@ -1039,6 +1119,7 @@ export class RapierDocument {
     const refresh = (capture = true) => {
       collaboration = kernel.collaboration();
       const next = capture ? kernel.snapshot() : state;
+      if (state.filename !== next.filename || state.docKind !== next.docKind) head.metadataRevision = next.revision;
       if (head.viewIntent?.status === 'pending') {
         const view = head.viewIntent;
         if (view.revision !== next.revision || (view.kind === 'compare' && view.compareId !== next.compare?.id)) head.viewIntent = { ...view, status: 'invalidated', reason: 'document_changed' };
@@ -1126,29 +1207,70 @@ export class RapierDocument {
       const invalid = admissibleText(args.text);
       if (invalid) throw failure('INVALID_DOCUMENT_INPUT', invalid);
       if (!args.commitId) return toolError(failure('INVALID_COMMIT_ID', 'commitId must be a nonempty identifier for this exact draft.'));
-      const hash = await digest(JSON.stringify({ expectedRevision: args.expectedRevision, text: args.text, filename: args.filename ?? null, docKind: args.docKind ?? null }));
+      const hash = await digest(JSON.stringify({ expectedRevision: args.expectedRevision, text: args.text, splices: args.splices ?? null, filename: args.filename ?? null, docKind: args.docKind ?? null }));
       const receipt = head.receipts.find(entry => entry.id === args.commitId);
       if (receipt) {
         if (receipt.hash !== hash) return toolError(failure('COMMIT_ID_REUSED', 'This commitId already identifies different content. Keep an identifier stable only for an identical retry.'), head, { snapshot: current() });
         await this.persist(head);
-        const accepted = head.version === receipt.version ? current() : { documentId: head.documentId, revision: receipt.revision, text: args.text, filename: receipt.filename, docKind: receipt.docKind };
-        const acceptedHead = { ...head, revision: receipt.revision, version: receipt.version, filename: receipt.filename, docKind: receipt.docKind, chars: args.text.length };
+        const draftEdits = state.commitResults?.find(row => row.id === receipt.id)?.edits || [];
+        const text = replay(args.text, draftEdits);
+        const accepted = {...(head.version === receipt.version ? current() : { documentId: head.documentId, revision: receipt.revision, text, filename: receipt.filename, docKind: receipt.docKind }), draftEdits};
+        const acceptedHead = { ...head, revision: receipt.revision, version: receipt.version, filename: receipt.filename, docKind: receipt.docKind, chars: text.length };
         return envelope({ outcome: 'committed', replayed: true, commitId: receipt.id, acceptedRevision: receipt.revision, acceptedVersion: receipt.version, currentRevision: head.revision, currentVersion: head.version }, acceptedHead, { snapshot: accepted, ...(head.version !== receipt.version ? { currentSnapshot: current() } : {}) });
       }
-      if (args.expectedRevision !== state.revision) return toolError(failure('REVISION_CONFLICT', 'The document changed before this draft arrived. Your draft was not applied; preserve it and inspect the current document.', { expectedRevision: args.expectedRevision }), head, { snapshot: current() });
+      if (state.journal.some(row => row.actor === 'human' && row.requestId === args.commitId))
+        return toolError(failure('COMMIT_RECEIPT_EXPIRED', 'This draft was already committed, but its exact receipt is no longer retained.'), head, { snapshot: current() });
       if (state.readOnly) return toolError(failure('DOCUMENT_READ_ONLY', 'The current workspace policy is read-only. Your draft was not applied.'), head, { snapshot: current() });
       const filename = args.filename ?? state.filename, docKind = args.docKind ?? state.docKind;
-      const changed = args.text !== state.text || filename !== state.filename || docKind !== state.docKind;
-      kernel.reconcile({ documentId: state.documentId, revision: state.revision + (changed ? 1 : 0), text: args.text, filename, docKind }, human(args.commitId));
+      if ((filename !== state.filename || docKind !== state.docKind) && (head.metadataRevision || 0) > args.expectedRevision)
+        return toolError(failure('DOCUMENT_METADATA_CHANGED', 'The document name or kind changed while this draft was being edited.'), head, { snapshot: current() });
+      const who = human(args.commitId), client = row => row.actor + ':' + row.principal + ':' + row.requestId;
+      let original = state.text, revision = state.revision, splices, text, draftEdits;
+      const log = [];
+      try {
+        // The exact journal owns the old source. Missing history or replacement cannot
+        // authorize guessing a base; concurrent source edits use the existing merge core.
+        for (let index = state.journal.length - 1; revision > args.expectedRevision && index >= 0; index--) {
+          const row = state.journal[index];
+          if (row.revision !== revision || row.baseRevision !== revision - 1 || row.operation === 'document.open_text') throw new Error('draft_base_unavailable');
+          const before = transformSplices(original, row.splices, true);
+          if (before === null) throw new Error('draft_base_unavailable');
+          log.unshift(...row.splices.map(splice => ({client: client(row),
+            splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})));
+          original = before; revision = row.baseRevision;
+        }
+        if (revision !== args.expectedRevision) throw new Error('draft_base_unavailable');
+        let authored = args.splices;
+        try { if (authored === undefined) authored = sourceEdits(original, args.text); }
+        catch (error) {
+          if (log.length || error.message !== 'source_diff_limit') throw error;
+          authored = [minimalSplice(original, args.text)];
+        }
+        if (transformSplices(original, authored) !== args.text)
+          return toolError(failure('INVALID_DOCUMENT_EDITS', 'The local journal does not produce this exact draft from its acknowledged source.'), head, {snapshot: current()});
+        ({text, splices, remote: draftEdits} = mergeSource(original, authored, client(who), log));
+      } catch (_) {
+        return toolError(failure('DRAFT_BASE_UNAVAILABLE', 'The retained history cannot rebase this draft. Its source remains in the editor.'), head, { snapshot: current() });
+      }
+      const mergedInvalid = admissibleText(text);
+      if (mergedInvalid) return toolError(failure('INVALID_DOCUMENT_INPUT', mergedInvalid), head, { snapshot: current() });
+      const changed = text !== state.text || filename !== state.filename || docKind !== state.docKind;
+      const nextRevision = state.revision + (changed ? 1 : 0);
+      const entry = {id: mintId('change_'), ...who, baseRevision: state.revision, revision: nextRevision,
+        operation: 'document.human_edit', splices};
+      kernel.reconcile({ documentId: state.documentId, revision: nextRevision, text, filename, docKind,
+        ...(changed ? {journal: [entry]} : {}) }, who);
       refresh();
       head.receipts = [...head.receipts, { id: args.commitId, hash, revision: state.revision, version: head.version, filename: state.filename, docKind: state.docKind }].slice(-MAX_RECEIPTS);
+      // The accepted result can differ from the submitted draft. Keep that difference
+      // with the chunked, size-bounded source, never in the single-key receipt index.
+      if (draftEdits.length) state.commitResults = [...(state.commitResults || []), {id: args.commitId, edits: draftEdits}];
       await this.persist(head, state, kernel.invocationJournal());
-      return envelope({ outcome: 'committed', commitId: args.commitId, acceptedRevision: state.revision, acceptedVersion: head.version }, head, { snapshot: current() });
+      return envelope({ outcome: 'committed', commitId: args.commitId, acceptedRevision: state.revision, acceptedVersion: head.version }, head, { snapshot: {...current(), draftEdits} });
     }
     if (!getTool(operation)) return toolError(failure('UNKNOWN_TOOL', 'Unknown operation.'));
     const documentId = head.documentId;
-    // WORKER_PRESENCE: unknown is not absent. An unnamed call is refused. The surface-fact continuation derives the same key on purpose (continues set).
-    if (typeof input.operationId !== 'string' || !input.operationId) return toolError(failure('INVALID_OPERATION_ID', 'Every document tool call names its operation with operation_id.'), head);
+    // WORKER_PRESENCE: unknown is not absent. Surface-fact continuations keep the incoming call's key.
     const actor = ['document.comment', 'document.read_context'].includes(operation) && input.humanTool === true ? 'human' : 'agent';
     // The verified editor mode is part of the invocation identity. The same
     // operation_id cannot replay an agent's handles or review as a human call.
@@ -1162,16 +1284,32 @@ export class RapierDocument {
     }
     refresh();
     if (state.documentId !== documentId) return toolError(failure('DOCUMENT_IDENTITY_CHANGED', 'This operation cannot replace the remote workspace identity.'));
-    await this.persist(head, state, kernel.invocationJournal());
-    if (operation === 'document.save' && value.saved) Object.assign(value, { verified: true, destination: 'workspace', durable: true });
-    const result = envelope(value, head, {}, { modelFacing: true });
-    if (operation === 'document.inspect_visual' && value.outcome === 'ok' && visual?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: visual.fact.image.data});
+    let download = null, publication = null;
     if (operation === 'document.export' && value.outcome === 'ok') {
-      // A retry replays the recorded receipt without calling the host: the file is built again from the source as it stands.
-      const file = exported || await exportFile(this.env, { format: args.format, filename: state.filename, docKind: state.docKind, text: state.text });
-      if (!file.bytes) return envelope({ outcome: 'refused', reason: file.reason }, head, {}, { modelFacing: true });
-      result.content.push({ type: 'resource', resource: { uri: 'file:///' + encodeURIComponent(file.name), mimeType: file.mimeType, blob: base64(file.bytes) } });
+      let grant = head.exports?.find(row => row.id === value.exportId);
+      if (exported?.id) {
+        grant = {id: exported.id, owner: capabilityHash, name: exported.name, mimeType: exported.mimeType,
+          bytes: exported.bytes.byteLength, parts: Math.ceil(exported.bytes.byteLength / CHUNK_CHARS), expiresAt: Date.now() + DAY,
+          sha256: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', exported.bytes)), byte => byte.toString(16).padStart(2, '0')).join('')};
+        grant.hash = await digest(await exportToken(input.exportAddress, grant, this.env));
+        head.exports = [...head.exports || [], grant];
+        publication = {grant, bytes: exported.bytes};
+      }
+      if (!grant || grant.owner !== capabilityHash || grant.expiresAt <= Date.now()) value = {outcome: 'refused', reason: 'export_expired'};
+      else {
+        const token = editorSecret(this.env) ? await exportToken(input.exportAddress, grant, this.env) : null;
+        if (!token || await digest(token) !== grant.hash) value = {outcome: 'refused', reason: 'export_unavailable'};
+        else {
+          download = {type: 'resource_link', uri: input.exportOrigin + '/export/' + token, name: grant.name, mimeType: grant.mimeType, size: grant.bytes};
+          value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, exportExpiresAt: new Date(grant.expiresAt).toISOString()};
+        }
+      }
     }
+    await this.persist(head, state, kernel.invocationJournal(), false, publication);
+    if (operation === 'document.save' && value.saved) Object.assign(value, { verified: true, destination: 'workspace', durable: true });
+    const result = envelope(value, download ? {...head, filename: download.name} : head, {}, { modelFacing: true });
+    if (operation === 'document.inspect_visual' && value.outcome === 'ok' && visual?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: visual.fact.image.data});
+    if (download) result.content.push(download);
     return result;
   }
 

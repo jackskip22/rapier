@@ -16,6 +16,21 @@ export function transportInterval(start, end, splices) {
   }
   return {start: a, end: b};
 }
+// Follow the current extent of a touched range for disclosure or the person's focus.
+// Unlike transportInterval, this does not prove unchanged source and never grants edit authority.
+export function transportTouchedInterval(start, end, splices) {
+  const unchanged = transportInterval(start, end, splices);
+  if (unchanged) return unchanged;
+  let range = {start, end};
+  for (const row of splices) {
+    // A split replacement can insert at a boundary before another splice touches the range.
+    const boundaryInsertion = !row.removed.length && (row.pos === range.start || row.pos === range.end);
+    const exact = boundaryInsertion ? null : transportInterval(range.start, range.end, [row]);
+    range = exact || {start: Math.min(range.start, row.pos),
+      end: Math.max(row.pos + row.inserted.length, range.end + row.inserted.length - row.removed.length)};
+  }
+  return range;
+}
 function over(row, other) {
   // Equal-position insertions have no ordering evidence. Review, never a lexical winner.
   if (!row.removed.length && !other.removed.length && row.pos === other.pos) return null;

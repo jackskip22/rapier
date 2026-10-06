@@ -11,9 +11,9 @@
   let nextId = 0, origin = null, initialized = false, closed = false, closing = false;
   let host, capabilities = {}, context = {}, token = '', base = null, incoming = null;
   let version = 0, incomingVersion = 0, presentationBlocked = false;
-  let dirty = false, flight = null, decisionFlight = null, conflict = false, switching = false;
+  let dirty = false, flight = null, continuation = null, decisionFlight = null, switching = false;
   let editEpoch = 0, lastEdit = 0, composing = false, contextEditing = false, contextEditingAt = 0;
-  let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton, dialog;
+  let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton;
   let unsubscribe, observer, compareObserver, compareButtons = [], locked = [], status = 'opening';
   let importRunning = false, uploadRunning = false, homeDialog, fileDialog, homeRequested = false;
   let boundFile = null, fileOpenEpoch = 0, pendingFileResult = null;
@@ -109,7 +109,7 @@
     }[fileIssue] || '';
     const text = {
       opening: 'Opening document', reconnecting: 'Reconnecting', offline: 'Connection interrupted',
-      conflict: 'Changes need attention', unavailable: 'Document unavailable', expired: 'This editor session has expired. Reload to keep editing',
+      unavailable: 'Document unavailable', expired: 'This editor session has expired. Reload to keep editing',
       unsupported: 'This host cannot connect to Rapier', detached: 'This document is open elsewhere',
       blocked: 'This update needs attention',
       review_waiting: 'A change is ready for review',
@@ -118,8 +118,8 @@
     notice.hidden = !text;
     notice.firstElementChild.textContent = text || '';
     notice.children[1].hidden = !['reconnecting', 'offline', 'opening', 'blocked'].includes(value);
-    notice.children[2].hidden = !['conflict', 'review_waiting'].includes(value) && !fileIssue;
-    notice.children[3].hidden = !base || !(['offline', 'conflict', 'unavailable', 'unsupported', 'detached', 'blocked', 'expired'].includes(value) || strandedDrafts.length > 0 || fileIssue);
+    notice.children[2].hidden = value !== 'review_waiting' && !fileIssue;
+    notice.children[3].hidden = !base || !(['offline', 'unavailable', 'unsupported', 'detached', 'blocked', 'expired'].includes(value) || strandedDrafts.length > 0 || fileIssue);
     document.documentElement.dataset.rapierSync = value;
     updateCompareControls();
   }
@@ -187,7 +187,7 @@
     const label = document.createElement('span');
     label.setAttribute('role', 'status');
     label.setAttribute('aria-live', 'polite');
-    notice.append(label, button('Retry', retry), button('Review', () => activeFile()?.issue ? reviewHostFile() : status === 'review_waiting' ? resumeReview() : review()), button('Copy draft', downloadDraft));
+    notice.append(label, button('Retry', retry), button('Review', () => activeFile()?.issue ? reviewHostFile() : resumeReview()), button('Copy draft', downloadDraft));
     (document.getElementById('toast-root') || document.body).append(notice);
 
     modeButton = button('', () => requestDisplayMode(context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen'), 'icon-btn rapier-app-fullscreen');
@@ -312,6 +312,22 @@
       value.start >= 0 && value.end >= value.start && value.end <= length ? {start: value.start, end: value.end} : null;
   }
 
+  function contextRanges(captured, source) {
+    // Metadata may still be pending after the same document's source was adopted.
+    if (!captured || captured.documentId !== source.documentId ||
+        typeof captured.text !== 'string' || typeof source.text !== 'string') return null;
+    let splices;
+    try {
+      splices = RapierLiveMerge.sourceSplices(captured.text, source.text).reverse().map(row =>
+        ({pos: row.at, removed: captured.text.slice(row.at, row.at + row.remove), inserted: row.insert}));
+    } catch (_) { return null; }
+    const move = value => {
+      const range = sourceRange(value, captured.text.length);
+      return range && sourceRange(RapierLedger.transportTouchedInterval(range.start, range.end, splices), source.text.length);
+    };
+    return {selection: move(captured.context?.selection), focus: move(captured.context?.focus)};
+  }
+
   function contextChanged(event) {
     contextEpoch++;
     if (typeof event?.editing === 'boolean') { contextEditing = event.editing; contextEditingAt = Date.now(); }
@@ -342,15 +358,13 @@
       if (token !== documentToken || closed) return false;
       if (epoch === contextEpoch && typeof captured?.context?.editing === 'boolean') { contextEditing = captured.context.editing; contextEditingAt = Date.now(); }
       const active = !release && !closing && visible();
-      const exact = captured?.ok === true && same(captured, source) && !dirty && !flight && !conflict && !composing;
+      const exact = captured?.ok === true && same(captured, source) && !dirty && !flight && !composing;
       const busy = active && (!exact || editing() || captured?.context?.editing === true ||
         (!!decisionFlight && decisionFlight.kind !== 'review') || !!policyQueued);
       const args = {document: documentToken, expectedRevision: source.revision, contextId: nonce,
         sequence: ++contextSequence, visible: active, editing: busy};
-      if (active && exact && !busy) {
-        args.selection = sourceRange(captured.context?.selection, source.text.length);
-        args.focus = sourceRange(captured.context?.focus, source.text.length);
-      }
+      const ranges = active && contextRanges(captured, source);
+      if (ranges) Object.assign(args, ranges);
       const result = await call('document.human_context', args, 5000);
       if (token !== documentToken || closed) return false;
       if (result.isError) {
@@ -385,7 +399,7 @@
 
   function modelContext() {
     if (!base) return null;
-    const unsent = dirty || !!flight || conflict || composing;
+    const unsent = dirty || !!flight || composing;
     const current = !withheld && !unsent && visible() && contextAck?.visible && contextAck.revision === base.revision &&
       contextAck.epoch === contextEpoch;
     const selection = current ? contextAck.selection : null, focus = current ? contextAck.focus : null;
@@ -422,7 +436,7 @@
   function queuePolicy(value) {
     if (!base || switching || closed) return;
     const policy = {};
-    if (['free', 'check', 'ask'].includes(value.posture)) policy.posture = value.posture;
+    if (['free', 'ask'].includes(value.posture)) policy.posture = value.posture;
     if (typeof value.readOnly === 'boolean') policy.readOnly = value.readOnly;
     if (!Object.keys(policy).length) return;
     policyQueued = {...policyQueued, ...policy, document: token};
@@ -445,13 +459,13 @@
         value.reviewId !== shown.id || value.documentId !== shown.documentId || value.serverRevision !== shown.serverRevision ||
         value.beforeText !== shown.text || value.revision !== shown.localRevision || value.generation !== shown.generation) {
       shown.dismissed = true;
-      if (!closing && !switching && !conflict) setStatus('review_waiting');
+      if (!closing && !switching) setStatus('review_waiting');
       return;
     }
-    if (dirty || flight || decisionFlight || conflict || switching ||
+    if (dirty || flight || decisionFlight || switching ||
         base?.collaboration?.review?.id !== shown.id || base.revision !== shown.serverRevision || base.text !== shown.text) {
       shown.dismissed = true;
-      if (!conflict && !switching) setStatus('review_waiting');
+      if (!switching) setStatus('review_waiting');
       host.notify('That review changed. Inspect the current proposal before deciding.', 'info');
       return;
     }
@@ -486,7 +500,7 @@
 
   async function acknowledgeView() {
     const sent = viewFlight;
-    if (!sent || dirty || flight || composing || conflict) return;
+    if (!sent || dirty || flight || composing) return;
     const result = await call('document.view_ack', sent);
     viewFlight = null;
     captureIncoming(result);
@@ -531,7 +545,7 @@
       presentedReview = null;
     }
     if (!base || closed || closing || switching || !visible() || dirty || flight || decisionFlight ||
-        policyQueued || reviewQueued || conflict || incoming || editing()) return;
+        policyQueued || reviewQueued || incoming || editing()) return;
     if (viewFlight) { await acknowledgeView(); return; }
     const local = await host.snapshot();
     if (!same(local, base)) { dirty = true; contextChanged(); return; }
@@ -581,9 +595,7 @@
 
   function schedule(delay = 1500) {
     clearTimeout(timer);
-    if (closed || closing || switching || conflict || failures >= 5 || !initialized || !visible()) {
-      // Reached only if conflict refuses autosave without the notice saying so (a stale flag): refusing must never look fine.
-      if (conflict && !closed && !closing && !switching && status !== 'conflict') setStatus('conflict');
+    if (closed || closing || switching || failures >= 5 || !initialized || !visible()) {
       return;
     }
     timer = setTimeout(() => { timer = 0; void cycle(); }, delay);
@@ -595,7 +607,7 @@
     if (base) dirty = true;
     updateCompareControls();
     contextChanged();
-    if (!conflict) schedule(500);
+    schedule(500);
   }
 
   function failed(error) {
@@ -605,7 +617,7 @@
       setStatus('unsupported');
       return;
     }
-    setStatus(conflict ? 'conflict' : failures >= 5 ? 'offline' : 'reconnecting');
+    setStatus(failures >= 5 ? 'offline' : 'reconnecting');
     schedule(Math.min(30000, 1500 * 2 ** (failures - 1)));
   }
 
@@ -619,9 +631,7 @@
       incomingVersion = latestVersion;
     }
     if (code === 'REVISION_CONFLICT') {
-      conflict = true;
-      flight = null;
-      setStatus('conflict');
+      setStatus('comparison_changed');
       return false;
     }
     if (code === 'DOCUMENT_UNAVAILABLE') {
@@ -657,7 +667,7 @@
       if (closed || closing || epoch !== fileOpenEpoch) return null;
       const committed = await call('document.commit', attempt.args);
       const value = metadata(committed).snapshot;
-      if (committed.isError || !snapshot(value) || value.text !== resource.text ||
+      if (committed.isError || !snapshot(value) ||
           value.documentId !== initial.documentId) throw new Error('FILE_OPEN_CONFLICT');
       if (closed || closing || epoch !== fileOpenEpoch) return null;
       const store = globalThis.RapierHostFiles.createHostFileBinding({request, file, resource,
@@ -698,7 +708,7 @@
     const store = activeFile();
     if (!store) return true;
     const documentToken = token, local = await host.snapshot();
-    if (activeFile() !== store || token !== documentToken || !same(local, base) || dirty || flight || conflict || composing) return false;
+    if (activeFile() !== store || token !== documentToken || !same(local, base) || dirty || flight || composing) return false;
     try { await store.save(local.text); }
     catch (_) { setStatus(status); return false; }
     const current = await host.snapshot();
@@ -712,7 +722,7 @@
       if (binding !== boundFile || closed) return;
       if (binding.store.incoming) {
         if (running) await running;
-        if (binding === boundFile && !closed && !closing && !switching && !conflict && !editing()) {
+        if (binding === boundFile && !closed && !closing && !switching && !editing()) {
           await useHostFileVersion(binding.store, binding.store.incoming, true);
         }
         setStatus(status);
@@ -725,28 +735,21 @@
   async function useHostFileVersion(store, resource, onlyIfUnedited = false) {
     if (!resource || activeFile() !== store || resource !== store.incoming || switching || closed || closing || !await flush()) return false;
     const local = await host.snapshot(), currentBase = base;
-    if (activeFile() !== store || resource !== store.incoming || !same(local, currentBase) || dirty || conflict || composing) return false;
+    if (activeFile() !== store || resource !== store.incoming || !same(local, currentBase) || dirty || composing) return false;
     if (onlyIfUnedited && (local.text !== store.resource.text || editing())) return false;
     clearTimeout(timer);
     switching = true;
     lock();
     try {
-      const result = await call('document.commit', {document: token, expectedRevision: currentBase.revision,
-        text: resource.text, filename: currentBase.filename, docKind: currentBase.docKind, commitId: crypto.randomUUID()});
-      if (!ensureResult(result)) return false;
-      const value = metadata(result).snapshot, nextVersion = viewVersion(result.structuredContent?.version);
-      if (!snapshot(value) || nextVersion === null || value.documentId !== currentBase.documentId || value.text !== resource.text) throw new Error('FILE_OPEN_CONFLICT');
-      incoming = value;
-      incomingVersion = nextVersion;
-      await loadIncoming(true, local, true);
+      const draft = {...local, text: resource.text};
+      delete draft.journal;
+      const adopted = await host.replaceDocument(draft, {expectedDocumentId: local.documentId,
+        expectedRevision: local.revision, expectedText: local.text});
+      if (adopted?.outcome !== 'applied') return false;
       store.accept(resource);
-      if (!same(await host.snapshot(), value)) {
-        dirty = true;
-        conflict = true;
-        setStatus('conflict');
-        return false;
-      }
-      return true;
+      dirty = true;
+      await commit();
+      return !dirty && !flight;
     } finally {
       switching = false;
       unlock();
@@ -874,6 +877,12 @@
       expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text
     });
     if (result?.outcome !== 'applied') {
+      if (result?.sourceApplied === true) {
+        base = value;
+        version = nextVersion;
+        continuation = {documentId: value.documentId, revision: value.revision, text: value.text, splices: [],
+          metadata: {filename: local.filename, docKind: local.docKind}};
+      }
       dirty = !!base && !same(await host.snapshot(), base);
       if (['conflict', 'yielded'].includes(result?.outcome)) return;
       failures = 5;
@@ -881,6 +890,7 @@
       return;
     }
     base = value;
+    continuation = null;
     version = nextVersion;
     adoptHostFile();
     if (incoming === value) incoming = null;
@@ -914,10 +924,15 @@
     if (!flight) {
       const local = await host.snapshot();
       if (!snapshot(local) || local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
-      if (same(local, base)) { dirty = false; return; }
+      if (same(local, base)) { dirty = false; continuation = null; return; }
+      const kept = continuation?.documentId === base.documentId && continuation.revision === base.revision ? continuation : null;
+      const splices = [...(kept?.splices || []), ...RapierLiveMerge.sourceEdits(kept?.text ?? base.text, local.text, local.journal)];
+      const filename = local.filename === kept?.metadata?.filename ? base.filename : local.filename;
+      const docKind = local.docKind === kept?.metadata?.docKind ? base.docKind : local.docKind;
       flight = {
-        document: token, expectedRevision: base.revision, text: local.text,
-        filename: local.filename, docKind: local.docKind, commitId: crypto.randomUUID()
+        document: token, expectedRevision: base.revision, text: local.text, splices,
+        ...(filename !== base.filename ? {filename} : {}),
+        ...(docKind !== base.docKind ? {docKind} : {}), commitId: crypto.randomUUID()
       };
     }
     const sent = flight;
@@ -925,16 +940,40 @@
     if (!ensureResult(result)) return;
     const meta = metadata(result), value = meta.snapshot;
     const nextVersion = viewVersion(result.structuredContent?.version);
-    if (!snapshot(value) || nextVersion === null || value.documentId !== base.documentId) throw new Error('MISSING_SNAPSHOT');
-    if (value.text !== sent.text || value.filename !== sent.filename || value.docKind !== sent.docKind || value.revision < sent.expectedRevision) {
-      incoming = value;
-      incomingVersion = nextVersion;
-      flight = null;
-      conflict = true;
-      setStatus('conflict');
-      return;
+    if (!snapshot(value) || nextVersion === null || value.documentId !== base.documentId || value.revision < sent.expectedRevision) throw new Error('MISSING_SNAPSHOT');
+    const local = await host.snapshot();
+    if (!snapshot(local) || local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
+    // The acknowledgement includes concurrent edits. Rebase any further typing from
+    // the submitted draft before moving the base; a failed CAS keeps this receipt live.
+    const {sourceEdits, mergeSource, replay} = RapierLiveMerge;
+    const remote = value.draftEdits;
+    if (!Array.isArray(remote) || remote.some(row => typeof row.client !== 'string' || !Array.isArray(row.splices)) ||
+        replay(sent.text, remote) !== value.text) throw new Error('MISSING_COMMIT_EDITS');
+    const kept = continuation?.commitId === sent.commitId ? continuation : null;
+    const continued = kept
+      ? mergeSource(value.text, [...kept.splices, ...sourceEdits(kept.text, local.text, local.journal)], 'human', [])
+      : mergeSource(sent.text, sourceEdits(sent.text, local.text, local.journal), 'human', remote);
+    const {text} = continued;
+    const adopted = {...value, text,
+      filename: local.filename === (sent.filename ?? continuation?.metadata?.filename ?? base.filename) ? value.filename : local.filename,
+      docKind: local.docKind === (sent.docKind ?? continuation?.metadata?.docKind ?? base.docKind) ? value.docKind : local.docKind};
+    // This local continuation is not a server journal suffix. Its exact source change
+    // is recorded by the editor, while the original authors remain in the server journal.
+    if (text !== value.text) delete adopted.journal;
+    if (!same(local, adopted)) {
+      const applied = await host.replaceDocument(adopted, {expectedDocumentId: local.documentId,
+        expectedRevision: local.revision, expectedText: local.text});
+      if (applied?.outcome !== 'applied') {
+        if (applied?.sourceApplied === true)
+          continuation = {documentId: value.documentId, revision: value.revision, commitId: sent.commitId, text, splices: continued.splices,
+            ...(continuation?.metadata ? {metadata: continuation.metadata} : {})};
+        dirty = true;
+        if (!['conflict', 'yielded'].includes(applied?.outcome)) { failures = 5; setStatus('blocked'); }
+        return;
+      }
     }
     base = value;
+    continuation = {documentId: value.documentId, revision: value.revision, text, splices: continued.splices};
     version = nextVersion;
     flight = null;
     if (incoming && incomingVersion <= version) incoming = null;
@@ -945,6 +984,7 @@
       incomingVersion = result.structuredContent.currentVersion;
     }
     dirty = !same(await host.snapshot(), base);
+    if (!dirty) continuation = null;
     if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
     failures = 0;
     setStatus('ready');
@@ -953,7 +993,7 @@
 
   function cycle(force = false) {
     if (running) return running;
-    if (closed || switching || conflict || !initialized || !token || !host || (!force && (!visible() || failures >= 5))) return Promise.resolve(false);
+    if (closed || switching || !initialized || !token || !host || (!force && (!visible() || failures >= 5))) return Promise.resolve(false);
     running = (async () => {
       if (!base) {
         if (!incoming && !await sync()) return false;
@@ -975,8 +1015,8 @@
         }
       }
       await presentCollaboration();
-      if (base && !dirty && !flight && !conflict) await saveHostFile();
-      return !!base && !dirty && !flight && !decisionFlight && !policyQueued && !reviewQueued && !conflict && !incoming;
+      if (base && !dirty && !flight) await saveHostFile();
+      return !!base && !dirty && !flight && !decisionFlight && !policyQueued && !reviewQueued && !incoming;
     })().catch(error => { failed(error); return false; }).finally(() => {
       running = null;
       updateCompareControls();
@@ -997,7 +1037,6 @@
     if (presentedReview?.failed) presentedReview = null;
     if (!initialized) await connect();
     if (pendingFileResult && !fileHydrations.size) await receive(pendingFileResult);
-    if (conflict) return review();
     contextChanged();
     await flush();
   }
@@ -1012,7 +1051,7 @@
     if (!await flush()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'unsent_draft'}};
     if (!current()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
     const local = await host.snapshot();
-    if (!current() || !same(local, base) || dirty || flight || conflict || composing) {
+    if (!current() || !same(local, base) || dirty || flight || composing) {
       return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
     }
     clearTimeout(timer);
@@ -1045,7 +1084,7 @@
     if (base) await saveHostFile();
     if (!base && token) return false;
     const local = await host.snapshot();
-    if (!admission() || (base && !same(local, base)) || !filePreserved(local) || dirty || flight || decisionFlight || conflict) return false;
+    if (!admission() || (base && !same(local, base)) || !filePreserved(local) || dirty || flight || decisionFlight) return false;
     clearTimeout(timer);
     switching = true;
     lock();
@@ -1063,6 +1102,7 @@
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
       token = nextToken;
       base = value;
+      continuation = null;
       version = nextVersion;
       adoptHostFile();
       incoming = null;
@@ -1147,6 +1187,7 @@
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
       token = nextToken;
       base = value;
+      continuation = null;
       version = nextVersion;
       adoptHostFile();
       incoming = null;
@@ -1157,8 +1198,6 @@
       viewFlight = null;
       visualFlight = null;
       viewed.clear();
-      // A conflict belongs to the document left behind; carrying it forward would silently stop autosave on the new one.
-      conflict = false;
       presentationBlocked = replaced.comparison?.ok === false;
       dirty = !same(await host.snapshot(), base);
       if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
@@ -1193,7 +1232,7 @@
     } else if (base) {
       saved = await flush();
       saved = await saveHostFile() && saved;
-      saved = saved && !dirty && !flight && !decisionFlight && !conflict && same(await host.snapshot(), base);
+      saved = saved && !dirty && !flight && !decisionFlight && same(await host.snapshot(), base);
       outcome = saved ? 'confirmed' : 'pending';
     }
     const local = host && base ? await host.snapshot() : null;
@@ -1214,7 +1253,7 @@
     const comparison = base?.compare;
     const selection = comparison ? selectedChanges() : null;
     const ready = !!selection?.ok && failures < 5 && !presentationBlocked && !dirty && !flight && !decisionFlight &&
-      !policyQueued && !reviewQueued && !presentedReview && !conflict && !switching;
+      !policyQueued && !reviewQueued && !presentedReview && !switching;
     for (const [index, control] of compareButtons.entries()) {
       control.hidden = !comparison;
       control.disabled = !ready;
@@ -1266,8 +1305,6 @@
     incomingVersion = nextVersion;
     dirty = !same(await host.snapshot(), base);
     if (result.isError && result.structuredContent?.code === 'REVISION_CONFLICT' && dirty) {
-      conflict = true;
-      setStatus('conflict');
       return false;
     }
     failures = 0;
@@ -1296,13 +1333,13 @@
       return true;
     }
     if (!base?.compare ||
-        switching || dirty || flight || decisionFlight || conflict) return false;
+        switching || dirty || flight || decisionFlight) return false;
     // advance:true only here: if the pointed hunk is settled, move the shared pointer to the next decidable hunk before deciding.
     const selection = action === 'close' ? {ok: true} : selectedChanges({advance: true});
     if (!selection?.ok) { setStatus('comparison_refused'); return false; }
     const expectedRevision = base.revision, expectedVersion = version, compareId = base.compare.id;
     if (!await flush() || expectedRevision !== base.revision || expectedVersion !== version || compareId !== base.compare?.id) {
-      setStatus(conflict ? 'conflict' : 'comparison_changed');
+      setStatus('comparison_changed');
       return false;
     }
     clearTimeout(timer);
@@ -1547,7 +1584,7 @@
   // "Disconnect agents": rotate the capability; the successor returns sealed to the editor key, is unsealed here and withheld from the model
   // until shared. Needs a trusted event, as setPolicy.
   async function disconnectAgents(event) {
-    if (event?.isTrusted !== true || !base || switching || closed || decisionFlight || conflict) return false;
+    if (event?.isTrusted !== true || !base || switching || closed || decisionFlight) return false;
     const target = {document: token, documentId: base.documentId};
     const editorKey = typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
     const unseal = globalThis.RapierDoorIdentity?.unsealForEditor;
@@ -1600,7 +1637,7 @@
       title.id = 'rapier-app-share-title';
       title.textContent = 'Share this document with an agent';
       const text = document.createElement('p');
-      text.textContent = 'An agent that receives this document capability can read and edit the document under your FREE, CHECK or ASK control until you disconnect agents again.';
+      text.textContent = 'An agent that receives this document capability can read and edit the document under your FREE or ASK control until you disconnect agents again.';
       const field = document.createElement('input');
       field.type = 'text';
       field.readOnly = true;
@@ -1662,7 +1699,7 @@
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
     const local = await host.snapshot();
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
-    if (!same(local, base) || dirty || flight || conflict || composing) throw new Error('REQUEST_NOT_SYNCED');
+    if (!same(local, base) || dirty || flight || composing) throw new Error('REQUEST_NOT_SYNCED');
     const payload = {document: token, documentId: base.documentId, revision: base.revision,
       filename: base.filename, selection: target.revision === base.revision ? target.selection : null,
       quotedPassage: target.quoted, request: question || target.quoted,
@@ -1742,59 +1779,6 @@
     });
   }
 
-  async function resolveConflict(choice) {
-    if (!conflict || running) return;
-    const epoch = editEpoch, local = await host.snapshot();
-    const result = await call('document.sync', {document: token});
-    if (!ensureResult(result)) return;
-    const latest = metadata(result).snapshot;
-    const nextVersion = viewVersion(result.structuredContent?.version);
-    if (!snapshot(latest) || nextVersion === null || latest.documentId !== base.documentId) throw new Error('MISSING_SNAPSHOT');
-    if (choice === 'latest') {
-      if (epoch !== editEpoch) return;
-      incoming = latest;
-      incomingVersion = nextVersion;
-      await loadIncoming(true, local);
-      if (!same(await host.snapshot(), latest)) return;
-    } else {
-      base = latest;
-      version = nextVersion;
-      dirty = true;
-      incoming = null;
-    }
-    conflict = false;
-    flight = null;
-    failures = 0;
-    dialog?.close();
-    setStatus('ready');
-    await flush();
-  }
-
-  function review() {
-    if (!dialog) {
-      dialog = document.createElement('dialog');
-      dialog.className = 'rapier-app-dialog';
-      dialog.setAttribute('aria-labelledby', 'rapier-app-review-title');
-      const title = document.createElement('h2');
-      title.id = 'rapier-app-review-title';
-      title.textContent = 'Your draft is safe here';
-      const explanation = document.createElement('p');
-      explanation.textContent = 'The shared document also changed. Keep my version replaces the shared version. Use latest replaces this draft. You can save a copy first.';
-      const actions = document.createElement('div');
-      for (const [label, action] of [
-        [object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft', downloadDraft], ['Keep my version', () => resolveConflict('mine')],
-        ['Use latest', () => resolveConflict('latest')], ['Keep editing', () => dialog.close()]
-      ]) actions.append(button(label, async () => {
-        for (const child of actions.children) child.disabled = true;
-        try { await action(); }
-        finally { for (const child of actions.children) child.disabled = false; }
-      }));
-      dialog.append(title, explanation, actions);
-      document.body.append(dialog);
-    }
-    if (!dialog.open) dialog.showModal();
-  }
-
   async function teardown(id) {
     closing = true;
     clearTimeout(timer);
@@ -1802,7 +1786,7 @@
     await saveHostFile();
     const local = base ? await host.snapshot() : null;
     // strandedDrafts are other documents; checked on their own, not in the current document's !saved case.
-    if ((!saved && (dirty || flight || decisionFlight || policyQueued || reviewQueued || conflict)) || strandedDrafts.length > 0 ||
+    if ((!saved && (dirty || flight || decisionFlight || policyQueued || reviewQueued)) || strandedDrafts.length > 0 ||
         (local && !filePreserved(local)) || switching || uploadRunning || importRunning || fileHydrations.size) {
       closing = false;
       contextChanged();
@@ -1821,7 +1805,7 @@
     // comment composer can outlive its failed device save: recheck at the actual close boundary.
     const latest = base ? await host.snapshot() : null;
     if ((latest && (!same(latest, base) || !filePreserved(latest))) || dirty || flight || decisionFlight ||
-        policyQueued || reviewQueued || conflict || globalThis.RapierCommentsUI?.keepDraft() === false) {
+        policyQueued || reviewQueued || globalThis.RapierCommentsUI?.keepDraft() === false) {
       closing = false;
       if (boundFile) void request('resources/subscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
       contextChanged();
@@ -1969,7 +1953,7 @@
       dirty: dirty || !!flight || !!decisionFlight || !!policyQueued || !!reviewQueued || fileDirty(),
       file: activeFile() ? Object.freeze({name: activeFile().file.name, writable: activeFile().resource.writable,
         saved: !fileDirty(), issue: activeFile().issue}) : null,
-      agentsDisconnected: withheld, conflict, switching, canDownload: object(capabilities.downloadFile), canImport: canImport(), canUpload: canUpload()}); }
+      agentsDisconnected: withheld, switching, canDownload: object(capabilities.downloadFile), canImport: canImport(), canUpload: canUpload()}); }
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { void start().catch(failed); }, {once: true});
   else void start().catch(failed);

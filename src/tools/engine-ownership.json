@@ -1,10 +1,10 @@
 {
   "version": 1,
   "limits": {
-    "mutableRoots": 109,
+    "mutableRoots": 108,
     "domSinks": 67,
     "storageKeys": 7,
-    "remainderBytes": 78834
+    "remainderBytes": 78663
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {
@@ -250,10 +250,6 @@
     "_rapierScrollRuntime@module/iife1": {
       "name": "_rapierScrollRuntime",
       "reason": "The viewport owner coalesces scroll refresh and suppression timing."
-    },
-    "_rapierSeenDelivery@module/iife1": {
-      "name": "_rapierSeenDelivery",
-      "reason": "The agent door owns delivery deduplication and its current document fence."
     },
     "_rapierSelectionRuntime@module/iife1": {
       "name": "_rapierSelectionRuntime",

@@ -1,7 +1,8 @@
 import {sha256} from '../kit/ledger/hash.mjs';
 import {readBase} from '../kit/ledger/carried.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
-import {transportInterval} from '../kit/ledger/merge.mjs';
+import {transportInterval, transportTouchedInterval} from '../kit/ledger/merge.mjs';
+import {rebaseHistory} from '../kernel/live-merge.mjs';
 // Rapier shared document kernel. SPDX-License-Identifier: AGPL-3.0-only.
 import { parseWill, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, willIntentOf, stripOneTerminator } from './will.mjs';
 import { diffLines } from './diff.mjs';
@@ -180,7 +181,7 @@ export function admissibleText(value) {
 
 function validName(value) {
   return typeof value === 'string' && value.length > 0 && value.length <= 512 &&
-    !/[\x00-\x1f\x7f/\\]/.test(value) && value !== '.' && value !== '..';
+    !/[\x00-\x1f\x7f/\\\uD800-\uDFFF]/u.test(value) && value !== '.' && value !== '..';
 }
 
 export function minimalSplice(before, after) {
@@ -265,13 +266,13 @@ export function createState({ id, documentId, filename = 'Untitled.md', text = '
   if (!['markdown', 'text', 'code'].includes(kind)) throw new TypeError('document_kind_invalid');
   const resolvedId = documentId || id || (typeof mintId === 'function' ? mintId('doc_') : null);
   if (!resolvedId) throw new TypeError('document_id_required');
+  if (!['free', 'ask'].includes(posture)) throw new TypeError('posture_invalid');
   return {
     documentId: String(resolvedId), revision: safeInt(revision) ? revision : 0,
-    filename, docKind: kind, text, readOnly: false, posture: ['free', 'check', 'ask'].includes(posture) ? posture : 'free', selection: null, focus: null,
+    filename, docKind: kind, text, readOnly: false, posture, selection: null, focus: null,
     journal: [], handles: {}, refs: {}, cursors: {}, compare: null,
-    humanContexts: {}, contextSequences: {}, review: null, reviewed: {}, resume: {}, proposalReads: {}, proposalBase: null, ledgerRoot: null,
-    history: { earliestRevision: safeInt(revision) ? revision : 0, trimmedBytes: 0, complete: true,
-      unreviewed: {}, unknownReviewRevision: 0 }, reviewedRevision: 0,
+    humanContexts: {}, contextSequences: {}, review: null, resume: {}, proposalReads: {}, proposalBase: null, ledgerRoot: null,
+    history: { earliestRevision: safeInt(revision) ? revision : 0, trimmedBytes: 0, complete: true },
     clock: 0,
   };
 }
@@ -280,13 +281,14 @@ function journalBytes(entry) {
   return entry.splices.reduce((sum, row) => sum + bytes(row.removed) + bytes(row.inserted), 0);
 }
 
-// The comment record is one line of the threads' own data, written only through document.comment. A text edit that
-// reaches into it, or glues text onto either end of its line, would rewrite or orphan the threads.
-function touchesCommentRecord(text, splices) {
+// Existing discussions belong to document.comment. Agent text writes cannot change their record,
+// or alter the carrier or Markdown context so those discussions disappear.
+function touchesCommentRecord(text, splices, kind = 'markdown') {
   const record = text.includes('md-comments:') ? parseComments(text).record : null;
   if (!record) return false;
-  return splices.some(row => row.pos < record.end && row.pos + row.removed.length > record.start ||
-    row.pos > record.start && row.pos <= record.end || row.pos === record.start && !/[\r\n]$/.test(row.inserted));
+  if (kind !== 'markdown') return true;
+  const changed = transformSplices(text, splices);
+  return changed == null || parseComments(changed).record?.raw !== record.raw;
 }
 
 function regionVerdict(will, splice) {
@@ -545,7 +547,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   let state = supplied ? clone(supplied) : createState({ mintId });
   if (!state || typeof state.text !== 'string' || !state.documentId || !safeInt(state.revision) ||
       !Array.isArray(state.journal) || !state.handles || !state.refs || !state.cursors || !state.history ||
-      !state.humanContexts || !state.contextSequences || !state.reviewed || !state.resume || !state.proposalReads) {
+      !state.humanContexts || !state.contextSequences || !state.resume || !state.proposalReads || !['free', 'ask'].includes(state.posture)) {
     throw new TypeError('Invalid Rapier state');
   }
   let queue = Promise.resolve();
@@ -762,7 +764,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       change.evidence = { ...change.evidence, start: range.start, end: range.end, revision: state.revision, text: state.text.slice(range.start, range.end) };
       const splice = review.splices[index];
       const drawInsertion = review.operation === 'document.draw' && change.asset && !splice.removed;
+      const sourceInsertion = ['document.apply_edits', 'document.propose_edits'].includes(review.operation) && !splice.removed;
       let pos = range.start + (change.offset || 0);
+      if (sourceInsertion) {
+        pos = insertionPoint(splice.pos, splice.inserted, review.revision, who);
+        if (pos === null) { change.status = 'stale'; change.reason = 'target_changed'; continue; }
+      }
       if (drawInsertion) {
         // Transport the insertion point through the journal; never widen the read handle.
         const entries = since(review.revision);
@@ -780,7 +787,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         } catch {}
         if (!placed) { change.status = 'stale'; change.reason = 'draw_placement_unavailable'; continue; }
       }
-      if (!safeInt(pos) || pos + splice.removed.length > (drawInsertion ? state.text.length : range.end) ||
+      if (!safeInt(pos) || pos + splice.removed.length > (drawInsertion || sourceInsertion ? state.text.length : range.end) ||
           state.text.slice(pos, pos + splice.removed.length) !== splice.removed) {
         change.status = 'stale'; change.reason = 'target_changed'; continue;
       }
@@ -803,7 +810,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   // Explain the existing review owner; a protected passage can need a decision even under FREE.
-  const reviewCause = review => review.law ? 'will' : review.kind === 'check' ? 'check' : review.byPosture ? 'ask' : 'proposal';
+  const reviewCause = review => review.law ? 'will' : review.byPosture ? 'ask' : 'proposal';
 
   function reviewSummary(review = state.review, context = false) {
     if (!review) return null;
@@ -811,13 +818,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const changes = publicReviewChanges(review, false);
     return { id: review.id, kind: review.kind, status: review.status, cause: reviewCause(review), revision: review.revision,
       expiresAt: review.expiresAt, label: review.label, editCount: review.editCount,
-      ...(review.kind !== 'check' && Array.isArray(review.changeIds) ? { changeIds: context ? pending : sortChangeIds(pending) } : {}),
-      ...(review.kind !== 'check' && changes ? { changes: context ? changes.map((row, index) => {
+      ...(Array.isArray(review.changeIds) ? { changeIds: context ? pending : sortChangeIds(pending) } : {}),
+      ...(changes ? { changes: context ? changes.map((row, index) => {
         const text = row.status === 'pending' ? review.splices[index]?.inserted : null;
         return text ? { ...row, excerpt: clip(text, 80) } : row;
       }) : changes.slice().sort((a, b) => Number(String(a.id).split('.').pop()) - Number(String(b.id).split('.').pop())) } : {}),
-      ...(review.baseRevision != null ? { baseRevision: review.baseRevision, scope: 'changes_since_revision',
-        includesHumanChanges: review.includesHumanChanges === true } : {}),
       ...(review.law ? { law: review.law, region: review.region } : {}),
       ...(review.reason ? { reason: review.reason } : {}),
       ...(review.decision ? { decision: clone(review.decision) } : {}) };
@@ -879,12 +884,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       delete state.humanContexts[key]; recordSequence();
       return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: null }));
     }
-    if (input.expectedRevision > state.revision || (!input.editing && input.expectedRevision !== state.revision)) return stamp(failure('human_context_stale', 'conflict'));
+    // A delayed attestation must not erase a live range already transported by a newer commit.
+    if (input.expectedRevision !== state.revision) return stamp(failure('human_context_stale', 'conflict'));
     const range = value => value && safeBoundary(state.text, value.start) && safeBoundary(state.text, value.end) && value.start <= value.end
       ? { start: value.start, end: value.end } : null;
-    const time = now(), exact = input.expectedRevision === state.revision && !input.editing;
-    const selection = exact ? range(input.selection) : null, focus = exact ? range(input.focus) : null;
-    if (exact && ((input.selection != null && !selection) || (input.focus != null && !focus))) return stamp(failure('human_context_range_invalid', 'invalid'));
+    const time = now(), selection = range(input.selection), focus = range(input.focus);
+    if ((input.selection != null && !selection) || (input.focus != null && !focus)) return stamp(failure('human_context_range_invalid', 'invalid'));
     if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
     state.humanContexts[key] = { owner: ownerOf(who), sequence: input.sequence, revision: input.expectedRevision,
       visible: true, editing: input.editing, selection, focus, updatedAt: time, expiresAt: time + LIMITS.presenceMs };
@@ -896,7 +901,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     humanParticipant(context);
     if (input.expectedRevision !== state.revision) return stamp(failure('document_changed', 'conflict'));
     if ((!own(input, 'posture') && !own(input, 'readOnly')) ||
-        (own(input, 'posture') && !['free', 'check', 'ask'].includes(input.posture)) ||
+        (own(input, 'posture') && !['free', 'ask'].includes(input.posture)) ||
         (own(input, 'readOnly') && typeof input.readOnly !== 'boolean')) return stamp(failure('policy_invalid', 'invalid'));
     let changed = false;
     for (const key of ['posture', 'readOnly']) if (own(input, key) && state[key] !== input[key]) { state[key] = input[key]; changed = true; }
@@ -944,6 +949,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   const display = (text, limit) => clip(disclose(String(text || '')).text, limit);
+
+  function currentRange(range) {
+    let end = Math.min(range.end, range.start + LIMITS.readChars);
+    while (!safeBoundary(state.text, end) && end > range.start) end--;
+    const shown = disclose(state.text, range.start, end);
+    const value = {start: range.start, end: range.end, text: shown.text,
+      complete: end === range.end && !shown.omissions.length};
+    if (shown.omissions.length) value.omissions = shown.omissions.slice(0, 8);
+    // The refusal must keep its cause even when the current range is large or needs JSON escaping.
+    while (value.text.length && bytes(JSON.stringify({...current(), current: value})) > LIMITS.resultBytes - 1600) {
+      value.text = clip(value.text, Math.floor(value.text.length / 2)); value.complete = false;
+    }
+    return {current: value};
+  }
 
   function prune() {
     expireCollaboration();
@@ -1004,20 +1023,32 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return next === state.revision ? rows : null;
   }
 
+  function insertionPoint(at, text, revision, who) {
+    const entries = since(revision);
+    if (!entries) return null;
+    const client = row => row.actor + ':' + row.principal + ':' + row.requestId;
+    const log = entries.flatMap(entry => entry.splices.map(splice => ({client: client(entry),
+      splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})));
+    return rebaseHistory({base: 0, log}, client(who), 0, [{at, remove: 0, insert: text}])[0]?.at ?? null;
+  }
+
   function relocate(record) {
     const entries = since(record.revision);
     if (!entries) return failure('history_unavailable', 'conflict');
-    let range = { start: record.start, end: record.end };
+    let range = { start: record.start, end: record.end }, changedBy = null;
     for (const entry of entries) {
-      range = transportInterval(range.start, range.end, entry.splices);
-      if (!range) return failure(entry.actor === 'human' ? 'human_changed_target' : 'target_changed', entry.actor === 'human' ? 'yielded' : 'conflict');
+      const moved = transportInterval(range.start, range.end, entry.splices);
+      if (!moved && changedBy === null) changedBy = entry.actor;
+      range = moved || transportTouchedInterval(range.start, range.end, entry.splices);
     }
     if (!safeBoundary(state.text, range.start) || !safeBoundary(state.text, range.end) || range.end < range.start) {
       return failure('target_changed', 'conflict');
     }
+    if (changedBy !== null) return failure(changedBy === 'human' ? 'human_changed_target' : 'target_changed',
+      changedBy === 'human' ? 'yielded' : 'conflict', currentRange(range));
     const selected = state.text.slice(range.start, range.end);
     if ((typeof record.text === 'string' && selected !== record.text) || (record.digest && digest(selected) !== record.digest)) {
-      return failure('target_changed', 'conflict');
+      return failure('target_changed', 'conflict', currentRange(range));
     }
     return { ...range, rebased: record.revision !== state.revision };
   }
@@ -1035,17 +1066,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const row = state.journal.shift(), cost = journalBytes(row);
       retained -= cost; state.history.trimmedBytes += cost; state.history.earliestRevision = row.revision;
       state.history.complete = false;
-      if (row.actor === 'agent' && row.splices.length && !row.sourceTransactionId && !row.humanReviewed &&
-          row.revision > Math.max(state.reviewedRevision || 0, state.reviewed[row.owner]?.revision || 0) &&
-          !state.journal.some(entry => entry.sourceTransactionId === row.id)) {
-        state.history.unreviewed[row.owner] = Math.max(state.history.unreviewed[row.owner] || 0, row.revision);
-        const keys = Object.keys(state.history.unreviewed);
-        while (keys.length > LIMITS.principals) {
-          const key = keys.shift();
-          state.history.unknownReviewRevision = Math.max(state.history.unknownReviewRevision, state.history.unreviewed[key]);
-          delete state.history.unreviewed[key];
-        }
-      }
     }
     outlineCache = null;
     imageCache = null;
@@ -1066,7 +1086,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(who.hostAgent ? {hostAgent: who.hostAgent} : {}),
       operation, requestId: who.requestId, invocationKey: who.invocationKey, label: clip(options.label || operation, 120),
       splices: clone(splices), createdAt: now(), sourceTransactionId: options.sourceTransactionId || null,
-      humanReviewed: options.humanReviewed === true,
       ...(agent ? { agent } : {}),
       ...(derivedCommentIndex == null ? {} : {derivedCommentIndex}),
     };
@@ -1080,8 +1099,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       state.focus = focus ? { ...state.focus, ...focus } : null;
     }
     for (const row of Object.values(state.humanContexts)) {
-      if (row.revision !== baseRevision || row.editing) { row.selection = null; row.focus = null; continue; }
-      for (const key of ['selection', 'focus']) if (row[key]) row[key] = transportInterval(row[key].start, row[key].end, splices);
+      if (row.revision !== baseRevision) { row.selection = null; row.focus = null; continue; }
+      for (const key of ['selection', 'focus']) if (row[key]) {
+        const move = row.editing ? transportTouchedInterval : transportInterval;
+        row[key] = move(row[key].start, row[key].end, splices);
+      }
       row.revision = revision;
     }
     if (!reviewSurvivesEdits(state.review)) invalidateReview();
@@ -1136,7 +1158,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         invalidateReview();
         state.text = incoming.text; state.revision = safeInt(target) ? target : base + 1;
         state.journal = []; state.history.earliestRevision = state.revision; state.history.complete = false;
-        state.history.unknownReviewRevision = Math.max(state.history.unknownReviewRevision, state.revision);
         state.compare = null; outlineCache = null;
         for (const row of Object.values(state.humanContexts)) { row.selection = null; row.focus = null; }
       } else {
@@ -1158,10 +1179,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (own(incoming, 'readOnly') && state.readOnly !== (incoming.readOnly === true)) { state.readOnly = incoming.readOnly === true; invalidateReview('policy_changed'); }
     // Notes' cards over the document: the host refuses edits behind them.
     state.notes = own(incoming, 'notes') && incoming.notes && typeof incoming.notes === 'object' ? { open: incoming.notes.open === true, current: typeof incoming.notes.current === 'string' ? incoming.notes.current : null } : null;
-    if (own(incoming, 'posture') && ['free', 'check', 'ask'].includes(incoming.posture) && state.posture !== incoming.posture) { state.posture = incoming.posture; invalidateReview('policy_changed'); }
-    if (safeInt(incoming.reviewedRevision) && incoming.reviewedRevision <= state.revision) {
-      state.reviewedRevision = Math.max(state.reviewedRevision || 0, incoming.reviewedRevision);
-    }
+    if (own(incoming, 'posture') && ['free', 'ask'].includes(incoming.posture) && state.posture !== incoming.posture) { state.posture = incoming.posture; invalidateReview('policy_changed'); }
     if (typeof incoming.closedComparisonId === 'string' && state.compare?.id === incoming.closedComparisonId) {
       state.compare = null;
     }
@@ -1818,21 +1836,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     catch (error) { return { parse: 'not_checked', reason: 'structure_unavailable' }; }
   }
 
-  const reviewedThrough = who => Math.max(state.reviewedRevision || 0, state.reviewed[ownerOf(who)]?.revision || 0);
-  const missingReviewHistory = who => Math.max(state.history.unknownReviewRevision, state.history.unreviewed[ownerOf(who)] || 0) > reviewedThrough(who);
-
   // Guidance, not new authority: an inspected target and the commit gate still decide each write.
-  function editingState(who, together, will) {
+  function editingState(together, will) {
     if (state.readOnly) return { mode: 'read_only', reason: 'document_read_only' };
-    if (together.presence?.editing) return { mode: 'yield', reason: 'human_edit_in_progress' };
     if (state.review?.status === 'pending') return { mode: 'review_pending', reason: reviewCause(state.review) };
     if (will?.faults.length) return { mode: 'blocked', reason: 'document_law' };
     if (state.posture === 'ask') return { mode: 'review_required', reason: 'ask' };
-    if (state.posture === 'check') {
-      if (missingReviewHistory(who)) return { mode: 'blocked', reason: 'review_history_unavailable' };
-      if (activeChanges(who).some(row => !row.humanReviewed && row.revision > reviewedThrough(who)))
-        return { mode: 'review_required', reason: 'check' };
-    }
     return { mode: 'inspect', reason: 'inspect_target' };
   }
 
@@ -1848,42 +1857,27 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (who.actor !== 'agent') return null;
     // A live human hand wins over an autonomous commit; an `approved` review cannot lose to the person's own restored caret.
     if (!approved) {
-      if (Object.values(state.humanContexts).some(row => row.visible && row.editing)) return failure('human_edit_in_progress', 'yielded');
-      let selection = state.selection?.active && state.selection.start !== state.selection.end ? state.selection : null;
-      let focus = state.focus?.active ? state.focus : null;
+      const ranges = [state.selection?.active && state.selection.start !== state.selection.end ? state.selection : null,
+        state.focus?.active ? state.focus : null];
+      for (const row of Object.values(state.humanContexts)) if (row.visible && row.editing && row.revision === state.revision) {
+        ranges.push(row.selection, row.focus);
+      }
+      const hands = ranges.filter(Boolean).map(range => ({original: range, moved: range}));
       for (const row of splices) {
-        if (overlap(selection, row) || overlap(focus, row)) return failure('foreground_hand_wins', 'yielded');
-        if (selection) selection = transportInterval(selection.start, selection.end, [row]);
-        if (focus) focus = transportInterval(focus.start, focus.end, [row]);
+        const touched = hands.find(hand => overlap(hand.moved, row));
+        if (touched) return failure('foreground_hand_wins', 'yielded', currentRange(touched.original));
+        for (const hand of hands) hand.moved = transportInterval(hand.moved.start, hand.moved.end, [row]);
       }
     }
-    if (!restores && !approved && state.posture === 'ask') return failure('human_review_required', 'pending', { reviewKind: 'proposal' });
-    if (!restores && !approved && state.posture === 'check' && missingReviewHistory(who)) return failure('review_history_unavailable', 'conflict');
-    if (!restores && !approved && state.posture === 'check' && activeChanges(who).some(row => !row.humanReviewed && row.revision > reviewedThrough(who))) {
-      return failure('human_review_required', 'pending', { reviewKind: 'check' });
-    }
+    if (!restores && !approved && state.posture === 'ask') return failure('human_review_required', 'pending');
     return null;
   }
 
   async function stageReview(kind, splices, who, context, operation, options = {}) {
     expireCollaboration();
-    let rows = splices, changeIds = [], changes = [], baseRevision, includesHumanChanges = false;
-    if (kind === 'check') {
-      const changes = activeChanges(who).filter(row => !row.humanReviewed && row.revision > reviewedThrough(who));
-      if (!changes.length) return failure('nothing_to_review');
-      baseRevision = Math.min(...changes.map(row => row.baseRevision));
-      const journal = since(baseRevision);
-      if (!journal) return failure('review_history_unavailable', 'conflict');
-      rows = [];
-      for (const entry of journal.slice().reverse()) {
-        for (const row of entry.splices.slice().reverse()) rows.push({ pos: row.pos, removed: row.inserted, inserted: row.removed });
-      }
-      if (transformSplices(state.text, rows) == null) return failure('review_history_unavailable', 'conflict');
-      changeIds = changes.map(row => row.id);
-      includesHumanChanges = journal.some(row => row.actor === 'human');
-    }
+    const rows = splices;
     const signature = digest(JSON.stringify({ kind, rows, operation, metadata: options.metadata || null }));
-    const requirements = { revision: state.revision, kind, editCount: kind === 'check' ? changeIds.length : options.editCount || rows.length };
+    const requirements = { revision: state.revision, kind, editCount: options.editCount || rows.length };
     const prior = state.review;
     if (prior?.status === 'pending') {
       if (prior.owner === ownerOf(who) && prior.revision === state.revision && prior.signature === signature) {
@@ -1899,27 +1893,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return failure('review_declined', 'refused', { review: reviewSummary() });
     }
     const time = now();
-    // 'inline' shares proposal expiry and revalidation; 'check' carries no handles.
-    const tracksHandles = kind === 'proposal' || kind === 'inline';
-    const handleExpiry = (tracksHandles ? options.handleIds || [] : []).map(id => state.handles[id]?.expiresAt).filter(Number.isFinite);
+    // Inline and proposal reviews share expiry and revalidation.
+    const handleExpiry = (options.handleIds || []).map(id => state.handles[id]?.expiresAt).filter(Number.isFinite);
     const id = mintId('review_');
     // Change ids derive from the review's; only authored splices are keepable, derived ones follow. Stored last-first; ".1" is first in document order.
-    if (kind !== 'check') {
-      const authored = tracksHandles ? options.authoredCount ?? rows.length : rows.length;
-      changes = initReviewChanges(id, rows, authored, tracksHandles ? options.handlePairs || [] : [], options.drawAssets);
-      changeIds = changes.map(row => row.id);
-    }
+    const authored = options.authoredCount ?? rows.length;
+    const changes = initReviewChanges(id, rows, authored, options.handlePairs || [], options.drawAssets);
+    const changeIds = changes.map(row => row.id);
     state.review = { id, kind, status: 'pending', documentId: state.documentId,
       revision: state.revision, sourceDigest: digest(state.text), filename: state.filename, docKind: state.docKind,
       createdAt: time, expiresAt: Math.min(time + LIMITS.reviewMs, ...handleExpiry), owner: ownerOf(who), ...who, operation,
-      label: clip(kind === 'check' ? 'Review changes before continuing' : kind === 'inline' ? (options.label || 'Edit review')
+      label: clip(kind === 'inline' ? (options.label || 'Edit review')
         : options.label || 'Proposed edits', 120),
       splices: clone(rows), authoredSplices: clone(options.authoredSplices || rows),
-      handleIds: tracksHandles ? [...(options.handleIds || [])] : [],
-      editCount: tracksHandles ? options.editCount || rows.length : changeIds.length,
+      handleIds: [...(options.handleIds || [])],
+      editCount: options.editCount || rows.length,
       reviewedRegion: options.reviewedRegion ?? null, changeIds, changes, signature,
       byPosture: options.byPosture === true, ...(options.law ? { law: options.law, region: options.region } : {}),
-      ...(baseRevision != null ? { baseRevision, includesHumanChanges } : {}),
       options: { label: options.label, editCount: options.editCount, authoredCount: options.authoredCount, rebased: options.rebased === true,
         keepCompare: options.keepCompare === true, compareDecision: options.compareDecision || null,
         metadata: options.metadata || null, note: options.note || null },
@@ -2004,6 +1994,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const approved = options.approvedReview && state.review?.id === options.approvedReview && state.review.status === 'pending';
     let gate = commitGate(splices, who, options.restores === true, approved);
     if (gate && gate.reason !== 'human_review_required') return gate;
+    if (state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.comment' &&
+        options.restores !== true && !options.sourceTransactionId &&
+        touchesCommentRecord(beforeText, authoredSplices, options.metadata?.docKind || state.docKind)) return failure('comments_record');
     let reviewedRegion = approved ? state.review.reviewedRegion : null;
     let law = enforceWill(beforeText, text, authoredSplices, { docKind: state.docKind, actor: who.actor,
       restores: options.restores === true, reviewedRegion, referenceCheck: host.referenceCheck });
@@ -2019,7 +2012,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const broken = markerBroken(beforeText, text, splices, kind);
         if (broken) return failure(kind + '_pair_broken', 'refused', broken);
       }
-      if (operation !== 'document.comment' && touchesCommentRecord(beforeText, authoredSplices)) return failure('comments_record');
     }
     // On the drawing the person has OPEN, an agent draws immediately (one Undo step). options.watched is remembered, so it is
     // re-established here from both halves: the patch is admitted and ordinary commits are fenced. Otherwise the posture applies.
@@ -2028,28 +2020,45 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (law || gate || options.propose) {
       const reviewed = reviewableLaw(beforeText, authoredSplices, law);
       if (law && reviewed == null) return failure('document_law', 'refused', law);
-      if (gate?.reviewKind === 'check') return stageReview('check', [], who, context, operation, options);
       // Human review is a typed pending outcome, decided on a continuation (reviewDecision).
       const inline = !options.propose && options.reviewInline !== false && authoredSplices.length === 1 && host.inlineReview === true;
       return stageReview(inline ? 'inline' : 'proposal', splices, who, context, operation,
         { ...options, reviewedRegion: reviewed, authoredSplices, byPosture: !!gate, ...(reviewed == null ? {} : { law: 'keep', region: reviewed }) });
     }
-    let result = null;
+    let result = null, transactionId = null, revision = baseRevision + 1, presentation = null;
+    const uncertain = reason => failure(reason, 'uncertain', { operation, requestId: who.requestId, baseRevision,
+      ...(transactionId ? { transactionId } : {}) });
     if (typeof host.commit === 'function') {
-      result = await host.commit({ documentId, baseRevision, beforeText, text, splices: clone(splices), authoredCount,
-        ...who, signal: context.signal, operation, label: clip(options.label || operation, 120),
-        sourceTransactionId: options.sourceTransactionId || null, reviewToken, fence: options.fence || null });
-      if (!result || result.ok !== true) return failure(result?.reason || 'commit_refused', result?.outcome || 'conflict');
-      // A successful host commit is irreversible to this invocation; cancellation cannot report it as absent.
-      if (result.documentId && result.documentId !== documentId) return failure('document_replaced_after_commit', 'conflict');
+      // Once the host is called, a missing or unusable receipt cannot establish that no write happened.
+      try {
+        result = await host.commit({ documentId, baseRevision, beforeText, text, splices: clone(splices), authoredCount,
+          ...who, signal: context.signal, operation, label: clip(options.label || operation, 120),
+          sourceTransactionId: options.sourceTransactionId || null, reviewToken, fence: options.fence || null });
+        const ok = result?.ok;
+        if (ok === false) {
+          const reason = result.reason, outcome = result.outcome;
+          return failure(typeof reason === 'string' && reason ? clip(reason, 160) : 'commit_refused',
+            outcome === 'refused' ? 'refused' : 'conflict');
+        }
+        if (ok !== true) return uncertain('host_commit_receipt_invalid');
+        const suppliedId = result.transactionId;
+        if (suppliedId != null) {
+          if (typeof suppliedId !== 'string' || !suppliedId || suppliedId.length > 128) return uncertain('host_commit_receipt_invalid');
+          transactionId = suppliedId;
+        }
+        const suppliedDocumentId = result.documentId;
+        if (suppliedDocumentId != null && suppliedDocumentId !== documentId) return uncertain('document_replaced_after_commit');
+        const suppliedRevision = result.revision;
+        revision = suppliedRevision == null ? revision : suppliedRevision;
+        presentation = result.presentation;
+      } catch { return uncertain('host_commit_unconfirmed'); }
     } else cancelled(context);
-    const revision = result?.revision == null ? baseRevision + 1 : result.revision;
-    if (!safeInt(revision) || revision <= baseRevision) return failure('host_revision_invalid');
-    const entry = appendCommit(text, splices, who, operation, { ...options, derivedCommentIndex: computed.derivedCommentIndex, revision, humanReviewed: !!approved || !!reviewToken, id: result?.transactionId || undefined });
+    if (!safeInt(revision) || revision <= baseRevision) return result ? uncertain('host_revision_invalid') : failure('host_revision_invalid');
+    const entry = appendCommit(text, splices, who, operation, { ...options, derivedCommentIndex: computed.derivedCommentIndex, revision, id: transactionId || undefined });
     if (options.metadata) { state.filename = options.metadata.filename; state.docKind = options.metadata.docKind; state.handles = {}; state.refs = {}; state.cursors = {}; }
     const structure = structureReceipt(beforeText, text, state.filename, context);
     return { outcome: options.rebased ? 'rebased' : 'applied', changeId: entry.id, editCount: options.editCount || splices.length,
-      ...(result?.presentation ? {presentation: result.presentation} : {}),
+      ...(presentation ? {presentation} : {}),
       ...(structure ? { structure } : {}),
       // law/region are the record of what governed this commit.
       ...(reviewedRegion == null ? {} : { law: 'keep', region: reviewedRegion }),
@@ -2083,9 +2092,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const inserted = placement === 'after' && needsParagraphBreakAfter(state.text, range.end)
         ? paragraphBreakAround(state.text, range.end).prefix + edit.text : edit.text;
       const narrow = minimalSplice(state.text.slice(start, end), inserted);
-      // Offset within the just-relocated range.
-      ready.push({ held, editIndex: index, start, end, offset: start - range.start + narrow.pos,
-        splice: { pos: start + narrow.pos, removed: narrow.removed, inserted: narrow.inserted } });
+      let pos = start + narrow.pos;
+      if (range.rebased && !narrow.removed && narrow.inserted) {
+        // Relocation already proved this handle's source unchanged. Order a pure
+        // insertion from its original offset by the same identity as hosted drafts.
+        pos = insertionPoint(held.start + start - range.start + narrow.pos, narrow.inserted, held.revision, who);
+      }
+      // Offset from the just-relocated range.
+      ready.push({ held, editIndex: index, start, end, offset: pos - range.start,
+        splice: { pos, removed: narrow.removed, inserted: narrow.inserted } });
     }
     const ordered = ready.slice().sort((a, b) => a.start - b.start || a.end - b.end);
     for (let index = 1; index < ordered.length; index++) {
@@ -2153,7 +2168,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         review.sourceDigest !== digest(state.text) || review.filename !== state.filename || review.docKind !== state.docKind) {
       invalidateReview(); return finish(failure('review_document_changed', 'conflict', { review: reviewSummary() }));
     }
-    const closedKind = review.kind === 'check' || review.kind === 'inline' || !!review.options.compareDecision;
+    const closedKind = review.kind === 'inline' || !!review.options.compareDecision;
     if ((input.action === 'apply' || input.action === 'drop') && closedKind) {
       return finish(failure('review_decision_invalid', 'invalid', { review: reviewSummary() }));
     }
@@ -2164,12 +2179,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return finish(accepted({ review: reviewSummary() }));
     }
     const who = participant(review, mintId);
-    if (review.kind === 'check') {
-      remember(state.reviewed, who, { revision: review.revision });
-      review.status = 'approved'; review.decidedAt = now();
-      review.decision = { action: 'approve', outcome: 'ok', revision: state.revision };
-      return finish(accepted({ acknowledged: true, review: reviewSummary() }));
-    }
     // A surviving review's handles were checked through surviveReview (with the evidence fallback); a second lookup here would reimpose the lapsed window.
     // Other reviews keep the direct check.
     if (!reviewSurvivesEdits(review)) {
@@ -2276,9 +2285,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return { outcome: 'review_missing' };
     }
     const keepIds = changeIds === undefined ? null : changeIds;
-    if (review.kind === 'check') {
-      return keepIds === null ? { outcome: 'ok', text: state.text } : { outcome: 'review_decision_invalid' };
-    }
     if (keepIds !== null && (!Array.isArray(keepIds) || !keepIds.length || keepIds.length > 128 || keepIds.some(id => typeof id !== 'string'))) {
       return { outcome: 'review_decision_invalid' };
     }
@@ -2579,10 +2585,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!rows.length) return { outcome: 'unchanged', decided: 0 };
     const acknowledge = status => {
       for (const row of rows) row.status = status;
-      if (who.actor === 'human' && compared.reviewOnly && compared.changes.every(row => row.status !== 'pending')) {
-        const entry = state.journal.find(row => row.id === compared.changeId);
-        if (entry) entry.humanReviewed = true;
-      }
     };
     if ((!compared.reviewOnly && !accept) || (compared.reviewOnly && accept)) {
       acknowledge(accept ? 'accepted' : 'rejected'); return { outcome: 'applied', decided: rows.length };
@@ -2627,6 +2629,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const comparison = buildComparison(state.text, text, state.filename, who);
     if (comparison.outcome) return comparison;
     const splices = comparison.changes.slice().reverse().map(row => ({pos: row.start, removed: row.removed, inserted: row.inserted}));
+    if (state.docKind === 'markdown' && touchesCommentRecord(state.text, splices)) return failure('comments_record');
     const law = enforceWill(state.text, text, splices, {docKind: state.docKind, actor: 'agent', referenceCheck: host.referenceCheck});
     return law ? failure('document_law', 'refused', law) : {splices};
   }
@@ -2692,6 +2695,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return failure('document_law', 'refused', { law: 'keep', rule: 'carrier_changed' });
     }
     const splice = minimalSplice(state.text, input.text), splices = splice.removed || splice.inserted ? [splice] : [];
+    if (who.actor === 'agent' && state.docKind === 'markdown' && touchesCommentRecord(state.text, splices, kind)) return failure('comments_record');
     if (typeof host.open === 'function') {
       // The worker door's law and posture (commit, below) before the host opens anything: the one splice from the document
       // to the text answers to the person's Will and to the review, and a refusal or a staged review asks the host nothing.
@@ -2702,7 +2706,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const reviewed = reviewableLaw(state.text, splices, law);
         if (law && reviewed == null) return failure('document_law', 'refused', law);
         const open = { label: 'Open document', metadata: { filename, docKind: kind }, authoredCount: splices.length, editCount: splices.length };
-        if (gate?.reviewKind === 'check') return stageReview('check', [], who, context, 'document.open_text', open);
         if (law || gate) return stageReview('proposal', splices, who, context, 'document.open_text',
           { ...open, reviewedRegion: reviewed, authoredSplices: splices, byPosture: !!gate, ...(reviewed == null ? {} : { law: 'keep', region: reviewed }) });
       }
@@ -2799,11 +2802,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const early = commitGate([{ pos: position, removed: '', inserted: '' }], who);
     if (early && early.reason !== 'human_review_required') return early;
-    if (early?.reviewKind === 'check') {
-      const fenced = commitFenceRefusal({ splices: [{ pos: position, removed: '', inserted: '' }] });
-      if (fenced) return fenced;
-      return stageReview('check', [], who, context, 'document.draw', { label: input.label || 'Draw a picture' });
-    }
     let painted = null;
     if (input.figures?.some?.(row => row?.kind === 'paint')) {
       const result = await paintFigures(input.figures, context);
@@ -2890,14 +2888,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // An open Draw's fence admits only a plain shapes patch: anything else would be overwritten by the person's Done.
     const editingFence = { operation: 'document.draw', drawingAsset: held.assetLabel || '',
       shapesOnly: !!input.shapes && input.recipe == null && !input.operations?.length && input.alt == null };
-    // Early read only, deciding the CHECK branch; commit() re-establishes it at the boundary (DS-02). Never from the wire.
+    // The host alone attests the open drawing; commit() re-establishes both fence facts at the boundary.
     const watched = !!commitFenceRefusal() && !commitFenceRefusal(editingFence);
-    // A CHECK draw on the open drawing lands immediately; elsewhere unchanged.
-    if (early?.reviewKind === 'check' && !watched) {
-      const fenced = commitFenceRefusal({ ...editingFence, splices: [{ pos: range.start, removed: held.text, inserted: '' }] });
-      if (fenced) return fenced;
-      return stageReview('check', [], who, context, 'document.draw', { label: input.label || 'Edit a drawing' });
-    }
     let svg, recipe;
     try {
       let base = JSON.parse(held.recipeJSON);
@@ -3135,9 +3127,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   async function execute(name, input, context) {
     pendingInspection = null;
     const who = participant(context, mintId);
-    const named = agentLabel(input && input.agent);
-    if (named) who.agent = named;
-    // Digest before either branch: recordInvocation wants the digest of whatever ran under this key.
+    // Digest before admission: clipping or ignoring fields must not hide different retry arguments.
     const inputDigest = digest(canonicalJson(input));
     // One finalizer inside the invocation boundary: every outcome records its code. A collision is not recorded; a replay writes no second row.
     const finalize = (result, { record = true } = {}) => {
@@ -3160,7 +3150,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const descriptor = getTool(name);
     if (!descriptor) return finalize(failure('operation_unknown', 'invalid'));
-    validateInput(descriptor.inputSchema, input);
+    input = validateInput(descriptor.inputSchema, input, 'arguments', !descriptor.visibility);
+    const named = agentLabel(input.agent);
+    if (named) who.agent = named;
     const beforeHandles = new Set(Object.keys(state.handles));
     const unsettled = await refresh(context);
     if (unsettled) return finalize(unsettled);
@@ -3180,7 +3172,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const focus = focused && reference(focused.start, focused.end, who, { kind: 'focus' });
         result = accepted({ filename: state.filename, docKind: state.docKind, chars: state.text.length,
           surface: pointing?.active ? { kind: 'editor', next: 'continue' } : { kind: 'headless', next: 'deliver_page' },
-          editing: editingState(who, together, will),
+          editing: editingState(together, will),
           readOnly: state.readOnly, posture: state.posture, ...(state.notes ? { notes: state.notes } : {}), selection: selected ? { start: selected.start, end: selected.end } : null,
           focus: focus ? { ref: focus.id, chars: focus.end - focus.start, kind: pointedKind(state.text, focus.start, focus.end, images) } : null,
           collaboration: { posture: together.posture, readOnly: together.readOnly, presence: together.presence,
@@ -3203,8 +3195,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
             complete: layout.complete, omitted: Math.max(0, layout.total - layout.entries.length),
             ...(layout.reason ? { reason: layout.reason } : {}) } } : {}),
           history: { complete: state.history.complete, earliestRevision: state.history.earliestRevision,
-            retainedChanges: state.journal.length, trimmedBytes: state.history.trimmedBytes,
-            reviewEvidenceComplete: !missingReviewHistory(who) },
+            retainedChanges: state.journal.length, trimmedBytes: state.history.trimmedBytes },
           // Structure is a declared world fact; `available` names only the size bound (agent/structure-request.mjs).
           ...(/\.(?:[cm]?js|html?)$/i.test(state.filename) ? { structure: { engine: 'acorn@8.19.0',
             available: state.text.length <= 8 * 1024 * 1024,
@@ -3294,9 +3285,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (typeof host.exportFile !== 'function') { result = failure('export_unavailable'); break; }
         const file = await host.exportFile({ format: input.format, filename: state.filename, docKind: state.docKind, text: state.text, signal: context.signal });
         cancelled(context);
-        result = !file?.bytes ? failure(file?.reason || 'export_unavailable')
+        result = !file?.bytes ? failure(file?.reason || 'export_unavailable', 'refused', {
+          ...(safeInt(file?.limitBytes) ? {limitBytes: file.limitBytes} : {}), ...(safeInt(file?.byteLength) ? {bytes: file.byteLength} : {})})
           : file.bytes.byteLength > MAX_EXPORT_BYTES ? failure('export_too_large', 'refused', { limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength })
-          : accepted({ format: input.format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength });
+          : accepted({ format: input.format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength,
+              ...(file.id ? {exportId: file.id} : {}) });
         break;
       }
       case 'notes.list': result = await notesList(input, who, context); break;

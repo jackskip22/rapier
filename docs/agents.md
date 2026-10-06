@@ -30,11 +30,10 @@ completeness. `returns` and `returnWaiting` expose retained returned pages. An i
 rather than repeating reveal or wait.
 
 **The person decides.** Under FREE edits apply; under ASK they wait for the person as a proposal
-(`pending`, source unchanged); under CHECK the person acknowledges your earlier work, then you send the edit
-again. `document.propose_edits` makes a proposal under any policy; the person applies or drops each change.
+(`pending`, source unchanged). `document.propose_edits` makes a proposal under any policy; the person applies or drops each change.
 Their typing comes first, and showing them a passage is not their review. The [Will](will.md) marks regions
 `edit`, `append` or `keep`, optionally with the person's words (`intent`); it holds at commit.
-A pending outcome and review name their `cause`: `will`, `ask`, `check` or `proposal`. A protected passage
+A pending outcome and review name their `cause`: `will`, `ask` or `proposal`. A protected passage
 awaiting review (`will`) does not mean the person's posture changed to ASK. Resolve the named waiting review before proposing another; a pending edit has not changed the source.
 
 **Compare and undo.** `document.compare` takes a whole alternative document (`action` defaults to `open`).
@@ -216,6 +215,12 @@ In ChatGPT, add the door as a connector at the same URL with no authentication. 
 `rapier-html` says how to put the page in front of the person in each Claude host ("Offer Rapier in the chat").
 
 ## Hand a person a page
+
+`document.export({format: "html"})` returns an offline Rapier page; `format: "markdown"` returns the exact
+source. The tool returns a `resource_link`; fetch its URI with GET to receive the file. Files up to 8 MiB
+are retained under the workspace's storage budget. The link keeps that exact file through later edits and
+release updates, expires at `exportExpiresAt` after 24 hours, and ends when the workspace is deleted or
+its capability rotates. It grants only access to that file. Download before expiry to keep a lasting copy.
 
 `npx rapier-html notes.md` writes `notes.rapier.html`: the document and editor in one offline file for any
 browser, no account needed. The person can read, edit, draw, save and share. Deliver the file, publish it

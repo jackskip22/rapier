@@ -30,7 +30,6 @@ function _rapierOpenInfoSheet(kind) {
       'RESTORE PURCHASE — Use the Google Play account you bought with.'],
     agent: ['edit control',
       'FREE — Edits immediately.',
-      'CHECK — Pauses until changes stay in view.',
       'ASK — You approve changes.'],
     will: ['will', _RAPIER_WILL_INFO.lead,
       ..._RAPIER_WILL_INFO.laws.map(entry => _rapierProtectionWord(entry.law) + ' — ' + entry.line)],

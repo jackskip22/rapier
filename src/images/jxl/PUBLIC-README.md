@@ -44,7 +44,7 @@ the loop to cancel, set `job.hurry = true` to finish with the smallest stream wr
 | --- | --- |
 | `rapier-jxl` | `encode`: 8-bit grey, grey with alpha, RGB and RGBA. Quality 100 is lossless; 1 to 99 is lossy, for flat-colour rasters. |
 | `rapier-jxl/min` | The core as one minified file. |
-| `rapier-jxl/effort` | The same `encode` with `{effort: 2, 3, 4 or 6}`: smaller exact files, more time, never larger than the effort below. Effort 1 is the core. From effort 3, screenshots, text and drawings also get exact palettes, repeated-run matching and a repeated-glyph dictionary, often half the size or less. See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md). |
+| `rapier-jxl/effort` | The same `encode` with `{effort: 2}` through `{effort: 9}`: smaller exact files at more time, never larger than the effort below. Effort 1 is the core. Effort 3 adds screen palettes, repeated-run matching and a repeated-glyph dictionary. Efforts 5 through 9 also search larger groups, row matches and predictors priced after matching. |
 | `rapier-jxl/wasm` | The effort door with integer WebAssembly SIMD kernels; the same bytes, JavaScript when SIMD is unavailable. See [docs/KERNELS.md](docs/KERNELS.md). |
 | `rapier-jxl/photo` | `encodePhoto`: DCT compression for photographs, exact alpha. |
 | `rapier-jxl/jpeg` | `transcode`: a JPEG carried as its coefficients, no decode. The JPEG file itself cannot be rebuilt; ICC bytes, Exif beyond orientation and XMP are not carried. |
@@ -54,6 +54,20 @@ the loop to cancel, set `job.hurry = true` to finish with the smallest stream wr
 
 Each door is a readable module in `src/` (a bundler carries shared modules once) and, except `writer` and `kernels`,
 a single minified file in `dist/` that can be copied on its own.
+
+The effort door also offers sampled trees for lossless encoding:
+
+```js
+import {encode} from 'rapier-jxl/effort';
+const bytes = encode(rgba, width, height, {effort: 4, treeLearning: 'sampled'});
+```
+
+Efforts 2 and 3 share trees learned from up to 1,024 samples per channel across the image. Efforts 4 through 9
+also try richer trees learned from up to 2,048 samples per channel in each group. Complete streams compete against
+effort 1; the richer point also keeps the cheaper sampled result. The option leaves effort 1 and lossy requests
+unchanged. Sampling is deterministic and writes the same bytes on one thread or a worker pool. In this mode,
+**any `job.hurry` observed during encoding returns effort 1 exactly**, including at the last group; finish iterating
+the job before reading `job.bytes`. Omit `treeLearning` for the ordinary search.
 
 ## Limits
 

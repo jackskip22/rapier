@@ -188,13 +188,17 @@
   async function humanContext() {
     const basic = {documentId: String(rapier.identity.authority), revision: Number(rapier.revision.settled),
       generation: Number(rapier.revision.generation)};
-    if (!readyDone || admission() || composing() || _rapierMutationBarrierActive() || Date.now() - lastInputAt < 900) {
+    if (!readyDone || admission() || _rapierMutationBarrierActive()) {
       return {...fail('document_not_settled', 'yielded'), ...basic,
         context: {sequence: contextSequence, visible: visible(), editing: visible() && editing(), selection: null, focus: null}};
     }
+    // Read the kept source and its live focus without checkpointing a draft or composition.
+    // The hosted adapter maps this range to its acknowledged source before publishing it.
+    const busy = () => ({...fail('document_not_settled', 'yielded'), ...documentState(),
+      context: {...editorFocus(), sequence: contextSequence, visible: visible(), editing: visible() && editing()}});
+    if (composing() || Date.now() - lastInputAt < 900) return busy();
     const captured = await _rapierWithSettledExternalDocument(documentState, {quiet: true});
-    if (!captured.settled) return {...fail('document_not_settled', 'yielded'), ...basic,
-      context: {sequence: contextSequence, visible: visible(), editing: true, selection: null, focus: null}};
+    if (!captured.settled) return busy();
     const value = captured.value;
     if (Date.now() - lastPointerAt < 1500) rememberPointer();
     const pointer = visible() && pointerCurrent() ? {selection: retainedPointer.selection, focus: retainedPointer.focus}
@@ -202,8 +206,7 @@
     return {ok: true, documentId: value.documentId, revision: value.revision, generation: value.generation,
       filename: value.filename, docKind: value.docKind, text: value.text,
       context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(true),
-        posture: value.posture, readOnly: value.readOnly,
-        ...(value.reviewedRevision == null ? {} : {reviewedRevision: value.reviewedRevision})}};
+        posture: value.posture, readOnly: value.readOnly}};
   }
 
   function setPolicy(policy, event) {
@@ -211,7 +214,7 @@
     if (!policyAvailable) return fail('policy_not_ready');
     if (!policy || Object.keys(policy).some(key => !['posture', 'readOnly'].includes(key)) ||
         (!Object.hasOwn(policy, 'posture') && !Object.hasOwn(policy, 'readOnly')) ||
-        (Object.hasOwn(policy, 'posture') && !['free', 'check', 'ask'].includes(policy.posture)) ||
+        (Object.hasOwn(policy, 'posture') && !['free', 'ask'].includes(policy.posture)) ||
         (Object.hasOwn(policy, 'readOnly') && typeof policy.readOnly !== 'boolean')) return fail('policy_invalid', 'invalid');
     const value = {sequence: ++contextSequence, visible: visible(), editing: editing(), trusted: true, policy: {...policy}};
     for (const notify of contextSubscribers) { try { notify(value); } catch (_) {} }
@@ -220,7 +223,7 @@
 
   function projectPolicy(value) {
     const policy = value.collaboration;
-    if (!apps || !policy || !['free', 'check', 'ask'].includes(policy.posture) || typeof policy.readOnly !== 'boolean') return;
+    if (!apps || !policy || !['free', 'ask'].includes(policy.posture) || typeof policy.readOnly !== 'boolean') return;
     policyAvailable = true;
     if (_rapierPosture() !== policy.posture) _rapierPostureSet(policy.posture);
     if (rapier.access.readOnly !== policy.readOnly) rapierSetReadOnly(policy.readOnly);
@@ -251,7 +254,7 @@
   // held handle, never from the wire), and Draw must be open on that same picture. The predicate
   // for the last of those is the SAME one that decides the hand-off, so the fence can never open
   // on an edit the surface would then refuse to show. A new picture under the canvas, an
-  // operations batch, a caption change, a staged CHECK review, an apply, a save, an open: all
+  // operations batch, a caption change, a staged review, an apply, a save, an open: all
   // still refused.
   const drawFence = fact => {
     if (typeof document === 'undefined' || !document.body?.classList?.contains('rapier-draw-open')) return '';
@@ -309,8 +312,7 @@
       proposalBase: proposalRecord()?.base || null, ledgerRoot: rapier.document.source?.rootId || null,
       generation: Number(rapier.revision.generation), filename: String(rapier.document.filename),
       docKind: String(rapier.document.docKind), text: _rapierSourceText(), readOnly: !!rapier.access.readOnly,
-      posture: _rapierPosture(), ...(!rapier.review.seen?.restored && _rapierSeenUndelivered() === 0
-        ? {reviewedRevision: Number(rapier.revision.settled)} : {})};
+      posture: _rapierPosture()};
   }
 
   function current() {
@@ -530,7 +532,8 @@
       return committed;
     } catch (error) {
       if (committed) { committed.presentation = 'failed'; return committed; }
-      if (error?.name === 'AbortError' || request.signal?.aborted) throw error;
+      // The compound owner restores source and Undo before rejecting a cancelled transaction.
+      if (error?.name === 'AbortError' || request.signal?.aborted) return fail('cancelled');
       return fail(error?.code || 'commit_failed', 'conflict');
     } finally {
       try { if (!done && !hidden) restorePlace(place, []); } catch (_) {}
@@ -551,7 +554,6 @@
     if (!compare.active) compare.snapshot = _rapierCompareCaptureView();
     compare.lens = 'text'; compare.changeId = null;
     compare.currentText = request.currentText; compare.currentName = request.currentName || rapier.document.filename;
-    _rapierSeenViewMovedByAgent();
     _rapierCompareStart(request.currentText, compare.currentName, request.incomingText, request.incomingName || 'comparison.md', {exact: true});
     if (!matches(request)) return fail('comparison_not_opened');
     comparisonOwner = owner;
@@ -582,7 +584,6 @@
       resolved = {kind: 'markdown-range', start, end};
     }
     const travel = _rapierTravelBegin('agent reveal'), token = rapier.view.restoreToken;
-    _rapierSeenViewMovedByAgent();
     const scroll = _rapierScrollResolvedIntoView(resolved);
     if (scroll.reason) return fail(scroll.reason);
     if (!await _rapierSettleRevealScroll(scroll, request.signal || idleSignal, token) || !matches(request)) return fail('view_changed');
@@ -701,16 +702,15 @@
   }
 
   function reviewImage(review, text) {
-    if (!['proposal', 'check'].includes(review?.kind) || !Array.isArray(review.splices) || !review.splices.length) return null;
+    if (review?.kind !== 'proposal' || !Array.isArray(review.splices) || !review.splices.length) return null;
     let rows = review.splices;
-    if (review.kind === 'proposal' && Array.isArray(review.changes) && review.changes.length) {
+    if (Array.isArray(review.changes) && review.changes.length) {
       rows = review.changes.map((row, index) => row.status === 'pending' ? review.splices[index] : null).filter(Boolean);
       if (!rows.length) return null;
     }
     const transformed = globalThis.RapierKernel.transformSplices(text, rows);
     if (typeof transformed !== 'string') return null;
-    const baseline = review.kind === 'check' ? transformed : text;
-    const incoming = review.kind === 'check' ? text : transformed;
+    const baseline = text, incoming = transformed;
     if (baseline === incoming) return null;
     return {baseline, incoming};
   }
@@ -780,9 +780,7 @@
     const resolved = {kind: 'document-range', source: value.text, start: 0, end: value.text.length, record: {}};
     const who = {actor: 'agent', principal: options.principal || 'mcp', requestId: options.requestId || review.id,
       transport: options.transport || 'platform', signal: controller.signal};
-    const presentation = review.kind === 'check' ? {kind: 'check', baseline: image.baseline,
-      baseRevision: review.baseRevision, includesHumanChanges: review.includesHumanChanges === true} : proposalRecord() ? {kind: 'proposal', base: proposalRecord().base} : null;
-    _rapierSeenViewMovedByAgent();
+    const presentation = proposalRecord() ? {kind: 'proposal', base: proposalRecord().base} : null;
     const changes = review.kind === 'proposal' && Array.isArray(review.changes) && review.changes.length
       ? review.changes.filter(row => row.status === 'pending').map(row => ({id: row.id, pos: row.pos, removed: String(row.removed || '').length, inserted: String(row.inserted || '').length}))
       : review.kind === 'proposal' && Array.isArray(review.changeIds) && review.changeIds.length && review.changeIds.length <= review.splices.length
@@ -840,9 +838,9 @@
   // reasons and caller names can contain document text. Never spread a review onto the wire.
   function embedReviewMetadata(review) {
     if (typeof review?.id !== 'string' || !/^review_[0-9a-f]{32}$/.test(review.id) ||
-        !['proposal', 'inline', 'check'].includes(review.kind) ||
+        !['proposal', 'inline'].includes(review.kind) ||
         !['pending', 'approved', 'declined', 'invalidated'].includes(review.status) ||
-        !['will', 'ask', 'check', 'proposal'].includes(review.cause) ||
+        !['will', 'ask', 'proposal'].includes(review.cause) ||
         !Number.isSafeInteger(review.revision) || review.revision < 0) return null;
     const law = review.law ?? null, region = review.region ?? null;
     if (law !== null && !['keep', 'append', 'edit'].includes(law)) return null;
@@ -972,12 +970,7 @@
       onDecision: async decision => {
         if (decision.trusted !== true) return;
         if (!['approve', 'decline', 'apply', 'drop'].includes(decision.action)) return;
-        const result = await decideKernelReview(request.review, decision.action, decision.changeIds);
-        if (decision.action === 'approve' && request.review.kind === 'check' && result.acknowledged === true) {
-          const ids = [...rapier.review.moved].filter(([, owner]) =>
-            _rapierScopeOwns(scope(request), owner.actor, owner.transport)).map(([id]) => id);
-          _rapierSeenWitnessBlocks(ids, null);
-        }
+        await decideKernelReview(request.review, decision.action, decision.changeIds);
       },
     });
   }
@@ -985,7 +978,7 @@
   // The inline read-surface's own read of the pending proposal: a pure accessor over the same
   // collaboration() snapshot document.get_context and the law lens already read, relocated
   // (relocation runs at decision time and whenever a door reads collaboration()) so a stale
-  // position never reaches the spans. Never anything but a proposal under decision -- a check,
+  // position never reaches the spans. Never anything but a proposal under decision -- an
   // inline or comparison-driven review has nothing for a person to keep or drop change by change.
   function pendingReviewSnapshot() {
     if (!kernel) return null;
@@ -1245,7 +1238,6 @@
       if (!hunks.ok) return hunks;
       const index = hunks.hunks.findIndex(hunk => hunkContains(hunk, request));
       if (index < 0) return fail('change_not_visible');
-      _rapierSeenViewMovedByAgent();
       const value = _rapierCompareFocusChange(index);
       return value.target ? {ok: true} : fail('change_not_visible');
     },
@@ -1709,15 +1701,20 @@
       const actor = {kind: row.actor, id: row.actor === 'agent'
         ? RapierLedger.agentActorId(row.transport || 'mcp', row.hostAgent ? {name: row.hostAgent} : null)
         : row.actor === 'human' ? 'local' : row.principal || 'mcp'};
-      const beforeHash = root, baseRevision = revision++;
-      for (const splice of row.splices) root = RapierLedger.rootAfter(root, splice);
-      records.push({beforeHash, afterHash: root, splices: row.splices, transaction: {
-        id: local.documentAuthority.slice(0, 48) + ':remote:' + revision.toString(36),
-        documentAuthority: local.documentAuthority, baseRevision, revision, actor, transport: 'platform',
-        operation: row.operation || 'document.remote_edit', requestId: null, sourceTransactionId: null,
-        parent: records.at(-1)?.transaction.id ?? null, reverts: null, reapplies: null,
-        createdAt: row.createdAt ?? 0, affectedBlockIds: [],
-      }});
+      // A hosted commit can join many local checkpoints. Carry its ordered source
+      // through bounded ledger records, each linked by its own local revision.
+      for (let offset = 0; offset < row.splices.length; offset += 64) {
+        const splices = row.splices.slice(offset, offset + 64);
+        const beforeHash = root, baseRevision = revision++;
+        for (const splice of splices) root = RapierLedger.rootAfter(root, splice);
+        records.push({beforeHash, afterHash: root, splices, transaction: {
+          id: local.documentAuthority.slice(0, 48) + ':remote:' + revision.toString(36),
+          documentAuthority: local.documentAuthority, baseRevision, revision, actor, transport: 'platform',
+          operation: row.operation || 'document.remote_edit', requestId: null, sourceTransactionId: null,
+          parent: records.at(-1)?.transaction.id ?? null, reverts: null, reapplies: null,
+          createdAt: row.createdAt ?? 0, affectedBlockIds: [],
+        }});
+      }
     }
     return RapierLedger.exportLedger({text: value.text, records, documentAuthority: local.documentAuthority,
       root, revision, complete: false});
@@ -1743,12 +1740,14 @@
     replacing = true;
     // The agent change this projection brought into the page, if any: its transaction, for the caret.
     let landed = null;
+    let sourceApplied = false;
     try {
       if (value.documentId !== before.documentId) {
         const stamp = _rapierMutationStamp();
         const loaded = await rapierLoad(value.text, value.filename, {documentAuthority: value.documentId,
           documentKind: value.docKind, expectedMutationStamp: stamp, returnReceipt: true, appsSnapshot: true});
         if (!loaded) return fail('document_changed', 'conflict');
+        sourceApplied = true;
       } else if (value.text !== before.text) {
         const row = _rapierPrefixSuffixDiff(before.text, value.text);
         let carriedLedger;
@@ -1763,12 +1762,14 @@
         const rows = rapier.undo.ledger;
         landed = rows.slice(rows.findLastIndex(entry => entry.transaction?.id === tip) + 1)
           .findLast(entry => entry.transaction?.actor?.kind === 'agent')?.transaction || null;
+        sourceApplied = true;
       }
       if (value.filename !== String(rapier.document.filename) || value.docKind !== rapier.document.docKind) {
-        if (_rapierSourceText() !== value.text || String(rapier.identity.authority) !== value.documentId) return fail('document_changed', 'conflict');
+        if (_rapierSourceText() !== value.text || String(rapier.identity.authority) !== value.documentId)
+          return {...fail('document_changed', 'conflict'), sourceApplied};
         const loaded = await rapierLoad(value.text, value.filename, {sameDocument: true, preserveHistory: true,
           documentKind: value.docKind, expectedMutationStamp: _rapierMutationStamp(), appsSnapshot: true});
-        if (!loaded) return fail('document_changed', 'conflict');
+        if (!loaded) return {...fail('document_changed', 'conflict'), sourceApplied};
       }
       const exact = _rapierSourceText() === value.text && String(rapier.identity.authority) === value.documentId;
       if (exact) {
@@ -1784,6 +1785,9 @@
         try { agentCaret(landed.id, (slash > 0 && named.slice(slash + 1)) || doorName); } catch (_) {}
       }
       return {ok: true, outcome: 'applied', comparison, snapshot: await snapshot()};
+    } catch (error) {
+      if (sourceApplied) return {...fail('snapshot_apply_failed', 'conflict'), sourceApplied};
+      throw error;
     } finally { replacing = false; }
   }
 
