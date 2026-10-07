@@ -121,12 +121,12 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     run.deferSettle=true;
     progress('painting'); await yieldPaint(); alive();
     while(!run.done) {
-     const deadline=performance.now()+PAINT_SLICE_MS;
      let visited=0;
-     completed+=run.run(()=>visited++>=8 || visited>1&&performance.now()>=deadline);
-     progress('painting'); await yieldPaint(); alive();
+     const laid=run.run(()=>visited++>=1); completed+=laid;
+     if(laid)progress('painting');
+     await yieldPaint(); alive();
     }
-    while(!run.finishSlice(performance.now()+PAINT_SLICE_MS)) {
+    while(!run.finishSlice(performance.now()+PAINT_SLICE_MS,64)) {
      progress('settling'); await yieldPaint(); alive();
     }
     progress('encoding'); await yieldPaint(); alive();
@@ -190,8 +190,9 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     const value=await execute(request); postMessage({id,value},transfer(value));
    } catch(error) {
     const cancelled=error.name==='AbortError'&&agentJobs.get(id)?.signal.aborted;
-    if(!cancelled)failed=error;
-    postMessage({id,error:{name:error.name,message:String(error.message||error),...(typeof error.code==='string'?{code:error.code}:{})},...(cancelled?{recoverable:true}:{})});
+    const recoverable=cancelled||error.code==='paint_history_full';
+    if(!recoverable)failed=error;
+    postMessage({id,error:{name:error.name,message:String(error.message||error),...(typeof error.code==='string'?{code:error.code}:{})},...(recoverable?{recoverable:true}:{})});
    } finally {agentJobs.delete(id);}
   };
   chain=chain.then(run); return chain;
@@ -223,7 +224,7 @@ export function createPaintWorkerClient({postMessage,terminate=()=>{}}) {
    const job=pending.get(message?.id); if(!job) return false;
    if(message.error) {
     const error=Object.assign(new Error(message.error.message),{name:message.error.name||'Error',...(typeof message.error.code==='string'?{code:message.error.code}:{})});
-    if(message.recoverable===true&&error.name==='AbortError'){pending.delete(message.id);job.cleanup?.();job.reject(error);}
+    if(message.recoverable===true&&(error.name==='AbortError'||error.code==='paint_history_full')){pending.delete(message.id);job.cleanup?.();job.reject(error);}
     else fail(error);
    }
    else if(message.progress===true) { try { job.onProgress?.(message.value); } catch(error) { fail(error); } }

@@ -10,6 +10,7 @@ import {createHash} from 'node:crypto';
 import {mkdir, readFile, readdir, rename, rm, writeFile} from 'node:fs/promises';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {mermaidResourceFiles} from './mermaid-resources.mjs';
 import {OCR_FILES} from '../notes/ocr.mjs';
 import {LETTER_SETS} from '../draw/letters.mjs';
 import {PDF_JS_VERSION} from '../interchange/pdf-resources.mjs';
@@ -37,7 +38,7 @@ export async function pluginPackFiles() {
 	const loader = await readFile(join(root, 'shell/plugin-loader.js'), 'utf8');
 	const math = bundlePin(loader, 'math', 'MATHJAX_VERSION');
 	math.path = join(root, 'shell/vendor', new URL(math.url).pathname.split('/').at(-1));
-	return [math, bundlePin(loader, 'mermaid', 'MERMAID_VERSION'),
+	return [math, ...mermaidResourceFiles(root),
 		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, url: file.url, sri: file.sri, bytes: file.bytes})),
 		...LETTER_SETS.map(set => ({id: 'rapier-letters-' + set.id, path: join(root, 'draw/letters', set.id + '.json'), sri: set.sha384, bytes: set.bytes})),
 		...pdfFiles(JSON.parse(await readFile(join(root, 'interchange/pdf-pins.json'), 'utf8')))];

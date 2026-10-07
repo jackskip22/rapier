@@ -46,7 +46,7 @@ const dataOnly = (value, depth = 0) => {
 // (draw/agent-paint.mjs encodeAgentPainting), preserving the kept painting and its replay.
 export function admitPaintReplay(raw, validRaster = value => typeof value === 'string' && /^data:image\/(png|jxl);base64,/.test(value)) {
   if (!object(raw) || !(raw.mode === 'water' && raw.baseRaster === null || validRaster(raw.baseRaster)) || !dimensions(raw.px) || !scale(raw.scale) || !Array.isArray(raw.entries)) return null;
-  if (raw.mode != null && raw.mode !== 'water' || raw.mode === 'water' && !waterPaperById(raw.paper)) return null;
+  if (raw.mode != null && raw.mode !== 'water' || raw.mode === 'water' && (!waterPaperById(raw.paper) || !identity(raw.session))) return null;
   if (!paintReplayFits(raw)) return null;
   const views = [];
   if (raw.views != null) {
@@ -119,5 +119,5 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
     if (!Array.isArray(entry.crop) || entry.crop.length !== 4 || !entry.crop.every(integer) || entry.crop[2] < entry.crop[0] || entry.crop[3] < entry.crop[1] || !dimensions([entry.crop[2] - entry.crop[0] + 1, entry.crop[3] - entry.crop[1] + 1])) return null;
     entries.push(copy(entry));
   }
-  return {baseRaster: raw.baseRaster, px: raw.px.slice(), scale: raw.scale, entries, ...(raw.mode === 'water' ? {mode: 'water', paper: raw.paper} : {}), ...(views.length ? {views} : {})};
+  return {baseRaster: raw.baseRaster, px: raw.px.slice(), scale: raw.scale, entries, ...(raw.mode === 'water' ? {mode: 'water', paper: raw.paper, session: raw.session} : {}), ...(views.length ? {views} : {})};
 }

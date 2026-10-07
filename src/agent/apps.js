@@ -24,7 +24,9 @@
   let contextFlight = null, contextTimer = 0, contextExpiryTimer = 0, contextEpoch = 0, contextSequence = 0, contextFailures = 0;
   let contextQueued = false, contextAck = null, contextIssue = '', unsubscribeContext;
   let modelFlight = null, modelQueued = false, modelAvailable = true, modelFailures = 0, modelSent = '';
-  let policyQueued = null, reviewQueued = null, presentedReview = null, viewFlight = null, visualFlight = null;
+  let policyQueued = null, reviewQueued = null, presentedReview = null, viewFlight = null, visualFlight = null, exportFlight = null;
+  const editorRequests = new Map();
+  let editorFlight = null, editorResolving = false;
   let openingSwitch = false;
   let hostWork = null;
   let imageSupportNoticeStarted = false;
@@ -166,6 +168,8 @@
 
   function setStatus(value) {
     status = value;
+    if (['unavailable', 'expired', 'unsupported', 'detached', 'unpaired'].includes(value)) cancelEditorRequests('editor_unavailable', {forget: true});
+    else if (value === 'offline') cancelEditorRequests('editor_unavailable', {waitingOnly: true});
     if (value === 'ready') void explainImageSupport();
     if (!notice) return;
     // Stranded drafts keep the notice (and its Copy/Download draft) up whatever this cycle's status says.
@@ -421,6 +425,7 @@
       if (release) { await contextFlight; return publishHumanContext(true); }
       return contextFlight;
     }
+    if (!release && editorContextBusy()) { contextQueued = true; return false; }
     if (closed || !initialized || !token || !base || (!release && switching)) return false;
     const documentToken = token, source = base, epoch = contextEpoch;
     contextQueued = false;
@@ -438,17 +443,22 @@
         (!!decisionFlight && decisionFlight.kind !== 'review') || !!policyQueued);
       const args = {document: documentToken, expectedRevision: source.revision, contextId: nonce,
         sequence: ++contextSequence, visible: active, editing: busy};
+      if (active && captured?.documentId === source.documentId && ['formatted', 'source', 'notes'].includes(captured?.context?.view)) args.view = captured.context.view;
       const ranges = active && contextRanges(captured, source);
       if (ranges) Object.assign(args, ranges);
       if (active && exact && captured.context?.drawing?.open) {
         args.drawing = {...captured.context.drawing};
         if (args.drawing.recipe) {
           const recipe = JSON.stringify(args.drawing.recipe), limits = globalThis.RapierKernel.LIMITS;
-          if (recipe.length > limits.editChars || new TextEncoder().encode(recipe).byteLength > limits.authorityBytes) {
+          if (new TextEncoder().encode(recipe).byteLength > limits.authorityBytes) {
             delete args.drawing.recipe;
             args.drawing.recipeUnavailable = 'target_over_edit_budget';
           }
         }
+      }
+      if (active && typeof host.editorContext === 'function') {
+        const editor = host.editorContext();
+        if (object(editor?.preferences)) args.editor = {preferences: editor.preferences};
       }
       const result = await call('document.human_context', args, 5000);
       if (token !== documentToken || closed) return false;
@@ -622,7 +632,172 @@
     captureIncoming(result);
   }
 
+  // The open editor answers a pending export request with the file it builds, bound to this workspace, document, revision and format.
+  // A source that changed while it rendered, or a workspace that was switched, sends the answer nowhere with bytes.
+  async function presentExport(local, expected) {
+    const intent = base?.exportIntent;
+    if (!intent || intent.status !== 'pending' || intent.revision !== base.revision || intent.documentId !== base.documentId) {
+      exportFlight = null;
+      return;
+    }
+    if (!exportFlight || exportFlight.exportId !== intent.id) {
+      const target = {document: token, documentId: base.documentId, revision: base.revision};
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), Math.max(0, intent.expiresAt - Date.now()));
+      let fact;
+      try {
+        fact = typeof host.exportDocument === 'function'
+          ? await host.exportDocument({...intent, signal: controller.signal}, expected)
+          : {outcome: 'refused', reason: 'editor_unavailable'};
+      } catch (_) { fact = {outcome: 'refused', reason: 'export_unavailable'}; }
+      finally { clearTimeout(timeout); }
+      if (token !== target.document || closed || closing || switching) return;
+      const current = await host.snapshot();
+      if (dirty || composing || !same(current, local) || current.generation !== local.generation ||
+          current.revision !== local.revision || base.revision !== target.revision) fact = {outcome: 'refused', reason: 'document_changed'};
+      exportFlight = {document: target.document, exportId: intent.id, expectedRevision: target.revision,
+        fact: {...fact, documentId: target.documentId, revision: target.revision, format: intent.format}};
+    }
+    const sent = exportFlight;
+    const result = await call('document.export_ack', sent, 60000);
+    if (exportFlight === sent) exportFlight = null;
+    captureIncoming(result);
+  }
+
+  function editorContextBusy() {
+    return editorResolving || !!editorFlight || [...editorRequests.values()].some(row => row.initial || row.later);
+  }
+
+  function editorUnavailable(row, reason) {
+    return {kind: 'editor', documentId: row.documentId, revision: row.revision, operation: row.operation,
+      receipt: {id: row.id, status: 'unavailable', ...(row.preference ? {preference: row.preference} : {action: row.action}), reason}};
+  }
+
+  function queueEditorReceipt(row, fact, initial = false) {
+    if (editorRequests.get(row.id) !== row || row.document !== token || closed ||
+        fact?.documentId !== row.documentId || fact.revision !== row.revision || fact.operation !== row.operation ||
+        fact.receipt?.id !== row.id || !['applied', 'waiting', 'done', 'declined', 'unavailable'].includes(fact.receipt.status)) return false;
+    // Keep the first receipt ahead of callbacks, even when a human changes the value while its ACK is in flight.
+    const captured = {...fact, receipt: {...fact.receipt}, ...(fact.file ? {file: {...fact.file}} : {})};
+    if (initial) { row.initial = captured; row.status = captured.receipt.status; }
+    else row.later = captured;
+    clearTimeout(contextTimer);
+    schedule(0);
+    return true;
+  }
+
+  function forgetEditorRequest(row, reason) {
+    editorRequests.delete(row.id);
+    if (editorFlight?.row === row) editorFlight = null;
+    host?.cancelEditorRequest?.(row.id, reason);
+    row.controller.abort();
+  }
+
+  function editorReceiptStatus(row) {
+    return row.later?.receipt.status || row.initial?.receipt.status || row.status;
+  }
+
+  function cancelEditorRequests(reason, {forget = false, waitingOnly = false} = {}) {
+    for (const row of editorRequests.values()) {
+      const status = editorReceiptStatus(row);
+      if (waitingOnly && !['resolving', 'waiting'].includes(status)) continue;
+      if (forget) { forgetEditorRequest(row, reason); continue; }
+      row.cancelReason = reason;
+      const cancelled = host?.cancelEditorRequest?.(row.id, reason);
+      row.controller.abort();
+      if (editorReceiptStatus(row) === 'waiting' && !cancelled) queueEditorReceipt(row, editorUnavailable(row, reason));
+    }
+  }
+
+  function reconcileEditorRequests() {
+    const intent = base?.editorIntent;
+    for (const row of editorRequests.values()) {
+      if (row.document !== token || row.documentId !== base?.documentId) forgetEditorRequest(row, 'document_changed');
+      else if (['resolving', 'waiting'].includes(editorReceiptStatus(row)) && (!intent || intent.id !== row.id ||
+          intent.documentId !== row.documentId || intent.revision !== row.revision || intent.expiresAt <= Date.now())) {
+        forgetEditorRequest(row, 'editor_request_unavailable');
+      }
+      else if (row.acknowledged && !row.initial && !row.later && row.status !== 'applied' && base.editorIntent?.id !== row.id) {
+        forgetEditorRequest(row, 'editor_request_unavailable');
+      }
+    }
+  }
+
+  async function acknowledgeEditor() {
+    if (editorResolving) return false;
+    if (!editorFlight) {
+      for (const row of editorRequests.values()) {
+        const slot = row.initial ? 'initial' : row.acknowledged && row.later ? 'later' : null;
+        if (!slot) continue;
+        editorFlight = {row, slot, fact: row[slot], args: {document: row.document,
+          expectedRevision: row.revision, editorId: row.id, fact: row[slot]}};
+        break;
+      }
+    }
+    const sent = editorFlight;
+    if (!sent) return true;
+    const {row} = sent;
+    if (row.document !== token || row.documentId !== base?.documentId || closed) {
+      forgetEditorRequest(row, 'document_changed');
+      return false;
+    }
+    // A context snapshot captured before a preference write must arrive before its applied receipt.
+    clearTimeout(contextTimer);
+    if (contextFlight) await contextFlight;
+    clearTimeout(contextTimer);
+    if (editorFlight !== sent) return false;
+    const result = await call('document.editor_ack', sent.args, 5000);
+    if (editorFlight !== sent) return false;
+    captureIncoming(result);
+    if (result?.isError) {
+      const data = result.structuredContent;
+      if (data?.outcome === 'uncertain' || ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_UNACKNOWLEDGED'].includes(data?.code)) throw new Error('EDITOR_ACK_UNCONFIRMED');
+      forgetEditorRequest(row, data?.reason || 'editor_request_unavailable');
+      if (data?.code) ensureResult(result);
+    } else {
+      if (result?.structuredContent?.editorId !== row.id || !object(result.structuredContent.receipt)) throw new Error('INVALID_EDITOR_ACK');
+      if (row[sent.slot] === sent.fact) row[sent.slot] = null;
+      row.acknowledged = true;
+      row.status = result.structuredContent.receipt.status;
+      editorFlight = null;
+    }
+    contextChanged();
+    schedule(0);
+    return true;
+  }
+
+  async function presentEditor(expected) {
+    const intent = base?.editorIntent;
+    if (!intent || !['pending', 'waiting'].includes(intent.status) || intent.documentId !== base.documentId || intent.revision !== base.revision) return;
+    if (editorRequests.has(intent.id)) return;
+    const row = {id: intent.id, document: token, documentId: intent.documentId, revision: intent.revision,
+      operation: intent.operation, preference: intent.preference, action: intent.action, status: 'resolving',
+      controller: new AbortController(), initial: null, later: null, acknowledged: false};
+    // One retained observer per applied preference is sufficient; the worker retains the latest applied receipt for it.
+    if (row.preference) for (const prior of editorRequests.values()) {
+      if (prior.preference === row.preference && prior.status === 'applied') forgetEditorRequest(prior, 'editor_request_replaced');
+    }
+    editorRequests.set(row.id, row);
+    editorResolving = true;
+    clearTimeout(contextTimer);
+    let fact;
+    try {
+      if (contextFlight) await contextFlight;
+      clearTimeout(contextTimer);
+      fact = typeof host.resolveEditorRequest === 'function'
+        ? await host.resolveEditorRequest({...intent, signal: row.controller.signal}, expected,
+          {onReceipt: value => queueEditorReceipt(row, value)})
+        : editorUnavailable(row, 'editor_unavailable');
+    } catch (_) { fact = editorUnavailable(row, 'editor_unavailable'); }
+    finally { editorResolving = false; }
+    if (editorRequests.get(row.id) !== row) return;
+    if (row.cancelReason && !['applied', 'done'].includes(fact?.receipt?.status)) fact = editorUnavailable(row, row.cancelReason);
+    if (!queueEditorReceipt(row, fact, true)) queueEditorReceipt(row, editorUnavailable(row, 'editor_unavailable'), true);
+    await acknowledgeEditor();
+  }
+
   async function presentCollaboration() {
+    reconcileEditorRequests();
     const review = base?.collaboration?.review;
     if (presentedReview && (reviewSignature(review) !== presentedReview.signature || review.status !== 'pending' ||
         base.revision !== presentedReview.serverRevision || base.text !== presentedReview.text)) {
@@ -631,11 +806,14 @@
     }
     if (!base || closed || closing || switching || !visible() || dirty || flight || decisionFlight ||
         policyQueued || reviewQueued || incoming || editing()) return;
+    if (editorContextBusy()) { await acknowledgeEditor(); return; }
     if (viewFlight) { await acknowledgeView(); return; }
     const local = await host.snapshot();
     if (!same(local, base)) { dirty = true; contextChanged(); return; }
     const expected = {expectedDocumentId: local.documentId, expectedRevision: local.revision,
       expectedText: local.text, expectedGeneration: local.generation};
+    if (base.exportIntent?.status === 'pending') { await presentExport(local, expected); return; }
+    if (base.editorIntent) { await presentEditor(expected); return; }
     if (base.visualIntent?.status === 'pending') { await presentVisual(local, expected); return; }
     if (review?.status === 'pending' && review.revision === base.revision) {
       if (presentedReview?.id === review.id) {
@@ -700,6 +878,7 @@
     editEpoch++;
     lastEdit = Date.now();
     if (base) dirty = true;
+    cancelEditorRequests('document_changed', {waitingOnly: true});
     updateCompareControls();
     contextChanged();
     schedule(500);
@@ -1122,6 +1301,7 @@
     if (!editorKeyFor(token)) return Promise.resolve(false);
     running = (async () => {
       if (viewFlight?.status === 'expired') await acknowledgeView();
+      await acknowledgeEditor();
       if (!base) {
         if (!incoming && !await sync()) return false;
         await loadIncoming(false, null, force);
@@ -1147,7 +1327,7 @@
     })().catch(error => { failed(error); return false; }).finally(() => {
       running = null;
       updateCompareControls();
-      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : policyQueued || reviewQueued ? 0 : dirty ? 500 : 1500);
+      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : policyQueued || reviewQueued || editorContextBusy() ? 0 : dirty ? 500 : 1500);
     });
     return running;
   }
@@ -1210,6 +1390,7 @@
     // A paired page edits its one workspace; another document comes from the assistant.
     if (pairedId) { host.notify('This page edits one document. Ask your assistant to open another.', 'info'); return false; }
     if (Object.hasOwn(args, 'document') || Object.hasOwn(args, 'file') || switching || closing || closed || fileHydrations.size) return false;
+    cancelEditorRequests('document_changed', {waitingOnly: true});
     if (base && !await flush()) return false;
     if (base) await saveHostFile();
     if (!base && token) return false;
@@ -1230,6 +1411,7 @@
         expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text
       });
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
+      cancelEditorRequests('document_changed', {forget: true});
       token = nextToken;
       base = value;
       continuation = null;
@@ -1242,6 +1424,7 @@
       reviewQueued = null;
       viewFlight = null;
       visualFlight = null;
+      exportFlight = null;
       viewed.clear();
       presentationBlocked = replaced.comparison?.ok === false;
       dirty = !same(await host.snapshot(), base);
@@ -1273,6 +1456,7 @@
     openingSwitch = true;
     try {
       let notice = '';
+      cancelEditorRequests('document_changed', {waitingOnly: true});
       if (presentedReview) await host.dismissReview(presentedReview.id, 'document_changed');
       const before = await host.snapshot();
       if (dirty || flight || !same(before, base)) {
@@ -1315,6 +1499,7 @@
         await new Promise(resolve => setTimeout(resolve, 300));
       }
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
+      cancelEditorRequests('document_changed', {forget: true});
       token = nextToken;
       base = value;
       continuation = null;
@@ -1327,6 +1512,7 @@
       reviewQueued = null;
       viewFlight = null;
       visualFlight = null;
+      exportFlight = null;
       viewed.clear();
       presentationBlocked = replaced.comparison?.ok === false;
       dirty = !same(await host.snapshot(), base);
@@ -1712,10 +1898,12 @@
     if (!editorKeyFor(target.document) || typeof unseal !== 'function') { host.notify('This editor cannot disconnect agents here.', 'info'); return false; }
     // No sheet: the press is the decision. The editor keeps the document, the row says what happened, and Share lets an
     // agent back in from here.
+    cancelEditorRequests('editor_unavailable', {waitingOnly: true});
     if (!await flush()) { host.notify('Finish the current edit, then try again.', 'info'); return false; }
     if (token !== target.document || base?.documentId !== target.documentId || switching || closed || closing) return false;
     clearTimeout(timer);
     switching = true;
+    cancelEditorRequests('editor_unavailable', {forget: true});
     lock();
     try {
       // Flush can renew the page key. Snapshot the proof at the rotation's synchronous call boundary.
@@ -2009,6 +2197,7 @@
 
   async function teardown(id) {
     closing = true;
+    cancelEditorRequests('editor_unavailable', {waitingOnly: true});
     clearTimeout(timer);
     const saved = await flush();
     await saveHostFile();
@@ -2043,8 +2232,10 @@
       return;
     }
     boundFile?.store.dispose();
+    cancelEditorRequests('editor_unavailable', {forget: true});
     post({id, result: {}});
     closed = true;
+    exportFlight = null;
     listeners.abort();
     observer?.disconnect();
     compareObserver?.disconnect();
@@ -2090,6 +2281,7 @@
       schedule(0);
     } else if (value.method === 'ui/notifications/tool-cancelled') {
       finishHostWork();
+      cancelEditorRequests('editor_request_unavailable', {waitingOnly: true});
       if (!base) {
         failures = 5;
         setStatus('unavailable');
@@ -2252,8 +2444,9 @@
     document.addEventListener('visibilitychange', () => {
       contextChanged();
       if (visible()) schedule(0);
-      else { clearTimeout(timer); void publishHumanContext(true); void flush(); }
+      else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); clearTimeout(timer); void publishHumanContext(true); void flush(); }
     }, {signal: listeners.signal});
+    window.addEventListener('pagehide', () => cancelEditorRequests('editor_unavailable', {forget: true}), {signal: listeners.signal});
     window.addEventListener('beforeunload', event => { if (dirty || flight || decisionFlight || policyQueued || reviewQueued || strandedDrafts.length > 0 || fileDirty() || uploadRunning || fileHydrations.size) { event.preventDefault(); event.returnValue = ''; } }, {signal: listeners.signal});
     unsubscribe = host.subscribe(event => { if (event?.actor === 'human') humanEdit(); });
     unsubscribeContext = host.subscribeContext(contextChanged);

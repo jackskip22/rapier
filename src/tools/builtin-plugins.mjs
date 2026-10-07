@@ -22,10 +22,10 @@ export function fillBuiltinSlot(source, marker, value) {
 
 export async function builtinPlugins(root, pack) {
 	const selected = (await pluginPackFiles()).filter(file =>
-		file.id === 'rapier-math' || file.id === 'rapier-mermaid' || file.id.startsWith('rapier-letters-'));
+		file.id === 'rapier-math' || file.id.startsWith('rapier-mermaid-') || file.id.startsWith('rapier-letters-'));
 	const groups = [], elements = [];
 	for (const id of ['math', 'mermaid', 'letters']) {
-		const files = selected.filter(file => id === 'letters' ? file.id.startsWith('rapier-letters-') : file.id === 'rapier-' + id);
+		const files = selected.filter(file => id === 'math' ? file.id === 'rapier-math' : file.id.startsWith('rapier-' + id + '-'));
 		if (!files.length) throw new Error('The editor resource has no ' + id + ' plug-in payload');
 		const spans = [], records = [];
 		for (const file of files) {
@@ -38,7 +38,7 @@ export async function builtinPlugins(root, pack) {
 		}
 		const element = 'rapier-plugin-' + id;
 		const html = await pack(element, 'application/rapier-runtime', spans);
-		groups.push({id, delivery: 'built-in', kind: id === 'letters' ? 'files' : 'script', element,
+		groups.push({id, delivery: 'built-in', kind: id === 'math' ? 'script' : 'files', element,
 			bytes: records.reduce((sum, file) => sum + file.bytes, 0), packedBytes: Buffer.byteLength(html), files: records});
 		elements.push(html);
 	}

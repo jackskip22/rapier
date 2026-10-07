@@ -16,7 +16,8 @@ function recipeAt(assets, label) {
   catch {return null;}
 }
 const replayBase = replay => ({baseRaster: replay.baseRaster, px: replay.px, scale: replay.scale, views: replay.views || [],
-  ...(replay.mode != null ? {mode: replay.mode} : {}), ...(replay.paper != null ? {paper: replay.paper} : {})});
+  ...(replay.mode != null ? {mode: replay.mode} : {}), ...(replay.paper != null ? {paper: replay.paper} : {}),
+  ...(replay.session != null ? {session: replay.session} : {})});
 function nonMaterial(shape) {
   const {raster, paint, geom, ...rest} = shape;
   const {brush, strokes, actions, seed, replay, px, ...kept} = paint || {};
@@ -51,7 +52,7 @@ function createdContribution(shape) {
   const replay = shape.paint?.replay;
   if (shape.recognized !== 'paint' || !replay?.entries?.length || replay.views?.length ||
       !same(nonMaterial(shape), {id: shape.id, stroke: null, recognized: 'paint', asDrawn: false,
-        brush: 'ink', style: null, paint: {scale: shape.paint.scale}}) ||
+        brush: 'ink', style: null, paint: {scale: shape.paint.scale, ...(shape.paint.mode === 'water' ? {mode: 'water'} : {})}}) ||
       replay.entries.some(row => row.actor !== 'agent' || row.removed || typeof row.id !== 'string')) return null;
   return {id: shape.id, replay, omitIds: replay.entries.map(row => row.id), requireEmptyBase: true};
 }
@@ -60,6 +61,9 @@ function createdContribution(shape) {
 // kind of authored edit. Later material requires replay even when the source inverse still fits.
 function contributions(before, after) {
   const {shapes: oldShapes, ...oldRest} = before, {shapes: newShapes, ...newRest} = after;
+  // SVG serialization derives view from the kept material bounds on every save. A growing
+  // paint sheet can change that crop; authored frame, canvas and other dials still must match.
+  delete oldRest.view; delete newRest.view;
   if (!same(oldRest, newRest)) return null;
   const changes = [], oldIds = new Set(oldShapes.map(shape => shape.id));
   let index = 0;

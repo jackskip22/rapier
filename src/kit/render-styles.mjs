@@ -2,12 +2,12 @@
 // The document's renderer. DOM, codecs and host state are explicit inputs.
 function createRenderStyles(runtime) {
   const {_rapierArtifactAccent, _rapierStyleText} = runtime;
-function _rapierArtifactThemeCss() {
+function _rapierArtifactThemeCss(houseDefaults = false) {
 	// Geometry and the selected accent belong to this page; palette and type belong to the
 	// MIT reference sheet. Only the optional code lexer still reads the app token names.
-	const accent = _rapierArtifactAccent();
+	const accent = houseDefaults ? '' : ':root,.md-render{--md-color-accent:' + _rapierArtifactAccent() + '}';
 	return `
-:root,.md-render{--md-color-accent:${accent}}
+${accent}
 html[data-rapier-theme="dark"]{color-scheme:dark}
 html[data-rapier-theme="light"]{color-scheme:light}
 html[data-rapier-theme="system"]{color-scheme:light dark}
@@ -71,11 +71,11 @@ function _rapierDocumentPrintCss(hostSelector) {
 }`;
 }
 
-function _rapierArtifactStyles(theme, includeFonts, printMode) {
+function _rapierArtifactStyles(theme, includeFonts, printMode, houseDefaults = false) {
 	const parts = [];
 	if (includeFonts) parts.push(_rapierStyleText('rapier-font-style'));
 	parts.push(_rapierStyleText('rapier-content-style'));
-	parts.push(_rapierArtifactThemeCss());
+	parts.push(_rapierArtifactThemeCss(houseDefaults));
 	// Where the faces do not ride (the written page's policy carries no font-src), the reader's own sans is
 	// matched to Geist's metrics: one family per system face, src:local() only (fetched by nothing, so the
 	// policy is untouched), size-adjust from Geist's weighted average advance over the face's own (Geist 467

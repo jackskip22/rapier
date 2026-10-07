@@ -1086,8 +1086,15 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 	const holder = {client: null, ready: null};
 	_rapierDrawPaintWorkers.set(role, holder);
 	if (typeof W?.workerSource !== 'function') return holder.ready = Promise.resolve(null);
-	const local = () => holder.client = water ? W.createLocalWaterClient() : W.createLocalPaintClient();
-	if (typeof Worker !== 'function') return holder.ready = Promise.resolve(local());
+	const local = async () => {
+		const client = holder.client = water ? W.createLocalWaterClient() : W.createLocalPaintClient();
+		if (water) await client.request('configure');
+		return client;
+	};
+	if (typeof Worker !== 'function') {
+		holder.ready = local().catch(error => { if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); throw error; });
+		return holder.ready;
+	}
 	holder.ready = (async () => {
 		const url = URL.createObjectURL(new Blob([W.workerSource()], {type: 'text/javascript'}));
 		let worker = null;
@@ -1099,9 +1106,9 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 			const isolated = globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
 			await client.request('configure', {helpers: !water && isolated ? 4 : 0, ...(!water && isolated ? {helperSource: rows.workerSource()} : {})});
 			return client;
-		} catch (_) { worker?.terminate(); return local(); }
+		} catch (error) { worker?.terminate(); if (water && error.code === 'water_webgpu_unavailable') throw error; return local(); }
 		finally { URL.revokeObjectURL(url); }
-	})();
+	})().catch(error => { if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); throw error; });
 	return holder.ready;
 }
 // A client that failed is let go (its worker stopped) and the next request starts a fresh one.
@@ -1111,16 +1118,30 @@ function _rapierDrawPaintRelease(client) {
 }
 async function _rapierDrawPaintAgentStrokes(strokes, seed = 1, target = null, options = {}) {
 	options.signal?.throwIfAborted();
+	if (options.mode === 'water') options = {...options, waterSession: _rapierWaterSession(), waterAuthorized: globalThis.RapierDrawAgentPaint.waterPaintingIsLive(target, _rapierWaterSession())};
 	const client = await _rapierDrawPaintClient('agent', options.mode);
 	if (!client) return globalThis.RapierDrawAgentPaint.paintAgentStrokes(strokes, seed, target, options);
-	try { return await client.request('agent', {strokes, seed, target, contribution: options.contribution, mode:options.mode, paper:options.paper, actions:options.actions, recipe:options.recipe}, [], options.onProgress, {signal: options.signal}); }
+	try {
+		const shape = await client.request('agent', {strokes, seed, target, contribution: options.contribution, mode:options.mode, paper:options.paper, actions:options.actions, recipe:options.recipe, waterSession:options.waterSession, waterAuthorized:options.waterAuthorized}, [], options.onProgress, {signal: options.signal});
+		if (options.mode === 'water' && shape) globalThis.RapierDrawAgentPaint.rememberWaterPainting(shape, options.waterSession);
+		return shape;
+	}
 	catch (error) { if (error.name !== 'AbortError') _rapierDrawPaintRelease(client); throw error; }
 }
 async function _rapierDrawPaintReplay(shape, omitIds, options = {}) {
 	options.signal?.throwIfAborted();
+	if (shape?.paint?.mode === 'water') {
+		const waterSession = _rapierWaterSession();
+		if (!globalThis.RapierDrawAgentPaint.waterPaintingIsLive(shape, waterSession)) return null;
+		options = {...options, waterSession, waterAuthorized: true};
+	}
 	const client = await _rapierDrawPaintClient('agent', shape?.paint?.mode);
 	if (!client) return globalThis.RapierDrawAgentPaint.replayAgentPainting(shape, omitIds, options);
-	try { return await client.request('replayAgent', {shape, omitIds, requireEmptyBase: options.requireEmptyBase === true}, [], options.onProgress, {signal: options.signal}); }
+	try {
+		const replayed = await client.request('replayAgent', {shape, omitIds, requireEmptyBase: options.requireEmptyBase === true, waterSession:options.waterSession, waterAuthorized:options.waterAuthorized}, [], options.onProgress, {signal: options.signal});
+		if (replayed?.paint?.mode === 'water') globalThis.RapierDrawAgentPaint.rememberWaterPainting(replayed, options.waterSession);
+		return replayed;
+	}
 	catch (error) { if (error.name !== 'AbortError') _rapierDrawPaintRelease(client); throw error; }
 }
 async function _rapierDrawPaintSample(shape, point, options = {}) {
@@ -6176,6 +6197,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	state.releaseIsolation?.(); state.releaseIsolation = null;
 	const origin = state.focusBeforeOpen; state.focusBeforeOpen = null;
 	if (origin?.isConnected && !origin.closest('[inert]')) origin.focus({ preventScroll: true });
+	globalThis.RapierDrawAgentPaint?.forgetWaterSession?.(globalThis.RapierDrawAgentPaint.waterSession(state.session));
 	state.open = false; state.session = (state.session || 0) + 1; state.editing = null; state.insertTarget = null; state.notes = null; state.openSnapshot = null;
 	_rapierDrawToastHome(false);
 	if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('draw', false);

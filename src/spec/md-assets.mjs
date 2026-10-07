@@ -370,7 +370,8 @@ export function serializeAsset(asset) {
   return '[' + asset.label + ']: ' + asset.url + title;
 }
 // Pure: re-derived at commit against the moved document; appends only at the text's end.
-export function appendAssetText(source, asset) {
+// A replay supplies the retained definition's line ending instead of choosing one from later prose.
+export function appendAssetText(source, asset, lineEnding) {
   if (typeof source !== 'string' || !asset || normalizeLabel(asset.label) !== asset.id) return fail('image_source_invalid');
   const parsed = documentAssets(source), title = assetTitle(asset.title);
   const existing = [...parsed.assets.values()].find(row => row.url === asset.url && row.title === title);
@@ -382,7 +383,7 @@ export function appendAssetText(source, asset) {
     return {source, id: asset.id, reference: asset.label, added: false, suffix: ''};
   }
   if (parsed.assets.size >= IMAGE_LIMITS.assets) return fail('image_asset_count_limit');
-  const eol = /\r\n|\n|\r/.exec(source)?.[0] || '\n', tail = /(?:\r\n?|\n)[ \t]*$/.exec(source);
+  const eol = lineEnding || /\r\n|\n|\r/.exec(source)?.[0] || '\n', tail = /(?:\r\n?|\n)[ \t]*$/.exec(source);
   const separator = !source || tail && /[\r\n][ \t]*$/.test(source.slice(0, tail.index)) ? '' : tail ? eol : eol + eol;
   const suffix = separator + block + eol, nextSource = source + suffix;
   if (nextSource.length > IMAGE_LIMITS.sourceChars) return fail('image_source_limit');

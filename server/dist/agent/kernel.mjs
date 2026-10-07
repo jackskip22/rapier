@@ -11,7 +11,7 @@ import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdown
 import { RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawMergeAgentRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
 import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
-import { getTool, validateInput, MAX_EXPORT_BYTES } from './catalog.mjs';
+import { getTool, validateInput, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS } from './catalog.mjs';
 import { FIND_KINDS } from './structure-request.mjs';
 import { _rapierTransformSplices as transformSplices } from '../kit/ledger/journal-records.mjs';
 import { pairMarkers, pairInkSpans, scanInkMarkers, scanColorMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
@@ -19,9 +19,59 @@ import { markdownSourcePositions } from '../spec/md-source.mjs';
 import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentUndoSplice, imageCommentTarget} from './comments.mjs';
 import {visualRequest, visualResult} from './visual.mjs';
 import {paintUndoPlan} from './paint-undo.mjs';
+import {editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
+
+// The file's name, by format; the editor's answer for Word or PDF must carry exactly this name.
+export function exportFilename(filename, format) {
+  if (format === 'markdown') return filename;
+  const suffix = format === 'html' ? '.rapier.html' : '.' + (format === 'page' ? 'html' : format);
+  // The offline page keeps its own rule (the Markdown and text extensions go). The other files are named as the editor's own Export names
+  // them: the document's name without its last extension.
+  const stem = format === 'html' ? filename.replace(/\.(md|markdown|txt)$/i, '') : filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
+  return [...stem].slice(0, MAX_FILENAME_CHARS - suffix.length).join('') + suffix;
+}
+
+// What each format keeps, said in the receipt. A text file of a Markdown document is its portable words and the one
+// final newline the editor's Export adds; a plain or code document is its own text.
+export function exportFidelity(format, docKind = 'markdown') {
+  const representation = {markdown: 'source', html: 'offline-editor', txt: 'plain-text', page: 'rendered-page', docx: 'word', pdf: 'raster-pdf'}[format];
+  return {representation, sourceEmbedded: ['html', 'pdf'].includes(format),
+    ...(format === 'txt' ? docKind === 'markdown' ? {projection: 'copy-as-text', images: 'descriptions-and-urls', formatting: 'text-markers', addsFinalNewline: true}
+      : {projection: 'source', addsFinalNewline: false} : {}),
+    ...(format === 'page' ? {html: 'sanitized', images: 'embedded-bytes-and-original-urls', code: 'source-text',
+      equations: 'source-text', mermaid: 'source-text', layout: 'static-styles', scripts: false} : {}),
+    ...(format === 'pdf' ? {textLayer: 'rendered-text', pagination: 'css-columns', dpi: 96} : {})};
+}
+
+// Bytes arrive only as a host fact. The request binds their kind, name and source
+// revision; the exported artifact never enters the document or its invocation journal.
+export function admitExportArtifact(request, fact) {
+  if (!fact || fact.documentId !== request.documentId || fact.revision !== request.revision || fact.format !== request.format)
+    return {reason: 'document_changed'};
+  if (fact.outcome !== 'ok') {
+    const reason = typeof fact.reason === 'string' ? fact.reason.slice(0, 128) : 'export_unavailable';
+    return {reason, ...(reason === 'export_too_large' ? {limitBytes: MAX_EXPORT_BYTES} : {})};
+  }
+  const artifact = fact.artifact, mimeType = request.format === 'docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf';
+  if (!artifact || artifact.mimeType !== mimeType || artifact.filename !== exportFilename(request.filename, request.format) || typeof artifact.data !== 'string')
+    return {reason: 'export_artifact_invalid'};
+  if (artifact.data.length > Math.ceil(MAX_EXPORT_BYTES / 3) * 4) return {reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES};
+  if (artifact.data.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(artifact.data)) return {reason: 'export_artifact_invalid'};
+  let data;
+  try { data = atob(artifact.data); } catch { return {reason: 'export_artifact_invalid'}; }
+  if (data.length > MAX_EXPORT_BYTES) return {reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES, byteLength: data.length};
+  if (request.format === 'docx' ? !data.startsWith('PK\x03\x04') : !data.startsWith('%PDF-')) return {reason: 'export_artifact_invalid'};
+  if (request.format === 'pdf' && (!Number.isSafeInteger(artifact.pages) || artifact.pages < 1)) return {reason: 'export_artifact_invalid'};
+  return {name: artifact.filename, mimeType, bytes: Uint8Array.from(data, char => char.charCodeAt(0)), fidelity: exportFidelity(request.format),
+    ...(Number.isSafeInteger(artifact.pages) ? {pages: artifact.pages} : {}),
+    ...(Array.isArray(artifact.issues) ? {issues: artifact.issues.slice(0, 32).filter(row => row && typeof row.code === 'string').map(row => ({code: row.code.slice(0, 128),
+      ...(typeof row.severity === 'string' ? {severity: row.severity.slice(0, 32)} : {}), ...(Number.isSafeInteger(row.count) && row.count >= 0 ? {count: row.count} : {}),
+      ...(typeof row.message === 'string' ? {message: row.message.slice(0, 512)} : {})}))} : {})};
+}
 
 export const LIMITS = Object.freeze({
   documentBytes: 25 * 1024 * 1024, editChars: 262144, drawingWorkChars: 786432, edits: 16,
@@ -60,6 +110,7 @@ const HINTS = {
   compare_not_open: 'No comparison is open; open one with compare, or show one of your changes with show_changes.',
   edits_overlap: 'Two edits cover the same text; merge them into one edit.',
   batch_too_large: 'Send fewer edits in one call.',
+  paint_history_full: 'Paint on a new layer so the existing painting and its undoable contributions stay intact.',
   draw_shape_limit: 'A drawing holds 1 to 128 shapes; send fewer.',
   draw_alt_required: 'Give alt, a short caption of the drawing.',
   paint_history_full: 'This layer keeps its painting and undo history; paint on a new layer with shapes.add.',
@@ -72,14 +123,25 @@ const HINTS = {
   paint_sheet_invalid: 'Read the drawing again for its current material, or add a new layer with shapes.add.',
   paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
   paint_sample_invalid: 'Sample an existing Water layer at a point in its drawing coordinates.',
+  water_webgpu_unavailable: 'Water needs WebGPU in the active editor. The drawing is unchanged.',
+  WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer; the drawing is unchanged.',
+  WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer; the drawing is unchanged.',
+  WATER_GPU_MEMORY: 'The graphics device could not allocate this Water operation. Use a smaller layer; the drawing is unchanged.',
+  WATER_GPU_FAILED: 'The graphics device refused this Water operation. The drawing is unchanged; reopen the editor before retrying.',
+  WATER_DEVICE_LOST: 'The Water graphics device is no longer available. The drawing is unchanged; reopen the editor before retrying.',
+  paint_replay_unavailable: 'This material can be selectively undone only while its painting session remains available. The current drawing is unchanged.',
   figures_invalid: 'Each figure names a kind from kinds and the fields the tool description lists for it.',
   recipe_invalid: 'Send figures, or a recipe exactly as read_context returned it.',
+  target_over_edit_budget: 'Read a fitting object with document.read_context and objectId, then pass its recipe_handle to document.draw with shapes or operations.',
   document_read_only: 'The person set this workspace read-only; ask them, or propose_edits.',
   document_law: 'The Will protects the source range named by start and end; keep it and edit another passage, or use propose_edits for that range.',
   human_edit_in_progress: 'The person is editing; wait for their input to settle, then get_context and retry.',
   human_review_required: 'The person\'s review is required before this applies; wait_for_user or check get_context, do not resend.',
   review_pending: 'One review at a time; wait for the pending one to settle.',
   editor_not_present: 'No editor is open on this workspace: get_context reports headless, so deliver the page through a file surface or ask the person to open Rapier.',
+  editor_unavailable: 'Open the document in Rapier for Word or PDF. Without an editor, export markdown, html, txt or page.',
+  export_render_limit: 'This document is too large for the worker to write as txt or page; export markdown or html, or open it in Rapier for Word or PDF.',
+  export_render_unavailable: 'This host could not write the txt or page file; export markdown or html instead.',
   presentation_already_pending: 'A reveal is already pending; check its view status in get_context before another.',
   contribution_refresh_required: 'A person corrected part of this contribution. Read that target again and propose its replacement under the same contribution name before keeping the whole.',
   wait_already_pending: 'One wait at a time; the earlier wait must finish first.',
@@ -286,6 +348,9 @@ function sourceDrawing(text, label) {
 // The receiver proves semantic metadata against the exact source transaction before its fence
 // admits it. The shared asset and comment owners reconstruct every derived source byte.
 export function verifyDrawingPatch(envelope, beforeText, afterText) {
+  return drawingPatchSource(envelope, beforeText, afterText);
+}
+function drawingPatchSource(envelope, beforeText, afterText, restoreDefinition = false) {
   try {
     if (!envelope || typeof beforeText !== 'string' || typeof afterText !== 'string' ||
         !envelope.occurrence || !envelope.targetOccurrence) return false;
@@ -307,10 +372,10 @@ export function verifyDrawingPatch(envelope, beforeText, afterText) {
         normalizeLabel(occurrence.reference) !== normalizeLabel(envelope.asset) ||
         normalizeLabel(target.reference) !== normalizeLabel(envelope.reference)) return false;
     if (envelope.undo === true) {
-      return verifyDrawingPatch({...envelope, undo: false, asset: envelope.reference, reference: envelope.asset,
+      return drawingPatchSource({...envelope, undo: false, asset: envelope.reference, reference: envelope.asset,
         occurrence: target, targetOccurrence: occurrence, assetGeneration: sha256(after.asset.url), sourceRecipeBefore: after.recipe, sourceRecipeAfter: before.recipe,
         recipeBefore: envelope.recipeAfter, recipeAfter: envelope.recipeBefore,
-        patch: _rapierDrawRecipeDelta(envelope.recipeAfter, envelope.recipeBefore)}, afterText, beforeText);
+        patch: _rapierDrawRecipeDelta(envelope.recipeAfter, envelope.recipeBefore)}, afterText, beforeText, true);
     }
     if (canonicalJson(envelope.recipeAfter) !== canonicalJson(after.recipe)) return false;
     const rows = [{pos: occurrence.start, removed: oldText, inserted: newText}];
@@ -318,11 +383,31 @@ export function verifyDrawingPatch(envelope, beforeText, afterText) {
     if (text == null) return false;
     const retired = imageDeletionSplices(beforeText, text, rows, 'agent');
     if (retired.length) { text = transformSplices(text, retired); rows.push(...retired); }
-    const appended = appendAssetText(text, {...after.asset, label: envelope.reference, id: normalizeLabel(envelope.reference)});
-    if (appended.added) { rows.push({pos: text.length, removed: '', inserted: appended.suffix}); text = appended.source; }
-    const comments = commentSplices(beforeText, rows);
-    if (comments.length) text = transformSplices(text, comments);
-    return text === afterText;
+    // Undo can follow text with a different first line ending. Replay the definition's own terminator,
+    // which belongs to the retained source transaction, rather than choosing one from the current prose.
+    const asset = {...after.asset, label: envelope.reference, id: normalizeLabel(envelope.reference)};
+    const eol = /^(?:\r\n|\n|\r)/.exec(afterText.slice(after.asset.end))?.[0] || /\r\n|\n|\r/.exec(text)?.[0] || '\n';
+    const appended = appendAssetText(text, asset, eol);
+    const matches = (source, addition = null) => {
+      const comments = commentSplices(beforeText, addition ? rows.concat(addition) : rows);
+      return (comments.length ? transformSplices(source, comments) : source) === afterText;
+    };
+    if (matches(appended.source, appended.added ? {pos: text.length, removed: '', inserted: appended.suffix} : null)) return true;
+    if (!restoreDefinition || !appended.added) return false;
+    // A person can type after an appended definition. Undo replays that definition at its retained
+    // position, not at the new end of the document. Only the asset owner's own separator bytes may
+    // precede it; the complete source and derived comments must still match exactly.
+    let start = after.asset.start;
+    const keptComments = parseComments(text).record, finalComments = parseComments(afterText).record;
+    if (keptComments && finalComments && finalComments.end <= start) start -= finalComments.raw.length - keptComments.raw.length;
+    for (const separator of ['', eol, eol + eol]) {
+      const position = start - separator.length;
+      if (!safeInt(position) || position > text.length) continue;
+      const restored = appendAssetText(text.slice(0, position), asset, eol);
+      if (restored.added && matches(restored.source + text.slice(position),
+        {pos: position, removed: '', inserted: restored.suffix})) return true;
+    }
+    return false;
   } catch { return false; }
 }
 
@@ -1118,7 +1203,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       // The open canvas's recipe is measured as a caller is shown it (disclosedRecipe): its pixels and histories are the document's.
       let text;
       try { text = JSON.stringify(Array.isArray(value.recipe?.shapes) ? disclosedRecipe(value.recipe) : value.recipe); } catch (_) { return false; }
-      if (text.length > LIMITS.editChars || bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
+      if (bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
       else {
         const recipe = _rapierDrawAdmitRecipe(value.recipe);
         if (!recipe) return false;
@@ -1194,9 +1279,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const targets = contexts.filter(row => !row.editing && row.revision === state.revision)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     const target = targets.find(row => row.selection || row.focus) || targets[0];
+    const view = contexts.filter(row => row.view).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.view;
     const editing = contexts.some(row => row.editing);
     const drawing = drawingSummary();
     const presence = contexts.length ? { active: true, editing,
+      ...(view ? {view} : {}),
       revision: target?.revision ?? state.revision,
       selection: target?.selection ? clone(target.selection) : null,
       focus: target?.focus ? clone(target.focus) : null,
@@ -1233,7 +1320,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const who = humanParticipant(context);
     if (typeof input.contextId !== 'string' || !input.contextId || input.contextId.length > 128 ||
         !safeInt(input.sequence) || !safeInt(input.expectedRevision) ||
-        typeof input.visible !== 'boolean' || typeof input.editing !== 'boolean') return stamp(failure('human_context_invalid', 'invalid'));
+        typeof input.visible !== 'boolean' || typeof input.editing !== 'boolean' ||
+        input.view != null && !['formatted', 'source', 'notes'].includes(input.view)) return stamp(failure('human_context_invalid', 'invalid'));
     expireCollaboration();
     const key = ownerOf(who) + ':' + input.contextId, prior = state.humanContexts[key], priorSequence = state.contextSequences[key];
     if (priorSequence && input.sequence <= priorSequence.sequence) return stamp(accepted({ acknowledged: false, sequence: priorSequence.sequence, expiresAt: prior?.expiresAt || null }));
@@ -1256,6 +1344,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (drawing === false) return stamp(failure('human_context_drawing_invalid', 'invalid'));
     if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
     state.humanContexts[key] = { owner: ownerOf(who), sequence: input.sequence, revision: input.expectedRevision,
+      ...(input.view ? {view: input.view} : {}),
       visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + LIMITS.presenceMs };
     recordSequence();
     return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: time + LIMITS.presenceMs }));
@@ -1611,10 +1700,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return { ...current(), outcome: 'ok' };
   }
 
-  async function refresh(context) {
+  async function refresh(context, operation) {
     cancelled(context);
     if (typeof host.snapshot === 'function') {
-      const value = await host.snapshot(); cancelled(context);
+      const value = await host.snapshot({operation}); cancelled(context);
       if (!value || value.ok === false) return failure(value?.reason || 'document_not_settled');
       reconcile(value, { actor: 'human', principal: 'local' });
     }
@@ -1665,29 +1754,31 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // not shown (the pixels and histories: the full text less the shown text). A drawing holding more of it than
   // LIMITS.drawingWorkChars is not offered for editing, whatever its shown text weighs, and the read names which bar it met. A large
   // background or many shapes are shown text, cheap to rebuild, and meet the shown-text budget alone.
-  function drawHandleRefusal(disclosed, fullChars) {
-    if (disclosed == null || disclosed.length > LIMITS.editChars || bytes(disclosed) > LIMITS.authorityBytes) return 'target_over_edit_budget';
+  function drawHandleRefusal(disclosed, fullChars, objectId = null) {
+    const editable = objectId && disclosed != null
+      ? JSON.stringify(JSON.parse(disclosed).shapes.find(shape => shape.id === objectId)) : disclosed;
+    if (editable == null || editable.length > LIMITS.editChars || bytes(editable) > LIMITS.authorityBytes) return 'target_over_edit_budget';
     if (fullChars - disclosed.length > LIMITS.drawingWorkChars) return 'target_over_work_budget';
     return null;
   }
   const unavailableEdit = reason => ({edit_unavailable: reason, ...(HINTS[reason] ? {hint: HINTS[reason]} : {})});
-  function drawingEditAvailability(assetLabel, disclosed = null) {
+  function drawingEditAvailability(assetLabel, disclosed = null, objectId = null) {
     const recipe = storedRecipe(assetLabel);
     if (!recipe) return {};
-    const reason = drawHandleRefusal(disclosed ?? JSON.stringify(disclosedRecipe(recipe)), JSON.stringify(recipe).length);
+    const reason = drawHandleRefusal(disclosed ?? JSON.stringify(disclosedRecipe(recipe)), JSON.stringify(recipe).length, objectId);
     return reason ? unavailableEdit(reason) : {};
   }
   // A recipe handle holds no recipe of the document's. Its digest binds the definition the caller was shown, so a re-read and an edit read
   // the recipe again from that definition, pixels and histories included: those bytes are the document's, and no handle's size follows them.
-  // Its budget is the text the caller was shown (disclosedRecipe), what it can edit; a drawing shown more than LIMITS.editChars gets no
-  // handle. A read hands in the text it has just paged; create and edit, which return no text, measure the definition they have just
+  // Its budget is the text the caller may edit: the disclosed recipe, or the named object alone for an object-scoped handle.
+  // A read hands in the text it has just paged; create and edit, which return no text, measure the definition they have just
   // written. The one recipe a handle keeps is the open canvas's, when the read came from the surface (a binding): the document does not
   // hold that recipe, and an edit is laid against what the caller saw of it (drawEdit). The page's kernel alone has a surface.
   function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null, objectId = null) {
     const recipe = storedRecipe(assetLabel);
     if (!recipe) return null;
     const shown = disclosed ?? JSON.stringify(disclosedRecipe(recipe));
-    if (drawHandleRefusal(shown, JSON.stringify(recipe).length)) return null;
+    if (drawHandleRefusal(shown, JSON.stringify(recipe).length, objectId)) return null;
     const text = state.text.slice(start, end);
     return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', assetLabel, assetDigest: assetDigest(assetLabel),
       ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}), ...(objectId ? {objectId} : {}) }, who);
@@ -1821,7 +1912,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(paint.replay ? {replay: {kept: true, entries: paint.replay.entries.length}} : {})} : paint;
   }
   // The recipe as a caller is shown it: each paint layer's pixels and history are named, never carried, and a replace that keeps the
-  // marker keeps the layer's own bytes. This text is what a recipe handle's budget measures: what a caller can edit, not what the document holds.
+  // marker keeps the layer's own bytes. The whole-recipe edit budget measures this text; an object handle measures its named shape.
   function disclosedRecipe(recipe) {
     return {...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
       raster: { kept: true, bytes: shape.raster.length, type: shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl' },
@@ -1868,13 +1959,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       page = text.slice(offset, end);
     }
     const complete = end >= text.length;
-    const unavailable = drawing?.recipeUnavailable || (imported ? null : drawingEditAvailability(picture.assetLabel, text).edit_unavailable);
+    const unavailable = drawing?.recipeUnavailable || (imported ? null : drawingEditAvailability(picture.assetLabel, text, objectId).edit_unavailable);
     const disclosedHandle = complete && !unavailable ? imported
       ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who)
       : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text, target.draw.binding?.drawSession ? recipeText : null, objectId) : null;
     const next = !complete ? mint('cursors', 'read_', { kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
       targetStart: target.targetStart, targetEnd: target.targetEnd, ...(imported ? {inspectionText: recipeText} : {recipeText, objectId, ...target.draw.binding}), assetLabel: picture.assetLabel, offset: end }, who) : null;
     if (target.cursor) delete state.cursors[target.cursor.id];
+    const editUnavailable = complete && !disclosedHandle
+      ? drawing?.recipeUnavailable || (imported ? null : drawHandleRefusal(text, recipeText.length, objectId)) || 'target_over_edit_budget' : null;
     return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: page,
       ...law,
       ...(objectId ? {objectId} : {}),
@@ -1882,7 +1975,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(drawing ? {drawing} : {}),
       ...(paintSample ? {paintSample} : {}),
       coverage: { disclosed: end, chars: text.length, complete },
-      ...(unavailable ? unavailableEdit(unavailable) : complete && !disclosedHandle ? unavailableEdit('target_over_edit_budget') : {}),
+      ...(unavailable ? unavailableEdit(unavailable) : editUnavailable ? (imported ? {edit_unavailable: editUnavailable} : unavailableEdit(editUnavailable)) : {}),
       next_cursor: next?.id || null, expires_in_ms: LIMITS.lifetimeMs };
   }
 
@@ -3580,7 +3673,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const base = readBase({...state.proposalBase || {text: state.text, sha256: digest, revision: state.ledgerRoot || digest, name: state.filename},
       by: input.by.trim(), at: new Date(now()).toISOString()});
     if (typeof host.proposalPage === 'string') {
-      const {format, ...file} = await exportDocument({format: 'html', text: input.text, base}, context);
+      const {format, fidelity, ...file} = await exportDocument({format: 'html', text: input.text, base}, context);
       if (file.outcome !== 'ok') return file;
       const result = await stageProposal({base, text: input.text}, who);
       if (result.outcome !== 'ok' && result.reason !== 'human_review_required') return result;
@@ -3595,14 +3688,39 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   async function exportDocument({format, text = state.text, base}, context) {
     if (typeof host.exportFile !== 'function') return failure('export_unavailable');
+    const request = {kind: 'export', documentId: state.documentId, revision: state.revision, format, filename: state.filename};
+    let checked;
+    // Word and PDF are the open editor's: the request goes out as a surface fact, and the editor's answer returns in the world,
+    // admitted against this exact document, revision, format and name before any host retains a byte.
+    if (format === 'docx' || format === 'pdf') {
+      const mode = 'export:' + format;
+      if (context.continues) {
+        const invalid = checkContinuation(context, mode);
+        if (invalid) return invalid;
+        pendingFacts.delete(context.continues);
+      }
+      if (!context.world?.export) {
+        const requestId = mintId('fact_');
+        pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements: request});
+        while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+        return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements: request}};
+      }
+      checked = admitExportArtifact(request, context.world.export);
+      if (!checked.bytes) return failure(checked.reason || 'export_unavailable', 'refused', {
+        ...(checked.reason === 'editor_unavailable' ? {availableFormats: ['markdown', 'html', 'txt', 'page']} : {}),
+        ...(safeInt(checked.limitBytes) ? {limitBytes: checked.limitBytes} : {}), ...(safeInt(checked.byteLength) ? {bytes: checked.byteLength} : {})});
+    }
     const file = await host.exportFile({format, filename: state.filename, docKind: state.docKind, text,
-      ...(base ? {base} : {}), signal: context.signal});
+      ...(base ? {base} : {}), signal: context.signal, ...(checked ? {file: checked, artifact: context.world.export.artifact} : {})});
     cancelled(context);
-    return !file?.bytes ? failure(file?.reason || 'export_unavailable', 'refused', {
-      ...(safeInt(file?.limitBytes) ? {limitBytes: file.limitBytes} : {}), ...(safeInt(file?.byteLength) ? {bytes: file.byteLength} : {})})
-      : file.bytes.byteLength > MAX_EXPORT_BYTES ? failure('export_too_large', 'refused', {limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength})
-      : accepted({format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength,
-          ...(file.id ? {exportId: file.id} : {})});
+    if (!file?.bytes) return failure(file?.reason || 'export_unavailable', 'refused', {
+      ...(safeInt(file?.limitBytes) ? {limitBytes: file.limitBytes} : {}), ...(safeInt(file?.byteLength) ? {bytes: file.byteLength} : {})});
+    if (file.bytes.byteLength > MAX_EXPORT_BYTES) return failure('export_too_large', 'refused', {limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength});
+    return accepted({format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength, limitBytes: MAX_EXPORT_BYTES,
+      fidelity: file.fidelity || exportFidelity(format, state.docKind),
+      ...(file.id ? {exportId: file.id} : {}), ...(file.url ? {downloadUrl: file.url} : {}),
+      ...(file.expiresAt ? {exportExpiresAt: new Date(file.expiresAt).toISOString()} : {}),
+      ...(safeInt(file.pages) ? {pages: file.pages} : {}), ...(Array.isArray(file.issues) ? {issues: file.issues} : {})});
   }
 
   async function openText(input, who, context) {
@@ -3665,7 +3783,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const supplied = result.presentation?.status || result.presentation;
     const presentation = states.includes(supplied) ? supplied : committed &&
       Object.values(state.humanContexts).some(row => row.visible && row.expiresAt > now()) ? 'presentation_deferred' : 'unavailable';
-    return {...result, receipt: {state: committed ? 'committed' : result.outcome === 'pending' && result.pending?.kind === 'human-review'
+    return {...result, receipt: {...(result.reason === 'cancelled' ? {landed: 0} : {}), state: result.reason === 'cancelled' ? 'cancelled' : committed ? 'committed' : result.outcome === 'pending' && result.pending?.kind === 'human-review'
       ? 'pending_review' : result.outcome === 'uncertain' ? 'uncertain' : 'unavailable',
       presentation: result.outcome === 'uncertain' ? 'uncertain' : presentation}};
   }
@@ -3702,7 +3820,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         ...(water ? {mode, actions, ...(paper != null ? {paper} : {}), ...(recipe ? {recipe} : {})} : {})}); }
       catch (error) {
         cancelled(context);
-        return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : error?.code === 'paint_history_full' ? 'refused' : 'invalid')};
+        return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : ['paint_history_full','paint_layer_full','water_webgpu_unavailable','WATER_BUDGET','WATER_REPLAY_BUDGET','WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error?.code) ? 'refused' : 'invalid')};
       }
       cancelled(context);
       if (!shape) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + (water ? '.actions' : '.strokes')}) };
@@ -3857,8 +3975,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!['applied', 'rebased'].includes(result.outcome)) return result;
     if (held) held.used = true;
     const recipeHandle = drawHandle(occStart, occStart + raw.length, appended.reference, who);
+    const editUnavailable = !recipeHandle && drawHandleRefusal(JSON.stringify(disclosedRecipe(recipe)), JSON.stringify(recipe).length);
     return { ...result, asset: {reference: appended.reference, title}, width: asset.width, height: asset.height,
-      recipe_handle: recipeHandle?.id || null, ...(!recipeHandle ? drawingEditAvailability(appended.reference) : {}) };
+      recipe_handle: recipeHandle?.id || null, ...(editUnavailable ? unavailableEdit(editUnavailable) : {}) };
   }
 
   // Patches the recipe of the definition the handle was minted over, read from the document and never held: a person's edit is a changed
@@ -3884,6 +4003,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const stored = storedRecipe(held.assetLabel);
     if (!stored) return failure('target_changed', 'conflict');
     const inspected = held.recipeJSON != null ? JSON.parse(held.recipeJSON) : stored;
+    if (input.recipe != null) {
+      const unavailable = drawHandleRefusal(JSON.stringify(disclosedRecipe(inspected)), JSON.stringify(inspected).length);
+      if (unavailable) return failure(unavailable, 'refused', {field: 'recipe'});
+    }
     const live = drawingFor(range.start, range.end, held.assetLabel);
     if (live?.recipeUnavailable) return failure('draw_surface_unavailable', 'conflict', {detail: live.recipeUnavailable});
     if (staleSurface && (!live?.recipe || live.session !== held.drawSession)) return staleSurface;
@@ -4256,6 +4379,41 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return {outcome: 'pending', reason: 'surface_fact_required', ...(drawing ? {drawing} : {}), pending: {kind: 'surface-fact', requestId, requirements: prepared.request}};
   }
 
+  function askEditor(operation, input, who, context) {
+    let sourceRange;
+    if (input.context_handle !== undefined) {
+      if (input.text !== undefined || !['read_aloud', 'copy'].includes(input.action)) return failure('editor_arguments_invalid', 'invalid');
+      const target = readTarget({context_handle: input.context_handle}, who);
+      if (target.outcome) return target;
+      // A drawing or an imported SVG is read as its recipe or node tree; only a passage of words reaches the person's device.
+      if (target.change || target.draw || target.svg) return failure('context_handle_wrong_kind', 'invalid');
+      input = {...input, text: state.text.slice(target.start, target.end)};
+      sourceRange = {start: target.start, end: target.end};
+    }
+    if (input.action === 'copy' && input.format === 'complete' && !sourceRange) return failure('editor_context_required', 'refused',
+      {hint: 'Read the passage first, then copy its context_handle as a complete excerpt.'});
+    const prepared = editorRequest(state, operation, input);
+    if (prepared.outcome !== 'ok') return prepared;
+    if (sourceRange) prepared.request.sourceRange = sourceRange;
+    const mode = 'editor:' + operation;
+    let requestId = context.world?.editor?.receipt?.id;
+    if (context.continues) {
+      const invalid = checkContinuation(context, mode);
+      if (invalid) return invalid;
+      const prior = pendingFacts.get(context.continues);
+      pendingFacts.delete(context.continues);
+      const {id, ...requirements} = prior.requirements || {};
+      if (canonicalJson(requirements) !== canonicalJson(prepared.request)) return failure('editor_request_changed');
+      requestId = context.continues;
+    }
+    if (context.world?.editor) return editorResult({...prepared.request, ...(requestId ? {id: requestId} : {})}, context.world.editor);
+    requestId = mintId('fact_');
+    const requirements = {...prepared.request, id: requestId};
+    pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements});
+    while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+    return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements}};
+  }
+
   async function point(input, who, context) {
     if (!!input.context_handle === !!input.change_id) return failure('point_target_ambiguous', 'invalid');
     let target, reveal = host.reveal;
@@ -4354,7 +4512,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       publishPresence();
     }
     const beforeHandles = new Set(Object.keys(state.handles));
-    const unsettled = await refresh(context);
+    const unsettled = await refresh(context, name);
     if (unsettled) return finalize(unsettled);
     prune();
     let result;
@@ -4365,6 +4523,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (facts?.outcome) { result = facts; break; }
         const layout = facts?.layout, images = facts?.images;
         const returns = typeof host.returns === 'function' ? await host.returns() : [];
+        const editor = projectEditorContext(typeof host.editorContext === 'function' ? await host.editorContext() : null);
         const will = state.docKind === 'markdown' ? parseWill(state.text) : null;
         const together = collaboration(), pointing = together.presence;
         const drawing = drawingSummary(), presence = pointing && {...pointing};
@@ -4372,7 +4531,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const selected = pointing?.selection || state.selection;
         const focused = pointing?.focus || state.focus;
         const focus = focused && reference(focused.start, focused.end, who, { kind: 'focus' });
-        result = accepted({ filename: state.filename, docKind: state.docKind, chars: state.text.length,
+        result = accepted({ filename: state.filename, docKind: state.docKind, chars: state.text.length, editor,
+          ...(typeof host.view === 'function' ? {view: host.view()} : {}),
           surface: pointing?.active || drawing ? { kind: 'editor', next: 'continue' } : { kind: 'headless', next: 'deliver_page' },
           editing: editingState(who, together, will),
           readOnly: state.readOnly, posture: state.posture, ...(state.notes ? { notes: state.notes } : {}), selection: selected ? { start: selected.start, end: selected.end, ...(selected.objectId ? {objectId: selected.objectId} : {}) } : null,
@@ -4423,6 +4583,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'document.list_comments': result = listComments(input, who); break;
       case 'document.comment': result = await comment(input, who, context); break;
       case 'document.inspect_visual': result = inspectVisual(input, context); break;
+      case 'document.ask_editor': result = askEditor(name, input, who, context); break;
       case 'document.read_context':
         result = input.return_id !== undefined && input.paintSample ? failure('drawing_object_scope', 'invalid') : input.return_id !== undefined
           ? typeof host.readReturn === 'function' ? await host.readReturn(input) : failure('return_unavailable')
@@ -4437,6 +4598,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'document.show_changes': result = await showChanges(input, who, context); break;
       case 'document.open_text': result = await openText(input, who, context); break;
       case 'document.point': result = await point(input, who, context); break;
+      case 'document.set_view': {
+        if (input.view === undefined) { result = askEditor(name, input, who, context); break; }
+        if (input.preference !== undefined || input.value !== undefined) {
+          result = failure('editor_arguments_invalid', 'invalid', {hint: 'Pass view alone, or pass preference and value together.'}); break;
+        }
+        if (typeof host.setView !== 'function') { result = failure('view_unavailable', 'refused', {hint: 'Open the document in its connected editor, then retry.'}); break; }
+        const value = await host.setView({documentId: state.documentId, revision: state.revision, view: input.view, ...who, signal: context.signal});
+        const view = {...(typeof host.view === 'function' ? host.view() : {}), requested: input.view,
+          ...(value?.viewId ? {id: value.viewId} : {}), status: value?.pending ? 'pending' : value?.ok ? 'presented' : 'refused'};
+        result = value?.pending ? {outcome: 'pending', reason: 'presentation_pending', view}
+          : value?.ok ? accepted({view}) : failure(value?.reason || 'view_unavailable', value?.outcome || 'refused',
+            {view, hint: value?.hint || 'Open the document in its connected editor and select an available view.'});
+        break;
+      }
       case 'document.reveal': {
         const change = changeOf(input.context_handle);
         if (change) {
@@ -4538,7 +4713,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // Recorded for fresh invocations and settled continuations; a plain retry never reaches here.
     return finalize(finalOutput);
     } catch (error) {
-      if (error?.name === 'AbortError' || context.signal?.aborted) return finalize(failure('cancelled'));
+      if (error?.name === 'AbortError' || context.signal?.aborted) return finalize(name === 'document.draw' ? drawingReceipt(failure('cancelled')) : failure('cancelled'));
       // A schema fault names its field, as every other refusal does.
       if (error instanceof TypeError || error?.code === 'invalid_arguments') return finalize(failure(clip(error.message, 160), 'invalid', error?.path ? {field: String(error.path).replace(/^arguments\.?/, '')} : undefined));
       throw error;

@@ -10,7 +10,6 @@ import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import {buildJPEGXLWorker} from '../images/codec-build.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
-import parseCSS from './vendor/postcss-parse.cjs';
 import {TOOLS, PAGE_TOOLS, UI_RESOURCE, mcpDescriptors} from '../agent/catalog.mjs';
 import {encodeBase124} from './base124.mjs';
 import {encodeTextPack} from './text-pack-build.mjs';
@@ -24,14 +23,19 @@ import {csp} from '../security/csp.mjs';
 import {checkHtmlSinks} from './html-sinks.mjs';
 import {checkToolchain} from './check-toolchain.mjs';
 import {SIZE_BUDGETS} from './profile-budgets.mjs';
+import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-text.mjs';
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections, welcomePaintHtml} from './seo-page.mjs';
+import {fillMermaidResources} from './mermaid-resources.mjs';
 import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
+import {buildExportAssets} from './build-export-assets.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
 const versionSync = await syncVersion({absent: 'skip'});
+// The worker's renderer takes its house styles from the same authored files, generated into mcp/render-assets.mjs.
+await buildExportAssets();
 
 // --ledger delegates to tools/size-ledger.mjs and keeps its exit status.
 if (process.argv.includes('--ledger')) {
@@ -98,11 +102,6 @@ const RETAINED_GROUPS = {
 const retainedGroup = path => Object.keys(RETAINED_GROUPS).find(group => RETAINED_GROUPS[group](path)) || null;
 const retainedModule = path => retainedGroup(path) !== null;
 const parse = (source, sourceType = 'script') => acorn.parse(source, {ecmaVersion: 'latest', sourceType});
-// A comment ships only when it is a licence notice -- `/*!`, `@license` or `@preserve`, an SPDX line, a
-// copyright statement ("Copyright (c)", "Copyright ©" or a year) or a licence grant ("Licensed
-// under", "Permission is hereby granted") -- or a `# sourceURL`/`# sourceMappingURL` directive. A
-// developer comment that merely mentions a licence does not ship (_page-notices.mjs under profile-seams).
-const keepsComment = value => /^(?:!|[#@]\s*source)|@license|@preserve|SPDX-License-Identifier|\bcopyright\s*(?:\(c\)|©|\d{4})|\blicen[sc]ed under\b|\bpermission is hereby granted\b/i.test(value);
 
 function walk(node, visit) {
   if (!node || typeof node.type !== 'string') return;
@@ -216,48 +215,6 @@ function apply(source, changes) {
 // Names are recorded in dist/runtime-symbols-<profile>.json, never the page.
 const lean = scriptMinifier(await Promise.all(['editor/engine.js', 'editor/share.js', 'editor/source-store.js', 'editor/lexer.js', ...JSON.parse(await read('editor/scripts.json'))].map(read)), keepsComment);
 
-// Stylesheets: PostCSS tree with whitespace raws emptied. Escaped or commented selectors stay verbatim (the list helper trims).
-function packStyleWhitespace(source) {
-  const tree = parseCSS(source);
-  tree.walk(node => {
-    node.raws.before = '';
-    if ('after' in node.raws) node.raws.after = '';
-    if ('between' in node.raws) node.raws.between = node.type === 'decl' ? ':' : '';
-    if (node.type === 'rule' && !node.selector.includes('\\') && !node.selector.includes('/*')) node.selector = node.selectors.join(',');
-    if (node.nodes) node.raws.semicolon = false;
-  });
-  tree.raws.after = '';
-  return tree.toString();
-}
-// A stylesheet's own WOFF2 files (shell/fonts/fonts.css names the two) are inlined as data URLs:
-// the page carries exactly those bytes and asks for nothing.
-async function inlineFonts(css, path) {
-  for (const [url, file] of new Map([...css.matchAll(/url\('([\w.-]+\.woff2)'\)/g)].map(m => [m[0], m[1]])))
-    css = css.replaceAll(url, "url('data:font/woff2;base64," + (await readFile(resolve(root, dirname(path), file))).toString('base64') + "')");
-  return css;
-}
-function stripStyleComments(source) {
-  const parts = [];
-  let cursor = 0, quote = '', url = 0;
-  for (let index = 0; index < source.length; index++) {
-    const char = source[index];
-    if (char === '\\') { index++; continue; }
-    if (quote) { if (char === quote) quote = ''; continue; }
-    if (char === '"' || char === "'") { quote = char; continue; }
-    if (url) { if (char === '(') url++; else if (char === ')') url--; continue; }
-    if (source.slice(index, index + 4).toLowerCase() === 'url(' && !/[\w-]/.test(source[index - 1] || '')) { url = 1; index += 3; continue; }
-    if (char !== '/' || source[index + 1] !== '*') continue;
-    const end = source.indexOf('*/', index + 2);
-    if (end < 0) throw new Error('Unclosed stylesheet comment');
-    if (!keepsComment(source.slice(index + 2, end)) && (!index || end + 2 === source.length || /[ \t\r\n\f]/.test(source[index - 1]) || /[ \t\r\n\f]/.test(source[end + 2]))) {
-      parts.push(source.slice(cursor, index));
-      cursor = end + 2;
-    }
-    index = end + 1;
-  }
-  parts.push(source.slice(cursor));
-  return parts.join('');
-}
 
 function stripMarkupComments(source) {
   const parts = [];
@@ -483,6 +440,7 @@ await bundle('kit/render-sanitize.mjs');
 await bundle('kit/render-print.mjs');
 const globals = {'RapierPortablePage': 'skills/rapier-html/wrap.mjs', 'RapierCursorMotion': 'agent/cursor-motion.mjs', 'RapierLedger': 'kit/rapier-ledger.mjs', 'RapierLedgerCarried': 'kit/ledger/carried.mjs', 'RapierRender': 'kit/render.mjs', 'RapierRenderStyles': 'kit/render-styles.mjs', 'RapierRenderMarkdown': 'kit/render-markdown.mjs', 'RapierRenderSanitizer': 'kit/render-sanitize.mjs', 'RapierRenderPrint': 'kit/render-print.mjs', 'RapierEmbedContract': 'packages/rapier-embed/contract.mjs', 'RapierAgentGuide': 'agent/guide.mjs', 'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierInk': 'spec/ink.mjs', 'RapierInkDraw': 'layout/ink-draw.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'kit/ledger/journal-records.mjs', 'RapierVisibleSource': 'editor/visible-source.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierPretext': 'agent/vendor/pretext/rich-inline.js', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', ...(PROFILE === 'full' ? {'RapierDrawFit': 'draw/fit.mjs', 'RapierPersonal': 'notes/personal.mjs', 'RapierDrawPaint': 'draw/paint.mjs', 'RapierDrawBrushes': 'draw/brushes.mjs', 'RapierDrawAgentPaint': 'draw/agent-paint.mjs', 'RapierDrawPaintWorker': 'draw/paint-worker.mjs', 'RapierDrawPaintRows': 'draw/paint-parallel.mjs', 'RapierDrawPaintRemote': 'draw/paint-remote.mjs', 'RapierNotesModel': 'notes/model.mjs', 'RapierNotesLibraryWindow': 'notes/library-window.mjs', 'RapierNotesLibraryReads': 'notes/library-reads.mjs', 'RapierNotesTakeout': 'notes/takeout.mjs', 'RapierNotesImportNotion': 'notes/import-notion.mjs', 'RapierNotesImportSimplenote': 'notes/import-simplenote.mjs', 'RapierNotesImportStandardNotes': 'notes/import-standardnotes.mjs', 'RapierNotesImportJoplin': 'notes/import-joplin.mjs', 'RapierNotesImportTextBundle': 'notes/import-textbundle.mjs', 'RapierNotesImportDayOne': 'notes/import-dayone.mjs', 'RapierNotesImportRoam': 'notes/import-roam.mjs', 'RapierNotesImportLogseq': 'notes/import-logseq.mjs', 'RapierNotesImport': 'notes/import.mjs', 'RapierNotesImportPictures': 'notes/import-pictures.mjs', 'RapierNotesImportReceipt': 'notes/import-receipt.mjs', 'RapierNotesImportUndoFace': 'notes/import-undo-face.mjs', 'RapierNotesImportPlan': 'notes/import-plan.mjs', 'RapierNotesFrontMatter': 'notes/frontmatter.mjs', 'RapierNotesLinks': 'notes/links.mjs', 'RapierNotesSearch': 'notes/search.mjs', 'RapierNotesOcr': 'notes/ocr.mjs', 'RapierNotesSearchCache': 'notes/search-cache.mjs', 'RapierNotesImportMarkdown': 'notes/import-markdown.mjs', 'RapierNotesImportEnex': 'notes/import-enex.mjs', 'RapierNotesImportHtml': 'notes/import-html.mjs', 'RapierNotesRestore': 'notes/restore.mjs', 'RapierNotesTrash': 'notes/trash.mjs', 'RapierNotesHistory': 'notes/history.mjs', 'RapierNotesIntegrity': 'notes/integrity.mjs', 'RapierNotesZip': 'notes/zip.mjs', 'RapierNotesBackup': 'notes/backup.mjs', 'RapierNotesBackupWorker': 'notes/backup-worker.mjs', 'RapierNotesOPFSWorker': 'notes/opfs-worker.mjs', 'RapierNotesOwner': 'notes/owner.mjs', 'RapierNotesOPFS': 'notes/opfs.mjs', 'RapierNotesIdbStore': 'notes/idb-store.mjs', 'RapierNotesFolder': 'notes/folder.mjs', 'RapierNotesTodo': 'notes/todo.mjs', 'RapierNotesAudio': 'notes/audio.mjs', 'RapierNotesAttachments': 'notes/attachments.mjs', 'RapierNotesSync': 'notes/sync.mjs', 'RapierNotesVault': 'notes/vault.mjs', 'RapierNotesMerge': 'notes/merge.mjs', 'RapierNotesSyncSession': 'notes/sync-session.mjs', 'RapierCloudProviders': 'notes/cloud-providers.mjs', 'RapierWebDAVTransport': 'notes/transport-webdav.mjs'} : {}), 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs', 'RapierDrawWater': 'draw/water.mjs', 'RapierDrawWaterWorker': 'draw/water-worker.mjs', 'RapierDrawWaterPaths': 'draw/water-paths.mjs'};
 globals.RapierLiveMerge = 'kernel/live-merge.mjs';
+globals.RapierAgentEditor = 'agent/editor.mjs';
 // Notes carries source facts in the full profile; editor slots read those same published helpers.
 if (PROFILE === 'full') globals.RapierSourceFacts = 'editor/source-facts.mjs';
 if (PROFILE === 'full') {
@@ -613,6 +571,8 @@ const mypaintNotice = (await read('draw/vendor-notices/libmypaint-COPYING.txt'))
 if (!mypaintNotice.includes('Martin Renold') || !mypaintNotice.includes('Permission to use, copy, modify, and/or distribute')) throw new Error('Missing libmypaint ISC notice');
 const dieterleNotice = (await read('draw/vendor-notices/dieterle-brushes-CC0.txt')).trim();
 if (!dieterleNotice.includes('Brien Dieterle') || !dieterleNotice.includes('CC0')) throw new Error('Missing Dieterle brush pack notice');
+const spectralNotice = (await read('draw/vendor-notices/spectral-js-MIT.txt')).trim();
+if (!spectralNotice.includes('Ronald van Wijnen') || !spectralNotice.includes('Permission is hereby granted')) throw new Error('Missing spectral.js MIT notice');
 // Vendor entries are unbracketed: nothing reads a marker back.
 ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list">\n' +
   // The document profile ships no JPEG XL encoder, so no notice for it.
@@ -621,7 +581,8 @@ ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list"
   '<details class="license-entry"><summary><span class="license-name">rough.js generator</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(roughNotice) + '</pre></details>\n' +
   // Nor Paint's engine and presets.
   (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">libmypaint brush engine (port)</span><span class="license-id">ISC</span></summary><pre class="license-text">' + escapeHtml(mypaintNotice) + '</pre></details>\n' : '') +
-  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Dieterle brush pack</span><span class="license-id">CC0 1.0</span></summary><pre class="license-text">' + escapeHtml(dieterleNotice) + '</pre></details>\n' : ''));
+  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Dieterle brush pack</span><span class="license-id">CC0 1.0</span></summary><pre class="license-text">' + escapeHtml(dieterleNotice) + '</pre></details>\n' : '') +
+  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Spectral.js color data</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(spectralNotice) + '</pre></details>\n' : ''));
 {
   // Every SHEET_NOTICES entry is in the sheet in full, compared as text.
   const words = text => text.replace(/\s+/g, ' ');
@@ -653,7 +614,7 @@ if (appsUi !== null) {
 }
 // The document profile carries no Draw/Paint styles.
 const styleRows = JSON.parse(await read('editor/styles.json')).filter(row => PROFILE === 'full' || (row.id !== 'rapier-draw-style' && row.id !== 'rapier-notes-style' && row.id !== 'rapier-todo-style'));
-const styles = await Promise.all(styleRows.map(async row => ({...row, css: packStyleWhitespace(await inlineFonts(stripStyleComments(await read(row.path)), row.path))})));
+const styles = await Promise.all(styleRows.map(async row => ({...row, css: styleText(row.path)})));
 if (new Set(styles.map(row => row.id)).size !== styles.length || styles.some(row => !/^rapier-[a-z-]+-style$/.test(row.id)))
   throw new Error('Editor style rows are invalid');
 // The loader makes each <style> from the record after the boot style. An older template's slots go with their
@@ -742,7 +703,8 @@ html = html.replace(/(<script[^>]*type="application\/speedracer-app\+json"[^>]*>
   const manifest = JSON.parse(source);
   const exportOperation = manifest.operations.find(row => row.name === 'document.export');
   manifest.factory.version = VERSION;
-  manifest.operations = PAGE_TOOLS.map(entry => ({name: entry.name, label: entry.title, description: entry.description, authority: ['read', 'view'].includes(entry.effect) ? 'read' : 'write', input: entry.inputSchema, result: entry.outputSchema}));
+  // The template's own document.export saves a file through the host; the agent's document.export is the page's WebMCP tool alone.
+  manifest.operations = PAGE_TOOLS.filter(entry => entry.name !== 'document.export').map(entry => ({name: entry.name, label: entry.title, description: entry.description, authority: ['read', 'view'].includes(entry.effect) ? 'read' : 'write', input: entry.inputSchema, result: entry.outputSchema}));
   if (exportOperation) manifest.operations.push(exportOperation);
   return open + JSON.stringify(manifest) + close;
 });
@@ -940,8 +902,16 @@ const codecScript = '<!-- RAPIER_JXL_BEGIN -->\n' +
 // platform global at parse time (gated below).
 const platformSpans = [];
 {
+  const preferences = await read('shell/preferences.mjs');
+  const preferenceScript = apply(preferences, parse(preferences, 'module').body
+    .filter(node => node.type === 'ExportNamedDeclaration')
+    .map(node => ({start: node.start, end: node.declaration.start, text: ''})));
+  platformSpans.push({name: 'rapier-preferences.js', source: await lean(
+    'globalThis.RapierPreferenceDefinitions = (() => {\n' + preferenceScript +
+    '\nreturn Object.freeze({PREFERENCE_ACCENTS, PREFERENCE_DEFINITIONS});\n})();', 'rapier-preferences.js')});
   for (const [name, path] of [['rapier-platform.js', 'shell/platform.js'], ['rapier-bundle-io.js', 'shell/bundle-io.js'], ['rapier-plugin-loader.js', 'shell/plugin-loader.js']]) {
-    const source = await lean(await read(path), name);
+    const input = await read(path);
+    const source = await lean(path === 'shell/plugin-loader.js' ? fillMermaidResources(input) : input, name);
     platformSpans.push({name, source});
   }
   const slot = /<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n/;
@@ -1066,7 +1036,7 @@ if (PROFILE === 'full') {
   const appsInterface = await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', appsUi);
   const plugins = await builtinPlugins(root, packedSpans);
   appPlugins = plugins.groups;
-  const appsPluginLoader = await lean(fillBuiltinSlot(fillBuiltinSlot(await read('shell/plugin-loader.js'),
+  const appsPluginLoader = await lean(fillBuiltinSlot(fillBuiltinSlot(fillMermaidResources(await read('shell/plugin-loader.js')),
     '/* RAPIER_BUILTIN_PLUGIN_EXECUTE */', builtinExecution),
     '/* RAPIER_BUILTIN_FILES_REUSE */', builtinFilesReuse), 'rapier-app-plugin-loader.js');
   const appsPlatform = await packedSpans('rapier-platform-runtime', 'application/rapier-runtime', [

@@ -8309,12 +8309,15 @@ function _rapierNotesReturnToCards() {
 }
 // `unseen`: the note being left was never on the screen (_rapierNotesDrewNothing); nothing stands
 // over it on the way back, and its going is not announced.
-async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
+async function _rapierNotesOpen(capture = false, {unseen = false, guard} = {}) {
+	if (guard && !guard()) return false;
 	if (!_rapierEmbedFeatureAllowed('notes')) return false;
 	if (!capture && !await _rapierNotesUnlock()) return;
+	if (guard && !guard()) return false;
 	if (typeof _rapierRecorderClosePlayers === 'function') _rapierRecorderClosePlayers(); if (typeof _rapierAttachmentsClose === 'function') _rapierAttachmentsClose();
 	const state = _rapierNotes;
 	state.opening = true;
+	let lift = null, presented = false;
 	try {
 	// Back from a note composed inside Notes: the bar travels back into the note's card. Where the
 	// card is not on the cards yet, the note's words go under the page's ground at once, the cards
@@ -8327,14 +8330,18 @@ async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
 	// The note's last change lands in the folder before its card is drawn from it (the autosave tick
 	// may still be held: notes-autosave-ordering, notes-lockscreen-start).
 	if (state.mode && state.current && !state.open) { try { await _rapierNotesFlush(); } catch (_) { return; } }
+	if (guard && !guard()) return false;
 	if (_rapierNotesReturnToCards()) return;
 	const back = state.mode && state.current && !state.open;
-	const lift = back && !unseen ? _rapierNotesLiftBack() : null;
+	lift = back && !unseen ? _rapierNotesLiftBack() : null;
 	await _rapierNotesStore.kind();
+	if (guard && !guard()) return false;
 	const surface = _rapierNotesEnsure();
 	try { await _rapierNotesReady(); } catch (error) { lift?.end(); _rapierNotesStartClass(false); showToast(String(error.message || error), 'error'); return; }
+	if (guard && !guard()) return false;
 	try { await _rapierNotesFlush(); } catch (_) { lift?.end(); _rapierNotesStartClass(false); return; }
 	if (state.loading) await state.loading;
+	if (guard && !guard()) return false;
 	// The way back from a note THIS window opened does not read the folder again. A read would
 	// replace state.texts and state.titles, so notes/library.js would throw away both of its indexes
 	// and every card's title with them, and nothing could be drawn until the whole folder had been
@@ -8355,16 +8362,20 @@ async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
 		const loaded = await state.loading; state.loading = null;
 		if (!loaded || !state.index) { lift?.end(); _rapierNotesIndexingBegin(); return; }
 	}
+	if (guard && !guard()) return false;
 	await _rapierNotesSweepTrash();
+	if (guard && !guard()) return false;
 	await _rapierNotesDiscardEmpty(unseen);
+	if (guard && !guard()) return false;
 	// On the way back the cards come up only under the page's ground, once the note's words have gone.
 	if (lift) await lift.covered;
+	if (guard && !guard()) return false;
 	// The cards come in on the same short fade they leave on -- or stand at once under a canvas that
 	// fades off them (`unseen`), or under the way back's ground, so nothing under them shows through
 	// two fades. The fade is the stylesheet's (@starting-style, rapier-notes.css): it begins in the
 	// first frame the cards are shown.
 	if (surface.hidden) surface.classList.toggle('rapier-notes-surface--in', !unseen && !lift && !_rapierNotesStill());
-	surface.hidden = false; state.open = true; document.body.classList.add('rapier-notes-open');
+	surface.hidden = false; state.open = true; presented = true; document.body.classList.add('rapier-notes-open');
 	document.getElementById('toast-root')?._rapierDismissNoticeView?.('editor');
 	_rapierNotesStartClass(false);
 	_rapierNotesHeadPaint();
@@ -8381,7 +8392,7 @@ async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
 		if (!state.remindTimer) state.remindTimer = setInterval(_rapierNotesRemindTick, RAPIER_NOTES_REMIND_MS);
 		_rapierNotesRemindTick();
 	}
-	} finally { state.opening = false; }
+	} finally { if (!presented) lift?.end(); state.opening = false; }
 }
 // Keep's rule: a new note left empty is not kept. The note the circle made and the editor never
 // gave a word is removed when the person comes back to Notes, and said once -- unless they never saw

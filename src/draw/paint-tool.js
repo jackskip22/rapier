@@ -1376,7 +1376,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 		// `finally` still lowers the guard and restores the strip. The debt itself is paid by the
 		// engine's own `_drainWet`; the two are independent: neither hides the other.
 		// The painter settles the water, and the page reads what it settled to.
-		layer.surface.settleWet(); await layer.surface.sync();
+		if(layer.mode==='water')layer.surface.finishWetWork();else layer.surface.settleWet(); await layer.surface.sync();
 		if (!auto) {
 			await _rapierPaintCommit(true);
 			shape = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
@@ -1395,7 +1395,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			// the picture is encoded again so nothing painted before the sheet flips is left off it.
 			// Bounded: a hand that never lifts falls back to the closing keep (Done re-encodes).
 			for (let tries = 0; ; tries++) {
-				layer.surface.settleWet(); await layer.surface.sync();
+				if(layer.mode==='water')layer.surface.finishWetWork();else layer.surface.settleWet(); await layer.surface.sync();
 				const version = layer.paintVersion || 0, box = layer.surface.bounds();
 				if (!box) return;
 				pieces = await _rapierPaintLosslessPieces(b => encode(b, { lossless: true }), box, budget, 0, layer.mode === 'water');
@@ -1649,7 +1649,10 @@ function _rapierPaintSealRevision(layer, stroke, priorShift, grown) {
 	const shift = entry?.shift ? {dx: entry.shift.dx - (priorShift?.dx || 0), dy: entry.shift.dy - (priorShift?.dy || 0)} : grown;
 	if (grown || state.recipe.canvas !== canvas) _rapierPaintFollowGrowth(layer, shift || {dx: 0, dy: 0});
 	const shape = _rapierDrawShapeById(layer.id);
-	if (shape) layer.geom = JSON.stringify(shape.geom);
+	if (shape) {
+		layer.geom = JSON.stringify(shape.geom);
+		if (layer.mode === 'water') globalThis.RapierDrawAgentPaint.rememberWaterPainting(shape, _rapierWaterSession());
+	}
 }
 function _rapierPaintWorker(layer) {
 	if (typeof Worker !== 'function') return null;
@@ -2234,7 +2237,7 @@ function _rapierPaintBlankSheet(w, h, scale, prepared = null, mode = _rapierPain
 	const remote = _rapierPaintRemoteNow(mode);
 	if (!remote) throw new Error('The painter is not ready');
 	// The surface is the painter's: the page holds its mirror. Its sheet is blank paper at this raster scale.
-	const surface = remote.surface(w, h, mode === 'water' ? {mode: 'water', paper: _rapierWaterState().paper, trackedGrowth: true} : {wet: RAPIER_PAINT_WET, trackedGrowth: true});
+	const surface = remote.surface(w, h, mode === 'water' ? {mode: 'water', pixelScale: scale, paper: _rapierWaterState().paper, waterSession: _rapierWaterSession(), trackedGrowth: true} : {wet: RAPIER_PAINT_WET, trackedGrowth: true});
 	if (mode !== 'water') surface.set('paper', RAPIER_PAINT_PAPER); surface.set('scale', scale / RAPIER_PAINT_GRAIN);
 	const {canvas, ctx} = _rapierPaintBlankCanvas(w, h, prepared);
 	return {surface, canvas, ctx};
@@ -2401,17 +2404,9 @@ function _rapierPaintAfterFrame(update) {
 }
 // ---- Drying
 // ---------------------------------------------------------------------------------------
-// A wet stroke is NOT committed when the finger lifts. Under the finger the physics is owed, not
-// run (`surface.wetPending`), so the mark shows at once but the water has not moved yet; on
-// release this loop hands the surface that owed time a slice at a time and blits every frame,
-// which is when a wash visibly blooms, its rim darkens and the tooth takes the pigment. When the
-// paper is dry the stroke commits itself: one `paint` shape, one history step, exactly as a dry
-// stroke does.
-//
-// A second stroke laid while the paper is still wet simply joins the same wash -- the layer is
-// still live and uncommitted, so the two strokes settle into one another and share that one
-// history step. Every path that would end the layer (Undo, a tool change, Done, closing Draw, the
-// canvas following the stage) flushes first, so a drying stroke is committed rather than lost.
+// Paint settles its deferred wet work before publication. Water publishes each lifted gesture
+// immediately and keeps its material live; elapsed display frames amend that gesture's pixels
+// until the next gesture takes its checkpoint. Closing paths publish all accepted material.
 function _rapierPaintScheduleDry(layer) {
 	if (!layer || !layer.surface?.wetState) return;
 	// The lift's pending live write now belongs to the same bounded readout as the wash.
@@ -2429,13 +2424,12 @@ function _rapierPaintDryTick(layer) {
 	if (state.paintLayer !== layer || !layer.surface || (!layer.surface.wetState && !layer.dryFinishing)) return;
 	// A new stroke owns the layer and drains a suspended operation at its checkpoint; a slice the painter has not answered is not asked again.
 	if (state.gesture || layer.dryBusy) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
-	layer.dryAt = performance.now();
+	const now = performance.now(), elapsed = Math.max(0, now - layer.dryAt);
+	layer.dryAt = now;
 	layer.dryBusy = true;
 	const surface = layer.surface;
-	// Fixed simulated feeds and all pass barriers are unchanged. The painter runs one bounded slice (RAPIER_PAINT_DRY_BUDGET ms, stopping
-	// inside a feed, projection or final refinement and carrying its exact loop state to the next); its reply carries what changed on the
-	// paper, laid on the overlay as it arrives.
-	const sliced = surface.dryWet(RAPIER_PAINT_DRY_FEED, RAPIER_PAINT_DRY_SLICE);
+	// Water advances the elapsed frame time. Paint drains a bounded slice of deferred work.
+	const sliced = layer.mode === 'water' ? surface.advanceWet(elapsed) : surface.dryWet(RAPIER_PAINT_DRY_FEED, RAPIER_PAINT_DRY_SLICE);
 	surface.remote.flush().catch(() => {});
 	sliced.then(done => {
 		layer.dryBusy = false;
@@ -2451,12 +2445,8 @@ function _rapierPaintWetWake(layer) {
 	if (layer.surface?._wetWork || !layer.wetWaiters?.length) return;
 	for (const ok of layer.wetWaiters.splice(0)) ok();
 }
-// Dry the paper now and commit what is on it: the settlement every path that ends a live layer owes
-// a stroke still drying on it. `settleWet` finishes the physics exactly (every suspended band
-// settles, the water goes), so the committed pixels are the ones the drying would have reached.
-// Dry the paper now and commit what is on it: the settlement every path that ends a live layer owes a stroke still drying on it. The painter
-// settles the physics exactly (every suspended band settles, the water goes), so the committed pixels are the ones the drying would have
-// reached. Null when nothing is wet; else a promise of whether a wet stroke was committed.
+// Publish the accepted state before a live layer ends. Paint settles its deferred physics;
+// Water flushes queued contact without adding simulated time. Null when nothing is wet.
 function _rapierPaintFlushWet() {
 	return _rapierPaintAfter(_rapierPaintFlushRevision(), () => {
 		const layer = _rapierPaintLayer();
@@ -2680,6 +2670,11 @@ function _rapierPaintHoldTick(gesture) {
 	// are never counted against two different clocks (or against each other twice).
 	const now = performance.now() - paint.clockOffset, dt = _rapierDrawClamp((now - paint.last) / 1000, 0.001, 0.5);
 	paint.last = now;
+	if (layer.mode === 'water') {
+		void layer.surface.advanceWet(dt * 1000).catch(() => {});
+		_rapierPaintScheduleBlit(); _rapierPaintScheduleHold(gesture);
+		return;
+	}
 	// The last REAL tilt and twist a move or the initial dab reported: a held hand does not typically
 	// change its angle, so holding the last real reading is the honest value, not a fabricated one,
 	// and a stylus held still at an angle never reads as flat.
@@ -2689,7 +2684,7 @@ function _rapierPaintHoldTick(gesture) {
 	const at = paint.drawn;
 	const hx = at ? at.p.x : paint.x, hy = at ? at.p.y : paint.y;
 	const htx = at ? at.p.tiltX : paint.tiltX, hty = at ? at.p.tiltY : paint.tiltY, hw = at ? at.p.twist : paint.twist;
-	paint.brush.strokeTo(layer.surface, hx * RAPIER_PAINT_GRAIN, hy * RAPIER_PAINT_GRAIN, paint.pressure, htx, hty, dt, 1, 0, hw);
+	paint.brush.strokeTo(layer.surface, hx * RAPIER_PAINT_GRAIN, hy * RAPIER_PAINT_GRAIN, paint.pressure, htx, hty, dt, 1, 0, hw, paint.inputKind);
 	_rapierPaintScheduleBlit();
 	_rapierPaintScheduleHold(gesture);
 }
@@ -2729,11 +2724,24 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer) {
 	if (layer.dryFinishing && !surface.wetState) { const flushed = _rapierPaintFlushWet(); if (flushed) await flushed; }
 	const flush = _rapierPaintFlushRevision(layer);
 	if (flush) await flush;
+	if (layer.mode === 'water' && layer.flipStroke?.entry && surface.revision !== layer.checkpoint?.revision) {
+		// Preserve the previous gesture at the wet state the next hand actually meets.
+		// This replaces that gesture's latest pixels without running an artificial Dry.
+		await _rapierPaintEncodeRevision(layer).promise;
+	}
 	// A stroke abandoned while it waited owes nothing, and must not leave a checkpoint nobody will end.
 	if (!state.open || state.session !== session || gesture.paint?.discarded) return 'gone';
 	// Finishing an empty wash or an erased lifted revision can retire this view. Resolve the
 	// next stroke against the remaining drawing before taking a rollback or touching pixels.
 	if (_rapierPaintLayer() !== layer) return false;
+	if (layer.mode === 'water' && layer.waterMaterial) {
+		const material=layer.waterMaterial,target=_rapierDrawShapeById(layer.id);
+		if(!target || target.raster!==layer.raster || !globalThis.RapierDrawAgentPaint.waterPaintingIsLive(target,material.session))throw Object.assign(new Error('This Water layer changed before the stroke was ready.'),{code:'paint_target_changed'});
+		await surface.fromWaterMaterial(material.replay,material.session);
+		delete layer.waterMaterial;
+		if (!state.open || state.session !== session || gesture.paint?.discarded) return 'gone';
+		if (_rapierPaintLayer() !== layer) return false;
+	}
 	// The earlier stroke is now sealed, including every cap sheet. This gesture gets its own step.
 	layer.flipStroke = null;
 	const props = {};
@@ -2820,7 +2828,7 @@ async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	brush.setHead(settings.held ?? null, settings.clear);
 	brush.reset(); brush.newStroke();
 	const p = _rapierPaintEventPoint(evt, geom, layer);
-	const holdNeeded = _rapierPaintHoldNeeded(brush);
+	const holdNeeded = layer.mode === 'water' || _rapierPaintHoldNeeded(brush);
 	// This brush's own width decides how far it lands and lifts over -- in drawing units, since the
 	// samples are, and the brush works at RAPIER_PAINT_GRAIN of them.
 	const reach = Math.exp(layer.brushRadius + settings.radiusOffset) / RAPIER_PAINT_GRAIN;
@@ -2835,7 +2843,8 @@ async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 		// for a taper to exist in, and measured 0.95 out where oil measured 0.41.
 		travel: 0, tail: [], drawn: null, drained: false, reach, land: Math.max(RAPIER_PAINT_LAND_MIN, reach * RAPIER_PAINT_LAND),
 		lift: brush.wet ? Math.max(1, reach * RAPIER_PAINT_LIFT_WET) : Math.max(RAPIER_PAINT_LIFT_MIN, reach * RAPIER_PAINT_LIFT * (settings.lift || 1)) };
-	const pressure = gesture.paint.pressure = _rapierPaintPressure(evt, gesture.paint, p);
+	gesture.paint.inputKind = ['pen', 'touch', 'mouse'].includes(evt.pointerType) ? evt.pointerType : 'mouse';
+	const pressure = gesture.paint.pressure = layer.mode === 'water' ? _rapierWaterPointerPressure(evt, gesture.paint.inputKind) : _rapierPaintPressure(evt, gesture.paint, p);
 	const seat = pressure * RAPIER_PAINT_SEAT;
 	// The seat dabs go straight to the brush, not through `_rapierPaintSample`, so they used to be the
 	// one place paint was laid with no chance to grow the surface first -- a stroke STARTED on the
@@ -2843,8 +2852,11 @@ async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	// flapped between a clean brush edge and an 86% wall on the same build: it depended on how much of
 	// the mark was seat and how much was sampled.
 	layer = _rapierPaintGrowToHold(layer, gesture.paint, p) || layer;
-	brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, seat, p.tiltX, p.tiltY, 0.0001, 1, 0, p.twist);
-	brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, seat, p.tiltX, p.tiltY, 0.012, 1, 0, p.twist);
+	if (layer.mode === 'water') brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, pressure, p.tiltX, p.tiltY, 1 / 60, 1, 0, p.twist, gesture.paint.inputKind, p.t);
+	else {
+		brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, seat, p.tiltX, p.tiltY, 0.0001, 1, 0, p.twist);
+		brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, seat, p.tiltX, p.tiltY, 0.012, 1, 0, p.twist);
+	}
 	if (timing && !timing.seat) timing.seat = performance.now();
 	gesture.paint.mouse = evt.pointerType === 'mouse'; _rapierPaintHeadAt(evt.clientX, evt.clientY);
 	_rapierPaintScheduleBlit();
@@ -2941,7 +2953,12 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 	// What this decode's pixels are computed FROM, read once, now. Required to still hold below
 	// before a single pixel is copied or an id is written down for retirement.
 	const groupKey = _rapierPaintGroupKey(target, group);
-	const load = async shape => { const pixels = await _rapierPaintPNG.decode(shape.raster) || await _rapierPaintDecodeStraight(shape.raster); if (pixels) return {shape, pixels}; return new Promise((ok, no) => { const image = new Image(); image.onload = () => ok({ shape, image }); image.onerror = () => no(new Error('a painting could not be read back')); image.src = shape.raster; }); };
+	const load = async shape => {
+		const pixels = await _rapierPaintPNG.decode(shape.raster) || await _rapierPaintDecodeStraight(shape.raster);
+		if (pixels) return {shape, pixels};
+		if(shape.paint?.mode==='water')throw Object.assign(new Error('This host cannot reopen the exact Water pixels.'),{code:'paint_raster_decoder_unavailable'});
+		return new Promise((ok, no) => { const image = new Image(); image.onload = () => ok({ shape, image }); image.onerror = () => no(new Error('a painting could not be read back')); image.src = shape.raster; });
+	};
 	let task = null;
 	const adopt = async loaded => {
 		try {
@@ -3007,17 +3024,19 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 				if (simple) {
 					const f = shape === target ? frame : _rapierPaintTargetFrame(shape);
 					const x0 = Math.round((f.c0[0] - (layer.origin?.[0] || 0)) * f.scale), y0 = Math.round((f.c0[1] - (layer.origin?.[1] || 0)) * f.scale);
-					if (layer.mode === 'water') await layer.surface.loadWaterReplay(shape.paint.replay, {offset:[x0,y0],expected:px});
-					else layer.surface.fromRGBA8(px.data, px.width, px.height, x0, y0);
+					layer.surface.fromRGBA8(px.data, px.width, px.height, x0, y0);
 				} else {
-					if (layer.mode === 'water') await layer.surface.loadWaterReplay(shape.paint.replay, {offset:[layer.frame.pad,layer.frame.pad],expected:px});
-					else layer.surface.fromRGBA8(px.data, px.width, px.height, layer.frame.pad, layer.frame.pad);
+					layer.surface.fromRGBA8(px.data, px.width, px.height, layer.frame.pad, layer.frame.pad);
 				}
 			}
 			// The overlay carries the picked-up pixels too, when the painter's reply to those pixels arrives, so the next stroke shows them under its dabs.
 			layer.id = again.id; layer.raster = again.raster; layer.geom = JSON.stringify(again.geom); layer.brushId = again.paint?.brush || null;
 			layer.paintReplay = again.paint?.replay ? _rapierDrawHistoryCopy(again.paint.replay) : null;
 			layer.waterPaper = again.paint?.paper || layer.waterPaper;
+			if (mode === 'water' && !globalThis.RapierDrawAgentPaint.waterPaintingIsLive(again, _rapierWaterSession())) {
+				layer.paintReplay = {mode:'water',paper:layer.waterPaper,session:_rapierWaterSession(),baseRaster:again.raster,px:again.paint.px.slice(),scale:again.paint.scale,entries:[]};
+			}
+			else if(mode==='water' && !group.length)layer.waterMaterial={replay:_rapierDrawHistoryCopy(layer.paintReplay),session:_rapierWaterSession()};
 			layer.retire = group.map(shape => shape.id);
 			await Promise.all(waiters.map(g => _rapierPaintApplyQueued(g).catch(() => {})));
 		} catch (error) { state.paintRehydrateFailed = key; try { _rapierPaintCloseLayer(); } catch (_) {}
@@ -3464,10 +3483,16 @@ function _rapierPaintMove(events, gesture) {
 	for (const sample of events) {
 		layer = _rapierPaintLayer() || layer; // a flip at the cap, draining the samples below, moves the stroke to a fresh sheet
 		const p = _rapierPaintEventPoint(sample, paint.geom, layer), dt = _rapierDrawClamp((p.t - paint.last) / 1000, 0.0005, 0.5);
-		const pressure = paint.pressure = _rapierPaintPressure(sample, paint, p);
+		const pressure = paint.pressure = layer.mode === 'water' ? _rapierWaterPointerPressure(sample, paint.inputKind) : _rapierPaintPressure(sample, paint, p);
 		paint.travel += Math.hypot(p.x - paint.x, p.y - paint.y);
 		paint.last = p.t; paint.x = p.x; paint.y = p.y; paint.tiltX = p.tiltX; paint.tiltY = p.tiltY; paint.twist = p.twist; paint.points++;
 		paint.reached = paint.reached || p.reach;
+		if (layer.mode === 'water') {
+			layer = _rapierPaintGrowToHold(layer, paint, p) || layer;
+			paint.brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, pressure, p.tiltX, p.tiltY, dt, 1, 0, p.twist, paint.inputKind, p.t);
+			paint.drawn = {p, dt, press: pressure, at: paint.travel};
+			continue;
+		}
 		paint.tail.push({ p, dt, press: pressure, at: paint.travel });
 		// Drained by DISTANCE (the lift lag) and by COUNT. The count bound is what a still hand needs:
 		// travel stops advancing, so the distance rule never fires, and a 240 Hz panel held for a minute
@@ -3492,17 +3517,8 @@ function _rapierPaintEnd(evt, gesture) {
 	const p = _rapierPaintEventPoint(evt, paint.geom, layer);
 	paint.reached = paint.reached || p.reach;
 	paint.travel += Math.hypot(p.x - paint.x, p.y - paint.y);
-	paint.tail.push({ p, dt: _rapierDrawClamp((p.t - paint.last) / 1000, 0.0005, 0.5), press: 0, at: paint.travel });
-	const end = paint.travel;
-	// The taper is the tail's OWN span, not a fixed lift distance: a flick shorter than one lift
-	// would otherwise arrive with every sample below full weight, so the whole mark would be a lift
-	// with no body at all. And a stroke so short that the lag never released anything keeps its first
-	// held sample at full weight -- that sample IS the body.
-	const span = Math.max(1e-4, Math.min(paint.lift, end - (paint.tail.length ? paint.tail[0].at : end)));
-	paint.tail.forEach((s, i) => _rapierPaintSample(paint, layer, s,
-		i === 0 && !paint.drained ? 1 : _rapierPaintSmooth(_rapierDrawClamp((end - s.at) / span, 0, 1))));
-	paint.tail.length = 0;
 	if (layer.mode === 'water') {
+		paint.brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, 0, p.tiltX, p.tiltY, Math.max(0, (p.t - paint.last) / 1000), 1, 0, p.twist, paint.inputKind, p.t);
 		const held = _rapierPaintLiftHold(layer);
 		void _rapierWaterPreflight(layer).then(() => {
 			_rapierPaintReleaseStroke(gesture); layer.paintVersion = (layer.paintVersion || 0) + 1;
@@ -3513,6 +3529,16 @@ function _rapierPaintEnd(evt, gesture) {
 		});
 		_rapierPaintScheduleBlit(); return;
 	}
+	paint.tail.push({ p, dt: _rapierDrawClamp((p.t - paint.last) / 1000, 0.0005, 0.5), press: 0, at: paint.travel });
+	const end = paint.travel;
+	// The taper is the tail's OWN span, not a fixed lift distance: a flick shorter than one lift
+	// would otherwise arrive with every sample below full weight, so the whole mark would be a lift
+	// with no body at all. And a stroke so short that the lag never released anything keeps its first
+	// held sample at full weight -- that sample IS the body.
+	const span = Math.max(1e-4, Math.min(paint.lift, end - (paint.tail.length ? paint.tail[0].at : end)));
+	paint.tail.forEach((s, i) => _rapierPaintSample(paint, layer, s,
+		i === 0 && !paint.drained ? 1 : _rapierPaintSmooth(_rapierDrawClamp((end - s.at) / span, 0, 1))));
+	paint.tail.length = 0;
 	_rapierPaintReleaseStroke(gesture);
 	// The layer the stroke ENDS on: draining the tail may have flipped the sheet at the cap.
 	const ended = _rapierPaintLayer() || layer;
@@ -3526,10 +3552,23 @@ function _rapierPaintEnd(evt, gesture) {
 	_rapierPaintScheduleBlit();
 	ended.surface.sync().then(() => _rapierPaintEndDecide(ended, held), () => { if (ended.pendingLift === held) ended.pendingLift = null; held.decide(); held.resolve(); });
 }
-// Wet media: the stroke is not finished when the finger is. It dries in view and commits itself; Undo takes it back meanwhile, so the head's
-// undo has something to do from now (_rapierDrawRenderHistory). A dry stroke is committed at the next frame.
+// A Water lift publishes its own Undo step while material remains wet. Paint's wet wash keeps
+// its existing settlement boundary; a dry Paint stroke is committed at the next frame.
 function _rapierPaintEndDecide(layer, held) {
 	if (layer.pendingLift !== held) { held.decide(); return; }
+	if (layer.mode === 'water') {
+		// A lifted Water gesture owns one history step immediately. The GPU remains wet;
+		// subsequent drying amends this gesture until the next gesture takes its checkpoint.
+		layer.flipStroke ||= {entry:null};
+		const job = _rapierPaintEncodeRevision(layer);
+		layer.pendingLift = null; held.deciding = false; held.decide();
+		job.promise.then(() => {
+			if (_rapierDrawState.paintLayer === layer && !layer.surface?.gone && layer.surface?.wetState) {
+				_rapierPaintShowLive(true); _rapierPaintScheduleDry(layer);
+			}
+		}, error => _rapierPaintNotKept(layer,error)).finally(() => held.resolve());
+		return;
+	}
 	if (layer.surface.wetState && !_rapierDrawState.paintSetting?.auto) {
 		layer.pendingLift = null; held.deciding = false; held.decide(); held.resolve();
 		_rapierPaintScheduleBlit(); _rapierPaintScheduleDry(layer); _rapierDrawRenderHistory();
@@ -3716,9 +3755,9 @@ function _rapierPaintCommit(keep = false, kept = null, custody = false) {
 	// Every commit attempt, refused or not, is a new version of the layer's pixels: the automatic
 	// settle below encodes against one version and re-encodes if the hand moved on meanwhile.
 	layer.paintVersion = (layer.paintVersion || 0) + 1;
-	// Whatever is still wet dries exactly here (in the painter), so the pixels written are the settled ones.
+	// Water keeps the accepted time boundary. Paint finishes its deferred wet work.
 	if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
-	layer.surface.settleWet();
+	if(layer.mode==='water')layer.surface.finishWetWork();else layer.surface.settleWet();
 	layer.dryFinishing = false; layer.dryBox = null;
 	// Impasto: the kept mark is lit -- but the lighting lives in `shadeInto`, at read-out (baking it
 	// into the stored pixels would make every later stroke re-light every earlier one).

@@ -1,24 +1,40 @@
 // SPDX-License-Identifier: MIT
 const RAPIER_SANITIZE_FORBID_TAGS = Object.freeze(['form', 'style', 'dialog', 'template', 'iframe']);
 const RAPIER_SANITIZE_FORBID_ATTR = Object.freeze(['action', 'formaction', 'form', 'for']);
+// The document profiles use one allowlist in a browser and in an inert server parser.
+const RAPIER_SANITIZE_PROFILES = Object.freeze({
+	htmlTags: Object.freeze(["a","abbr","acronym","address","area","article","aside","audio","b","bdi","bdo","big","blink","blockquote","body","br","button","canvas","caption","center","cite","code","col","colgroup","content","data","datalist","dd","decorator","del","details","dfn","dialog","dir","div","dl","dt","element","em","fieldset","figcaption","figure","font","footer","form","h1","h2","h3","h4","h5","h6","head","header","hgroup","hr","html","i","img","input","ins","kbd","label","legend","li","main","map","mark","marquee","menu","menuitem","meter","nav","nobr","ol","optgroup","option","output","p","picture","pre","progress","q","rp","rt","ruby","s","samp","search","section","select","shadow","slot","small","source","spacer","span","strike","strong","style","sub","summary","sup","table","tbody","td","template","textarea","tfoot","th","thead","time","tr","track","tt","u","ul","var","video","wbr"]),
+	svgTags: Object.freeze(["svg","a","altglyph","altglyphdef","altglyphitem","animatecolor","animatemotion","animatetransform","circle","clippath","defs","desc","ellipse","enterkeyhint","exportparts","filter","font","g","glyph","glyphref","hkern","image","inputmode","line","lineargradient","marker","mask","metadata","mpath","part","path","pattern","polygon","polyline","radialgradient","rect","stop","style","switch","symbol","text","textpath","title","tref","tspan","view","vkern"]),
+	mathTags: Object.freeze(["math","menclose","merror","mfenced","mfrac","mglyph","mi","mlabeledtr","mmultiscripts","mn","mo","mover","mpadded","mphantom","mroot","mrow","ms","mspace","msqrt","mstyle","msub","msup","msubsup","mtable","mtd","mtext","mtr","munder","munderover","mprescripts"]),
+	htmlAttributes: Object.freeze(["accept","action","align","alt","autocapitalize","autocomplete","autopictureinpicture","autoplay","background","bgcolor","border","capture","cellpadding","cellspacing","checked","cite","class","clear","color","cols","colspan","command","commandfor","controls","controlslist","coords","crossorigin","datetime","decoding","default","dir","disabled","disablepictureinpicture","disableremoteplayback","download","draggable","enctype","enterkeyhint","exportparts","face","for","headers","height","hidden","high","href","hreflang","id","inert","inputmode","integrity","ismap","kind","label","lang","list","loading","loop","low","max","maxlength","media","method","min","minlength","multiple","muted","name","nonce","noshade","novalidate","nowrap","open","optimum","part","pattern","placeholder","playsinline","popover","popovertarget","popovertargetaction","poster","preload","pubdate","radiogroup","readonly","rel","required","rev","reversed","role","rows","rowspan","spellcheck","scope","selected","shape","size","sizes","slot","span","srclang","start","src","srcset","step","style","summary","tabindex","title","translate","type","usemap","valign","value","width","wrap","xmlns"]),
+	svgAttributes: Object.freeze(["accent-height","accumulate","additive","alignment-baseline","amplitude","ascent","attributename","attributetype","azimuth","basefrequency","baseline-shift","begin","bias","by","class","clip","clippathunits","clip-path","clip-rule","color","color-interpolation","color-interpolation-filters","color-profile","color-rendering","cx","cy","d","dx","dy","diffuseconstant","direction","display","divisor","dominant-baseline","dur","edgemode","elevation","end","exponent","fill","fill-opacity","fill-rule","filter","filterunits","flood-color","flood-opacity","font-family","font-size","font-size-adjust","font-stretch","font-style","font-variant","font-weight","fx","fy","g1","g2","glyph-name","glyphref","gradientunits","gradienttransform","height","href","id","image-rendering","in","in2","intercept","k","k1","k2","k3","k4","kerning","keypoints","keysplines","keytimes","lang","lengthadjust","letter-spacing","kernelmatrix","kernelunitlength","lighting-color","local","marker-end","marker-mid","marker-start","markerheight","markerunits","markerwidth","maskcontentunits","maskunits","max","mask","mask-type","media","method","mode","min","name","numoctaves","offset","operator","opacity","order","orient","orientation","origin","overflow","paint-order","path","pathlength","patterncontentunits","patterntransform","patternunits","pointer-events","points","preservealpha","preserveaspectratio","primitiveunits","r","rx","ry","radius","refx","refy","repeatcount","repeatdur","restart","result","rotate","scale","seed","shape-rendering","slope","specularconstant","specularexponent","spreadmethod","startoffset","stddeviation","stitchtiles","stop-color","stop-opacity","stroke-dasharray","stroke-dashoffset","stroke-linecap","stroke-linejoin","stroke-miterlimit","stroke-opacity","stroke","stroke-width","style","surfacescale","systemlanguage","tabindex","tablevalues","targetx","targety","transform","transform-origin","text-anchor","text-decoration","text-orientation","text-rendering","textlength","type","u1","u2","unicode","values","vector-effect","viewbox","visibility","version","vert-adv-y","vert-origin-x","vert-origin-y","width","word-spacing","wrap","writing-mode","xchannelselector","ychannelselector","x","x1","x2","xmlns","y","y1","y2","z","zoomandpan"]),
+	mathAttributes: Object.freeze(["accent","accentunder","align","bevelled","close","columnalign","columnlines","columnspacing","columnspan","denomalign","depth","dir","display","displaystyle","encoding","fence","frame","height","href","id","largeop","length","linethickness","lquote","lspace","mathbackground","mathcolor","mathsize","mathvariant","maxsize","minsize","movablelimits","notation","numalign","open","rowalign","rowlines","rowspacing","rowspan","rspace","rquote","scriptlevel","scriptminsize","scriptsizemultiplier","selection","separator","separators","stretchy","subscriptshift","supscriptshift","symmetric","voffset","width","xmlns"]),
+	xmlAttributes: Object.freeze(["xlink:href","xml:id","xlink:title","xml:space","xmlns:xlink"]),
+});
+const RAPIER_SANITIZE_DROP_CONTENTS = Object.freeze('annotation-xml.audio.colgroup.desc.foreignobject.head.iframe.math.mi.mn.mo.ms.mtext.noembed.noframes.noscript.plaintext.script.selectedcontent.style.svg.template.thead.title.video.xmp'.split('.'));
+function _rapierSanitizeProfile(...kinds) {
+	return {ALLOWED_TAGS: Object.freeze(['#text', ...new Set(kinds.flatMap(kind => RAPIER_SANITIZE_PROFILES[kind + 'Tags']))]),
+		ALLOWED_ATTR: Object.freeze([...new Set(kinds.flatMap(kind => RAPIER_SANITIZE_PROFILES[kind + 'Attributes']).concat(kinds.some(kind => kind !== 'html') ? RAPIER_SANITIZE_PROFILES.xmlAttributes : []))]),
+		FORBID_CONTENTS: RAPIER_SANITIZE_DROP_CONTENTS};
+}
 const RAPIER_SANITIZE_OPTIONS = Object.freeze({
 	render: Object.freeze({
-		USE_PROFILES: { html: true, svg: true, mathMl: true },
+		..._rapierSanitizeProfile('html', 'svg', 'math'),
 		FORBID_TAGS: RAPIER_SANITIZE_FORBID_TAGS,
 		FORBID_ATTR: RAPIER_SANITIZE_FORBID_ATTR,
 	}),
 	paste: Object.freeze({
-		USE_PROFILES: { html: true },
+		..._rapierSanitizeProfile('html'),
 		FORBID_TAGS: RAPIER_SANITIZE_FORBID_TAGS,
 		FORBID_ATTR: RAPIER_SANITIZE_FORBID_ATTR,
 	}),
 	snippet: Object.freeze({
-		USE_PROFILES: { html: true },
+		..._rapierSanitizeProfile('html'),
 		FORBID_TAGS: RAPIER_SANITIZE_FORBID_TAGS,
 		FORBID_ATTR: Object.freeze([...'style']),
 	}),
 	diagram: Object.freeze({
-		USE_PROFILES: { html: true, svg: true },
+		..._rapierSanitizeProfile('html', 'svg'),
 		FORBID_TAGS: Object.freeze(['form', 'dialog', 'template', 'iframe', 'script', 'foreignobject']),
 		FORBID_ATTR: RAPIER_SANITIZE_FORBID_ATTR,
 	}),
@@ -66,9 +82,98 @@ function prepareMathSource(input, DOMParser) {
 	return sourceRoot ? root.outerHTML : root;
 }
 
+// An inert parser and a string sanitizer use the same profile as DOMPurify. Neither port may
+// execute document scripts or fetch resources. HTML5 parsing precedes filtering so foreign
+// content, entities and malformed table markup cross the same boundary as a browser's parser.
+function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeRasterDataUrl}) {
+	if (![parseFragment, serialize, sanitizeHtml, safeRasterDataUrl].every(port => typeof port === 'function'))
+		throw new TypeError('The inert HTML sanitizer requires every parser and filtering port');
+	const uri = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+	const uriSafe = new Set(['alt', 'class', 'for', 'id', 'label', 'name', 'pattern', 'placeholder', 'role', 'summary', 'title', 'value', 'style', 'xmlns']);
+	const schemes = ['http', 'https', 'ftp', 'ftps', 'mailto', 'tel', 'callto', 'sms', 'cid', 'xmpp', 'matrix'];
+	const htmlNamespace = 'http://www.w3.org/1999/xhtml', svgNamespace = 'http://www.w3.org/2000/svg', mathNamespace = 'http://www.w3.org/1998/Math/MathML';
+	const svgTags = new Set(RAPIER_SANITIZE_PROFILES.svgTags), mathTags = new Set(RAPIER_SANITIZE_PROFILES.mathTags);
+	const mathIntegration = new Set(['mi', 'mo', 'mn', 'ms', 'mtext']), htmlIntegration = new Set(['annotation-xml']);
+	const sharedHtmlSvg = new Set(['title', 'style', 'font', 'a', 'script']);
+	// DOMPurify's default namespace admission applies in addition to its tag profile. In
+	// particular a MathML name parsed as HTML, or HTML inside SVG desc, is not admitted.
+	const validNamespace = (node, parent) => {
+		const tag = node.tagName.toLowerCase(), parentTag = (parent.tagName || 'template').toLowerCase();
+		const namespace = node.namespaceURI, parentNamespace = parent.namespaceURI || htmlNamespace;
+		if (namespace === svgNamespace) return parentNamespace === htmlNamespace ? tag === 'svg'
+			: parentNamespace === mathNamespace ? tag === 'svg' && (parentTag === 'annotation-xml' || mathIntegration.has(parentTag)) : svgTags.has(tag);
+		if (namespace === mathNamespace) return parentNamespace === htmlNamespace ? tag === 'math'
+			: parentNamespace === svgNamespace ? tag === 'math' && htmlIntegration.has(parentTag) : mathTags.has(tag);
+		return namespace === htmlNamespace && !(parentNamespace === svgNamespace && !htmlIntegration.has(parentTag))
+			&& !(parentNamespace === mathNamespace && !mathIntegration.has(parentTag))
+			&& !mathTags.has(tag) && (sharedHtmlSvg.has(tag) || !svgTags.has(tag));
+	};
+	return function sanitize(value, context = 'render') {
+		const selected = context === 'raw' || context === 'export' || context === 'source' || RAPIER_SANITIZE_OPTIONS[context] ? context : 'render';
+		const options = RAPIER_SANITIZE_OPTIONS[selected] || RAPIER_SANITIZE_OPTIONS.render;
+		const forbiddenTags = new Set(options.FORBID_TAGS || []), forbiddenAttributes = new Set(options.FORBID_ATTR || []);
+		const tags = new Set(options.ALLOWED_TAGS.filter(tag => tag !== '#text' && !forbiddenTags.has(tag)));
+		const attributes = new Set(options.ALLOWED_ATTR);
+		const tree = parseFragment(String(value == null ? '' : value));
+		const dropContents = new Set(RAPIER_SANITIZE_DROP_CONTENTS);
+		const admitTree = parent => {
+			for (let index = 0; index < (parent.childNodes || []).length;) {
+				const node = parent.childNodes[index], tag = node.tagName?.toLowerCase();
+				if (tag && !tags.has(tag)) {
+					const children = dropContents.has(tag) ? [] : node.childNodes || [];
+					for (const child of children) child.parentNode = parent;
+					parent.childNodes.splice(index, 1, ...children);
+					continue;
+				}
+				if (tag && !validNamespace(node, parent) || node.nodeName === '#comment') {
+					parent.childNodes.splice(index, 1); continue;
+				}
+				admitTree(node); index++;
+			}
+		};
+		admitTree(tree);
+		const admitNames = node => {
+			if (node.tagName && tags.has(node.tagName.toLowerCase())) tags.add(node.tagName);
+			for (const child of node.childNodes || []) admitNames(child);
+		};
+		admitNames(tree);
+		const cleaned = sanitizeHtml(serialize(tree), {
+			allowedTags: [...tags], allowedAttributes: false,
+			disallowedTagsMode: 'discard', nonTextTags: RAPIER_SANITIZE_DROP_CONTENTS,
+			allowedSchemes: schemes, allowedSchemesByTag: {img: [...schemes, 'data']},
+			allowedSchemesAppliedToAttributes: ['href', 'src', 'xlink:href', 'cite', 'background', 'poster'],
+			parseStyleAttributes: false,
+			parser: {lowerCaseTags: false, lowerCaseAttributeNames: false, decodeEntities: true},
+			transformTags: {'*': (tagName, input) => {
+				const attribs = Object.create(null), tag = tagName.toLowerCase();
+				for (const [name, inputValue] of Object.entries(input)) {
+					const key = name.toLowerCase();
+					const value = name === 'value' ? inputValue : inputValue.trim();
+					if (forbiddenAttributes.has(key) || key.startsWith('on')) continue;
+					if (/((--!?|])>)|<\/(style|script|title|xmp|textarea|noscript|iframe|noembed|noframes)/i.test(value)
+						|| key === 'attributename' && value.includes('href')) continue;
+					const data = /^data-[\-\w.\u00b7-\uffff]+$/.test(key), aria = /^aria-[\-\w]+$/.test(key);
+					const pageBreak = key === 'contenteditable' && value === 'false' && tag === 'div' && input['data-md-break'] === 'page';
+					if (!(data && selected !== 'raw') && !aria && !pageBreak && !attributes.has(key)) continue;
+					const compact = value.replace(/[\u0000-\u0020\u00a0\u1680\u180e\u2000-\u2029\u205f\u3000]/g, '');
+					if (!data && !aria && !pageBreak && !uriSafe.has(key) && compact) {
+						if (/^data:/i.test(compact)) {
+							if (key !== 'src' || tag !== 'img' || !safeRasterDataUrl(compact)) continue;
+						} else if (!uri.test(compact)) continue;
+					}
+					attribs[name] = value;
+				}
+				if ((tag === 'a' || tag === 'area') && attribs.target?.trim().toLowerCase() === '_blank') attribs.rel = 'noopener noreferrer';
+				return {tagName, attribs};
+			}},
+		});
+		return serialize(parseFragment(cleaned));
+	};
+}
+
 // The document's renderer. DOM, codecs and host state are explicit inputs.
 function createRenderSanitizer(runtime) {
-  const {CSSStyleSheet, DOMPurify, RAPIER_RASTER_DATA_URL_RE, URL, _rapierCssDeclaration, _rapierDropRemoteDeclarations, _rapierRemoteContent, _rapierRuleDescriptorIsRemote, _rapierSanitizeRuntime, _rapierVerifyRasterBytes, document, globalThis, location} = runtime;
+  const {CSSStyleSheet, DOMPurify, RAPIER_RASTER_DATA_URL_RE, URL, _rapierCssDeclaration, _rapierDropRemoteDeclarations, _rapierRemoteContent, _rapierRuleDescriptorIsRemote, _rapierSanitizeRuntime, document, globalThis, location} = runtime;
 
 // Only the diagram reader and its styled export admit static foreignObject labels. The
 // ordinary SVG reader still rejects HTML subdocuments. The export class selects scope;
@@ -257,7 +362,10 @@ function sanitizeRapierHtml(value, context = 'render') {
 	let options = selected === 'raw' ? { ...RAPIER_SANITIZE_OPTIONS.render, ALLOW_DATA_ATTR: false } : RAPIER_SANITIZE_OPTIONS[selected] || RAPIER_SANITIZE_OPTIONS.render;
 	const labels = selected === 'diagram' || selected === 'export';
 	if (labels) {
-		options = {...options, USE_PROFILES: {...options.USE_PROFILES, mathMl: true}, ADD_TAGS: ['foreignobject'],
+		// DOMPurify's USE_PROFILES replaces explicit allowlists. Add MathML to the
+		// selected profile without discarding its admitted HTML and SVG vocabulary.
+		options = {...options, ALLOWED_TAGS: [...new Set([...options.ALLOWED_TAGS, ...RAPIER_SANITIZE_PROFILES.mathTags])],
+			ALLOWED_ATTR: [...new Set([...options.ALLOWED_ATTR, ...RAPIER_SANITIZE_PROFILES.mathAttributes])], ADD_TAGS: ['foreignobject'],
 			HTML_INTEGRATION_POINTS: {foreignobject: true}, FORBID_TAGS: options.FORBID_TAGS.filter(tag => tag !== 'foreignobject')};
 		DOMPurify.addHook('uponSanitizeElement', diagramLabelElement);
 		DOMPurify.addHook('uponSanitizeAttribute', diagramLabelAttribute);
@@ -356,6 +464,18 @@ function _rapierDropRemoteRules(rules, owner) {
 	}
 }
 
-  return {_rapierInstallSanitizeHooks, sanitizeRapierHtml, diagramLabelStyle, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
+function _rapierVerifyRasterBytes(bytes, mime) {
+	if (mime === 'image/jxl') return globalThis.RapierImageAssets.isJxl(bytes);
+
+	// declaration, doctype or generator/license comment before <svg itself, of whatever length its
+
+	if (mime === 'image/svg+xml') return /<svg[\s>]/i.test(new TextDecoder('utf-8', {fatal: false}).decode(bytes));
+	if (mime === 'image/png') return bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+	if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+	if (mime === 'image/webp') return bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
+	return false;
 }
-export {RAPIER_SANITIZE_FORBID_TAGS as forbidTags, RAPIER_SANITIZE_FORBID_ATTR as forbidAttributes, createRenderSanitizer, RAPIER_SANITIZE_OPTIONS as options, prepareMathSource};
+
+  return {_rapierVerifyRasterBytes, _rapierInstallSanitizeHooks, sanitizeRapierHtml, diagramLabelStyle, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
+}
+export {RAPIER_SANITIZE_FORBID_TAGS as forbidTags, RAPIER_SANITIZE_FORBID_ATTR as forbidAttributes, createRenderSanitizer, createInertHtmlSanitizer, RAPIER_SANITIZE_OPTIONS as options, prepareMathSource};

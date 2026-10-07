@@ -1,8 +1,8 @@
 {
   "_comment": "The one owner of Rapier's canonical release inputs. tools/build.mjs and tools/witness.mjs read this file and record canonical:true|false against the runtime that actually built or witnessed; tools/release-truth.mjs prints the comparison as release.md's \"Toolchain\" row; tools/release-gate.mjs refuses a receipt whose browser is not chromium.product. A development run on a different Node or browser still builds, but the harness refuses to run witnesses unless RAPIER_WITNESS_ANY_BROWSER=1 is set, in which case every result line and the receipt carry (unpinned browser: <product>) instead of staying silent. Advancing the pin: unzip the new Chrome for Testing into <PLAYWRIGHT_BROWSERS_PATH or /opt/pw-browsers>/chrome-for-testing-<version>/ so chromePath() finds it first; run a sweep on it; write the new product string here in this one place, the same day the release intentionally moves. Never a headless shell. The floor check in build.mjs remains the only hard Node refusal.",
   "node": {
-    "version": "v22.22.2",
-    "why": "the exact Node the last release (docs/build.json `node`) was built and witnessed on"
+    "version": "v22.23.3",
+    "why": "the current Node 22 release, named the same in repo/mcp/.node-version and repo/mcp/.nvmrc"
   },
   "nodeFloor": {
     "major": 22,

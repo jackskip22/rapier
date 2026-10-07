@@ -2,9 +2,9 @@
   "version": 1,
   "limits": {
     "mutableRoots": 109,
-    "domSinks": 67,
+    "domSinks": 65,
     "storageKeys": 7,
-    "remainderBytes": 78501
+    "remainderBytes": 77883
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {

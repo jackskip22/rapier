@@ -40,7 +40,7 @@ against any contract keeps working in every later release, which speaks every ve
 
 With `close` granted, the frame's Close control sends `close-request`, the host decides, and the frame answers `close-ready` for that request.
 
-`agent` opens the existing core tool catalogue, including edits, comparison decisions, drawing, painting and Notes reads and proposals when a Notes provider is available. The page also exposes its local instructions tool. There is no generic `invoke` postMessage method. Cross-origin parent WebMCP discovery still needs browser support and Permissions Policy, and uses exact `exposedTo`. It adds no network call, shell, arbitrary JavaScript, OAuth, clipboard, file-picker or storage-access tool. Without `agent`, known-tool calls at the hosted embed’s published invoke boundary refuse (`embed_agent_not_granted`), as well as being hidden from browser discovery.
+`agent` opens the existing core tool catalogue, including edits, comparison decisions, drawing, painting and Notes reads and proposals when a Notes provider is available. It also exposes the editor's preference and device-action requests in section 2.3. The page exposes its local instructions tool. There is no generic `invoke` postMessage method. Cross-origin parent WebMCP discovery still needs browser support and Permissions Policy, and uses exact `exposedTo`. It adds no arbitrary network call, shell, JavaScript, OAuth or storage-access tool. Clipboard and device-file requests wait for the person's tap and retain the browser's permissions. Without `agent`, known-tool calls at the hosted embed’s published invoke boundary refuse (`embed_agent_not_granted`), as well as being hidden from browser discovery.
 
 Permissions are checked on **incoming commands and outgoing disclosure**. UI Save, retry, state updates, picture storage and close fallback cannot expand the grant. Without `read`, host Save refuses without sending source and tells the person to copy or download; that host is not a durable save destination. Without `close`, pressing the frame’s Close control explains the missing grant (save to the host first if `read` was granted, otherwise copy or download); the control and document stay open. No `close-request`, `close-ready` or other message reaches the port or window, even through close-anyway fallback. Refusal leaves save and close state unchanged, including an in-flight save; the host page must offer its own exit.
 
@@ -66,8 +66,9 @@ Draw and Paint are independent: either can open the existing canvas. `draw` perm
 text; `paint` permits Raster Brush. Selection, erasing, image insertion and existing effects remain shared canvas
 operations when either is present. A disallowed remembered tool is not selected when opening the canvas.
 The host choices hide the corresponding entry controls and guard their existing runtime entry points. They do
-not remove existing drawings, pictures, notes or source, and are not a sandbox on document content or a narrower
-version of the independently granted agent tool set. Copy and download recovery remain available when Share
+not remove existing drawings, pictures, notes or source, and are not a sandbox on document content. The core
+document tools retain their independently granted authority; editor device actions obey the same feature gates
+as their controls. Copy and download recovery remain available when Share
 is omitted. Feature choices do not enable a feature omitted from the build.
 
 A host load exceeding `documentBytes` gets `load-nack` `{code: 'document_too_large', limit}` before source is
@@ -159,6 +160,34 @@ repeat is `asset_request_conflict`, a wrong digest is `asset_hash_mismatch`, a m
 `code` to send a named nack. Use `signal` for cancellable work; retirement aborts it, but cannot undo storage
 already performed by host code. Only one storage callback is pending at a time; a callback that ignores
 cancellation still cannot make the helper start unbounded parallel writes. See the package README for an example.
+
+## 2.3 Editor preferences and device actions
+
+The `agent` grant admits `document.set_view` and `document.ask_editor` through the existing agent door. They
+add no port command and cannot change the host's capabilities, accepted settings, document identity or revision.
+An absent, disconnected or unready editor returns `editor_unavailable` with a hint to open the editor.
+
+`document.set_view` sets a named device preference through `RapierPreferences`. The catalogue defines the exact
+names and value domains. A successful receipt records the applied value and its previous value, without a
+confirmation card, and the editor's notice offers the person Undo until any later change of that
+preference. Read-only mode and Notes skills are the person's alone: a request to change either is refused
+(`human_authority_required`) before it reaches an editor. An active host theme or accent refuses an agent change
+of that preference: the request cannot clear the host override or rewrite the frozen settings. The person's own
+controls retain their existing ability to take over from the host. A later human preference change takes
+precedence and is reported by `document.get_context`.
+
+`document.ask_editor` requests read aloud of a passage, copying, opening a device file, installing a plug-in, or
+exporting Word or PDF. Clipboard, file-picker, read-aloud and plug-in requests each show one card and wait for
+the person's tap. Dismissal produces a declined receipt. The request does not grant clipboard access, user
+activation, audio permission, download permission or a feature that the host excluded. A denied feature or
+unavailable device capability produces an unavailable receipt with its reason; no action is reported as done
+merely because a card was shown.
+
+Word and PDF byte exports require no tap. The editor builds the file from the request's captured document and
+hands the bytes to the export store for a download receipt. A changed document invalidates an unfinished
+export, and a print dialog never stands in for the file. Word uses the same native OOXML writer as the
+document's Export control, so the bytes are the Export control's own. Conversion notices travel with the
+receipt, while the source stays in the editor.
 
 ## 3. The command envelope and refusal rules
 

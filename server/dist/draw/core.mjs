@@ -3840,7 +3840,9 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 					if (!replay || !record.px || !keepRasters && (rasterUnits += JSON.stringify(replay).length) > RAPIER_DRAW_RASTER_TOTAL) return null;
 					record.replay = replay;
 				}
-				if (record.mode === 'water' && (!record.px || !record.scale || !record.replay || record.replay.mode !== 'water')) return null;
+				// The raster owns Water's saved pixels. A session journal is auxiliary material history,
+				// never a prerequisite for opening the picture on another graphics device.
+				if (record.mode === 'water' && (!record.px || !record.scale || record.strokes)) return null;
 				if (record.replay?.mode === 'water' && record.mode !== 'water') return null;
 				if (Object.keys(record).length) shape.paint = record;
 			}

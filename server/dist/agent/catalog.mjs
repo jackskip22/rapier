@@ -2,6 +2,7 @@ import { validateInput, agentInputSchema } from './validate-input.mjs';
 import { VERSION } from '../version.mjs';
 import { VISUAL_LIMITS } from './visual.mjs';
 import { FIND_KINDS } from './structure-request.mjs';
+import {EDITOR_LIMITS, EDITOR_ACTIONS, EDITOR_PLUGINS, EDITOR_COPY_FORMATS, EDITOR_ISSUE_CODE_PATTERN, PREFERENCE_SCHEMAS, PREFERENCE_WORDS} from './editor.mjs';
 
 export const MAX_TEXT_BYTES = 25 * 1024 * 1024;
 // Exported files remain bounded while the door builds and retains their exact bytes.
@@ -20,6 +21,37 @@ const integer = (minimum, maximum, description) => ({type: 'integer', minimum, m
 const pageSize = (minimum, maximum, description) => integer(minimum, Number.MAX_SAFE_INTEGER, description + ' Clamped to ' + maximum + '.');
 const object = (properties = {}, required = []) => ({type: 'object', properties, required, additionalProperties: false});
 const authoredObject = (properties, required = []) => ({...object(properties, required), 'x-rapier-strict': true});
+// The editor bridge: a device preference and a device action, each answered by an open editor with a receipt. The value domains
+// come from the one preference table (shell/preferences.mjs); the call that sets one states them once, in the words an agent reads.
+const preferenceValue = {type: ['string', 'boolean'], maxLength: EDITOR_LIMITS.preferenceChars};
+const preferenceNames = Object.keys(PREFERENCE_SCHEMAS);
+const preferenceSnapshot = object(PREFERENCE_SCHEMAS, preferenceNames);
+const editorView = {type: 'string', enum: ['formatted', 'source', 'notes']};
+export const SET_VIEW_SCHEMA = object({view: {...editorView, description: 'Choose a document mode using view alone; to change a device preference instead, pass preference and value together.'}, preference: {type: 'string', enum: preferenceNames},
+  value: {...preferenceValue, description: 'Text, except true and false, which are booleans. ' + PREFERENCE_WORDS}});
+export const ASK_EDITOR_SCHEMA = object({
+  action: {type: 'string', enum: EDITOR_ACTIONS, description: 'read_aloud and copy take text or a context_handle, and copy with format complete takes a context_handle; install_plugin takes a plugin; open_file, export_word and export_pdf take nothing more.'},
+  text: {...string(EDITOR_LIMITS.textChars, 'The passage to read aloud or copy.'), minLength: 1},
+  context_handle: string(128, 'The handle of an inspected passage to read aloud or copy.'),
+  format: {type: 'string', enum: EDITOR_COPY_FORMATS, description: 'How copy writes the passage: markdown when absent.'},
+  plugin: {type: 'string', enum: EDITOR_PLUGINS, description: 'The plug-in install_plugin installs.'}}, ['action']);
+const editorIssues = {type: 'array', maxItems: EDITOR_LIMITS.issueRows, items: object({
+  code: {...string(EDITOR_LIMITS.issueCodeChars), pattern: EDITOR_ISSUE_CODE_PATTERN}, severity: {type: 'string', enum: ['info', 'warning']},
+  count: integer(0, Number.MAX_SAFE_INTEGER), message: string(EDITOR_LIMITS.issueMessageChars)}, ['code', 'severity', 'count', 'message'])};
+// The editor's own report of one request: closed tightly, because the editor's page wrote it.
+const receiptStatus = {type: 'string', enum: ['applied', 'waiting', 'done', 'declined', 'unavailable']};
+const editorReceipt = object({id: ref, status: receiptStatus,
+  preference: {type: 'string', enum: preferenceNames}, action: {type: 'string', enum: EDITOR_ACTIONS}, value: preferenceValue,
+  previous: preferenceValue, superseded: {type: 'boolean'}, current: preferenceValue, reason: string(96),
+  issues: {...editorIssues, description: 'The notices of a finished Word or PDF export; only a done export receipt carries them.'}}, ['status']);
+// The same receipt as a result or an observation returns it: the kernel wrote that, so only its shape is stated.
+const scalar = {type: ['string', 'boolean']};
+const receiptResult = object({id: ref, status: receiptStatus, preference: {type: 'string'}, action: {type: 'string'}, value: scalar, previous: scalar,
+  superseded: {type: 'boolean'}, current: scalar, reason: {type: 'string'}, issues: {type: 'array', items: object({code: {type: 'string'},
+    severity: {type: 'string'}, count: {type: 'integer'}, message: {type: 'string'}}, ['code', 'severity', 'count', 'message'])}}, ['status']);
+const editorContext = object({preferences: {type: ['object', 'null'], additionalProperties: true,
+  description: 'Each control by name, as the editor shows it now; document.set_view lists what each takes.'},
+  receipts: {type: 'array', items: receiptResult, maxItems: EDITOR_LIMITS.receipts}}, ['preferences', 'receipts']);
 const kinds = {type: 'string', enum: ['markdown', 'text', 'code'], description: 'markdown, text or code; the filename decides when absent.'};
 const ids = {type: 'array', items: ref, minItems: 1, maxItems: 128, uniqueItems: true};
 // Every argument says what it takes: a shape guessed from a name is a wasted call.
@@ -31,10 +63,14 @@ const editBatch = object({edits: {type: 'array', minItems: 1, maxItems: 16, desc
   placement: {type: 'string', enum: ['replace', 'before', 'after'], description: 'replace (default) swaps the disclosed text; before or after inserts beside it.'}}, ['context_handle', 'text'])},
   label: string(120, 'A short name the person sees for this change.'), note: string(240, 'A sentence for the person about this change.')}, ['edits']);
 const reviewCause = {enum: ['will', 'ask', 'check', 'proposal']};
+// The six files document.export writes: the worker makes the first four alone, the open editor builds Word and PDF.
+const EXPORT_FORMATS = ['markdown', 'html', 'txt', 'page', 'docx', 'pdf'];
 const document = string(64, "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private.");
 export const RESULT_SCHEMA = {type: 'object', properties: {outcome: {type: 'string'}, reason: {type: 'string'}, cause: reviewCause, reviewId: ref, document, documentId: {type: 'string'}, documentRevision: {type: 'integer'}, representation: {const: 'source'}}, required: ['outcome'], additionalProperties: true};
 const count = {type: 'integer', minimum: 0};
 const flag = {type: 'boolean'};
+const viewState = object({current: {...editorView, type: ['string', 'null'], enum: [...editorView.enum, null]},
+  requested: editorView, id: ref, status: string(32), reason: string(160), kind: string(32), revision: count});
 const nullableRef = {type: ['string', 'null'], maxLength: 128};
 const rows = item => ({type: 'array', items: item});
 const drawingId = {...string(64), minLength: 1, pattern: '^[A-Za-z0-9_-]+$'};
@@ -165,6 +201,7 @@ const resultProperties = {
   'document.pair_browser': {paired: flag},
   'document.pair_status': {pairingCode: string(8), paired: flag, codeExpiresAt: string(64)},
   'document.get_context': {surface: object({kind: {enum: ['editor', 'headless']}, next: {enum: ['continue', 'deliver_page']}}, ['kind', 'next']),
+    view: viewState,
     editing: object({mode: {enum: ['read_only', 'review_pending', 'review_required', 'blocked', 'inspect']},
       reason: {enum: ['document_read_only', 'will', 'ask', 'check', 'proposal', 'document_law', 'review_history_unavailable', 'inspect_target']}}, ['mode', 'reason']),
     returns: rows(returnedPage), returnWaiting: flag, filename: string(MAX_FILENAME_CHARS), docKind: kinds, chars: count, readOnly: flag, posture, notes: record, history: record,
@@ -173,12 +210,15 @@ const resultProperties = {
     collaboration: object({posture, readOnly: flag, presence: {type: ['object', 'null'], additionalProperties: true}, agentPresence: record, review}, ['posture', 'readOnly', 'presence', 'agentPresence', 'review']),
     sourceChanges, continuation, brief: object({source: {const: 'document'}, authority: {const: false}, text: string(2048), start: count, end: count, sectionEnd: count, complete: flag,
       remaining: count, reason: string(64), omissions: rows(record)}, ['source', 'authority', 'text', 'start', 'end', 'sectionEnd', 'complete', 'remaining']),
-    layout: record, images: record, paint: record, drawing: record, comments: object({total: count, open: count, stale: count, reason: string(64)}, ['total', 'open', 'stale'])},
+    layout: record, images: record, paint: record, drawing: record, editor: editorContext, comments: object({total: count, open: count, stale: count, reason: string(64)}, ['total', 'open', 'stale'])},
   'document.get_outline': {...page, engine: {type: ['string', 'null']}, total: count, items: rows({type: 'object', properties: {ref: nullableRef, kind: string(64), depth: count, label: string(192), chars: count, layout: record}, additionalProperties: true}), pending},
   'document.read_context': {...page, objectId: drawingId, paintSample: record, sha256: string(64), return_id: ref, name: string(256), receivedAt: string(64), text: string(12288), start: count, end: count, handle: nullableRef, recipe_handle: nullableRef, drawing: record, complete_handle: ref, comment_handle: ref, coverage: record, expires_in_ms: count, omissions: rows(record), layout: record, images: record, change_id: ref, status: string(32), removed: string(4096), inserted: string(4096), removed_chars: count, inserted_chars: count},
   'document.find': {...page, matches: rows({type: 'object', properties: {matched: string(12288), handle: nullableRef, snippet: string(192), section_ref: ref, section: string(192), start: count, end: count, handle_scope: {type: 'string', enum: ['matched', 'change']}}, additionalProperties: true}), pending},
   'document.inspect_visual': {representation: {type: 'string', enum: ['source', 'visual']}, observation: record, drawing: record, pending},
   'document.visual_ack': {representation: {type: 'string', enum: ['source', 'visual']}},
+  'document.set_view': {receipt: receiptResult, pending, view: viewState},
+  'document.ask_editor': {receipt: receiptResult, pending, filename: string(MAX_FILENAME_CHARS), mimeType: string(128), bytes: count, exportId: ref, exportExpiresAt: string(64)},
+  'document.editor_ack': {receipt: receiptResult, editorId: ref},
   'document.list_comments': {...page, threads: rows(record), thread: record, messages: rows(record), total: count},
   'document.comment': {...change, threadId: ref, messageId: ref, pending},
   'document.apply_edits': {...change, handle: described(ref, 'A handle for one inserted span of the successful batch, when that span admits an edit handle.'), pending},
@@ -192,7 +232,8 @@ const resultProperties = {
   'document.point': {status: {enum: ['shown', 'deferred', 'expired']}, pointerId: ref, createdAt: count, expires_at: count, lifetime: count},
   'document.wait_for_user': {text: string(1500), selection: record, truncated: flag, returned: record},
   'document.create_return': {return_url: string(512), return_id: ref, return_expires_at: string(64), max_bytes: count},
-  'document.export': {format: {enum: ['markdown', 'html']}, ...exportedFile},
+  'document.export': {format: {enum: EXPORT_FORMATS}, ...exportedFile, mimeType: string(128), downloadUrl: string(8192), fidelity: record, pages: count, issues: rows(record),
+    availableFormats: rows({enum: EXPORT_FORMATS.slice(0, 4)}), pending},
   'document.save': {saved: flag, verified: flag, filename: string(MAX_FILENAME_CHARS)},
   'document.draw': {...change, asset: record, width: count, height: count, removed: flag, recipe_handle: nullableRef, svg_handle: nullableRef},
   'document.rotate_capability': {rotated: flag, rotations: count, rotatedAt: string(64), sealed: string(512)},
@@ -212,6 +253,8 @@ const outcomes = {
   'rapier.guide': ['ok'],
   'rapier.open': ['created', 'current', ...hostFailures],
   'document.inspect_visual': ['ok', 'pending', ...kernelFailures],
+  'document.set_view': ['ok', 'pending', 'conflict', 'yielded', ...invocationFailures],
+  'document.ask_editor': ['ok', 'pending', 'target_gone', 'conflict', ...invocationFailures],
   'document.list_comments': ['ok', 'target_gone', 'conflict', ...kernelFailures],
   'document.comment': ['applied', 'unchanged', 'target_gone', 'conflict', 'yielded', 'pending', ...invocationFailures],
   'document.get_context': ['ok', 'conflict', ...kernelFailures],
@@ -245,6 +288,8 @@ const outcomes = {
   'document.set_policy': ['ok', 'invalid', ...hostFailures],
   'document.review_decide': ['ok', 'applied', 'rebased', 'unchanged', 'target_gone', 'conflict', 'pending', ...invocationFailures],
   'document.visual_ack': ['ok', ...hostFailures],
+  'document.export_ack': ['ok', ...hostFailures],
+  'document.editor_ack': ['ok', ...hostFailures],
   'document.view_ack': ['ok', ...hostFailures],
   'document.rotate_capability': ['rotated', ...hostFailures],
   'document.pair_browser': ['confirmation_required', ...hostFailures],
@@ -263,9 +308,11 @@ const tool = (name, title, description, effect, inputSchema = object()) => {
 // A display name the assistant gives itself. Not a principal: undo without a change id uses it to find that name's latest change.
 const agentName = string(64, 'This assistant\'s display name.');
 const documentTool = (name, title, description, effect, inputSchema = object()) =>
-  tool(name, title, description, effect, agentInputSchema(object({...inputSchema.properties, agent: agentName, operation_id: operationId}, inputSchema.required)));
+  tool(name, title, description, effect, agentInputSchema({...inputSchema, ...object({...inputSchema.properties, agent: agentName, operation_id: operationId}, inputSchema.required)}));
 
 export const TOOLS = Object.freeze([
+  documentTool('document.set_view', 'Set the editor view', "Pass view alone to show the formatted document, its exact source or the Notes cards; navigation waits until the person finishes typing, and get_context.view reports it. Pass preference and value together to change a device preference (theme, accent, text size, headings, layout, code view, the pen, the Notes view); its receipt carries the previous value for Undo. The person's later choice wins. Read-only mode, Notes skills and assets stay the person's alone.", 'view', SET_VIEW_SCHEMA),
+  documentTool('document.ask_editor', 'Ask the open editor', "Asks the open editor for what needs the person's device: one card the person taps to read a passage aloud, copy it, open a device file or install a plug-in, or a Word or PDF export returned as a file link without a tap. Receipts say waiting, done, declined or unavailable.", 'view', ASK_EDITOR_SCHEMA),
   documentTool('document.inspect_visual', 'Inspect the rendered document', "Returns a PNG of a settled editor region at the expected revision for visual inspection after a source read.", 'read', object({expectedRevision: integer(0, Number.MAX_SAFE_INTEGER, 'The documentRevision from current context.'), scope: {type: 'string', enum: ['viewport', 'page', 'focus', 'selection'], description: 'The rendered area to inspect; viewport by default.'}}, ['expectedRevision'])),
   documentTool('document.list_comments', 'Read anchored discussions', "Lists anchored discussions and current anchor status when reading document feedback or a specific thread.", 'read', object({status: {type: 'string', enum: ['open', 'resolved', 'all']}, thread_id: ref, cursor})),
   documentTool('document.comment', 'Discuss inspected work', "Creates, replies to, resolves or reopens a discussion on inspected text, a drawing object or the whole document.", 'write', object({action: {type: 'string', enum: ['create', 'reply', 'resolve', 'reopen']}, thread_id: ref, text: string(4096), context_handle: ref, anchor: {type: 'string', enum: ['document', 'text', 'image', 'drawing']}, object_id: drawingId, recipient: string(64)}, ['action'])),
@@ -291,8 +338,8 @@ export const TOOLS = Object.freeze([
   documentTool('document.create_return', 'Create a page return', "Creates a return receipt and address for an edited offline page. With a connected host the person confirms the upload in their connected browser; without one the address is its own one-use grant. It accepts one submission within 24 hours and before workspace expiry.", 'create'),
   documentTool('document.wait_for_user', 'Receive the person’s reply', "Waits for the person's next selection, message or returned page when their response is needed, up to timeout_ms.", 'view', object({mode: {type: 'string', enum: ['selection', 'message'], description: 'What to wait for: a selection or a message.'}, after_return_id: string(128, 'Message mode: wait after this received return; absent, the latest retained return answers immediately.'), timeout_ms: {...integer(1000, 120000, 'How long to wait: 1,000 to 120,000 milliseconds; 20,000 by default.'), default: 20000}})),
   documentTool('document.save', 'Save the document', "Saves to the person's chosen local destination, or confirms durable hosted storage, when keeping work. The receipt reports verification.", 'durable'),
-  documentTool('document.export', 'Export the document', "Creates a file link for exact Markdown or an offline Rapier page, up to 8 MiB. With a connected host the link needs its connection; without one the link is its own grant. The stored file lasts up to 24 hours within the workspace lifetime.", 'create',
-    object({format: {type: 'string', enum: ['markdown', 'html'], description: 'markdown or html.'}, review_id: string(128, 'A pending review to show in an html review page beside the original source; it is not applied or approved.')}, ['format'])),
+  documentTool('document.export', 'Export the document', "Creates a file link, up to 8 MiB: markdown is the exact source; html is the offline editor with its source inside; txt is the document's words as plain text; page is a standalone rendered web page; docx is Word; pdf carries raster pages, searchable text and the attached source. An open editor builds Word and PDF without a tap. The receipt states what each format keeps. With a connected host the link needs its connection; without one the link is its own grant. The stored file lasts up to 24 hours within the workspace lifetime.", 'create',
+    object({format: {type: 'string', enum: EXPORT_FORMATS, description: 'markdown, html, txt, page, docx or pdf.'}, review_id: string(128, 'A pending review to show in an html review page beside the original source; it is not applied or approved.')}, ['format'])),
   // The short contract an agent reads each call (one registry). The exhaustive recipe/shape contract is the admitting code (draw/core.mjs
   // _rapierDrawAdmitRecipe, _rapierDrawLowerFigures); never copy it into prose here. A refused figure names its field.
   documentTool('document.draw', 'Draw a picture', "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. Read the drawing for recipe_handle. Change a drawing dial with shapes.set; a background kind or effect preset alone takes its starting values. Change an object with an operation. A complete recipe replaces the inspected recipe, including strokes and fonts, and uses the same open-canvas hand-off as a patch. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with node_edits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
@@ -312,6 +359,15 @@ const sourceRange = {...object({start: integer(0, MAX_TEXT_BYTES), end: integer(
 const hostFile = object({name: {...string(256, 'The opened filename, without a path.'), minLength: 1}, resourceUri: {...string(8192, 'Opaque host resource URI. Only the editor reads it through the host bridge.'), minLength: 1}}, ['name', 'resourceUri']);
 const visualFact = object({documentId: string(256), revision, scope: {type: 'string', enum: ['viewport', 'page', 'focus', 'selection']}, drawing: record, outcome: {type: 'string', enum: ['ok', 'refused']}, reason: string(128), sourceRange,
   image: object({mimeType: {const: 'image/png', type: 'string'}, data: string(Math.ceil(VISUAL_LIMITS.imageBytes / 3) * 4), width: integer(1, VISUAL_LIMITS.edge), height: integer(1, VISUAL_LIMITS.edge)}, ['mimeType', 'data', 'width', 'height'])}, ['documentId', 'revision', 'scope', 'outcome']);
+const exportFact = object({documentId: string(256), revision, format: {type: 'string', enum: ['docx', 'pdf']},
+  outcome: {type: 'string', enum: ['ok', 'refused']}, reason: string(128),
+  artifact: object({mimeType: string(128), data: string(Math.ceil(MAX_EXPORT_BYTES / 3) * 4), filename: string(MAX_FILENAME_CHARS),
+    pages: integer(1, Number.MAX_SAFE_INTEGER), issues: {...rows(object({code: string(128), severity: string(32), count, message: string(512)}, ['code'])), maxItems: 32}},
+  ['mimeType', 'data', 'filename'])}, ['documentId', 'revision', 'format', 'outcome']);
+const editorFact = object({kind: {type: 'string', const: 'editor'}, documentId: ref, revision: integer(0, Number.MAX_SAFE_INTEGER),
+  operation: {type: 'string', enum: ['document.set_view', 'document.ask_editor']}, receipt: editorReceipt,
+  file: object({name: string(MAX_FILENAME_CHARS), mimeType: string(128), data: string(Math.ceil(MAX_EXPORT_BYTES / 3) * 4)}, ['name', 'mimeType', 'data'])},
+  ['kind', 'documentId', 'revision', 'operation', 'receipt']);
 export const HOST_TOOLS = Object.freeze([
   tool('rapier.guide', 'How to use Rapier', "Returns Rapier's usage guide and workflows when host instructions are unavailable.", 'read', agentInputSchema(object())),
   tool('rapier.open', 'Rapier editor', "Creates an editable workspace from text or a host file, or resumes one by its document value. Returns editor_url, the live workspace in a browser. It makes two kinds of diagram: native SVG drawings (document.draw) and Mermaid flowcharts as fences in the source (document.apply_edits). Workspaces expire after 30 idle days.", 'create', agentInputSchema(object({document, file: hostFile, text: string(MAX_TEXT_BYTES, 'Create: the document\'s text.'), filename: string(MAX_FILENAME_CHARS, 'Its name; the extension sets the kind.'), docKind: kinds, createToken: {...string(128, 'An optional retry name for this creation: an unchanged retry reopens the same workspace. With a connected host it is scoped to the connection; without one it is a secret of 22 or more random URL-safe characters.'), minLength: 1, pattern: '^[A-Za-z0-9_-]+$'}}))),
@@ -320,10 +376,12 @@ export const HOST_TOOLS = Object.freeze([
     splices: described({...rows(object({pos: integer(0, MAX_TEXT_BYTES), removed: text, inserted: text}, ['pos', 'removed', 'inserted'])), maxItems: 32000}, 'Exact sequential local journal from the acknowledged source to text; at most the retained 500 records of 64 splices.'),
     filename: string(MAX_FILENAME_CHARS), docKind: kinds, commitId: string(128)}, ['document', 'editorKey', 'expectedRevision', 'text', 'commitId'])), visibility: ['app']},
   {...tool('document.compare_decide', 'Decide a comparison', "Applies the person's comparison decision when its comparison, document revision and workspace version still match.", 'destructive', object({document, editorKey, expectedRevision: integer(0, Number.MAX_SAFE_INTEGER), expectedVersion: integer(0, Number.MAX_SAFE_INTEGER), compareId: ref, action: {type: 'string', enum: ['accept', 'reject', 'close']}, changeIds: ids, decisionId: string(128)}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'compareId', 'action', 'decisionId'])), visibility: ['app']},
-  {...tool('document.human_context', 'Update the person’s context', "Updates the editor's selection, focus, settled drawing and editing lease for one document revision.", 'view', object({document, editorKey, expectedRevision: revision, contextId: ref, sequence: revision, visible: flag, editing: flag, selection: sourceRange, focus: sourceRange, drawing: {type: ['object', 'null'], additionalProperties: true}}, ['document', 'editorKey', 'expectedRevision', 'contextId', 'sequence', 'visible', 'editing'])), visibility: ['app']},
+  {...tool('document.human_context', 'Update the person’s context', "Updates the editor's selection, focus, settled drawing, view, device preferences and editing lease for one document revision.", 'view', object({document, editorKey, expectedRevision: revision, contextId: ref, sequence: revision, visible: flag, editing: flag, view: editorView, selection: sourceRange, focus: sourceRange, drawing: {type: ['object', 'null'], additionalProperties: true}, editor: object({preferences: preferenceSnapshot}, ['preferences'])}, ['document', 'editorKey', 'expectedRevision', 'contextId', 'sequence', 'visible', 'editing'])), visibility: ['app']},
   {...tool('document.set_policy', 'Set collaboration controls', "Changes the workspace's collaboration permissions to the person's selected posture (FREE, CHECK or ASK) or read-only setting, or shares a connected workspace with agents again after Disconnect agents.", 'destructive', object({document, editorKey, expectedRevision: revision, expectedVersion: revision, posture: {type: 'string', enum: ['free', 'check', 'ask']}, readOnly: flag, agentAccess: {type: 'boolean', description: 'true shares a disconnected connected workspace with agents again.'}, decisionId: ref}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'decisionId'])), visibility: ['app']},
   {...tool('document.review_decide', 'Decide the exact review', "Records the person's decision on an exact pending review. Approve applies remaining selected edits or acknowledges the work CHECK showed; apply and drop decide selected changes while keeping the review open.", 'destructive', object({document, editorKey, expectedRevision: revision, expectedVersion: revision, reviewId: ref, action: {type: 'string', enum: ['approve', 'decline', 'apply', 'drop']}, changeIds: {...ids, description: 'Pending change ids: apply and drop act on them; approve keeps them and drops the rest; decline takes none.'}, decisionId: ref}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'reviewId', 'action', 'decisionId'])), visibility: ['app']},
   {...tool('document.visual_ack', 'Return a visual observation', "Supplies the editor's rendered observation for an exact pending visual request.", 'view', object({document, editorKey, expectedRevision: revision, visualId: ref, fact: visualFact}, ['document', 'editorKey', 'expectedRevision', 'visualId', 'fact'])), visibility: ['app']},
+  {...tool('document.export_ack', 'Return an exported file', "Supplies the open editor's Word or PDF file for an exact pending export request.", 'view', object({document, editorKey, expectedRevision: revision, exportId: ref, fact: exportFact}, ['document', 'editorKey', 'expectedRevision', 'exportId', 'fact'])), visibility: ['app']},
+  {...tool('document.editor_ack', 'Return an editor receipt', "Records the editor's receipt for one exact preference or device request, including the person's later choice of a preference.", 'view', object({document, editorKey, expectedRevision: revision, editorId: ref, fact: editorFact}, ['document', 'editorKey', 'expectedRevision', 'editorId', 'fact'])), visibility: ['app']},
   {...tool('document.view_ack', 'Acknowledge editor presentation', "Records whether the editor presented or refused a requested passage or difference, and when a shown pointer ends.", 'view', object({document, editorKey, expectedRevision: revision, viewId: ref, status: {type: 'string', enum: ['presented', 'refused', 'expired']}, reason: string(160)}, ['document', 'editorKey', 'expectedRevision', 'viewId', 'status'])), visibility: ['app']},
   {...tool('document.rotate_capability', 'Disconnect agents', "Revokes existing agent access to the workspace when the person disconnects agents, preserving its content, history and collaboration controls. The replacement document value returns sealed to the editor, which shares it again when the person chooses; every paired browser but the one asking is unpaired.", 'destructive', object({document, editorKey}, ['document', 'editorKey'])), visibility: ['app']},
   tool('document.pair_browser', 'Pair a browser', "Names the four-letter code the person gives you from editor_url. The person then chooses ALLOW on that page to connect this browser to this workspace for a day. One use; a code lasts one minute. Five misses lock pairing for the code window.", 'destructive', object({document, code: {...string(4, 'The four letters the page shows.'), pattern: '^[A-Za-z]{4}$'}}, ['document', 'code'])),
@@ -333,8 +391,7 @@ export const HOST_TOOLS = Object.freeze([
 
 export const getTool = name => TOOLS.find(entry => entry.name === name) || HOST_TOOLS.find(entry => entry.name === name);
 // Page and embed adapters expose the public guide beside the document kernel's tools.
-// The page's own Share and Export make the files document.export hands over, so the page does not register it.
-export const PAGE_TOOLS = Object.freeze([...TOOLS.filter(entry => entry.name !== 'document.export'), getTool('rapier.guide')]);
+export const PAGE_TOOLS = Object.freeze([...TOOLS, getTool('rapier.guide')]);
 
 export function annotations(effect, host = 'mcp', name = '') {
   if (!Object.hasOwn(EFFECT_CLASSES, effect)) throw new Error('Undeclared tool effect');
@@ -353,7 +410,7 @@ export const ICONS = Object.freeze([{src: 'data:image/svg+xml;base64,' + btoa(MA
 // proves agreement with the worker. Every document tool takes its owner-scoped handle and optional retry name.
 export function mcpDescriptors({ uiResource, auth = 'anonymous' } = {}) {
   if (!['anonymous', 'oauth', 'server-bearer'].includes(auth)) throw new TypeError('Unknown MCP authentication profile');
-  return [...TOOLS.map(entry => ({...entry, inputSchema: agentInputSchema(object({document, operation_id: operationId, ...entry.inputSchema.properties}, ['document', ...entry.inputSchema.required]))})), ...HOST_TOOLS].map(entry => {
+  return [...TOOLS.map(entry => ({...entry, inputSchema: agentInputSchema({...entry.inputSchema, ...object({document, operation_id: operationId, ...entry.inputSchema.properties}, ['document', ...entry.inputSchema.required])})})), ...HOST_TOOLS].map(entry => {
     const {effect, class: toolClass, visibility, ...descriptor} = entry;
     // The local server verifies its transport bearer before dispatch; it has no connector OAuth flow. /mcp is called
     // without one by the hosts that list it; /muse requires the connection.

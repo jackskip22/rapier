@@ -118,6 +118,25 @@ resources, unavailable regions or concurrent edits produce a refusal. A visual o
 handle; reread source before a change. Image bytes expire after the response and a later replay asks for a
 fresh observation. A headless workspace cannot supply rendered pixels.
 
+**The editor's own controls.** The open editor's device controls reach an agent through two tools, answered by the
+open editor with a receipt. For a device control, `document.set_view` takes a `preference` (theme, accent, text size, headings, layout,
+the code view, the pen, the read-aloud button, the Notes view and the other controls the tool's schema lists) and
+a `value` from that control's own domain. The editor applies it at once and answers `applied` with the
+`previous` value; the editor's notice offers the person Undo until anything else changes that preference, and the
+person's later choice of it wins and is reported in `get_context` (`editor.receipts`, with `superseded` and
+`current`). Read-only mode, Notes skills and assets are the person's alone: an agent's request for any of them is refused
+(`human_authority_required`) on every door, and a host that fixes the theme or accent refuses a change of it
+(`host_owns_preference`).
+`document.ask_editor` asks for what needs the person's device. Read aloud (`text`, or a `context_handle` for a
+passage you inspected), `copy` (`format` markdown, plain, formatted, or a complete excerpt of an inspected
+passage), opening a device file and installing a named plug-in each show the person one card and act only on
+their tap; a passage over 540 characters shows its first 360, the count between and its last 120, and the whole
+passage is what is read or copied. The first answer is `waiting`, and `get_context` later reports `done` or `declined`. `export_word`
+and `export_pdf` need no tap: the editor builds the file from the exact document and the receipt carries a file
+link as `document.export` does, with any conversion notices. An editor that is absent, hidden or on another document
+answers `unavailable` with its reason, `editor_unavailable` when none is open. `get_context.editor` holds the
+editor's current preferences and its latest receipts.
+
 The hosted editor syncs human edits and publishes document identity, revision, selection/focus and editing
 state through supported model-context updates. Updates inform later turns; they neither start a response nor guarantee a running agent sees each keystroke.
 
@@ -164,6 +183,11 @@ connection; reconnect through the host's authorization flow. A reveal stays `pre
 holds one wait for the person's next selection, message or returned page; a save receipt says whether the write was
 verified.
 `timeout_ms` is 1,000 to 120,000 milliseconds, with a default of 20,000.
+
+Use `document.set_view` with `view: formatted`, `source` or `notes` to request the connected editor's
+document or cards. Pass `view` alone, or pass `preference` and `value` together for a device control; a request mixing them refuses. `document.get_context` reports the actual view in `view.current` and the request's
+status. A switch waits through source typing and applies at idle; the person's next manual view choice
+ends that pending request. Hosted requests return `presentation_pending` until the page confirms them.
 
 **Return a person's edit.** `document.create_return` mints a one-use `return_url` for this workspace,
 valid until `return_expires_at` (at most 24 hours). Pass its URL and expiry to `rapier-html --return` and `--return-expires-at`; the carried page's
@@ -239,7 +263,7 @@ person's or agent's painted layers: move, resize, group or remove them like any 
 lands without a handle; read it again to continue.
 
 A `document.draw` result carries `receipt`: `state` says whether the document holds the change (`committed`, `pending_review`,
-`uncertain` or `unavailable`) and `presentation` whether the person's canvas shows it (`incorporated`, `presentation_deferred`,
+`cancelled`, `uncertain` or `unavailable`) and `presentation` whether the person's canvas shows it (`incorporated`, `presentation_deferred`,
 `unavailable` or `uncertain`). While the person has a drawing open, `get_context`, `read_context` and `inspect_visual` carry
 `drawing`, the settled canvas as they see it (its occurrence, selection, paint target and what their hand is doing). A change to that
 drawing lands at once, or the moment their hand leaves the canvas, as one Undo step beside whatever they drew meanwhile. A change to an
@@ -263,9 +287,12 @@ The ordinary paint engine makes the raster, the same on every door, and retains 
 replay. The page replays them after accepting the change; the source and Undo keep
 one drawing edit, not a transaction per dab. A painting an agent has painted on also keeps the history of its
 strokes, the person's later ones included, so one agent contribution can be taken back beside them
-(`document.undo_agent_change`). If a new agent contribution would take that replay past 8 MiB,
-`paint_history_full` refuses it and keeps the painting and its existing replay. Paint on a new layer with
-`shapes.add` to continue.
+(`document.undo_agent_change`). If a new agent contribution would take that history past 8 MiB,
+`paint_history_full` refuses it and keeps the existing picture and history intact; paint on a new layer.
+The Paint tool may drop replay at its own limit when the person's source transaction holds that stroke's Undo.
+An earlier agent contribution without its replay then answers `change_interleaved` beside later work.
+Hosted paint checks cancellation between dabs. Until the drawing commits, its material is private: a cancelled
+receipt has `state: "cancelled", landed: 0`, and all previously committed paint and its Undo remain intact.
 
 ```json
 {"alt":"A blue brush stroke","figures":[{"kind":"paint","strokes":[{"brush":"rapier/oil","colour":"#2255cc","size":50,"points":[[30,40,0.3],[65,30,0.8],[100,40,0.2]]}]}]}
@@ -349,6 +376,8 @@ workspace deletion have the distinct effects listed below.
 | `document.find` | Read | Finds source or code targets and returns inspection handles. |
 | `document.list_comments` | Read | Reads anchored discussions and their status. |
 | `document.inspect_visual` | Read | Requests a revision-bound observation from the connected editor. |
+| `document.set_view` | Write | Requests the formatted document, exact source or Notes cards at idle, or sets a device preference and returns its previous value for Undo; the person's later choice wins. |
+| `document.ask_editor` | Write | Asks the open editor to read a passage aloud, copy it, open a device file or install a plug-in on the person's tap, or to export Word or PDF without one. |
 | `document.apply_edits` | Write | Applies inspected text edits in one transaction. |
 | `document.draw` | Write | Adds or changes editable drawings and brush paintings. |
 | `document.comment` | Write | Adds discussion messages or changes a thread's status. |
@@ -361,7 +390,7 @@ workspace deletion have the distinct effects listed below.
 | `document.point` | Write | Points at an inspected passage, drawing object or change with a few words; the document is unchanged. |
 | `document.create_return` | Write | Creates a receipt with an authenticated address for one returned page. |
 | `document.wait_for_user` | Write | Establishes a bounded wait for the person's response. |
-| `document.export` | Write | Stores an immutable file with an expiring authenticated download address; with `review_id`, an offline page of that pending review beside its original. |
+| `document.export` | Write | Stores an immutable file (`markdown`, `html`, `txt`, `page`, `docx` or `pdf`) with an expiring authenticated download address; Word and PDF come from the open editor; with `review_id`, an offline page of that pending review beside its original. |
 | `document.save` | Sensitive write | Saves at the chosen local destination or confirms durable hosted storage. |
 | `document.open_text` | Sensitive write | Replaces the working document and retires its handles and comparison. |
 | `notes.list` | Read | Lists or searches note metadata in the configured Notes store. |
@@ -383,8 +412,10 @@ its deployment bearer; its tool listing omits connector OAuth declarations.
 | --- | --- | --- |
 | `document.sync` | Read | Reads the workspace snapshot for the connected editor. |
 | `document.commit` | Write | Persists the person's edits while rebasing concurrent contributions. |
-| `document.human_context` | Write | Updates selection, focus and the editing lease. |
+| `document.human_context` | Write | Updates selection, focus, device preferences and the editing lease. |
+| `document.editor_ack` | Write | Supplies the editor's receipt for an exact preference or device request. |
 | `document.visual_ack` | Write | Supplies an observation for an exact visual request. |
+| `document.export_ack` | Write | Supplies the open editor's Word or PDF file for an exact export request. |
 | `document.view_ack` | Write | Records presentation or refusal of a navigation request. |
 | `document.compare_decide` | Sensitive write | Applies the person's decision to an exact comparison and version. |
 | `document.review_decide` | Sensitive write | Applies or declines the person's selected review changes. |
@@ -424,12 +455,22 @@ the workspace, expiring after about thirty idle days and cleared on its next req
 
 ## Hand a person a page
 
-`document.export({format: "html"})` returns an offline Rapier page; `format: "markdown"` returns the exact
-source. The tool returns a `resource_link`; fetch its URI with GET and the owner's OAuth authorization, or
-open it in that owner's connected browser, to receive the file. Files up to 8 MiB
-are retained under the workspace's storage budget. The link keeps that exact file through later edits and
-release updates, expires at `exportExpiresAt` after 24 hours, and ends when the workspace is deleted or
-its handle generation rotates. The URL grants no access by itself. Download before expiry to keep a lasting copy.
+`document.export({format})` writes one of six files: `markdown` is the exact source, `html` an offline Rapier
+page with the source inside, `txt` the words as the editor's Copy as text writes them, `page` a standalone
+web page of the rendered document (no script, no editor), `docx` Word and `pdf` pages with a searchable text
+layer and the source attached. The receipt's `fidelity` states what the format keeps. The worker writes the
+first four; the open editor writes Word and PDF and returns them through `document.export_ack`, so the same
+immutable file path serves all six, and without an open editor `docx` and `pdf` are refused with
+`editor_unavailable` while the other four remain. The worker writes `txt` and `page` for a document of up to
+256 KiB and a structure of up to thirty thousand parser tokens (a list entry, a table cell or a paragraph is
+a few); a larger one is refused as `export_render_limit`, and `markdown`, `html`, `docx` and `pdf` still
+carry it.
+
+The tool returns a `resource_link`; fetch its URI with GET and the owner's OAuth authorization, or open it in
+that owner's connected browser, to receive the file. Files up to 8 MiB are retained under the workspace's
+storage budget. The link keeps that exact file through later edits and release updates, expires at
+`exportExpiresAt` after 24 hours, and ends when the workspace is deleted or its handle generation rotates. The
+URL grants no access by itself. Download before expiry to keep a lasting copy.
 
 `document.propose` returns an authenticated offline review file containing the proposed text and its exact
 original baseline, hash, revision and proposer. The pending proposal leaves the workspace source unchanged.

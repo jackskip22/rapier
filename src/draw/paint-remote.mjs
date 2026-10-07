@@ -69,10 +69,14 @@ export class RemotePaintSurface {
 	finishWetWork() { this._push({target: 'surface', id: this.id, method: '_finishWetWork', args: []}); }
 	// One bounded drying slice in the painter; resolves with whether the paper is dry.
 	dryWet(feed = 8, slice = 8) { return this._push({target: 'surface', id: this.id, method: 'dryWet', args: [feed, slice]}, {ticket: true}).promise; }
+	advanceWet(milliseconds) { return this._push({target: 'surface', id: this.id, method: 'advanceWet', args: [milliseconds]}, {ticket: true}).promise; }
 	fromRGBA8(data, width, height, x = 0, y = 0) {
 		this.importOffset = [x, y];
 		const buffer = data.buffer;
 		this._push({target: 'surface', id: this.id, method: 'fromRGBA8', args: [data, width, height, x, y]}, {transfer: buffer instanceof ArrayBuffer && data.byteOffset === 0 && data.byteLength === buffer.byteLength ? buffer : null});
+	}
+	fromWaterMaterial(replay,session) {
+		return this._push({target:'surface',id:this.id,method:'fromWaterMaterial',args:[structuredClone(replay),session,this.importOffset.slice()]},{structural:true,ticket:true}).promise;
 	}
 	grow(left = 0, top = 0, right = 0, bottom = 0) {
 		left = Math.max(0, Math.ceil(left)); top = Math.max(0, Math.ceil(top)); right = Math.max(0, Math.ceil(right)); bottom = Math.max(0, Math.ceil(bottom));
@@ -126,7 +130,6 @@ export class RemotePaintSurface {
 		if(data.paths)data.paths=data.paths.map(path=>path.map(point));if(data.at)data.at=point(data.at);
 		return this._push({target:'surface',id:this.id,method:'applyWater',args:[data]},{ticket:true}).promise;
 	}
-	loadWaterReplay(replay,{offset=[0,0],expected=null}={}) { this.importOffset=offset.slice(); return this._push({target:'surface',id:this.id,method:'fromWaterReplay',args:[structuredClone(replay),offset.slice(),expected]},{ticket:true}).promise; }
 	readMaterial(box=null) { return this.remote.read(this,{box,snapshot:true}); }
 	samplePigment(x,y) { return this.remote.read(this,{sample:[x+this.toothOX/(this.scale*3),y+this.toothOY/(this.scale*3)],verify:false}).then(reply=>reply.sample || reply.pigment || null); }
 	drop() { this.remote.dropSurface(this); }
@@ -158,10 +161,12 @@ export class RemotePaintBrush {
 	reset() { this._command('reset', []); }
 	newStroke() { this._command('newStroke', []); }
 	rebase(dx, dy) { if (dx || dy) this._command('rebase', [dx, dy]); }
-	strokeTo(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = .001, viewzoom = 1, viewrotation = 0, barrel = 0) {
+	strokeTo(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = .001, viewzoom = 1, viewrotation = 0, barrel = 0, inputKind = 'script', inputTime = null) {
 		if (surface.gone) return;
 		surface.pending++;
-		this.remote._enqueue({wire: {target: 'stroke', surfaceId: surface.id, brushId: this.id, args: [x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel]}, surface, mutates: true, brush: this});
+		const args = [x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel];
+		if (surface.options.mode === 'water') args.push(inputKind,inputTime);
+		this.remote._enqueue({wire: {target: 'stroke', surfaceId: surface.id, brushId: this.id, args}, surface, mutates: true, brush: this});
 	}
 	drop() { this.remote.dropBrush(this); }
 }
@@ -266,11 +271,10 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 				if (entry.surface) { entry.surface.pending--; if (entry.structural) entry.surface.structural--; }
 				if (entry.wire.target === 'surface') {
 					if(entry.wire.method==='endStroke' && entry.surface?.waterCheckpoint?.id===entry.wire.args[0])entry.surface.waterCheckpoint=null;
-					if(entry.wire.method==='fromWaterReplay' && entry.surface) {
-						const confirmed=reply.surfaces?.find(state=>state.surfaceId===entry.surface.id)?.meta;
-						if(confirmed){entry.surface.toothOX=confirmed.toothOX;entry.surface.toothOY=confirmed.toothOY;}
-					}
 					const value = reply.values[at], work = reply.replayWork?.[at]; at++;
+					if(entry.wire.method==='fromWaterMaterial' && value && entry.surface) {
+						entry.surface.width=value.width;entry.surface.height=value.height;entry.surface.toothOX=value.toothOX;entry.surface.toothOY=value.toothOY;
+					}
 					if (entry.replayRecord && work) {
 						const commands = entry.replayRecord.commands, position = commands.indexOf(entry.replayCommand);
 						if (position >= 0) commands.splice(position, 1, ...work);

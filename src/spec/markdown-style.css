@@ -87,6 +87,36 @@
 	--md-diagram-c7:light-dark(#5eac56,#002104);
 	--md-diagram-c8:light-dark(#d485fc,#330033);
 	--md-diagram-c9:light-dark(#c9b49b,#4f3626);
+
+	--md-mermaid-surface:light-dark(#f2f1ee,#171b1e);
+	--md-mermaid-border:light-dark(#757b80,#929ba1);
+	--md-mermaid-grid:light-dark(#d0d4d6,#424a4f);
+	--md-mermaid-muted:light-dark(#525a60,#b7c0c5);
+	--md-mermaid-on-series:light-dark(#fff8ea,#11181c);
+	--md-mermaid-series-1:light-dark(#176e85,#6bc2d5);
+	--md-mermaid-series-2:light-dark(#b55b2a,#f1a172);
+	--md-mermaid-series-3:light-dark(#7652a0,#bda0e1);
+	--md-mermaid-series-4:light-dark(#34775c,#7fc4a4);
+	--md-mermaid-series-5:light-dark(#a34f68,#e79eb4);
+	--md-mermaid-series-6:light-dark(#896e23,#d8be68);
+	--md-mermaid-series-7:light-dark(#426caa,#92b7ed);
+	--md-mermaid-series-8:light-dark(#876144,#cba886);
+	--md-mermaid-series-9:light-dark(#55703a,#afc88e);
+	--md-mermaid-series-10:light-dark(#94633c,#e4b185);
+	--md-mermaid-series-11:light-dark(#8a5186,#d5a0cf);
+	--md-mermaid-series-12:light-dark(#476d70,#91b9ba);
+	--md-mermaid-tint-1:light-dark(#e0edf1,#1b3941);
+	--md-mermaid-tint-2:light-dark(#f5e6dc,#472e21);
+	--md-mermaid-tint-3:light-dark(#ebe4f2,#342941);
+	--md-mermaid-tint-4:light-dark(#e2eee7,#223b2e);
+	--md-mermaid-tint-5:light-dark(#f3e1e8,#432a33);
+	--md-mermaid-tint-6:light-dark(#f3edd9,#40391f);
+	--md-mermaid-tint-7:light-dark(#e2eaf6,#26354a);
+	--md-mermaid-tint-8:light-dark(#eee5dd,#3b3129);
+	--md-mermaid-tint-9:light-dark(#e8eddf,#303921);
+	--md-mermaid-tint-10:light-dark(#f1e5d9,#433122);
+	--md-mermaid-tint-11:light-dark(#f0e2ed,#3e2a3b);
+	--md-mermaid-tint-12:light-dark(#e2ecec,#263a3b);
 }
 .md-render{color-scheme:light}
 /* Geist and Geist Mono both have a 530/1000 x-height. Preserve their size and match a
@@ -135,6 +165,10 @@
 	margin: 0 0 var(--md-line);
 	max-width: 100%;
 	overflow: auto;
+	padding-block: 0.55rem 0.85rem;
+	background:
+		linear-gradient(var(--md-diagram-node-line), var(--md-diagram-node-line)) top / 100% 1px no-repeat,
+		linear-gradient(var(--md-diagram-node-line), var(--md-diagram-node-line)) bottom / 100% 1px no-repeat;
 }
 :where(.md-render) .diagram-block .diagram-source {
 	font-family: var(--md-font-mono);
@@ -145,7 +179,12 @@
 	margin: 0;
 	white-space: pre-wrap;
 }
-:where(.md-render) .diagram-block[data-diagram-state="ready"] .diagram-source {
+/* A drawing in progress keeps its source for the reader and for export, but does not flash
+   the fence across the page. The measured height, once known, holds the place. */
+:where(.md-render) .diagram-block:is([data-diagram-state="idle"],[data-diagram-state="pending"]) {
+	min-height: 5.25rem;
+}
+:where(.md-render) .diagram-block:is([data-diagram-state="ready"],[data-diagram-state="idle"],[data-diagram-state="pending"]) .diagram-source {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -159,70 +198,21 @@
 :where(.md-render) .diagram-block .diagram-cache {
 	max-width: 100%;
 }
-/* Mermaid owns its geometry and typography. Only known paint roles are themed here;
-   other families keep their generator's matching fill and ink. Authored inline pairs win. */
+/* Mermaid owns its geometry and typography. Its reference palette is projected onto SVG paint
+   at admission; only renderer paint omissions are corrected here. */
 :where(.md-render) svg.rapier-native-flowchart{display:block;margin-inline:auto;height:auto}
-:where(.md-render) svg.rapier-diagram{display:block;margin-inline:auto;height:auto}
+:where(.md-render) svg.rapier-diagram{display:block;margin-inline:auto;height:auto;text-rendering:optimizeLegibility}
 
-/* Recolour connectors without changing widths, dashes, marker contours or hollow interiors. */
-:where(.md-render) svg.rapier-diagram:is([aria-roledescription^="flowchart"],[aria-roledescription="classDiagram"],[aria-roledescription="stateDiagram"],[aria-roledescription="requirement"],[aria-roledescription="er"]) :is(path.flowchart-link,path.relation,path.relationshipLine,path.transition){stroke:var(--md-diagram-line)!important}
-:where(.md-render) svg.rapier-diagram:is([aria-roledescription^="flowchart"],[aria-roledescription="classDiagram"],[aria-roledescription="stateDiagram"],[aria-roledescription="requirement"],[aria-roledescription="er"],[aria-roledescription="sequence"],[aria-roledescription="c4"],[aria-roledescription="journey"]) marker{fill:var(--md-diagram-arrow)!important}
-
-/* Sequence surfaces and their labels move together between paper colours. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(rect.actor,rect.activation0,rect.activation1,rect.activation2,polygon.labelBox){fill:var(--md-diagram-node-fill)!important;stroke:var(--md-diagram-node-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(text.actor,text.labelText,text.loopText,text.messageText,text.sectionTitle),
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(text.actor,text.labelText,text.loopText,text.messageText,text.sectionTitle) tspan{fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(text.sequenceNumber,text.sequenceNumber tspan){fill:var(--md-color-bg)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] rect.note{fill:var(--md-color-inset)!important;stroke:var(--md-diagram-node-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(text.noteText,text.noteText tspan){fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(line.messageLine0,line.messageLine1,path.messageLine0,path.messageLine1){stroke:var(--md-diagram-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="sequence"] :is(line.actor-line,line.loopLine){stroke:var(--md-diagram-inner-line)!important}
-
-/* A state begins with a dot, ends with a ring, and forks through a bar. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="stateDiagram"] :is(circle.state-start,rect.fork-join,circle.end-state-inner){fill:var(--md-color-text)!important;stroke:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="stateDiagram"] circle.state-end{fill:var(--md-color-bg)!important;stroke:var(--md-color-text)!important}
-/* Compound-state frames follow the paper; their child states keep their own surfaces and ink. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="stateDiagram"] g.statediagram-cluster>rect.inner{fill:var(--md-color-bg)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="stateDiagram"] g.statediagram-cluster>g>rect.outer{fill:var(--md-diagram-node-fill)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="stateDiagram"] g.statediagram-cluster>.cluster-label :is(text,tspan){fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="stateDiagram"] g.statediagram-cluster>.cluster-label :is(foreignObject,.nodeLabel){color:var(--md-color-text)!important}
-
-/* C4 node colours include their own label ink. Outside captions and connections use the page. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="c4"] text:not(.c4-shape *){fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="c4"] :is(line,path)[stroke]:not(.c4-shape *):not(marker *):not(symbol *){stroke:var(--md-diagram-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="c4"] rect[fill="none"][stroke]:not(.c4-shape *){stroke:var(--md-diagram-node-line)!important}
-
-/* Journey cards pair their surface with both HTML and SVG label branches; faces keep their paints. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"] rect:is(.journey-section,.task){fill:var(--md-diagram-node-fill)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"] rect:is(.journey-section,.task)+switch :is(text,tspan){fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"] rect:is(.journey-section,.task)+switch foreignObject{color:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"]>text,
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"] text.legend{fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"]>line{stroke:var(--md-diagram-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="journey"] line.task-line{stroke:var(--md-diagram-inner-line)!important}
-
-/* Gantt paint selectors name their element type: journey also uses the class "task" on text. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] rect:is(.section0,.section2){fill:var(--md-diagram-node-fill)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] rect:is(.section1,.section3){fill:var(--md-color-bg)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] rect.task{fill:var(--md-diagram-c1)!important;stroke:var(--md-diagram-c1)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] rect:is(.active0,.active1,.active2,.active3){fill:var(--md-diagram-c3)!important;stroke:var(--md-diagram-c3)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] rect:is(.done0,.done1,.done2,.done3){fill:var(--md-diagram-node-line)!important;stroke:var(--md-diagram-node-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] rect:is(.crit0,.crit1,.crit2,.crit3,.activeCrit0,.activeCrit1,.activeCrit2,.activeCrit3,.doneCrit0,.doneCrit1,.doneCrit2,.doneCrit3){fill:var(--md-diagram-c6)!important;stroke:var(--md-diagram-c6)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] text.taskText{fill:var(--md-diagram-on-colour)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] text:is(.taskTextOutsideRight,.taskTextOutsideLeft,.sectionTitle,.titleText){fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] .grid .tick line{stroke:var(--md-diagram-inner-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] .grid .tick text{fill:var(--md-diagram-quiet)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gantt"] line.today{stroke:var(--md-diagram-c6)!important}
-
-/* Outside labels never acquire the ink intended for a coloured slice or branch. */
-:where(.md-render) svg.rapier-diagram[aria-roledescription="pie"] text.pieTitleText,
-:where(.md-render) svg.rapier-diagram[aria-roledescription="pie"] g.legend text,
-:where(.md-render) svg.rapier-diagram[aria-roledescription="timeline"]>text{fill:var(--md-color-text)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="timeline"] g.lineWrapper>line{stroke:var(--md-diagram-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gitGraph"] rect.commit-label-bkg{fill:var(--md-color-bg)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gitGraph"] text.commit-label{fill:var(--md-diagram-quiet)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gitGraph"] polygon.tag-label-bkg{fill:var(--md-diagram-node-fill)!important;stroke:var(--md-diagram-node-line)!important}
-:where(.md-render) svg.rapier-diagram[aria-roledescription="gitGraph"] text.tag-label{fill:var(--md-color-text)!important}
+/* Radar gives these SVG labels a color declaration; SVG text needs a fill. */
+:where(.md-render) svg.rapier-diagram[aria-roledescription="radar"] :is(.radarTitle,.radarAxisLabel){fill:currentColor}
+/* Multiplying a ribbon by black paper makes its entire flow disappear. */
+:where(.md-render) svg.rapier-diagram[aria-roledescription="sankey"] .link{mix-blend-mode:normal!important}
+/* Captions keep their baseline while masking chart marks behind their letters. */
+:where(.md-render) svg.rapier-diagram[aria-roledescription="c4"] text:not(.c4-shape *),
+:where(.md-render) svg.rapier-diagram[aria-roledescription="architecture"] .architecture-service text,
+:where(.md-render) svg.rapier-diagram[aria-roledescription="wardley"] .wardley-node-label,
+:where(.md-render) svg.rapier-diagram[aria-roledescription="xychart"] [class^="line-plot-"]>.labels>text,
+:where(.md-render) svg.rapier-diagram[aria-roledescription="cynefin"] :is(text.cynefinSubtitle,text.cynefinArrowLabel,text.cynefinDomainLabel){paint-order:stroke fill;stroke:var(--md-color-bg)!important;stroke-width:2.5px;stroke-linejoin:round}
 
 /* Generator styles are removed at admission; these owned keyframes animate only dash offset. */
 @keyframes rapier-mermaid-dash{from{stroke-dashoffset:900}to{stroke-dashoffset:0}}
@@ -242,6 +232,9 @@
 	margin: .4em 0 0;
 	font-size: 0.88em;
 	opacity: .78;
+}
+:where(.md-render) .diagram-block--error .diagram-source {
+	max-height: 9rem;
 }
 
 /* The line model (the way a Word document reads). One line, --md-line, is the body's line box: 1.75rem, 1.6 lines

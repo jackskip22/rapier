@@ -1,7 +1,8 @@
 (() => {
-  const {createKernel, createState, measurementsRequired, receiptStructureEligible, receiptStructureFact} = globalThis.RapierKernel;
+  const {createKernel, createState, measurementsRequired, receiptStructureEligible, receiptStructureFact, exportFilename, exportFidelity} = globalThis.RapierKernel;
   const {resolveCaller} = globalThis.RapierDoorIdentity;
-  const {TOOLS, PAGE_TOOLS, getTool, annotations, validateInput} = globalThis.RapierAgentCatalog;
+  const {TOOLS, PAGE_TOOLS, MAX_EXPORT_BYTES, getTool, annotations, validateInput} = globalThis.RapierAgentCatalog;
+  const editorProtocol = globalThis.RapierAgentEditor;
   const {guideResult} = globalThis.RapierAgentGuide;
   // The decision core takes no clock or randomness of its own; this door supplies the real ones,
   // same as mcp/worker.mjs does for the hosted door.
@@ -48,6 +49,9 @@
   let contextSequence = 0, humanSequence = 0, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, policyAvailable = false, remoteReview = null, projecting = 0, viewFlight = null;
   let visualFlight = null;
+  let pendingView = null, viewTimer = 0;
+  const editorRequests = new Map(), preferenceVersions = new Map(), agentPreferenceWrites = new Set();
+  let editorCard = null;
   let embedReviewSignature = '';
   let reviewPersistenceSignature = '';
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -178,6 +182,7 @@
       contextQueued = false;
       const value = {sequence: contextSequence, visible: visible(), editing: editing(), reason};
       for (const notify of contextSubscribers) { try { notify(value); } catch (_) {} }
+      if (pendingView?.status === 'pending') void drainView();
     });
   }
 
@@ -211,7 +216,7 @@
       generation: Number(rapier.revision.generation)};
     if (!readyDone || admission() || _rapierMutationBarrierActive()) {
       return {...fail('document_not_settled', 'yielded'), ...basic,
-        context: {sequence: contextSequence, visible: visible(), editing: visible() && editing(), selection: null, focus: null}};
+        context: {sequence: contextSequence, visible: visible(), editing: visible() && editing(), view: viewMode(), selection: null, focus: null}};
     }
     const drawing = drawingContext();
     if (drawing?.open) {
@@ -220,13 +225,13 @@
       const value = documentState();
       const focus = drawing.occurrence && Number.isSafeInteger(drawing.occurrence.start) && Number.isSafeInteger(drawing.occurrence.end)
         ? {start: drawing.occurrence.start, end: drawing.occurrence.end, active: false} : null;
-      return {ok: true, ...value, context: {sequence: contextSequence, visible: visible(), editing: false,
+      return {ok: true, ...value, context: {sequence: contextSequence, visible: visible(), editing: false, view: viewMode(),
         selection: null, focus, drawing, posture: value.posture, readOnly: value.readOnly}};
     }
     // Read the kept source and its live focus without checkpointing a draft or composition.
     // The hosted adapter maps this range to its acknowledged source before publishing it.
     const busy = () => ({...fail('document_not_settled', 'yielded'), ...documentState(),
-      context: {...editorFocus(), sequence: contextSequence, visible: visible(), editing: visible() && editing()}});
+      context: {...editorFocus(), sequence: contextSequence, visible: visible(), editing: visible() && editing(), view: viewMode()}});
     if (composing() || Date.now() - lastInputAt < 900) return busy();
     const captured = await _rapierWithSettledExternalDocument(documentState, {quiet: true});
     if (!captured.settled) return busy();
@@ -236,7 +241,7 @@
       : {selection: null, focus: null};
     return {ok: true, documentId: value.documentId, revision: value.revision, generation: value.generation,
       filename: value.filename, docKind: value.docKind, text: value.text,
-      context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(true),
+      context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(true), view: viewMode(),
         posture: value.posture, readOnly: value.readOnly,
         ...(value.reviewedRevision == null ? {} : {reviewedRevision: value.reviewedRevision})}};
   }
@@ -364,11 +369,11 @@
       closedComparisonId: !apps && comparisonKernelId && !ownsComparison(comparisonOwner) ? comparisonKernelId : null};
   }
 
-  async function snapshot() {
+  async function snapshot(options = {}) {
     await ready;
     const reason = admission();
     if (reason) throw Object.assign(new Error(reason), {code: reason});
-    if (drawingContext()?.open) return current();
+    if (options.operation === 'document.set_view' || drawingContext()?.open) return current();
     const read = await _rapierWithSettledExternalDocument(current, {quiet: true});
     if (!read.settled) throw Object.assign(new Error('document_not_settled'), {code: 'document_not_settled'});
     return read.value;
@@ -378,6 +383,216 @@
     return request.documentId === String(rapier.identity.authority) &&
       (revision == null || revision === Number(rapier.revision.settled)) &&
       (request.beforeText == null || request.beforeText === _rapierSourceText());
+  }
+
+  function editorFact(request, status, details = {}) {
+    return {kind: 'editor', documentId: request.documentId, revision: request.revision, operation: request.operation,
+      receipt: {id: request.id, status, ...(request.preference ? {preference: request.preference} : {action: request.action}), ...details}};
+  }
+
+  function editorCurrent(record) {
+    const stamp = record.expected;
+    return !admission() && visible() && !record.request.signal?.aborted && stamp &&
+      stamp.expectedDocumentId === String(rapier.identity.authority) &&
+      stamp.expectedRevision === Number(rapier.revision.settled) &&
+      stamp.expectedGeneration === Number(rapier.revision.generation) &&
+      stamp.expectedText === _rapierSourceText();
+  }
+
+  function editorPublish(record, fact, notify = true) {
+    record.fact = fact;
+    if (fact.receipt.status !== 'waiting') {
+      clearTimeout(record.timer);
+      record.cleanup?.(); record.cleanup = null;
+      if (editorCard === record) editorCard = null;
+      record.expected = null;
+    }
+    if (notify) for (const callback of record.callbacks) { try { callback(fact); } catch (_) {} }
+    contextChanged('editor');
+    return fact;
+  }
+
+  function cancelEditorRequest(id, reason = 'editor_unavailable') {
+    const record = editorRequests.get(id);
+    if (!record || record.fact?.receipt.status !== 'waiting') return false;
+    editorPublish(record, editorFact(record.request, 'unavailable', {reason}));
+    if (_rapierUi.confirmId === record.confirmId) _rapierUiResolveConfirm(false);
+    return true;
+  }
+
+  function editorContext() {
+    return editorProtocol.editorContext({preferences: RapierPreferences.snapshot(), receipts: [...editorRequests.values()]
+      .filter(record => record.localDocumentId === String(rapier.identity.authority)).map(record => record.fact?.receipt)});
+  }
+
+  // Each write has a generation, including a person's deliberate write of the same value. Undo
+  // and a delayed acknowledgement can never overwrite that later choice.
+  for (const preference of Object.keys(globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS)) {
+    preferenceVersions.set(preference, 0);
+    RapierPreferences.subscribe(preference, value => {
+      preferenceVersions.set(preference, preferenceVersions.get(preference) + 1);
+      const record = [...editorRequests.values()].findLast(row => row.request.preference === preference && row.fact?.receipt.status === 'applied');
+      if (record && !agentPreferenceWrites.has(preference)) editorPublish(record, {...record.fact, receipt: {...record.fact.receipt, superseded: true, current: value}});
+      contextChanged('preferences');
+    });
+  }
+
+  function editorActionRefusal(request) {
+    if (request.action === 'read_aloud' && (!_rapierEmbedFeatureAllowed('readAloud') || !_rapierSpeechEngine())) return 'read_aloud_unavailable';
+    if (request.action === 'open_file' && _rapierEmbed.active) return 'host_owns_document';
+    if (request.action === 'install_plugin') {
+      if (request.plugin.startsWith('letters-') && !_rapierEmbedFeatureAllowed('draw')) return 'host_feature_refused';
+      const provider = request.plugin === 'pdf' ? globalThis.RapierPdfPlugin : _rapierProviders[request.plugin];
+      if (typeof provider?.install !== 'function') return 'plugin_unavailable';
+    }
+    return '';
+  }
+
+  async function editorAction(record) {
+    const request = record.request;
+    if (request.action === 'read_aloud') return _readFlatDoc(0, request.text) === true;
+    if (request.action === 'copy') {
+      if (request.format === 'complete') {
+        const authority = _rapierExcerptAuthoritySnapshot(), range = request.sourceRange;
+        const source = _rapierSourceText();
+        if (!authority || !range || source.slice(range.start, range.end) !== request.text) return false;
+        const exact = {...range, canonicalLength: authority.canonicalLength};
+        const plan = _rapierPlanCompleteExcerpt(exact, rapier.semantic.facts, rapier.semantic.index);
+        const payload = _rapierMaterializeCompleteExcerpt(exact, plan, source);
+        return !!payload && await _rapierWriteTextClipboard(_rapierCompleteImageExcerpt(payload.excerpt, source)) === true;
+      }
+      return rapierCopy(request.format, {canonical: request.text, metadata: {filename: String(rapier.document.filename),
+        docKind: String(rapier.document.docKind), codeLang: rapier.document.codeLang}});
+    }
+    if (request.action === 'open_file') { await _rapierUiBeginOpenDocument(record.tap); return true; }
+    if (request.action === 'install_plugin') {
+      const provider = request.plugin === 'pdf' ? globalThis.RapierPdfPlugin : _rapierProviders[request.plugin];
+      await provider.install();
+      return true;
+    }
+    return false;
+  }
+
+  function editorShowCard(record) {
+    const request = record.request;
+    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', install_plugin: 'install plug-in'};
+    const shown = request.text ? editorProtocol.editorPreview(request.text) : null;
+    const message = shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : 'Choose a file from this device to open in Rapier.');
+    const answer = rapierConfirm({title: labels[request.action], message, confirmLabel: labels[request.action]});
+    record.confirmId = _rapierUi.confirmId;
+    editorCard = record;
+    const accept = document.getElementById('confirm-accept');
+    const tapped = event => {
+      if (_rapierUi.confirmId !== record.confirmId) return;
+      if (!event.isTrusted) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+      record.tap = event;
+    };
+    const aborted = () => cancelEditorRequest(request.id);
+    accept.addEventListener('click', tapped, true);
+    request.signal?.addEventListener('abort', aborted, {once: true});
+    record.cleanup = () => { accept.removeEventListener('click', tapped, true); request.signal?.removeEventListener('abort', aborted); };
+    record.timer = setTimeout(() => cancelEditorRequest(request.id, 'editor_request_expired'), editorProtocol.EDITOR_LIMITS.cardMs);
+    answer.then(async accepted => {
+      if (record.fact.receipt.status !== 'waiting') return;
+      if (!accepted) { editorPublish(record, editorFact(request, 'declined')); return; }
+      if (!record.tap || !editorCurrent(record)) { editorPublish(record, editorFact(request, 'unavailable', {reason: 'document_changed'})); return; }
+      const refusal = editorActionRefusal(request);
+      if (refusal) { editorPublish(record, editorFact(request, 'unavailable', {reason: refusal})); return; }
+      try {
+        const done = await editorAction(record);
+        if (record.fact.receipt.status === 'waiting') editorPublish(record, editorFact(request, done ? 'done' : 'unavailable',
+          done ? {} : {reason: 'editor_action_failed'}));
+      } catch (error) {
+        if (record.fact.receipt.status === 'waiting') editorPublish(record, editorFact(request, 'unavailable', {reason: 'editor_action_failed'}));
+      }
+    });
+  }
+
+  async function resolveEditorRequest(requirements, expected, options = {}) {
+    const prepared = editorProtocol.editorRequest(requirements, requirements.operation, requirements);
+    if (prepared.outcome !== 'ok') return editorFact(requirements, 'unavailable', {reason: prepared.reason});
+    const request = {...prepared.request, id: requirements.id, ...(requirements.sourceRange ? {sourceRange: requirements.sourceRange} : {}),
+      ...(requirements.expiresAt ? {expiresAt: requirements.expiresAt} : {}), ...(requirements.signal ? {signal: requirements.signal} : {})};
+    if (typeof request.id !== 'string' || !request.id || request.id.length > 128) return editorFact(request, 'unavailable', {reason: 'editor_request_invalid'});
+    const signature = JSON.stringify({...prepared.request, sourceRange: request.sourceRange});
+    const prior = editorRequests.get(request.id);
+    if (prior) {
+      if (prior.signature !== signature) return editorFact(request, 'unavailable', {reason: 'editor_request_changed'});
+      if (options.onReceipt) prior.callbacks.add(options.onReceipt);
+      if (editorProtocol.EDITOR_EXPORT_TYPES[request.action] && prior.fact?.receipt.status === 'done' && !prior.fact.file)
+        return editorFact(request, 'unavailable', {reason: 'export_expired'});
+      return prior.fact || editorFact(request, 'unavailable', {reason: 'editor_busy'});
+    }
+    const stamp = expected || {expectedDocumentId: request.documentId, expectedRevision: request.revision,
+      expectedText: _rapierSourceText(), expectedGeneration: Number(rapier.revision.generation)};
+    const record = {request, signature, expected: {...stamp}, localDocumentId: stamp.expectedDocumentId, callbacks: new Set()};
+    if (options.onReceipt) record.callbacks.add(options.onReceipt);
+    const refused = reason => editorFact(request, 'unavailable', {reason});
+    if (admission() || !visible()) return refused('editor_unavailable');
+    if (!editorCurrent(record)) return refused('document_changed');
+    if (request.expiresAt && request.expiresAt <= Date.now()) return refused('editor_request_expired');
+    // Keep at most one card, and leave any existing house dialog in the person's hands.
+    if (editorProtocol.editorNeedsTap(request) && (editorCard || _rapierUi.confirmId)) return refused('editor_busy');
+    editorRequests.set(request.id, record);
+    while (editorRequests.size > editorProtocol.EDITOR_LIMITS.receipts) {
+      const entry = [...editorRequests].find(([, row]) => row !== record && row !== editorCard);
+      if (!entry) break;
+      if (entry[1].url) URL.revokeObjectURL(entry[1].url);
+      clearTimeout(entry[1].fileTimer); editorRequests.delete(entry[0]);
+    }
+    if (request.operation === 'document.set_view') {
+      if (_rapierEmbed.active && ((request.preference === 'theme' && _rapierEmbed.theme) ||
+          (request.preference === 'accent' && _rapierEmbed.accent))) return editorPublish(record, refused('host_owns_preference'), false);
+      const previous = RapierPreferences.read(request.preference);
+      agentPreferenceWrites.add(request.preference);
+      try { RapierPreferences.write(request.preference, request.value); }
+      finally { agentPreferenceWrites.delete(request.preference); }
+      if (RapierPreferences.read(request.preference) !== request.value) return editorPublish(record, refused('preference_write_failed'), false);
+      const version = preferenceVersions.get(request.preference);
+      const fact = editorPublish(record, editorFact(request, 'applied', {value: request.value, previous}), false);
+      showToast('view changed', 'info', {label: 'Undo', fn: () => {
+        if (preferenceVersions.get(request.preference) === version && RapierPreferences.read(request.preference) === request.value)
+          RapierPreferences.write(request.preference, previous);
+      }});
+      return fact;
+    }
+    const refusal = editorActionRefusal(request);
+    if (refusal) return editorPublish(record, refused(refusal), false);
+    if (editorProtocol.editorNeedsTap(request)) {
+      const fact = editorPublish(record, editorFact(request, 'waiting'), false);
+      editorShowCard(record);
+      return fact;
+    }
+    try {
+      const artifact = await _rapierBuildEditorExport(request.action, record.expected,
+        {signal: request.signal, current: () => editorCurrent(record), maxBytes: MAX_EXPORT_BYTES});
+      if (!editorCurrent(record)) return editorPublish(record, refused('document_changed'), false);
+      if (!(artifact.bytes instanceof Uint8Array) || artifact.bytes.byteLength > MAX_EXPORT_BYTES) return editorPublish(record, refused('export_too_large'), false);
+      let binary = '';
+      for (let offset = 0; offset < artifact.bytes.length; offset += 32768) binary += String.fromCharCode(...artifact.bytes.subarray(offset, offset + 32768));
+      const file = {name: artifact.filename, mimeType: artifact.mimeType, data: btoa(binary)};
+      if (!editorProtocol.editorFile(request, file, MAX_EXPORT_BYTES)) return editorPublish(record, refused('export_invalid'), false);
+      // Bytes live only at the adapter boundary, outside receipts and the invocation journal.
+      // Retain one export for a bounded retry, releasing the previous page URL and payload.
+      for (const prior of editorRequests.values()) if (prior.fact?.file) {
+        if (prior.url) URL.revokeObjectURL(prior.url);
+        clearTimeout(prior.fileTimer); prior.url = null;
+        const {file: released, ...retained} = prior.fact;
+        prior.fact = retained;
+      }
+      record.fileTimer = setTimeout(() => {
+        if (record.url) URL.revokeObjectURL(record.url);
+        record.url = null;
+        const {file: released, ...retained} = record.fact;
+        record.fact = retained;
+      }, editorProtocol.EDITOR_LIMITS.cardMs);
+      return editorPublish(record, {...editorFact(request, 'done', artifact.issues?.length ? {issues: artifact.issues} : {}), file}, false);
+    } catch (error) {
+      const reason = request.signal?.aborted ? 'cancelled' : /^WILL LOST/.test(String(error?.message)) ? 'will_lost' :
+        ['document_changed', 'stale_context'].includes(error?.code) ? 'document_changed' :
+        typeof error?.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) ? error.code : 'export_unavailable';
+      return editorPublish(record, refused(reason), false);
+    }
   }
 
   function capturePlace() {
@@ -627,6 +842,88 @@
     return {ok: true};
   }
 
+  function viewMode(documentOnly = false) {
+    return !documentOnly && notesFact()?.open ? 'notes' : rapier.document.docKind === 'code' || rapier.view.mode === 'source' ? 'source' : 'formatted';
+  }
+
+  function viewContext() {
+    return {current: viewMode(), ...(pendingView ? {id: pendingView.id, requested: pendingView.view,
+      status: pendingView.status, ...(pendingView.reason ? {reason: pendingView.reason} : {})} : {})};
+  }
+
+  function retireView(transport) {
+    if (transport && pendingView?.transport !== transport) return;
+    const request = pendingView;
+    pendingView = null;
+    clearTimeout(viewTimer); viewTimer = 0;
+    if (request?.status === 'pending') { request.status = 'refused'; request.reason = 'host_not_connected'; }
+  }
+
+  async function applyViewMode(request) {
+    if (!matches(request, null)) return fail('document_changed', 'conflict');
+    const reason = admission();
+    if (reason) return fail(reason);
+    if (request.signal?.aborted) return fail('cancelled');
+    if (!visible() || editing() || drawingContext()?.open || notesFact()?.busy || remoteReview ||
+        _rapierWillReviewSlot.settling || _rapierUiViewTransition.busy) return fail('human_edit_in_progress', 'yielded');
+    if (!['formatted', 'source', 'notes'].includes(request.view)) return fail('view_invalid', 'invalid');
+    if (viewMode() === request.view) return {ok: true};
+    const fromView = viewMode(), sequence = humanSequence;
+    const guard = () => !request.signal?.aborted && !admission() && matches(request, null) && visible() &&
+      !editing() && !drawingContext()?.open && !remoteReview && !_rapierWillReviewSlot.settling &&
+      humanSequence === sequence && (!request.guard || request.guard()) &&
+      (viewMode() === fromView || viewMode() === request.view);
+    if (request.view === 'notes') {
+      if (typeof _rapierNotesOpen !== 'function' || !_rapierEmbedFeatureAllowed('notes')) return fail('view_unavailable');
+      await _rapierNotesOpen(false, {guard});
+    } else {
+      if (request.view === 'formatted' && rapier.document.docKind === 'code') return fail('view_unavailable');
+      if (request.view === 'source') _rapierUiRequestSourceView();
+      else if (rapier.view.mode === 'source') await _rapierUiRequestWysiwygView({guard});
+    }
+    if (!matches(request, null)) return fail('document_changed', 'conflict');
+    if (admission()) return fail(admission());
+    if (request.signal?.aborted) return fail('cancelled');
+    if (viewMode() !== fromView && viewMode() !== request.view) return fail('human_view_changed');
+    if (request.guard && !request.guard()) return fail('view_changed');
+    if (!guard()) return fail('human_edit_in_progress', 'yielded');
+    if (request.view !== 'notes' && notesFact()?.open) {
+      if (viewMode(true) !== request.view) return fail('view_unavailable');
+      _rapierNotesClose();
+    }
+    if (viewMode() !== request.view) return fail('view_unavailable');
+    _rapierSeenViewMovedByAgent();
+    contextChanged('view');
+    return {ok: true};
+  }
+
+  async function drainView() {
+    clearTimeout(viewTimer); viewTimer = 0;
+    const request = pendingView;
+    if (!request || request.status !== 'pending' || request.running) return;
+    request.running = true;
+    try {
+      const current = viewMode();
+      const result = current !== request.fromView && current !== request.view ? fail('human_view_changed')
+        : await applyViewMode({...request, guard: () => pendingView === request && request.status === 'pending'});
+      if (pendingView !== request) return result;
+      if (result.outcome === 'yielded') {
+        viewTimer = setTimeout(() => { void drainView(); }, 950);
+        return {pending: true, viewId: request.id};
+      }
+      request.status = result.ok ? 'presented' : 'refused';
+      if (result.reason) request.reason = result.reason;
+      contextChanged('view');
+      return {...result, viewId: request.id};
+    } finally { request.running = false; }
+  }
+
+  async function setView(request) {
+    await ready;
+    pendingView = {...request, id: kernelMintId('view_'), fromView: viewMode(), status: 'pending'};
+    return await drainView();
+  }
+
   async function reveal(request) {
     if (!matches(request) || rapier.compare?.active) return fail('view_changed');
     abort(request);
@@ -725,7 +1022,12 @@
 
   async function applyView(intent, expected, value, options = {}) {
     await ready;
-    if (!intent || intent.status !== 'pending' || !['document', 'compare'].includes(intent.kind)) return fail('view_invalid', 'invalid');
+    if (!intent || intent.status !== 'pending' || !['document', 'compare', 'mode'].includes(intent.kind)) return fail('view_invalid', 'invalid');
+    if (intent.kind === 'mode') {
+      if (value?.documentId !== expected?.expectedDocumentId || !expectedCurrent(expected)) return fail('document_changed', 'conflict');
+      if (viewMode() !== intent.fromView && viewMode() !== intent.view) return fail('human_view_changed');
+      return applyViewMode({documentId: value.documentId, view: intent.view, guard: () => expectedCurrent(expected)});
+    }
     const hand = await humanContext();
     if (!value || value.documentId !== expected?.expectedDocumentId || value.text !== expected.expectedText ||
         value.revision !== intent.revision || !expectedCurrent(expected)) return fail('document_changed', 'conflict');
@@ -1287,6 +1589,100 @@
     }
   }
 
+  let exportFlight = null;
+  const retainedExports = new Map();
+  const RETAINED_EXPORTS = 4, EXPORT_LIFETIME_MS = 86400000;
+
+  // Word and PDF are the editor's own writers: built from one settled snapshot, and a change of source while they render invalidates the
+  // result before it can leave, through the hosted acknowledgement or the local grant. Both export requests share the artifact
+  // owner; Word also shares the person's Export preparation, portability analysis, and writer.
+  async function exportDocument(request, expected) {
+    await ready;
+    const identity = {documentId: request?.documentId, revision: request?.revision, format: request?.format};
+    const refuse = reason => ({...identity, outcome: 'refused', reason});
+    if (request?.signal?.aborted) return refuse('cancelled');
+    if (exportFlight) return refuse('export_busy');
+    if (request?.kind !== 'export' || !['docx', 'pdf'].includes(request.format)) return refuse('export_format_invalid');
+    if (admission() || !visible()) return refuse('editor_unavailable');
+    const fence = hostFence();
+    if (fence) return refuse(fence);
+    const local = await humanContext(), revision = expected?.expectedRevision ?? request.revision;
+    if (!local.ok || local.context.editing) return refuse('human_edit_in_progress');
+    if (local.documentId !== request.documentId || local.revision !== revision ||
+        (expected && (expected.expectedDocumentId !== local.documentId || expected.expectedText !== local.text ||
+          expected.expectedGeneration !== local.generation))) return refuse('document_changed');
+    const current = () => !request.signal?.aborted && visible() && !admission() && !hostFence() && !editing() &&
+      String(rapier.identity.authority) === local.documentId && Number(rapier.revision.settled) === revision &&
+      Number(rapier.revision.generation) === local.generation && _rapierSourceText() === local.text &&
+      String(rapier.document.filename) === local.filename;
+    const flight = {}; exportFlight = flight;
+    try {
+      const artifact = await _rapierBuildEditorExport(request.format === 'docx' ? 'export_word' : 'export_pdf', {expectedText: local.text},
+        {signal: request.signal, current, maxBytes: MAX_EXPORT_BYTES});
+      const blob = new Blob([artifact.bytes], {type: artifact.mimeType}), filename = exportFilename(request.filename, request.format);
+      const {pages, issues} = artifact;
+      if (!current()) return refuse(request.signal?.aborted ? 'cancelled' : 'document_changed');
+      if (!blob.size || blob.size > MAX_EXPORT_BYTES) return refuse('export_too_large');
+      const url = await _rapierBlobDataUrl(blob);
+      if (!current()) return refuse(request.signal?.aborted ? 'cancelled' : 'document_changed');
+      return {...identity, outcome: 'ok', artifact: {mimeType: blob.type, data: url.slice(url.indexOf(',') + 1), filename,
+        ...(pages ? {pages} : {}), ...(issues?.length ? {issues} : {})}};
+    } catch (error) {
+      return refuse(request.signal?.aborted ? 'cancelled' : /^WILL LOST/.test(String(error?.message)) ? 'will_lost' :
+        error?.code === 'stale_context' ? 'document_changed' : typeof error?.code === 'string' && error.code ? error.code.slice(0, 128) : 'export_unavailable');
+    } finally { if (exportFlight === flight) exportFlight = null; }
+  }
+
+  // A local file is a Blob address that lives a day, as a hosted grant does, and ends with its document, its place among the last few,
+  // or this page.
+  function forgetExport(id) {
+    const value = retainedExports.get(id);
+    if (!value) return;
+    clearTimeout(value.timer); URL.revokeObjectURL(value.url); retainedExports.delete(id);
+  }
+  function releaseExports(documentId) {
+    for (const [id, value] of retainedExports) if (!documentId || value.documentId !== documentId || value.expiresAt <= Date.now()) forgetExport(id);
+  }
+
+  // The file for document.export on this page: each format from its one owner, over the settled source the request names.
+  // A request that carries a base is a review beside its original: the document is the base, the text is the proposal.
+  async function exportFile(request) {
+    const local = await snapshot(), source = request.base?.text ?? request.text;
+    if (local.text !== source || local.filename !== request.filename || request.signal?.aborted) return {reason: 'document_changed'};
+    let bytes, mimeType, pages, issues;
+    let name = exportFilename(request.filename, request.format), fidelity = exportFidelity(request.format, request.docKind);
+    if (request.file) {
+      ({bytes, mimeType, name, pages, issues, fidelity} = request.file);
+    } else if (request.format === 'markdown') {
+      bytes = new TextEncoder().encode(request.text); mimeType = (request.docKind === 'markdown' ? 'text/markdown' : 'text/plain') + '; charset=utf-8';
+    } else if (request.format === 'html') {
+      if (!globalThis.RapierPortableTemplate || !globalThis.RapierPortablePage) return {reason: 'export_page_unavailable'};
+      bytes = new TextEncoder().encode(globalThis.RapierPortablePage.wrap(globalThis.RapierPortableTemplate(), request.text, request.filename,
+        request.base ? {base: request.base} : undefined));
+      mimeType = 'text/html; charset=utf-8';
+    } else {
+      const captured = await _rapierCaptureSettledExternalDocument();
+      if (!captured || captured.canonical !== source) return {reason: 'document_changed'};
+      if (request.format === 'txt') {
+        bytes = new TextEncoder().encode(_rapierRenderModule('render-markdown')._rapierPlainTextFile(_rapierBuildInterchangeContext({format: 'txt'}, captured)));
+        mimeType = 'text/plain; charset=utf-8';
+      } else if (request.format === 'page') {
+        const artifact = await _rapierBuildArtifact({kind: 'page'}, _rapierBuildInterchangeContext({kind: 'page'}, captured));
+        bytes = new TextEncoder().encode(artifact.html); mimeType = 'text/html; charset=utf-8';
+      } else return {reason: 'export_format_invalid'};
+    }
+    if (bytes.byteLength > MAX_EXPORT_BYTES) return {reason: 'export_too_large', byteLength: bytes.byteLength, limitBytes: MAX_EXPORT_BYTES};
+    const now = await snapshot();
+    if (request.signal?.aborted || now.documentId !== local.documentId || now.revision !== local.revision || now.text !== local.text || now.filename !== local.filename)
+      return {reason: request.signal?.aborted ? 'cancelled' : 'document_changed'};
+    releaseExports(local.documentId);
+    while (retainedExports.size >= RETAINED_EXPORTS) forgetExport(retainedExports.keys().next().value);
+    const id = crypto.randomUUID(), url = URL.createObjectURL(new Blob([bytes], {type: mimeType})), expiresAt = Date.now() + EXPORT_LIFETIME_MS;
+    const timer = setTimeout(() => forgetExport(id), EXPORT_LIFETIME_MS);
+    retainedExports.set(id, {url, expiresAt, documentId: local.documentId, timer});
+    return {id, url, expiresAt, name, mimeType, bytes, fidelity, ...(pages ? {pages} : {}), ...(issues?.length ? {issues} : {})};
+  }
+
   // Drives the inline Will review UI for a pending{kind:'human-review'} whose review.kind is
   // 'inline' -- the same _rapierWillReviewOpen presentation host.review drove synchronously inside
   // the kernel. decide does not block on it: it stages the pending review and returns; this runs
@@ -1333,7 +1729,7 @@
   }
 
   const host = {
-    snapshot, commit, reveal,
+    snapshot, commit, reveal, setView, view: viewContext, exportFile, editorContext,
     paintRaster: (raster, options) => globalThis.RapierEmbeddedImages.validatePaintRaster(raster, options),
     presence: value => {
       if (caret.point && !value.pointers?.some(point => point.id === caret.point.id && point.status !== 'expired' && point.expiresAt > Date.now())) caretPut('pointer_cleared');
@@ -1466,7 +1862,8 @@
     // outside the invocation boundary, because those are this door's facts, not a kernel outcome.
     if (tool && TOOLS.includes(tool)) {
       const reason = admission();
-      if (reason) return {outcome: 'refused', reason};
+      if (reason) return name === 'document.set_view' || name === 'document.ask_editor'
+        ? editorProtocol.editorFailure(reason === 'embed_agent_not_granted' ? reason : 'editor_unavailable') : {outcome: 'refused', reason};
     }
     // resolveCaller is the one caller-resolution and invocation-identity implementation every door
     // shares (agent/door-identity.mjs): invocationKey is always derived from this door's own
@@ -1498,7 +1895,7 @@
     const eager = measurementsRequired(name, args);
     const beforeText = _rapierSourceText();
     const run = async () => {
-      let world, visualFact;
+      let world, visualFact, editorObservation;
       if (eager?.structure?.mode === 'outline') {
         const fact = await resolveStructureFact({mode: 'outline', filename: String(rapier.document.filename)});
         if (fact) world = {structure: fact};
@@ -1509,6 +1906,16 @@
       // iteration is its own fresh decide().
       for (let guard = 0; guard < 4 && result.outcome === 'pending'; guard++) {
         if (result.pending?.kind === 'surface-fact') {
+          if (result.pending.requirements?.kind === 'export') {
+            const fact = await exportDocument({...result.pending.requirements, signal: who.signal});
+            result = await kernel.invoke(name, args, {...who, continues: result.pending.requestId, world: {export: fact}});
+            continue;
+          }
+          if (result.pending.requirements?.kind === 'editor') {
+            editorObservation = await resolveEditorRequest({...result.pending.requirements, signal: who.signal});
+            result = await kernel.invoke(name, args, {...who, continues: result.pending.requestId, world: {editor: editorObservation}});
+            continue;
+          }
           if (result.pending.requirements?.kind === 'visual') {
             visualFact = await inspectVisual({...result.pending.requirements, signal: who.signal});
             result = await kernel.invoke(name, args, {...who, continues: result.pending.requestId, world: {visual: visualFact}});
@@ -1554,6 +1961,13 @@
         if (validated.outcome !== 'ok') return {...result, ...validated, observation: undefined};
         return {...result, ...validated, content: [{type: 'image', mimeType: 'image/png', data: visualFact.image.data}]};
       }
+      if (result.receipt?.status === 'done' && editorProtocol.EDITOR_EXPORT_TYPES[args.action]) {
+        const record = editorRequests.get(result.receipt.id);
+        const file = record?.fact?.file;
+        if (!file) return {...editorProtocol.editorFailure('export_expired')};
+        record.url ||= URL.createObjectURL(new Blob([editorProtocol.editorFile(record.request, file, MAX_EXPORT_BYTES).bytes], {type: file.mimeType}));
+        return {...result, content: [{type: 'resource_link', name: file.name, mimeType: file.mimeType, uri: record.url}]};
+      }
       return result;
     };
     const result = await (who.actor === 'agent'
@@ -1593,8 +2007,10 @@
   }
 
   function retire() {
+    if (editorCard && registrations.size) cancelEditorRequest(editorCard.request.id);
     const retired = [...registrations.values()];
     registrations.clear(); failures.clear(); registrationOwner = null; registrationExposure = '';
+    retireView('webmcp');
     // Abort listeners may install a new owner synchronously; only retire this snapshot.
     for (const entry of retired) entry.abort();
   }
@@ -1632,7 +2048,7 @@
             if (signals.some(signal => signal.aborted)) cancel();
             try {
               return await invoke(tool.name, args, {actor: 'agent', principal: 'webmcp', transport: 'webmcp',
-                requestId: crypto.randomUUID(), signal: flight.signal});
+                requestId: crypto.randomUUID(), signal: tool.name === 'document.set_view' ? AbortSignal.any(signals) : flight.signal});
             } finally {
               for (const signal of signals) signal.removeEventListener('abort', cancel);
             }
@@ -1657,7 +2073,7 @@
       return status();
     }
     if (!_rapierBootstrapRuntime.complete) return status();
-    if (admission()) retire();
+    if (admission()) { if (editorCard) cancelEditorRequest(editorCard.request.id); retire(); }
     if (refreshing) { refreshAgain = true; return refreshing; }
     refreshing = (async () => {
       // Passive: a person's typing burst is never cut into a transaction for this read; the burst's own checkpoint refreshes again.
@@ -1730,6 +2146,8 @@
         window.dispatchEvent(new Event('rapier-agent-ready'));
       }
       const prior = previous; previous = value;
+      releaseExports(value.documentId);
+      if (editorCard && !editorCurrent(editorCard)) cancelEditorRequest(editorCard.request.id, 'document_changed');
       if (prior && (value.documentId !== prior.documentId || value.revision !== prior.revision ||
           value.text !== prior.text || value.filename !== prior.filename || value.docKind !== prior.docKind)) {
         const events = value.documentId === prior.documentId
@@ -2335,7 +2753,8 @@
     pointState: () => caret.point ? {...caret.point} : null,
     clearPoint: (id, reason = 'view_changed') => { if (!id || caret.point?.id === id) caretPut(reason); },
     nameAtDoor, noteRemoteCall, doorName: () => doorName, stageCarriedProposal, proposalExport,
-    replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual,
+    replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual, exportDocument,
+    resolveEditorRequest, cancelEditorRequest, editorContext,
     policyReady: () => policyAvailable, applyView, presentReview, dismissReview, presentationChanged, readFile, notify,
     pendingReviewSnapshot, reviewSnapshot, decideReviewChange, representPendingReview, agentRecoveryState,
     publishEmbedReview,
@@ -2349,7 +2768,7 @@
     document.addEventListener(type, humanActivity, {capture: true, passive: true});
   }
   document.addEventListener('visibilitychange', () => {
-    if (!visible()) { retainedPointer = null; viewFlight?.abort(); visualFlight?.abort(); }
+    if (!visible()) { retainedPointer = null; viewFlight?.abort(); visualFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); }
     else if (!apps && kernel?.collaboration()?.review?.status === 'pending' && kernel.collaboration().review.kind !== 'proposal') {
       void representPendingReview().catch(() => {});
     }
@@ -2357,7 +2776,7 @@
   });
   window.addEventListener('blur', () => { contextChanged('blur'); });
   window.addEventListener('focus', () => { contextChanged('focus'); });
-  window.addEventListener('pagehide', () => { visualFlight?.abort(); retire(); for (const endpoint of ownedNotesEndpoints) void endpoint.lock(); });
+  window.addEventListener('pagehide', () => { retireView(); visualFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); retire(); for (const endpoint of ownedNotesEndpoints) void endpoint.lock(); });
   window.addEventListener('pageshow', () => { void refresh(); });
   queueMicrotask(() => { void refresh(); });
 })();

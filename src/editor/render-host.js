@@ -25,6 +25,7 @@ function _rapierRenderModule(kind) {
       _rapierPortableHtml: typeof _rapierPortableHtml === 'undefined' ? undefined : _rapierPortableHtml,
       _rapierPrepareInterchangeContext: typeof _rapierPrepareInterchangeContext === 'undefined' ? undefined : _rapierPrepareInterchangeContext,
       _rapierProjectPortableRoot: typeof _rapierProjectPortableRoot === 'undefined' ? undefined : _rapierProjectPortableRoot,
+      _rapierProviders: typeof _rapierProviders === 'undefined' ? undefined : _rapierProviders,
       _rapierSourceCharEscaped: typeof _rapierSourceCharEscaped === 'undefined' ? undefined : _rapierSourceCharEscaped,
       _rapierSourceLineSpan: typeof _rapierSourceLineSpan === 'undefined' ? undefined : _rapierSourceLineSpan,
       crypto: typeof crypto === 'undefined' ? undefined : crypto,
@@ -40,11 +41,12 @@ function _rapierRenderModule(kind) {
       _rapierStyleText: typeof _rapierStyleText === 'undefined' ? undefined : _rapierStyleText
     });
     case 'render-markdown': return globalThis.RapierRenderMarkdown.createMarkdownRenderer({
+      Node: typeof Node === 'undefined' ? undefined : Node,
+      _rapierPrefixPortableAnchors: typeof _rapierPrefixPortableAnchors === 'undefined' ? undefined : _rapierPrefixPortableAnchors,
       RAPIER_HIGHLIGHT_COLOR_BY_MARKER: typeof RAPIER_HIGHLIGHT_COLOR_BY_MARKER === 'undefined' ? undefined : RAPIER_HIGHLIGHT_COLOR_BY_MARKER,
       RAPIER_MARKDOWN_SPEC: typeof RAPIER_MARKDOWN_SPEC === 'undefined' ? undefined : RAPIER_MARKDOWN_SPEC,
       RAPIER_RENDERED_HEADING_SELECTOR: typeof RAPIER_RENDERED_HEADING_SELECTOR === 'undefined' ? undefined : RAPIER_RENDERED_HEADING_SELECTOR,
       _rapierApplyMarkdownSpec: typeof _rapierApplyMarkdownSpec === 'undefined' ? undefined : _rapierApplyMarkdownSpec,
-      _rapierBidiStrong: typeof _rapierBidiStrong === 'undefined' ? undefined : _rapierBidiStrong,
       _rapierChromeOwnsId: typeof _rapierChromeOwnsId === 'undefined' ? undefined : _rapierChromeOwnsId,
       _rapierCodeHtml: typeof _rapierCodeHtml === 'undefined' ? undefined : _rapierCodeHtml,
       _rapierDeriveDarkColor: typeof _rapierDeriveDarkColor === 'undefined' ? undefined : _rapierDeriveDarkColor,
@@ -84,7 +86,6 @@ function _rapierRenderModule(kind) {
       _rapierRemoteContent: typeof _rapierRemoteContent === 'undefined' ? undefined : _rapierRemoteContent,
       _rapierRuleDescriptorIsRemote: typeof _rapierRuleDescriptorIsRemote === 'undefined' ? undefined : _rapierRuleDescriptorIsRemote,
       _rapierSanitizeRuntime: typeof _rapierSanitizeRuntime === 'undefined' ? undefined : _rapierSanitizeRuntime,
-      _rapierVerifyRasterBytes: typeof _rapierVerifyRasterBytes === 'undefined' ? undefined : _rapierVerifyRasterBytes,
       document: typeof document === 'undefined' ? undefined : document,
       globalThis: typeof globalThis === 'undefined' ? undefined : globalThis,
       location: typeof location === 'undefined' ? undefined : location

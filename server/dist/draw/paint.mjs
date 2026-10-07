@@ -610,7 +610,6 @@ export class PaintBrush {
 		this.oilHairs = null; this.oilAt = null; this.oilTravel = 0; this.oilFilmLoaded = false; this.oilDir = null; this.oilPress = null;
 		this._newBlade();
 		this._newHold();
-		this._stroke = this.wetStroke ? this._wetStrokeTo : this._strokeTo;
 		this._prepareDab = this.wetStroke ? this._prepareWetDab : this._prepareAndDrawDab;
 	}
 	// ---- The brush's belly -----------------------------------------------------------------------
@@ -1093,16 +1092,22 @@ export class PaintBrush {
 	// What a Tool carries across its dabs, made once per stroke: Posterize's palette, the drag's reach and
 	// comb (`rapier_carry`, `rapier_comb`); the other operators are handed four empty slots they never read.
 	_opLoad() { return this.op === 'posterize' ? new Map() : this.op === 'smear' ? Float64Array.of(this.rapier?.rapier_carry || 0, this.rapier?.rapier_comb || 0, this.rapier?.rapier_soft || 0) : new Float64Array(4); }
-	strokeTo(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = .001, viewzoom = 1, viewrotation = 0, barrel = 0, linear = true) {
-		const result = this._stroke(surface, x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel, linear);
-		if (this.op && surface.opComposeOwed) surface.opCompose();
-		return result;
+	strokeTo(...args) {
+		const work = this.strokeToWork(...args);
+		let step;
+		do { step = work.next(); } while (!step.done);
+		return step.value;
 	}
-	_wetStrokeTo(surface, x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel, linear) {
-		if (!Number.isFinite(dtime) || dtime > 60) throw new RangeError('Wet event time');
-		this.wetRemaining = Math.max(.0001, dtime) * 1000;
-		const result = this._strokeTo(surface, x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel, linear);
-		if (this.wetRemaining > 0) surface.wetPending = (surface.wetPending || 0) + this.wetRemaining;
+	// The same motion owner can pause between dabs for private agent work. The person's
+	// synchronous stroke drains it whole, preserving its material and random sequence.
+	*strokeToWork(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = .001, viewzoom = 1, viewrotation = 0, barrel = 0, linear = true) {
+		if (this.wetStroke) {
+			if (!Number.isFinite(dtime) || dtime > 60) throw new RangeError('Wet event time');
+			this.wetRemaining = Math.max(.0001, dtime) * 1000;
+		}
+		const result = yield* this._strokeToWork(surface, x, y, pressure, xtilt, ytilt, dtime, viewzoom, viewrotation, barrel, linear);
+		if (this.wetStroke && this.wetRemaining > 0) surface.wetPending = (surface.wetPending || 0) + this.wetRemaining;
+		if (this.op && surface.opComposeOwed) surface.opCompose();
 		return result;
 	}
 	_prepareWetDab(surface, linear, dt) {
@@ -1498,7 +1503,7 @@ export class PaintBrush {
 	// One motion event: (x, y) in surface pixels, pressure 0..1, tilt -1..1 each axis, dtime in
 	// seconds since the previous event. Returns true when libmypaint would split the stroke here
 	// (its undo grain); Rapier keeps one stroke per pointer gesture and ignores that.
-	_strokeTo(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = 0.001, viewzoom = 1, viewrotation = 0, barrel = 0, linear = true) {
+	*_strokeToWork(surface, x, y, pressure, xtilt = 0, ytilt = 0, dtime = 0.001, viewzoom = 1, viewrotation = 0, barrel = 0, linear = true) {
 		const ST_ = this.states, M = this.mappings, maxDtime = 5;
 		let tiltAscension = 0, tiltDeclination = 90, tiltDeclinationX = 90, tiltDeclinationY = 90;
 		// A held head with no stylus tilt of its own leans at the held angle; a stylus that reports a tilt keeps its own.
@@ -1513,7 +1518,7 @@ export class PaintBrush {
 		if (pressure <= 0) pressure = 0;
 		if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 1e8 || Math.abs(y) > 1e8) { x = 0; y = 0; pressure = 0; viewzoom = 1; viewrotation = 0; barrel = 0; }
 		if (dtime <= 0) dtime = 0.0001;
-		if (dtime > 0.1 && pressure && ST_[ST.pressure] === 0) { this._strokeTo(surface, x, y, 0, 0, 0, dtime - 0.0001, viewzoom, viewrotation, 0, linear); dtime = 0.0001; }
+		if (dtime > 0.1 && pressure && ST_[ST.pressure] === 0) { yield* this._strokeToWork(surface, x, y, 0, 0, 0, dtime - 0.0001, viewzoom, viewrotation, 0, linear); dtime = 0.0001; }
 		if (this.skip > 0.001) {
 			const dist = Math.hypot(this.skipLastX - x, this.skipLastY - y);
 			this.skipLastX = x; this.skipLastY = y; this.skippedDtime += dtime; this.skip -= dist; dtime = this.skippedDtime;
@@ -1560,6 +1565,7 @@ export class PaintBrush {
 			this.randomInput = this.rng.next();
 			dtimeLeft -= stepDtime; countLeft -= stepCount; if (countLeft < 0) countLeft = 0;
 			dabsTodo = this._countDabsTo(x, y, countLeft);
+			yield;
 		}
 		{
 			stepDpressure = pressure - ST_[ST.pressure];

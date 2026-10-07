@@ -138,16 +138,7 @@ Object.defineProperty(window, 'RapierPlatform', {
 	get: function () { return _rapierPlatformPortRuntime.port; },
 });
 
-const RAPIER_ACCENT_PRESETS = Object.freeze([
-	Object.freeze({ name: 'Teal',   accent: '#12A594', fg: '#000000' }),
-	Object.freeze({ name: 'Blue',   accent: '#3291ff', fg: '#000000' }),
-	Object.freeze({ name: 'Amber',  accent: '#F38020', fg: '#000000' }),
-	Object.freeze({ name: 'Green',  accent: '#45D483', fg: '#000000' }),
-	Object.freeze({ name: 'Red',    accent: '#E5484D', fg: '#000000' }),
-	Object.freeze({ name: 'Purple', accent: '#8E4EC6', fg: '#ffffff' }),
-	Object.freeze({ name: 'Pink',   accent: '#E93D82', fg: '#000000' }),
-	Object.freeze({ name: 'Gray',   accent: '#8F8F8F', fg: '#000000' }),
-]);
+const RAPIER_ACCENT_PRESETS = globalThis.RapierPreferenceDefinitions.PREFERENCE_ACCENTS;
 const RAPIER_ACCENT_VALUES = Object.freeze(RAPIER_ACCENT_PRESETS.map(function (preset) { return preset.accent; }));
 
  
@@ -165,37 +156,12 @@ const RAPIER_STORAGE_SCOPE = (function () {
 })();
 const RapierStorage = Object.freeze({
 	scope: RAPIER_STORAGE_SCOPE,
+	// The person's controls are defined once (shell/preferences.mjs); the catalogue's value domains come from the same table.
+	// A marker the page keeps for itself beside them is storage only, never a control.
 	preferences: Object.freeze({
-		accent:         Object.freeze({ key: 'rapier:preference:accent',            fallback: '#12A594', values: RAPIER_ACCENT_VALUES }),
-		// A fresh Rapier follows the device's light or dark setting.
-		theme:          Object.freeze({ key: 'rapier:preference:theme',             fallback: 'system', values: Object.freeze(['dark', 'light', 'system']) }),
-		fontSize:       Object.freeze({ key: 'rapier:preference:font-size',         fallback: 'md', values: Object.freeze(['sm', 'md', 'lg', 'xl']) }),
-		checker:        Object.freeze({ key: 'rapier:preference:checker',           fallback: true }),
-		assets:         Object.freeze({ key: 'rapier:preference:assets',            fallback: false }),
-		lineNums:       Object.freeze({ key: 'rapier:preference:line-numbers',      fallback: 'auto', values: Object.freeze(['auto', 'off', 'selected', 'all']) }),
-		imageStorage:   Object.freeze({ key: 'rapier:preference:image-storage', fallback: 'jxl', values: Object.freeze(['jxl', 'original']) }),
-		inkColour:      Object.freeze({ key: 'rapier:preference:ink-colour',        fallback: '#b32034' }),
-		inkWidth:       Object.freeze({ key: 'rapier:preference:ink-width',         fallback: '9', values: Object.freeze(Array.from({ length: 23 }, (_, i) => String(i + 2))) }),
-		inkStylus:      Object.freeze({ key: 'rapier:preference:ink-stylus',        fallback: 'on', values: Object.freeze(['on', 'off']) }),
-		wrap:           Object.freeze({ key: 'rapier:preference:wrap',              fallback: true }),
-		dim:            Object.freeze({ key: 'rapier:preference:dim',               fallback: 'dim', values: Object.freeze(['dim', 'full']) }),
-		lineFit:        Object.freeze({ key: 'rapier:preference:line-fit',          fallback: 'truncate', values: Object.freeze(['truncate', 'resize']) }),
-		readOnly:       Object.freeze({ key: 'rapier:preference:read-only',         fallback: false }),
-		showPlayButton: Object.freeze({ key: 'rapier:preference:show-play-button',  fallback: false }),
-		highlights:     Object.freeze({ key: 'rapier:preference:highlights',        fallback: 'standard', values: Object.freeze(['standard', 'accent']) }),
-		highlightColor: Object.freeze({ key: 'rapier:preference:highlight-color',  fallback: 'default', values: Object.freeze(['default', 'green', 'red', 'blue', 'yellow', 'purple']) }),
-		headings:       Object.freeze({ key: 'rapier:preference:headings',          fallback: 'expanded', values: Object.freeze(['off', 'collapsed', 'expanded']) }),
-		// An app preference, never a document fact.
-		layout:         Object.freeze({ key: 'rapier:preference:layout',            fallback: 'rapier', values: Object.freeze(['rapier', 'plain']) }),
-		// App preferences, never document facts.
-		notesSkills:    Object.freeze({ key: 'rapier:preference:notes-skills',      fallback: false }),
-		notesStart:     Object.freeze({ key: 'rapier:preference:notes-start',       fallback: 'editor', values: Object.freeze(['editor', 'notes']) }),
-		notesSort:      Object.freeze({ key: 'rapier:preference:notes-sort',        fallback: 'custom', values: Object.freeze(['custom', 'created', 'modified']) }),
+		...globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS,
 		// Persistent storage was asked for once for this folder (a browser profile is the folder on the web).
 		notesPersistAsked: Object.freeze({ key: 'rapier:preference:notes-persist-asked', fallback: false }),
-		notesLayout:    Object.freeze({ key: 'rapier:preference:notes-layout',      fallback: 'half', values: Object.freeze(['half', 'full']) }),
-		// An open coloured note wears its colour on the bar alone (default) or over the page.
-		notesColour:    Object.freeze({ key: 'rapier:preference:notes-colour',      fallback: 'bar', values: Object.freeze(['bar', 'page']) }),
 	}),
 	webFileHandlesDb: 'rapier:file-handles' + RAPIER_STORAGE_SCOPE,
 	webGenerationPrefix: 'web:',
@@ -281,7 +247,7 @@ var _preferenceListeners = Object.create(null);
 function _preferenceAdmits(spec, value) {
 	return value != null && typeof value === typeof spec.fallback &&
 		Array.isArray(value) === Array.isArray(spec.fallback) &&
-		(!spec.values || spec.values.indexOf(value) >= 0);
+		(!spec.values || spec.values.indexOf(value) >= 0) && (!spec.pattern || new RegExp(spec.pattern).test(value));
 }
 return Object.freeze({
 	read: function rapierReadPreference(field) {
@@ -333,6 +299,12 @@ return Object.freeze({
 		if (!RapierStorage.preferences[field]) throw new Error('unknown Rapier preference: ' + field);
 		(_preferenceListeners[field] || (_preferenceListeners[field] = [])).push(apply);
 		return apply;
+	},
+	// Every control the person has, with its value now: what an editor reports of its device.
+	snapshot: function () {
+		return Object.fromEntries(Object.keys(globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS).map(function (field) {
+			return [field, RapierPreferences.read(field)];
+		}));
 	},
 });
 })();

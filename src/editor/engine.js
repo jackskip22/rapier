@@ -1117,15 +1117,9 @@ function _rapierRenderBlockMarkup(raw, referenceIndex = null) {
 // L, R or AL owns the block. Digits are EN/AN (not strong). The same owner runs on render and
 // live input, including composition: only the direction attribute changes, never the composing
 // text nodes or selection. Source stays plain Unicode — dir lives only on the projection.
-const _RAPIER_RTL_SCRIPT = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}\p{Script=Adlam}\p{Script=Phoenician}\p{Script=Imperial_Aramaic}\p{Script=Palmyrene}\p{Script=Nabataean}\p{Script=Hatran}\p{Script=Old_South_Arabian}\p{Script=Old_North_Arabian}\p{Script=Mende_Kikakui}\p{Script=Old_Hungarian}\p{Script=Old_Sogdian}\p{Script=Sogdian}\p{Script=Elymaic}\p{Script=Chorasmian}\p{Script=Yezidi}\p{Script=Old_Uyghur}\p{Script=Hanifi_Rohingya}]/u;
+const _RAPIER_RTL_SCRIPT = globalThis.RapierRenderMarkdown.rtlScripts;
 
-function _rapierBidiStrong(cp) {
-	const ch = String.fromCodePoint(cp);
-	if (/\p{Nd}/u.test(ch)) return null;
-	if (_RAPIER_RTL_SCRIPT.test(ch)) return 'R';
-	if (/\p{L}/u.test(ch)) return 'L';
-	return null;
-}
+function _rapierBidiStrong(...args) { return _rapierRenderModule('render-markdown')._rapierBidiStrong(...args); }
 function _rapierFirstStrongDir(...args) { return _rapierRenderModule('render-markdown')._rapierFirstStrongDir(...args); }
 function _rapierApplyBlockDirection(...args) { return _rapierRenderModule('render-markdown')._rapierApplyBlockDirection(...args); }
 
@@ -2539,6 +2533,21 @@ function _rapierApplySourceSplices(splices, inverse = false) {
 	return applied;
 }
 
+function _readCreateState() {
+	return {
+		active: false,
+		paused: false,
+		queue: [],
+		position: -1,
+		utterance: null,
+		passage: null,
+		boundaryTimer: null,
+		autoFollow: true,
+		lastWordStart: 0,
+		scrollDetectorArmed: false,
+	};
+}
+
 const rapier = {
 
 	document: {
@@ -2692,17 +2701,7 @@ const rapier = {
 	bindingTransition: { busy: false, token: 0, tokens: new Set() },
 	composition: { block: false, source: false },
 
-	speech: {
-		active: false,
-		paused: false,
-		queue: [],
-		position: -1,
-		utterance: null,
-		boundaryTimer: null,
-		autoFollow: true,
-		lastWordStart: 0,
-		scrollDetectorArmed: false,
-	},
+	speech: _readCreateState(),
 
 };
 
@@ -2994,14 +2993,7 @@ function _rapierWillPlateTrustedSource(node) {
 }
 
 // A partial copy or edited token must not resurrect its full saved Markdown; verify the visible text first.
-function _rapierSourceTokenValue(node) {
-	if (!node?.hasAttribute('data-rapier-source') || !node.hasAttribute('data-rapier-visible') ||
-			Array.from(node.childNodes).some(child => child.nodeType !== Node.TEXT_NODE)) return null;
-	try {
-		return node.textContent === decodeURIComponent(node.getAttribute('data-rapier-visible'))
-			? decodeURIComponent(node.getAttribute('data-rapier-source')) : null;
-	} catch (_) { return null; }
-}
+function _rapierSourceTokenValue(...args) { return _rapierRenderModule('render-markdown')._rapierSourceTokenValue(...args); }
 
 let turndown;
 // Punctuation flanking can turn a<strong>!</strong>b into a**!**b, which CommonMark reads as
@@ -4826,6 +4818,16 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 		host.replaceChildren(drawing);
 		return clean;
 	}
+	// A later use of the same source is the measured drawing: paint is already inlined as page
+	// variables, so light and dark share it. Only the local anchors are renamed.
+	if (drawing.classList.contains('rapier-diagram') && !drawing.querySelector('style')) {
+		_rapierPrefixPortableAnchors(pending, 'diagram-' + crypto.randomUUID());
+		_rapierDiagramKeepsItsWidth(drawing);
+		host.replaceChildren(drawing);
+		return clean;
+	}
+	const family = drawing.getAttribute('aria-roledescription') || '';
+	const provider = _rapierProviders.mermaid;
 	// Export admits no stylesheet from document content. Resolve the generator's already
 	// sanitized, root-scoped rules onto their own SVG elements BEFORE that boundary. Parsing
 	// uses a detached CSSStyleSheet: no page-global rules, resource loads or theme snapshot.
@@ -4899,22 +4901,37 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 		const hex = '#' + [rgb.r, rgb.g, rgb.b].map(n => n.toString(16).padStart(2, '0')).join('');
 		const dark = _rapierDeriveDarkColor(hex), channels = [1, 3, 5].map(at => parseInt(dark.slice(at, at + 2), 16));
 		const ground = '#' + channels.map(n => Math.round(n * rgb.a).toString(16).padStart(2, '0')).join('');
-		return {dark: rgb.a === 1 ? dark : 'rgba(' + channels.join(', ') + ', ' + rgb.a + ')',
+		return {hex, alpha: rgb.a, dark: rgb.a === 1 ? dark : 'rgba(' + channels.join(', ') + ', ' + rgb.a + ')',
 			ink: _rapierContrastRatio(ground, '#000000') >= _rapierContrastRatio(ground, '#ffffff') ? '#000000' : '#ffffff'};
 	};
+	const nodeSelector = '.node,.cluster,.c4-shape,.participant,g.treemapNode,g.treemapSection';
 	const filledNodes = new Map();
 	for (const [element, properties] of winners) {
+		const svg = element.closest('svg');
+		const messageArrow = family === 'zenuml' && svg !== drawing && !!svg.closest('g.message');
+		// Message arrows share document ink; embedded icon artwork owns its literal colors.
+		const iconWrapper = element.closest('.participant-icon');
+		const icon = (iconWrapper && iconWrapper !== element) || (svg !== drawing && !messageArrow);
 		for (const [property, value] of properties) {
-			let presentation = value.value, important = value.important && value.rank[1];
-			if (value.authored && /^(?:fill|stroke|color|stop-color)$/.test(property)) {
+			let presentation = value.value, important = value.important;
+			if (!icon && /^(?:fill|stroke|color|stop-color|background-color)$/.test(property)) {
 				const pair = colour(value.value);
 				if (pair) {
-					presentation = 'light-dark(' + value.value + ', ' + pair.dark + ')';
-					const node = property === 'fill' && /^(?:rect|circle|ellipse|polygon|path)$/.test(element.localName)
-						&& element.closest('.node,.cluster,.c4-shape');
-					if (node) filledNodes.set(node, pair);
+					// Gantt's status-label importance is renderer-owned; its grammar has no classDef or style.
+					const statusLabel = family === 'gantt' && property === 'fill' && element.localName === 'text' &&
+						!value.rank[1] && Array.from(element.classList).some(name => /^(?:active|done)(?:Crit)?Text[0-3]$/.test(name));
+					let role = (!value.important || statusLabel) && provider?.presentationPaint?.(pair.hex, pair.alpha,
+						{family, inline: value.rank[1] === 1, property});
+					if (role && family === 'gantt' && /var\(--md-mermaid-on-series\)/.test(role) &&
+						(element.classList.contains('taskTextOutsideLeft') || element.classList.contains('taskTextOutsideRight')))
+						role = 'var(--md-color-text)';
+					presentation = role || 'light-dark(' + value.value + ', ' + pair.dark + ')';
+					if (!role) {
+						const node = property === 'fill' && /^(?:rect|circle|ellipse|polygon|path)$/.test(element.localName)
+							&& element.closest(nodeSelector);
+						if (node) filledNodes.set(node, pair);
+					}
 				}
-				important = true;
 			}
 			element.style.setProperty(property, presentation, important ? 'important' : '');
 		}
@@ -4924,21 +4941,27 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 	// a script-free export and print, so changing theme never mutates source or needs another render.
 	for (const [node, pair] of filledNodes) {
 		for (const label of node.querySelectorAll('text,tspan,foreignObject,foreignObject [style]')) {
-			if (label.closest('.node,.cluster,.c4-shape') !== node) continue;
+			if (label.closest(nodeSelector) !== node) continue;
+			const property = label.closest('foreignObject') ? 'color' : 'fill';
 			let light = 'var(--md-color-text)';
 			for (let ancestor = label; ancestor && ancestor !== node.parentElement; ancestor = ancestor.parentElement) {
 				const properties = winners.get(ancestor), fill = properties?.get('fill'), color = properties?.get('color');
-				const ink = fill?.authored ? fill : color?.authored ? color : null;
+				// HTML text uses color; a classDef fill may describe the surrounding shape.
+				const ink = property === 'color' ? color : fill?.authored ? fill : color;
 				if (ink?.authored) { light = ink.value; break; }
 			}
-			const property = label.closest('foreignObject') ? 'color' : 'fill';
 			label.style.setProperty(property, 'light-dark(' + light + ', ' + pair.ink + ')', 'important');
 		}
 	}
 	drawing.classList.add('rapier-diagram');
 	drawing.querySelectorAll('line[id^="actor"]').forEach(line => line.classList.add('actor-line'));
-	// The cache holds unrenamed generator output. Every use gets its own local reference map,
-	// including two copies of the SAME source in the live document or a later export clone.
+	// Transition arrows keep their native paths but paint beneath their domain labels.
+	if (family === 'cynefin') for (const arrows of drawing.querySelectorAll('g.cynefin-arrows')) {
+		const labels = arrows.parentElement?.querySelector(':scope > g.cynefin-labels');
+		if (labels) labels.before(arrows);
+	}
+	// Cache the generator's SVG, before this use's own anchor names, so a second copy does not
+	// ask Mermaid again. Projection still runs: the measured paint is what the live node keeps.
 	_rapierPrefixPortableAnchors(pending, 'diagram-' + crypto.randomUUID());
 	_rapierDiagramKeepsItsWidth(drawing);
 	host.replaceChildren(drawing);
@@ -4980,6 +5003,10 @@ async function _rapierFillDiagram(host, detached = false) {
 	const native = globalThis.RapierFlowchart?.parseFlowchart(src).ok === true;
 	if (native) host.setAttribute('data-diagram-native', '');
 	else host.removeAttribute('data-diagram-native');
+	const key = (native ? 'native:' : 'mermaid:') + src;
+	// The same source and theme are already on this block. Theme lives in the measured paint
+	// variables, so a theme change is not a new drawing and typing must not ask for one.
+	if (!detached && host._rapierDiagramKey === key && host.getAttribute('data-diagram-state') === 'ready') return;
 	const provider = _rapierProviders.mermaid;
 	const gen = (host._rapierDiagramGen || 0) + 1;
 	host._rapierDiagramGen = gen;
@@ -5002,8 +5029,8 @@ async function _rapierFillDiagram(host, detached = false) {
 	}
 	host.setAttribute('data-diagram-state', 'pending');
 	try {
-		const key = (native ? 'native:' : 'mermaid:') + src;
 		let cached = _rapierDiagramSvgCache.get(key), svg = cached?.svg;
+		if (cached?.height > 0) host.style.minHeight = cached.height + 'px';
 		if (!svg && native) {
 			const rendered = globalThis.RapierFlowchart.renderFlowchart(src);
 			if (!rendered.ok) throw new Error(rendered.reason);
@@ -5011,15 +5038,20 @@ async function _rapierFillDiagram(host, detached = false) {
 			cached = {recipe: rendered.recipe, labels: rendered.labels};
 		}
 		if (!native && !svg) svg = await provider.renderToString(src);
-		await document.fonts.ready;
+		if (!_rapierDiagramSvgCache.fonts) _rapierDiagramSvgCache.fonts = document.fonts.ready.catch(() => {});
+		await _rapierDiagramSvgCache.fonts;
 		if (!current()) return;
-		const clean = _rapierApplyDiagramSvg(cacheHost, svg, native);
-		_rapierDiagramSvgCache.set(key, {...cached, svg: clean});
-		if (native && !detached) globalThis.RapierFlowchartEditor?.bind(host, src, cached.recipe, cached.labels);
+		const measured = _rapierApplyDiagramSvg(cacheHost, svg, native);
+		cacheHost.hidden = false;
+		const drawn = cacheHost.querySelector('svg');
+		const height = drawn ? Math.ceil(drawn.getBoundingClientRect().height) : (cached?.height || 0);
+		if (height > 0) host.style.minHeight = height + 'px';
+		_rapierDiagramSvgCache.set(key, {...cached, svg: measured, height, recipe: cached?.recipe, labels: cached?.labels});
+		host._rapierDiagramKey = key;
+		if (native && !detached) globalThis.RapierFlowchartEditor?.bind(host, src, cached?.recipe, cached?.labels);
 		host.setAttribute('data-diagram-state', 'ready');
 		host.classList.remove('diagram-block--absent', 'diagram-block--error');
 		host.querySelectorAll(':scope > .diagram-reason').forEach(reason => reason.remove());
-		cacheHost.hidden = false;
 	} catch (err) {
 		if (current()) _rapierMarkDiagramError(host, err);
 	}
@@ -5067,6 +5099,13 @@ function _rapierUpdateDiagramPreview(preview, raw) {
 	const body = token.content.replace(/\n$/, '');
 	const native = globalThis.RapierFlowchart?.parseFlowchart(body).ok === true;
 	const provider = _rapierProviders.mermaid;
+	const key = (native ? 'native:' : 'mermaid:') + body;
+	const cached = _rapierDiagramSvgCache.get(key);
+	if (cached?.svg) {
+		try { _rapierApplyDiagramSvg(preview, cached.svg, native); }
+		catch (err) { preview.textContent = _rapierFriendlyDiagramError(err); }
+		return;
+	}
 	if (!native && (!provider || provider.status !== 'ready' || typeof provider.renderToString !== 'function')) {
 		preview.textContent = body;
 		return;
@@ -5084,9 +5123,11 @@ function _rapierUpdateDiagramPreview(preview, raw) {
 		return;
 	}
 	Promise.resolve(pending).then(async svg => {
-		await document.fonts.ready;
+		if (!_rapierDiagramSvgCache.fonts) _rapierDiagramSvgCache.fonts = document.fonts.ready.catch(() => {});
+		await _rapierDiagramSvgCache.fonts;
 		if (preview._rapierPreviewGen !== gen) return;
-		_rapierApplyDiagramSvg(preview, svg, native);
+		const measured = _rapierApplyDiagramSvg(preview, svg, native);
+		_rapierDiagramSvgCache.set(key, {...(_rapierDiagramSvgCache.get(key) || {}), svg: measured});
 	}).catch(err => {
 		if (preview._rapierPreviewGen !== gen) return;
 		preview.textContent = _rapierFriendlyDiagramError(err);
@@ -5097,6 +5138,28 @@ function _rapierDetachDiagramPreview(wrapper) {
 	if (!wrapper) return;
 	wrapper.classList.remove('block-wrapper--diagram-source');
 	wrapper.querySelectorAll(':scope > .diagram-live-preview').forEach(node => node.remove());
+}
+
+function _rapierDiagramMemoryPressed() {
+	const mem = typeof performance !== 'undefined' ? performance.memory : null;
+	if (mem && mem.jsHeapSizeLimit > 0 && mem.usedJSHeapSize > mem.jsHeapSizeLimit * 0.62) return true;
+	// Without a heap reading, only a genuinely heavy set of live drawings may be parked.
+	let nodes = 0;
+	document.querySelectorAll('.diagram-block[data-diagram-state="ready"] .diagram-cache svg').forEach(svg => { nodes += svg.getElementsByTagName('*').length; });
+	return nodes > 14000;
+}
+
+function _rapierParkDiagram(host) {
+	if (!host || host.hasAttribute('data-diagram-native') || host.getAttribute('data-diagram-state') !== 'ready') return;
+	const cache = host.querySelector('.diagram-cache');
+	const svg = cache && cache.querySelector('svg');
+	if (!svg) return;
+	const height = Math.ceil(svg.getBoundingClientRect().height);
+	if (height > 0) host.style.minHeight = height + 'px';
+	cache.replaceChildren();
+	cache.hidden = true;
+	host._rapierDiagramKey = '';
+	host.setAttribute('data-diagram-state', 'idle');
 }
 
 function _rapierObserveDiagrams(root) {
@@ -5110,16 +5173,18 @@ function _rapierObserveDiagrams(root) {
 	if (!_rapierDiagramObserver) {
 		_rapierDiagramObserver = new IntersectionObserver(entries => {
 			for (const entry of entries) {
-				if (!entry.isIntersecting) continue;
-				_rapierDiagramObserver.unobserve(entry.target);
-				_rapierFillDiagram(entry.target);
+				const host = entry.target;
+				if (entry.isIntersecting) {
+					const state = host.getAttribute('data-diagram-state');
+					if (state === 'ready' || state === 'pending' || state === 'error' || state === 'absent') continue;
+					_rapierFillDiagram(host);
+				} else if (_rapierDiagramMemoryPressed()) _rapierParkDiagram(host);
 			}
-		}, { rootMargin: '80px 0px', threshold: 0.01 });
+		}, { root: null, rootMargin: '200px 0px', threshold: 0 });
 	}
 	nodes.forEach(node => {
 		const state = node.getAttribute('data-diagram-state');
-		if (state === 'ready' || state === 'pending' || state === 'error') return;
-		if (state === 'absent') return;
+		if (state === 'error' || state === 'absent' || node.hasAttribute('data-diagram-unclosed')) return;
 		_rapierDiagramObserver.observe(node);
 	});
 }
@@ -18592,6 +18657,7 @@ function rapierStopReading() {
 	rapier.speech.queue         = [];
 	rapier.speech.position      = -1;
 	rapier.speech.lastWordStart = 0;
+	rapier.speech.passage       = null;
 	_readClearHighlight();
 	updateReadAloudButton();
 }
@@ -18671,8 +18737,8 @@ function _readSpeakBlock(blockId, fromCharIndex) {
 function _readTogglePause() {
 	if (rapier.speech.paused) {
 		rapier.speech.paused = false;
-		if (rapier.document.docKind !== 'markdown') {
-			_readFlatDoc(rapier.speech.lastWordStart || 0);
+		if (rapier.speech.passage !== null || rapier.document.docKind !== 'markdown') {
+			_readFlatDoc(rapier.speech.lastWordStart || 0, rapier.speech.passage);
 		} else {
 			_readSpeakBlock(rapier.speech.queue[rapier.speech.position], rapier.speech.lastWordStart);
 		}
@@ -18748,12 +18814,14 @@ function rapierReadAloud() {
 	_readAdvanceQueue();
 }
 
-function _readFlatDoc(fromCharIndex) {
-	const ta = document.getElementById('source-textarea');
-	const full = ta ? _rapierFlatValue() : _rapierSourceText();
+function _readFlatDoc(fromCharIndex, passage = null) {
+	if (!_rapierEmbedFeatureAllowed('readAloud')) return false;
+	const supplied = typeof passage === 'string';
+	const ta = supplied ? null : document.getElementById('source-textarea');
+	const full = supplied ? passage : ta ? _rapierFlatValue() : _rapierSourceText();
 	const start = Math.max(0, fromCharIndex | 0);
 	const text = full.slice(start).trim() ? full.slice(start) : full;
-	if (!text.trim()) { showToast('nothing to read', 'error'); return; }
+	if (!text.trim()) { showToast('nothing to read', 'error'); return false; }
 
 	const words = [];
 	const wordRe = /\S+/g;
@@ -18761,25 +18829,29 @@ function _readFlatDoc(fromCharIndex) {
 	while ((m = wordRe.exec(text)) !== null) {
 		words.push({ start: start + m.index, end: start + m.index + m[0].length });
 	}
-	if (words.length === 0) { showToast('nothing to read', 'error'); return; }
+	if (words.length === 0) { showToast('nothing to read', 'error'); return false; }
 
 	_readCancelUtterance();
 
 	const utt = _rapierSpeechUtterance(text);
-	if (!utt) { _readFail(null, true); return; }
+	if (!utt) { _readFail(null, true); return false; }
 	utt.rate = 0.95;
 	rapier.speech.utterance = utt;
+	rapier.speech.passage = supplied ? passage : null;
+	rapier.speech.queue = [];
+	rapier.speech.position = -1;
 	rapier.speech.active = true;
 	rapier.speech.paused = false;
 	updateReadAloudButton();
 
 	const highlight = (i) => {
-		if (i < 0 || i >= words.length || !ta) return;
+		if (i < 0 || i >= words.length) return;
+		rapier.speech.lastWordStart = words[i].start;
+		if (!ta) return;
 		try {
 			if (document.activeElement !== ta) ta.focus({ preventScroll: true });
 			_rapierFlatSelectAndReveal(words[i].start, words[i].end, false);
 		} catch (_) {}
-		rapier.speech.lastWordStart = words[i].start;
 	};
 	const pacer = _readBoundaryPacer(words, highlight);
 
@@ -18794,6 +18866,7 @@ function _readFlatDoc(fromCharIndex) {
 		if (rapier.speech.utterance !== utt || !rapier.speech.active || rapier.speech.paused) return;
 		_readClearBoundaryTimer();
 		rapier.speech.active = false; rapier.speech.paused = false; rapier.speech.utterance = null;
+		rapier.speech.passage = null;
 		rapier.speech.lastWordStart = 0;
 		updateReadAloudButton();
 	};
@@ -18805,7 +18878,8 @@ function _readFlatDoc(fromCharIndex) {
 		const engine = _rapierSpeechEngine();
 		if (!engine) throw new Error('speech synthesis unavailable');
 		engine.speak(utt);
-	} catch (_) { _readFail(utt, false); }
+	} catch (_) { _readFail(utt, false); return false; }
+	return rapier.speech.active && rapier.speech.utterance === utt;
 }
 
 const _rapierStatsRuntime = Object.seal({ updateTimer: 0, pending: false, idleGeneration: 0 });
@@ -21393,10 +21467,7 @@ function _rapierLanguageClass(...args) { return _rapierRenderModule('render-mark
 
 function _rapierNormalizeCodeElement(...args) { return _rapierRenderModule('render-markdown')._rapierNormalizeCodeElement(...args); }
 
-function _rapierUnwrapElement(element) {
-	while (element.firstChild) element.parentNode.insertBefore(element.firstChild, element);
-	element.remove();
-}
+function _rapierUnwrapElement(...args) { return _rapierRenderModule('render-markdown')._rapierUnwrapElement(...args); }
 
 // A heading between two parts of one numbered list (item 9, a heading, then a list that starts at 10): the dotted line
 // between the circles must run on past the heading, and the heading stands on the margin the item text stands on.
@@ -21469,8 +21540,8 @@ function _rapierBuildInterchangeContext(options, capturedDocument = null) {
 	const canonical = capturedDocument ? String(capturedDocument.canonical || '') : _rapierGetCanonicalText();
 	const metadata = capturedDocument?.metadata || _rapierGetDocumentMetadata();
 	const baseName = metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
-	const plain = capturedDocument ? capturedDocument.plain === true : _rapierPlainLayout();
-	const semanticRoot = _rapierRenderSemanticRoot(canonical, metadata);
+	const plain = options?.kind === 'page' ? false : capturedDocument ? capturedDocument.plain === true : _rapierPlainLayout();
+	const semanticRoot = _rapierRenderSemanticRoot(canonical, metadata, {page: options?.kind === 'page'});
 	if (plain) _rapierStripPlainLayoutFacts(semanticRoot);
 	const images = Array.from(semanticRoot.querySelectorAll('img'));
 	return {
@@ -21518,432 +21589,33 @@ function _rapierBuildInterchangeContext(options, capturedDocument = null) {
 	};
 }
 
-function _rapierCalloutInfo(blockquote) {
-	const first = blockquote && blockquote.querySelector(':scope > p:first-child');
-	if (!first) return null;
-	const existing = first.querySelector('.callout__label');
-	if (existing) {
-		const type = String(existing.textContent || '').trim().toUpperCase();
-		return /^(NOTE|TIP|IMPORTANT|WARNING|CAUTION|DANGER|INFO)$/.test(type) ? { first, type, existing } : null;
-	}
-	const match = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|DANGER|INFO)\]/i.exec(first.textContent || '');
-	return match ? { first, type: match[1].toUpperCase(), existing: null } : null;
-}
+function _rapierCalloutInfo(...args) { return _rapierRenderModule('render-markdown')._rapierCalloutInfo(...args); }
 
-function _rapierRemoveCalloutMarker(first) {
-	if (!first) return;
-	first.innerHTML = first.innerHTML.replace(
-		/^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|DANGER|INFO)\]\s*(?:<br\s*\/?>)?\s*/i,
-		''
-	);
-}
+function _rapierRemoveCalloutMarker(...args) { return _rapierRenderModule('render-markdown')._rapierRemoveCalloutMarker(...args); }
 
 function _rapierProjectStyledRoot(...args) { return _rapierRenderModule('render')._rapierProjectStyledRoot(...args); }
 
-function _rapierMathSource(node) {
-	if (!node) return '';
-	const carrier = node.matches && node.matches('[data-math-src]')
-		? node
-		: node.querySelector && node.querySelector('[data-math-src]');
-	if (carrier) {
-		const encoded = carrier.getAttribute('data-math-src') || '';
-		try { return decodeURIComponent(encoded); } catch (_) { return encoded; }
-	}
-	const placeholder = node.matches && node.matches('.math-placeholder')
-		? node
-		: node.querySelector && node.querySelector('.math-placeholder');
-	return String((placeholder || node).textContent || '').trim();
-}
+function _rapierMathSource(...args) { return _rapierRenderModule('render-markdown')._rapierMathSource(...args); }
 
-function _rapierFlattenPortableDetails(root) {
-	const blockTags = new Set([
-		'ADDRESS','ARTICLE','ASIDE','BLOCKQUOTE','DIV','DL','FIELDSET','FIGURE',
-		'FOOTER','FORM','H1','H2','H3','H4','H5','H6','HEADER','HR','MAIN',
-		'NAV','OL','P','PRE','SECTION','TABLE','UL',
-	]);
-	Array.from(root.querySelectorAll('details')).reverse().forEach(details => {
-		const summary = Array.from(details.children).find(child => child.tagName === 'SUMMARY');
-		const section = document.createElement('section');
-		if (details.id) section.id = details.id;
-		if (summary && (summary.textContent.trim() || summary.children.length)) {
-			const heading = summary.querySelector('h1,h2,h3,h4,h5,h6');
-			const label = document.createElement(heading ? 'div' : 'p');
-			if (summary.id) label.id = summary.id;
-			const content = heading ? label : document.createElement('strong');
-			while (summary.firstChild) content.appendChild(summary.firstChild);
-			if (!heading) label.appendChild(content);
-			section.appendChild(label);
-		}
-
-		let paragraph = null;
-		Array.from(details.childNodes).forEach(child => {
-			if (child === summary) return;
-			const isText = child.nodeType === Node.TEXT_NODE;
-			if (isText && !String(child.nodeValue || '').trim()) return;
-			const isBlock = child.nodeType === Node.ELEMENT_NODE && blockTags.has(child.tagName);
-			if (!isBlock) {
-				if (!paragraph) {
-					paragraph = document.createElement('p');
-					section.appendChild(paragraph);
-				}
-				paragraph.appendChild(child);
-				return;
-			}
-			paragraph = null;
-			section.appendChild(child);
-		});
-		details.replaceWith(section);
-	});
-}
+function _rapierFlattenPortableDetails(...args) { return _rapierRenderModule('render-markdown')._rapierFlattenPortableDetails(...args); }
 
 function _rapierPrefixPortableAnchors(...args) { return _rapierRenderModule('render')._rapierPrefixPortableAnchors(...args); }
 
-const RAPIER_PORTABLE_HIGHLIGHT_HEX = Object.freeze({
-	green: '#35c57a', red: '#f05a62', blue: '#4f91f7', yellow: '#e6b91e', purple: '#9b6dea',
-});
+const RAPIER_PORTABLE_HIGHLIGHT_HEX = globalThis.RapierRenderMarkdown.portableHighlightHex;
 
-function _rapierProjectPortableRoot(semanticRoot, options) {
-	const opts = options || {};
-	// This projection is HTML-shaped (width baked into a CSS `style`, `data-*` stripped) for the
-	// consumers that read HTML -- publishing/fragment export, TXT. DOCX is not an HTML consumer: its
-	// writer (interchange/docx.mjs) reads the layout comment itself, so stripping it first and
-	// handing back CSS only throws the fact away before the writer ever sees it. `keepLayoutData`
-	// leaves `data-rapier-image-layout` (width, align AND rotation) and the paragraph's
-	// `data-md-align` exactly as the semantic root already carries them, instead of the CSS-only
-	// projection, so the one existing layout representation reaches the writer.
-	const keepLayoutData = !!opts.keepLayoutData;
-	const root = semanticRoot.cloneNode(true), nativeElements = new Set();
-	// A source soft break is a reading space, never the editor's invisible token.
-	_rapierResolveSoftBreakTokens(root);
-	if (opts.keepDiagrams) for (const figure of root.querySelectorAll('.diagram-block[data-diagram-native]')) {
-		const svg = figure.querySelector('.diagram-cache > svg.rapier-native-flowchart');
-		if (figure.getAttribute('data-diagram-state') === 'ready' && svg) {
-			// A class in authored HTML grants no exemption: only the native materialization above does.
-			for (const element of [svg, ...svg.querySelectorAll('*')]) nativeElements.add(element);
-			figure.replaceWith(svg);
-		}
-	}
+function _rapierProjectPortableRoot(...args) { return _rapierRenderModule('render-markdown')._rapierProjectPortableRoot(...args); }
 
-	root.querySelectorAll('blockquote').forEach(blockquote => {
-		const info = _rapierCalloutInfo(blockquote);
-		if (!info) return;
-		if (info.existing) info.existing.remove();
-		else _rapierRemoveCalloutMarker(info.first);
-		const label = document.createElement('strong');
-		label.textContent = info.type.charAt(0) + info.type.slice(1).toLowerCase() + ': ';
-		info.first.insertBefore(label, info.first.firstChild);
-	});
+function _rapierPortableHtml(...args) { return _rapierRenderModule('render-markdown')._rapierPortableHtml(...args); }
 
-	root.querySelectorAll('input[type="checkbox"]').forEach(input => {
-		const nextStartsWithSpace = input.nextSibling
-			&& input.nextSibling.nodeType === Node.TEXT_NODE
-			&& /^\s/.test(input.nextSibling.nodeValue || '');
-		input.replaceWith(document.createTextNode((input.checked ? '☒' : '☐') + (nextStartsWithSpace ? '' : ' ')));
-	});
+function _rapierNormalizeInlineText(...args) { return _rapierRenderModule('render-markdown')._rapierNormalizeInlineText(...args); }
 
-	root.querySelectorAll('.math-display-wrap').forEach(wrapper => {
-		const source = _rapierMathSource(wrapper);
-		const p = document.createElement('p');
-		const code = document.createElement('code');
-		code.textContent = source || '[equation]';
-		p.appendChild(code);
-		wrapper.replaceWith(p);
-	});
-	root.querySelectorAll('.math-rendered,.math-placeholder').forEach(math => {
-		const code = document.createElement('code');
-		code.textContent = _rapierMathSource(math) || '[equation]';
-		math.replaceWith(code);
-	});
-	root.querySelectorAll('math').forEach(math => {
-		const code = document.createElement('code');
-		code.textContent = String(math.textContent || '').trim() || '[equation]';
-		math.replaceWith(code);
-	});
+function _rapierPortableInlineText(...args) { return _rapierRenderModule('render-markdown')._rapierPortableInlineText(...args); }
 
-	_rapierFlattenPortableDetails(root);
+function _rapierPortableListText(...args) { return _rapierRenderModule('render-markdown')._rapierPortableListText(...args); }
 
-	root.querySelectorAll('section.footnotes').forEach(section => {
-		section.querySelectorAll('.footnotes-sep').forEach(node => node.remove());
-		if (!section.querySelector(':scope > h1,:scope > h2,:scope > h3')) {
-			const heading = document.createElement('h2');
-			heading.textContent = 'Footnotes';
-			section.insertBefore(heading, section.firstChild);
-		}
-	});
+function _rapierPortableTableText(...args) { return _rapierRenderModule('render-markdown')._rapierPortableTableText(...args); }
 
-	root.querySelectorAll('.table-scroll-wrap,.math-display-wrap').forEach(_rapierUnwrapElement);
-
-	root.querySelectorAll('pre > code').forEach(_rapierNormalizeCodeElement);
-
-	root.querySelectorAll('svg').forEach(svg => {
-		if (nativeElements.has(svg)) return;
-		const title = svg.getAttribute('aria-label')
-			|| (svg.querySelector('title') && svg.querySelector('title').textContent)
-			|| '';
-		svg.replaceWith(document.createTextNode(title ? '[Image: ' + title.trim() + ']' : '[Image]'));
-	});
-
-	_rapierPrefixPortableAnchors(root, opts.baseName);
-
-	root.querySelectorAll('*').forEach(element => {
-		if (nativeElements.has(element)) return;
-		const lang = element.tagName === 'CODE' ? _rapierLanguageClass(element) : '';
-		const columnAlignment = /^(TH|TD)$/.test(element.tagName) && /^(left|center|right)$/.test(element.style.textAlign)
-			? element.style.textAlign : '';
-		const alignment = globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-md-layout'))?.align || columnAlignment;
-		const imageLayout = element.tagName === 'IMG' ? globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-rapier-image-layout')) : null;
-
-		const colorHex = element.tagName === 'SPAN' ? element.getAttribute('data-md-color') : null;
-
-		const highlightHex = element.tagName === 'MARK'
-			? (RAPIER_PORTABLE_HIGHLIGHT_HEX[String(element.getAttribute('data-rapier-highlight') || '').toLowerCase()] || RAPIER_PORTABLE_HIGHLIGHT_HEX.yellow)
-			: null;
-
-		const isTableCaption = element.tagName === 'P' && element.classList.contains('rapier-table-caption');
-
-		const isPageBreak = element.hasAttribute('data-md-break');
-		Array.from(element.attributes).forEach(attribute => {
-			const name = attribute.name.toLowerCase();
-			if (keepLayoutData && (name === 'data-rapier-image-layout' || name === 'data-md-align')) return;
-			if (name === 'class' || name === 'style' || name.startsWith('data-')
-					|| name === 'contenteditable' || name === 'spellcheck'
-					|| name === 'tabindex' || name === 'disabled' || name === 'aria-disabled') {
-				element.removeAttribute(attribute.name);
-			}
-		});
-		if (lang) element.className = 'language-' + lang;
-		if (alignment) element.style.textAlign = alignment;
-		if (imageLayout && !keepLayoutData) {
-			const pictureStyle = globalThis.RapierMarkdownLayout.imageStyle(imageLayout);
-			if (imageLayout.width != null) element.removeAttribute('width');
-			if (pictureStyle) element.style.cssText = pictureStyle;
-		}
-		if (colorHex && /^#[0-9a-f]{6}$/i.test(colorHex)) element.style.color = colorHex.toLowerCase();
-		if (highlightHex) element.style.backgroundColor = highlightHex;
-		if (isTableCaption) { element.style.fontStyle = 'italic'; element.style.color = '#555555'; }
-
-		if (isPageBreak) {
-			const p = document.createElement('p');
-			p.setAttribute('style', 'page-break-before: always');
-			element.replaceWith(p);
-		}
-	});
-
-	const clean = document.createElement('div');
-	clean.innerHTML = sanitizeRapierHtml(root.innerHTML, 'export');
-	return clean;
-}
-
-function _rapierPortableHtml(root) {
-	return sanitizeRapierHtml(root ? root.innerHTML : '', 'export').trim();
-}
-
-function _rapierNormalizeInlineText(value) {
-	return String(value || '')
-		.replace(/\u00a0/g, ' ')
-		.replace(/[\t\f\v ]+/g, ' ')
-		.replace(/ *\n */g, '\n')
-		.trim();
-}
-
-function _rapierPortableInlineText(node, options) {
-	const opts = options || {};
-	if (!node) return '';
-	if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
-	if (node.nodeType !== Node.ELEMENT_NODE) return '';
-	const tag = node.tagName;
-	if (tag === 'BR') return '\n';
-	// A task's box is what the person sees of it.
-	if (tag === 'INPUT') return /^checkbox$/i.test(node.type || '') ? (node.checked || node.hasAttribute('checked') ? '☑ ' : '☐ ') : '';
-	if (tag === 'IMG') {
-		if (opts.visible) return '';
-		const alt = String(node.getAttribute('alt') || '').trim();
-		const src = String(node.getAttribute('src') || '').trim();
-		if (/^data:image\//i.test(src)) return alt ? '[Image: ' + alt + ']' : '[Image]';
-		if (src) return alt ? '[Image: ' + alt + ' — ' + src + ']' : '[Image: ' + src + ']';
-		return alt ? '[Image: ' + alt + ']' : '[Image]';
-	}
-	if (tag === 'A') {
-		const label = _rapierNormalizeInlineText(Array.from(node.childNodes)
-			.map(child => _rapierPortableInlineText(child, opts)).join(''));
-		const href = String(node.getAttribute('href') || '').trim();
-		if (opts.visible || !href || href.charAt(0) === '#') return label;
-		if (!label || label === href) return href;
-		return label + ' (' + href + ')';
-	}
-	if (tag === 'CODE' && !opts.inPre) {
-		const source = String(node.textContent || '');
-		return opts.visible ? source : source ? '`' + source + '`' : '';
-	}
-	return Array.from(node.childNodes)
-		.map(child => _rapierPortableInlineText(child, opts)).join('');
-}
-
-function _rapierPortableListText(list, depth, options) {
-	const opts = options || {};
-	const level = Math.max(0, depth | 0);
-	const ordered = list.tagName === 'OL';
-	let counter = ordered ? (parseInt(list.getAttribute('start'), 10) || 1) : 0;
-	const lines = [];
-	Array.from(list.children).filter(child => child.tagName === 'LI').forEach(item => {
-		const nested = Array.from(item.children).filter(child => child.tagName === 'UL' || child.tagName === 'OL');
-		const content = Array.from(item.childNodes)
-			.filter(child => !(child.nodeType === Node.ELEMENT_NODE && (child.tagName === 'UL' || child.tagName === 'OL')))
-			.map(child => _rapierPortableInlineText(child, opts)).join('');
-		const normalized = _rapierNormalizeInlineText(content);
-		const indent = '  '.repeat(level);
-		// A task shows its box where a bullet would be.
-		const marker = /^[☐☑]/.test(normalized) ? '' : ordered ? (counter++) + '. ' : '• ';
-		const parts = (normalized || '').split('\n');
-		lines.push(indent + marker + (parts.shift() || ''));
-		parts.forEach(part => lines.push(indent + '  ' + part));
-		nested.forEach(child => {
-			const nestedText = _rapierPortableListText(child, level + 1, opts);
-			if (nestedText) lines.push(nestedText);
-		});
-	});
-	return lines.join('\n');
-}
-
-// A table, or a part of one a selection clipped out (a head, a body, a row): its rows.
-function _rapierPortableTableText(table, options) {
-	const opts = options || {};
-	const rows = table.tagName === 'TR' ? [table] : Array.from(table.querySelectorAll('tr'));
-	return rows.map(row => {
-		return Array.from(row.children)
-			.filter(cell => cell.tagName === 'TH' || cell.tagName === 'TD')
-			.map(cell => _rapierNormalizeInlineText(_rapierPortableInlineText(cell, opts)))
-			.join(opts.visible ? '\t' : ' | ');
-	}).filter(Boolean).join('\n');
-}
-
-function _rapierPortablePlainText(root, options) {
-	const opts = options || {};
-	const blocks = [];
-	const blockTags = new Set([
-		'ADDRESS','ARTICLE','ASIDE','BLOCKQUOTE','DETAILS','DIV','DL','FIELDSET','FIGURE','FOOTER',
-		'FORM','H1','H2','H3','H4','H5','H6','HEADER','HR','MAIN','NAV','OL','P','PRE','SECTION','TABLE','UL'
-	]);
-
-	const pushBlock = (text, preserve) => {
-		let value = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
-		if (preserve) value = value.replace(/\n+$/, '');
-		else value = value.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
-		if (value) blocks.push({ text: value, preserve: !!preserve });
-	};
-
-	const collectChildren = parent => {
-		let inline = [];
-		const flush = () => {
-			if (!inline.length) return;
-			pushBlock(_rapierNormalizeInlineText(inline.map(node => _rapierPortableInlineText(node, opts)).join('')), false);
-			inline = [];
-		};
-		const tablePart = node => node.nodeType === Node.ELEMENT_NODE && /^(THEAD|TBODY|TFOOT|TR)$/.test(node.tagName);
-		const blankText = node => node.nodeType === Node.TEXT_NODE && !String(node.nodeValue || '').trim();
-		const children = Array.from(parent.childNodes);
-		const inTableRun = index => { for (let at = index - 1; at >= 0; at--) { if (!blankText(children[at])) return tablePart(children[at]); } return false; };
-		children.forEach((child, index) => {
-			if (tablePart(child)) {
-				// The parts of a table a selection clipped out of it: one block of rows, whichever parts arrived.
-				if (inTableRun(index)) return;
-				flush();
-				const parts = [];
-				for (let at = index; at < children.length && (tablePart(children[at]) || blankText(children[at])); at++) {
-					if (tablePart(children[at])) parts.push(_rapierPortableTableText(children[at], opts));
-				}
-				pushBlock(parts.filter(Boolean).join('\n'), false);
-			} else if (blankText(child) && inTableRun(index)) {
-				return;
-			} else if (child.nodeType === Node.ELEMENT_NODE && blockTags.has(child.tagName)) {
-				flush();
-				collectBlock(child);
-			} else if (opts.visible && child.nodeType === Node.ELEMENT_NODE && child.tagName === 'CODE' && String(child.textContent || '').includes('\n')) {
-				// Lines of a code block taken without their block: the code as shown, every space kept.
-				flush();
-				pushBlock(String(child.textContent || ''), true);
-			} else {
-				inline.push(child);
-			}
-		});
-		flush();
-	};
-
-	const collectBlock = node => {
-		if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
-		const tag = node.tagName;
-		if (/^H[1-6]$/.test(tag) || tag === 'P') {
-			const text = _rapierNormalizeInlineText(_rapierPortableInlineText(node, opts));
-			// An empty paragraph (the line Enter makes) is a line of its own, as it is in Word's plain text: one newline more between its neighbours.
-			if (tag === 'P' && !text && node.childNodes.length && !node.hasAttribute('data-md-break')) blocks.push({ text: '', blank: true });
-			else pushBlock(text, false);
-			return;
-		}
-		if (tag === 'HR') { pushBlock('────────', false); return; }
-		if (tag === 'PRE') {
-			const code = node.querySelector(':scope > code') || node;
-			const lang = _rapierLanguageClass(code);
-			const source = String(code.textContent || '').replace(/\r\n?/g, '\n').replace(/\n$/, '');
-			if (opts.visible) { pushBlock(source, true); return; }
-			const label = lang ? lang.charAt(0).toUpperCase() + lang.slice(1) + ':\n\n' : '';
-			pushBlock(label + source.split('\n').map(line => '    ' + line).join('\n'), true);
-			return;
-		}
-		if (tag === 'UL' || tag === 'OL') {
-			pushBlock(_rapierPortableListText(node, 0, opts), false);
-			return;
-		}
-		if (tag === 'TABLE') {
-			pushBlock(_rapierPortableTableText(node, opts), false);
-			return;
-		}
-		if (tag === 'BLOCKQUOTE') {
-			const before = blocks.length;
-			collectChildren(node);
-			const quoted = blocks.splice(before).filter(block => !block.blank).map(block => block.text).join('\n\n');
-			if (quoted) pushBlock(opts.visible ? quoted : quoted.split('\n').map(line => line ? '> ' + line : '>').join('\n'), true);
-			return;
-		}
-		if (tag === 'DL') {
-			const children = Array.from(node.children);
-			for (let i = 0; i < children.length; i++) {
-				if (children[i].tagName !== 'DT') continue;
-				const term = _rapierNormalizeInlineText(_rapierPortableInlineText(children[i], opts));
-				const defs = [];
-				while (children[i + 1] && children[i + 1].tagName === 'DD') {
-					defs.push(_rapierNormalizeInlineText(_rapierPortableInlineText(children[++i], opts)));
-				}
-				pushBlock(term + (defs.length ? ' — ' + defs.join('\n  ') : ''), false);
-			}
-			return;
-		}
-		if (tag === 'DETAILS') {
-			const summary = node.querySelector(':scope > summary');
-			if (summary) pushBlock(_rapierNormalizeInlineText(_rapierPortableInlineText(summary, opts)), false);
-			Array.from(node.children).filter(child => child !== summary).forEach(collectBlock);
-			return;
-		}
-		if (tag === 'FIGURE') {
-			const image = node.querySelector(':scope > img');
-			if (image) pushBlock(_rapierPortableInlineText(image, opts), false);
-			const caption = node.querySelector(':scope > figcaption');
-			if (caption) pushBlock(_rapierNormalizeInlineText(_rapierPortableInlineText(caption, opts)), false);
-			return;
-		}
-		collectChildren(node);
-	};
-
-	collectChildren(root);
-	// Each block stands a blank line from the next, and each empty paragraph between them adds one newline more.
-	let joined = '', blanks = 0;
-	for (const block of blocks) {
-		if (block.blank) { blanks++; continue; }
-		joined += (joined ? '\n\n' + '\n'.repeat(blanks) : '') + block.text;
-		blanks = 0;
-	}
-	const text = joined.trim();
-	return opts.finalNewline && text ? text + '\n' : text;
-}
+function _rapierPortablePlainText(...args) { return _rapierRenderModule('render-markdown')._rapierPortablePlainText(...args); }
 
 function _rapierSaveSelectionState() {
 	const selection = window.getSelection && window.getSelection();
@@ -22275,8 +21947,8 @@ async function _rapierPortableMarkdownForCopy(canonical) {
 	}
 }
 
-async function rapierCopy(kind) {
-	const captured = await _rapierCaptureSettledExternalDocument();
+async function rapierCopy(kind, suppliedCapture = null) {
+	const captured = suppliedCapture || await _rapierCaptureSettledExternalDocument();
 	if (!captured) return false;
 	const requested = kind === 'formatted' || kind === 'plain' ? kind : 'markdown';
 	const canonical = captured.canonical;
@@ -22313,8 +21985,9 @@ async function rapierCopy(kind) {
 		catch (error) { showToast('Image copy failed: ' + error.message, 'error'); return false; }
 	}
 	const portableRoot = _rapierProjectPortableRoot(context.semanticRoot, { baseName: context.baseName });
+	// The words are the text file's (Export .txt): a remote picture held back until the person allows it is said as the picture, not as its placeholder.
 	const plain = metadata.docKind === 'markdown'
-		? _rapierPortablePlainText(portableRoot)
+		? _rapierPortablePlainText(_rapierProjectPortableRoot(_rapierRenderModule('render-markdown')._rapierHeldPicturesAsWords(context.semanticRoot), { baseName: context.baseName }))
 		: canonical;
 
 	if (requested === 'plain') {
@@ -22625,23 +22298,70 @@ async function _rapierConvertPortableHtmlToDocx(prepared) {
 	return new Blob([packed], {type: RAPIER_DOCX_MIME});
 }
 
+async function _rapierBuildDocxArtifact(captured, confirmWarnings = false) {
+	const context = await _rapierPrepareInterchangeContext({ format: 'docx' }, captured);
+	const prepared = await _rapierBuildDocxHtml(context);
+	const issues = _rapierAnalyzePortability(context, 'docx');
+	if (confirmWarnings && !await _rapierConfirmDocxWarnings(issues)) return null;
+	return {blob: await _rapierConvertPortableHtmlToDocx(prepared), filename: context.baseName + '.docx', issues};
+}
+
+// Export bytes stay bound to the request's source and live document identity. Device printing
+// never stands in for a byte writer: a print dialog cannot return the requested file.
+async function _rapierBuildEditorExport(action, expected = {}, options = {}) {
+	if (action !== 'export_word' && action !== 'export_pdf') {
+		throw Object.assign(new Error('This editor export format is unavailable.'), {code: 'export_unavailable'});
+	}
+	const cancelled = () => options.signal?.aborted;
+	const cancellation = () => Object.assign(new Error('The export was cancelled.'), {code: 'cancelled'});
+	if (cancelled()) throw cancellation();
+	const captured = await _rapierCaptureSettledExternalDocument({quiet: true, passive: true});
+	if (cancelled()) throw cancellation();
+	if (!captured) throw _rapierDocumentNotSettledError('export this document');
+	const current = () => !cancelled() && options.current?.() !== false && _rapierMutationStampIsCurrent(captured.stamp) &&
+		(typeof expected.expectedText !== 'string' || captured.canonical === expected.expectedText);
+	const stale = () => Object.assign(new Error('The document changed before its export finished. Request the export again.'), {code: 'stale_context'});
+	const check = () => { if (cancelled()) throw cancellation(); if (!current()) throw stale(); };
+	check();
+	let bytes, filename, mimeType, pages, issues = [];
+	if (action === 'export_word') {
+		const artifact = await _rapierBuildDocxArtifact(captured);
+		check();
+		bytes = new Uint8Array(await artifact.blob.arrayBuffer());
+		filename = artifact.filename; mimeType = RAPIER_DOCX_MIME; issues = artifact.issues;
+	} else {
+		const artifact = await _rapierBuildPrintArtifact(captured);
+		check();
+		if (artifact.willFont) await _rapierPrintWillProve(artifact.willFont);
+		check();
+		const made = await _rapierRenderModule('render-print')._rapierWritePrintPdf({root: _rapierCreatePrintHost(artifact),
+			css: artifact.css, canonical: captured.canonical, filename: captured.metadata.filename, title: artifact.documentTitle,
+			settings: _rapierDocumentSettingsOf(captured.canonical)},
+			{capture: globalThis.RapierVisualCapture?.captureVisual, signal: options.signal, current, maxBytes: options.maxBytes});
+		check();
+		bytes = made.bytes; pages = made.pages;
+		if (!(bytes instanceof Uint8Array) || bytes.length < 8 ||
+				bytes[0] !== 37 || bytes[1] !== 80 || bytes[2] !== 68 || bytes[3] !== 70 || bytes[4] !== 45) {
+			throw Object.assign(new Error('The PDF writer did not return a PDF file.'), {code: 'export_invalid'});
+		}
+		filename = artifact.filename; mimeType = 'application/pdf';
+	}
+	check();
+	if (options.maxBytes !== undefined && bytes.byteLength > options.maxBytes) {
+		throw Object.assign(new Error('The exported file exceeds the file limit.'), {code: 'export_too_large'});
+	}
+	return {bytes, filename, mimeType, issues, ...(pages ? {pages} : {})};
+}
+
 async function _rapierCreateDocxArtifact() {
 	if (_rapierDocxRuntime.generationPromise) return _rapierDocxRuntime.generationPromise;
 	let busyStarted = false;
 	_rapierDocxRuntime.generationPromise = (async () => {
 		const captured = await _rapierCaptureSettledExternalDocument();
 		if (!captured) return null;
-		const context = await _rapierPrepareInterchangeContext({ format: 'docx' }, captured);
 		busyStarted = true;
 		_rapierUiDocx.applyGenerationState({ busy: true });
-		const prepared = await _rapierBuildDocxHtml(context);
-		const issues = _rapierAnalyzePortability(context, 'docx');
-		if (!await _rapierConfirmDocxWarnings(issues)) return null;
-		return {
-			blob: await _rapierConvertPortableHtmlToDocx(prepared),
-			filename: context.baseName + '.docx',
-			issues,
-		};
+		return _rapierBuildDocxArtifact(captured, true);
 	})().catch(error => {
 		console.warn('[rapier] DOCX generation failed', error);
 		const message = String(error && error.message || error || 'unknown error');
@@ -23152,15 +22872,9 @@ async function rapierExport(fmt) {
 	}
 
 	const context = fmt === 'txt' ? _rapierBuildInterchangeContext({format:fmt}, captured) : await _rapierPrepareInterchangeContext({ format: fmt }, captured);
-	const metadata = context.metadata;
 
 	if (fmt === 'txt') {
-		const text = metadata.docKind === 'markdown'
-			? _rapierPortablePlainText(
-					_rapierProjectPortableRoot(context.semanticRoot, { baseName: context.baseName }),
-					{ finalNewline: true }
-				)
-			: context.canonical;
+		const text = _rapierRenderModule('render-markdown')._rapierPlainTextFile(context);
 		return await _download(new Blob([text], { type: 'text/plain' }), context.baseName + '.txt') === true;
 	}
 
@@ -26845,17 +26559,7 @@ function _rapierRasterClipboardFile(dataTransfer) {
 	}
 	return null;
 }
-function _rapierVerifyRasterBytes(bytes, mime) {
-	if (mime === 'image/jxl') return globalThis.RapierImageAssets.isJxl(bytes);
-
-	// declaration, doctype or generator/license comment before <svg itself, of whatever length its
-
-	if (mime === 'image/svg+xml') return /<svg[\s>]/i.test(new TextDecoder('utf-8', {fatal: false}).decode(bytes));
-	if (mime === 'image/png') return bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
-	if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-	if (mime === 'image/webp') return bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
-	return false;
-}
+function _rapierVerifyRasterBytes(...args) { return _rapierRenderModule('render-sanitize')._rapierVerifyRasterBytes(...args); }
 async function _rapierDecodeRaster(blob) {
     if (typeof createImageBitmap === 'function') {
         try { return await createImageBitmap(blob, {imageOrientation: 'from-image'}); } catch (_) {}
@@ -40153,13 +39857,7 @@ function _rapierRetireNames() {
 	}
 }
 
-function _rapierResolveSoftBreakTokens(root) {
-	root.querySelectorAll('.rapier-source-token--softbreak').forEach(token => {
-		if (_rapierSourceTokenValue(token) === '\n') token.replaceWith(document.createTextNode(' '));
-		else token.replaceWith(...token.childNodes);
-	});
-	return root;
-}
+function _rapierResolveSoftBreakTokens(...args) { return _rapierRenderModule('render-markdown')._rapierResolveSoftBreakTokens(...args); }
 
 function _rapierSemanticProjection(node) {
 	return node.querySelector('.rapier-source-token--softbreak')
@@ -45736,6 +45434,8 @@ function _rapierUiRequestSourceView() {
 }
 
 async function _rapierUiRequestWysiwygView() {
+	const guard = arguments[0]?.guard;
+	if (guard && !guard()) return false;
 	const refs = _rapierUi.refs;
 	if (rapier.document.docKind === 'code' || rapier.view.mode !== 'source' ||
 			_rapierUiViewTransition.busy || !refs) return false;
@@ -45747,6 +45447,7 @@ async function _rapierUiRequestWysiwygView() {
 		const committed = await rapierCommitMarkdownSource(refs.sourceTextarea.value);
 		if (token !== _rapierUiViewTransition.token || rapier.view.mode !== 'source') return false;
 		if (!committed) return false;
+		if (guard && !guard()) return false;
 		rapierSetMode(rapier.view.sourceReturnMode === 'read' ? 'read' : 'edit', { announce: false });
 		rapierRestoreWysiwygScrollAnchor();
 		return true;
@@ -48878,6 +48579,8 @@ function _rapierUiMount() {
 	_rapierUiInstallPointerGesture();
 
 	RapierPreferences.subscribe('showPlayButton', () => renderReadAloud());
+	for (const field of ['inkColour', 'inkWidth']) RapierPreferences.subscribe(field, () => _rapierInkPenReadPreferences());
+	RapierPreferences.subscribe('highlightColor', value => { _rapierEditingRuntime.lastHighlightColor = _rapierHighlightColor(value) || 'default'; });
 	RapierPreferences.subscribe('theme', value => applyTheme(_rapierEmbed.theme || value));
 	RapierPreferences.subscribe('accent', value => {
 		_rapierEmbed.accent = '';

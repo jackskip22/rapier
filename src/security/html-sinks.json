@@ -241,16 +241,6 @@
 				"kind": "static-template",
 				"reason": "Dialog markup is a fixed template with only _escHtml(title) interpolated."
 			},
-			"_rapierRemoveCalloutMarker": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "first.innerHTML is a regex-stripped copy of its own already-sanitized innerHTML (removes a leading [!NOTE]-style marker); introduces no new markup."
-			},
-			"_rapierProjectPortableRoot": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "clean.innerHTML = sanitizeRapierHtml(root.innerHTML, 'export'), re-sanitizing the exported root before return."
-			},
 			"_rapierClipboardFallbackPayload": {
 				"count": 1,
 				"kind": "sanitized-document",
@@ -477,10 +467,20 @@
 			}
 		},
 		"kit/render-markdown.mjs": {
+			"_rapierRemoveCalloutMarker": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "first.innerHTML is a regex-stripped copy of its own already-sanitized innerHTML (removes a leading [!NOTE]-style marker); introduces no new markup."
+			},
+			"_rapierProjectPortableRoot": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "clean.innerHTML = sanitizeRapierHtml(root.innerHTML, 'export'), re-sanitizing the exported root before return."
+			},
 			"_rapierRenderSemanticRoot": {
 				"count": 1,
 				"kind": "sanitized-document",
-				"reason": "root.innerHTML = sanitizeRapierHtml(rendered, 'export'), the markdown-it render output passed through DOMPurify."
+				"reason": "The markdown-it render output passes through the shared render policy before assignment: DOMPurify in the editor or the inert HTML5 parser and sanitizer in the worker. The page's source context preserves authored resource URLs."
 			}
 		},
 		"kit/render-sanitize.mjs": {
@@ -512,6 +512,20 @@
 				"count": 5,
 				"kind": "static-template",
 				"reason": "The four Water strip writes build fixed button markup. Brush, tool and paper chip ids and names, including imported brush names, pass through _rapierDrawEscapeAttr. Brush image sources come only from the local Paint PNG codec encoding CPU Water previews. Pigment ids and hex swatch colours come from the immutable WATER_PIGMENTS catalog; pigment names are escaped. The fifth write shows the selected tool's trusted static icon and fixed label on its toolbar button. Icons come from the existing Draw glyph table and fixed Water glyphs. Selected states are booleans; material, imported JSON and typed words never become raw markup."
+			}
+		},
+		"shell/plugin-loader.js": {
+			"_diagramResourceText": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "A detached, unmounted textarea decodes source character references as text for the resource preflight. It creates no label subtree and is never attached; source passed to the renderer stays byte-for-byte unchanged."
+			}
+		},
+		"shell/mermaid/zenuml-adapter.mjs": {
+			"draw": {
+				"count": 1,
+				"kind": "probe",
+				"reason": "The pinned native ZenUML renderer supplies escaped SVG markup in its owned render realm after public-parser validation and the resource preflight. The completed SVG passes Rapier's diagram sanitizer before reaching the document or export."
 			}
 		}
 	}

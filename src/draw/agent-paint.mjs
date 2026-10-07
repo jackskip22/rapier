@@ -6,7 +6,8 @@ import { RAPIER_PAINT_BRUSHES, paintBrushById } from './brushes.mjs';
 import {admitPaintReplay, paintReplayFits, PAINT_REPLAY_MAX_BYTES} from './paint-history.mjs';
 export {PAINT_REPLAY_MAX_BYTES, paintReplayFits};
 import {canonicalJSON} from '../kit/ledger/data.mjs';
-import {WaterSurface} from './water.mjs';
+import {WaterSurface, waterReady} from './water.mjs';
+import {sha256} from '../kit/ledger/hash.mjs';
 import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS} from './water-data.mjs';
 import {encodeSteps as encodeJXLSteps} from '../images/jxl/index.mjs';
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
@@ -28,6 +29,29 @@ const HEX = /^#[0-9a-f]{6}$/i;
 const sameScale = (a, b) => finite(a) && finite(b) && Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b));
 const cancelled = signal => { if (signal?.aborted) { const error = new Error('Painting cancelled'); error.name = 'AbortError'; throw error; } };
 const copy = value => JSON.parse(JSON.stringify(value));
+
+const waterSessionId = 'water-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+const waterPublications = new Map();
+export const waterSession = (scope = '') => waterSessionId + (scope === '' ? '' : '-' + String(scope));
+// Publication receipts bind the JSON representation retained by the drawing, including its
+// normalization of signed zero and optional fields.
+const waterJournalKey = replay => sha256(canonicalJSON(copy(replay)));
+const waterPublicationKey = shape => sha256(shape.raster) + ':' + waterJournalKey(shape.paint.replay);
+// Only material the current execution actually published can be selectively replayed. Saved
+// pixels open independently of these receipts; a file's auxiliary journal grants no authority.
+export function rememberWaterPainting(shape, session = waterSession()) {
+	const replay = shape?.paint?.replay;
+	if (shape?.paint?.mode !== 'water' || replay?.session !== session || typeof shape.raster !== 'string') return false;
+	let rows = waterPublications.get(session);
+	if (!rows) waterPublications.set(session, rows = new Set());
+	rows.add(waterPublicationKey(shape));
+	return true;
+}
+export function waterPaintingIsLive(shape, session = waterSession()) {
+	const replay = shape?.paint?.replay;
+	return typeof shape?.raster === 'string' && replay?.session === session && waterPublications.get(session)?.has(waterPublicationKey(shape)) === true;
+}
+export function forgetWaterSession(session) { waterPublications.delete(session); }
 
 export function agentPaintBrushRegistry() {
 	// Each brush carries its own first-use size: the width the Paint tool opens it at and the width a stroke takes when it names none.
@@ -110,10 +134,10 @@ export class AgentPaintRun {
 		this.surface.toothOX = -offset[0]; this.surface.toothOY = -offset[1];
 		if (pixels) this.surface.fromRGBA8(pixels.data, pixels.width, pixels.height, offset[0], offset[1]);
 		this.deferSettle = deferSettle; this.settling = null;
-		this.stroke = 0; this.point = 0; this.brush = null;
+		this.stroke = 0; this.point = 0; this.brush = null; this.motion = null;
 	}
 	get done() { return this.stroke >= this.strokes.length; }
-	// Lays dabs until `until(strokeIndex, pointIndex)` says stop, or the strokes end. Returns how many points it laid.
+	// Checks `until(strokeIndex, pointIndex)` before each dab. Returns the number of completed input points.
 	run(until = () => false) {
 		const g = AGENT_PAINT_GRAIN, {x: ox, y: oy} = this.frame;
 		let laid = 0;
@@ -130,26 +154,26 @@ export class AgentPaintRun {
 				this.brush.reset(); this.brush.newStroke();
 			}
 			const points = stroke.points;
-			if (this.point < points.length) {
-				if (until(this.stroke, this.point)) return laid;
-				const p = points[this.point], q = points[this.point - 1];
-				const dt = q ? Math.min(5, Math.max(0.0001, Math.hypot(p[0] - q[0], p[1] - q[1]) / HAND_PACE)) : 0.0001;
-				this.brush.strokeTo(this.surface, (p[0] - ox) * g, (p[1] - oy) * g, p[2] ?? 0.6, 0, 0, dt, 1, 0, 0, true);
-				this.point++; laid++;
-				continue;
+			if (until(this.stroke, this.point)) return laid;
+			if (!this.motion) {
+				const p = points[Math.min(this.point, points.length - 1)], q = points[this.point - 1];
+				const lifting = this.point === points.length;
+				const dt = lifting ? .016 : q ? Math.min(5, Math.max(.0001, Math.hypot(p[0] - q[0], p[1] - q[1]) / HAND_PACE)) : .0001;
+				this.motion = this.brush.strokeToWork(this.surface, (p[0] - ox) * g, (p[1] - oy) * g, lifting ? 0 : p[2] ?? .6, 0, 0, dt, 1, 0, 0, true);
 			}
-			const last = points[points.length - 1];
-			this.brush.strokeTo(this.surface, (last[0] - ox) * g, (last[1] - oy) * g, 0, 0, 0, 0.016, 1, 0, 0, true);
-			this.stroke++; this.point = 0; this.brush = null;
+			if (!this.motion.next().done) continue;
+			this.motion = null;
+			if (this.point < points.length) { this.point++; laid++; }
+			else { this.stroke++; this.point = 0; this.brush = null; }
 		}
 		if (!this.deferSettle) this.finishSlice(Infinity);
 		return laid;
 	}
 	// Settling uses the material owner's existing iterator, so a worker can yield between its bands.
-	finishSlice(until = Infinity) {
+	finishSlice(until = Infinity, steps = Infinity) {
 		if (!this.done) return false;
 		if (!this.settling && this.surface.wetState) { this.surface.wetPending = 0; this.settling = this.surface._settleWetWork(); }
-		while (this.settling && performance.now() < until) if (this.settling.next().done) this.settling = null;
+		while (this.settling && performance.now() < until && steps-- > 0) if (this.settling.next().done) this.settling = null;
 		return !this.settling;
 	}
 }
@@ -258,9 +282,11 @@ export async function agentPaintReplayRun(paint) {
 	if(paint?.mode==='water') {
 		const plan=waterReplayPlan(paint);if(!plan)return null;
 		const prior={...plan.replay,entries:plan.replay.entries.slice(0,-1)},last=plan.replay.entries.at(-1);
-		const material=await restoreWaterReplay(prior),surface=waterSurface(plan.frame.w,plan.frame.h,plan.scale,plan.paper,plan.seed);
-		if(prior.entries.length || prior.baseRaster!==null)surface.fromState(material.state,{offset:last.grow.slice(0,2)});
-		return new AgentWaterReplayRun(plan,surface);
+		const restored=await replayPaintEntries(prior,{surface:true,seed:plan.seed}),surface=restored.surface;
+		try {
+			await surface.reframe(plan.frame.w,plan.frame.h,last.grow[0]-restored.crop[0],last.grow[1]-restored.crop[1]);
+			return new AgentWaterReplayRun({...plan,actions:waterActionsInFrame(plan.actions,surface)},surface);
+		} catch(error) {surface.dispose();throw error;}
 	}
 	const plan = agentPaintReplayPlan(paint);
 	if (!plan) return null;
@@ -337,6 +363,7 @@ export function cropPaintReplay(raw, crop) {
 
 // The kernel can retain a human-ended history without inventing a latest-stroke replay.
 export function agentPaintSheetHolds(paint) {
+	if (paint?.mode === 'water' && paint.replay == null) return Array.isArray(paint.px) && paint.px.length === 2 && boundedSheet(...paint.px) && finite(paint.scale) && paint.scale > 0 && paint.scale <= 16 && !!waterPaperById(paint.paper);
 	if (paint?.strokes != null) return !!agentPaintReplayPlan(paint);
 	const replay = admitPaintReplay(paint?.replay), sheet = replay && replayPaintSheet(replay);
 	return !!sheet && Array.isArray(paint.px) && paint.px.length === 2 && sheet.px[0] === paint.px[0] && sheet.px[1] === paint.px[1] && sameScale(sheet.scale, paint.scale);
@@ -357,51 +384,72 @@ async function finishRun(run, {signal, onProgress} = {}) {
 	while (!run.done) {
 		cancelled(signal);
 		const start = performance.now(); let samples = 0;
-		run.run(() => samples++ >= 8 || performance.now() - start >= 12);
+		run.run(() => samples++ >= (signal ? 1 : 8) || performance.now() - start >= 12);
 		const completed = run.strokes.slice(0, run.stroke).reduce((n, stroke) => n + stroke.points.length, 0) + run.point;
 		onProgress?.({phase: 'painting', completed, total, stroke: run.stroke, point: run.point, strokes: run.strokes.length});
 		if (!run.done) await yieldPainting();
 	}
-	while (!run.finishSlice(performance.now() + 12)) { cancelled(signal); await yieldPainting(); }
+	while (!run.finishSlice(performance.now() + 12, 64)) { cancelled(signal); await yieldPainting(); }
 	cancelled(signal);
 }
 
-// Replay the captured material inputs. Consecutive strokes on one human sheet keep its wet
-// state and relief; a reopened sheet starts from the previous published raster, just as Paint does.
+// A current-session journal preserves material across human and agent sheets. Saved pixels
+// remain the document boundary; callers explicitly request ownership of a live surface.
 async function replayPaintEntries(replay, options = {}) {
 	cancelled(options.signal);
-	let pixels = replay.baseRaster === null && replay.mode === 'water' ? {width:replay.px[0],height:replay.px[1],data:new Uint8ClampedArray(replay.px[0]*replay.px[1]*4)} : await decodePaintRaster(replay.baseRaster, options), live = null, brushes = new Map(), waterState = null;
+	let pixels = replay.baseRaster === null && replay.mode === 'water' ? {width:replay.px[0],height:replay.px[1],data:new Uint8ClampedArray(replay.px[0]*replay.px[1]*4)} : await decodePaintRaster(replay.baseRaster, options), live = null, brushes = new Map();
 	if (!pixels || pixels.width !== replay.px[0] || pixels.height !== replay.px[1]) throw new Error('The paint replay base does not match its raster');
 	if (options.requireEmptyBase === true && pixels.data.some(value => value !== 0)) throw new Error('The new paint layer has unrecorded base material');
-	let turn = performance.now(), viewIndex = 0;
+	let turn = performance.now(), viewIndex = 0, waterPaper = replay.paper, retainedSurface = null;
+	try {
 	for (let index = 0; index <= replay.entries.length; index++) {
 		cancelled(options.signal);
 		const view = replay.views?.[viewIndex];
-		if (view?.at === index) { pixels = cropPaintPixels(pixels, view.crop); if (waterState) {const water=waterSurface(waterState.frame?.width || waterState.width,waterState.frame?.height || waterState.height,replay.scale,replay.paper); water.fromState(waterState); waterState=water.snapshot({x0:view.crop[0],y0:view.crop[1],x1:view.crop[2],y1:view.crop[3]});} live = null; brushes = new Map(); viewIndex++; }
+		if (view?.at === index) {
+			pixels = cropPaintPixels(pixels, view.crop);
+			if (live?.water) {
+				await live.surface.reframe(pixels.width,pixels.height,-live.crop[0]-view.crop[0],-live.crop[1]-view.crop[1]);
+				live={surface:live.surface,water:true,crop:[0,0,pixels.width-1,pixels.height-1]};
+			} else live=null;
+			brushes = new Map(); viewIndex++;
+		}
 		const entry = replay.entries[index];
 		if (!entry) break;
 		if (entry.mode === 'water') {
 			if (entry.actor === 'agent') {
 				const [left,top,right,bottom]=entry.grow, width=pixels.width+left+right, height=pixels.height+top+bottom;
 				if (!boundedSheet(width,height) || width!==entry.px[0] || height!==entry.px[1]) throw new Error('The Water replay sheet does not match its growth');
-				const surface=waterSurface(width,height,entry.scale,entry.paper,entry.seed);
-				if(waterState) surface.fromState(waterState,{offset:[left,top]}); else if(replay.baseRaster!==null || index>0) surface.fromRGBA8(pixels.data,pixels.width,pixels.height,left,top);
-				if(!entry.removed) await applyWaterActions(surface,entry.actions,options);
-				pixels=surface.toRGBA8(); waterState=surface.snapshot(); live=null; brushes=new Map();
+				if(live?.water) await live.surface.reframe(width,height,left-live.crop[0],top-live.crop[1]);
+				else {
+					const surface=await waterSurface(width,height,entry.scale,waterPaper || entry.paper,entry.seed);
+					live={surface,water:true};
+					if(replay.baseRaster!==null || index>0)await surface.fromRGBA8(pixels.data,pixels.width,pixels.height,left,top);
+				}
+				live.id=null;live.crop=[0,0,width-1,height-1];
+				// Tip data remains a dependency of later strokes after its introducing marks are removed.
+				const actions=entry.removed?entry.actions.filter(action=>action.kind==='tip'):entry.actions;
+				await applyWaterActions(live.surface,waterActionsInFrame(actions,live.surface),{...options,replayFrames:true,frameOffset:live.surface.origin.slice()});
+				pixels=await live.surface.toRGBA8();waterPaper=live.surface.paperId;brushes=new Map();
 			} else {
 				const sheet=entry.sheet;
 				if(!live || live.id!==sheet.id || !live.water) {
-					const surface=waterSurface(sheet.width,sheet.height,sheet.scale*AGENT_PAINT_GRAIN,sheet.options.paper,sheet.options.seed,sheet.waterFrame?.origin);
-					if(waterState) surface.fromState(waterState,{offset:sheet.offset}); else if(replay.baseRaster!==null || index>0) surface.fromRGBA8(pixels.data,pixels.width,pixels.height,...sheet.offset);
-					live={id:sheet.id,surface,water:true}; brushes=new Map();
+					if(live?.water) await live.surface.reframe(sheet.width,sheet.height,sheet.offset[0]-live.crop[0],sheet.offset[1]-live.crop[1]);
+					else {
+						const surface=await waterSurface(sheet.width,sheet.height,sheet.scale*AGENT_PAINT_GRAIN,waterPaper || sheet.options.paper,sheet.waterFrame?.seed??sheet.options.seed,sheet.waterFrame?.origin,sheet.waterFrame);
+						live={surface,water:true};
+						if(replay.baseRaster!==null || index>0)await surface.fromRGBA8(pixels.data,pixels.width,pixels.height,...sheet.offset);
+					}
+					live.id=sheet.id;brushes=new Map();
 				}
-				await applyWaterActions(live.surface,entry.actions,options);
+				const origin=sheet.waterFrame?.origin??[0,0],frameOffset=live.surface.origin.map((value,index)=>value-origin[index]);
+				await applyWaterActions(live.surface,waterActionsInFrame(entry.actions,live.surface,origin),{...options,replayFrames:true,frameOffset});
+				waterPaper=live.surface.paperId;
 				const [x0,y0,x1,y1]=entry.crop, box={x0,y0,x1,y1};
-				pixels=live.surface.toRGBA8(box); waterState=live.surface.snapshot(box);
+				pixels=await live.surface.toRGBA8(box);live.crop=entry.crop.slice();
 			}
+			live.surface.takeWaterReplay();
 			continue;
 		}
-		waterState=null;
 		if (entry.actor === 'agent') {
 			live = null; brushes = new Map();
 			const grow = entry.grow, width = pixels.width + grow[0] + grow[2], height = pixels.height + grow[1] + grow[3];
@@ -451,7 +499,17 @@ async function replayPaintEntries(replay, options = {}) {
 		pixels = surface.toRGBA8({x0, y0, x1, y1});
 	}
 	cancelled(options.signal);
-	return options.material ? {pixels,state:waterState} : pixels;
+	if(options.surface && replay.mode==='water') {
+		if(!live?.water) {
+			const surface=await waterSurface(pixels.width,pixels.height,replay.scale,waterPaper,options.seed);
+			live={surface,water:true,crop:[0,0,pixels.width-1,pixels.height-1]};
+			if(replay.baseRaster!==null)await surface.fromRGBA8(pixels.data,pixels.width,pixels.height);
+		}
+		retainedSurface=live.surface;
+		return {pixels,surface:retainedSurface,crop:live.crop.slice()};
+	}
+	return options.material ? {pixels,state:null} : pixels;
+	} finally { if (live?.water && live.surface!==retainedSurface) live.surface.dispose(); }
 }
 
 // Removing a contribution is another material replay, never a pixel replacement over a later
@@ -460,31 +518,35 @@ export async function replayAgentPainting(shape, omitIds, options = {}) {
 	cancelled(options.signal);
 	const replay = admitPaintReplay(shape?.paint?.replay), ids = new Set(omitIds);
 	if (!replay || !replayPaintSheet(replay) || !ids.size || [...ids].some(id => !replay.entries.some(entry => entry.actor === 'agent' && !entry.removed && entry.id === id))) return null;
-	const [actual, expected] = await Promise.all([decodePaintRaster(shape.raster, options), replayPaintEntries(replay, options)]);
-	if (!samePixels(actual, expected)) return null;
+	const water=shape.paint.mode==='water', session=options.waterSession || waterSession();
+	if (water && (replay.session !== session || !options.waterAuthorized && !waterPaintingIsLive(shape, session))) return null;
+	const actual=await decodePaintRaster(shape.raster, options);
+	if (!water && !samePixels(actual, await replayPaintEntries(replay, options))) return null;
 	const revised = {...replay, entries: replay.entries.map(entry => ids.has(entry.id) ? {...entry, removed: true} : entry)};
-	const water=shape.paint.mode==='water',material=water?await replayPaintEntries(revised,{...options,material:true}):null;
-	const pixels = material ? material.pixels : await replayPaintEntries(revised, options);
+	const pixels = await replayPaintEntries(revised, options);
 	if (pixels.width !== actual.width || pixels.height !== actual.height) throw new Error('Paint replay changed the current pixel frame');
-	const raster = shape.paint.mode === 'water' ? await encodeWaterRaster(pixels,options) : await codec.compressed(pixels);
+	const raster = water ? await encodeWaterRaster(pixels,options) : await codec.compressed(pixels);
 	cancelled(options.signal);
 	const paint = {...shape.paint, replay: revised}; delete paint.strokes; delete paint.actions; delete paint.seed;
-	if(material?.state)paint.paper=material.state.frame.paper;
-	return {...shape, raster, paint};
+	if (water) paint.paper=waterReplayPaper(revised);
+	const result={...shape, raster, paint};
+	if (water) rememberWaterPainting(result, session);
+	return result;
 }
 
 function paintHistoryFull() {
 	return Object.assign(new Error('The paint history is full. Continue on a new layer.'), {code:'paint_history_full'});
 }
-function waterSurface(width,height,scale,paper,seed=1,origin) {
-	const surface=new WaterSurface(width,height,{pixelScale:scale,paper,seed,...(origin?{origin}: {})});
-	surface.scale=scale/AGENT_PAINT_GRAIN;
+async function waterSurface(width,height,scale,paper,seed=1,origin,frame=null) {
+	const material=frame?Object.fromEntries(['paperScale','paperOrigin','paperSeed'].filter(key=>frame[key]!=null).map(key=>[key,frame[key]])):{};
+	const surface=new WaterSurface(width,height,{pixelScale:scale,paper,seed,...(origin?{origin}: {}),...material});
+	await surface.ready;
 	return surface;
 }
 async function applyWaterActions(surface,actions,options={}) {
 	for(let index=0;index<actions.length;index++) {
 		cancelled(options.signal);
-		for(const step of surface.applyWaterSteps(actions[index])) {cancelled(options.signal);await yieldPainting();}
+		for await(const step of surface.applyWaterSteps(actions[index],{replayFrames:options.replayFrames===true,frameOffset:options.frameOffset})) {cancelled(options.signal);await yieldPainting();}
 		options.onProgress?.({phase:'painting',completed:index+1,total:actions.length});
 		await yieldPainting();
 	}
@@ -499,6 +561,10 @@ async function encodeWaterRaster(pixels,options={}) {
 }
 function waterActionMap(actions,map) {
 	return actions.map(action=>({...action,...(action.paths?{paths:action.paths.map(path=>path.map(map))}:{}),...(action.at?{at:map(action.at).slice(0,2)}:{})}));
+}
+function waterActionsInFrame(actions,surface,origin=[0,0]) {
+	const dx=(surface.origin[0]-origin[0])/surface.pixelScale,dy=(surface.origin[1]-origin[1])/surface.pixelScale;
+	return dx || dy ? waterActionMap(actions,([x,y,...rest])=>[x+dx,y+dy,...rest]) : actions;
 }
 function waterActionBounds(actions) {
 	let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity,reach=4;
@@ -516,7 +582,8 @@ export function waterReplayAt(prior,capture,box,{raster=null,px,scale=AGENT_PAIN
 	if(!capture || !sheet || !box) return prior || null;
 	const actions=admitWaterActions(capture.actions);
 	if(!actions) throw Object.assign(new Error('Invalid Water actions'),{code:'paint_strokes_invalid'});
-	let replay=prior?admitPaintReplay(prior):{mode:'water',paper:sheet.options.paper,baseRaster:raster,px:px.slice(),scale,entries:[]};
+	const session=sheet.options.waterSession || waterSession();
+	let replay=prior?.session===session?admitPaintReplay(prior):{mode:'water',paper:sheet.options.paper,session,baseRaster:raster,px:px.slice(),scale,entries:[]};
 	if(!replay)throw Object.assign(new Error('Invalid Water source'),{code:'paint_sheet_invalid'});
 	replay={...replay,mode:'water',paper:replay.paper || sheet.options.paper};
 	const id=sheet.id+'-water',entry={id,actor:'human',mode:'water',sheet:{...copy(sheet),...(capture.frame?{waterFrame:copy(capture.frame)}:{})},actions,crop:[box.x0,box.y0,box.x1,box.y1]};
@@ -534,79 +601,92 @@ export function waterReplayAt(prior,capture,box,{raster=null,px,scale=AGENT_PAIN
 export async function restoreWaterReplay(raw,options={}) {
 	const replay=admitPaintReplay(raw);
 	if(!replay || replay.mode!=='water' || !replayPaintSheet(replay))throw Object.assign(new Error('Invalid Water replay'),{code:'paint_sheet_invalid'});
-	const result=await replayPaintEntries(replay,{...options,material:true});
-	if(!result.state) {
-		const surface=waterSurface(result.pixels.width,result.pixels.height,replay.scale,replay.paper);
-		if(replay.baseRaster!==null)surface.fromRGBA8(result.pixels.data,result.pixels.width,result.pixels.height,0,0);
-		result.state=surface.snapshot();
-	}
-	return result;
+	if (replay.session !== (options.waterSession || waterSession())) throw Object.assign(new Error('This Water journal belongs to another painting session.'), {code:'paint_target_changed'});
+	return replayPaintEntries(replay,{...options,material:true});
 }
 
 export async function sampleAgentPainting(shape,point,options={}) {
 	const map=layerMap(shape,16384);
 	if(shape?.paint?.mode!=='water' || !map || !Array.isArray(point) || point.length!==2 || !point.every(finite))return null;
-	const {pixels,state}=await restoreWaterReplay(shape.paint.replay,options);
-	const actual=await decodePaintRaster(shape.raster,options);
-	if(!samePixels(actual,pixels))return null;
-	const surface=waterSurface(pixels.width,pixels.height,shape.paint.scale,shape.paint.paper);
-	surface.fromState(state);
-	const local=map.local(point);
-	const sample=surface.samplePigment(local[0]+state.frame.origin[0]/shape.paint.scale,local[1]+state.frame.origin[1]/shape.paint.scale);
-	return sample?{...sample,pigment:admitWaterPigment(Object.fromEntries(['coefficients','granulation','staining','source'].filter(key=>sample[key]!=null).map(key=>[key,sample[key]])))}:null;
+	await waterReady(); cancelled(options.signal);
+	const pixels=await decodePaintRaster(shape.raster,options);
+	if (!pixels || pixels.width!==map.px[0] || pixels.height!==map.px[1]) return null;
+	const surface=await waterSurface(pixels.width,pixels.height,shape.paint.scale,shape.paint.paper);
+	try {
+		await surface.fromRGBA8(pixels.data,pixels.width,pixels.height);
+		const sample=await surface.samplePigment(...map.local(point));
+		cancelled(options.signal);
+		return sample?{...sample,pigment:admitWaterPigment(Object.fromEntries(['coefficients','granulation','staining','source'].filter(key=>sample[key]!=null).map(key=>[key,sample[key]])))}:null;
+	} finally { surface.dispose(); }
 }
 
 async function paintAgentWater(raw,seed,target,options) {
 	cancelled(options.signal);
+	await waterReady(); cancelled(options.signal);
 	let actions=admitWaterActions(lowerWaterActions(raw,options.recipe));
+	if(actions?.some(action=>action.frame || action.frames?.some(frame=>frame.length===4)))throw Object.assign(new Error('A new Water action cannot change a stored material frame.'),{code:'paint_strokes_invalid'});
 	const paper=options.paper || target?.paint?.paper || 'cold-press';
+	const session=options.waterSession || waterSession();
 	if(!actions || !actions.length || !waterPaperById(paper) || !Number.isInteger(seed) || seed<0 || seed>0x7fffffff)return null;
 	const map=target&&layerMap(target,16384);
 	if(target&&!map)return null;
+	if(target && options.paper && options.paper!==target.paint?.paper) actions=[{kind:'paper',paper},...actions];
 	if(map)actions=waterActionMap(actions,map.local);
 	const bounds=waterActionBounds(actions);
 	if(!target&&!bounds)return null;
-	let pixels=null,state=null,replay,geom,frame,grow=[0,0,0,0],scale=map?.scale || AGENT_PAINT_GRAIN;
+	let pixels=null,replay,geom,frame,retained=false,grow=[0,0,0,0],scale=map?.scale || AGENT_PAINT_GRAIN;
 	if(target) {
 		pixels=await decodePaintRaster(target.raster,options);
 		if(!pixels || pixels.width!==map.px[0] || pixels.height!==map.px[1])return null;
-		replay=target.paint.replay?admitPaintReplay(target.paint.replay):{mode:'water',paper,baseRaster:target.raster,px:map.px.slice(),scale,entries:[]};
+		retained=target.paint.replay?.session===session && (options.waterAuthorized || waterPaintingIsLive(target,session));
+		replay=retained?admitPaintReplay(target.paint.replay):{mode:'water',paper,session,baseRaster:target.raster,px:map.px.slice(),scale,entries:[]};
 		if(!replay)return null;
-		if(target.paint.replay) {
-			const material=await replayPaintEntries(replay,{...options,material:true});
-			if(!samePixels(pixels,material.pixels))return null;
-			state=material.state;
-		}
 		replay={...replay,mode:'water',paper:replay.paper || paper};
 		if(bounds)grow=[Math.max(0,Math.ceil(-bounds.x*scale)),Math.max(0,Math.ceil(-bounds.y*scale)),Math.max(0,Math.ceil((bounds.x+bounds.w)*scale-pixels.width)),Math.max(0,Math.ceil((bounds.y+bounds.h)*scale-pixels.height))];
 		frame={x:0,y:0,w:pixels.width+grow[0]+grow[2],h:pixels.height+grow[1]+grow[3]};
-		actions=waterActionMap(actions,([x,y,...rest])=>[x+(state?state.frame.origin[0]:grow[0])/scale,y+(state?state.frame.origin[1]:grow[1])/scale,...rest]);
+		actions=waterActionMap(actions,([x,y,...rest])=>[x+grow[0]/scale,y+grow[1]/scale,...rest]);
 		geom=grow.some(Boolean)?{p:[[-grow[0],-grow[1]],[pixels.width+grow[2],-grow[1]],[pixels.width+grow[2],pixels.height+grow[3]],[-grow[0],pixels.height+grow[3]]].map(p=>map.at(...p))}:copy(target.geom);
 	} else {
 		frame={x:bounds.x,y:bounds.y,w:Math.ceil(bounds.w*scale),h:Math.ceil(bounds.h*scale)};
 		actions=waterActionMap(actions,([x,y,...rest])=>[x-frame.x,y-frame.y,...rest]);
-		replay={mode:'water',paper,baseRaster:null,px:[frame.w,frame.h],scale,entries:[]};
+		replay={mode:'water',paper,session,baseRaster:null,px:[frame.w,frame.h],scale,entries:[]};
 		geom={cx:frame.x+frame.w/scale/2,cy:frame.y+frame.h/scale/2,w:frame.w/scale,h:frame.h/scale};
 	}
 	if(!boundedSheet(frame.w,frame.h))return null;
-	// An agent contribution finishes in canonical quality. Dry is retained as physical input.
-	if(actions.at(-1)?.kind!=='dry')actions=[...actions,{kind:'dry'}];
 	const id=typeof options.contribution==='string'?options.contribution:'paint-'+seed+'-'+(replay.entries.length+1);
 	if(replay.entries.some(row=>row.id===id))throw new Error('Paint contribution is already present');
 	const entry={id,actor:'agent',mode:'water',actions,seed,paper,px:[frame.w,frame.h],scale,grow};
 	const grown={...replay,entries:[...replay.entries,entry]};
 	if(!paintReplayFits(grown))throw paintHistoryFull();
 	if(!admitPaintReplay(grown))return null;
-	const surface=waterSurface(frame.w,frame.h,scale,paper,seed);
-	if(state)surface.fromState(state,{offset:grow.slice(0,2)});else if(pixels)surface.fromRGBA8(pixels.data,pixels.width,pixels.height,...grow.slice(0,2));
-	await applyWaterActions(surface,actions,options);
-	const painted=surface.toRGBA8();
-	if(!target&&!painted.data.some((value,index)=>index%4===3&&value))return null;
-	const raster=await encodeWaterRaster(painted,options);
-	if(raster.length>8*1024*1024)throw Object.assign(new Error('The painted layer is full. Continue on a new layer.'),{code:'paint_layer_full'});
-	const paint={...(target?.paint||{}),mode:'water',paper:surface.paperId,brush:actions.find(action=>typeof action.brush==='string')?.brush || 'water/round',px:[frame.w,frame.h],scale,seed,replay:grown};
-	delete paint.strokes;delete paint.actions;
-	return {...(target||{}),recognized:'paint',geom,raster,paint};
+	let surface;
+	try {
+		if(retained) {
+			const restored=await replayPaintEntries(replay,{...options,surface:true,seed});surface=restored.surface;
+			await surface.reframe(frame.w,frame.h,grow[0]-restored.crop[0],grow[1]-restored.crop[1]);
+		} else {
+			surface=await waterSurface(frame.w,frame.h,scale,paper,seed);
+			if(pixels)await surface.fromRGBA8(pixels.data,pixels.width,pixels.height,...grow.slice(0,2));
+		}
+		await applyWaterActions(surface,waterActionsInFrame(actions,surface),options);
+		const painted=await surface.toRGBA8();
+		if(!target&&!painted.data.some((value,index)=>index%4===3&&value))return null;
+		const raster=await encodeWaterRaster(painted,options);
+		if(raster.length>8*1024*1024)throw Object.assign(new Error('The painted layer is full. Continue on a new layer.'),{code:'paint_layer_full'});
+		const paint={...(target?.paint||{}),mode:'water',paper:surface.paperId,brush:actions.find(action=>typeof action.brush==='string')?.brush || 'water/round',px:[frame.w,frame.h],scale,seed,replay:grown};
+		delete paint.strokes;delete paint.actions;
+		const result={...(target||{}),recognized:'paint',geom,raster,paint};
+		rememberWaterPainting(result,session);
+		return result;
+	} finally { surface?.dispose(); }
+}
+
+function waterReplayPaper(replay) {
+	let paper=replay.paper;
+	for (const entry of replay.entries) if (!entry.removed) {
+		for (const action of entry.actions || []) if (action.paper) paper=action.paper;
+	}
+	return paper;
 }
 
 function waterReplayOrigin(replay) {
@@ -616,7 +696,7 @@ function waterReplayOrigin(replay) {
 		if(view?.at===index){origin=[origin[0]+view.crop[0],origin[1]+view.crop[1]];viewIndex++;}
 		const entry=replay.entries[index];if(!entry)break;
 		if(entry.mode!=='water'){origin=[0,0];water=false;continue;}
-		if(entry.actor==='agent')origin=water?[origin[0]-entry.grow[0],origin[1]-entry.grow[1]]:[0,0];
+		if(entry.actor==='agent')origin=[0,0];
 		else {const frame=entry.sheet.waterFrame;origin=frame?.origin?.slice() || (water?[origin[0]-entry.sheet.offset[0],origin[1]-entry.sheet.offset[1]]:[0,0]);origin=[origin[0]+entry.crop[0],origin[1]+entry.crop[1]];}
 		water=true;
 	}
@@ -634,17 +714,21 @@ function waterReplayPlan(paint) {
 	return {mode:'water',paper:last.paper,actions:last.actions,strokes,frame:{x:0,y:0,w:paint.px[0],h:paint.px[1]},seed:last.seed,scale:paint.scale,replay};
 }
 class AgentWaterReplayRun {
-	constructor(plan,surface) {Object.assign(this,plan);this.surface=surface;this.stroke=0;this.point=0;this.action=0;this.settling=null;}
+	constructor(plan,surface) {Object.assign(this,plan);this.surface=surface;this.stroke=0;this.point=0;this.action=0;this.path=0;this.iterator=null;}
 	get done(){return this.action>=this.actions.length;}
-	run(until=()=>false) {
+	async run(until=()=>false) {
 		let points=0;
 		while(!this.done) {
 			const indices=this.strokes.map((stroke,index)=>stroke.actionIndex===this.action?index:-1).filter(index=>index>=0);
-			const last=indices.at(-1);
-			if(last!=null&&until(last,this.strokes[last].points.length-1))break;
-			this.surface.applyWater(this.actions[this.action++]);
-			for(const index of indices)points+=this.strokes[index].points.length;
-			this.stroke=last==null?this.stroke:last+1;
+			const next=indices[this.path];
+			if(next!=null&&until(next,this.point))break;
+			this.iterator ||= this.surface.applyWaterSteps(this.actions[this.action]);
+			const step=await this.iterator.next();
+			if(step.done){this.iterator=null;this.action++;this.path=0;this.point=0;continue;}
+			if(Number.isSafeInteger(step.value?.path)&&Number.isSafeInteger(step.value?.point)) {
+				this.path=step.value.path;this.stroke=indices[this.path];this.point=step.value.point+1;points++;
+				if(this.point>=this.strokes[this.stroke].points.length){this.path++;this.stroke=indices[this.path]??this.stroke+1;this.point=0;}
+			}
 		}
 		return points;
 	}

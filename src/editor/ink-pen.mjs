@@ -19,12 +19,9 @@ function _rapierInkPenInstall(doors) {
 	if (!host || !doors || !doors.spec || !doors.ink || !doors.draw || typeof doors.apply !== 'function') return;
 	const state = _rapierInkPenState(host);
 	state.doors = doors;
+	_rapierInkPenReadPreferences();
 	if (state.installed) return;
 	state.installed = true;
-	const remembered = doors.colour?.();
-	if (/^#[0-9a-f]{6}$/i.test(remembered || '')) state.hex = remembered.toLowerCase();
-	const rememberedWidth = Number(doors.width?.());
-	if (Number.isInteger(rememberedWidth) && rememberedWidth >= 2 && rememberedWidth <= 24) state.width = rememberedWidth;
 	host.addEventListener('pointerdown', _rapierInkPenDown, { capture: true });
 	host.addEventListener('pointermove', _rapierInkPenMove, { capture: true });
 	host.addEventListener('pointerup', _rapierInkPenUp, { capture: true });
@@ -61,6 +58,17 @@ function _rapierInkPenInstall(doors) {
 			_rapierInkPenMode(host);
 		});
 	}
+}
+
+// Preference writes change the next stroke's authored metadata, including after installation.
+function _rapierInkPenReadPreferences() {
+	const state = _rapierInkHost()?._rapierInkPen;
+	if (!state?.doors) return;
+	const remembered = state.doors.colour?.();
+	if (/^#[0-9a-f]{6}$/i.test(remembered || '')) state.hex = remembered.toLowerCase();
+	const rememberedWidth = Number(state.doors.width?.());
+	if (Number.isInteger(rememberedWidth) && rememberedWidth >= 2 && rememberedWidth <= 24) state.width = rememberedWidth;
+	_rapierInkPenPaintStrip(document.getElementById(_RAPIER_INK_STRIP_ID), state);
 }
 
 function _rapierInkPenToggle() {

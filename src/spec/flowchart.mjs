@@ -103,6 +103,8 @@ function flowchartIds(cursor) {
 function flowchartLabel(value) {
   if (value.length > FLOWCHART_LIMITS.labelChars) flowchartFail('flowchart_label_limit');
   if (!value.trim()) flowchartFail('flowchart_empty_label');
+  // Paired math delimiters belong to Mermaid's native MathML renderer.
+  if (/\$\$.*?\$\$/.test(value)) flowchartFail('flowchart_unsupported');
   // HTML and Mermaid entity spellings are refused, while an ordinary ampersand remains ordinary text.
   if (/[<>\x00-\x1f\x7f-\x9f\ud800-\udfff\ufffe\uffff]/u.test(value) ||
       /&(?:#[xX]?[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*;)|&(?:amp|lt|gt|quot|apos)(?:;|(?=[^A-Za-z0-9]|$))|#[A-Za-z0-9]+;/i.test(value) ||

@@ -39,13 +39,14 @@ the drawing for movable, editable shapes and the fence for a flowchart that must
 | Discuss “this” or “that part” | Read current selection/focus, then source or the drawing recipe; clarify an ambiguous referent |
 | Undo the agent's work beside later human edits | `document.undo_agent_change` with the recorded change ID |
 | Keep, annotate, draw or paint after the conversation | Deliver the offline editor with `rapier-html`; the person uses its canvas and brushes |
+| Keep a document in another format | `document.export`: `markdown`, `html`, `txt`, `page`, `docx` or `pdf` |
 | Work from the person's notes | `notes.list` (with `query` for the library search), `notes.read` (a `version` from `notes.history` reads the past), `notes.set` for pin, colour, section, tags, archive and trash, `notes.sync {action: "now"}`, `notes.propose` for new notes and changes; Notes answer at the person's own folder or enrolled endpoint, else `notes_locked` or `notes_not_configured` |
 | Put the editor inside a product | Use `embed-rapier` for the app-owned storage contract |
 
 Read [diagrams and drawing examples](references/diagrams.md) for the supported Mermaid grammar, native
 figures, spatial composition and object edits. Read [collaboration](references/collaboration.md) for
 in-document requests, returned pages, continuation and recovery. Read the [catalog](references/AGENT-TOOLS.json)
-only for the schema needed. Structure reads and scoped edits keep long documents out of context; the
+(the document and door tools) or the [Notes catalog](references/AGENT-TOOLS-notes.json) only for the schema needed. Structure reads and scoped edits keep long documents out of context; the
 [measurement](references/token-saving.md) describes a measured workload, not a universal per-edit cost.
 
 ## Create a useful first result
@@ -80,6 +81,14 @@ outer fence longer than every backtick run in the source (at least four), or att
 Close each Mermaid block with the same marker character and at least its opening length before prose resumes.
 
 ## Read, change, continue
+
+`document.export` returns a download link and a receipt. `markdown` is the exact source, `html` the offline
+editor with the source inside, `txt` the words as Copy as text writes them, `page` a standalone web page
+of the rendered document, `docx` Word and `pdf` pages with searchable text and the source attached. The
+receipt states what the format keeps. Word and PDF are written by the person's open editor without a tap
+and are refused with `editor_unavailable` when none is open; the other four need no editor. Files are
+immutable, at most 8 MiB and available for 24 hours; disconnecting the workspace revokes their links.
+Keep a downloaded copy when it matters.
 
 1. Start or resume with `document.get_context`: inspect `brief`, `surface`, `editing`, `law`,
    `collaboration.review`, `sourceChanges`, selection/focus and waiting returns. Host context or a
