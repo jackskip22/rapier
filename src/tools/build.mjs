@@ -26,7 +26,7 @@ import {checkToolchain} from './check-toolchain.mjs';
 import {SIZE_BUDGETS} from './profile-budgets.mjs';
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
-import {seoSection, welcomePaintHtml} from './seo-page.mjs';
+import {seoSection, seoDoorSections, welcomePaintHtml} from './seo-page.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
@@ -671,7 +671,7 @@ html = html.replace(/<!-- RAPIER_PAINT_BEGIN -->[\s\S]*?<!-- RAPIER_PAINT_END --
 html = html.replace(/<!-- RAPIER_PLATFORM_BEGIN -->[\s\S]*?<!-- RAPIER_PLATFORM_END -->\n?/g, '<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n');
 html = html.replace(/<meta name="rapier-version" content="[^"]+">/, `<meta name="rapier-version" content="${VERSION}">`);
 // The page's search words. The template carries two RAPIER_SEO regions: the head's (the site's description, previews, canonical address
-// and structured data) and the body's (the plain guide a crawler reads, written below from the welcome document). Only the full page,
+// and structured data) and the body's (the home guide and inert door templates, from the welcome and sheets). Only the full page,
 // the site's own, keeps them. The document profile, the ChatGPT copy and every page that carries someone's document
 // (skills/rapier-html/page.mjs) drop both: none of them is rapier.website.
 const seoRegion = /<!-- RAPIER_SEO_BEGIN -->[\s\S]*?<!-- RAPIER_SEO_END -->\n?/g;
@@ -697,8 +697,13 @@ else {
       {'@type': 'Organization', '@id': publisher, name: data.name, url: origin + '/', logo: {'@type': 'ImageObject', url: origin + '/icon-512.png', width: 512, height: 512}, sameAs}]};
     return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs, publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
   });
-  const [guide] = [...html.matchAll(seoRegion)].slice(1);
-  html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection(await read('editor/engine.js')) + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);
+  const [guide] = [...html.matchAll(seoRegion)].slice(1), engineSource = await read('editor/engine.js');
+  const doors = Object.entries(seoDoorSections(engineSource, ui)).map(([path, section]) => {
+    const name = 'RAPIER_DOOR_' + path.slice(1).toUpperCase();
+    return '<!-- ' + name + '_BEGIN -->\n<template>\n' + section + '\n</template>\n<!-- ' + name + '_END -->';
+  }).join('\n');
+  // Inert templates share the outer region: every document carrier drops all site guides in one operation.
+  html = html.slice(0, guide.index) + '<!-- RAPIER_SEO_BEGIN -->\n' + seoSection(engineSource) + '\n' + doors + '\n<!-- RAPIER_SEO_END -->\n' + html.slice(guide.index + guide[0].length);
 }
 // One page policy (security/csp.mjs): shell <meta> is csp('web'); Android and Windows send csp('native'). Absent native trees are `unchecked`.
 {

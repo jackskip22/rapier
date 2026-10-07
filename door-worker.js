@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// rapier.website's doors, /privacy, /commercial, /notes and /draw, answered with their own head.
+// rapier.website's doors, /privacy, /commercial, /notes and /draw, answered with their own head and guide.
 //
-// The site is one HTML file; the static host answers each door with that same file (`_redirects`), and the page opens the
-// sheet from the address. A reader that does not run the page (a crawler's first pass, a link preview, a search engine
-// deciding whether /privacy, /notes or /draw is a page of its own or a copy of /) would read the home page's title, description and
-// canonical address on every door, and the sitemap's two door addresses would name a canonical that is not themselves.
-// This worker answers a door's request with the same bytes, the head region alone rewritten to that door's own words and
-// address. Everything after the head is passed through untouched, so the page, its boot and its bytes are the same page.
+// One HTML asset carries the application and its search guides. The build keeps the door guides in inert templates
+// inside the body's search region. A door replaces the home guide with its own and names its own address in the head.
+// The application bytes between and after those regions pass through unchanged; the page opens the view from the address.
 //
-// Fail open: any doubt (the asset missing, encoded, without the head's markers) serves the plain page. The worker never
+// Fail open: any doubt (the asset missing, encoded, without its markers or guide) serves the plain page. The worker never
 // refuses a person and never stands between `/` and its page: `wrangler.jsonc` runs it first on the doors alone.
 const ORIGIN = 'https://rapier.website';
 const PAGE = '/rapier.html';
 const BEGIN = '<!-- RAPIER_SEO_BEGIN -->';
 const END = '<!-- RAPIER_SEO_END -->';
-const WINDOW = 65536;
+const HEAD_WINDOW = 65536;
+// Bound a malformed asset's buffered prefix; the rest of the application is streamed without decoding.
+const WINDOW = 1024 * 1024;
 
 // The words the engine shows while the sheet is open (`_rapierRenderDocumentHead` in editor/engine.js). The row
 // runtime-pack-roundtrip reads the served head and the opened sheet's head and refuses a difference.
@@ -34,6 +33,7 @@ export const DOORS = Object.freeze({
 });
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true});
+const beginBytes = encoder.encode(BEGIN), endBytes = encoder.encode(END);
 const attribute = value => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const text = value => String(value).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 const jsonInScript = value => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -89,23 +89,40 @@ export function doorHead(head, path) {
 	return out.slice(0, out.length - END.length) + '<script type="application/json" id="rapier-home-head">' + jsonInScript(home) + '</script>\n' + END;
 }
 
-// The whole page as bytes, for a host that has it whole (the witness server, a test).
+function doorGuide(body, path) {
+	const name = 'RAPIER_DOOR_' + path.slice(1).toUpperCase();
+	const begin = '<!-- ' + name + '_BEGIN -->', end = '<!-- ' + name + '_END -->';
+	const start = body.indexOf(begin), close = body.indexOf(end, start + begin.length);
+	if (start < 0 || close < 0 || body.indexOf(begin, start + begin.length) >= 0 || body.indexOf(end, close + end.length) >= 0) return null;
+	const template = body.slice(start + begin.length, close).trim();
+	return /^<template>\s*(<section id="rapier-seo">[\s\S]*<\/section>)\s*<\/template>$/.exec(template)?.[1] ?? null;
+}
+
+// The whole page as bytes, for a host that has it whole. Decode only the head and search guide; every application byte stays exact.
 export function doorPage(bytes, path) {
-	const end = indexOf(bytes, encoder.encode(END));
-	if (end < 0 || end > WINDOW || !DOORS[path]) return bytes;
+	if (!DOORS[path]) return bytes;
+	const end = indexOf(bytes, endBytes), cut = end + endBytes.length;
+	if (end < 0 || cut > HEAD_WINDOW) return bytes;
+	const bodyAt = indexOf(bytes, beginBytes, cut), bodyEnd = indexOf(bytes, endBytes, bodyAt + beginBytes.length);
+	const tailAt = bodyEnd + endBytes.length;
+	if (bodyAt < 0 || bodyEnd < 0 || tailAt > WINDOW) return bytes;
 	try {
-		const cut = end + END.length;
 		const head = doorHead(decoder.decode(bytes.subarray(0, cut)), path);
-		if (head === null) return bytes;
-		const next = encoder.encode(head), out = new Uint8Array(next.length + bytes.length - cut);
-		out.set(next, 0); out.set(bytes.subarray(cut), next.length);
+		const guide = doorGuide(decoder.decode(bytes.subarray(bodyAt + beginBytes.length, bodyEnd)), path);
+		if (head === null || guide === null) return bytes;
+		const next = encoder.encode(head), body = encoder.encode(BEGIN + '\n' + guide + '\n' + END);
+		const middle = bytes.subarray(cut, bodyAt);
+		const out = new Uint8Array(next.length + middle.length + body.length + bytes.length - tailAt);
+		out.set(next); out.set(middle, next.length); out.set(body, next.length + middle.length);
+		out.set(bytes.subarray(tailAt), next.length + middle.length + body.length);
 		return out;
 	} catch (_) { return bytes; }
 }
 
-// The page as a stream: the head buffered to its closing marker, the rest passed through as it arrives.
+// Buffer through the body's closing search marker so a missing guide cannot leave a rewritten head over the home body.
+// Once both replacements are known, the rest passes through as it arrives.
 function doorStream(source, path) {
-	const reader = source.getReader(), marker = encoder.encode(END);
+	const reader = source.getReader(), marker = endBytes;
 	let held = new Uint8Array(0), passing = false;
 	const join = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a, 0); out.set(b, a.length); return out; };
 	return new ReadableStream({
@@ -119,10 +136,11 @@ function doorStream(source, path) {
 				for (;;) {
 					const {value, done} = await reader.read();
 					if (value) held = join(held, value);
-					const at = indexOf(held, marker);
-					if (at >= 0 || done || held.length > WINDOW) {
+					const headAt = indexOf(held, marker);
+					const at = headAt < 0 ? -1 : indexOf(held, marker, headAt + marker.length);
+					if (at >= 0 || done || held.length > WINDOW || (headAt >= 0 && headAt + marker.length > HEAD_WINDOW) || (headAt < 0 && held.length > HEAD_WINDOW)) {
 						passing = true;
-						const changed = at >= 0 && at <= WINDOW ? doorPage(held, path) : held;
+						const changed = at >= 0 && at + marker.length <= WINDOW ? doorPage(held, path) : held;
 						if (changed.length) controller.enqueue(changed);
 						held = new Uint8Array(0);
 						if (done) controller.close();

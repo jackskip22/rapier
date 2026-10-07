@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // What a crawler reads in rapier.html without running a byte of it. The page's own words are packed: to a reader that does not execute it
-// the body is script text. This writes the one <section> that says what Rapier is, in plain HTML, from two sources: the feature summary
-// below (the README's list, one line each) and the welcome document, the text the editor opens on, evaluated from editor/engine.js and
-// rendered with the page's own Markdown grammar (agent/markdown-spec.mjs) with its pictures left out. The build writes it between the body's
-// RAPIER_SEO markers of the full page and nowhere else. The head's style hides it from the first paint and its <noscript> style shows it
+// the body is script text. The home guide combines the feature summary below and the welcome document, evaluated from editor/engine.js
+// and rendered with the page's Markdown grammar (agent/markdown-spec.mjs) with its pictures left out. Each door takes its own welcome
+// sections or the interface's policy sheet. The build writes all guides between the body's RAPIER_SEO markers, the door guides in inert
+// templates for the Worker to select. The head's style hides the active guide from the first paint and its <noscript> style shows it
 // where scripting is off, so no person who runs the editor ever sees it; it carries no `hidden` attribute, because a reader that ignores
 // stylesheets (a crawler, a reader mode) drops what carries one.
 import {formatColorRun} from '../spec/md-marks.mjs';
@@ -17,6 +17,7 @@ import {installMarkdownLayout} from '../layout/markdown.mjs';
 import {imageStyle, linesHeightCss} from '../spec/md-layout.mjs';
 import {installMarkdownImages, dataImage} from '../spec/md-assets.mjs';
 import {decodeDataImage, imageDimensions} from '../images/assets.mjs';
+import {DOORS} from '../door-worker.js';
 
 // The README's "Everything it does", one line each. Plain, and only what the README already says.
 const SUMMARY = `The fast, free Markdown editor for your phone. Write, draw, paint and keep notes, offline, with no account; it works on any device. Rapier is open source (AGPL-3.0-only), with no telemetry.
@@ -261,4 +262,77 @@ export function seoSection(engineSource) {
 	// Words only: no picture, script, style, form or comment, and no picture's bytes.
 	if (/<(?:img|svg|script|style|iframe|form|input|!--)|data:|RAPIER_/i.test(section)) throw new Error('The search words must be plain text and links');
 	return section;
+}
+
+// Select actual headings, so a heading-like line in a fenced example cannot end a guide.
+function welcomeGuidePart(source, heading, {omitTitle = false, omitSpecimens = false} = {}) {
+	const {tokens, lines} = source, found = [];
+	for (let index = 0; index < tokens.length; index++) {
+		if (tokens[index].type === 'heading_open' && tokens[index].level === 0 && tokens[index + 1]?.content === heading) found.push(index);
+	}
+	if (found.length !== 1) throw new Error('The welcome must carry one ' + heading + ' section');
+	const start = found[0], opening = tokens[start], rank = Number(opening.tag.slice(1));
+	let end = start + 3;
+	while (end < tokens.length && !(tokens[end].type === 'heading_open' && tokens[end].level === 0 && Number(tokens[end].tag.slice(1)) <= rank)) end++;
+	const from = opening.map[omitTitle ? 1 : 0], to = tokens[end]?.map?.[0] ?? lines.length;
+	const omitted = new Set();
+	if (omitSpecimens) for (let index = start + 3; index < end; index++) {
+		const token = tokens[index], layout = token.meta?.mdLayout;
+		if (token.type !== 'inline' || !layout?.imageOnly || layout.layout.wrap !== 'around') continue;
+		const picture = token.children.find(child => child.type === 'image');
+		if (!picture || [...picture.content].length <= 1) continue;
+		// A floated specimen and its adjoining description refer to one another. The plain guide keeps
+		// standalone instructions; a one-letter picture is a drop cap, restored by withoutPictures.
+		const paragraph = tokens[index - 1], next = tokens[index + 2], words = tokens[index + 3];
+		if (next?.type !== 'paragraph_open' || next.level !== paragraph.level || words?.type !== 'inline' || words.meta?.mdLayout?.imageOnly) continue;
+		for (let line = paragraph.map[0]; line < next.map[1]; line++) omitted.add(line);
+	}
+	return withoutPictures(lines.slice(from, to).filter((_, index) => !omitted.has(from + index)).join('\n'));
+}
+
+// The sheets contain nested link groups. Match their div boundary before dropping the interface's
+// wrappers and classes, so a configured agreement or checkout remains the same link the editor shows.
+function sheetGuide(markup, name) {
+	const source = markup.replace(/<!--[\s\S]*?-->/g, '');
+	const tags = [...source.matchAll(/<\/?div\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi)];
+	const found = tags.filter(tag => !tag[0].startsWith('</') && /\bclass="([^"]*)"/.exec(tag[0])?.[1].split(/\s+/).includes(name));
+	if (found.length !== 1) throw new Error('The interface must carry one ' + name + ' sheet');
+	const start = found[0], at = tags.indexOf(start);
+	let depth = 1, end = at + 1;
+	for (; end < tags.length; end++) {
+		depth += tags[end][0].startsWith('</') ? -1 : 1;
+		if (depth === 0) break;
+	}
+	if (depth !== 0) throw new Error('The ' + name + ' sheet has no closing div');
+	return source.slice(start.index + start[0].length, tags[end].index)
+		.replace(/<\/?div\b[^>]*>/gi, '')
+		.replace(/\sclass="[^"]*"/g, '')
+		.replace(/<(\/?)h3>/g, '<$1h2>')
+		.replace(/[ \t]*\n[ \t]*/g, '\n').trim();
+}
+
+// Each address gets the same words as its view in the editor. The connector's published privacy
+// document is derived from the same sheet, so its link introduces no second copy of the policy.
+export function seoDoorSections(engineSource, uiMarkup) {
+	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
+	installMarkdownImages(parser);
+	installMarkdownLayout(parser);
+	const markdown = welcomeMarkdown(engineSource);
+	const source = {tokens: parser.parse(markdown, {docId: 'door-source'}), lines: markdown.split('\n')};
+	const render = (text, name) => plain(parser.render(text, {docId: 'door-' + name}));
+	const bodies = {
+		'/notes': render(welcomeGuidePart(source, 'Notes', {omitTitle: true}), 'notes'),
+		'/draw': render(welcomeGuidePart(source, 'Drawing', {omitSpecimens: true}) + '\n' + welcomeGuidePart(source, 'Paint'), 'draw'),
+		'/privacy': sheetGuide(uiMarkup, 'privacy-words') + '\n<p><a href="https://github.com/jackskip22/rapier-plugins/blob/main/PRIVACY.md">Connector privacy and terms</a> use the same policy.</p>\n',
+		'/commercial': sheetGuide(uiMarkup, 'commercial-words') + '\n',
+	};
+	const escape = value => parser.utils.escapeHtml(String(value));
+	return Object.fromEntries(Object.entries(DOORS).map(([path, door]) => {
+		if (!bodies[path]) throw new Error('The site door has no guide: ' + path);
+		const links = [['/', 'Rapier'], ...Object.entries(DOORS).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
+			.map(([address, label]) => '<a href="https://rapier.website' + address + '">' + escape(label) + '</a>').join(' · ');
+		const section = '<section id="rapier-seo">\n<h1>' + escape(door.name) + '</h1>\n' + bodies[path] + '<nav><p>' + links + '</p></nav>\n</section>';
+		if (/<(?:img|svg|script|style|iframe|form|input|button|!--)|data:|RAPIER_/i.test(section)) throw new Error('The door guide must be plain text and links');
+		return [path, section];
+	}));
 }

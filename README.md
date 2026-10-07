@@ -8,6 +8,7 @@ no account.
 - **As a file:** [download rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) and open it in any
   browser.
 - **On Android:** the Rapier app on Google Play. It has no Internet permission.
+- **On Windows:** [download Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe), the same editor as a desktop app.
 - **With an agent:** the Claude plugin, the ChatGPT app, or any MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does

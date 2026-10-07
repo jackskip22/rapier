@@ -24,6 +24,7 @@
   let modelFlight = null, modelQueued = false, modelAvailable = true, modelFailures = 0, modelSent = '';
   let policyQueued = null, reviewQueued = null, presentedReview = null, viewFlight = null, visualFlight = null;
   let openingSwitch = false;
+  let hostWork = null;
   let imageSupportNoticeStarted = false;
   // After "Disconnect agents" the editor holds a capability no agent has; it stays out of model context until shared again from here.
   let withheld = false;
@@ -51,6 +52,8 @@
   const editing = () => composing || contextBusy() || Date.now() - lastEdit < 900;
   const metadata = result => object(result?._meta?.rapier) ? result._meta.rapier : {};
   const viewVersion = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const reviewSignature = review => JSON.stringify(review && {id: review.id, kind: review.kind, status: review.status,
+    revision: review.revision, contribution: review.contribution, changes: review.changes, splices: review.splices});
   const canImport = () => typeof window.openai?.selectFiles === 'function' &&
     typeof window.openai?.getFileDownloadUrl === 'function';
   const canUpload = () => typeof window.openai?.uploadFile === 'function';
@@ -103,7 +106,22 @@
     const own = globalThis.RapierAgentCatalog?.getTool?.(name)?.visibility?.includes('app') ||
       (human && ['document.comment', 'document.read_context'].includes(name));
     const editorKey = typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
-    return request('tools/call', {name, arguments: own && editorKey ? {...args, editorKey} : args}, timeout);
+    const run = () => request('tools/call', {name, arguments: own && editorKey ? {...args, editorKey} : args}, timeout);
+    return !own && host?.trackInvocation ? host.trackInvocation(name, args, run, crypto.randomUUID()) : run();
+  }
+
+  function finishHostWork() {
+    const current = hostWork;
+    hostWork = null;
+    current?.();
+  }
+
+  function beginHostWork(params) {
+    finishHostWork();
+    if (!host?.trackInvocation || !token || params?.arguments?.document !== token) return;
+    const done = new Promise(resolve => { hostWork = resolve; });
+    void host.trackInvocation('agent', params.arguments,
+      () => done, crypto.randomUUID()).catch(() => {});
   }
 
   function button(label, action, className = '') {
@@ -175,10 +193,7 @@
     style.textContent = `
       .rapier-app-notice{pointer-events:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:var(--color-surface-2);color:var(--color-text);font:var(--text-sm)/1.5 var(--font-mono)}
       .rapier-app-notice[hidden]{display:none}.rapier-app-notice>span{flex:1 1 auto}.rapier-app-notice button{text-transform:uppercase;letter-spacing:var(--track-caps-ui)}
-      .rapier-app-notice button,.rapier-app-dialog button{font:inherit;color:inherit;background:var(--color-surface-hover);border:0;border-radius:0;min-height:48px;padding:8px 14px;cursor:pointer}
-      .rapier-app-dialog{max-width:min(440px,calc(100vw - 32px));padding:24px;border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);font:inherit}
-      .rapier-app-dialog::backdrop{background:#0009}.rapier-app-dialog h2{font-size:1.15em;margin:0 0 12px}.rapier-app-dialog p{line-height:1.5}
-      .rapier-app-dialog>div{display:flex;gap:10px;flex-wrap:wrap}.rapier-app-dialog button:disabled{opacity:.5;cursor:wait}
+      .rapier-app-notice button{font:inherit;color:inherit;background:var(--color-surface-hover);border:0;border-radius:0;min-height:48px;padding:8px 14px;cursor:pointer}
       .rapier-app-image-notice{pointer-events:auto;width:min(440px,calc(100vw - 32px));box-sizing:border-box;padding:20px;background:var(--color-bg);color:var(--color-text);font:inherit}
       .rapier-app-image-notice strong{font-size:1.05em}.rapier-app-image-notice p{margin:12px 0;line-height:1.5}
       .rapier-app-image-notice button{font:inherit;text-transform:uppercase;color:var(--color-accent-foreground,#fff);background:var(--color-accent);border:0;border-radius:0;padding:12px 16px;cursor:pointer}
@@ -336,7 +351,8 @@
 
   function sourceRange(value, length) {
     return object(value) && Number.isSafeInteger(value.start) && Number.isSafeInteger(value.end) &&
-      value.start >= 0 && value.end >= value.start && value.end <= length ? {start: value.start, end: value.end} : null;
+      value.start >= 0 && value.end >= value.start && value.end <= length ? {start: value.start, end: value.end,
+        ...(typeof value.objectId === 'string' ? {objectId: value.objectId} : {})} : null;
   }
 
   function contextRanges(captured, source) {
@@ -350,7 +366,8 @@
     } catch (_) { return null; }
     const move = value => {
       const range = sourceRange(value, captured.text.length);
-      return range && sourceRange(RapierLedger.transportTouchedInterval(range.start, range.end, splices), source.text.length);
+      const moved = range && sourceRange(RapierLedger.transportTouchedInterval(range.start, range.end, splices), source.text.length);
+      return moved && {...moved, ...(range.objectId ? {objectId: range.objectId} : {})};
     };
     return {selection: move(captured.context?.selection), focus: move(captured.context?.focus)};
   }
@@ -500,7 +517,7 @@
       return;
     }
     if (dirty || flight || decisionFlight || switching ||
-        base?.collaboration?.review?.id !== shown.id || base.revision !== shown.serverRevision || base.text !== shown.text) {
+        reviewSignature(base?.collaboration?.review) !== shown.signature || base.revision !== shown.serverRevision || base.text !== shown.text) {
       shown.dismissed = true;
       if (!switching) setStatus('review_waiting');
       host.notify('That review changed. Inspect the current proposal before deciding.', 'info');
@@ -537,9 +554,9 @@
 
   async function acknowledgeView() {
     const sent = viewFlight;
-    if (!sent || dirty || flight || composing) return;
+    if (!sent || sent.status !== 'expired' && (dirty || flight || composing)) return;
     const result = await call('document.view_ack', sent);
-    viewFlight = null;
+    if (viewFlight === sent) viewFlight = null;
     captureIncoming(result);
     schedule(0);
   }
@@ -576,7 +593,7 @@
 
   async function presentCollaboration() {
     const review = base?.collaboration?.review;
-    if (presentedReview && (review?.id !== presentedReview.id || review.status !== 'pending' ||
+    if (presentedReview && (reviewSignature(review) !== presentedReview.signature || review.status !== 'pending' ||
         base.revision !== presentedReview.serverRevision || base.text !== presentedReview.text)) {
       await host.dismissReview(presentedReview.id, 'review_changed');
       presentedReview = null;
@@ -594,7 +611,7 @@
         if (presentedReview.failed || presentedReview.dismissed) setStatus('review_waiting');
         return;
       }
-      const shown = {id: review.id, documentId: base.documentId, serverRevision: base.revision,
+      const shown = {id: review.id, signature: reviewSignature(review), documentId: base.documentId, serverRevision: base.revision,
         text: base.text, localRevision: local.revision, generation: local.generation};
       presentedReview = shown;
       const result = await host.presentReview(review, base, expected, {
@@ -620,13 +637,23 @@
     }
     const intent = base.viewIntent;
     if (!intent || intent.status !== 'pending' || intent.revision !== base.revision || viewed.has(intent.id)) return;
-    const result = await host.applyView(intent, expected, base);
+    const documentToken = token;
+    let ended = null;
+    const result = await host.applyView(intent, expected, base, {onPointResult: receipt => {
+      if (documentToken !== token || closed || closing || switching || base?.viewIntent?.id !== intent.id) return;
+      ended = receipt;
+      if (!viewed.has(intent.id)) return;
+      viewFlight = {document: documentToken, expectedRevision: base.revision, viewId: intent.id,
+        status: 'expired', reason: receipt.reason || 'pointer_expired'};
+      schedule(0);
+    }});
     if (dirty || composing || !same(await host.snapshot(), base)) return;
     if (!result?.ok && (result?.outcome === 'yielded' || ['document_not_settled', 'foreground_hand_wins', 'human_edit_in_progress'].includes(result?.reason))) return;
     viewed.add(intent.id);
     if (viewed.size > 64) viewed.delete(viewed.values().next().value);
     viewFlight = {document: token, expectedRevision: base.revision, viewId: intent.id,
-      status: result?.ok ? 'presented' : 'refused', ...(result?.ok ? {} : {reason: String(result?.reason || 'view_unavailable').slice(0, 128)})};
+      status: ended ? 'expired' : result?.ok ? 'presented' : 'refused',
+      ...(ended ? {reason: ended.reason || 'pointer_expired'} : result?.ok ? {} : {reason: String(result?.reason || 'view_unavailable').slice(0, 128)})};
     await acknowledgeView();
   }
 
@@ -806,31 +833,32 @@
     const store = activeFile();
     if (!store || closed || closing || switching) return;
     fileDialog?.close();
-    const resource = store.incoming, sheet = document.createElement('dialog');
-    fileDialog = sheet;
-    sheet.className = 'rapier-app-dialog';
-    sheet.setAttribute('aria-label', 'Save your file');
-    const title = document.createElement('h2'), text = document.createElement('p'), actions = document.createElement('div');
-    title.textContent = store.file.name;
-    text.textContent = resource
-      ? 'The file changed outside this editor. Keep my version replaces the file and keeps its version for Copy draft; Use file version replaces this draft.'
-      : 'Your draft is safe in this editor. Save a new copy to ChatGPT Files or download it, or retry saving the original.';
-    const act = (label, action) => button(label, async event => {
-      if (event?.isTrusted !== true || activeFile() !== store) return;
-      for (const child of actions.children) child.disabled = true;
-      try { if (await action(event)) sheet.close(); }
-      finally { for (const child of actions.children) child.disabled = false; }
-    });
-    actions.append(act(object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft', downloadDraft));
-    if (canUpload()) actions.append(act('Save to ChatGPT Files', uploadCurrent));
+    const resource = store.incoming, boxes = [];
+    // Use file version replaces the draft, so it is the pop's bottom box; Keep editing stands among the ways forward.
+    const act = (label, action, pop = 'affirm') => {
+      const box = button(label, async event => {
+        if (event?.isTrusted !== true || activeFile() !== store) return;
+        for (const child of boxes) child.disabled = true;
+        try { if (await action(event)) sheet.close(); }
+        finally { for (const child of boxes) child.disabled = false; }
+      });
+      box.dataset.pop = pop;
+      boxes.push(box);
+      return box;
+    };
+    act(object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft', downloadDraft);
+    if (canUpload()) act('Save to ChatGPT Files', uploadCurrent);
     if (resource) {
-      actions.append(act('Keep my version', () => keepMyVersion(store, resource)), act('Use file version', () => useHostFileVersion(store, resource)));
-    } else actions.append(act('Retry save', saveHostFile));
-    actions.append(button('Keep editing', () => sheet.close()));
-    sheet.append(title, text, actions);
-    sheet.addEventListener('close', () => sheet.remove(), {once: true});
-    document.body.append(sheet);
-    sheet.showModal();
+      act('Keep my version', () => keepMyVersion(store, resource));
+      act('Use file version', () => useHostFileVersion(store, resource), 'destructive');
+    } else act('Retry save', saveHostFile);
+    const keep = button('Keep editing', () => sheet.close());
+    keep.dataset.pop = 'cancel';
+    boxes.push(keep);
+    const sheet = fileDialog = host.sheet({title: store.file.name, words: resource
+      ? 'The file changed outside this editor. Keep my version replaces the file and keeps its version for Copy draft; Use file version replaces this draft.'
+      : 'Your draft is safe in this editor. Save a new copy to ChatGPT Files or download it, or retry saving the original.',
+      body: [boxes], onEscape: current => current.close(), onClose: () => { if (fileDialog === sheet) fileDialog = null; }});
   }
 
   // Keep my version: the file's version is kept before the editor's is written over it, as a switch keeps a stranded
@@ -1055,6 +1083,7 @@
     if (running) return running;
     if (closed || switching || !initialized || !token || !host || (!force && (!visible() || failures >= 5))) return Promise.resolve(false);
     running = (async () => {
+      if (viewFlight?.status === 'expired') await acknowledgeView();
       if (!base) {
         if (!incoming && !await sync()) return false;
         await loadIncoming(false, null, force);
@@ -1375,6 +1404,7 @@
     if (task.kind === 'review' && ['apply', 'drop'].includes(task.args.action) && presentedReview && base) {
       const live = base.collaboration?.review;
       if (live?.status === 'pending' && live.id === presentedReview.id) {
+        presentedReview.signature = reviewSignature(live);
         presentedReview.serverRevision = base.revision;
         presentedReview.text = base.text;
         presentedReview.localRevision = base.revision;
@@ -1466,28 +1496,22 @@
   function showHome() {
     if (closed || closing || switching) return false;
     if (homeDialog?.open) return true;
-    homeDialog?.remove();
-    const sheet = document.createElement('dialog');
-    homeDialog = sheet;
-    sheet.className = 'rapier-app-dialog';
-    sheet.setAttribute('aria-label', 'Rapier documents');
-    const title = document.createElement('h2'), actions = document.createElement('div');
-    title.textContent = 'Your documents';
-    actions.append(button('New document', async () => { await openDocument({text: '', filename: 'untitled.md', docKind: 'markdown'}); }));
-    if (canImport()) actions.append(button('Open from ChatGPT Files', async event => { if (await importFile(event)) sheet.close(); }));
-    actions.append(button('Open from device', async event => { if (await openLocalFile(event)) sheet.close(); }));
-    if (base && canUpload()) actions.append(button('Save to ChatGPT Files', uploadCurrent));
-    sheet.append(title, actions);
-    const records = recentHostFiles();
+    homeDialog?.close();
+    const actions = [button('New document', async () => { await openDocument({text: '', filename: 'untitled.md', docKind: 'markdown'}); })];
+    if (canImport()) actions.push(button('Open from ChatGPT Files', async event => { if (await importFile(event)) sheet.close(); }));
+    actions.push(button('Open from device', async event => { if (await openLocalFile(event)) sheet.close(); }));
+    if (base && canUpload()) actions.push(button('Save to ChatGPT Files', uploadCurrent));
+    const back = button(base ? 'Back to document' : 'Close', () => sheet.close());
+    back.dataset.pop = 'cancel';
+    const records = recentHostFiles(), body = [];
     if (records.length && typeof window.openai?.getFileDownloadUrl === 'function') {
-      const heading = document.createElement('p'), recent = document.createElement('div');
+      const heading = document.createElement('p');
+      heading.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5';
       heading.textContent = 'Recently opened or saved';
-      for (const file of records) recent.append(button(file.fileName, async event => { if (await importFile(event, file)) sheet.close(); }));
-      sheet.append(heading, recent);
-    }
-    sheet.append(button(base ? 'Back to document' : 'Close', () => sheet.close()));
-    document.body.append(sheet);
-    sheet.showModal();
+      body.push(actions, heading, [...records.map(file => button(file.fileName, async event => { if (await importFile(event, file)) sheet.close(); })), back]);
+    } else body.push([...actions, back]);
+    const sheet = homeDialog = host.sheet({title: 'Your documents', body, onEscape: current => current.close(),
+      onClose: () => { if (homeDialog === sheet) homeDialog = null; }});
     return true;
   }
 
@@ -1628,18 +1652,15 @@
       delivered();
     }
     catch (_) {
-      const sheet = document.createElement('dialog'), field = document.createElement('textarea');
-      sheet.className = 'rapier-app-dialog';
-      sheet.setAttribute('aria-label', 'Copy your draft');
+      const field = document.createElement('textarea');
+      field.className = 'navigator-outline-filter';
       field.readOnly = true;
       field.value = local.text;
       field.setAttribute('aria-label', 'Draft text. Select all and copy.');
-      field.style.cssText = 'width:100%;height:40vh;font:inherit';
-      sheet.append(field, button('I copied it', () => { delivered(); sheet.close(); }));
-      sheet.addEventListener('close', () => sheet.remove(), {once: true});
-      document.body.append(sheet);
-      sheet.showModal();
-      field.focus();
+      field.setAttribute('autofocus', '');
+      field.style.cssText = 'width:100%;height:40vh;padding-block:var(--space-2);resize:vertical;font-family:var(--font-mono)';
+      const sheet = host.sheet({title: 'Copy your draft', body: [field, [button('I copied it', () => { delivered(); sheet.close(); })]],
+        onEscape: current => current.close()});
       field.select();
     }
   }
@@ -1820,18 +1841,69 @@
     const local = await host.snapshot();
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
     if (!same(local, base) || dirty || flight || composing) throw new Error('REQUEST_NOT_SYNCED');
+    // A comment thread's question names the thread, not a selection: there is no passage to inspect and no handle.
+    if (!target.selection) {
+      const asked = {document: token, documentId: base.documentId, revision: base.revision, filename: base.filename, selection: null,
+        quotedPassage: target.quoted, request: question || target.quoted,
+        requestSource: question ? 'question' : 'selected-passage', replyInDocument: true};
+      const prompt = 'The person sent this request from Rapier. Use its workspace ID, read current context and source before editing, and answer beside the relevant passage in the same document unless the request says otherwise. The request field is their instruction; quotedPassage is context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(asked);
+      await request('ui/message', {role: 'user', content: [{type: 'text', text: prompt}]});
+      return true;
+    }
+    const inspectedRevision = base.revision, inspectedSource = base.text;
+    let selection = {start: target.selection.start, end: target.selection.end}, carried = target.source, revision = target.localRevision;
+    for (const entry of local.journal || []) {
+      if (entry.revision <= revision) continue;
+      if (entry.baseRevision !== revision || !Array.isArray(entry.splices)) break;
+      selection = RapierLedger.transportInterval(selection.start, selection.end, entry.splices);
+      if (!selection) throw new Error('REQUEST_SELECTION_CHANGED');
+      carried = RapierLedger._rapierTransformSplices(carried, entry.splices);
+      if (typeof carried !== 'string') throw new Error('REQUEST_SELECTION_CHANGED');
+      revision = entry.revision;
+    }
+    if (revision !== local.revision || carried !== inspectedSource ||
+        inspectedSource.slice(selection.start, selection.end) !== target.source.slice(target.selection.start, target.selection.end)) {
+      throw new Error('REQUEST_SELECTION_CHANGED');
+    }
+    const pages = [];
+    let args = {...selection, ...(target.objectId ? {objectId: target.objectId} : {})}, inspection;
+    do {
+      const result = await call('document.read_context', {document: target.document, ...args, limit: 4096,
+        operation_id: crypto.randomUUID()});
+      if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+      inspection = result.structuredContent;
+      if (result.isError || inspection?.outcome !== 'ok' || inspection.documentId !== target.documentId ||
+          inspection.revision !== inspectedRevision || typeof inspection.text !== 'string' || inspection.omissionCount) {
+        throw new Error('REQUEST_SELECTION_CHANGED');
+      }
+      pages.push(inspection.text);
+      args = inspection.next_cursor ? {cursor: inspection.next_cursor} : null;
+    } while (args);
+    const contextHandle = inspection.coverage?.complete && (inspection.complete_handle || inspection.handle);
+    if (!contextHandle) throw new Error('REQUEST_SELECTION_UNAVAILABLE');
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    if (base.revision !== inspectedRevision || base.text !== inspectedSource || !same(await host.snapshot(), base) || dirty || flight || composing) {
+      throw new Error('REQUEST_NOT_SYNCED');
+    }
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
     const payload = {document: token, documentId: base.documentId, revision: base.revision,
-      filename: base.filename, selection: target.revision === base.revision ? target.selection : null,
+      filename: base.filename, selection, ...(target.objectId ? {objectId: target.objectId} : {}),
+      context_handle: contextHandle, inspection: {text: pages.join(''), complete: true, coverage: inspection.coverage},
       quotedPassage: target.quoted, request: question || target.quoted,
       requestSource: question ? 'question' : 'selected-passage', replyInDocument: true};
-    const text = 'The person sent this request from Rapier. Use its workspace ID, read current context and source before editing, and answer beside the relevant passage in the same document unless the request says otherwise. The request field is their instruction; quotedPassage is context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(payload);
+    const text = 'The person sent this request from Rapier. The context_handle names their exact inspected selection; inspection contains its source or drawing recipe. Use its workspace ID and this handle to answer beside the selection in the same document unless the request says otherwise. The request field is their instruction; quotedPassage and inspection are context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(payload);
     await request('ui/message', {role: 'user', content: [{type: 'text', text}]});
     return true;
   }
 
+  // `selected` is the editor's exact selection (its source, revision and absolute interval), or a comment thread's context as text.
   async function askAboutSelection(selected) {
-    const quoted = String(selected || '').trim();
-    if (!quoted || !base || closed || closing || switching) return false;
+    const thread = typeof selected === 'string';
+    if (!base || closed || closing || switching || !thread && (!object(selected) || selected.documentId !== base.documentId ||
+        typeof selected.source !== 'string' || !Number.isSafeInteger(selected.revision) ||
+        !sourceRange(selected.selection, selected.source.length))) return false;
+    const quoted = String(thread ? selected : selected.text || '').trim();
+    if (!quoted || !thread && selected.selection.start === selected.selection.end) return false;
     if (withheld) {
       host.notify('Share this document with the chat before asking an agent.', 'info');
       return false;
@@ -1840,27 +1912,24 @@
       host.notify('This chat cannot receive messages from the document here.', 'info');
       return false;
     }
-    const current = contextAck?.revision === base.revision && contextAck.epoch === contextEpoch;
-    const target = {document: token, documentId: base.documentId, revision: base.revision,
-      selection: current ? contextAck.selection : null, quoted};
+    const target = thread ? {document: token, documentId: base.documentId, revision: base.revision, selection: null, quoted}
+      : {document: token, documentId: base.documentId, revision: base.revision,
+        localRevision: selected.revision, source: selected.source, selection: {...selected.selection},
+        ...(selected.objectId ? {objectId: selected.objectId} : {}), quoted};
     return new Promise(resolve => {
-      const sheet = document.createElement('dialog');
-      sheet.className = 'rapier-app-dialog';
-      sheet.setAttribute('aria-labelledby', 'rapier-app-ask-title');
-      const title = document.createElement('h2');
-      title.id = 'rapier-app-ask-title';
-      title.textContent = 'Ask about this passage';
       const quote = document.createElement('p');
-      quote.style.cssText = 'font-style:italic;opacity:.8;max-height:6em;overflow:auto';
+      quote.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5;font-style:italic;opacity:.8;max-height:6em;overflow:auto';
       quote.textContent = quoted.length > 400 ? quoted.slice(0, 400) + '…' : quoted;
       const hint = document.createElement('p');
+      hint.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5';
       hint.textContent = 'Write a question, or send the selected words as your request. The reply belongs here in your document.';
       const field = document.createElement('textarea');
+      field.className = 'navigator-outline-filter';
       field.rows = 3;
       field.placeholder = 'Your question (optional)';
       field.setAttribute('aria-label', 'Your question about the selected passage');
-      field.style.cssText = 'width:100%;font:inherit;padding:12px;border:0;border-radius:0;background:var(--bg);color:inherit;box-sizing:border-box;resize:vertical';
-      const actions = document.createElement('div');
+      field.setAttribute('autofocus', '');
+      field.style.cssText = 'width:100%;height:auto;min-height:6rem;padding-block:var(--space-2);resize:vertical;box-sizing:border-box';
       let settled = false, sending = false;
       const finish = outcome => {
         if (settled) return;
@@ -1879,6 +1948,8 @@
         } catch (error) {
           host.notify(error?.message === 'REQUEST_DOCUMENT_CHANGED' ? 'This document is no longer shared here. Close this question and share the document again.' :
             error?.message === 'REQUEST_NOT_SYNCED' ? 'Your edits have not synced yet. Your question is kept here; try again when the document is ready.' :
+            error?.message === 'REQUEST_SELECTION_CHANGED' ? 'The selected work changed. Your question is kept here; select the current work and ask again.' :
+            error?.message === 'REQUEST_SELECTION_UNAVAILABLE' ? 'This selection cannot be inspected as one editable target. Select a smaller passage and ask again.' :
             'The chat did not confirm receipt. Your question is kept here; check the chat before sending again.', 'error');
         } finally {
           sending = false;
@@ -1886,16 +1957,13 @@
         }
       };
       const sendButton = button('Send', send), cancelButton = button('Cancel', () => finish(false));
-      actions.append(sendButton, cancelButton);
-      sheet.append(title, quote, hint, field, actions);
-      sheet.addEventListener('keydown', event => {
+      cancelButton.dataset.pop = 'cancel';
+      field.addEventListener('keydown', event => {
         if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void send(event); }
       });
-      sheet.addEventListener('cancel', event => { if (sending) event.preventDefault(); });
-      sheet.addEventListener('close', () => { if (!settled) { settled = true; resolve(false); } sheet.remove(); }, {once: true});
-      document.body.append(sheet);
-      sheet.showModal();
-      field.focus();
+      const sheet = host.sheet({title: 'Ask about this passage', body: [quote, hint, field, [sendButton, cancelButton]],
+        onEscape: () => { if (!sending) finish(false); },
+        onClose: () => { if (!settled) { settled = true; resolve(false); } }});
     });
   }
 
@@ -1964,22 +2032,24 @@
     if (!initialized || typeof value.method !== 'string') return;
     if (Object.hasOwn(value, 'id')) {
       if (value.method === 'ping') post({id: value.id, result: {}});
-      else if (value.method === 'ui/resource-teardown') void teardown(value.id).catch(error => {
+      else if (value.method === 'ui/resource-teardown') { finishHostWork(); void teardown(value.id).catch(error => {
         closing = false;
         post({id: value.id, error: {code: -32000, message: 'The document could not finish saving.'}});
         failed(error);
-      });
+      }); }
       else post({id: value.id, error: {code: -32601, message: 'Method not supported'}});
       return;
     }
     if (value.method === 'ui/notifications/host-context-changed') updateContext(value.params);
     else if (value.method === 'notifications/resources/updated' &&
         typeof value.params?.uri === 'string' && value.params.uri === activeFile()?.file.resourceUri) void refreshHostFile();
-    else if (value.method === 'ui/notifications/tool-result') void receive(value.params).catch(failed);
-    else if (value.method === 'ui/notifications/tool-input' && !token && validToken(value.params?.arguments?.document)) {
-      token = value.params.arguments.document;
+    else if (value.method === 'ui/notifications/tool-result') { finishHostWork(); void receive(value.params).catch(failed); }
+    else if (value.method === 'ui/notifications/tool-input') {
+      if (!token && validToken(value.params?.arguments?.document)) token = value.params.arguments.document;
+      beginHostWork(value.params);
       schedule(0);
     } else if (value.method === 'ui/notifications/tool-cancelled') {
+      finishHostWork();
       if (!base) {
         failures = 5;
         setStatus('unavailable');

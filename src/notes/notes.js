@@ -7552,14 +7552,15 @@ function _rapierNotesBind(surface, search) {
 		// A sort or layout pick is a TOGGLE in the settings panel, not a row that dismisses it -- the
 		// panel stays open with the new state worn, exactly as the main panel's switches do. Custom,
 		// created and modified are all answerable from the index, so no sort needs a whole-folder read.
-		if (act === 'sort') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesSort', value); renderSwitch(el.parentElement, value); _rapierNotesRender(); return; }
+		// The surface follows the preference through its subscriber (below), whoever wrote it: this switch, or an agent at the door.
+		if (act === 'sort') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesSort', value); renderSwitch(el.parentElement, value); return; }
 		// Skills lives in this panel. The section appears and goes on the cards, so the surface is
 		// redrawn with the preference.
-		if (act === 'skills') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesSkills', value === 'true'); renderSwitch(el.parentElement, value); _rapierNotesRender(); return; }
+		if (act === 'skills') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesSkills', value === 'true'); renderSwitch(el.parentElement, value); return; }
 		// The colour mode: the bar alone or the whole page. The icon turns in place, so its band grows or
 		// shrinks rather than being redrawn; the settings panel stands over the cards, so a note open
 		// under them wears the new mode the next time it comes in (the head is painted for it now).
-		if (act === 'colour-mode') { _rapierNotesSetPref('notesColour', _rapierNotesColourMode() === 'page' ? 'bar' : 'page'); _rapierNotesColourModeWear(el); _rapierNotesHeadPaint(); return; }
+		if (act === 'colour-mode') { _rapierNotesSetPref('notesColour', _rapierNotesColourMode() === 'page' ? 'bar' : 'page'); _rapierNotesColourModeWear(el); return; }
 		if (act === 'bin-open') { _rapierNotesSettingsOpen(false); _rapierNotesBinOpen(true); return; }
 		if (act === 'bin-close') { _rapierNotesBinOpen(false); return; }
 		if (act === 'bin-pick') {
@@ -7572,7 +7573,7 @@ function _rapierNotesBind(surface, search) {
 		// Empty the bin is delete-forever over everything in it -- same act, same confirm, same
 		// "there is no undo after this", rather than a quieter second way to destroy the same files.
 		if (act === 'bin-empty') { void _rapierNotesBinRun('delete-forever', _rapierNotesBinFiles()); return; }
-		if (act === 'layout') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesLayout', value); renderSwitch(el.parentElement, value); _rapierNotesLayout(); _rapierNotesRender(); return; }
+		if (act === 'layout') { const value = _rapierSwitchValue(el); _rapierNotesSetPref('notesLayout', value); renderSwitch(el.parentElement, value); return; }
 		if (act === 'section-add-menu') { _rapierNotesSettingsOpen(false); void _rapierNotesSectionFromMenu(); return; }
 		if (act === 'section' && el.classList.contains('rapier-notes-section-head')) {
 			// In the Sections mode a tap on one of the person's own heads opens that section's face --
@@ -7696,7 +7697,12 @@ function _rapierNotesBind(surface, search) {
 	window.addEventListener('pagehide', departure);
 	window.addEventListener('freeze', departure);
 	window.addEventListener('rapier:checkpoint-requested', departure);
+	// The view preferences have one owner each: whoever writes one (the settings switch, an agent through the door), the open
+	// surface follows at once.
 	try { RapierPreferences.subscribe('notesSkills', () => { if (state.open) _rapierNotesRender(); }); } catch (_) {}
+	try { RapierPreferences.subscribe('notesSort', () => { if (state.open) _rapierNotesRender(); }); } catch (_) {}
+	try { RapierPreferences.subscribe('notesLayout', () => { if (state.open) { _rapierNotesLayout(); _rapierNotesRender(); } }); } catch (_) {}
+	try { RapierPreferences.subscribe('notesColour', () => { if (state.open) _rapierNotesHeadPaint(); }); } catch (_) {}
 	// The settings panel's copy of the theme selector follows the theme wherever it was chosen: the
 	// main panel, this panel's copy, or the host.
 	try { RapierPreferences.subscribe('theme', () => _rapierNotesThemeMark()); } catch (_) {}

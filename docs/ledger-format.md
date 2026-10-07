@@ -31,7 +31,8 @@ console.assert(together.text === 'Hello');
 records[]: {transaction, splices: [{pos, removed, inserted}], beforeHash, afterHash}
 transaction: {id, documentAuthority, baseRevision, revision, actor: {kind, id},
  transport, operation, requestId, sourceTransactionId, affectedBlockIds,
- parent, reverts, reapplies, createdAt}
+ parent, reverts, reapplies, createdAt, [contribution, contributionBaseRevision,
+ sourceTransactionIds, remoteTransactionId]}
 ```
 
 `format` is `rapier-ledger/1`. `start.text` is the exact text before the first
@@ -39,7 +40,10 @@ retained record. Every outgoing record carries its own splices, including Undo a
 Redo. Offsets and ranges count UTF-16 code units; no boundary may cut a surrogate
 pair. Splices execute in their recorded order. UTF-8 checksums preserve CRLF, tabs,
 NUL and non-ASCII text. The canonical text limit is 25 MiB; each record has at most
-64 splices. The existing record validator remains authoritative for field bounds.
+64 splices. The existing record validator remains authoritative for field bounds. The optional fields name an agent's grouped
+contribution and where its record came from: `contribution` is 1 to 120 characters, `contributionBaseRevision` a non-negative
+integer, `sourceTransactionIds` at most 500 identifiers of 1 to 160 characters and `remoteTransactionId` 1 to 256 characters; a
+record that carries one outside these bounds, or of another type, is refused.
 
 `start.sha256` and `head.sha256` hash UTF-8 text. The envelope `sha256` hashes
 canonical JSON of every other envelope field: recursively sorted object keys,

@@ -1,5 +1,5 @@
 {
-  "release": "1.1.76",
+  "release": "1.1.77",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -379,6 +379,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -709,6 +716,13 @@
                 "type": "string",
                 "maxLength": 512
               },
+              "contribution": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
               "changes": {
                 "type": "integer",
                 "minimum": 0
@@ -757,6 +771,10 @@
                   "object",
                   "null"
                 ],
+                "additionalProperties": true
+              },
+              "agentPresence": {
+                "type": "object",
                 "additionalProperties": true
               },
               "review": {
@@ -815,6 +833,13 @@
                     "type": "string",
                     "maxLength": 120
                   },
+                  "contribution": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
                   "editCount": {
                     "type": "integer",
                     "minimum": 0
@@ -870,6 +895,7 @@
               "posture",
               "readOnly",
               "presence",
+              "agentPresence",
               "review"
             ],
             "additionalProperties": false
@@ -938,6 +964,13 @@
                     "label": {
                       "type": "string",
                       "maxLength": 96
+                    },
+                    "contribution": {
+                      "type": "string",
+                      "maxLength": 120,
+                      "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+                      "minLength": 1,
+                      "pattern": "\\S"
                     },
                     "insertedChars": {
                       "type": "integer",
@@ -1595,6 +1628,13 @@
             "maximum": 9007199254740991,
             "description": "Units per page. Clamped to 4096."
           },
+          "objectId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "The handle can change this object alone; the whole drawing is still read."
+          },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
@@ -1670,6 +1710,12 @@
           "omitted": {
             "type": "integer",
             "minimum": 0
+          },
+          "objectId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$"
           },
           "sha256": {
             "type": "string",
@@ -2122,6 +2168,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -2321,7 +2374,7 @@
     {
       "name": "document.propose_edits",
       "title": "Propose inspected edits",
-      "description": "Stages changes to inspected passages for the person to approve or decline before application.",
+      "description": "Stages changes to inspected passages for the person to approve or decline before application. Use the same contribution name on text and drawing changes to review them together; read a corrected target again to refresh its part.",
       "effect": "view",
       "class": "write",
       "inputSchema": {
@@ -2369,6 +2422,13 @@
           "note": {
             "type": "string",
             "description": "A sentence for the person about this change."
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "agent": {
             "type": "string",
@@ -2439,6 +2499,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -2504,7 +2571,7 @@
     {
       "name": "document.undo_agent_change",
       "title": "Undo your change",
-      "description": "Reverses a selected agent change, or the latest change under the supplied agent name, while preserving later human work.",
+      "description": "Reverses a selected agent change, a whole named contribution, or the latest change under the supplied agent name, while preserving later human work.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -2514,6 +2581,13 @@
             "type": "string",
             "maxLength": 128,
             "description": "The changeId to reverse; absent selects the latest change under this call's agent name."
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "agent": {
             "type": "string",
@@ -2582,6 +2656,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -2624,7 +2705,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Replaces the open comparison with an applied agent revision's diff for inspection, without changing document text or review decisions.",
+      "description": "Replaces the open comparison with the diff of an applied agent revision or a whole named contribution, without changing document text or review decisions.",
       "effect": "view",
       "class": "write",
       "inputSchema": {
@@ -2634,6 +2715,13 @@
             "type": "string",
             "maxLength": 128,
             "description": "The changeId to show (default: your latest)."
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "agent": {
             "type": "string",
@@ -2700,6 +2788,13 @@
           "name": {
             "type": "string",
             "maxLength": 512
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "changes": {
             "type": "integer",
@@ -2854,6 +2949,13 @@
           "name": {
             "type": "string",
             "maxLength": 512
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "changes": {
             "type": "integer",
@@ -3028,6 +3130,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -3150,6 +3259,129 @@
           },
           "revealed": {
             "type": "boolean"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "document.point",
+      "title": "Point to inspected work",
+      "description": "Points at an inspected passage, drawing object or change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.",
+      "effect": "view",
+      "class": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "context_handle": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "change_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "words": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "A few words beside the pointer.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "lifetime": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Seconds the pointer lives; 6 by default."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "words"
+        ],
+        "additionalProperties": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "shown",
+              "deferred",
+              "expired",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "status": {
+            "enum": [
+              "shown",
+              "deferred",
+              "expired"
+            ]
+          },
+          "pointerId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expires_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lifetime": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -3565,7 +3797,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. A drawing's recipe also carries its paper, background with every number its kind has, copier effect, light, letters and embedded fonts: read the drawing and send the whole recipe back with recipe_handle to change them; while the person has that drawing open, shapes patches and operations are admitted. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with svgNodeEdits.",
+      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. A drawing's recipe also carries its paper, background with every number its kind has, copier effect, light, letters and embedded fonts: read the drawing and send the whole recipe back with recipe_handle to change them; while the person has that drawing open, shapes patches and operations are admitted. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with svgNodeEdits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -4993,6 +5225,13 @@
             "type": "string",
             "description": "A short name the person sees for this change."
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
@@ -5061,6 +5300,13 @@
               "null"
             ],
             "maxLength": 128
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "editCount": {
             "type": "integer",
@@ -6446,6 +6692,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -6804,6 +7057,13 @@
                 "type": "string",
                 "maxLength": 512
               },
+              "contribution": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
               "changes": {
                 "type": "integer",
                 "minimum": 0
@@ -6852,6 +7112,10 @@
                   "object",
                   "null"
                 ],
+                "additionalProperties": true
+              },
+              "agentPresence": {
+                "type": "object",
                 "additionalProperties": true
               },
               "review": {
@@ -6910,6 +7174,13 @@
                     "type": "string",
                     "maxLength": 120
                   },
+                  "contribution": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
                   "editCount": {
                     "type": "integer",
                     "minimum": 0
@@ -6965,6 +7236,7 @@
               "posture",
               "readOnly",
               "presence",
+              "agentPresence",
               "review"
             ],
             "additionalProperties": false
@@ -7033,6 +7305,13 @@
                     "label": {
                       "type": "string",
                       "maxLength": 96
+                    },
+                    "contribution": {
+                      "type": "string",
+                      "maxLength": 120,
+                      "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+                      "minLength": 1,
+                      "pattern": "\\S"
                     },
                     "insertedChars": {
                       "type": "integer",
@@ -7755,6 +8034,13 @@
             "maximum": 9007199254740991,
             "description": "Units per page. Clamped to 4096."
           },
+          "objectId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "The handle can change this object alone; the whole drawing is still read."
+          },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
@@ -7826,6 +8112,12 @@
           "omitted": {
             "type": "integer",
             "minimum": 0
+          },
+          "objectId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$"
           },
           "sha256": {
             "type": "string",
@@ -8332,6 +8624,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -8581,7 +8880,7 @@
     {
       "name": "document.propose_edits",
       "title": "Propose inspected edits",
-      "description": "Stages changes to inspected passages for the person to approve or decline before application.",
+      "description": "Stages changes to inspected passages for the person to approve or decline before application. Use the same contribution name on text and drawing changes to review them together; read a corrected target again to refresh its part.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8638,6 +8937,13 @@
           "note": {
             "type": "string",
             "description": "A sentence for the person about this change."
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "agent": {
             "type": "string",
@@ -8702,6 +9008,13 @@
               "null"
             ],
             "maxLength": 128
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "editCount": {
             "type": "integer",
@@ -8791,7 +9104,7 @@
     {
       "name": "document.undo_agent_change",
       "title": "Undo your change",
-      "description": "Reverses a selected agent change, or the latest change under the supplied agent name, while preserving later human work.",
+      "description": "Reverses a selected agent change, a whole named contribution, or the latest change under the supplied agent name, while preserving later human work.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8810,6 +9123,13 @@
             "type": "string",
             "maxLength": 128,
             "description": "The changeId to reverse; absent selects the latest change under this call's agent name."
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "agent": {
             "type": "string",
@@ -8873,6 +9193,13 @@
               "null"
             ],
             "maxLength": 128
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "editCount": {
             "type": "integer",
@@ -8939,7 +9266,7 @@
     {
       "name": "document.show_changes",
       "title": "Inspect your changes",
-      "description": "Replaces the open comparison with an applied agent revision's diff for inspection, without changing document text or review decisions.",
+      "description": "Replaces the open comparison with the diff of an applied agent revision or a whole named contribution, without changing document text or review decisions.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8958,6 +9285,13 @@
             "type": "string",
             "maxLength": 128,
             "description": "The changeId to show (default: your latest)."
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "agent": {
             "type": "string",
@@ -9020,6 +9354,13 @@
           "name": {
             "type": "string",
             "maxLength": 512
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "changes": {
             "type": "integer",
@@ -9202,6 +9543,13 @@
           "name": {
             "type": "string",
             "maxLength": 512
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "changes": {
             "type": "integer",
@@ -9403,6 +9751,13 @@
             ],
             "maxLength": 128
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "editCount": {
             "type": "integer",
             "minimum": 0
@@ -9561,6 +9916,156 @@
       },
       "annotations": {
         "title": "Show an inspected passage",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          }
+        ],
+        "website.rapier/tool-class": "write",
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Working in Rapier.",
+        "openai/toolInvocation/invoked": "Rapier has replied."
+      }
+    },
+    {
+      "name": "document.point",
+      "title": "Point to inspected work",
+      "description": "Points at an inspected passage, drawing object or change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          },
+          "context_handle": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "change_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "words": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "A few words beside the pointer.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "lifetime": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Seconds the pointer lives; 6 by default."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          }
+        },
+        "required": [
+          "document",
+          "words"
+        ],
+        "additionalProperties": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "shown",
+              "deferred",
+              "expired",
+              "target_gone",
+              "conflict",
+              "yielded",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "status": {
+            "enum": [
+              "shown",
+              "deferred",
+              "expired"
+            ]
+          },
+          "pointerId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expires_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lifetime": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Point to inspected work",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -10101,7 +10606,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. A drawing's recipe also carries its paper, background with every number its kind has, copier effect, light, letters and embedded fonts: read the drawing and send the whole recipe back with recipe_handle to change them; while the person has that drawing open, shapes patches and operations are admitted. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with svgNodeEdits.",
+      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. A drawing's recipe also carries its paper, background with every number its kind has, copier effect, light, letters and embedded fonts: read the drawing and send the whole recipe back with recipe_handle to change them; while the person has that drawing open, shapes patches and operations are admitted. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with svgNodeEdits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -11538,6 +12043,13 @@
             "type": "string",
             "description": "A short name the person sees for this change."
           },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
@@ -11602,6 +12114,13 @@
               "null"
             ],
             "maxLength": 128
+          },
+          "contribution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.",
+            "minLength": 1,
+            "pattern": "\\S"
           },
           "editCount": {
             "type": "integer",
@@ -12939,13 +13458,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.76.html",
+          "resourceUri": "ui://rapier/editor-1.1.77.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.76.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.77.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -13430,6 +13949,12 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 26214400
+              },
+              "objectId": {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
               }
             },
             "required": [
@@ -13453,6 +13978,12 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 26214400
+              },
+              "objectId": {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
               }
             },
             "required": [
@@ -13916,6 +14447,12 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 26214400
+                  },
+                  "objectId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9_-]+$"
                   }
                 },
                 "required": [
@@ -14055,7 +14592,7 @@
     {
       "name": "document.view_ack",
       "title": "Acknowledge editor presentation",
-      "description": "Records whether the editor presented or refused a requested passage or difference.",
+      "description": "Records whether the editor presented or refused a requested passage or difference, and when a shown pointer ends.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -14082,7 +14619,8 @@
             "type": "string",
             "enum": [
               "presented",
-              "refused"
+              "refused",
+              "expired"
             ]
           },
           "reason": {

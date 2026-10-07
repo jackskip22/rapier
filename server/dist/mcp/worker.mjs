@@ -201,7 +201,7 @@ async function takeIdOf(capability) {
 const mintId = prefix => prefix + crypto.randomUUID().replaceAll('-', '');
 
 function snapshot(state, collaboration, viewIntent, visualIntent) {
-  const compare = state.compare ? { id: state.compare.id, revision: state.compare.revision, baseline: state.compare.baseline, incoming: state.compare.incoming, name: state.compare.name, reviewOnly: state.compare.reviewOnly === true, changes: state.compare.changes.map(({ id, start, end, incomingStart, incomingEnd, removed, inserted, status }) => ({ id, start, end, incomingStart, incomingEnd, removed, inserted, status })) } : null;
+  const compare = state.compare ? { id: state.compare.id, revision: state.compare.revision, baseline: state.compare.baseline, incoming: state.compare.incoming, name: state.compare.name, ...(state.compare.contribution ? {contribution: state.compare.contribution} : {}), reviewOnly: state.compare.reviewOnly === true, changes: state.compare.changes.map(({ id, start, end, incomingStart, incomingEnd, removed, inserted, status }) => ({ id, start, end, incomingStart, incomingEnd, removed, inserted, status })) } : null;
   return { documentId: state.documentId, revision: state.revision, text: state.text, filename: state.filename, docKind: state.docKind, journal: state.journal, proposalBase: state.proposalBase, compare, collaboration, viewIntent: viewIntent || null, ...(visualIntent ? {visualIntent} : {}) };
 }
 
@@ -214,13 +214,14 @@ function agentReport(head) {
 
 function collaborationSummary(value) {
   const presence = value.presence, review = value.review;
-  return { posture: value.posture, readOnly: value.readOnly, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes } : {}), ...(review.splices ? { splices: review.splices } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
+  return { posture: value.posture, readOnly: value.readOnly, agentPresence: value.agentPresence, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes } : {}), ...(review.splices ? { splices: review.splices } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
 }
 
-// Model-facing: ids, statuses, counts; never splices. Built from the same collaboration() as collaborationSummary.
+// Model-facing: ids, statuses, counts; never splices. Built from the same collaboration() as collaborationSummary, without the editor's
+// aggregate of every agent's pointer (their words and owners): a caller's own presence is get_context's, never a shared fact.
 function collaborationContext(value) {
   const presence = value.presence, review = value.review;
-  return { posture: value.posture, readOnly: value.readOnly, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes.map(({ id, status, reason }) => ({ id, status, ...(reason ? { reason } : {}) })) } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
+  return { posture: value.posture, readOnly: value.readOnly, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes.map(({ id, status, reason }) => ({ id, status, ...(reason ? { reason } : {}) })) } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
 }
 
 // Sorted defensively; storage order is not promised.
@@ -230,6 +231,7 @@ function reviewChangesFingerprint(review) {
 }
 
 function viewChanged(before, after) {
+  if (JSON.stringify(before.pointers) !== JSON.stringify(after.pointers)) return true;
   if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision || before.posture !== after.posture || before.readOnly !== after.readOnly || before.review?.id !== after.review?.id || before.review?.status !== after.review?.status || before.reviewedRevision !== after.reviewedRevision) return true;
   // Per-change status moves without review.id/status changing: fingerprint the changes too, or a partial drop reads unchanged.
   if (reviewChangesFingerprint(before.review) !== reviewChangesFingerprint(after.review)) return true;
@@ -244,7 +246,7 @@ function envelope(value, head, meta = {}, { modelFacing = false } = {}) {
   const result = { ...value, outcome: value.outcome || 'ok', ...(head ? { documentId: head.documentId, revision: head.revision, documentRevision: head.revision, version: head.version, filename: head.filename, docKind: head.docKind, chars: head.chars, collaboration, ...(head.viewIntent ? { view: { id: head.viewIntent.id, kind: head.viewIntent.kind, revision: head.viewIntent.revision, status: head.viewIntent.status, ...(head.viewIntent.reason ? { reason: head.viewIntent.reason } : {}) } } : {}), expiresAt: new Date(head.expiresAt).toISOString() } : {}) };
   if (modelFacing && collaboration?.review && encoder.encode(JSON.stringify(result)).byteLength > LIMITS.resultBytes) {
     const review = collaboration.review;
-    result.collaboration = { ...collaboration, review: { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), editCount: review.editCount, complete: false } };
+    result.collaboration = { ...collaboration, review: { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), editCount: review.editCount, ...(review.contribution ? {contribution: review.contribution} : {}), complete: false } };
   }
   const message = typeof result.message === 'string' ? result.message : typeof result.reason === 'string' ? result.reason : `${result.outcome}${head ? `; document revision ${head.revision}` : ''}`;
   return { content: [{ type: 'text', text: message }], structuredContent: result, ...(isError ? { isError: true } : {}), ...(Object.keys(meta).length ? { _meta: { rapier: meta } } : {}) };
@@ -1284,6 +1286,10 @@ export class RapierDocument {
       const waiter = createRequestWait({signal, timeoutMs: bounded(input.args.timeout_ms, 30000, 1000, 120000),
         onFinish: settled => { if (this.returnWaiter === settled) this.returnWaiter = null; }});
       waiter.mode = mode;
+      waiter.capabilityHash = input.capabilityHash;
+      waiter.operationId = input.operationId;
+      waiter.caller = {...resolveCaller({actor: 'agent', principal: 'remote:' + input.capabilityHash,
+        requestId: input.operationId}, {transport: 'mcp'}), agent: input.args.agent};
       this.returnWaiter = waiter;
       return {promise: waiter.promise};
     });
@@ -1317,7 +1323,10 @@ export class RapierDocument {
       if (this.visualWaiter) return {result: await resume(refuse('visual_capture_busy'))};
       if (!result.structuredContent.collaboration?.presence?.active) return {result: await resume(refuse('editor_not_present'))};
       const wait = createRequestWait({signal, timeoutMs: VIEW_LEASE_MS});
-      const capture = {wait, id: pending.requestId, request, capabilityHash: input.capabilityHash};
+      const capture = {wait, id: pending.requestId, request, capabilityHash: input.capabilityHash,
+        operationId: input.operationId,
+        caller: {...resolveCaller({actor: 'agent', principal: 'remote:' + input.capabilityHash,
+          requestId: input.operationId}, {transport: 'mcp'}), agent: input.args.agent}};
       this.visualWaiter = capture;
       try {
         const head = structuredClone(this.ctx.storage.kv.get('head'));
@@ -1457,8 +1466,14 @@ export class RapierDocument {
       await this.ctx.storage.sync();
       return envelope({ outcome: 'paired', paired: true, message: 'The browser showing that code now edits this workspace.' }, head);
     }
+    // Pending observations are live requests owned by their existing waiters. A fresh kernel
+    // receives those callers as transient facts; none survives request settlement or a restart.
+    const inFlight = [this.returnWaiter, this.visualWaiter].filter(row => row &&
+      row.capabilityHash === capabilityHash && row.operationId !== input.operationId).map(row => row.caller);
     const elapsed = head.nextExpiryAt !== null && head.nextExpiryAt <= Date.now();
-    if (operation === 'document.sync' && !elapsed && args.afterVersion === head.version && (args.afterRevision === undefined || args.afterRevision === head.revision)) {
+    if (operation === 'document.sync' && !elapsed &&
+        (head.collaboration?.agentPresence?.inFlight || 0) === inFlight.length &&
+        args.afterVersion === head.version && (args.afterRevision === undefined || args.afterRevision === head.revision)) {
       return envelope({ outcome: 'current', unchanged: true, ...agentReport(head) }, head);
     }
     let state = this.readState(head), collaboration;
@@ -1469,16 +1484,21 @@ export class RapierDocument {
     const human = handle => ({ ...resolveCaller({ actor: 'human', principal, session: 'editor', requestId: handle }, { transport: 'mcp' }), serverNow: Date.now() });
     const queueView = (kind, request) => {
       const presence = kernel.collaboration().presence;
-      if (!presence?.active) return { ok: false, reason: 'editor_not_present' };
-      if (presence.editing) return { ok: false, reason: 'human_edit_in_progress' };
-      if (head.viewIntent?.status === 'pending' && head.viewIntent.expiresAt > Date.now()) return { ok: false, reason: 'presentation_already_pending' };
-      head.viewIntent = { id: crypto.randomUUID(), kind, revision: request.revision, status: 'pending', expiresAt: Date.now() + VIEW_LEASE_MS,
+      const pointer = request.pointer;
+      if (pointer?.expiresAt <= Date.now()) return {ok: false, status: 'expired', reason: 'pointer_expired'};
+      if (!pointer && !presence?.active) return { ok: false, reason: 'editor_not_present' };
+      if (!pointer && presence.editing) return { ok: false, reason: 'human_edit_in_progress' };
+      const prior = head.viewIntent;
+      if (prior?.status === 'pending' && prior.expiresAt > Date.now() &&
+          !(pointer && prior.pointer)) return { ok: false, reason: 'presentation_already_pending' };
+      head.viewIntent = { id: crypto.randomUUID(), kind, revision: request.revision, status: 'pending', expiresAt: pointer?.expiresAt ?? Date.now() + VIEW_LEASE_MS,
+        ...(pointer ? {pointer} : {}),
         ...(kind === 'document' ? { start: request.start, end: request.end } : { compareId: request.compareId, changeId: request.changeId }) };
-      return { pending: true, viewId: head.viewIntent.id };
+      return { pending: true, viewId: head.viewIntent.id, ...(!presence?.active ? {reason: 'editor_not_present'} : presence.editing ? {reason: 'human_edit_in_progress'} : {}) };
     };
     // Seed from the persisted journal, or a DO retry finds an empty one and acts twice.
     let exported = null;
-    const kernel = createKernel({ state, host: { proposalPage: UI_RESOURCE, exportFile: async request => {
+    const kernel = createKernel({ state, inFlight, host: { proposalPage: UI_RESOURCE, exportFile: async request => {
       if (!editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
       const file = await exportFile(this.env, request);
       exported = file.bytes && file.bytes.byteLength <= MAX_EXPORT_BYTES ? {...file, id: mintId('export_')} : file;
@@ -1515,15 +1535,27 @@ export class RapierDocument {
     };
     const refresh = (capture = true) => {
       collaboration = kernel.collaboration();
-      const next = capture ? kernel.snapshot() : state;
+      let next = capture ? kernel.snapshot() : state;
       if (state.filename !== next.filename || state.docKind !== next.docKind) head.metadataRevision = next.revision;
-      if (head.viewIntent?.status === 'pending') {
+      if (head.viewIntent?.pointer && ['pending', 'presented'].includes(head.viewIntent.status)) {
+        const view = head.viewIntent;
+        const pointer = Object.values(next.pointers).find(row => row.id === view.pointer.id);
+        if (!pointer || pointer.status === 'expired' || view.expiresAt <= Date.now() || view.revision !== next.revision) {
+          if (pointer && pointer.status !== 'expired') {
+            kernel.pointResult({pointerId: pointer.id, status: 'expired', reason: 'document_changed'}, human(view.id));
+            next = kernel.snapshot();
+          }
+          head.viewIntent = {...view, status: 'expired', reason: pointer?.reason || 'pointer_expired', pointer: {...view.pointer, status: 'expired'}};
+          collaboration = kernel.collaboration();
+        } else head.viewIntent = {...view, pointer: {...pointer}};
+      } else if (head.viewIntent?.status === 'pending') {
         const view = head.viewIntent;
         if (view.revision !== next.revision || (view.kind === 'compare' && view.compareId !== next.compare?.id)) head.viewIntent = { ...view, status: 'invalidated', reason: 'document_changed' };
         else if (view.expiresAt <= Date.now()) head.viewIntent = { ...view, status: 'expired', reason: 'presentation_expired' };
       }
       const nextViewKey = JSON.stringify(head.viewIntent);
-      const changed = viewChanged(state, next) || nextViewKey !== viewKey;
+      const changed = viewChanged(state, next) || nextViewKey !== viewKey ||
+        (head.collaboration?.agentPresence?.inFlight || 0) !== collaboration.agentPresence.inFlight;
       head = this.describe(next, head, head.version + (changed ? 1 : 0), collaboration);
       state = next;
       viewKey = nextViewKey;
@@ -1566,13 +1598,22 @@ export class RapierDocument {
     if (operation === 'document.view_ack') {
       const view = head.viewIntent;
       if (!view || view.id !== args.viewId) return toolError(failure('VIEW_UNAVAILABLE', 'This presentation request is no longer current.'), head);
-      if (!['presented', 'refused'].includes(args.status)) return toolError(failure('INVALID_VIEW_ACK', 'A presentation acknowledgment must be presented or refused.'), head);
+      if (!['presented', 'refused', 'expired'].includes(args.status) || args.status === 'expired' && !view.pointer) return toolError(failure('INVALID_VIEW_ACK', 'This presentation acknowledgment is not supported.'), head);
+      if (view.pointer && args.status === 'expired') {
+        const value = kernel.pointResult({pointerId: view.pointer.id, status: 'expired', reason: args.reason || 'dismissed'}, human(args.viewId));
+        head.viewIntent = {...view, status: 'expired', reason: args.reason || 'dismissed', pointer: {...view.pointer, status: 'expired'}};
+        refresh();
+        await this.persist(head, state, kernel.invocationJournal());
+        return envelope({...value, outcome: 'ok', viewId: view.id, presented: false}, head);
+      }
       if (view.status !== 'pending') {
         if (view.status === args.status && (view.reason || '') === (args.reason || '')) return envelope({ outcome: 'ok', replayed: true, viewId: view.id }, head);
         return toolError(failure('VIEW_UNAVAILABLE', 'This presentation request has already settled or expired.'), head);
       }
       if (args.expectedRevision !== state.revision || view.revision !== state.revision || (view.kind === 'compare' && (view.compareId !== state.compare?.id || !state.compare.changes.some(row => row.id === view.changeId)))) return toolError(failure('REVISION_CONFLICT', 'The target changed before presentation was acknowledged.'), head, { snapshot: current() });
       head.viewIntent = { ...view, status: args.status, ...(args.reason ? { reason: args.reason } : {}) };
+      if (view.pointer) kernel.pointResult({pointerId: view.pointer.id,
+        status: args.status === 'presented' ? 'shown' : 'expired', ...(args.reason ? {reason: args.reason} : {})}, human(args.viewId));
       refresh();
       await this.persist(head, state, kernel.invocationJournal());
       return envelope({ outcome: 'ok', viewId: view.id, presented: args.status === 'presented' }, head);

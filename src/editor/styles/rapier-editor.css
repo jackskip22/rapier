@@ -357,6 +357,45 @@ body.rapier-notes-open .rapier-frontmatter { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .section-fold-btn svg { transition: none; } }
 
+/* The copy control at a code block's top right corner: one tap takes the code as shown. It wears the block's own
+   surface colour, so the end of a long line under it is covered cleanly; hidden while the block is edited. */
+.fence-copy {
+	position: absolute;
+	z-index: 2;
+	inset-block-start: 5px;
+	inset-inline-end: 5px;
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 0;
+	outline: 0;
+	box-shadow: none;
+	background: var(--md-color-surface-2);
+	color: var(--color-text-muted);
+	cursor: pointer;
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+.fence-copy:focus,
+.fence-copy:active { outline: 0; box-shadow: none; }
+/* The glyph is quiet; the box under it is solid, so the line it covers never shows through. */
+.fence-copy svg { width: 18px; height: 18px; display: block; opacity: .64; }
+.fence-copy:focus-visible,
+.fence-copy[data-copied] { color: var(--color-text); }
+.fence-copy:focus-visible svg,
+.fence-copy[data-copied] svg { opacity: 1; }
+@media (hover:hover) and (pointer:fine) {
+	.fence-copy:hover { color: var(--color-text); }
+	.fence-copy:hover svg { opacity: 1; }
+}
+.fence-copy .fence-copy__done,
+.fence-copy[data-copied] .fence-copy__copy { display: none; }
+.fence-copy[data-copied] .fence-copy__done { display: block; }
+.block-wrapper--editing > .fence-copy { display: none; }
+
 .block-wrapper[data-folded="true"] > .section-fold-btn svg { transform: rotate(90deg); }
 /* The chevron sits centred on the heading's first line. A heading's line box is the whole or half lines its size
    fills (the style pack's line model: h1 two lines, h2 and h3 one and a half, h4 to h6 one), so the control takes

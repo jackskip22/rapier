@@ -1953,6 +1953,35 @@
       "reason": "This logical-inline-end offset seats the fold control beside its heading, not on a viewport-bottom surface."
     },
     {
+      "id": "fence-copy-control",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".fence-copy",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset-block-start",
+            "value": "5px",
+            "important": false
+          },
+          {
+            "property": "inset-inline-end",
+            "value": "5px",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".block-wrapper",
+      "reason": "These offsets seat the copy control in a code block's top right corner inside its own wrapper, not on a viewport-bottom surface."
+    },
+    {
       "id": "section-fold-control-h1",
       "file": "editor/styles/rapier-editor.css",
       "selector": ".block-wrapper--heading[data-heading-level=\"1\"] > .section-fold-btn",

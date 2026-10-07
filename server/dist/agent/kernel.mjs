@@ -70,6 +70,7 @@ const HINTS = {
   review_pending: 'One review at a time; wait for the pending one to settle.',
   editor_not_present: 'No editor is open on this workspace: get_context reports headless, so deliver the page through a file surface or ask the person to open Rapier.',
   presentation_already_pending: 'A reveal is already pending; check its view status in get_context before another.',
+  contribution_refresh_required: 'A person corrected part of this contribution. Read that target again and propose its replacement under the same contribution name before keeping the whole.',
   wait_already_pending: 'One wait at a time; the earlier wait must finish first.',
   notes_folder_unreadable: 'Notes could not answer just now; try again later.',
   notes_not_read: 'Read the whole note first, then propose again to write the change at once. Until then it waits for the person to keep or drop.',
@@ -312,7 +313,7 @@ function participant(context = {}, mintId) {
   if (!['human', 'agent', 'system'].includes(actor) || !principal || principal.length > 160) throw new TypeError('Invalid participant');
   const hostAgent = actor === 'agent' && typeof context.hostAgent === 'string' ? context.hostAgent : '';
   if (hostAgent) agentActorId('agent', {name: hostAgent});
-  return { actor, principal, ...(hostAgent ? {hostAgent} : {}), transport: String(context.transport || 'platform'), requestId: clip(context.requestId || mintId('call_'), 160),
+  return { actor, principal, ...(hostAgent ? {hostAgent} : {}), ...(agentLabel(context.agent) ? {agent: agentLabel(context.agent)} : {}), transport: String(context.transport || 'platform'), requestId: clip(context.requestId || mintId('call_'), 160),
     invocationKey: clip(context.invocationKey || mintId('key_'), 160) };
 }
 const ownerOf = who => `${who.transport}:${who.actor}:${who.principal}`;
@@ -330,7 +331,7 @@ export function createState({ id, documentId, filename = 'Untitled.md', text = '
   return {
     documentId: String(resolvedId), revision: safeInt(revision) ? revision : 0,
     filename, docKind: kind, text, readOnly: false, posture, selection: null, focus: null, drawing: null,
-    journal: [], handles: {}, refs: {}, cursors: {}, compare: null,
+    journal: [], handles: {}, refs: {}, cursors: {}, compare: null, pointers: {},
     humanContexts: {}, contextSequences: {}, review: null, reviewDecisions: {entries: [], omitted: 0}, reviewed: {}, resume: {}, proposalReads: {}, proposalBase: null, ledgerRoot: null,
     history: { earliestRevision: safeInt(revision) ? revision : 0, trimmedBytes: 0, complete: true,
       unreviewed: {}, unknownReviewRevision: 0 }, reviewedRevision: 0,
@@ -603,13 +604,13 @@ export function measurementsRequired(op, args = {}) {
   return null;
 }
 
-export function createKernel({ state: supplied, host = {}, clock, mintId, invocationJournal: suppliedJournal } = {}) {
+export function createKernel({ state: supplied, host = {}, clock, mintId, invocationJournal: suppliedJournal, inFlight: suppliedInFlight = [] } = {}) {
   if (typeof clock !== 'function') throw new TypeError('createKernel requires an injected clock');
   if (typeof mintId !== 'function') throw new TypeError('createKernel requires an injected id minter');
   let state = supplied ? clone(supplied) : createState({ mintId });
   if (!state || typeof state.text !== 'string' || !state.documentId || !safeInt(state.revision) ||
       !Array.isArray(state.journal) || !state.handles || !state.refs || !state.cursors || !state.history ||
-      !state.humanContexts || !state.contextSequences || !state.reviewed || !state.resume || !state.proposalReads ||
+      !state.humanContexts || !state.contextSequences || !state.reviewed || !state.resume || !state.proposalReads || !state.pointers ||
       !Array.isArray(state.reviewDecisions?.entries) || !safeInt(state.reviewDecisions.omitted)) {
     throw new TypeError('Invalid Rapier state');
   }
@@ -618,6 +619,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   let imageCache = null;
   let waitPending = false;
   let pendingInspection = null;
+  const working = new Map();
+  const presenceKey = who => ownerOf(who) + '\u0000' + (who.agent || '');
+  // Existing host waits outlive a kernel invocation; their callers are ephemeral facts, never document state.
+  const carriedWork = suppliedInFlight.map(context => participant(context, mintId)).filter(who => who.actor === 'agent').map(presenceKey);
   // Surface-fact continuations: ephemeral, never journalled.
   const pendingFacts = new Map();
   // A retry belongs to one caller, document and operation identity. Whole receipts last 24 hours;
@@ -677,8 +682,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (prior.operation !== name || (prior.spent ? prior.digest !== short(inputDigest) : prior.inputDigest !== inputDigest)) return null;
     if (now() > prior.expiresAt) return stamp(failure('operation_retry_expired', 'refused', {retryExpiresAt: prior.expiresAt}));
     if (prior.settledRevision !== state.revision) return null;
-    return prior.spent ? stamp({outcome: 'replayed', replayed: true, reason: 'receipt_output_spent'})
-      : {...clone(prior.output), replayed: true};
+    if (prior.spent) return stamp({outcome: 'replayed', replayed: true, reason: 'receipt_output_spent'});
+    const output = {...clone(prior.output), replayed: true};
+    if (name === 'document.point' && output.pointerId) {
+      expireCollaboration();
+      const pointer = Object.values(state.pointers).find(row => row.id === output.pointerId);
+      const status = pointer?.status || 'expired';
+      Object.assign(output, {outcome: status, status});
+    }
+    return output;
   }
   function invocationJournalEntries() {
     return (spentJournal.size ? [{spent: [...spentJournal.values()].map(record => [record.key, record.settledRevision,
@@ -735,8 +747,43 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     for (const [key, row] of Object.entries(state.humanContexts)) {
       if (row.expiresAt <= time) delete state.humanContexts[key];
     }
+    for (const row of Object.values(state.pointers)) if (row.expiresAt <= time || row.documentId !== state.documentId) row.status = 'expired';
     // Content outlives authority: expiresAt is an authority clock, not a status. A lapsed review stays pending and readable;
     // surviveReview revalidates at decision. Renewal is the person's act.
+  }
+
+  function agentPresence(who = null, excludeCurrent = false) {
+    expireCollaboration();
+    const key = who && presenceKey(who);
+    const localWork = who ? working.get(key)?.count || 0 : [...working.values()].reduce((n, row) => n + row.count, 0);
+    const inFlight = Math.max(0, localWork - (excludeCurrent ? 1 : 0)) + (who ? carriedWork.filter(value => value === key).length : carriedWork.length);
+    const pointers = (who ? [state.pointers[key]].filter(Boolean) : Object.values(state.pointers)).map(row => clone(row));
+    const active = inFlight > 0 || pointers.some(row => row.status === 'shown');
+    return who ? {active, inFlight, pointer: pointers[0] ? {id: pointers[0].id, status: pointers[0].status, expiresAt: pointers[0].expiresAt} : null,
+      ...(who.agent ? {agent: who.agent} : {})} : {active, inFlight, pointers};
+  }
+
+  function publishPresence() {
+    if (typeof host.presence === 'function') {
+      try { host.presence(agentPresence()); } catch {}
+    }
+  }
+
+  function pointResult(input, context = {}) {
+    humanParticipant(context);
+    expireCollaboration();
+    const row = Object.values(state.pointers).find(row => row.id === input.pointerId);
+    if (!row) return stamp(failure('pointer_missing', 'target_gone'));
+    if (!['shown', 'expired'].includes(input.status)) return stamp(failure('pointer_status_invalid', 'invalid'));
+    if (row.status !== 'expired') {
+      if (input.status === 'shown') for (const other of Object.values(state.pointers)) if (other !== row && other.status === 'shown') {
+        other.status = 'expired'; other.reason = 'pointer_replaced';
+      }
+      row.status = input.status;
+    }
+    if (input.reason) row.reason = clip(input.reason, 160);
+    publishPresence();
+    return stamp({outcome: row.status, status: row.status, pointerId: row.id, expires_at: row.expiresAt});
   }
 
   function invalidateReview(reason = 'document_changed') {
@@ -748,7 +795,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // review.changes[i].handleId aligns with splices[i] and changeIds[i] (storage order, last-first). Other reviews invalidate on change.
   function reviewSurvivesEdits(review = state.review) {
     return review?.status === 'pending' && ['proposal', 'inline'].includes(review.kind)
-      && Array.isArray(review.handleIds) && review.handleIds.length
+      && Array.isArray(review.handleIds) && (review.handleIds.length || review.contribution)
       && Array.isArray(review.changes) && review.changes.length
       && !review.options?.compareDecision;
   }
@@ -777,16 +824,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // `assets` and `handlePairs` are index-aligned with `rows`. A drawing stages one authored change, its occurrence; definition and retirement
   // derive at commit. handlePairs come from the author, never reconstructed from as-minted bounds. `evidence` clones the handle's disclosed
   // span, revision and content at staging, so a decision can revalidate after the handle's lifetime.
-  function initReviewChanges(reviewId, rows, authored, handlePairs, assets) {
+  function initReviewChanges(reviewId, rows, authored, handlePairs, assets, operation, next = 0) {
     return rows.slice(0, authored).map((splice, index) => {
       const paired = handlePairs?.[index];
       const held = paired?.handleId ? state.handles[paired.handleId] : null;
-      return { id: reviewId + '.' + (authored - index), status: 'pending',
+      return { id: reviewId + '.' + (next + authored - index), status: 'pending', operation,
         handleId: paired?.handleId ?? null, offset: paired?.offset ?? 0,
+        target: {start: splice.pos, end: splice.pos + splice.removed.length, revision: state.revision},
         // Evidence: the handle's span, revision, content and (Draw) asset identity, cloned while fresh.
         ...(held ? { evidence: { start: held.start, end: held.end, revision: held.revision, text: held.text,
           digest: digest(held.text), ...(['draw', 'svg'].includes(held.kind) ? { assetLabel: held.assetLabel, assetDigest: held.assetDigest,
-            ...(held.drawSession ? {drawSession: held.drawSession, surfaceGeneration: held.surfaceGeneration, surfaceRecipeDigest: held.surfaceRecipeDigest} : {}) } : {}) } } : {}),
+            ...(held.drawSession ? {drawSession: held.drawSession, surfaceGeneration: held.surfaceGeneration, surfaceRecipeDigest: held.surfaceRecipeDigest} : {}) } : {}) } }
+          : !splice.removed ? {evidence: {start: splice.pos, end: splice.pos, revision: state.revision, text: '', digest: digest('')}} : {}),
         ...(assets?.[index] ? { asset: assets[index] } : {}) };
     });
   }
@@ -813,11 +862,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let pending = 0;
     for (let index = 0; index < review.changes.length; index++) {
       const change = review.changes[index];
+      if (change.target?.revision !== state.revision) {
+        const entries = since(change.target?.revision);
+        let target = change.target;
+        for (const entry of entries || []) if (target) target = transportTouchedInterval(target.start, target.end, entry.splices);
+        if (entries && target) change.target = {...target, revision: state.revision};
+      }
       if (change.status !== 'pending') continue;
-      if (!change.handleId) {
+      if (!change.handleId && !(review.contribution && change.evidence)) {
         change.status = 'stale'; change.reason = 'target_changed'; continue;
       }
-      const held = peekHandle(change.handleId, who);
+      const held = change.handleId ? peekHandle(change.handleId, who) : {};
       // A lapsed or evicted handle ends agent authority, not the person's decision: only a real conflict stales from the live row;
       // otherwise fall back to retained evidence. Preview and decision share this path.
       if (held.outcome && !['context_expired', 'context_missing'].includes(held.reason)) {
@@ -837,8 +892,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       // Advance the anchor so a later history trim cannot orphan evidence.
       change.evidence = { ...change.evidence, start: range.start, end: range.end, revision: state.revision, text: state.text.slice(range.start, range.end) };
       const splice = review.splices[index];
-      const drawInsertion = review.operation === 'document.draw' && change.asset && !splice.removed;
-      const sourceInsertion = ['document.apply_edits', 'document.propose_edits'].includes(review.operation) && !splice.removed;
+      const operation = change.operation || review.operation;
+      const drawInsertion = operation === 'document.draw' && change.asset && !splice.removed;
+      const sourceInsertion = ['document.apply_edits', 'document.propose_edits'].includes(operation) && !splice.removed;
       let pos = range.start + (change.offset || 0);
       if (sourceInsertion) {
         pos = insertionPoint(splice.pos, splice.inserted, review.revision, who);
@@ -866,7 +922,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         change.status = 'stale'; change.reason = 'target_changed'; continue;
       }
       splice.pos = pos;
+      change.target = {start: pos, end: pos + splice.removed.length, revision: state.revision};
       pending++;
+    }
+    if (review.contribution) {
+      review.revision = state.revision; review.sourceDigest = digest(state.text);
+      const stale = review.changes.some(row => row.status === 'stale');
+      if (stale) review.reason = 'contribution_refresh_required'; else delete review.reason;
+      refreshReviewExpiry(review);
+      return;
     }
     if (!pending) {
       if (invalidateIfEmpty) invalidateReview();
@@ -945,6 +1009,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const changes = publicReviewChanges(review, false);
     return { id: review.id, kind: review.kind, status: review.status, cause: reviewCause(review), revision: review.revision,
       expiresAt: review.expiresAt, label: review.label, editCount: review.editCount,
+      ...(review.contribution ? {contribution: review.contribution, complete: !review.changes.some(row => row.status === 'stale')} : {}),
       ...(review.kind !== 'check' && Array.isArray(review.changeIds) ? { changeIds: context ? pending : sortChangeIds(pending) } : {}),
       ...(review.kind !== 'check' && changes ? { changes: context ? changes.map((row, index) => {
         const text = row.status === 'pending' ? review.splices[index]?.inserted : null;
@@ -1082,8 +1147,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     // nextExpiryAt projects only future moments; a lapsed expiresAt would force every sync to do full work forever.
     const expiries = contexts.map(row => row.expiresAt);
+    for (const pointer of Object.values(state.pointers)) if (pointer.status !== 'expired') expiries.push(pointer.expiresAt);
     if (state.review?.status === 'pending' && state.review.expiresAt > now()) expiries.push(state.review.expiresAt);
-    return { posture: state.posture, readOnly: state.readOnly, presence, review,
+    return { posture: state.posture, readOnly: state.readOnly, presence, agentPresence: agentPresence(), review,
       nextExpiryAt: expiries.length ? Math.min(...expiries) : null };
   }
 
@@ -1114,7 +1180,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // A delayed attestation must not erase a live range already transported by a newer commit.
     if (input.expectedRevision !== state.revision) return stamp(failure('human_context_stale', 'conflict'));
     const range = value => value && safeBoundary(state.text, value.start) && safeBoundary(state.text, value.end) && value.start <= value.end
-      ? { start: value.start, end: value.end } : null;
+      ? { start: value.start, end: value.end, ...(typeof value.objectId === 'string' ? {objectId: value.objectId} : {}) } : null;
     const time = now(), selection = range(input.selection), focus = range(input.focus);
     if ((input.selection != null && !selection) || (input.focus != null && !focus)) return stamp(failure('human_context_range_invalid', 'invalid'));
     const drawing = normalizeDrawing(input.drawing);
@@ -1327,10 +1393,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       operation, requestId: who.requestId, invocationKey: who.invocationKey, label: clip(options.label || operation, 120),
       splices: clone(splices), createdAt: now(), sourceTransactionId: options.sourceTransactionId || null,
       humanReviewed: options.humanReviewed === true,
+      ...(options.contribution ? {contribution: options.contribution,
+        contributionBaseRevision: options.contributionBaseRevision ?? activeChanges(who).find(row => row.contribution === options.contribution)?.contributionBaseRevision ?? baseRevision} : {}),
+      ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: [...options.sourceTransactionIds]} : {}),
       ...(agent ? { agent } : {}),
       ...(derivedCommentIndex == null ? {} : {derivedCommentIndex}),
     };
     if (options.drawingPatch) entry.drawingPatch = {...clone(options.drawingPatch), transactionId: entry.id};
+    for (const [key, pointer] of Object.entries(state.pointers)) if (pointer.status !== 'expired') {
+      pointer.status = 'expired'; pointer.reason = who.actor === 'agent' && key === presenceKey(who) ? 'agent_changed' : 'document_changed';
+    }
     state.text = text; state.revision = revision;
     if (state.selection) {
       const moved = transportInterval(state.selection.start, state.selection.end, splices);
@@ -1351,7 +1423,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (row.revision !== baseRevision) { row.selection = null; row.focus = null; continue; }
       for (const key of ['selection', 'focus']) if (row[key]) {
         const move = row.editing ? transportTouchedInterval : transportInterval;
-        row[key] = move(row[key].start, row[key].end, splices);
+        const moved = move(row[key].start, row[key].end, splices);
+        row[key] = moved ? {...row[key], ...moved} : null;
       }
       row.revision = revision;
     }
@@ -1425,7 +1498,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (!own(incoming, field)) continue;
       const row = incoming[field];
       state[field] = row && safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end) && row.start <= row.end
-        ? { start: row.start, end: row.end, active: row.active === true } : null;
+        ? { start: row.start, end: row.end, active: row.active === true, ...(typeof row.objectId === 'string' ? {objectId: row.objectId} : {}) } : null;
     }
     if (own(incoming, 'readOnly') && state.readOnly !== (incoming.readOnly === true)) { state.readOnly = incoming.readOnly === true; invalidateReview('policy_changed'); }
     // Notes' cards over the document: the host refuses edits behind them.
@@ -1523,14 +1596,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // handle. A read hands in the text it has just paged; create and edit, which return no text, measure the definition they have just
   // written. The one recipe a handle keeps is the open canvas's, when the read came from the surface (a binding): the document does not
   // hold that recipe, and an edit is laid against what the caller saw of it (drawEdit). The page's kernel alone has a surface.
-  function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null) {
+  function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null, objectId = null) {
     const recipe = storedRecipe(assetLabel);
     if (!recipe) return null;
     const shown = disclosed ?? JSON.stringify(disclosedRecipe(recipe));
     if (drawHandleRefusal(shown, JSON.stringify(recipe).length)) return null;
     const text = state.text.slice(start, end);
     return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', assetLabel, assetDigest: assetDigest(assetLabel),
-      ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}) }, who);
+      ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}), ...(objectId ? {objectId} : {}) }, who);
   }
 
   function svgHandle(start, end, nodeIds, assetLabel, who) {
@@ -1582,7 +1655,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const stale = drawBindingFailure(cursor, {start: cursor.targetStart, end: cursor.targetEnd});
         if (stale) return stale;
       }
-      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? {draw: {recipeText: cursor.recipeText, assetLabel: cursor.assetLabel,
+      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? {draw: {recipeText: cursor.recipeText, assetLabel: cursor.assetLabel, objectId: cursor.objectId || null,
         binding: {drawSession: cursor.drawSession, surfaceGeneration: cursor.surfaceGeneration, surfaceRecipeDigest: cursor.surfaceRecipeDigest},
         drawing: drawingSummary(drawingFor(cursor.targetStart, cursor.targetEnd, cursor.assetLabel))}} : {}),
         ...(cursor.kind === 'svg-read' ? {svg: {inspectionText: cursor.inspectionText, assetLabel: cursor.assetLabel}} : {}) };
@@ -1601,8 +1674,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (held.kind === 'svg' && !inspectionText) return failure('target_changed', 'conflict');
       const recipeText = held.kind === 'draw' ? drawInspection(held.assetLabel) : null;
       if (held.kind === 'draw' && !recipeText) return failure('target_changed', 'conflict');
+      const drawn = held.kind === 'draw' ? drawingAt(range.start, range.end) || {draw: {recipeText, assetLabel: held.assetLabel}} : null;
       return { ...range, targetStart: range.start, targetEnd: range.end, offset: range.start, coverage: [],
-        ...(held.kind === 'draw' ? drawingAt(range.start, range.end) || {draw: {recipeText, assetLabel: held.assetLabel}} : {}),
+        ...(drawn ? {...drawn, draw: {...drawn.draw, objectId: held.objectId || null}} : {}),
         ...(inspectionText ? {svg: {inspectionText, assetLabel: held.assetLabel}} : {}) };
     }
     if (input.ref) {
@@ -1666,7 +1740,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
   function readDrawContext(target, input, who) {
     const picture = target.svg || target.draw, imported = !!target.svg, drawing = target.draw?.drawing;
-    const recipeText = picture.inspectionText || picture.recipeText, stored = JSON.parse(recipeText), recipe = imported ? stored : disclosedRecipe(stored);
+    const recipeText = picture.inspectionText || picture.recipeText, stored = JSON.parse(recipeText);
+    if (imported && input.objectId) return failure('drawing_object_scope', 'invalid');
+    const objectId = imported ? null : picture.objectId || input.objectId || null;
+    if (input.objectId && picture.objectId && input.objectId !== picture.objectId) return failure('drawing_object_scope', 'invalid');
+    if (objectId && !stored.shapes.some(row => row.id === objectId)) return failure('drawing_object_missing', 'target_gone');
+    const recipe = imported ? stored : disclosedRecipe(stored);
     const law = documentLaw(target.targetStart, target.targetEnd);
     const text = JSON.stringify(recipe), limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
     const offset = target.cursor ? target.offset : 0;
@@ -1681,12 +1760,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const complete = end >= text.length;
     const disclosedHandle = complete && !drawing?.recipeUnavailable ? imported
       ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who)
-      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text, target.draw.binding?.drawSession ? recipeText : null) : null;
+      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text, target.draw.binding?.drawSession ? recipeText : null, objectId) : null;
     const next = !complete ? mint('cursors', 'read_', { kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
-      targetStart: target.targetStart, targetEnd: target.targetEnd, ...(imported ? {inspectionText: recipeText} : {recipeText, ...target.draw.binding}), assetLabel: picture.assetLabel, offset: end }, who) : null;
+      targetStart: target.targetStart, targetEnd: target.targetEnd, ...(imported ? {inspectionText: recipeText} : {recipeText, objectId, ...target.draw.binding}), assetLabel: picture.assetLabel, offset: end }, who) : null;
     if (target.cursor) delete state.cursors[target.cursor.id];
     return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: page,
       ...law,
+      ...(objectId ? {objectId} : {}),
       complete, remaining: text.length - end, handle: disclosedHandle?.id || null, recipe_handle: disclosedHandle?.id || null,
       ...(drawing ? {drawing} : {}),
       coverage: { disclosed: end, chars: text.length, complete },
@@ -1706,6 +1786,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (drawing) target = { ...target, ...drawing, offset: 0, coverage: [] };
     }
     if (target.draw || target.svg) return readDrawContext(target, input, who);
+    if (input.objectId) return failure('drawing_object_scope', 'invalid');
     const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
     const start = target.offset;
     let end = Math.min(target.targetEnd, start + limit);
@@ -2292,8 +2373,54 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return null;
   }
 
+  function mergeContribution(review, rows, operation, options) {
+    const authored = options.authoredCount ?? rows.length;
+    const next = review.nextChange || Math.max(0, ...review.changes.map(row => Number(row.id.split('.').pop()) || 0));
+    const fresh = initReviewChanges(review.id, rows, authored, options.handlePairs || [], options.drawAssets, operation, next);
+    const overlaps = (a, b) => a && b && (a.start === a.end || b.start === b.end
+      ? a.start <= b.end && b.start <= a.end : a.start < b.end && b.start < a.end);
+    const retained = [];
+    for (let index = 0; index < review.changes.length; index++) {
+      const change = review.changes[index], splice = review.splices[index];
+      if (!['pending', 'stale'].includes(change.status)) continue;
+      const replacements = fresh.filter(row => overlaps(change.target, change.status === 'stale' ? row.evidence : row.target) &&
+        !(change.status === 'pending' && change.target.start === change.target.end && row.target.start === row.target.end));
+      if (!replacements.length) { retained.push({change, splice}); continue; }
+      const replacementRange = replacements[0] && (change.status === 'stale' ? replacements[0].evidence : replacements[0].target);
+      if (replacements.length !== 1 || replacementRange.start > change.target.start || replacementRange.end < change.target.end) {
+        return failure('contribution_targets_overlap', 'invalid');
+      }
+    }
+    const combined = retained.concat(fresh.map((change, index) => ({change, splice: rows[index]})));
+    if (combined.length > LIMITS.edits || combined.reduce((sum, row) => sum + row.splice.inserted.length, 0) > LIMITS.editChars) return failure('batch_too_large', 'invalid');
+    combined.sort((a, b) => b.splice.pos - a.splice.pos || Number(b.change.id.split('.').pop()) - Number(a.change.id.split('.').pop()));
+    for (let index = 1; index < combined.length; index++) {
+      const lower = combined[index], upper = combined[index - 1];
+      if (lower.change.status === 'pending' && upper.change.status === 'pending' && lower.splice.pos + lower.splice.removed.length > upper.splice.pos) return failure('contribution_targets_overlap', 'invalid');
+    }
+    review.changes = combined.map(row => row.change);
+    review.splices = combined.map(row => clone(row.splice));
+    review.authoredSplices = clone(review.splices);
+    review.changeIds = review.changes.map(row => row.id);
+    review.handleIds = [...new Set(review.changes.map(row => row.handleId).filter(Boolean))];
+    review.nextChange = next + authored;
+    review.operation = review.changes.every(row => row.operation === 'document.draw') ? 'document.draw' : 'document.propose_edits';
+    review.label = review.contribution;
+    review.signature = digest(JSON.stringify({contribution: review.contribution, rows: review.splices}));
+    review.options.authoredCount = review.changes.length;
+    review.options.editCount = review.changes.length;
+    review.options.label = review.contribution;
+    review.options.note = options.note || review.options.note;
+    review.options.rebased ||= options.rebased === true;
+    review.revision = state.revision; review.sourceDigest = digest(state.text);
+    if (review.changes.some(row => row.status === 'stale')) review.reason = 'contribution_refresh_required'; else delete review.reason;
+    refreshReviewExpiry(review);
+    return null;
+  }
+
   async function stageReview(kind, splices, who, context, operation, options = {}) {
     expireCollaboration();
+    surviveReview();
     let rows = splices, changeIds = [], changes = [], baseRevision, includesHumanChanges = false;
     if (kind === 'check') {
       const changes = activeChanges(who).filter(row => !row.humanReviewed && row.revision > reviewedThrough(who));
@@ -2309,13 +2436,25 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       changeIds = changes.map(row => row.id);
       includesHumanChanges = journal.some(row => row.actor === 'human');
     }
-    const signature = digest(JSON.stringify({ kind, rows, operation, metadata: options.metadata || null }));
+    const signature = digest(JSON.stringify({ kind, rows, operation, contribution: options.contribution || null, metadata: options.metadata || null }));
     const requirements = { revision: state.revision, kind, editCount: kind === 'check' ? changeIds.length : options.editCount || rows.length };
     const prior = state.review;
     if (prior?.status === 'pending') {
       if (prior.owner === ownerOf(who) && prior.revision === state.revision && prior.signature === signature) {
         return { outcome: 'pending', reason: 'human_review_required', cause: reviewCause(prior), reviewId: prior.id, review: reviewSummary(),
           pending: { kind: 'human-review', proposalId: prior.id, requirements } };
+      }
+      if (options.contribution && prior.contribution === options.contribution && prior.owner === ownerOf(who) &&
+          kind === 'proposal' && prior.kind === 'proposal' && !prior.options.compareDecision && !options.metadata &&
+          (prior.reviewedRegion ?? null) === (options.reviewedRegion ?? null)) {
+        const fault = mergeContribution(prior, rows, operation, options);
+        if (fault) return fault;
+        if (typeof host.presentReview === 'function') {
+          try { await host.presentReview({documentId: state.documentId, revision: state.revision,
+            review: collaboration().review, ...participant(prior, mintId), signal: context.signal}); } catch {}
+        }
+        return {outcome: 'pending', reason: 'human_review_required', cause: reviewCause(prior), reviewId: prior.id, contribution: prior.contribution,
+          review: reviewSummary(), pending: {kind: 'human-review', proposalId: prior.id, requirements: {...requirements, editCount: prior.editCount}}};
       }
       return failure('review_pending', 'pending', { cause: reviewCause(prior), reviewId: prior.id, review: reviewSummary() });
     }
@@ -2330,14 +2469,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // Change ids derive from the review's; only authored splices are keepable, derived ones follow. Stored last-first; ".1" is first in document order.
     if (kind !== 'check') {
       const authored = tracksHandles ? options.authoredCount ?? rows.length : rows.length;
-      changes = initReviewChanges(id, rows, authored, tracksHandles ? options.handlePairs || [] : [], options.drawAssets);
+      changes = initReviewChanges(id, rows, authored, tracksHandles ? options.handlePairs || [] : [], options.drawAssets, operation);
       changeIds = changes.map(row => row.id);
     }
     state.review = { id, kind, status: 'pending', documentId: state.documentId,
       revision: state.revision, sourceDigest: digest(state.text), filename: state.filename, docKind: state.docKind,
       createdAt: time, expiresAt: Math.min(time + LIMITS.reviewMs, ...handleExpiry), owner: ownerOf(who), ...who, operation,
       label: clip(kind === 'check' ? 'Review changes before continuing' : kind === 'inline' ? (options.label || 'Edit review')
-        : options.label || 'Proposed edits', 120),
+        : options.contribution || options.label || 'Proposed edits', 120),
+      ...(options.contribution ? {contribution: options.contribution, nextChange: changes.length} : {}),
       splices: clone(rows), authoredSplices: clone(options.authoredSplices || rows),
       handleIds: tracksHandles ? [...(options.handleIds || [])] : [],
       editCount: tracksHandles ? options.editCount || rows.length : changeIds.length,
@@ -2345,6 +2485,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       byPosture: options.byPosture === true, ...(options.law ? { law: options.law, region: options.region } : {}),
       ...(baseRevision != null ? { baseRevision, includesHumanChanges } : {}),
       options: { label: options.label, editCount: options.editCount, authoredCount: options.authoredCount, rebased: options.rebased === true,
+        ...(options.contribution ? {contribution: options.contribution} : {}),
         keepCompare: options.keepCompare === true, compareDecision: options.compareDecision || null,
         metadata: options.metadata || null, note: options.note || null,
         ...(options.drawingPatch ? {drawingPatch: clone(options.drawingPatch), fence: clone(options.fence), watched: options.watched === true} : {}) },
@@ -2359,6 +2500,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       } catch { presentation = 'unavailable'; }
     }
     return { outcome: 'pending', reason: 'human_review_required', cause: reviewCause(state.review), reviewId: id, review: reviewSummary(),
+      ...(options.contribution ? {contribution: options.contribution} : {}),
       pending: { kind: 'human-review', proposalId: id, requirements }, ...(presentation ? { presentation } : {}) };
   }
 
@@ -2483,8 +2625,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       // Once the host is called, a missing or unusable receipt cannot establish that no write happened.
       try {
         result = await host.commit({ documentId, baseRevision, beforeText, text, splices: clone(splices), authoredCount,
-          ...who, signal: context.signal, operation, label: clip(options.label || operation, 120),
-          sourceTransactionId: options.sourceTransactionId || null, reviewToken, fence: options.fence || null });
+          ...who, signal: context.signal, operation, label: clip(options.contribution || options.label || operation, 120),
+          sourceTransactionId: options.sourceTransactionId || null,
+          ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: options.sourceTransactionIds} : {}),
+          ...(options.contribution ? {contribution: options.contribution} : {}), reviewToken, fence: options.fence || null });
         const ok = result?.ok;
         if (ok === false) {
           const reason = result.reason, outcome = result.outcome;
@@ -2509,13 +2653,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (options.metadata) { state.filename = options.metadata.filename; state.docKind = options.metadata.docKind; state.handles = {}; state.refs = {}; state.cursors = {}; }
     const structure = structureReceipt(beforeText, text, state.filename, context);
     const output = { outcome: options.rebased ? 'rebased' : 'applied', changeId: entry.id, editCount: options.editCount || splices.length,
+      ...(options.contribution ? {contribution: options.contribution} : {}),
       ...(presentation ? {presentation, ...(result?.drawingReceipt ? {drawingReceipt: result.drawingReceipt} : {})} : {}),
       ...(entry.drawingPatch ? {drawingPatch: clone(entry.drawingPatch)} : {}),
       ...(structure ? { structure } : {}),
       // law/region are the record of what governed this commit.
       ...(reviewedRegion == null ? {} : { law: 'keep', region: reviewedRegion }),
       transaction: { transactionId: entry.id, baseRevision, revision, actor: who.actor, principal: who.principal,
-        operation, sourceTransactionId: options.sourceTransactionId || null } };
+        operation, sourceTransactionId: options.sourceTransactionId || null,
+        ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: [...options.sourceTransactionIds]} : {}),
+        ...(options.contribution ? {contribution: options.contribution, contributionBaseRevision: entry.contributionBaseRevision} : {}) } };
     return operation === 'document.draw' || options.drawingPatch ? drawingReceipt(output) : output;
   }
 
@@ -2567,7 +2714,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const handlePairs = withSplices.map(row => ({ handleId: row.held.id, offset: row.offset }));
     const result = await commit(splices, who, context, propose ? 'document.propose_edits' : 'document.apply_edits', {
       label: input.label || (propose ? 'Proposed edits' : 'Agent edit'), rebased, editCount: ready.length,
-      handleIds: ready.map(row => row.held.id), handlePairs, note: input.note || null, propose,
+      handleIds: ready.map(row => row.held.id), handlePairs, note: input.note || null, propose, contribution: input.contribution,
     });
     if (['applied', 'rebased', 'unchanged'].includes(result.outcome)) {
       for (const row of ready) row.held.used = true;
@@ -2596,7 +2743,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     // apply/drop leave the review open; approve with ids keeps those and closes; approve without applies all; decline drops all.
     // Only a proposal's pending splices can be named.
-    const namedIds = input.changeIds === undefined ? null : input.changeIds;
+    let namedIds = input.changeIds === undefined ? null : input.changeIds;
     if (namedIds !== null && (!Array.isArray(namedIds) || !namedIds.length || namedIds.length > 128 ||
         namedIds.some(id => typeof id !== 'string'))) {
       return finish(failure('review_decision_invalid', 'invalid'));
@@ -2621,13 +2768,21 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         review.sourceDigest !== digest(state.text) || review.filename !== state.filename || review.docKind !== state.docKind) {
       invalidateReview(); return finish(failure('review_document_changed', 'conflict', { review: reviewSummary() }));
     }
+    if (review.contribution) {
+      const all = review.changes.filter(row => ['pending', 'stale'].includes(row.status)).map(row => row.id);
+      if (namedIds !== null && namedIds.some(id => !all.includes(id))) return finish(failure('review_decision_invalid', 'invalid', {review: reviewSummary()}));
+      if (input.action === 'drop') input = {...input, action: 'decline'};
+      else if (input.action === 'apply') input = {...input, action: 'approve'};
+      if (input.action === 'approve' && review.changes.some(row => row.status === 'stale')) return finish(failure('contribution_refresh_required', 'conflict', {review: reviewSummary()}));
+      namedIds = null;
+    }
     const closedKind = review.kind === 'check' || review.kind === 'inline' || !!review.options.compareDecision;
     if ((input.action === 'apply' || input.action === 'drop') && closedKind) {
       return finish(failure('review_decision_invalid', 'invalid', { review: reviewSummary() }));
     }
     if (input.action === 'decline') {
       if (review.kind !== 'check') rememberReviewDecision(review, 'dropped', pendingChangeIds(review));
-      if (Array.isArray(review.changes)) for (const row of review.changes) if (row.status === 'pending') row.status = 'dropped';
+      if (Array.isArray(review.changes)) for (const row of review.changes) if (row.status === 'pending' || review.contribution && row.status === 'stale') row.status = 'dropped';
       review.status = 'declined'; review.decidedAt = now();
       review.decision = { action: 'decline', outcome: 'ok', revision: state.revision };
       return finish(accepted({ review: reviewSummary() }));
@@ -2749,7 +2904,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         review.sourceDigest !== digest(state.text) || review.filename !== state.filename || review.docKind !== state.docKind) {
       return { outcome: 'review_missing' };
     }
-    const keepIds = changeIds === undefined ? null : changeIds;
+    let keepIds = changeIds === undefined ? null : changeIds;
     if (review.kind === 'check') {
       return keepIds === null ? { outcome: 'ok', text: state.text } : { outcome: 'review_decision_invalid' };
     }
@@ -2757,6 +2912,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return { outcome: 'review_decision_invalid' };
     }
     const ownPending = pendingChangeIds(review);
+    if (review.contribution) {
+      if (keepIds !== null && keepIds.some(id => !ownPending.includes(id))) return {outcome: 'review_decision_invalid'};
+      if (review.changes.some(row => row.status === 'stale')) return {outcome: 'contribution_refresh_required'};
+      keepIds = null;
+    }
     let splices = review.splices, authoredCount = review.options.authoredCount ?? review.splices.length, drawAssets = [];
     if (keepIds !== null) {
       if (review.options.compareDecision || !ownPending.length || keepIds.some(id => !ownPending.includes(id))) {
@@ -2781,7 +2941,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const computed = committedText(state.text, splices, authoredCount, review.actor, state.docKind, review.operation, false, undefined, drawAssets);
     if (!computed) return { outcome: 'review_missing' };
-    return { outcome: 'ok', text: computed.text };
+    return { outcome: 'ok', text: computed.text, ...(review.contribution ? {changeIds: ownPending} : {}) };
   }
 
   function decideReview(input, context = {}) {
@@ -2792,9 +2952,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   function activeChanges(who) {
-    const withdrawn = new Set(state.journal.filter(row => row.sourceTransactionId).map(row => row.sourceTransactionId));
+    const withdrawn = new Set(state.journal.flatMap(row => row.sourceTransactionIds || (row.sourceTransactionId ? [row.sourceTransactionId] : [])));
     return state.journal.filter(row => row.actor === 'agent' && row.owner === ownerOf(who) &&
-      !row.sourceTransactionId && row.splices.length && !withdrawn.has(row.id));
+      !row.sourceTransactionId && !row.sourceTransactionIds?.length && row.splices.length && !withdrawn.has(row.id));
   }
 
   function liveAgents(who) {
@@ -2803,8 +2963,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return names;
   }
 
-  function inverse(entry) {
-    const later = since(entry.revision);
+  function inverse(entry, sourceText = state.text, later = since(entry.revision)) {
     if (!later) return failure('history_unavailable', 'conflict');
     const reverse = (splices, keepIndices = false) => {
       const rows = [];
@@ -2825,16 +2984,39 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return rows.sort((a, b) => b.pos - a.pos || b.origin - a.origin).map(({pos, removed, inserted, index}) =>
         ({pos, removed, inserted, ...(keepIndices ? {index} : {})}));
     };
-    // An edit followed by its exact Undo is neutral, including nested undone pairs. Keep the journal and
-    // handle invalidation intact; only inverse transport can cross these proven cancellations. A claimed
-    // sourceTransactionId alone is not proof: every inverse row, unit and coordinate must agree.
+    // An edit followed by its exact Undo is neutral, including nested undone pairs. An inverse can move
+    // beside its source only across disjoint work: transport both operations so that work keeps its bytes
+    // and order. The durable journal and handle invalidation stay intact. A sourceTransactionId is only
+    // a candidate; every moved inverse row, unit and coordinate must equal the source's actual reverse.
     const remaining = [];
     for (const row of later) {
-      const prior = remaining.at(-1), reversed = prior && row.sourceTransactionId === prior.id && reverse(prior.splices);
-      if (reversed && reversed.length === row.splices.length && reversed.every((undo, index) => {
-        const actual = row.splices[index];
+      const at = row.sourceTransactionId ? remaining.findLastIndex(prior => prior.id === row.sourceTransactionId) : -1;
+      const reversed = at >= 0 && reverse(remaining[at].splices);
+      const between = reversed && remaining.slice(at + 1).map(entry => ({...entry, splices: entry.splices.map(splice => ({...splice}))}));
+      const path = between && between.flatMap(entry => entry.splices);
+      const moved = [];
+      let disjoint = !!reversed;
+      if (reversed) for (const splice of row.splices) {
+        let undo = {...splice};
+        for (let index = path.length - 1; index >= 0; index--) {
+          const other = path[index];
+          const range = transportInterval(undo.pos, undo.pos + undo.removed.length,
+            [{pos: other.pos, removed: other.inserted, inserted: other.removed}]);
+          if (!range) { disjoint = false; break; }
+          undo.pos = range.start;
+          // Two insertions at the same boundary have no transport ordering proof.
+          if (!undo.removed.length && !other.removed.length && undo.pos === other.pos) { disjoint = false; break; }
+          const carried = transportInterval(other.pos, other.pos + other.removed.length, [undo]);
+          if (!carried) { disjoint = false; break; }
+          other.pos = carried.start;
+        }
+        if (!disjoint) break;
+        moved.push(undo);
+      }
+      if (disjoint && reversed.length === moved.length && reversed.every((undo, index) => {
+        const actual = moved[index];
         return undo.pos === actual.pos && undo.removed === actual.removed && undo.inserted === actual.inserted;
-      })) remaining.pop();
+      })) remaining.splice(at, remaining.length - at, ...between);
       else remaining.push(row);
     }
     const reversed = reverse(entry.splices, true);
@@ -2846,7 +3028,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         range = transportInterval(range.start, range.end, laterEntry.splices);
         if (!range) break;
       }
-      if (!range || state.text.slice(range.start, range.end) !== row.removed) {
+      if (!range || sourceText.slice(range.start, range.end) !== row.removed) {
         // New replies or independent edits must not prevent selective Undo of prose. Their
         // current thread record remains; commit re-derives anchors over the admitted inverse.
         if (row.index === entry.derivedCommentIndex) continue;
@@ -2901,14 +3083,42 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       result: {replaced: plan.asset, asset: {reference: asset.label, title}}};
   }
 
+  function contributionChanges(name, who) {
+    const entries = activeChanges(who).filter(row => row.contribution === name);
+    if (!entries.length) return failure('change_not_owned_or_unavailable', 'target_gone');
+    const first = Math.min(...entries.map(row => row.contributionBaseRevision ?? row.baseRevision));
+    if (!since(first)) return failure('history_unavailable', 'conflict');
+    return entries;
+  }
+
+  // The existing journal supplies every inverse. Preview all of them against temporary source before one commit.
+  function inverseContribution(entries) {
+    let text = state.text;
+    const splices = [], undone = [];
+    for (const entry of entries.slice().reverse()) {
+      const later = since(entry.revision);
+      if (!later) return failure('history_unavailable', 'conflict');
+      const rows = inverse(entry, text, later.concat(undone));
+      if (rows.outcome) return rows;
+      const next = transformSplices(text, rows);
+      if (next == null) return failure('change_interleaved', 'conflict');
+      splices.push(...rows); text = next;
+      if (splices.length > 64) return failure('contribution_too_large', 'refused');
+      undone.push({id: 'inverse:' + entry.id, sourceTransactionId: entry.id, splices: rows});
+    }
+    return splices;
+  }
+
   async function undo(input, who, context) {
+    if (input.contribution && input.change_id) return failure('change_target_ambiguous', 'invalid');
     const changes = activeChanges(who);
     const label = who.agent || '';
     const latest = changes.at(-1) || null;
     // No name: one stream, the latest change. A name undoes that name's latest, never another name's.
     const own = label ? changes.filter(row => row.agent === label) : changes;
-    const entry = input.change_id ? changes.find(row => row.id === input.change_id) : own.at(-1);
-    const other = !input.change_id && label && latest && latest.agent !== label ? {
+    const entry = input.change_id ? changes.find(row => row.id === input.change_id)
+      : input.contribution ? changes.filter(row => row.contribution === input.contribution).at(-1) : own.at(-1);
+    const other = !input.change_id && !input.contribution && label && latest && latest.agent !== label ? {
       latestChangeId: latest.id,
       ...(latest.agent ? { latestAgent: latest.agent } : {}),
       route: latest.agent
@@ -2919,12 +3129,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (other) return failure('other_agent_latest', 'refused', other);
       return failure(input.change_id ? 'change_not_owned_or_unavailable' : 'no_agent_change', 'target_gone');
     }
-    let splices = inverse(entry), painting = null;
-    if (splices.reason === 'change_interleaved') {
+    const contribution = input.contribution || entry.contribution;
+    const group = contribution ? contributionChanges(contribution, who) : null;
+    if (group?.outcome) return group;
+    let splices = group ? inverseContribution(group) : inverse(entry), painting = null;
+    if (!group && splices.reason === 'change_interleaved') {
       const row = commentUndoSplice(state.text, entry, since(entry.revision));
       if (row) splices = [row];
     }
-    if (splices.reason === 'change_interleaved' && entry.operation === 'document.draw') {
+    if (!group && splices.reason === 'change_interleaved' && entry.operation === 'document.draw') {
       try { painting = await paintInverse(entry, who, context); }
       catch { cancelled(context); return failure('paint_replay_unavailable', 'conflict'); }
       if (painting?.outcome) return painting;
@@ -2934,7 +3147,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // The exact source inverse reaches an open canvas as the inverse of the original semantic change. A selective Undo that repaints a layer
     // writes a new material result, not the inverse, so it has its own hand-off (agent/browser.js, the repainted layers).
     let drawingPatch = null;
-    if (entry.drawingPatch && !painting) {
+    // One member's drawing delta is the whole inverse only when the name holds that one change; a longer name returns its source whole.
+    if (entry.drawingPatch && !painting && !(group?.length > 1)) {
       const original = entry.drawingPatch;
       const saved = sourceDrawing(state.text, original.reference);
       if (!saved) return failure('target_changed', 'conflict');
@@ -2945,13 +3159,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         recipeBefore: clone(original.recipeAfter), recipeAfter: clone(original.recipeBefore)};
     }
     const result = await commit(splices, who, context, 'document.undo_agent_change', {
-      label: `Undo ${entry.label}`, sourceTransactionId: entry.id, restores: true, editCount: splices.length,
+      label: `Undo ${contribution || entry.label}`, sourceTransactionId: group?.length > 1 ? null : entry.id,
+      ...(group ? {contribution, sourceTransactionIds: group.map(row => row.id)} : {}), restores: true, editCount: splices.length,
       ...(painting ? {authoredCount: painting.authoredCount, drawAssets: painting.drawAssets, fence: painting.fence}
         : drawingPatch ? {drawingPatch, fence: {operation: 'document.draw', drawingAsset: drawingPatch.asset,
           shapesOnly: true, drawingPatch}} : {}),
     });
     if (result.outcome === 'applied') {
       result.undoneChangeId = entry.id;
+      if (group) result.undoneChangeIds = group.map(row => row.id);
       if (painting) Object.assign(result, painting.result);
       if (other) Object.assign(result, other);
     }
@@ -2990,6 +3206,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!state.compare) return null;
     return {
       compareId: state.compare.id, name: state.compare.name,
+      ...(state.compare.contribution ? {contribution: state.compare.contribution, changeIds: [...state.compare.changeIds]} : {}),
       changes: state.compare.changes.length,
       // `remaining`, not `pending`: the envelope's pending is the typed outcome.
       open: state.compare.changes.filter(row => row.status === 'pending').length,
@@ -3110,19 +3327,32 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (compared.detached && accept) return failure('comparison_not_current_document');
     if (input.change_ids != null && (!Array.isArray(input.change_ids) || input.change_ids.some(id => typeof id !== 'string') ||
         new Set(input.change_ids).size !== input.change_ids.length)) return failure('change_ids_invalid', 'invalid');
-    const ids = input.change_ids || compared.changes.filter(row => row.status === 'pending').map(row => row.id);
+    if (compared.contribution && input.change_ids?.some(id => !compared.changes.some(row => row.id === id && row.status === 'pending'))) return failure('change_not_pending');
+    const ids = compared.contribution ? compared.changes.filter(row => row.status === 'pending').map(row => row.id)
+      : input.change_ids || compared.changes.filter(row => row.status === 'pending').map(row => row.id);
     const rows = ids.map(id => compared.changes.find(row => row.id === id));
     if (rows.some(row => !row || row.status !== 'pending')) return failure('change_not_pending');
     if (!rows.length) return { outcome: 'unchanged', decided: 0 };
     const acknowledge = status => {
       for (const row of rows) row.status = status;
       if (who.actor === 'human' && compared.reviewOnly && compared.changes.every(row => row.status !== 'pending')) {
-        const entry = state.journal.find(row => row.id === compared.changeId);
-        if (entry) entry.humanReviewed = true;
+        for (const entry of state.journal) if ((compared.changeIds || [compared.changeId]).includes(entry.id)) entry.humanReviewed = true;
       }
     };
     if ((!compared.reviewOnly && !accept) || (compared.reviewOnly && accept)) {
       acknowledge(accept ? 'accepted' : 'rejected'); return { outcome: 'applied', decided: rows.length };
+    }
+    if (compared.contribution && compared.reviewOnly) {
+      const entries = state.journal.filter(row => compared.changeIds.includes(row.id) && row.owner === compared.owner && row.contribution === compared.contribution);
+      if (entries.length !== compared.changeIds.length) return failure('history_unavailable', 'conflict');
+      const splices = inverseContribution(entries);
+      if (splices.outcome) return splices;
+      const result = await commit(splices, who, context, 'document.compare', {label: 'Drop ' + compared.contribution,
+        contribution: compared.contribution, keepCompare: true, restores: true, sourceTransactionId: entries.length === 1 ? entries[0].id : null,
+        sourceTransactionIds: entries.map(row => row.id)});
+      const landed = ['applied', 'rebased', 'unchanged'].includes(result.outcome);
+      if (landed) acknowledge('rejected');
+      return {...result, decided: landed ? rows.length : 0};
     }
     if (who.actor !== 'human' && rows.some(row => !row.inspectedBy.includes(ownerOf(who)))) return failure('change_not_inspected');
     if (who.actor !== 'human' && (rows.length > LIMITS.edits || rows.reduce((sum, row) => sum + row.inserted.length, 0) > LIMITS.editChars)) return failure('batch_too_large', 'invalid');
@@ -3145,17 +3375,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function showChanges(input, who, context) {
+    if (input.contribution && input.change_id) return failure('change_target_ambiguous', 'invalid');
     const changes = activeChanges(who);
-    const entry = input.change_id ? changes.find(row => row.id === input.change_id) : changes.at(-1);
+    const entry = input.change_id ? changes.find(row => row.id === input.change_id)
+      : input.contribution ? changes.filter(row => row.contribution === input.contribution).at(-1) : changes.at(-1);
     if (!entry) return failure('change_not_owned_or_unavailable', 'target_gone');
-    const splices = inverse(entry);
+    const contribution = input.contribution || entry.contribution;
+    const group = contribution ? contributionChanges(contribution, who) : null;
+    if (group?.outcome) return group;
+    const splices = group ? inverseContribution(group) : inverse(entry);
     if (splices.outcome) return splices;
     const baseline = transformSplices(state.text, splices);
     if (baseline == null) return failure('change_interleaved', 'conflict');
-    const result = await compareText({ text: state.text, name: state.filename }, who, context, baseline);
+    const result = await compareText({ text: state.text, name: contribution || state.filename }, who, context, baseline);
     if (result.outcome !== 'ok' || state.compare?.id !== result.compareId) return result;
     state.compare.reviewOnly = true; state.compare.changeId = entry.id;
-    return { ...result, changeId: entry.id, review_only: true };
+    if (group) { state.compare.contribution = contribution; state.compare.changeIds = group.map(row => row.id); }
+    return { ...result, changeId: entry.id, review_only: true, ...(group ? {contribution, changeIds: group.map(row => row.id)} : {}) };
   }
 
   function proposalPlan(text, who) {
@@ -3450,6 +3686,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
     const result = await commit(splices, who, context, 'document.draw', {
       label: input.label || 'Draw a picture', editCount: 1, authoredCount: 1, rebased,
+      contribution: input.contribution, propose: !!input.contribution,
       handleIds: held ? [held.id] : [], reviewInline: false,
       handlePairs: [{ handleId: held ? held.id : null, offset: heldOffset }],
       drawAssets: [{ id: normalizeLabel(appended.reference), label: appended.reference, url: asset.url, title: asset.title }],
@@ -3474,6 +3711,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const held = lookup('handles', input.recipe_handle, who);
     if (held.outcome) return held;
     if (held.kind !== 'draw') return failure('context_handle_wrong_kind', 'invalid');
+    if (held.objectId && input.alt != null) return failure('drawing_object_scope', 'invalid');
     const range = relocate(held);
     if (range.outcome) return range;
     if (held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
@@ -3508,6 +3746,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     // Early read only, deciding the CHECK branch; commit() re-establishes it at the boundary (DS-02). Never from the wire.
     const watched = !!commitFenceRefusal() && !commitFenceRefusal(editingFence);
+    // A name asks for a review the person keeps, and a review of the drawing open in Draw cannot be kept: refused as every other edit to it is.
+    if (input.contribution && watched) return commitFenceRefusal({...editingFence, shapesOnly: false}) || commitFenceRefusal();
     // A CHECK draw on the open drawing lands immediately; elsewhere unchanged.
     if (early?.reviewKind === 'check' && !watched) {
       const fenced = commitFenceRefusal({ ...editingFence, splices: [{ pos: range.start, removed: held.text, inserted: '' }] });
@@ -3517,6 +3757,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let svg, recipe;
     try {
       let base = clone(inspected);
+      const outsideObject = value => {
+        const {shapes, ...settings} = value;
+        return canonicalJson({...settings, shapes: shapes.filter(row => row.id !== held.objectId)});
+      };
+      const untouched = held.objectId ? outsideObject(base) : null;
       if (input.recipe != null) {
         // A whole inspected recipe reaches canvas, paper, strokes and fonts without replacing the document.
         // Redacted pixels are restored only from the same held paint id, as for a shapes replacement.
@@ -3557,6 +3802,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const operations = await paintOperations(input.operations, context);
       if (operations.refusal) return operations.refusal;
       recipe = applyOperations(base, operations.list).recipe;
+      // A handle scoped to one object lets the agent change that object alone; the check is on the agent's own change, before the canvas's is laid under it.
+      if (held.objectId && outsideObject(recipe) !== untouched) return failure('drawing_object_scope', 'invalid');
       // The agent worked on the drawing it inspected; the canvas has moved on since (the person drew). Its change is laid over the canvas as
       // it stands, by the one merge, and an object or dial both hands touched refuses here, before anything is written.
       if (surfaceDiffers) {
@@ -3576,6 +3823,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
       const result = await commit([{pos: range.start, removed: held.text, inserted: ''}], who, context, 'document.draw', {
         fence: {...editingFence, shapesOnly: false}, label: input.label || 'Remove an empty drawing',
+        contribution: input.contribution, propose: !!input.contribution,
         editCount: 1, authoredCount: 1, handleIds: [held.id], reviewInline: false,
         handlePairs: [{handleId: held.id, offset: 0}],
       });
@@ -3673,13 +3921,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const result = await commit(splices, who, context, 'document.draw', {
       fence: {...editingFence, ...(drawingPatch ? {drawingPatch} : {})}, ...(drawingPatch ? {drawingPatch} : {}),
       watched, rebased,
+      contribution: input.contribution, propose: !!input.contribution,
       label: input.label || 'Edit a drawing', editCount: 1, authoredCount: splices.length, handleIds: [held.id], reviewInline: false,
       handlePairs: [{ handleId: held.id, offset: occStart - range.start }],
       drawAssets: [{ id: normalizeLabel(appended.reference), label: appended.reference, url: asset.url, title: asset.title }],
     });
     if (!['applied', 'rebased'].includes(result.outcome)) return result;
     held.used = true;
-    const nextHandle = recipe ? drawHandle(occStart, occStart + raw.length, appended.reference, who)
+    const nextHandle = recipe ? (held.objectId && !recipe.shapes.some(row => row.id === held.objectId) ? null
+      : drawHandle(occStart, occStart + raw.length, appended.reference, who, {}, null, null, held.objectId))
       : svgHandle(occStart, occStart + raw.length, nodeIds, appended.reference, who);
     // `replaced`: the picture the handle held; the replay matches on it. Never from the wire.
     return { ...result, asset: {reference: appended.reference, title}, replaced: held.assetLabel || null,
@@ -3704,6 +3954,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (ref) targets.push({ ref: ref.id, chars: range.end - range.start });
       }
       return { changeId: entry.id, revision: entry.revision, actor: entry.actor,
+        ...(entry.contribution ? {contribution: entry.contribution} : {}),
         ...(entry.agent ? { agent: entry.agent } : {}),
         yours: entry.owner === ownerOf(who),
         operation: clip(entry.operation, 64), label: display(entry.label, 96),
@@ -3836,15 +4087,81 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return {outcome: 'pending', reason: 'surface_fact_required', ...(drawing ? {drawing} : {}), pending: {kind: 'surface-fact', requestId, requirements: prepared.request}};
   }
 
+  async function point(input, who, context) {
+    if (!!input.context_handle === !!input.change_id) return failure('point_target_ambiguous', 'invalid');
+    let target, reveal = host.reveal;
+    const change = changeOf(input.change_id || input.context_handle);
+    if (change) {
+      if (state.compare.owner !== ownerOf(who) && !state.compare.hostCompareId) return failure('compare_not_owned');
+      target = {compareId: state.compare.id, changeId: change.id, hostCompareId: state.compare.hostCompareId || null,
+        start: change.start, end: change.end, incomingStart: change.incomingStart, incomingEnd: change.incomingEnd,
+        removed: change.removed, inserted: change.inserted, currentText: state.compare.baseline, incomingText: state.compare.incoming,
+        index: state.compare.changes.indexOf(change)};
+      reveal = host.revealChange;
+    } else if (input.change_id) {
+      const entry = activeChanges(who).find(row => row.id === input.change_id);
+      if (!entry) return failure('change_not_owned_or_unavailable', 'target_gone');
+      const later = since(entry.revision);
+      if (!later) return failure('history_unavailable', 'conflict');
+      for (let index = 0; index < entry.splices.length; index++) {
+        const row = entry.splices[index];
+        let range = transportInterval(row.pos, row.pos + row.inserted.length, entry.splices.slice(index + 1));
+        for (const next of later) { if (!range) break; range = transportInterval(range.start, range.end, next.splices); }
+        if (range) { target = range; break; }
+      }
+      if (!target) return failure('target_changed', 'conflict');
+    } else {
+      const held = lookup('handles', input.context_handle, who);
+      if (held.outcome) return held;
+      const range = relocate(held);
+      if (range.outcome) return range;
+      if (held.kind === 'draw' && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+      target = {...range, ...(held.kind === 'draw' ? {assetLabel: held.assetLabel, ...(held.objectId ? {objectId: held.objectId} : {})} : {})};
+    }
+    const createdAt = now(), lifetime = input.lifetime ?? 6, key = presenceKey(who);
+    // One editor view has one pointer. A valid replacement retires its previous attention before presentation awaits.
+    for (const row of Object.values(state.pointers)) if (row.status !== 'expired') {
+      row.status = 'expired'; row.reason = 'pointer_replaced';
+    }
+    const pointer = {id: mintId('pointer_'), documentId: state.documentId, revision: state.revision,
+      owner: ownerOf(who), ...(who.agent ? {agent: who.agent} : {}), start: target.start, end: target.end,
+      ...(target.objectId ? {objectId: target.objectId} : {}), ...(target.assetLabel ? {assetLabel: target.assetLabel} : {}),
+      ...(target.compareId ? {compareId: target.compareId, changeId: target.changeId} : {}),
+      words: input.words, createdAt, expiresAt: createdAt + lifetime * 1000, status: 'deferred'};
+    state.pointers[key] = pointer;
+    const retained = Object.entries(state.pointers).sort((a, b) => a[1].createdAt - b[1].createdAt);
+    while (retained.length > LIMITS.principals) delete state.pointers[retained.shift()[0]];
+    publishPresence();
+    let value;
+    try {
+      if (typeof reveal === 'function') value = await reveal({documentId: state.documentId, revision: state.revision,
+        ...target, pointer: clone(pointer), ...who, signal: context.signal});
+      cancelled(context);
+    } catch (error) {
+      pointer.status = 'expired'; publishPresence(); throw error;
+    }
+    expireCollaboration();
+    if (pointer.status !== 'expired') pointer.status = value?.status === 'expired' ? 'expired' : value?.ok && !value?.pending ? 'shown' : 'deferred';
+    if (value?.viewId) pointer.viewId = value.viewId;
+    publishPresence();
+    return {outcome: pointer.status, status: pointer.status, pointerId: pointer.id, createdAt, expires_at: pointer.expiresAt, lifetime,
+      ...(value?.viewId ? {view: {id: value.viewId, status: value.pending ? 'pending' : pointer.status}} : {}),
+      ...(value?.reason ? {reason: value.reason} : {})};
+  }
+
   async function execute(name, input, context) {
     pendingInspection = null;
     const namedOperation = typeof input?.operation_id === 'string' && input.operation_id.length > 0 && input.operation_id.length <= 128 ? input.operation_id : null;
     const who = participant(namedOperation ? {...context, invocationKey: namedOperation} : context, mintId);
+    let workKey = null;
     // Digest before admission: clipping or ignoring fields must not hide different retry arguments.
     const inputDigest = sha256(canonicalJson(input));
     // One finalizer inside the invocation boundary: every outcome records its code. A collision is not recorded; a replay writes no second row.
     const finalize = (result, { record = true } = {}) => {
       const output = stamp(result || failure('operation_failed'));
+      if (name === 'document.get_context' && output.collaboration) {
+        output.collaboration.agentPresence = agentPresence({...who, ...(output.collaboration.agentPresence?.agent ? {agent: output.collaboration.agentPresence.agent} : {})}, !!workKey);
+      }
       if (record) recordInvocation(who.invocationKey, name, state.documentId, output, inputDigest, who);
       return output;
     };
@@ -3859,13 +4176,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       // inputDigest must match; an undigested row never matches and collides. A replay says it is the record, so a caller
       // that meant a new operation under an old name learns that nothing new ran. First owner wins the key; a collision is
       // never recorded.
-      if (prior) return replayOf(prior, name, inputDigest) || stamp(failure('invocation_key_collision', 'invalid'));
+      if (prior) {
+        const replay = replayOf(prior, name, inputDigest);
+        return replay ? finalize(replay, {record: false}) : stamp(failure('invocation_key_collision', 'invalid'));
+      }
     }
     const descriptor = getTool(name);
     if (!descriptor) return finalize(failure('operation_unknown', 'invalid'));
     input = validateInput(descriptor.inputSchema, input, 'arguments', !descriptor.visibility);
     const named = agentLabel(input.agent);
     if (named) who.agent = named;
+    if (input.contribution != null) input.contribution = input.contribution.trim();
+    if (who.actor === 'agent') {
+      workKey = presenceKey(who);
+      const held = working.get(workKey);
+      working.set(workKey, {who, count: (held?.count || 0) + 1});
+      publishPresence();
+    }
     const beforeHandles = new Set(Object.keys(state.handles));
     const unsettled = await refresh(context);
     if (unsettled) return finalize(unsettled);
@@ -3888,9 +4215,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         result = accepted({ filename: state.filename, docKind: state.docKind, chars: state.text.length,
           surface: pointing?.active || drawing ? { kind: 'editor', next: 'continue' } : { kind: 'headless', next: 'deliver_page' },
           editing: editingState(who, together, will),
-          readOnly: state.readOnly, posture: state.posture, ...(state.notes ? { notes: state.notes } : {}), selection: selected ? { start: selected.start, end: selected.end } : null,
+          readOnly: state.readOnly, posture: state.posture, ...(state.notes ? { notes: state.notes } : {}), selection: selected ? { start: selected.start, end: selected.end, ...(selected.objectId ? {objectId: selected.objectId} : {}) } : null,
           focus: focus ? { ref: focus.id, chars: focus.end - focus.start, kind: pointedKind(state.text, focus.start, focus.end, images) } : null,
-          collaboration: { posture: together.posture, readOnly: together.readOnly, presence,
+          collaboration: { posture: together.posture, readOnly: together.readOnly, presence, agentPresence: agentPresence(who, true),
             review: contextReviewProjection(state.review) },
           sourceChanges: sourceChanges(who),
           ...(drawing ? {drawing} : {}),
@@ -3949,6 +4276,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'document.compare': result = await compareAction(input, who, context); break;
       case 'document.show_changes': result = await showChanges(input, who, context); break;
       case 'document.open_text': result = await openText(input, who, context); break;
+      case 'document.point': result = await point(input, who, context); break;
       case 'document.reveal': {
         const change = changeOf(input.context_handle);
         if (change) {
@@ -4054,6 +4382,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       // A schema fault names its field, as every other refusal does.
       if (error instanceof TypeError || error?.code === 'invalid_arguments') return finalize(failure(clip(error.message, 160), 'invalid', error?.path ? {field: String(error.path).replace(/^arguments\.?/, '')} : undefined));
       throw error;
+    } finally {
+      if (workKey) {
+        const held = working.get(workKey);
+        if (held?.count > 1) held.count--;
+        else working.delete(workKey);
+        publishPresence();
+      }
     }
   }
 
@@ -4069,5 +4404,5 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return result;
   }
 
-  return Object.freeze({ invoke, snapshot, reconcile, humanContext, setPolicy, decideReview, collaboration, drawingContext: drawingSummary, previewReview, stageProposal, invocationJournal: invocationJournalEntries });
+  return Object.freeze({ invoke, snapshot, reconcile, humanContext, pointResult, setPolicy, decideReview, collaboration, drawingContext: drawingSummary, previewReview, stageProposal, invocationJournal: invocationJournalEntries });
 }

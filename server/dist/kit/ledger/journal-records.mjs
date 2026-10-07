@@ -105,6 +105,10 @@ function _rapierValidLedgerRecord(record, prior, earlier, documentAuthority, max
 		const transaction = record.transaction;
 		const nullableText = (value, limit, empty = true) => value === null ||
 			(typeof value === 'string' && value.length <= limit && (empty || value.length > 0));
+		// A grouped agent contribution's optional fields, bounded like the identities beside them: a name of 1 to 120 characters, a
+		// revision, at most 500 source identities (the journal the kernel retains) of 1 to 160, and a hosted row's identity of 1 to 256.
+		const optional = (value, valid) => value === undefined || valid(value);
+		const identity = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit;
 		if (!transaction || typeof transaction.id !== 'string' || !transaction.id.length ||
 				transaction.id.length > 256 || !Array.isArray(earlier) ||
 				earlier.some(row => row?.transaction?.id === transaction.id) ||
@@ -115,6 +119,11 @@ function _rapierValidLedgerRecord(record, prior, earlier, documentAuthority, max
 				transaction.operation.length > _RAPIER_TRANSACTION_OPERATION_LIMIT ||
 				!nullableText(transaction.requestId, _RAPIER_TRANSACTION_REQUEST_LIMIT) ||
 				!nullableText(transaction.sourceTransactionId, _RAPIER_TRANSACTION_REQUEST_LIMIT) ||
+				!optional(transaction.contribution, value => identity(value, 120)) ||
+				!optional(transaction.contributionBaseRevision, value => Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0)) ||
+				!optional(transaction.sourceTransactionIds, value => Array.isArray(value) && value.length <= 500 &&
+					value.every(id => identity(id, _RAPIER_TRANSACTION_REQUEST_LIMIT))) ||
+				!optional(transaction.remoteTransactionId, value => identity(value, 256)) ||
 				!nullableText(transaction.parent, 256, false) ||
 				!nullableText(transaction.reverts, 256, false) ||
 				!nullableText(transaction.reapplies, 256, false) ||

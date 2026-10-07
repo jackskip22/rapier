@@ -60,6 +60,9 @@
       : request.principal || 'local'},
     transport: request.transport === 'webmcp' ? 'webmcp' : 'platform',
     operation, requestId: request.requestId || crypto.randomUUID(),
+    ...(request.contribution ? {contribution: request.contribution} : {}),
+    ...(Number.isSafeInteger(request.contributionBaseRevision) ? {contributionBaseRevision: request.contributionBaseRevision} : {}),
+    ...(request.sourceTransactionIds ? {sourceTransactionIds: request.sourceTransactionIds.slice()} : {}),
   });
   const scope = request => ({kind: request.actor || 'agent', id: request.principal || 'webmcp',
     transport: request.transport === 'webmcp' ? 'webmcp' : 'platform'});
@@ -69,6 +72,8 @@
   const ownsComparison = owner => comparisonOwner === owner && _rapierCompareRuntime.agentOpened &&
     comparisonGeneration === _rapierCompareRuntime.jobId;
   const nativeComparisonId = () => String(rapier.identity.authority) + ':native:' + _rapierCompareRuntime.jobId;
+  const reviewSignature = review => JSON.stringify(review && {id: review.id, kind: review.kind, status: review.status,
+    revision: review.revision, contribution: review.contribution, changes: review.changes, splices: review.splices});
 
   function externalComparison() {
     const compare = rapier.compare;
@@ -100,6 +105,11 @@
     retainedPointer.generation === Number(rapier.revision.generation);
 
   function livePointer() {
+    if (typeof _rapierDrawState === 'object' && _rapierDrawState.open) {
+      const selected = _rapierAskChatSelectionText();
+      const range = selected?.objectId ? {...selected.selection, objectId: selected.objectId, active: false} : null;
+      return {selection: range, focus: range};
+    }
     const ta = document.getElementById('source-textarea');
     if (ta && document.activeElement === ta &&
         (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source')) {
@@ -345,6 +355,9 @@
         actor: tx.actor.kind, principal: transactionPrincipals.get(tx.id)?.principal || (tx.actor.kind === 'agent' ? 'unverified:' + doorSession : tx.actor.id), transport: tx.transport,
         ...(transactionPrincipals.get(tx.id)?.hostAgent ? {hostAgent: transactionPrincipals.get(tx.id).hostAgent} : {}),
         operation: tx.operation, sourceTransactionId: tx.sourceTransactionId,
+        ...(tx.contribution ? {contribution: tx.contribution} : {}),
+        ...(Number.isSafeInteger(tx.contributionBaseRevision) ? {contributionBaseRevision: tx.contributionBaseRevision} : {}),
+        ...(Array.isArray(tx.sourceTransactionIds) ? {sourceTransactionIds: tx.sourceTransactionIds.slice()} : {}),
         splices: splices.map(row => ({pos: row.pos, removed: row.removed, inserted: row.inserted}))}] : [];
     });
     return {...documentState(), ...editorFocus(), drawing: drawingContext(), journal, externalComparison: externalComparison(),
@@ -461,6 +474,8 @@
   }
 
   function commitAdmission(request) {
+    // An Undo restores exact earlier text: one change names its source transaction, a named contribution names every member's.
+    const restoring = !!request.sourceTransactionId || (Array.isArray(request.sourceTransactionIds) && request.sourceTransactionIds.length > 0);
     const reason = admission() || hostFence({...request.fence, splices: request.splices});
     if (reason) return reason;
     if (!matches(request)) return 'document_changed';
@@ -468,7 +483,7 @@
     if (_rapierUserMutationBlocked()) return 'document_not_settled';
     if (_rapierWillReviewSlot.settling || _rapierCompareRuntime.lawReview) return 'human_review_in_progress';
     if (rapier.compare?.active && !ownsComparison(comparisonOwner)) return 'human_comparison_open';
-    if (request.actor === 'agent' && !request.sourceTransactionId && !reviews.has(request.reviewToken)) {
+    if (request.actor === 'agent' && !restoring && !reviews.has(request.reviewToken)) {
       // The kernel's watched test admits a semantic patch for the drawing the person has open.
       // Other edits remain under the document's review policy.
       const watched = !!hostFence() && !hostFence(request.fence);
@@ -479,6 +494,7 @@
 
   async function commit(request) {
     abort(request);
+    const restoring = !!request.sourceTransactionId || (Array.isArray(request.sourceTransactionIds) && request.sourceTransactionIds.length > 0);
     const review = reviews.get(request.reviewToken);
     if (request.reviewToken && (!review || review.documentId !== request.documentId ||
         review.revision !== request.baseRevision || review.beforeText !== request.beforeText ||
@@ -499,18 +515,18 @@
       let text = request.beforeText;
       for (const row of request.splices) {
         const will = {..._rapierWillParse(text), space: 'source'};
-        if (!review && !request.sourceTransactionId && _rapierWillRefuses(will,
+        if (!review && !restoring && _rapierWillRefuses(will,
           {kind: 'document-range', start: row.pos, end: row.pos + row.removed.length}, row.inserted)) return fail('document_law');
         text = text.slice(0, row.pos) + row.inserted + text.slice(row.pos + row.removed.length);
       }
       proof = _rapierWillProofBefore('agent', review ? resolved.slice(0, request.authoredCount ?? resolved.length) : resolved,
-        !!review, !!request.sourceTransactionId);
+        !!review, restoring);
     }
     const drafts = request.splices.map(row => ({kind: 'document-range',
       startBlockId: null, endBlockId: null, beforeText: row.removed, afterText: row.inserted,
       anchorBefore: row.pos, anchorAfter: row.pos, replacementLength: row.inserted.length}));
     const changeSet = _rapierChangeSetMetadata(ctx, drafts, request.label || request.operation,
-      request.sourceTransactionId ? 'undo' : 'change');
+      restoring ? 'undo' : 'change');
     let done = false, committed = null;
     try {
       const result = await _rapierWithCompoundTransaction(ctx, async compound => {
@@ -532,7 +548,9 @@
         if (_rapierWillProofFails(proof)) throw Object.assign(new Error('document_law'), {code: 'document_law'});
         if (!hidden && !restorePlace(place, request.splices)) throw Object.assign(new Error('selection_restore_failed'), {code: 'selection_restore_failed'});
         abort(request);
-      }, {changeSet, sourceTransactionId: request.sourceTransactionId, carriedLedger: request.carriedLedger, signal: request.signal});
+      }, {changeSet, sourceTransactionId: request.sourceTransactionId, sourceTransactionIds: request.sourceTransactionIds,
+        contribution: request.contribution, contributionBaseRevision: request.contributionBaseRevision,
+        carriedLedger: request.carriedLedger, signal: request.signal});
       // Before any other task runs: Draw's Done reads the place it lands at after its own wait for this commit.
       if (typeof _rapierDrawFollow === 'function') _rapierDrawFollow(request.splices);
       committed = {ok: true, revision: result.commitReceipt.documentRevision,
@@ -541,6 +559,7 @@
         committed.drawingReceipt = projectRemoteDrawing(request.fence.drawingPatch,
           {transactionId: committed.transactionId, name: request.hostAgent || doorName});
       }
+      if (caret.point) caretPut('document_changed');
       if (committed.transactionId && !request.carriedLedger) {
         transactionPrincipals.set(committed.transactionId, {principal: request.principal, hostAgent: request.hostAgent});
         const retained = new Set(rapier.undo.ledger.map(row => row.transaction.id));
@@ -605,6 +624,10 @@
   async function reveal(request) {
     if (!matches(request) || rapier.compare?.active) return fail('view_changed');
     abort(request);
+    if (request.pointer?.expiresAt <= Date.now()) return fail('pointer_expired');
+    if (request.pointer && typeof _rapierDrawEditingAsset === 'function' && _rapierDrawEditingAsset()) {
+      return agentCaret(request.pointer.id, request.pointer.words, request) ? {ok: true} : fail('target_not_visible');
+    }
     let resolved = {kind: 'document-range', start: request.start, end: request.end};
     if (rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source') {
       const start = _rapierBodyOffsetOfCanonical(request.start), end = _rapierBodyOffsetOfCanonical(request.end);
@@ -617,8 +640,12 @@
     if (scroll.reason) return fail(scroll.reason);
     if (!await _rapierSettleRevealScroll(scroll, request.signal || idleSignal, token) || !matches(request)) return fail('view_changed');
     abort(request);
-    if (resolved.kind === 'markdown-range') _rapierRestoreCanonicalSelection(request.start, request.end);
-    _rapierRevealMarker(resolved, scroll.element);
+    if (request.pointer) {
+      if (!agentCaret(request.pointer.id, request.pointer.words, request, scroll.element)) return fail('target_not_visible');
+    } else {
+      if (resolved.kind === 'markdown-range') _rapierRestoreCanonicalSelection(request.start, request.end);
+      _rapierRevealMarker(resolved, scroll.element);
+    }
     if (scroll.scrolled) _rapierTravelCommit(travel, _rapierTravelDestinationForResolved(resolved));
     return {ok: true};
   }
@@ -690,7 +717,7 @@
       (expected.expectedGeneration == null || expected.expectedGeneration === Number(rapier.revision.generation));
   }
 
-  async function applyView(intent, expected, value) {
+  async function applyView(intent, expected, value, options = {}) {
     await ready;
     if (!intent || intent.status !== 'pending' || !['document', 'compare'].includes(intent.kind)) return fail('view_invalid', 'invalid');
     const hand = await humanContext();
@@ -705,7 +732,8 @@
     projecting++;
     try {
       const request = {documentId: value.documentId, revision: expected.expectedRevision,
-        principal: 'mcp', actor: 'agent', transport: 'platform', signal: controller.signal};
+        principal: 'mcp', actor: 'agent', transport: 'platform', signal: controller.signal,
+        ...(intent.pointer ? {pointer: intent.pointer, onPointResult: options.onPointResult} : {})};
       let result;
       if (intent.kind === 'document') {
         if (!Number.isSafeInteger(intent.start) || !Number.isSafeInteger(intent.end) || intent.start < 0 ||
@@ -785,7 +813,7 @@
     _rapierReviewSpansRefresh();
     await ready;
     if (!review || review.status !== 'pending') return dismissReview();
-    if (remoteReview?.review.id === review.id && remoteReview.value.revision === value?.revision &&
+    if (remoteReview?.signature === reviewSignature(review) && remoteReview.value.revision === value?.revision &&
         remoteReview.value.text === value?.text && expectedCurrent(remoteReview.expected)) {
       return {ok: true, pending: true, presented: remoteReview.presented, reviewId: review.id};
     }
@@ -810,8 +838,9 @@
     const resolved = {kind: 'document-range', source: value.text, start: 0, end: value.text.length, record: {}};
     const who = {actor: 'agent', principal: options.principal || 'mcp', requestId: options.requestId || review.id,
       transport: options.transport || 'platform', signal: controller.signal};
-    const presentation = review.kind === 'check' ? {kind: 'check', baseline: image.baseline,
+    let presentation = review.kind === 'check' ? {kind: 'check', baseline: image.baseline,
       baseRevision: review.baseRevision, includesHumanChanges: review.includesHumanChanges === true} : proposalRecord() ? {kind: 'proposal', base: proposalRecord().base} : null;
+    if (review.contribution) presentation = {...(presentation || {kind: 'proposal'}), contribution: review.contribution};
     _rapierSeenViewMovedByAgent();
     const changes = review.kind === 'proposal' && Array.isArray(review.changes) && review.changes.length
       ? review.changes.filter(row => row.status === 'pending').map(row => ({id: row.id, pos: row.pos, removed: String(row.removed || '').length, inserted: String(row.inserted || '').length}))
@@ -823,7 +852,7 @@
       const refusal = await decision;
       return fail(refusal.reason || 'review_unavailable');
     }
-    const record = {review, value, expected: {...expected}, image, options, pending, controller, presented: false, done: null};
+    const record = {review, signature: reviewSignature(review), value, expected: {...expected}, image, options, pending, controller, presented: false, done: null};
     remoteReview = record;
     // Review content outlives execution authority: `expiresAt` is the agent's authority-lapse
     // clock, not a session bound. The presentation stays until the person decides or the document
@@ -938,14 +967,17 @@
     if (!review || !['approve', 'decline', 'apply', 'drop'].includes(action)) return refuse('review_decision_invalid');
     let reviewToken;
     const live = kernel.collaboration()?.review;
+    if (reviewSignature(live) !== reviewSignature(review)) return refuse('review_document_changed');
     const current = kernel.snapshot();
     const expectedRevision = live?.revision ?? current.revision;
-    // approve/decline decide every still-pending change at once (kept or dropped); apply/drop name
-    // only the ones they carry. Either way this is exactly the set the inline read surface must
-    // leave undrawn until the commit below resolves (decidingChanges' own comment names why).
-    const affected = action === 'approve' || action === 'decline'
-      ? Array.isArray((live || review).changeIds) ? (live || review).changeIds : []
-      : Array.isArray(changeIds) ? changeIds : [];
+    // A named contribution is decided whole, including stale members when it is dropped.
+    // Keep every affected inline fragment suppressed until that one decision resolves.
+    const source = live || review;
+    const affected = source.contribution && Array.isArray(source.changes)
+      ? source.changes.filter(row => row.status === 'pending' || row.status === 'stale').map(row => row.id)
+      : action === 'approve' || action === 'decline'
+        ? Array.isArray(source.changeIds) ? source.changeIds.slice() : []
+        : Array.isArray(changeIds) ? changeIds.slice() : [];
     for (const id of affected) decidingChanges.add(id);
     try {
     if ((action === 'approve' || action === 'apply') && (live || review).kind === 'proposal') {
@@ -957,9 +989,10 @@
       let text;
       if (preview?.outcome === 'ok') {
         text = preview.text;
-      } else if (Array.isArray(changeIds) && Array.isArray((live || review).changeIds)) {
+        for (const id of preview.changeIds || []) { decidingChanges.add(id); if (!affected.includes(id)) affected.push(id); }
+      } else if (source.contribution) return refuse(preview?.reason || preview?.outcome || 'review_evidence_unavailable');
+      else if (Array.isArray(changeIds) && Array.isArray(source.changeIds)) {
         const keep = new Set(changeIds);
-        const source = live || review;
         const splices = Array.isArray(source.changes)
           ? source.changes.filter(row => keep.has(row.id) && row.status === 'pending')
             .map(row => ({pos: row.pos, removed: row.removed, inserted: row.inserted}))
@@ -995,7 +1028,8 @@
     // calls this unconditionally for every proposal review, whether or not the modal lens ends up
     // opening below -- so decideKernelReview can pin a reviewToken to it later for a decision that
     // reaches this door by any path.
-    if (request?.review?.kind === 'proposal' && request.review.id) {
+    // A later call for the same review (the inline bar's REVIEW) never replaces the identity learned at staging.
+    if (request?.review?.kind === 'proposal' && request.review.id && !reviewIdentities.has(request.review.id)) {
       reviewIdentities.set(request.review.id, {principal: request.principal, requestId: request.requestId});
     }
     const value = await snapshot();
@@ -1295,6 +1329,12 @@
   let paintedLayers = [];
   const host = {
     snapshot, commit, reveal,
+    presence: value => {
+      if (caret.point && !value.pointers?.some(point => point.id === caret.point.id && point.status !== 'expired' && point.expiresAt > Date.now())) caretPut('pointer_cleared');
+      const pointers = apps ? (value.pointers || []).filter(point => point.status !== 'shown' || point.id === caret.point?.id) : value.pointers;
+      _rapierAgentBarRender({...value, pointers,
+        active: Number(value.inFlight || 0) > 0 || pointers?.some(point => point.status === 'shown' && point.expiresAt > Date.now()) === true});
+    },
     propose: async request => {
       if (!globalThis.RapierPortableTemplate || !globalThis.RapierPortablePage) return {reason: 'proposal_page_unavailable'};
       const page = globalThis.RapierPortablePage.wrap(globalThis.RapierPortableTemplate(), request.text, request.filename, {base: request.base});
@@ -1355,6 +1395,11 @@
       if (index < 0) return fail('change_not_visible');
       _rapierSeenViewMovedByAgent();
       const value = _rapierCompareFocusChange(index);
+      if (request.pointer && value.target) {
+        if (value.scrolled && !await _rapierAwaitScrollRest(value.scroller, request.signal || idleSignal)) return fail('view_changed');
+        if (!matches(request, null) || request.pointer.expiresAt <= Date.now()) return fail('pointer_expired');
+        return agentCaret(request.pointer.id, request.pointer.words, request, value.target) ? {ok: true} : fail('target_not_visible');
+      }
       return value.target ? {ok: true} : fail('change_not_visible');
     },
     wait: async request => {
@@ -1726,16 +1771,77 @@
   // or under Draw or the Notes cards shows nothing (the page never scrolls to animate), reduced motion places it at
   // once, and scrolling, hiding or leaving the page puts it away. One caret, one change at a time; the same change
   // never traces twice.
-  const caret = {el: null, from: null, frame: 0, rest: 0, last: null};
-  function caretPut() {
+  const caret = {el: null, from: null, frame: 0, rest: 0, last: null, point: null, pointResult: null};
+  function caretPut(reason = 'view_changed') {
     cancelAnimationFrame(caret.frame); clearTimeout(caret.rest); caret.frame = caret.rest = 0;
+    const point = caret.point, completed = caret.pointResult;
+    caret.point = caret.pointResult = null;
     if (caret.el) caret.el.remove();
     caret.el = null; caret.from = null;
+    if (point) {
+      const value = {pointerId: point.id, status: 'expired', reason};
+      if (completed) completed(value);
+      else if (!apps) kernel.pointResult(value, {actor: 'human', principal: 'local', transport: 'platform'});
+      if (apps) {
+        const work = _rapierAgentBar.workAuthority === String(rapier.identity.authority) ? _rapierAgentBar.work : null;
+        const pointers = (work?.pointers || []).filter(row => row.id !== point.id);
+        _rapierAgentBarRender({...work, pointers, active: Number(work?.inFlight || 0) > 0 ||
+          pointers.some(row => row.status === 'shown' && row.expiresAt > Date.now())});
+      }
+      else _rapierAgentBarRender();
+    }
   }
   for (const [target, type] of [[window, 'scroll'], [window, 'resize'], [window, 'pagehide'], [document, 'visibilitychange']]) {
     target.addEventListener(type, () => { if (caret.el) caretPut(); }, {capture: true, passive: true});
   }
-  function caretTarget() {
+  document.addEventListener('pointerdown', event => {
+    if (event.isTrusted && caret.point) caretPut('human_interaction');
+  }, {capture: true, passive: true});
+  function caretTarget(request, element) {
+    if (request?.pointer) {
+      const pointer = request.pointer;
+      let box, home = null;
+      if (pointer.assetLabel && typeof _rapierDrawEditingAsset === 'function' && _rapierDrawState.open) {
+        if (_rapierDrawEditingAsset() !== pointer.assetLabel || _rapierDrawState.editing?.position !== request.start) return null;
+        box = pointer.objectId ? [...(_rapierDrawState.svg?.querySelectorAll('[data-shape-id]') || [])]
+          .find(node => node.getAttribute('data-shape-id') === pointer.objectId)?.getBoundingClientRect() : _rapierDrawState.svgRoot?.getBoundingClientRect();
+      } else {
+        if (covered()) return null;
+        const bound = element && _rapierBoundBlock(element), span = bound && _rapierExcerptCanonicalBlockSpans([bound.id]).get(bound.id);
+        const occurrence = span && _rapierScanMarkdownImages(bound.raw).find(row => span.start + row.start === request.start);
+        const image = occurrence && element.querySelector('img[data-rapier-image-index="' + occurrence.renderIndex + '"]');
+        if (image && pointer.objectId && pointer.assetLabel) {
+          const assets = globalThis.RapierImageAssets, core = globalThis.RapierDrawCore;
+          const asset = assets.documentAssets(_rapierSourceText()).assets.get(assets.normalizeLabel(pointer.assetLabel));
+          try {
+            const recipe = core._rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(assets.decodeDataImage(asset.url)));
+            const shape = recipe.shapes.find(row => row.id === pointer.objectId), view = recipe.view;
+            if (!shape || !view || !(view.w > 0 && view.h > 0)) return null;
+            const bounds = core._rapierDrawShapeBBoxIn(shape, recipe), rect = image.getBoundingClientRect();
+            box = {left: rect.left + (bounds.minX - view.x) / view.w * rect.width,
+              top: rect.top + (bounds.minY - view.y) / view.h * rect.height,
+              height: Math.max(14, Math.min(40, (bounds.maxY - bounds.minY) / view.h * rect.height))};
+          } catch (_) { return null; }
+        } else if (pointer.objectId) return null;
+        else if (image) box = image.getBoundingClientRect();
+        else if (rapier.compare?.active) box = element?.getBoundingClientRect();
+        else if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source') {
+          box = _rapierSourceRectForOffset(document.getElementById('source-textarea'), _rapierTaPos(request.start));
+        } else {
+          const resolved = _rapierResolvePoint(request.start);
+          if (resolved) {
+            const range = document.createRange(); range.setStart(resolved.node, resolved.offset); range.collapse(true);
+            box = _rapierCaretClientRect(range) || range.getBoundingClientRect();
+            // The words stand in the gap above the block that holds the place (place() runs the leader down from them), never over a line of it.
+            home = (resolved.node.nodeType === 1 ? resolved.node : resolved.node.parentElement)?.closest('[data-block-id]') || null;
+          }
+        }
+      }
+      if (!box) return null;
+      const height = Math.max(14, Math.min(40, box.height || 18));
+      const point = {x: box.left, y: box.top, height, top: home ? home.getBoundingClientRect().top : box.top};
+      return point.y >= 0 && point.y + height <= window.innerHeight && point.x >= 0 && point.x <= window.innerWidth ? point : null;
+    }
     if (covered()) return null;
     const ledger = rapier.undo.ledger;
     for (let i = ledger.length - 1; i >= 0; i--) {
@@ -1753,22 +1859,28 @@
       if (text) { range.setStart(text, text.data.length); range.collapse(true); } else range.selectNodeContents(host);
       const rects = range.getClientRects(), box = rects.length ? rects[rects.length - 1] : host.getBoundingClientRect();
       const height = Math.max(14, Math.min(40, box.height || 18));
-      const point = {x: text ? box.right : box.left, y: box.top + (box.height - height) / 2, height};
+      const point = {x: text ? box.right : box.left, y: box.top + (box.height - height) / 2, height, top: host.getBoundingClientRect().top};
       return point.y >= 0 && point.y + height <= window.innerHeight && point.x >= 0 && point.x <= window.innerWidth ? point : null;
     }
     return null;
   }
-  function agentCaret(change, label) {
-    if (!change || change === caret.last || document.visibilityState === 'hidden') return;
+  function agentCaret(change, label, request, element) {
+    if (!change || document.visibilityState === 'hidden') return false;
+    if (change === caret.last) return !!caret.el;
+    if (request?.pointer && request.pointer.expiresAt <= Date.now()) return false;
+    if (caret.point) caretPut('superseded');
     caret.last = change;
-    const target = caretTarget();
-    if (!target) { caretPut(); return; }
+    const target = caretTarget(request, element);
+    if (!target) { caretPut(); return false; }
     if (!document.getElementById('rapier-agent-caret-style')) {
       const style = document.createElement('style');
       style.id = 'rapier-agent-caret-style';
+      // The bar stands at the exact place; the words sit in the gap above the block (--lead, the leader's length) and slide along the
+      // line to stay inside the page's 16 px gutters (--tag-x); over the open canvas the bar rides above the Draw surface.
       style.textContent = '.rapier-agent-caret{position:fixed;left:0;top:0;z-index:150;pointer-events:none;width:2px;background:var(--color-accent,#12A594);transition:opacity .4s}' +
-        '.rapier-agent-caret span{position:absolute;left:0;bottom:100%;padding:2px 4px;white-space:nowrap;background:var(--color-accent,#12A594);color:#fff;font:700 9px/1.2 Geist,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}' +
-        '.rapier-agent-caret[data-flip] span{left:auto;right:0}.rapier-agent-caret[data-fading]{opacity:0}@media (prefers-reduced-motion:reduce){.rapier-agent-caret{transition:none}}';
+        '.rapier-agent-caret::before{content:"";position:absolute;left:0;bottom:100%;width:1px;height:var(--lead,0px);background:inherit;opacity:.55}' +
+        '.rapier-agent-caret span{position:absolute;left:var(--tag-x,0px);bottom:calc(100% + var(--lead,0px));box-sizing:border-box;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;padding:2px 4px;white-space:nowrap;background:var(--color-accent,#12A594);color:#fff;font:700 9px/1.2 Geist,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}' +
+        '.rapier-agent-caret[data-fading]{opacity:0}body.rapier-draw-open .rapier-agent-caret{z-index:905}@media (prefers-reduced-motion:reduce){.rapier-agent-caret{transition:none}}';
       document.head.append(style);
     }
     if (!caret.el) {
@@ -1777,39 +1889,53 @@
       document.body.append(caret.el);
     }
     caret.el.removeAttribute('data-fading');
-    caret.el.firstChild.textContent = String(label || 'agent').slice(0, 24);
+    caret.el.firstChild.textContent = String(label || 'agent').slice(0, request?.pointer ? 240 : 24);
     caret.el.style.height = target.height + 'px';
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const motion = globalThis.RapierCursorMotion.createCursorMotion(caret.from || target, target, 'arc', {reducedMotion: reduced || !caret.from});
-    // Near the right edge the tag stands to the left of the caret instead of running off the screen.
+    // The words keep to the gap above the target's block (a block whose top has scrolled away keeps them just above the bar) and
+    // to the page's gutters: near the right edge they slide left along the line instead of running off the screen.
     const place = point => {
+      const tag = caret.el.firstChild;
       caret.el.style.transform = 'translate(' + point.x + 'px,' + point.y + 'px)';
-      if (point.x + caret.el.firstChild.offsetWidth > window.innerWidth - 2) caret.el.setAttribute('data-flip', ''); else caret.el.removeAttribute('data-flip');
+      caret.el.style.setProperty('--lead', Math.round(Math.max(0, Math.min(point.y - target.top, point.y - tag.offsetHeight - 2))) + 'px');
+      caret.el.style.setProperty('--tag-x', Math.round(Math.max(16, Math.min(point.x, window.innerWidth - 16 - tag.offsetWidth)) - point.x) + 'px');
     };
     cancelAnimationFrame(caret.frame); clearTimeout(caret.rest);
+    if (request?.pointer) {
+      caret.point = {...request.pointer, documentId: request.documentId, revision: request.revision, status: 'shown'};
+      caret.pointResult = request.onPointResult || null;
+      caret.rest = setTimeout(() => caretPut('lifetime_elapsed'), Math.max(0, request.pointer.expiresAt - Date.now()));
+      if (apps) _rapierAgentBarRender({..._rapierAgentBar.work, active: true,
+        pointers: [...(_rapierAgentBar.work?.pointers || []).filter(row => row.id !== caret.point.id), caret.point]});
+      else _rapierAgentBarRender();
+    }
     const started = performance.now();
     const step = now => {
       const {position} = motion.at(now - started);
       place(position);
       if (now - started < motion.durationMs) { caret.frame = requestAnimationFrame(step); return; }
       caret.from = target;
-      caret.rest = setTimeout(() => { if (!caret.el) return; caret.el.dataset.fading = ''; caret.rest = setTimeout(caretPut, 450); }, 2600);
+      if (!caret.point) caret.rest = setTimeout(() => { if (!caret.el) return; caret.el.dataset.fading = ''; caret.rest = setTimeout(caretPut, 450); }, 2600);
     };
     place(motion.at(0).position);
     caret.frame = requestAnimationFrame(step);
+    return true;
   }
 
-  function remoteJournal(value, before) {
-    if (!Array.isArray(value.journal) || !value.journal.length || value.text === before.text) return null;
-    const remote = []; let text = value.text, matched = false;
+  // The hosted rows that replay back to this page's text, oldest first: the rows that carry source, and with `whole` the
+  // metadata-only revisions between them too. Null when the retained history does not reach the text.
+  function remoteJournal(value, before, whole) {
+    if (!Array.isArray(value.journal) || !value.journal.length || value.text === before?.text) return null;
+    const remote = []; let text = value.text, matched = !before;
     for (let i = value.journal.length - 1; i >= 0; i--) {
       const row = value.journal[i];
       if (!row || !Array.isArray(row.splices)) throw new Error('Invalid remote history');
-      if (!row.splices.length) continue;
+      if (!row.splices.length) { if (whole) remote.unshift(row); continue; }
       text = RapierLedger._rapierTransformSplices(text, row.splices, true);
       if (text === null) throw new Error('Remote history does not replay');
       remote.unshift(row);
-      if (text === before.text) { matched = true; break; }
+      if (before && text === before.text) { matched = true; break; }
     }
     return matched ? remote : null;
   }
@@ -1817,29 +1943,96 @@
   // A server revision is not a local revision. Match an exact replay suffix, then mint local
   // revision/root links while retaining every observed writer. Missing older events stay unknown.
   function remoteLedger(value, before, mapped) {
-    const remote = remoteJournal(value, before);
-    if (!remote) return null;
-    const local = _rapierLedgerCapture(), records = local.records.slice();
+    if (!Array.isArray(value.journal) || !value.journal.length || value.text === before?.text) return null;
+    const identity = id => typeof id === 'string' && id.length > 0 && id.length <= 256;
+    const incoming = new Map(); let prior = null;
+    for (const row of value.journal) {
+      if (!row || !identity(row.id) || incoming.has(row.id) || !Array.isArray(row.splices) ||
+          !Number.isSafeInteger(row.baseRevision) || row.baseRevision < 0 || !Number.isSafeInteger(row.revision) ||
+          row.revision !== row.baseRevision + 1)
+        throw new Error('Invalid remote history');
+      if (prior && row.baseRevision !== prior.revision) throw new Error('Remote history is not continuous');
+      incoming.set(row.id, row); prior = row;
+    }
+    const remote = remoteJournal(value, before, true);
+    if (!remote) return null; // retained remote history does not reach this local checkpoint: the text is taken without a ledger
+    if (!before && (typeof value.documentId !== 'string' || !value.documentId)) throw new Error('Remote document is missing');
+    const local = before ? _rapierLedgerCapture() : {records: [], documentAuthority: value.documentId,
+      head: {root: RapierLedger.textRoot(remote.reduceRight((text, row) => RapierLedger._rapierTransformSplices(text, row.splices, true), value.text)), revision: 0}};
+    const records = local.records.slice(), sources = new Map(), revisions = new Map(), retained = new Map();
+    const boundary = (remoteRevision, localRevision) => {
+      if (revisions.has(remoteRevision) && revisions.get(remoteRevision) !== localRevision)
+        throw new Error('Remote revision has conflicting local evidence');
+      revisions.set(remoteRevision, localRevision);
+    };
+    for (const record of records) {
+      const tx = record.transaction, id = tx.remoteTransactionId ?? tx.id;
+      if (!identity(id)) throw new Error('Invalid remote transaction identity');
+      if (!incoming.has(id)) continue;
+      if (!retained.has(id)) retained.set(id, []);
+      retained.get(id).push(record);
+    }
+    // A remote row may occupy several local records. Only its complete retained splice sequence
+    // proves its identity and both revision boundaries; a trimmed fragment proves neither.
+    for (const [id, parts] of retained) {
+      const row = incoming.get(id), splices = parts.flatMap(part => part.splices || []);
+      if (splices.length !== row.splices.length || !splices.every((splice, index) => {
+        const other = row.splices[index];
+        return splice.pos === other.pos && splice.removed === other.removed && splice.inserted === other.inserted;
+      }) || parts.some((part, index) => index && part.transaction.baseRevision !== parts[index - 1].transaction.revision)) continue;
+      sources.set(id, parts.map(part => part.transaction.id));
+      boundary(row.baseRevision, parts[0].transaction.baseRevision);
+      boundary(row.revision, parts.at(-1).transaction.revision);
+    }
+    boundary(remote[0].baseRevision, local.head.revision);
+    // Metadata-only server revisions share their neighbouring source checkpoint.
+    for (const rows of [value.journal, value.journal.slice().reverse()]) for (const row of rows) if (!row.splices.length) {
+      if (revisions.has(row.baseRevision)) boundary(row.revision, revisions.get(row.baseRevision));
+      else if (revisions.has(row.revision)) boundary(row.baseRevision, revisions.get(row.revision));
+    }
     let root = local.head.root, revision = local.head.revision;
     for (const row of remote) {
+      boundary(row.baseRevision, revision);
+      const contribution = {};
+      if (row.contribution) {
+        if (typeof row.contribution !== 'string' || !Number.isSafeInteger(row.contributionBaseRevision) ||
+            row.contributionBaseRevision < 0 || !revisions.has(row.contributionBaseRevision))
+          throw new Error('Remote contribution history is incomplete');
+        contribution.contribution = row.contribution;
+        contribution.contributionBaseRevision = revisions.get(row.contributionBaseRevision);
+      }
+      const originIds = row.sourceTransactionIds ?? (row.sourceTransactionId ? [row.sourceTransactionId] : []);
+      if (!Array.isArray(originIds) || originIds.length > incoming.size || new Set(originIds).size !== originIds.length ||
+          originIds.some(id => !identity(id) || !sources.has(id)) ||
+          (row.sourceTransactionId && (!identity(row.sourceTransactionId) || !originIds.includes(row.sourceTransactionId))))
+        throw new Error('Remote Undo history is incomplete');
+      const sourceTransactionIds = originIds.flatMap(id => sources.get(id));
+      const single = row.sourceTransactionId && sources.get(row.sourceTransactionId);
+      const sourceTransactionId = single?.length === 1 ? single[0] : null;
       const actor = {kind: row.actor, id: row.actor === 'agent'
         ? RapierLedger.agentActorId(row.transport || 'mcp', row.hostAgent ? {name: row.hostAgent} : null)
         : row.actor === 'human' ? 'local' : row.principal || 'mcp'};
       // A hosted commit can join many local checkpoints. Carry its ordered source
       // through bounded ledger records, each linked by its own local revision.
+      const parts = [];
       for (let offset = 0; offset < row.splices.length; offset += 64) {
         const splices = row.splices.slice(offset, offset + 64);
         const beforeHash = root, baseRevision = revision++;
         for (const splice of splices) root = RapierLedger.rootAfter(root, splice);
+        const id = local.documentAuthority.slice(0, 48) + ':remote:' + revision.toString(36);
+        parts.push(id);
         records.push({beforeHash, afterHash: root, splices, transaction: {
-          id: local.documentAuthority.slice(0, 48) + ':remote:' + revision.toString(36),
+          id, remoteTransactionId: row.id,
           documentAuthority: local.documentAuthority, baseRevision, revision, actor, transport: 'platform',
-          operation: row.operation || 'document.remote_edit', requestId: null, sourceTransactionId: null,
+          operation: row.operation || 'document.remote_edit', requestId: null, sourceTransactionId, ...contribution,
+          ...(sourceTransactionIds.length ? {sourceTransactionIds: sourceTransactionIds.slice()} : {}),
           parent: records.at(-1)?.transaction.id ?? null, reverts: null, reapplies: null,
           createdAt: row.createdAt ?? 0, affectedBlockIds: [],
         }});
-        if (mapped) mapped(row, records.at(-1).transaction.id);
+        if (mapped) mapped(row, id);
       }
+      if (parts.length) sources.set(row.id, parts);
+      boundary(row.revision, revision);
     }
     return RapierLedger.exportLedger({text: value.text, records, documentAuthority: local.documentAuthority,
       root, revision, complete: false});
@@ -1906,8 +2099,11 @@
     try {
       if (value.documentId !== before.documentId) {
         const stamp = _rapierMutationStamp();
+        let carriedLedger;
+        try { carriedLedger = remoteLedger(value, null); }
+        catch (_) { return fail('snapshot_history_invalid', 'invalid'); }
         const loaded = await rapierLoad(value.text, value.filename, {documentAuthority: value.documentId,
-          documentKind: value.docKind, expectedMutationStamp: stamp, returnReceipt: true, appsSnapshot: true});
+          documentKind: value.docKind, expectedMutationStamp: stamp, returnReceipt: true, appsSnapshot: true, carriedLedger});
         if (!loaded) return fail('document_changed', 'conflict');
         sourceApplied = true;
       } else if (value.text !== before.text) {
@@ -1957,6 +2153,7 @@
       if (exact) {
         proposalBaseRecord = value.proposalBase ? {authority: value.documentId, base: globalThis.RapierLedgerCarried.readBase(value.proposalBase), text: value.text, review: value.collaboration?.review} : null;
         projectPolicy(value);
+        if (apps) host.presence(value.collaboration?.agentPresence || {active: false, inFlight: 0, pointers: []});
       }
       const comparison = !exact ? {...fail('document_changed'), visible: false} : remoteReview
         ? {ok: true, visible: true, review: remoteReview.review.id} : await syncComparison(value);
@@ -2082,7 +2279,52 @@
     return connected;
   }
 
+  // A sheet in the house dialog's own form for the Apps page: the confirm overlay's markup (the scrim, the pop, the title row, the
+  // words, the rows of boxes), opened and closed through openDialog and closeDialog so it owns keys and focus as every house dialog
+  // does. `body` is read in order: a node is placed as it is, an array of buttons becomes a row of house boxes, each button carrying
+  // its role in `data-pop` (affirm unless set); the last row is the pop's (_rapierPopArrange puts the cancel or the destructive box
+  // at the bottom). `onEscape` runs on Escape when given; close() takes the sheet down and runs onClose once.
+  let sheetSequence = 0;
+  function houseSheet({title, words = '', body = [], onEscape = null, onClose = null}) {
+    const overlay = document.createElement('div'), panel = document.createElement('div'), inner = document.createElement('div');
+    const titleRow = document.createElement('div'), heading = document.createElement('h2'), rows = [];
+    overlay.className = 'settings-overlay restore-modal-overlay';
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-hidden', 'true'); overlay.inert = true;
+    panel.className = 'settings-panel rapier-pop'; panel.style.cssText = 'max-width:420px;margin:auto';
+    inner.className = 'settings-panel__body';
+    titleRow.className = 'navigator-title-row'; heading.className = 'settings-section__title';
+    heading.id = 'rapier-sheet-title-' + (++sheetSequence); heading.textContent = title;
+    overlay.setAttribute('aria-labelledby', heading.id);
+    titleRow.append(heading); inner.append(titleRow);
+    if (words) {
+      const p = document.createElement('p'); p.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5'; p.textContent = words; inner.append(p);
+    }
+    for (const item of body) {
+      if (!Array.isArray(item)) { inner.append(item); continue; }
+      const row = document.createElement('div'); row.className = 'settings-action-row'; row.setAttribute('data-pop-row', '');
+      for (const box of item) { box.classList.add('settings-action-btn'); if (!box.dataset.pop) box.dataset.pop = 'affirm'; row.append(box); }
+      inner.append(row); rows.push(row);
+    }
+    if (rows.length) _rapierPopArrange(rows[rows.length - 1]);
+    panel.append(inner); overlay.append(panel); document.body.append(overlay);
+    let open = true;
+    const sheet = {overlay, get open() { return open; }, close() {
+      if (!open) return false;
+      open = false;
+      closeDialog(overlay); overlay.remove();
+      try { onClose?.(); } catch (_) {}
+      return true;
+    }};
+    openDialog(overlay, {panel: '.settings-panel', onEscape: onEscape ? () => onEscape(sheet) : null});
+    return sheet;
+  }
+
   globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status, ownedNotesAdapter, ownedNotesCheckpoint,
+    sheet: houseSheet,
+    presence: host.presence,
+    trackInvocation: (operation, input, run, invocationId) => _rapierAgentInvocationTracked(operation, input, run, invocationId),
+    pointState: () => caret.point ? {...caret.point} : null,
+    clearPoint: (id, reason = 'view_changed') => { if (!id || caret.point?.id === id) caretPut(reason); },
     nameAtDoor, noteRemoteCall, doorName: () => doorName, stageCarriedProposal, proposalExport,
     replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual,
     policyReady: () => policyAvailable, applyView, presentReview, dismissReview, presentationChanged, readFile, notify,
