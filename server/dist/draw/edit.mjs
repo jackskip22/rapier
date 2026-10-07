@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { RAPIER_DRAW_LABEL_MAX, _rapierDrawInkView, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
+import { RAPIER_DRAW_LABEL_MAX, RAPIER_DRAW_HEADS, RAPIER_DRAW_NIB_MIN, RAPIER_DRAW_NIB_MAX, _rapierDrawApplyShapesPatch, _rapierDrawFigureFault, _rapierDrawSetLineGeometry, _rapierDrawStrokeSamples, _rapierDrawDefaultStyle, _rapierDrawInkView, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
+import { admitText } from './text.mjs';
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const FRAMES = new Set(['rect', 'paint', 'diamond', 'star', 'hexagon', 'pentagon', 'octagon', 'cylinder', 'subroutine', 'asymmetric']);
@@ -15,7 +16,7 @@ function _rapierDrawReleaseAuthorPaint(shape, change) {
 	if (change.border !== undefined) delete own.stroke;
 	if (!Object.keys(own).length) delete shape.authorStyle;
 }
-function fail(code = 'drawing_operation_invalid') { throw Object.assign(new RangeError(code === 'drawing_locked' ? 'Unlock the selected drawing first' : code === 'drawing_geometry_limit' ? 'Drawing exceeds its coordinate range' : code === 'drawing_work_limit' ? 'Drawing operation exceeds its work limit' : code === 'drawing_border_inactive' ? 'A border needs a solid shape in the Ink look, not an as-drawn stroke' : code === 'drawing_border_invalid' ? 'Choose a border colour from the palette or use #RRGGBB' : 'Invalid drawing operation'), { code }); }
+function fail(code = 'drawing_operation_invalid', field) { throw Object.assign(new RangeError((field ? field + ': ' : '') + (code === 'drawing_locked' ? 'Unlock the selected drawing first' : code === 'drawing_geometry_limit' ? 'Drawing exceeds its coordinate range' : code === 'drawing_work_limit' ? 'Drawing operation exceeds its work limit' : code === 'drawing_border_inactive' ? 'A border needs a solid shape in the Ink look, not an as-drawn stroke' : code === 'drawing_border_invalid' ? 'Choose a border colour from the palette or use #RRGGBB' : 'Invalid drawing operation')), { code, ...(field ? { field } : {}) }); }
 function pointOK(p) { if (!spatial(p[0]) || !spatial(p[1])) fail('drawing_geometry_limit'); return p; }
 function geomOK(g) {
 	if (!g) return g;
@@ -442,9 +443,130 @@ function distribute(recipe, units, axis, ids) {
 		break;
 	}
 }
+const TEXT_PROPERTIES = new Set(['textFont', 'textSize', 'textBold', 'textItalic', 'textUnderline', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textCase', 'textKern', 'textFigures', 'textWrap', 'labelWidth', 'labelIn', 'labelAlign', 'labelVAlign', 'labelPos', 'labelBeside', 'step', 'textEffect', 'textEffectSeed', 'effectFlower', 'effectStem']);
+const LOOK_PROPERTIES = new Set(['brush', 'style', 'ink', 'border', 'dash', 'nib', 'smooth', 'opacity', ...TEXT_PROPERTIES]);
+const SHAPE_PROPERTIES = new Set([...LOOK_PROPERTIES, 'label', 'headStart', 'headEnd', 'route', 'bend', 'curveT', 'elbow', 'angle', 'len', 'inner', 'corner', 'flat', 'geom']);
+const OPERATION_FIELDS = {
+	create: ['figures', 'direction'], move: ['dx', 'dy'], resize: ['width', 'height', 'anchor', 'local'], rotate: ['angle', 'pivot'], connect: ['start', 'end'],
+	set_look: [...LOOK_PROPERTIES], properties: ['properties'], set_label: ['label'], set_step: ['step'], group: ['group'],
+	duplicate: ['dx', 'dy', 'newIds'], align: ['alignment'], distribute: ['axis'], flip: ['axis'],
+	ungroup: [], lock: [], unlock: [], unlockAll: [], delete: [], front: [], back: [], forward: [], backward: [], clean: [], unclean: [],
+};
+function setLabel(shape, recipe, label) {
+	if (typeof label !== 'string' || label.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(label) || ['ink', 'paint', 'arc', 'parabola'].includes(shape.recognized) || shape.recognized === 'text' && !label) fail('drawing_label_invalid', 'label');
+	if (!shape.label && !['text', 'line', 'arrow'].includes(shape.recognized)) shape.labelIn = true;
+	if (label) shape.label = label; else { delete shape.label; delete shape.step; }
+}
+function geometryProperties(shape, patch) {
+	if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !shape.geom) fail('drawing_geometry_limit', 'geom');
+	const kind = shape.recognized, g = {...shape.geom}, framed = FRAMES.has(kind), line = kind === 'line' || kind === 'arrow';
+	const fields = new Set(g.p ? ['p'] : line ? ['x1', 'y1', 'x2', 'y2'] : kind === 'arc' ? ['cx', 'cy', 'r', 'a0', 'a1'] : ['cx', 'cy', 'rot', ...(framed ? ['w', 'h'] : kind === 'circle' ? ['r'] : kind === 'ellipse' ? ['rx', 'ry'] : kind === 'text' ? ['w'] : [])]);
+	if (kind === 'star') { fields.add('inner'); fields.add('points'); }
+	for (const [key, value] of Object.entries(patch)) {
+		if (!fields.has(key)) fail('drawing_geometry_limit', 'geom.' + key);
+		if (value === null) { delete g[key]; continue; }
+		if (key === 'p') {
+			if (!Array.isArray(value) || value.length !== g.p.length || !value.every(p => Array.isArray(p) && p.length === 2 && p.every(spatial))) fail('drawing_geometry_limit', 'geom.p');
+			g.p = value.map(p => p.slice()); continue;
+		}
+		if (typeof value !== 'number' || !Number.isFinite(value) || !['rot', 'a0', 'a1'].includes(key) && !spatial(value) || ['r', 'rx', 'ry', 'w', 'h'].includes(key) && value <= 0 || key === 'inner' && (value < .15 || value > .75) || key === 'points' && ![5, 6].includes(value)) fail('drawing_geometry_limit', 'geom.' + key);
+		g[key] = value;
+	}
+	const required = shape.geom.p ? ['p'] : line ? ['x1', 'y1', 'x2', 'y2'] : kind === 'arc' ? ['cx', 'cy', 'r', 'a0', 'a1'] : ['cx', 'cy', ...(framed ? ['w', 'h'] : kind === 'circle' ? ['r'] : kind === 'ellipse' ? ['rx', 'ry'] : [])];
+	for (const key of required) if (g[key] === undefined) fail('drawing_geometry_limit', 'geom.' + key);
+	return g;
+}
+// Both the property sheet and operations use this writer on their private candidate. Text admission
+// stays with its text owner; supplied fields must be meaningful before recipe admission can omit defaults.
+function setProperties(shape, recipe, properties) {
+	if (!properties || typeof properties !== 'object' || Array.isArray(properties)) fail('drawing_operation_invalid', 'properties');
+	for (const key of Object.keys(properties)) if (!SHAPE_PROPERTIES.has(key)) fail('drawing_operation_invalid', key);
+	const keys = Object.keys(properties), colour = keys.length === 1 && ['ink', 'border'].includes(keys[0]) ? keys[0] : null;
+	if (keys.length === 1 && ['nib', 'smooth'].includes(keys[0]) && properties[keys[0]] === (shape[keys[0]] ?? recipe[keys[0]])) return;
+	if (colour) {
+		const value = properties[colour], held = (colour === 'border' ? shape.authorStyle?.stroke : shape.style === 'solid' ? shape.authorStyle?.fill : shape.authorStyle?.stroke) || shape[colour] || '';
+		if (held === (value ?? '') && (value === null || _rapierDrawValidInk(value))) return;
+	}
+	const next = {...shape};
+	for (const [key, value] of Object.entries(properties)) if (!['geom', 'inner'].includes(key)) { if (value === null) delete next[key]; else next[key] = value; }
+	if ('label' in properties) { setLabel(next, recipe, properties.label ?? ''); }
+	if ('labelIn' in properties && properties.labelIn != null && (typeof properties.labelIn !== 'boolean' || properties.labelIn && ['text', 'line', 'arrow', 'arc', 'parabola', 'ink', 'paint'].includes(shape.recognized))) fail('drawing_label_invalid', 'labelIn');
+	for (const key of TEXT_PROPERTIES) if (key in properties) {
+		const value = properties[key];
+		if (value !== null && !admitText({label: next.label, labelIn: next.labelIn, route: next.route, [key]: value}, shape.recognized)) fail('drawing_label_invalid', key);
+		if (key === 'textFont' && typeof value === 'string' && /^f[\da-f]{24}$/.test(value) && !recipe.fonts?.some(font => font.id === value)) fail('drawing_label_invalid', key);
+		if (key === 'step' && value != null && (!next.label || !next.labelIn || ['text', 'line', 'arrow', 'ink', 'paint', 'arc', 'parabola'].includes(shape.recognized))) fail('drawing_label_invalid', key);
+	}
+	if (!admitText(next, shape.recognized)) fail('drawing_label_invalid', 'labelIn' in properties ? 'labelIn' : 'label');
+	for (const [key, max, min] of [['nib', RAPIER_DRAW_NIB_MAX, RAPIER_DRAW_NIB_MIN], ['smooth', 100, 0]]) if (key in properties && properties[key] != null) {
+		if (!Number.isInteger(properties[key]) || properties[key] < min || properties[key] > max || ['text', 'paint'].includes(shape.recognized)) fail('drawing_look_invalid', key);
+	}
+	if ('brush' in properties && properties.brush != null && !_rapierDrawBrushesFor(shape.recognized, shape.stroke != null).includes(properties.brush)) fail('drawing_look_invalid', 'brush');
+	if ('style' in properties && properties.style != null && !_rapierDrawStylesFor(shape.recognized).includes(properties.style)) fail('drawing_look_invalid', 'style');
+	if (properties.brush === null) next.brush = 'ink';
+	if (properties.style === null) next.style = _rapierDrawDefaultStyle(shape.recognized);
+	_rapierDrawReleaseAuthorPaint(next, properties.style === null ? {...properties, style: next.style} : properties);
+	if ('style' in properties) { for (const key of ['headStart', 'headEnd', 'trimStart', 'trimEnd', 'cutWidth']) if (!(key in properties)) delete next[key]; if (properties.style !== 'solid') delete next.border; }
+	for (const key of ['ink', 'border']) if (key in properties && properties[key] != null) {
+		const valid = _rapierDrawValidInk(properties[key]); if (!valid) fail(key === 'border' ? 'drawing_border_invalid' : 'drawing_look_invalid', key); next[key] = valid;
+	}
+	if ((next.border || next.style === 'solid' && next.authorStyle?.stroke) && !_rapierDrawBorderActive(next)) fail('drawing_border_inactive', 'border' in properties ? 'border' : 'brush' in properties ? 'brush' : 'style');
+	if ('dash' in properties) { if (properties.dash === '') delete next.dash; else if (properties.dash != null && !['dashed', 'dotted'].includes(properties.dash)) fail('drawing_look_invalid', 'dash'); }
+	if (('brush' in properties || 'dash' in properties) && next.dash && !_rapierDrawDashActive(next)) fail('drawing_look_invalid', 'dash');
+	if ('opacity' in properties && properties.opacity != null && (typeof properties.opacity !== 'number' || !Number.isFinite(properties.opacity) || properties.opacity < .05 || properties.opacity > 1)) fail('drawing_look_invalid', 'opacity');
+	for (const key of ['headStart', 'headEnd', 'route', 'bend', 'curveT', 'elbow', 'angle', 'len']) if (key in properties && properties[key] != null) {
+		const value = properties[key], line = ['line', 'arrow'].includes(shape.recognized);
+		if (key === 'angle' || key === 'len') { if (typeof value !== 'boolean' || !line && !(key === 'angle' && shape.recognized === 'triangle')) fail('drawing_operation_invalid', key); }
+		else if (!line) fail('drawing_operation_invalid', key);
+		else if (key === 'headStart' || key === 'headEnd') { if (!RAPIER_DRAW_HEADS.includes(value)) fail('drawing_operation_invalid', key); delete next['trim' + key.slice(4)]; delete next.cutWidth; }
+		else if (key === 'route') {
+			if (!['straight', 'curved', 'elbow', 'auto'].includes(value)) fail('drawing_operation_invalid', key);
+			if (next.recognized === 'line' && value !== 'straight') { next.recognized = 'arrow'; if (next.brush && !_rapierDrawBrushesFor('arrow').includes(next.brush)) next.brush = 'ink'; }
+			if (value === 'curved' && !next.bend) next.bend = _rapierDrawClamp(Math.hypot(next.geom.x2 - next.geom.x1, next.geom.y2 - next.geom.y1) * .2, 12, 60);
+			if (value === 'elbow' && typeof next.elbow !== 'number') next.elbow = .5;
+		} else if (!spatial(value) || key === 'elbow' && (value < 0 || value > 1)) fail('drawing_geometry_limit', key);
+	}
+	if ('corner' in properties && properties.corner != null && (shape.recognized !== 'rect' || typeof properties.corner !== 'number' || !Number.isFinite(properties.corner) || properties.corner <= 0 || properties.corner > .5)) fail('drawing_geometry_limit', 'corner');
+	if ('flat' in properties && properties.flat != null && (shape.recognized !== 'hexagon' || typeof properties.flat !== 'boolean')) fail('drawing_operation_invalid', 'flat');
+	if ('geom' in properties) {
+		const geom = geometryProperties(shape, properties.geom);
+		if (['line', 'arrow'].includes(shape.recognized)) {
+			next.geom = {...shape.geom};
+			if (!_rapierDrawSetLineGeometry(next, geom, recipe)) fail('drawing_geometry_limit', 'geom');
+		} else next.geom = geom;
+	}
+	if ('inner' in properties) {
+		if (shape.recognized !== 'star') fail('drawing_geometry_limit', 'inner');
+		try { next.geom = geometryProperties(next, {inner: properties.inner}); } catch (error) { error.field = 'inner'; throw error; }
+	}
+	for (const key of Object.keys(shape)) if (!(key in next)) delete shape[key];
+	Object.assign(shape, next); _rapierDrawFitText(shape, recipe);
+	if (properties.brush === 'light') {
+		if (shape.geom && ['line', 'arrow'].includes(shape.recognized)) recipe.light = Math.atan2(shape.geom.y2 - shape.geom.y1, shape.geom.x2 - shape.geom.x1);
+		else { const points = _rapierDrawShapeStroke(shape, recipe)?.pts, samples = points?.length >= 2 && _rapierDrawStrokeSamples(points, 3); if (samples?.length) recipe.light = samples[0].ang; }
+	}
+}
+function _rapierDrawSetBinding(shape, end, binding, recipe, point = null) {
+	if (!['start', 'end'].includes(end) || !['line', 'arrow'].includes(shape.recognized) || !shape.geom) fail('drawing_operation_invalid', end);
+	if (binding !== null) {
+		if (!binding || typeof binding !== 'object' || Array.isArray(binding)) fail('drawing_operation_invalid', end);
+		for (const key of Object.keys(binding)) if (!['to', 'ax', 'ay'].includes(key)) fail('drawing_operation_invalid', end + '.' + key);
+		if (typeof binding.to !== 'string' || !recipe.shapes.some(target => target.id === binding.to && target.id !== shape.id && _rapierDrawAnchorFrame(target, recipe))) fail('drawing_operation_invalid', end + '.to');
+		for (const key of ['ax', 'ay']) if (typeof binding[key] !== 'number' || !Number.isFinite(binding[key]) || binding[key] < 0 || binding[key] > 1) fail('drawing_operation_invalid', end + '.' + key);
+		point = _rapierDrawResolveBindAnchor(binding, recipe);
+		if (!point) fail('drawing_geometry_limit', end);
+	}
+	if (point) {
+		if (!Array.isArray(point) || point.length !== 2 || !point.every(spatial)) fail('drawing_geometry_limit', end);
+		const next = {...shape.geom, [end === 'start' ? 'x1' : 'x2']: point[0], [end === 'start' ? 'y1' : 'y2']: point[1]};
+		if (!_rapierDrawSetLineGeometry(shape, next, recipe)) fail('drawing_geometry_limit', end);
+	}
+	if (binding) (shape.bind || (shape.bind = {}))[end] = {...binding};
+	else if (shape.bind) { delete shape.bind[end]; if (!shape.bind.start && !shape.bind.end) delete shape.bind; }
+}
 // Admission creates a private candidate; validate the whole batch before the caller adopts any geometry.
 function applyOperations(input, operations) {
-	if (!Array.isArray(operations) || operations.length > 64) fail();
+	if (!Array.isArray(operations) || operations.length > 64) fail('drawing_operation_invalid', 'operations');
 	let recipe = _rapierDrawAdmitRecipe(input);
 	if (!recipe) fail('drawing_geometry_limit');
 	const before = signature(recipe);
@@ -452,21 +574,37 @@ function applyOperations(input, operations) {
 	for (const shape of recipe.shapes) _rapierDrawFitText(shape, recipe);
 	_rapierDrawRerouteBoundArrows(recipe);
 	let ids = [], work = 0;
-	for (const operation of operations) {
+	for (const [index, operation] of operations.entries()) {
+		try {
 		if (!operation || typeof operation !== 'object' || Array.isArray(operation)) fail();
 		const type = operation.type, all = new Set(recipe.shapes.map(shape => shape.id));
+		if (!Object.hasOwn(OPERATION_FIELDS, type)) fail('drawing_operation_invalid', 'type');
+		for (const key of Object.keys(operation)) if (!['type', 'ids'].includes(key) && !OPERATION_FIELDS[type].includes(key)) fail('drawing_operation_invalid', key);
+		if (type === 'create') {
+			if (operation.ids != null && (!Array.isArray(operation.ids) || operation.ids.length)) fail('drawing_operation_invalid', 'ids');
+			if (!Array.isArray(operation.figures) || !operation.figures.length || operation.figures.length > 128) fail('drawing_operation_invalid', 'figures');
+			if (operation.direction != null && !['down', 'across', 'up', 'back'].includes(operation.direction)) fail('drawing_operation_invalid', 'direction');
+			const patched = _rapierDrawApplyShapesPatch(recipe, {add: operation.figures}, operation.direction);
+			if (!patched) {
+				const fault = _rapierDrawFigureFault(operation.figures.filter(raw => raw && typeof raw.kind === 'string'), recipe.shapes, operation.direction);
+				fail('drawing_operation_invalid', fault?.field ? 'figures[' + fault.index + '].' + fault.field : 'figures');
+			}
+			recipe = patched; ids = recipe.shapes.filter(shape => !all.has(shape.id)).map(shape => shape.id);
+			for (const shape of recipe.shapes) if (ids.includes(shape.id)) _rapierDrawFitText(shape, recipe);
+			_rapierDrawRerouteBoundArrows(recipe); continue;
+		}
 		if (type === 'unlockAll') { for (const shape of recipe.shapes) delete shape.locked; ids = []; continue; }
-		if (!Array.isArray(operation.ids) || operation.ids.length > 2048 || !operation.ids.every(id => typeof id === 'string' && all.has(id))) fail();
+		if (!Array.isArray(operation.ids) || operation.ids.length > 2048 || !operation.ids.every(id => typeof id === 'string' && all.has(id))) fail('drawing_operation_invalid', 'ids');
 		ids = selectionIds(recipe, operation.ids, true);
 		const selected = new Set(ids), shapes = recipe.shapes.filter(shape => selected.has(shape.id));
-		if (!['lock', 'unlock'].includes(type) && shapes.some(shape => shape.locked)) fail('drawing_locked');
+		if (!['lock', 'unlock'].includes(type) && shapes.some(shape => shape.locked)) fail('drawing_locked', 'ids');
 		work += recipe.shapes.length + shapes.reduce((sum, shape) => sum + (_rapierDrawShapeStroke(shape, recipe)?.pts.length || 0), 0);
 		if (work > 4194304) fail('drawing_work_limit');
 		if (type === 'group') {
-			if (operation.group != null && (typeof operation.group !== 'string' || !ID.test(operation.group))) fail();
+			if (operation.group != null && (typeof operation.group !== 'string' || !ID.test(operation.group))) fail('drawing_operation_invalid', 'group');
 			if (shapes.length < 2 || shapes[0].group && shapes.every(shape => shape.group === shapes[0].group) && (!operation.group || operation.group === shapes[0].group)) continue;
 			const used = new Set(recipe.shapes.flatMap(shape => [shape.id, shape.group].filter(Boolean)));
-			if (operation.group && used.has(operation.group)) fail();
+			if (operation.group && used.has(operation.group)) fail('drawing_operation_invalid', 'group');
 			const group = operation.group || nextId('g', used), last = recipe.shapes.reduce((n, shape, i) => selected.has(shape.id) ? i : n, -1);
 			const position = recipe.shapes.slice(0, last + 1).filter(shape => !selected.has(shape.id)).length;
 			for (const shape of shapes) shape.group = group;
@@ -477,10 +615,12 @@ function applyOperations(input, operations) {
 		else if (type === 'delete') { recipe.shapes = recipe.shapes.filter(shape => !selected.has(shape.id)); recipe = _rapierDrawPruneUnusedStrokes(recipe); ids = []; }
 		else if (type === 'duplicate') {
 			const dx = operation.dx ?? 24, dy = operation.dy ?? 24;
-			if (!spatial(dx) || !spatial(dy) || recipe.shapes.length + shapes.length > 2048 || recipe.strokes.reduce((sum, stroke) => sum + stroke.pts.length, 0) + shapes.reduce((sum, shape) => sum + (_rapierDrawShapeStroke(shape, recipe)?.pts.length || 0), 0) > 262144) fail('drawing_geometry_limit');
+			if (!spatial(dx)) fail('drawing_geometry_limit', 'dx');
+			if (!spatial(dy)) fail('drawing_geometry_limit', 'dy');
+			if (recipe.shapes.length + shapes.length > 2048 || recipe.strokes.reduce((sum, stroke) => sum + stroke.pts.length, 0) + shapes.reduce((sum, shape) => sum + (_rapierDrawShapeStroke(shape, recipe)?.pts.length || 0), 0) > 262144) fail('drawing_geometry_limit');
 			const assigned = operation.newIds;
 			for (const shape of recipe.shapes) if (shape.group) all.add(shape.group);
-			if (assigned != null && (!Array.isArray(assigned) || assigned.length !== shapes.length || !assigned.every(id => typeof id === 'string' && ID.test(id) && !all.has(id)) || new Set(assigned).size !== assigned.length)) fail();
+			if (assigned != null && (!Array.isArray(assigned) || assigned.length !== shapes.length || !assigned.every(id => typeof id === 'string' && ID.test(id) && !all.has(id)) || new Set(assigned).size !== assigned.length)) fail('drawing_operation_invalid', 'newIds');
 			const mapped = new Map(shapes.map((shape, i) => [shape.id, assigned?.[i] || nextId('s', all)])), groups = new Map(), used = new Set(recipe.shapes.flatMap(shape => [shape.id, shape.group].filter(Boolean)).concat([...mapped.values()]));
 			const copies = shapes.map(shape => {
 				const copy = clone(shape), stroke = _rapierDrawShapeStroke(shape, recipe); copy.id = mapped.get(shape.id);
@@ -504,80 +644,62 @@ function applyOperations(input, operations) {
 				if (type === 'unclean' && shape.border) fail('drawing_border_inactive');
 				shape.asDrawn = type === 'unclean';
 			}
-		} else if (type === 'set_look') {
-			// Appearance only: brush (the look), style (the fill), ink, border, dash; each validated against
-			// what the shape's kind may wear, and a field left out is left alone.
-			const { brush, style, ink, border, dash } = operation;
-			for (const shape of shapes) {
-				_rapierDrawReleaseAuthorPaint(shape, operation);
-				if (brush !== undefined) {
-					if (typeof brush !== 'string' || !_rapierDrawBrushesFor(shape.recognized, shape.stroke != null).includes(brush)) fail('drawing_look_invalid');
-					shape.brush = brush;
-				}
-				if (style !== undefined) {
-					if (typeof style !== 'string' || !_rapierDrawStylesFor(shape.recognized).includes(style)) fail('drawing_look_invalid');
-					shape.style = style; delete shape.headStart; delete shape.headEnd; delete shape.trimStart; delete shape.trimEnd; delete shape.cutWidth;
-					if (style !== 'solid') delete shape.border;
-				}
-				if (ink !== undefined) {
-					if (ink === null) delete shape.ink;
-					else { const valid = _rapierDrawValidInk(ink); if (!valid) fail('drawing_look_invalid'); shape.ink = valid; }
-				}
-				if (border !== undefined) {
-					if (border === null) delete shape.border;
-					else { const valid = _rapierDrawValidInk(border); if (!valid) fail('drawing_border_invalid'); shape.border = valid; }
-				}
-				if ((shape.border || shape.style === 'solid' && shape.authorStyle?.stroke) && !_rapierDrawBorderActive(shape)) fail('drawing_border_inactive');
-				if (dash !== undefined) {
-					if (dash === null || dash === '') delete shape.dash;
-					else if (dash === 'dashed' || dash === 'dotted') shape.dash = dash;
-					else fail('drawing_look_invalid');
-				}
-				// A look combination the renderer would ignore is refused, not stored inert -- checked
-				// whenever this call touched the field that decides dash's own activity (brush) or dash
-				// itself, against the one shared capability table (_rapierDrawDashActive) the human Style
-				// sheet's dash row reads too.
-				if ((brush !== undefined || dash !== undefined) && shape.dash && !_rapierDrawDashActive(shape)) fail('drawing_look_invalid');
-			}
+		} else if (type === 'set_look' || type === 'properties') {
+			const {type: _type, ids: _ids, ...look} = operation, properties = type === 'set_look' ? look : operation.properties;
+			if (!properties || typeof properties !== 'object' || Array.isArray(properties)) fail('drawing_operation_invalid', 'properties');
+			try { for (const shape of shapes) setProperties(shape, recipe, properties); }
+			catch (error) { if (type === 'properties') error.field = 'properties' + (error.field ? '.' + error.field : ''); throw error; }
 		} else if (type === 'set_label') {
-			// The words of a box or a text, as Draw's own label editor sets them: the box refits its words and
-			// its connectors follow. A line or arrow takes a caption the same way; ink and paint carry none.
-			const label = operation.label;
-			if (typeof label !== 'string' || label.length > RAPIER_DRAW_LABEL_MAX || /[\ud800-\udfff\ufffe\uffff]/u.test(label)) fail('drawing_label_invalid');
-			for (const shape of shapes) {
-				if (shape.recognized === 'ink' || shape.recognized === 'paint' || (shape.recognized === 'arc' || shape.recognized === 'parabola')) fail('drawing_label_invalid');
-				if (shape.recognized === 'text' && !label) fail('drawing_label_invalid');
-				if (!shape.label && !['text', 'line', 'arrow'].includes(shape.recognized)) shape.labelIn = true;
-				if (label) shape.label = label; else { delete shape.label; delete shape.step; }
-				_rapierDrawFitText(shape, recipe);
-			}
+			if (!('label' in operation)) fail('drawing_label_invalid', 'label');
+			for (const shape of shapes) setProperties(shape, recipe, {label: operation.label});
 		} else if (type === 'set_step') {
-			// The place a box holds in the order a flow is read: an integer from 1 to 99 above its words, or none.
-			const step = operation.step;
-			if (step != null && (!Number.isInteger(step) || step < 1 || step > 99)) fail('drawing_label_invalid');
-			for (const shape of shapes) {
-				if (!shape.label || !shape.labelIn || ['text', 'line', 'arrow', 'ink', 'paint', 'arc', 'parabola'].includes(shape.recognized)) fail('drawing_label_invalid');
-				if (step == null) delete shape.step; else shape.step = step;
-				_rapierDrawFitText(shape, recipe);
-			}
+			if (!('step' in operation)) fail('drawing_label_invalid', 'step');
+			for (const shape of shapes) setProperties(shape, recipe, {step: operation.step});
 		} else if (type === 'front' || type === 'back') moveLayer(recipe, ids, type === 'front');
 		else if (type === 'forward' || type === 'backward') stepLayer(recipe, ids, type === 'forward');
 		else if (type === 'move') {
-			if (!spatial(operation.dx) || !spatial(operation.dy)) fail('drawing_geometry_limit');
+			if (!spatial(operation.dx)) fail('drawing_geometry_limit', 'dx');
+			if (!spatial(operation.dy)) fail('drawing_geometry_limit', 'dy');
 			if (!operation.dx && !operation.dy) continue;
 			for (const shape of shapes) { _rapierDrawTranslateShape(shape, recipe, operation.dx, operation.dy); _rapierDrawReleaseBindings(shape, ids); }
 			const moved = new Set(shapes.map(shape => shape.id));
 			_rapierDrawRefaceArrows(moved, recipe);
 			for (const id of moved) personMoved.add(id);
+		} else if (type === 'resize') {
+			for (const key of ['width', 'height']) if (key in operation && (!spatial(operation[key]) || operation[key] <= 0)) fail('drawing_geometry_limit', key);
+			if (!('width' in operation) && !('height' in operation)) fail('drawing_operation_invalid', 'width');
+			if ('local' in operation && typeof operation.local !== 'boolean') fail('drawing_operation_invalid', 'local');
+			const anchor = operation.anchor || {x: .5, y: .5};
+			if (!anchor || typeof anchor !== 'object' || Array.isArray(anchor)) fail('drawing_operation_invalid', 'anchor');
+			for (const key of Object.keys(anchor)) if (!['x', 'y'].includes(key)) fail('drawing_operation_invalid', 'anchor.' + key);
+			for (const key of ['x', 'y']) if (![0, .5, 1].includes(anchor[key])) fail('drawing_operation_invalid', 'anchor.' + key);
+			if (!shapes.length) continue;
+			const frame = operation.local === false ? {theta: 0, pivot: null, box: union(shapes.map(shape => _rapierDrawShapeBBoxIn(shape, recipe)))} : selectionFrame(recipe, ids);
+			const {box, theta, pivot} = frame, w = box.maxX - box.minX, h = box.maxY - box.minY;
+			if (!w && operation.width != null) fail('drawing_geometry_limit', 'width');
+			if (!h && operation.height != null) fail('drawing_geometry_limit', 'height');
+			const width = operation.width ?? w, height = operation.height ?? h, x = box.minX + w * anchor.x, y = box.minY + h * anchor.y;
+			const next = {minX: x - width * anchor.x, maxX: x + width * (1 - anchor.x), minY: y - height * anchor.y, maxY: y + height * (1 - anchor.y)};
+			for (const shape of shapes) { _rapierDrawResizeShapeLocal(shape, recipe, theta, pivot, box, next); _rapierDrawFitText(shape, recipe); _rapierDrawReleaseBindings(shape, ids); personMoved.add(shape.id); }
+			anchorResizeLocal(recipe, ids, theta, pivot, next, anchor);
+		} else if (type === 'rotate') {
+			if (typeof operation.angle !== 'number' || !Number.isFinite(operation.angle)) fail('drawing_geometry_limit', 'angle');
+			if (operation.pivot != null && (!Array.isArray(operation.pivot) || operation.pivot.length !== 2 || !operation.pivot.every(spatial))) fail('drawing_geometry_limit', 'pivot');
+			if (!shapes.length || !operation.angle) continue;
+			const box = union(shapes.map(shape => _rapierDrawShapeBBoxIn(shape, recipe))), pivot = operation.pivot || [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
+			for (const shape of shapes) { _rapierDrawRotateShape(shape, recipe, pivot[0], pivot[1], operation.angle); _rapierDrawReleaseBindings(shape, ids); personMoved.add(shape.id); }
+		} else if (type === 'connect') {
+			if (!('start' in operation) && !('end' in operation)) fail('drawing_operation_invalid', 'start');
+			for (const shape of shapes) for (const end of ['start', 'end']) if (end in operation) _rapierDrawSetBinding(shape, end, operation[end], recipe);
 		} else if (type === 'align') {
 			const rule = { left: ['x', 0], center: ['x', .5], right: ['x', 1], top: ['y', 0], middle: ['y', .5], bottom: ['y', 1] }[operation.alignment];
-			if (!rule) fail();
+			if (!rule) fail('drawing_operation_invalid', 'alignment');
 			const units = unitsFor(recipe, ids), box = union(units.map(unit => unit.box));
 			if (units.length < 2) continue;
 			const [axis, t] = rule, [lo, hi] = AXES[axis], target = box[lo] + (box[hi] - box[lo]) * t;
 			shiftUnits(recipe, units, unit => { const delta = target - unit.box[lo] - (unit.box[hi] - unit.box[lo]) * t; return axis === 'x' ? [delta, 0] : [0, delta]; }, ids);
 		} else if (type === 'distribute' || type === 'flip') {
-			if (!Object.hasOwn(AXES, operation.axis)) fail();
+			if (!Object.hasOwn(AXES, operation.axis)) fail('drawing_operation_invalid', 'axis');
 			const units = unitsFor(recipe, ids);
 			if (type === 'distribute') distribute(recipe, units, operation.axis, ids);
 			else if (shapes.length) {
@@ -587,6 +709,9 @@ function applyOperations(input, operations) {
 			}
 		} else fail();
 		_rapierDrawRerouteBoundArrows(recipe);
+		} catch (error) {
+			error.field = 'operations[' + index + ']' + (error.field ? '.' + error.field : ''); throw error;
+		}
 	}
 	let admitted = _rapierDrawAdmitRecipe(recipe);
 	// A box set on or against another leaves a connector no routed way. A person's move is never refused for that: connectors go
@@ -604,7 +729,7 @@ function applyOperations(input, operations) {
 			if ((admitted = _rapierDrawAdmitRecipe(recipe))) break;
 		}
 	}
-	if (!admitted) fail('drawing_geometry_limit');
+	if (!admitted) fail('drawing_geometry_limit', operations.length ? 'operations[' + (operations.length - 1) + ']' : 'recipe');
 	const changed = before !== signature(admitted);
 	return { recipe: admitted, ids, changed };
 }
@@ -706,4 +831,4 @@ function snapResize(recipe, ids, from, next, tolerance) {
 	return { next: out, guides };
 }
 
-export { applyOperations, editDrawing, selectionIds, snapMove, snapResize, anchorResize, anchorResizeLocal, selectionFrame, rotateDrawing, contentTiltBox, _rapierDrawReleaseAuthorPaint, _rapierDrawTranslateGeom, _rapierDrawTranslateShape, _rapierDrawRotatePt, _rapierDrawBindAnchorFor, _rapierDrawResizeShape, _rapierDrawResizeShapeLocal, _rapierDrawRotateShape, _rapierDrawFitText, _rapierDrawReleaseBindings, _rapierDrawPruneUnusedStrokes };
+export { applyOperations, editDrawing, setProperties, _rapierDrawSetBinding, selectionIds, snapMove, snapResize, anchorResize, anchorResizeLocal, selectionFrame, rotateDrawing, contentTiltBox, _rapierDrawReleaseAuthorPaint, _rapierDrawTranslateGeom, _rapierDrawTranslateShape, _rapierDrawRotatePt, _rapierDrawBindAnchorFor, _rapierDrawResizeShape, _rapierDrawResizeShapeLocal, _rapierDrawRotateShape, _rapierDrawFitText, _rapierDrawReleaseBindings, _rapierDrawPruneUnusedStrokes };

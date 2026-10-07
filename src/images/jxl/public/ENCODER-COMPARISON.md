@@ -1,12 +1,13 @@
 # Encoder payloads
 
-Rapier JXL is the smallest JavaScript or WebAssembly JPEG XL encoder among the published payloads measured here.
-A bounded survey, not proof of a global minimum; the encoders differ in what they cover.
+Executable JavaScript and WebAssembly encoder payloads. Rapier JXL's sizes are measured from this release;
+the other package versions below were measured on 2026-09-30. Their capabilities differ.
 
 | Encoder / entry | Version | Minified JS + WASM bytes | gzip bytes | Included capability |
 | --- | --- | ---: | ---: | --- |
 | Rapier JXL core | __VERSION__ | __CORE_BYTES__ | __CORE_GZIP__ | 8-bit lossless RGBA, lossy modular with exact alpha |
-| Rapier JXL effort door | __VERSION__ | __EFFORT_BYTES__ | __EFFORT_GZIP__ | The core, and the weighted predictor searched for lossless |
+| Rapier JXL effort door | __VERSION__ | __EFFORT_BYTES__ | __EFFORT_GZIP__ | The core, plus lossless predictor, palette, colour-transform and screen searches |
+| Rapier JXL wasm door | __VERSION__ | __WASM_BYTES__ | __WASM_GZIP__ | Effort with inlined integer kernels; identical encoded bytes |
 | Rapier JXL JPEG door | __VERSION__ | __JPEG_BYTES__ | __JPEG_GZIP__ | JPEG coefficients, orientation; no JPEG reconstruction |
 | Rapier JXL photo door | __VERSION__ | __PHOTO_BYTES__ | __PHOTO_GZIP__ | 8-bit photographic VarDCT, exact alpha; q100 lossless |
 | [jSquash](https://github.com/jamsinclair/jSquash/tree/main/packages/jxl) | 1.3.0 | 1,388,572 | 525,782 | 8-bit lossless/lossy RGBA |

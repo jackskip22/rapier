@@ -2,11 +2,12 @@ import {parseFrontMatter, tagsOf} from './frontmatter.mjs';
 // Word questions are complete (last word a prefix). The index holds field/count bags, never bodies. confirm names unresolved literals;
 // confirmSearch reprojects exact Markdown and reranks before limiting; an absent read stays in confirm. Pure.
 // Segment authored words first, fold afterwards. One word reader for notes and questions.
-import {cardHead, sectionOf, isCodeFile} from './model.mjs';
+import {cardHead, sectionOf, isCodeFile, projectCard} from './model.mjs';
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
-import {scanLinks, linkMask, hasHtmlTag, headingAnchors, isLineStart, asMap} from './links.mjs';
-import {documentAssets, IMAGE_LIMITS, markdownParser} from '../spec/md-assets.mjs';
+import {scanLinks, linkMask, hasHtmlTag, headingAnchors, isLineStart, asMap, projectLinks, stageLinkIndex, stageLinkNote, packLinkProjection} from './links.mjs';
+import {documentAssets, IMAGE_LIMITS, markdownParser, configureParser, installMarkdownImages} from '../spec/md-assets.mjs';
+import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec, installMarkdownMath, splitOpeningFrontmatter} from '../agent/markdown-spec.mjs';
 import {libraryReadRow} from './library-reads.mjs';
 
 const BYTE_PAYLOAD_STUB = 'A'.repeat(128);
@@ -413,11 +414,24 @@ function counted(texts) {
 	}
 	return m;
 }
-function tokenBag(proj) {
-	const bag = {title: counted([proj.title]), headings: counted([proj.headings.map(h => h.text).join(' ')]), tags: counted(proj.tags), body: counted([proj.body.replaceAll(ASSET_TOKEN, ' ')])};
-	if (proj.pictures) { const words = counted([proj.pictures]); if (words.size) bag.pictures = words; }
+function* tokenBagWalk(proj) {
+	const bag = {}, texts = {title: [proj.title], headings: [proj.headings.map(h => h.text).join(' ')], tags: proj.tags,
+		body: [proj.body.replaceAll(ASSET_TOKEN, ' ')], ...(proj.pictures ? {pictures: [proj.pictures]} : {})};
+	let walked = 0;
+	for (const field of Object.keys(texts)) {
+		const words = new Map();
+		for (const text of texts[field]) for (const part of wordSegments(text)) {
+			if (part.isWordLike) {
+				const word = fold(part.segment), count = words.get(word);
+				if (count === undefined) words.set(copyText(word), 1); else words.set(word, count + 1);
+			}
+			if (++walked % 128 === 0) yield;
+		}
+		if (field !== 'pictures' || words.size) bag[field] = words;
+	}
 	return bag;
 }
+function tokenBag(proj) { const walk = tokenBagWalk(proj); let row; do { row = walk.next(); } while (!row.done); return row.value; }
 
 function addPostings(postings, file, bag, owned) {
 	for (const field of fieldsOf(bag)) {
@@ -521,6 +535,327 @@ export function stepSearchIndex(state, {notes: count = 64, own = false} = {}) {
 
 export function searchIndexProgress(state) {
 	return {done: state.index.notes.size, total: state.index.notes.size + state.pending.size};
+}
+
+// The original projection runs in a disposable worker. Markdown is never divided into
+// guessed blocks. The page moves at most one bounded packet at a time, and exposes a note
+// only after every counted word and source interval has arrived for its current generation.
+export const SEARCH_INDEX_CHARS = 8192;
+// Where a note's projection stops fitting an idle turn: about 0.23 ms per KB of prose and 0.69 per KB of dense headings,
+// tasks and links, so 16 KB of prose reaches the 4 ms slice. A smaller note is projected where it arrives, a larger one in
+// the worker. It is a cost, not the 8,192-unit transfer chunk above. The words and links a replaced note may hold and still
+// retire in one turn follow it.
+export const SEARCH_WORKER_CHARS = 16384, SEARCH_WORKER_WORDS = 4096, SEARCH_WORKER_LINKS = 1024;
+const SEARCH_INDEX_ROWS = 128;
+function* searchStringRows(kind, value) {
+	const text = String(value || '');
+	if (!text.length) { yield [kind, '', true]; return; }
+	for (let at = 0; at < text.length; at += SEARCH_INDEX_CHARS) yield [kind, text.slice(at, at + SEARCH_INDEX_CHARS), at + SEARCH_INDEX_CHARS >= text.length];
+}
+function* searchValueRows(value) {
+	if (typeof value === 'string') { yield* searchStringRows('valueString', value); return; }
+	if (value && typeof value === 'object') {
+		yield [Array.isArray(value) ? 'array' : 'object'];
+		if (Array.isArray(value)) { for (const part of value) yield* searchValueRows(part); }
+		else for (const key of Object.keys(value)) { yield ['key', key]; yield* searchValueRows(value[key]); }
+		yield ['end']; return;
+	}
+	yield ['value', value];
+}
+function* searchResultRows(proj, bag, links, title, encoded) {
+	yield ['facts', proj.tasks.open, proj.tasks.done, proj.hasPicture, proj.hasDrawing, proj.hasLink, !!proj.hasRecording, !!proj.hasFile];
+	yield* searchStringRows('cardTitle', title);
+	yield* searchStringRows('title', proj.title);
+	for (const head of proj.headings) { yield ['heading', head.level, head.start]; yield* searchStringRows('slug', head.slug); yield* searchStringRows('headingText', head.text); }
+	for (const tag of proj.tags) yield* searchStringRows('tag', tag);
+	if (proj.pictures) yield* searchStringRows('pictures', proj.pictures);
+	yield* searchStringRows('excerpt', boundedExcerpt(proj.body));
+	for (const field of fieldsOf(bag)) for (const [word, count] of bag[field]) { yield ['word', field, count]; yield* searchStringRows('token', word); }
+	if (links) yield* searchValueRows(links);
+	if (encoded !== null) yield* searchStringRows('encoded', encoded);
+}
+
+export function installSearchWorker(scope) {
+	const parser = applyMarkdownSpec(scope.markdownit(RAPIER_MARKDOWN_SPEC.options), scope);
+	installMarkdownMath(parser, RAPIER_MARKDOWN_SPEC.rules.mathBlock); installMarkdownImages(parser);
+	configureParser(parser, splitOpeningFrontmatter);
+	let job = null, serial = 0;
+	const send = (operation, value = {}) => scope.postMessage({id: job.id, operation, ...value});
+	const pause = () => new Promise(resolve => setTimeout(resolve, 0));
+	const finish = async own => {
+		try {
+			let text;
+			if (own.bytes.length) {
+				const bytes = new Uint8Array(own.byteLength); let at = 0;
+				for (const part of own.bytes) { bytes.set(part, at); at += part.length; }
+				// The folder's own reading of a file that is not UTF-8 text: unreadable, never a failed index.
+				const decode = view => { try { return new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(view); } catch (_) { throw Object.assign(new Error('this file is not UTF-8 text'), {name: 'EncodingError', code: 'unreadable'}); } };
+				own.bytes = null; text = projectSearchBytes(bytes, {file: own.file, decode});
+			} else { const source = own.source.join(''); text = own.ranges.length ? {searchText: source, payloadRanges: own.ranges, mapLink: searchByteLinkMap(own.ranges)} : source; }
+			own.source = null;
+			send('phase', {phase: 'projection'});
+			const proj = withPictures(projectText(text, {}, own.file), own.pictures.join('')); own.pictures = null; own.ranges = null;
+			const source = typeof text === 'string' ? text : text.searchText;
+			const sourceBytes = own.byteLength || new TextEncoder().encode(source).length + (text?.payloadRanges || []).reduce((total, row) => total + row.end - row.start - row.length, 0);
+			const links = isCodeFile(own.file) ? null : projectLinks(source, {mapLink: text?.mapLink});
+			const title = projectCard(own.file, source).title || '';
+			const tokens = tokenBagWalk(proj); let part;
+			send('phase', {phase: 'words'});
+			do {
+				const start = performance.now();
+				do { part = tokens.next(); } while (!part.done && performance.now() - start < 4);
+				if (!part.done) await pause();
+				if (job !== own) return;
+			} while (!part.done);
+			const encoded = links ? JSON.stringify([packSearchProjection({...proj, bag: part.value, excerpt: boundedExcerpt(proj.body)}), packLinkProjection(links, sourceBytes)]) : null;
+			own.result = searchResultRows(proj, part.value, links, title, encoded); own.carry = null;
+			send('ready');
+		} catch (error) { if (job === own) send('error', {message: String(error?.message || error).slice(0, 1024), ...(error?.code === 'unreadable' ? {code: 'unreadable'} : {})}); }
+	};
+	scope.addEventListener('message', ({data}) => {
+		try {
+			if (data?.operation === 'begin') {
+				if (!Number.isSafeInteger(data.id) || data.id <= serial || typeof data.file !== 'string') return;
+				serial = data.id; job = {id: data.id, file: data.file, source: [], bytes: [], byteLength: 0, pictures: [], ranges: []}; send('input'); return;
+			}
+			if (!job || data?.id !== job.id) return;
+			// One worker serves a folder generation: a finished job lets go of its buffers and its results.
+			if (data.operation === 'end') { job = null; return; }
+			if (data.operation === 'source' || data.operation === 'pictures') {
+				if (typeof data.text !== 'string' || data.text.length > SEARCH_INDEX_CHARS) throw new Error('Invalid search input packet');
+				job[data.operation].push(data.text); send('input');
+			} else if (data.operation === 'bytes') {
+				if (!(data.bytes instanceof Uint8Array) || data.bytes.length > SEARCH_INDEX_CHARS) throw new Error('Invalid search byte packet');
+				job.bytes.push(data.bytes); job.byteLength += data.bytes.length; send('input');
+			} else if (data.operation === 'ranges') {
+				if (!Array.isArray(data.rows) || data.rows.length > 32) throw new Error('Invalid search source ranges');
+				for (const row of data.rows) job.ranges.push(row); send('input');
+			} else if (data.operation === 'finish') void finish(job);
+			else if (data.operation === 'pull' && job.result) {
+				const rows = []; let chars = 0, done = false;
+				while (rows.length < SEARCH_INDEX_ROWS && chars < SEARCH_INDEX_CHARS) {
+					const next = job.carry || job.result.next(); job.carry = null;
+					if (next.done) { done = true; break; }
+					const size = typeof next.value[1] === 'string' ? next.value[1].length : 0;
+					if (rows.length && chars + size > SEARCH_INDEX_CHARS) { job.carry = next; break; }
+					rows.push(next.value); chars += size;
+				}
+				send('result', {rows, done});
+			}
+		} catch (error) { if (job) send('error', {message: String(error?.message || error).slice(0, 1024)}); }
+	});
+}
+
+// The pending map remains the only source queue. This runner holds one transfer and the
+// posting iterators being retired; neither can publish across an edit or folder replacement.
+export function createSearchIndexRunner({getState, setState, getLinks, setLinks, createWorker, wake, live = () => true, completed = () => {}, unreadable = () => {}, streaming = () => false}) {
+	let active = null, worker = null, sequence = 0, stopped = false, resolving = false, resolution = null, resolutionOf = null;
+	const retired = [], failed = new Map(), linkDirty = new Set(), linkRemovals = new Set();
+	const refresh = () => {
+		const state = getState(), next = slicedState(state.index, state.pending);
+		if (next.index.partial && failed.size === state.pending.size) next.index.progress.unread = true;
+		setState(next);
+	};
+	function* oldWords(file, bag) { for (const field of fieldsOf(bag)) for (const word of bag[field].keys()) yield [file, word]; }
+	const retire = (file, note) => { if (note?.bag) retired.push({file, walk: oldWords(file, note.bag)}); };
+	// One worker serves the generation, built by the first large note. A job that is cancelled or fails ends the worker (it may
+	// be inside a long projection); a job that finishes lets go of its buffers and leaves the worker for the next note.
+	const dispose = () => { if (worker) { worker.onmessage = worker.onerror = worker.onmessageerror = null; worker.terminate(); worker = null; } };
+	const valid = own => !stopped && live() && active === own && getState().pending.get(own.file) === own.text && (picturesOf(getState().index, own.file) || '') === own.pictures;
+	const reject = (own, error) => {
+		if (!valid(own)) return;
+		retire(own.file, own.note); active = null;
+		if (error?.code === 'unreadable') {
+			// Not UTF-8 text: the folder's own unreadable path, as for a note small enough to be read where it arrives.
+			try { worker?.postMessage({id: own.id, operation: 'end'}); } catch (_) {}
+			const state = getState(); state.pending.delete(own.file); failed.delete(own.file); linkDirty.delete(own.file);
+			refresh(); unreadable(own.file); wake(); return;
+		}
+		dispose(); failed.set(own.file, own.text);
+		refresh(); wake();
+	};
+	const accept = (own, rows) => {
+		const note = own.note, index = getState().index;
+		const addValue = value => {
+			const top = own.values.at(-1);
+			if (!top) own.links = value;
+			else if (Array.isArray(top.value)) top.value.push(value);
+			else { top.value[top.key] = value; top.key = null; }
+		};
+		for (const row of rows) {
+			const [kind, value, end] = row;
+			if (kind === 'facts') { note.tasks = {open: row[1], done: row[2]}; note.hasPicture = row[3]; note.hasDrawing = row[4]; note.hasLink = row[5]; if (row[6]) note.hasRecording = true; if (row[7]) note.hasFile = true; }
+			else if (kind === 'heading') { own.heading = {level: value, start: end, slug: '', text: ''}; note.headings.push(own.heading); }
+			else if (kind === 'slug' || kind === 'headingText') own.heading[kind === 'slug' ? 'slug' : 'text'] += value;
+			else if (kind === 'tag') { own.tag += value; if (end) { note.tags.push(own.tag); own.tag = ''; } }
+			else if (kind === 'word') { own.field = value; own.count = end; own.token = ''; note.bag[value] ||= new Map(); }
+			else if (kind === 'token') {
+				own.token += value;
+				if (end) {
+					const word = own.token; note.bag[own.field].set(word, own.count);
+					let inner = index.postings.get(word); if (!inner) { inner = new Map(); index.postings.set(word, inner); }
+					let record = inner.get(own.file); if (!record) { record = {title: 0, headings: 0, tags: 0, body: 0}; inner.set(own.file, record); }
+					record[own.field] = own.count; own.token = '';
+				}
+			} else if (kind === 'cardTitle') own.cardTitle += value;
+			else if (kind === 'encoded') own.encoded += value;
+			else if (kind === 'array' || kind === 'object') { const part = kind === 'array' ? [] : {}; addValue(part); own.values.push({value: part}); }
+			else if (kind === 'key') own.values.at(-1).key = value;
+			else if (kind === 'end') own.values.pop();
+			else if (kind === 'value') addValue(value);
+			else if (kind === 'valueString') { own.valueText += value; if (end) { addValue(own.valueText); own.valueText = ''; } }
+			else if (kind === 'title' || kind === 'excerpt' || kind === 'pictures') note[kind] = (note[kind] || '') + value;
+			else throw new Error('Invalid search result packet');
+		}
+	};
+	const start = (file, text) => {
+		const own = active = {id: ++sequence, file, text, pictures: picturesOf(getState().index, file) || '', at: 0, field: text?.searchBytes ? 'bytes' : 'source', input: false, ready: false, packet: null,
+			note: {file, title: '', headings: [], tags: [], excerpt: '', bag: {title: new Map(), headings: new Map(), tags: new Map(), body: new Map()}}, tag: '', cardTitle: '', encoded: '', values: [], valueText: ''};
+		try {
+			if (!worker) {
+				const made = worker = createWorker();
+				made.onmessage = ({data}) => {
+					const job = active;
+					if (!job || !valid(job) || data?.id !== job.id) return;
+					if (data.operation === 'error') { reject(job, Object.assign(new Error(data.message), data.code === 'unreadable' ? {code: 'unreadable'} : {})); return; }
+					if (data.operation === 'input') job.input = true;
+					else if (data.operation === 'ready') job.ready = true;
+					else if (data.operation === 'result') job.packet = data;
+					wake();
+				};
+				made.onerror = event => { event.preventDefault?.(); const job = active; if (worker === made) dispose(); if (job) reject(job, event.error || new Error(event.message || 'Search worker stopped')); };
+				made.onmessageerror = () => { const job = active; if (worker === made) dispose(); if (job) reject(job, new Error('Search worker result could not be read')); };
+			}
+			own.worker = worker;
+			worker.postMessage({id: own.id, operation: 'begin', file});
+		} catch (error) { reject(own, error); }
+	};
+	// A note projected where it arrives: below the routing cost, as text, with a bounded set of source ranges.
+	const small = (file, text, state) => {
+		const source = typeof text === 'string' ? text : text.searchText;
+		return !text?.searchBytes && source.length + (picturesOf(state.index, file) || '').length <= SEARCH_WORKER_CHARS && (!text.payloadRanges || text.payloadRanges.length <= 32);
+	};
+	const step = () => {
+		if (stopped || !live()) return false;
+		const state = getState();
+		if (retired.length) {
+			for (let count = 0; count < SEARCH_INDEX_ROWS && retired.length; count++) {
+				const next = retired[0].walk.next(); if (next.done) { retired.shift(); continue; }
+				const [file, word] = next.value, inner = state.index.postings.get(word);
+				if (inner) { inner.delete(file); if (!inner.size) state.index.postings.delete(word); }
+			}
+			return true;
+		}
+		if (linkRemovals.size && getLinks?.()) {
+			// One note's rows leave the graph; the other notes' links are re-resolved by the one whole-graph pass.
+			const file = linkRemovals.values().next().value, stream = streaming();
+			const done = stageLinkNote(getLinks(), {file, projection: null, stream}).next().value;
+			setLinks(done.index); linkRemovals.delete(file);
+			if (!stream) { resolving = true; resolution = null; }
+			return true;
+		}
+		if (!active) {
+			let next; for (const row of state.pending) if (failed.get(row[0]) !== row[1]) { next = row; break; }
+			if (!next) {
+				if (!resolving || !getLinks?.()) return false;
+				if (!resolution || resolutionOf !== getLinks()) { resolutionOf = getLinks(); resolution = stageLinkIndex(resolutionOf); }
+				try { const part = resolution.next(); if (part.done) { setLinks(part.value); resolving = false; resolution = null; } }
+				catch (error) { if (error.message !== 'link_index_changed') throw error; resolution = null; }
+				return true;
+			}
+			const [file, text] = next, source = typeof text === 'string' ? text : text.searchText;
+			const pictures = picturesOf(state.index, file) || '';
+			if (small(file, text, state)) {
+				try {
+					const proj = withPictures(projectText(text, state.index.sidecar.notes?.[file] || {}, file), pictures), bag = tokenBag(proj);
+					if (linkDirty.has(file) && getLinks?.() && !isCodeFile(file)) {
+						active = {file, text, pictures, note: indexNote(proj, file, bag), links: projectLinks(source, {mapLink: text?.mapLink}), done: true, cardTitle: projectCard(file, source).title || ''};
+						addPostings(state.index.postings, file, bag); return true;
+					}
+					state.index.notes.set(file, indexNote(proj, file, bag)); addPostings(state.index.postings, file, bag);
+					state.pending.delete(file); failed.delete(file); linkDirty.delete(file); refresh(); completed(file);
+				} catch (_) { failed.set(file, text); refresh(); }
+				return true;
+			}
+			start(file, text); return false;
+		}
+		const own = active;
+		if (!valid(own)) { if (!own.done) dispose(); retire(own.file, own.note); active = null; return true; }
+		if (own.done) {
+			if (getLinks?.() && own.links) {
+				// The note's own rows are resolved in bounded steps and installed over that note alone; when its names
+				// changed, the one whole-graph pass re-resolves the other notes' links.
+				if (!own.stage || own.stageOf !== getLinks()) { own.stageOf = getLinks(); own.streamed = streaming(); own.stage = stageLinkNote(own.stageOf, {file: own.file, projection: own.links, stream: own.streamed}); }
+				try {
+					const part = own.stage.next(); if (!part.done) return true;
+					setLinks(part.value.index);
+					if (part.value.changedNames && !own.streamed) { resolving = true; resolution = null; }
+				} catch (error) { if (error.message !== 'link_index_changed') { reject(own, error); return true; } own.stage = null; return true; }
+			}
+			state.index.notes.set(own.file, {...own.note, ...searchEntry(state.index.sidecar.notes?.[own.file])});
+			state.pending.delete(own.file); failed.delete(own.file); linkDirty.delete(own.file); active = null; refresh(); completed(own.file, {title: own.cardTitle, ...(own.encoded ? {encoded: own.encoded} : {})}); return true;
+		}
+		if (own.packet) {
+			const packet = own.packet; own.packet = null;
+			try {
+				if (!Array.isArray(packet.rows) || packet.rows.length > SEARCH_INDEX_ROWS) throw new Error('Invalid search result batch');
+				accept(own, packet.rows);
+				if (packet.done) {
+					worker?.postMessage({id: own.id, operation: 'end'}); own.worker = null; own.done = true; return true;
+				}
+				own.ready = true;
+			} catch (error) { reject(own, error); return true; }
+		}
+		if (own.ready) { own.ready = false; own.worker.postMessage({id: own.id, operation: 'pull'}); return false; }
+		if (own.input) {
+			own.input = false;
+			for (;;) {
+				if (own.field === 'bytes') {
+					const bytes = own.text.searchBytes;
+					if (own.at < bytes.length) { const part = bytes.slice(own.at, own.at + SEARCH_INDEX_CHARS); own.at += part.length; own.worker.postMessage({id: own.id, operation: 'bytes', bytes: part}, [part.buffer]); break; }
+					own.field = 'pictures'; own.at = 0;
+				}
+				const source = own.field === 'source' ? (typeof own.text === 'string' ? own.text : own.text.searchText) : own.pictures;
+				if (own.field !== 'ranges' && own.at < source.length) {
+					const text = source.slice(own.at, own.at + SEARCH_INDEX_CHARS); own.at += text.length;
+					own.worker.postMessage({id: own.id, operation: own.field, text}); break;
+				}
+				if (own.field === 'source') { own.field = 'pictures'; own.at = 0; continue; }
+				if (own.field === 'pictures') { own.field = 'ranges'; own.at = 0; }
+				const ranges = own.text?.payloadRanges || [];
+				if (own.at < ranges.length) { const rows = ranges.slice(own.at, own.at + 32); own.at += rows.length; own.worker.postMessage({id: own.id, operation: 'ranges', rows}); break; }
+				own.worker.postMessage({id: own.id, operation: 'finish'}); break;
+			}
+		}
+		return false;
+	};
+	return {
+		step,
+		queue(file, text, entry) {
+			const state = getState();
+			if (active?.file === file) { if (!active.done) dispose(); retire(file, active.note); active = null; }
+			retire(file, state.index.notes.get(file)); state.index.notes.delete(file); failed.delete(file);
+			if (text == null) { state.pending.delete(file); linkDirty.delete(file); linkRemovals.add(file); }
+			else { state.pending.set(file, text); linkDirty.add(file); linkRemovals.delete(file); }
+			state.index = {...state.index, sidecar: updatedSidecar(state.index.sidecar, file, text, entry, true)};
+			refresh(); wake();
+		},
+		cancel() { if (stopped) return; stopped = true; dispose(); active = null; retired.length = 0; failed.clear(); linkDirty.clear(); linkRemovals.clear(); resolution = null; resolving = false; },
+		resolve() { resolving = true; resolution = null; wake(); },
+		owns(file) { return active?.file === file || linkDirty.has(file) || linkRemovals.has(file) || retired.some(row => row.file === file); },
+		get linksPending() { return resolving || linkRemovals.size > 0 || !!active?.done; },
+		get waiting() { return !!active && !active.done && !active.input && !active.ready && !active.packet; },
+		// What the next step is, for a caller that may take several in one idle callback: 'note' is a small note's projection,
+		// 'short' is a retirement, a removal or a step of the whole-graph pass (a fraction of a millisecond each, for the
+		// caller's clock to bound). A worker's job, its start and its waits end the callback.
+		get cheap() {
+			if (stopped || !live() || active) return false;
+			if (retired.length || (linkRemovals.size && getLinks?.())) return 'short';
+			const state = getState();
+			for (const [file, text] of state.pending) if (failed.get(file) !== text) return small(file, text, state) ? 'note' : false;
+			return resolving && !!getLinks?.() ? 'short' : false;
+		},
+	};
 }
 
 function updatedSidecar(previous, file, text, entry, own = false) {

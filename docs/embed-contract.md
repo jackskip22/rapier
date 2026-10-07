@@ -190,6 +190,8 @@ Extra envelope or payload fields refuse. An invalid envelope, wrong identity or 
 
 Filename bound is 255 code units, title 240, code 64, reason 500. The wire content pre-gate is the document limit (25 MiB) counted in code units; the codec/transaction owner applies the actual UTF-8 admission limit. Requests larger than the browser can clone may fail before Rapier.
 
+A `load` of a revision for which this tab still holds the session's unsaved draft opens the draft as the document, with the host's `content` as the saved text: the draft is unsaved work, a save carries it, and nothing is asked. One notice says so, and `load-ack` carries `recoveredDraft: true`. The draft stays in its slot until a save, or the host's `discard` close decision, clears it.
+
 Editor-originated messages use the same identity/revision envelope, but unsolicited replies may have `requestId: null`; do not apply host-to-editor request-ID rules to unsolicited state. `connected`, load/compare replies and protocol errors are control replies; the protected source and metadata channels are checked separately. No `fetch`, `evaluate`, `readStorage`, `exportAll` or arbitrary agent-call command exists, and unknown commands do not dispatch.
 
 ### A save is a two-party acknowledgement
@@ -231,7 +233,7 @@ The exact envelope is:
 }
 ```
 
-Every payload field above is present; there are no additional fields. `id` is the kernel-minted review identifier (`review_` followed by 32 lowercase hexadecimal digits). `kind` is `proposal` or `inline`; `status` is `pending`, `approved`, `declined` or `invalidated`; `cause` is `will`, `ask` or `proposal`. `revision` is the kernel's nonnegative safe-integer document revision, separate from the host's durable `baseRevision`. `law` is `keep`, `append`, `edit` or `null`; `region` is its zero-based nonnegative safe-integer region index, or `null` when no region is named. Each `changes` entry has only its review-derived `id` and a `status` of `pending`, `applied`, `dropped` or `stale`.
+Every payload field above is present; there are no additional fields. `id` is the kernel-minted review identifier (`review_` followed by 32 lowercase hexadecimal digits). `kind` is `proposal`, `inline` or `check`; `status` is `pending`, `approved`, `declined` or `invalidated`; `cause` is `will`, `ask`, `check` or `proposal`. `revision` is the kernel's nonnegative safe-integer document revision, separate from the host's durable `baseRevision`. `law` is `keep`, `append`, `edit` or `null`; `region` is its zero-based nonnegative safe-integer region index, or `null` when no region is named. Each `changes` entry has only its review-derived `id` and a `status` of `pending`, `applied`, `dropped` or `stale`; a check may have an empty array.
 
 `decision` is `null` until the kernel records a completed decision. Then it contains exactly `{action, outcome, revision}`: `action` is `approve` or `decline`, `outcome` is `ok`, `applied`, `rebased` or `unchanged`, and `revision` is a nonnegative safe integer. Applying or dropping part of a proposal updates `changes` while the review remains `pending` and `decision` remains `null`; the last decision closes the same `id`. An invalidated review reports `status: 'invalidated'` without inventing a human decision. An immediate agent edit that needed no review produces no review event.
 

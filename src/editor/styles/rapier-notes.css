@@ -43,6 +43,8 @@ html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#
    bar never stands beside it. */
 /* The cards' margins are the cards' gap: the scroller's side padding is --notes-gap, the same 8 px
    that stands between two cards of a row. */
+/* The quiet line under the head: what the storage is, in the cards' own margin, until a backup exists. */
+.rapier-notes-storage{flex:none;margin:0;padding:0 var(--notes-gap) var(--space-2);color:var(--color-text-muted);font:var(--text-xs)/1.5 var(--font-mono)}
 .rapier-notes-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:0 var(--notes-gap) calc(var(--notes-foot) + var(--space-2));scrollbar-width:none}
 .rapier-notes-scroll::-webkit-scrollbar{display:none;width:0;height:0}
 .rapier-notes-scroll{padding-top:calc(var(--space-2) + var(--notes-bar-room,0px))}

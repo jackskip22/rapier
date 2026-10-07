@@ -27,13 +27,20 @@
   let imageSupportNoticeStarted = false;
   // After "Disconnect agents" the editor holds a capability no agent has; it stays out of model context until shared again from here.
   let withheld = false;
+  // The paired editor (mcp/paired.mjs): this page at the top level, naming its one workspace, with no host around it.
+  // Its calls go to its own route with this browser's cookies; the successor of a disconnect waits here for Share.
+  const pairedId = window.parent === window && typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string' &&
+    /^ws_[A-Za-z0-9_-]{43}$/.test(globalThis.RAPIER_PAIRED_DOCUMENT) ? globalThis.RAPIER_PAIRED_DOCUMENT : null;
+  let shareable = '', pairDialog = null;
+  // A connected workspace stores Disconnect as a decision its snapshots report; an anonymous one reports nothing.
+  let agentAccess = null;
   let strandedDrafts = []; // oldest first -- see STRANDED_DRAFT_LIMIT above
   const viewed = new Set();
 
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const same = (a, b) => !!a && !!b && a.documentId === b.documentId && a.text === b.text &&
     a.filename === b.filename && a.docKind === b.docKind;
-  const validToken = value => typeof value === 'string' && /^rpr_[A-Za-z0-9_-]{43}$/.test(value);
+  const validToken = value => typeof value === 'string' && (/^rpr_[A-Za-z0-9_-]{43}$/.test(value) || value === pairedId);
   const snapshot = value => object(value) && typeof value.documentId === 'string' &&
     value.documentId.length > 0 && value.documentId.length <= 256 && Number.isSafeInteger(value.revision) &&
     value.revision >= 0 && typeof value.text === 'string' && typeof value.filename === 'string' &&
@@ -55,13 +62,14 @@
   // Before ui/initialize answers, only the bootstrap (name, version, display modes, protocol; never a document, bearer or editor key) may go to the parent
   // unaddressed: its reply names the origin. Anything else is refused, not held. After binding, only the bound origin; never 'null'.
   function post(message) {
-    if (closed) return;
+    if (closed || pairedId) return;
     if (origin === null && (message.method !== 'ui/initialize' || pending.get(message.id)?.method !== 'ui/initialize')) throw new Error('HOST_UNBOUND');
     window.parent.postMessage({jsonrpc: '2.0', ...message}, origin ?? '*');
   }
 
   function request(method, params, timeout = 20000) {
     if (closed) return Promise.reject(new Error('CLOSED'));
+    if (pairedId) return method === 'tools/call' ? pageCall(params, timeout) : Promise.reject(new Error('HOST_UNAVAILABLE'));
     const id = `${nonce}:${++nextId}`;
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -72,6 +80,21 @@
       try { post({id, method, params}); }
       catch (error) { clearTimeout(timeoutId); pending.delete(id); reject(error); }
     });
+  }
+
+  // One JSON-RPC tools/call to the page's own route, in the legacy era's stateless form, with this browser's cookies.
+  async function pageCall(params, timeout) {
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(globalThis.RAPIER_DOOR, {method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'error', signal: controller.signal,
+        headers: {'Content-Type': 'application/json', Accept: 'application/json', 'MCP-Protocol-Version': '2025-11-25'},
+        body: JSON.stringify({jsonrpc: '2.0', id: `${nonce}:${++nextId}`, method: 'tools/call', params})});
+      const body = await response.json();
+      if (!object(body) || object(body.error) || !object(body.result)) throw Object.assign(new Error('HOST_REQUEST_FAILED'), {code: body?.error?.code});
+      return body.result;
+    } catch (error) {
+      throw error?.name === 'AbortError' ? new Error('TIMEOUT') : error;
+    } finally { clearTimeout(timer); }
   }
 
   function call(name, args, timeout, human = false) {
@@ -109,6 +132,7 @@
     }[fileIssue] || '';
     const text = {
       opening: 'Opening document', reconnecting: 'Reconnecting', offline: 'Connection interrupted',
+      unpaired: 'This browser is not paired with the document',
       unavailable: 'Document unavailable', expired: 'This editor session has expired. Reload to keep editing',
       unsupported: 'This host cannot connect to Rapier', detached: 'This document is open elsewhere',
       blocked: 'This update needs attention',
@@ -117,9 +141,9 @@
     }[value] || strandedText || fileText;
     notice.hidden = !text;
     notice.firstElementChild.textContent = text || '';
-    notice.children[1].hidden = !['reconnecting', 'offline', 'opening', 'blocked'].includes(value);
+    notice.children[1].hidden = !['reconnecting', 'offline', 'opening', 'blocked', 'unpaired'].includes(value);
     notice.children[2].hidden = value !== 'review_waiting' && !fileIssue;
-    notice.children[3].hidden = !base || !(['offline', 'unavailable', 'unsupported', 'detached', 'blocked', 'expired'].includes(value) || strandedDrafts.length > 0 || fileIssue);
+    notice.children[3].hidden = !base || !(['offline', 'unavailable', 'unsupported', 'detached', 'blocked', 'expired', 'unpaired'].includes(value) || strandedDrafts.length > 0 || fileIssue);
     document.documentElement.dataset.rapierSync = value;
     updateCompareControls();
   }
@@ -150,7 +174,7 @@
     const style = document.createElement('style');
     style.textContent = `
       .rapier-app-notice{pointer-events:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:var(--color-surface-2);color:var(--color-text);font:var(--text-sm)/1.5 var(--font-mono)}
-      .rapier-app-notice[hidden]{display:none}.rapier-app-notice>span{flex:1 1 auto}
+      .rapier-app-notice[hidden]{display:none}.rapier-app-notice>span{flex:1 1 auto}.rapier-app-notice button{text-transform:uppercase;letter-spacing:var(--track-caps-ui)}
       .rapier-app-notice button,.rapier-app-dialog button{font:inherit;color:inherit;background:var(--color-surface-hover);border:0;border-radius:0;min-height:48px;padding:8px 14px;cursor:pointer}
       .rapier-app-dialog{max-width:min(440px,calc(100vw - 32px));padding:24px;border:0;border-radius:0;background:var(--color-bg);color:var(--color-text);font:inherit}
       .rapier-app-dialog::backdrop{background:#0009}.rapier-app-dialog h2{font-size:1.15em;margin:0 0 12px}.rapier-app-dialog p{line-height:1.5}
@@ -159,6 +183,8 @@
       .rapier-app-image-notice strong{font-size:1.05em}.rapier-app-image-notice p{margin:12px 0;line-height:1.5}
       .rapier-app-image-notice button{font:inherit;text-transform:uppercase;color:var(--color-accent-foreground,#fff);background:var(--color-accent);border:0;border-radius:0;padding:12px 16px;cursor:pointer}
       .rapier-app-decision{font:inherit;font-size:12px;width:auto;padding:0 9px;min-height:36px}
+      .rapier-app-pop{z-index:300}.rapier-app-pop p{margin:0 0 var(--space-4);line-height:1.5}.rapier-app-pop input{flex:0 0 auto;width:100%;height:48px;box-sizing:border-box;margin:0 0 var(--space-4);background:var(--color-surface-2);font-family:var(--font-mono)}
+      .rapier-app-pair-code{font:var(--fw-medium) 3.5rem/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase}
       .rapier-app-decision:disabled{opacity:.4;cursor:default}
       #top-actions{position:relative}
       .rapier-app-fullscreen{position:absolute;inset-block-start:100%;inset-inline-end:0;background:color-mix(in srgb,var(--color-bg) 50%,transparent);border-radius:0}
@@ -206,7 +232,8 @@
     homePath.setAttribute('d', 'M3 9l9-7 9 7v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9m6 12v-9h6v9');
     homeSvg.append(homePath);
     homeButton.append(homeSvg);
-    document.getElementById('top-actions')?.append(homeButton);
+    // Your documents opens and saves host files; a paired page has one workspace and no host.
+    if (!pairedId) document.getElementById('top-actions')?.append(homeButton);
     const bar = document.getElementById('compare-actions');
     if (bar) {
       compareButtons = ['accept', 'reject'].map(action => {
@@ -225,7 +252,7 @@
 
   function lock() {
     for (const child of document.body.children) {
-      if (['SCRIPT', 'STYLE'].includes(child.tagName) || child === notice || child.id === 'toast-root' || child.inert) continue;
+      if (['SCRIPT', 'STYLE'].includes(child.tagName) || child === notice || child === pairDialog || child.id === 'toast-root' || child.inert) continue;
       child.inert = true;
       locked.push(child);
     }
@@ -365,6 +392,16 @@
         sequence: ++contextSequence, visible: active, editing: busy};
       const ranges = active && contextRanges(captured, source);
       if (ranges) Object.assign(args, ranges);
+      if (active && exact && captured.context?.drawing?.open) {
+        args.drawing = {...captured.context.drawing};
+        if (args.drawing.recipe) {
+          const recipe = JSON.stringify(args.drawing.recipe), limits = globalThis.RapierKernel.LIMITS;
+          if (recipe.length > limits.editChars || new TextEncoder().encode(recipe).byteLength > limits.authorityBytes) {
+            delete args.drawing.recipe;
+            args.drawing.recipeUnavailable = 'target_over_edit_budget';
+          }
+        }
+      }
       const result = await call('document.human_context', args, 5000);
       if (token !== documentToken || closed) return false;
       if (result.isError) {
@@ -380,7 +417,7 @@
       contextAck = {revision: source.revision, epoch,
         selection: receipt.revision === source.revision ? args.selection || null : null,
         focus: receipt.revision === source.revision ? args.focus || null : null,
-        visible: active, editing: busy};
+        visible: active, editing: busy, ...(args.drawing ? {drawing: args.drawing} : {})};
       clearTimeout(contextExpiryTimer);
       if (Number.isFinite(receipt.contextExpiresAt)) contextExpiryTimer = setTimeout(() => {
         contextAck = null;
@@ -436,7 +473,7 @@
   function queuePolicy(value) {
     if (!base || switching || closed) return;
     const policy = {};
-    if (['free', 'ask'].includes(value.posture)) policy.posture = value.posture;
+    if (['free', 'check', 'ask'].includes(value.posture)) policy.posture = value.posture;
     if (typeof value.readOnly === 'boolean') policy.readOnly = value.readOnly;
     if (!Object.keys(policy).length) return;
     policyQueued = {...policyQueued, ...policy, document: token};
@@ -637,6 +674,12 @@
     if (code === 'DOCUMENT_UNAVAILABLE') {
       failures = 5;
       setStatus('unavailable');
+      return false;
+    }
+    // A paired browser whose pairing ended (a day passed, or agents were disconnected elsewhere) pairs again on Retry.
+    if (code === 'PAIRING_REQUIRED') {
+      failures = 5;
+      setStatus('unpaired');
       return false;
     }
     // The editor key lasts a day (mcp/editor-keys.mjs): say so and keep the draft reachable; do not retry.
@@ -870,7 +913,14 @@
         (!base || value.documentId === base.documentId) && (!incoming || nextVersion >= incomingVersion)) {
       incoming = value;
       incomingVersion = nextVersion;
+      learnAccess(value);
     }
+  }
+
+  // A connected workspace's snapshot carries the person's stored sharing decision; while it is off, Share is offered
+  // and sharing first turns it back on (reconnectAgents).
+  function learnAccess(value) {
+    if (typeof value?.agentAccess === 'boolean') { agentAccess = value.agentAccess; withheld = !value.agentAccess; }
   }
 
   async function loadIncoming(force = false, expected = null, immediate = false) {
@@ -894,7 +944,7 @@
           metadata: {filename: local.filename, docKind: local.docKind}};
       }
       dirty = !!base && !same(await host.snapshot(), base);
-      if (['conflict', 'yielded'].includes(result?.outcome)) return;
+      if (['conflict', 'yielded'].includes(result?.outcome) || result?.reason === 'draw_session_open' || result?.reason === 'drawing_busy') return;
       failures = 5;
       setStatus('blocked');
       return;
@@ -919,11 +969,11 @@
     if (base && !force) { args.afterRevision = base.revision; args.afterVersion = version; }
     const result = await call('document.sync', args);
     if (!ensureResult(result)) return false;
+    host.noteRemoteCall?.(result.structuredContent?.agent);
     const value = metadata(result).snapshot;
     const nextVersion = viewVersion(result.structuredContent?.version);
     if (snapshot(value) && nextVersion !== null && (!base || value.documentId === base.documentId)) {
-      incoming = value;
-      incomingVersion = nextVersion;
+      captureIncoming(result);
     }
     else if (result.structuredContent?.unchanged !== true) throw new Error('MISSING_SNAPSHOT');
     failures = 0;
@@ -978,7 +1028,7 @@
           continuation = {documentId: value.documentId, revision: value.revision, commitId: sent.commitId, text, splices: continued.splices,
             ...(continuation?.metadata ? {metadata: continuation.metadata} : {})};
         dirty = true;
-        if (!['conflict', 'yielded'].includes(applied?.outcome)) { failures = 5; setStatus('blocked'); }
+        if (!['conflict', 'yielded'].includes(applied?.outcome) && applied?.reason !== 'draw_session_open' && applied?.reason !== 'drawing_busy') { failures = 5; setStatus('blocked'); }
         return;
       }
     }
@@ -1020,7 +1070,7 @@
           if (!dirty && incoming) await loadIncoming(false, null, force);
         } else if (policyQueued) await commitPolicy();
         else if (!editing() || force) {
-          if (!incoming && !await sync()) return false;
+          if (!await sync()) return false;
           await loadIncoming(false, null, force);
         }
       }
@@ -1042,6 +1092,7 @@
   }
 
   async function retry() {
+    if (pairedId && status === 'unpaired') { location.reload(); return; }
     failures = 0;
     contextFailures = 0;
     if (presentedReview?.failed) presentedReview = null;
@@ -1089,6 +1140,8 @@
   async function openDocument(args = {}, {admission = () => true} = {}) {
     const catalog = globalThis.RapierAgentCatalog;
     catalog.validateInput(catalog.getTool('rapier.open').inputSchema, args);
+    // A paired page edits its one workspace; another document comes from the assistant.
+    if (pairedId) { host.notify('This page edits one document. Ask your assistant to open another.', 'info'); return false; }
     if (Object.hasOwn(args, 'document') || Object.hasOwn(args, 'file') || switching || closing || closed || fileHydrations.size) return false;
     if (base && !await flush()) return false;
     if (base) await saveHostFile();
@@ -1599,8 +1652,8 @@
     const editorKey = typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
     const unseal = globalThis.RapierDoorIdentity?.unsealForEditor;
     if (!editorKey || typeof unseal !== 'function') { host.notify('This editor cannot disconnect agents here.', 'info'); return false; }
-    const agreed = await confirmSheet('Disconnect agents?', 'Every agent holding this document loses access now. Your editor keeps the document. To let an agent back in, share it again from here.', 'Disconnect');
-    if (!agreed) return false;
+    // No sheet: the press is the decision. The editor keeps the document, the row says what happened, and Share lets an
+    // agent back in from here.
     if (!await flush()) { host.notify('Finish the current edit, then try again.', 'info'); return false; }
     if (token !== target.document || base?.documentId !== target.documentId || switching || closed || closing) return false;
     clearTimeout(timer);
@@ -1621,9 +1674,17 @@
         host.notify('The new capability could not be read. Copy your draft.', 'error');
         return false;
       }
+      withheld = true;
+      if (Number.isSafeInteger(result.structuredContent.version)) version = result.structuredContent.version;
+      if (agentAccess !== null) agentAccess = false;
+      if (pairedId) {
+        shareable = next;
+        modelSent = '';
+        host.notify('Agents disconnected. Share the document to let one back in.', 'success');
+        return true;
+      }
       if (boundFile?.document === target.document && boundFile.documentId === target.documentId) boundFile.document = next;
       token = next;
-      withheld = true;
       modelSent = '';
       host.notify('Agents disconnected. Share the document to let one back in.', 'success');
       return true;
@@ -1636,30 +1697,42 @@
     }
   }
 
+  // Sharing a connected workspace is first the person's stored decision, at the current revision and version.
+  async function reconnectAgents(target, event) {
+    if (agentAccess !== false) return true;
+    const current = () => !closed && !closing && !switching && !openingSwitch && !!base && token === target.document && base.documentId === target.documentId;
+    if (event?.isTrusted !== true || !current() || !await flush() || !current()) return false;
+    const result = await call('document.set_policy', {document: target.document, agentAccess: true,
+      expectedRevision: base.revision, expectedVersion: version, decisionId: crypto.randomUUID()});
+    if (!current() || !ensureResult(result)) return false;
+    captureIncoming(result);
+    return agentAccess === true;
+  }
+
   // "Send to chat" gives the capability to this chat's model and lifts the withholding; "Copy" is for another agent and keeps it withheld.
   async function shareDocument(event) {
     if (event?.isTrusted !== true || !base || !withheld || closed) return false;
     return new Promise(resolve => {
-      const sheet = document.createElement('dialog');
-      sheet.className = 'rapier-app-dialog';
-      sheet.setAttribute('aria-labelledby', 'rapier-app-share-title');
-      const title = document.createElement('h2');
-      title.id = 'rapier-app-share-title';
-      title.textContent = 'Share this document with an agent';
+      const pop = housePop('rapier-app-share-title', 'Share with an agent');
       const text = document.createElement('p');
-      text.textContent = 'An agent that receives this document capability can read and edit the document under your FREE or ASK control until you disconnect agents again.';
+      // A connected workspace answers only the person's own connections; an anonymous one answers whoever holds the ID.
+      text.textContent = (agentAccess === null ? 'An agent that receives this workspace ID'
+        : 'An agent on one of your approved connections that receives this workspace ID')
+        + ' can read and edit the document under your FREE, CHECK or ASK control until you disconnect agents again.';
       const field = document.createElement('input');
       field.type = 'text';
       field.readOnly = true;
-      field.value = token;
-      field.setAttribute('aria-label', 'Document capability');
-      field.style.cssText = 'width:100%;font:inherit;padding:9px 10px;border-radius:7px;border:1px solid currentColor;background:none;color:inherit;box-sizing:border-box';
-      const actions = document.createElement('div');
+      field.className = 'navigator-outline-filter';
+      field.value = pairedId ? shareable : token;
+      field.setAttribute('aria-label', 'Workspace ID');
       let settled = false;
-      const finish = outcome => { if (settled) return; settled = true; sheet.close(); resolve(outcome); };
-      if (object(capabilities.message)) actions.append(button('Send to chat', async () => {
+      const finish = outcome => { if (settled) return; settled = true; pop.overlay.remove(); resolve(outcome); };
+      pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') finish(false); }, {signal: listeners.signal});
+      const target = {document: token, documentId: base.documentId};
+      if (object(capabilities.message)) pop.row.append(popButton('send to chat', 'affirm', async event => {
         try {
-          await request('ui/message', {role: 'user', content: [{type: 'text', text: 'Rapier document capability: ' + token + '\nUse it as the document argument of the Rapier tools.'}]});
+          if (!await reconnectAgents(target, event)) return;
+          await request('ui/message', {role: 'user', content: [{type: 'text', text: 'Rapier document: ' + token + '\nUse it as the document argument of the Rapier tools.'}]});
           withheld = false;
           modelSent = '';
           contextChanged();
@@ -1667,35 +1740,72 @@
           finish(true);
         } catch (_) { host.notify('Could not reach the chat.', 'error'); }
       }));
-      actions.append(button('Copy', async () => {
-        try { await navigator.clipboard.writeText(token); host.notify('Copied.', 'info'); finish(true); }
+      pop.row.append(popButton('copy', 'affirm', async event => {
+        try { if (!await reconnectAgents(target, event)) return; await navigator.clipboard.writeText(field.value); host.notify('Copied.', 'info'); finish(true); }
         catch (_) { field.focus(); field.select(); host.notify('Select the value and copy it.', 'info'); }
-      }), button('Done', () => finish(false)));
-      sheet.append(title, text, field, actions);
-      sheet.addEventListener('close', () => { finish(false); sheet.remove(); }, {once: true});
-      document.body.append(sheet);
-      sheet.showModal();
+      }), popButton('done', 'cancel', () => finish(false)));
+      pop.show(text, field);
     });
+  }
+
+  // The house pop-up (editor/pop.js): a settings panel with its title, its words and one row of answers, the destructive
+  // answer (else Cancel) the red box at the bottom. The app build has no pop.js, so the row is arranged here the same way.
+  function housePop(id, heading, extra = '') {
+    const overlay = document.createElement('div');
+    overlay.className = ('settings-overlay restore-modal-overlay open rapier-app-pop ' + extra).trim();
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', id);
+    const panel = document.createElement('div');
+    panel.className = 'settings-panel rapier-pop';
+    panel.style.cssText = 'max-width:420px;margin:auto';
+    const body = document.createElement('div');
+    body.className = 'settings-panel__body';
+    const head = document.createElement('div');
+    head.className = 'navigator-title-row';
+    const title = document.createElement('h2');
+    title.id = id;
+    title.className = 'settings-section__title';
+    title.textContent = heading;
+    head.append(title);
+    const row = document.createElement('div');
+    row.className = 'settings-action-row';
+    row.setAttribute('data-pop-row', '');
+    body.append(head);
+    panel.append(body);
+    overlay.append(panel);
+    const show = (...words) => {
+      body.append(...words, row);
+      document.body.append(overlay);
+      if (typeof globalThis._rapierPopArrange === 'function') globalThis._rapierPopArrange(row);
+      else {
+        const shown = [...row.children].filter(box => !box.hidden);
+        const bottom = shown.find(box => box.dataset.pop === 'destructive') || shown.find(box => box.dataset.pop === 'cancel');
+        if (bottom) { row.append(bottom); bottom.setAttribute('data-pop-bottom', ''); }
+        row.classList.add('rapier-pop__actions');
+      }
+      // Focus waits on a safe answer; a pop-up whose only answer is the red box takes none.
+      row.querySelector('button:not([data-pop-bottom])')?.focus({preventScroll: true});
+    };
+    return {overlay, row, show};
+  }
+
+  function popButton(label, role, action) {
+    const element = button(label, action, 'settings-action-btn');
+    element.dataset.pop = role;
+    return element;
   }
 
   function confirmSheet(heading, body, verb) {
     return new Promise(resolve => {
-      const sheet = document.createElement('dialog');
-      sheet.className = 'rapier-app-dialog';
-      sheet.setAttribute('aria-labelledby', 'rapier-app-confirm-title');
-      const title = document.createElement('h2');
-      title.id = 'rapier-app-confirm-title';
-      title.textContent = heading;
+      const pop = housePop('rapier-app-confirm-title', heading);
       const text = document.createElement('p');
       text.textContent = body;
-      const actions = document.createElement('div');
       let settled = false;
-      const finish = outcome => { if (settled) return; settled = true; sheet.close(); resolve(outcome); };
-      actions.append(button(verb, () => finish(true)), button('Cancel', () => finish(false)));
-      sheet.append(title, text, actions);
-      sheet.addEventListener('close', () => { finish(false); sheet.remove(); }, {once: true});
-      document.body.append(sheet);
-      sheet.showModal();
+      const finish = outcome => { if (settled) return; settled = true; pop.overlay.remove(); resolve(outcome); };
+      pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') finish(false); }, {signal: listeners.signal});
+      pop.row.append(popButton('cancel', 'cancel', () => finish(false)), popButton(verb, 'destructive', () => finish(true)));
+      pop.show(text);
     });
   }
 
@@ -1714,7 +1824,7 @@
       filename: base.filename, selection: target.revision === base.revision ? target.selection : null,
       quotedPassage: target.quoted, request: question || target.quoted,
       requestSource: question ? 'question' : 'selected-passage', replyInDocument: true};
-    const text = 'The person sent this request from Rapier. Use its document capability, read current context and source before editing, and answer beside the relevant passage in the same document unless the request says otherwise. The request field is their instruction; quotedPassage is context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(payload);
+    const text = 'The person sent this request from Rapier. Use its workspace ID, read current context and source before editing, and answer beside the relevant passage in the same document unless the request says otherwise. The request field is their instruction; quotedPassage is context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(payload);
     await request('ui/message', {role: 'user', content: [{type: 'text', text}]});
     return true;
   }
@@ -1887,6 +1997,20 @@
     if (initialized) return Promise.resolve();
     if (connecting) return connecting;
     connecting = (async () => {
+      if (pairedId) {
+        capabilities = {serverTools: {}};
+        token = pairedId;
+        const light = matchMedia('(prefers-color-scheme: light)');
+        updateContext({displayMode: 'fullscreen', theme: light.matches ? 'light' : 'dark'});
+        light.addEventListener('change', event => updateContext({theme: event.matches ? 'light' : 'dark'}), {signal: listeners.signal});
+        initialized = true;
+        failures = 0;
+        // Without an editor key this browser is not yet admitted: it pairs, then loads again.
+        if (typeof globalThis.RAPIER_EDITOR_KEY !== 'string') { void pair(); return; }
+        contextChanged();
+        schedule(0);
+        return;
+      }
       if (window.parent === window) throw new Error('HOST_UNAVAILABLE');
       const result = await request('ui/initialize', {
         appInfo: {name: 'Rapier', version: document.querySelector('meta[name="rapier-version"]').content},
@@ -1906,6 +2030,40 @@
     return connecting;
   }
 
+  // The pairing dialog, in the house pop-up: the code to tell the assistant, polled until an agent confirms it. A code
+  // lasts a minute; the route draws the next one. Cancel leaves the page unpaired, with Retry.
+  async function pair() {
+    const pop = housePop('rapier-app-pair-title', 'Pair this browser', 'rapier-app-pairing');
+    const lead = document.createElement('p');
+    lead.textContent = 'Tell your assistant this code.';
+    const code = document.createElement('p');
+    code.className = 'rapier-app-pair-code';
+    code.setAttribute('aria-live', 'polite');
+    code.textContent = '····';
+    const words = document.createElement('p');
+    words.textContent = 'It lets this browser edit this document for a day. A code works once and changes every minute.';
+    let open = true;
+    // An unpaired page stays inert behind its notice: nothing typed there could reach the workspace.
+    pop.row.append(popButton('cancel', 'cancel', () => { open = false; pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); }));
+    pairDialog = pop.overlay;
+    pop.show(lead, code, words);
+    lock();
+    while (open && !closed) {
+      let value = null;
+      try { value = (await call('document.pair_status', {document: pairedId}))?.structuredContent; } catch (_) {}
+      if (!open) return;
+      if (value?.outcome === 'paired') { location.reload(); return; }
+      if (value?.outcome === 'waiting' && /^[A-Z]{4}$/.test(value.pairingCode)) code.textContent = value.pairingCode;
+      else if (value?.code === 'DOCUMENT_UNAVAILABLE') {
+        code.textContent = '';
+        lead.textContent = 'This document is no longer available.';
+        words.textContent = 'It was deleted or expired. Ask your assistant for a new one.';
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+
   // editor/engine.js _rapierOpenExternalLink calls this when hosted, ahead of its RapierPlatform/window.open fallbacks.
   async function openExternalLink(url) {
     // A host without ui/open-link gets window.open(): degrade, never trap the tap.
@@ -1918,7 +2076,7 @@
     mountUi();
     host = window.RapierAgentBrowser;
     if (!host) throw new Error('EDITOR_UNAVAILABLE');
-    window.addEventListener('message', message, {signal: listeners.signal});
+    if (!pairedId) window.addEventListener('message', message, {signal: listeners.signal});
     window.addEventListener('openai:set_globals', event => {
       if (Object.hasOwn(event.detail?.globals || {}, 'safeArea')) {
         // Both host event paths update one value; an old initialize snapshot must not mask a new inset.
@@ -1929,7 +2087,7 @@
     const blockBeforeOpen = event => {
       if (base && !switching) return;
       if (event.type === 'keydown' && (event.key === 'Tab' ||
-          ((notice.contains(event.target) || homeDialog?.contains(event.target) || fileDialog?.contains(event.target)) &&
+          ((notice.contains(event.target) || pairDialog?.contains(event.target) || homeDialog?.contains(event.target) || fileDialog?.contains(event.target)) &&
             !event.ctrlKey && !event.metaKey && ['Enter', ' '].includes(event.key)))) return;
       event.preventDefault();
       event.stopImmediatePropagation();

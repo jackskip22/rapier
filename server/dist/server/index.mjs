@@ -3,13 +3,13 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {basename,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {timingSafeEqual} from 'node:crypto';
+import {createHash,timingSafeEqual} from 'node:crypto';
 import {once} from 'node:events';
 import {FileStore,documentName,refusal} from './store.mjs';
 import {BucketStore} from './bucket-store.mjs';
 import {Renderer} from './chromium.mjs';
 import {FolderSearch,searchFingerprint} from './search.mjs';
-import {handleMcp,deployment,MAX_RPC_BODY_BYTES} from '../mcp/worker.mjs';
+import {handleMcp,handleAuthenticatedMcp,deployment,MAX_RPC_BODY_BYTES} from '../mcp/worker.mjs';
 import {VERSION} from '../version.mjs';
 
 const ROOT=fileURLToPath(new URL('../',import.meta.url));
@@ -52,6 +52,10 @@ export async function createServer(options={}) {
   let closing=null,timer,origin=null;const controllers=new Set(),tasks=new Set();
   try {
     await store.open();
+    const authority=Object.freeze({
+      ownerId:'owner_'+createHash('sha256').update('rapier-server-owner\0').update(store.credentials.token).digest('base64url'),
+      scopes:Object.freeze(['rapier:read','rapier:write']),source:'server',
+    });
     const assets=new Map();
     for(const name of ['rapier-app.html','rapier-skills.json','icon-192.png','icon-512.png']) {
       const path=resolve(assetsDirectory,name);
@@ -86,15 +90,15 @@ export async function createServer(options={}) {
         if(request.headers.host!==new URL(origin).host)throw refusal('HOST_REFUSED','This Host is not the configured server origin.',403);
         if(!request.url?.startsWith('/') || request.url.startsWith('//'))throw refusal('PATH_REFUSED','Use a local server path.',400);
         const url=new URL(request.url,origin);
-        const isReturn=url.pathname.startsWith('/return/');
-        if(url.pathname==='/mcp' || isReturn) {
-          // A returned copy has the worker's own expiring, one-use capability in its URL.
-          // Ordinary MCP calls have the deployment bearer as well as document capabilities.
-          if(!isReturn && request.method!=='OPTIONS' && !authorized(request))return json(response,{error:'AUTHORIZATION_REQUIRED',message:'A server bearer token is required.'},401,{'WWW-Authenticate':'Bearer realm="rapier-server"'});
-          if(!['POST','OPTIONS'].includes(request.method))return json(response,{error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST, OPTIONS'});
+        const isMcp=url.pathname==='/mcp',isReturn=url.pathname.startsWith('/return/'),isExport=url.pathname.startsWith('/export/');
+        if(isMcp || isReturn || isExport) {
+          // Workspace, export and return addresses name resources; the deployment bearer grants access.
+          if(request.method!=='OPTIONS' && !authorized(request))return json(response,{error:'AUTHORIZATION_REQUIRED',message:'A server bearer token is required.'},401,{'WWW-Authenticate':'Bearer realm="rapier-server"'});
+          const methods=isExport ? ['GET','HEAD'] : ['POST','OPTIONS'];
+          if(!methods.includes(request.method))return json(response,{error:'METHOD_NOT_ALLOWED'},405,{Allow:methods.join(', ')});
           let scope=null;
-          if(!isReturn && url.searchParams.has('document'))scope=documentName(url.searchParams.get('document'));
-          if(!isReturn && [...url.searchParams.keys()].some(key=>key!=='document'))throw refusal('QUERY_REFUSED','The MCP URL accepts only a document path.',400);
+          if(isMcp && url.searchParams.has('document'))scope=documentName(url.searchParams.get('document'));
+          if(isMcp && [...url.searchParams.keys()].some(key=>key!=='document'))throw refusal('QUERY_REFUSED','The MCP URL accepts only a document path.',400);
           let bytes=request.method==='POST' ? await bodyOf(request,MAX_RPC_BODY_BYTES) : null;
           if(scope && bytes) {
             let message;try{message=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw refusal('INVALID_JSON','The request is not valid UTF-8 JSON.',400);}
@@ -110,14 +114,15 @@ export async function createServer(options={}) {
             }
           }
           const headers=new Headers();
-          for(const [name,value] of Object.entries(request.headers))if(value!==undefined && !['host','content-length','connection','cf-connecting-ip','x-forwarded-for'].includes(name))headers.set(name,Array.isArray(value) ? value.join(', ') : value);
+          for(const [name,value] of Object.entries(request.headers))if(value!==undefined && !['host','content-length','connection','authorization','cookie','cf-connecting-ip','x-forwarded-for'].includes(name))headers.set(name,Array.isArray(value) ? value.join(', ') : value);
           headers.set('CF-Connecting-IP',request.socket.remoteAddress || '127.0.0.1');
-          const reply=await handleMcp(new Request(url,{method:request.method,headers,...(bytes ? {body:bytes} : {}),signal:control.signal}),environment(scope));
-          if(request.method==='OPTIONS' && !isReturn && reply.status<300)reply.headers.set('Access-Control-Allow-Headers',(reply.headers.get('Access-Control-Allow-Headers') || '')+', Authorization');
+          const incoming=new Request(url,{method:request.method,headers,...(bytes ? {body:bytes} : {}),signal:control.signal}),env=environment(scope);
+          const reply=request.method==='OPTIONS' ? await handleMcp(incoming,env) : await handleAuthenticatedMcp(incoming,env,authority);
+          if(request.method==='OPTIONS' && reply.status<300)reply.headers.set('Access-Control-Allow-Methods','POST');
           return forward(response,reply);
         }
         if(!['GET','HEAD'].includes(request.method))return json(response,{error:'METHOD_NOT_ALLOWED'},405,{Allow:'GET, HEAD'});
-        if(url.pathname==='/health')return json(response,{service:'rapier-server',version:VERSION,...deployment(environment()),...(api.maintenanceError ? {maintenanceError:api.maintenanceError} : {}),renderer:{version:renderer.version,runtime:renderer.runtimeHash},...(store.poisoned ? {ready:false,recoveryRequired:true} : {})},store.poisoned ? 503 : 200);
+        if(url.pathname==='/health')return json(response,{service:'rapier-server',version:VERSION,...deployment(environment(),{authentication:'server-bearer'}),...(api.maintenanceError ? {maintenanceError:api.maintenanceError} : {}),renderer:{version:renderer.version,runtime:renderer.runtimeHash},...(store.poisoned ? {ready:false,recoveryRequired:true} : {})},store.poisoned ? 503 : 200);
         if(url.pathname==='/search') {
           const q=url.searchParams.get('q') || '',limit=Number(url.searchParams.get('limit') || 50);
           if(q.length>2048 || !Number.isSafeInteger(limit) || limit<1 || limit>200)throw refusal('QUERY_REFUSED','Use a query of at most 2048 characters and a limit from 1 to 200.',400);

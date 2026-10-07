@@ -190,6 +190,8 @@ const RapierStorage = Object.freeze({
 		notesSkills:    Object.freeze({ key: 'rapier:preference:notes-skills',      fallback: false }),
 		notesStart:     Object.freeze({ key: 'rapier:preference:notes-start',       fallback: 'editor', values: Object.freeze(['editor', 'notes']) }),
 		notesSort:      Object.freeze({ key: 'rapier:preference:notes-sort',        fallback: 'custom', values: Object.freeze(['custom', 'created', 'modified']) }),
+		// Persistent storage was asked for once for this folder (a browser profile is the folder on the web).
+		notesPersistAsked: Object.freeze({ key: 'rapier:preference:notes-persist-asked', fallback: false }),
 		notesLayout:    Object.freeze({ key: 'rapier:preference:notes-layout',      fallback: 'half', values: Object.freeze(['half', 'full']) }),
 		// An open coloured note wears its colour on the bar alone (default) or over the page.
 		notesColour:    Object.freeze({ key: 'rapier:preference:notes-colour',      fallback: 'bar', values: Object.freeze(['bar', 'page']) }),

@@ -27,6 +27,14 @@ function _rapierHeadingSlugBase(text) {
 		.replace(/^-|-$/g, '') || 'heading';
 }
 
+// Every occupied suffix counts, including a heading whose own text already ends in that suffix.
+function _rapierNextHeadingSlug(base, used) {
+	let slug = base;
+	while (Object.hasOwn(used, slug)) slug = base + '-' + (++used[base]);
+	used[slug] = 0;
+	return slug;
+}
+
 function _rapierCollectTokenFacts(markdown, tokens, slugBase, normalizeReference, env, lineOffsets) {
 	const source = String(markdown || '');
 	const offsets = lineOffsets || _rapierLineStartOffsets(source);
@@ -51,9 +59,7 @@ function _rapierCollectTokenFacts(markdown, tokens, slugBase, normalizeReference
 		const base = typeof slugBase === 'function'
 			? slugBase(value)
 			: _rapierHeadingSlugBase(value);
-		if (headingSlugs[base]) return base + '-' + (++headingSlugs[base]);
-		headingSlugs[base] = 1;
-		return base;
+		return _rapierNextHeadingSlug(base, headingSlugs);
 	};
 	for (let index = 0; index < (tokens || []).length; index++) {
 		const token = tokens[index];
@@ -327,4 +333,4 @@ function _rapierBuildSemanticFactIndex(facts) {
 	return Object.freeze({ byKind, definitions: Object.freeze(definitions), uses: Object.freeze(uses), useMaxEnds: Object.freeze(useMaxEnds) });
 }
 
-export { _rapierBuildSemanticFactIndex, _rapierLineStartOffsets, _rapierSourceLineSpan, _rapierHeadingSlugBase, _rapierCollectTokenFacts, _rapierFinalizeParsedBlocks };
+export { _rapierBuildSemanticFactIndex, _rapierLineStartOffsets, _rapierSourceLineSpan, _rapierHeadingSlugBase, _rapierNextHeadingSlug, _rapierCollectTokenFacts, _rapierFinalizeParsedBlocks };

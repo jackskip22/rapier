@@ -30,6 +30,7 @@ function _rapierOpenInfoSheet(kind) {
       'RESTORE PURCHASE — Use the Google Play account you bought with.'],
     agent: ['edit control',
       'FREE — Edits immediately.',
+      'CHECK — Pauses until changes stay in view.',
       'ASK — You approve changes.'],
     will: ['will', _RAPIER_WILL_INFO.lead,
       ..._RAPIER_WILL_INFO.laws.map(entry => _rapierProtectionWord(entry.law) + ' — ' + entry.line)],
@@ -82,21 +83,27 @@ function _rapierOpenInfoSheet(kind) {
     /* RAPIER_NOTES_END */
   }[kind];
   if (!content) return;
-  const overlay = _rapierUi.refs.infoOverlay, sheet = overlay.querySelector('.info-action-sheet');
-  overlay.querySelector('#info-sheet-title').textContent = content[0];
-  const body = overlay.querySelector('.info-action-body'), list = document.createElement('ul');
-  list.append(...content.slice(1).map(text => {
-    const item = document.createElement('li'); item.textContent = text; return item;
-  }));
-  body.replaceChildren(list);
+  const list = _rapierInfoSheetShow(content[0], content.slice(1));
   if (kind === 'notes') {
     // Keep the live storage answer attached while the sheet is open.
     list.lastElementChild.id = 'notes-storage-note';
     if (typeof _rapierNotesStorageAnswer === 'function') void _rapierNotesStorageAnswer(false);
   }
+}
+// The house information sheet with a title and its lines: the kinds above, and a result's notes opened from a notice
+// (an import's, interchange/browser.js) in the person's own time. Returns the list for a caller that keeps a line live.
+function _rapierInfoSheetShow(title, lines) {
+  const overlay = _rapierUi.refs.infoOverlay, sheet = overlay.querySelector('.info-action-sheet');
+  overlay.querySelector('#info-sheet-title').textContent = title;
+  const body = overlay.querySelector('.info-action-body'), list = document.createElement('ul');
+  list.append(...lines.map(text => {
+    const item = document.createElement('li'); item.textContent = text; return item;
+  }));
+  body.replaceChildren(list);
   sheet.scrollTop = 0;
   openDialog(overlay, {panel: '.info-action-sheet', noautofocus: true});
   sheet.focus({preventScroll: true});
+  return list;
 }
 
 const _rapierInfoOverlay = document.getElementById('info-overlay');

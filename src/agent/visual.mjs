@@ -12,6 +12,29 @@ const reasons = new Set(['cancelled', 'document_changed', 'document_not_settled'
   'visual_resources_unavailable', 'visual_render_unavailable', 'visual_capture_busy', 'visual_capture_expired',
   'editor_not_present', 'notes_library_open', 'draw_session_open', 'host_not_connected']);
 
+export function visualDrawingIdentity(value) {
+  if (!object(value) || typeof value.session !== 'string' || !value.session || value.session.length > 256 ||
+      !integer(value.surfaceGeneration)) return null;
+  if (value.occurrence === null && value.assetGeneration === null)
+    return {session: value.session, surfaceGeneration: value.surfaceGeneration, assetGeneration: null, occurrence: null};
+  if (typeof value.assetGeneration !== 'string' || !/^[a-f0-9]{64}$/.test(value.assetGeneration) ||
+      !range(value.occurrence) || typeof value.occurrence.reference !== 'string' ||
+      !value.occurrence.reference || value.occurrence.reference.length > 256) return null;
+  const source = value.occurrence;
+  if (source.position != null && !integer(source.position) || source.imageIndex != null && !integer(source.imageIndex) ||
+      source.blockId != null && (typeof source.blockId !== 'string' || !source.blockId || source.blockId.length > 256)) return null;
+  return {session: value.session, surfaceGeneration: value.surfaceGeneration, assetGeneration: value.assetGeneration,
+    occurrence: {reference: source.reference, position: source.position ?? source.start,
+      ...(source.blockId != null ? {blockId: source.blockId} : {}),
+      ...(source.imageIndex != null ? {imageIndex: source.imageIndex} : {}), start: source.start, end: source.end}};
+}
+
+export function sameVisualDrawing(a, b) {
+  if (a == null || b == null) return a == null && b == null;
+  const left = visualDrawingIdentity(a), right = visualDrawingIdentity(b);
+  return !!left && !!right && JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function visualRequest(state, args = {}) {
   if (!object(state) || typeof state.documentId !== 'string' || !state.documentId || !integer(state.revision))
     return refused('document_changed');
@@ -19,7 +42,12 @@ export function visualRequest(state, args = {}) {
   const scope = args.scope || 'viewport';
   if (!scopes.has(scope)) return refused('visual_target_unavailable');
   const request = {kind: 'visual', documentId: state.documentId, revision: state.revision, scope};
-  if (scope === 'focus' || scope === 'selection') {
+  if (state.drawing != null) {
+    const drawing = visualDrawingIdentity(state.drawing);
+    if (!drawing) return refused('visual_target_unavailable');
+    request.drawing = drawing;
+  }
+  if (!request.drawing && (scope === 'focus' || scope === 'selection')) {
     const target = state[scope];
     if (!range(target) || typeof state.text !== 'string' || target.end > state.text.length) return refused('visual_target_missing');
     request.sourceRange = {start: target.start, end: target.end};
@@ -75,10 +103,12 @@ export function visualResult(request, fact) {
       fact.documentId !== request.documentId || fact.revision !== request.revision || fact.scope !== request.scope)
     return refused('document_changed');
   if (fact.outcome !== 'ok') return refused(reasons.has(fact.reason) ? fact.reason : 'visual_render_unavailable');
+  if (!sameVisualDrawing(request.drawing, fact.drawing)) return refused('visual_target_changed');
   if (request.sourceRange && !sameRange(request.sourceRange, fact.sourceRange)) return refused('visual_target_changed');
   const size = pngBytes(fact.image);
   if (size === null) return refused('visual_image_invalid');
   return {outcome: 'ok', representation: 'visual', observation: {documentId: request.documentId, revision: request.revision,
     scope: request.scope, mimeType: 'image/png', width: fact.image.width, height: fact.image.height, bytes: size,
+    ...(request.drawing ? {drawing: visualDrawingIdentity(request.drawing)} : {}),
     ...(request.sourceRange ? {sourceRange: {...request.sourceRange}} : {})}};
 }

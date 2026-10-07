@@ -51,7 +51,7 @@ No account, no analytics, no advertising. What you write stays on your device un
 
 ## Agents
 
-Work on the same page as an AI agent. It reads only the passages it needs, changes exactly what it read, never overwrites what you are typing, and you keep or drop each change where it lands. Diagrams it draws stay editable shapes. The Will marks what it may edit. Connect Claude, ChatGPT or any MCP client to https://mcp.rapier.website/mcp with no account, or use WebMCP in the browser.
+Work on the same page as an AI agent. It reads only the passages it needs, changes exactly what it read, never overwrites what you are typing, and you keep or drop each change where it lands. It draws native SVG diagrams as editable shapes, and separately renders Mermaid flowcharts from fences. The Will marks what it may edit. Connect Claude, ChatGPT or any MCP client to https://mcp.rapier.website/mcp with no account, or use WebMCP in the browser.
 
 ## Where it runs
 
@@ -93,8 +93,10 @@ function withoutPictures(markdown) {
 		const picture = /^!\[([^\]]*)\]\[[^\]]+\](?:\s*<!--.*?-->)?\s*$/.exec(line);
 		if (picture) { if ([...picture[1]].length === 1) letter = picture[1]; continue; }
 		if (/^\[[^\]]+\]:\s*data:/.test(line)) continue;
-		if (letter && line.trim()) { kept.push(letter + line); letter = ''; continue; }
-		kept.push(line);
+		// A text block's layout (a first-line indent, an alignment) is presentation; the plain guide carries the words alone.
+		const words = line.replace(/\s*<!--\s*md-layout(?=[: \t-])[^>]*-->\s*$/i, '');
+		if (letter && words.trim()) { kept.push(letter + words); letter = ''; continue; }
+		kept.push(words);
 	}
 	return kept.join('\n');
 }

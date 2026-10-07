@@ -17,13 +17,13 @@ import {SYNC_STATE_FILE, readSyncStateBytes, syncStateWrite, decodeSyncState, en
 import {createRecordings} from './recording.mjs';
 import {planAttachment, rewriteAttachmentNames, attachmentIntake, attachmentsOf, attachmentLine} from './attachments.mjs';
 import {exactBytes, sha256, storedFileDigest, checkByteAbort, blobByteChunks, digestByteChunks} from './integrity.mjs';
-import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, addSection, setCollapsed, orderAfter} from './model.mjs';
+import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, isAttachmentName, attachmentFileName, reconcile, noteFileName, admitIdentities, parseIndex, addSection, setCollapsed, orderAfter, noteControlValues, setNoteControls} from './model.mjs';
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
 import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
-import {manifestName, parseManifest, materialize} from './history.mjs';
+import {manifestName, parseManifest, materialize, recordVersion} from './history.mjs';
 import {applyReminderActions, changeReminders} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
 
@@ -46,7 +46,8 @@ export function applyMetadata(base, wanted, fresh) {
 			for (const row of after) if (!before.some(n => eq(n, row))) {
 				const present = rows.find(n => n.name === row.name);
 				if (present && !eq(row, present)) throw fail('changed', 'This section changed in another page. Open the cards again.');
-				if (!present) rows.push(copy(row));
+				// A section added where it was (an Undo of a delete) keeps its place before the next one the folder has; added last it stays last.
+				if (!present) { const next = after.slice(after.indexOf(row) + 1).map(n => rows.findIndex(m => m.name === n.name)).find(i => i >= 0); rows.splice(next ?? rows.length, 0, copy(row)); }
 			}
 			return rows;
 		}
@@ -239,14 +240,67 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return snapshot;
 	});
 	const metadata = (base, wanted) => tracked(() => owner.transact(scope, ({index}) => ({kind: 'metadata', index: applyMetadata(base, wanted, index)})));
+	// One journal owns the card fields, any tag bytes, and the exact past on both sides of the change.
+	// Admission runs after the folder lease and each asynchronous preparation, before any new write.
+	const controls = ({file, id, fields}, {signal, app = false, guard = () => {}} = {}) => underLease(async lease => {
+		const active = () => { checkByteAbort(signal); guard(); };
+		active();
+		let beforeValues, nextText;
+		const snapshot = await lease.transact(async ({index, bodies}) => {
+			active();
+			if (!isNoteFile(file) || !Object.hasOwn(index.notes, file) || index.notes[file].id !== id || !bodies.has(file)) throw fail('notes_target_missing', 'This note is no longer in the folder.');
+			const previousEntry = index.notes[file], priorText = decode(bodies.get(file)), now = clock();
+			beforeValues = noteControlValues(index, file, priorText);
+			const planned = setNoteControls(index, file, fields, {text: priorText, app});
+			index = planned.index; nextText = planned.text;
+			const values = noteControlValues(index, file, nextText), changed = {}, previous = {};
+			for (const name of Object.keys(values)) if (!eq(beforeValues[name], values[name])) { changed[name] = values[name]; previous[name] = beforeValues[name]; }
+			if (!Object.keys(changed).length) return {index};
+			if (exactBytes(JSON.stringify({changed, previous})).length > 8192) throw fail('notes_receipt_too_large', 'These choices cannot fit an exact change receipt. Change fewer fields.');
+			const content = await sha256(nextText); active();
+			if (index.notes[file].trashed && (!previousEntry.trashed || nextText !== priorText)) index = markTrashed(index, file, {digest: content, now});
+			if (nextText !== priorText) index.notes[file] = {...index.notes[file], revision: 'sha256:' + content, modified: now};
+			const path = manifestName(id), priorManifest = await store.read('history/' + path); active();
+			let past;
+			try { past = parseManifest(priorManifest, {noteId: id, now}); }
+			catch (_) { throw fail('notes_history_unavailable', 'This note has unreadable history. Its source and choices were kept.'); }
+			const before = await recordVersion(past, {file, text: priorText, entry: previousEntry, reason: 'save', now}); active();
+			const reason = !previousEntry.trashed && index.notes[file].trashed ? 'trash' : previousEntry.trashed && !index.notes[file].trashed ? 'untrash' : 'edit-card';
+			const after = await recordVersion(before.manifest, {file, text: nextText, entry: index.notes[file], reason, now}); active();
+			const byName = new Map([...before.writes, ...after.writes].map(write => [write.name, write]));
+			try {
+				const readObject = name => byName.has(name) ? byName.get(name).bytes : store.read('history/' + name);
+				await materialize(before.manifest, before.version.id, readObject);
+				await materialize(after.manifest, after.version.id, readObject);
+			} catch (_) { throw fail('notes_history_unavailable', 'The exact words of this note could not be retained in history.'); }
+			active();
+			const manifestWrite = byName.get(path); byName.delete(path); byName.set(path, manifestWrite);
+			const writes = [];
+			for (const [name, write] of byName) {
+				const held = name === path ? priorManifest : await store.read('history/' + name); active();
+				if (write.immutable && held != null) {
+					if (await sha256(held) !== await sha256(write.bytes)) throw fail('notes_history_unavailable', 'A retained history object has different bytes.');
+					active(); continue;
+				}
+				writes.push({file: 'history/' + name, bytes: write.bytes, expectedDigest: await digest(held)}); active();
+			}
+			if (nextText !== priorText) writes.push({file, bytes: exactBytes(nextText), expectedDigest: await sha256(priorText), requires: 'history/' + path});
+			active();
+			return {kind: 'note-controls', index, writes};
+		}, {bodies: [file]});
+		if (snapshot.dropped?.length || snapshot.kept?.length || snapshot.index.notes[file]?.id !== id) throw fail('notes_changed', 'This note changed while its controls were written.');
+		const values = noteControlValues(snapshot.index, file, nextText), changed = {}, previous = {};
+		for (const name of Object.keys(values)) if (!eq(beforeValues[name], values[name])) { changed[name] = values[name]; previous[name] = beforeValues[name]; }
+		return {...snapshot, file, text: nextText, changed, previous};
+	});
 	const reminderChange = (targets, change, now = clock()) => tracked(() => owner.transact(scope, ({index}) => ({kind: 'reminder', index: changeReminders(index, targets, change, now)})));
 	const reminderActions = actions => tracked(() => owner.transact(scope, ({index}) => ({kind: 'reminder-actions', index: applyReminderActions(index, actions)})));
-	const createOwned = async (lease, text, wanted, extra = {}, request, media = null, {signal} = {}) => {
+	const createOwned = async (lease, text, wanted, extra = {}, request, media = null, {signal, guard} = {}) => {
 		let file;
 		const snapshot = await lease.transact(({index, files}) => {
 			// The folder lock may have been held by another writer when this call
 			// arrived. Admission is here, after that wait and before any new write.
-			checkByteAbort(signal);
+			checkByteAbort(signal); guard?.();
 			if (request) { const kept = Object.keys(index.notes).find(name => index.notes[name].createdByRequest === request); if (kept) { file = kept; return {index}; } }
 			file = available(wanted, text, files);
 			const now = clock(), next = createEntry(media ? reviveMedia(index, media.path, media.digest) : index, file, {created: now, modified: now, ...extra, ...(request ? {createdByRequest: request} : {})});
@@ -300,7 +354,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	});
 	// A save reads the sidecar once, inside its own transaction: the note is located by id in the
 	// transaction's fresh index and its body read there, not in a whole read before the transaction.
-	const save = ({file, id, expectedDigest, text, preserveConflict = true}) => underLease(async lease => {
+	const save = ({file, id, expectedDigest, text, preserveConflict = true}, {signal, guard} = {}) => underLease(async lease => {
+		const active = () => { checkByteAbort(signal); guard?.(); }; active();
 		const bytes = exactBytes(text), nextDigest = await sha256(bytes);
 		const locate = index => {
 			const matches = id ? Object.keys(index.notes).filter(n => index.notes[n].id === id) : [];
@@ -309,9 +364,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		let destination = null, copied = false;
 		const admitted = Array.isArray(expectedDigest) ? expectedDigest : [expectedDigest];
 		const snapshot = await lease.transact(async ({index, files, readBodies}) => {
+			active();
 			destination = locate(index);
 			const bodies = destination ? await readBodies([destination]) : new Map();
 			const before = destination ? bodies.get(destination) : null, actual = await digest(before);
+			active();
 			const stale = !destination || !admitted.includes(actual);
 			// An already saved live note keeps its timestamp, generation and bytes. A stale
 			// caller whose exact words landed still succeeds; restoring Trash is a real edit.
@@ -687,9 +744,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		result.createdSections = snapshot.index.sections.filter(section => !before.index.sections.some(old => old.name === section.name));
 		return {...snapshot, result, ...(receiptCommit ? {receiptCheckpoint:receiptCommit.receiptCheckpoint} : {})};
 	});
-	const restoreSnapshot = async (entries, {replace = false} = {}) => {
+	const restoreSnapshot = async (entries, {replace = false, signal, guard} = {}) => {
 		// Full source verification precedes the lease and every destination effect. The
 		// owner stages one verified file at a time and publishes the original sidecar last.
+		const admit = async () => { checkByteAbort(signal); await guard?.(); checkByteAbort(signal); };
+		await admit();
 		const plan = entries?.parts ? await planSnapshotStream(entries) : await planSnapshot(entries), sidecar = plan.files.find(row => row.name === NOTES_INDEX_FILE);
 		let indexBytes = sidecar.bytes ?? await sidecar.read(), checkpoint = null;
 		const writes = [];
@@ -721,6 +780,9 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return tracked(async () => {
 			const lease = await owner.acquire(scope);
 			try {
+				// Endpoint setup may have lost its key or enrollment while planning or queued
+				// behind another folder writer. Once admitted, the journal finishes normally.
+				await admit();
 				const snapshot = await lease.transact({kind: 'restore', index: plan.index, exactIndex: indexBytes, writes}, {exactRestore: true, replace});
 				deviceId = snapshot.index.folderDeviceId || '';
 				// The exact publication is the backup's own sidecar: ids and namespaces stay the backup's
@@ -882,5 +944,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, rebuildIndex, metadata, reminderActions, reminderChange, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, rebuildIndex, metadata, controls, reminderActions, reminderChange, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

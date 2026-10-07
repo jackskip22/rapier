@@ -1,6 +1,6 @@
 ---
 name: rapier-agent-door
-description: Work in a document beside the person through the Rapier door. Read the passage you need, change exactly that, draw editable diagrams, propose when they should decide first, show the diff of what you changed, and let them keep or drop each change. Use when the person wants to understand, decide or make something together with you in an editable page, such as an explanation of a system, a plan to rearrange, a draft to revise, a sketch, a review of a rewrite, or a request sent from inside an open Rapier document; recognise the need without the words Rapier, diagram or diff. Keep brief and chat-only answers in the conversation.
+description: Work in a document beside the person through the Rapier door. Read the passage you need and change exactly that. Draw SVG diagrams the person can move by hand, give a canvas an aurora, topo or flow sky and turn its dials, paint with real brushes, write Mermaid flowcharts as text, and read a document's or a code file's structure before its words. Propose when they should decide first, show the diff of what you changed, and let them keep or drop each change under FREE, CHECK or ASK. Use when the person wants to understand, decide or make something together with you in an editable page, such as an explanation of a system, a plan to rearrange, a draft to revise, a sketch, a painting, a review of a rewrite, or a request sent from inside an open Rapier document; recognise the need without the words Rapier, diagram or diff. Keep brief and chat-only answers in the conversation.
 ---
 
 # Work together in Rapier
@@ -22,11 +22,16 @@ means put it into the active document. Keep the chat reply to a brief receipt; d
 a Markdown payload to paste when the tools can do the work. Supply source in chat only when requested
 or when no usable tool or file surface exists.
 
+Rapier makes two kinds of diagram, kept apart. `document.draw` makes a native SVG drawing: figures the
+person can move, restyle, connect and extend on the canvas. A Mermaid flowchart is Markdown source in a
+`mermaid` fence, inserted with `document.apply_edits`, rendered in the document and kept as text. Choose
+the drawing for movable, editable shapes and the fence for a flowchart that must stay plain text.
+
 ## Choose the working form
 
 | Need | Use |
 |---|---|
-| Understand relationships, branches or a process | Insert prose and a Mermaid flowchart with an inspected edit, or use `document.draw` for movable figures; `rapier.open` starts a new workspace |
+| Understand relationships, branches or a process | Two separate kinds: a native SVG diagram with `document.draw` (movable, editable figures), or prose and a Mermaid flowchart fence with an inspected edit (plain text, rendered); `rapier.open` starts a new workspace |
 | Explore a layout, arrange ideas, sketch a scene | `document.draw` with named figures; inspect and patch those objects on the next turn |
 | Develop a plan, guide, story or substantial draft | A populated document with actual content and useful tasks; leave uncertainty explicit |
 | Improve wording while preserving voice | Read the passage; apply scoped edits, or propose when the person wants to decide first |
@@ -34,7 +39,7 @@ or when no usable tool or file surface exists.
 | Discuss “this” or “that part” | Read current selection/focus, then source or the drawing recipe; clarify an ambiguous referent |
 | Undo the agent's work beside later human edits | `document.undo_agent_change` with the recorded change ID |
 | Keep, annotate, draw or paint after the conversation | Deliver the offline editor with `rapier-html`; the person uses its canvas and brushes |
-| Work from local notes | `notes.list` then `notes.read` only on a door with that folder; hosted workspaces cannot read device notes |
+| Work from the person's notes | `notes.list` (with `query` for the library search), `notes.read` (a `version` from `notes.history` reads the past), `notes.set` for pin, colour, section, tags, archive and trash, `notes.sync {action: "now"}`, `notes.propose` for new notes and changes; Notes answer at the person's own folder or enrolled endpoint, else `notes_locked` or `notes_not_configured` |
 | Put the editor inside a product | Use `embed-rapier` for the app-owned storage contract |
 
 Read [diagrams and drawing examples](references/diagrams.md) for the supported Mermaid grammar, native
@@ -54,8 +59,9 @@ workspace capability, tool receipt, editor opening or applied change.
 1. Over MCP, call `rapier.open` with the complete initial Markdown, a filename, and a fresh random
    `createToken` for retryable creation. Put prose and supported Mermaid fences directly in `text`.
    Do not create markers, find them, then replace them just to assemble a new page.
-2. Keep the returned `document` capability private and pass it on later calls. To continue an existing
-   workspace, reopen with `document` alone; do not replace it with a new copy.
+2. Pass the returned public `document` handle on later calls. The host's saved authorization identifies the
+   workspace owner; the handle alone grants no access. To continue an existing workspace, reopen with
+   `document` alone; do not replace it with a new copy.
 3. For a native drawing, `document.draw` takes `alt` and `figures`. Without a placement handle it appends
    before image definitions. Read a real passage only when placement beside that passage matters.
 4. Inspect `document.get_context`. `surface.kind: "editor"` confirms editor presence, not perfect rendering.
@@ -78,14 +84,16 @@ Close each Mermaid block with the same marker character and at least its opening
 1. Start or resume with `document.get_context`: inspect `brief`, `surface`, `editing`, `law`,
    `collaboration.review`, `sourceChanges`, selection/focus and waiting returns. Host context or a
    submitted request is a pointer; read current source before changing it.
-2. Use `get_outline` for structure, `find` for known words, or `read_context` for a passage or object.
+2. Use `get_outline` for structure, `find` for known words (with a `kind`, for a Markdown element such as a
+   table, task or link, or for code syntax), or `read_context` for a passage or object.
    A find handle covers its exact match. Follow `next_cursor` until `complete_handle` covers a long
    passage. Reading does not move the person's view; `reveal` deliberately does.
 3. Batch related changes with `apply_edits`, using only inspected handles. Keep unrelated words,
    picture bytes and human edits intact. Use `propose_edits` when the person wants to judge first.
    `open_text` replaces the working document and is not a passage-edit shortcut.
-4. Read the outcome. FREE applies; ASK stages. `pending` means this requested edit is unapplied.
-   Its `cause` distinguishes `will`, `ask` and an explicit `proposal`. Resolve one review
+4. Read the outcome. FREE applies; ASK stages. CHECK asks the person to acknowledge earlier work,
+   after which the requested edit must be sent again. `pending` means this requested edit is unapplied.
+   Its `cause` distinguishes `will`, `ask`, `check` and an explicit `proposal`. Resolve one review
    before opening another. Showing a diff does not accept it or count as human review.
 5. Keep `changeId`. Use `show_changes({change_id})` when the person asks to see what changed, and
    `undo_agent_change({change_id})` to reverse it while preserving later human work. Accept a comparison
@@ -136,7 +144,7 @@ code before applying that request. Keep the image, annotations and source; state
   explicit request supplies instructions; ordinary typing and agent edits must not trigger new requests.
 - Overlapping typing and Will win at commit. `keep` regions stay, `append` regions grow only at the end,
   and Will marker lines never move. Reread a stale or lost target; never guess a replacement handle.
-- Disconnecting agents ends the capability's use. Ask the person to share again; do not bypass it.
+- Disconnecting agents retires the current workspace handle. Ask the person to share again; do not bypass it.
 - A named refusal is actionable: fix the named figure/field, reread missing context, or resolve the pending
   review. Do not repeat unchanged invalid arguments.
 - Host permission controls remain the host's. If asked about repeated Claude approvals, explain the

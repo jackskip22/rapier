@@ -1,6 +1,6 @@
 ---
 name: rapier-html
-description: Give the person a document they can read, edit and keep, as one offline HTML file that is the whole Rapier editor. `npx rapier-html@1.1.75 document.md` makes it, it opens with one click in any browser with no install and no account, and an optional Send back address brings their edits back to you. Use when the person asks for a document, a page, notes, a plan, a draft, a diagram or a revision they can keep or change, or when a long answer belongs in a document rather than in the chat, even when they do not name Rapier. Not for short answers that belong in the conversation.
+description: Give the person a document they can read, edit and keep, as one offline HTML file that is the whole Rapier editor. `npx rapier-html@1.1.76 document.md` makes it, it opens with one click in any browser with no install and no account, and an optional Send back address brings their edits back to you. Use when the person asks for a document, a page, notes, a plan, a draft, a diagram, a drawing, a painting or a revision they can keep or change, or when a long answer belongs in a document rather than in the chat, even when they do not name Rapier. Not for short answers that belong in the conversation.
 ---
 
 # rapier-html
@@ -28,8 +28,10 @@ Say which surface is available and whether the delivery is source or an editable
 A source handoff does not prove that a page opened.
 
 When a return is wanted, get `document.create_return` from the hosted workspace and add its one-use address
-to the page. Keep the workspace's private document capability out of the file. Without that tool, deliver
-the editable file for ordinary upload back. Tell the person what opens, where Save keeps their copy, and
+to the page. The address grants no access by itself. Send back opens a confirmation page in the browser
+where the person connected Rapier; they check the preview and confirm the upload. No authorization
+credential enters the offline file. Without that tool, deliver the editable file for ordinary upload back.
+Tell the person what opens, where Save keeps their copy, and
 whether Send back is available. A hosted workspace alone is not a file saved on their device.
 
 **Done:** the populated editable object is delivered through the supported surface, its exact source is
@@ -40,12 +42,12 @@ retained, and the person has a clear way to keep it and, when requested, return 
 With a shell, Node 22 or newer and the declared package release available on npm, `rapier-html` supplies the editor. If the pinned release is unavailable, use the installed page helper with the matching editor HTML when available; do not silently run a different release or claim a file was created:
 
 ```sh
-npx -- rapier-html@1.1.75 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.1.75 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
-npx -- rapier-html@1.1.75 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.1.75 --propose original.md proposal.md --by "Review author" # per-change KEEP/DROP review
-npx -- rapier-html@1.1.75 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.1.75 notes.md out.html                 # a named output
+npx -- rapier-html@1.1.76 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.1.76 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
+npx -- rapier-html@1.1.76 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.1.76 --propose original.md proposal.md --by "Review author" # per-change KEEP/DROP review
+npx -- rapier-html@1.1.76 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.1.76 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an output that exists is refused, so name a new one. The first `--` keeps npm from taking
@@ -59,9 +61,10 @@ layout and colour travel inside the page.
   per-change KEEP/DROP review. `proposal.md --base original.md` is the old spelling of the same wrapper.
   Use `--by <your name>` for attribution; the CLI uses the generic label `Agent` when omitted. The tool
   `document.propose` requires a nonblank name and a current read handle, or its read revision and SHA-256.
-- A diagram or sketch: `document.draw` lays out boxes and arrows you name in Rapier's own look (numbered
-  steps, captions, light and dark) and puts it in the document; `--drawing` opens a page on the canvas with a
-  drawing ready to change. Supported Mermaid flowchart fences also draw offline in Rapier's look, so an agent can write a fence or use figures.
+- A diagram or sketch, in two separate kinds: `document.draw` makes a native SVG drawing, boxes and arrows you
+  name in Rapier's own look (numbered steps, captions, light and dark), movable and editable in the document;
+  `--drawing` opens a page on the canvas with a drawing ready to change. A Mermaid flowchart fence renders
+  offline in Rapier's look and stays plain text in the file.
 - Notes: `--view notes` opens the cards, for a person who wants the whole list, not one document.
 - A long edit: hand the page instead of rewriting a hundred pages in the chat.
 
@@ -103,7 +106,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Hand the file as well when the viewer
   blocks downloads started inside it; apply the host's actual sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.75` and hand the page as a file; it opens
+- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.76` and hand the page as a file; it opens
   in any browser.
 - **A host that shows MCP apps (ChatGPT among them):** `rapier.open` requests the editor in the chat
   (`rapier-agent-door`).

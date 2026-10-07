@@ -1,5 +1,7 @@
 import { createPaintPNGCodec } from './paint-png.mjs';
 export { createPaintPNGCodec };
+import {PAINT_BRUSH_CONTROLS, PAINT_SIZE_DEFAULTS, paintSizeDefault, PAINT_DIP_MIN, PAINT_DIP_MAX, PAINT_DIP_FULL, paintBrushRadiusOffset, paintBrushHead, paintBrushDip} from './paint-controls.mjs';
+export {PAINT_BRUSH_CONTROLS, PAINT_SIZE_DEFAULTS, paintSizeDefault, PAINT_DIP_MIN, PAINT_DIP_MAX, PAINT_DIP_FULL, paintBrushRadiusOffset, paintBrushHead, paintBrushDip};
 // SPDX-License-Identifier: AGPL-3.0-only
 // draw/paint.mjs -- the Paint tool's dab engine: MyPaint's brush model (libmypaint 2.0, the
 // `.myb` version 3 preset format) in plain JavaScript, so a MyPaint brush pack paints in Rapier
@@ -1624,6 +1626,9 @@ export class PaintSurface {
 	constructor(width, height, {wet = {}, trackedGrowth = false} = {}) {
 		this.width = Math.max(1, Math.trunc(width)); this.height = Math.max(1, Math.trunc(height));
 		this.data = new Float32Array(this.width * this.height * 4);
+		// Premultiplied material cannot retain RGB beneath zero alpha. A loaded raster's hidden
+		// channels travel separately, allocated only when the source actually carries them.
+		this.transparentRGB = null;
 		// The tool's blank sheets write through _touch, so their untouched margins are exact zeros.
 		// Raw surfaces also expose their buffers to callers and must copy those buffers in full.
 		this.growBox = trackedGrowth ? null : undefined;
@@ -1669,7 +1674,7 @@ export class PaintSurface {
 		if (this.strokeCheckpoint) throw new Error('A paint stroke is already open');
 		const material = {};
 		for (const key of Object.keys(this)) if (key.startsWith('wet') || ['opDefer', 'opOwed', 'hold', 'drawDab', 'body', 'bite'].includes(key)) material[key] = this[key];
-		const checkpoint = {data: this.data, volume: this.volume, oil: this.oil, width: this.width, height: this.height, growBox: this.growBox && {...this.growBox}, toothOX: this.toothOX, toothOY: this.toothOY, toothTiles: this.toothTiles, toothTilesW: this.toothTilesW, material: copyPaintMaterial(material), tiles: new Map()};
+		const checkpoint = {data: this.data, volume: this.volume, oil: this.oil, transparentRGB: this.transparentRGB, width: this.width, height: this.height, growBox: this.growBox && {...this.growBox}, toothOX: this.toothOX, toothOY: this.toothOY, toothTiles: this.toothTiles, toothTilesW: this.toothTilesW, material: copyPaintMaterial(material), tiles: new Map()};
 		this.strokeCheckpoint = checkpoint;
 		return checkpoint;
 	}
@@ -1681,22 +1686,23 @@ export class PaintSurface {
 		for (let ty = Math.floor(y0 / 64); ty <= Math.floor(y1 / 64); ty++) for (let tx = Math.floor(x0 / 64); tx <= Math.floor(x1 / 64); tx++) {
 			const key = ty + ':' + tx; if (cp.tiles.has(key)) continue;
 			const x = tx * 64, y = ty * 64, w = Math.min(64, this.width - x), h = Math.min(64, this.height - y);
-			const pixels = new Float32Array(w * h * 4), volume = cp.volume && new Uint8Array(w * h), oil = cp.oil && new Uint16Array(w * h);
-			for (let row = 0; row < h; row++) { const at = (y + row) * this.width + x; pixels.set(this.data.subarray(at * 4, (at + w) * 4), row * w * 4); if (volume) volume.set(this.volume.subarray(at, at + w), row * w); if (oil) oil.set(this.oil.subarray(at, at + w), row * w); }
-			cp.tiles.set(key, {x, y, w, h, pixels, volume, oil});
+			const pixels = new Float32Array(w * h * 4), volume = cp.volume && new Uint8Array(w * h), oil = cp.oil && new Uint16Array(w * h), transparentRGB = cp.transparentRGB && new Uint8Array(w * h * 3);
+			for (let row = 0; row < h; row++) { const at = (y + row) * this.width + x; pixels.set(this.data.subarray(at * 4, (at + w) * 4), row * w * 4); if (volume) volume.set(this.volume.subarray(at, at + w), row * w); if (oil) oil.set(this.oil.subarray(at, at + w), row * w); if (transparentRGB) transparentRGB.set(this.transparentRGB.subarray(at * 3, (at + w) * 3), row * w * 3); }
+			cp.tiles.set(key, {x, y, w, h, pixels, volume, oil, transparentRGB});
 		}
 	}
 	endStroke(checkpoint, cancel = false) {
 		if (!checkpoint || this.strokeCheckpoint !== checkpoint) return false;
 		this.strokeCheckpoint = null;
 		if (!cancel) return true;
-		for (const {x, y, w, h, pixels, volume, oil} of checkpoint.tiles.values()) for (let row = 0; row < h; row++) {
+		for (const {x, y, w, h, pixels, volume, oil, transparentRGB} of checkpoint.tiles.values()) for (let row = 0; row < h; row++) {
 			const at = (y + row) * checkpoint.width + x;
 			checkpoint.data.set(pixels.subarray(row * w * 4, (row + 1) * w * 4), at * 4);
 			if (volume) checkpoint.volume.set(volume.subarray(row * w, (row + 1) * w), at);
 			if (oil) checkpoint.oil.set(oil.subarray(row * w, (row + 1) * w), at);
+			if (transparentRGB) checkpoint.transparentRGB.set(transparentRGB.subarray(row * w * 3, (row + 1) * w * 3), at * 3);
 		}
-		this.data = checkpoint.data; this.volume = checkpoint.volume; this.oil = checkpoint.oil; this.width = checkpoint.width; this.height = checkpoint.height;
+		this.data = checkpoint.data; this.volume = checkpoint.volume; this.oil = checkpoint.oil; this.transparentRGB = checkpoint.transparentRGB; this.width = checkpoint.width; this.height = checkpoint.height;
 		// Relief readout uses this paper field too; cancelling must restore its presence as well
 		// as its origin, or unchanged material would encode differently after a cancelled mark.
 		this.toothOX = checkpoint.toothOX; this.toothOY = checkpoint.toothOY; this.toothTiles = checkpoint.toothTiles; this.toothTilesW = checkpoint.toothTilesW; this.weaveTiles = null;
@@ -1708,7 +1714,7 @@ export class PaintSurface {
 		return true;
 	}
 
-	clear() { this._finishWetWork(); this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); if (this.oil) this.oil.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
+	clear() { this._finishWetWork(); this._keepStrokePixels(0, 0, this.width - 1, this.height - 1); this.wetState = null; this.wetWindow = null; this.wetRasterBase = null; this.wetCover = null; this.wetDeposited = null; this.wetPending = 0; this.wetTouched = null; this.wetOwedBox = false; this.wetBandY = 0; this.wetBandBox = null; delete this.drawDab; this.data.fill(0); this.transparentRGB = null; if (this.oil) this.oil.fill(0); this._readout = null; this.sinceRead = null; this._touch(0, 0, this.width - 1, this.height - 1); }
 	// The wet state is a WINDOW over the stroke, on a COARSE grid, stepped AFTER the finger. A
 	// phone's live layer is 2.4 Mpx and the dense state is 128 bytes a pixel, and the reference step
 	// over that at every dab takes seconds. So: the window opens around the first wet dab with a
@@ -2081,6 +2087,7 @@ export class PaintSurface {
 			if (!this._wetWork) {
 				const compose = this._wetDryPhase === 'compose';
 				const step = !compose && (this.wet || this.wetPending);
+				this.recordWetWork?.(compose ? 'composeWet' : step ? 'stepWet' : 'settleWet', compose ? [true] : step ? [feed, feed + slice] : []);
 				this._wetWork = {iterator: compose ? this._composeWetWork(true) : step ? this._stepWetWork(feed, feed + slice) : this._settleWetWork(), next: step ? 'compose' : null};
 			}
 			const work = this._wetWork;
@@ -3752,13 +3759,13 @@ export class PaintSurface {
 	// its rows are copied stay on the current surface and are copied again at adoption.
 	prepareGrowth(left, top, right, bottom) {
 		const width = this.width + left + right, height = this.height + top + bottom;
-		const data = new Float32Array(width * height * 4), volume = this.volume && new Uint8Array(width * height), oil = this.oil && new Uint16Array(width * height);
+		const data = new Float32Array(width * height * 4), volume = this.volume && new Uint8Array(width * height), oil = this.oil && new Uint16Array(width * height), transparentRGB = this.transparentRGB && new Uint8Array(width * height * 3);
 		const box = this.growBox === undefined ? {x0: 0, y0: 0, x1: this.width - 1, y1: this.height - 1} : this.growBox && {...this.growBox};
-		return this.preparedGrowth = {left, top, right, bottom, width, height, data, volume, oil, source: this.data, sourceVolume: this.volume, sourceOil: this.oil, box, y: box?.y0 || 0, changed: null};
+		return this.preparedGrowth = {left, top, right, bottom, width, height, data, volume, oil, transparentRGB, source: this.data, sourceVolume: this.volume, sourceOil: this.oil, sourceTransparentRGB: this.transparentRGB, box, y: box?.y0 || 0, changed: null};
 	}
 	copyGrowth(pixels = 65536) {
 		const next = this.preparedGrowth;
-		if (!next || next.source !== this.data || next.sourceVolume !== this.volume || next.sourceOil !== this.oil) { this.preparedGrowth = null; return false; }
+		if (!next || next.source !== this.data || next.sourceVolume !== this.volume || next.sourceOil !== this.oil || next.sourceTransparentRGB !== this.transparentRGB) { this.preparedGrowth = null; return false; }
 		const box = next.box;
 		if (!box) return true;
 		const W = this.width, count = box.x1 - box.x0 + 1, end = Math.min(box.y1 + 1, next.y + Math.max(1, Math.floor(pixels / count)));
@@ -3767,6 +3774,7 @@ export class PaintSurface {
 			next.data.set(this.data.subarray(from * 4, (from + count) * 4), to * 4);
 			if (next.volume) next.volume.set(this.volume.subarray(from, from + count), to);
 			if (next.oil) next.oil.set(this.oil.subarray(from, from + count), to);
+			if (next.transparentRGB) next.transparentRGB.set(this.transparentRGB.subarray(from * 3, (from + count) * 3), to * 3);
 		}
 		return next.y > box.y1;
 	}
@@ -3777,9 +3785,10 @@ export class PaintSurface {
 		this._finishWetWork();
 		const W = this.width, H = this.height, nw = W + left + right, nh = H + top + bottom;
 		const next = this.preparedGrowth;
-		const prepared = next && next.source === this.data && next.sourceVolume === this.volume && next.sourceOil === this.oil && next.left === left && next.top === top && next.right === right && next.bottom === bottom;
+		const prepared = next && next.source === this.data && next.sourceVolume === this.volume && next.sourceOil === this.oil && next.sourceTransparentRGB === this.transparentRGB && next.left === left && next.top === top && next.right === right && next.bottom === bottom;
 		const data = prepared ? next.data : new Float32Array(nw * nh * 4);
 		const volume = this.volume ? (prepared ? next.volume : new Uint8Array(nw * nh)) : null, oil = this.oil ? (prepared ? next.oil : new Uint16Array(nw * nh)) : null;
+		const transparentRGB = this.transparentRGB ? (prepared ? next.transparentRGB : new Uint8Array(nw * nh * 3)) : null;
 		if (prepared) this.copyGrowth(Infinity);
 		const changed = prepared ? next.changed : this.growBox === undefined ? {x0: 0, y0: 0, x1: W - 1, y1: H - 1} : this.growBox;
 		if (changed) for (let y = changed.y0; y <= changed.y1; y++) {
@@ -3787,12 +3796,14 @@ export class PaintSurface {
 			data.set(this.data.subarray(from * 4, (from + count) * 4), to * 4);
 			if (volume) volume.set(this.volume.subarray(from, from + count), to);
 			if (oil) oil.set(this.oil.subarray(from, from + count), to);
+			if (transparentRGB) transparentRGB.set(this.transparentRGB.subarray(from * 3, (from + count) * 3), to * 3);
 		}
 		// Publish the new stride and both buffers only after every allocation and copy succeeds.
 		this.data = data;
 		this.preparedGrowth = null;
 		if (volume) this.volume = volume;
 		if (oil) this.oil = oil;
+		this.transparentRGB = transparentRGB;
 		this.width = nw; this.height = nh;
 		if (this.growBox) { this.growBox.x0 += left; this.growBox.x1 += left; this.growBox.y0 += top; this.growBox.y1 += top; }
 		// Cached alpha bounds live on the paper's tile grid, so empty growth needs no rescan.
@@ -3841,7 +3852,7 @@ export class PaintSurface {
 			let p = ((box.y0 + j) * W + box.x0) * 4, q = j * w * 4;
 			for (let i = 0; i < w; i++, p += 4, q += 4) {
 				const a = D[p + 3];
-				if (a <= 0) continue;
+				if (a <= 0) { if (this.transparentRGB) { const at = p / 4 * 3; out[q] = this.transparentRGB[at]; out[q + 1] = this.transparentRGB[at + 1]; out[q + 2] = this.transparentRGB[at + 2]; } continue; }
 				out[q] = byte(clamp(D[p] / a, 0, 1)); out[q + 1] = byte(clamp(D[p + 1] / a, 0, 1)); out[q + 2] = byte(clamp(D[p + 2] / a, 0, 1));
 				out[q + 3] = Math.round(clamp(a, 0, 1) * 255);
 			}
@@ -3928,6 +3939,10 @@ export class PaintSurface {
 				const x = x0 + i;
 				if (x < 0 || x >= W) continue;
 				const q = (j * width + i) * 4, a = pixels[q + 3] / 255, p = (y * W + x) * 4;
+				if (!a && bytes && (pixels[q] || pixels[q + 1] || pixels[q + 2])) {
+					this.transparentRGB ||= new Uint8Array(W * this.height * 3);
+					this.transparentRGB.set(pixels.subarray(q, q + 3), (y * W + x) * 3);
+				} else if (this.transparentRGB) this.transparentRGB.fill(0, (y * W + x) * 3, (y * W + x + 1) * 3);
 				D[p] = decode(pixels[q]) * a; D[p + 1] = decode(pixels[q + 1]) * a; D[p + 2] = decode(pixels[q + 2]) * a; D[p + 3] = a;
 			}
 		}

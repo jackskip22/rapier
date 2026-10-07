@@ -178,17 +178,11 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
     const admittedBytes = new TextEncoder().encode(text).length;
     RapierTextCodec.normalizeDocument(text, admittedBytes);
     checkCurrent();
+    // What the copy does not carry is recorded with the result and stands in its notice (_rapierAcceptDocumentImport): nothing is asked first.
+    // The copy opens as a new unsaved document with the outgoing one set aside, and the original file is untouched, so there is nothing to protect.
     const warnings = [...new Set([...(result.warnings || []).map(row => typeof row === 'string' ? row : row.message).filter(Boolean), ...imageWarnings])];
-    if (warnings.length) {
-      run.banner?.remove(); run.banner = null;
-      const accepted = await rapierConfirm({title: 'Import notes',
-        message: warnings.slice(0, 8).join('\n\n') + (warnings.length > 8 ? '\n\nOther document-specific formatting also uses normal Markdown flow.' : ''),
-        confirmLabel: 'open Markdown'});
-      if (!accepted) return null;
-      checkCurrent();
-    }
     const baseName = String(name).replace(/\.(docx|pdf)$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'imported';
-    return {text, filename: baseName + '.md', admittedBytes, importStamp: run.stamp, imageStorage: imageCount ? profile : null,
+    return {text, filename: baseName + '.md', admittedBytes, importStamp: run.stamp, imageStorage: imageCount ? profile : null, warnings,
       importSummary: kind.toUpperCase() + ' imported' + (imageCount ? ' · ' + imageCount + ' embedded picture' + (imageCount === 1 ? '' : 's') : '')};
   } catch (error) {
     error.rapierImport = true;
@@ -202,7 +196,12 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
 
 function _rapierAcceptDocumentImport(result) {
   if (result.imageStorage) RapierPreferences.write('imageStorage', result.imageStorage);
-  showToast(result.importSummary || 'Document imported', 'success');
+  const said = result.importSummary || 'Document imported', warnings = result.warnings || [];
+  if (!warnings.length) { showToast(said, 'success'); return; }
+  // One notice carries the result and how many notes the conversion left, and stands until the person closes it; SHOW opens
+  // the notes in the house sheet, every one of them, in the person's own time (a list of sentences is no notice).
+  showToast(said + ' · ' + warnings.length + (warnings.length === 1 ? ' note' : ' notes') + ' on what the copy keeps', 'info',
+    {label: 'SHOW', stay: true, fn: () => _rapierInfoSheetShow('import notes', warnings)});
 }
 
 async function _rapierOpenImportedFile(file, name = file?.name || '', options = {}) {

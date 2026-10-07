@@ -218,6 +218,64 @@ async function _rapierSendBack() {
 	if (['expired', 'used'].includes(_rapierPageReturn.state)) return saveOffered ? rapierSave({forceSaveAs: true}) : false;
 	if (_rapierPageReturn.state === 'sending' || _rapierPageReturn.state === 'accepted') return false;
 	_rapierPageReturn.state = 'sending';
+	// An anonymous workspace's return address is its own one-use grant: the page posts to it directly. A connected
+	// workspace's address only names the return, so the person confirms in a window of their connected browser.
+	if (!/\/return\/rpret_[a-f0-9]{64}\.return_[a-f0-9]{32}$/.test(_rapierPageReturn.address)) return _rapierSendBackDirect();
+	_rapierPageReturn.message = 'Sending…';
+	_rapierRenderPageReturn();
+	try {
+		const address = _rapierPageReturn.address, origin = new URL(address).origin;
+		// A top-level page can use its private owner cookie. The offline file has no credential.
+		const popup = window.open(address, '_blank', 'popup');
+		if (!popup) throw new Error('Open the return page to authorize this upload.');
+		const {status, answer} = await new Promise((resolve, reject) => {
+			let started = false, port;
+			const finish = (value, error) => {
+				window.removeEventListener('message', ready); clearTimeout(timeout); clearInterval(closed);
+				port?.close();
+				if (error) { popup.close(); reject(error); } else resolve(value);
+			};
+			const ready = async event => {
+				if (event.source !== popup || event.origin !== origin || started) return;
+				if (event.data?.type === 'rapier-return-unavailable') {
+					started = true; return finish({status: event.data.status, answer: {accepted: false, reason: event.data.reason}});
+				}
+				if (event.data?.type !== 'rapier-return-ready') return;
+				started = true;
+				try {
+					const captured = await _rapierCaptureSettledExternalDocument();
+					if (!captured || !_rapierPageReturnCurrent() || _rapierPageReturn.address !== address ||
+						!_rapierMutationStampSharesDocument(captured.stamp) || _rapierPageReturn.expiresAt <= Date.now())
+						throw new Error('The document changed or the return expired while settling.');
+					const channel = new MessageChannel(); port = channel.port1;
+					port.onmessage = event => {
+						const data = event.data;
+						if (data?.type === 'rapier-return-result' && Number.isInteger(data.status) && data.status >= 200 && data.status <= 599)
+							finish({status: data.status, answer: data.answer});
+					};
+					popup.postMessage({type: 'rapier-return-document', name: captured.metadata.filename,
+						source: (captured.metadata.bom ? '\uFEFF' : '') + captured.canonical}, origin, [channel.port2]);
+				} catch (error) { finish(null, error); }
+			};
+			window.addEventListener('message', ready);
+			const timeout = setTimeout(() => finish(null, new Error('Return confirmation timed out.')), 5 * 60 * 1000);
+			const closed = setInterval(() => { if (popup.closed) finish(null, new Error('Return page closed.')); }, 500);
+		});
+		const accepted = status >= 200 && status < 300 && answer?.accepted === true;
+		_rapierPageReturn.state = accepted ? 'accepted' : status === 410 ? 'expired' : status === 409 ? 'used' : 'ready';
+		_rapierPageReturn.message = accepted ? 'Accepted. Your document was sent back.'
+			: _rapierPageReturn.state === 'expired' ? 'Return expired. Your work is safe on this page.'
+			: _rapierPageReturn.state === 'used' ? 'Return already used. Your work is safe on this page.'
+			: 'Refused: ' + (typeof answer?.reason === 'string' ? answer.reason : 'the worker did not accept this return.');
+		return accepted;
+	} catch (_) {
+		_rapierPageReturn.state = 'ready';
+		_rapierPageReturn.message = 'Not confirmed. Check your connection. Nothing is retried automatically.';
+		return false;
+	} finally { _rapierRenderPageReturn(); }
+}
+
+async function _rapierSendBackDirect() {
 	_rapierPageReturn.message = 'Sending…';
 	_rapierRenderPageReturn();
 	try {

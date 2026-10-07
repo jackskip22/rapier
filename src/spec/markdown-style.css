@@ -362,7 +362,8 @@
 /* The line model (the way a Word document reads). One line, --md-line, is the body's line box: 1.75rem, 1.6 lines
    of the 1.1rem body, a whole 28 px at the browser's 16 px root so baselines land on pixels. Every block ends one
    line below its last line; a heading ends half a line below. A heading's own box is the whole or half lines its
-   size fills: h1 at 2.4 x the body on two lines, h2 and h3 on one and a half, h4 to h6 on one. Nothing sets a top
+   size fills: h1 at 2.43 x the body on two lines (medium weight, lighter than the bold smaller headings), h2 and h3
+   on one and a half, h4 to h6 on one. Nothing sets a top
    margin, so a plain page (sibling margins collapsing) and the editor (a wrapper per block) space alike, and the
    space before any block is the line its predecessor leaves. */
 .md-render{
@@ -373,7 +374,7 @@
 .md-render h1,.md-render h2,.md-render h3,.md-render h4,.md-render h5,.md-render h6{
 	font-family:var(--md-font-sans);letter-spacing:-0.01em;
 	line-height:var(--md-line);margin:0 0 calc(var(--md-line) / 2);color:var(--md-heading-color);text-wrap:balance}
-.md-render h1{font-size:calc(var(--md-text-body) * 2.7);line-height:calc(var(--md-line) * 2);font-weight:620}
+.md-render h1{font-size:calc(var(--md-text-body) * 2.43);line-height:calc(var(--md-line) * 2);font-weight:500}
 .md-render h2{font-size:calc(var(--md-text-body) * 1.9);line-height:calc(var(--md-line) * 1.5);font-weight:600}
 .md-render h3{font-size:calc(var(--md-text-body) * 1.5);line-height:calc(var(--md-line) * 1.5);font-weight:600}
 .md-render h4{font-size:calc(var(--md-text-body) * 1.25);font-weight:500}

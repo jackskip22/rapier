@@ -296,12 +296,16 @@ html[data-pasting="on"] body::after{
 	letter-spacing:var(--track-caps);text-transform:uppercase}
 
 
+/* A notice is read over the page, so its surface is nearly opaque: the words under it never show through. */
 .toast,.restore-notice,.rapier-notes-snack{
-	background:rgb(0 0 0 / .5);color:#fff;border:0;border-radius:0;box-shadow:none;
+	background:rgb(0 0 0 / .94);color:#fff;border:0;border-radius:0;box-shadow:none;
 	font:var(--fw-medium) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
 }
-body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack{background:rgb(255 255 255 / .5);color:#000}
-@media(prefers-reduced-motion:reduce){.toast,.restore-notice{animation:none}}
+body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack{background:rgb(255 255 255 / .94);color:#000}
+/* The placer reads a notice's visibility at once after it changes it (_rapierUpdateToastLift's hit test), so no transition may stand between the
+   change and the read. The reduced-motion rule in rapier-source.css gives every element a 0.01 ms transition: a notice un-hidden at that moment was
+   still hidden at the first instant of the change, was read as unreachable and was held hidden. A notice's exit sets its own transition inline. */
+@media(prefers-reduced-motion:reduce){.toast,.restore-notice{animation:none}.toast-container,.toast,.restore-notice{transition:none}}
 
 .restore-notice{
 	display:flex;flex-direction:column;align-items:stretch;

@@ -390,7 +390,7 @@
 		 stands in the DOM from boot so what it says can be announced where it already was, and it is
 		 `hidden` with nothing to say — no tab stop and no name over an empty gutter. -->
 <button type="button" class="agent-note" id="agent-note" hidden aria-live="polite" aria-atomic="true"><span class="agent-note__who"></span><span class="agent-note__said"></span></button>
-<div class="change-line" id="change-line" hidden role="group" aria-label="the agent's change"><span class="change-line__status">APPLIED</span><button type="button" class="change-line__verb" id="change-line-keep" aria-label="keep this change and close the comparison" onmousedown="event.preventDefault()">KEEP CHANGE</button><button type="button" class="change-line__verb" id="change-line-undo" aria-label="undo the agent's change" onmousedown="event.preventDefault()">UNDO</button></div>
+<div class="change-line" id="change-line" hidden role="group" aria-label="the agent's change"><span class="change-line__status">APPLIED</span><button type="button" class="change-line__verb" id="change-line-keep" aria-label="close the comparison; the change stays" onmousedown="event.preventDefault()">DONE</button><button type="button" class="change-line__verb" id="change-line-undo" aria-label="undo the agent's change" onmousedown="event.preventDefault()">UNDO</button></div>
 <!-- The inline review bar (change peeking's inline surface): how many of a pending proposal's
      changes remain, ALLOW ALL (approve every remaining pending change) and the lens for the whole
      review, beside the spans drawn directly in the read surface. -->
@@ -2338,21 +2338,23 @@ SOFTWARE.</pre>
 		 role="dialog" aria-modal="true" aria-labelledby="navigator-title">
 	<div class="settings-panel navigator-panel">
 		<div class="settings-panel__body">
-			<!-- ── Posture row: the person's chain. The words are the label, so the row has none. -->
+			<!-- ── Posture row: the person's chain. The three words are the label, so the row has none. -->
 			<div class="posture-row" id="posture-row" hidden>
 				<div class="posture-row__line">
 					<div class="theme-switcher theme-switcher--joined posture-row__words" role="group"
 							 aria-label="how your agent works in this document">
 						<button type="button" class="theme-switcher__btn posture-row__word" data-posture="free"
 										aria-pressed="true" data-active="true">FREE</button>
+						<button type="button" class="theme-switcher__btn posture-row__word" data-posture="check"
+										aria-pressed="false">CHECK</button>
 						<button type="button" class="theme-switcher__btn posture-row__word" data-posture="ask"
 										aria-pressed="false">ASK</button>
 					</div>
 					<button type="button" class="settings-info-btn" id="posture-info" data-action="information" data-value="agent" aria-label="what these words mean" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
 				</div>
 				<div class="posture-row__line posture-row__agents" id="posture-agents" hidden>
-					<button type="button" class="theme-switcher__btn posture-row__word posture-row__agent-btn" id="posture-disconnect">DISCONNECT AGENTS</button>
-					<button type="button" class="theme-switcher__btn posture-row__word posture-row__agent-btn" id="posture-share" hidden>SHARE WITH AN AGENT</button>
+					<button type="button" class="settings-action-btn posture-row__agent-btn" id="posture-disconnect">DISCONNECT AGENTS</button>
+					<button type="button" class="settings-action-btn posture-row__agent-btn" id="posture-share" hidden>SHARE WITH AN AGENT</button>
 				</div>
 			</div>
 			<!-- ── Agent row. -->
@@ -2370,7 +2372,7 @@ SOFTWARE.</pre>
 					<span class="agent-row__lens-status" id="agent-row-lens-status"></span>
 					<span class="agent-row__lens-actions">
 						<button type="button" class="agent-row__verb" id="agent-row-done" disabled
-									aria-label="keep this change and close the comparison">KEEP CHANGE</button>
+									aria-label="close the comparison; the change stays">DONE</button>
 						<button type="button" class="agent-row__verb" id="agent-row-undo"
 										aria-label="undo the agent's change">UNDO</button>
 					</span>

@@ -12,6 +12,7 @@ export const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlByt
 
 const NS = Object.freeze({
   w: ['http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main'],
+  m: ['http://schemas.openxmlformats.org/officeDocument/2006/math', 'http://purl.oclc.org/ooxml/officeDocument/math'],
   r: ['http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'http://purl.oclc.org/ooxml/officeDocument/relationships'],
   a: ['http://schemas.openxmlformats.org/drawingml/2006/main', 'http://purl.oclc.org/ooxml/drawingml/main'],
   wp: ['http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing', 'http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing'],
@@ -101,6 +102,8 @@ function paragraphProperties(node) {
   }
   const bidi = on(child(node, 'w', 'bidi'));
   if (bidi !== undefined) out.bidi = bidi;
+  const pageBreakBefore = on(child(node, 'w', 'pageBreakBefore'));
+  if (pageBreakBefore !== undefined) out.pageBreakBefore = pageBreakBefore;
   for (const [name, key] of [['numId', 'numId'], ['ilvl', 'level']]) {
     const value = val(child(number, 'w', name));
     if (value != null) out[key] = integer(value, null, 0, name === 'ilvl' ? 8 : 2147483647);
@@ -184,6 +187,98 @@ function importedText(text) {
       ? sourceToken('&#' + part.codePointAt(0) + ';') : escape(part)).join('');
 }
 
+// Preserve Office Math's expression tree in the existing TeX source syntax. Flattening
+// XML text would turn a fraction into multiplication and discard roots and exponents.
+function mathTex(node) {
+  const text = value => String(value).replace(/[\\{}$%#&_^~]/g, c => ({'\\':'\\backslash{}',
+    '^':'\\text{\\textasciicircum}', '~':'\\text{\\textasciitilde}'}[c] || '\\' + c));
+  const property = (name, key, fallback = null) => attr(child(child(node, 'm', name + 'Pr'), 'm', key), 'm', 'val') ?? fallback;
+  const hidden = (name, key) => {
+    const bit = child(child(node, 'm', name + 'Pr'), 'm', key);
+    return bit ? !['0', 'false', 'off'].includes(attr(bit, 'm', 'val')) : false;
+  };
+  const contents = parent => Array.from(parent?.children || []).filter(n =>
+    !(is(n, 'm') && n.localName.endsWith('Pr')) && !is(n, 'w', 'rPr')).map(mathTex).join('');
+  const part = name => contents(child(node, 'm', name));
+  if (is(node, 'm', 't') || is(node, 'w', 't')) return text(node.textContent);
+  if (!is(node, 'm')) return fail('DOCX contains unsupported equation content: ' + node.localName, 'docx_math_unsupported');
+  const name = node.localName;
+  if (['oMath', 'oMathPara', 'e', 'num', 'den', 'sub', 'sup', 'deg', 'lim', 'fName', 'box'].includes(name)) return contents(node);
+  if (name === 'r') {
+    const word = child(node, 'w', 'rPr');
+    if (['vanish', 'strike', 'dstrike'].some(key => on(child(word, 'w', key))) || child(word, 'w', 'rStyle'))
+      return fail('DOCX contains unsupported equation run formatting.', 'docx_math_unsupported');
+    let value = contents(node);
+    if (hidden(name, 'nor')) return '\\text{' + value + '}';
+    const script = property(name, 'scr', 'roman'), scripts = {roman:'', 'double-struck':'mathbb', script:'mathcal',
+      fraktur:'mathfrak', 'sans-serif':'mathsf', monospace:'mathtt'};
+    if (!Object.hasOwn(scripts, script)) return fail('DOCX contains an unsupported equation alphabet.', 'docx_math_unsupported');
+    const style = property(name, 'sty') || (on(child(word, 'w', 'b')) ? (on(child(word, 'w', 'i')) ? 'bi' : 'b') : 'i');
+    if (!['p', 'b', 'i', 'bi'].includes(style)) return fail('DOCX contains unsupported equation run formatting.', 'docx_math_unsupported');
+    if (scripts[script]) value = '\\' + scripts[script] + '{' + value + '}';
+    const command = style === 'bi' ? 'boldsymbol' : style === 'b' ? 'mathbf' : style === 'p' && !scripts[script] ? 'mathrm' : '';
+    return command ? '\\' + command + '{' + value + '}' : value;
+  }
+  if (name === 'f') return property('f', 'type') === 'noBar'
+    ? '\\genfrac{}{}{0pt}{}{' + part('num') + '}{' + part('den') + '}'
+    : '\\frac{' + part('num') + '}{' + part('den') + '}';
+  if (name === 'rad') {
+    const degree = hidden('rad', 'degHide') ? '' : part('deg');
+    return '\\sqrt' + (degree ? '[{' + degree + '}]' : '') + '{' + part('e') + '}';
+  }
+  if (['sSub', 'sSup', 'sSubSup', 'sPre'].includes(name)) {
+    const base = '{' + part('e') + '}', sub = name !== 'sSup' ? '_{' + part('sub') + '}' : '',
+      sup = name !== 'sSub' ? '^{' + part('sup') + '}' : '';
+    return name === 'sPre' ? '{}' + sub + sup + base : base + sub + sup;
+  }
+  if (name === 'nary') {
+    const symbol = property(name, 'chr', '∫');
+    if (Array.from(symbol).length !== 1) return fail('DOCX contains an invalid equation operator.', 'docx_math_unsupported');
+    const sub = hidden(name, 'subHide') ? '' : part('sub'), sup = hidden(name, 'supHide') ? '' : part('sup');
+    const operator = {__proto__:null, '∑':'sum', '∏':'prod', '∐':'coprod', '∫':'int', '∬':'iint', '∭':'iiint',
+      '∮':'oint', '⋃':'bigcup', '⋂':'bigcap', '⋁':'bigvee', '⋀':'bigwedge', '⨁':'bigoplus', '⨂':'bigotimes'}[symbol];
+    return (operator ? '\\' + operator : '\\mathop{' + text(symbol) + '}') +
+      (sub ? '_{' + sub + '}' : '') + (sup ? '^{' + sup + '}' : '') + '{' + part('e') + '}';
+  }
+  if (name === 'd') {
+    const delimiter = value => {
+      if (!value) return '.';
+      if (/^[()[\]|/.]$/.test(value)) return value;
+      const command = {__proto__:null, '{':'\\{', '}':'\\}', '‖':'\\|', '⟨':'\\langle ', '⟩':'\\rangle ',
+        '⌊':'\\lfloor ', '⌋':'\\rfloor ', '⌈':'\\lceil ', '⌉':'\\rceil ', '\\':'\\backslash '}[value];
+      return command || fail('DOCX contains an unsupported equation delimiter.', 'docx_math_unsupported');
+    };
+    return '\\left' + delimiter(property(name, 'begChr', '(')) +
+      children(node, 'm', 'e').map(mathTex).join('\\middle' + delimiter(property(name, 'sepChr', '|'))) +
+      '\\right' + delimiter(property(name, 'endChr', ')'));
+  }
+  if (name === 'm') return '\\begin{matrix}' + children(node, 'm', 'mr')
+    .map(row => children(row, 'm', 'e').map(mathTex).join(' & ')).join(' \\\\ ') + '\\end{matrix}';
+  if (name === 'eqArr') return '\\begin{aligned}' + children(node, 'm', 'e').map(mathTex).join(' \\\\ ') + '\\end{aligned}';
+  if (name === 'func') return '\\operatorname{' + part('fName') + '}{' + part('e') + '}';
+  if (name === 'limLow' || name === 'limUpp') return (name === 'limLow' ? '\\underset' : '\\overset') +
+    '{' + part('lim') + '}{' + part('e') + '}';
+  if (name === 'bar') return (property(name, 'pos', 'bot') === 'bot' ? '\\underline' : '\\overline') + '{' + part('e') + '}';
+  if (name === 'acc') {
+    const symbol = property(name, 'chr', '\u0302');
+    if (Array.from(symbol).length !== 1) return fail('DOCX contains an invalid equation accent.', 'docx_math_unsupported');
+    const accent = {__proto__:null, '\u0302':'hat', '\u0303':'tilde', '\u0304':'bar', '\u0305':'overline', '\u0306':'breve',
+      '\u0307':'dot', '\u0308':'ddot', '\u030c':'check', '\u20d7':'vec', '→':'vec'}[symbol];
+    return (accent ? '\\' + accent : '\\overset{' + text(symbol) + '}') + '{' + part('e') + '}';
+  }
+  if (name === 'groupChr') {
+    const symbol = property(name, 'chr', '⏟'), below = property(name, 'pos', 'bot') === 'bot';
+    return (symbol === '⏟' || symbol === '⏞' ? (below ? '\\underbrace' : '\\overbrace') :
+      (below ? '\\underset' : '\\overset') + '{' + text(symbol) + '}') + '{' + part('e') + '}';
+  }
+  if (name === 'borderBox') {
+    if (['strikeH', 'strikeV', 'strikeBLTR', 'strikeTLBR', 'hideTop', 'hideBot', 'hideLeft', 'hideRight'].some(key => hidden(name, key)))
+      return fail('DOCX contains an unsupported equation border or strike.', 'docx_math_unsupported');
+    return '\\boxed{' + part('e') + '}';
+  }
+  return fail('DOCX contains an unsupported equation structure: ' + name, 'docx_math_unsupported');
+}
+
 /** Only declared OOXML parts are read. The caller owns image conversion and the eventual document transaction. */
 export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {}) {
   if (!(blob instanceof Blob) || blob.size > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB import limit.');
@@ -192,7 +287,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
   const files = await unpackFiles(blob);
   checkCurrent();
   const warnings = new Set(), xmlCache = new Map(), relationCache = new Map(), converted = new Map(), imageRequests = [], rawTables = [];
-  const stats = {paragraphs: 0, images: 0, uniqueImages: 0, tables: 0, footnotes: 0, endnotes: 0};
+  const stats = {paragraphs: 0, images: 0, uniqueImages: 0, tables: 0, footnotes: 0, endnotes: 0, comments: 0};
   let xmlBytes = 0, elements = 0, outputBytes = 0;
   const warn = text => warnings.add(text);
   const account = html => {
@@ -297,7 +392,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     styleCache.set(id, result);
     return result;
   };
-  const abstracts = new Map(), numbers = new Map(), counts = new Map();
+  const abstracts = new Map(), numbers = new Map(), counts = new Map(), levelCache = new Map();
   if (numberingPath) {
     const root = readXml(numberingPath, 'w', 'numbering');
     for (const node of children(root, 'w', 'abstractNum')) {
@@ -309,7 +404,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         if (index === null || levels.has(index)) return fail('DOCX numbering levels are invalid.');
         levels.set(index, level);
       }
-      abstracts.set(id, levels);
+      abstracts.set(id, {levels, link: val(child(node, 'w', 'numStyleLink'))});
     }
     for (const node of children(root, 'w', 'num')) {
       const id = integer(attr(node, 'w', 'numId'));
@@ -317,12 +412,26 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
       numbers.set(id, node);
     }
   }
-  const numbering = (properties, styleId, direct) => {
+  const numberingLevels = (id, chain = []) => {
+    if (levelCache.has(id)) return levelCache.get(id);
+    const definition = abstracts.get(id);
+    if (!definition) return fail('DOCX references a missing numbering definition.');
+    if (!definition.link) return definition.levels;
+    if (chain.includes(id) || chain.length >= 32) return fail('DOCX contains a circular or excessive numbering style reference.');
+    if (!styles.has(definition.link)) return fail('DOCX references a missing numbering style.');
+    const instance = numbers.get(style(definition.link).p.numId);
+    if (!instance) return fail('DOCX numbering style references a missing instance.');
+    const levels = numberingLevels(integer(val(child(instance, 'w', 'abstractNumId'))), [...chain, id]);
+    levelCache.set(id, levels);
+    return levels;
+  };
+  const numbering = (properties, styleId) => {
     if (!properties.numId) return null;
-    const instance = numbers.get(properties.numId), abstractId = integer(val(child(instance, 'w', 'abstractNumId'))), levels = abstracts.get(abstractId);
-    if (!instance || !levels) return fail('DOCX references a missing numbering definition.');
-    let index = direct.level ?? 0;
-    if (direct.level == null) for (const [level, node] of levels) if (val(child(node, 'w', 'pStyle')) === styleId) index = level;
+    const instance = numbers.get(properties.numId);
+    if (!instance) return fail('DOCX references a missing numbering definition.');
+    const levels = numberingLevels(integer(val(child(instance, 'w', 'abstractNumId'))));
+    let index = properties.level ?? 0;
+    if (properties.level == null) for (const [level, node] of levels) if (val(child(node, 'w', 'pStyle')) === styleId) index = level;
     const override = children(instance, 'w', 'lvlOverride').find(node => integer(attr(node, 'w', 'ilvl'), null, 0, 8) === index);
     const level = child(override, 'w', 'lvl') || levels.get(index);
     if (!level) return fail('DOCX references a missing numbering level.');
@@ -374,7 +483,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         if (node.localName !== 'customXml') warn('Revision history was removed; current text was retained.');
         blocks.push(...sequence(node));
       } else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
-      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) warn('Comments were not imported.');
+      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) continue;
       else if (is(node, 'w') && ['sectPr','tcPr','tblPr','tblGrid','trPr','bookmarkStart','bookmarkEnd','proofErr','permStart','permEnd'].includes(node.localName)) continue;
       else return fail('DOCX contains an unsupported document block: ' + node.localName);
     }
@@ -475,12 +584,11 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     return {image: account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + escape(alt) + '">'), width, align, rotate, opacity};
   };
   const noteParts = new Map(), notes = new Map();
-  const noteReference = (node, context) => {
-    if (context.note) return fail('DOCX contains a note reference inside another note.');
-    const kind = node.localName === 'footnoteReference' ? 'footnote' : 'endnote', id = integer(attr(node, 'w', 'id'));
-    if (id === null) return fail('DOCX contains an invalid note reference.');
+  const notePart = (kind, required = true) => {
     if (!noteParts.has(kind)) {
-      const path = related(mainPath, kind + 's', true), root = readXml(path, 'w', kind + 's'), records = new Map();
+      const path = related(mainPath, kind + 's', required);
+      if (!path) return null;
+      const root = readXml(path, 'w', kind + 's'), records = new Map();
       for (const record of children(root, 'w', kind)) {
         const type = attr(record, 'w', 'type');
         if (type && type !== 'normal') continue;
@@ -490,16 +598,30 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
       }
       noteParts.set(kind, {path, records});
     }
-    const part = noteParts.get(kind), content = part.records.get(id), label = 'docx-' + (kind === 'footnote' ? 'fn-' : 'en-') + id;
+    return noteParts.get(kind);
+  };
+  const registerNote = (kind, id, context) => {
+    const part = notePart(kind), content = part.records.get(id), label = 'docx-' + ({footnote:'fn-', endnote:'en-', comment:'comment-'}[kind]) + id;
     if (!content) return fail('DOCX is missing the text of a referenced note.');
     if (!notes.has(label)) {
       const ordinal = notes.size + 1;
-      notes.set(label, {label, ordinal, content, context: {...context, path: part.path, p: {}, note: true, tableCell: false, width: context.sectionWidth || context.width}});
+      const author = kind === 'comment' ? attr(content, 'w', 'author') || '' : '', date = kind === 'comment' ? attr(content, 'w', 'date') || '' : '';
+      const metadata = author || date ? '<p>' + importedText(author) + (author && date ? '<br>' : '') + importedText(date) + '</p>' : '';
+      notes.set(label, {label, ordinal, content, metadata, context: {...context, path: part.path, p: {}, note: true, tableCell: false, width: context.sectionWidth || context.width}});
       stats[kind + 's']++;
     }
-    if (['1','true','on'].includes(attr(node, 'w', 'customMarkFollows'))) warn('Custom note marks became automatic Markdown note numbers.');
     return '<sup class="footnote-ref"><a href="#fn-' + label + '" data-footnote-label="' + label + '">' + notes.get(label).ordinal + '</a></sup>';
   };
+  const noteReference = (node, context) => {
+    if (context.note) return fail('DOCX contains a note reference inside another note.');
+    const kind = node.localName === 'footnoteReference' ? 'footnote' : node.localName === 'endnoteReference' ? 'endnote' : 'comment';
+    const id = integer(attr(node, 'w', 'id'));
+    if (id === null) return fail('DOCX contains an invalid note reference.');
+    if (['1','true','on'].includes(attr(node, 'w', 'customMarkFollows'))) warn('Custom note marks became automatic Markdown note numbers.');
+    return registerNote(kind, id, context);
+  };
+  const commentPart = notePart('comment', false);
+  if (commentPart?.records.size) warn('Comments became Markdown notes; review ranges were not retained.');
   const inline = async (container, context, inherited = {}) => {
     const pieces = [];
     for (const node of container.children) {
@@ -515,7 +637,21 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         }
         flush();
       } else if (is(node, 'w', 't')) pieces.push({html: account(importedText(node.textContent))});
-      else if (is(node, 'w', 'tab')) { pieces.push({html: sourceToken('&#9;')}); warn('Tab characters were retained; custom tab stops became ordinary text flow.'); }
+      else if (is(node, 'w', 'tab') || is(node, 'w', 'ptab')) { pieces.push({html: sourceToken('&#9;')}); warn('Tab characters were retained; custom tab stops became ordinary text flow.'); }
+      else if (is(node, 'w', 'sym')) {
+        const encoded = attr(node, 'w', 'char'), code = /^[0-9a-f]{1,4}$/i.test(encoded || '') ? parseInt(encoded, 16) : -1;
+        // Legacy symbol fonts assign private or Latin code points to unrelated glyphs.
+        // Without that font's mapping, inventing a Unicode character would change the text.
+        if (code < 0x100 || code >= 0xd800 && code <= 0xf8ff || code >= 0xfffe)
+          return fail('DOCX contains a symbol that requires its original font mapping.', 'docx_symbol_font');
+        pieces.push({html: account(importedText(String.fromCodePoint(code)))});
+      }
+      else if (is(node, 'm', 'oMath') || is(node, 'm', 'oMathPara')) {
+        const displayMath = is(node, 'm', 'oMathPara'), delimiter = displayMath ? '$$' : '$';
+        const source = delimiter + mathTex(node) + delimiter;
+        pieces.push({html: account('<span class="math-rendered" data-math-src="' + escape(encodeURIComponent(source)) + '">' +
+          escape(source) + '</span>'), semantic: true, displayMath});
+      }
       else if (is(node, 'w', 'br') || is(node, 'w', 'cr')) {
         const type = attr(node, 'w', 'type') || node.getAttribute?.('type');
         if (type === 'page') pieces.push({pageBreak: true, semantic: true});
@@ -541,9 +677,9 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         if (node.localName === 'fldSimple') warn('Fields became their stored displayed text.');
         pieces.push(...await inline(node, context, inherited));
       } else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
-      else if (is(node, 'w') && ['footnoteReference','endnoteReference'].includes(node.localName)) pieces.push({html: noteReference(node, context), semantic: true});
+      else if (is(node, 'w') && ['footnoteReference','endnoteReference','commentReference'].includes(node.localName)) pieces.push({html: noteReference(node, context), semantic: true});
       else if (is(node, 'w') && ['instrText','fldChar'].includes(node.localName)) warn('Fields became their stored displayed text.');
-      else if (is(node, 'w') && ['commentReference','commentRangeStart','commentRangeEnd'].includes(node.localName)) warn('Comments were not imported.');
+      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) continue;
       else if (is(node, 'w') && ['pPr','rPr','bookmarkStart','bookmarkEnd','proofErr','lastRenderedPageBreak','permStart','permEnd','footnoteRef','endnoteRef'].includes(node.localName)) continue;
       else return fail('DOCX contains unsupported inline content: ' + node.localName);
     }
@@ -553,7 +689,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     if (++stats.paragraphs > DOCX_LIMITS.paragraphs) return fail('DOCX contains too many paragraphs.');
     const properties = child(node, 'w', 'pPr'), id = val(child(properties, 'w', 'pStyle')) || defaultStyle;
     const named = style(id), direct = paragraphProperties(properties), base = {...defaultParagraph, ...context.p, ...named.p, ...direct};
-    const list = numbering(base, id, direct), effective = {...defaultParagraph, ...context.p, ...list?.p, ...named.p, ...direct};
+    const list = numbering(base, id), effective = {...defaultParagraph, ...context.p, ...list?.p, ...named.p, ...direct};
     const align = alignment(effective), outline = integer(effective.outline, null, 0, 9);
     if (outline !== null && outline >= 6 && outline < 9) warn('Headings deeper than level six became ordinary paragraphs.');
     const heading = outline !== null && outline < 6 ? outline + 1 : null;
@@ -574,6 +710,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
       }
     }
     const pieces = await inline(node, context, mergeRunStyle(defaultRun, named.r)), output = [];
+    if (effective.pageBreakBefore) pieces.unshift({pageBreak: true, semantic: true});
     const annotation = layout => {
       if (!context.tableCell) return layoutAttribute(layout);
       if (Object.keys(layout).length) warn('Individual paragraph alignment and picture sizing inside table cells were not retained; Markdown column alignment remains.');
@@ -582,6 +719,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     let text = '';
     const flush = () => { if (text) { output.push('<' + tag + annotation(align ? {align} : {}) + '>' + text + '</' + tag + '>'); text = ''; } };
     for (const piece of pieces) {
+      if (piece.displayMath) { flush(); output.push('<p>' + piece.html + '</p>'); continue; }
       if (piece.pageBreak) {
         flush();
         // A <br> child keeps this div non-blank so turndown's rapierPageBreak rule fires
@@ -643,7 +781,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         result.push(...tableParts(node, name, ignored));
       } else if (is(node, 'mc', 'AlternateContent')) result.push(...tableParts(chooseAlternate(node), name, ignored));
       else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
-      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) warn('Comments were not imported.');
+      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) continue;
       else return fail('DOCX contains unsupported table content: ' + node.localName);
     }
     return result;
@@ -708,12 +846,16 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     contexts[index] = currentSection;
   }
   let html = await renderBlocks(nodes, {path: mainPath, p: {}}, contexts);
+  const unplaced = [];
+  for (const id of commentPart?.records.keys() || []) if (!notes.has('docx-comment-' + id))
+    unplaced.push(registerNote('comment', id, {path: mainPath, p: {}, ...currentSection}));
+  if (unplaced.length) html += '<p>' + unplaced.join(' ') + '</p>';
   if (notes.size) {
     const items = [];
     for (const note of notes.values()) {
       checkCurrent();
       items.push('<li id="fn-' + note.label + '" data-footnote-label="' + note.label + '">' +
-        await renderBlocks(sequence(note.content), note.context) + '</li>');
+        note.metadata + await renderBlocks(sequence(note.content), note.context) + '</li>');
     }
     html += '<section class="footnotes"><ol>' + items.join('') + '</ol></section>';
   }
@@ -740,6 +882,13 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
 
 // Convert trusted import staging to ordinary HTML for raw tables and the Notes HTML importer.
 export function docxPortableHtml(html, imageUrls = new Map()) {
+  // TeX is text here. Unlike an intentional raw-HTML source token, comparison signs
+  // and ampersands in a formula must not be reinterpreted as HTML by the Notes door.
+  html = html.replace(/<span class="math-rendered" data-math-src="([^"]*)">([\s\S]*?)<\/span>/g, (_, encoded, visible) => {
+    const source = decodeURIComponent(encoded);
+    if (escape(source) !== visible) return fail('DOCX equation source proof does not match.', 'docx_source_token');
+    return escape(source);
+  });
   // Source tokens must prove their visible source before becoming ordinary markup or entities.
   html = html.replace(/<span class="rapier-source-token" data-rapier-source="([^"]*)" data-rapier-visible="\1">([\s\S]*?)<\/span>/g,
     (whole, encoded, visible) => {
@@ -794,7 +943,7 @@ function decodeDataUrl(url) {
   return {type: match[1].toLowerCase(), bytes: fromBase64(match[2])};
 }
 // Walks the rendered export root, never a second Markdown grammar.
-const INLINE_TAGS = new Set(['STRONG', 'B', 'EM', 'I', 'U', 'INS', 'DEL', 'S', 'STRIKE', 'MARK', 'CODE', 'A', 'SPAN', 'SUB', 'SUP', 'ABBR', 'IMG', 'BR', 'KBD', 'SMALL']);
+const INLINE_TAGS = new Set(['STRONG', 'B', 'EM', 'I', 'U', 'INS', 'DEL', 'S', 'STRIKE', 'MARK', 'CODE', 'A', 'SPAN', 'SUB', 'SUP', 'ABBR', 'IMG', 'INPUT', 'BR', 'KBD', 'SMALL']);
 const HIGHLIGHT_RGB = Object.freeze({green: [53, 197, 122], red: [240, 90, 98], blue: [79, 145, 247], yellow: [230, 185, 30], purple: [155, 109, 234]});
 function cssColorHex(value) {
   const text = String(value || '').trim().toLowerCase();
@@ -933,20 +1082,68 @@ export function docxBlocksFromDom(root) {
     for (const li of Array.from(list.children)) {
       if (li.tagName !== 'LI') continue;
       const own = li.cloneNode(true);
-      const nested = Array.from(own.children).filter(child => /^(UL|OL)$/.test(child.tagName));
-      nested.forEach(child => child.remove());
-      const text = own.textContent || '';
+      const isList = child => /^(UL|OL)$/.test(child.tagName);
+      const text = Array.from(own.childNodes).filter(child => !isList(child)).map(child => child.textContent || '').join('');
       const task = /^\s*[☐☒]/.test(text) ? text.trim().startsWith('☒') : null;
       if (task != null) {
         const walker = own.childNodes;
         for (const child of Array.from(walker)) {
           if (child.nodeType === 3 && /[☐☒]/.test(child.nodeValue)) { child.nodeValue = child.nodeValue.replace(/^\s*[☐☒]\s?/, ''); break; }
-          if (child.nodeType === 1 && /[☐☒]/.test(child.textContent)) { child.textContent = child.textContent.replace(/^\s*[☐☒]\s?/, ''); break; }
+          if (child.nodeType === 1 && !isList(child) && /[☐☒]/.test(child.textContent)) { child.textContent = child.textContent.replace(/^\s*[☐☒]\s?/, ''); break; }
         }
       }
-      items.push({level, ordered, task, start, runs: runsOf(own)});
+      // Loose items own paragraphs before and after their nested lists. Keep these blocks
+      // in source order; only the first paragraph consumes this item's list marker.
+      const anchor = own.getAttribute('id');
+      own.removeAttribute('id');
+      let group = own.cloneNode(false), first = true;
+      const begin = paragraph => {
+        const runs = paragraph?.runs || [];
+        if (anchor) {
+          const bookmark = {anchor};
+          runs.unshift({type: 'bookmarkStart', bookmark});
+          runs.push({type: 'bookmarkEnd', bookmark});
+        }
+        items.push({level, ordered, task, start, runs, layout: paragraph?.layout || null,
+          heading: paragraph?.type === 'heading' ? paragraph.level : null,
+          quote: paragraph?.type === 'quote', code: paragraph?.type === 'code'});
+        first = false;
+      };
+      const flush = () => {
+        // Rendered block boundaries add ASCII whitespace nodes. Keep authored inline
+        // separators, tabs and Unicode spaces, but not those boundary-only nodes.
+        for (const fromStart of [true, false]) {
+          let edge;
+          while ((edge = group.childNodes[fromStart ? 0 : group.childNodes.length - 1])?.nodeType === 3 && /^[ \r\n]*$/.test(edge.nodeValue)) edge.remove();
+        }
+        if (!group.childNodes.length) return;
+        const content = nestedBlocks(group);
+        if (first) {
+          if (content[0]?.type === 'image') {
+            const image = content.shift();
+            begin({runs: [image]});
+            if (image.caption) content.unshift({type: 'paragraph', runs: [{type: 'text', text: 'Figure: ' + image.caption}], layout: {align: 'center'}});
+          } else if (content[0]?.type === 'code') {
+            const lines = content.shift().text.split('\n');
+            begin({type: 'code', runs: [{type: 'text', text: lines.shift(), code: true}]});
+            if (lines.length) content.unshift({type: 'code', text: lines.join('\n')});
+          } else begin((content[0]?.type === 'paragraph' && !content[0].rule || ['heading', 'quote'].includes(content[0]?.type)) ? content.shift() : null);
+        }
+        if (content.length) items.push({level, continuation: true, blocks: content});
+        group = own.cloneNode(false);
+      };
+      for (const child of Array.from(own.childNodes)) {
+        if (isList(child)) {
+          flush();
+          if (first) begin(null);
+          listItems(child, Math.min(8, level + 1), items);
+        } else if (child.nodeType === 1 && !INLINE_TAGS.has(child.tagName)) {
+          flush(); group.appendChild(child); flush();
+        } else group.appendChild(child);
+      }
+      flush();
+      if (first) begin(null);
       if (ordered) start++;
-      for (const child of Array.from(li.children)) if (/^(UL|OL)$/.test(child.tagName)) listItems(child, Math.min(8, level + 1), items);
     }
   };
   const nestedBlocks = node => {
@@ -1042,10 +1239,11 @@ function tXml(text, style = {}) {
     part === '\t' ? '<w:tab/>' : '<w:t xml:space="preserve">' + escape(part).replace(/\r/g, '&#13;') + '</w:t>').join('') + '</w:r>';
 }
 
-function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading, ind} = {}) {
+function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading, ind, numTab} = {}) {
   const bits = [];
   if (styleId) bits.push('<w:pStyle w:val="' + escape(styleId) + '"/>');
   if (numId != null) bits.push('<w:numPr><w:ilvl w:val="' + (ilvl || 0) + '"/><w:numId w:val="' + numId + '"/></w:numPr>');
+  if (numTab != null) bits.push('<w:tabs><w:tab w:val="num" w:pos="' + numTab + '"/></w:tabs>');
   if (align && ['left', 'right', 'center', 'both'].includes(align)) bits.push('<w:jc w:val="' + align + '"/>');
   if (ind) bits.push(ind);
   if (outline != null) bits.push('<w:outlineLvl w:val="' + outline + '"/>');
@@ -1062,15 +1260,15 @@ function jcOf(layout) {
   return value === 'justify' ? 'both' : ['left', 'right', 'center'].includes(value) ? value : null;
 }
 
-// One step of `indent` or `first` is 2em (the layout standard). At the page's 16px type, 2em is 32px, which is 480 twips.
+// One step of `indent` or `first` is 2em of the paragraph's type. A point is 20 twips.
 // A heading ignores `first`. `w:left` is the start edge of a left-to-right paragraph, the edge the key indents from.
-function indOf(layout, {first = true} = {}) {
-  if (!layout) return '';
-  const step = 480;
-  const left = layout.indent ? layout.indent * step : 0;
-  const firstLine = first && layout.first ? layout.first * step : 0;
-  if (!left && !firstLine) return '';
-  return '<w:ind' + (left ? ' w:left="' + left + '"' : '') + (firstLine ? ' w:firstLine="' + firstLine + '"' : '') + '/>';
+function indOf(layout, {first = true, base = 0, pointSize = 12, hanging = 0} = {}) {
+  const step = pointSize * 40;
+  const left = Math.round(base + (layout?.indent || 0) * step);
+  const firstLine = first && layout?.first ? Math.round(layout.first * step) : 0;
+  if (!left && !firstLine && !hanging) return '';
+  return '<w:ind' + (left ? ' w:left="' + left + '"' : '') +
+    (firstLine ? ' w:firstLine="' + firstLine + '"' : hanging ? ' w:hanging="' + Math.round(hanging) + '"' : '') + '/>';
 }
 
 // `rewriteDocument` writes the Will markers into word/document.xml in the one pass.
@@ -1129,6 +1327,7 @@ function corePropertiesXml(settings) {
 export async function writeDocx(input, {convertImage, rewriteDocument, canonical} = {}) {
   const {blocks, refs, notes} = input && typeof input === 'object' && Array.isArray(input.blocks) ? input : docxBlocksFromDom(input);
   const settings = typeof canonical === 'string' ? readDocumentSettings(canonical) : null;
+  const bodyPointSize = referenceType(settings).body;
   const navigation = docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]);
   const rels = [], media = [];
   let rid = 1, docPr = 1;
@@ -1269,8 +1468,12 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     return xml;
   };
 
-  const emitBlocks = async blocks => {
+  const quoteBorders = '<w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="777777"/></w:pBdr>';
+  const codeShading = '<w:shd w:val="clear" w:color="auto" w:fill="F4F4F4"/>';
+  const emitBlocks = async (blocks, inset = 0) => {
    const bodyParts = [];
+   const paragraphInd = layout => indOf(layout, {base: inset, pointSize: bodyPointSize});
+   const tableInd = inset ? '<w:tblInd w:w="' + Math.round(inset) + '" w:type="dxa"/>' : '';
    for (const block of blocks) {
     if (block.type === 'break') {
       bodyParts.push(pXml('<w:r><w:br w:type="page"/></w:r>'));
@@ -1282,26 +1485,26 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     }
     if (block.type === 'heading') {
       const inner = await emitRuns(block.runs);
-      bodyParts.push(pXml(inner, {styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout), ind: indOf(block.layout, {first: false})}));
+      bodyParts.push(pXml(inner, {styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout), ind: indOf(block.layout, {first: false, base: inset, pointSize: bodyPointSize})}));
       continue;
     }
     if (block.type === 'math') {
-      bodyParts.push(pXml(tXml('$$' + block.tex + '$$')));
+      bodyParts.push(pXml(tXml('$$' + block.tex + '$$'), {ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'image') {
       const src = block.src || (block.ref ? refs.get(String(block.ref).toLowerCase()) : null);
       if (!src) continue;
       const drawing = /^data:image\/svg\+xml/i.test(src);
-      bodyParts.push(pXml(pictureXml(await assetFor(src, block.alt, drawing), block.alt, block.layout), {align: jcOf(block.layout)}));
-      if (block.caption) bodyParts.push(pXml(tXml('Figure: ' + block.caption), {align: 'center'}));
+      bodyParts.push(pXml(pictureXml(await assetFor(src, block.alt, drawing), block.alt, block.layout), {align: jcOf(block.layout), ind: paragraphInd(null)}));
+      if (block.caption) bodyParts.push(pXml(tXml('Figure: ' + block.caption), {align: 'center', ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'callout') {
       const label = tXml('[!' + block.kind + ']', {bold: true});
       const body = await emitRuns(block.runs);
       const border = '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="0969DA"/></w:pBdr>';
-      bodyParts.push('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>' +
+      bodyParts.push('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>' + tableInd + '<w:tblBorders>' +
         '<w:left w:val="single" w:sz="24" w:space="0" w:color="0969DA"/>' +
         '<w:top w:val="nil"/><w:right w:val="nil"/><w:bottom w:val="nil"/>' +
         '</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>' +
@@ -1311,13 +1514,29 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     }
     if (block.type === 'quote') {
       bodyParts.push(pXml(await emitRuns(block.runs), {
-        borders: '<w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="777777"/></w:pBdr>'
+        borders: quoteBorders, ind: paragraphInd(null)
       }));
       continue;
     }
     if (block.type === 'list') {
-      const idAt = [];
+      const idAt = [], leftAt = [];
+      let lastNumberedLevel = -1;
       for (const item of block.items) {
+        if (item.continuation) {
+          while (idAt.length && idAt[idAt.length - 1].level > item.level) idAt.pop();
+          bodyParts.push(await emitBlocks(item.blocks, leftAt[item.level] ?? inset));
+          continue;
+        }
+        // The reference column advances 2.75 units for numbers and 1.25 for bullets.
+        // Each unit is 12 points at M; mixed nesting adds each ancestor's own advance.
+        const advance = item.ordered ? 660 : 300;
+        const left = (leftAt[item.level - 1] ?? inset + item.level * advance) + advance;
+        leftAt.length = item.level + 1; leftAt[item.level] = left;
+        const pointSize = item.heading ? 12 : bodyPointSize;
+        const authoredIndent = (item.layout?.indent || 0) * pointSize * 40;
+        const numTab = Math.round(left + authoredIndent + (item.heading ? 0 : item.layout?.first || 0) * pointSize * 40);
+        const ind = indOf(item.layout, {first: false, base: left, pointSize,
+          hanging: (item.ordered ? 660 : 240) + authoredIndent});
         while (idAt.length && idAt[idAt.length - 1].level > item.level) idAt.pop();
         const top = idAt[idAt.length - 1];
         let numId;
@@ -1327,15 +1546,18 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         const freshLevel = !top || top.level !== item.level || top.numId !== numId;
         if (freshLevel && item.ordered) {
           const start = item.start ?? 1, prior = numEntries.get(numId).starts.get(item.level);
-          // One numbering instance has one start per level. A sibling nested list with a
-          // different authored start needs its own instance; the parent's instance stays put.
-          if (prior != null && prior !== start) numId = allocNum(2);
+          // A new branch needs its own start when no numbered ancestor intervened to
+          // restart this level, or when its authored start differs from the prior branch.
+          if (prior != null && (prior !== start || lastNumberedLevel >= item.level)) numId = allocNum(2);
           numEntries.get(numId).starts.set(item.level, start);
         }
         if (freshLevel) idAt.push({level: item.level, ordered: item.ordered, numId});
         const prefix = item.task == null ? '' : (item.task ? '[x] ' : '[ ] ');
         const inner = (prefix ? tXml(prefix) : '') + await emitRuns(item.runs);
-        bodyParts.push(pXml(inner, {styleId: 'ListParagraph', numId, ilvl: item.level}));
+        bodyParts.push(pXml(inner, {styleId: item.heading ? 'Heading' + item.heading : 'ListParagraph',
+          outline: item.heading ? item.heading - 1 : null, numId, ilvl: item.level, align: jcOf(item.layout), ind, numTab,
+          borders: item.quote ? quoteBorders : null, shading: item.code ? codeShading : null}));
+        lastNumberedLevel = item.level;
       }
       continue;
     }
@@ -1375,7 +1597,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
           (value.continuation ? '<w:vMerge/>' : value.rowspan > 1 ? '<w:vMerge w:val="restart"/>' : '') + '</w:tcPr>' +
           (inner || pXml('')) + (value.blocks?.at(-1)?.type === 'table' ? pXml('') : '') + '</w:tc>';
       };
-      let tbl = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>' +
+      let tbl = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>' + tableInd + '</w:tblPr><w:tblGrid>' +
         Array.from({length: cols}, () => '<w:gridCol w:w="' + width + '"/>').join('') + '</w:tblGrid>';
       for (const row of grid) {
         tbl += '<w:tr>' + (row.header ? '<w:trPr><w:tblHeader/></w:trPr>' : '');
@@ -1386,18 +1608,18 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       }
       tbl += '</w:tbl>';
       bodyParts.push(tbl);
-      if (block.caption) bodyParts.push(pXml(tXml('Table: ' + block.caption), {align: 'center'}));
+      if (block.caption) bodyParts.push(pXml(tXml('Table: ' + block.caption), {align: 'center', ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'code') {
-      for (const line of String(block.text || '').split('\n')) bodyParts.push(pXml(tXml(line, {code: true}), {shading: '<w:shd w:val="clear" w:color="auto" w:fill="F4F4F4"/>'}));
+      for (const line of String(block.text || '').split('\n')) bodyParts.push(pXml(tXml(line, {code: true}), {shading: codeShading, ind: paragraphInd(null)}));
       continue;
     }
     if (block.rule) {
-      bodyParts.push(pXml('', {borders: '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>'}));
+      bodyParts.push(pXml('', {borders: '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>', ind: paragraphInd(null)}));
       continue;
     }
-    bodyParts.push(pXml(await emitRuns(block.runs), {align: jcOf(block.layout), ind: indOf(block.layout)}));
+    bodyParts.push(pXml(await emitRuns(block.runs), {align: jcOf(block.layout), ind: paragraphInd(block.layout)}));
    }
    return bodyParts.join('') || pXml('');
   };
@@ -1416,11 +1638,11 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '">\n<w:body>' +
     bodyXml + sectPr + '</w:body></w:document>';
 
-  // Headings on the reference scale, as spec/markdown-style.css sets them: h1 to h6 at 2.7, 1.9, 1.5, 1.25, 1.1 and 1 of the
+  // Headings on the reference scale, as spec/markdown-style.css sets them: h1 to h6 at 2.43, 1.9, 1.5, 1.25, 1.1 and 1 of the
   // body, on two, one and a half, one and a half, then one line.
   const type = settings ? referenceType(settings) : null;
   const headingStyles = [1, 2, 3, 4, 5, 6].map(level => {
-    const size = type ? Math.round(type.body * [2.7, 1.9, 1.5, 1.25, 1.1, 1][level - 1] * 2) : 0;
+    const size = type ? Math.round(type.body * [2.43, 1.9, 1.5, 1.25, 1.1, 1][level - 1] * 2) : 0;
     const line = type ? Math.round(type.line * [2, 1.5, 1.5, 1, 1, 1][level - 1] * 20) : 0;
     return '<w:style w:type="paragraph" w:styleId="Heading' + level + '"><w:name w:val="heading ' + level + '"/>' +
       '<w:basedOn w:val="Normal"/><w:pPr>' + (type ? '<w:spacing w:line="' + line + '" w:lineRule="atLeast"/>' : '') +

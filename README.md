@@ -8,7 +8,6 @@ no account.
 - **As a file:** [download rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) and open it in any
   browser.
 - **On Android:** the Rapier app on Google Play. It has no Internet permission.
-- **On Windows:** [download Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe), the same editor as a desktop app.
 - **With an agent:** the Claude plugin, the ChatGPT app, or any MCP client at `https://mcp.rapier.website/mcp`.
 
 ## What it does
@@ -73,9 +72,13 @@ Rapier writes CommonMark plus conventions other editors already read, with pictu
 
 ## Source and self-hosting
 
-`src/` is the complete source of `rapier.html`; `node src/tools/build.mjs` rebuilds it byte for byte
+`src/` is the complete source of `rapier.html`; `(cd src && node tools/build.mjs)` rebuilds it byte for byte
 ([build.json](docs/build.json)). `npx wrangler deploy` serves it with the included configuration.
-`RAPIER_PROFILE=document node src/tools/build.mjs` builds the smaller document editor without Notes, Draw and Paint.
+`(cd src && RAPIER_PROFILE=document node tools/build.mjs)` builds the smaller document editor without Notes, Draw and Paint.
+
+Run `node --test src/tools/test-public.mjs` with Node 22 to check concurrent source edits and Undo, authored HTML
+control boundaries, and hostile SVG filtering with drawing-data preservation. The tests need no browser, account,
+package install or network connection. The same checks run on every push and pull request in GitHub Actions.
 
 ## Licence and contributing
 

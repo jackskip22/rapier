@@ -51,6 +51,7 @@ function _rapierRenderModule(kind) {
       _rapierDormantHeadings: typeof _rapierDormantHeadings === 'undefined' ? undefined : _rapierDormantHeadings,
       _rapierEmbedAssetSource: typeof _rapierEmbedAssetSource === 'undefined' ? undefined : _rapierEmbedAssetSource,
       _rapierHeadingSlugBase: typeof _rapierHeadingSlugBase === 'undefined' ? undefined : _rapierHeadingSlugBase,
+      _rapierNextHeadingSlug: typeof _rapierNextHeadingSlug === 'undefined' ? undefined : _rapierNextHeadingSlug,
       _rapierHighlightAdmitted: typeof _rapierHighlightAdmitted === 'undefined' ? undefined : _rapierHighlightAdmitted,
       _rapierInstallMarkdownMath: typeof _rapierInstallMarkdownMath === 'undefined' ? undefined : _rapierInstallMarkdownMath,
       _rapierMarkdownPreview: typeof _rapierMarkdownPreview === 'undefined' ? undefined : _rapierMarkdownPreview,

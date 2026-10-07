@@ -4,9 +4,13 @@ import {penPath, strokeHasPressure as _rapierDrawStrokeHasPressure} from './pen-
 import {DRAW_TEXT_MAX, GARDEN_COLOURS, admitText, layoutText, letterInputFont, restoreLetters} from './text.mjs';
 import {admitFonts, fontDefs, fontMetadata, restoreFonts} from './font.mjs';
 import {roughPaths} from './rough.mjs';
-import {COPIER_PRESETS, copierPreset, admitCopier, copierBounds, copierMarkup, copierPreviewEffect} from './effects.mjs';
+import {COPIER_PRESETS, copierPreset, admitCopier, fillCopier, copierBounds, copierMarkup, copierPreviewEffect} from './effects.mjs';
 import {_rapierColorForDarkPaper, _rapierContrastRatio} from '../editor/colour-math.mjs';
-import {normalizeBackground, backgroundSVG, BACKGROUND_PRESETS, sampleStops as _rapierDrawSampleStops} from './backgrounds.mjs';
+import {normalizeBackground, backgroundSVG, BACKGROUND_PRESETS, BACKGROUND_KINDS, backgroundStart, fillBackground, sampleStops as _rapierDrawSampleStops} from './backgrounds.mjs';
+import {admitPaintStrokeRecords, admitPaintReplay} from './paint-history.mjs';
+import {sha256} from '../kit/ledger/hash.mjs';
+
+export const _rapierDrawAssetGeneration = sha256;
 
 function _rapierDrawNextAssetName(records) {
 	const used = new Set();
@@ -159,17 +163,7 @@ const RAPIER_DRAW_RASTER_MAX = 8 * 1024 * 1024, RAPIER_DRAW_RASTER_TOTAL = 24 * 
 const _RAPIER_DRAW_RASTER = /^data:image\/(?:png;base64,iVBORw0KGgo|jxl;base64,(?:\/w[o-r]|AAAADEpYTCA))[A-Za-z0-9+/]*={0,2}$/;
 // The shape of draw/agent-paint.mjs admitAgentStroke's output, read without the paint engine (core ships in every profile).
 function _rapierDrawAgentStrokes(raw) {
-	if (!Array.isArray(raw) || !raw.length || raw.length > 32) return null;
-	let total = 0;
-	const unit = n => typeof n === 'number' && n >= 0 && n <= 1, out = [];
-	for (const s of raw) {
-		if (!s || typeof s !== 'object' || typeof s.brush !== 'string' || s.brush.length > 96 || typeof s.colour !== 'string' || !/^#[0-9a-f]{6}$/.test(s.colour)) return null;
-		if (!(typeof s.size === 'number' && s.size >= 0 && s.size <= 100) || s.load != null && !unit(s.load) || s.water != null && !unit(s.water)) return null;
-		if (!Array.isArray(s.points) || !s.points.length || (total += s.points.length) > 4096) return null;
-		if (!s.points.every(p => Array.isArray(p) && (p.length === 2 || p.length === 3 && unit(p[2])) && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 1e6 && Math.abs(p[1]) <= 1e6)) return null;
-		out.push({brush: s.brush, colour: s.colour, size: s.size, ...(s.load != null ? {load: s.load} : {}), ...(s.water != null ? {water: s.water} : {}), points: s.points.map(p => p.slice())});
-	}
-	return out;
+	return admitPaintStrokeRecords(raw);
 }
 function _rapierDrawValidRaster(value, max = RAPIER_DRAW_RASTER_MAX) {
 	return typeof value === 'string' && value.length >= 60 && value.length <= max && _RAPIER_DRAW_RASTER.test(value) ? value : null;
@@ -3411,15 +3405,25 @@ function _rapierDrawReadRecipeFromSVGText(svg) {
 	}
 }
 
-function _rapierDrawNormalizeAgentRecipe(input) {
+// What an agent's recipe becomes before it is admitted: the shapes it names (or its figures, lowered), the canvas and strokes it leaves
+// out, and a background or an effect that names its kind or preset alone completed from the starting values the person's own tools start
+// from. Null for what cannot be a recipe at all.
+function _rapierDrawAgentCandidate(input) {
 	if (input?.shapes?.some?.(shape => shape?.labelBeside != null)) return null;
 	if (!input || typeof input !== 'object') return null;
 	const { figures, version = RAPIER_DRAW_VERSION, ...rest } = input;
 	const shapes = Array.isArray(rest.shapes) ? rest.shapes : Array.isArray(figures) ? _rapierDrawLowerFigures(figures, [], input.direction) : null;
 	if (!Array.isArray(shapes) || !shapes.length || shapes.length > 128) return null;
-	const recipe = _rapierDrawAdmitRecipe({ ...rest, shapes, version, canvas: rest.canvas || { w: 4096, h: 4096 }, strokes: rest.strokes || [] });
+	if (rest.background !== undefined) rest.background = fillBackground(rest.background);
+	if (rest.effect !== undefined) rest.effect = fillCopier(rest.effect);
+	return { ...rest, shapes, version, canvas: rest.canvas || { w: 4096, h: 4096 }, strokes: rest.strokes || [] };
+}
+
+function _rapierDrawNormalizeAgentRecipe(input) {
+	const candidate = _rapierDrawAgentCandidate(input);
+	const recipe = candidate && _rapierDrawAdmitRecipe(candidate);
 	if (!recipe) return null;
-	if (!rest.canvas) {
+	if (!input.canvas) {
 		_rapierDrawSceneWork(recipe);
 		const box = _rapierDrawUnionView(recipe);
 		recipe.canvas = { w: Math.min(65536, Math.max(16, Math.ceil((box?.maxX || 280) + 40))), h: Math.min(65536, Math.max(16, Math.ceil((box?.maxY || 200) + 40))) };
@@ -3431,12 +3435,16 @@ function _rapierDrawNormalizeAgentRecipe(input) {
 // edit path (docs/agents.md): `add` accepts either a figure (lowered the same way as a fresh
 // recipe's own figures, resolved against the recipe's current shapes so a new arrow can bind to a
 // box already on the page) or a full recipe shape object; `replace` swaps a shape by its existing
-// id for a new definition at the same position; `remove` drops shapes by id. The caller re-admits
-// the result (_rapierDrawAdmitRecipe, via applyOperations), which revalidates bounds and drops binds
-// left dangling by a removal. Additions keep their authored identities; a collision is refused.
+// id for a new definition at the same position; `remove` drops shapes by id; `set` moves the drawing's
+// own dials (below). The caller re-admits the result (_rapierDrawAdmitRecipe, via applyOperations),
+// which revalidates bounds and drops binds left dangling by a removal. Additions keep their authored
+// identities; a collision is refused. A figure never chooses the router's caption position (labelBeside); a complete native shape carries it as the
+// recipe holds it, so a shape copied from an inspection, or one a native operation moved, replaces whole.
 function _rapierDrawApplyShapesPatch(recipe, patch, direction = 'down') {
 	if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return null;
 	if (!recipe || !Array.isArray(recipe.shapes)) return null;
+	const dialed = patch.set == null ? recipe : _rapierDrawSetDials(recipe, patch.set);
+	if (!dialed) return null;
 	let shapes = recipe.shapes.slice();
 	if (patch.remove != null) {
 		if (!Array.isArray(patch.remove) || patch.remove.length > 128 || !patch.remove.every(id => typeof id === 'string')) return null;
@@ -3447,7 +3455,7 @@ function _rapierDrawApplyShapesPatch(recipe, patch, direction = 'down') {
 	if (patch.replace != null) {
 		if (!Array.isArray(patch.replace) || patch.replace.length > 128) return null;
 		for (const raw of patch.replace) {
-			if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || raw.labelBeside != null ||
+			if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || (raw.labelBeside != null && typeof raw.kind === 'string') ||
 				!shapes.some(shape => shape.id === raw.id) || replacements.has(raw.id) ||
 				!(typeof raw.kind === 'string' || typeof raw.recognized === 'string')) return null;
 			replacements.set(raw.id, raw);
@@ -3457,7 +3465,7 @@ function _rapierDrawApplyShapesPatch(recipe, patch, direction = 'down') {
 	// Reserve authored identities before assigning any: they name the objects in later calls.
 	const used = new Set(shapes.flatMap(shape => [shape.id, shape.group].filter(Boolean)));
 	for (const raw of patch.add || []) {
-		if (!raw || typeof raw !== 'object' || raw.labelBeside != null ||
+		if (!raw || typeof raw !== 'object' || (raw.labelBeside != null && typeof raw.kind === 'string') ||
 			!(typeof raw.kind === 'string' || typeof raw.recognized === 'string')) return null;
 		if (raw.id != null) {
 			if (typeof raw.id !== 'string' || !_RAPIER_DRAW_ID.test(raw.id) || used.has(raw.id)) return null;
@@ -3485,8 +3493,178 @@ function _rapierDrawApplyShapesPatch(recipe, patch, direction = 'down') {
 	}
 	// A group also authors its title and rule, not only the named boxes.
 	shapes.push(...byId.values());
-	if (!shapes.length || shapes.length > 128) return null;
-	return { ...recipe, shapes };
+	// The semantic envelope that carries an agent's change to an open canvas may name the complete resulting order, back to front.
+	// An agent's own patch never does: its order is moved by the arrange operations.
+	if (patch.order != null) {
+		if (!Array.isArray(patch.order) || !patch.order.every(id => typeof id === 'string') || new Set(patch.order).size !== patch.order.length) return null;
+		const ordered = new Map(shapes.map(shape => [shape.id, shape]));
+		if (patch.order.some(id => !ordered.has(id))) return null;
+		shapes = patch.order.map(id => ordered.get(id)).concat(shapes.filter(shape => !patch.order.includes(shape.id)));
+	}
+	const candidate = { ...dialed, shapes };
+	// The envelope's other recipe members ride beside the dials: the strokes the shapes stand on, the fonts, the turn, the last tool and the view.
+	for (const key of RAPIER_DRAW_PATCH_CARRIED) {
+		if (!Object.hasOwn(patch, key)) continue;
+		if (patch[key] === null && key !== 'strokes') delete candidate[key]; else candidate[key] = patch[key];
+	}
+	return candidate;
+}
+
+// The drawing's own dials, the members of a patch's `set`: each replaces the value it names, whole; a name that is no dial is ignored, as an
+// undeclared field is at every door. `null` removes it (the tool's None, ADAPTIVE on and the automatic canvas colour); a background or an
+// effect that names its kind or preset alone is completed from the starting values. The result is admitted by _rapierDrawAdmitRecipe with
+// the rest of the recipe, so a dial that does not admit refuses the whole patch.
+const RAPIER_DRAW_PATCH_DIALS = Object.freeze(['background', 'paper', 'effect', 'canvas', 'frame', 'light', 'smooth', 'nib']);
+// The members of a recipe that are neither shapes nor dials. Only the semantic envelope names them (an agent's patch is read through the
+// catalogue, which declares none of them), so the dials have one road in, `set`, and these have another that is never an input.
+const RAPIER_DRAW_PATCH_CARRIED = Object.freeze(['strokes', 'fonts', 'angle', 'tool', 'view']);
+function _rapierDrawSetDials(recipe, set) {
+	if (!set || typeof set !== 'object' || Array.isArray(set) || set.canvas === null) return null;
+	const next = { ...recipe };
+	for (const key of RAPIER_DRAW_PATCH_DIALS) {
+		if (!Object.hasOwn(set, key)) continue;
+		if (set[key] === null) delete next[key];
+		else next[key] = key === 'background' ? fillBackground(set[key]) : key === 'effect' ? fillCopier(set[key]) : set[key];
+	}
+	return next;
+}
+
+// The patch that turns `before` into `after`, in the grammar _rapierDrawApplyShapesPatch reads: the shapes added, replaced and removed, the
+// complete order when it moved, the dials under `set` (null for one that is gone) and the carried members beside them. The semantic envelope
+// is built with it and proved against it; null when the two differ in a member neither list names, so nothing is carried half way.
+export function _rapierDrawRecipeDelta(before, after) {
+	const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+	const copy = value => value === undefined ? null : JSON.parse(JSON.stringify(value));
+	if (!before || !after || !Array.isArray(before.shapes) || !Array.isArray(after.shapes)) return null;
+	const prior = new Map(before.shapes.map(shape => [shape.id, shape])), next = new Map(after.shapes.map(shape => [shape.id, shape]));
+	const add = after.shapes.filter(shape => !prior.has(shape.id));
+	const replace = after.shapes.filter(shape => prior.has(shape.id) && !same(shape, prior.get(shape.id)));
+	const remove = before.shapes.filter(shape => !next.has(shape.id)).map(shape => shape.id);
+	const patch = { ...(add.length ? { add: copy(add) } : {}), ...(replace.length ? { replace: copy(replace) } : {}), ...(remove.length ? { remove } : {}) };
+	const kept = before.shapes.filter(shape => next.has(shape.id)).map(shape => shape.id).concat(add.map(shape => shape.id));
+	if (!same(kept, after.shapes.map(shape => shape.id))) patch.order = after.shapes.map(shape => shape.id);
+	const set = {};
+	for (const key of RAPIER_DRAW_PATCH_DIALS) if (!same(before[key], after[key])) set[key] = Object.hasOwn(after, key) ? copy(after[key]) : null;
+	if (Object.keys(set).length) patch.set = set;
+	for (const key of RAPIER_DRAW_PATCH_CARRIED) if (!same(before[key], after[key])) patch[key] = Object.hasOwn(after, key) ? copy(after[key]) : null;
+	for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+		if (key === 'shapes' || key === 'version' || RAPIER_DRAW_PATCH_DIALS.includes(key) || RAPIER_DRAW_PATCH_CARRIED.includes(key)) continue;
+		if (!same(before[key], after[key])) return null;
+	}
+	return patch;
+}
+
+// The first key of a refused background or effect: the sent values go in one at a time over the starting point's, and the first that stops
+// the object admitting is the key named ('' when the object is not one, or no key does).
+function _rapierDrawBadKey(sent, start, admits) {
+	if (!sent || typeof sent !== 'object' || Array.isArray(sent) || !start) return '';
+	const probe = { ...start };
+	for (const key of new Set([...Object.keys(start), ...Object.keys(sent)])) {
+		if (Object.hasOwn(sent, key)) probe[key] = sent[key]; else delete probe[key];
+		if (!admits(probe)) return '.' + key;
+	}
+	return '';
+}
+// The second pass for a refused agent recipe: the first field, or the first shape, that stops it admitting. The recipe is built up one
+// top-level field at a time from an empty drawing, then one shape at a time; the first step that is refused is the one named, and inside a
+// background, an effect or a shape the first key that does it. Null when the recipe admits.
+function _rapierDrawRecipeFault(input) {
+	const candidate = _rapierDrawAgentCandidate(input);
+	if (!candidate) return { field: !input || typeof input !== 'object' ? 'recipe' : Array.isArray(input.figures) && !Array.isArray(input.shapes) ? 'figures' : 'shapes' };
+	const admits = recipe => !!_rapierDrawAdmitRecipe(recipe);
+	if (admits(candidate)) return null;
+	let built = { version: RAPIER_DRAW_VERSION, canvas: { w: 1, h: 1 }, strokes: [], shapes: [] };
+	for (const field of ['version', 'canvas', 'effect', 'background', 'fonts', 'strokes']) {
+		if (candidate[field] === undefined) continue;
+		built = { ...built, [field]: candidate[field] };
+		if (admits(built)) continue;
+		const sent = candidate[field];
+		if (field === 'background') return { field: field + (BACKGROUND_KINDS.includes(sent?.kind) ? _rapierDrawBadKey(sent, backgroundStart(sent.kind), normalizeBackground) : sent && typeof sent === 'object' && !Array.isArray(sent) ? '.kind' : '') };
+		if (field !== 'effect') return { field };
+		// A number the effect lacks is the preset's to supply: with no preset named, or one the machine does not have, the preset is the fault.
+		const key = _rapierDrawBadKey(sent, copierPreset(sent?.preset, sent?.seed) || copierPreset(), admitCopier).slice(1);
+		return { field: field + (key ? '.' + (Object.hasOwn(sent, key) ? key : 'preset') : '') };
+	}
+	// Admission refuses a longer run of shapes whenever it refuses a shorter one, so the first refused prefix ends at the first shape at fault.
+	const shapes = candidate.shapes;
+	let low = 1, high = shapes.length;
+	while (low < high) { const mid = (low + high) >> 1; if (admits({ ...built, shapes: shapes.slice(0, mid) })) low = mid + 1; else high = mid; }
+	const at = low - 1, shape = shapes[at], before = shapes.slice(0, at), path = 'shapes[' + at + ']';
+	if (!shape || typeof shape !== 'object') return { field: path };
+	const key = Object.keys(shape).find(name => !['id', 'recognized', 'geom'].includes(name) && admits({ ...built, shapes: before.concat(Object.fromEntries(Object.entries(shape).filter(([other]) => other !== name))) }));
+	// With every optional key innocent, the fault is in what makes the shape: its kind, the stroke or picture it stands on, or its geometry.
+	return { field: path + '.' + (key || (!_rapierDrawKnownKind(shape.recognized) ? 'recognized' : shape.recognized === 'ink' ? 'stroke' : shape.recognized === 'paint' ? 'raster' : 'geom')) };
+}
+
+// The three-way merge that lays an agent's change over the canvas the person has been working on since the agent looked: `before` is the
+// drawing the agent inspected, `after` the drawing it made, `live` the settled canvas now. What the agent touched and the person did not
+// is the agent's, what the person touched and the agent did not is the person's, and one object or dial both touched is a conflict (null),
+// never a guess. Strokes are resolved by object identity: later local marks may have changed their array indices.
+export function _rapierDrawMergeAgentRecipe(live, before, after) {
+	const same = (a, b) => {
+		if (a === b) return true;
+		if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+		const keys = Object.keys(a).filter(key => a[key] !== undefined), other = Object.keys(b).filter(key => b[key] !== undefined);
+		return keys.length === other.length && keys.every(key => Object.hasOwn(b, key) && same(a[key], b[key]));
+	};
+	const shapeValue = (shape, recipe) => shape ? { ...shape, stroke: shape.stroke == null ? null : recipe.strokes[shape.stroke] } : null;
+	const was = new Map(before.shapes.map(shape => [shape.id, shape]));
+	const next = new Map(after.shapes.map(shape => [shape.id, shape]));
+	const rows = new Map(live.shapes.map(shape => [shape.id, {shape, recipe: live}]));
+	for (const id of new Set([...was.keys(), ...next.keys()])) {
+		const prior = shapeValue(was.get(id), before), target = shapeValue(next.get(id), after);
+		if (same(prior, target)) continue;
+		const current = rows.get(id), value = current ? shapeValue(current.shape, current.recipe) : null;
+		if (!same(value, prior) && !same(value, target)) return null;
+		if (!target) rows.delete(id); else rows.set(id, {shape: next.get(id), recipe: after});
+	}
+	const out = { ...live, shapes: [], strokes: [] };
+	for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+		if (['version', 'shapes', 'strokes'].includes(key)) continue;
+		const fallback = key === 'nib' ? RAPIER_DRAW_NIB_DEFAULT : key === 'smooth' ? RAPIER_DRAW_SMOOTH_DEFAULT : undefined;
+		const prior = before[key] ?? fallback, target = after[key] ?? fallback, current = live[key] ?? fallback;
+		if (same(prior, target)) continue;
+		if (!same(current, prior) && !same(current, target)) return null;
+		if (after[key] === undefined) delete out[key]; else out[key] = after[key];
+	}
+	const beforeOrder = before.shapes.map(shape => shape.id), afterOrder = after.shapes.map(shape => shape.id);
+	const shared = new Set(beforeOrder.filter(id => next.has(id)));
+	const oldShared = beforeOrder.filter(id => shared.has(id)), newShared = afterOrder.filter(id => shared.has(id));
+	let order = live.shapes.map(shape => shape.id).filter(id => rows.has(id));
+	if (!same(oldShared, newShared)) {
+		const current = order.filter(id => shared.has(id));
+		if (!same(current, oldShared.filter(id => rows.has(id))) && !same(current, newShared.filter(id => rows.has(id)))) return null;
+		// The agent's order, with each of the person's own shapes kept above exactly the shared shapes it stood above. That is possible only
+		// when those are the first shapes of the agent's order: otherwise the arrangement would move the person's mark relative to an object
+		// they both see, and nothing lands.
+		const agent = newShared.filter(id => rows.has(id)), own = order.filter(id => !shared.has(id) && !next.has(id)), anchored = new Map();
+		for (const id of own) {
+			const below = order.slice(0, order.indexOf(id)).filter(other => shared.has(other)), prefix = new Set(agent.slice(0, below.length));
+			if (!below.every(other => prefix.has(other))) return null;
+			const key = below.length ? agent[below.length - 1] : '';
+			if (!anchored.has(key)) anchored.set(key, []);
+			anchored.get(key).push(id);
+		}
+		order = (anchored.get('') || []).concat(afterOrder.filter(id => rows.has(id)).flatMap(id => [id, ...(anchored.get(id) || [])]));
+	}
+	const placed = new Set(order), intended = new Map(afterOrder.map((id, index) => [id, index]));
+	for (const id of afterOrder) {
+		if (!rows.has(id) || placed.has(id)) continue;
+		let lower = 0, upper = order.length;
+		for (let at = 0; at < order.length; at++) {
+			const anchor = intended.get(order[at]);
+			if (anchor < intended.get(id)) lower = Math.max(lower, at + 1);
+			else if (anchor > intended.get(id)) upper = Math.min(upper, at);
+		}
+		if (lower > upper) return null;
+		order.splice(upper, 0, id); placed.add(id);
+	}
+	for (const id of order) {
+		const {shape, recipe} = rows.get(id), copy = {...shape};
+		if (copy.stroke != null) { const stroke = recipe.strokes[copy.stroke]; if (!stroke) return null; copy.stroke = out.strokes.length; out.strokes.push(stroke); }
+		out.shapes.push(copy);
+	}
+	return _rapierDrawAdmitRecipe(out);
 }
 
 // The real per-recipe shape/stroke budget, read every admission. A window flag, read only when a
@@ -3498,6 +3676,7 @@ function _rapierDrawTestBudget(name, fallback) {
 	const value = typeof globalThis !== 'undefined' ? globalThis[name] : null;
 	return Number.isInteger(value) && value > 0 ? value : fallback;
 }
+const _rapierDrawKnownKind = kind => ['ink', 'circle', 'ellipse', 'triangle', 'line', 'arrow', 'arc', 'parabola', 'text', 'paint'].includes(kind) || Object.hasOwn(RAPIER_DRAW_POLYGONS, kind) || RAPIER_DRAW_BOXES.has(kind);
 // Recipes are untrusted input: admit bounded fields and unique IDs before geometry, bindings or SVG consume them.
 function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	const shapeBudget = _rapierDrawTestBudget('__rapierDrawTestMaxShapes', 2048), strokeBudget = _rapierDrawTestBudget('__rapierDrawTestMaxStrokes', 2048);
@@ -3539,7 +3718,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		if (typeof raw.id === 'string' && !sourceIds.has(raw.id)) sourceIds.set(raw.id, id);
 		let kind = raw.recognized, geom = null;
 		const polygon = Object.hasOwn(RAPIER_DRAW_POLYGONS, kind), frame = RAPIER_DRAW_BOXES.has(kind) || kind === 'paint' || polygon;
-		if (!['ink', 'circle', 'ellipse', 'triangle', 'line', 'arrow', 'arc', 'parabola', 'text', 'paint'].includes(kind) && !polygon && !RAPIER_DRAW_BOXES.has(kind)) return null;
+		if (!_rapierDrawKnownKind(kind)) return null;
 		if (kind !== 'ink') {
 			const g = raw.geom;
 			if (!g || typeof g !== 'object') return null;
@@ -3617,15 +3796,20 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 				// integer test it would refuse every drawing that held a piece).
 				if (paint.group != null) { if (typeof paint.group !== 'string' || !_RAPIER_DRAW_ID.test(paint.group)) return null; record.group = paint.group; }
 				// An agent's layer keeps the strokes it was painted from (draw/agent-paint.mjs), for the replay; the raster stays the picture.
-				// Points are in drawing units on that sheet. Grain 3 is AGENT_PAINT_GRAIN, read here without the paint engine.
+				// Points are local drawing units on the material's own pixel scale.
 				if (paint.strokes != null) {
 					const strokes = _rapierDrawAgentStrokes(paint.strokes);
-					if (!strokes || !record.px) return null;
-					const gw = record.px[0] / 3, gh = record.px[1] / 3;
+					if (!strokes || !record.px || !record.scale) return null;
+					const gw = record.px[0] / record.scale, gh = record.px[1] / record.scale;
 					for (const s of strokes) for (const p of s.points) if (p[0] < -1 || p[1] < -1 || p[0] > gw + 1 || p[1] > gh + 1) return null;
 					record.strokes = strokes;
 				}
 				if (paint.seed != null) { if (!Number.isInteger(paint.seed) || paint.seed < 0 || paint.seed > 0x7fffffff) return null; record.seed = paint.seed; }
+				if (paint.replay != null) {
+					const replay = admitPaintReplay(paint.replay, value => _rapierDrawValidRaster(value, keepRasters ? Infinity : RAPIER_DRAW_RASTER_MAX));
+					if (!replay || !record.px || !keepRasters && (rasterUnits += JSON.stringify(replay).length) > RAPIER_DRAW_RASTER_TOTAL) return null;
+					record.replay = replay;
+				}
 				if (Object.keys(record).length) shape.paint = record;
 			}
 		} else if (raw.raster != null) return null;
@@ -3810,4 +3994,4 @@ function _rapierDrawShapeContours(shape, recipe) {
 	return path?.length ? [path, ...marks.map(points => points.map(p => p.concat(0)))] : [];
 }
 
-export {_rapierDrawShapeFilledOnly,normalizeBackground as _rapierDrawNormalizeBackground,backgroundSVG as _rapierDrawBackgroundSVG,BACKGROUND_PRESETS as RAPIER_DRAW_BACKGROUND_PRESETS,_rapierDrawSampleStops,letterInputFont,GARDEN_COLOURS,COPIER_PRESETS,copierPreset,admitCopier,copierPreviewEffect,copierBounds,copierMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestoreSVGRecipe,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots};
+export {_rapierDrawShapeFilledOnly,normalizeBackground as _rapierDrawNormalizeBackground,backgroundSVG as _rapierDrawBackgroundSVG,BACKGROUND_PRESETS as RAPIER_DRAW_BACKGROUND_PRESETS,_rapierDrawSampleStops,letterInputFont,GARDEN_COLOURS,COPIER_PRESETS,copierPreset,admitCopier,copierPreviewEffect,copierBounds,copierMarkup,RAPIER_DRAW_DIAGRAM,RAPIER_DRAW_PAINT_INK_FILTER,_rapierDrawUnionView,_rapierDrawDarkRules,_rapierDrawUsedColours,_rapierDrawRouteChanges,_rapierDrawBorderActive,_rapierDrawGrowPolygon,_rapierDrawSpatial,RAPIER_DRAW_POLYGONS,RAPIER_DRAW_HEADS,_rapierDrawRestoreSVGRecipe,_rapierDrawStripRasters,_rapierDrawValidRaster,RAPIER_DRAW_RASTER_MAX,RAPIER_DRAW_RASTER_TOTAL,_rapierDrawNormalizeAgentRecipe,_rapierDrawRecipeFault,backgroundStart as _rapierDrawBackgroundStart,_rapierDrawReadRecipeFromSVGText,_rapierDrawLowerFigures,_rapierDrawFigureFault,_rapierDrawApplyShapesPatch,_rapierDrawTextFrame,_rapierDrawTextLayout,_rapierDrawLabelFraction,_rapierDrawShapeContours,_rapierDrawArrowHitPolyline,RAPIER_DRAW_LABEL_MAX,_rapierDrawSetLineGeometry,_rapierDrawSceneMarkup,RAPIER_DRAW_NIB_DEFAULT,RAPIER_DRAW_NIB_MAX,RAPIER_DRAW_NIB_MIN,RAPIER_DRAW_SMOOTH_DEFAULT,RAPIER_DRAW_VERSION,_rapierDrawAdmitRecipe,_rapierDrawAnchorFrame,_rapierDrawArcEndpoints,_rapierDrawArrowParts,_rapierDrawArrowRoutePoints,_rapierDrawBBox,_rapierDrawBrushMarkup,_rapierDrawBrushesFor,_rapierDrawBuildSVG,_rapierDrawClamp,_rapierDrawClosestOnSeg,_rapierDrawDefaultStyle,_rapierDrawDist,_rapierDrawEdgeSnapPoint,_rapierDrawEllipseEdgePoint,_rapierDrawFmt,_rapierDrawInterpolatePoint,_rapierDrawIsClosedStroke,_rapierDrawLabelPlacement,_rapierDrawNextAssetName,_rapierDrawNibLevel,_rapierDrawPaintPad,_rapierDrawPenPathD,_rapierDrawPerimeter,_rapierDrawPointInPolygon,_rapierDrawRDP,_rapierDrawRDPClosed,_rapierDrawRectPolygon,_rapierDrawRelaxStroke,_rapierDrawRerouteBoundArrows,_rapierDrawResamplePolyline,_rapierDrawResolveBindAnchor,_rapierDrawRouteBBoxFromPoints,_rapierDrawShapeBBoxIn,_rapierDrawShapePaintedBBoxIn,_rapierDrawShapeInk,_rapierDrawShapeMarkup,_rapierDrawShapeNib,_rapierDrawShapePaintsInk,_rapierDrawShapePolygon,_rapierDrawShapePolyline,_rapierDrawShapeStroke,_rapierDrawSmoothLevel,_rapierDrawSmoothPathD,_rapierDrawSmoothPlan,_rapierDrawStreamlineStroke,_rapierDrawStrokeHalf,_rapierDrawStrokeHasPressure,_rapierDrawStrokeSamples,_rapierDrawEscapeAttr,_rapierDrawInkView,_rapierDrawStylesFor,_rapierDrawValidInk,_rapierDrawDashActive,_rapierDrawRDPWeighted,_rapierDrawEffectiveWidth,RAPIER_DRAW_INK_WIDTH,RAPIER_DRAW_SHAPE_WIDTH,_rapierDrawObjectFrame,_rapierDrawStippleDots};

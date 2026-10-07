@@ -1,7 +1,7 @@
 import {agentActorId} from '../kit/ledger/format.mjs';
 import { createKernel, createState, admissibleText, minimalSplice, transformSplices, LIMITS } from '../agent/kernel.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
-import { paintAgentStrokes, agentPaintSheetHolds } from '../draw/agent-paint.mjs';
+import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, replayAgentPainting } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, guideResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
@@ -9,40 +9,64 @@ import { wrap } from '../skills/rapier-html/wrap.mjs';
 import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
-import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor } from '../agent/door-identity.mjs';
+import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor, fromBase64url } from '../agent/door-identity.mjs';
 import { mintEditorKey, verifyEditorKey, editorSecretUsable, classifyEditorSecret, editorSecretKeyMaterial } from './editor-keys.mjs';
-import { visualResult } from '../agent/visual.mjs';
+import { visualResult, sameVisualDrawing } from '../agent/visual.mjs';
 import { createRequestWait } from './request-lifetime.mjs';
+import {handleOAuth, oauthChallenge, oauthForbidden, oauthOrigin, HOUSE_STYLE} from './oauth.mjs';
+import { PAIRED_PATH, PAIR_CODE, PAIR_CODE_MS, MAX_PAIRINGS, PAIR_SESSION_MS, PAGE_CSP, sessionCookie, pendingCookie, readCookie, setCookie, newCode, newSecret, mintSession, verifySession, pageFlags } from './paired.mjs';
 
 // Two eras on one endpoint (MCP 2026-07-28 dual-era): legacy `initialize` plus header, modern per-request `_meta`. Stateless in both;
 // PROTOCOL_VERSION names the legacy era.
 export const PROTOCOL_VERSION = '2025-11-25';
 export const MODERN_PROTOCOL_VERSION = '2026-07-28';
 export const PROTOCOL_VERSIONS = Object.freeze([MODERN_PROTOCOL_VERSION, PROTOCOL_VERSION]);
+// A host pinned to an earlier legacy revision is answered in its own version; the legacy era's shapes serve it and it
+// needs no later feature. Without a version header a request is the oldest of these, as that revision's rule says.
+const LEGACY_VERSIONS = Object.freeze([PROTOCOL_VERSION, '2025-06-18', '2025-03-26']);
+// /mcp admits the anonymous reference kind beside a connection; /muse admits a connection alone.
+const DOORS = new Set(['/mcp', '/muse']);
 const META_VERSION = 'io.modelcontextprotocol/protocolVersion', META_CLIENT = 'io.modelcontextprotocol/clientCapabilities', META_SERVER = 'io.modelcontextprotocol/serverInfo';
 const UNSUPPORTED_VERSION = -32022, HEADER_MISMATCH = -32020;
 // Re-exported: this door's own resource URI.
 export { UI_RESOURCE, INSTRUCTIONS };
+export { RapierOwnedNotes } from './owned-notes.mjs';
 const UI_MIME = 'text/html;profile=mcp-app';
 // The single descriptor projection; tools/build.mjs makes the same call and proves agreement. Never patch a descriptor here.
 export const DESCRIPTORS = Object.freeze(mcpDescriptors({ uiResource: UI_RESOURCE }));
+const SERVER_DESCRIPTORS = Object.freeze(mcpDescriptors({uiResource: UI_RESOURCE, auth: 'server-bearer'}));
 const TOOL_BY_NAME = new Map(DESCRIPTORS.map(tool => [tool.name, tool]));
 // The editor key is verified before human authority is minted. What it proves is exact and no more: the caller
 // holds the page this deployment served to whoever read the UI resource, a host-attested path, not proof of a
 // person. No operation name promotes an agent.
 const EDITOR_ONLY_TOOLS = new Set(HOST_TOOLS.filter(tool => tool.visibility?.includes('app')).map(tool => tool.name));
+// /muse lists what an agent calls and carries no embedded editor: the person edits at editor_url, the paired page,
+// which calls the editor's own operations over its own route.
+const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)));
+const PAIR_BROWSER = 'document.pair_browser', PAIR_STATUS = 'document.pair_status';
+// The longest wait one /muse call holds; the agent calls again for more.
+const MUSE_WAIT_MS = 15000, MUSE_EXPORT_TEXT_CHARS = 60000;
+// Without a connection, on /mcp, the document value is the whole authority.
+const ANONYMOUS = Object.freeze({source: 'anonymous', scopes: Object.freeze(['rapier:read', 'rapier:write'])});
 const editorSecret = env => (editorSecretUsable(env.EDITOR_KEY_SECRET) ? env.EDITOR_KEY_SECRET : '');
 // One deployment verdict, read by /health and every entry point: a missing piece is refused, never permissive.
 // Development is ALLOW_UNMETERED_CREATE=true, never inferred. An absent or non-32-byte root secret serves no editor page.
-export function deployment(env) {
+export function deployment(env, {authentication = 'oauth'} = {}) {
+  if (!['oauth', 'server-bearer'].includes(authentication)) throw new TypeError('Unknown deployment authentication profile');
   const missing = [], invalid = [];
   if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) missing.push('DOCUMENTS');
   if (!env.ASSETS?.fetch) missing.push('ASSETS');
+  if (authentication === 'oauth' && (!env.OAUTH_KV?.get || !env.OAUTH_KV?.put)) missing.push('OAUTH_KV');
   const development = env.ALLOW_UNMETERED_CREATE === 'true';
   const budget = !!(env.BUDGET?.get && env.BUDGET?.idFromName);
   if (!budget && !development) missing.push('BUDGET');
   const secret = classifyEditorSecret(env.EDITOR_KEY_SECRET);
   if (!secret.usable) (secret.reason === 'malformed' ? invalid : missing).push('EDITOR_KEY_SECRET');
+  if (authentication === 'oauth') {
+    let authorityOrigin;
+    try { authorityOrigin = oauthOrigin(env); } catch { invalid.push('OAUTH_ORIGIN'); }
+    if (env.RETURN_ORIGIN && env.RETURN_ORIGIN !== authorityOrigin) invalid.push('RETURN_ORIGIN');
+  }
   for (const [name, local] of [['UI_ORIGIN', true], ['FILE_DOWNLOAD_ORIGINS', false], ['ALLOWED_ORIGINS', true], ['RETURN_ORIGIN', true]]) {
     for (const value of String(env[name] || '').split(',').map(part => part.trim()).filter(Boolean)) {
       try { configuredOrigin(value, name, local); } catch (error) { invalid.push(name); break; }
@@ -52,12 +76,15 @@ export function deployment(env) {
 }
 // Creates per deployment per hour, metered by RapierBudget. Not per address: a host's many people share its addresses.
 const CREATE_BUDGET_PER_DEPLOYMENT = 5000, CREATE_BUDGET_WINDOW_MS = 60 * 60 * 1000;
-const CAPABILITY = /^rpr_[A-Za-z0-9_-]{43}$/;
+const WORKSPACE_HANDLE = /^rpr_[A-Za-z0-9_-]{43}$/;
+const RETURN_HANDLE = /^rpret_([a-f0-9]{64})\.(return_[a-f0-9]{32})$/;
+const EXPORT_HANDLE = /^rpexp_([a-f0-9]{64})\.(export_[a-f0-9]{32})$/;
+// An anonymous workspace's file and return links are their own grants, as its reference is its own authority.
 const RETURN_CAPABILITY = /^rpret_([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/;
 const EXPORT_CAPABILITY = /^rpexp_([a-f0-9]{64})\.([A-Za-z0-9_-]{43})$/;
+const BEARER_RETURN_CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Rapier-Name' };
 const MAX_RETURNS = 16;
-const RETURN_CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Rapier-Name' };
-const returnReply = (value, status = 200) => json(value, status, RETURN_CORS);
+const returnReply = (value, status = 200) => json(value, status);
 const returnRefused = (reason, status) => returnReply({ accepted: false, reason }, status);
 const receivedReturns = head => (head.returns || []).filter(row => row.receivedAt).sort((a, b) => a.sequence - b.sequence);
 const returnMetadata = row => ({ return_id: row.id, name: row.name, receivedAt: row.receivedAt, bytes: row.bytes, chars: row.chars });
@@ -97,7 +124,7 @@ async function digest(value) {
 }
 
 // The finished file for document.export: the source as it stands, or the offline page (the built editor page, with the source carried inside).
-async function exportFile(env, { format, filename, docKind, text }) {
+async function exportFile(env, { format, filename, docKind, text, base }) {
   let file;
   if (format === 'markdown') file = { name: filename, mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
   else {
@@ -107,7 +134,7 @@ async function exportFile(env, { format, filename, docKind, text }) {
       const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE');
       const suffix = '.rapier.html';
       const stem = [...filename.replace(/\.(md|markdown|txt)$/i, '')].slice(0, MAX_FILENAME_CHARS - suffix.length).join('');
-      file = { name: stem + suffix, mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename)) };
+      file = { name: stem + suffix, mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename, base ? {base} : undefined)) };
     } catch (error) {
       return error?.code === 'EXPORT_PAGE_TOO_LARGE' ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES } : { reason: 'export_page_unavailable' };
     }
@@ -116,6 +143,7 @@ async function exportFile(env, { format, filename, docKind, text }) {
     ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES, byteLength: file.bytes.byteLength } : file;
 }
 const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const exportHandle = (address, grant) => 'rpexp_' + address + '.' + grant.id;
 async function exportToken(address, grant, env) {
   const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-export-v1:'), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
   const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(grant.id + ':' + grant.owner)));
@@ -124,10 +152,15 @@ async function exportToken(address, grant, env) {
 function newCapability() {
   return 'rpr_' + base64url(crypto.getRandomValues(new Uint8Array(32))).slice(0, 43);
 }
-// Capability: `rpr_` + 43 chars, 22 address then 21 secret. DO addressed by digest of the address; head stores digest of the whole.
-// Rotation keeps the address, replaces the secret. Only SHA-256 digests are stored.
+// A public workspace reference has a stable address and a revocable generation.
+// The verified owner scopes the storage address; possession of the reference grants nothing.
 const ADDRESS_CHARS = 'rpr_'.length + 22;
-const workspaceAddress = capability => digest(capability.slice(0, ADDRESS_CHARS));
+const workspaceAddress = (handle, ownerKey) => digest(ownerKey + ':' + handle.slice(0, ADDRESS_CHARS));
+// Without a connection the reference is the whole authority; its owner is named by its address, which a rotation keeps.
+const anonymousOwner = handle => digest('bearer:' + handle.slice(0, ADDRESS_CHARS));
+// The paired editor's public name is its storage address, which the file and return links already carry.
+const pageId = address => 'ws_' + base64url(Uint8Array.from(address.match(/../g), pair => parseInt(pair, 16)));
+const pageAddress = id => Array.from(fromBase64url(id.slice('ws_'.length)), byte => byte.toString(16).padStart(2, '0')).join('');
 // The successor is HMAC-derived from the predecessor, so a lost rotation response is answered again with the same successor. Never stored clear.
 async function rotatedCapability(capability, env) {
   const key = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-rotation-v1:'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -136,17 +169,20 @@ async function rotatedCapability(capability, env) {
 }
 const ROTATE = 'document.rotate_capability';
 
-// The JSON-RPC id is never creation authority. A client-secret createToken derives one capability; degenerate tokens are refused.
-const CREATE_TOKEN = /^[A-Za-z0-9_-]{22,128}$/;
-// A createToken is a secret: a counter or one-character run is guessable.
-const fewDistinct = token => new Set(token).size < 8;
+// Creation retries are names within one authenticated owner's namespace.
+const CREATE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 function createTokenRefusal(token) {
-  if (!CREATE_TOKEN.test(token)) return 'A createToken must be 22 to 128 url-safe characters (A-Z a-z 0-9 _ -) that you generated at random.';
-  if (fewDistinct(token)) return 'Generate createToken at random: this one has too few distinct characters to keep the workspace private.';
+  if (!CREATE_TOKEN.test(token)) return 'createToken must be 1 to 128 URL-safe characters (A-Z a-z 0-9 _ -).';
   return null;
 }
-async function tokenCapability(token, env) {
-  const payload = encoder.encode('rapier-create-v2:' + token);
+// Without a connection a createToken is the secret the reference is derived from: a counter or a short run is guessable.
+function secretTokenRefusal(token) {
+  if (!/^[A-Za-z0-9_-]{22,128}$/.test(token)) return 'Without a connection, a createToken must be 22 to 128 URL-safe characters (A-Z a-z 0-9 _ -) that you generated at random.';
+  if (new Set(token).size < 8) return 'Generate createToken at random: this one has too few distinct characters to keep the workspace private.';
+  return null;
+}
+async function tokenCapability(token, env, ownerKey) {
+  const payload = encoder.encode(ownerKey ? 'rapier-create:' + ownerKey + ':' + token : 'rapier-create-v2:' + token);
   const secret = editorSecret(env);
   let raw;
   if (secret) {
@@ -169,6 +205,13 @@ function snapshot(state, collaboration, viewIntent, visualIntent) {
   return { documentId: state.documentId, revision: state.revision, text: state.text, filename: state.filename, docKind: state.docKind, journal: state.journal, proposalBase: state.proposalBase, compare, collaboration, viewIntent: viewIntent || null, ...(visualIntent ? {visualIntent} : {}) };
 }
 
+// The last call an agent made, as the editor's sync reports it: when, which operation and a find's kind, never what the call carried. It is what
+// the editor needs to show the agent present, and the acorn when the call read the document's structure (editor/engine.js, the agent bar).
+function agentReport(head) {
+  const call = head?.agentCall;
+  return call ? { agent: { id: call.id, ago: Math.max(0, Date.now() - call.at), operation: call.operation, ...(call.kind ? { kind: call.kind } : {}) } } : {};
+}
+
 function collaborationSummary(value) {
   const presence = value.presence, review = value.review;
   return { posture: value.posture, readOnly: value.readOnly, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes } : {}), ...(review.splices ? { splices: review.splices } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
@@ -187,7 +230,7 @@ function reviewChangesFingerprint(review) {
 }
 
 function viewChanged(before, after) {
-  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision || before.posture !== after.posture || before.readOnly !== after.readOnly || before.review?.id !== after.review?.id || before.review?.status !== after.review?.status) return true;
+  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision || before.posture !== after.posture || before.readOnly !== after.readOnly || before.review?.id !== after.review?.id || before.review?.status !== after.review?.status || before.reviewedRevision !== after.reviewedRevision) return true;
   // Per-change status moves without review.id/status changing: fingerprint the changes too, or a partial drop reads unchanged.
   if (reviewChangesFingerprint(before.review) !== reviewChangesFingerprint(after.review)) return true;
   const left = before.compare?.changes || [], right = after.compare?.changes || [];
@@ -257,7 +300,7 @@ function allowedOrigin(request, env) {
   const origin = request.headers.get('Origin');
   const url = new URL(request.url);
   // Host is caller controlled. Browser origins for secondary deployments must be configured explicitly.
-  const allowed = new Set([RETURN_ORIGIN, ...(env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)]);
+  const allowed = new Set([RETURN_ORIGIN, env.OAUTH_ORIGIN, ...(env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)].filter(Boolean));
   const loopback = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?$/i;
   if (loopback.test(url.host) && loopback.test(request.headers.get('Host') || url.host)) allowed.add(url.origin);
   return validateOrigin(origin, allowed);
@@ -350,9 +393,10 @@ function declaresAppsUi(params) {
   const ui = plain(capabilities.extensions) ? capabilities.extensions['io.modelcontextprotocol/ui'] : null;
   return !!(plain(ui) && Array.isArray(ui.mimeTypes) && ui.mimeTypes.includes(UI_MIME));
 }
-function listedTools(env, appsClient) {
-  if (env.HOST_TOOLS_LISTING !== 'app-clients') return DESCRIPTORS;
-  return appsClient ? DESCRIPTORS : DESCRIPTORS.filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name));
+function listedTools(env, appsClient, authority) {
+  const descriptors = authority?.source === 'server' ? SERVER_DESCRIPTORS : DESCRIPTORS;
+  if (env.HOST_TOOLS_LISTING !== 'app-clients') return descriptors;
+  return appsClient ? descriptors : descriptors.filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name));
 }
 
 // 'ok', 'exceeded', 'uncertain' or 'no-binding'. No binding refuses creation, never unmetered. The two takes are a sequential pair, not one transaction;
@@ -374,7 +418,9 @@ async function takeCreateBudget(env, { takeId }) {
   return 'ok';
 }
 
-async function callTool(name, args, env, request, hostAgent = null) {
+// authority: a verified connection (oauth or the local server), the anonymous kind on /mcp, or the paired page, whose
+// admission (the owner's browser, or a browser paired by code) the workspace itself decides.
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp') {
   const descriptor = TOOL_BY_NAME.get(name);
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
   const rawArgs = args;
@@ -386,22 +432,25 @@ async function callTool(name, args, env, request, hostAgent = null) {
     return {isError: true, content: [{type: 'text', text: JSON.stringify(result.structuredContent)}]};
   }
   if (name === 'rapier.guide') return envelope(guideResult());
+  if (name === PAIR_STATUS) return toolError(failure('PAIRING_PAGE_ONLY', 'Only the paired editor page asks for its own pairing code, on its own route.'));
   for (const field of ['text', 'query']) if (typeof args[field] === 'string' && contentBytes(args[field]) > MAX_TEXT_BYTES) return toolError(failure('TEXT_TOO_LARGE', `${field} exceeds the UTF-8 text limit.`, { limitBytes: MAX_TEXT_BYTES }));
-  const verdict = deployment(env);
+  const verdict = deployment(env, {authentication: authority.source === 'server' ? 'server-bearer' : 'oauth'});
   if (!verdict.documents) return toolError(failure('STORAGE_UNAVAILABLE', 'The document storage binding is unavailable.'));
-  const create = name === 'rapier.open' && args.document === undefined;
+  const page = authority.source === 'page' ? authority : null, anonymous = authority.source === 'anonymous';
+  const create = !page && name === 'rapier.open' && args.document === undefined;
   if (name === 'rapier.open' && args.file && ['document', 'text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a host file with file alone; its contents are read by the editor through the host.'));
   if (name === 'rapier.open' && args.file && (/[\\/\u0000-\u001f\u007f]/.test(args.file.name) || !args.file.resourceUri.trim())) return toolError(failure('INVALID_DOCUMENT_INPUT', 'A host file needs a filename without a path and a nonempty resource URI.'));
-  if (!create && !CAPABILITY.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', 'Use the document capability returned by rapier.open.'));
-  // Creation identity never comes from the public request id. A secret token recovers it; absent
-  // a token, every call draws a new identity and therefore needs its own budget spend.
+  if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', 'Use the document value returned by rapier.open.'));
+  const connectedOwner = page || anonymous ? null : await digest(authority.ownerId);
+  // A connection's retry name belongs to its verified owner; without a connection the createToken is a secret.
+  // Without one, every create is a new workspace.
   const createToken = typeof args.createToken === 'string' ? args.createToken : null;
   if (create && createToken !== null) {
-    const refusal = createTokenRefusal(createToken);
+    const refusal = anonymous ? secretTokenRefusal(createToken) : createTokenRefusal(createToken);
     if (refusal) return toolError(failure('INVALID_CREATE_TOKEN', refusal));
   }
-  if (!create && args.createToken !== undefined) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'createToken belongs to a create. Reopening uses the document capability you already hold.'));
-  const minted = create ? (createToken !== null ? await tokenCapability(createToken, env) : newCapability()) : null;
+  if (!create && args.createToken !== undefined) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'createToken belongs to a create. Reopening uses the existing document value.'));
+  const minted = create ? (createToken !== null ? await tokenCapability(createToken, env, connectedOwner) : newCapability()) : null;
   const createBudget = create ? { takeId: await takeIdOf(minted), retryable: createToken !== null } : null;
   if (!create && name === 'rapier.open' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with document.open_text.'));
   const humanTool = ['document.comment', 'document.read_context'].includes(name) && args.editorKey !== undefined;
@@ -410,21 +459,43 @@ async function callTool(name, args, env, request, hostAgent = null) {
     const verdict = await verifyEditorKey(editorSecret(env), args.editorKey);
     if (!verdict.ok) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', 'This is the editor\'s own operation. It needs the editor key the Rapier app received with its page.', { reason: verdict.reason }));
   }
-  const document = create ? minted : args.document;
-  const capabilityHash = await digest(document);
+  const document = create ? minted : page ? null : args.document;
+  const ownerKey = page ? null : anonymous ? await anonymousOwner(document) : connectedOwner;
+  const capabilityHash = document ? await digest(document) : null;
   // Credentials stay outside the workspace; operation_id names the call. Preserve raw operational
   // arguments so changed ignored fields or clipped tails cannot replay. Admission above uses declared fields.
   const { document: ignored, editorKey: ignoredKey, createToken: ignoredToken, operation_id: operationName, ...input } =
     name === 'rapier.open' || EDITOR_ONLY_TOOLS.has(name) ? args : rawArgs;
   const file = name === 'rapier.open' ? input.file : undefined;
   if (file) { delete input.file; Object.assign(input, {text: '', filename: file.name}); }
+  if (door === '/muse' && name === 'document.wait_for_user') input.timeout_ms = Math.min(input.timeout_ms ?? MUSE_WAIT_MS, MUSE_WAIT_MS);
   // Rotation mints the successor here (the workspace never sees a capability, only digests) and
   // hands the workspace the successor's digest to store; the successor itself goes back sealed.
-  const successor = name === ROTATE ? await rotatedCapability(document, env) : null;
-  const documentAddress = await workspaceAddress(document);
+  // The paired page holds no reference to derive one from, so its rotation draws a fresh lease at the same address.
+  const successor = name === ROTATE ? (document ? await rotatedCapability(document, env) : await pageSuccessor(env, page)) : null;
+  if (name === ROTATE && !successor) return toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.'));
+  const documentAddress = page ? page.address : await workspaceAddress(document, ownerKey);
+  // Owned Notes content terminates at the enrolled endpoint. The opaque relay receives
+  // only a verified address for this status check, never a query, note or tool result.
+  if (name.startsWith('notes.') && env.OWNED_NOTES !== undefined) {
+    let status;
+    try {
+      const response = await env.OWNED_NOTES.get(env.OWNED_NOTES.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/status', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({capabilityHash}),
+      }));
+      if (response.ok) status = await response.json();
+    } catch {}
+    if (status?.reason === 'notes_not_configured') return envelope({outcome: 'ok', availability: 'unavailable', reason: 'notes_not_configured', message: 'Notes is not set up on this host.',
+      complete: true, remaining: 0, next_cursor: null, ...(name === 'notes.list' ? {notes: []} : {}),
+      ...(name === 'notes.read' ? {file: args.file, found: false, text: null} : {})});
+    const hint = typeof status?.hint === 'string' && status.hint.length <= 512 ? status.hint
+      : 'Unlock Notes at the enrolled endpoint and use its private connection. The hosted relay cannot read encrypted Notes.';
+    return envelope({outcome: 'refused', availability: 'locked', reason: 'notes_locked',
+      adapter_enrolled: status?.adapterEnrolled === true, hint, message: hint});
+  }
   // Only pending observations follow client disconnects. Once a durable operation
   // starts, its receipt must finish even if the caller has stopped listening.
-  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(name === 'document.wait_for_user' || name === 'document.inspect_visual' ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: name, args: input, create, capabilityHash, ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(name === 'document.export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
+  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(name === 'document.wait_for_user' || name === 'document.inspect_visual' ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: name, args: input, create, ...(page ? {page: page.authority} : {ownerKey, capabilityHash}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(['document.export', 'document.propose'].includes(name) ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
   if (!response.ok) {
     const identity = ['operation_id', 'commitId', 'decisionId', 'createToken'].find(key => args[key] !== undefined);
     const retryable = Boolean(identity) || !create && (EDITOR_ONLY_TOOLS.has(name) || descriptor.annotations.readOnlyHint);
@@ -440,7 +511,9 @@ async function callTool(name, args, env, request, hostAgent = null) {
     result.structuredContent = { ...result.structuredContent, sealed: await sealForEditor(args.editorKey, successor) };
     return result;
   }
-  result.structuredContent = { ...result.structuredContent, document };
+  // The paired page names its workspace by id and never receives a reference.
+  if (page) return result;
+  result.structuredContent = { ...result.structuredContent, document, ...(name === 'rapier.open' ? { editor_url: new URL('/d/' + pageId(documentAddress), request.url).href } : {}) };
   if (file || create && Object.keys(args).length === 0) result._meta = {...result._meta, rapier: {...result._meta?.rapier, ...(file ? {hostFile: file} : {home: true})}};
   return result;
 }
@@ -459,51 +532,164 @@ function headerValue(value) {
 // Runtime deployment identity is independent of the installed skills snapshot. No binding means no deployment claim.
 const serverInfo = env => ({ name: 'rapier', title: 'Rapier', version: VERSION + (env.RAPIER_DEPLOYMENT?.id ? '+worker.' + env.RAPIER_DEPLOYMENT.id : ''), websiteUrl: 'https://rapier.website', icons: ICONS });
 
-export async function handleMcp(request, env) {
-  if (new URL(request.url).pathname !== '/mcp') return handleRequest(request, env);
+export function handleMcp(request, env, ctx = {}) {
+  return withOrigin(request, env, () => handleOAuth(request, env, ctx, (incoming, authority) => handleRequest(incoming, env, authority)));
+}
+
+// In-process ingress only: the local HTTP server independently verifies its deployment bearer
+// before passing this authority. No request header, tool argument or environment flag selects it.
+export function handleAuthenticatedMcp(request, env, authority) {
+  if (authority?.source !== 'server' || !/^owner_[A-Za-z0-9_-]{43}$/.test(authority.ownerId || '') ||
+      !Array.isArray(authority.scopes) || !['rapier:read', 'rapier:write'].every(scope => authority.scopes.includes(scope)))
+    throw new TypeError('Verified server authority is required');
+  return withOrigin(request, env, () => handleRequest(request, env, authority));
+}
+
+async function withOrigin(request, env, dispatch) {
+  const path = new URL(request.url).pathname;
+  // An anonymous workspace's return address is its own grant, posted from any page; an offline file's origin is null.
+  if (path.startsWith('/return/') && RETURN_CAPABILITY.test(path.slice('/return/'.length))) return dispatch();
+  if (!DOORS.has(path) && !path.startsWith('/return/')) return dispatch();
   if (!allowedOrigin(request, env)) return rpcError(null, -32000, 'Origin is not allowed.', 403);
   const origin = request.headers.get('Origin');
   // Browser clients must be able to read refusals as well as successful replies. The existing
   // origin admission owns access; CORS reflects that one admitted origin, never a wildcard.
   const response = request.method === 'OPTIONS'
     ? new Response(null, {status: 204, headers: {'Cache-Control': 'no-store',
-      'Access-Control-Allow-Methods': 'POST',
-      'Access-Control-Allow-Headers': 'Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-Rapier-Apps-Client'}})
-    : await handleRequest(request, env);
+      'Access-Control-Allow-Methods': DOORS.has(path) ? 'POST' : 'GET, POST',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-Rapier-Apps-Client, X-Rapier-Name'}})
+    : await dispatch();
   if (!origin) return response;
   const headers = new Headers(response.headers);
   headers.set('Access-Control-Allow-Origin', origin);
-  headers.set('Access-Control-Expose-Headers', 'X-Rapier-Apps-Client');
+  headers.set('Access-Control-Expose-Headers', 'X-Rapier-Apps-Client, WWW-Authenticate');
   headers.set('Vary', 'Origin');
   return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
 }
 
-async function handleRequest(request, env) {
+function requireScope(request, env, authority, scopes) {
+  if (!authority) return oauthChallenge(request, env, scopes);
+  if (!scopes.every(scope => authority.scopes.includes(scope))) return oauthForbidden(request, env, scopes);
+  return null;
+}
+
+// The offline file carries a public return address. Only this top-level page can use the
+// private browser cookie; its explicit confirmation sends the source to the same origin.
+function returnPage(status = 200, reason = '') {
+  const nonce = crypto.randomUUID();
+  const initial = JSON.stringify({status, reason}).replace(/</g, '\\u003c');
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Send back · Rapier</title><link rel="stylesheet" href="/fonts.css"><style nonce="${nonce}">${HOUSE_STYLE}#send{margin-top:auto}#name{color:var(--muted);font:400 .75rem/1.5 "Geist Mono",monospace}</style><main><h1>Send this document back</h1><p id="status" role="status">Waiting for the offline page.</p><p id="name"></p><pre id="preview" hidden></pre><p>The agent receives a separate returned copy. Your current workspace text stays as it is.</p><button id="send" disabled>Send document</button></main>
+<script nonce="${nonce}">
+const initial=${initial}, status=document.getElementById('status'), button=document.getElementById('send');
+const sourceWindow=window.opener;
+let pending=null, port=null, sending=false;
+function reply(code,answer){port?.postMessage({type:'rapier-return-result',status:code,answer});}
+if(initial.status!==200){
+  status.textContent=initial.reason;
+  sourceWindow?.postMessage({type:'rapier-return-unavailable',...initial},'*');
+}else if(!sourceWindow){
+  status.textContent='Open this return using Send back on the offline page.';
+}else{
+  window.addEventListener('message',event=>{
+    if(event.source!==sourceWindow||pending||event.data?.type!=='rapier-return-document'||event.ports.length!==1)return;
+    const data=event.data;
+    if(typeof data.source!=='string'||typeof data.name!=='string'||!data.name||[...data.name].length>${MAX_FILENAME_CHARS}||data.source.length>${MAX_TEXT_BYTES})return;
+    const bytes=new TextEncoder().encode(data.source).byteLength;
+    if(bytes>${MAX_TEXT_BYTES})return;
+    pending={source:data.source,name:data.name};port=event.ports[0];
+    document.getElementById('name').textContent=data.name+' · '+bytes.toLocaleString()+' bytes';
+    const preview=document.getElementById('preview');preview.textContent=data.source.slice(0,4000);preview.hidden=false;
+    status.textContent='Check the document preview, then confirm the upload.';button.disabled=false;
+  });
+  // This readiness message contains no source, identity or credential.
+  sourceWindow.postMessage({type:'rapier-return-ready'},'*');
+}
+button.addEventListener('click',async event=>{
+  if(!event.isTrusted||!pending||sending)return;
+  sending=true;button.disabled=true;status.textContent='Sending…';
+  try{
+    const response=await fetch(location.pathname,{method:'POST',credentials:'same-origin',redirect:'error',referrerPolicy:'no-referrer',cache:'no-store',
+      headers:{'Content-Type':'text/markdown;charset=utf-8','X-Rapier-Name':encodeURIComponent(pending.name)},body:pending.source});
+    const answer=await response.json();reply(response.status,answer);
+    if(response.ok&&answer.accepted===true){status.textContent='Accepted. You can close this page.';pending=null;}
+    else{status.textContent=answer.reason||answer.message||'The return was not accepted.';}
+  }catch{status.textContent='The receipt could not be confirmed. Ask the agent whether it arrived.';reply(503,{accepted:false,reason:status.textContent});}
+  finally{sending=false;button.disabled=true;}
+});
+</script></html>`;
+  return new Response(html, {status, headers: {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; font-src data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`}});
+}
+
+async function handleRequest(request, env, authority) {
   const url = new URL(request.url);
   if (url.pathname.startsWith('/export/')) {
     const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'};
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405, headers: {...headers, Allow: 'GET, HEAD'}});
-    const token = url.pathname.slice('/export/'.length), match = EXPORT_CAPABILITY.exec(token);
+    const token = url.pathname.slice('/export/'.length), granted = EXPORT_CAPABILITY.exec(token);
+    // An anonymous workspace's link is its own grant; a connected workspace's names a file its owner reads.
+    const refusal = granted ? null : requireScope(request, env, authority, ['rapier:read']);
+    if (refusal) return refusal;
+    const match = granted || EXPORT_HANDLE.exec(token);
     if (!match || url.search || url.hash) return new Response(null, {status: 404, headers});
     if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return new Response(null, {status: 503, headers});
     try {
       return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(new Request('https://rapier.internal/export', {
-        method: request.method, headers: {'X-Rapier-Export-Hash': await digest(token)},
+        method: request.method, headers: granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId)},
       }));
     } catch { return new Response(null, {status: 503, headers}); }
   }
   if (url.pathname.startsWith('/return/')) {
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...RETURN_CORS, 'Cache-Control': 'no-store' } });
-    if (request.method !== 'POST') return returnRefused('Use POST to send this document back.', 405);
-    const token = url.pathname.slice('/return/'.length), match = RETURN_CAPABILITY.exec(token);
-    if (!match || url.search || url.hash) return returnRefused('This return address is unknown.', 404);
-    if (!/^text\/markdown(?:\s*;\s*charset=utf-8)?\s*$/i.test(request.headers.get('Content-Type') || '')) return returnRefused('Content-Type must be text/markdown with UTF-8 text.', 415);
-    if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return returnRefused('Return storage is unavailable.', 503);
+    // An anonymous workspace's return address is its own one-use grant, posted directly by any page.
+    const token = url.pathname.slice('/return/'.length), granted = RETURN_CAPABILITY.exec(token);
+    const refused = (reason, status) => granted ? json({ accepted: false, reason }, status, BEARER_RETURN_CORS) : returnRefused(reason, status);
+    if (granted && request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...BEARER_RETURN_CORS, 'Cache-Control': 'no-store' } });
+    const browserPage = !granted && request.method === 'GET';
+    if (!browserPage && request.method !== 'POST') return refused('Use POST to send this document back.', 405);
+    if (!granted) {
+      const refusal = requireScope(request, env, authority, ['rapier:read', 'rapier:write']);
+      if (refusal) return browserPage ? returnPage(refusal.status, 'Open this page in the browser where you connected Rapier. Connect in your app first if needed, then reopen this return.') : refusal;
+      if (!browserPage && authority.source === 'browser' && request.headers.get('Origin') !== url.origin)
+        return returnRefused('Confirm the upload on the return page.', 403);
+    }
+    const match = granted || RETURN_HANDLE.exec(token);
+    if (!match || url.search || url.hash) return browserPage ? returnPage(404, 'This return address is unknown.') : refused('This return address is unknown.', 404);
+    if (!browserPage && !/^text\/markdown(?:\s*;\s*charset=utf-8)?\s*$/i.test(request.headers.get('Content-Type') || '')) return refused('Content-Type must be text/markdown with UTF-8 text.', 415);
+    if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return refused('Return storage is unavailable.', 503);
     try {
-      const forwarded = new Request('https://rapier.internal/return', request);
-      forwarded.headers.set('X-Rapier-Return-Hash', await digest(token));
-      return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(forwarded);
-    } catch { return returnRefused('The return receipt could not be confirmed. Ask the agent whether it arrived.', 503); }
+      const headers = new Headers(request.headers);
+      if (granted) headers.set('X-Rapier-Return-Hash', await digest(token));
+      else {
+        headers.set('X-Rapier-Return-ID', match[2]);
+        headers.set('X-Rapier-Owner', await digest(authority.ownerId));
+      }
+      headers.delete('Authorization');
+      headers.delete('Cookie');
+      // Own the incoming-body transfer until it settles. A storage refusal can
+      // arrive before reading the body; its pump must stop before this response.
+      const relay = request.body ? new TransformStream() : null, controller = new AbortController();
+      const transfer = relay ? request.body.pipeTo(relay.writable, {signal: controller.signal}).then(() => true, () => false) : Promise.resolve(true);
+      let response;
+      try {
+        const forwarded = new Request('https://rapier.internal/return', {method: request.method, headers, signal: request.signal,
+          ...(relay ? {body: relay.readable, duplex: 'half'} : {})});
+        response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(forwarded);
+      } finally {
+        if (!response?.ok) controller.abort();
+        const transferred = await transfer;
+        if (response?.ok && !transferred) throw new Error('The returned source transfer was not confirmed.');
+      }
+      if (granted) {
+        const answered = new Headers(response.headers);
+        for (const [name, value] of Object.entries(BEARER_RETURN_CORS)) answered.set(name, value);
+        return new Response(response.body, { status: response.status, headers: answered });
+      }
+      if (!browserPage) return response;
+      const result = await response.json();
+      return returnPage(response.status, result.reason || '');
+    } catch { return refused('The return receipt could not be confirmed. Ask the agent whether it arrived.', 503); }
   }
   if (url.pathname === '/health') return json({ service: 'rapier', serverInfo: serverInfo(env), protocolVersions: PROTOCOL_VERSIONS, protocolVersion: PROTOCOL_VERSION, ...deployment(env) });
   // The ChatGPT app directory verifies the door's domain by reading a token it gives the publisher at this
@@ -514,11 +700,26 @@ async function handleRequest(request, env) {
     const token = typeof env.OPENAI_APPS_CHALLENGE === 'string' ? env.OPENAI_APPS_CHALLENGE : '';
     return token ? new Response(token, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } }) : new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
   }
-  if (url.pathname !== '/mcp') return new Response('Not found', { status: 404 });
+  const paired = PAIRED_PATH.exec(url.pathname);
+  if (!DOORS.has(url.pathname) && !paired) return new Response('Not found', { status: 404 });
+  const door = paired ? 'page' : url.pathname, cookies = [];
+  // A host that has not connected is told where to; nothing is read or stored first. A client asks for the scope this
+  // names, so it names the refresh permission too: without it a connection would need consent again every 15 minutes.
+  if (door === '/muse' && !authority) return oauthChallenge(request, env, ['rapier:read', 'rapier:write', 'offline_access']);
+  if (door === '/mcp') authority ??= ANONYMOUS;
+  if (paired) {
+    authority = await pageCaller(request, env, paired[1], authority);
+    if (!authority) return new Response('Not found', { status: 404 });
+    if (['GET', 'HEAD'].includes(request.method)) return pairedPage(request, env, authority);
+    if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
+    // The page's own transport: same origin only, so no other site can spend its cookies.
+    if (request.headers.get('Origin') !== url.origin || !['same-origin', null].includes(request.headers.get('Sec-Fetch-Site'))) return rpcError(null, -32000, 'Origin is not allowed.', 403);
+  }
   if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   if (!/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type') || '')) return rpcError(null, -32600, 'Content-Type must be application/json.', 415);
-  const accept = (request.headers.get('Accept') || '').toLowerCase().split(',').filter(part => !/;\s*q=0(?:\.0*)?\s*(?:;|$)/.test(part)).map(part => part.split(';')[0].trim());
-  if (!accept.includes('application/json') || !accept.includes('text/event-stream')) return rpcError(null, -32600, 'Accept must include application/json and text/event-stream.', 406);
+  // Every reply is one JSON object, so a client that accepts no event stream is answered the same way.
+  const accept = (request.headers.get('Accept') || '').toLowerCase().split(',').filter(part => !/;\s*q=0(?:\.0*)?\s*(?:;|$)/.test(part)).map(part => part.split(';')[0].trim()).filter(Boolean);
+  if (accept.length && !accept.some(type => ['application/json', 'application/*', '*/*'].includes(type))) return rpcError(null, -32600, 'Accept must allow application/json.', 406);
   let message;
   try {
     message = await readBody(request);
@@ -558,7 +759,7 @@ async function handleRequest(request, env) {
     }
     appsClient = declaresAppsUi({ capabilities: meta[META_CLIENT] });
   } else {
-    if (message.method !== 'initialize' && header !== PROTOCOL_VERSION) return rpcError(id ?? null, -32600, `MCP-Protocol-Version must be ${PROTOCOL_VERSION}.`, 400);
+    if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return rpcError(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
     if (!Object.hasOwn(message, 'id')) return new Response(null, { status: 202, headers: { 'Cache-Control': 'no-store' } });
     appsClient = request.headers.get('X-Rapier-Apps-Client') === '1';
   }
@@ -573,12 +774,20 @@ async function handleRequest(request, env) {
   }
   let result, headers = {};
   const cacheable = (value, ttlMs, cacheScope) => modern ? { ...value, ttlMs, cacheScope } : value;
+  if (door === 'page' && message.method !== 'tools/call') return rpcError(id, -32601, 'Method not found.');
+  // A tool refused for want of a connection or a scope still answers as a tool, naming the challenge for hosts that
+  // link an account from it.
+  const challenged = refusal => {
+    const challenge = refusal.headers.get('WWW-Authenticate');
+    return json({jsonrpc: '2.0', id, result: {isError: true, content: [{type: 'text', text: 'Connect Rapier with the permission this tool needs.'}],
+      _meta: {'mcp/www_authenticate': [challenge]}}}, refusal.status, {'WWW-Authenticate': challenge});
+  };
   try {
     switch (message.method) {
       case 'initialize':
         if (modern) return rpcError(id, -32601, 'Method not found.', 404);
         if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return rpcError(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
-        result = { protocolVersion: PROTOCOL_VERSION, capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {} } }, serverInfo: serverInfo(env), instructions };
+        result = { protocolVersion: LEGACY_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION, capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {} } }, serverInfo: serverInfo(env), instructions };
         // Stateless: the client carries the declaration back as a header.
         if (declaresAppsUi(params)) headers = { 'X-Rapier-Apps-Client': '1' };
         break;
@@ -592,10 +801,22 @@ async function handleRequest(request, env) {
       case 'tools/list':
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its full fixed tool catalog in one page.');
         // A listing that varies by the client's Apps declaration is not shared-cache content.
-        result = cacheable({ tools: listedTools(env, appsClient) }, env.HOST_TOOLS_LISTING === 'app-clients' ? 0 : 3600000, env.HOST_TOOLS_LISTING === 'app-clients' ? 'private' : 'public'); break;
+        result = door === '/muse' ? cacheable({ tools: MUSE_DESCRIPTORS }, 3600000, 'public')
+          : cacheable({ tools: listedTools(env, appsClient, authority) }, env.HOST_TOOLS_LISTING === 'app-clients' ? 0 : 3600000, env.HOST_TOOLS_LISTING === 'app-clients' ? 'private' : 'public'); break;
       case 'tools/call':
         if (typeof params.name !== 'string' || (params.arguments !== undefined && !plain(params.arguments))) return rpcError(id, -32602, 'tools/call requires name and an arguments object.');
-        result = await callTool(params.name, params.arguments || {}, env, request, modern ? meta['io.modelcontextprotocol/clientInfo']?.name : null); break;
+        if (door === '/muse' && EDITOR_ONLY_TOOLS.has(params.name)) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
+        if (params.name !== 'rapier.guide' && TOOL_BY_NAME.has(params.name)) {
+          const reads = TOOL_BY_NAME.get(params.name).annotations.readOnlyHint || params.name === 'rapier.open' && params.arguments?.document !== undefined;
+          const refusal = requireScope(request, env, authority, reads ? ['rapier:read'] : ['rapier:read', 'rapier:write']);
+          if (refusal) return challenged(refusal);
+        }
+        if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
+        result = await callTool(params.name, params.arguments || {}, env, request, authority, modern ? meta['io.modelcontextprotocol/clientInfo']?.name : null, door);
+        // The page that disconnects agents keeps its own pairing; every other paired browser loses it.
+        if (door === 'page' && params.name === ROTATE && result.structuredContent?.rotated === true && authority.authority.pairEpoch !== undefined)
+          cookies.push(setCookie(authority.id, sessionCookie(authority.id), await mintSession(editorSecret(env), authority.id, authority.authority.pairEpoch + 1), PAIR_SESSION_MS / 1000));
+        break;
       case 'skills/list':
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its complete static skill catalog in one page.');
         result = cacheable({skills: (await skillsBundle(request, env)).skills}, 3600000, 'public'); break;
@@ -612,12 +833,20 @@ async function handleRequest(request, env) {
         const skills = bundle.skills.flatMap(skill => skill.resources.map(entry => ({
           uri: entry.uri, name: entry.uri === skill.uri ? skill.frontmatter.name : entry.uri.slice('skill://rapier/'.length), mimeType: bundle.contents[entry.uri].mimeType,
           ...(entry.uri === skill.uri ? { description: skill.frontmatter.description } : {}) })));
-        result = cacheable({ resources: [{ uri: UI_RESOURCE, name: 'rapier-editor', title: 'Rapier document workspace', mimeType: UI_MIME, description: 'The full Rapier editor, connected to the canonical document through the MCP Apps bridge.' }, ...skills] }, 3600000, 'public'); break;
+        result = cacheable({ resources: [...(door === '/muse' ? [] : [{ uri: UI_RESOURCE, name: 'rapier-editor', title: 'Rapier document workspace', mimeType: UI_MIME, description: 'The full Rapier editor, connected to the canonical document through the MCP Apps bridge.' }]), ...skills] }, 3600000, 'public'); break;
       }
       case 'resources/templates/list':
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'The empty resource template catalog has no continuation.');
         result = cacheable({resourceTemplates: []}, 3600000, 'public'); break;
-      case 'resources/read': result = cacheable(await resource(request, env, params.uri), 0, 'private'); break;
+      case 'resources/read': {
+        if (params.uri === UI_RESOURCE) {
+          // The editor key reaches /muse only through the paired page.
+          if (door === '/muse') throw failure('RESOURCE_NOT_FOUND', 'Unknown resource.');
+          const refusal = requireScope(request, env, authority, ['rapier:read']);
+          if (refusal) return refusal;
+        }
+        result = cacheable(await resource(request, env, params.uri), 0, 'private'); break;
+      }
       default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
   } catch (error) {
@@ -633,8 +862,86 @@ async function handleRequest(request, env) {
   if (message.method === 'tools/call' && !EDITOR_ONLY_TOOLS.has(params.name) && plain(result.structuredContent)) {
     result = { ...result, content: [{ type: 'text', text: JSON.stringify(result.structuredContent) }, ...(result.content || []).filter(item => item.type === 'image' || item.type === 'resource' || item.type === 'resource_link')] };
   }
+  // A host that renders no link still receives the Markdown itself, within one bounded result.
+  if (door === '/muse' && message.method === 'tools/call' && params.name === 'document.export' && params.arguments?.format === 'markdown' && result.structuredContent?.outcome === 'ok') {
+    const link = result.content.find(item => item.type === 'resource_link');
+    const file = link ? await handleRequest(new Request(link.uri), env, authority) : null;
+    const text = file?.ok ? await file.text() : null;
+    if (text !== null) result.content.push({type: 'text', text: text.length <= MUSE_EXPORT_TEXT_CHARS ? text
+      : `The Markdown is ${text.length} characters, more than one result carries; read it in pages with document.read_context.`});
+  }
   if (modern) result = { ...result, resultType: 'complete', _meta: { ...(plain(result._meta) ? result._meta : {}), [META_SERVER]: serverInfo(env) } };
-  return json({ jsonrpc: '2.0', id, result }, 200, headers);
+  const reply = json({ jsonrpc: '2.0', id, result }, 200, headers);
+  for (const cookie of cookies) reply.headers.append('Set-Cookie', cookie);
+  return reply;
+}
+
+// The paired editor's authority over one workspace: the owner's browser (its owner cookie), or a browser paired by
+// code (its pairing cookie). The workspace decides whether either admits it.
+async function pageCaller(request, env, id, browser) {
+  const address = pageAddress(id);
+  if (pageId(address) !== id) return null;
+  const authority = {};
+  if (browser?.source === 'browser') authority.ownerKey = await digest(browser.ownerId);
+  const session = editorSecret(env) ? await verifySession(editorSecret(env), id, readCookie(request, sessionCookie(id))) : null;
+  if (session) authority.pairEpoch = session.epoch;
+  return Object.freeze({source: 'page', id, address, authority, scopes: ANONYMOUS.scopes});
+}
+
+async function pageAdmission(env, page) {
+  if (!Object.keys(page.authority).length) return {admitted: false};
+  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(page.address)).fetch(new Request('https://rapier.internal/page', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({authority: page.authority})}));
+  return response.ok ? response.json() : {admitted: false};
+}
+
+// The page that disconnects agents holds no reference: a fresh lease at the workspace's own address.
+async function pageSuccessor(env, page) {
+  const admission = await pageAdmission(env, page);
+  return admission.admitted && /^rpr_[A-Za-z0-9_-]{22}$/.test(admission.prefix || '') ? admission.prefix + base64url(crypto.getRandomValues(new Uint8Array(16))).slice(0, 21) : null;
+}
+
+// GET /d/<id>: the Apps resource's own page at the top level. An admitted browser receives the editor key with it; any
+// other browser receives the page without one, which shows its pairing code. An unknown workspace looks the same.
+async function pairedPage(request, env, page) {
+  const headers = {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': PAGE_CSP};
+  const unavailable = () => new Response('The editor is unavailable.', {status: 503, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store'}});
+  if (!env.ASSETS?.fetch || !env.DOCUMENTS?.get || !editorSecret(env)) return unavailable();
+  try {
+    const response = await env.ASSETS.fetch(new Request(new URL('/rapier-app.html', request.url)));
+    if (!response.ok) return unavailable();
+    let html = await readTextBody(response, MAX_UI_BYTES, 'editor page', 'UI_RESOURCE_TOO_LARGE');
+    const versions = [...html.matchAll(/<meta\s+name="rapier-version"\s+content="([^"]+)"\s*\/?\s*>/gi)];
+    if (versions.length !== 1 || versions[0][1] !== VERSION) return unavailable();
+    html = html.replace(/(<link\b[^>]*\bhref=)(["'])(icon-(?:192|512)\.png)\2/gi, (_, prefix, quote, name) => prefix + quote + '/' + name + quote);
+    const admitted = (await pageAdmission(env, page)).admitted === true;
+    const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
+    html = pageFlags(html, {id: page.id, editorKey: admitted ? await mintEditorKey(editorSecret(env)) : '', fileOrigins});
+    if (!html) return unavailable();
+    return new Response(request.method === 'HEAD' ? null : html, {headers});
+  } catch { return unavailable(); }
+}
+
+// document.pair_status on the page's route: the code the page shows, and a secret only its cookie holds. A confirmed
+// code becomes a one-day session for this workspace alone; an expired or spent pairing draws a fresh code.
+async function pairStatus(request, env, page, args, cookies) {
+  if (!plain(args) || args.document !== page.id) return toolError(failure('INVALID_DOCUMENT', 'The page names its own workspace.'));
+  if (!editorSecret(env)) return toolError(failure('EDITOR_KEY_UNCONFIGURED', 'This deployment cannot pair a browser.'));
+  const ask = async body => (await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(page.address)).fetch(new Request('https://rapier.internal/pair', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}))).json();
+  const held = readCookie(request, pendingCookie(page.id));
+  if (/^[A-Za-z0-9_-]{43}$/.test(held || '')) {
+    const status = await ask({action: 'status', secretHash: await digest(held)});
+    if (status.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
+    if (status.status === 'waiting') return envelope({outcome: 'waiting', paired: false, pairingCode: status.code, codeExpiresAt: new Date(status.expiresAt).toISOString()});
+    if (status.status === 'paired') {
+      cookies.push(setCookie(page.id, sessionCookie(page.id), await mintSession(editorSecret(env), page.id, status.epoch), PAIR_SESSION_MS / 1000), setCookie(page.id, pendingCookie(page.id), '', 0));
+      return envelope({outcome: 'paired', paired: true});
+    }
+  }
+  const secret = newSecret(), started = await ask({action: 'start', secretHash: await digest(secret), codes: [newCode(), newCode(), newCode(), newCode()]});
+  if (started.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
+  if (!started.code) return toolError(failure('WORKSPACE_UNAVAILABLE', 'No pairing code could be drawn. Try again.'));
+  cookies.push(setCookie(page.id, pendingCookie(page.id), secret, Math.ceil(PAIR_CODE_MS * 3 / 1000)));
+  return envelope({outcome: 'waiting', paired: false, pairingCode: started.code, codeExpiresAt: new Date(started.expiresAt).toISOString()});
 }
 
 export default { fetch: handleMcp };
@@ -767,13 +1074,13 @@ export class RapierDocument {
     const expiresAt = Date.now() + this.retention;
     const renew = !(head.expiresAt > expiresAt - 60000);
     if (!state && !renew && !expired.length && !exported) return;
-    // Alarm after the transaction (from the committed head); a crash before setAlarm recovers from head.expiresAt.
+    // Source and its expiry alarm commit together; a lost acknowledgement must not retain an unscheduled workspace.
     if (renew) head.expiresAt = expiresAt;
     const previousParts = head.parts || 0;
     if (text !== undefined) head.parts = Math.ceil(text.length / CHUNK_CHARS);
     // SQLite limits a key and value together to 2 MB; leave room for the key and serialization.
     if (contentBytes(JSON.stringify(head)) > 2_000_000 - 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The workspace metadata is full. Let temporary exports expire before creating another.', {limitBytes: this.maxStateBytes});
-    this.ctx.storage.transactionSync(() => {
+    await this.ctx.storage.transaction(async () => {
       for (const row of expired) for (let index = 0; index < row.parts; index++) this.ctx.storage.kv.delete('export:' + row.id + ':' + index);
       if (exported) for (let index = 0; index < exported.grant.parts; index++) {
         this.ctx.storage.kv.put('export:' + exported.grant.id + ':' + index, exported.bytes.slice(index * CHUNK_CHARS, (index + 1) * CHUNK_CHARS));
@@ -788,9 +1095,9 @@ export class RapierDocument {
       if (human !== undefined && this.ctx.storage.kv.get('human') !== human) this.ctx.storage.kv.put('human', human);
       if (journalText !== undefined && this.ctx.storage.kv.get('journal') !== journalText) this.ctx.storage.kv.put('journal', journalText);
       this.ctx.storage.kv.put('head', head);
+      if (renew) await this.ctx.storage.setAlarm(head.expiresAt);
     });
     await this.ctx.storage.sync();
-    if (renew) await this.ctx.storage.setAlarm(head.expiresAt);
     if (state) this.cachedState = state;
     if (journalText !== undefined) this.cachedJournal = journal;
   }
@@ -802,12 +1109,25 @@ export class RapierDocument {
 
   async fetch(request) {
     const path = new URL(request.url).pathname;
-    if (path === '/return' && request.method === 'POST') return this.exclusive(() => this.acceptReturn(request));
+    if (path === '/return' && ['GET', 'POST'].includes(request.method)) return this.exclusive(() => this.acceptReturn(request));
     if (path === '/export' && ['GET', 'HEAD'].includes(request.method)) return this.exclusive(() => this.readExport(request));
+    if (path === '/pair' && request.method === 'POST') return this.exclusive(() => this.pairing(request));
+    if (path === '/page' && request.method === 'POST') return this.exclusive(async () => {
+      const head = this.ctx.storage.kv.get('head'), body = await request.json().catch(() => null);
+      const admitted = !!head && head.expiresAt > Date.now() && plain(body?.authority) && this.admits(head, body.authority);
+      return json(admitted ? { admitted, prefix: head.prefix } : { admitted });
+    });
     try {
       if (request.method !== 'POST' || path !== '/operation') return new Response(null, { status: 404 });
       const input = await request.json();
-      if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || typeof input.operation !== 'string' || !plain(input.args) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
+      // The paired editor names no reference: the workspace admits the browser, then the call acts as the workspace's own.
+      if (plain(input) && plain(input.page)) {
+        const head = this.ctx.storage.kv.get('head');
+        if (!head || head.expiresAt <= Date.now() || !this.admits(head, input.page)) return json(toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.')));
+        Object.assign(input, { capabilityHash: head.capabilityHash, ownerKey: head.ownerKey });
+        delete input.page;
+      }
+      if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
       // Mint once per incoming call, before any observation continuation can re-enter operate().
       input.operationId ??= crypto.randomUUID();
@@ -823,12 +1143,52 @@ export class RapierDocument {
     }
   }
 
+  // A browser reaches this workspace as its connected owner, or through a pairing of the current epoch.
+  admits(head, authority) {
+    return !head.bearer && typeof authority.ownerKey === 'string' && authority.ownerKey === head.ownerKey
+      || Number.isSafeInteger(authority.pairEpoch) && authority.pairEpoch === (head.pairEpoch || 0);
+  }
+
+  // Pending pairings live in the head: a code for a minute, then, once an agent confirms it, two minutes for the page
+  // to collect its session. Collecting spends the pairing. Neither changes the document or renews its expiry.
+  async pairing(request) {
+    try {
+      const body = await request.json(), now = Date.now();
+      const head = structuredClone(this.ctx.storage.kv.get('head'));
+      if (!head || head.expiresAt <= now) return json({ status: 'absent' });
+      if (!plain(body) || !/^[a-f0-9]{64}$/.test(body.secretHash || '')) return new Response(null, { status: 400 });
+      const live = (head.pairings || []).filter(row => row.confirmedAt ? row.confirmedAt + 2 * PAIR_CODE_MS > now : row.expiresAt > now);
+      const save = async () => {
+        head.pairings = live;
+        this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
+        await this.ctx.storage.sync();
+      };
+      if (body.action === 'status') {
+        const row = live.find(entry => entry.secretHash === body.secretHash);
+        if (!row) { await save(); return json({ status: 'expired' }); }
+        if (!row.confirmedAt) return json({ status: 'waiting', code: row.code, expiresAt: row.expiresAt });
+        live.splice(live.indexOf(row), 1);
+        await save();
+        return json({ status: 'paired', epoch: head.pairEpoch || 0 });
+      }
+      if (body.action !== 'start' || !Array.isArray(body.codes)) return new Response(null, { status: 400 });
+      const code = body.codes.find(value => PAIR_CODE.test(value) && !live.some(entry => entry.code === value));
+      if (!code) return json({ status: 'busy' });
+      while (live.length >= MAX_PAIRINGS) live.splice(live.findIndex(entry => !entry.confirmedAt), 1);
+      live.push({ code, secretHash: body.secretHash, expiresAt: now + PAIR_CODE_MS });
+      await save();
+      return json({ status: 'waiting', code, expiresAt: now + PAIR_CODE_MS });
+    } catch { return new Response(null, { status: 503 }); }
+  }
+
   async readExport(request) {
     const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox', 'Referrer-Policy': 'no-referrer'};
     try {
-      const head = this.ctx.storage.kv.get('head');
+      const head = this.ctx.storage.kv.get('head'), byHash = request.headers.get('X-Rapier-Export-Hash');
+      // An anonymous workspace's link is its own grant; a connected workspace's link needs its owner.
+      if (head && (byHash ? !head.bearer : head.bearer || head.ownerKey !== request.headers.get('X-Rapier-Owner'))) return new Response(null, {status: 404, headers});
       if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 410, headers});
-      const row = head.exports?.find(row => row.hash === request.headers.get('X-Rapier-Export-Hash'));
+      const row = head.exports?.find(row => byHash ? row.hash === byHash : row.id === request.headers.get('X-Rapier-Export-ID'));
       if (!row) return new Response(null, {status: 404, headers});
       if (row.expiresAt <= Date.now() || row.owner !== head.capabilityHash) return new Response(null, {status: 410, headers});
       const bytes = new Uint8Array(row.bytes);
@@ -848,12 +1208,14 @@ export class RapierDocument {
   async acceptReturn(request) {
     try {
       try { this.ctx.storage.operation = 'return'; } catch {}
-      const head = structuredClone(this.ctx.storage.kv.get('head'));
+      const head = structuredClone(this.ctx.storage.kv.get('head')), byHash = request.headers.get('X-Rapier-Return-Hash');
+      if (head && (byHash ? !head.bearer : head.bearer || head.ownerKey !== request.headers.get('X-Rapier-Owner'))) return returnRefused('This return address is unknown.', 404);
       if (!head || head.expiresAt <= Date.now()) return returnRefused('This return session has expired or was deleted.', 410);
-      const grant = head.returns?.find(row => row.hash === request.headers.get('X-Rapier-Return-Hash'));
+      const grant = head.returns?.find(row => byHash ? row.hash === byHash : row.id === request.headers.get('X-Rapier-Return-ID'));
       if (!grant) return returnRefused('This return address is unknown.', 404);
       if (grant.receivedAt) return returnRefused('This document was already sent back. The first copy is retained.', 409);
       if (grant.expiresAt <= Date.now() || grant.owner !== head.capabilityHash) return returnRefused('This return address has expired.', 410);
+      if (request.method === 'GET') return returnReply({ready: true});
       let name;
       try { name = decodeURIComponent(request.headers.get('X-Rapier-Name') || 'document.md'); } catch { return returnRefused('The document name is not valid URI-encoded text.', 400); }
       if (!name || [...name].length > MAX_FILENAME_CHARS || /[\\/\x00-\x1f\x7f]/.test(name)) return returnRefused(`The document name must be a filename of at most ${MAX_FILENAME_CHARS} characters.`, 400);
@@ -876,6 +1238,9 @@ export class RapierDocument {
       if (error.code === 'RETURN_TOO_LARGE') return returnRefused(error.message, 413);
       if (error instanceof TypeError) return returnRefused('The document is not valid UTF-8 text.', 400);
       return returnRefused('The return receipt could not be confirmed. Ask the agent whether it arrived.', 503);
+    } finally {
+      // An early owner/grant refusal must stop the forwarded upload before the DO response ends its lifetime.
+      if (request.body && !request.bodyUsed) await request.body.cancel().catch(() => {});
     }
   }
 
@@ -907,7 +1272,7 @@ export class RapierDocument {
       if (signal?.aborted) return {aborted: true};
       const head = this.ctx.storage.kv.get('head'), mode = input.args.mode || 'message';
       const refused = reason => ({ value: { outcome: 'refused', reason } });
-      if (!head || head.capabilityHash !== input.capabilityHash || head.expiresAt <= Date.now()) return refused('return_unavailable');
+      if (!head || head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.agentAccess === false || head.expiresAt <= Date.now()) return refused('return_unavailable');
       const key = resolveCaller({ actor: 'agent', principal: 'remote:' + input.capabilityHash, requestId: input.operationId }, { transport: 'mcp' }).invocationKey;
       if (this.readJournal().some(row => row.key === key)) return { value: null };
       if (this.returnWaiter) return refused('wait_already_pending');
@@ -996,9 +1361,10 @@ export class RapierDocument {
   }
 
   async operate(input, waitResult, visual) {
-    const { operation, args, capabilityHash } = input;
+    const { operation, args, capabilityHash, ownerKey } = input;
     try { if (this.ctx.storage) this.ctx.storage.operation = operation; } catch {}
     let head = structuredClone(this.ctx.storage.kv.get('head'));
+    if (head && head.ownerKey !== ownerKey) return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unavailable to the connected identity.'));
     if (head && head.expiresAt <= Date.now()) {
       this.cachedState = null;
       this.cachedJournal = null;
@@ -1010,6 +1376,7 @@ export class RapierDocument {
       if (head) {
         // Same capability as a committed create: reopen; no second workspace, no budget. A different capability at this address is WORKSPACE_EXISTS.
         if (head.capabilityHash !== capabilityHash) return toolError(failure('WORKSPACE_EXISTS', 'A workspace cannot be created at this capability.'));
+        if (head.agentAccess === false) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
         const state = this.readState(head);
         const kernel = createKernel({ state, clock: Date.now, mintId, invocationJournal: this.readJournal() });
         const collaboration = kernel.collaboration();
@@ -1028,7 +1395,7 @@ export class RapierDocument {
       if (invalid) throw failure('INVALID_DOCUMENT_INPUT', invalid);
       const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: args.text ?? '', docKind: args.docKind }), clock: Date.now, mintId });
       const collaboration = kernel.collaboration(), state = kernel.snapshot();
-      head = this.describe(state, { capabilityHash, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null }, 1, collaboration);
+      head = this.describe(state, { ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null }, 1, collaboration);
       await this.persist(head, state, kernel.invocationJournal());
       return envelope({ outcome: 'created', created: true }, head, { snapshot: snapshot(state, collaboration) });
     }
@@ -1040,6 +1407,9 @@ export class RapierDocument {
       }
       return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document capability is unknown, deleted or expired. Open a new workspace from an exported copy.'));
     }
+    // A connected workspace's Disconnect is a stored decision: no agent call passes it, whatever reference it holds,
+    // until the person's editor shares the workspace again (document.set_policy with agentAccess).
+    if (head.agentAccess === false && input.editorAuthorized !== true) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
     const intent = head.visualIntent, capture = this.visualWaiter;
     if (intent && (!capture || capture.id !== intent.id || capture.capabilityHash !== capabilityHash ||
         intent.expiresAt <= Date.now() || intent.revision !== head.revision)) {
@@ -1063,17 +1433,33 @@ export class RapierDocument {
       // The receipt a lost response can be asked for again: the predecessor's digest, one generation.
       head.rotation = { predecessorHash: head.capabilityHash, generation: (head.rotations || 0) + 1 };
       head.capabilityHash = input.rotateToHash;
+      // An anonymous workspace's reference is its whole authority, so retiring it is the decision; a connected
+      // workspace's authority is the connection, so the decision is stored. Every paired browser is unpaired.
+      if (!head.bearer) { head.agentAccess = false; head.version++; }
+      head.pairEpoch = (head.pairEpoch || 0) + 1;
+      head.pairings = [];
       head.rotatedAt = Date.now();
       head.rotations = (head.rotations || 0) + 1;
+      // No agent holds the successor yet; the editor must not show the one that held the predecessor as present.
+      delete head.agentCall;
       this.ctx.storage.transactionSync(() => { this.ctx.storage.kv.put('head', head); });
       await this.ctx.storage.sync();
       this.returnWaiter?.finish({ outcome: 'refused', reason: 'document_disconnected' });
       this.visualWaiter?.wait.finish({...this.visualWaiter.request, outcome: 'refused', reason: 'document_changed'});
       return envelope({ outcome: 'rotated', rotated: true, rotations: head.rotations, rotatedAt: new Date(head.rotatedAt).toISOString() }, head);
     }
+    if (operation === PAIR_BROWSER) {
+      const now = Date.now(), code = String(args.code || '').toUpperCase();
+      const row = (head.pairings || []).find(entry => entry.code === code && !entry.confirmedAt && entry.expiresAt > now);
+      if (!row) return envelope({ outcome: 'refused', reason: 'pairing_code_unknown', message: 'No browser is waiting with that code. A code works once, for one minute: ask for the code the page shows now.' }, head);
+      row.confirmedAt = now;
+      this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
+      await this.ctx.storage.sync();
+      return envelope({ outcome: 'paired', paired: true, message: 'The browser showing that code now edits this workspace.' }, head);
+    }
     const elapsed = head.nextExpiryAt !== null && head.nextExpiryAt <= Date.now();
     if (operation === 'document.sync' && !elapsed && args.afterVersion === head.version && (args.afterRevision === undefined || args.afterRevision === head.revision)) {
-      return envelope({ outcome: 'current', unchanged: true }, head);
+      return envelope({ outcome: 'current', unchanged: true, ...agentReport(head) }, head);
     }
     let state = this.readState(head), collaboration;
     let viewKey = JSON.stringify(head.viewIntent);
@@ -1097,7 +1483,9 @@ export class RapierDocument {
       const file = await exportFile(this.env, request);
       exported = file.bytes && file.bytes.byteLength <= MAX_EXPORT_BYTES ? {...file, id: mintId('export_')} : file;
       return exported;
-    }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, paint: paintAgentStrokes, paintSheet: agentPaintSheetHolds,
+    }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences,
+      paint: (strokes, options = {}) => paintAgentStrokes(strokes, options.seed, options.target, options),
+      paintSheet: agentPaintSheetHolds, paintBrushes: agentPaintBrushRegistry, paintReplay: replayAgentPainting,
       // Names are disclosed by wait/read; repeating 16 maximum names can overflow context's result bound.
       returns: () => receivedReturns(head).map(row => { const { name, ...listed } = returnMetadata(row); return listed; }),
       readReturn: input => this.readReturn(head, input),
@@ -1105,10 +1493,12 @@ export class RapierDocument {
         if (!input.returnAddress) return { outcome: 'refused', reason: 'return_unavailable' };
         const retained = (head.returns || []).filter(row => row.receivedAt || row.expiresAt > Date.now() && row.owner === head.capabilityHash);
         if (retained.length >= MAX_RETURNS) return { outcome: 'refused', reason: 'return_envelopes_full' };
-        const token = 'rpret_' + input.returnAddress + '.' + base64url(crypto.getRandomValues(new Uint8Array(32)));
-        const grant = { id: mintId('return_'), hash: await digest(token), owner: head.capabilityHash, expiresAt: Math.min(Date.now() + DAY, head.expiresAt) };
+        const grant = { id: mintId('return_'), owner: head.capabilityHash, expiresAt: Math.min(Date.now() + DAY, head.expiresAt) };
+        // An anonymous workspace's return address is its own one-use grant, kept only as a digest.
+        const token = 'rpret_' + input.returnAddress + '.' + (head.bearer ? base64url(crypto.getRandomValues(new Uint8Array(32))) : grant.id);
+        if (head.bearer) grant.hash = await digest(token);
         head.returns = [...retained, grant];
-        return { outcome: 'ok', return_url: configuredOrigin(this.env.RETURN_ORIGIN || RETURN_ORIGIN, 'RETURN_ORIGIN', true) + '/return/' + token, return_id: grant.id, return_expires_at: new Date(grant.expiresAt).toISOString(), max_bytes: MAX_TEXT_BYTES };
+        return { outcome: 'ok', return_url: configuredOrigin(this.env.RETURN_ORIGIN || oauthOrigin(this.env), 'RETURN_ORIGIN', true) + '/return/' + token, return_id: grant.id, return_expires_at: new Date(grant.expiresAt).toISOString(), max_bytes: MAX_TEXT_BYTES };
       },
       wait: async () => waitResult || { outcome: 'refused', reason: 'wait_unavailable' },
       save: async () => ({ ok: true }), reveal: request => queueView('document', request), revealChange: request => queueView('compare', request) }, clock: Date.now, mintId,
@@ -1119,7 +1509,7 @@ export class RapierDocument {
     const resolveStructureFact = requirements => {
       if (!requirements || !['outline', 'find'].includes(requirements.mode) || state.filename !== requirements.filename) return null;
       const value = analyzeDocument({ text: state.text, filename: state.filename, mode: requirements.mode,
-        ...(requirements.mode === 'find' ? { query: requirements.query, kind: requirements.kind, within: requirements.within, offset: requirements.offset } : {}) });
+        ...(requirements.mode === 'find' ? { docKind: requirements.docKind, query: requirements.query, kind: requirements.kind, within: requirements.within, offset: requirements.offset } : {}) });
       return { mode: requirements.mode, revision: state.revision, filename: state.filename,
         ...(requirements.mode === 'find' ? { query: requirements.query, kind: requirements.kind, within: requirements.within, offset: requirements.offset } : {}), value };
     };
@@ -1143,13 +1533,17 @@ export class RapierDocument {
     // kernel's clock. Its final snapshot owns that clock; do not clone the whole source twice.
     refresh(elapsed || !!state.review || Object.keys(state.humanContexts).length > 0 || !!head.viewIntent);
     if (elapsed || head.version !== initialVersion || (initialExpiry !== null && initialExpiry <= Date.now())) await this.persist(head, state, kernel.invocationJournal());
-    const current = () => snapshot(state, collaboration, head.viewIntent, head.visualIntent);
+    const current = () => ({...snapshot(state, collaboration, head.viewIntent, head.visualIntent), ...(head.bearer ? {} : {agentAccess: head.agentAccess !== false})});
     if (operation === 'document.visual_ack') {
       const capture = this.visualWaiter;
       if (!capture || capture.id !== args.visualId || capture.capabilityHash !== capabilityHash) return toolError(failure('VISUAL_UNAVAILABLE', 'This visual observation is no longer pending.'), head);
       if (args.expectedRevision !== state.revision || capture.request.revision !== state.revision) {
         capture.wait.finish({...capture.request, outcome: 'refused', reason: 'document_changed'});
         return toolError(failure('REVISION_CONFLICT', 'The document changed before the observation arrived.'), head);
+      }
+      if (!sameVisualDrawing(capture.request.drawing, kernel.drawingContext())) {
+        capture.wait.finish({...capture.request, outcome: 'refused', reason: 'visual_target_changed'});
+        return envelope({outcome: 'refused', reason: 'visual_target_changed', representation: 'visual'}, head);
       }
       const verdict = visualResult(capture.request, args.fact);
       if (args.fact.outcome === 'ok' && verdict.outcome !== 'ok') return envelope(verdict, head);
@@ -1159,7 +1553,7 @@ export class RapierDocument {
     if (operation === 'rapier.open' || operation === 'document.sync') {
       // A read-only sync does not slide expiry.
       if (operation === 'rapier.open') await this.persist(head);
-      return envelope({ outcome: 'current', unchanged: false }, head, { snapshot: current() });
+      return envelope({ outcome: 'current', unchanged: false, ...(operation === 'document.sync' ? agentReport(head) : {}) }, head, { snapshot: current() });
     }
     if (operation === 'document.human_context') {
       const priorVersion = head.version;
@@ -1195,7 +1589,12 @@ export class RapierDocument {
       }
       if (args.expectedRevision !== state.revision || args.expectedVersion !== head.version) return toolError(failure('REVISION_CONFLICT', 'The document or decision changed. Inspect the current state before deciding again.'), head, { snapshot: current() });
       let value;
-      if (operation === 'document.set_policy') value = kernel.setPolicy({ expectedRevision: args.expectedRevision, ...(args.posture !== undefined ? { posture: args.posture } : {}), ...(args.readOnly !== undefined ? { readOnly: args.readOnly } : {}) }, human(args.decisionId));
+      if (operation === 'document.set_policy') {
+        if (args.agentAccess !== undefined && head.bearer) return toolError(failure('INVALID_DECISION', 'An anonymous workspace is shared by its document value, not by a stored decision.'), head, { snapshot: current() });
+        value = args.agentAccess !== undefined && args.posture === undefined && args.readOnly === undefined ? {outcome: 'ok'}
+          : kernel.setPolicy({ expectedRevision: args.expectedRevision, ...(args.posture !== undefined ? { posture: args.posture } : {}), ...(args.readOnly !== undefined ? { readOnly: args.readOnly } : {}) }, human(args.decisionId));
+        if (value.outcome === 'ok' && args.agentAccess !== undefined && (head.agentAccess !== false) !== args.agentAccess) { head.agentAccess = args.agentAccess; head.version++; }
+      }
       else if (operation === 'document.review_decide') value = await kernel.decideReview({ expectedRevision: args.expectedRevision, reviewId: args.reviewId, action: args.action, ...(Array.isArray(args.changeIds) ? { changeIds: args.changeIds } : {}) }, human(args.decisionId));
       else {
         if (args.compareId !== state.compare?.id) return toolError(failure('REVISION_CONFLICT', 'The comparison changed before this decision arrived.'), head, { snapshot: current() });
@@ -1291,24 +1690,28 @@ export class RapierDocument {
     }
     refresh();
     if (state.documentId !== documentId) return toolError(failure('DOCUMENT_IDENTITY_CHANGED', 'This operation cannot replace the remote workspace identity.'));
+    if (actor === 'agent') head.agentCall = { id: input.operationId, at: Date.now(), operation, ...(operation === 'document.find' && typeof args.kind === 'string' ? { kind: args.kind.slice(0, 24) } : {}) };
     let download = null, publication = null;
-    if (operation === 'document.export' && value.outcome === 'ok') {
+    if (['document.export', 'document.propose'].includes(operation) && value.outcome === 'ok') {
       let grant = head.exports?.find(row => row.id === value.exportId);
       if (exported?.id) {
         grant = {id: exported.id, owner: capabilityHash, name: exported.name, mimeType: exported.mimeType,
           bytes: exported.bytes.byteLength, parts: Math.ceil(exported.bytes.byteLength / CHUNK_CHARS), expiresAt: Date.now() + DAY,
           sha256: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', exported.bytes)), byte => byte.toString(16).padStart(2, '0')).join('')};
-        grant.hash = await digest(await exportToken(input.exportAddress, grant, this.env));
+        if (head.bearer) grant.hash = await digest(await exportToken(input.exportAddress, grant, this.env));
         head.exports = [...head.exports || [], grant];
         publication = {grant, bytes: exported.bytes};
       }
       if (!grant || grant.owner !== capabilityHash || grant.expiresAt <= Date.now()) value = {outcome: 'refused', reason: 'export_expired'};
       else {
-        const token = editorSecret(this.env) ? await exportToken(input.exportAddress, grant, this.env) : null;
-        if (!token || await digest(token) !== grant.hash) value = {outcome: 'refused', reason: 'export_unavailable'};
+        // An anonymous workspace's link is a grant derived again from the deployment key; a connected one's names the file.
+        const token = !input.exportAddress ? null : !head.bearer ? exportHandle(input.exportAddress, grant)
+          : editorSecret(this.env) ? await exportToken(input.exportAddress, grant, this.env) : null;
+        if (!token || head.bearer && await digest(token) !== grant.hash) value = {outcome: 'refused', reason: 'export_unavailable'};
         else {
           download = {type: 'resource_link', uri: input.exportOrigin + '/export/' + token, name: grant.name, mimeType: grant.mimeType, size: grant.bytes};
-          value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, exportExpiresAt: new Date(grant.expiresAt).toISOString()};
+          value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, exportExpiresAt: new Date(grant.expiresAt).toISOString(),
+            ...(operation === 'document.propose' ? {page: download.uri} : {})};
         }
       }
     }

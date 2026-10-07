@@ -1,5 +1,6 @@
 import acorn from './vendor/acorn.mjs';
 import { structureRequest } from './structure-request.mjs';
+import { analyzeMarkdownStructure } from './markdown-server.mjs';
 const self = {acorn};
 function _rapierStructureAnalyze(request) {
 	// The worker admits its own source; the caller's gate cannot bound a directly delivered job.
@@ -1840,7 +1841,7 @@ export function analyzeDocument(input) {
   input.signal?.throwIfAborted();
   const request = structureRequest(input);
   if (!request) return {ok: false, complete: false, status: 'unavailable', reason: 'structure_unavailable'};
-  const result = _rapierStructureAnalyze(request);
+  const result = request.kind === 'markdown' ? analyzeMarkdownStructure(request) : _rapierStructureAnalyze(request);
   input.signal?.throwIfAborted();
   return result;
 }

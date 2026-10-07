@@ -1,9 +1,9 @@
 # Security
 
-Rapier is one offline page. It keeps no account, sends nothing it was not asked to send, and the document never
-leaves the device unless the person exports it. That makes most classes of vulnerability impossible and the remaining
-ones serious: anything that lets a document, a pasted page, an imported file or an agent's message run code, read
-another origin, reach the network, or change the source the person did not touch.
+Rapier is an offline editor with optional sharing, sync and agent connections. Local editing needs no account.
+Sharing, sync and connected agents transfer data to the services the person uses. Security reports cover hostile
+documents and imports, unauthorized access or edits, exposed credentials, unintended network requests, and changes
+to source or history without the person's permission.
 
 **Report privately, first.** Use GitHub's "Report a vulnerability" on this repository's Security tab. If that is not
 available to you, open an issue titled "security" with no details in it and a maintainer will reach you. Please do not

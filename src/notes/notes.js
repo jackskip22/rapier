@@ -651,8 +651,22 @@ function _rapierNotesTake(snapshot) {
 	if (typeof _rapierNotesSyncUi !== 'undefined') _rapierNotesSyncUi.changed();
 	// Persistence is asked for after the first write is in the folder: a browser asked with a real
 	// write behind the question answers it better.
-	if (!state.persistAsked) { state.persistAsked = true; void _rapierNotesStorageAnswer(true); }
+	_rapierNotesAskPersistenceOnce();
 	return snapshot;
+}
+// Persistent storage is asked for once per folder, never once per session: the preference owner remembers the ask (a
+// browser profile is the folder on the web), and a later session opens straight onto the cards. The quiet line under
+// the head says what the storage is for as long as it matters.
+function _rapierNotesAskPersistenceOnce() {
+	const state = _rapierNotes;
+	if (state.persistAsked) return false;
+	state.persistAsked = true;
+	let asked = false;
+	try { asked = RapierPreferences.read('notesPersistAsked') === true; } catch (_) {}
+	if (asked) return false;
+	try { RapierPreferences.write('notesPersistAsked', true); } catch (_) {}
+	void _rapierNotesStorageAnswer(true);
+	return true;
 }
 // A note's words into the folder through the owner: the digest of the words this window last read
 // or wrote is what the owner admits the write against, so a competing edit from another window is
@@ -698,9 +712,10 @@ async function _rapierNotesStorageKind() {
 	if (store.storageFault || store.bytes.kind === 'fault') return 'fault';
 	return store.native ? 'native' : store.bytes.kind || (store.durable ? 'opfs' : 'memory');
 }
-function _rapierNotesStorageSentence() {
+// What the storage is, in one sentence: the quiet line under the head, and the first sentence of the settings' own.
+function _rapierNotesStorageKindSentence() {
 	const kind = _rapierNotes.storageKnown;
-	const sentence = kind === 'native' ? 'Notes are saved in this app.'
+	return kind === 'native' ? 'Notes are saved in this app.'
 		: kind === 'memory' ? 'Notes disappear when this page closes. Back up before closing.'
 		: kind === 'fault' ? 'Saves are unconfirmed. Keep this page open; save a copy.'
 		: kind === 'indexeddb' ? 'Your browser may delete these notes. Keep a backup.'
@@ -708,6 +723,23 @@ function _rapierNotesStorageSentence() {
 		: kind === 'evictable' ? 'Low storage can make your browser delete these notes. Back up.'
 		: kind === 'unknown' ? 'Browser storage protection is unconfirmed.'
 		: 'Open Notes to check storage.';
+}
+// The two places the storage answer is written: the settings panel's sentence (whole: space, backups), and the quiet
+// line under the cards' head, which says what the storage is until a backup exists and never for the app's own folder.
+function _rapierNotesStorageLines() {
+	const state = _rapierNotes, kind = state.storageKnown;
+	const note = document.getElementById('notes-storage-note');
+	if (note) { note.textContent = _rapierNotesStorageSentence(); note.dataset.notesStorage = kind; }
+	const line = document.getElementById('notes-storage-line');
+	if (!line) return;
+	const quiet = !kind || kind === 'native' || !!state.lastBackup;
+	line.hidden = quiet;
+	line.textContent = quiet ? '' : _rapierNotesStorageKindSentence();
+	line.dataset.notesStorage = kind || '';
+}
+function _rapierNotesStorageSentence() {
+	const kind = _rapierNotes.storageKnown;
+	const sentence = _rapierNotesStorageKindSentence();
 	const backup = _rapierNotes.lastBackup, prepared = _rapierNotes.preparedBackup;
 	const pending = prepared?.sequence && prepared.sent.length < prepared.plan.parts.length
 		? ' Backup incomplete: ' + prepared.sent.length + '/' + prepared.plan.parts.length + ' parts sent; next: ' + (prepared.sent.length + 1) + '. Keep every part.' : '';
@@ -766,8 +798,7 @@ async function _rapierNotesStorageAnswer(ask = false, {measure = true} = {}) {
 		_rapierNotes.storageKnown = granted === true ? 'persistent' : granted === false ? 'evictable' : 'unknown';
 	}
 	// Best-effort: the pop-up may be closed right now, in which case there is nothing to write yet.
-	const note = document.getElementById('notes-storage-note');
-	if (note) { note.textContent = _rapierNotesStorageSentence(); note.dataset.notesStorage = _rapierNotes.storageKnown; }
+	_rapierNotesStorageLines();
 }
 // The folder is the truth: list it, read the sidecar, reconcile, then read every note's bytes.
 // Atomic: everything is read into locals and published to the state only once every read has
@@ -852,6 +883,7 @@ async function _rapierNotesLoad() {
 	// getting here means what this window would write is founded on what is actually there.
 	state.syncState = syncState; state.indexBase = index; state.index = _rapierNotesCopyIndex(index); state.texts = new Map(); state.titles = new Map(); state.hold = new Set(); state.sizes = sizes; state.readFailed = new Map(); state.unreadable = new Set(); state.loadGen++; store.stale = false;
 	state.lastBackup = index.lastBackup || null;
+	_rapierNotesStorageLines();
 	state.stamps = stamps; state.stampsAt = stampsAt; state.readBracket = new Map();
 	_rapierNotesReadsReset();
 	// The index's memory, before either index is begun: what did not change since last time does not
@@ -987,6 +1019,9 @@ async function _rapierNotesReadFile(row) {
 			try {
 				const S = globalThis.RapierNotesSearch;
 				if (search && exact === undefined && S && typeof _rapierNotesLibraryRead === 'function') {
+					// The source stays in the existing pending queue. Large UTF-8 decode, image-byte
+					// projection, card title and both indexes run in its generation's worker.
+					if (source.byteLength > S.SEARCH_WORKER_CHARS && _rapierNotesLibraryRead(file, {searchBytes: source instanceof Uint8Array ? source : new Uint8Array(source)})) return;
 					const projected = S.projectSearchBytes(source, {decode, file});
 					state.titles.set(file, _rapierNotesModel().projectCard(file, projected.searchText).title || '');
 					state.readFailed.delete(file);
@@ -1296,7 +1331,9 @@ function _rapierNotesBuildSurface() {
 	// The arrow's question: the same panel, grown out of the arrow (_rapierNotesAskOpen).
 	const ask = _rapierNotesAskEl();
 	const bin = _rapierNotesBinEl();
-	surface.append(head, find, addsBar, scroll, fab, popup, sheet, status, help, selected, jump, ask, settings, bin);
+	// The quiet line under the head: what the storage is, until a backup exists (_rapierNotesStorageLines).
+	const storageLine = _rapierNotesEl('p', 'rapier-notes-storage'); storageLine.id = 'notes-storage-line'; storageLine.hidden = true;
+	surface.append(head, storageLine, find, addsBar, scroll, fab, popup, sheet, status, help, selected, jump, ask, settings, bin);
 	document.body.appendChild(surface);
 	state.surface = surface; state.scroll = scroll; state.scrollRoom = scrollRoom; state.sheet = sheet; state.find = find; state.search = search; state.fab = fab; state.popupEl = popup;
 	state.addsBar = addsBar; state.settingsEl = settings; state.jumpEl = jump; state.askEl = ask; state.binEl = bin; state.binPicked = new Set();
@@ -1866,7 +1903,9 @@ function _rapierNotesReorderUp(evt, cancelled) {
 	try { drag.head.releasePointerCapture(drag.pointer); } catch (_) {}
 	drag.head.classList.remove('rapier-notes-section-head--held');
 	for (const h of drag.heads) h.style.transform = '';
-	if (cancelled || !drag.moved || drag.at === drag.from) { _rapierNotesRender(); return drag.moved; }
+	// A press that moved nothing draws nothing again: the draw replaces the head under the pointer, and the click that follows a mouse press (the tap
+	// that opens the section's face) then has no head to land on.
+	if (cancelled || !drag.moved || drag.at === drag.from) { if (drag.moved) _rapierNotesRender(); return drag.moved; }
 	_rapierNotesSectionMove(drag.heads.map(h => h.dataset.notesSection), drag.from, drag.at);
 	state.swallowClick = performance.now();
 	return true;
@@ -3833,7 +3872,7 @@ function _rapierNotesWhen(time) {
 // a blob is named by its own content; an existing object is verified, not trusted by name), the
 // manifest last. Applied in that order, an interruption anywhere leaves objects nothing points at
 // yet -- never a manifest pointing at bytes that are not there.
-async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', restoredFrom} = {}, underLease = false) {
+async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', restoredFrom, signal, guard} = {}, underLease = false) {
 	const H = globalThis.RapierNotesHistory, state = _rapierNotes;
 	if (!H || typeof H.recordVersion !== 'function') return null;
 	const id = entry?.id;
@@ -3844,6 +3883,7 @@ async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', re
 	// manifestName already names its own part of the folder ('manifests/<id>.json').
 	// The import holds the folder lease for its whole landed batch; ordinary saves acquire it.
 	const record = async () => {
+		const active = () => { if (signal?.aborted) throw new DOMException('The Notes request was cancelled.', 'AbortError'); guard?.(); }; active();
 		const path = H.manifestName(id);
 		let manifest;
 		const held = await _rapierNotesStore.readHistory(path);
@@ -3857,6 +3897,7 @@ async function _rapierNotesRecordVersion({file, text, entry, reason = 'save', re
 		}
 		const createdFiles = [], readBack = new Map();
 		const result = await H.recordVersion(manifest, {file, text, entry, reason, now: Date.now(), ...(restoredFrom === undefined ? {} : {restoredFrom})});
+		active();
 		for (const write of result.writes) if (write.immutable) {
 			// The immutable writer checks absence or verifies equality under this same lease. Its
 			// result, not a second absence read, distinguishes new files from shared retained objects.
@@ -4589,9 +4630,10 @@ function _rapierNotesCloseSheet() {
 	state.sheetOpener = null;
 	_rapierNotesHeadPaint();
 }
-// The snackbar: one line at the foot with UNDO, after an archive or a delete. A new one replaces
-// the last; the undo puts the entries back exactly as they were, order untouched. An Undo is a
-// KEEP THIS path: the snack stays until the person answers it; it does not expire on a timer.
+// The snackbar: one line at the foot with UNDO, after an archive or a delete (of a note, or of a
+// section). A new one replaces the last; the undo puts the entries back exactly as they were, order
+// untouched. An Undo is a KEEP THIS path: the snack stays until the person answers it; it does not
+// expire on a timer.
 function _rapierNotesSnack(message, undo) {
 	const state = _rapierNotes, model = _rapierNotesNoticeModel(), life = model.life;
 	_rapierNotesSnackHide();
@@ -4709,20 +4751,25 @@ async function _rapierNotesSnackActivate(act) {
 		});
 		snack.transient = started.state;
 		if (!started.effect) return;
-		const kept = snack.undo ? snack.undo.map(was => [was.file, state.index.notes[was.file] ? {...state.index.notes[was.file]} : null]) : [];
+		const entries = Array.isArray(snack.undo) ? snack.undo : [];
+		const kept = entries.map(was => [was.file, state.index.notes[was.file] ? {...state.index.notes[was.file]} : null]);
+		let again = null;
 		try {
 			if (!snack.undo) throw new Error('nothing to undo');
-			for (const was of snack.undo) { const entry = state.index.notes[was.file]; if (entry) Object.assign(entry, was.fields); }
+			// A deleted section's Undo is a function (_rapierNotesSectionEdit): it puts the section back and answers what takes it out again.
+			if (typeof snack.undo === 'function') again = snack.undo();
+			else for (const was of entries) { const entry = state.index.notes[was.file]; if (entry) Object.assign(entry, was.fields); }
 			await _rapierNotesWriteIndex();
 			snack.transient = model.life.stepTransient(snack.transient, {type: 'settle', nowMs: performance.now(), ticket: started.effect.ticket, ok: true}).state;
 			const el = snack.el;
 			_rapierNotesSnackHide();
-			if (typeof _rapierNotesLibraryTouch === 'function') for (const was of snack.undo || []) _rapierNotesLibraryTouch(was.file);
+			if (typeof _rapierNotesLibraryTouch === 'function') for (const was of entries) _rapierNotesLibraryTouch(was.file);
 			_rapierNotesRender();
 			el?.remove();
 			return;
 		} catch (error) {
 			for (const [f, e] of kept) if (e && state.index.notes[f]) Object.assign(state.index.notes[f], e);
+			if (typeof again === 'function') { again(); _rapierNotesRender(); }
 			snack.transient = model.life.stepTransient(snack.transient, {
 				type: 'settle', nowMs: performance.now(), ticket: started.effect.ticket, ok: false, error: String(error?.message || error),
 			}).state;
@@ -4782,15 +4829,16 @@ function _rapierNotesRemindSnack(file) {
 globalThis.__rapierNotesRemindTick = () => _rapierNotesRemindTick();
 // The Sections mode's rename and delete, over the model's own renameSection and removeSection: a
 // rename carries every note in the section and the person's own order (the order names sections by
-// name); a delete sends the section's notes to Other -- their category simply names a section that
-// is gone, which sectionOf reads as Other -- and deletes no note. The section's element is keyed
-// by its name, so it is let go for the render to rebuild.
+// name); a delete sends the section's notes to Other -- the model clears their category -- and
+// deletes no note. Nothing is asked: the snack says where the notes are, and its Undo puts the
+// section back as it stood (its place, its order, its notes). The section's element is keyed by
+// its name, so it is let go for the render to rebuild.
 async function _rapierNotesSectionEdit(act, arg) {
 	const state = _rapierNotes, M = _rapierNotesModel(), from = state.sheetSection; if (!from || !state.index) return;
 	// When the folder refuses the write, this one change is undone on whatever the index is by then:
 	// a colour, a pin or a tick the person set while the write was in flight is not this edit's to
 	// throw away, and putting the whole earlier picture back would throw it away. The drag's failure path already undoes only its own key.
-	let undo;
+	let undo, snack = '';
 	if (act === 'section-rename') {
 		const to = M.cutText(String(arg || '').trim().replace(/\s+/g, ' '), 48);
 		if (!to || to === from) { _rapierNotesHideSheet(); return; }
@@ -4804,10 +4852,9 @@ async function _rapierNotesSectionEdit(act, arg) {
 			if (state.reorderWasClosed && to in state.reorderWasClosed) { state.reorderWasClosed[from] = state.reorderWasClosed[to]; delete state.reorderWasClosed[to]; }
 		};
 	} else {
-		const count = Object.values(state.index.notes).filter(e => e && e.category === from && !e.trashed).length;
-		const ok = await rapierConfirm({title: 'delete section', message: count ? 'Delete "' + from + '"? Its ' + (count === 1 ? 'note goes' : count + ' notes go') + ' to Other. No note is deleted.' : 'Delete the empty section "' + from + '"?', confirmLabel: 'delete section', destructive: true});
-		if (ok !== true) return;
-		const at = state.index.sections.findIndex(s => s.name === from), after = state.index.sections[at + 1]?.name || null;
+		const count = M.sortedSection(state.index, from).length;
+		snack = 'Section "' + from + '" deleted' + (count ? '. ' + (count === 1 ? 'Its note is' : 'Its ' + count + ' notes are') + ' in Other.' : '');
+		const at = state.index.sections.findIndex(s => s.name === from), after = state.index.sections[at + 1]?.name || null, row = {...state.index.sections[at]};
 		const orderAt = Array.isArray(state.index.sectionOrder) ? state.index.sectionOrder.indexOf(from) : -1;
 		const emptied = Object.keys(state.index.notes).filter(file => state.index.notes[file]?.category === from);
 		const wasClosed = state.reorderWasClosed?.[from];
@@ -4815,17 +4862,26 @@ async function _rapierNotesSectionEdit(act, arg) {
 		if (Array.isArray(state.index.sectionOrder)) state.index = {...state.index, sectionOrder: state.index.sectionOrder.filter(id => id !== from)};
 		if (state.reorderWasClosed) delete state.reorderWasClosed[from];
 		undo = () => {
+			const had = state.index.sections.some(s => s.name === from);
 			state.index = M.moveSection(M.addSection(state.index, from), from, after);
+			// The section that stood, not a fresh one: its fold (the Sections mode had folded it) comes back with it.
+			if (!had) state.index = {...state.index, sections: state.index.sections.map(s => s.name === from ? {...row} : s)};
 			for (const file of emptied) if (state.index.notes[file] && !state.index.notes[file].category) state.index = M.setCategory(state.index, file, from);
 			if (orderAt >= 0 && Array.isArray(state.index.sectionOrder) && !state.index.sectionOrder.includes(from)) { const order = state.index.sectionOrder.slice(); order.splice(Math.min(orderAt, order.length), 0, from); state.index = {...state.index, sectionOrder: order}; }
 			if (state.reorderWasClosed && wasClosed !== undefined) state.reorderWasClosed[from] = wasClosed;
+			// What takes the section out again, for an Undo the folder refuses (_rapierNotesSnackActivate).
+			return () => {
+				state.index = M.removeSection(state.index, from);
+				if (Array.isArray(state.index.sectionOrder)) state.index = {...state.index, sectionOrder: state.index.sectionOrder.filter(id => id !== from)};
+			};
 		};
 	}
 	const grid = state.grids[from]; if (grid) { delete state.grids[from]; grid.parentElement?.remove(); }
 	state.sheetSection = null; _rapierNotesHideSheet();
 	_rapierNotesRender();
 	try { await _rapierNotesWriteIndex(); }
-	catch (error) { undo(); _rapierNotesRender(); showToast('The section change was not written to the notes folder: ' + String(error?.message || error), 'error'); }
+	catch (error) { undo(); _rapierNotesRender(); showToast('The section change was not written to the notes folder: ' + String(error?.message || error), 'error'); return; }
+	if (snack) _rapierNotesSnack(snack, undo);
 }
 // Keep or Drop on a change an agent proposed (notes.propose). Keep writes its words into the note it changes through that note's own
 // save (its history keeps what was there) and puts the proposal in Trash. Drop puts the proposal in Trash, where it can still be restored.
@@ -6759,7 +6815,7 @@ async function _rapierNotesContinueBackupSet(prepared, {again = false, inventory
 	const omitted = prepared.omitted.length ? ' Not included: ' + prepared.omitted.map(row => row.name).join(', ') + '; keep their originals, and restore this copy with Add backup.' : ' Keep the parts together to restore.';
 	// Sent again, the last sentence says it is the earlier copy, as the one-file toast does -- not a fourth sentence.
 	showToast((confirmed ? 'Backed up ' : 'Backup sent to destinations: ') + count + (count === 1 ? ' part' : ' parts') + ', ' + _rapierNotesBytesWords(prepared.bytes) + '.' + omitted + (again ? ' This is the earlier copy, not a new backup.' : ''), confirmed && !prepared.omitted.length ? 'success' : 'info');
-	const line = document.getElementById('notes-storage-note'); if (line) line.textContent = _rapierNotesStorageSentence();
+	_rapierNotesStorageLines();
 	} finally { await snapshot?.release(); }
 }
 // An export outcome is not the prepared copy: only an actual send reaches this owner. The date is
@@ -6802,7 +6858,7 @@ async function _rapierNotesSendPreparedBackup({again = false, verifiedFile, onPr
 	// own, so there is nothing to discard and nothing more to say; a copy sent again from Notes settings is
 	// named as the earlier one, with the time it was prepared.
 	showToast(message + '.' + (again ? ' This is the earlier copy, prepared ' + new Date(prepared.stamp).toLocaleString('en') + ', not a new backup.' : ''), outcome.status === 'confirmed' ? 'success' : 'info');
-	const line = document.getElementById('notes-storage-note'); if (line) line.textContent = _rapierNotesStorageSentence();
+	_rapierNotesStorageLines();
 }
 async function _rapierNotesDiscardPreparedBackup() {
 	const state = _rapierNotes, prepared = state.preparedBackup;
@@ -7645,28 +7701,6 @@ function _rapierNotesBind(surface, search) {
 	// main panel, this panel's copy, or the host.
 	try { RapierPreferences.subscribe('theme', () => _rapierNotesThemeMark()); } catch (_) {}
 }
-// Notes works everywhere the main rapier.html runs, but on the web -- the site, or the file opened
-// offline -- the folder is the browser's own storage, which it can clear. So the first open of a
-// session says so, once, before the cards: what can be lost and what to do, in two or three short
-// lines of the house's plain lower case, and no more. Its three answers: open notes; sync with
-// cloudflare, the settings panel's own box and its own press (offline the device's words, online the
-// sync sheet); cancel. A page-only store or one that could not be opened says what is true of it
-// instead. The app itself is never warned: it keeps the folder on the device.
-async function _rapierNotesCacheWarning() {
-	const state = _rapierNotes;
-	if (state.warned) return true;
-	if (_rapierNotesIsApp()) return true;
-	await _rapierNotesStorageAnswer(false, {measure: false});
-	state.warned = true;
-	const words = {
-		memory: 'your notes live only in this page and go when it closes. back them up from the notes settings before you close it.',
-		fault: 'your notes could not be stored safely here, so new ones may not be kept. back up what you need before you close this page.',
-	}[state.storageKnown] || '• This browser can clear your notes.\n• Back up, or sync.';
-	const choice = await rapierConfirm({title: 'notes in this browser', message: words, confirmLabel: 'Open notes', secondaryLabel: 'Sync with Cloudflare'});
-	// The sync answer does what the box does, and does not stand in the way of the notes.
-	if (choice === 'secondary') { try { _rapierNotesSyncPress(); } catch (_) {} return true; }
-	return choice === true;
-}
 // ---- The lift: a card into its note, and back -----------------------------------------------------
 // Keep's motion, as one motion on one clock: a coloured card flattens into the top bar as it moves,
 // never growing to full size first and shrinking after. The lift is a layer over the whole screen
@@ -8296,7 +8330,6 @@ async function _rapierNotesOpen(capture = false, {unseen = false} = {}) {
 	const back = state.mode && state.current && !state.open;
 	const lift = back && !unseen ? _rapierNotesLiftBack() : null;
 	await _rapierNotesStore.kind();
-	if (!await _rapierNotesCacheWarning()) { lift?.end(); _rapierNotesStartClass(false); return; }
 	const surface = _rapierNotesEnsure();
 	try { await _rapierNotesReady(); } catch (error) { lift?.end(); _rapierNotesStartClass(false); showToast(String(error.message || error), 'error'); return; }
 	try { await _rapierNotesFlush(); } catch (_) { lift?.end(); _rapierNotesStartClass(false); return; }
@@ -8450,10 +8483,12 @@ function _rapierNotesFence(on) {
 // cards are up the toast root is a child of the surface: it stacks inside it, above the cards and
 // the foot, under the scrim and the sheets (a notice under a sheet is visibly under it), and the
 // placer takes the surface a notice stands inside as its ground, not its obstacle. Back to the
-// body when the cards go, so the editor's own notices are the editor's again.
+// body when the cards go, so the editor's own notices are the editor's again. A canvas that is up
+// over the cards (the + bar's DRAW) holds the root while it is (draw/draw.js _rapierDrawToastHome,
+// which asks here where to put it back), so the cards opening or closing under it move nothing.
 function _rapierNotesToastHome(inNotes) {
 	const state = _rapierNotes, root = document.getElementById('toast-root');
-	if (!root) return;
+	if (!root || document.body.classList.contains('rapier-draw-open')) return;
 	const home = inNotes && state.surface ? state.surface : document.body;
 	if (root.parentElement !== home) home.appendChild(root);
 }
@@ -8485,16 +8520,9 @@ Object.defineProperty(globalThis, 'rapierNotesStanding', { enumerable: false, ge
 	busy: !!(_rapierNotes.noteOpening || _rapierNotes.opening || _rapierNotes.returning || _rapierNotes.renaming) }) });
 // ---- The agent's door
 // ---------------------------------------------------------------------------
-// notes.list and notes.read (agent/kernel.mjs, injected as host.notesList/host.notesRead by
-// agent/browser.js) read the folder through this one object, so the agent sees the person's notes
-// wherever this file ships and nothing where it does not (the document profile refuses cleanly).
-// The folder as it stands is the answer: with Notes loaded, its own index (queued changes
-// included) and a read placed behind that note's pending writes; without, a read-only pass over
-// the folder that writes nothing -- not the sidecar, not a rebuilt index, no toast. A trashed note
-// is on its way out and is neither listed nor read; an archived one is listed under 'archive'. A
-// fault is a refusal (null), never a throw the kernel has to catch, and a folder written by a
-// newer Rapier is refused the same way (the shell says why when the person opens Notes). The rows
-// are the kernel's contract: {file, title, section, skill, modified}; the title is the card's own.
+// Every agent connection uses this Notes owner. A query reaches the card search; writes reach
+// the folder transaction. Trash stays readable and can be restored; only an explicit is:trash
+// query includes it in a list. No tool changes Skills, credentials or permanent deletion.
 async function _rapierNotesHostIndex(signal) {
 	const state = _rapierNotes;
 	if (state.index) return state.index;
@@ -8506,10 +8534,18 @@ async function _rapierNotesHostIndex(signal) {
 	catch (error) { if (error?.code !== 'corrupt') throw error; parsed = M.emptyIndex(); }
 	return M.reconcile(parsed, files).index;
 }
+function _rapierNotesHostRefusal(error) {
+	if (error?.name === 'AbortError') return {refused: 'cancelled'};
+	if (error?.code === 'notes_locked') return {availability: 'locked', reason: 'notes_locked', hint: 'Unlock the enrolled Notes endpoint and reconnect.'};
+	return {refused: String(error?.code || '').startsWith('notes_') ? error.code : error?.code === 'changed' ? 'notes_changed' : 'notes_folder_unreadable'};
+}
+function _rapierNotesHostLocked() {
+	return _rapierNotes.captureToken ? {availability: 'locked', reason: 'notes_locked', hint: 'Unlock the app to use Notes.'} : null;
+}
 // A change an agent wrote over a note, with nothing of the person's lost. It is written only when the note is not open in the editor,
 // still holds the words the agent read whole (`base`, their SHA-256) and its History took the person's words first; the owner's save
 // refuses the write if the note moved after that. Otherwise `{reason}` says why it was not written; null when the call was withdrawn.
-async function _rapierNotesAgentChange(file, next, base, signal) {
+async function _rapierNotesAgentChange(file, next, base, signal, guard) {
 	const state = _rapierNotes, store = _rapierNotesStore, sha = globalThis.RapierNotesIntegrity.sha256;
 	if (!base) return {reason: 'notes_not_read'};
 	if (state.current === file) return {reason: 'notes_open'};
@@ -8518,12 +8554,14 @@ async function _rapierNotesAgentChange(file, next, base, signal) {
 	const entry = state.index.notes[file], was = await store.queue(file, () => store.read(file));
 	if (typeof was !== 'string' || await sha(was) !== base) return {reason: 'notes_changed'};
 	let past = null;
-	if (entry?.id) { try { past = await _rapierNotesRecordVersion({file, text: was, entry, reason: 'save'}); } catch (error) { console.warn('[rapier] notes history', error); } }
+	if (entry?.id) { try { past = await _rapierNotesRecordVersion({file, text: was, entry, reason: 'save', signal, guard}); } catch (error) { if (signal?.aborted || error?.code === 'notes_locked') throw error; console.warn('[rapier] notes history', error); } }
 	if (!past) return {reason: 'notes_history_unavailable'};
 	if (signal?.aborted) return null;
 	if (state.current === file) return {reason: 'notes_open'};
 	let saved;
-	try { saved = await store.folder.save({file, id: entry.id, expectedDigest: [base], text: next, preserveConflict: false}); }
+	try { saved = await store.folder.save({file, id: entry.id, expectedDigest: [base], text: next, preserveConflict: false}, {signal, guard: () => {
+		guard?.(); if (state.current === file) throw Object.assign(new Error('The person has this note open.'), {code: 'notes_open'});
+	}}); }
 	catch (error) { if (error?.code === 'changed') return {reason: 'notes_changed'}; throw error; }
 	_rapierNotesTake(saved);
 	const kept = saved.file;
@@ -8537,9 +8575,14 @@ globalThis.rapierNotesHost = Object.freeze({
 	// notes.propose: a new note lands at once as the person's own, marked in the index as the agent's. A change is written at once over a
 	// note the agent read whole and the person has not touched (their words go into History first); any other change is left as a card
 	// to keep or drop, and `reason` says why. `saved` is the words as stored, for the kernel's next base.
-	async propose({text, title = '', of = '', by, base}, {signal} = {}) {
+	async propose({text, title = '', of = '', by, base}, {signal, guard: endpointGuard} = {}) {
 		try {
+			const locked = _rapierNotesHostLocked(); if (locked) return locked;
 			const bytes = _rapierNotesStore.bytes;
+			const guard = () => {
+				endpointGuard?.();
+				if (_rapierNotesHostLocked() || bytes && _rapierNotesStore.bytes !== bytes) throw Object.assign(new Error('Notes is locked.'), {code: 'notes_locked'});
+			};
 			await _rapierNotesReady();
 			const M = _rapierNotesModel(), index = await _rapierNotesHostIndex(signal);
 			if (!index || signal?.aborted || bytes && _rapierNotesStore.bytes !== bytes || typeof text !== 'string') return null;
@@ -8547,43 +8590,50 @@ globalThis.rapierNotesHost = Object.freeze({
 			const at = Date.now(), body = title && !/^#\s/.test(text) ? '# ' + title + '\n\n' + text : text;
 			let waiting = null;
 			if (of) {
-				const change = await _rapierNotesAgentChange(of, text, base, signal);
+				const change = await _rapierNotesAgentChange(of, text, base, signal, guard);
 				if (change?.file) { if (_rapierNotes.open) _rapierNotesRender(); return {file: change.file, applied: true, saved: text}; }
 				if (!change || signal?.aborted) return null;
 				waiting = change.reason;
 			}
 			const mark = of ? {proposed: M.cleanProposed({by, at, of})} : {agent: M.cleanAgent({by, at})};
 			if (!Object.values(mark)[0]) return null;
-			const file = await _rapierNotesWriteNew(body, title || '', mark, undefined, {signal});
+			const file = await _rapierNotesWriteNew(body, title || '', mark, undefined, {signal, guard});
 			if (_rapierNotes.open) _rapierNotesRender();
 			return {file, applied: !of, ...(waiting ? {reason: waiting} : {saved: body})};
-		} catch (error) { console.warn('[rapier] notes: the agent\'s proposal was refused', error); return null; }
+		} catch (error) { console.warn('[rapier] notes: the agent\'s proposal was refused', error); return _rapierNotesHostRefusal(error); }
 	},
-	async list({signal} = {}) {
+	async list({query = '', signal} = {}) {
 		try {
+			const locked = _rapierNotesHostLocked(); if (locked) return locked;
 			const bytes = _rapierNotesStore.bytes;
-			const denied = () => bytes && _rapierNotesStore.bytes !== bytes;
+			const denied = () => _rapierNotesHostLocked() || bytes && _rapierNotesStore.bytes !== bytes;
 			if (denied()) return null;
 			await _rapierNotesReady();
 			const M = _rapierNotesModel(), index = await _rapierNotesHostIndex(signal);
 			if (!index || signal?.aborted || denied()) return null;
-			const rows = [];
+			const rows = [], texts = new Map();
 			for (const [file, entry] of Object.entries(index.notes)) {
-				if (entry.trashed) continue;
+				if (entry.trashed && !query) continue;
 				let text = null;
 				try { text = (_rapierNotes.index === index ? _rapierNotes.texts.get(file) : undefined) ?? await _rapierNotesStore.read(file); }
 				catch (error) { if (error?.code !== 'unreadable') throw error; }
 				if (signal?.aborted || denied()) return null;
+				if (query && typeof text !== 'string') return {refused: 'notes_search_incomplete'};
+				if (query) texts.set(file, text);
 				const card = M.projectCard(file, typeof text === 'string' ? text : '');
 				rows.push({file, title: card.title || '', section: M.sectionOf(entry, index.sections), skill: entry.skill === true, ...(Number.isFinite(entry.modified) ? {modified: entry.modified} : {})});
 			}
-			return denied() ? null : rows;
+			if (denied()) return null;
+			if (!query) return rows;
+			const found = typeof _rapierNotesLibrarySearchList === 'function' ? _rapierNotesLibrarySearchList(texts, index, query) : null;
+			return found ? rows.filter(row => found.has(row.file)) : {refused: 'notes_search_incomplete'};
 		} catch (error) { console.warn('[rapier] notes: the agent\'s list was refused', error); return null; }
 	},
-	async read(file, {signal} = {}) {
+	async read(file, {version, signal} = {}) {
 		try {
+			const locked = _rapierNotesHostLocked(); if (locked) return locked;
 			const bytes = _rapierNotesStore.bytes;
-			const denied = () => bytes && _rapierNotesStore.bytes !== bytes;
+			const denied = () => _rapierNotesHostLocked() || bytes && _rapierNotesStore.bytes !== bytes;
 			if (denied()) return null;
 			await _rapierNotesReady();
 			const M = _rapierNotesModel(), name = String(file || '');
@@ -8591,12 +8641,74 @@ globalThis.rapierNotesHost = Object.freeze({
 			const index = await _rapierNotesHostIndex(signal);
 			if (!index || signal?.aborted || denied()) return null;
 			const entry = index.notes[name];
-			if (!entry || entry.trashed) return null;
+			if (!entry) return null;
+			if (version !== undefined) {
+				if (!entry.id) return null;
+				const H = globalThis.RapierNotesHistory;
+				if (!H) return {refused: 'notes_history_unavailable'};
+				const manifest = H.parseManifest(await _rapierNotesStore.readHistory(H.manifestName(entry.id)), {noteId: entry.id, now: Date.now()});
+				if (!manifest.versions.some(row => row.id === version)) return null;
+				const held = await H.materialize(manifest, version, path => _rapierNotesStore.readHistory(path));
+				return signal?.aborted || denied() ? null : {file: name, text: held.text, version};
+			}
 			// Behind the note's own queue, so a save in flight lands before the agent reads.
 			const text = await _rapierNotesStore.queue(name, () => _rapierNotesStore.read(name));
 			if (typeof text !== 'string' || signal?.aborted || denied()) return null;
 			return {file: name, text, section: M.sectionOf(entry, index.sections), ...(Number.isFinite(entry.modified) ? {modified: entry.modified} : {})};
-		} catch (error) { console.warn('[rapier] notes: the agent\'s read was refused', error); return null; }
+		} catch (error) { console.warn('[rapier] notes: the agent\'s read was refused', error); return _rapierNotesHostRefusal(error); }
+	},
+	async history(file, {signal} = {}) {
+		try {
+			const locked = _rapierNotesHostLocked(); if (locked) return locked;
+			await _rapierNotesReady();
+			const store = _rapierNotesStore; await store.kind(); const bytes = store.bytes;
+			if (!_rapierNotesModel().isNoteFile(file)) return {file, found: false, versions: []};
+			const index = await _rapierNotesHostIndex(signal), entry = index?.notes[file];
+			if (!entry) return {file, found: false, versions: []};
+			if (!entry.id) return {file, found: true, versions: [], tidied: 0, tidiedAt: null};
+			const H = globalThis.RapierNotesHistory;
+			if (!H) return {refused: 'notes_history_unavailable'};
+			const manifest = H.parseManifest(await store.readHistory(H.manifestName(entry.id)), {noteId: entry.id, now: Date.now()});
+			if (signal?.aborted || _rapierNotesHostLocked() || store.bytes !== bytes) return {refused: 'cancelled'};
+			return {file, found: true, versions: H.versionsOf(manifest, file).reverse().map(row => ({version: row.id, time: row.time, reason: row.reason, size: row.size, current: row.id === manifest.current})),
+				tidied: manifest.thinned.reduce((sum, batch) => sum + batch.removes.length, 0), tidiedAt: manifest.thinned.at(-1)?.time ?? null};
+		} catch (error) { return _rapierNotesHostRefusal(error); }
+	},
+	async set({file, ...input}, {signal, guard: endpointGuard} = {}) {
+		try {
+			const locked = _rapierNotesHostLocked(); if (locked) return locked;
+			await _rapierNotesReady();
+			const M = _rapierNotesModel(), fields = Object.fromEntries(M.NOTE_CONTROL_FIELDS.filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
+			if (!M.isNoteFile(file)) return {refused: 'notes_target_missing'};
+			const app = _rapierNotesIsApp();
+			if (Object.hasOwn(fields, 'reminder') && (!app || typeof globalThis.RapierPlatform?.host?.scheduleReminder !== 'function')) return {refused: 'notes_reminder_app_only'};
+			const store = _rapierNotesStore; await store.kind(); const bytes = store.bytes;
+			const guard = () => {
+				endpointGuard?.();
+				if (_rapierNotesHostLocked() || store.bytes !== bytes) throw Object.assign(new Error('Notes is locked.'), {code: 'notes_locked'});
+				if (Object.hasOwn(fields, 'tags') && _rapierNotes.current === file) throw Object.assign(new Error('The person has this note open.'), {code: 'notes_open'});
+			};
+			guard();
+			const fresh = await store.folder.read(), id = fresh.index.notes[file]?.id;
+			if (!id) return {refused: 'notes_target_missing'};
+			const saved = await store.folder.controls({file, id, fields}, {signal, app, guard});
+			_rapierNotesTake(saved); _rapierNotesHold(file, saved.text);
+			if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(file);
+			if (_rapierNotes.open) _rapierNotesRender();
+			_rapierNotesHeadPaint();
+			const result = {file, changed: saved.changed, previous: saved.previous};
+			if (Object.hasOwn(fields, 'reminder')) result.reminder = {device: 'app', saved: true, delivery: 'device_managed'};
+			return result;
+		} catch (error) { return _rapierNotesHostRefusal(error); }
+	},
+	async sync({action, signal, guard} = {}) {
+		try {
+			const locked = _rapierNotesHostLocked(); if (locked) return locked;
+			guard?.();
+			if (action !== 'now') return {refused: 'notes_sync_action_invalid'};
+			return typeof _rapierNotesSyncUi !== 'undefined' && typeof _rapierNotesSyncUi.syncNow === 'function'
+				? await _rapierNotesSyncUi.syncNow({signal, guard}) : {action, synced: false, reason: 'notes_sync_not_configured'};
+		} catch (error) { return _rapierNotesHostRefusal(error); }
 	},
 });
 // The engine carries nothing for Notes (its top level is a ratchet that only shrinks: tools/

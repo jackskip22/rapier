@@ -2,7 +2,7 @@
 const RAPIER_TABLE_CAPTION_PREFIX_RE = /^(?:Table:|:) /;
 // The document's renderer. DOM, codecs and host state are explicit inputs.
 function createMarkdownRenderer(runtime) {
-  const {RAPIER_HIGHLIGHT_COLOR_BY_MARKER, RAPIER_MARKDOWN_SPEC, RAPIER_RENDERED_HEADING_SELECTOR, _rapierApplyMarkdownSpec, _rapierBidiStrong, _rapierChromeOwnsId, _rapierCodeHtml, _rapierDeriveDarkColor, _rapierDormantHeadings, _rapierEmbedAssetSource, _rapierHeadingSlugBase, _rapierHighlightAdmitted, _rapierInstallMarkdownMath, _rapierMarkdownPreview, _rapierPlainLayout, _rapierProviders, _rapierRemoteContent, _rapierRemoteImagePlaceholder, _rapierRemoteSubresourceOrigin, _rapierRenderedAnchorOriginalIds, _rapierSourceCharEscaped, _rapierSplitOpeningFrontmatter, _rapierUiDiagram, _rapierUiMath, document, escapeRapierHtmlText, globalThis, sanitizeRapierHtml, window} = runtime;
+  const {RAPIER_HIGHLIGHT_COLOR_BY_MARKER, RAPIER_MARKDOWN_SPEC, RAPIER_RENDERED_HEADING_SELECTOR, _rapierApplyMarkdownSpec, _rapierBidiStrong, _rapierChromeOwnsId, _rapierCodeHtml, _rapierDeriveDarkColor, _rapierDormantHeadings, _rapierEmbedAssetSource, _rapierHeadingSlugBase, _rapierNextHeadingSlug, _rapierHighlightAdmitted, _rapierInstallMarkdownMath, _rapierMarkdownPreview, _rapierPlainLayout, _rapierProviders, _rapierRemoteContent, _rapierRemoteImagePlaceholder, _rapierRemoteSubresourceOrigin, _rapierRenderedAnchorOriginalIds, _rapierSourceCharEscaped, _rapierSplitOpeningFrontmatter, _rapierUiDiagram, _rapierUiMath, document, escapeRapierHtmlText, globalThis, sanitizeRapierHtml, window} = runtime;
   let md = runtime.md;
 function initMarkdownIt() {
 	if (typeof window.markdownit !== 'function') throw new Error('markdownit');
@@ -596,18 +596,10 @@ function _rapierAssignHeadingSlugs(root, selector = RAPIER_RENDERED_HEADING_SELE
 	const headings = Array.from(root.querySelectorAll(selector)).concat(_rapierDormantHeadings(root, selector));
 	const headingSet = new Set(headings);
 	if (reserveExisting) (root.isConnected ? document : root).querySelectorAll('[id]').forEach(element => {
-		if (!headingSet.has(element) && element.id) used[element.id] = 1;
+		if (!headingSet.has(element) && element.id) used[element.id] = 0;
 	});
 	headings.forEach(heading => {
-		const base = _rapierHeadingSlugBase(heading.textContent);
-		let slug = base;
-		if (used[slug]) {
-			let ordinal = used[base];
-			do { slug = base + '-' + (++ordinal); } while (used[slug]);
-			used[base] = ordinal;
-		}
-		used[slug] = 1;
-		heading.id = slug;
+		heading.id = _rapierNextHeadingSlug(_rapierHeadingSlugBase(heading.textContent), used);
 	});
 }
 

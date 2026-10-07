@@ -41,6 +41,12 @@ export async function serverCells() {
   try {
     await start();
     assert.equal((await fetch(server.origin+'/mcp',{method:'POST',body:'{}'})).status,401,'transport bearer is required before tool dispatch');
+    const listing=await rpc('tools/list');
+    for(const tool of listing.tools) {
+      assert.equal(Object.hasOwn(tool,'securitySchemes'),false,'the local transport does not advertise an OAuth flow');
+      assert.equal(Object.hasOwn(tool._meta || {},'securitySchemes'),false,'host metadata does not claim another authentication path');
+    }
+    assert(!JSON.stringify(listing).includes(server.token),'the transport credential stays outside tool descriptors');
     assert.equal((await fetch(server.origin+'/d/outside.md')).status,403,'a symlink cannot disclose an outside file');
     assert.equal((await fetch(server.origin+'/d/%2e%2e/outside.md')).status,404,'parent paths never become file access');
     assert.equal((await fetch(server.origin+'/d/.rapier-server/credentials.json')).status,403,'private state is not a document');
@@ -72,6 +78,16 @@ export async function serverCells() {
     assert.equal(await readFile(join(root,'agent.md'),'utf8'),original);
     const scoped=await call('rapier.open',{},'?document=nested%2Fsecond.md'); assert(scoped.document,JSON.stringify(scoped));
     const read=await call('document.read_context',{...named(opened.document),start:0,end:original.length}); assert.equal(read.text,original);
+    const exported=await rpc('tools/call',{name:'document.export',arguments:{...named(opened.document),format:'markdown'}});
+    const file=exported.content.find(value=>value.type==='resource_link');assert(file,JSON.stringify(exported));
+    assert(!JSON.stringify(exported).includes(server.token),'the transport credential stays outside file results');
+    for(const headers of [{},{Authorization:'Bearer '+'A'.repeat(43)}])
+      assert.equal((await fetch(file.uri,{headers})).status,401,'an export address alone or with a foreign bearer grants no access');
+    const downloaded=await fetch(file.uri,{headers:{Authorization:'Bearer '+server.token}});
+    assert.equal(downloaded.status,200);assert.equal(await downloaded.text(),original,'the authenticated export retains exact source');
+    const fileHead=await fetch(file.uri,{method:'HEAD',headers:{Authorization:'Bearer '+server.token}});
+    assert.equal(fileHead.status,200);assert.equal((await fileHead.arrayBuffer()).byteLength,0);
+    assert.equal(Number(fileHead.headers.get('Content-Length')),Buffer.byteLength(original));
     const changed='Revised agent document.\r\n',operation_id=randomUUID();
     const edit=await call('document.apply_edits',{document:opened.document,operation_id,edits:[{context_handle:read.handle,text:changed}]});
     assert.equal(edit.outcome,'applied',JSON.stringify(edit)); assert.equal(await readFile(join(root,'agent.md'),'utf8'),changed);
@@ -88,8 +104,20 @@ export async function serverCells() {
     const rotation=await call('document.rotate_capability',{document:opened.document,editorKey});
     assert.equal(rotation.rotated,true,JSON.stringify(rotation));assert(!rotation.document,'the successor is not exposed as agent-readable text');
     const successor=await unsealForEditor(editorKey,rotation.sealed);assert.match(successor,/^rpr_/);
+    // Disconnect is the owner's stored decision: the editor shares the successor again before an agent uses it.
+    const synced=await call('document.sync',{document:successor,editorKey});
+    const shared=await call('document.set_policy',{document:successor,editorKey,expectedRevision:synced.documentRevision,expectedVersion:synced.version,agentAccess:true,decisionId:'share-again'});
+    assert.equal(shared.outcome,'ok',JSON.stringify(shared));
     const returned=await call('document.create_return',named(successor));
     assert.equal(new URL(returned.return_url).origin,server.origin,'a returned file belongs to this business server, not the public deployment');
+    const returnedSource='\ufeffReturned from the local client.\r\n😀\r\n';
+    for(const headers of [{},{Authorization:'Bearer '+'A'.repeat(43)}])
+      assert.equal((await fetch(returned.return_url,{method:'POST',headers:{'Content-Type':'text/markdown',...headers},body:returnedSource})).status,401,'a public return address never authorizes an upload');
+    assert.equal((await fetch(returned.return_url,{headers:{Authorization:'Bearer '+server.token}})).status,405,'the local service exposes no OAuth browser-return flow');
+    const received=await fetch(returned.return_url,{method:'POST',headers:{'Content-Type':'text/markdown',Authorization:'Bearer '+server.token},body:returnedSource});
+    assert.equal(received.status,200);assert.equal((await received.json()).accepted,true);
+    assert.equal((await call('document.read_context',{...named(successor),return_id:returned.return_id,start:0,limit:4096})).text,returnedSource);
+    assert.equal(await readFile(join(root,'agent.md'),'utf8'),original,'an authenticated return keeps the working file unchanged');
 
     const old=await call('document.read_context',{...named(opened.document),start:0,end:original.length}); assert.notEqual(old.text,original,'retired bearer has no read authority');
     assert.equal((await call('document.read_context',{...named(successor),start:0,end:original.length})).text,original);

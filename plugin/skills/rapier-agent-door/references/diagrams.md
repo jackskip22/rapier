@@ -4,6 +4,15 @@ Use a diagram when relationships, sequence, branching or position make an explan
 Keep the explanation beside it. Label assumptions and unknowns; a neat drawing does not verify a claim.
 Use the document's style and Rapier's defaults, short labels and prose explaining the important path.
 
+## Two kinds, kept apart
+
+A native SVG diagram is made with `document.draw`: named figures the person can move, restyle, connect and
+extend on Rapier's canvas, saved as SVG in the document. A Mermaid flowchart is a `mermaid` fence in the
+Markdown source, inserted with `document.apply_edits`; Rapier renders the supported grammar offline and the
+file keeps the text. A drawing is not Mermaid and a fence is not a drawing. Choose the drawing when shapes
+should be moved and edited by hand; choose the fence when the flowchart must stay plain text in any
+Markdown editor.
+
 ## Put the diagram in the working document
 
 For an open Rapier document, read the intended passage and insert Markdown through `document.apply_edits`,
@@ -49,7 +58,7 @@ Do not silently discard connections or claim that the result rendered without ob
 
 ## Native figures
 
-`document.draw` can create this diagram with no coordinates. Supply the MCP document capability and a
+`document.draw` can create this diagram with no coordinates. Supply the MCP workspace handle and a
 fresh operation ID as usual; examples here show only the operation payload.
 
 ```json
@@ -92,8 +101,14 @@ when this host carries Paint. Send a paint figure with a stable id and ordered s
 ]}]}
 ```
 
-`points` are drawing coordinates with optional pressure from 0 to 1; `size` is 0 to 100, and `load`
-and `water` are 0 to 1. Brush ids come from the shipped registry, including `rapier/scumble`,
+`points` are drawing coordinates with optional pressure from 0 to 1. `size` is 0 to 100; omitted, it is the
+brush's own first-use size, the width the Paint tool opens that brush at. `get_context` lists every brush under
+`paint.brushes` (its id, name, kind and that size) and each control's range and default under `paint.controls`.
+`load` and `water` are 0 to 1. `angle` is 0 to 179 degrees (45 when omitted), the angle a brush whose head is
+not round is held at; `follow: true` turns the head with the stroke instead, and `erase: true` makes a brush
+take paint off with its own head (a brush that works the paint already on the layer, such as smudge or blend,
+ignores it). A figure's `seed` (an integer from 0 to 2,147,483,647, default 1) fixes the brush's random choices,
+so the same strokes paint the same marks. Brush ids come from the shipped registry, including `rapier/scumble`,
 `rapier/watercolour`, `rapier/pencil`, `rapier/pen` and `rapier/marker`. A paint figure takes at most
 32 strokes, 1,024 points per stroke and 4,096 points in total, within a 2,048-pixel sheet. An eraser or
 blender needs existing pigment in that same layer; an empty resulting picture is refused. Painting
@@ -104,8 +119,9 @@ is not available in a build without Paint. Do not claim a refused call created m
 Read the image occurrence through `document.read_context` for its recipe and a current handle.
 Do not use a source-text handle as a recipe handle or guess IDs from the rendered picture.
 
-- Move an inspected object with `operations: [{"type":"move","ids":["herbs"],"dx":40,"dy":0}]`. While the person has that drawing open, send
-  only a `shapes` patch (a move is a `shapes.replace` of the moved shape); `operations` waits until they close it.
+- Move an inspected object with `operations: [{"type":"move","ids":["herbs"],"dx":40,"dy":0}]` and the read
+  handle as `recipe_handle`. The batch (up to 64 operations, applied in order) takes every edit the person's
+  controls make and lands whole or not at all; a refusal names the operation and field.
 - Change a label by copying the exact shape from the read recipe, changing its `label`, then sending
   `shapes: {replace: [updatedShape]}` with the read handle as `recipe_handle`. A replacement is a complete
   shape, not just `id` and `label`. Preserve geometry, style and bindings.
@@ -115,14 +131,35 @@ Do not use a source-text handle as a recipe handle or guess IDs from the rendere
   deliberately; do not relayout the whole drawing for a narrow change.
 - Preserve a disclosed paint raster's `{kept:true}` marker when replacing its shape. Never manufacture
   pixel bytes or replace a layer because its bytes were redacted in the read. Keep its `paint` record
-  unchanged too: different replay strokes with retained old pixels are refused. To repaint, replace
-  the inspected layer by a `kind: "paint"` figure with its id and new strokes.
+  unchanged too: different replay strokes with retained old pixels are refused. To paint more on that
+  layer, put a `kind: "paint"` figure with its id and the new strokes in `shapes.replace`: they lay on the
+  layer's own pixels, which keep their transform and every other field, and the sheet grows, up to 2,048
+  pixels a side, to take a stroke that leaves it. A missing id answers `paint_target_invalid`, a locked layer
+  `paint_target_locked` and a layer the person changed meanwhile `paint_target_changed` (read it again, then
+  resend). To start a layer over, remove it and add a new paint figure.
 - Change only the caption with `recipe_handle` and `alt`; no dummy shape operation is needed.
-- For canvas size, paper, lighting, strokes, fonts or other drawing-wide fields, send the complete
-  inspected `recipe` with `recipe_handle`. Keep every unrelated field and paint marker. Do not combine
+- Move the drawing's own dials with `shapes: {set: {...}}` and the read handle as `recipe_handle`: `background`,
+  `paper` (`white` or `black`), `effect`, `canvas` (`{w, h}`), `frame` (`{x, y, w, h}`), `light` (radians), `smooth`
+  (0 to 100) and `nib` (2 to 24). Each member replaces the one it names, whole. `null` removes a background,
+  effect, frame or paper (the paper then follows the reader's light or dark page, the frame the ink). A background or effect that
+  names only its `kind` or `preset` takes the person's starting values for every number left out. A dial that
+  does not admit refuses the whole patch, its shapes included, and names the field (`background.curtains`,
+  `effect.copies`, `canvas`). A `set` lands on the person's open canvas as one Undo step, beside any `add`,
+  `replace` or `remove` in the same patch.
+- For strokes, fonts or other drawing-wide fields, send the complete inspected `recipe` with
+  `recipe_handle`. Keep every unrelated field and paint marker. Do not combine
   `recipe` with `shapes` or `figures`; an `operations` batch may follow the recipe change.
 
 A whole-recipe or caption edit does not bypass the person's open drawing or Notes fence. While a person
-has the drawing open, only the existing shapes-only patch exception can land; other edits must wait.
+has the drawing open, a `shapes` patch (its `set` included) and an `operations` batch land on their canvas as
+one Undo step; a whole `recipe` or a caption waits until they close it (`draw_session_open`).
+A shape or dial the person has changed on the canvas and not yet saved stays theirs: the agent's change is in
+the document and one Undo away. A refused recipe names the first field that stopped it (`field`).
 
-Keep the change ID for inspection and Undo. If the person changed the image meanwhile, a fresh read establishes the new recipe.
+Keep the change ID for inspection and Undo. Where the person has painted on a layer since, `undo_agent_change`
+takes back the agent's strokes by replaying the layer's history without them, so the person's strokes stay. A
+painting keeps that history while it fits 8 MiB; on a very large painting only the latest contribution stays undoable. Whichever stroke would pass that, the Paint tool's or an
+agent's, the history is dropped before it does: the picture stays, the painting goes on taking strokes, an agent's
+next stroke lays on the picture as it is and starts a new history, and an undo of an earlier contribution beside
+later work then answers `change_interleaved`. If the person changed the image meanwhile, a fresh read establishes
+the new recipe.

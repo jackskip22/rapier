@@ -11,7 +11,7 @@ import {attachmentSizeWords} from './size-words.mjs';
 export const ATTACHMENT_MAX_BYTES = 300_000_000;
 export const ATTACHMENT_BATCH_BYTES = ATTACHMENT_MAX_BYTES;
 export const ATTACHMENT_MEMORY_BYTES = ZIP_ENTRY_MEMORY_BYTES;
-export const ATTACHMENT_CONFIRM_BYTES = 1024 * 1024;
+export const ATTACHMENT_LARGE_BYTES = 1024 * 1024;
 const encode = value => encodeURIComponent(value).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
 export function attachmentHref(name) {
 	if (!isAttachmentName(name)) throw new Error('This attachment name is not a portable sibling file.');
@@ -80,12 +80,10 @@ export function attachmentMime(name) { return MIMES[extension(name)] || 'applica
 // Size words live in notes/size-words.mjs (import-free for the backup worker); republished here.
 export {attachmentSizeWords};
 // Pure admission before File.arrayBuffer(), before allocation, before writing anything.
-export function attachmentIntake(files, {ephemeral = false, streaming = false, memoryBackupRemaining = null} = {}) {
+export function attachmentIntake(files, {streaming = false, memoryBackupRemaining = null} = {}) {
 	const picked = Array.from(files || []), limit = streaming ? ATTACHMENT_MAX_BYTES : ATTACHMENT_MEMORY_BYTES; let bytes = 0;
-	const result = refusal => ({files: picked, bytes, refusal, confirm: !refusal && (ephemeral || bytes >= ATTACHMENT_CONFIRM_BYTES),
-		// How much, that a copy goes into the folder and its backups, and that it outlives the note.
-		message: refusal || 'a copy of ' + picked.length + (picked.length === 1 ? ' file' : ' files') + ' (' + attachmentSizeWords(bytes) + ') goes into your notes folder and its backups, and stays in saved files if the note is deleted.'
-			+ (ephemeral ? ' this library lives only in this tab: back it up before closing.' : '')});
+	// Nothing is asked of a large admission: `large` is for the result's notice, which says how much was kept and that it outlives the note.
+	const result = refusal => ({files: picked, bytes, refusal, large: !refusal && bytes >= ATTACHMENT_LARGE_BYTES});
 	if (!picked.length) return result('No files were selected.');
 	for (const file of picked) {
 		if (typeof file?.name !== 'string' || !Number.isSafeInteger(file.size) || file.size < 0) return result('One selected file has no reliable name or size. Nothing was added.');

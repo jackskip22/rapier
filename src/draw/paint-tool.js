@@ -13,7 +13,7 @@
 // their own alpha and nothing is put behind them in the document.
 // The engine itself is not here: this tool paints through the painter (draw/paint-worker.mjs, one worker a page, or the same
 // code run in process where no worker can start) and holds a mirror of each surface (draw/paint-remote.mjs), never its material.
-const {parseBrush, serializeBrush} = globalThis.RapierDrawPaint;
+const {parseBrush, serializeBrush, paintBrushDip, paintBrushRadiusOffset, paintBrushHead, paintSizeDefault} = globalThis.RapierDrawPaint;
 const _rapierPaintPNG = globalThis.RapierDrawPaint.createPaintPNGCodec();
 const {RAPIER_PAINT_BRUSHES, paintBrushById} = globalThis.RapierDrawBrushes;
 
@@ -187,12 +187,10 @@ const RAPIER_PAINT_PINNED = ['rapier/oil', 'rapier/bristle', 'rapier/flat', 'rap
 // light hand on Firm is the touch scale's doing (nothing may special-case a brush id for it), and
 // opening Scumble on Light would double that.
 const RAPIER_PAINT_DEFAULT_ID = 'rapier/scumble';
-// Smudge is a fingertip, not a thumb: 30, the width at which a pull on the phone reads as a fingertip's. Watercolour is a wash:
-// at 50 it lays a 21-point tube with a dark rim, a marker's line; at 62 a passage that glazes what it crosses, for the same
-// drying.
-const RAPIER_PAINT_SIZE_DEFAULTS = Object.freeze({ 'rapier/flat': 66, 'rapier/scumble': 89, 'rapier/smudge': 30, 'rapier/watercolour': 62 });
+// Each brush's first-use size is the shared controls' (draw/paint-controls.mjs PAINT_SIZE_DEFAULTS): the agent's stroke
+// without a size takes the same width.
 const RAPIER_PAINT_SIZES_KEY = 'rapier:draw.paintsizes';
-function _rapierPaintSizeDefault(id) { return Object.hasOwn(RAPIER_PAINT_SIZE_DEFAULTS, id) ? RAPIER_PAINT_SIZE_DEFAULTS[id] : RAPIER_PAINT_SIZE_DEFAULT; }
+function _rapierPaintSizeDefault(id) { return paintSizeDefault(id); }
 function _rapierPaintSizesRead() { try { const raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_SIZES_KEY) || '{}'); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; } catch (_) { return {}; } }
 function _rapierPaintSizeFor(id) { const own = _rapierPaintSizesRead()[id]; const n = Number(own); return Number.isFinite(n) ? _rapierDrawClamp(Math.round(n), 0, 100) : _rapierPaintSizeDefault(id); }
 // The preset the ERASE tool paints with over a painting, and the radius its own settings declare
@@ -457,8 +455,7 @@ function _rapierPaintSize() { const n = Number(_rapierDrawState.paintSize); retu
 // The one consequence worth knowing: the FINEST setting is twice as coarse as the preset's own
 // finest. If the fine end is wanted, widen the slider's own range (the log-8 span below); do not
 // shrink this, which would put the default back where it is too small.
-const RAPIER_PAINT_SIZE_DOUBLED = Math.log(2);
-function _rapierPaintRadiusOffset(size = _rapierPaintSize()) { return (size - 50) / 50 * Math.log(8) + RAPIER_PAINT_SIZE_DOUBLED; }
+function _rapierPaintRadiusOffset(size = _rapierPaintSize()) { return paintBrushRadiusOffset(size); }
 function _rapierPaintSetSize(value) {
 	const n = _rapierDrawClamp(Math.round(Number(value)), 0, 100);
 	if (!Number.isFinite(n)) return;
@@ -497,7 +494,7 @@ function _rapierPaintHeadClear(on) {
 // A Tool works the paint under it and has no colour to take away, so the clear swatch is a brush's alone.
 function _rapierPaintHeadSettings(id) {
 	const head = _rapierPaintHead();
-	return { held: head.follow ? null : head.angle, clear: head.clear && !_rapierPaintIsTool(id) };
+	return paintBrushHead({angle: head.angle, follow: head.follow, erase: head.clear}, _rapierPaintIsTool(id));
 }
 // The chip and the angle panel. The chip is the first cell of the brush strip and shows the head, a thin oval at its own
 // angle, with its angle in degrees (dashed, and the word FOLLOW, while the head follows the finger). Tapping it opens the
@@ -805,7 +802,7 @@ function _rapierPaintGlyphShow(key, url) {
 // It is per brush, because a dip is: the oil in your hand is loaded or not independently of the pen
 // in the jar. One storage key holds the whole set.
 const RAPIER_PAINT_DIP_KEY = 'rapier.paint.dip';
-const RAPIER_PAINT_DIP_MIN = 14, RAPIER_PAINT_DIP_MAX = 260, RAPIER_PAINT_DIP_FULL = 0.97;
+const RAPIER_PAINT_DIP_FULL = 0.97;
 const RAPIER_PAINT_DIP_W = 300, RAPIER_PAINT_DIP_H = 58, RAPIER_PAINT_DIP_RADIUS = -0.8;
 const RAPIER_PAINT_DIP_FIELD_W = 48, RAPIER_PAINT_DIP_FIELD_H = 32;
 function _rapierPaintDips() {
@@ -837,21 +834,7 @@ function _rapierPaintSetDip(id, load, water) {
 // Turns the two axes into the settings the engine reads. A def whose preset declares no rapier
 // block gets one -- `PaintBrush` copies `def.rapier` whole, so a stylus preset takes a dip too.
 function _rapierPaintApplyDip(def, id) {
-	const [load, water] = _rapierPaintDip(id);
-	if (load >= RAPIER_PAINT_DIP_FULL && water <= 0.005) return def;
-	def.rapier = { ...(def.rapier || {}) };
-	// Quadratic, because the bottom of the axis is where a painter wants the fine control: the
-	// difference between a nearly dry brush and a half-loaded one is most of what drybrush is.
-	if (load < RAPIER_PAINT_DIP_FULL) def.rapier.rapier_load = Math.round(RAPIER_PAINT_DIP_MIN + (RAPIER_PAINT_DIP_MAX - RAPIER_PAINT_DIP_MIN) * load * load);
-	if (water > 0.005) {
-		def.rapier.rapier_thinners = water;
-		if (def.wet) {
-			def.wet = { ...def.wet };
-			if (def.wet.rapier_water > 0) def.wet.rapier_water = Math.min(4, def.wet.rapier_water * (1 + 1.1 * water));
-			if (def.wet.rapier_pigment_load > 0) def.wet.rapier_pigment_load *= 1 - 0.62 * water;
-		}
-	}
-	return def;
+	return paintBrushDip(def, ..._rapierPaintDip(id));
 }
 // One owner for "the brush this id means right now": the preset, fitted for a finger if that is on,
 // dipped as the person has dipped it. The strip's tiles, the Dip's own sample and the live layer all
@@ -1205,6 +1188,7 @@ async function _rapierPaintEncodeCanvasBox(canvas, box, options = {lossless: tru
 function _rapierPaintSplitShapeSync(shapes, shape, pieces) {
 	const state = _rapierDrawState, geom = shape.geom || {}, [pw, ph] = shape.paint?.px || [0, 0];
 	if (!(pw > 0 && ph > 0)) return null;
+	const sourcePaint = shape.paint || {};
 	// A rotated rectangle and an explicit corner frame are the same pixel-to-world map: a painted
 	// shape's rot must be kept here, or a rotated rectangle's pieces would occupy the axis-aligned
 	// box of the pixels rather than the world the person rotated it into.
@@ -1225,12 +1209,14 @@ function _rapierPaintSplitShapeSync(shapes, shape, pieces) {
 		: [geom.cx - geom.w / 2 + geom.w * u / pw, geom.cy - geom.h / 2 + geom.h * v / ph];
 	const made = pieces.map((piece, index) => {
 		const b = piece.box, c0 = at(b.x0, b.y0), c1 = at(b.x1 + 1, b.y0), c3 = at(b.x0, b.y1 + 1);
+		const replay = sourcePaint.replay ? globalThis.RapierDrawAgentPaint.cropPaintReplay(sourcePaint.replay, [b.x0, b.y0, b.x1, b.y1]) : null;
+		if (sourcePaint.replay && !replay) throw new Error('The painting changed before its lossless pieces were kept');
 		const g = frame ? { p: [c0, c1, [c1[0] + c3[0] - c0[0], c1[1] + c3[1] - c0[1]], c3] }
 			: { cx: (c0[0] + c1[0]) / 2, cy: (c0[1] + c3[1]) / 2, w: c1[0] - c0[0], h: c3[1] - c0[1] };
 		const next = index === 0 ? shape : { ...shape, id: nextId() };
 		// The pieces are ONE painting: each carries the group (the first piece's id), and picking any
 		// of them up to paint reopens the whole group as one layer (_rapierPaintRehydrateFor).
-		next.geom = g; next.raster = piece.url; next.paint = { ...(shape.paint || {}), strokes: undefined, seed: undefined, px: [b.x1 - b.x0 + 1, b.y1 - b.y0 + 1], group: shape.id };
+		next.geom = g; next.raster = piece.url; next.paint = { ...sourcePaint, strokes: undefined, seed: undefined, px: [b.x1 - b.x0 + 1, b.y1 - b.y0 + 1], group: shape.id, ...(replay ? {replay} : {}) };
 		return next;
 	});
 	const i = shapes.indexOf(shape);
@@ -1474,16 +1460,12 @@ function _rapierPaintSettle(shape) {
 	if (laying) laying.finished.then(() => sheet.remove(), () => sheet.remove());
 	else sheet.remove();
 }
+// SET runs on the press. Nothing is lost by it: one Undo gives the painting back exactly as it was (draw-b03-set-custody, the
+// manual Set case), and the toast after it says what happened, so no question stands before it.
 async function _rapierPaintRequestSetLayer() {
 	const state = _rapierDrawState;
-	if (!state.paintLayer || state.paintSetting || typeof rapierConfirm !== 'function') return;
-	const confirmed = await rapierConfirm({
-		title: 'Set painting?',
-		message: '• Flattens the painting to a picture.\n• A new layer opens above it.',
-		confirmLabel: 'Set',
-		secondaryLabel: '',
-	});
-	if (confirmed && state.open && !state.finishing) await _rapierPaintSetLayer();
+	if (!state.paintLayer || state.paintSetting || !state.open || state.finishing) return;
+	await _rapierPaintSetLayer();
 }
 function _rapierPaintSetPicker(kind, open = true) {
 	const state = _rapierDrawState, mode = kind === 'tools' ? 'tools' : 'brushes';
@@ -1685,7 +1667,7 @@ function _rapierPaintEncodeRevision(layer, keep = false, {retire = false, releas
 	layer.pngSerial = (layer.pngSerial || 0) + 1;
 	// The job's promise ends when the picture is in the recipe; it rejects with the reason when the picture could not be kept (whoever
 	// awaits it -- a closing commit -- says so, and an ordinary lift that nobody awaits has already said so in a toast).
-	const job = {id: layer.pngSerial, keep, custody, retire, release, place: _rapierPaintPlace(layer), px: null, box: null, raster: null, shown: null, empty: false, revision: 0, read: null,
+	const job = {id: layer.pngSerial, keep, custody, retire, release, place: _rapierPaintPlace(layer), px: null, box: null, raster: null, shown: null, empty: false, revision: 0, read: null, replay: layer.surface.takeReplay?.() ?? null, // a frozen pixel surface records no replay
 		stored: !!layer.nextFlip, stroke: layer.flipStroke, brushId: layer.brushId, worker: owner?.worker, url: owner?.url, session: state.session,
 		promise: new Promise((ok, no) => { resolve = ok; reject = no; }), resolve: () => resolve(), reject: error => reject(error)};
 	job.promise.catch(() => {});
@@ -1725,7 +1707,16 @@ function _rapierPaintDropRevision(layer, job, error = null) {
 	clearTimeout(job.timer);
 	if (layer.publicationTask === job) layer.publicationTask = null;
 	// A picture that could not be encoded leaves the layer open and its pixels in the painter; the person is told, and a later commit reads them again.
-	if (error) { _rapierPaintNotKept(layer, error); job.reject(error); } else job.resolve();
+	if (error) {
+		if (at >= 0 && job.replay?.length) {
+			const last = job.replay.at(-1), box = job.box;
+			if (!last.crop && box) last.crop = [box.x0, box.y0, box.x1, box.y1];
+			if (queue[at]) queue[at].replay = [...job.replay, ...(queue[at].replay || [])];
+			else layer.surface?.restoreReplay(job.replay);
+			job.replay = null;
+		}
+		_rapierPaintNotKept(layer, error); job.reject(error);
+	} else job.resolve();
 	if (at >= 0) _rapierPaintDrainRevisions(layer);
 }
 // A cap freezes its departed sheet; an ordinary lift keeps its live sheet behind the same capture
@@ -1823,7 +1814,7 @@ function _rapierPaintFinishRevision(layer, raster, cancel = false) {
 		// The surface is exactly what the revision read: nothing was asked of the painter since, no hand is down and no later revision waits.
 		const live = !layer.nextFlip && layer.surface?.revision === job.revision && !_rapierDrawState.gesture && !queue.length;
 		if (job.empty) { if (live) _rapierPaintPublishEmpty(layer); }
-		else if (live) _rapierPaintPublish(layer, job.keep, raster, job.custody);
+		else if (live) _rapierPaintPublish(layer, job.keep, raster, job.custody, false, job.replay);
 		else _rapierPaintPublishFrozen(layer, job, raster);
 	} catch (error) { queue.unshift(job); layer.pendingCommit = job; layer.pendingOverflow = true; throw error; }
 	finally { if (!queue.includes(job)) job.resolve(); }
@@ -1850,10 +1841,12 @@ function _rapierPaintPublishFrozen(layer, job, raster) {
 	const grown = !layer.frame && _rapierDrawGrowCanvas(geom.cx - geom.w / 2, geom.cy - geom.h / 2, geom.cx + geom.w / 2, geom.cy + geom.h / 2);
 	state.paintLastGrown = grown || null;
 	if (grown) { geom.cx += grown.dx; geom.cy += grown.dy; }
+	const replay = _rapierPaintReplayAt(layer, job.replay, job.box);
+	if (replay) layer.paintReplay = replay;
 	let shape = existing;
-	if (shape) { shape.geom = geom; shape.raster = raster; shape.paint = { brush: job.brushId, px: [pw, ph], scale: s }; }
+	if (shape) { shape.geom = geom; shape.raster = raster; shape.paint = { brush: job.brushId, px: [pw, ph], scale: s, ...(replay ? {replay} : {}) }; }
 	else {
-		shape = { id: _rapierDrawNextId(), stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, geom, raster, paint: { brush: job.brushId, px: [pw, ph], scale: s } };
+		shape = { id: _rapierDrawNextId(), stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, geom, raster, paint: { brush: job.brushId, px: [pw, ph], scale: s, ...(replay ? {replay} : {}) } };
 		state.recipe.shapes.push(shape);
 	}
 	layer.id = shape.id; layer.raster = raster; layer.geom = JSON.stringify(geom);
@@ -2697,9 +2690,9 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer) {
 	// The earlier stroke is now sealed, including every cap sheet. This gesture gets its own step.
 	layer.flipStroke = null;
 	const props = {};
-	for (const key of ['id', 'raster', 'geom', 'origin', 'frame', 'retire', 'checkpoint', 'pendingOverflow', 'setPending', 'paintVersion']) props[key] = _rapierDrawHistoryCopy(layer[key]);
+	for (const key of ['id', 'raster', 'geom', 'origin', 'frame', 'retire', 'checkpoint', 'pendingOverflow', 'setPending', 'paintVersion', 'paintReplay']) props[key] = _rapierDrawHistoryCopy(layer[key]);
 	// The checkpoint itself lives in the painter (beginStroke is the first command of the stroke's batch); the page keeps its name.
-	gesture.paintRollback = {layer, props, pixels: surface.beginStroke(), recipe: _rapierDrawHistoryRecipe(), undo: state.undoStack.slice(), redo: state.redoStack.slice(), view: {..._rapierDrawView()}};
+	gesture.paintRollback = {layer, props, pixels: surface.beginStroke({record: !!layer.paintReplay}), recipe: _rapierDrawHistoryRecipe(), undo: state.undoStack.slice(), redo: state.redoStack.slice(), view: {..._rapierDrawView()}};
 }
 function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	const saved = gesture.paintRollback, state = _rapierDrawState;
@@ -2862,21 +2855,7 @@ function _rapierPaintDiscardChangedTarget(gesture) {
 // at Done; ImageDecoder without premultiplication gives the exact straight RGBA. Null where the browser's
 // ImageDecoder does not read JPEG XL: the <img> path below reads it, or the stroke falls back.
 async function _rapierPaintDecodeStraight(raster) {
-	const head = 'data:image/jxl;base64,';
-	if (!raster.startsWith(head) || typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported('image/jxl').catch(() => false)) return null;
-	const decoder = new ImageDecoder({data: Uint8Array.from(atob(raster.slice(head.length)), c => c.charCodeAt(0)), type: 'image/jxl', premultiplyAlpha: 'none'});
-	try {
-		const {image} = await decoder.decode();
-		try {
-			const width = image.displayWidth, height = image.displayHeight, format = image.format;
-			if (!['RGBA', 'RGBX', 'BGRA', 'BGRX'].includes(format)) return null;
-			const data = new Uint8ClampedArray(width * height * 4);
-			await image.copyTo(data, {rect: {x: 0, y: 0, width, height}, layout: [{offset: 0, stride: width * 4}]});
-			if (format[0] === 'B') for (let q = 0; q < data.length; q += 4) { const b = data[q]; data[q] = data[q + 2]; data[q + 2] = b; }
-			if (format[3] === 'X') for (let q = 3; q < data.length; q += 4) data[q] = 255;
-			return {width, height, data};
-		} finally { image.close(); }
-	} finally { decoder.close(); }
+	return globalThis.RapierDrawAgentPaint.decodeNativePaintJXL(raster);
 }
 // Decodes `target`'s own PNG back into a live surface -- the whole-canvas offset path for an
 // untransformed target, the padded local-frame path (above) for a transformed one -- and, once it
@@ -2986,6 +2965,7 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 			}
 			// The overlay carries the picked-up pixels too, when the painter's reply to those pixels arrives, so the next stroke shows them under its dabs.
 			layer.id = again.id; layer.raster = again.raster; layer.geom = JSON.stringify(again.geom); layer.brushId = again.paint?.brush || null;
+			layer.paintReplay = again.paint?.replay ? _rapierDrawHistoryCopy(again.paint.replay) : null;
 			layer.retire = group.map(shape => shape.id);
 			await Promise.all(waiters.map(g => _rapierPaintApplyQueued(g).catch(() => {})));
 		} catch (_) { state.paintRehydrateFailed = key; try { _rapierPaintCloseLayer(); } catch (_) {} for (const g of waiters) _rapierPaintQueueFallback(g); }
@@ -3586,6 +3566,20 @@ function _rapierPaintDiscardOverflow() {
 // _rapierPaintCommit computes, the pixels as the working PNG; the recipe is untouched, and a layer
 // with nothing on it is nothing. A suspended material pass completes before the read; an
 // intermediate reconstruction never becomes a recovery picture.
+function _rapierPaintReplayAt(layer, records, box) {
+	if (!layer.paintReplay) return null;
+	const replay = _rapierDrawHistoryCopy(layer.paintReplay);
+	for (const record of records || []) if (box && record.commands.some(command => command.target === 'stroke')) {
+		const entry = {..._rapierDrawHistoryCopy(record), crop: record.crop || [box.x0, box.y0, box.x1, box.y1]};
+		const at = replay.entries.findIndex(row => row.id === entry.id);
+		if (at < 0) replay.entries.push(entry); else replay.entries[at] = entry;
+	}
+	// A history is kept while the document's material budget admits it (draw/paint-history.mjs). Past it, the history is
+	// dropped and recording stops: the painting keeps its raster and goes on taking strokes, and a selective Undo of one
+	// of them refuses, as it does for a painting that never recorded. Nothing the person painted is refused for its history.
+	if (!globalThis.RapierDrawAgentPaint.paintReplayFits(replay)) { layer.paintReplay = null; return null; }
+	return replay;
+}
 function _rapierPaintLayerSnapshot(defer = false) {
 	const layer = _rapierPaintLayer(); if (!layer || !layer.surface) return null;
 	if (!defer) _rapierPaintDropSnapshots(layer);
@@ -3603,7 +3597,8 @@ function _rapierPaintSnapshotOf(layer, surface, defer) {
 	// A settled stroke already owns this exact encode. A live wash is read without settling it;
 	// its checkpoint preserves the visible straight RGBA without altering the material's physics.
 	const cached = layer.checkpoint?.revision === surface.revision;
-	const snapshot = { id: layer.id != null ? layer.id : null, geom, raster: cached ? layer.checkpoint.raster : null, encode: null, paint: { brush: layer.brushId, px: [pw, ph], scale: s }, retire: layer.retire?.slice() };
+	const replay = _rapierPaintReplayAt(layer, layer.surface.peekReplay(), box);
+	const snapshot = { id: layer.id != null ? layer.id : null, geom, raster: cached ? layer.checkpoint.raster : null, encode: null, paint: { brush: layer.brushId, px: [pw, ph], scale: s, ...(replay ? {replay} : {}) }, retire: layer.retire?.slice() };
 	if (cached) return snapshot;
 	// A routine backup fixes the material revision and geometry before its IO ticket yields. Its pixels are read at this point of the painter's
 	// order, and only while that revision is still held; a later stroke makes the attempt retry. The existing worker compresses the captured
@@ -3647,10 +3642,10 @@ function _rapierPaintPublishEmpty(layer) {
 	if (existing || layer.retire?.length) { const gone = new Set(layer.retire || []); _rapierDrawSnapshot(); state.recipe.shapes = state.recipe.shapes.filter(shape => shape !== existing && !gone.has(shape.id)); _rapierDrawRenderAll(); _rapierDrawSealHistory(); }
 	_rapierPaintCloseLayer(); _rapierPaintSyncPaper();
 }
-function _rapierPaintPublish(layer, keep, kept, custody, synced = false) {
+function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record = null) {
 	const state = _rapierDrawState, surface = layer.surface;
 	// The painted box is read off the painter's mirror, which is the painter's own once everything queued for the sheet has run.
-	if (!synced && !surface.settled && !surface.failure) return surface.sync().then(() => _rapierPaintPublish(layer, keep, kept, custody, true));
+	if (!synced && !surface.settled && !surface.failure) return surface.sync().then(() => _rapierPaintPublish(layer, keep, kept, custody, true, record));
 	layer.paintVersion = (layer.paintVersion || 0) + 1;
 	const box = surface.bounds();
 	const existing = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
@@ -3672,7 +3667,7 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false) {
 		// immediately, as on a closing path; subsequent strokes get independent deltas while Set
 		// encodes. Its final codec change amends only the latest delta. Done still enforces the
 		// picture admission law before any oversized working raster can reach the document.
-		_rapierPaintCommit(true, raster);
+		_rapierPaintPublish(layer, true, raster, custody, true, record);
 		if (state.paintLayer === layer && !state.paintSetting) void _rapierPaintSetLayer({ auto: true, kib: Math.round(raster.length / 1024) });
 		return null;
 	}
@@ -3691,11 +3686,21 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false) {
 		if (others + raster.length > globalThis.RapierDrawCore?.RAPIER_DRAW_RASTER_TOTAL) {
 			const already = layer.pendingOverflow;
 			layer.pendingOverflow = true;
+			if (record) surface.restoreReplay?.(record);
 			if (!already) showToast('This drawing’s paintings together are at what one document picture can hold. Set this painting to keep it, or download the drawing and start another.', 'info');
 			return null;
 		}
 	}
 	layer.pendingOverflow = false;
+	// A closing commit on a layer whose pixels and brush are already published (SET, Done or a tool change after a settled
+	// stroke) has nothing new to keep: the shape stands as it is and no history step is made, so every Undo answers a step
+	// taken. A stroke that painted nothing but changed the brush still records the brush, as it always has.
+	if (existing && !pieces && !layer.retire?.length && !layer.flipStroke && layer.published &&
+			layer.published.raster === raster && layer.published.revision === surface.revision && existing.paint?.brush === layer.brushId) {
+		_rapierPaintShowLive(false);
+		_rapierPaintSyncPaper();
+		return null;
+	}
 	const built = _rapierPaintGeomOf(layer, box), pw = built.pw, ph = built.ph, s = built.s, geom = built.geom;
 	const stroke = layer.flipStroke;
 	const joins = !!stroke?.entry && stroke.entry === state.undoStack.at(-1);
@@ -3706,14 +3711,19 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false) {
 	const grown = !layer.frame && _rapierDrawGrowCanvas(geom.cx - geom.w / 2, geom.cy - geom.h / 2, geom.cx + geom.w / 2, geom.cy + geom.h / 2);
 	state.paintLastGrown = grown || null;
 	if (grown) { geom.cx += grown.dx; geom.cy += grown.dy; }
+	const replay = _rapierPaintReplayAt(layer, record || surface.takeReplay?.() || null, box);
+	if (replay) layer.paintReplay = replay;
 	let shape = existing;
-	if (shape) { shape.geom = geom; shape.raster = raster; shape.paint = { brush: layer.brushId, px: [pw, ph], scale: s }; }
+	if (shape) { shape.geom = geom; shape.raster = raster; shape.paint = { brush: layer.brushId, px: [pw, ph], scale: s, ...(replay ? {replay} : {}) }; }
 	else {
-		shape = { id: _rapierDrawNextId(), stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, geom, raster, paint: { brush: layer.brushId, px: [pw, ph], scale: s } };
+		shape = { id: _rapierDrawNextId(), stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, geom, raster, paint: { brush: layer.brushId, px: [pw, ph], scale: s, ...(replay ? {replay} : {}) } };
 		state.recipe.shapes.push(shape);
 	}
 	layer.id = shape.id; layer.raster = raster; layer.geom = JSON.stringify(geom);
 	layer.checkpoint = {revision: surface.revision, raster};
+	// What the recipe holds for this layer as of this publish (the checkpoint above is the latest encoded revision, which may
+	// still be unpublished): the closing-commit rule above reads it.
+	layer.published = {revision: surface.revision, raster};
 	// Lossless pieces (the law above _rapierPaintLosslessPieces): the whole painting's shape is cut
 	// into one shape per piece, in this same history step; the layer closes below in every path
 	// that hands pieces in (the automatic Set opens a clean sheet).

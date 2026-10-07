@@ -202,7 +202,8 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 	if (kind === 'fault') throw new Error('The Notes folder could not be opened. Nothing was added; keep the original files.');
 	if (kind === 'memory') throw new Error('This tab’s storage is temporary, so it cannot keep files. Nothing was added.');
 	if (!fresh && (!owner || _rapierAttachmentsOwner() !== owner)) throw new Error('Open the intended note before adding a file. Nothing was copied.');
-	if (decision.confirm && !await rapierConfirm({title: 'keep files with this note?', message: decision.message, confirmLabel: 'Keep files', cancelLabel: 'Cancel'})) return;
+	// Nothing is asked: the person chose the files, the copy sheet below has its own Cancel, a link comes off with Unlink and a copy off
+	// with Delete forever. The result says how much was kept and that it outlives the note.
 	const kept = [], controller = new AbortController();
 	const sheet = _rapierAttachmentsDialog('Keeping files'), status = _rapierNotesEl('p', '', 'Preparing the file copy');
 	const progress = _rapierNotesEl('progress', ''); sheet.append(status, progress);
@@ -231,7 +232,7 @@ async function _rapierAttachmentsAdd(files, {fresh = false, owner = _rapierAttac
 			const file = await _rapierNotesWriteNew(source, wanted); _rapierNotesAdmit(file, source); _rapierNotesPlaceNew(file);
 			await _rapierNotesWriteIndex(); await _rapierNotesOpenNote(file);
 		} else await _rapierAttachmentsEdit(owner, text => kept.reduce((source, entry) => A.addAttachmentLine(source, entry), text));
-		showToast(kept.length + (kept.length === 1 ? ' file kept' : ' files kept'), 'success');
+		showToast(kept.length + (kept.length === 1 ? ' file kept' : ' files kept') + (decision.large ? ' (' + A.attachmentSizeWords(decision.bytes) + '). ' + (kept.length === 1 ? 'It stays' : 'They stay') + ' in Saved files if the note is deleted.' : ''), 'success');
 	} catch (error) {
 		// The files already copied, said once, where they wait -- not advice about originals no copy touches.
 		throw new Error(String(error?.message || error) + (kept.length ? ' ' + (kept.length === 1 ? '1 copied file stays' : kept.length + ' copied files stay') + ' in Saved files.' : ''));

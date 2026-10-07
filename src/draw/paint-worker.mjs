@@ -2,7 +2,7 @@
 // One engine owner. Browser and worker_threads install this identical protocol. Commands are
 // ordered; replies transfer only readout copies, never the authoritative material or rollback.
 import {PaintSurface, PaintBrush, paintStroke} from './paint.mjs';
-import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, encodeAgentPainting} from './agent-paint.mjs';
+import {AgentPaintRun, admitAgentStrokes, prepareAgentPainting, prepareAgentLayerPainting, encodeAgentPainting, agentPaintReplayRun, replayAgentPainting} from './agent-paint.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {createPaintRowPool, PAINT_SPLIT_PIXELS} from './paint-parallel.mjs';
 const hash = data => sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));
@@ -12,6 +12,7 @@ const properties = new Set(['paper','scale','toothOX','toothOY','wetPending']);
 const idOf = id => { if(!Number.isSafeInteger(id)||id<1) throw new Error('Paint identity must be a positive integer'); return id; };
 const need = (map,id) => { const value=map.get(idOf(id)); if(!value) throw new Error('Paint identity is not live'); return value; };
 const PAINT_SLICE_MS = 12, PAINT_PREVIEW_MS = 120;
+const paintAbort = () => Object.assign(new Error('The agent painting was cancelled'), {name:'AbortError'});
 // A message gives another task a turn without nesting timers. Close both ports after each yield
 // so the in-process painter does not retain a live channel when its work is finished.
 const yieldPaint = () => new Promise(resolve => {
@@ -21,6 +22,7 @@ const yieldPaint = () => new Promise(resolve => {
 });
 export function createPaintWorker({postMessage, spawnRows, isolated = false} = {}) {
  const surfaces=new Map(), brushes=new Map(), runs=new Map(), checkpoints=new Map();
+ const agentJobs=new Map();
  let lastId=0, failed=null, pool=null, chain=Promise.resolve();
  const transfer = value => {
   const buffers=new Set();
@@ -55,8 +57,8 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(operation==='batch') {
    if(!Array.isArray(request.commands)||request.commands.length>32768) throw new Error('Invalid paint batch');
    const changed=new Map(), used=new Set();
-   let values=[], completed=0, turn=performance.now(), shown=turn-PAINT_PREVIEW_MS;
-   const reply = async final => ({completed,surfaces:await Promise.all([...changed].map(([id,full])=>state(id,full,final))),values,
+   let values=[], replayWork=[], completed=0, turn=performance.now(), shown=turn-PAINT_PREVIEW_MS;
+   const reply = async final => ({completed,surfaces:await Promise.all([...changed].map(([id,full])=>state(id,full,final))),values,replayWork,
     brushes:Object.fromEntries([...used].map(id=>[id,{loadFuel:brushes.get(id)?.loadFuel ?? null}])),stats:pool?.stats || null});
    const apply = c => {
     const args=c.args || [];
@@ -66,13 +68,17 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
      const surface=need(surfaces,c.surfaceId); need(brushes,c.brushId).strokeTo(surface,...args); changed.set(c.surfaceId,changed.get(c.surfaceId)||false); used.add(c.brushId); return;
     }
     if(c.target!=='surface') throw new Error('Unknown paint command target');
-    const surface=need(surfaces,c.id); let full=changed.get(c.id)||false, value;
+    const surface=need(surfaces,c.id); let full=changed.get(c.id)||false, value, recorded=null;
     if(c.method==='set') { if(!properties.has(args[0])) throw new Error('Unknown paint property'); surface[args[0]]=args[1]; }
     else if(c.method==='beginStroke') { if(checkpoints.has(c.id)) throw new Error('Stroke already open'); checkpoints.set(c.id,{id:args[0],value:surface.beginStroke()}); }
     else if(c.method==='endStroke') { const cp=checkpoints.get(c.id); if(!cp||cp.id!==args[0]) throw new Error('Stroke checkpoint does not match'); value=surface.endStroke(cp.value,args[1]===true); checkpoints.delete(c.id); full=args[1]===true; }
-    else if(c.method==='dryWet') { value=surface.dryWet(performance.now() + 8,args[0]??8,args[1]??8); }
+    else if(c.method==='dryWet') {
+     if(c.record===true){recorded=[];surface.recordWetWork=(method,args)=>recorded.push({target:'surface',id:c.id,method,args});}
+     try {value=surface.dryWet(performance.now()+8,args[0]??8,args[1]??8);}
+     finally {surface.recordWetWork=null;}
+    }
     else { if(!surfaceMethods.has(c.method)) throw new Error('Unknown surface command'); value=surface[c.method](...args); if(c.method==='grow') full=true; }
-    values.push(value); changed.set(c.id,full);
+    values.push(value); replayWork.push(recorded); changed.set(c.id,full);
    };
    for(const c of request.commands) {
     apply(c); completed++;
@@ -81,7 +87,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
      // its time painting. The serial chain remains owned across every yield and preview.
      if(performance.now()-shown>=PAINT_PREVIEW_MS) {
       const value=await reply(false); postMessage({id:request.id,progress:true,value},transfer(value));
-      values=[]; for(const id of changed.keys()) changed.set(id,false);
+      values=[]; replayWork=[]; for(const id of changed.keys()) changed.set(id,false);
       shown=performance.now();
      }
      await yieldPaint(); turn=performance.now();
@@ -99,18 +105,52 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    return {pixels,box,digest:pixels && request.verify !== false ? await hash(pixels.data) : null,meta:metaOf(surface),...(request.material ? {material:new Float32Array(surface.data),volume:surface.volume ? new Uint8Array(surface.volume) : null,oil:surface.oil ? new Uint16Array(surface.oil) : null} : {})};
   }
   if(operation==='agent') {
-   const prepared=prepareAgentPainting(request.strokes,request.seed);
+   const signal=agentJobs.get(request.id)?.signal;
+   const alive=()=> {if(signal?.aborted)throw paintAbort();};
+   alive();
+   const prepared=request.target
+    ? await prepareAgentLayerPainting(request.strokes,request.target,request.seed,{contribution:request.contribution,signal})
+    : prepareAgentPainting(request.strokes,request.seed,{contribution:request.contribution,signal});
+   alive();
    if(!prepared) return null;
-   pool?.attach(prepared.run.surface);
-   try { prepared.run.run(); return await encodeAgentPainting(prepared); }
-   finally { pool?.detach(prepared.run.surface); }
+   const run=prepared.run,total=run.strokes.reduce((n,stroke)=>n+stroke.points.length,0);
+   let completed=0;
+   const progress=phase=> {if(request.progress===true)postMessage({id:request.id,progress:true,value:{phase,completed,total,stroke:run.stroke,point:run.point}});};
+   pool?.attach(run.surface);
+   try {
+    run.deferSettle=true;
+    progress('painting'); await yieldPaint(); alive();
+    while(!run.done) {
+     const deadline=performance.now()+PAINT_SLICE_MS;
+     let visited=0;
+     completed+=run.run(()=>visited++>=8 || visited>1&&performance.now()>=deadline);
+     progress('painting'); await yieldPaint(); alive();
+    }
+    while(!run.finishSlice(performance.now()+PAINT_SLICE_MS)) {
+     progress('settling'); await yieldPaint(); alive();
+    }
+    progress('encoding'); await yieldPaint(); alive();
+    const result=await encodeAgentPainting(prepared);
+    alive(); return result;
+   }
+   finally { pool?.detach(run.surface); }
   }
   if(operation==='replayCreate') {
    const strokes=admitAgentStrokes(request.strokes),id=idOf(request.surfaceId),frame=request.frame;
    if(!strokes||!frame||!Number.isSafeInteger(frame.w)||!Number.isSafeInteger(frame.h)||frame.w<1||frame.h<1||frame.w*frame.h>12000000||!Number.isFinite(frame.x)||!Number.isFinite(frame.y)||surfaces.has(id)) throw new Error('Invalid paint replay');
-   const run=new AgentPaintRun(strokes,frame,request.seed); surfaces.set(id,run.surface); pool?.attach(run.surface); runs.set(id,run); return state(id);
+   const run=request.replay ? await agentPaintReplayRun({strokes,px:[frame.w,frame.h],seed:request.seed,scale:request.scale,replay:request.replay}) : new AgentPaintRun(strokes,frame,request.seed);
+   if(!run)throw new Error('Invalid paint replay material');
+   surfaces.set(id,run.surface); pool?.attach(run.surface); runs.set(id,run); return state(id);
   }
   if(operation==='replay') { const run=need(runs,request.surfaceId),count=run.run((s,p)=>s>request.stroke||s===request.stroke&&p>=request.point); return {count,done:run.done,surface:await state(request.surfaceId)}; }
+  if(operation==='replayAgent') {
+   const signal=agentJobs.get(request.id)?.signal;
+   if(signal?.aborted)throw paintAbort();
+   const value=await replayAgentPainting(request.shape,request.omitIds,{signal,
+    onProgress:request.progress===true?value=>postMessage({id:request.id,progress:true,value}):undefined});
+   if(signal?.aborted)throw paintAbort();
+   return value;
+  }
   if(operation==='footprint') {
    // The outline's footprint of a brush at a held angle (null: turning with the hand) and a size: a brush of this owner, never the page's.
    const brush=new PaintBrush(request.definition); brush.setBaseValue('radius_logarithmic',request.radius); brush.setHead(request.held,false);
@@ -133,6 +173,14 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   throw new Error('Unknown paint operation');
  }
  return request => {
+  // Cancellation is a control message, not material work. It must reach an agent while the
+  // ordered executor yields; queuing it behind that agent would make cancellation impossible.
+  if(request?.operation==='cancel') {
+   const job=agentJobs.get(request.requestId);
+   if(job)job.abort();
+   return Promise.resolve(!!job);
+  }
+  if(['agent','replayAgent'].includes(request?.operation)&&Number.isSafeInteger(request.id)&&request.id>0&&!agentJobs.has(request.id))agentJobs.set(request.id,new AbortController());
   const run=async()=> {
    const id=request?.id;
    try {
@@ -140,7 +188,11 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
     if(!Number.isSafeInteger(id)||id<=lastId) throw new Error('Paint request is out of order');
     lastId=id;
     const value=await execute(request); postMessage({id,value},transfer(value));
-   } catch(error) { failed=error; postMessage({id,error:{message:String(error.message||error)}}); }
+   } catch(error) {
+    const cancelled=error.name==='AbortError'&&agentJobs.get(id)?.signal.aborted;
+    if(!cancelled)failed=error;
+    postMessage({id,error:{name:error.name,message:String(error.message||error)},...(cancelled?{recoverable:true}:{})});
+   } finally {agentJobs.delete(id);}
   };
   chain=chain.then(run); return chain;
  };
@@ -149,18 +201,36 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
 export function createPaintWorkerClient({postMessage,terminate=()=>{}}) {
  let serial=0, failure=null, closed=false;
  const pending=new Map();
- const fail=error=> { failure=error instanceof Error ? error : new Error(String(error)); for(const job of pending.values()) job.reject(failure); pending.clear(); };
+ const fail=error=> { failure=error instanceof Error ? error : new Error(String(error)); for(const job of pending.values()){job.cleanup?.();job.reject(failure);} pending.clear(); };
  return {
-  request(operation,payload={},transfer=[],onProgress=null) { if(failure||closed) return Promise.reject(failure||new Error('Paint worker is closed')); const id=++serial;
-   return new Promise((resolve,reject)=> { pending.set(id,{resolve,reject,onProgress}); try { postMessage({...payload,id,operation,progress:typeof onProgress==='function'},transfer); } catch(error) { fail(error); } }); },
+  request(operation,payload={},transfer=[],onProgress=null,{signal}={}) {
+   if(failure||closed)return Promise.reject(failure||new Error('Paint worker is closed'));
+   if(signal&&!['agent','replayAgent'].includes(operation))return Promise.reject(new Error('Only independent agent material can be cancelled'));
+   if(signal?.aborted)return Promise.reject(paintAbort());
+   const id=++serial;
+   return new Promise((resolve,reject)=> {
+    const abort=()=>{try{postMessage({operation:'cancel',requestId:id});}catch(error){fail(error);}};
+    const cleanup=()=>signal?.removeEventListener('abort',abort);
+    pending.set(id,{resolve,reject,onProgress,cleanup,cancel:['agent','replayAgent'].includes(operation)?abort:null});
+    try {
+     signal?.addEventListener('abort',abort,{once:true});
+     postMessage({...payload,id,operation,progress:typeof onProgress==='function'},transfer);
+     if(signal?.aborted)abort();
+    } catch(error) {fail(error);}
+   });
+  },
   receive(message) {
    const job=pending.get(message?.id); if(!job) return false;
-   if(message.error) { fail(new Error(message.error.message)); }
+   if(message.error) {
+    const error=Object.assign(new Error(message.error.message),{name:message.error.name||'Error'});
+    if(message.recoverable===true&&error.name==='AbortError'){pending.delete(message.id);job.cleanup?.();job.reject(error);}
+    else fail(error);
+   }
    else if(message.progress===true) { try { job.onProgress?.(message.value); } catch(error) { fail(error); } }
-   else { pending.delete(message.id); job.resolve(message.value); }
+   else { pending.delete(message.id); job.cleanup?.(); job.resolve(message.value); }
    return true;
   },
-  fail, async close() { closed=true; fail(new Error('Paint worker is closed')); await terminate(); }
+  fail, async close() { closed=true; for(const job of [...pending.values()])job.cancel?.(); fail(new Error('Paint worker is closed')); await terminate(); }
  };
 }
 // The painter run in this realm, for a page that cannot start a worker (no Worker, a host that refuses a Blob worker, a

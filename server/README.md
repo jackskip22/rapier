@@ -60,12 +60,15 @@ SIGINT and SIGTERM close connections, stop render work, release the root lock an
 | `GET /d/report.md.pdf` | Chromium prints the existing Rapier print artifact, using the same semantic render and print styles. |
 | `POST /mcp` | The existing MCP tool catalogue and kernel, with the selected durable storage adapter. |
 | `POST /mcp?document=nested%2Freport.md` | Open that existing file and restrict workspace calls to that path. |
-| `POST /return/<capability>` | The worker's expiring, one-use return receipt, on this server's origin. |
+| `GET /export/<handle>` | A retained immutable file, authenticated with the deployment bearer. HEAD returns its metadata. |
+| `POST /return/<handle>` | One returned copy for the expiring receipt, authenticated with the deployment bearer. |
 | `GET /health` | Version, readiness, render pin and runtime hash; interrupted persistence reports 503. |
 
-GET read/export/search routes also accept HEAD. They are **not user-authenticated by the service**. Protect the whole listener with the business's access policy; do not expose confidential documents publicly. There is no arbitrary-file route, raw directory listing or vault/sync connection.
+Document rendering under `/d/` and search routes also accept HEAD. They are **not user-authenticated by the service**. Protect the whole listener with the business's access policy; do not expose confidential documents publicly. There is no arbitrary-file route, raw directory listing or vault/sync connection.
 
-Regular MCP requests require `Authorization: Bearer <token>`. The token is generated on first start and retained in `.rapier-server/credentials.json` inside the folder or bucket. On disk it is readable only by the service owner; bucket access is controlled by the provider policy. Every document still has its separate unguessable capability. The actual MCP App resource mints the existing editor authority; an ordinary agent cannot approve a review or rotate a document capability using invented authority. Do not supply the editor key in agent-visible text. One-use return URLs use their own kernel authority rather than the transport bearer.
+MCP requests, retained file downloads under `/export/`, and return uploads require `Authorization: Bearer <token>`. The token is generated on first start and retained in `.rapier-server/credentials.json` inside the folder or bucket. On disk it is readable only by the service owner; bucket access is controlled by the provider policy. The service derives a stable private workspace owner from this token, preserving access across restarts. Public workspace handles and file or return addresses grant no access alone. The token stays outside tool arguments and results.
+
+The actual MCP App resource mints the existing editor authority; an ordinary agent cannot approve a review or rotate a workspace handle using invented authority. Do not supply the editor key in agent-visible text. Return uploads use authenticated HTTP clients and the local route accepts POST. The local tool listing omits connector OAuth declarations because the transport owns bearer authentication.
 
 An unscoped `rapier.open` with a new admissible filename creates that file. It cannot overwrite an existing name. A scoped `rapier.open` takes its source from the selected store, not a caller-supplied file URL, filename or replacement text. File URLs that would require an outbound fetch are unavailable. Remote inspection, edits, agent Undo, Will, ASK approval and capability rotation run through `mcp/worker.mjs` and its existing kernel; the service does not implement parallel edit rules.
 

@@ -54,7 +54,7 @@ function _rapierPasteRunLooksCode(lines) {
 }
 
 function _rapierSplitOversizeProseLine(line) {
-	const text = String(line || '').trim();
+	const text = String(line || '');
 	if (text.length <= _RAPIER_PASTE_PROSE_MAX || !_rapierPasteLooksProse(text)) return [text];
 	const chunks = [];
 	let rest = text;
@@ -74,25 +74,23 @@ function _rapierSplitOversizeProseLine(line) {
 			if (whitespace >= floor) cut = whitespace;
 		}
 		if (cut < floor) break;
-		chunks.push(rest.slice(0, cut).trim());
-		rest = rest.slice(cut).trimStart();
+		// Paragraph boundaries add newlines without consuming the spaces at the cut.
+		chunks.push(rest.slice(0, cut));
+		rest = rest.slice(cut);
 	}
 	if (rest) chunks.push(rest);
 	return chunks.length ? chunks : [text];
 }
 
 function _rapierNormalizePlainTextPaste(markdown) {
-	const raw = String(markdown || '').replace(/\r\n?|[\u2028\u2029]/g, '\n');
-
-	const lead = /^[ \t\u00a0]+(?=\S)/.test(raw) ? ' ' : '';
-	const tail = /\S[ \t\u00a0]+$/.test(raw) ? ' ' : '';
-	const source = raw.trim();
+	const source = String(markdown || '').replace(/\r\n?|[\u2028\u2029]/g, '\n');
 	if (!source.includes('\n')) {
-		return lead + _rapierSplitOversizeProseLine(source).join('\n\n') + tail;
+		return _rapierSplitOversizeProseLine(source).join('\n\n');
 	}
 
 	const lines = source.split('\n');
 	const out = [];
+	const hardBreak = /(?: {2}|\\)$/;
 	let i = 0;
 	let fence = null;
 	let inMath = false;
@@ -126,8 +124,7 @@ function _rapierNormalizePlainTextPaste(markdown) {
 			continue;
 		}
 		if (!trimmed) {
-			// Collapse ordinary blank runs here; code and math payloads bypass this owner.
-			if (out.length && out[out.length - 1] !== '') out.push('');
+			out.push(line);
 			i++;
 			continue;
 		}
@@ -141,7 +138,7 @@ function _rapierNormalizePlainTextPaste(markdown) {
 
 		const run = [];
 		while (i < lines.length && _rapierPlainPasteLineKind(lines[i]) === 'prose') {
-			run.push(lines[i].trimEnd());
+			run.push(lines[i]);
 			i++;
 		}
 
@@ -152,7 +149,7 @@ function _rapierNormalizePlainTextPaste(markdown) {
 			// Short lines the person pasted are lines, not a hard break invented inside one paragraph.
 			if (codeRun || run.length < 2) out.push(...run);
 			else for (let position = 0; position < run.length; position++) {
-				if (position && out.length && out[out.length - 1] !== '') out.push('');
+				if (position && !hardBreak.test(run[position - 1])) out.push('');
 				out.push(run[position]);
 			}
 			continue;
@@ -175,11 +172,11 @@ function _rapierNormalizePlainTextPaste(markdown) {
 					const previous = c > 0 ? chunks[c - 1] : (r > 0 ? run[r - 1] : '');
 					const sizeBoundary = paragraphChars > 0 &&
 						paragraphChars + chunk.length + 1 > _RAPIER_PASTE_PROSE_MAX;
-					const explicitParagraph = sizeBoundary || c > 0 || independentLines || (
+					const explicitParagraph = c > 0 || (!hardBreak.test(previous) && (sizeBoundary || independentLines || (
 						_rapierPasteEndsSentence(previous) &&
 						_rapierPasteStartsSentence(chunk) &&
 						!(wrapLike && previous.trim().length >= Math.max(45, median - 12))
-					);
+					)));
 					if (explicitParagraph) {
 						out.push('');
 						paragraphChars = 0;
@@ -191,7 +188,7 @@ function _rapierNormalizePlainTextPaste(markdown) {
 		}
 	}
 
-	return lead + out.join('\n').trim() + tail;
+	return out.join('\n');
 }
 
 // The paste's one decision. Every paste resolver asks it, at every size and in both views: a Markdown
@@ -201,10 +198,10 @@ function _rapierNormalizePlainTextPaste(markdown) {
 // when it decides); other HTML is converted; plain text is kept, and a diagram's source is fenced.
 function _rapierPasteDecision(payload, htmlCarriesOnlyWords) {
 	const value = payload || {};
-	if (String(value.markdown || '').trim()) return 'markdown';
-	const plain = String(value.plain || '').trim();
+	if (String(value.markdown || '')) return 'markdown';
+	const plain = String(value.plain || '');
 	if (value.insideCode && plain) return 'code';
-	if (String(value.html || '').trim() && !(plain && htmlCarriesOnlyWords())) return 'html';
+	if (String(value.html || '').trim() && !(plain.trim() && htmlCarriesOnlyWords())) return 'html';
 	return plain ? 'plain' : null;
 }
 
@@ -245,9 +242,10 @@ function _rapierPasteContent(decision, payload, converted = '') {
 		return { kind: 'html', markdown: lead + String(converted) + tail, plainText: false, html: '' };
 	}
 	if (_rapierLooksLikeDiagramSource(plain)) {
+		const source = plain.replace(/^﻿/, '');
 		return {
 			kind: 'markdown',
-			markdown: '```mermaid\n' + plain.replace(/^﻿/, '').replace(/\s+$/, '') + '\n```',
+			markdown: '```mermaid\n' + source + (/[\r\n]$/.test(source) ? '' : '\n') + '```',
 			plainText: false,
 			html: '',
 			fenced: true,

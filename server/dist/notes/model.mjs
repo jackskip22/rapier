@@ -1,4 +1,4 @@
-import {parseFrontMatter, stripFrontMatter} from './frontmatter.mjs';
+import {parseFrontMatter, stripFrontMatter, tagsOf, setTags} from './frontmatter.mjs';
 import {stripInkMarkers, stripColorMarkers} from '../spec/md-marks.mjs';
 // How many of a note's leading lines the metadata block covers, from the module's own reading of it.
 // `pieces` carry their own endings, so this counts the same under LF, CRLF and CR alike.
@@ -387,6 +387,50 @@ export function setCategory(index, file, name) {
 	const raw = typeof name === 'string' ? name : '';
 	const category = index.sections.find(s => s.name.toLowerCase() === raw.trim().toLowerCase())?.name ?? raw;
 	return {...index, notes: {...index.notes, [file]: {...index.notes[file], category}}};
+}
+
+// Tool-facing names map to the same fields and front matter the card controls own.
+export const NOTE_CONTROL_FIELDS = Object.freeze(['pinned', 'colour', 'section', 'tags', 'archived', 'trashed', 'reminder']);
+export function noteControlValues(index, file, text) {
+	const entry = index.notes[file];
+	if (!entry) return null;
+	return {pinned: entry.pinned === true, colour: entry.colour || '', section: entry.category || '',
+		tags: isMarkdownNote(file) ? tagsOf(text) : [], archived: entry.archived === true, trashed: entry.trashed === true,
+		reminder: cleanRemind(entry.remind)};
+}
+export function setNoteControls(index, file, fields, {text, app = false} = {}) {
+	const fail = code => { throw Object.assign(new Error(code), {code}); };
+	if (!isNoteFile(file) || !Object.hasOwn(index.notes, file)) fail('notes_target_missing');
+	if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).some(key => !NOTE_CONTROL_FIELDS.includes(key))) fail('notes_fields_invalid');
+	for (const name of ['pinned', 'archived', 'trashed']) if (Object.hasOwn(fields, name) && typeof fields[name] !== 'boolean') fail('notes_fields_invalid');
+	if (Object.hasOwn(fields, 'reminder') && !app) fail('notes_reminder_app_only');
+	if (fields.archived === true && fields.trashed === true) fail('notes_archive_trash_conflict');
+	let next = {...index, notes: {...index.notes, [file]: {...index.notes[file]}}}, entry = next.notes[file];
+	if (Object.hasOwn(fields, 'pinned')) entry.pinned = fields.pinned;
+	if (Object.hasOwn(fields, 'colour')) { if (!NOTE_COLOURS.includes(fields.colour)) fail('notes_colour_invalid'); entry.colour = fields.colour; }
+	if (Object.hasOwn(fields, 'section')) {
+		if (typeof fields.section !== 'string' || [...fields.section].length > 48 || !fields.section.isWellFormed()) fail('notes_section_invalid');
+		const wanted = fields.section.trim();
+		if (wanted) {
+			const admitted = admitSection(next, wanted);
+			if (!admitted.name) fail('notes_section_invalid');
+			next = admitted.index; entry.category = admitted.name;
+		} else entry.category = '';
+	}
+	if (Object.hasOwn(fields, 'archived')) entry.archived = fields.archived;
+	if (Object.hasOwn(fields, 'trashed')) entry.trashed = fields.trashed;
+	if (fields.trashed === true) entry.archived = false;
+	else if (fields.archived === true) entry.trashed = false;
+	if (!entry.trashed) { delete entry.trashedAt; delete entry.trashDigest; delete entry.trashRevision; }
+	if (Object.hasOwn(fields, 'reminder')) {
+		if (fields.reminder !== null && !cleanRemind(fields.reminder)) fail('notes_reminder_invalid');
+		next = setRemind(next, file, fields.reminder);
+	}
+	if (Object.hasOwn(fields, 'tags')) {
+		if (!isMarkdownNote(file)) fail('notes_tags_require_markdown');
+		try { text = setTags(text, fields.tags); } catch (_) { fail('notes_tags_invalid'); }
+	}
+	return {index: next, text};
 }
 
 // Skills (only when enabled: absent, not collapsed), Pinned, the person's sections, Other. Archive and Trash never.

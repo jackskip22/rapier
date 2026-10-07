@@ -1,11 +1,116 @@
 // Deliberate document observations, rendered by the browser; never a source writer.
 // SPDX-License-Identifier: AGPL-3.0-only
 import {VISUAL_LIMITS, visualDimensions} from './visual.mjs';
+import {_rapierDrawBuildSVG} from '../draw/core.mjs';
+import {sanitizeSvgText, decodeDataImage, inspectRaster, inspectJPEGXL} from '../images/assets.mjs';
 
 const DOM_BYTES = 16 * 1024 * 1024;
 const SVG = 'http://www.w3.org/2000/svg', XHTML = 'http://www.w3.org/1999/xhtml';
 const error = code => Object.assign(new Error(code), {code});
 const intersects = (a, b) => a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
+
+async function loadImage(window, url, signal) {
+  const image = new window.Image();
+  await new Promise((resolve, reject) => {
+    const cleanup = () => { image.onload = null; image.onerror = null; signal.removeEventListener('abort', aborted); };
+    const aborted = () => { cleanup(); image.src = ''; reject(signal.reason || error('cancelled')); };
+    image.onload = () => { cleanup(); resolve(); };
+    image.onerror = () => { cleanup(); reject(error('visual_render_unavailable')); };
+    signal.addEventListener('abort', aborted, {once: true});
+    image.src = url;
+    if (signal.aborted) aborted();
+  });
+  return image;
+}
+
+// The settled recipe is a read snapshot. Rendering it neither finishes a gesture nor touches
+// Draw's live DOM, raster stores or history. The normal drawing owner supplies all SVG content.
+export async function captureDrawing({recipe, clip, signal, current}) {
+  const document = globalThis.document, window = document?.defaultView;
+  if (!document || !window) throw error('visual_render_unavailable');
+  if (!clip || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(clip[key])) ||
+      clip.width <= 0 || clip.height <= 0) throw error('visual_target_unavailable');
+  const outputWidth = clip.outputWidth ?? VISUAL_LIMITS.edge, outputHeight = clip.outputHeight ?? VISUAL_LIMITS.edge;
+  if (!Number.isFinite(outputWidth) || !Number.isFinite(outputHeight) || outputWidth <= 0 || outputHeight <= 0)
+    throw error('visual_target_unavailable');
+  let scale = Math.min(1, Math.min(outputWidth, VISUAL_LIMITS.edge) / clip.width,
+    Math.min(outputHeight, VISUAL_LIMITS.edge) / clip.height);
+  const area = clip.width * scale * (clip.height * scale);
+  if (area > VISUAL_LIMITS.pixels) scale *= Math.sqrt(VISUAL_LIMITS.pixels / area);
+  const width = Math.max(1, Math.floor(clip.width * scale)), height = Math.max(1, Math.floor(clip.height * scale));
+  if (!visualDimensions(width, height)) throw error('visual_too_large');
+  const controller = new AbortController(), cancelled = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', cancelled, {once: true});
+  if (signal?.aborted) cancelled();
+  const timeout = window.setTimeout(() => controller.abort(error('visual_capture_expired')), 15000);
+  const check = () => {
+    if (controller.signal.aborted) throw controller.signal.reason || error('cancelled');
+    if (current?.() === false) throw error('visual_target_changed');
+  };
+  let canvas;
+  try {
+    check();
+    const rendered = _rapierDrawBuildSVG(recipe, undefined, true);
+    if (!rendered) throw error('visual_target_unavailable');
+    if (new TextEncoder().encode(rendered).byteLength > DOM_BYTES) throw error('visual_too_large');
+    const parsed = new window.DOMParser().parseFromString(sanitizeSvgText(rendered), 'image/svg+xml');
+    const svg = parsed.documentElement;
+    if (parsed.querySelector('parsererror') || svg?.namespaceURI !== SVG || svg.localName !== 'svg')
+      throw error('visual_render_unavailable');
+    for (const metadata of [...svg.querySelectorAll('metadata')]) metadata.remove();
+    const resources = new Set();
+    let sourcePixels = 0;
+    for (const node of svg.querySelectorAll('image,feImage')) {
+      const url = node.getAttribute('href') || node.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      if (!url || resources.has(url)) continue;
+      resources.add(url);
+      if (!/^data:image\/(?:png|jxl);base64,/.test(url)) throw error('visual_resources_unavailable');
+      let header;
+      try {
+        const bytes = decodeDataImage(url);
+        header = url.startsWith('data:image/jxl;') ? inspectJPEGXL(bytes) : inspectRaster(bytes);
+      } catch (failure) {
+        throw error(['JXL_SIZE', 'JXL_DIMENSIONS', 'RASTER_SIZE', 'RASTER_DIMENSIONS'].includes(failure?.code)
+          ? 'visual_too_large' : 'visual_resources_unavailable');
+      }
+      sourcePixels += header.width * header.height;
+      if (sourcePixels > VISUAL_LIMITS.pixels * 4) throw error('visual_too_large');
+      // SVG may load successfully while one of its raster layers silently fails. Verify every
+      // embedded layer with the native decoder before accepting the composite observation.
+      let decoded;
+      try { decoded = await loadImage(window, url, controller.signal); }
+      catch { throw error('visual_resources_unavailable'); }
+      check();
+      if (decoded.naturalWidth * decoded.naturalHeight !== header.width * header.height)
+        throw error('visual_resources_unavailable');
+    }
+    svg.setAttribute('viewBox', `${clip.x} ${clip.y} ${clip.width} ${clip.height}`);
+    svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height));
+    const serialized = new window.XMLSerializer().serializeToString(svg);
+    if (new TextEncoder().encode(serialized).byteLength > DOM_BYTES) throw error('visual_too_large');
+    const image = await loadImage(window, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serialized), controller.signal);
+    check();
+    canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw error('visual_render_unavailable');
+    context.drawImage(image, 0, 0);
+    const url = canvas.toDataURL('image/png');
+    check();
+    if (!url.startsWith('data:image/png;base64,')) throw error('visual_render_unavailable');
+    const data = url.slice('data:image/png;base64,'.length);
+    if (data.length > Math.ceil(VISUAL_LIMITS.imageBytes / 3) * 4) throw error('visual_too_large');
+    return {mimeType: 'image/png', data, width, height};
+  } catch (failure) {
+    if (signal?.aborted) throw error('cancelled');
+    if (controller.signal.aborted) throw error('visual_capture_expired');
+    if (failure?.code) throw failure;
+    throw error('visual_resources_unavailable');
+  } finally {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener('abort', cancelled);
+    if (canvas) { canvas.width = 0; canvas.height = 0; }
+  }
+}
 
 export async function captureVisual({root, clip, signal, current}) {
   const document = root?.ownerDocument, window = document?.defaultView;
@@ -215,16 +320,7 @@ export async function captureVisual({root, clip, signal, current}) {
     foreign.append(clone); svg.append(foreign);
     const serialized = new window.XMLSerializer().serializeToString(svg);
     if (new TextEncoder().encode(serialized).byteLength > DOM_BYTES) throw error('visual_too_large');
-    const image = new window.Image();
-    await new Promise((resolve, reject) => {
-      const cleanup = () => { image.onload = null; image.onerror = null; controller.signal.removeEventListener('abort', aborted); };
-      const aborted = () => { cleanup(); image.src = ''; reject(controller.signal.reason || error('cancelled')); };
-      image.onload = () => { cleanup(); resolve(); };
-      image.onerror = () => { cleanup(); reject(error('visual_render_unavailable')); };
-      controller.signal.addEventListener('abort', aborted, {once: true});
-      image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serialized);
-      if (controller.signal.aborted) aborted();
-    });
+    const image = await loadImage(window, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serialized), controller.signal);
     check();
     const canvas = document.createElement('canvas'); canvases.push(canvas);
     canvas.width = width; canvas.height = height;

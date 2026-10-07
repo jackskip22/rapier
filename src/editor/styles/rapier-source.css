@@ -120,10 +120,11 @@ html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack 
 	position: fixed;
 	/* DESIGN RULE: the document is full width; the circle overhangs the edge. */
 	right: -9px;
-	/* TOP-BAR LAW: the circle never stands over the top bar. Until the engine places it on its
-		 track, it rests one gutter below the bar — the same place the track begins — so a circle
-		 shown before any scroll (a presence state, a forced class) is never drawn over the bar. */
-	top: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 16px);
+	/* TOP-BAR LAW: the circle never stands over the top bar, and never over the first heading's
+		 own chevron at the same edge. Until the engine places it on its track, it rests a gutter and
+		 one H1 line below the bar — the same place the track begins — so a circle shown before any
+		 scroll (a presence state, a forced class) is drawn over neither. */
+	top: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 72px);
 	width: 60px;
 	height: 60px;
 	border-radius: 50%;
@@ -1071,7 +1072,8 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	letter-spacing:var(--track-caps);
 }
 .posture-row__agents { gap: var(--space-2); }
-.posture-row__agents .posture-row__agent-btn { flex: 1 1 auto; font-size: var(--text-xs); letter-spacing:var(--track-caps); padding: 0 var(--space-3); }
+/* Disconnect and Share are the house's own action boxes, each a full line. */
+.posture-row__agents .posture-row__agent-btn { flex: 1 1 100%; }
 .agent-row {
 	flex: 0 0 auto;
 	display: flex;

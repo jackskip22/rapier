@@ -1187,7 +1187,7 @@
           },
           {
             "property": "top",
-            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 16px)",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 72px)",
             "important": false
           }
         ]

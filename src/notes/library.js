@@ -3,7 +3,7 @@
 // profile. createElement/textContent only, never innerHTML.
 const RAPIER_NOTES_LIB_LIMIT = 400, RAPIER_NOTES_LIB_RECENT = 8, RAPIER_NOTES_LIB_MENTION_MIN = 4;
 const _rapierNotesLib = {
-	sidx: null, lidx: null, from: null, query: null, results: null, build: null, slice: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
+	sidx: null, lidx: null, from: null, generation: null, query: null, results: null, build: null, slice: null, runner: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
 	chips: null, bar: null, picker: null, renamed: null, connections: null, secs: null, trustedPaint: false,
 	// This question's run, whether its first exact hit happened, and the run count. The run id changes with the question.
 	run: null, runs: 0, hit: false, said: null,
@@ -11,11 +11,20 @@ const _rapierNotesLib = {
 function _rapierNotesSearchModule() { return globalThis.RapierNotesSearch; }
 function _rapierNotesLinksModule() { return globalThis.RapierNotesLinks; }
 
+// The tool uses the card search's grammar and exact phrase confirmation without changing the person's question.
+function _rapierNotesLibrarySearchList(texts, index, query) {
+	const S = _rapierNotesSearchModule();
+	if (!S) return null;
+	const built = S.buildSearchIndex(texts, index, {pictures: typeof _rapierOcrWords === 'function' ? _rapierOcrWords() : null});
+	const found = S.confirmSearch(S.search(built, query, {limit: Object.keys(index.notes).length}), texts);
+	return found.confirm.length ? null : new Set(found.results.map(row => row.file));
+}
+
 // ---- The two derived indexes ----
 // Derived, never the truth: built on first question, updated one note at a time after each write, discarded when the load hands a new texts map.
 function _rapierNotesLibraryTextsComplete() {
 	const lib = _rapierNotesLib, L = _rapierNotesLinksModule();
-	if (lib.lidx && L && lib.from === _rapierNotes.texts) L.resolveLinkIndex(lib.lidx);
+	if (lib.lidx && L && lib.from === _rapierNotes.texts) _rapierNotesLibraryRunner().resolve();
 	lib.results = null; lib.query = null;
 }
 // #257: both indexes start empty with the load and every note read joins as it arrives, so its words can be let go.
@@ -67,6 +76,7 @@ function _rapierNotesLibraryBegin() {
 			do {
 				const row = plan.reuse[at]; plan.reuse[at++] = null;
 				const present = !!state.index?.notes?.[row.file];
+				// A row beyond the cache's own byte bound is a disposable miss (take answers null); the unchanged bytes are reread.
 				const projection = present && state.searchCache.take(row);
 				if (projection) {
 					const admitted = [{...row, projection}];
@@ -108,9 +118,9 @@ function _rapierNotesLibraryTaken(file) {
 function _rapierNotesLibraryBacklog() { const b = _rapierNotesLib.build; return b && !b.done ? b.pending.size : 0; }
 function _rapierNotesLibraryFresh() {
 	const state = _rapierNotes, lib = _rapierNotesLib;
-	if (lib.from === state.texts) return true;
-	lib.slice?.cancel?.(); lib.hydrate?.stop();
-	lib.from = state.texts; lib.linksPending = null; lib.slice = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
+	if (lib.from === state.texts && lib.generation === state.loadGen) return true;
+	lib.slice?.cancel?.(); lib.runner?.cancel(); lib.hydrate?.stop();
+	lib.from = state.texts; lib.generation = state.loadGen; lib.linksPending = null; lib.slice = null; lib.runner = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
 	return false;
 }
 function _rapierNotesLibraryIdle(run) {
@@ -119,8 +129,8 @@ function _rapierNotesLibraryIdle(run) {
 	run(null); return null;
 }
 // ---- The search index, in slices ----
-// Built a bounded number of notes per idle slice, byte-equal to the whole build; an early answer is partial and says so. One slice per folder
-// generation.
+// One generation owns the worker and its bounded input/result slices. Pending notes stay
+// partial until their complete source facts and counted words are installed.
 function _rapierNotesLibrarySearchIndex() {
 	const S = _rapierNotesSearchModule(), state = _rapierNotes, lib = _rapierNotesLib;
 	if (!S || !state.index) return null;
@@ -132,6 +142,54 @@ function _rapierNotesLibrarySearchIndex() {
 	lib.sidx.sidecar = state.index; lib.sidx.sections = state.index.sections || [];
 	return lib.sidx;
 }
+function _rapierNotesLibraryWorker() {
+	const S = _rapierNotesSearchModule(), parser = typeof _rapierParseRuntime !== 'undefined' && _rapierParseRuntime.markdownSource;
+	if (typeof Worker !== 'function' || typeof S?.workerSource !== 'function' || !parser) throw new Error('Search worker is unavailable');
+	const url = URL.createObjectURL(new Blob([parser, '\n', S.workerSource()], {type: 'text/javascript'}));
+	try { return new Worker(url, {name: 'rapier-notes-search'}); }
+	finally { URL.revokeObjectURL(url); }
+}
+function _rapierNotesLibraryRunner() {
+	const lib = _rapierNotesLib, state = _rapierNotes, from = state.texts, gen = state.loadGen;
+	if (!lib.runner) lib.runner = _rapierNotesSearchModule().createSearchIndexRunner({
+		getState: () => lib.build,
+		setState: build => { lib.build = build; lib.sidx = build.index; lib.results = null; lib.query = null; },
+		getLinks: () => lib.lidx,
+		setLinks: index => { lib.lidx = index; lib.results = null; },
+		createWorker: _rapierNotesLibraryWorker,
+		live: () => lib.from === from && state.texts === from && state.loadGen === gen,
+		wake: _rapierNotesLibraryScheduleSlice,
+		// The folder is still arriving: the link graph grows in place and the one whole-graph pass waits for the read's end.
+		streaming: () => typeof _rapierNotesTextsComplete === 'function' && !_rapierNotesTextsComplete(),
+		completed: (file, prepared) => {
+			if (prepared) { state.titles?.set(file, prepared.title); state.readFailed?.delete(file); }
+			lib.linksPending?.delete(file);
+			_rapierNotesLibraryRemember(file, prepared);
+			if (typeof _rapierNotesLetGo === 'function') _rapierNotesLetGo(file);
+		},
+		// A file that is not UTF-8 text is the folder's own unreadable note, as where a small one is read.
+		unreadable: file => {
+			lib.linksPending?.delete(file);
+			if (typeof _rapierNotesHold === 'function') _rapierNotesHold(file, '');
+			state.unreadable?.add(file);
+		},
+	});
+	return lib.runner;
+}
+function _rapierNotesLibraryChange(file, text, entry) {
+	const lib = _rapierNotesLib, S = _rapierNotesSearchModule(), old = lib.build.index.notes.get(file);
+	const size = typeof text === 'string' ? text.length : text?.searchText?.length || 0;
+	const words = old?.bag ? Object.values(old.bag).reduce((sum, field) => sum + field.size, 0) : 0;
+	const links = lib.lidx?.out.get(file)?.length || 0;
+	// An ordinary edit keeps its immediate answer. Replacing or removing a note above the routing cost (its words and
+	// links are the old note's size) retires its postings in the same slices; a pending worker never owns the replacement.
+	const deferred = lib.build.pending.has(file) || lib.runner?.owns(file) || size > S.SEARCH_WORKER_CHARS || words > S.SEARCH_WORKER_WORDS || links > S.SEARCH_WORKER_LINKS;
+	if (!deferred) {
+		lib.build = S.updateSearchIndex(lib.build, file, text, entry, {own: true}); lib.sidx = lib.build.index;
+	} else _rapierNotesLibraryRunner().queue(file, text, entry);
+	if (!lib.build.done) _rapierNotesLibraryScheduleSlice();
+	return deferred;
+}
 function _rapierNotesLibraryScheduleSlice() {
 	const lib = _rapierNotesLib, state = _rapierNotes, from = state.texts, gen = state.loadGen;
 	if (lib.slice) return;
@@ -140,24 +198,24 @@ function _rapierNotesLibraryScheduleSlice() {
 		// A retired callback must not clear the replacement folder’s scheduled slice.
 		if (lib.slice !== task || lib.from !== from || state.loadGen !== gen) return;
 		lib.slice = null;
-		if (!lib.build || lib.build.done) return;
+		if (!lib.build) return;
 		if (typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked()) { _rapierNotesLibraryScheduleSlice(); return; }
-		const S = _rapierNotesSearchModule();
-		const large = state.sizes?.size > 200, started = globalThis.performance?.now() ?? Date.now();
-		let stepped = 0;
-		// The build grows in place, so the queue's keys say what a slice took.
-		const queued = [...lib.build.pending.keys()];
-		do { const notes = large ? 1 : 16; lib.build = S.stepSearchIndex(lib.build, {notes, own: true}); stepped += notes; }
-		while (!lib.build.done && stepped < 256 && deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() > (large ? 1 : 8) &&
-			(!large || (globalThis.performance?.now() ?? Date.now()) - started < 4 &&
-			!(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked())));
-		lib.sidx = lib.build.index; lib.results = null; lib.query = null;
-		// Let a slice's words go (#257) and remember the note's row here, the one moment both owners hold it. A missing or disagreeing bracket declines.
-		if (typeof _rapierNotesLetGo === 'function') for (const file of queued) if (!lib.build.pending.has(file)) {
-			_rapierNotesLibraryRemember(file);
-			_rapierNotesLetGo(file);
+		// Steps that need no worker share the callback: a small folder spends the idle budget on notes (up to 256 while 8 ms
+		// remain), a large one up to 4 ms a turn; the short steps of a retirement or the whole-graph pass never take more than
+		// 4 ms. A worker's construction and every wait for one end the callback, so a finished note cannot lend the rest of its
+		// turn to the next worker.
+		const runner = _rapierNotesLibraryRunner(), large = state.sizes?.size > 200, began = globalThis.performance?.now() ?? Date.now();
+		const timed = !!deadline && typeof deadline.timeRemaining === 'function';
+		const young = () => (globalThis.performance?.now() ?? Date.now()) - began < 4 && !(typeof _rapierNotesBackgroundBlocked === 'function' && _rapierNotesBackgroundBlocked());
+		let more = runner.step(), kind;
+		for (let steps = 1; more && (kind = runner.cheap) && steps < (timed ? 256 : large ? 1 : 16); steps++) {
+			// A small folder looks at its budget every sixteen notes; a large one, and a short step, after each. A timer callback has
+			// no deadline: it takes sixteen notes in a small folder and one in a large one, and only a short step looks at the clock.
+			const bounded = large || kind === 'short';
+			if (timed ? (bounded || steps % 16 === 0) && !(deadline.timeRemaining() > (large ? 1 : 8) && (!bounded || young())) : kind === 'short' && !young()) break;
+			more = runner.step();
 		}
-		if (!lib.build.done) _rapierNotesLibraryScheduleSlice();
+		if (more) _rapierNotesLibraryScheduleSlice();
 		// A read-sized queue emptying is not completion: answer at most four times a second while reads remain, then after the final slice.
 		const now = Date.now();
 		// Search progress paint only: see _rapierNotesLibrarySortedSection.
@@ -187,16 +245,22 @@ function _rapierNotesLibraryRead(file, text = _rapierNotes.texts.get(file)) {
 	const S = _rapierNotesSearchModule(), L = _rapierNotesLinksModule(), entry = (state.index && state.index.notes[file]) || {};
 	// A read-back of a note both indexes hold changes nothing: every write reaches them through _rapierNotesLibraryTouch.
 	let changed = false;
-	if (lib.build && S && !lib.build.index.notes.has(file)) { lib.build = S.updateSearchIndex(lib.build, file, text, entry, {queue: true, own: true}); lib.sidx = lib.build.index; if (!lib.build.done) _rapierNotesLibraryScheduleSlice(); changed = true; }
-	if (lib.lidx && L && !lib.lidx.out.has(file)) { lib.lidx = L.updateLinkIndex(lib.lidx, file, typeof text === 'string' ? text : text.searchText, {stream: !_rapierNotesTextsComplete(), mapLink: text.mapLink}); changed = true; }
-	if (changed) { lib.results = null; if (lib.lidx?.out.has(file)) lib.linksPending?.delete(file); }
+	const deferred = lib.runner?.owns(file);
+	if (lib.build && S && !lib.build.index.notes.has(file)) {
+		if (deferred) lib.runner.queue(file, text, entry);
+		else lib.build = S.updateSearchIndex(lib.build, file, text, entry, {queue: true, own: true});
+		lib.sidx = lib.build.index; if (!lib.build.done) _rapierNotesLibraryScheduleSlice(); changed = true;
+	}
+	const large = deferred || !!text?.searchBytes || (typeof text === 'string' ? text.length : text.searchText.length) > S.SEARCH_WORKER_CHARS;
+	if (lib.lidx && L && !lib.lidx.out.has(file) && !large) { lib.lidx = L.updateLinkIndex(lib.lidx, file, typeof text === 'string' ? text : text.searchText, {stream: !_rapierNotesTextsComplete(), mapLink: text.mapLink}); changed = true; }
+	if (changed) { lib.results = null; if (!lib.build?.pending.has(file) && lib.lidx?.out.has(file)) lib.linksPending?.delete(file); }
 	// A note that joins the index with a picture (a read, a rename's re-read) is read by the text-in-pictures plug-in (notes/ocr.js).
 	if (changed && typeof _rapierOcrJoined === 'function') _rapierOcrJoined(file);
 	return !!lib.build && !!lib.lidx;
 }
 // One note's row, remembered only where both owners hold it; any doubt declines (costs a re-read, never a wrong answer).
 // Trap: notes.js and library.js share one IIFE, so a same-named top-level function is one binding and the later file wins. Keep names distinct.
-function _rapierNotesLibraryRemember(file) {
+function _rapierNotesLibraryRemember(file, prepared) {
 	const state = _rapierNotes, lib = _rapierNotesLib, cache = state.searchCache;
 	if (!cache || !state.readBracket) return;
 	const bracket = state.readBracket.get(file);
@@ -206,7 +270,7 @@ function _rapierNotesLibraryRemember(file) {
 	if (!search || !lib.lidx?.files?.has(file)) return;
 	try {
 		// The retained title goes in the row; `has` separates "no title" from "not computed", and only the first may be stored empty.
-		cache.remember(file, {search, links: {out: lib.lidx.out.get(file), aliases: lib.lidx.aliases.get(file)},
+		cache.remember(file, {...(prepared?.encoded ? {encoded: prepared.encoded} : {search, links: {out: lib.lidx.out.get(file), aliases: lib.lidx.aliases.get(file)}}),
 			...(state.titles?.has(file) ? {title: state.titles.get(file)} : {})},
 			bracket.before, bracket.after, bracket.observedAt);
 	} catch (_) { /* a cache that will not take a row is a cache that is not there */ }
@@ -260,7 +324,7 @@ function _rapierNotesLibraryLinkIndex() {
 	if (!L) return null;
 	_rapierNotesLibraryFresh();
 	// Links are read in notes only: a code file's words are code.
-	if (!lib.lidx) lib.lidx = L.buildLinkIndex(new Map([..._rapierNotes.texts].filter(([file]) => !_rapierNotesModel().isCodeFile(file))));
+	if (!lib.lidx) lib.lidx = L.buildLinkIndex(new Map([..._rapierNotes.texts].filter(([file, text]) => !_rapierNotesModel().isCodeFile(file) && text.length <= _rapierNotesSearchModule().SEARCH_WORKER_CHARS)));
 	return lib.lidx;
 }
 // One note changed; `gone` drops it. No index is built here.
@@ -272,8 +336,8 @@ function _rapierNotesLibraryTouch(file, gone) {
 	const text = gone ? null : state.texts.get(file);
 	if (text == null && !gone) return;
 	const S = _rapierNotesSearchModule(), L = _rapierNotesLinksModule();
-	if (lib.build && S) { lib.build = S.updateSearchIndex(lib.build, file, text, (state.index && state.index.notes[file]) || {}, {own: true}); lib.sidx = lib.build.index; if (!lib.build.done) _rapierNotesLibraryScheduleSlice(); }
-	if (lib.lidx && L && !_rapierNotesModel().isCodeFile(file)) lib.lidx = L.updateLinkIndex(lib.lidx, file, text);
+	const deferred = lib.build && S && _rapierNotesLibraryChange(file, text, (state.index && state.index.notes[file]) || {});
+	if (lib.lidx && L && !_rapierNotesModel().isCodeFile(file) && !deferred) lib.lidx = L.updateLinkIndex(lib.lidx, file, text);
 	lib.results = null; lib.job = null; if (lib.snips) lib.snips.delete(file);
 	// A note written since its pictures were read is read again, in idle time.
 	if (typeof _rapierOcrTouched === 'function') _rapierOcrTouched(file, gone);
@@ -285,6 +349,7 @@ function _rapierNotesLibraryPictures(file, words) {
 	if (!lib.build || !S || typeof S.updateSearchPictures !== 'function' || lib.from !== state.texts) return;
 	// The plug-in installed after the index was begun: the index takes the map now, for the notes still to come.
 	if (!lib.build.index.pictures && typeof _rapierOcrWords === 'function' && _rapierOcrWords()) lib.build.index.pictures = _rapierOcrWords();
+	if (lib.build.pending.has(file)) _rapierNotesLibraryRunner().queue(file, lib.build.pending.get(file), state.index.notes?.[file]);
 	lib.build = S.updateSearchPictures(lib.build, file, words, {own: true});
 	lib.sidx = lib.build.index;
 	lib.results = null; lib.job = null; if (lib.snips) lib.snips.delete(file);
@@ -317,7 +382,7 @@ function _rapierNotesLibraryRun() {
 	const confirm = new Set(answers.flatMap(a => a.confirm));
 	// Coverage belongs to the folder, not just the texts that have arrived in the current slice.
 	const total = Object.keys(state.index.notes).length;
-	lib.partial = state.reading && (!state.reading.complete || sidx.notes.size < total) ? {done: sidx.notes.size, total, ...(state.reading.complete && lib.build.done ? {unread: true} : {})} : answers[0].partial ? answers[0].progress : null;
+	lib.partial = state.reading && (!state.reading.complete || sidx.notes.size < total) ? {done: sidx.notes.size, total, ...(state.reading.complete && (lib.build.done || sidx.progress?.unread) ? {unread: true} : {})} : answers[0].partial ? answers[0].progress : null;
 	lib.hit = found.size > 0;
 	if (confirm.size && (!lib.partial || lib.partial.unread)) {
 		const job = lib.job = {query, id: lib.run, gen: state.loadGen, answers, confirm, total: confirm.size, found, coverage: lib.partial,
@@ -613,10 +678,15 @@ function _rapierNotesLibraryBarPaint() {
 function _rapierNotesLibraryRenameWho(oldFile) {
 	const index = _rapierNotesLibraryLinkIndex();
 	// A partial projection cannot authorize a narrowed rewrite: the full read stays the authority until every file has rejoined.
-	if (!index || _rapierNotesLib.linksPending?.size || Object.keys(_rapierNotes.index?.notes || {}).some(file => !index.files.has(file))) return undefined;
+	if (!index || _rapierNotesLib.linksPending?.size || _rapierNotesLib.runner?.linksPending || _rapierNotesLib.build?.pending.size || Object.keys(_rapierNotes.index?.notes || {}).some(file => !index.files.has(file))) return undefined;
 	const who = new Set((index.in.get(oldFile) || []).map(r => r.from));
 	for (const L of index.out.get(oldFile) || []) if (L.resolved && L.resolved.file === oldFile) who.add(oldFile);
 	return [...who];
+}
+function _rapierNotesLibraryLinksReady() {
+	const lib = _rapierNotesLib;
+	return lib.from === _rapierNotes.texts && lib.generation === _rapierNotes.loadGen &&
+		!lib.linksPending?.size && !lib.runner?.linksPending && !lib.build?.pending.size;
 }
 // Every `was` must still sit where the module said, or the patch is refused whole.
 function _rapierNotesLibraryRefit(text, changed) {
@@ -635,25 +705,22 @@ async function _rapierNotesLibraryRenamed(report) {
 	if (typeof _rapierOcrTouched === 'function') _rapierOcrTouched(report.from, true);
 	if (!lib.lidx || !L || lib.from !== state.texts) return;
 	// Re-read the possible writers one at a time, dropped writes included: the folder's current bytes decide the edges.
-	const before = lib.lidx, from = state.texts, gen = state.loadGen;
+	const from = state.texts, gen = state.loadGen;
 	const affected = new Set([report.to, ...((report.linking || Object.keys(state.index.notes)).filter(file => file !== report.from))]);
 	lib.linksPending = affected;
 	for (const file of [report.from, ...affected]) {
-		lib.lidx = L.updateLinkIndex(lib.lidx, file, null);
 		const S = _rapierNotesSearchModule();
-		if (lib.build && S) { lib.build = S.updateSearchIndex(lib.build, file, null, undefined, {own: true}); lib.sidx = lib.build.index; }
+		if (lib.build && S) _rapierNotesLibraryRunner().queue(file, null, undefined);
 	}
-	// Knowing all filenames is necessary even while their changed links are being reacquired.
-	lib.lidx.files = new Set([...before.files].filter(file => file !== report.from).concat(report.to));
 	for (const file of [...affected]) {
 		if (state.texts !== from || state.loadGen !== gen || lib.linksPending !== affected) return;
 		state.texts.delete(file); state.readFailed.delete(file);
 		await _rapierNotesReadOne(file, {search: true});
 		if (state.texts !== from || state.loadGen !== gen || lib.linksPending !== affected) return;
-		if (lib.lidx.out.has(file) && !state.readFailed.has(file) && !state.unreadable?.has(file)) affected.delete(file);
+		if (!lib.build?.pending.has(file) && lib.lidx.out.has(file) && !state.readFailed.has(file) && !state.unreadable?.has(file)) affected.delete(file);
 		_rapierNotesLetGo(file);
 	}
-	L.resolveLinkIndex(lib.lidx);
+	_rapierNotesLibraryRunner().resolve();
 	lib.results = null; lib.query = null;
 }
 // ---- The Connections sheet ----
@@ -685,9 +752,13 @@ function _rapierNotesLibraryConnections(file) {
 		from.add(rec.from); back.push(rec.from);
 	}
 	let mentions = [];
-	try { mentions = L.unlinkedMentions(index, _rapierNotes.texts, file, {titles: [_rapierNotesLibraryTitle(file)], minLength: RAPIER_NOTES_LIB_MENTION_MIN}); }
+	try { if (_rapierNotesLibraryLinksReady()) {
+		const title = _rapierNotesLibraryTitle(file);
+		mentions = L.unlinkedMentions(index, _rapierNotes.texts, file, {titles: [title], minLength: RAPIER_NOTES_LIB_MENTION_MIN})
+			.slice(0, 20).map(hit => { const row = _rapierNotesReadRow(hit.file); return {...hit, was: title, revision: row.revision, bytes: row.bytes, generation: _rapierNotes.loadGen}; });
+	} }
 	catch (_) { mentions = []; }
-	return {file, out, back, mentions: mentions.slice(0, 20), incomplete: !!_rapierNotesLib.linksPending?.size};
+	return {file, out, back, mentions: mentions.slice(0, 20), incomplete: !!_rapierNotesLib.linksPending?.size || !!_rapierNotesLib.runner?.linksPending || !!_rapierNotesLib.build?.pending.size};
 }
 function _rapierNotesLibraryConnectionsFace(sheet, file) {
 	const lib = _rapierNotesLib, found = _rapierNotesLibraryConnections(file);
@@ -744,7 +815,9 @@ async function _rapierNotesLibraryLinkMention(target, hit) {
 	if (!L || typeof L.markdownLink !== 'function') return;
 	const text = state.texts.get(hit.file);
 	if (text == null) return;
-	const was = text.slice(hit.start, hit.end);
+	const row = _rapierNotesReadRow(hit.file);
+	if (!_rapierNotesLibraryLinksReady() || state.loadGen !== hit.generation || row.revision !== hit.revision || row.bytes !== hit.bytes || text.slice(hit.start, hit.end) !== hit.was) return;
+	const was = hit.was;
 	const now = L.markdownLink(was, target);
 	const next = _rapierNotesLibraryRefit(text, [{start: hit.start, end: hit.end, was, now}]);
 	if (next == null) { if (typeof showToast === 'function') showToast('That mention has changed since it was read; nothing was written.', 'info'); return; }

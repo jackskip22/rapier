@@ -3,8 +3,10 @@ const cosmeticLimits = {label: 120, note: 240, agent: 64, alt: 240};
 // Opaque records (drawing recipes, for example) keep their own deeper owner's contract.
 export function agentInputSchema(schema, depth = 0) {
   const projected = {...schema};
+  // The strictness marker is the catalogue's own: the published schema says it as additionalProperties.
+  delete projected['x-rapier-strict'];
   if (schema.properties) {
-    projected.additionalProperties = true;
+    projected.additionalProperties = schema['x-rapier-strict'] ? false : true;
     projected.properties = Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => {
       const property = agentInputSchema(value, depth + 1);
       if (!depth && Object.hasOwn(cosmeticLimits, key)) delete property.maxLength;
@@ -20,7 +22,7 @@ export function agentInputSchema(schema, depth = 0) {
 export function validateInput(schema, value, path = 'arguments', agent = false) {
   const faults = [];
   const visit = (schema, value, path, depth = 0, key = '') => {
-    const invalid = reason => faults.push({path, message: path + ': ' + reason});
+    const invalid = (reason, field = path) => faults.push({path: field, message: field + ': ' + reason});
     let type = schema.type;
     if (Array.isArray(type)) {
       if (value === null && type.includes('null')) return value;
@@ -31,7 +33,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
     if (type === 'object') {
       if (!value || typeof value !== 'object' || Array.isArray(value)) { invalid('expected an object'); return; }
       const properties = schema.properties || {}, required = schema.required || [];
-      const admitted = agent && schema.properties ? {} : value;
+      const admitted = agent && schema.properties && schema.additionalProperties !== false ? {} : value;
       for (const key of Object.keys(properties)) {
         if (Object.hasOwn(value, key)) {
           const field = visit(properties[key], value[key], path + '.' + key, depth + 1, key);
@@ -41,7 +43,9 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
       }
       for (const key of required) if (!Object.hasOwn(properties, key) && !Object.hasOwn(value, key)) invalid('missing ' + key);
       if (schema.additionalProperties === false) for (const key of Object.keys(value)) {
-        if (!Object.hasOwn(properties, key)) invalid('unknown field ' + key);
+        // In the agent's projected schema only an authored object closes its fields, so the field is named; the door's
+        // raw schema names it for authored objects alone.
+        if (!Object.hasOwn(properties, key)) invalid('unknown field ' + key, schema['x-rapier-strict'] || agent ? path + '.' + key : path);
       }
       value = admitted;
     } else if (type === 'array') {

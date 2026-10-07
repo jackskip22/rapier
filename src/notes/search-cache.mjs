@@ -24,7 +24,8 @@ export function takeSearchCacheProjection(row) {
 	if (!pending) return null;
 	const encoded = pending.encoded;
 	delete pending.encoded;
-	if (typeof encoded !== 'string' || !stampFor(row)) return null;
+	// A row the cache could not have admitted is a miss before it is parsed.
+	if (typeof encoded !== 'string' || 2 * encoded.length > Math.min(SEARCH_CACHE_LIMITS.bytes, SEARCH_CACHE_LIMITS.batchBytes) || !stampFor(row)) return null;
 	try {
 		const value = JSON.parse(encoded);
 		if (!Array.isArray(value) || value.length !== 2) return null;
@@ -227,9 +228,21 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 			const stamp = stampFor(before);
 			if (!stampsMatch(stamp, stampFor(after)) || !stampDurable(stamp, observedAt)) return false;
 			try {
+				// Large-note workers use these same packers before bounded delivery. The read
+				// stamps and queue charge still own admission; reuse still validates both halves.
+				const title = typeof projection.title === 'string' ? projection.title : null;
+				if (typeof projection.encoded === 'string')
+					return queue({key: [scope, file], scope, version, ...stamp, title, encoded: projection.encoded});
+				// A lower bound on the existing encoded row charge. Decline an impossible row
+				// before copying every heading, counted word and link merely to reject it later.
+				const note = projection.search, outgoing = projection.links;
+				let minimum = (note.title?.length || 0) + (note.excerpt?.length || 0) +
+					4 * note.headings.length + 2 * note.tags.length + 30 * outgoing.out.length + 2 * outgoing.aliases.length;
+				for (const field of ['title', 'headings', 'tags', 'body']) minimum += 6 * note.bag[field].size;
+				if (note.pictures && note.bag.pictures) minimum += note.pictures.length + 6 * note.bag.pictures.size;
+				if (2 * minimum > Math.min(bound.bytes, bound.batchBytes)) return false;
 				const search = packSearchProjection(projection.search), links = packLinkProjection(projection.links, stamp.size);
 				// The CARD's title, never search's; unknown writes null.
-				const title = typeof projection.title === 'string' ? projection.title : null;
 				const encoded = JSON.stringify([search, links]);
 				return queue({key: [scope, file], scope, version, ...stamp, title, encoded});
 			} catch (_) { return false; }

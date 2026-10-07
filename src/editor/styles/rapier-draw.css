@@ -22,6 +22,9 @@ html.rapier-draw-open{overscroll-behavior:none}
 /* The site's /draw door (draw/draw.js RAPIER_DRAW_DOOR_AT_BIRTH): until the canvas is up nothing of the
    editor is painted, as Notes' start does (rapier-notes.css html.rapier-notes-start). */
 html.rapier-draw-start body>*:not(.rapier-draw-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
+/* The toasts while the canvas is up (draw/draw.js _rapierDrawToastHome moves the toast root into this surface): above the stage, its strips
+   and its panels, under the scrim of an open tool chooser (7), its menu (8) and the floating menus and text editor (900s). */
+.rapier-draw-surface>#toast-root{z-index:6}
 /* A canvas a Notes door opened comes up over the note (or over the plate Notes grows from the + bar's
    DRAW) and leaves over the note or the cards, on one short fade at the house ease (draw/draw.js
    RAPIER_DRAW_FADE_MS, _rapierDrawLeave); closed, it lets a finger through to what is under it. */
@@ -509,7 +512,7 @@ body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 .rapier-draw-dropper-say{flex:1;font:var(--fw-medium) var(--text-2xs,10px) var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase;color:var(--color-text-secondary)}
 /* Sampled, the bar's main word is the hex in the bar's own button type, beside a flat chip of the colour, and the word is
    the copy; it takes the hint's place at the left, Done staying at the right. Copied, its glyph is the editor's check for
-   a moment; refused, the hint beside it says so (a page notice waits while Draw is up). */
+   a moment; refused, the hint beside it says so, where the finger is (the page's notice stands over the canvas above the bar). */
 .rapier-draw-dropper-hex{margin-right:auto;gap:var(--space-1);padding:0 var(--space-2);min-width:0}
 .rapier-draw-dropper-chip{flex:none;width:20px;height:20px}
 .rapier-draw-dropper-glyph{display:flex}

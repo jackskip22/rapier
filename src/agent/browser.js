@@ -17,6 +17,7 @@
   const transactionPrincipals = new Map(), doorNames = new Map();
   const subscribers = new Set();
   const contextSubscribers = new Set();
+  const ownedNotesEndpoints = new Set();
   const registrations = new Map();
   const failures = new Map();
   const reviews = new Map();
@@ -48,6 +49,7 @@
   let retainedPointer = null, policyAvailable = false, remoteReview = null, projecting = 0, viewFlight = null;
   let visualFlight = null;
   let embedReviewSignature = '';
+  let reviewPersistenceSignature = '';
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   ready.catch(() => {});
   const fail = (reason, outcome = 'refused') => ({ok: false, outcome, reason});
@@ -172,6 +174,11 @@
   function humanActivity(event) {
     if (event.isTrusted !== true || projecting) return;
     const target = event.target;
+    if (target?.closest?.('.rapier-draw-surface')) {
+      humanSequence++;
+      queueMicrotask(() => contextChanged(event.type));
+      return;
+    }
     const inEditor = target?.id === 'source-textarea' || document.getElementById('editor-blocks')?.contains(target);
     if (!inEditor) return;
     humanSequence++;
@@ -185,12 +192,26 @@
     queueMicrotask(() => { rememberPointer(); contextChanged(event.type); });
   }
 
+  function drawingContext() {
+    return typeof _rapierDrawContext === 'function' ? _rapierDrawContext() : null;
+  }
+
   async function humanContext() {
     const basic = {documentId: String(rapier.identity.authority), revision: Number(rapier.revision.settled),
       generation: Number(rapier.revision.generation)};
     if (!readyDone || admission() || _rapierMutationBarrierActive()) {
       return {...fail('document_not_settled', 'yielded'), ...basic,
         context: {sequence: contextSequence, visible: visible(), editing: visible() && editing(), selection: null, focus: null}};
+    }
+    const drawing = drawingContext();
+    if (drawing?.open) {
+      // Draw owns its settled recipe and the gesture still in progress. Observing either
+      // never checkpoints the document or completes the person's current stroke or label.
+      const value = documentState();
+      const focus = drawing.occurrence && Number.isSafeInteger(drawing.occurrence.start) && Number.isSafeInteger(drawing.occurrence.end)
+        ? {start: drawing.occurrence.start, end: drawing.occurrence.end, active: false} : null;
+      return {ok: true, ...value, context: {sequence: contextSequence, visible: visible(), editing: false,
+        selection: null, focus, drawing, posture: value.posture, readOnly: value.readOnly}};
     }
     // Read the kept source and its live focus without checkpointing a draft or composition.
     // The hosted adapter maps this range to its acknowledged source before publishing it.
@@ -206,7 +227,8 @@
     return {ok: true, documentId: value.documentId, revision: value.revision, generation: value.generation,
       filename: value.filename, docKind: value.docKind, text: value.text,
       context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(true),
-        posture: value.posture, readOnly: value.readOnly}};
+        posture: value.posture, readOnly: value.readOnly,
+        ...(value.reviewedRevision == null ? {} : {reviewedRevision: value.reviewedRevision})}};
   }
 
   function setPolicy(policy, event) {
@@ -214,7 +236,7 @@
     if (!policyAvailable) return fail('policy_not_ready');
     if (!policy || Object.keys(policy).some(key => !['posture', 'readOnly'].includes(key)) ||
         (!Object.hasOwn(policy, 'posture') && !Object.hasOwn(policy, 'readOnly')) ||
-        (Object.hasOwn(policy, 'posture') && !['free', 'ask'].includes(policy.posture)) ||
+        (Object.hasOwn(policy, 'posture') && !['free', 'check', 'ask'].includes(policy.posture)) ||
         (Object.hasOwn(policy, 'readOnly') && typeof policy.readOnly !== 'boolean')) return fail('policy_invalid', 'invalid');
     const value = {sequence: ++contextSequence, visible: visible(), editing: editing(), trusted: true, policy: {...policy}};
     for (const notify of contextSubscribers) { try { notify(value); } catch (_) {} }
@@ -223,7 +245,7 @@
 
   function projectPolicy(value) {
     const policy = value.collaboration;
-    if (!apps || !policy || !['free', 'ask'].includes(policy.posture) || typeof policy.readOnly !== 'boolean') return;
+    if (!apps || !policy || !['free', 'check', 'ask'].includes(policy.posture) || typeof policy.readOnly !== 'boolean') return;
     policyAvailable = true;
     if (_rapierPosture() !== policy.posture) _rapierPostureSet(policy.posture);
     if (rapier.access.readOnly !== policy.readOnly) rapierSetReadOnly(policy.readOnly);
@@ -245,23 +267,22 @@
   // holds (draw/draw.js _rapierDrawHeldRanges: the open picture's block, or the place a new drawing
   // lands). An edit that touches none of it lands while the person draws, and Draw's place moves with
   // it (commit, below). Anything without splices -- an open, a save, a comparison -- is refused.
-  // The one exception, and the reason for it: an edit to the very drawing the person has open is
-  // not an edit to the markdown behind the canvas -- it is the one change that is ABOUT what they
-  // are looking at, and they watch it arrive (the replay). Narrow on purpose, and on three facts
-  // at once: the edit must be a plain shapes patch (the only shape of edit the open surface can
-  // take into the drawing it is holding -- anything else would be silently overwritten by the
-  // person's own Done), it must name a drawing (kernel.mjs drawEdit's `fence`, derived from the
-  // held handle, never from the wire), and Draw must be open on that same picture. The predicate
-  // for the last of those is the SAME one that decides the hand-off, so the fence can never open
-  // on an edit the surface would then refuse to show. A new picture under the canvas, an
-  // operations batch, a caption change, a staged review, an apply, a save, an open: all
-  // still refused.
+  // The very picture the person has open is Draw's own question (draw/draw.js _rapierDrawFence), one gate for the commit and for the landing:
+  // a verified change for the exact occurrence lands now, or waits behind the person's hand and lands when it lifts; a paint layer that is no
+  // longer the one the agent painted into is refused; a caption, which the canvas cannot take, keeps the ordinary fence. Every other edit
+  // must leave the ranges Draw holds intact, so Done cannot overwrite work hidden behind the canvas.
   const drawFence = fact => {
     if (typeof document === 'undefined' || !document.body?.classList?.contains('rapier-draw-open')) return '';
-    const open = typeof _rapierDrawEditingAsset === 'function' ? _rapierDrawEditingAsset() : '';
-    if (open && fact?.drawingAsset && String(fact.drawingAsset) === open) return fact.shapesOnly ? '' : 'draw_session_open';
+    const open = typeof _rapierDrawEditingAsset === 'function' ? _rapierDrawEditingAsset({allowBusy: true}) : '';
+    // A picture is known by its reference label, which Markdown reads without regard to case: the occurrence an agent's draw wrote
+    // and the definition the page rendered (what Draw holds) name the one picture in two spellings, so the two are compared as ids.
+    const id = label => { const assets = globalThis.RapierImageAssets; return assets && typeof assets.normalizeLabel === 'function' ? assets.normalizeLabel(String(label)) : String(label); };
+    if (open && fact?.drawingAsset && id(fact.drawingAsset) === id(open)) {
+      return typeof _rapierDrawFence === 'function' ? _rapierDrawFence(fact) : 'draw_session_open';
+    }
     const held = Array.isArray(fact?.splices) && typeof _rapierDrawHeldRanges === 'function' ? _rapierDrawHeldRanges() : null;
-    return held && _rapierDrawMoveRanges(held, fact.splices) ? '' : 'draw_session_open';
+    // The document profile has no Draw: the fence then refuses as it always has.
+    return held && typeof _rapierDrawMoveRanges === 'function' && _rapierDrawMoveRanges(held, fact.splices) ? '' : 'draw_session_open';
   };
   const hostFence = fact => notesFence(fact) || drawFence(fact);
   // Draw or the cards stand over the editor: the person's place is theirs, not the editor's.
@@ -312,7 +333,8 @@
       proposalBase: proposalRecord()?.base || null, ledgerRoot: rapier.document.source?.rootId || null,
       generation: Number(rapier.revision.generation), filename: String(rapier.document.filename),
       docKind: String(rapier.document.docKind), text: _rapierSourceText(), readOnly: !!rapier.access.readOnly,
-      posture: _rapierPosture()};
+      posture: _rapierPosture(), ...(!rapier.review.seen?.restored && _rapierSeenUndelivered() === 0
+        ? {reviewedRevision: Number(rapier.revision.settled)} : {})};
   }
 
   function current() {
@@ -325,7 +347,7 @@
         operation: tx.operation, sourceTransactionId: tx.sourceTransactionId,
         splices: splices.map(row => ({pos: row.pos, removed: row.removed, inserted: row.inserted}))}] : [];
     });
-    return {...documentState(), ...editorFocus(), journal, externalComparison: externalComparison(),
+    return {...documentState(), ...editorFocus(), drawing: drawingContext(), journal, externalComparison: externalComparison(),
       closedComparisonId: !apps && comparisonKernelId && !ownsComparison(comparisonOwner) ? comparisonKernelId : null};
   }
 
@@ -333,6 +355,7 @@
     await ready;
     const reason = admission();
     if (reason) throw Object.assign(new Error(reason), {code: reason});
+    if (drawingContext()?.open) return current();
     const read = await _rapierWithSettledExternalDocument(current, {quiet: true});
     if (!read.settled) throw Object.assign(new Error('document_not_settled'), {code: 'document_not_settled'});
     return read.value;
@@ -446,8 +469,8 @@
     if (_rapierWillReviewSlot.settling || _rapierCompareRuntime.lawReview) return 'human_review_in_progress';
     if (rapier.compare?.active && !ownsComparison(comparisonOwner)) return 'human_comparison_open';
     if (request.actor === 'agent' && !request.sourceTransactionId && !reviews.has(request.reviewToken)) {
-      // Nothing is left to review on the drawing the person has open: the kernel's own watched test (its fence admits this request and
-      // the open fence does not) lands a shapes patch at once. Any other edit stays under the fence and under ASK.
+      // The kernel's watched test admits a semantic patch for the drawing the person has open.
+      // Other edits remain under the document's review policy.
       const watched = !!hostFence() && !hostFence(request.fence);
       if (_rapierPosture() === 'ask' && !watched) return 'human_review_required';
     }
@@ -514,6 +537,10 @@
       if (typeof _rapierDrawFollow === 'function') _rapierDrawFollow(request.splices);
       committed = {ok: true, revision: result.commitReceipt.documentRevision,
         documentId: result.commitReceipt.documentAuthority, transactionId: result.transaction?.id};
+      if (request.actor === 'agent' && request.fence?.drawingPatch) {
+        committed.drawingReceipt = projectRemoteDrawing(request.fence.drawingPatch,
+          {transactionId: committed.transactionId, name: request.hostAgent || doorName});
+      }
       if (committed.transactionId && !request.carriedLedger) {
         transactionPrincipals.set(committed.transactionId, {principal: request.principal, hostAgent: request.hostAgent});
         const retained = new Set(rapier.undo.ledger.map(row => row.transaction.id));
@@ -554,6 +581,7 @@
     if (!compare.active) compare.snapshot = _rapierCompareCaptureView();
     compare.lens = 'text'; compare.changeId = null;
     compare.currentText = request.currentText; compare.currentName = request.currentName || rapier.document.filename;
+    _rapierSeenViewMovedByAgent();
     _rapierCompareStart(request.currentText, compare.currentName, request.incomingText, request.incomingName || 'comparison.md', {exact: true});
     if (!matches(request)) return fail('comparison_not_opened');
     comparisonOwner = owner;
@@ -584,6 +612,7 @@
       resolved = {kind: 'markdown-range', start, end};
     }
     const travel = _rapierTravelBegin('agent reveal'), token = rapier.view.restoreToken;
+    _rapierSeenViewMovedByAgent();
     const scroll = _rapierScrollResolvedIntoView(resolved);
     if (scroll.reason) return fail(scroll.reason);
     if (!await _rapierSettleRevealScroll(scroll, request.signal || idleSignal, token) || !matches(request)) return fail('view_changed');
@@ -702,15 +731,16 @@
   }
 
   function reviewImage(review, text) {
-    if (review?.kind !== 'proposal' || !Array.isArray(review.splices) || !review.splices.length) return null;
+    if (!['proposal', 'check'].includes(review?.kind) || !Array.isArray(review.splices) || !review.splices.length) return null;
     let rows = review.splices;
-    if (Array.isArray(review.changes) && review.changes.length) {
+    if (review.kind === 'proposal' && Array.isArray(review.changes) && review.changes.length) {
       rows = review.changes.map((row, index) => row.status === 'pending' ? review.splices[index] : null).filter(Boolean);
       if (!rows.length) return null;
     }
     const transformed = globalThis.RapierKernel.transformSplices(text, rows);
     if (typeof transformed !== 'string') return null;
-    const baseline = text, incoming = transformed;
+    const baseline = review.kind === 'check' ? transformed : text;
+    const incoming = review.kind === 'check' ? text : transformed;
     if (baseline === incoming) return null;
     return {baseline, incoming};
   }
@@ -780,7 +810,9 @@
     const resolved = {kind: 'document-range', source: value.text, start: 0, end: value.text.length, record: {}};
     const who = {actor: 'agent', principal: options.principal || 'mcp', requestId: options.requestId || review.id,
       transport: options.transport || 'platform', signal: controller.signal};
-    const presentation = proposalRecord() ? {kind: 'proposal', base: proposalRecord().base} : null;
+    const presentation = review.kind === 'check' ? {kind: 'check', baseline: image.baseline,
+      baseRevision: review.baseRevision, includesHumanChanges: review.includesHumanChanges === true} : proposalRecord() ? {kind: 'proposal', base: proposalRecord().base} : null;
+    _rapierSeenViewMovedByAgent();
     const changes = review.kind === 'proposal' && Array.isArray(review.changes) && review.changes.length
       ? review.changes.filter(row => row.status === 'pending').map(row => ({id: row.id, pos: row.pos, removed: String(row.removed || '').length, inserted: String(row.inserted || '').length}))
       : review.kind === 'proposal' && Array.isArray(review.changeIds) && review.changeIds.length && review.changeIds.length <= review.splices.length
@@ -838,9 +870,9 @@
   // reasons and caller names can contain document text. Never spread a review onto the wire.
   function embedReviewMetadata(review) {
     if (typeof review?.id !== 'string' || !/^review_[0-9a-f]{32}$/.test(review.id) ||
-        !['proposal', 'inline'].includes(review.kind) ||
+        !['proposal', 'inline', 'check'].includes(review.kind) ||
         !['pending', 'approved', 'declined', 'invalidated'].includes(review.status) ||
-        !['will', 'ask', 'proposal'].includes(review.cause) ||
+        !['will', 'ask', 'check', 'proposal'].includes(review.cause) ||
         !Number.isSafeInteger(review.revision) || review.revision < 0) return null;
     const law = review.law ?? null, region = review.region ?? null;
     if (law !== null && !['keep', 'append', 'edit'].includes(law)) return null;
@@ -866,11 +898,18 @@
   }
 
   function publishEmbedReview() {
+    const review = kernel?.collaboration()?.review;
+    const retained = review ? JSON.stringify([String(rapier.identity.authority), review.id, review.revision,
+      review.status, review.changes?.map(row => [row.id, row.status, row.reason]), review.decision || null]) : '';
+    if (retained !== reviewPersistenceSignature) {
+      reviewPersistenceSignature = retained;
+      // A proposal or Drop changes no source bytes, but still belongs to document recovery.
+      _rapierArmAutosave();
+    }
     if (!_rapierEmbed.active || !_rapierEmbed.connected || !_rapierEmbed.loaded ||
         _rapierEmbed.loading || !_rapierEmbed.capabilities?.includes('agent') || !kernel) {
       embedReviewSignature = ''; return false;
     }
-    const review = kernel.collaboration()?.review;
     if (!review) { embedReviewSignature = ''; return false; }
     const payload = embedReviewMetadata(review);
     if (!payload) return false;
@@ -970,7 +1009,12 @@
       onDecision: async decision => {
         if (decision.trusted !== true) return;
         if (!['approve', 'decline', 'apply', 'drop'].includes(decision.action)) return;
-        await decideKernelReview(request.review, decision.action, decision.changeIds);
+        const result = await decideKernelReview(request.review, decision.action, decision.changeIds);
+        if (decision.action === 'approve' && request.review.kind === 'check' && result.acknowledged === true) {
+          const ids = [...rapier.review.moved].filter(([, owner]) =>
+            _rapierScopeOwns(scope(request), owner.actor, owner.transport)).map(([id]) => id);
+          _rapierSeenWitnessBlocks(ids, null);
+        }
       },
     });
   }
@@ -978,7 +1022,7 @@
   // The inline read-surface's own read of the pending proposal: a pure accessor over the same
   // collaboration() snapshot document.get_context and the law lens already read, relocated
   // (relocation runs at decision time and whenever a door reads collaboration()) so a stale
-  // position never reaches the spans. Never anything but a proposal under decision -- an
+  // position never reaches the spans. Never anything but a proposal under decision -- a check,
   // inline or comparison-driven review has nothing for a person to keep or drop change by change.
   function pendingReviewSnapshot() {
     if (!kernel) return null;
@@ -997,12 +1041,12 @@
     return review && review.kind === 'proposal' ? review : null;
   }
 
-  // The small, review-only slice of kernel state a restart needs to bring a pending negotiation
-  // back -- never the document text itself, which the editor's own existing recovery store already
-  // owns and restores independently (`refresh`'s own `!kernel` branch merges the two). Called by
-  // that same store's existing write cycle. Ordinary documents retain nothing when no review is
-  // pending; a proposal retains its one original base after its decisions too. This is the
-  // document's current proposal ancestry, not an archive of past reviews.
+  // The kernel state a restart needs for pending negotiations and caller-scoped retries -- never
+  // the document text itself, which the editor's own existing recovery store already owns and
+  // restores independently (`refresh`'s `!kernel` branch merges the two). That store's existing
+  // write cycle retains the kernel's bounded receipts and spent identities even in FREE, so a
+  // reconnect cannot execute an old write again. Pending work, CHECK state and the person's decision
+  // receipts survive too; a portable proposal also retains its original base.
   function agentRecoveryState() {
     if (!kernel) return null;
     // The kernel's own state otherwise only catches up with an ordinary human edit the way every
@@ -1012,10 +1056,11 @@
     // Reconciling here, against the same live snapshot() every door already reads, keeps the
     // retained slice current with no new source of truth and no extra write of its own.
     try { kernel.reconcile(current(), {actor: 'system', principal: 'bootstrap'}); } catch (_) {}
-    const snap = kernel.snapshot();
-    if ((!snap.review || snap.review.status !== 'pending') && !snap.proposalBase) return null;
+    const snap = kernel.snapshot(), invocationJournal = kernel.invocationJournal();
+    if ((!snap.review || snap.review.status !== 'pending') && !snap.proposalBase &&
+        !snap.reviewDecisions.entries.length && snap.posture !== 'check' && !invocationJournal.length) return null;
     const {text, ...rest} = snap;
-    return {...rest, invocationJournal: kernel.invocationJournal()};
+    return {...rest, invocationJournal};
   }
 
   // The inline read-surface's keep/drop strip and type-over call this directly instead of going
@@ -1037,10 +1082,12 @@
   // pinning and presence bookkeeping) rather than opening a second presentation path; presentReview's
   // own dedupe makes a call while the lens is already open for this review a harmless no-op.
   async function representPendingReview() {
-    const review = pendingReviewSnapshot();
-    if (!review) return {ok: false, reason: 'review_missing'};
-    // The review names the revision it was staged on; the document is this page's own. Without both, matches() refuses every REVIEW tap.
-    return presentKernelReview({review, documentId: String(rapier.identity.authority), revision: review.revision, principal: 'local', transport: 'platform', requestId: crypto.randomUUID()});
+    const review = kernel?.collaboration()?.review;
+    if (!review || review.status !== 'pending') return {ok: false, reason: 'review_missing'};
+    const origin = kernel.snapshot().review;
+    const identity = {principal: origin.principal, transport: origin.transport, requestId: origin.requestId};
+    if (review.kind === 'inline') return driveInlineReview(review, identity);
+    return presentKernelReview({review, documentId: String(rapier.identity.authority), revision: review.revision, ...identity});
   }
 
   // Structural parse for a JS/HTML document: the browser's own answer to a world.structure fact
@@ -1051,7 +1098,10 @@
     if (!request) return {ok: false, complete: false, reason: 'structure_unavailable'};
     const sameSource = () => _rapierSourceText() === input.text && String(rapier.document.filename) === input.filename;
     if (!sameSource()) return {ok: false, complete: false, reason: 'document_changed'};
-    const result = await _rapierStructureJob(request, idleSignal);
+    // Markdown is read in this realm by the parser the page renders with (the engine's `md`); code goes to the structure worker.
+    const result = request.kind === 'markdown'
+      ? (typeof md === 'undefined' || !md ? {ok: false, complete: false, reason: 'structure_unavailable'} : globalThis.RapierAgentMarkdown.structureMarkdown(request, md))
+      : await _rapierStructureJob(request, idleSignal);
     return sameSource() ? result : {ok: false, complete: false, reason: 'document_changed'};
   }
 
@@ -1066,7 +1116,7 @@
     if (String(rapier.document.filename) !== requirements.filename) return null;
     const text = _rapierSourceText();
     const input = {text, filename: requirements.filename, mode: requirements.mode,
-      ...(requirements.mode === 'find' ? {query: requirements.query, kind: requirements.kind,
+      ...(requirements.mode === 'find' ? {docKind: requirements.docKind, query: requirements.query, kind: requirements.kind,
         within: requirements.within, offset: requirements.offset} : {})};
     const value = await structureJob(input);
     return {mode: requirements.mode, revision: Number(rapier.revision.settled), filename: requirements.filename,
@@ -1076,6 +1126,47 @@
 
   // Pixels are an observation of exactly this source, never a source handle. Apps supplies its
   // already-verified local snapshot separately because local and server revision counters differ.
+  async function inspectDrawingVisual(request, expected, drawing) {
+    const visual = globalThis.RapierAgentVisual;
+    const identity = {documentId: request.documentId, revision: request.revision, scope: request.scope,
+      drawing: visual.visualDrawingIdentity(drawing)};
+    const refuse = reason => ({...identity, outcome: 'refused', reason});
+    if (!visual.sameVisualDrawing(request.drawing, drawing)) return refuse('visual_target_changed');
+    if (drawing.recipeUnavailable || !drawing.recipe) return refuse('visual_render_unavailable');
+    const before = documentState(), revision = expected?.expectedRevision ?? request.revision;
+    if (before.documentId !== request.documentId || before.revision !== revision ||
+        (expected && (expected.expectedDocumentId !== before.documentId || expected.expectedText !== before.text ||
+          expected.expectedGeneration !== before.generation))) return refuse('document_changed');
+    const field = request.scope === 'page' ? 'canvas' : request.scope === 'selection' ? 'selection' : 'visible';
+    const clip = drawing.bounds?.[field];
+    if (!clip || !(clip.width > 0 && clip.height > 0)) return refuse('visual_target_missing');
+    if (typeof globalThis.RapierVisualCapture?.captureDrawing !== 'function') return refuse('visual_render_unavailable');
+    const controller = new AbortController(), abortCapture = () => controller.abort(request.signal?.reason);
+    request.signal?.addEventListener('abort', abortCapture, {once: true});
+    if (request.signal?.aborted) abortCapture();
+    visualFlight = controller;
+    const geometry = JSON.stringify({clip, transform: request.scope === 'viewport' ? drawing.transform : null,
+      selected: request.scope === 'selection' ? drawing.selectedObjects : null});
+    const current = () => {
+      if (!visible() || admission() || _rapierMutationBarrierActive() || String(rapier.identity.authority) !== before.documentId ||
+          Number(rapier.revision.settled) !== revision || Number(rapier.revision.generation) !== before.generation ||
+          _rapierSourceText() !== before.text) return false;
+      const next = drawingContext();
+      return visual.sameVisualDrawing(identity.drawing, next) && geometry === JSON.stringify({clip: next?.bounds?.[field],
+        transform: request.scope === 'viewport' ? next?.transform : null,
+        selected: request.scope === 'selection' ? next?.selectedObjects : null});
+    };
+    try {
+      const image = await globalThis.RapierVisualCapture.captureDrawing({recipe: drawing.recipe, clip, signal: controller.signal, current});
+      return current() ? {...identity, outcome: 'ok', image} : refuse('visual_target_changed');
+    } catch (error) {
+      return refuse(request.signal?.aborted ? 'cancelled' : error?.code || 'visual_render_unavailable');
+    } finally {
+      request.signal?.removeEventListener('abort', abortCapture);
+      if (visualFlight === controller) visualFlight = null;
+    }
+  }
+
   async function inspectVisual(request, expected) {
     await ready;
     const identity = {documentId: request?.documentId, revision: request?.revision, scope: request?.scope};
@@ -1085,6 +1176,9 @@
     if (request?.kind !== 'visual' || !['viewport', 'page', 'focus', 'selection'].includes(request.scope))
       return refuse('visual_target_unavailable');
     if (admission() || !visible()) return refuse('host_not_connected');
+    const drawing = drawingContext();
+    if (drawing?.open) return inspectDrawingVisual(request, expected, drawing);
+    if (request.drawing) return refuse('visual_target_changed');
     if (hostFence()) return refuse(hostFence());
     if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source' || rapier.compare?.active)
       return refuse('visual_render_unavailable');
@@ -1162,14 +1256,16 @@
     publishEmbedReview();
     const decline = () => kernel.decideReview({expectedRevision: review.revision, reviewId: review.id, action: 'decline'},
       {actor: 'human', principal: 'local', transport: 'platform', requestId: crypto.randomUUID(), signal: idleSignal});
+    const pending = reason => ({outcome: 'pending', reason: 'human_review_required', reviewId: review.id,
+      review: kernel.collaboration().review, cause: review.cause, presentation: reason});
     const beforeText = _rapierSourceText();
     const splice = review.authoredSplices?.[0];
     if (String(rapier.identity.authority) !== review.documentId || Number(rapier.revision.settled) !== review.revision ||
-        !splice || beforeText.slice(splice.pos, splice.pos + splice.removed.length) !== splice.removed) return decline();
+        !splice || beforeText.slice(splice.pos, splice.pos + splice.removed.length) !== splice.removed) return pending('review_document_changed');
     const resolved = {kind: 'document-range', source: beforeText, start: splice.pos, end: splice.pos + splice.removed.length, record: {}};
     if (!review.byPosture) {
       const will = {..._rapierWillParse(beforeText), space: 'source'};
-      if (!_rapierWillCanReview(will, resolved)) return decline();
+      if (!_rapierWillCanReview(will, resolved)) return pending('review_unavailable');
     }
     const who = {actor: 'agent', principal: requestMeta.principal || 'mcp', requestId: requestMeta.requestId || review.id,
       transport: requestMeta.transport || 'platform', signal: idleSignal};
@@ -1177,11 +1273,12 @@
     let reviewToken;
     try {
       const restored = decision.review && await _rapierAwaitWillRestore(decision.review, idleSignal);
-      const approve = decision.allowed && restored && _rapierSourceText() === beforeText &&
+      if (decision.reason === 'kept') return await decline();
+      const approve = decision.allowed && decision.reason === 'allowed' && restored && _rapierSourceText() === beforeText &&
         String(rapier.identity.authority) === review.documentId && Number(rapier.revision.settled) === review.revision;
-      if (!approve) return decline();
+      if (!approve) return pending(decision.reason || 'review_unavailable');
       const text = globalThis.RapierKernel.transformSplices(beforeText, review.splices);
-      if (typeof text !== 'string') return decline();
+      if (typeof text !== 'string') return pending('review_document_changed');
       reviewToken = crypto.randomUUID();
       reviews.set(reviewToken, {documentId: review.documentId, revision: review.revision, beforeText, text,
         principal: who.principal, requestId: who.requestId, expires: Date.now() + 30000});
@@ -1190,6 +1287,8 @@
     } finally {
       if (decision.review) _rapierWillReviewRelease(decision.review, false);
       if (reviewToken) reviews.delete(reviewToken);
+      publishEmbedReview();
+      void refresh();
     }
   }
 
@@ -1203,8 +1302,18 @@
     },
     compare: showComparison, closeCompare: closeComparison, presentReview: presentKernelReview,
     // An agent's paint strokes, laid by the paint engine (draw/agent-paint.mjs) in the painter's own worker where the page has one (draw/draw.js); absent in the document build, where the kernel refuses them.
-    // The layers it lays are remembered for the call, so Draw replays the painted patch rather than the agent's strokes alone.
-    ...(globalThis.RapierDrawAgentPaint ? {paint: async strokes => { const shape = await (typeof _rapierDrawPaintAgentStrokes === 'function' ? _rapierDrawPaintAgentStrokes : globalThis.RapierDrawAgentPaint.paintAgentStrokes)(strokes); if (shape) paintedLayers.push(shape); return shape; }, paintSheet: paint => globalThis.RapierDrawAgentPaint.agentPaintSheetHolds(paint)} : {}),
+    // The layers a document.draw lays ride in the semantic change the kernel hands the open canvas. The layers a selective Undo repaints are
+    // remembered for the call instead: that Undo writes a new material result, not an inverse, so Draw is handed the layers themselves.
+    ...(globalThis.RapierDrawAgentPaint ? {
+      paint: (strokes, options = {}) => (typeof _rapierDrawPaintAgentStrokes === 'function' ? _rapierDrawPaintAgentStrokes : globalThis.RapierDrawAgentPaint.paintAgentStrokes)(strokes, options.seed, options.target, options),
+      paintReplay: async (shape, omitIds, options) => {
+        const replayed = await (typeof _rapierDrawPaintReplay === 'function' ? _rapierDrawPaintReplay : globalThis.RapierDrawAgentPaint.replayAgentPainting)(shape, omitIds, options);
+        if (replayed) paintedLayers.push(replayed);
+        return replayed;
+      },
+      paintSheet: paint => globalThis.RapierDrawAgentPaint.agentPaintSheetHolds(paint),
+      paintBrushes: () => globalThis.RapierDrawAgentPaint.agentPaintBrushRegistry(),
+    } : {}),
     // notes.list / notes.read: the folder is answered by the Notes shell's own door where the build
     // carries Notes (notes/notes.js sets globalThis.rapierNotesHost at install); the document profile
     // has no such door, so the kernel returns an empty, unavailable listing.
@@ -1214,9 +1323,12 @@
     // is absent would look like notes_folder_unreadable (retry the folder) instead of an unavailable
     // empty listing (this build has no Notes). undefined is the kernel's "no door" signal; the door
     // itself still returns null when the folder cannot answer.
-    notesList: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.list !== 'function') return undefined; return door.list({signal: request?.signal}); },
-    notesPropose: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.propose !== 'function') return undefined; return door.propose({text: request.text, title: request.title, of: request.of, by: request.by, base: request.base}, {signal: request?.signal}); },
-    notesRead: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.read !== 'function') return undefined; return door.read(String(request?.file || ''), {signal: request?.signal}); },
+    notesList: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.list !== 'function') return undefined; return door.list({query: request.query, signal: request?.signal}); },
+    notesPropose: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.propose !== 'function') return undefined; return door.propose({text: request.text, title: request.title, of: request.of, by: request.by, base: request.base}, {signal: request?.signal, guard: request.guard}); },
+    notesRead: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.read !== 'function') return undefined; return door.read(String(request?.file || ''), {version: request.version, signal: request?.signal}); },
+    notesSet: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.set !== 'function') return undefined; return door.set(request, {signal: request?.signal, guard: request.guard}); },
+    notesHistory: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.history !== 'function') return undefined; return door.history(request.file, {signal: request?.signal}); },
+    notesSync: async request => { const door = globalThis.rapierNotesHost; if (typeof door?.sync !== 'function') return undefined; return door.sync({action: request.action, signal: request?.signal, guard: request.guard}); },
     // Declares the capability decide's own commit branch reads (capability negotiation): this door
     // can present a review inline, at the exact edit, not only through the Compare-panel proposal
     // flow. mcp/worker.mjs does not set this -- it has no inline UI to show, so it stays on the
@@ -1226,7 +1338,10 @@
     markdown: async input => {
       abort(input);
       if (_rapierSourceText() !== input.text) return {entries: [], complete: false, reason: 'document_changed'};
-      const value = globalThis.RapierAgentMarkdown.outlineMarkdown(input.text, {limit: input.limit}, window.markdownit);
+      // The parser the document is rendered with: the footnote rule and the linkifier are its spec, so a footnote definition is a
+      // footnote block here and not a paragraph (the plain constructor would answer otherwise), as the page's find already asks.
+      if (typeof md === 'undefined' || !md) return {entries: [], complete: false, reason: 'markdown_parser_unavailable'};
+      const value = globalThis.RapierAgentMarkdown.outlineMarkdown(input.text, {limit: input.limit}, md);
       abort(input);
       return _rapierSourceText() === input.text ? value : {entries: [], complete: false, reason: 'document_changed'};
     },
@@ -1238,6 +1353,7 @@
       if (!hunks.ok) return hunks;
       const index = hunks.hunks.findIndex(hunk => hunkContains(hunk, request));
       if (index < 0) return fail('change_not_visible');
+      _rapierSeenViewMovedByAgent();
       const value = _rapierCompareFocusChange(index);
       return value.target ? {ok: true} : fail('change_not_visible');
     },
@@ -1323,7 +1439,8 @@
     }
     const who = {actor: resolved.actor, principal: resolved.principal, transport: resolved.transport,
       hostAgent: doorNames.get(resolved.transport === 'webmcp' ? 'webmcp' : 'platform') || '',
-      requestId: resolved.requestId, invocationKey: resolved.invocationKey, signal: request.signal || idleSignal};
+      requestId: resolved.requestId, invocationKey: resolved.invocationKey, signal: request.signal || idleSignal,
+      ...(typeof request.notesGuard === 'function' ? {notesGuard: request.notesGuard} : {})};
     // measurementsRequired is the fast path where the need is knowable from the op alone:
     // get_outline on a non-Markdown document always wants structure, so this door hands world the
     // fact before ever asking, and the common case costs no round trip. Anything not knowable up
@@ -1379,6 +1496,7 @@
       if (result.outcome === 'ok' && result.representation === 'visual' && result.observation) {
         const requirements = {kind: 'visual', documentId: result.observation.documentId,
           revision: result.observation.revision, scope: result.observation.scope,
+          ...(result.observation.drawing ? {drawing: result.observation.drawing} : {}),
           ...(result.observation.sourceRange ? {sourceRange: result.observation.sourceRange} : {})};
         // A read receipt may replay after its pixels were released. Re-observe that exact source
         // and target; never return metadata alone as though an image had reached the caller.
@@ -1389,7 +1507,7 @@
       }
       return result;
     };
-    if (name === 'document.draw') paintedLayers = [];
+    if (name === 'document.undo_agent_change') paintedLayers = [];
     const result = await (who.actor === 'agent'
       ? _rapierAgentInvocationTracked(name, args, run, who.requestId) : run());
     if (name === 'document.apply_edits' && ['applied', 'rebased'].includes(result.outcome)) {
@@ -1397,18 +1515,13 @@
       _rapierAgentNoteShow();
       try { agentCaret(result.changeId, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
     }
-    // The agent's edit has landed in the document. If the person happens to be looking at that same
-    // drawing in Draw right now, they watch it arrive in the order it was written instead of in one
-    // frame. Nothing here decides anything: the change is already committed, the replay is only how
-    // it is shown, and Draw refuses the hand-off unless it is open on the very picture `replaced`
-    // names. Guarded because the document profile ships no Draw UI at all
-    // (tools/check-profile-seams.mjs).
-    if (name === 'document.draw' && ['applied', 'rebased'].includes(result.outcome) && args?.shapes && result.replaced
+    // A drawing change reaches the open canvas inside the commit above, as the kernel's verified semantic change (commit, projectRemoteDrawing),
+    // so the person watches it arrive in the order it was written, or after the gesture in their hand. The one hand-off with no such change is
+    // a selective Undo that repainted a layer: that wrote a new material result, not an inverse, so Draw is handed the repainted layers.
+    // Guarded because the document profile ships no Draw UI at all (tools/check-profile-seams.mjs).
+    if (name === 'document.undo_agent_change' && result.outcome === 'applied' && result.replaced && paintedLayers.length
         && typeof _rapierDrawAgentPatch === 'function') {
-      // The kernel painted `add` before `replace`, in order; each `{kind: 'paint'}` takes its layer back, under the id it named.
-      const painted = paintedLayers.slice(), laid = list => list?.map(row => row?.kind === 'paint' && painted.length ? {...painted.shift(), ...(row.id != null ? {id: row.id} : {})} : row);
-      const patch = {...args.shapes, ...(args.shapes.add ? {add: laid(args.shapes.add)} : {}), ...(args.shapes.replace ? {replace: laid(args.shapes.replace)} : {})};
-      try { _rapierDrawAgentPatch(patch, {asset: result.replaced, reference: result.asset?.reference, transactionId: result.changeId, name: doorName}); }
+      try { _rapierDrawAgentPatch({replace: paintedLayers}, {asset: result.replaced, reference: result.asset?.reference, transactionId: result.changeId, name: doorName}); }
       catch (_) {}
     }
     // Any call can be the first thing to relocate a pending review's changes through
@@ -1498,10 +1611,10 @@
       if (!read.settled) return status();
       const value = read.value;
       if (!kernel) {
-        // A pending negotiation is retained state, not a live-session-only fact (a review is decided
-        // over time). Building the kernel from document identity/text/revision alone would silently
-        // drop whatever was mid-decision the moment the page goes away. `recovery`, when the caller
-        // has one, is the small, review-only slice the editor's own existing recovery store read
+        // Negotiations and retry identities survive page recovery. Building the kernel from
+        // document identity/text/revision alone would drop pending decisions and allow an old write
+        // to execute again. `recovery`, when the caller has one, is the kernel slice the editor's
+        // own existing recovery store read
         // back alongside the document (editor/engine.js's `rapierTryRestore`, handed down through
         // the one boot-ready call this function is always reached from first, `_rapierWebMcpSync`)
         // -- never the document text itself, which that same store already owns and just finished
@@ -1540,6 +1653,12 @@
         // cache its own restore path.
         if (inherits && restoredState.review?.status === 'pending' && restoredState.review.id) {
           reviewIdentities.set(restoredState.review.id, {principal: restoredState.review.principal, requestId: restoredState.review.requestId});
+          if (restoredState.review.kind !== 'proposal') {
+            const reviewId = restoredState.review.id;
+            ready.then(() => {
+              if (visible() && kernel?.collaboration()?.review?.id === reviewId) return representPendingReview();
+            }).catch(() => {});
+          }
         }
         kernel = createKernel({
           state: inherits
@@ -1680,9 +1799,7 @@
     caret.frame = requestAnimationFrame(step);
   }
 
-  // A server revision is not a local revision. Match an exact replay suffix, then mint local
-  // revision/root links while retaining every observed writer. Missing older events stay unknown.
-  function remoteLedger(value, before) {
+  function remoteJournal(value, before) {
     if (!Array.isArray(value.journal) || !value.journal.length || value.text === before.text) return null;
     const remote = []; let text = value.text, matched = false;
     for (let i = value.journal.length - 1; i >= 0; i--) {
@@ -1694,7 +1811,14 @@
       remote.unshift(row);
       if (text === before.text) { matched = true; break; }
     }
-    if (!matched) return null; // retained remote history does not reach this local checkpoint
+    return matched ? remote : null;
+  }
+
+  // A server revision is not a local revision. Match an exact replay suffix, then mint local
+  // revision/root links while retaining every observed writer. Missing older events stay unknown.
+  function remoteLedger(value, before, mapped) {
+    const remote = remoteJournal(value, before);
+    if (!remote) return null;
     const local = _rapierLedgerCapture(), records = local.records.slice();
     let root = local.head.root, revision = local.head.revision;
     for (const row of remote) {
@@ -1714,10 +1838,47 @@
           parent: records.at(-1)?.transaction.id ?? null, reverts: null, reapplies: null,
           createdAt: row.createdAt ?? 0, affectedBlockIds: [],
         }});
+        if (mapped) mapped(row, records.at(-1).transaction.id);
       }
     }
     return RapierLedger.exportLedger({text: value.text, records, documentAuthority: local.documentAuthority,
       root, revision, complete: false});
+  }
+
+  function projectRemoteDrawing(envelope, options) {
+    const transactionId = options.remoteTransactionId || options.transactionId;
+    if (typeof _rapierDrawAgentPatch !== 'function') return {status: 'unavailable', transactionId};
+    try { return _rapierDrawAgentPatch(envelope.patch, {...envelope, ...options}); }
+    catch (_) { return {status: 'uncertain', transactionId, reason: 'drawing_projection_failed'}; }
+  }
+
+  function remoteDrawingPlan(journal) {
+    const drawing = drawingContext();
+    const occurrence = drawing?.occurrence;
+    if (!drawing?.open || !occurrence) return {fence: null, entries: new Set()};
+    let ranges = typeof _rapierDrawHeldRanges === 'function' ? _rapierDrawHeldRanges() : null;
+    let position = occurrence.position ?? occurrence.start, asset = occurrence.reference || occurrence.asset;
+    let first = null;
+    const entries = new Set(), normalize = globalThis.RapierImageAssets.normalizeLabel;
+    for (const row of journal) {
+      const patch = row.drawingPatch;
+      if (patch && patch.occurrence.start === position && normalize(patch.asset) === normalize(asset)) {
+        if (!first) {
+          if (typeof _rapierDrawCanQueuePatch !== 'function' || !_rapierDrawCanQueuePatch(patch))
+            return {reason: 'draw_session_open'};
+          first = patch;
+        }
+        entries.add(row);
+        asset = patch.reference;
+        ranges = ranges?.map(range => RapierLedger.transportTouchedInterval(range.start, range.end, row.splices));
+      } else {
+        ranges = ranges && typeof _rapierDrawMoveRanges === 'function' ? _rapierDrawMoveRanges(ranges, row.splices) : null;
+        if (!ranges) return {reason: 'draw_session_open'};
+      }
+      position = movedPoint(position, row.splices, true);
+    }
+    return {fence: first ? {operation: 'document.draw', drawingAsset: first.asset, shapesOnly: true, drawingPatch: first} : null,
+      entries, committedReference: asset, committedPosition: position};
   }
 
   async function replaceDocument(value, expected = {}) {
@@ -1740,6 +1901,7 @@
     replacing = true;
     // The agent change this projection brought into the page, if any: its transaction, for the caret.
     let landed = null;
+    const drawingReceipts = [];
     let sourceApplied = false;
     try {
       if (value.documentId !== before.documentId) {
@@ -1750,14 +1912,34 @@
         sourceApplied = true;
       } else if (value.text !== before.text) {
         const row = _rapierPrefixSuffixDiff(before.text, value.text);
-        let carriedLedger;
-        try { carriedLedger = remoteLedger(value, before); }
+        let carriedLedger, journal, plan;
+        const mapped = new Map();
+        try {
+          journal = remoteJournal(value, before);
+          let source = before.text;
+          for (const entry of journal || []) {
+            const after = RapierLedger._rapierTransformSplices(source, entry.splices);
+            if (entry.drawingPatch && !globalThis.RapierKernel.verifyDrawingPatch(entry.drawingPatch, source, after))
+              return fail('snapshot_drawing_invalid', 'invalid');
+            source = after;
+          }
+          plan = journal ? remoteDrawingPlan(journal) : {fence: null, entries: new Set()};
+          if (plan.reason) return fail(plan.reason, 'yielded');
+          carriedLedger = remoteLedger(value, before, (entry, id) => mapped.set(entry, id));
+        }
         catch (_) { return fail('snapshot_history_invalid', 'invalid'); }
         const tip = rapier.undo.ledger.at(-1)?.transaction?.id;
         const committed = await commit({documentId: before.documentId, baseRevision: before.revision,
-          beforeText: before.text, text: value.text, splices: [row], actor: 'system', principal: 'mcp',
-          transport: 'platform', operation: 'document.remote_edit', label: 'Remote edit', carriedLedger});
+          beforeText: before.text, text: value.text, splices: journal ? journal.flatMap(entry => entry.splices) : [row], actor: 'system', principal: 'mcp',
+          transport: 'platform', operation: 'document.remote_edit', label: 'Remote edit', carriedLedger, fence: plan.fence});
         if (!committed.ok) return committed;
+        for (const entry of journal || []) if (entry.drawingPatch) {
+          drawingReceipts.push(projectRemoteDrawing(entry.drawingPatch, {
+            transactionId: mapped.get(entry) || committed.transactionId, remoteTransactionId: entry.id,
+            name: entry.hostAgent || doorName,
+            ...(plan.entries.has(entry) ? {committedReference: plan.committedReference, committedPosition: plan.committedPosition} : {}),
+          }));
+        }
         // Only rows after the page's former tip arrived with this projection; an older agent row is not its news.
         const rows = rapier.undo.ledger;
         landed = rows.slice(rows.findLastIndex(entry => entry.transaction?.id === tip) + 1)
@@ -1784,7 +1966,7 @@
         const named = String(landed.actor.id), slash = named.indexOf('/');
         try { agentCaret(landed.id, (slash > 0 && named.slice(slash + 1)) || doorName); } catch (_) {}
       }
-      return {ok: true, outcome: 'applied', comparison, snapshot: await snapshot()};
+      return {ok: true, outcome: 'applied', comparison, snapshot: await snapshot(), ...(drawingReceipts.length ? {drawingReceipts} : {})};
     } catch (error) {
       if (sourceApplied) return {...fail('snapshot_apply_failed', 'conflict'), sourceApplied};
       throw error;
@@ -1836,8 +2018,72 @@
     return given;
   }
 
-  globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status,
-    nameAtDoor, doorName: () => doorName, stageCarriedProposal, proposalExport,
+  // The last call the hosted door took, as document.sync reports it (agent/apps.js): the agent is present, and the acorn shows when the call read
+  // structure. The page marks it as it marks a call of its own door, through the same tracked invocation and the same lease.
+  let remoteCall = '';
+  function noteRemoteCall(report) {
+    if (!report || typeof report.id !== 'string' || !report.id || report.id === remoteCall || typeof report.operation !== 'string' || !(report.ago >= 0)) return;
+    remoteCall = report.id;
+    if (report.ago >= _RAPIER_AGENT_CONNECTED_MS) return;
+    if (report.ago < _RAPIER_ACORN_LINGER_MS) {
+      void _rapierAgentInvocationTracked(report.operation, typeof report.kind === 'string' ? {kind: report.kind} : {}, () => new Promise(done => setTimeout(done, 1600)), report.id);
+      return;
+    }
+    _rapierAgentBarMarkConnected({documentAuthority: String(rapier.identity.authority || ''), documentEpoch: Number(rapier.identity.epoch || 0)});
+    _rapierAgentBar.connectedUntil -= report.ago;
+    _rapierAgentBarRender();
+  }
+
+  // Account enrollment supplies the keys, grants and encrypted receipt store at this
+  // endpoint. The private transport calls the same page door and pins this Notes folder.
+  async function ownedNotesAdapter(options = {}) {
+    await ready;
+    if (typeof globalThis.RapierOwnedNotesAdapter?.createOwnedNotesAdapter !== 'function' ||
+        typeof _rapierNotesReady !== 'function') throw Object.assign(new Error('notes_not_configured'), {code: 'notes_not_configured'});
+    await _rapierNotesReady();
+    await _rapierNotesStore.kind();
+    const door = globalThis.rapierNotesHost, folder = _rapierNotesStore.folder, bytes = _rapierNotesStore.bytes;
+    const native = globalThis.RapierPlatform?.host?.notesStore, current = options.isCurrent || (() => true);
+    const endpoint = globalThis.RapierOwnedNotesAdapter.createOwnedNotesAdapter({...options,
+      isCurrent: (scope, actor) => !!folder && globalThis.rapierNotesHost === door && _rapierNotesStore.folder === folder &&
+        _rapierNotesStore.bytes === bytes && globalThis.RapierPlatform?.host?.notesStore === native && current(scope, actor) === true,
+      invoke: (name, args, request) => invoke(name, args, {actor: 'agent', principal: request.principal,
+        transport: request.transport, requestId: request.requestId, signal: request.signal, notesGuard: request.notesGuard}),
+    });
+    const connected = Object.freeze({receive: endpoint.receive, captureCheckpoint: endpoint.captureCheckpoint, lock: () => {
+      ownedNotesEndpoints.delete(connected); return endpoint.lock();
+    }});
+    ownedNotesEndpoints.add(connected);
+    return connected;
+  }
+
+  // Whole-store ciphertext has a separate endpoint-only key. Capture and restore use
+  // the same enrolled folder as tool calls; transport bindings cannot substitute it.
+  async function ownedNotesCheckpoint(options = {}) {
+    await ready;
+    if (typeof globalThis.RapierOwnedNotesCheckpoint?.createOwnedNotesCheckpoint !== 'function' ||
+        typeof _rapierNotesReady !== 'function') throw Object.assign(new Error('notes_not_configured'), {code: 'notes_not_configured'});
+    await _rapierNotesReady();
+    await _rapierNotesStore.kind();
+    const door = globalThis.rapierNotesHost, folder = _rapierNotesStore.folder, bytes = _rapierNotesStore.bytes;
+    const native = globalThis.RapierPlatform?.host?.notesStore, current = options.isCurrent || (() => true);
+    const endpoint = globalThis.RapierOwnedNotesCheckpoint.createOwnedNotesCheckpoint({...options, store: _rapierNotesStore,
+      isCurrent: async () => {
+        const same = () => !!folder && globalThis.rapierNotesHost === door && _rapierNotesStore.folder === folder &&
+          _rapierNotesStore.bytes === bytes && globalThis.RapierPlatform?.host?.notesStore === native;
+        return same() && await current() === true && same();
+      },
+    });
+    const connected = Object.freeze({capture: endpoint.capture, publish: endpoint.publish,
+      restore: input => endpoint.restore({...input, folder}), lock: () => {
+        ownedNotesEndpoints.delete(connected); return endpoint.lock();
+      }});
+    ownedNotesEndpoints.add(connected);
+    return connected;
+  }
+
+  globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status, ownedNotesAdapter, ownedNotesCheckpoint,
+    nameAtDoor, noteRemoteCall, doorName: () => doorName, stageCarriedProposal, proposalExport,
     replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual,
     policyReady: () => policyAvailable, applyView, presentReview, dismissReview, presentationChanged, readFile, notify,
     pendingReviewSnapshot, reviewSnapshot, decideReviewChange, representPendingReview, agentRecoveryState,
@@ -1853,11 +2099,14 @@
   }
   document.addEventListener('visibilitychange', () => {
     if (!visible()) { retainedPointer = null; viewFlight?.abort(); visualFlight?.abort(); }
+    else if (!apps && kernel?.collaboration()?.review?.status === 'pending' && kernel.collaboration().review.kind !== 'proposal') {
+      void representPendingReview().catch(() => {});
+    }
     contextChanged('visibility');
   });
   window.addEventListener('blur', () => { contextChanged('blur'); });
   window.addEventListener('focus', () => { contextChanged('focus'); });
-  window.addEventListener('pagehide', () => { visualFlight?.abort(); retire(); });
+  window.addEventListener('pagehide', () => { visualFlight?.abort(); retire(); for (const endpoint of ownedNotesEndpoints) void endpoint.lock(); });
   window.addEventListener('pageshow', () => { void refresh(); });
   queueMicrotask(() => { void refresh(); });
 })();

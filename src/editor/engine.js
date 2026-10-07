@@ -392,7 +392,8 @@ function renderToast(msg, type = 'success', action = null) {
 	toast.addEventListener('animationend', enteredNow, {once: true});
 	setTimeout(enteredNow, 240);
 	root.appendChild(toast);
-	controller = _rapierMountToast(toast, type === 'error' ? 0 : hasAction ? 8000 : 4500);
+	// An error, and a notice that says `stay: true` on its action (a list the person reads at their own pace), stand until closed.
+	controller = _rapierMountToast(toast, type === 'error' || action?.stay === true ? 0 : hasAction ? 8000 : 4500);
 }
 
 function applyTheme(value) {
@@ -1922,6 +1923,7 @@ function _buildParseWorkerSource() {
 		+ '\n;self._rapierSourceCharEscaped=' + _rapierSourceCharEscaped.toString() + ';'
 		+ '\n;self.__rapierInstallMarkdownMath=' + _rapierInstallMarkdownMath.toString() + ';'
 		+ '\n;self.__rapierHeadingSlugBase=' + _rapierHeadingSlugBase.toString() + ';'
+		+ '\n;self._rapierNextHeadingSlug=' + _rapierNextHeadingSlug.toString() + ';'
 		+ '\n;self.__rapierInstallSemanticProbe=' + _rapierRenderModule('render-markdown')._rapierInstallSemanticProbe.toString() + ';'
 		+ '\n;self.__rapierCollectTokenFacts=' + _rapierCollectTokenFacts.toString() + ';'
 		+ '\n;self._rapierCollectTokenFacts=self.__rapierCollectTokenFacts;'
@@ -3590,21 +3592,22 @@ function rapierWelcomeMarkdown() {
 	// The heading names the release the page is (its canonical meta), never a number typed here that an update outlives.
 	const version = (document.querySelector('meta[name="rapier-version"]') || {}).content || '';
 	return [
-		"![The rapier logo][rapier-logo] <!--md-layout:v1 width=38.97% wrap=around x=76.93% y=-0.085em-->",
-		"",
 		"## rapier" + (version ? " v" + version : ""),
 		"",
-		"Rapier is a fast Markdown editor made for your phone. It is open source and works offline with no ads, accounts or tracking. Write, draw, paint and keep notes. Works on any device with a browser.",
+		"![The rapier logo][rapier-logo] <!--md-layout:v1 width=34% wrap=around x=83% y=0.1em-->",
+		"",
+		"Write docs, keep notes, draw and paint. Everything you make is plain Markdown. Fast, offline, free. Made for your phone, and it works on anything with a browser.",
+		"",
+		"> ==Now or in 20 years.== Your file opens in any Markdown app, on any device, for as long as there are computers. <!--md-layout:v1 align=center-->",
 		"",
 		'# ' + _rapierFormatColorRun('#31cca8', 'get rapier'),
 		"",
-		"- **The Rapier app for Android.** It has no internet permission, so nothing leaves your phone.",
-		"  - This is the best way to use Rapier.",
-		"- **[rapier.website](https://rapier.website)** in your phone's browser. Tap \"Add to home screen\" or \"Install\" in your browser and it opens like an app, offline too.",
-		"- **In ChatGPT or Claude**: add the Rapier plugin and ask your agent to open Rapier.",
+		"- **The Rapier app for Android.** No internet permission. Nothing leaves your phone. This is the best way to use Rapier.",
+		"- **[rapier.website](https://rapier.website)** in your phone's browser. Tap \"Add to home screen\" and it opens like an app, offline too.",
+		"- **With Claude, ChatGPT, Muse or any agent that speaks MCP.** Add Rapier as a connector and say \"open Rapier\". It puts the page in front of you and works on it with you.",
 		"",
 		"> [!TIP]",
-		"> **Tap any paragraph** to edit it. **Drag the circle** at the right edge to move through a long document, or **tap it** to see the headings.",
+		"> **Tap any paragraph** to edit it. **Drag the circle** at the right edge to fly through a long document, or **tap it** to see the headings.",
 		"",
 		"**Contents**",
 		"",
@@ -3631,44 +3634,44 @@ function rapierWelcomeMarkdown() {
 		"## Start here",
 		"",
 		"1. **Tap this line** to edit it.",
-		"   1. The formatting bar appears with the everyday tools. **+** has every other command.",
-		"   2. You can type Markdown. Rapier shows it formatted as you type.",
+		"   1. The bar at the bottom has the everyday tools. **+** has everything else.",
+		"   2. Type Markdown if you like. Rapier formats it as you go.",
 		"   3. Tap outside the text when you're done.",
 		"2. **Tap a line in the contents** to jump there. **+** → **Table of contents** adds one to any document.",
 		"3. **Tick a box.**",
 		"   - [x] Open Rapier",
 		"   - [ ] Change these words",
 		"   - [ ] Tick this box",
-		"4. This document is yours to change. **Undo** is on the formatting bar.",
+		"4. This document is yours. Change anything. **Undo** is on the bar.",
 		"",
 		"## Writing",
 		"",
 		"![W][leaf-w] <!--md-layout:v1 lines=5 wrap=around-->",
 		"",
-		"rite the way you would on paper, and Rapier keeps it as plain Markdown. This W comes from one of Draw's four letter sets, traced from old books in the British Library. It is a drawing: tap it, then the brush, to change it.",
+		"rite the way you would on paper. Rapier keeps it as plain Markdown. This W is a drawing, from one of Draw's four letter sets, traced from old books in the British Library. Tap it, then the brush, and change it. Every big letter on this page is one of them.",
 		"",
-		"**Bold**, *italic*, ~~struck through~~, ++underlined++, `code`, ==highlighted==, ==🟢green==, ==🔴red==, ==🔵blue==, H~2~O and 1^st^. It is all plain Markdown, so any other Markdown app can open the file.[^1]",
+		"**Bold**, *italic*, ~~struck through~~, ++underlined++, `code`, ==highlighted==, ==🟢green==, ==🔴red==, ==🔵blue==, H~2~O and 1^st^. All plain Markdown. Any other Markdown app can open the file.[^1]",
 		"",
-		"> A quote starts with `>`. Use it for words from someone else, or to set a passage apart.",
+		"> A quote starts with `>`. Someone else's words, or a passage set apart.",
 		"",
 		"> [!NOTE]",
-		"> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show it as a quote.",
+		"> A callout is a quote that starts with `[!NOTE]`, `[!TIP]` or `[!WARNING]`. Apps that don't know callouts show a quote. Nothing breaks.",
 		"",
 		"<details>",
 		"<summary>Expanding section</summary>",
 		"",
-		"It keeps a long page short. Tap the title to open or close it. **+** → **Expanding section** adds one.",
+		"Keeps a long page short. Tap the title to open or close it. **+** → **Expanding section** adds one.",
 		"",
 		"</details>",
 		"",
-		"Find and replace is behind the magnifier. **+** → **Line** adds a page break for PDF and Word. **Footnote**, **Divider** and **Table of contents** are there too.",
+		"Find and replace is behind the magnifier. **+** → **Line** adds a page break for PDF and Word. **Footnote**, **Divider** and **Table of contents** live there too.",
 		"",
 		"## Lists",
 		"",
 		"1. A numbered list keeps its numbers when you add, move or delete lines.",
-		"2. Put the cursor in an item and tap **Nest** to indent it. **Resume** moves it back.",
+		"2. Put the cursor in an item and tap **Nest** to indent it. **Resume** brings it back.",
 		"   1. Numbers start again inside.",
-		"   2. Bullets and numbers can mix.",
+		"   2. Bullets and numbers mix.",
 		"      - A bullet inside a number",
 		"      - Another one",
 		"   3. Then back out.",
@@ -3680,19 +3683,29 @@ function rapierWelcomeMarkdown() {
 		"",
 		"## Pictures",
 		"",
-		"Add a picture (PNG, JPEG, WebP or JPEG XL), then drag it to move or resize it. Text wraps around the picture's outline, not its box. Tap a picture for its controls: the **brush** opens it in Draw, **T** changes its description, and you can rotate or fade it. Pictures are stored inside this Markdown file. Nothing is uploaded. New pictures are saved as JPEG XL, which keeps them small.",
+		"![A][letter-a] <!--md-layout:v1 lines=4 wrap=around-->",
 		"",
-		"![A rapier with a red tassel, drawn in Draw][rapier-sword] <!--md-layout:v1 width=60.737% wrap=around x=69.63% y=0.03em-->",
+		"dd a picture: PNG, JPEG, WebP or JPEG XL. Drag it to move or resize it. Words wrap around the picture's outline, not its box. Tap a picture for its controls: the **brush** opens it in Draw, **T** changes its description, and you can rotate or fade it. Pictures live inside this Markdown file. Nothing is uploaded, ever. New pictures are saved as JPEG XL by Rapier's own encoder, so they stay small.",
 		"",
 		"## Drawing",
 		"",
-		"The brush on the formatting bar starts a new drawing. **SVG Brush** follows your pressure and speed. A stroke that looks like a circle, box, line or arrow becomes that shape with one tap. **SVG Pen (Testing)** draws an even line. Choose **Select**, then tap a shape to move, resize, label or restyle it, or to attach an arrow that stays attached when the shape moves. The drawing is saved in the file as SVG, so it stays sharp and editable.",
+		"![D][letter-d] <!--md-layout:v1 lines=4 wrap=around-->",
 		"",
-		"This rapier is a drawing too, and the words follow its outline, not its box. Tap it, then the brush, and every part is yours to move. Its grip is a line made into a tube and a rope: choose **Select**, tap a line, then **Style → Look** for a spring, rope or tube.",
+		"raw with the brush on the bar. **SVG Brush** follows your pressure and speed. Draw a rough circle, box, line or arrow, and one tap makes it the real thing. **SVG Pen** draws an even line. **Select** a shape to move, resize, label or restyle it, or hang an arrow on it that stays attached when the shape moves. Drawings are saved in the file as SVG: sharp at any size, editable forever.",
+		"",
+		"![An aurora over dark hills: a canvas background made in Draw, with a moon drawn on it][aurora] <!--md-layout:v1 width=100%-->",
+		"",
+		"**Background** gives the canvas a sky. Aurora, topo, flow, grid, texture, a solid colour or a gradient, each with its own dials: colours, curtains, stars, glow and more. Tap the picture, then the brush, then the canvas icon and **Background**, and turn them. The sky is part of the SVG, so it stays sharp and editable too.",
+		"",
+		"![A rapier with a red tassel, drawn in Draw][rapier-sword] <!--md-layout:v1 width=36% wrap=around x=82%-->",
+		"",
+		"This rapier is a drawing too. The words follow its outline, not its box. Tap it, then the brush, and every part is yours. Its grip is a line turned into a tube and a rope: **Select**, tap a line, then **Style → Look** for a spring, rope or tube.",
 		"",
 		"## Paint",
 		"",
-		"**Raster Brush** has real painting brushes: oil, bristle, marker, pencil, pen and watercolour. Paint with your finger. Rapier runs its own paint engine, so a MyPaint brush behaves as its author set it. Watercolour keeps spreading after you lift your finger, then dries. Smudge, smear, blend and erase work on paint that is already down. A painting is one picture inside the drawing, saved losslessly. You can paint into it again.",
+		"![P][letter-p] <!--md-layout:v1 lines=4 wrap=around-->",
+		"",
+		"aint with your finger. **Raster Brush** is real paint: oil, bristle, marker, pencil, pen and watercolour. Rapier runs its own paint engine, so a MyPaint brush behaves the way it was made to. Watercolour keeps spreading after you lift your finger, then dries. Smudge, smear, blend and erase paint that's already down. A painting is one picture inside the drawing, saved losslessly. Paint into it again whenever you like.",
 		"",
 		"## Tables",
 		"",
@@ -3702,7 +3715,9 @@ function rapierWelcomeMarkdown() {
 		"| Send it for review | Waiting |",
 		"| Print it | Not yet |",
 		"",
-		"Tap a cell to edit it. **Tab** moves to the next cell. Add or remove rows and columns from the cell's controls. Paste cells from a spreadsheet and the table grows to fit.",
+		"![T][letter-t] <!--md-layout:v1 lines=3 wrap=around-->",
+		"",
+		"ap a cell to edit it. **Tab** moves to the next cell. Add or remove rows and columns from the cell's controls. Paste cells from a spreadsheet and the table grows to fit.",
 		"",
 		"## Code",
 		"",
@@ -3716,18 +3731,18 @@ function rapierWelcomeMarkdown() {
 		"",
 		"## Notes",
 		"",
-		"Open **Notes** from the three dots. Each note is a Markdown file shown as a card. Pin cards, colour them and sort them into sections. A note can hold a checklist you tick from its card, a reminder, a voice recording, drawings and attached files. **Import** brings in notes from Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. **Backup** saves them all as one zip. **Sync** keeps them in your own Cloudflare account, encrypted with a key that never leaves your devices.",
+		"Open **Notes** from the three dots. Every note is a Markdown file shown as a card. Pin them, colour them, sort them into sections. A note can hold a checklist you tick from the card, a reminder, a voice recording, drawings and files. Link notes to each other. Search them all. Go back to any earlier version. **Import** brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. **Backup** saves the lot as one zip. **Sync** keeps them in your own Cloudflare account, encrypted with a key that never leaves your devices.",
 		"",
 		"> [!TIP]",
-		"> Back up notes you care about. A browser can clear its stored data. The Android app keeps notes in its own files, outside Android's automatic backup.",
+		"> Back up the notes you care about. A browser can clear its stored data. The Android app keeps notes in its own files, outside Android's automatic backup.",
 		"",
 		"## Open, save and export",
 		"",
-		"Open Markdown, text, code, Word, TextPack or PDF files. A Word document becomes an editable page with its pictures. A PDF comes in as text or as pictures of its pages.",
+		"Open Markdown, text, code, Word, TextPack or PDF files. A Word document becomes an editable page, pictures and all. A PDF comes in as text or as pictures of its pages.",
 		"",
-		"Rapier keeps a draft as you work, so a closed tab comes back. **Save** writes the file and, where it can, reads it back to check it. Your Markdown stays readable in every other app.",
+		"Rapier keeps a draft as you work, so a closed tab comes back. **Save** writes the file and reads it back to check it. Your Markdown stays readable in every other app.",
 		"",
-		"Under the three dots, **Copy**, **Share** and **Export** send your work as text, a web page, PDF or Word. A shared web page opens offline in any browser, and Rapier can open it again for editing.",
+		"Under the three dots, **Copy**, **Share** and **Export** send your work as text, a web page, PDF or Word. The web page opens offline in any browser, and Rapier can open it again for editing.",
 		"",
 		"## Compare",
 		"",
@@ -3738,31 +3753,43 @@ function rapierWelcomeMarkdown() {
 		"+ Rapier is the best Markdown editor ever",
 		"```",
 		"",
+		"---",
+		"",
 		"## Agents",
 		"",
-		"Use Rapier with Claude, ChatGPT or any AI agent that speaks MCP, on the document you have open. Ask it to explain, rewrite, plan or draw. It reads only the parts it needs, so it stays fast on a long document. It changes only the passage it read and can't overwrite what you are typing. Each change shows where it lands, and you keep or drop it. Undoing a change never undoes your own work. While an agent is connected, the circle says so. Tap it for status, messages and changes. Select a passage and use **Ask** to talk about that part.",
+		"![M][letter-m] <!--md-layout:v1 lines=4 wrap=around-->",
 		"",
-		"To connect, add `https://mcp.rapier.website/mcp` as a connector in Claude, ChatGPT or any app that takes MCP. It needs no account and no key. In Claude Code, the Rapier plugin sets it up.",
+		"use, Claude, ChatGPT or any agent that speaks MCP can work with you right here on the page. Ask it to explain, rewrite, plan, draw or paint. It reads only the parts it needs, so a long document stays fast. It changes only the passage it read. It can't overwrite what you're typing. Every change shows where it lands, and you keep it or drop it. Undoing its change never undoes yours.",
 		"",
-		"You could ask: **“Explain how Rapier works.”** The agent draws a diagram like this one, with numbered steps, colours and arrows.",
+		"You set the pace. **FREE**: it edits as it goes. **CHECK**: it waits until you've seen its last change. **ASK**: every edit is a proposal.",
+		"",
+		"The agent has every control you have, without touching the screen. It draws SVG diagrams you can move by hand, gives a canvas a sky and turns the dials, paints with the real brushes, writes Mermaid flowcharts as text, and reads the shape of a document or a code file before its words. Two kinds of diagram, kept apart: a drawing is SVG you can grab; a Mermaid flowchart is a `mermaid` fence in the Markdown, drawn by the Mermaid plugin.",
+		"",
+		"While an agent is here, the circle says so: an acorn that pulses. Tap it for status, messages and changes. Select a passage and tap **Ask** to talk about that part.",
+		"",
+		"To connect, add `https://mcp.rapier.website/mcp` as a connector in Claude, ChatGPT, Muse or any app that takes MCP. No account, no key. In Claude Code, the Rapier plugin sets it up.",
+		"",
+		"Try: **\"Explain how Rapier works.\"** The agent draws a diagram like this one, with numbered steps, colours and arrows.",
 		"",
 		"![How Rapier lays out a page: your Markdown file, the kernel, the parser, then words around a picture or in plain lines, and only what is on screen drawn][agent-diagram] <!--md-layout:v1 width=100%-->",
 		"",
-		"Tap a diagram once to select it. Then move or resize it like a picture, tap a label to type new words, or drag a box and watch its arrows follow.",
+		"Tap a diagram once to select it. Move or resize it like a picture, tap a label to type new words, or drag a box and watch its arrows follow.",
 		"",
 		"## Under the hood",
 		"",
-		"Most editors turn your file into their own format and back again. Rapier never does. Its kernel keeps your Markdown exactly as you wrote it, character for character, and every change is one small edit to that text. That is why Undo takes back exactly one thing, why an agent can rewrite one sentence while you type in another, and why the file you save opens unchanged in any other app.",
+		"Most editors turn your file into their own format and back again. Rapier never does. Its kernel keeps your Markdown exactly as you wrote it, character for character. Every change is one small edit to that text. That's why Undo takes back exactly one thing, why an agent can rewrite one sentence while you type in another, and why the file you save opens unchanged anywhere. <!--md-layout:v1 first=1-->",
 		"",
-		"Rapier works out every line itself. Pretext measures each word in the page's own fonts, so Rapier knows where a line will break before it draws it. That is how words can follow a drawing's outline instead of its box.",
+		"Rapier works out every line itself. Pretext measures each word in the page's own fonts, so Rapier knows where a line will break before it draws it. That's how words follow a drawing's outline instead of its box. <!--md-layout:v1 first=1-->",
 		"",
-		"On a long document Rapier lays out only what is near your screen, so a whole book opens almost at once.",
+		"On a long document Rapier lays out only what's near your screen. A whole book opens almost at once. <!--md-layout:v1 first=1-->",
 		"",
-		"Pictures are saved as JPEG XL by Rapier's own encoder, written in JavaScript, so they stay small and nothing is uploaded. Drawings stay SVG, sharp at any size and still editable.",
+		"Pictures are saved as JPEG XL by Rapier's own encoder, written in JavaScript, so they stay small and nothing is uploaded. Drawings stay SVG: sharp at any size, still editable. <!--md-layout:v1 first=1-->",
 		"",
 		"## Where it runs",
 		"",
-		"Rapier is made for your phone and works the same in any browser. Use it at rapier.website, install it as an app, or keep `rapier.html` on a USB stick. The Android app has no internet permission. The whole editor is one file, under 2 MB.",
+		"![Clouds in a blue sky][clouds] <!--md-layout:v1 width=46% wrap=around x=23% y=0.1em-->",
+		"",
+		"Made for your phone, and the same in any browser. Use it at rapier.website, install it as an app, or keep `rapier.html` on a USB stick. The Android app has no internet permission. The whole editor is one file, under 2 MB. It opens in a blink and works with no signal at all, on a train, on a plane, on a beach with the clouds going by.",
 		"",
 		"## Keyboard",
 		"",
@@ -3785,6 +3812,8 @@ function rapierWelcomeMarkdown() {
 		"",
 		"With words selected, `K` adds a link. `Tab` and `Shift Tab` nest a list item, indent code or move through a table. `Esc` closes what's open.",
 		"",
+		"---",
+		"",
 		"## For developers and agents",
 		"",
 		"```sh",
@@ -3796,22 +3825,27 @@ function rapierWelcomeMarkdown() {
 		"",
 		"`rapier-html` opens a document in the whole editor. `rapier-markdown-kit` reads and writes Markdown. `rapier-embed` puts Rapier inside your own app. The agent tools are described in `llms.txt` and `agents.md`; the hosted connection is `https://mcp.rapier.website/mcp`.",
 		"",
-		"Rapier is open source under AGPL-3.0-only. The Markdown kit is MIT licensed.",
+		"Rapier is open source under AGPL-3.0-only. The Markdown kit is MIT.",
 		"",
-		"[^1]: A footnote. Tap the arrow to return to the text.",
-		"",
-		"![Clouds in a blue sky][clouds] <!--md-layout:v1 width=100%-->",
+		"[^1]: A footnote. Tap the arrow to go back.",
 		"",
 		"## Will",
 		"",
-		"If you work with an agent, you can say what it may do with each part of a document. Select a section, tap **W** on the formatting bar, then type an intent or lock the section. Rapier writes this into the document as HTML comments. Agents read them and people never see them. They travel with the file: Markdown, Word, PDF and Rapier's own web pages.",
+		"![W][leaf-w] <!--md-layout:v1 lines=3 wrap=around-->",
 		"",
+		"orking with an agent? Say what it may do with each part of the document. Select a section, tap **W** on the bar, then type an intent or lock the section. Rapier writes this into the document as HTML comments. Agents read them; people never see them. They travel with the file: Markdown, Word, PDF and Rapier's own web pages.",
 		"",
 		"[rapier-logo]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIiB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiI+PHN0eWxlPkBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6ZGFyayl7cmVjdHtmaWxsOiNmZmZ9cGF0aHtmaWxsOiMwMDB9fTwvc3R5bGU+PHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiLz48cGF0aCBmaWxsPSIjZmZmIiBkPSJNNTUuMyAxNDNWMTI5LjRIODhMODAuNCAxMzYuN1Y1Mi4zTDg4IDU5LjlINTUuM1Y0Ni4ySDkzLjNMOTQuOCA3Mi4yTDkzLjMgNzEuMVE5NC44IDU4LjUgMTAxIDUyLjNRMTA3LjIgNDYuMiAxMTcuNiA0Ni4ySDEzNy42VjYwLjJIMTE3LjlRMTEwLjcgNjAuMiAxMDUuOSA2My4xUTEwMS4xIDY1LjkgOTguNSA3MS4yUTk2IDc2LjYgOTYgODQuNlYxMzYuN0w4OC42IDEyOS40SDEyNi42VjE0M1oiLz48L3N2Zz4=",
 		"[leaf-w]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQ5IDM4IDIwMyAyMDQiIHdpZHRoPSIyMDMiIGhlaWdodD0iMjA0IiBjb2xvcj0iIzEyMTIxMiI+PG1ldGFkYXRhIGlkPSJyYXBpZXItZHJhdyI+eyJ2ZXJzaW9uIjoxLCJjYW52YXMiOnsidyI6MzAwLCJoIjozMDB9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImMxIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoidGV4dCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjpudWxsLCJnZW9tIjp7ImN4IjoxNTAsImN5IjoxNTB9LCJpbmsiOiIjYjMyNjFlIiwibGFiZWwiOiJXIiwidGV4dFNpemUiOjIwMCwidGV4dEZvbnQiOiJsZXR0ZXJzOmxlYWYifV0sInZpZXciOnsieCI6NDksInkiOjM4LCJ3IjoyMDMsImgiOjIwNH19PC9tZXRhZGF0YT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDUwLjQgNDApIiBkPSJNNzgzIDc4Yy02LTEyIDAtMjgtNi00MC0xMCA4LTggMjQtMTcgMzQtNS0xMi0xLTI3LTYtMzktMTggNS0yIDM0LTIwIDQ1LTUtMTEgMC0yMi0zLTM0LTE3IDAtMjQgNzUtMTUgODcgMy0xIDQtMSA2LTMgOC0xMi00LTM0IDktNDEgMTAtNSAyNDgtOSAyNTMtNiA5IDUgOCAxOSA3IDI3LTIgMTktMTE1IDMzLTExNiAxMTcgNi0xIDExLTQgMTctOCAxNSAxMiA3MS0zNCA1Mi0zOS0xOC01LTI5IDktNDAgMTkgMTMtNTMgOTgtMjUgMzcgMTggMTMgMzEgNzggNTIgMjkgOTItNyA1LTIyIDE0LTIwIDIzIDYgNTIgMTAyIDEwOCA0IDIwMi0xMjggMTIzLTE2MC0xMjMtNzYtNjEtOSAxNy00OSAxMy0zNSA0NyA0MyAxMDEgMTQ3LTE0OS0xMS0xNDMtMTMgMS0xNSAyMy0xOCAzMy0xNCA0NC03MCAxNjYtNjMgMjA2IDkxLTYgMTQ5LTExOCAxMjUgNzYgMTQgMiAyOC00IDQyLTcgMTcyLTQwLTg5LTE0NCAyNi00NS01NCA1MC00NC0xMTQgMjktNDIgNTYgNTYtMjMgODUtNjAgMTAzIDIyIDIyIDEwNSAzNiA4MCA5NS0zIDYtNjYtOC04MS0yLTg3IDM3LTEzNyAxMzUtMjQ3IDgyLTEyIDE0LTEwIDMyLTI1IDQzLTE3LTE0LTExLTQyLTI0LTYxLTExLTE1LTM3LTE3LTQ5LTMyLTM1LTQ0LTIwLTk5LTM4LTE0OC04LTIzLTU4LTM0LTU4LTQxIDItMzIgNDAtMzEgNjEtMzQgMi0yNS0yMS0xMDItNDAtMTE3LTEyIDIyLTc3IDIyNi03MyAyNDAgMyA4IDYxIDEwIDc0IDIzIDMxIDMwIDMwIDc5IDYyIDEwNyAxNiAxNCA0MyAzIDU1IDE0LTc1IDY2LTk3LTEzOS0xNzAtMTIzLTY4IDE1LTYxIDE5Mi0xMDkgMTc3LTIxIDIwLTQzIDMyLTY2IDQ3IDI0IDcgMzQtMTIgNTQtMTYgNCA1IDYgOCA5IDE0IDc2LTIgNTItMTAwIDc4LTExMSAxOSAyNSAyNCA2MyA2OSA1NSAxLTE2LTQ2LTY5LTYtNzQgNTAgMTEwIDMxIDk5IDE1MCA2MCAzMyA0NC05NyAzNy0xMTggMzItNy0xLTEwLTEtMTUgMiAxNCAxNyA0MSAyMyA2MiAyOSAxNTggNDcgMjAyLTYzIDMxOC05OCAzMS05IDU3LTggODYgNiA2MSAzMSAyNCAxNDgtNDYgMTIzLTExNC00MCA4MS0zOCAxNC03MS01NS0yNy0xNjAgNjQtMjE4IDc0LTcyIDEzLTE0NCA2LTIwNy0zMi0xNS05LTI5LTI1LTQ2LTI5IDkgNjktMzYgOTAtNjYgMzItMTcgMC0zMiAxNS00OSAxOS02MyAxNS0xMDQtNy0xNTktMjQtMTMgMjQtMjggMzYtNTcgMzctMTA2IDYtNjYtMTE1LTgzLTE3NS01LTE5LTIxLTI1LTI3LTQwIDIxLTI1IDQ3IDAgNzAtMyA4LTI0LTItNTIgOC03OCAyMy02MyA4Ni0xMTQgNjMtMTg3LTQtMTMtMTgtMTktMjItMzEgNDEtNDUgNzYgNzIgNzggOTVsMSAxMSAxIDktMSA2IDAgMiAwIDMtMSA2Yy01IDQzLTIzIDg1LTUgMTI3IDUgOSAxNiAxNCAyNCA2IDEyLTEzLTE4LTQzLTUtNjAgMjMgMTQgNDUgNTcgNjYgNzcgNi0xNC0xMDUtMzk2LTEyNC00MjAtMTAgMjYtNiA1OC0xNyA4Mi0xMyAyNy03NiA5OC0xMDcgODMtMTItNy0yNS0yMC0yNC0zMyA4LTQgMzctMiAzOS0xNCAyLTE4LTMxLTI4LTMzLTQ3LTMtMjUgMzItMzQgMzYtNTQgMi0xMC0xMi0xNC0xNC0yMy0xMy01MSAyLTEzMiA1Ny0xNTEtNiA0OC03NCAxMjQtMjYgMTc3IDYzIDY5IDk5LTU3IDM2LTM4IDIgMTEgMTIgMTMgMTcgMjMtMjkgNDYtNzQtOTMtMTAtMTI5IDUgMjktMjQgNTctMTQgODkgMjEgNCAzNCA1IDU0IDE0LTMtMzgtMzAtMTMyLTU0LTE1NS0zNS0zMy0xMTYtMjEtOTgtODcgMzgtMiA3OSAxMCAxMTUgMiA1LTI1LTM5LTE2LTU1LTE2bC05IDE0Yy00NC0zLTczLTUyLTIwLTcwIDIyLTggNDggNDMgODQgMzYgNDItOCA4Ny00NiAxMzItNDQgMjcgMiA1NSA0OCA3MiA0NSA4NC0xNiAxMDgtNjAgMjEzLTQwIDU3IDEyIDk1IDcwIDEzMSA3NiA0IDE4LTYgMzkgMTAgNTIgOS01MiAxMi0xNDkgOTgtMTI1IDExIDMgMjMgMTkgMzUgMTggMTYtMyAyOC0yMyA0MC0yOSAxNi03IDEyMiAxNyAxMDkgMzgtOCAxNC01OC0xMy03NS0xMi00NCAzLTY0IDM2LTEwMCA1MXpNMTc1IDY5Yy00LTctNy0xMC0xNC0xMy0yNSAyNyAxMyAzOSAzNiAyNyAwLTEzLTMtMjYgNy0zMyA2IDkgNCAyMSA2IDMyIDIyIDMgNy0zMSAyMC00MiA1IDExLTIgMzMgNSA0MyAxIDAgMjkyIDM1IDIwMi01OC0xMCA0LTM4IDUyLTg2IDUyIDktMjAgMzctMjUgNTUtMzUtMjItMTYtNzggMzAtMTA3IDMwIDItMTEgMy0xNi01LTI0LTEyIDUtOSAxNy0xNSAyOC0xMS0xMiA0LTM1LTgtNDUtMzItMjgtODYgMTItOTYgMzh6TTQ2MCA3OWM1MS0xNSA2OC0zMiAxMjgtMjUtMTUtMzctMTM2LTMxLTEyOCAyNXpNNDc4IDgzYzMxIDE0IDczLTQgMTA2IDgtMzcgMjctMTYwIDExLTIwNCAxLTEgMTMgMTEgMTIgMjMgMTggNTAgMjYgNjUgNjggODEgMTE5IDI5IDk4IDE0MyA1MzcgMTc4IDU5MSAzNS0zOCAxNTctNDc5IDE4Mi01NjIgMTMtNDIgMTktODggNDUtMTIzIDEwLTEzIDQwLTI1IDQxLTM4LTI0LTUtMTAxLTktMTE5IDMgMTQgMTYgNDEgMTcgNDIgNDYgMSAyOC0xNDMgNDg4LTE1NCA0OTktMjYtMTUtMzktMTExLTUwLTE0Mi0yNC03MS0xMTgtMjk3LTk5LTM1OSA5LTMzIDUxLTUwIDc3LTU5LTQwLTE3LTExNy00Ni0xNDktMnpNNzA1IDE2NGM0LTE3IDctODAtMy05My0xNiAxNi0xNiA4MyAzIDkzek04NSAxMDNjMTggMTUgNDYgMjYgNjAgNDYgNzYgMTA5IDE0MyA0MTggMTg2IDU1OCAxMiAzOSAxNSA5MiAzNCAxMjYgMjItMzcgMTI2LTM4NyAxMTMtNDA2LTI2IDQxLTUwIDE5OS03NSAyMTYtOS05LTE1MS00NDYtMTUzLTQ3NC0xLTI5IDI3LTUwIDQ1LTY2LTgtNi0yMDAtNi0yMTAgMHpNNjAwIDE5NWMyMi0xNiA0NiA0IDY4IDEyIDMxLTQ2LTQ0LTEyMS05Ni00Ny0xNiAyMyAzOCAyMjYgNzQgMTI3IDQtMTIgMTEtMjIgNS0zNS0xMC0yMi00Ny0zOC01MS01N3pNNzA4IDM5NmMxMS03IDQyLTMyIDQ3LTQzIDEyLTI1LTI2LTU2LTktODkgMTYtMzMgODQtNjggNTktMTEyLTgtMTUtMjAtMjEtMzctMjMtOCAwLTE4LTktMjYtNS0zMSAxOC0zNiAxNDItMzQgMTcyIDMgMzItNyA2OCAwIDEwMHpNMjgyIDIyMmM4LTggMTYtNDUgMzQtMzggMTQgNS0yMCA1My0yMSA2OCAwIDM0IDI3IDEyMyA3MyAxMTAtOTQtMTA4IDM5LTEzOC02LTIxOS0yMi0zOS0xMTkgMTEtODAgNzl6TTM5MiAyOTNjNDUtMjkgNjYgNjIgMTEgODItMjQgOC00OC00LTY5IDEgNyAxOSA1MyAyNSA2OSA0NyAxMSAxNiAxMiA2Ny0xNiA1MSAxNi0zMi00LTc3LTQ1LTcwIDAgMTYgNDUgMTU5IDUyIDE2MyAyMy0zNCA2Ny0xODYgNjctMjI4LTEtNDQtMzYtMTYyLTc2LTE4My03IDEyIDMgMjYtMSA0Mi0xMSA0NC03MCA5MS0yNCAxMzggMTcgMTggNzMgMjUgNjYtMTUtNC0xOS0yOS0xMi0zNC0yOHpNODYzIDM2M2M2LTcgNy0xNSAxMi0yMyA1IDEzLTUgMjYgNiAzNSAxMy0xMCA5LTQwIDIzLTU0IDEzLTEzIDMzLTcgNDgtMjAgMjQtMjEgMjItMzYtMy01Ny02MS01My0xNjEgMTA2LTg2IDExOXpNNjc5IDQzNmMxNy0zNiAyOC0xMTYgOS0xNTEtMzAgMTAtMjUgMTI5LTkgMTUxek02MTggMzQyYy0yIDIzIDI4IDEzMyA0NyAxNDYgNC0xNC03LTE1Ni0xMi0xNjUtMTIgNS0yMyAxMy0zNSAxOXpNODk0IDM4MmM2IDIgOSAyIDE1IDAgMSA2IDEgMTEgMyAxNyA4IDAgOSAwIDE1LTUgMSAxMC0zIDIwIDAgMzBsMTIgMWMtNCAxMi04IDIyLTQgMzRsMTEgMWMtNiAxOS0xNSAzNy0xOSA1NyAzMS0xMiA1Ni01MiA0NS05MmwtNy0zYzItMTYgMTAtMzQtOS00MCAwLTEwIDItMTgtMy0yNi02IDEtNyAwLTEyIDUtOC00OS01NS0xOS00NyAyMXpNNTcgMzc5Yy00NCAyMyAxNyA5OCA2NCA2NCA3LTUgMTMtMTcgMTItMjctMS0yNS0zNCAyNS01NCAxMi0xNC05IDItNjEtMjItNDl6TTY4NSA1NTVjMTAtNiA2Mi0xNjEgNTktMTc2LTM1IDUtNzkgMTQ3LTU5IDE3NnpNNDMgNDkxYzMwIDI5IDQzLTYwIDAgMHpNMTU4IDQ5N2MwIDE4IDE1IDM0IDEzIDU1LTUgNzUtNjYgMTI2LTc4IDIwMS00IDI4IDQ2IDEwNSAzMyAxMTQtMjAtMTEtNDktMTAxLTg2LTc2IDkgNDgtMiAxODggNjkgMTg1IDEzIDAgMzEtMyA0MC0xMiAyMy0yNC00MS02My0yMy02OCAzNS0xMCA0NSA1NiA3OSA1Ni0yLTE3LTIxLTI2LTIyLTQ2IDAtMTcgNzcgMiA5NS0yOSAxOC0zMyAxOC0xMjktMzQtMTM3LTE2LTIgNCA2OC0yIDgxLTEzLTEwIDAtODEtNDQtNTgtMTIgNyAxOSAxMzMtMjAgNzktNTgtODAgNjUtMzEwLTIwLTM0NXpNODQ5IDU4NmMtMzAgMjAtMzkgNzAtNjYgOTcgNy0yMyAzNS00OCAzNC03Mi00MS00LTQ1IDE1LTY2IDQwbC01LTEzYy0xNCA1LTE3IDQ3LTE1IDYxIDIwIDMgMTktMjAgMzMtMjYtMyA5LTggMTctMTEgMjYgMjMgMjggMjAgMTMgNDYgMi0yIDctMyAxMi0yIDE5IDc3IDIzIDk0LTEwNyA1Mi0xMzR6TTUwMyA2MjRjNSA0IDcgNSAxNSA0bDkgMTNjMzgtMTEtMTYtNDUtMjQtMTd6TTg1MiA2MThjLTYgMjctMzEgNjQtNTIgODMgMy0yMCAzNy03NSA1Mi04M3pNNjk2IDgwMGMtMi0zMyA0OS00OSA1Ny03Ni00NC00OC04MiAxMTAtODUgMTM2IDI4IDAgNDItNDUgNjktMzgtNiAxNS0yNCAyNC0yOSAzOSA2LTEgMTEtMyAxNy02LTEgNSAwIDkgMSAxMyAyNS0yIDM4LTQgNjQtMTdsNCA3YzcxLTUgNzEtOTQgMTgyLTgyIDEtMTMtNi0yMy0xNS0zMy02NS03OC0xMDIgMTMtMTUyIDIyLTIyIDUtMS00NC00NS0yNi0yNiAxMC00MyA2My02OCA2MXpNMTgxIDczM2MtMTEgMTYtMTEgNDYtNSA2MyAxNi01IDE4LTUwIDUtNjN6TTU1OSA3NzNsMTIgM2MtMiAxMi03IDE4LTEgMjggNyAwIDEwLTIgMTctNy0zIDIwIDEgMzIgMjAgNDAgMy0xOS0xMS02Ny0yOC03NSAzLTEyIDQtMTctNC0yNy0xNCA3LTIwIDIzLTE2IDM4ek0zMDggODMzYy0yMiA1My0zNiA5OC0xMDcgNzgtMzMgNDMgMTg3IDg5IDEwNy03OHpNNzM0IDk1OGM1NiAxNiAxNTAtMTA0IDIwMS00MCAyNiAzMS0yMCAzNC0zNCA0OCAzOSAyOCA4Mi0zMyA2MC02OS00Mi03Mi0xOTAgMTctMjI3IDYxek00MTEgOTExYy01IDktOCAyMS0xMCAzMmw5IDZjMCA5LTEgMTYgMSAyNSAyOS00IDI0LTUzIDAtNjN6Ii8+PC9nPjwvZz48L3N2Zz4=",
 		"[rapier-sword]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjE1IDEwIDQ5MyAxMDU2IiB3aWR0aD0iNDkzIiBoZWlnaHQ9IjEwNTYiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3Ijo1MjUsImgiOjExODB9LCJzdHJva2VzIjpbeyJwdHMiOltbNDI5Ljc1MzY4ODcyNDAwNTEsOTk4LjY0MjMyNDY1NzY1MzEsMCwwLjk1XSxbNDE3LjY4MTQ3NDEzMjUyOTczLDEwMDMuNDI5OTc5MDc4OTA5MiwyMCwwLjk1XSxbNDA1LjYwOTI1OTU0MTA1NDM3LDEwMDguMjE3NjMzNTAwMTY1Myw0MCwwLjk1XV19LHsicHRzIjpbWzM4OC4yMjI3OTAwMDE1ODg5LDg5NC42NDc3ODQxNjk2NjIsMCwwLjk1XSxbMzc2LjE1MDU3NTQxMDExMzcsODk5LjQzNTQzODU5MDkxOCwyMCwwLjk1XSxbMzY0LjA3ODM2MDgxODYzODQzLDkwNC4yMjMwOTMwMTIxNzQzLDQwLDAuOTVdXX0seyJwdHMiOltbNDgxLjY1Njc4NDQ1Mzk2Mzg0LDg0NS4zODY3NTgxODg5MzgsMCwwLjhdLFs0NTkuNjgyMjIwODYyNDU3OCw4NTQuMTczNTk4MDYyNDU2NywyMCwwLjg2XSxbNDM3LjgwNDI0OTg1MzU4MDYsODYyLjkzNDU1NjAzMTQ2NSw0MCwwLjkyXSxbNDE1LjkyNjI3ODg0NDcwMzYsODcxLjY5NTUxNDAwMDQ3MzUsNjAsMC45Nl0sWzM5My45NTE3MTUyNTMxOTc1Niw4ODAuNDgyMzUzODczOTkyMiw4MCwwLjk5XSxbMzcyLjA3Mzc0NDI0NDMyMDMsODg5LjI0MzMxMTg0MzAwMDUsMTAwLDFdLFszNTAuMTk1NzczMjM1NDQzMiw4OTguMDA0MjY5ODEyMDA4OCwxMjAsMC45OV0sWzMyOC4xOTUzMjc3Mzk0MjY5NCw5MDYuNjk0NTE3MTAyODk4NywxNDAsMC45Nl0sWzMwNi4zMTczNTY3MzA1NDk4LDkxNS40NTU0NzUwNzE5MDcsMTYwLDAuOTJdLFsyODQuNDM5Mzg1NzIxNjcyNyw5MjQuMjE2NDMzMDQwOTE1NSwxODAsMC44Nl0sWzI2Ni4wOTA1MTIxOTQ0NjE5LDkzMS41NTM0ODk0OTEyODE5LDE5Ni43MDAxMDI3ODA5MjkyLDAuODA5ODk5NjkxNjU3MjEyNF1dfSx7InB0cyI6W1s0ODEuNjU2Nzg0NDUzOTYzODQsODQ1LjM4Njc1ODE4ODkzOCwwLDAuOF0sWzQ4Ny4yMzgzNDkxNDAyMDQwNCw4NDIuNjQ4ODUxMDIyMjY1OCwyMCwwLjc2XSxbNDkxLjMzMTI3MzExMTY3NjQsODM5LjM3ODA3NTM3MDU2NjYsNDAsMC43M10sWzQ5My45ODczMjAxNzc0MDEsODM1Ljc2NzYxNjM5OTA5ODUsNjAsMC42OV0sWzQ5NS4zMjg5NjQ4MjQ1MTczNiw4MzEuODg4MTg0Nzg1OTc5OSw4MCwwLjY1XSxbNDk1LjMxMTM3ODI3OTQxNjgsODI3Ljk1ODg0NzYwMDk3ODksMTAwLDAuNjFdLFs0OTQuMDgyOTE2OTMzNzQ4OTUsODI0LjE0NjkwODEwNDg0MywxMjAsMC41OF0sWzQ5MS40NTAzOTU2MjIyNTU5LDgyMC41MDQxMzAxMDY1OTMsMTQwLDAuNTRdLFs0ODcuNTYyMTcwNzM2NTg2OTUsODE3LjE5NzgxNjg2Njk3NjMsMTYwLDAuNV1dfSx7InB0cyI6W1s0MDAuNjM3NDA4NTYwODI4MzYsODc5LjkzMzI1OTE2Nzg2MjMsMCwwLjU1XSxbNDE3LjQyOTc4NTQ1NjU3Njg0LDg4NC42NDc3MTMzNDUyOTcyLDIwLDAuNjRdLFs0MzIuMTEwOTk1NjA1MzEzNSw4OTAuNzU2MDczODkyMDA5Niw0MCwwLjcyXSxbNDQ0LjcyNTg2Nzc4MDY0NjksODk4LjAzOTI3MzczODIzMDksNjAsMC44XSxbNDU1LjI0ODUyMDA3ODA2NjcsOTA2LjQwMDcyMDMwMTMzMjUsODAsMC44Nl0sWzQ2My42OTc4OTkzNjY2NzEsOTE1LjUyNDc1MzkyODkxNzgsMTAwLDAuOTFdLFs0NjkuOTc3NDEzMDYzODMxLDkyNS40MzcyNTY1MjU0OTY1LDEyMCwwLjk0XSxbNDc0LjIyODQ4MjUyNTc4MzksOTM1Ljg5MzI3OTExNjc5MDUsMTQwLDAuOTVdLFs0NzYuMjA2MTU4Nzc4MjUxNiw5NDYuNzUxNDAwMzQ2NTYyNiwxNjAsMC45NF0sWzQ3Ni4wMjU5ODEyNzI5NjA3Myw5NTcuNjcwMDc4NjU3OTA1MywxODAsMC45MV0sWzQ3My43MTM4MzE5MTQ0MjE5LDk2OC43NDU5MDY2MzM0NDc3LDIwMCwwLjg2XSxbNDY5LjA5NTQ3MjQwNjQ3NTY2LDk3OS43MTQ5ODg0Mjk4MTM1LDIyMCwwLjhdLFs0NjIuMjg2NDQyMjAwODQ4MzQsOTkwLjIzNTc4MjQ5MDA5NTEsMjQwLDAuNzJdLFs0NTMuMjE2MDMwNjE5NDIyLDEwMDAuNDMwNzYzMzAxNDMxOSwyNjAsMC42NF0sWzQ0MS44NzczMDI2MjY3ODQxNywxMDA5Ljg4NzY3ODYyODc5NzksMjgwLDAuNTVdXX0seyJwdHMiOltbNDYwLjQ5MDk5NzAyNDU0NzI2LDg1MS43ODI4MDcxNjQxMDYyLDAsMC40NV0sWzQ2MS42NjY2OTg3MzQ5MTM1NSw4NDMuODA2NzM1MTA1MjM5LDIwLDAuNTVdLFs0NjAuNDIwNjUwODQ0MTQ1MTQsODM2LjA2NTQ1ODQyNDEwMjMsNDAsMC42NV0sWzQ1Ny4xMTMzNDE3NzgyNDczMyw4MjguMzU4ODU2OTIwMDI1OSw2MCwwLjczXSxbNDUxLjkxOTAwOTgzMzM3OTczLDgyMC45NTA4MjY0MzYzODY2LDgwLDAuOF0sWzQ0NS4wNTY3MjIwNzkzMTA1LDgxMy44ODYxOTU3NDY3OTI5LDEwMCwwLjg2XSxbNDM2LjU3ODI0MjMyNTA2MDE2LDgwNy4zNTgxNTAwMTY1MDIyLDEyMCwwLjg5XSxbNDI2Ljk5MjQxNTM4ODI4MzQ2LDgwMS4zMzM4NzIzMDU1OTIzLDE0MCwwLjldLFs0MTYuMjI4NTMwNTkwODYxNiw3OTUuOTM1ODM3MTAxMjAyNCwxNjAsMC44OV0sWzQwNC42NTQwMTEzOTQyMTIyNiw3OTEuMzc2MTc2NDM3Njg4NSwxODAsMC44Nl0sWzM5Mi40NjIwNDI5NjM1OTMyNiw3ODcuNjAzMTI2NTA2MDMwMSwyMDAsMC44XSxbMzc5LjgwMDk4MTY5MDY1Mzc3LDc4NC43ODM5OTA1NjY5NzQ3LDIyMCwwLjczXSxbMzY2Ljk4NjQ4NzIyNzc5MTAzLDc4Mi45Mzc3MTU0ODk2MjA1LDI0MCwwLjY1XSxbMzU0LjA5NjIwNTI4ODUzNTY2LDc4Mi4zNTQwNzkwMjE4NTQsMjYwLDAuNTVdLFszNDEuNDE5OTEzNjIwNzc0NCw3ODIuOTU1NDM1NDUwMTQ1LDI4MCwwLjQ1XV19LHsicHRzIjpbWzI4Mi4xMzgyNTIzNzA1Mzg5LDkyMi45Njk1MjI3MzkyODk5LDAsMC40NV0sWzI3NS45Njc4NDEwMDI4MzQzNSw5MTguMTAwNjM5NTQ1NjUwNywyMCwwLjU1XSxbMjcxLjQxODY5ODQzMzU4NDk1LDkxMS41NTUwMDcyNzAyNTk1LDQwLDAuNjVdLFsyNjguNDk3NzU5Njk4MjAyOCw5MDMuNzQ0ODc4MTQ4MTQyMiw2MCwwLjczXSxbMjY3LjEzNDMxNDExODU2OTI1LDg5NC43OTI3MjY2NjY0MzgsODAsMC44XSxbMjY3LjI4MzUzMjkyMTA3NTcsODg0LjkxNzYxOTg5NDkxNTIsMTAwLDAuODZdLFsyNjguOTAwNTg3MzMyMTE0LDg3NC4zMzg2MjQ5MDMzNDE0LDEyMCwwLjg5XSxbMjcxLjc0NzQ2MzQxMjgxNzg2LDg2My4zMjY1NzI1NzA1MDU1LDE0MCwwLjldLFsyNzUuNzc5MzMyMzg5NTc4Nyw4NTIuMTAwNTI5OTY2MTc1NSwxNjAsMC44OV0sWzI4MS4wMjIwNzYxNjY5MDcsODQwLjc1NzA4OTY3Mjk4MDIsMTgwLDAuODZdLFsyODcuMjM3NjgwODA1OTM2NjMsODI5LjU2NzA4MjU2OTcwODUsMjAwLDAuOF0sWzI5NC41MDM3OTIwMjAxOTgwMyw4MTguODIwMjg2NDA0MjQ2NiwyMjAsMC43M10sWzMwMi41NTY1MTM5NjYzMTQ5LDgwOC42OTA5Mzk0NzI3NTQ2LDI0MCwwLjY1XSxbMzExLjQ0NzYxMDQ1MzMwNzgsNzk5LjM3MjIyNjk0MDQ5MDIsMjYwLDAuNTVdLFszMjEuMDM1NjYwMTI0OTM5MzQsNzkxLjEwOTA5Nzc4MTczMTQsMjgwLDAuNDVdXX0seyJwdHMiOltbNDMyLjYxMjI3NDA1ODk5MTgzLDg2Mi44NzYzNTUxMDAxNzMsMCwwLjRdLFs0MzIuNTg0MDM2MDA0MjAyODYsODU1LjQyOTkzMjk2NTE5NjksMjAsMC41MV0sWzQzMC45NTE2MTc3ODI5MTg4LDg0Ny43OTIxODM5MDIxMDEyLDQwLDAuNjJdLFs0MjcuNjcwMTkwNjIxNTMxMzMsODQwLjE4MjE3NDk4MDY1MzksNjAsMC43MV0sWzQyMy4xMjYxMjQ4NTA1NTU3LDgzMi40OTYzNzg1ODI4MTM4LDgwLDAuNzldLFs0MTcuMzk3MDY2MTgzNTIzMyw4MjUuMDI0NTcyNDU2NDY4MywxMDAsMC44NV0sWzQxMC42NzYxOTk3ODU2OTEzLDgxNy43MTQ5OTI3OTI1OTU5LDEyMCwwLjg5XSxbNDAzLjEzNzc2Mzk1MzIxOTc1LDgxMC44MzE1MzU0MzQ1NzM4LDE0MCwwLjldLFszOTQuOTA0MjMzMTczMjQ3Nyw4MDQuNDQ0OTExMDYwNTIwNiwxNjAsMC44OV0sWzM4Ni4yMjA1NTY0MjAwNTM1LDc5OC42OTY1NDEwMjY2NzMxLDE4MCwwLjg1XSxbMzc3LjIwOTIwODE4MDc3NjE2LDc5My42NTcxMzYwMTExNTA0LDIwMCwwLjc5XSxbMzY4LjAxODU0NDg0NzA2NTMsNzg5LjQ5Mzk5OTI3NDcwMDEsMjIwLDAuNzFdLFszNTguODY3NjMzNDg4Njg4OTcsNzg2LjI1MTk1OTU5MDkzMDQsMjQwLDAuNjJdLFszNDkuOTc1NTQxMTc1NDE1MDYsNzgzLjk3NTg0NTczMzQ0OTgsMjYwLDAuNTFdLFszNDEuNDE5OTEzNjIwNzc0NCw3ODIuOTU1NDM1NDUwMTQ1LDI4MCwwLjRdXX0seyJwdHMiOltbMzEwLjAxNjk3NTMzNjA5NDMzLDkxMS44NzU5NzQ4MDMyMjMxLDAsMC40XSxbMzA0Ljk1MzkxMTE1MDkxNjI3LDkwNi41MDMzMjM1OTAyMDMxLDIwLDAuNTFdLFszMDAuODg3NzMxNDk0ODExMyw4OTkuODI4MjgxNzkyMjYwNiw0MCwwLjYyXSxbMjk3Ljk2Njc5Mjc1OTQyOTE1LDg5Mi4wMTgxNTI2NzAxNDMzLDYwLDAuNzFdLFsyOTUuOTUzMDgxMDA1OTAzNCw4ODMuMzQzNzY3MTAyNjM5Nyw4MCwwLjc5XSxbMjk0Ljk2OTA3MDcyMTM3MzMsODczLjg3NTgzNTc2Nzg2ODcsMTAwLDAuODVdLFsyOTQuODAyNjI5ODcxNDgyODUsODYzLjk4MTc4MjEyNzI0NzYsMTIwLDAuODldLFsyOTUuNjAyMTE0ODQ3ODgxNDcsODUzLjgyODkwOTQ0MTUyNCwxNDAsMC45XSxbMjk3LjIwMDIyMjM4OTgyMTY1LDg0My41NjU1NzQxMDIzNDczLDE2MCwwLjg5XSxbMjk5LjQyOTY0OTIzNjU1NTc1LDgzMy4zNDAxMzI1MDEzNjY4LDE4MCwwLjg1XSxbMzAyLjU4NzEwODE3MTM4MjQsODIzLjQ4NzE5MTE2MDA3NzgsMjAwLDAuNzldLFszMDYuMjg2MjI4ODYzNzg2NSw4MTQuMTEwMjc3Njk2NTIxMywyMjAsMC43MV0sWzMxMC42MDQ2NTcwMjcyOTgzNCw4MDUuNDk5MTY5ODU4NTgzNywyNDAsMC42Ml0sWzMxNS41NjgyNzQ1NjY0Mjg1LDc5Ny43NTA0NjAyMjg4OTQ0LDI2MCwwLjUxXSxbMzIxLjAzNTY2MDEyNDkzOTM0LDc5MS4xMDkwOTc3ODE3MzE0LDI4MCwwLjRdXX0seyJwdHMiOltbNDA2LjYxMzYzODkzNjk5NCw4NzMuMjU5MDc5NzgwNzc3LDAsMC4zNV0sWzQwNS41NzQ2NDYyODIzMDc2NCw4NjYuMjkwNTQzNzYwNjcxNSwyMCwwLjQ3XSxbNDAzLjM2MjY3MjU2NTI1MDE0LDg1OC44MDgwODYxMjQ2Mzc0LDQwLDAuNTldLFs0MDAuMjc0NDMwNTY5MTIwMzQsODUxLjE0NjMxMzM5NDE2OTUsNjAsMC42OV0sWzM5Ni4yODQwMzgzODk0MDgxLDg0My4yMDg2MzI5ODY2MzkxLDgwLDAuNzhdLFszOTEuNjYyMzI2OTA0OTAyLDgzNS4yMzMwNTg4NDA5MTI1LDEwMCwwLjg1XSxbMzg2LjQ2MTA1OTkyNDYyMjMsODI3LjQxMjc3NjEyMjI0NzUsMTIwLDAuODldLFszODAuODczNDIyNjEzODI2OTYsODE5LjY5NjAyMTAyMTYyMzMsMTQwLDAuOV0sWzM3NS4wMDI5NDI1OTA1NTcwNCw4MTIuNDY5MTYzODY5NTU1NywxNjAsMC44OV0sWzM2OC45MjAzMzA1MzI5MzEzLDgwNS42MDk3MzAxNzg5MDU3LDE4MCwwLjg1XSxbMzYyLjg5NjQxNzMxOTczOCw3OTkuMzU1NzMzODg4NTM5NCwyMDAsMC43OF0sWzM1Ni45ODI5NjY3NTk5OTc4LDc5My45MDAzNjAxNjM3MTQ2LDIyMCwwLjY5XSxbMzUxLjM3MzE2NDAxODk2ODYsNzg5LjE5MTg0NTE5NTQxMDgsMjQwLDAuNTldLFszNDYuMTQ0NjU0ODEwMTgxLDc4NS41MTk5NjY3MzE1MTQ2LDI2MCwwLjQ3XSxbMzQxLjQxOTkxMzYyMDc3NDQsNzgyLjk1NTQzNTQ1MDE0NSwyODAsMC4zNV1dfSx7InB0cyI6W1szMzYuMDE1NjEwNDU4MDkyMDYsOTAxLjQ5MzI1MDEyMjYxOTEsMCwwLjM1XSxbMzMyLjA1OTg5MzQ1NTQ0MDQsODk1LjYxNjgzMDg5MDIxOCwyMCwwLjQ3XSxbMzI4LjQ3NjY3NjcxMjQ4MDA3LDg4OC44MTIzNzk1Njk3MjQ0LDQwLDAuNTldLFszMjUuNDU5MTQ1Mzk0NDY4OCw4ODEuMDI4MTMyMzUyMTE3NCw2MCwwLjY5XSxbMzIyLjg2NTg3ODE0NTE2OTc1LDg3Mi41MDkwMzgyMTE2NzU0LDgwLDAuNzhdLFszMjAuNjc3OTI4MDk1NDg0NCw4NjMuNTcwNzU2ODAwNzk1NSwxMDAsMC44NV0sWzMxOS4wNDM2NTE2MzcwNjIxLDg1NC4zODA1OTEzODAyMjUsMTIwLDAuODldLFszMTcuODY2NDU2MTg3Mjc0MTQsODQ0Ljk2NDQyMzg1NDQ3NDYsMTQwLDAuOV0sWzMxNy4xMDE1MTI5NzI1MTIyLDgzNS41NDEzMjEyOTMzMTIsMTYwLDAuODldLFszMTYuNzI5ODc1MTIzNjc3OTcsODI2LjQyNjk0MzM0OTEzNDMsMTgwLDAuODVdLFszMTYuODAzMzA2NDQ5NzkxNzYsODE3LjgxNDQ3NTE4NzE5OTIsMjAwLDAuNzhdLFszMTcuMjI1MjE0MzY4MjI1MSw4MDkuNzI5Nzk4NzEyMDE3MiwyMjAsMC42OV0sWzMxOC4xNjk4MzcxNzUxMzczMyw4MDIuNDM2ODA5NzY2OTY0NCwyNDAsMC41OV0sWzMxOS4zOTkxNjA5MzE2NjIyLDc5Ni4yMDYzMzkyMzA4Mjk1LDI2MCwwLjQ3XSxbMzIxLjAzNTY2MDEyNDkzOTM0LDc5MS4xMDkwOTc3ODE3MzE0LDI4MCwwLjM1XV19LHsicHRzIjpbWzQ3Ni4wNzQ3NTc2MDMxMzgyLDkyMy4wNzg3ODQ2NTM5Mjc2LDAsMC4zXSxbNDgxLjcwMzg3MTcxMDk4MjIsOTExLjYzMTgxNjc0MjY5MTUsMjAsMC40MV0sWzQ4NS42NTgwOTQ5NzQyMTIzLDkwMC4xMTU5OTYzOTA0NzQ4LDQwLDAuNTJdLFs0ODguMTExNjY1Njg4OTg4NCw4ODguNzk1MjE5NDQwNjU0LDYwLDAuNjFdLFs0ODguOTY3OTkxMjcyNjgxNSw4NzcuNjk1MzY3Nzk3NzM5Niw4MCwwLjY5XSxbNDg4LjU0MjczMTM3NzY4ODUsODY2LjgzNTM4ODMzMDgyOTMsMTAwLDAuNzVdLFs0ODYuNzkxMDU3MjMwNDAxMDcsODU2LjQzNDM0ODEwOTY5MTUsMTIwLDAuNzldLFs0ODMuNzY0NzMyNjM5ODM5ODUsODQ2LjY4NTQzMjI5OTU4NDEsMTQwLDAuOF0sWzQ3OS42ODI4MjQ2NzU3NzI1LDgzNy42MzM0Njk2NzQxMTUzLDE2MCwwLjc5XSxbNDc0LjU5NzA5NzE0NzIyLDgyOS40NzE2NDUzOTg1NDI5LDE4MCwwLjc1XSxbNDY4LjYwNDE0MjYzNjgxMDgsODIyLjE3NDA3NzU2ODM1NjcsMjAwLDAuNjldLFs0NjEuODUyMzE3NTM2MTk0NzMsODE1LjkwODA2OTQ0NDMwNDQsMjIwLDAuNjFdLFs0NTQuMjk2NzkzMDcxNzYzMiw4MTAuODkyNjg4MDk2MTUzOCwyNDAsMC41Ml0sWzQ0Ni4xNTY2MzYzMTMyODQyNSw4MDcuMTcyNzYyMjk3NTEzNSwyNjAsMC40MV0sWzQzNy40ODM2MTEwNjk3Nzg1LDgwNC45NDE0NzcyMTM2NDEzLDI4MCwwLjNdXX1dLCJzaGFwZXMiOlt7ImlkIjoiYmxhZGUiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJ0cmlhbmdsZSIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoic29saWQiLCJnZW9tIjp7InAiOltbMjQuODE4NDAxODI1NjA0OTIzLDIwLjIwNzk0NTk1NjM5ODEwNl0sWzM0Mi44MDU1MjQ2MzA2NDE5LDc4OC44OTkzNDY3OTk1Mjg2XSxbMzI0LjIwNDc2NjM5NTczNTUzLDc5Ni4zNjgwNjc3ODAxNjI1XV19fSx7ImlkIjoicmljYXNzbyIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6MzUwLjk1Mjg4MzI1NTM4MDgsImN5Ijo4MzYuMzA1OTk3Njc3MjI2MiwidyI6MjAsImgiOjEwNiwicm90IjoyLjc2MTQzMDIxMDE4NTEyM319LHsiaWQiOiJwb21tZWwiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJjaXJjbGUiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJzcGhlcmUiLCJzdHlsZSI6Im91dGxpbmUiLCJnZW9tIjp7ImN4Ijo0MjguNTE2MjAzMDIzNDk0MiwiY3kiOjEwMzAuMzQyNzc2MjE4MTc1NSwiciI6MjYuMDAwMDAwMDAwMDAwMDA0LCJyb3QiOjIuODc5NzkzMjY1NzkwNjQzfX0seyJpZCI6ImdyaXAiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJsaW5lIiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoidHViZSIsInN0eWxlIjoicGxhaW4iLCJnZW9tIjp7IngxIjo0MTYuNjE1MjM5MjQ5MzM1NDUsInkxIjoxMDAwLjYwOTg0NzMxMzU3MjcsIngyIjozNzcuMzEzNDAyODc1OTM2ODQsInkyIjo5MDIuMjI5Njg4NDUxNzQ0M30sIm5pYiI6MjJ9LHsiaWQiOiJ3aXJlIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoibGluZSIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6InJvcGUiLCJzdHlsZSI6InBsYWluIiwiZ2VvbSI6eyJ4MSI6NDE2LjYxNTIzOTI0OTMzNTQ1LCJ5MSI6MTAwMC42MDk4NDczMTM1NzI3LCJ4MiI6Mzc3LjMxMzQwMjg3NTkzNjg0LCJ5MiI6OTAyLjIyOTY4ODQ1MTc0NDN9LCJuaWIiOjE0fSx7ImlkIjoiazEiLCJzdHJva2UiOjAsInJlY29nbml6ZWQiOiJpbmsiLCJhc0RyYXduIjp0cnVlLCJicnVzaCI6ImJydXNoIiwic3R5bGUiOm51bGwsImdlb20iOm51bGwsIm5pYiI6OH0seyJpZCI6ImsyIiwic3Ryb2tlIjoxLCJyZWNvZ25pemVkIjoiaW5rIiwiYXNEcmF3biI6dHJ1ZSwiYnJ1c2giOiJicnVzaCIsInN0eWxlIjpudWxsLCJnZW9tIjpudWxsLCJuaWIiOjh9LHsiaWQiOiJzOSIsInN0cm9rZSI6MiwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwic21vb3RoIjowLCJuaWIiOjZ9LHsiaWQiOiJrNCIsInN0cm9rZSI6MywicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwibmliIjo1fSx7ImlkIjoia25vYjYiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJjaXJjbGUiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6NDgyLjQwNjIzMDQ0MzA1NjIsImN5Ijo4MTQuOTU1ODgwMjczNDE1NiwiciI6Nywicm90IjoyLjg3OTc5MzI2NTc5MDY0M319LHsiaWQiOiJrOCIsInN0cm9rZSI6NCwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwibmliIjo1fSx7ImlkIjoiazkiLCJzdHJva2UiOjUsInJlY29nbml6ZWQiOiJpbmsiLCJhc0RyYXduIjp0cnVlLCJicnVzaCI6ImJydXNoIiwic3R5bGUiOm51bGwsImdlb20iOm51bGwsIm5pYiI6NH0seyJpZCI6ImsxMCIsInN0cm9rZSI6NiwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwibmliIjo0fSx7ImlkIjoiazExIiwic3Ryb2tlIjo3LCJyZWNvZ25pemVkIjoiaW5rIiwiYXNEcmF3biI6dHJ1ZSwiYnJ1c2giOiJicnVzaCIsInN0eWxlIjpudWxsLCJnZW9tIjpudWxsLCJuaWIiOjN9LHsiaWQiOiJrMTIiLCJzdHJva2UiOjgsInJlY29nbml6ZWQiOiJpbmsiLCJhc0RyYXduIjp0cnVlLCJicnVzaCI6ImJydXNoIiwic3R5bGUiOm51bGwsImdlb20iOm51bGwsIm5pYiI6M30seyJpZCI6ImsxMyIsInN0cm9rZSI6OSwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwibmliIjozfSx7ImlkIjoiazE0Iiwic3Ryb2tlIjoxMCwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwibmliIjozfSx7ImlkIjoiazE1Iiwic3Ryb2tlIjoxMSwicmVjb2duaXplZCI6ImluayIsImFzRHJhd24iOnRydWUsImJydXNoIjoiYnJ1c2giLCJzdHlsZSI6bnVsbCwiZ2VvbSI6bnVsbCwibmliIjozfV0sInNtb290aCI6MjUsIm5pYiI6OSwidG9vbCI6InNlbGVjdCIsImFuZ2xlIjoxNjUsInZpZXciOnsieCI6MTUsInkiOjEwLCJ3Ijo0OTMsImgiOjEwNTZ9fTwvbWV0YWRhdGE+PHN0eWxlPkBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6ZGFyayl7W2ZpbGw9IiMxMjEyMTIiXXtmaWxsOiNmYWZhZmF9W3N0cm9rZT0iIzEyMTIxMiJde3N0cm9rZTojZmFmYWZhfX08L3N0eWxlPjxnIGRhdGEtc2hhcGUtaWQ9ImJsYWRlIiBkYXRhLWJydXNoPSJpbmsiPjxwb2x5Z29uIHBvaW50cz0iMjQuODIsMjAuMjEgMzQyLjgxLDc4OC45IDMyNC4yLDc5Ni4zNyIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9InJpY2Fzc28iIGRhdGEtYnJ1c2g9ImluayI+PHJlY3QgeD0iMzQwLjk1IiB5PSI3ODMuMzEiIHdpZHRoPSIyMCIgaGVpZ2h0PSIxMDYiIHRyYW5zZm9ybT0icm90YXRlKDE1OC4yMiAzNTAuOTUgODM2LjMxKSIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9InBvbW1lbCIgZGF0YS1icnVzaD0ic3BoZXJlIj48ZWxsaXBzZSBjeD0iNDI4LjUyIiBjeT0iMTAzMC4zNCIgcng9IjI2IiByeT0iMjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyLjYiLz48cGF0aCBkPSJNNDMwLjU3IDEwMjMuNzJBOS4wNSA5LjA1IDAgMCAxIDQyMS45IDEwMzIuNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjAuNjkiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik00MzMuMjQgMTAyMS41M0ExMS44NiAxMS44NiAwIDAgMSA0MTkuNyAxMDM1LjA3IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMC44OCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTQzNS4zMSAxMDE4LjMzQTE0LjY2IDE0LjY2IDAgMCAxIDQxNi41MSAxMDM3LjEzIiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMS4wNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTQzNi40NyAxMDE0LjNBMTcuNDcgMTcuNDcgMCAwIDEgNDEyLjQ4IDEwMzguMyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjEuMjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik00MzYuNTEgMTAwOS42OUEyMC4yOCAyMC4yOCAwIDAgMSA0MDcuODYgMTAzOC4zNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjEuNDUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik00MzcuMzcgMTAwNi41NkEyMy4wOSAyMy4wOSAwIDEgMSA0MDQuNzMgMTAzOS4xOSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjEuNjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik00NDMuODIgMTAxMC4xN0EyNS45IDI1LjkgMCAwIDEgNDA4LjM1IDEwNDUuNjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjgzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNNDQ5LjIxIDEwMTUuNzZBMjguNyAyOC43IDAgMCAxIDQxMy45NCAxMDUxLjA0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMi4wMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTQ1My4wNCAxMDIzLjc3QTMxLjUxIDMxLjUxIDAgMCAxIDQyMS45NSAxMDU0Ljg3IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMi4yMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTQ1My41NCAxMDM1LjczQTM0LjMyIDM0LjMyIDAgMCAxIDQzMy45MSAxMDU1LjM3IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNNDQ2Ljk5IDEwMzkuMThMNDQ5Ljg0IDEwNDAuNTUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC44NSIvPjxwYXRoIGQ9Ik00NDYuMjkgMTAyMy41OUw0NDguODQgMTAyMi42MiIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjEuMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBvcGFjaXR5PSIwLjg1Ii8+PHBhdGggZD0iTTQzMi41MiAxMDUyLjI4TDQzMy4xNyAxMDU1LjgxIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMS4xIiBzdHJva2UtbGluZWNhcD0icm91bmQiIG9wYWNpdHk9IjAuODUiLz48cGF0aCBkPSJNNDQ2LjgxIDEwNDEuNzZMNDQ5LjI0IDEwNDMuMjciIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC44NSIvPjxwYXRoIGQ9Ik00NDYuODUgMTAyOS4xMkw0NTAuMzUgMTAyOC44OSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjEuMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBvcGFjaXR5PSIwLjg1Ii8+PHBhdGggZD0iTTQzNC42MSAxMDQ2LjE1TDQzNS41IDEwNDguNDgiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC44NSIvPjxwYXRoIGQ9Ik00NDkuMTYgMTAyNy44N0w0NTEuNTcgMTAyNy41OCIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjEuMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBvcGFjaXR5PSIwLjg1Ii8+PHBhdGggZD0iTTQ0MS4xNCAxMDQ3LjA4TDQ0Mi42NCAxMDQ5LjA3IiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMS4xIiBzdHJva2UtbGluZWNhcD0icm91bmQiIG9wYWNpdHk9IjAuODUiLz48cGF0aCBkPSJNNDQ4Ljg1IDEwMjYuMDFMNDUyIDEwMjUuMzQiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC44NSIvPjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJncmlwIiBkYXRhLWJydXNoPSJ0dWJlIj48cGF0aCBkPSJNNDI1LjQ3IDk5Ny4wNyBMNDI0LjM1IDk5NC4yNiBMNDIzLjIyIDk5MS40NSBMNDIyLjEgOTg4LjY0IEw0MjAuOTggOTg1LjgzIEw0MTkuODUgOTgzLjAyIEw0MTguNzMgOTgwLjIxIEw0MTcuNjEgOTc3LjQgTDQxNi40OSA5NzQuNTkgTDQxNS4zNiA5NzEuNzcgTDQxNC4yNCA5NjguOTYgTDQxMy4xMiA5NjYuMTUgTDQxMS45OSA5NjMuMzQgTDQxMC44NyA5NjAuNTMgTDQwOS43NSA5NTcuNzIgTDQwOC42MyA5NTQuOTEgTDQwNy41IDk1Mi4xIEw0MDYuMzggOTQ5LjI5IEw0MDUuMjYgOTQ2LjQ4IEw0MDQuMTMgOTQzLjY3IEw0MDMuMDEgOTQwLjg2IEw0MDEuODkgOTM4LjA0IEw0MDAuNzcgOTM1LjIzIEwzOTkuNjQgOTMyLjQyIEwzOTguNTIgOTI5LjYxIEwzOTcuNCA5MjYuOCBMMzk2LjI3IDkyMy45OSBMMzk1LjE1IDkyMS4xOCBMMzk0LjAzIDkxOC4zNyBMMzkyLjkxIDkxNS41NiBMMzkxLjc4IDkxMi43NSBMMzkwLjY2IDkwOS45NCBMMzg5LjU0IDkwNy4xMyBMMzg4LjQxIDkwNC4zMSBMMzg3LjI5IDkwMS41IEwzODYuMTcgODk4LjY5IEwzNjguNDYgOTA1Ljc3IEwzNjkuNTggOTA4LjU4IEwzNzAuNzEgOTExLjM5IEwzNzEuODMgOTE0LjIgTDM3Mi45NSA5MTcuMDEgTDM3NC4wNyA5MTkuODIgTDM3NS4yIDkyMi42MyBMMzc2LjMyIDkyNS40NCBMMzc3LjQ0IDkyOC4yNSBMMzc4LjU3IDkzMS4wNiBMMzc5LjY5IDkzMy44OCBMMzgwLjgxIDkzNi42OSBMMzgxLjkzIDkzOS41IEwzODMuMDYgOTQyLjMxIEwzODQuMTggOTQ1LjEyIEwzODUuMyA5NDcuOTMgTDM4Ni40MyA5NTAuNzQgTDM4Ny41NSA5NTMuNTUgTDM4OC42NyA5NTYuMzYgTDM4OS43OSA5NTkuMTcgTDM5MC45MiA5NjEuOTggTDM5Mi4wNCA5NjQuNzkgTDM5My4xNiA5NjcuNjEgTDM5NC4yOSA5NzAuNDIgTDM5NS40MSA5NzMuMjMgTDM5Ni41MyA5NzYuMDQgTDM5Ny42NSA5NzguODUgTDM5OC43OCA5ODEuNjYgTDM5OS45IDk4NC40NyBMNDAxLjAyIDk4Ny4yOCBMNDAyLjE1IDk5MC4wOSBMNDAzLjI3IDk5Mi45IEw0MDQuMzkgOTk1LjcxIEw0MDUuNTIgOTk4LjUzIEw0MDYuNjQgMTAwMS4zNCBMNDA3Ljc2IDEwMDQuMTUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjQuODkiLz48ZWxsaXBzZSBjeD0iNDE2LjYyIiBjeT0iMTAwMC42MSIgcng9IjMuMjQiIHJ5PSI5LjUzIiB0cmFuc2Zvcm09InJvdGF0ZSgtMTExLjc4IDQxNi42MiAxMDAwLjYxKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjMuMTgiLz48ZWxsaXBzZSBjeD0iMzc3LjMxIiBjeT0iOTAyLjIzIiByeD0iMy4yNCIgcnk9IjkuNTMiIHRyYW5zZm9ybT0icm90YXRlKC0xMTEuNzggMzc3LjMxIDkwMi4yMykiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIzLjE4Ii8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9IndpcmUiIGRhdGEtYnJ1c2g9InJvcGUiPjxwYXRoIGQ9Ik00MTYuNjIgMTAwMC42MSBMNDE4LjE0IDk5Ny44NSBMNDE3Ljc3IDk5NS44NCBMNDE1LjIgOTk0LjcyIEw0MTEuOTYgOTkzLjg2IEw0MTAuMTIgOTkyLjQ0IEw0MTAuNjEgOTkwLjA5IEw0MTIuMzkgOTg3LjIzIEw0MTMuMzcgOTg0LjY5IEw0MTIuMSA5ODMuMDQgTDQwOS4wMyA5ODIuMTEgTDQwNi4xIDk4MS4xMyBMNDA1LjE0IDk3OS4zNyBMNDA2LjMyIDk3Ni43NCBMNDA4LjA1IDk3My45IEw0MDguMjcgOTcxLjY2IEw0MDYuMTcgOTcwLjM0IEw0MDIuODkgOTY5LjUgTDQwMC41NCA5NjguMjkgTDQwMC40NyA5NjYuMTYgTDQwMi4xMSA5NjMuMzUgTDQwMy40OCA5NjAuNjUgTDQwMi44MiA5NTguNzcgTDQwMC4wNSA5NTcuNzIgTDM5Ni44OCA5NTYuODQgTDM5NS4zMiA5NTUuMyBMMzk2LjA2IDk1Mi44NiBMMzk3Ljg3IDk0OS45OCBMMzk4LjYxIDk0Ny41MyBMMzk3LjA1IDk0NiBMMzkzLjg4IDk0NS4xMiBMMzkxLjExIDk0NC4wNyBMMzkwLjQ1IDk0Mi4xOSBMMzkxLjgxIDkzOS40OSBMMzkzLjQ2IDkzNi42OCBMMzkzLjM5IDkzNC41NSBMMzkxLjA0IDkzMy4zNCBMMzg3Ljc2IDkzMi41IEwzODUuNjYgOTMxLjE4IEwzODUuODggOTI4Ljk0IEwzODcuNjEgOTI2LjEgTDM4OC43OSA5MjMuNDcgTDM4Ny44MyA5MjEuNzEgTDM4NC44OSA5MjAuNzMgTDM4MS44MiA5MTkuOCBMMzgwLjU2IDkxOC4xNSBMMzgxLjUzIDkxNS42MSBMMzgzLjMyIDkxMi43NSBMMzgzLjgxIDkxMC40IEwzODEuOTcgOTA4Ljk4IEwzNzguNzIgOTA4LjEyIEwzNzYuMTYgOTA3IEwzNzUuNzkgOTA0Ljk5IEwzNzcuMzEgOTAyLjIzICIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIuMzMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik00MTYuNjIgMTAwMC42MSBMNDEzLjYxIDk5OS42NiBMNDEyLjQ5IDk5Ny45NSBMNDEzLjU4IDk5NS4zNyBMNDE1LjM0IDk5Mi41MSBMNDE1LjY5IDk5MC4yMiBMNDEzLjcyIDk4OC44NSBMNDEwLjQ1IDk4OCBMNDA4IDk4Ni44MyBMNDA3Ljc4IDk4NC43NyBMNDA5LjM2IDk4MS45OCBMNDEwLjgxIDk3OS4yNSBMNDEwLjMgOTc3LjMgTDQwNy42MyA5NzYuMjIgTDQwNC40MSA5NzUuMzUgTDQwMi43MiA5NzMuODcgTDQwMy4zMyA5NzEuNDggTDQwNS4xMyA5NjguNjEgTDQwNS45OSA5NjYuMTEgTDQwNC41OCA5NjQuNTIgTDQwMS40NSA5NjMuNjIgTDM5OC42IDk2Mi42IEwzOTcuNzkgOTYwLjc4IEwzOTkuMDcgOTU4LjExIEw0MDAuNzYgOTU1LjI5IEw0MDAuODMgOTUzLjEgTDM5OC42MSA5NTEuODQgTDM5NS4zMiA5NTEgTDM5My4xIDk0OS43NCBMMzkzLjE3IDk0Ny41NSBMMzk0Ljg2IDk0NC43MyBMMzk2LjE0IDk0Mi4wNiBMMzk1LjMzIDk0MC4yNCBMMzkyLjQ3IDkzOS4yMiBMMzg5LjM1IDkzOC4zMiBMMzg3Ljk0IDkzNi43MyBMMzg4LjggOTM0LjIzIEwzOTAuNTkgOTMxLjM2IEwzOTEuMjEgOTI4Ljk2IEwzODkuNTEgOTI3LjQ5IEwzODYuMyA5MjYuNjIgTDM4My42MyA5MjUuNTQgTDM4My4xMSA5MjMuNTkgTDM4NC41NiA5MjAuODYgTDM4Ni4xNSA5MTguMDcgTDM4NS45MyA5MTYuMDEgTDM4My40NyA5MTQuODQgTDM4MC4yMSA5MTMuOTkgTDM3OC4yNCA5MTIuNjIgTDM3OC41OSA5MTAuMzMgTDM4MC4zNSA5MDcuNDcgTDM4MS40NCA5MDQuODkgTDM4MC4zMiA5MDMuMTggTDM3Ny4zMSA5MDIuMjMgIiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMi4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsxIiBkYXRhLWJydXNoPSJicnVzaCI+PHBhdGggZD0iTTQyOS43Niw5OTguNjUgUTQwNS42MSwxMDA4LjIzIDQwNS42MSwxMDA4LjIyIFQ0MDUuNjEsMTAwOC4yMSA0MTcuNjgsMTAwMy40MiBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsyIiBkYXRhLWJydXNoPSJicnVzaCI+PHBhdGggZD0iTTM4OC4yMyw4OTQuNjYgUTM2NC4wOCw5MDQuMjMgMzY0LjA4LDkwNC4yMyBUMzY0LjA4LDkwNC4yMiAzNzYuMTUsODk5LjQzIFoiIGZpbGw9IiMxMjEyMTIiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iczkiIGRhdGEtYnJ1c2g9ImJydXNoIj48cGF0aCBkPSJNNDgxLjY2LDg0NS40IFE0NzAuNjIsODU0LjQzIDQ2MS42OCw4NTguMTIgVDQ0Mi42Nyw4NjUuOTMgNDIyLDg3NC4zMyA0MDAuNjIsODgyLjk3IDM3OC45NCw4OTEuNjUgMzU3LjA3LDkwMC4yOSAzMzUuMTMsOTA4Ljg5IDMxMy4xOSw5MTcuNDYgMjg0LjE1LDkyNi42NSAyNjYuMDksOTMxLjU2IDI2Ni4wOSw5MzEuNTUgMjgyLjU1LDkyMi42NSAzMDkuOTIsOTA5LjI4IDMzMS43NCw5MDAuMzcgMzUzLjU5LDg5MS41NCAzNzUuMzgsODgyLjc3IDM5Ny4wNiw4NzQuMDkgNDE4LjUsODY1LjU5IDQzOS4yNiw4NTcuNDEgNDU4LjQxLDg0OS45NCA0NzQuNTQsODQ1LjkxIFoiIGZpbGw9IiMxMjEyMTIiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iazQiIGRhdGEtYnJ1c2g9ImJydXNoIj48cGF0aCBkPSJNNDgxLjY1LDg0NS4zOCBRNDg1LjUzLDgzOS4yMyA0ODcuMjgsODM3LjY4IFQ0OTAuMDQsODM0LjYxIDQ5MS40Myw4MzEuNjEgNDkxLjY5LDgyOC42NyA0OTAuOTMsODI1Ljc3IDQ4OC45Miw4MjAuNzYgNDg3LjU2LDgxNy4yIDQ4Ny41Nyw4MTcuMTkgNDkxLjI5LDgxOS42OSA0OTYuMDEsODI0LjQ2IDQ5Ny4xNSw4MjkuMSA0OTYuNjYsODMzLjg1IDQ5NC42MSw4MzguNDMgNDkxLjA1LDg0Mi42NCA0ODUuMjksODQ1LjAyIFoiIGZpbGw9IiMxMjEyMTIiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0ia25vYjYiIGRhdGEtYnJ1c2g9ImluayI+PGNpcmNsZSBjeD0iNDgyLjQxIiBjeT0iODE0Ljk2IiByPSI3IiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iazgiIGRhdGEtYnJ1c2g9ImJydXNoIj48cGF0aCBkPSJNNDAwLjY0LDg3OS45MiBRNDExLjA4LDg3OS44MyA0MTcuNTEsODgyLjA5IFQ0MzAuNDMsODg3LjM5IDQ0Mi44NSw4OTQuMTcgNDUzLjg4LDkwMi4yMSA0NjMuMDksOTExLjMyIDQ3MC4yNyw5MjEuMzkgNDc1LjI2LDkzMi4yMSA0NzcuOTMsOTQzLjUzIDQ3OC4yNSw5NTUuMDkgNDc2LjE5LDk2Ni43MiA0NzEuNzYsOTc4LjExIDQ2NS4wMSw5ODkuMDcgNDUxLjQ4LDEwMDIuMTYgNDQxLjg4LDEwMDkuODkgNDQxLjg3LDEwMDkuODggNDQ5LjEsMTAwMC40NiA0NTkuOCw5ODUuOTkgNDY1LjY0LDk3NS44MyA0NjkuMzUsOTY1LjU3IDQ3MC45OCw5NTUuMzEgNDcwLjYxLDk0NS4yMiA0NjguMyw5MzUuMzQgNDYzLjk5LDkyNS43MyA0NTcuNyw5MTYuNTggNDQ5LjQ3LDkwOC4wMiA0MzkuMzksOTAwLjIyIDQyNy44Myw4OTMuNCA0MTUuNjIsODg3Ljg2IDQwNS4wNyw4ODIuNyBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9Ims5IiBkYXRhLWJydXNoPSJicnVzaCI+PHBhdGggZD0iTTQ2MC40OCw4NTEuNzggUTQ1OS40NCw4NDYuOTUgNDU4LjkxLDg0My45NiBUNDU3LjMsODM3LjY3IDQ1NC4zLDgzMSA0NDkuNjYsODI0LjI5IDQ0My40Myw4MTcuNzQgNDM1Ljc2LDgxMS40NyA0MjYuOCw4MDUuNTggNDE2LjczLDgwMC4yNCA0MDUuNzcsNzk1LjU0IDM5NC4xMiw3OTEuNTggMzgxLjk3LDc4OC40NiAzNjkuNTUsNzg2LjMxIDM1Mi4zNSw3ODQuMjQgMzQxLjQyLDc4Mi45NiAzNDEuNDIsNzgyLjk1IDM1Mi41OSw3ODIuMTIgMzcwLjI0LDc4MS44OSAzODMuMTMsNzgzLjY5IDM5NS43Niw3ODYuNTcgNDA3Ljk0LDc5MC40IDQxOS40NCw3OTUuMTIgNDMwLjA1LDgwMC42NyA0MzkuNTIsODA2Ljk0IDQ0Ny42OSw4MTMuODMgNDU0LjMxLDgyMS4yNCA0NTkuMTQsODI4Ljk5IDQ2Mi4xLDgzNi43NyA0NjIuOTksODQ0LjAzIDQ2MS43LDg0OS42MSBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsxMCIgZGF0YS1icnVzaD0iYnJ1c2giPjxwYXRoIGQ9Ik0yODIuMTMsOTIyLjk4IFEyNzcuNTIsOTIxLjUxIDI3NS4wOCw5MTkuMTIgVDI3MC43MSw5MTMuMjUgMjY3LjQ3LDkwNS41OSAyNjUuNjIsODk2LjY0IDI2NS4zMSw4ODYuNyAyNjYuNSw4NzYuMDYgMjY5LjA1LDg2NC45OSAyNzIuOSw4NTMuNjggMjc3Ljk3LDg0Mi4zMSAyODQuMTUsODMxLjEyIDI5MS4zNCw4MjAuMzMgMjk5LjQ1LDgxMC4xNiAzMTIuMzgsNzk4LjE4IDMyMS4wMyw3OTEuMTEgMzIxLjA0LDc5MS4xMSAzMTQuMDEsNzk5LjU1IDMwMyw4MTIuODkgMjk1LjQ3LDgyMyAyODguNzksODMzLjYxIDI4My4wOCw4NDQuNTQgMjc4LjM5LDg1NS41MiAyNzQuNzksODY2LjMyIDI3Mi4zNSw4NzYuNzUgMjcxLjEsODg2LjYgMjcxLjA5LDg5NS42NCAyNzIuMzYsOTAzLjcgMjc0Ljc5LDkxMC41OCAyNzcuOTcsOTE2LjI3IDI4MC45LDkyMC44OSBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsxMSIgZGF0YS1icnVzaD0iYnJ1c2giPjxwYXRoIGQ9Ik00MzIuNiw4NjIuODggUTQzMS4yLDg1OC42IDQzMC41OCw4NTUuNjIgVDQyOC43Nyw4NDkuMyA0MjUuNzcsODQyLjQgNDIxLjU2LDgzNS4yNyA0MTYuMjUsODI4LjExIDQwOS45Nyw4MjEuMDggNDAyLjg1LDgxNC4zMyAzOTUuMDcsODA4IDM4Ni43OSw4MDIuMTkgMzc4LjE2LDc5Ny4wNSAzNjkuMzQsNzkyLjY4IDM2MC41Miw3ODkuMTUgMzQ4Ljc3LDc4NS4yOCAzNDEuNDIsNzgyLjk2IDM0MS40Miw3ODIuOTUgMzQ5LjI1LDc4My44MyAzNjEuNjYsNzg2LjEzIDM3MC44OSw3ODkuNDQgMzgwLjEyLDc5My42OCAzODkuMTUsNzk4Ljc4IDM5Ny43OSw4MDQuNjMgNDA1LjksODExLjEzIDQxMy4yOCw4MTguMTUgNDE5Ljc1LDgyNS41NyA0MjUuMTcsODMzLjIyIDQyOS4zNyw4NDAuOTMgNDMyLjI1LDg0OC40NSA0MzMuNjcsODU1LjM1IDQzMy4zMSw4NjAuNzMgWiIgZmlsbD0iIzEyMTIxMiIvPjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJrMTIiIGRhdGEtYnJ1c2g9ImJydXNoIj48cGF0aCBkPSJNMzEwLjAxLDkxMS44OCBRMzA2LjA5LDkwOS43NCAzMDQuMTEsOTA3LjE3IFQzMDAuMzgsOTAxLjE5IDI5Ny4yNiw4OTMuNzYgMjk0Ljk5LDg4NS4yNSAyOTMuNjQsODc1Ljk0IDI5My4yNCw4NjYuMSAyOTMuNzksODU1Ljk0IDI5NS4xOCw4NDUuNjUgMjk3LjQxLDgzNS40NCAzMDAuNDQsODI1LjUgMzA0LjE2LDgxNi4wOCAzMDguNTUsODA3LjM0IDMxNS45Nyw3OTcuMTMgMzIxLjAzLDc5MS4xMSAzMjEuMDQsNzkxLjExIDMxNy4zMSw3OTcuODYgMzExLjQ2LDgwOC43MyAzMDcuNTIsODE3LjM0IDMwNC4xOSw4MjYuNiAzMDEuNDgsODM2LjI5IDI5OS40OCw4NDYuMjIgMjk4LjIsODU2LjE4IDI5Ny42Niw4NjUuOTQgMjk3LjkzLDg3NS4zNiAyOTkuMDEsODg0LjI0IDMwMC44OCw4OTIuMzMgMzAzLjQ4LDg5OS40IDMwNi41Myw5MDUuMjUgMzA5LjA3LDkwOS44NSBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsxMyIgZGF0YS1icnVzaD0iYnJ1c2giPjxwYXRoIGQ9Ik00MDYuNiw4NzMuMjYgUTQwNC43NCw4NjkuNDQgNDAzLjgxLDg2Ni41NSBUNDAxLjYsODYwLjI4IDM5OC42Miw4NTMuMjQgMzk0Ljg1LDg0NS43OCAzOTAuNDIsODM4LjE1IDM4NS40OCw4MzAuNDkgMzgwLjEzLDgyMi45OCAzNzQuNSw4MTUuNzYgMzY4LjcyLDgwOC45MSAzNjIuOTQsODAyLjU5IDM1Ny4yOCw3OTYuOTQgMzUxLjg5LDc5Mi4wNyAzNDUuMzQsNzg2LjQxIDM0MS40Miw3ODIuOTYgMzQxLjQyLDc4Mi45NSAzNDYuMjUsNzg1LjI3IDM1My45MSw3ODkuNzEgMzU5LjcxLDc5NC40MiAzNjUuNzMsNzk5Ljk1IDM3MS44NSw4MDYuMjEgMzc3LjksODEzLjA4IDM4My43NCw4MjAuNDIgMzg5LjIsODI4LjExIDM5NC4yLDgzNi4wMiAzOTguNTcsODQzLjk4IDQwMi4xOSw4NTEuODIgNDA0Ljk1LDg1OS4yNiA0MDYuNyw4NjUuOTUgNDA2Ljk2LDg3MS4xNiBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsxNCIgZGF0YS1icnVzaD0iYnJ1c2giPjxwYXRoIGQ9Ik0zMzYuMDEsOTAxLjUgUTMzMi42Nyw4OTguODQgMzMwLjk3LDg5Ni4yMSBUMzI3LjY0LDg5MC4xOCAzMjQuNTIsODgyLjg1IDMyMS43Myw4NzQuNjYgMzE5LjM5LDg2NS45MSAzMTcuNTgsODU2Ljc3IDMxNi4yNiw4NDcuNCAzMTUuNDEsODM4LjA0IDMxNS4wNCw4MjguOSAzMTUuMTMsODIwLjE3IDMxNS42Nyw4MTEuOTkgMzE2LjY2LDgwNC41NyAzMTkuMTQsNzk2LjEgMzIxLjAzLDc5MS4xMSAzMjEuMDQsNzkxLjExIDMyMC41OCw3OTYuMyAzMTkuNzUsODA0LjkgMzE5LjE3LDgxMi4xNCAzMTguOTgsODIwLjE1IDMxOS4xNyw4MjguNjkgMzE5LjcyLDgzNy42MyAzMjAuNjMsODQ2Ljc4IDMyMS45Miw4NTUuOTMgMzIzLjU5LDg2NC44NCAzMjUuNjcsODczLjQgMzI4LjA5LDg4MS40MiAzMzAuNzcsODg4LjYxIDMzMy40OSw4OTQuNjcgMzM1LjQyLDg5OS40NCBaIiBmaWxsPSIjMTIxMjEyIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImsxNSIgZGF0YS1icnVzaD0iYnJ1c2giPjxwYXRoIGQ9Ik00NzYuMDcsOTIzLjA3IFE0NzguMTEsOTE1LjkxIDQ3OS44Miw5MTEuMjIgVDQ4Mi45MSw5MDEuMzEgNDg1LjA3LDg5MC43NiA0ODYuMDQsODgwLjEgNDg1Ljc5LDg2OS41OSA0ODQuMzMsODU5LjQ5IDQ4MS43Myw4NDkuOTQgNDc4LjA5LDg0MS4wNSA0NzMuNSw4MzIuOTEgNDY4LjA0LDgyNS42MSA0NjEuNzcsODE5LjI4IDQ1NC43OCw4MTQuMDYgNDQ0LjI5LDgwOC4zNCA0MzcuNDgsODA0Ljk1IDQzNy40OSw4MDQuOTQgNDQ0Ljk5LDgwNy4xOSA0NTYuNDUsODExLjc0IDQ2NC4wMyw4MTYuOTggNDcwLjg0LDgyMy40NiA0NzYuNzgsODMxLjAzIDQ4MS43NSw4MzkuNTMgNDg1LjY0LDg0OC44NyA0ODguMzUsODU4LjkzIDQ4OS43Niw4NjkuNTMgNDg5LjgxLDg4MC40OCA0ODguNTIsODkxLjUyIDQ4NS45OCw5MDIuMzMgNDgyLjQ1LDkxMi4zNiA0NzguMyw5MjAuMDkgWiIgZmlsbD0iIzEyMTIxMiIvPjwvZz48L3N2Zz4= \"A rapier with a red tassel, drawn in Draw\"",
 		"[agent-diagram]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjMwIDMwIDYxMSAxMTk0IiB3aWR0aD0iNjExIiBoZWlnaHQ9IjExOTQiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3Ijo2NzMsImgiOjEyNTZ9LCJzdHJva2VzIjpbXSwic2hhcGVzIjpbeyJpZCI6ImZpbGUiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJlbGxpcHNlIiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjM1NC41LCJjeSI6MTIwLCJyeCI6ODYuNSwicnkiOjgwfSwic2VlZCI6Mzk5MTA5NTg0MSwiaW5rIjoiIzRmMzYyNiIsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiWW91ciBNYXJrZG93biBmaWxlIiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjo4NSwidGV4dEJvbGQiOnRydWUsImxhYmVsSW4iOnRydWUsInN0ZXAiOjF9LHsiaWQiOiJrZXJuZWwiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJyZWN0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjM1NC41LCJjeSI6MzM2LjUsInciOjEyNCwiaCI6MTEzfSwic2VlZCI6Mjk0OTM4OTA2MywiaW5rIjoiIzAxMWY2NyIsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiVGhlIGtlcm5lbCBrZWVwcyB0aGUgZXhhY3QgdGV4dCIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6MTA4LCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6Mn0seyJpZCI6InBhcnNlIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoicmVjdCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoic29saWQiLCJnZW9tIjp7ImN4IjozNTQuNSwiY3kiOjUyOS41LCJ3IjoxMjYsImgiOjExM30sInNlZWQiOjM4NzEwMzUyNDIsImluayI6IiNhNzI5MDYiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IlRoZSBwYXJzZXIgc3BsaXRzIGl0IGludG8gYmxvY2tzIiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjoxMDcsImxhYmVsQWxpZ24iOiJzdGFydCIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlLCJzdGVwIjozfSx7ImlkIjoicGljIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoiZGlhbW9uZCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoic29saWQiLCJnZW9tIjp7ImN4IjozNTQuNSwiY3kiOjc1NiwidyI6MjQxLCJoIjoxODB9LCJzZWVkIjo4NjE2NjE0MSwiaW5rIjoiI2YwZjBmMCIsInRleHRXcmFwIjoiYmFsYW5jZSIsImxhYmVsIjoiQSBwaWN0dXJlIGJlc2lkZSB0aGUgd29yZHM/IiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjoxMDIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlfSx7ImlkIjoid3JhcCIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6InJlY3QiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6MTIxLCJjeSI6OTgyLjUsInciOjE2MiwiaCI6MTEzfSwic2VlZCI6ODc2OTUyNDg5LCJpbmsiOiIjMzMwMDMzIiwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJQcmV0ZXh0IGxheXMgZWFjaCBsaW5lIGFyb3VuZCBpdHMgb3V0bGluZSIsInRleHRTaXplIjoxNCwibGFiZWxXaWR0aCI6MTIxLCJsYWJlbEFsaWduIjoic3RhcnQiLCJ0ZXh0Qm9sZCI6dHJ1ZSwibGFiZWxJbiI6dHJ1ZSwic3RlcCI6NH0seyJpZCI6ImZsb3ciLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJyZWN0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjU2OSwiY3kiOjk4Mi41LCJ3IjoxMjQsImgiOjExM30sInNlZWQiOjI2NjkyNDg0NTMsImluayI6IiMwYzUzNGQiLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IlRoZSB3b3JkcyBmbG93IGluIHBsYWluIGxpbmVzIiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjoxMDMsImxhYmVsQWxpZ24iOiJzdGFydCIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlLCJzdGVwIjo1fSx7ImlkIjoic2NyZWVuIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoicmVjdCIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoic29saWQiLCJnZW9tIjp7ImN4IjozNDUsImN5IjoxMTY2LjUsInciOjE2MSwiaCI6OTV9LCJzZWVkIjozNzc0NzAzMTMwLCJpbmsiOiIjMDAyMTA0IiwidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJPbmx5IHdoYXQgaXMgb24gc2NyZWVuIGlzIGRyYXduIiwidGV4dFNpemUiOjE0LCJsYWJlbFdpZHRoIjoxMDksImxhYmVsQWxpZ24iOiJzdGFydCIsInRleHRCb2xkIjp0cnVlLCJsYWJlbEluIjp0cnVlLCJzdGVwIjo2fSx7ImlkIjoiZzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJhcnJvdyIsImFzRHJhd24iOmZhbHNlLCJicnVzaCI6ImluayIsInN0eWxlIjoiYXJyb3ciLCJnZW9tIjp7IngxIjozNTQuNSwieTEiOjIwMCwieDIiOjM1NC41LCJ5MiI6MjgwfSwic2VlZCI6MjQyNTIzMzU1OCwicm91dGUiOiJhdXRvIiwiYmluZCI6eyJzdGFydCI6eyJ0byI6ImZpbGUiLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6Imtlcm5lbCIsImF4IjowLjUsImF5IjowfX19LHsiaWQiOiJnMiIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6ImFycm93IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJhcnJvdyIsImdlb20iOnsieDEiOjM1NC41LCJ5MSI6MzkzLCJ4MiI6MzU0LjUsInkyIjo0NzN9LCJzZWVkIjo1ODIwODIxMzcsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJrZXJuZWwiLCJheCI6MC41LCJheSI6MX0sImVuZCI6eyJ0byI6InBhcnNlIiwiYXgiOjAuNSwiYXkiOjB9fX0seyJpZCI6ImczIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoiYXJyb3ciLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6ImFycm93IiwiZ2VvbSI6eyJ4MSI6MzU0LjUsInkxIjo1ODYsIngyIjozNTQuNSwieTIiOjY2Nn0sInNlZWQiOjI1MjM0NTE2OTQsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJwYXJzZSIsImF4IjowLjUsImF5IjoxfSwiZW5kIjp7InRvIjoicGljIiwiYXgiOjAuNSwiYXkiOjB9fX0seyJpZCI6Imc0Iiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoiYXJyb3ciLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6ImFycm93IiwiZ2VvbSI6eyJ4MSI6MjM0LCJ5MSI6NzU2LCJ4MiI6MTIxLCJ5MiI6OTI2fSwic2VlZCI6Nzk3ODI5ODUzLCJ0ZXh0V3JhcCI6ImJhbGFuY2UiLCJsYWJlbCI6IlllcyIsInRleHRTaXplIjoxMCwibGV0dGVyU3BhY2luZyI6MC4xMiwibGFiZWxXaWR0aCI6MTYwLCJsYWJlbFBvcyI6MC42NzcyMDg0ODA1NjUzNzEsInRleHRGb250IjoibW9ubyIsInRleHRDYXNlIjoidXBwZXIiLCJyb3V0ZSI6ImF1dG8iLCJiaW5kIjp7InN0YXJ0Ijp7InRvIjoicGljIiwiYXgiOjAsImF5IjowLjV9LCJlbmQiOnsidG8iOiJ3cmFwIiwiYXgiOjAuNSwiYXkiOjB9fX0seyJpZCI6Imc1Iiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoiYXJyb3ciLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6ImFycm93IiwiZ2VvbSI6eyJ4MSI6NDc1LCJ5MSI6NzU2LCJ4MiI6NTY5LCJ5MiI6OTI2fSwic2VlZCI6MjY3NjYyMTM1MywidGV4dFdyYXAiOiJiYWxhbmNlIiwibGFiZWwiOiJObyIsInRleHRTaXplIjoxMCwibGV0dGVyU3BhY2luZyI6MC4xMiwibGFiZWxXaWR0aCI6MTYwLCJsYWJlbFBvcyI6MC42NTM5NzcyNzI3MjcyNzI3LCJ0ZXh0Rm9udCI6Im1vbm8iLCJ0ZXh0Q2FzZSI6InVwcGVyIiwicm91dGUiOiJhdXRvIiwiYmluZCI6eyJzdGFydCI6eyJ0byI6InBpYyIsImF4IjoxLCJheSI6MC41fSwiZW5kIjp7InRvIjoiZmxvdyIsImF4IjowLjUsImF5IjowfX19LHsiaWQiOiJnNiIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6ImFycm93IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJhcnJvdyIsImdlb20iOnsieDEiOjEyMSwieTEiOjEwMzksIngyIjozMTguMTY2NjY2NjY2NjY2NywieTIiOjExMTl9LCJzZWVkIjoyMTgxMTg0NzYzLCJyb3V0ZSI6ImF1dG8iLCJiaW5kIjp7InN0YXJ0Ijp7InRvIjoid3JhcCIsImF4IjowLjUsImF5IjoxfSwiZW5kIjp7InRvIjoic2NyZWVuIiwiYXgiOjAuMzMzMzMzMzMzMzMzMzMzMywiYXkiOjB9fX0seyJpZCI6Imc3Iiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoiYXJyb3ciLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6ImFycm93IiwiZ2VvbSI6eyJ4MSI6NTY5LCJ5MSI6MTAzOSwieDIiOjM3MS44MzMzMzMzMzMzMzMzLCJ5MiI6MTExOX0sInNlZWQiOjMyOTQzNzcwODAsInJvdXRlIjoiYXV0byIsImJpbmQiOnsic3RhcnQiOnsidG8iOiJmbG93IiwiYXgiOjAuNSwiYXkiOjF9LCJlbmQiOnsidG8iOiJzY3JlZW4iLCJheCI6MC42NjY2NjY2NjY2NjY2NjY2LCJheSI6MH19fV0sInZpZXciOnsieCI6MzAsInkiOjMwLCJ3Ijo2MTEsImgiOjExOTR9fTwvbWV0YWRhdGE+PHN0eWxlPkBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6ZGFyayl7W2ZpbGw9IiMxMjEyMTIiXXtmaWxsOiNmYWZhZmF9W3N0cm9rZT0iIzEyMTIxMiJde3N0cm9rZTojZmFmYWZhfVtmaWxsPSIjZjBmMGYwIl17ZmlsbDojMWQxZDFkfVtmaWxsPSIjNGYzNjI2Il17ZmlsbDojYWY5MTdmfVtmaWxsPSIjMDExZjY3Il17ZmlsbDojNjA4YWRifVtmaWxsPSIjYTcyOTA2Il17ZmlsbDojZmY4MTYzfVtmaWxsPSIjMzMwMDMzIl17ZmlsbDojYTY2ZGEzfVtmaWxsPSIjMGM1MzRkIl17ZmlsbDojNmRhY2E0fVtmaWxsPSIjMDAyMTA0Il17ZmlsbDojNjk4ZTZhfVtkYXRhLXNoYXBlLWlkPSJmaWxlIl0gW2ZpbGw9IiNmZmZmZmYiXXtmaWxsOiMxMjEyMTJ9W2RhdGEtc2hhcGUtaWQ9Imtlcm5lbCJdIFtmaWxsPSIjZmZmZmZmIl17ZmlsbDojMTIxMjEyfVtkYXRhLXNoYXBlLWlkPSJwYXJzZSJdIFtmaWxsPSIjZmZmZmZmIl17ZmlsbDojMTIxMjEyfVtkYXRhLXNoYXBlLWlkPSJ3cmFwIl0gW2ZpbGw9IiNmZmZmZmYiXXtmaWxsOiMxMjEyMTJ9W2RhdGEtc2hhcGUtaWQ9ImZsb3ciXSBbZmlsbD0iI2ZmZmZmZiJde2ZpbGw6IzEyMTIxMn1bZGF0YS1zaGFwZS1pZD0ic2NyZWVuIl0gW2ZpbGw9IiNmZmZmZmYiXXtmaWxsOiMxMjEyMTJ9fTwvc3R5bGU+PGcgZGF0YS1zaGFwZS1pZD0iZmlsZSIgZGF0YS1icnVzaD0iaW5rIj48ZWxsaXBzZSBjeD0iMzU0LjUiIGN5PSIxMjAiIHJ4PSI4Ni41IiByeT0iODAiIGZpbGw9IiM0ZjM2MjYiIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik0zNDMuOTQgOTAuMjA3TDM1MC4xIDc4Ljk4N0wzNTEuODYgNzkuMDc1TDM0NS43IDkwLjI5NVpNMzQ3LjkgOTIuODAzUTM0Ni4yMDYgOTIuODAzIDM0NC45NTIgOTEuODEzUTM0My43MiA5MC44MjMgMzQzLjA2IDg4Ljk5N1EzNDIuNCA4Ny4xNzEgMzQyLjQgODQuNjYzUTM0Mi40IDgyLjEzMyAzNDMuMDYgODAuMzA3UTM0My43MiA3OC40ODEgMzQ0Ljk1MiA3Ny40OTFRMzQ2LjIwNiA3Ni40NzkgMzQ3LjkgNzYuNDc5UTM0OS42MTYgNzYuNDc5IDM1MC44NDggNzcuNDkxUTM1Mi4wOCA3OC40ODEgMzUyLjc0IDgwLjMwN1EzNTMuNCA4Mi4xMzMgMzUzLjQgODQuNjYzUTM1My40IDg3LjE3MSAzNTIuNzQgODguOTk3UTM1Mi4wOCA5MC44MjMgMzUwLjg0OCA5MS44MTNRMzQ5LjYxNiA5Mi44MDMgMzQ3LjkgOTIuODAzWk0zNDcuOSA5MC45NTVRMzQ5IDkwLjk1NSAzNDkuNzkyIDkwLjE4NVEzNTAuNTYyIDg5LjQxNSAzNTAuOTggODguMDA3UTM1MS40MiA4Ni41NzcgMzUxLjQyIDg0LjY2M1EzNTEuNDIgODIuNzA1IDM1MC45OCA4MS4yNzVRMzUwLjU2MiA3OS44NjcgMzQ5Ljc5MiA3OS4wOTdRMzQ5IDc4LjMyNyAzNDcuOSA3OC4zMjdRMzQ2LjgyMiA3OC4zMjcgMzQ2LjAzIDc5LjA5N1EzNDUuMjM4IDc5Ljg2NyAzNDQuODIgODEuMjc1UTM0NC4zOCA4Mi43MDUgMzQ0LjM4IDg0LjY2M1EzNDQuMzggODYuNTc3IDM0NC44MiA4OC4wMDdRMzQ1LjIzOCA4OS40MTUgMzQ2LjAzIDkwLjE4NVEzNDYuODIyIDkwLjk1NSAzNDcuOSA5MC45NTVaTTM2MC43NDggOTIuNDUxTDM2MC43NDggODAuODc5TDM1Ni42NTYgODAuODc5TDM1Ni42NTYgNzkuMjUxTDM1OC43NjggNzkuMjUxUTM1OS42MDQgNzkuMjUxIDM2MC4xMzIgNzkuMDA5UTM2MC42MzggNzguNzY3IDM2MC44OCA3OC4yMzlRMzYxLjEgNzcuNzExIDM2MS4xIDc2LjgzMUwzNjIuNjQgNzYuODMxTDM2Mi42NCA5Mi40NTFaTTM1NS44MiA5Mi40NTFMMzU1LjgyIDkwLjYwM0wzNjYuMzggOTAuNjAzTDM2Ni4zOCA5Mi40NTFaIiBmaWxsPSIjZmZmZmZmIi8+PHRleHQgeD0iMzM4LjkyMSIgeT0iMTE3LjciIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iI2ZmZmZmZiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMzEuMTU4IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPllvdXI8L3RleHQ+PHRleHQgeD0iMzE5LjQxIiB5PSIxMzUuNyIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjZmZmZmZmIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI3MC4xNzkiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+TWFya2Rvd248L3RleHQ+PHRleHQgeD0iMzQzLjU4IiB5PSIxNTMuNyIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjZmZmZmZmIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSIyMS44NCIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5maWxlPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJrZXJuZWwiIGRhdGEtYnJ1c2g9ImluayI+PHJlY3QgeD0iMjkyLjUiIHk9IjI4MCIgd2lkdGg9IjEyNCIgaGVpZ2h0PSIxMTMiIGZpbGw9IiMwMTFmNjciIHN0cm9rZT0ibm9uZSIvPjxwYXRoIGQ9Ik0zMDguODIgMzA2Ljc3NkwzMTQuOTggMjk1LjU1NkwzMTYuNzQgMjk1LjY0NEwzMTAuNTggMzA2Ljg2NFpNMzEyLjc4IDMwOS4zNzJRMzExLjA4NiAzMDkuMzcyIDMwOS44MzIgMzA4LjM4MlEzMDguNiAzMDcuMzkyIDMwNy45NCAzMDUuNTY2UTMwNy4yOCAzMDMuNzQgMzA3LjI4IDMwMS4yMzJRMzA3LjI4IDI5OC43MDIgMzA3Ljk0IDI5Ni44NzZRMzA4LjYgMjk1LjA1IDMwOS44MzIgMjk0LjA2UTMxMS4wODYgMjkzLjA0OCAzMTIuNzggMjkzLjA0OFEzMTQuNDk2IDI5My4wNDggMzE1LjcyOCAyOTQuMDZRMzE2Ljk2IDI5NS4wNSAzMTcuNjIgMjk2Ljg3NlEzMTguMjggMjk4LjcwMiAzMTguMjggMzAxLjIzMlEzMTguMjggMzAzLjc0IDMxNy42MiAzMDUuNTY2UTMxNi45NiAzMDcuMzkyIDMxNS43MjggMzA4LjM4MlEzMTQuNDk2IDMwOS4zNzIgMzEyLjc4IDMwOS4zNzJaTTMxMi43OCAzMDcuNTI0UTMxMy44OCAzMDcuNTI0IDMxNC42NzIgMzA2Ljc1NFEzMTUuNDQyIDMwNS45ODQgMzE1Ljg2IDMwNC41NzZRMzE2LjMgMzAzLjE0NiAzMTYuMyAzMDEuMjMyUTMxNi4zIDI5OS4yNzQgMzE1Ljg2IDI5Ny44NDRRMzE1LjQ0MiAyOTYuNDM2IDMxNC42NzIgMjk1LjY2NlEzMTMuODggMjk0Ljg5NiAzMTIuNzggMjk0Ljg5NlEzMTEuNzAyIDI5NC44OTYgMzEwLjkxIDI5NS42NjZRMzEwLjExOCAyOTYuNDM2IDMwOS43IDI5Ny44NDRRMzA5LjI2IDI5OS4yNzQgMzA5LjI2IDMwMS4yMzJRMzA5LjI2IDMwMy4xNDYgMzA5LjcgMzA0LjU3NlEzMTAuMTE4IDMwNS45ODQgMzEwLjkxIDMwNi43NTRRMzExLjcwMiAzMDcuNTI0IDMxMi43OCAzMDcuNTI0Wk0zMjAuNDggMzA5LjAyUTMyMC40OCAzMDcuMzcgMzIxLjAwOCAzMDYuMDI4UTMyMS41MTQgMzA0LjcwOCAzMjIuODEyIDMwMy40OThRMzI0LjEzMiAzMDIuMjg4IDMyNi40NjQgMzAxLjA1NlEzMjcuNTQyIDMwMC40ODQgMzI4LjIwMiAzMDBRMzI4Ljg2MiAyOTkuNTE2IDMyOS4xNyAyOTguOTY2UTMyOS40NzggMjk4LjQxNiAzMjkuNDc4IDI5Ny42MjRRMzI5LjQ3OCAyOTYuODEgMzI5LjEyNiAyOTYuMjE2UTMyOC43NzQgMjk1LjYgMzI4LjA5MiAyOTUuMjQ4UTMyNy4zODggMjk0Ljg5NiAzMjYuMzU0IDI5NC44OTZRMzI0LjcwNCAyOTQuODk2IDMyMy43MzYgMjk1Ljc1NFEzMjIuNzkgMjk2LjYxMiAzMjIuNTQ4IDI5OC4xOTZMMzIwLjU2OCAyOTguMDY0UTMyMC44MzIgMjk1Ljc3NiAzMjIuMzI4IDI5NC40MTJRMzIzLjgyNCAyOTMuMDQ4IDMyNi4zNTQgMjkzLjA0OFEzMjcuOTYgMjkzLjA0OCAzMjkuMTA0IDI5My42MlEzMzAuMjQ4IDI5NC4xOTIgMzMwLjg2NCAyOTUuMjA0UTMzMS40NTggMjk2LjIzOCAzMzEuNDU4IDI5Ny41OFEzMzEuNDU4IDI5OC43NjggMzMxLjA2MiAyOTkuNjQ4UTMzMC42NjYgMzAwLjUwNiAzMjkuNzIgMzAxLjI1NFEzMjguNzk2IDMwMi4wMDIgMzI3LjE2OCAzMDIuODZRMzI1Ljc2IDMwMy42MDggMzI0Ljc5MiAzMDQuMzc4UTMyMy44NDYgMzA1LjE0OCAzMjMuMzQgMzA1Ljg1MlEzMjIuODU2IDMwNi41NzggMzIyLjgxMiAzMDcuMTcyTDMzMS40OCAzMDcuMTcyTDMzMS40OCAzMDkuMDJaIiBmaWxsPSIjZmZmZmZmIi8+PHRleHQgeD0iMzA2LjE4IiB5PSIzMzQuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjZmZmZmZmIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI3MS4zNDQiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+VGhlIGtlcm5lbDwvdGV4dD48dGV4dCB4PSIzMDYuMTgiIHk9IjM1Mi4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjY1LjUyIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPmtlZXBzIHRoZTwvdGV4dD48dGV4dCB4PSIzMDYuMTgiIHk9IjM3MC4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjY5LjMwNiIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5leGFjdCB0ZXh0PC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJwYXJzZSIgZGF0YS1icnVzaD0iaW5rIj48cmVjdCB4PSIyOTEuNSIgeT0iNDczIiB3aWR0aD0iMTI2IiBoZWlnaHQ9IjExMyIgZmlsbD0iI2E3MjkwNiIgc3Ryb2tlPSJub25lIi8+PHBhdGggZD0iTTMwNy44MiA0OTkuNzc2TDMxMy45OCA0ODguNTU2TDMxNS43NCA0ODguNjQ0TDMwOS41OCA0OTkuODY0Wk0zMTEuNzggNTAyLjM3MlEzMTAuMDg2IDUwMi4zNzIgMzA4LjgzMiA1MDEuMzgyUTMwNy42IDUwMC4zOTIgMzA2Ljk0IDQ5OC41NjZRMzA2LjI4IDQ5Ni43NCAzMDYuMjggNDk0LjIzMlEzMDYuMjggNDkxLjcwMiAzMDYuOTQgNDg5Ljg3NlEzMDcuNiA0ODguMDUgMzA4LjgzMiA0ODcuMDZRMzEwLjA4NiA0ODYuMDQ4IDMxMS43OCA0ODYuMDQ4UTMxMy40OTYgNDg2LjA0OCAzMTQuNzI4IDQ4Ny4wNlEzMTUuOTYgNDg4LjA1IDMxNi42MiA0ODkuODc2UTMxNy4yOCA0OTEuNzAyIDMxNy4yOCA0OTQuMjMyUTMxNy4yOCA0OTYuNzQgMzE2LjYyIDQ5OC41NjZRMzE1Ljk2IDUwMC4zOTIgMzE0LjcyOCA1MDEuMzgyUTMxMy40OTYgNTAyLjM3MiAzMTEuNzggNTAyLjM3MlpNMzExLjc4IDUwMC41MjRRMzEyLjg4IDUwMC41MjQgMzEzLjY3MiA0OTkuNzU0UTMxNC40NDIgNDk4Ljk4NCAzMTQuODYgNDk3LjU3NlEzMTUuMyA0OTYuMTQ2IDMxNS4zIDQ5NC4yMzJRMzE1LjMgNDkyLjI3NCAzMTQuODYgNDkwLjg0NFEzMTQuNDQyIDQ4OS40MzYgMzEzLjY3MiA0ODguNjY2UTMxMi44OCA0ODcuODk2IDMxMS43OCA0ODcuODk2UTMxMC43MDIgNDg3Ljg5NiAzMDkuOTEgNDg4LjY2NlEzMDkuMTE4IDQ4OS40MzYgMzA4LjcgNDkwLjg0NFEzMDguMjYgNDkyLjI3NCAzMDguMjYgNDk0LjIzMlEzMDguMjYgNDk2LjE0NiAzMDguNyA0OTcuNTc2UTMwOS4xMTggNDk4Ljk4NCAzMDkuOTEgNDk5Ljc1NFEzMTAuNzAyIDUwMC41MjQgMzExLjc4IDUwMC41MjRaTTMyNC44NDggNTAyLjM3MlEzMjIuMzE4IDUwMi4zNzIgMzIwLjk1NCA1MDEuMTRRMzE5LjU5IDQ5OS45MyAzMTkuNDggNDk3Ljk5NEwzMjEuNDM4IDQ5Ny44NjJRMzIxLjU3IDQ5OS4yOTIgMzIyLjUxNiA0OTkuOTA4UTMyMy40NCA1MDAuNTI0IDMyNC44NDggNTAwLjUyNFEzMjUuNzk0IDUwMC41MjQgMzI2LjYzIDUwMC4yNlEzMjcuNDY2IDQ5OS45NzQgMzI3Ljk3MiA0OTkuMzM2UTMyOC41IDQ5OC43MiAzMjguNSA0OTcuNjY0UTMyOC41IDQ5Ni42MyAzMjguMDM4IDQ5NS45NDhRMzI3LjU3NiA0OTUuMjg4IDMyNi43ODQgNDk0Ljk4UTMyNS45NyA0OTQuNjUgMzI0Ljk1OCA0OTQuNjVMMzIzLjcyNiA0OTQuNjVMMzIzLjcyNiA0OTIuODAyTDMyNC45NTggNDkyLjgwMlEzMjUuNzcyIDQ5Mi44MDIgMzI2LjQ1NCA0OTIuNTZRMzI3LjEzNiA0OTIuMzE4IDMyNy41MzIgNDkxLjc2OFEzMjcuOTUgNDkxLjI0IDMyNy45NSA0OTAuMzZRMzI3Ljk1IDQ4OS4xNSAzMjcuMTggNDg4LjUxMlEzMjYuNDEgNDg3Ljg5NiAzMjQuOTU4IDQ4Ny44OTZRMzIzLjQ4NCA0ODcuODk2IDMyMi43MzYgNDg4LjQ5UTMyMS45NjYgNDg5LjA4NCAzMjEuODEyIDQ5MC4xMThMMzE5LjgzMiA0ODkuOTg2UTMyMC4wNTIgNDg4LjIyNiAzMjEuMzcyIDQ4Ny4xNDhRMzIyLjY5MiA0ODYuMDQ4IDMyNC45NTggNDg2LjA0OFEzMjYuNDc2IDQ4Ni4wNDggMzI3LjU5OCA0ODYuNTc2UTMyOC43MiA0ODcuMDgyIDMyOS4zMzYgNDg4LjAyOFEzMjkuOTMgNDg4Ljk3NCAzMjkuOTMgNDkwLjI3MlEzMjkuOTMgNDkxLjcyNCAzMjkuMDI4IDQ5Mi42MDRRMzI4LjEwNCA0OTMuNTA2IDMyNi4zMjIgNDkzLjgzNkwzMjYuMzIyIDQ5My40NFEzMjguMjM2IDQ5My42NiAzMjkuMzU4IDQ5NC44MDRRMzMwLjQ4IDQ5NS45NDggMzMwLjQ4IDQ5Ny42NjRRMzMwLjQ4IDQ5OS4xNiAzMjkuNzU0IDUwMC4yMTZRMzI5LjAyOCA1MDEuMjcyIDMyNy43NTIgNTAxLjgyMlEzMjYuNDc2IDUwMi4zNzIgMzI0Ljg0OCA1MDIuMzcyWiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjMwNS4xOCIgeT0iNTI3LjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iI2ZmZmZmZiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNzMuMDkxIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPlRoZSBwYXJzZXI8L3RleHQ+PHRleHQgeD0iMzA1LjE4IiB5PSI1NDUuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjZmZmZmZmIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI1Mi4xMjUiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+c3BsaXRzIGl0PC90ZXh0Pjx0ZXh0IHg9IjMwNS4xOCIgeT0iNTYzLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iI2ZmZmZmZiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNzMuNjc0IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPmludG8gYmxvY2tzPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJwaWMiIGRhdGEtYnJ1c2g9ImluayI+PHBvbHlnb24gcG9pbnRzPSIzNTQuNSw2NjYgNDc1LDc1NiAzNTQuNSw4NDYgMjM0LDc1NiIgZmlsbD0iI2YwZjBmMCIgc3Ryb2tlPSJub25lIi8+PHRleHQgeD0iMzIzLjc3OCIgeT0iNzQyLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzEyMTIxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNjEuNDQzIiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPkEgcGljdHVyZTwvdGV4dD48dGV4dCB4PSIzMzIuODA2IiB5PSI3NjAuMiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0TGVuZ3RoPSI0My4zODkiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+YmVzaWRlPC90ZXh0Pjx0ZXh0IHg9IjMxNi40OTgiIHk9Ijc3OC4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9Ijc2LjAwMyIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj50aGUgd29yZHM/PC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJ3cmFwIiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjQwIiB5PSI5MjYiIHdpZHRoPSIxNjIiIGhlaWdodD0iMTEzIiBmaWxsPSIjMzMwMDMzIiBzdHJva2U9Im5vbmUiLz48cGF0aCBkPSJNNTYuMzIgOTUyLjc3Nkw2Mi40OCA5NDEuNTU2TDY0LjI0IDk0MS42NDRMNTguMDggOTUyLjg2NFpNNjAuMjggOTU1LjM3MlE1OC41ODYgOTU1LjM3MiA1Ny4zMzIgOTU0LjM4MlE1Ni4xIDk1My4zOTIgNTUuNDQgOTUxLjU2NlE1NC43OCA5NDkuNzQgNTQuNzggOTQ3LjIzMlE1NC43OCA5NDQuNzAyIDU1LjQ0IDk0Mi44NzZRNTYuMSA5NDEuMDUgNTcuMzMyIDk0MC4wNlE1OC41ODYgOTM5LjA0OCA2MC4yOCA5MzkuMDQ4UTYxLjk5NiA5MzkuMDQ4IDYzLjIyOCA5NDAuMDZRNjQuNDYgOTQxLjA1IDY1LjEyIDk0Mi44NzZRNjUuNzggOTQ0LjcwMiA2NS43OCA5NDcuMjMyUTY1Ljc4IDk0OS43NCA2NS4xMiA5NTEuNTY2UTY0LjQ2IDk1My4zOTIgNjMuMjI4IDk1NC4zODJRNjEuOTk2IDk1NS4zNzIgNjAuMjggOTU1LjM3MlpNNjAuMjggOTUzLjUyNFE2MS4zOCA5NTMuNTI0IDYyLjE3MiA5NTIuNzU0UTYyLjk0MiA5NTEuOTg0IDYzLjM2IDk1MC41NzZRNjMuOCA5NDkuMTQ2IDYzLjggOTQ3LjIzMlE2My44IDk0NS4yNzQgNjMuMzYgOTQzLjg0NFE2Mi45NDIgOTQyLjQzNiA2Mi4xNzIgOTQxLjY2NlE2MS4zOCA5NDAuODk2IDYwLjI4IDk0MC44OTZRNTkuMjAyIDk0MC44OTYgNTguNDEgOTQxLjY2NlE1Ny42MTggOTQyLjQzNiA1Ny4yIDk0My44NDRRNTYuNzYgOTQ1LjI3NCA1Ni43NiA5NDcuMjMyUTU2Ljc2IDk0OS4xNDYgNTcuMiA5NTAuNTc2UTU3LjYxOCA5NTEuOTg0IDU4LjQxIDk1Mi43NTRRNTkuMjAyIDk1My41MjQgNjAuMjggOTUzLjUyNFpNNzUuNDE2IDk1NS4wMkw3NS40MTYgOTUxLjYzMkw2Ny43NiA5NTEuNjMyTDY3Ljc2IDk0OS45MTZMNzUuMjg0IDkzOS40TDc3LjMwOCA5MzkuNEw3Ny4zMDggOTQ5Ljc4NEw3OS4yIDk0OS43ODRMNzkuMiA5NTEuNjMyTDc3LjMwOCA5NTEuNjMyTDc3LjMwOCA5NTUuMDJaTTY5LjY5NiA5NDkuNzg0TDc1LjQxNiA5NDkuNzg0TDc1LjQxNiA5NDIuMDRaIiBmaWxsPSIjZmZmZmZmIi8+PHRleHQgeD0iNTMuNjgiIHk9Ijk4MC4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjgyLjk5MiIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5QcmV0ZXh0IGxheXM8L3RleHQ+PHRleHQgeD0iNTMuNjgiIHk9Ijk5OC4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjEwOS43ODIiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+ZWFjaCBsaW5lIGFyb3VuZDwvdGV4dD48dGV4dCB4PSI1My42OCIgeT0iMTAxNi4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjY3Ljg1IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPml0cyBvdXRsaW5lPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJmbG93IiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjUwNyIgeT0iOTI2IiB3aWR0aD0iMTI0IiBoZWlnaHQ9IjExMyIgZmlsbD0iIzBjNTM0ZCIgc3Ryb2tlPSJub25lIi8+PHBhdGggZD0iTTUyMy4zMiA5NTIuNzc2TDUyOS40OCA5NDEuNTU2TDUzMS4yNCA5NDEuNjQ0TDUyNS4wOCA5NTIuODY0Wk01MjcuMjggOTU1LjM3MlE1MjUuNTg2IDk1NS4zNzIgNTI0LjMzMiA5NTQuMzgyUTUyMy4xIDk1My4zOTIgNTIyLjQ0IDk1MS41NjZRNTIxLjc4IDk0OS43NCA1MjEuNzggOTQ3LjIzMlE1MjEuNzggOTQ0LjcwMiA1MjIuNDQgOTQyLjg3NlE1MjMuMSA5NDEuMDUgNTI0LjMzMiA5NDAuMDZRNTI1LjU4NiA5MzkuMDQ4IDUyNy4yOCA5MzkuMDQ4UTUyOC45OTYgOTM5LjA0OCA1MzAuMjI4IDk0MC4wNlE1MzEuNDYgOTQxLjA1IDUzMi4xMiA5NDIuODc2UTUzMi43OCA5NDQuNzAyIDUzMi43OCA5NDcuMjMyUTUzMi43OCA5NDkuNzQgNTMyLjEyIDk1MS41NjZRNTMxLjQ2IDk1My4zOTIgNTMwLjIyOCA5NTQuMzgyUTUyOC45OTYgOTU1LjM3MiA1MjcuMjggOTU1LjM3MlpNNTI3LjI4IDk1My41MjRRNTI4LjM4IDk1My41MjQgNTI5LjE3MiA5NTIuNzU0UTUyOS45NDIgOTUxLjk4NCA1MzAuMzYgOTUwLjU3NlE1MzAuOCA5NDkuMTQ2IDUzMC44IDk0Ny4yMzJRNTMwLjggOTQ1LjI3NCA1MzAuMzYgOTQzLjg0NFE1MjkuOTQyIDk0Mi40MzYgNTI5LjE3MiA5NDEuNjY2UTUyOC4zOCA5NDAuODk2IDUyNy4yOCA5NDAuODk2UTUyNi4yMDIgOTQwLjg5NiA1MjUuNDEgOTQxLjY2NlE1MjQuNjE4IDk0Mi40MzYgNTI0LjIgOTQzLjg0NFE1MjMuNzYgOTQ1LjI3NCA1MjMuNzYgOTQ3LjIzMlE1MjMuNzYgOTQ5LjE0NiA1MjQuMiA5NTAuNTc2UTUyNC42MTggOTUxLjk4NCA1MjUuNDEgOTUyLjc1NFE1MjYuMjAyIDk1My41MjQgNTI3LjI4IDk1My41MjRaTTU0MC40MzYgOTU1LjM3MlE1MzguOTE4IDk1NS4zNzIgNTM3Ljc5NiA5NTQuODIyUTUzNi42NTIgOTU0LjI3MiA1MzUuOTkyIDk1My4yODJRNTM1LjMxIDk1Mi4yOTIgNTM1LjIgOTUwLjk5NEw1MzcuMTggOTUwLjg2MlE1MzcuMzU2IDk1Mi4xODIgNTM4LjIzNiA5NTIuODY0UTUzOS4wOTQgOTUzLjUyNCA1NDAuNDM2IDk1My41MjRRNTQxLjk1NCA5NTMuNTI0IDU0Mi44NTYgOTUyLjZRNTQzLjc4IDk1MS42NTQgNTQzLjc4IDk1MC4wMDRRNTQzLjc4IDk0OC45MDQgNTQzLjM4NCA5NDguMTEyUTU0Mi45ODggOTQ3LjI5OCA1NDIuMjQgOTQ2Ljg4UTU0MS41MTQgOTQ2LjQ0IDU0MC40OCA5NDYuNDRRNTM5LjU1NiA5NDYuNDQgNTM4LjcyIDk0Ni44OFE1MzcuODYyIDk0Ny4zNDIgNTM3LjQ4OCA5NDguMTc4TDUzNS40NjQgOTQ4LjE3OEw1MzYuNDk4IDkzOS40TDU0NC44MTQgOTM5LjRMNTQ0LjgxNCA5NDEuMjQ4TDUzOC4yMzYgOTQxLjI0OEw1MzcuNTMyIDk0Ny4wMTJMNTM3LjE4IDk0Ni42NlE1MzcuNTMyIDk0NS45NzggNTM4LjEwNCA5NDUuNTM4UTUzOC42NzYgOTQ1LjA5OCA1MzkuMzggOTQ0Ljg1NlE1NDAuMDYyIDk0NC42MzYgNTQwLjc0NCA5NDQuNjM2UTU0Mi4yNCA5NDQuNjM2IDU0My4zODQgOTQ1LjM0UTU0NC41MDYgOTQ2LjAyMiA1NDUuMTQ0IDk0Ny4yMzJRNTQ1Ljc2IDk0OC40NDIgNTQ1Ljc2IDk1MC4wMDRRNTQ1Ljc2IDk1MS41NjYgNTQ1LjA3OCA5NTIuNzc2UTU0NC4zOTYgOTU0LjAwOCA1NDMuMjA4IDk1NC42OVE1NDEuOTk4IDk1NS4zNzIgNTQwLjQzNiA5NTUuMzcyWiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjUyMC42OCIgeT0iOTgwLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iI2ZmZmZmZiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iNzEuOTI2IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPlRoZSB3b3JkczwvdGV4dD48dGV4dCB4PSI1MjAuNjgiIHk9Ijk5OC4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjQ2Ljg4MyIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5mbG93IGluPC90ZXh0Pjx0ZXh0IHg9IjUyMC42OCIgeT0iMTAxNi4yIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmZmZmYiIHhtbDpzcGFjZT0icHJlc2VydmUiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHRMZW5ndGg9IjY4LjE0MSIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5wbGFpbiBsaW5lczwvdGV4dD48L2c+PGcgZGF0YS1zaGFwZS1pZD0ic2NyZWVuIiBkYXRhLWJydXNoPSJpbmsiPjxyZWN0IHg9IjI2NC41IiB5PSIxMTE5IiB3aWR0aD0iMTYxIiBoZWlnaHQ9Ijk1IiBmaWxsPSIjMDAyMTA0IiBzdHJva2U9Im5vbmUiLz48cGF0aCBkPSJNMjgwLjgyIDExNDUuNzc2TDI4Ni45OCAxMTM0LjU1NkwyODguNzQgMTEzNC42NDRMMjgyLjU4IDExNDUuODY0Wk0yODQuNzggMTE0OC4zNzJRMjgzLjA4NiAxMTQ4LjM3MiAyODEuODMyIDExNDcuMzgyUTI4MC42IDExNDYuMzkyIDI3OS45NCAxMTQ0LjU2NlEyNzkuMjggMTE0Mi43NCAyNzkuMjggMTE0MC4yMzJRMjc5LjI4IDExMzcuNzAyIDI3OS45NCAxMTM1Ljg3NlEyODAuNiAxMTM0LjA1IDI4MS44MzIgMTEzMy4wNlEyODMuMDg2IDExMzIuMDQ4IDI4NC43OCAxMTMyLjA0OFEyODYuNDk2IDExMzIuMDQ4IDI4Ny43MjggMTEzMy4wNlEyODguOTYgMTEzNC4wNSAyODkuNjIgMTEzNS44NzZRMjkwLjI4IDExMzcuNzAyIDI5MC4yOCAxMTQwLjIzMlEyOTAuMjggMTE0Mi43NCAyODkuNjIgMTE0NC41NjZRMjg4Ljk2IDExNDYuMzkyIDI4Ny43MjggMTE0Ny4zODJRMjg2LjQ5NiAxMTQ4LjM3MiAyODQuNzggMTE0OC4zNzJaTTI4NC43OCAxMTQ2LjUyNFEyODUuODggMTE0Ni41MjQgMjg2LjY3MiAxMTQ1Ljc1NFEyODcuNDQyIDExNDQuOTg0IDI4Ny44NiAxMTQzLjU3NlEyODguMyAxMTQyLjE0NiAyODguMyAxMTQwLjIzMlEyODguMyAxMTM4LjI3NCAyODcuODYgMTEzNi44NDRRMjg3LjQ0MiAxMTM1LjQzNiAyODYuNjcyIDExMzQuNjY2UTI4NS44OCAxMTMzLjg5NiAyODQuNzggMTEzMy44OTZRMjgzLjcwMiAxMTMzLjg5NiAyODIuOTEgMTEzNC42NjZRMjgyLjExOCAxMTM1LjQzNiAyODEuNyAxMTM2Ljg0NFEyODEuMjYgMTEzOC4yNzQgMjgxLjI2IDExNDAuMjMyUTI4MS4yNiAxMTQyLjE0NiAyODEuNyAxMTQzLjU3NlEyODIuMTE4IDExNDQuOTg0IDI4Mi45MSAxMTQ1Ljc1NFEyODMuNzAyIDExNDYuNTI0IDI4NC43OCAxMTQ2LjUyNFpNMjk4LjAyNCAxMTQ4LjM3MlEyOTYuMjY0IDExNDguMzcyIDI5NS4wMzIgMTE0Ny41OFEyOTMuNzc4IDExNDYuNzY2IDI5My4xNCAxMTQ1LjIwNFEyOTIuNDggMTE0My42NDIgMjkyLjQ4IDExNDEuNDJRMjkyLjQ4IDExMzkuNDg0IDI5Mi43ODggMTEzNy43OVEyOTMuMTE4IDExMzYuMDk2IDI5My44NDQgMTEzNC44MlEyOTQuNTQ4IDExMzMuNTIyIDI5NS43MzYgMTEzMi43OTZRMjk2LjkwMiAxMTMyLjA0OCAyOTguNjQgMTEzMi4wNDhRMzAwLjAyNiAxMTMyLjA0OCAzMDAuOTk0IDExMzIuNTFRMzAxLjk2MiAxMTMyLjk3MiAzMDIuNTU2IDExMzMuODA4UTMwMy4xNzIgMTEzNC42NDQgMzAzLjQ4IDExMzUuNzQ0TDMwMS41IDExMzUuOTJRMzAxLjIzNiAxMTM0Ljk5NiAzMDAuNTc2IDExMzQuNDQ2UTI5OS45MzggMTEzMy44OTYgMjk4LjY0IDExMzMuODk2UTI5Ny4zNDIgMTEzMy44OTYgMjk2LjQxOCAxMTM0LjY0NFEyOTUuNDk0IDExMzUuMzcgMjk0Ljk4OCAxMTM2Ljg0NFEyOTQuNDYgMTEzOC4zMTggMjk0LjQxNiAxMTQwLjU0TDI5NC4wMiAxMTQwLjQ1MlEyOTQuMjYyIDExMzkuNjYgMjk0Ljg1NiAxMTM5UTI5NS40NzIgMTEzOC4zMTggMjk2LjM1MiAxMTM3LjlRMjk3LjI1NCAxMTM3LjUwNCAyOTguMzc2IDExMzcuNTA0UTI5OS45MTYgMTEzNy41MDQgMzAxLjA2IDExMzguMTY0UTMwMi4yMDQgMTEzOC44MjQgMzAyLjg0MiAxMTQwLjAxMlEzMDMuNDggMTE0MS4yMjIgMzAzLjQ4IDExNDIuODI4UTMwMy40OCAxMTQ0LjU0NCAzMDIuNzc2IDExNDUuNzc2UTMwMi4wOTQgMTE0Ny4wMyAzMDAuODg0IDExNDcuNzEyUTI5OS42NTIgMTE0OC4zNzIgMjk4LjAyNCAxMTQ4LjM3MlpNMjk4LjA2OCAxMTQ2LjUyNFEyOTkuNjA4IDExNDYuNTI0IDMwMC41NTQgMTE0NS41NTZRMzAxLjUgMTE0NC41NjYgMzAxLjUgMTE0Mi44MjhRMzAxLjUgMTE0MS4yIDMwMC42MiAxMTQwLjI1NFEyOTkuNzE4IDExMzkuMzA4IDI5OC4yNDQgMTEzOS4zMDhRMjk3LjE4OCAxMTM5LjMwOCAyOTYuMzUyIDExMzkuNzQ4UTI5NS41MTYgMTE0MC4xNjYgMjk1LjAzMiAxMTQwLjk1OFEyOTQuNTQ4IDExNDEuNzUgMjk0LjU0OCAxMTQyLjgyOFEyOTQuNTQ4IDExNDMuOTA2IDI5NC45ODggMTE0NC43NDJRMjk1LjQwNiAxMTQ1LjU3OCAyOTYuMTk4IDExNDYuMDRRMjk2Ljk5IDExNDYuNTI0IDI5OC4wNjggMTE0Ni41MjRaIiBmaWxsPSIjZmZmZmZmIi8+PHRleHQgeD0iMjc4LjE4IiB5PSIxMTczLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iI2ZmZmZmZiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMTA1LjEyMyIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5Pbmx5IHdoYXQgaXMgb248L3RleHQ+PHRleHQgeD0iMjc4LjE4IiB5PSIxMTkxLjIiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iI2ZmZmZmZiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZm9udC13ZWlnaHQ9IjcwMCIgdGV4dExlbmd0aD0iMTA4LjMyNiIgbGVuZ3RoQWRqdXN0PSJzcGFjaW5nQW5kR2x5cGhzIj5zY3JlZW4gaXMgZHJhd248L3RleHQ+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImcxIiBkYXRhLWJydXNoPSJpbmsiPjxwYXRoIGQ9Ik0zNTQuNSAyMDBMMzU0LjUgMjY2IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI2NiIvPjxwb2x5Z29uIHBvaW50cz0iMzQ5LjUsMjY2IDM1NC41LDI4MCAzNTkuNSwyNjYiIGZpbGw9IiMxMjEyMTIiIHN0cm9rZT0ibm9uZSIvPjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJnMiIgZGF0YS1icnVzaD0iaW5rIj48cGF0aCBkPSJNMzU0LjUgMzkzTDM1NC41IDQ1OSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iNjYiLz48cG9seWdvbiBwb2ludHM9IjM0OS41LDQ1OSAzNTQuNSw0NzMgMzU5LjUsNDU5IiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzMiIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTM1NC41IDU4NkwzNTQuNSA2NTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHBhdGhMZW5ndGg9IjY2Ii8+PHBvbHlnb24gcG9pbnRzPSIzNDkuNSw2NTIgMzU0LjUsNjY2IDM1OS41LDY1MiIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9Imc0IiBkYXRhLWJydXNoPSJpbmsiPjxwYXRoIGQ9Ik0yMzQgNzU2TDE0Mi4zIDc1NkwxMjEgNzU2TDEyMSA4MTcuODUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHBhdGhMZW5ndGg9IjE3NC44NSIvPjxwYXRoIGQ9Ik0xMjEgODUxLjQ1TDEyMSA5MTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEyMTIxMiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHBhdGhMZW5ndGg9IjYwLjU1Ii8+PHBvbHlnb24gcG9pbnRzPSIxMTYsOTEyIDEyMSw5MjYgMTI2LDkxMiIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PHRleHQgeD0iMTEwLjIiIHk9IjgzNy42NSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSxtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiMxMjEyMTIiIHhtbDpzcGFjZT0icHJlc2VydmUiIGxldHRlci1zcGFjaW5nPSIwLjEyZW0iIHRleHRMZW5ndGg9IjIxLjYiIGxlbmd0aEFkanVzdD0ic3BhY2luZ0FuZEdseXBocyI+WUVTPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJnNSIgZGF0YS1icnVzaD0iaW5rIj48cGF0aCBkPSJNNDc1IDc1Nkw1NTEuMyA3NTZMNTY5IDc1Nkw1NjkgODE3Ljg1IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSIxNTUuODUiLz48cGF0aCBkPSJNNTY5IDg1MS40NUw1NjkgOTEyIiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSI2MC41NSIvPjxwb2x5Z29uIHBvaW50cz0iNTY0LDkxMiA1NjksOTI2IDU3NCw5MTIiIGZpbGw9IiMxMjEyMTIiIHN0cm9rZT0ibm9uZSIvPjx0ZXh0IHg9IjU2MS44IiB5PSI4MzcuNjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmb250LXNpemU9IjEwIiBmaWxsPSIjMTIxMjEyIiB4bWw6c3BhY2U9InByZXNlcnZlIiBsZXR0ZXItc3BhY2luZz0iMC4xMmVtIiB0ZXh0TGVuZ3RoPSIxNC40IiBsZW5ndGhBZGp1c3Q9InNwYWNpbmdBbmRHbHlwaHMiPk5PPC90ZXh0PjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJnNiIgZGF0YS1icnVzaD0iaW5rIj48cGF0aCBkPSJNMTIxIDEwMzlMMTIxIDEwOTIuNEwzMTguMTcgMTA5Mi40TDMxOC4xNyAxMTA1IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMjEyMTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBwYXRoTGVuZ3RoPSIyNjMuMTciLz48cG9seWdvbiBwb2ludHM9IjMxMy4xNywxMTA1IDMxOC4xNywxMTE5IDMyMy4xNywxMTA1IiBmaWxsPSIjMTIxMjEyIiBzdHJva2U9Im5vbmUiLz48L2c+PGcgZGF0YS1zaGFwZS1pZD0iZzciIGRhdGEtYnJ1c2g9ImluayI+PHBhdGggZD0iTTU2OSAxMDM5TDU2OSAxMDkyLjRMMzcxLjgzIDEwOTIuNEwzNzEuODMgMTEwNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTIxMjEyIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgcGF0aExlbmd0aD0iMjYzLjE3Ii8+PHBvbHlnb24gcG9pbnRzPSIzNjYuODMsMTEwNSAzNzEuODMsMTExOSAzNzYuODMsMTEwNSIgZmlsbD0iIzEyMTIxMiIgc3Ryb2tlPSJub25lIi8+PC9nPjwvc3ZnPg== \"How Rapier lays out a page: your Markdown file, the kernel, the parser, then words around a picture or in plain lines, and only what is on screen drawn\"",
 		"[clouds]: data:image/jxl;base64,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 \"Clouds in a blue sky\"",
+		"[aurora]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NDAgMzYwIiB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgY29sb3I9IiMxMjEyMTIiPjxtZXRhZGF0YSBpZD0icmFwaWVyLWRyYXciPnsidmVyc2lvbiI6MSwiY2FudmFzIjp7InciOjY0MCwiaCI6MzYwfSwic3Ryb2tlcyI6W10sInNoYXBlcyI6W3siaWQiOiJtb29uIiwic3Ryb2tlIjpudWxsLCJyZWNvZ25pemVkIjoiY2lyY2xlIiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOiJzb2xpZCIsImdlb20iOnsiY3giOjU0OCwiY3kiOjcyLCJyIjoyMn0sImluayI6IiNmM2YwZTYifSx7ImlkIjoiaGlsbCIsInN0cm9rZSI6bnVsbCwicmVjb2duaXplZCI6ImVsbGlwc2UiLCJhc0RyYXduIjpmYWxzZSwiYnJ1c2giOiJpbmsiLCJzdHlsZSI6InNvbGlkIiwiZ2VvbSI6eyJjeCI6MzIwLCJjeSI6NDAwLCJyeCI6NDIwLCJyeSI6OTB9LCJpbmsiOiIjMGEwZjFhIn1dLCJwYXBlciI6ImJsYWNrIiwiYmFja2dyb3VuZCI6eyJraW5kIjoiYXVyb3JhIiwic2VlZCI6NSwiY3VydGFpbnMiOjMsImhlaWdodCI6MC42LCJzd2F5IjowLjQsInJheXMiOjAuMiwic3RhcnMiOjAuMjUsImdsb3ciOjAuNDUsInN0b3BzIjpbeyJhdCI6MCwiY29sb3IiOiIjMTIyMDRhIn0seyJhdCI6MC42LCJjb2xvciI6IiMyYmJmOWEifSx7ImF0IjoxLCJjb2xvciI6IiNkNGY1YzUifV19LCJmcmFtZSI6eyJ4IjowLCJ5IjowLCJ3Ijo2NDAsImgiOjM2MH0sInZpZXciOnsieCI6MCwieSI6MCwidyI6NjQwLCJoIjozNjB9fTwvbWV0YWRhdGE+PHN0eWxlPkBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6ZGFyayl7W2ZpbGw9IiNmM2YwZTYiXXtmaWxsOiNmYmY4ZWR9W2ZpbGw9IiMwYTBmMWEiXXtmaWxsOiM3NTdjOGJ9fTwvc3R5bGU+PGcgZGF0YS1yYXBpZXItYmFja2dyb3VuZD0iYXVyb3JhIj48ZGVmcz48Y2xpcFBhdGggaWQ9InJhcGllci1iZy0yMm5pYmYtYyI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjY0MCIgaGVpZ2h0PSIzNjAiLz48L2NsaXBQYXRoPjxmaWx0ZXIgaWQ9InJhcGllci1iZy0yMm5pYmYtZyIgZmlsdGVyVW5pdHM9InVzZXJTcGFjZU9uVXNlIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iOC41Ii8+PC9maWx0ZXI+PGxpbmVhckdyYWRpZW50IGlkPSJyYXBpZXItYmctMjJuaWJmLWEyIiB4MT0iMCIgeTE9IjEiIHgyPSIwIiB5Mj0iMCI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZTRmZmQ4IiBzdG9wLW9wYWNpdHk9IjAuOTUiLz48c3RvcCBvZmZzZXQ9IjAuMDYiIHN0b3AtY29sb3I9IiNkNGY1YzUiIHN0b3Atb3BhY2l0eT0iMC44NSIvPjxzdG9wIG9mZnNldD0iMC4zIiBzdG9wLWNvbG9yPSIjZDRmNWM1IiBzdG9wLW9wYWNpdHk9IjAuMzUiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNkNGY1YzUiIHN0b3Atb3BhY2l0eT0iMCIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJyYXBpZXItYmctMjJuaWJmLWExIiB4MT0iMCIgeTE9IjEiIHgyPSIwIiB5Mj0iMCI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjODRkOWM1IiBzdG9wLW9wYWNpdHk9IjAuOTUiLz48c3RvcCBvZmZzZXQ9IjAuMDYiIHN0b3AtY29sb3I9IiMyN2EzOGQiIHN0b3Atb3BhY2l0eT0iMC44NSIvPjxzdG9wIG9mZnNldD0iMC4zIiBzdG9wLWNvbG9yPSIjMjdhMzhkIiBzdG9wLW9wYWNpdHk9IjAuMzUiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyN2EzOGQiIHN0b3Atb3BhY2l0eT0iMCIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJyYXBpZXItYmctMjJuaWJmLWEwIiB4MT0iMCIgeTE9IjEiIHgyPSIwIiB5Mj0iMCI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNDI1MTc2IiBzdG9wLW9wYWNpdHk9IjAuOTUiLz48c3RvcCBvZmZzZXQ9IjAuMDYiIHN0b3AtY29sb3I9IiMxMjIwNGEiIHN0b3Atb3BhY2l0eT0iMC44NSIvPjxzdG9wIG9mZnNldD0iMC4zIiBzdG9wLWNvbG9yPSIjMTIyMDRhIiBzdG9wLW9wYWNpdHk9IjAuMzUiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMxMjIwNGEiIHN0b3Atb3BhY2l0eT0iMCIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJyYXBpZXItYmctMjJuaWJmLXkiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMwNDA3MTIiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwNjBiMWIiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48ZyBjbGlwLXBhdGg9InVybCgjcmFwaWVyLWJnLTIybmliZi1jKSI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjY0MCIgaGVpZ2h0PSIzNjAiIGZpbGw9InVybCgjcmFwaWVyLWJnLTIybmliZi15KSIvPjxwYXRoIGQ9Ik00MzguNCAyMzkuM2gwTTE5My45IDIxOS4yaDBNNTg5LjUgMTI0LjZoME0zNDUgMTRoME0xMDAuNiA3OS45aDBNNDk2LjEgODUuM2gwTTI1MS43IDgwLjVoME03LjIgNjQuNmgwTTQwMi43IDEzOC44aDBNMTU4LjMgMTYuOWgwTTU1My44IDEzNC43aDBNMzA5LjQgNzkuMWgwTTY0LjkgMTA4aDBNNDYwLjQgNTQuN2gwTTIxNiAxMC40aDBNNjExLjUgMTg1LjloME0zNjcuMSA4My4yaDBNMTIyLjYgNDkuM2gwTTUxOC4yIDkxLjRoME0yNzMuNyAxMTRoME0yOS4yIDEwOS40aDBNNDI0LjggMTAzLjhoME0xODAuMyA2OC4yaDBNNTc1LjkgMTQxLjVoME0zMzEuNCAxNC45aDBNODYuOSAxNGgwTTQ4Mi41IDE5NS45aDBNMjM4IDE5OS41aDBNNjMzLjYgMjIzLjVoME0zODkuMSAyMzZoME0xNDQuNyAyMTkuOGgwTTU0MC4yIDEwNS4zaDBNMjk1LjcgMTE2LjloME01MS4zIDkzLjVoME00NDYuOCAxMjguNmgwTTIwMi40IDY5LjFoME01OTcuOSAxMjMuOGgwTTM1My40IDExOC44aDBNMTA5IDg4LjJoME01MDQuNSA0NWgwTTI2MC4xIDE0Ni44aDBNMTUuNiA1OS41aDBNNDExLjIgMThoME0xNjYuNyA0NS42aDBNNTYyLjIgMTU4LjRoME0zMTcuOCAxNDJoME03My4zIDgwLjNoME00NjguOSAxOTNoME0yMjQuNCA2NC44aDBNNjE5LjkgNy44aDBNMzc1LjUgNjIuNmgwTTEzMSAxNTEuNGgwTTUyNi42IDQ2LjNoME0yODIuMSA1My4xaDBNMzcuNyA2OGgwTTQzMy4yIDI4LjVoME0xODguNyAxMjMuNmgwTTU4NC4zIDIxOC41aDBNMzM5LjggODUuN2gwTTk1LjQgOTAuM2gwTTQ5MC45IDk3LjFoME0yNDYuNCAxNDdoME0yIDQ5LjloME0zOTcuNSA3Mi4yaDBNMTUzLjEgNTEuNWgwTTU0OC42IDEzNS42aDBNMzA0LjIgMTI2LjloME01OS43IDU5LjVoME00NTUuMiA1OS4zaDBNMjEwLjggOTUuM2gwTTYwNi4zIDEwMC42aDBNMzYxLjkgMTguOWgwTTExNy40IDg4LjZoME01MTIuOSAxNDUuM2gwTTI2OC41IDkzLjNoME0yNCA4NC4zaDBNNDE5LjYgNjAuOGgwTTE3NS4xIDQ1aDBNNTcwLjcgMjEuOWgwTTMyNi4yIDU3LjZoME04MS43IDcyLjloME00NzcuMyAxMzYuOGgwTTIzMi44IDM4LjhoME02MjguNCAxMzMuNGgwTTM4My45IDk2aDBNMTM5LjQgMTE5LjVoME01MzUgOTMuNWgwTTI5MC41IDU5LjFoME00Ni4xIDY4aDBNNDQxLjYgNjMuN2gwTTE5Ny4yIDEwNC41aDBNNTkyLjcgMTI0LjhoME0zNDguMiA2MC45aDBNMTAzLjggODEuN2gwTTQ5OS4zIDEyNy41aDBNMjU0LjkgMjAwLjNoME0xMC40IDE4OC43aDBNNDA2IDEyNS40aDBNMTYxLjUgMjUuOGgwTTU1NyAzMy45aDBNMzEyLjYgMjguM2gwTTY4LjEgMTA1LjFoME00NjMuNyA5NmgwTTIxOS4yIDcyLjZoME02MTQuNyAxNzEuM2gwTTM3MC4zIDE4NC4yaDBNMTI1LjggODQuOWgwTTUyMS40IDE0NC4yaDBNMjc2LjkgOTBoME0zMi41IDE4LjJoME00MjggMzMuNGgwTTE4My41IDEzOS4yaDBNNTc5LjEgODYuOGgwTTMzNC42IDg0LjFoME05MC4yIDg2LjJoMCIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjEuNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBvcGFjaXR5PSIwLjgiLz48dXNlIGhyZWY9IiNyYXBpZXItYmctMjJuaWJmLWsiIGZpbHRlcj0idXJsKCNyYXBpZXItYmctMjJuaWJmLWcpIiBvcGFjaXR5PSIwLjciLz48ZyBpZD0icmFwaWVyLWJnLTIybmliZi1rIj48ZyBmaWxsPSJ1cmwoI3JhcGllci1iZy0yMm5pYmYtYTIpIiBvcGFjaXR5PSIwLjUiPjxwYXRoIGQ9Ik0wIDEzNUwxMCAxMzNMMTAgMS42TDAgMy40WiIvPjxwYXRoIGQ9Ik0xMCAxMzNMMjAgMTMwLjlMMjAgLTJMMTAgMS42WiIvPjxwYXRoIGQ9Ik0yMCAxMzAuOUwzMCAxMjlMMzAgLTcuNUwyMCAtMloiLz48cGF0aCBkPSJNMzAgMTI5TDQwIDEyNy4yTDQwIC0xMS41TDMwIC03LjVaIi8+PHBhdGggZD0iTTQwIDEyNy4yTDUwIDEyNS43TDUwIC0xNC4xTDQwIC0xMS41WiIvPjxwYXRoIGQ9Ik01MCAxMjUuN0w2MCAxMjQuN0w2MCAtMTYuNkw1MCAtMTQuMVoiLz48cGF0aCBkPSJNNjAgMTI0LjdMNzAgMTI0LjJMNzAgLTIwTDYwIC0xNi42WiIvPjxwYXRoIGQ9Ik03MCAxMjQuMkw4MCAxMjRMODAgLTI2LjNMNzAgLTIwWiIvPjxwYXRoIGQ9Ik04MCAxMjRMOTAgMTIzLjdMOTAgLTM0LjFMODAgLTI2LjNaIi8+PHBhdGggZD0iTTkwIDEyMy43TDEwMCAxMjMuMUwxMDAgLTQxLjhMOTAgLTM0LjFaIi8+PHBhdGggZD0iTTEwMCAxMjMuMUwxMTAgMTIyLjRMMTEwIC00OC45TDEwMCAtNDEuOFoiLz48cGF0aCBkPSJNMTEwIDEyMi40TDEyMCAxMjEuOUwxMjAgLTU1LjRMMTEwIC00OC45WiIvPjxwYXRoIGQ9Ik0xMjAgMTIxLjlMMTMwIDEyMS40TDEzMCAtNjEuOEwxMjAgLTU1LjRaIi8+PHBhdGggZD0iTTEzMCAxMjEuNEwxNDAgMTIxLjFMMTQwIC02Ny42TDEzMCAtNjEuOFoiLz48cGF0aCBkPSJNMTQwIDEyMS4xTDE1MCAxMjAuN0wxNTAgLTcwLjlMMTQwIC02Ny42WiIvPjxwYXRoIGQ9Ik0xNTAgMTIwLjdMMTYwIDEyMC40TDE2MCAtNzEuOUwxNTAgLTcwLjlaIi8+PHBhdGggZD0iTTE2MCAxMjAuNEwxNzAgMTE5LjlMMTcwIC03MC40TDE2MCAtNzEuOVoiLz48cGF0aCBkPSJNMTcwIDExOS45TDE4MCAxMTkuM0wxODAgLTY4LjVMMTcwIC03MC40WiIvPjxwYXRoIGQ9Ik0xODAgMTE5LjNMMTkwIDExOC40TDE5MCAtNjguNkwxODAgLTY4LjVaIi8+PHBhdGggZD0iTTE5MCAxMTguNEwyMDAgMTE3LjRMMjAwIC02OEwxOTAgLTY4LjZaIi8+PHBhdGggZD0iTTIwMCAxMTcuNEwyMTAgMTE2LjdMMjEwIC02NC44TDIwMCAtNjhaIi8+PHBhdGggZD0iTTIxMCAxMTYuN0wyMjAgMTE2LjVMMjIwIC01OC44TDIxMCAtNjQuOFoiLz48cGF0aCBkPSJNMjIwIDExNi41TDIzMCAxMTYuN0wyMzAgLTUwLjlMMjIwIC01OC44WiIvPjxwYXRoIGQ9Ik0yMzAgMTE2LjdMMjQwIDExNy4yTDI0MCAtNDQuMkwyMzAgLTUwLjlaIi8+PHBhdGggZD0iTTI0MCAxMTcuMkwyNTAgMTE4LjFMMjUwIC0zOS4yTDI0MCAtNDQuMloiLz48cGF0aCBkPSJNMjUwIDExOC4xTDI2MCAxMTkuM0wyNjAgLTMzLjZMMjUwIC0zOS4yWiIvPjxwYXRoIGQ9Ik0yNjAgMTE5LjNMMjcwIDEyMC41TDI3MCAtMjYuOEwyNjAgLTMzLjZaIi8+PHBhdGggZD0iTTI3MCAxMjAuNUwyODAgMTIxLjZMMjgwIC0xNy42TDI3MCAtMjYuOFoiLz48cGF0aCBkPSJNMjgwIDEyMS42TDI5MCAxMjIuNkwyOTAgLTkuMkwyODAgLTE3LjZaIi8+PHBhdGggZD0iTTI5MCAxMjIuNkwzMDAgMTIzLjZMMzAwIC00LjVMMjkwIC05LjJaIi8+PHBhdGggZD0iTTMwMCAxMjMuNkwzMTAgMTI0LjZMMzEwIC0yLjdMMzAwIC00LjVaIi8+PHBhdGggZD0iTTMxMCAxMjQuNkwzMjAgMTI1LjdMMzIwIC00TDMxMCAtMi43WiIvPjxwYXRoIGQ9Ik0zMjAgMTI1LjdMMzMwIDEyNi43TDMzMCAtNC44TDMyMCAtNFoiLz48cGF0aCBkPSJNMzMwIDEyNi43TDM0MCAxMjcuNkwzNDAgLTQuM0wzMzAgLTQuOFoiLz48cGF0aCBkPSJNMzQwIDEyNy42TDM1MCAxMjguMkwzNTAgLTUuN0wzNDAgLTQuM1oiLz48cGF0aCBkPSJNMzUwIDEyOC4yTDM2MCAxMjguNkwzNjAgLTkuMkwzNTAgLTUuN1oiLz48cGF0aCBkPSJNMzYwIDEyOC42TDM3MCAxMjkuMUwzNzAgLTEzLjJMMzYwIC05LjJaIi8+PHBhdGggZD0iTTM3MCAxMjkuMUwzODAgMTI5LjZMMzgwIC0xNS44TDM3MCAtMTMuMloiLz48cGF0aCBkPSJNMzgwIDEyOS42TDM5MCAxMzAuMkwzOTAgLTE0LjdMMzgwIC0xNS44WiIvPjxwYXRoIGQ9Ik0zOTAgMTMwLjJMNDAwIDEzMC44TDQwMCAtMTEuNEwzOTAgLTE0LjdaIi8+PHBhdGggZD0iTTQwMCAxMzAuOEw0MTAgMTMxLjZMNDEwIC04LjRMNDAwIC0xMS40WiIvPjxwYXRoIGQ9Ik00MTAgMTMxLjZMNDIwIDEzMi40TDQyMCAtNS45TDQxMCAtOC40WiIvPjxwYXRoIGQ9Ik00MjAgMTMyLjRMNDMwIDEzMy4zTDQzMCAtMy41TDQyMCAtNS45WiIvPjxwYXRoIGQ9Ik00MzAgMTMzLjNMNDQwIDEzMy45TDQ0MCAwLjFMNDMwIC0zLjVaIi8+PHBhdGggZD0iTTQ0MCAxMzMuOUw0NTAgMTM0LjJMNDUwIDQuNUw0NDAgMC4xWiIvPjxwYXRoIGQ9Ik00NTAgMTM0LjJMNDYwIDEzNC41TDQ2MCAxMC4xTDQ1MCA0LjVaIi8+PHBhdGggZD0iTTQ2MCAxMzQuNUw0NzAgMTM0LjhMNDcwIDE0LjlMNDYwIDEwLjFaIi8+PHBhdGggZD0iTTQ3MCAxMzQuOEw0ODAgMTM1LjJMNDgwIDE2LjRMNDcwIDE0LjlaIi8+PHBhdGggZD0iTTQ4MCAxMzUuMkw0OTAgMTM1LjNMNDkwIDE1LjFMNDgwIDE2LjRaIi8+PHBhdGggZD0iTTQ5MCAxMzUuM0w1MDAgMTM1LjNMNTAwIDEwLjVMNDkwIDE1LjFaIi8+PHBhdGggZD0iTTUwMCAxMzUuM0w1MTAgMTM1LjJMNTEwIDYuNUw1MDAgMTAuNVoiLz48cGF0aCBkPSJNNTEwIDEzNS4yTDUyMCAxMzVMNTIwIDUuMkw1MTAgNi41WiIvPjxwYXRoIGQ9Ik01MjAgMTM1TDUzMCAxMzQuNUw1MzAgNC42TDUyMCA1LjJaIi8+PHBhdGggZD0iTTUzMCAxMzQuNUw1NDAgMTMzLjdMNTQwIDRMNTMwIDQuNloiLz48cGF0aCBkPSJNNTQwIDEzMy43TDU1MCAxMzIuNkw1NTAgMi4xTDU0MCA0WiIvPjxwYXRoIGQ9Ik01NTAgMTMyLjZMNTYwIDEzMS4yTDU2MCAtMS4xTDU1MCAyLjFaIi8+PHBhdGggZD0iTTU2MCAxMzEuMkw1NzAgMTI5LjZMNTcwIC01LjVMNTYwIC0xLjFaIi8+PHBhdGggZD0iTTU3MCAxMjkuNkw1ODAgMTI4TDU4MCAtOS45TDU3MCAtNS41WiIvPjxwYXRoIGQ9Ik01ODAgMTI4TDU5MCAxMjYuN0w1OTAgLTEzTDU4MCAtOS45WiIvPjxwYXRoIGQ9Ik01OTAgMTI2LjdMNjAwIDEyNS44TDYwMCAtMTQuNkw1OTAgLTEzWiIvPjxwYXRoIGQ9Ik02MDAgMTI1LjhMNjEwIDEyNS40TDYxMCAtMTQuM0w2MDAgLTE0LjZaIi8+PHBhdGggZD0iTTYxMCAxMjUuNEw2MjAgMTI1LjFMNjIwIC0xMy44TDYxMCAtMTQuM1oiLz48cGF0aCBkPSJNNjIwIDEyNS4xTDYzMCAxMjQuOEw2MzAgLTE0LjFMNjIwIC0xMy44WiIvPjxwYXRoIGQ9Ik02MzAgMTI0LjhMNjQwIDEyNC42TDY0MCAtMTUuOEw2MzAgLTE0LjFaIi8+PC9nPjxnIGZpbGw9InVybCgjcmFwaWVyLWJnLTIybmliZi1hMSkiIG9wYWNpdHk9IjAuOCI+PHBhdGggZD0iTTAgMTg0LjFMMTAgMTgxLjhMMTAgMjcuNUwwIDMwLjhaIi8+PHBhdGggZD0iTTEwIDE4MS44TDIwIDE3OS44TDIwIDI1LjNMMTAgMjcuNVoiLz48cGF0aCBkPSJNMjAgMTc5LjhMMzAgMTc4LjJMMzAgMjMuOEwyMCAyNS4zWiIvPjxwYXRoIGQ9Ik0zMCAxNzguMkw0MCAxNzcuMUw0MCAyMy4yTDMwIDIzLjhaIi8+PHBhdGggZD0iTTQwIDE3Ny4xTDUwIDE3Ni41TDUwIDIzLjRMNDAgMjMuMloiLz48cGF0aCBkPSJNNTAgMTc2LjVMNjAgMTc2LjRMNjAgMjMuN0w1MCAyMy40WiIvPjxwYXRoIGQ9Ik02MCAxNzYuNEw3MCAxNzYuNkw3MCAyMkw2MCAyMy43WiIvPjxwYXRoIGQ9Ik03MCAxNzYuNkw4MCAxNzcuMkw4MCAxNy40TDcwIDIyWiIvPjxwYXRoIGQ9Ik04MCAxNzcuMkw5MCAxNzguM0w5MCAxMy44TDgwIDE3LjRaIi8+PHBhdGggZD0iTTkwIDE3OC4zTDEwMCAxNzkuNkwxMDAgMTIuN0w5MCAxMy44WiIvPjxwYXRoIGQ9Ik0xMDAgMTc5LjZMMTEwIDE4MS4zTDExMCAxMi4yTDEwMCAxMi43WiIvPjxwYXRoIGQ9Ik0xMTAgMTgxLjNMMTIwIDE4My4zTDEyMCAxMS41TDExMCAxMi4yWiIvPjxwYXRoIGQ9Ik0xMjAgMTgzLjNMMTMwIDE4NS41TDEzMCA5LjdMMTIwIDExLjVaIi8+PHBhdGggZD0iTTEzMCAxODUuNUwxNDAgMTg3LjdMMTQwIDguMkwxMzAgOS43WiIvPjxwYXRoIGQ9Ik0xNDAgMTg3LjdMMTUwIDE4OS44TDE1MCA5LjJMMTQwIDguMloiLz48cGF0aCBkPSJNMTUwIDE4OS44TDE2MCAxOTIuMkwxNjAgMTEuOUwxNTAgOS4yWiIvPjxwYXRoIGQ9Ik0xNjAgMTkyLjJMMTcwIDE5NC43TDE3MCAxNC42TDE2MCAxMS45WiIvPjxwYXRoIGQ9Ik0xNzAgMTk0LjdMMTgwIDE5Ny41TDE4MCAxOC45TDE3MCAxNC42WiIvPjxwYXRoIGQ9Ik0xODAgMTk3LjVMMTkwIDIwMC41TDE5MCAyNS45TDE4MCAxOC45WiIvPjxwYXRoIGQ9Ik0xOTAgMjAwLjVMMjAwIDIwMy45TDIwMCAzNC44TDE5MCAyNS45WiIvPjxwYXRoIGQ9Ik0yMDAgMjAzLjlMMjEwIDIwNy40TDIxMCA0NC4xTDIwMCAzNC44WiIvPjxwYXRoIGQ9Ik0yMTAgMjA3LjRMMjIwIDIxMC43TDIyMCA1Mi4yTDIxMCA0NC4xWiIvPjxwYXRoIGQ9Ik0yMjAgMjEwLjdMMjMwIDIxMy4zTDIzMCA1Ny45TDIyMCA1Mi4yWiIvPjxwYXRoIGQ9Ik0yMzAgMjEzLjNMMjQwIDIxNS4zTDI0MCA2MS41TDIzMCA1Ny45WiIvPjxwYXRoIGQ9Ik0yNDAgMjE1LjNMMjUwIDIxNi44TDI1MCA2Mi41TDI0MCA2MS41WiIvPjxwYXRoIGQ9Ik0yNTAgMjE2LjhMMjYwIDIxNy45TDI2MCA1Ny41TDI1MCA2Mi41WiIvPjxwYXRoIGQ9Ik0yNjAgMjE3LjlMMjcwIDIxOC43TDI3MCA0OS41TDI2MCA1Ny41WiIvPjxwYXRoIGQ9Ik0yNzAgMjE4LjdMMjgwIDIxOS4yTDI4MCA0Mi4xTDI3MCA0OS41WiIvPjxwYXRoIGQ9Ik0yODAgMjE5LjJMMjkwIDIxOS43TDI5MCAzNS43TDI4MCA0Mi4xWiIvPjxwYXRoIGQ9Ik0yOTAgMjE5LjdMMzAwIDIyMC4yTDMwMCAzMkwyOTAgMzUuN1oiLz48cGF0aCBkPSJNMzAwIDIyMC4yTDMxMCAyMjAuNUwzMTAgMzEuMkwzMDAgMzJaIi8+PHBhdGggZD0iTTMxMCAyMjAuNUwzMjAgMjIwLjNMMzIwIDMxLjJMMzEwIDMxLjJaIi8+PHBhdGggZD0iTTMyMCAyMjAuM0wzMzAgMjE5LjhMMzMwIDMyLjRMMzIwIDMxLjJaIi8+PHBhdGggZD0iTTMzMCAyMTkuOEwzNDAgMjE5LjRMMzQwIDM1LjhMMzMwIDMyLjRaIi8+PHBhdGggZD0iTTM0MCAyMTkuNEwzNTAgMjE5LjdMMzUwIDQxLjFMMzQwIDM1LjhaIi8+PHBhdGggZD0iTTM1MCAyMTkuN0wzNjAgMjIwLjZMMzYwIDQ4LjlMMzUwIDQxLjFaIi8+PHBhdGggZD0iTTM2MCAyMjAuNkwzNzAgMjIxLjhMMzcwIDU4LjdMMzYwIDQ4LjlaIi8+PHBhdGggZD0iTTM3MCAyMjEuOEwzODAgMjIyLjlMMzgwIDY3LjhMMzcwIDU4LjdaIi8+PHBhdGggZD0iTTM4MCAyMjIuOUwzOTAgMjIzLjVMMzkwIDc0LjlMMzgwIDY3LjhaIi8+PHBhdGggZD0iTTM5MCAyMjMuNUw0MDAgMjIzLjVMNDAwIDc4LjVMMzkwIDc0LjlaIi8+PHBhdGggZD0iTTQwMCAyMjMuNUw0MTAgMjIzTDQxMCA3OS42TDQwMCA3OC41WiIvPjxwYXRoIGQ9Ik00MTAgMjIzTDQyMCAyMjIuMUw0MjAgODIuM0w0MTAgNzkuNloiLz48cGF0aCBkPSJNNDIwIDIyMi4xTDQzMCAyMjAuN0w0MzAgODYuMUw0MjAgODIuM1oiLz48cGF0aCBkPSJNNDMwIDIyMC43TDQ0MCAyMTlMNDQwIDkyLjJMNDMwIDg2LjFaIi8+PHBhdGggZD0iTTQ0MCAyMTlMNDUwIDIxNy4xTDQ1MCA5Ni41TDQ0MCA5Mi4yWiIvPjxwYXRoIGQ9Ik00NTAgMjE3LjFMNDYwIDIxNC44TDQ2MCA5NS4zTDQ1MCA5Ni41WiIvPjxwYXRoIGQ9Ik00NjAgMjE0LjhMNDcwIDIxMi4xTDQ3MCA5MC45TDQ2MCA5NS4zWiIvPjxwYXRoIGQ9Ik00NzAgMjEyLjFMNDgwIDIwOC45TDQ4MCA4NC4xTDQ3MCA5MC45WiIvPjxwYXRoIGQ9Ik00ODAgMjA4LjlMNDkwIDIwNS40TDQ5MCA3OC42TDQ4MCA4NC4xWiIvPjxwYXRoIGQ9Ik00OTAgMjA1LjRMNTAwIDIwMS43TDUwMCA3NC45TDQ5MCA3OC42WiIvPjxwYXRoIGQ9Ik01MDAgMjAxLjdMNTEwIDE5Ny44TDUxMCA3Mi40TDUwMCA3NC45WiIvPjxwYXRoIGQ9Ik01MTAgMTk3LjhMNTIwIDE5NC4xTDUyMCA2OS42TDUxMCA3Mi40WiIvPjxwYXRoIGQ9Ik01MjAgMTk0LjFMNTMwIDE5MUw1MzAgNjMuOEw1MjAgNjkuNloiLz48cGF0aCBkPSJNNTMwIDE5MUw1NDAgMTg4LjdMNTQwIDU3TDUzMCA2My44WiIvPjxwYXRoIGQ9Ik01NDAgMTg4LjdMNTUwIDE4Ny4zTDU1MCA0OS41TDU0MCA1N1oiLz48cGF0aCBkPSJNNTUwIDE4Ny4zTDU2MCAxODYuOEw1NjAgNDIuN0w1NTAgNDkuNVoiLz48cGF0aCBkPSJNNTYwIDE4Ni44TDU3MCAxODdMNTcwIDM3LjhMNTYwIDQyLjdaIi8+PHBhdGggZD0iTTU3MCAxODdMNTgwIDE4Ny45TDU4MCAzMy44TDU3MCAzNy44WiIvPjxwYXRoIGQ9Ik01ODAgMTg3LjlMNTkwIDE4OS4yTDU5MCAzMC44TDU4MCAzMy44WiIvPjxwYXRoIGQ9Ik01OTAgMTg5LjJMNjAwIDE5MC44TDYwMCAzMC40TDU5MCAzMC44WiIvPjxwYXRoIGQ9Ik02MDAgMTkwLjhMNjEwIDE5Mi4yTDYxMCAzMS45TDYwMCAzMC40WiIvPjxwYXRoIGQ9Ik02MTAgMTkyLjJMNjIwIDE5My45TDYyMCAzNC4xTDYxMCAzMS45WiIvPjxwYXRoIGQ9Ik02MjAgMTkzLjlMNjMwIDE5NS41TDYzMCAzNS40TDYyMCAzNC4xWiIvPjxwYXRoIGQ9Ik02MzAgMTk1LjVMNjQwIDE5Ni45TDY0MCAzNC41TDYzMCAzNS40WiIvPjwvZz48ZyBmaWxsPSJ1cmwoI3JhcGllci1iZy0yMm5pYmYtYTApIiBvcGFjaXR5PSIxIj48cGF0aCBkPSJNMCAyNzcuNEwxMCAyNzcuM0wxMCAxMTlMMCAxMTlaIi8+PHBhdGggZD0iTTEwIDI3Ny4zTDIwIDI3Ni45TDIwIDExOC45TDEwIDExOVoiLz48cGF0aCBkPSJNMjAgMjc2LjlMMzAgMjc2LjFMMzAgMTE5TDIwIDExOC45WiIvPjxwYXRoIGQ9Ik0zMCAyNzYuMUw0MCAyNzVMNDAgMTE5LjJMMzAgMTE5WiIvPjxwYXRoIGQ9Ik00MCAyNzVMNTAgMjczLjhMNTAgMTE4LjZMNDAgMTE5LjJaIi8+PHBhdGggZD0iTTUwIDI3My44TDYwIDI3Mi41TDYwIDExNy41TDUwIDExOC42WiIvPjxwYXRoIGQ9Ik02MCAyNzIuNUw3MCAyNzEuM0w3MCAxMTcuOEw2MCAxMTcuNVoiLz48cGF0aCBkPSJNNzAgMjcxLjNMODAgMjcwLjRMODAgMTE5LjlMNzAgMTE3LjhaIi8+PHBhdGggZD0iTTgwIDI3MC40TDkwIDI2OS45TDkwIDEyNS4xTDgwIDExOS45WiIvPjxwYXRoIGQ9Ik05MCAyNjkuOUwxMDAgMjY5LjhMMTAwIDEzMS43TDkwIDEyNS4xWiIvPjxwYXRoIGQ9Ik0xMDAgMjY5LjhMMTEwIDI3MC4xTDExMCAxMzYuNUwxMDAgMTMxLjdaIi8+PHBhdGggZD0iTTExMCAyNzAuMUwxMjAgMjcwLjhMMTIwIDEzOC45TDExMCAxMzYuNVoiLz48cGF0aCBkPSJNMTIwIDI3MC44TDEzMCAyNzEuN0wxMzAgMTM3LjVMMTIwIDEzOC45WiIvPjxwYXRoIGQ9Ik0xMzAgMjcxLjdMMTQwIDI3Mi44TDE0MCAxMzYuNUwxMzAgMTM3LjVaIi8+PHBhdGggZD0iTTE0MCAyNzIuOEwxNTAgMjc0LjFMMTUwIDEzNy43TDE0MCAxMzYuNVoiLz48cGF0aCBkPSJNMTUwIDI3NC4xTDE2MCAyNzUuNkwxNjAgMTM4LjZMMTUwIDEzNy43WiIvPjxwYXRoIGQ9Ik0xNjAgMjc1LjZMMTcwIDI3Ny4xTDE3MCAxMzguNUwxNjAgMTM4LjZaIi8+PHBhdGggZD0iTTE3MCAyNzcuMUwxODAgMjc4LjZMMTgwIDEzNy4xTDE3MCAxMzguNVoiLz48cGF0aCBkPSJNMTgwIDI3OC42TDE5MCAyNzkuOUwxOTAgMTM1LjZMMTgwIDEzNy4xWiIvPjxwYXRoIGQ9Ik0xOTAgMjc5LjlMMjAwIDI4MS4xTDIwMCAxMzZMMTkwIDEzNS42WiIvPjxwYXRoIGQ9Ik0yMDAgMjgxLjFMMjEwIDI4Mi4xTDIxMCAxMzdMMjAwIDEzNloiLz48cGF0aCBkPSJNMjEwIDI4Mi4xTDIyMCAyODIuOUwyMjAgMTM2LjVMMjEwIDEzN1oiLz48cGF0aCBkPSJNMjIwIDI4Mi45TDIzMCAyODMuM0wyMzAgMTM3LjVMMjIwIDEzNi41WiIvPjxwYXRoIGQ9Ik0yMzAgMjgzLjNMMjQwIDI4My42TDI0MCAxNDEuNUwyMzAgMTM3LjVaIi8+PHBhdGggZD0iTTI0MCAyODMuNkwyNTAgMjgzLjZMMjUwIDE0NC42TDI0MCAxNDEuNVoiLz48cGF0aCBkPSJNMjUwIDI4My42TDI2MCAyODMuNUwyNjAgMTQ1LjdMMjUwIDE0NC42WiIvPjxwYXRoIGQ9Ik0yNjAgMjgzLjVMMjcwIDI4Mi43TDI3MCAxNDMuOEwyNjAgMTQ1LjdaIi8+PHBhdGggZD0iTTI3MCAyODIuN0wyODAgMjgxLjFMMjgwIDEzOS44TDI3MCAxNDMuOFoiLz48cGF0aCBkPSJNMjgwIDI4MS4xTDI5MCAyNzguOUwyOTAgMTM2LjhMMjgwIDEzOS44WiIvPjxwYXRoIGQ9Ik0yOTAgMjc4LjlMMzAwIDI3Ni4zTDMwMCAxMzRMMjkwIDEzNi44WiIvPjxwYXRoIGQ9Ik0zMDAgMjc2LjNMMzEwIDI3My43TDMxMCAxMzAuOEwzMDAgMTM0WiIvPjxwYXRoIGQ9Ik0zMTAgMjczLjdMMzIwIDI3MC45TDMyMCAxMjguNEwzMTAgMTMwLjhaIi8+PHBhdGggZD0iTTMyMCAyNzAuOUwzMzAgMjY4LjJMMzMwIDEyNy40TDMyMCAxMjguNFoiLz48cGF0aCBkPSJNMzMwIDI2OC4yTDM0MCAyNjUuOUwzNDAgMTI3LjVMMzMwIDEyNy40WiIvPjxwYXRoIGQ9Ik0zNDAgMjY1LjlMMzUwIDI2My44TDM1MCAxMjcuN0wzNDAgMTI3LjVaIi8+PHBhdGggZD0iTTM1MCAyNjMuOEwzNjAgMjYxLjRMMzYwIDEyNS4xTDM1MCAxMjcuN1oiLz48cGF0aCBkPSJNMzYwIDI2MS40TDM3MCAyNTguN0wzNzAgMTE5LjhMMzYwIDEyNS4xWiIvPjxwYXRoIGQ9Ik0zNzAgMjU4LjdMMzgwIDI1NS42TDM4MCAxMTEuOUwzNzAgMTE5LjhaIi8+PHBhdGggZD0iTTM4MCAyNTUuNkwzOTAgMjUyLjdMMzkwIDEwMi42TDM4MCAxMTEuOVoiLz48cGF0aCBkPSJNMzkwIDI1Mi43TDQwMCAyNDkuOEw0MDAgOTQuNEwzOTAgMTAyLjZaIi8+PHBhdGggZD0iTTQwMCAyNDkuOEw0MTAgMjQ3LjJMNDEwIDg4LjVMNDAwIDk0LjRaIi8+PHBhdGggZD0iTTQxMCAyNDcuMkw0MjAgMjQ0LjZMNDIwIDg2LjhMNDEwIDg4LjVaIi8+PHBhdGggZD0iTTQyMCAyNDQuNkw0MzAgMjQyLjNMNDMwIDg1LjhMNDIwIDg2LjhaIi8+PHBhdGggZD0iTTQzMCAyNDIuM0w0NDAgMjQwLjFMNDQwIDgzLjNMNDMwIDg1LjhaIi8+PHBhdGggZD0iTTQ0MCAyNDAuMUw0NTAgMjM4LjFMNDUwIDc5LjdMNDQwIDgzLjNaIi8+PHBhdGggZD0iTTQ1MCAyMzguMUw0NjAgMjM2TDQ2MCA3NC4zTDQ1MCA3OS43WiIvPjxwYXRoIGQ9Ik00NjAgMjM2TDQ3MCAyMzRMNDcwIDY5LjhMNDYwIDc0LjNaIi8+PHBhdGggZD0iTTQ3MCAyMzRMNDgwIDIzMi41TDQ4MCA2Ni4yTDQ3MCA2OS44WiIvPjxwYXRoIGQ9Ik00ODAgMjMyLjVMNDkwIDIzMS42TDQ5MCA2MS4yTDQ4MCA2Ni4yWiIvPjxwYXRoIGQ9Ik00OTAgMjMxLjZMNTAwIDIzMS4zTDUwMCA1OC4xTDQ5MCA2MS4yWiIvPjxwYXRoIGQ9Ik01MDAgMjMxLjNMNTEwIDIzMS4zTDUxMCA1OS4xTDUwMCA1OC4xWiIvPjxwYXRoIGQ9Ik01MTAgMjMxLjNMNTIwIDIzMS41TDUyMCA2NC4yTDUxMCA1OS4xWiIvPjxwYXRoIGQ9Ik01MjAgMjMxLjVMNTMwIDIzMkw1MzAgNzQuNEw1MjAgNjQuMloiLz48cGF0aCBkPSJNNTMwIDIzMkw1NDAgMjMyLjZMNTQwIDgzLjJMNTMwIDc0LjRaIi8+PHBhdGggZD0iTTU0MCAyMzIuNkw1NTAgMjMzLjNMNTUwIDg4LjdMNTQwIDgzLjJaIi8+PHBhdGggZD0iTTU1MCAyMzMuM0w1NjAgMjM0TDU2MCA5Mi4xTDU1MCA4OC43WiIvPjxwYXRoIGQ9Ik01NjAgMjM0TDU3MCAyMzQuN0w1NzAgOTMuNkw1NjAgOTIuMVoiLz48cGF0aCBkPSJNNTcwIDIzNC43TDU4MCAyMzVMNTgwIDk0LjZMNTcwIDkzLjZaIi8+PHBhdGggZD0iTTU4MCAyMzVMNTkwIDIzNC44TDU5MCA5NEw1ODAgOTQuNloiLz48cGF0aCBkPSJNNTkwIDIzNC44TDYwMCAyMzQuNUw2MDAgOTFMNTkwIDk0WiIvPjxwYXRoIGQ9Ik02MDAgMjM0LjVMNjEwIDIzNC41TDYxMCA4OEw2MDAgOTFaIi8+PHBhdGggZD0iTTYxMCAyMzQuNUw2MjAgMjM0LjlMNjIwIDg2LjdMNjEwIDg4WiIvPjxwYXRoIGQ9Ik02MjAgMjM0LjlMNjMwIDIzNS42TDYzMCA4NS42TDYyMCA4Ni43WiIvPjxwYXRoIGQ9Ik02MzAgMjM1LjZMNjQwIDIzNi4yTDY0MCA4NC40TDYzMCA4NS42WiIvPjwvZz48cGF0aCBkPSJNNS43IDEzMy45di05OC40TTExLjYgMTMyLjZ2LTg0LjVNMjAgMTMwLjl2LTY5LjNNMjcuNiAxMjkuNHYtNTcuOU00MC44IDEyNy4xdi05NU00NC4zIDEyNi41di03NC41TTU0LjMgMTI1LjJ2LTk5LjJNNjQuOSAxMjQuNHYtODcuMk02OS4xIDEyNC4zdi02NS4zTTgwLjEgMTI0di0xMDcuNE04OS40IDEyMy43di05Mi45TTk4LjIgMTIzLjJ2LTEyMy42TTEwNC45IDEyMi44di05NS42TTExMiAxMjIuM3YtMTMxLjJNMTIwLjQgMTIxLjl2LTEwMC4xTTEzMCAxMjEuNHYtMTQ1LjlNMTM3LjQgMTIxLjJ2LTE1MU0xNDUuOSAxMjAuOXYtMTA0LjhNMTU0LjMgMTIwLjZ2LTExNC42TTE2NC41IDEyMC4ydi0xNTAuNU0xNzMuMiAxMTkuOHYtMTI5LjFNMTgxLjQgMTE5LjJ2LTExOS42TTE5MC40IDExOC40di0xNTEuOU0xOTUuMiAxMTcuOXYtODUuMk0yMDUuOCAxMTd2LTEwOC40TTIxNiAxMTYuNXYtMTQyLjZNMjI0LjUgMTE2LjV2LTEyNi4zTTIzMy4zIDExNi44di05Ny43TTI0Mi4xIDExNy40di0xMDYuM00yNTAuNCAxMTguMnYtOTAuOU0yNTguMyAxMTkuMXYtOTMuNU0yNjYuMyAxMjB2LTk2LjRNMjc1LjMgMTIxLjF2LTk1LjNNMjgyLjcgMTIxLjl2LTEwNS4zTTI5MC41IDEyMi42di04Mi44TTMwMS4zIDEyMy43di03N00zMDkuNCAxMjQuNnYtODguOU0zMTcuNCAxMjUuNHYtODcuOE0zMjIuMSAxMjUuOXYtNjAuN00zMzEuOSAxMjYuOXYtMTA3LjZNMzQwIDEyNy42di05OS40TTM1MC41IDEyOC4ydi04MC42TTM2MC40IDEyOC42di0xMDUuNU0zNjcuNSAxMjguOXYtNjguMU0zNzQuNCAxMjkuM3YtODEuNk0zODIuNiAxMjkuN3YtMTA5LjhNMzkxLjEgMTMwLjJ2LTg0LjZNNDAxLjEgMTMwLjl2LTExOS4zTTQwOC40IDEzMS41di0xMDguNU00MTYgMTMyLjF2LTEwNi43TTQyNi4zIDEzM3YtNzIuOU00MzMuNyAxMzMuNXYtMTE0LjRNNDQwLjkgMTMzLjl2LTk4LjRNNDUwLjIgMTM0LjJ2LTY0LjlNNDU3LjkgMTM0LjR2LTg2LjNNNDY2LjEgMTM0Ljd2LTU0LjhNNDc4IDEzNS4xdi02NS44TTQ4NCAxMzUuMnYtNTcuMU00OTEuNiAxMzUuM3YtOTYuMk01MDMuMSAxMzUuMnYtODAuM001MDYuMiAxMzUuMnYtODEuM001MTguMiAxMzV2LTU0LjVNNTI3LjUgMTM0LjZ2LTgwLjdNNTM0LjggMTM0LjF2LTY4LjNNNTQzLjMgMTMzLjR2LTc2LjhNNTUwLjMgMTMyLjZ2LTk4LjlNNTU4LjEgMTMxLjV2LTEwNi44TTU2OS4zIDEyOS43di03Ny41TTU3Ny42IDEyOC4zdi02OC4yTTU4NC45IDEyNy4zdi04MS42TTU5NS41IDEyNi4ydi04NU02MDEuOSAxMjUuN3YtODAuMk02MDkuNiAxMjUuNHYtNzQuNU02MTYuOCAxMjUuMXYtNzhNNjI1LjcgMTI0Ljl2LTkyLjFNNjM3LjcgMTI0LjZ2LTk5LjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2U0ZmZkOCIgc3Ryb2tlLXdpZHRoPSIyLjEiIG9wYWNpdHk9IjAuMSIvPjxwYXRoIGQ9Ik00LjQgMTgzLjF2LTEyMC4xTTEwLjIgMTgxLjh2LTEwOS4zTTE4LjMgMTgwLjF2LTEwNi40TTI3LjEgMTc4LjZ2LTgwLjVNMzcuNiAxNzcuM3YtNjMuN000Ny40IDE3Ni42di04Ny42TTU1LjQgMTc2LjR2LTk4LjJNNjEuNyAxNzYuNHYtOTUuOU02OS4zIDE3Ni42di04Ni44TTc4LjUgMTc3LjF2LTgxLjVNODYuOCAxNzcuOXYtMTMxLjVNOTQuMyAxNzguOHYtMTA0LjRNMTA1LjYgMTgwLjV2LTE0MC4yTTExNC42IDE4Mi4ydi05Ni4zTTEyMS44IDE4My43di0xMjYuN00xMzEuMyAxODUuOHYtMTE5LjNNMTM5IDE4Ny40di0xNDMuM00xNDcuMyAxODkuMnYtMTQxTTE1Ni44IDE5MS40di04MS42TTE2NSAxOTMuNHYtMTI3LjhNMTczLjMgMTk1LjZ2LTE0Mi45TTE4MC4zIDE5Ny42di0xMjJNMTg5LjUgMjAwLjN2LTkxLjZNMTk3LjcgMjAzLjF2LTEzMy4yTTIwNS4zIDIwNS44di04OS42TTIxMy4zIDIwOC42di04OC43TTIyNS40IDIxMi4ydi0xMzEuOE0yMzAuOSAyMTMuNXYtMTA1LjFNMjQwIDIxNS4zdi05OC4xTTI1MC42IDIxNi45di05OC43TTI1NS43IDIxNy41di04Mi45TTI2NS40IDIxOC40di0xMDguNE0yNzMgMjE4Ljl2LTEwMC40TTI3OC45IDIxOS4ydi0xMDMuM00yOTEuNCAyMTkuOHYtMTI4LjlNMjk5LjQgMjIwLjJ2LTExMS45TTMwNi40IDIyMC41di0xMjhNMzEzLjggMjIwLjV2LTEzNC4zTTMyNSAyMjB2LTEwMi4yTTMzMiAyMTkuN3YtOTYuNU0zNDAuNCAyMTkuNHYtMTQxLjdNMzUwIDIxOS43di0xNDkuOE0zNTcuNyAyMjAuM3YtODUuMk0zNjUuNyAyMjEuM3YtMTE5LjhNMzcyLjUgMjIyLjF2LTY5LjFNMzgyLjIgMjIzdi05MS44TTM5MC41IDIyMy41di0xMDEuNk0zOTkuOSAyMjMuNXYtOTcuN000MDkuOCAyMjMuMXYtMTI3LjNNNDE4LjUgMjIyLjN2LTEwMy4zTTQyNi44IDIyMS4ydi05NE00MzUuNiAyMTkuOHYtNzcuM000MzkuOSAyMTl2LTEwNS4xTTQ0OC45IDIxNy4zdi04MS41TTQ1OC4yIDIxNS4ydi04NC4yTTQ3MC4xIDIxMnYtODAuM000NzUgMjEwLjV2LTYzLjlNNDg0LjggMjA3LjJ2LTY2LjdNNDkzLjIgMjA0LjJ2LTU5LjRNNTAwLjIgMjAxLjZ2LTEwNE01MTAuMiAxOTcuN3YtODYuOU01MTkuNiAxOTQuM3YtNzIuOU01MjggMTkxLjZ2LTU5LjhNNTM2LjQgMTg5LjR2LTcyLjVNNTQxLjMgMTg4LjR2LTY4LjNNNTUwLjkgMTg3LjN2LTc1LjdNNTU5LjcgMTg2Ljh2LTExNS44TTU2Ni4zIDE4Ni44di0xMjMuNU01NzcuOSAxODcuNnYtODVNNTg1LjkgMTg4Ljd2LTczLjVNNTkyLjEgMTg5LjZ2LTk1LjZNNjAxLjQgMTkxdi05NS45TTYwOC43IDE5Mi4xdi04OC41TTYxNy41IDE5My40di05ME02MjcuNSAxOTUuMXYtOTIuOU02MzcuNyAxOTYuNnYtMTA4LjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzg0ZDljNSIgc3Ryb2tlLXdpZHRoPSIyLjEiIG9wYWNpdHk9IjAuMiIvPjxwYXRoIGQ9Ik02LjEgMjc3LjR2LTgyLjdNMTQuOCAyNzcuMnYtMTEwLjJNMjAuOSAyNzYuOXYtMTAzLjhNMjYuOCAyNzYuNHYtMTE5LjZNMzYuMiAyNzUuNXYtNzguNE00NS43IDI3NC4zdi04MC4zTTUzLjQgMjczLjN2LTc1LjdNNjEuOSAyNzIuM3YtOTkuNU03MS4zIDI3MS4ydi05Nk04MC4yIDI3MC40di04MS4xTTg2LjQgMjcwdi02OC45TTk1LjIgMjY5Ljh2LTExMy45TTEwNy4zIDI3MHYtNzkuMU0xMTUgMjcwLjV2LTExMC4yTTEyMi42IDI3MS4xdi03OC45TTEzMy42IDI3Mi4xdi04M00xMzkuOSAyNzIuOHYtOTJNMTQ5IDI3My45di0xMDZNMTUzLjkgMjc0Ljd2LTgyLjFNMTY1LjkgMjc2LjV2LTYyLjFNMTczLjYgMjc3Ljd2LTEwNC4xTTE4MS42IDI3OC44di0xMDEuNk0xOTIuNSAyODAuMnYtMTA3LjZNMTk3LjkgMjgwLjl2LTc3LjdNMjA0LjcgMjgxLjZ2LTk1LjVNMjE1LjEgMjgyLjV2LTk3LjJNMjIyLjYgMjgzdi03OC44TTIzMi40IDI4My40di0xMjEuMk0yMzkuOCAyODMuNnYtOTEuNU0yNDYuNSAyODMuNnYtMTAwLjhNMjU4LjEgMjgzLjV2LTc5LjNNMjY4LjQgMjgyLjl2LTgxLjRNMjc0LjkgMjgydi05OE0yODMuNiAyODAuM3YtNzIuOU0yODcuMSAyNzkuNXYtODguMU0yOTcuNyAyNzYuOXYtOTEuOU0zMDcuNSAyNzQuNHYtODMuM00zMTYuNSAyNzEuOHYtOTguMk0zMjIuOSAyNzB2LTEwNC4yTTMzMS45IDI2Ny43di03NC45TTM0Mi43IDI2NS4zdi04NC45TTM1MCAyNjMuOHYtOTYuOU0zNTYuMSAyNjIuNHYtMTE3LjRNMzY1LjQgMjYwdi03OC42TTM3NS4xIDI1Ny4xdi03Mk0zODQgMjU0LjR2LTcwLjFNMzkyIDI1Mi4xdi05Ny45TTQwMS4yIDI0OS41di05OS42TTQwOC4yIDI0Ny42di0xMTMuNk00MTguNyAyNDV2LTEzNy43TTQyNS42IDI0My4zdi0xMjQuNU00MzQuNiAyNDEuMnYtODguMk00NDMuNyAyMzkuM3YtOTkuMk00NTEuNSAyMzcuN3YtMTIwLjRNNDU5LjcgMjM2LjF2LTkyLjNNNDY5LjEgMjM0LjJ2LTExNS4xTTQ3Ni4xIDIzM3YtMTAxLjJNNDgzLjkgMjMyLjF2LTgyLjhNNDkzLjcgMjMxLjR2LTg1LjdNNTAzLjUgMjMxLjN2LTkzLjFNNTEwLjUgMjMxLjN2LTEyOC4yTTUxOC4yIDIzMS41di0xMjEuOU01MjcuNSAyMzEuOXYtODkuNE01MzYuNyAyMzIuNHYtODYuOU01NDQuNSAyMzIuOXYtNzguOU01NTMuMyAyMzMuNXYtNzYuOE01NjIgMjM0LjF2LTkyLjZNNTY2LjUgMjM0LjR2LTExNC40TTU3Ny4zIDIzNXYtMTE5LjhNNTg1LjggMjM1di03OC44TTU5My41IDIzNC43di02MS40TTYwNC43IDIzNC41di03MS4xTTYxMC42IDIzNC41di05MC4xTTYxOC41IDIzNC44di03Ni41TTYyOC41IDIzNS41di02OS40TTYzMy44IDIzNS44di04My4xIiBmaWxsPSJub25lIiBzdHJva2U9IiM0MjUxNzYiIHN0cm9rZS13aWR0aD0iMi4xIiBvcGFjaXR5PSIwLjMiLz48L2c+PC9nPjwvZz48ZyBkYXRhLXNoYXBlLWlkPSJtb29uIiBkYXRhLWJydXNoPSJpbmsiPjxjaXJjbGUgY3g9IjU0OCIgY3k9IjcyIiByPSIyMiIgZmlsbD0iI2YzZjBlNiIgc3Ryb2tlPSJub25lIi8+PC9nPjxnIGRhdGEtc2hhcGUtaWQ9ImhpbGwiIGRhdGEtYnJ1c2g9ImluayI+PGVsbGlwc2UgY3g9IjMyMCIgY3k9IjQwMCIgcng9IjQyMCIgcnk9IjkwIiBmaWxsPSIjMGEwZjFhIiBzdHJva2U9Im5vbmUiLz48L2c+PC9zdmc+",
+		"[letter-a]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjIyIDUgMjU2IDI5MCIgd2lkdGg9IjI1NiIgaGVpZ2h0PSIyOTAiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozMDAsImgiOjMwMH0sInN0cm9rZXMiOltdLCJzaGFwZXMiOlt7ImlkIjoiYzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJ0ZXh0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOm51bGwsImdlb20iOnsiY3giOjE1MCwiY3kiOjE1MH0sImluayI6IiNiMzI2MWUiLCJsYWJlbCI6IkEiLCJ0ZXh0U2l6ZSI6MjAwLCJ0ZXh0Rm9udCI6ImxldHRlcnM6YXJhYmVzcXVlIn1dLCJ2aWV3Ijp7IngiOjIyLCJ5Ijo1LCJ3IjoyNTYsImgiOjI5MH19PC9tZXRhZGF0YT48c3R5bGU+QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXtbZmlsbD0iI2IzMjYxZSJde2ZpbGw6I2ZmODY3Nn19PC9zdHlsZT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDUwLjcgNDApIiBkPSJNOTg4IDk3OGw1IDVjLTIgOC0xMjQgOS0xNDQgOS0xNTItMy0zMDYgNy00NTggMy04NC0yLTE2OC0zLTI1Mi0zLTI0IDEtMTI1IDYtMTI0IDAgMy0xNSAxODEtOCAyMjktOCA0NCAwIDkwLTggMTMzLTggNDAgMSA4MiA3IDEyMiA4IDgxIDIgMTYyLTUgMjQ0LTMgNDMgMSAyMDYgMTAgMjM3LTQgNy0zIDYtMTc4IDUtMjA2LTgtMTM4LTUtMjc2LTMtNDE0IDEtNTMtNC0xMDYtMS0xNTkgMy01NyAxMC0xMjYgMi0xODIgMC0zLTEtNS0zLTYtMTUtOC0xNTEgMS0xNzkgMC0xMjMtNC0yNDktMi0zNzIgMi0yMSAxLTQzIDktNjQgOC0yOC0xLTU4LTctODctOC0yNS0xLTU3IDgtODEgMSAxMi0xNiAxNjctMTUgMTc1LTIgODgtMjggMzU2LTUgNDY3LTkgMTYgMCAxNDQtMyAxNDggMiA3IDEwIDIgMjA3IDIgMjM1IDAgMTc5IDYgMzU4IDIgNTM3LTEgNDYgMTEgMTY3LTMgMjAyek0xNDAgMTJjLTI3IDEyLTEwNy04LTEyNiA1bDAgODNjMCA4OCAxIDE3NSAzIDI2MiAzIDc1IDYgMTUxIDQgMjI1IDAgNyAwIDEyLTcgMTMtMTMtMjAtNC0xMTAtNS0xMzgtMi0xMDUtMy0yMTEtNS0zMTYgMC0yNi0xMy0xMTUtMy0xMzUgNC04IDEyNi0xMCAxMzkgMXpNNTQ0IDE4YzM2IDMxIDI1IDYwIDE0IDk5LTQtNyAxLTE1LTEtMjEtMy02LTEzLTQtMTYtMTMtMi0xMiA4LTIzIDgtMzUgMC0xMS0xMC0xOS05LTMwbDQgMHpNNDMxIDE5YzAgOC04IDEzLTggMjEgMSAxOCAzNiAzNyA0IDUwIDYgMzItMTEgMjYtMTIgNDEtMSAxMSAyMCA1MyAyOCA1NyAyOS0yNyAzNS04NiA1OC0xMTkgMzAgOSAzMCA4NCA1OCA5NyAxOS0xNiA1LTI5IDMtNDQgNiAxIDEzIDUgMTggMyAyOC0xMyA0NC04MyAxMTgtMTAxIDI2LTcgNjgtOSA5MyAwIDExIDQgMjUgMTkgMzYgMTkgMTMtMSAxMy0yNSAzNC0yMSAyMSA0IDI2IDM2IDQ4IDMzLTE4LTUxIDUyIDI0IDQ1LTI4IDI5LTMgNiA0Ni0yOSA0NS0yOC0xLTUyLTU4LTgwLTM3LTQgMyAxMCA3NiAyIDk2LTExIDI5LTYzIDYxLTg2IDI3IDExLTMgMjYgOSA0MCA1IDQ4LTE1IDYwLTgwIDE5LTExMC03Ny01Ni0xMzMgMTE4LTE3MyAzOC00LTgtMS0xOC00LTI3LTE2IDAtNzggOTgtNzkgMTE3IDAgNCA0NSA5OCA0OCAxMDEgMyAyIDggMCAxMS0yIDI4LTE3IDM4LTYxIDgwLTYwLTE3IDI4LTc5IDM1LTg0IDc2LTEgMTMgNjIgMTM2IDczIDE1NyA1NCAxMTcgOTkgMjQ0IDE2NCAzNTUgMTYgMjggNzAgNzAgNzcgODgtMTMgMTYtODEgNS0xMDMgNi0xMCAwLTEwNi0xLTEwOC0zLTItMiA1LTQzIDAtNTctNy0yMi0xMTUtMjY5LTExOC0yNzEtNy00LTIxLTItMjktMS05IDEtMjEtMi0yOSAzLTEyIDgtNCA5MSAyMiA5NCAxMi0xOC0yOC0yNy0yLTUxIDE2LTE1IDUzLTMgNTQgMTktNTItNy0zNiA0Mi00MyA3Ny0zIDE0LTEyIDI0LTE1IDM2LTY0LTI2LTI0LTI5LTIwLTY3IDUgMTIgOCAyNCAxNiAzNiAyNC0xNy0xMi03OS0xOC0zOC0zNS05Ni0yNCAxMDYtNSAxMzcgNzgtNS05IDgyIDY0IDg0IDYgMzMtNTMgMTgtNjQtNDItNy0zOC0xOC03NS0yMS0xMTMtMy0yNyAyLTYwLTUtODYtMS00LTctNi0xMS01LTE1IDMtMyA1Mi0yIDYxIDQgMzIgMyAyMTMgNTAgMTk4IDEgMjUtMjMgNS0zMSAxMi03IDUtMTAgMzItMTcgNDItMTktOC0xOS0zNy0yMy01NC0xMyA1LTQ4IDI1LTQ0LTkgNjIgMjMgNjQtMjE1IDUzLTI0Ni0yLTYtMTAtNC0xNC0zLTE0IDYyIDggMTI3LTI0IDE5OC04IDIwLTQ2IDk2LTc1IDYyLTUtNS0zLTEwIDAtMTUgNDggMiAzNC0xMzMgNzAtNzMgMTQtMTEgMjctOTMgMTctMTA3LTggMTItMjcgMTMtMzEgMjAtNTEgODktODAgMTg5LTE4NSAyMzAtNjQgMjUtNzgtMTgtMTI0LTM3LTEzLTYtNTYtNi00NiAxNyAyNS04IDMwIDIxIDkgMjItMzggMy0yNi01NSAyOS00NyAyMyAzIDMzIDMyIDU2IDMyLTMtMjMtNy0yMyA1LTQ0LTE1LTUtMTA5IDYtMTEyLTMtNC0xMCAzNC0yNiA0MC0zMyAyNC0yOCA0MS02MCA1OC05MyA2MS0xMTcgMTE4LTIzNyAxNzItMzU4IDEwLTI0IDUzLTk1IDUxLTExNy0xLTE2LTE5LTM2LTI4LTQ5LTE1LTIyLTM1LTMzLTU1LTQ4LTQtNC0xOC0xMy0yMS00LTIwIDU2IDQ5IDEzNSAxMSAyMTgtMjMgNDktMTQ3IDkzLTE3MCAzMyAxOSA1IDQyIDIyIDYxIDEzLTEtMTItMTMtMTktMTMtMzQgMC01NyA5NS0zNiA4Ni05OC01LTI5LTU3LTQ4LTcwLTE1LTIgNiAyIDMzIDE1IDIzIDUtNC0xNy0zOSAxNS0yMSA2IDQgMTMgMTUgMTAgMjItMTAgMzItNTYgMTctNTMtMTQgMTAtODMgOTQtMTAgMTE5IDEgMy0xMC02LTU5LTE2LTYzLTE4LTktMzcgOS00OC0yMC01LTEzIDUtNTgtMy02NC02LTYtNTUgNC02NCA4LTE1IDYgMjEgNTQgMTkgNjYtNCAyNS00MSAxMy00OSAzNi0xMSAzMiAyMyAxIDI3IDE0IDMgMTItMTMgMjMtMjQgMjAtOS0yLTEyLTEwLTE2LTE3LTI1LTQwIDYyLTExMCAyOC0xMTMtMTQtMS0zNCAyMS00MiAzMS0yNyAzMS01OSA3OS00MyAxMjUgMyA4IDE1IDcgMTggMTUgNSAxMi0xIDIzIDEgMzUgNCAyMCAyOCAzMyAzOSA0OGwtMTMtM2MtOCAyMSAxMDMgNTUgMTEwIDE0MiAxMCAxMjQtMTI3IDEzMi0xMzQgMTg3LTUgNDEgNTcgNDQgNDYgMTAtMy04LTEzLTgtMTgtMyA3IDI0LTE5IDIxLTE1IDMgNS0yMSA0MS0yNCA0NCAwIDUgNDItMzYgMjUtNDUgMzUtMTEgMTMtNCA1Ni0zOSA0Mi0yNi0xMS0zLTQxIDExLTI0bC0zIDljMTUgNyAyNS0xNSAyMi0yOC05LTQxLTQ3LTcyLTExLTExNyAyOC0zNiA0NiAyMyA1OCAyMSAxOC0zIDc2LTcxIDY3LTg1LTIwIDE2LTExMCA3MC0xMTkgMTMgMjcgMTAgMzkgMjQgNjkgNSA3Ny00NS0zMS05Mi0zOC0xMjMtNi0yNiA4LTMwIDIzLTQxLTQtMTYtODUtOTUtODctMTE5LTEtOCA1LTE0IDUtMjIgMC0xMjQgNzktMTMyIDg0LTE2OC0yMy0xMi01MCA4LTY1LTI2LTIzLTU0IDI3LTU5IDI2LTM2LTU3IDI3IDI1IDEgMjUgNTAgMjMgOSA5NiAxMCAxMjAtNCAzNS0yMCAyNS01MyA5MS00MyA5NCAxNSAxNyAxMDYgMCA2NCAxMC0xIDIxIDQgMjktNS0xOSAzLTE1LTItMjQtMTQtNyAzLTUgOS03IDE2LTMwLTIwIDM3LTU0IDMxLTIgMjctMjQtMTItNTMtMzgtNDItODQgMzYgMTAgNjYgMzQgOTIgMTUgMTUgMTggNDQgMzUgNTYgNS00IDQ2LTg5IDQ2LTk2LTItMjgtNjctMTMzLTk1LTEzNSAyIDE2IDcgMzItMTAgNDMtNTUgMzctOTEtMTM1LTE3MS0zNy0zNCA0MyAyMCAxMDQgNjcgNzQgNjctNDMtNTctODEtMzAtMjUgOSAwIDUtMTUgMTgtMTIgMjYgNiAwIDQ3LTIxIDI4LTI2LTIzIDMtNzIgMzYtNTQgNDMgMjIgMTQgNzctMjUgODEtOTkgMTEtMzctMTIxLTQ4LTEzMS0xNS0xNS01NyA1MC04NiA1MC02NSAwLTI0LTY2LTYtMzYtOCAyLTE0LTEtMjEgMyA4IDM5IDM3LTQxIDczLTEzIDExLTYgMjktMjQgNDQtMTggOCA0IDUgMjEgMTQgMjIgMTMgMCAyOC04IDQyLTEwIDQyLTcgODkgMiAxMjYgMjEgMTUgNyA2NCA2NiA2OSA2NiA0Mi0zLTYxLTg5IDIxLTk5ek03OTQgMTE3YzAtNi0yLTgtOC0xMS0zMy0xNC0zMCAyMi0zNCA0MC0yOC0xMSA1LTY0IDM0LTU0IDc3IDI4LTI1IDgxLTEwIDM0IDItOSAxMi02IDE4LTl6TTkwIDg5NmM0IDMgMTE5IDIgMTI0LTItMy0xNC0xMS0yNC0xMS0zOSAzLTYyIDcxLTE2MCA5Ny0yMTkgNy0xNCAzNi04NSA0Ny05MCAxMS02IDI0MCAwIDI1OSA2IDkgNCAzNyA3OSA0MyA5MiAyNiA2NCA2NCAxMzIgODggMTk0IDQgMTEgMCAzNyA4IDQ1bDMgMmMxNyAzIDEzNSA0IDE0NS0zLTEyLTI1LTM5LTQ0LTUyLTY5LTM1LTY2LTYxLTEzNS05My0yMDItNTEtMTA2LTEwMy0yMTMtMTUxLTMyMS0xMi0yNS04Ny0xODgtOTQtMTg4LTQgMC05IDUtMTEgOC0zMCA1OC01NCAxMTktODUgMTc3LTYyIDExMS0xMTcgMjMyLTE2OCAzNDgtMTkgNDUtMzYgOTUtNTkgMTM2LTE0IDI1LTMwIDU2LTQ4IDc5LTEyIDE1LTMyIDMwLTQyIDQ2ek05MzQgMTUzYzI1LTE0IDE4IDM0LTkgNDUtMTYgNy02OC0yNC02Ny0yIDAgMTIgNjUgNjggNzYgOTMgOCAxNyA0IDM2IDcgNTUgMSAxMCAxMSAxNSA4IDI1LTQgMTMtMTQgOS0yMSAxNy0xNCAxOC05NSAxMTQtOTUgMTI2IDEwNSAzNy0yNSA3MyAyMiAxNDIgOCAxMSAxOCAyMiAzMiAyNSA3NCAxMyAxMDUtMTIwLTgtOTQgMjEtMTkgMzQtNyA1Ni0xMi0xMS0yNi01NC00Ni0zNi04NiAxOS00MiA4NS0yOSA2MiAxLTEwLTMtNS0xNi0xNy0xOC0xMS0zLTIxIDEtMjggOS00MiA0NSA2MiAxMDEgNDIgMTY1LTE0IDQ1LTQ3IDI5LTc3IDQ0IDIzIDM3IDc4IDcgOTIgNTUgMTMgNDUtNzYgMTA0LTMzIDEyNCAxNiA4IDE3LTUgMjMtMTUgMTkgMSA1IDMxLTExIDMxLTM3LTMtMjEtNDktMjgtNTYtMTQtMTQtNDMgMi00Ny0zMi0zLTI1IDM1LTQwIDQ2LTE2IDcgMTYtMjUgNDAtMTYtMS00LTMtOC00LTEzLTItNDEgMjEgNTMgNzcgNTAtMi0yLTYzLTc1LTcwLTExMC0xMTAtNzAtNzktMjItMTI0IDE2LTE5My0xMC02LTM0IDItNDcgMi00OC0xLTkwLTUwLTEwNC05Mi0xNC00MiAzMy0xNTQgOC0xNjIgMzktMzYtMzUtOTItNzYtNzEtMjIgMTEtMTIgNTAgMTEgNTMgMjAgMiAyMi0yNSAxLTEyLTMzLTIwIDU5LTI3IDIzIDktNDggNDUtOTAtNjctNS03MSA2Ny0yIDgxIDY4IDEwMSA3NyAxMyA1IDM1LTMgNTAtMSAxMCAxIDI5IDkgMzkgNyA0LTEgNC02IDMtOS01LTE0IDEyLTQwIDI1LTQ2IDE1LTcgNjggNDcgNTUtMnpNNzAzIDM0NWMyNy0zMyA1Ni03NCAxMDUtNDggMTEgNiAyMiAxNyAyNSAyOSA4IDM1LTQzIDU4LTUzIDIxLTEtNSAwLTExIDMtMTUgMTktMzAgMjUgMzYgMzkgMTAgMi00IDEtMTMgMC0xOC05LTMxLTU3LTI0LTY3IDItMjYgNzQgODMgNTYgNjIgMTE0LTQgOS0xNSA5LTIwIDE3IDMxIDIzIDkyLTE5IDEwOC00NyAyNS00MSA0LTI3IDktNDkgMy05IDE1LTkgMTgtMTcgMTAtMzAtMTctNzctMzgtOTctMTAtOS0xOS0xNS0zMC0yMi0yMC0xMy0yNy0yLTE3IDE3IDEwIDE3IDcyIDY1IDI2IDg0LTIwIDktMTItMjktMjAtMzktMTAtMTMtMzgtOC00MS0yOC0yLTEyIDM4LTQxIDEwLTQ4LTEyLTItNDMtNi01MyAwLTcgMyAxIDQ2LTcgNTctMTUgMjEtMzItNS00MyAyLTEzIDctMjEgNjMtMTYgNzV6TTQ4MiAyNjZjMzggNDcgNjQgMTYwIDk1IDIxOCAzIDUgMTUgMTkgMTQgMjQtMSA5LTE4IDQtMjMgNC0zMyAxLTE5NSAzLTE5OSAwLTctNSAyMC01MCAyNC01NyAxNC0yNSA3NC0xODUgODktMTg5ek00NjkgNDc2Yy0xMi0zNiAwLTg0LTE2LTExOS0xMiA1LTIzIDQ1LTIyIDU5LTE3IDUtNDAgNjMtNDIgODAgNjIgMzEgNDYtMjUgNTAtMzkgNyAxNi0yIDQ1IDIxIDQ1IDctMSA4LTUgMTAtMTAgNSAxMyAyOSAxMyA0MCA0IDkgMTAgNTQgMTEgNjUgNC0yLTEzLTIwLTU1LTMyLTUyLTQtMjEgMi00NC0xOC02Mi0xOSA5LTQgNzQtMTQgOTUtMTAtMzggMTMtODAgNS0xMTktMy0xNC0xNi0zMS0yMi00NS0yLTYtNS0yMC0xNC0xOC0zNiA5LTMgMTQ4LTExIDE3N3pNODEgNDg3Yy0xMy0xNS02My0zOS00My0xIDItMiAzLTIgNS01IDYgMCAxMSAyIDExIDEwLTMgMjYtNDItMy0xOS0zMSAxNi0xNyA1MCA5IDQ2IDI3ek03NTAgNTAwYzI0LTQgMjkgMzEgNyAzNS0yMyA1LTMxLTMxLTctMzV6TTIxOSA1MDhjMzAtNyA0MSAzOSAxNCA0NC0zMCA3LTQyLTM3LTE0LTQ0ek00ODkgNTg3YzYgMCAxMSAxIDE3LTEgOCAxNyAxNiA3IDMyIDE1IDEyLTIzLTYtMzQtMjctMzFsLTUtNmMtMTMgNS0xOCA5LTE3IDIzek0yNTMgOTA4Yy0xMyAxMi00NyAwLTY1IDMgMTIgMTMgMTYgMTUgMTEgMzQtNi0yLTEwLTQtMTYtMy0xMSAyOSA1NyAyMCA3MSAxMyA1MS0yNSA5OC03NSAxMjUtMTI0IDE0LTI1IDM1LTY3IDM3LTk2IDAtMTAtMTQtMTctMTgtMjYtOS0xOSA2LTUyLTEzLTY3LTE5LTE2LTI3LTQtMzggMTAtMjMtMjYgMzQtNTIgNTYtMzYgMzMgMjQtOCA0MCAyIDU5IDE1LTggMjktMjIgNDQtMzAtMS03LTQtNy0xMS02LTMtNy0xNS0yMC0xNS0yNiAxLTkgMjktMzEgMTMtNDMtOC02LTcxLTgtNzktMi0xNiAxMi0xMzIgMjU1LTEzNiAyODItNiAzNCAyNCAzNSAzMiA1OHpNNDQ0IDU5OWMyMiA1IDM0LTM1IDctMzItNCAwLTEwIDEtMTAgNiAwIDggMSAxOSAzIDI2ek02NyA2NDhjLTEzLTgtMTMtMzUtNy00NyAyMC0xIDI5LTI3IDU0LTE0IDI5IDE1IDI4IDY5LTExIDU3LTgtMi0xMy05LTEzLTE3IDEtMzQgNDMgMTcgMzUtMTktMS00LTItOS01LTExLTQyLTI2LTU3IDE5LTUzIDUxek04NzMgNTk1YzQgMTQgNSAzNCAyNiAzMyA3LTEgOS00IDktMTAtNS0xLTEyIDAtMTQtNS0xNy0zMyA2NS0xMSAyNCAyMC0yNiAyMC02MC0xMC00NS0zOHpNNTM1IDYxMmMtNDEgNiA1IDU2IDYgMjcgMC0xMSAxLTE4LTYtMjd6TTEyIDYxOWMxNiAyIDExIDUzIDEwIDY4LTMgNzEtMSAxNDMgMSAyMTQgMSAxNCA5IDc2LTYgNzYtNC03LTEwLTM0Ny01LTM1OHpNNDM0IDY3MWMtMTUtMTQtMzQgMzctMTAgNDUgNy0xMCA1LTI5IDEwLTQxIDUgMTcgMTAgMjQgMjYgMzMgMTItMjIgMS03My0yNi0zN3pNMzE4IDc0MGM1NC0xMyA1MiAxMTktOSAxMjQtMTAgMC0xOC0zLTIyLTEyLTE2LTM1IDI0LTQ0IDQyLTYxbDEgMGM1LTUgMTAtMTQgMTEtMjIgMy01Ny00MiAyNi0zNy0xMiAxLTcgNi0xNSAxNC0xN3pNNjY3IDc3MmMtMy0zLTMtNy01LTEyLTUgMC04IDAtMTIgNC00NSAzOSAxMTIgNTkgMTggMTE4IDQgMjcgNDEgMzcgNTEgNTctNDYtMTMtOTUtOTQtOTUtMTM5IDAtODggNjQtNDIgNDMtMjh6TTY0MyA4ODljMTggMTQgODggOTMgMTEwIDY5LTctNC0xNC0zLTE2LTExIDExIDEgMjYgOCAzNyA2IDYtMiAxMC01IDEyLTExIDE4LTQ2LTM3IDIwLTMwLTIwIDUtMjggNDMtMjAgNDIgMjkgMjktNCA1Ni00NyA4OS0yOCAzNyAyMiAyIDY5LTE5IDQwLTExLTE1IDE4LTIwIDI2LTEzIDctMjQtMjYtMjYtNDItMjAtNzUgMjgtMTA5IDY5LTE4Mi03LTktOS0yNy0yMC0yNy0zNHoiLz48L2c+PC9nPjwvc3ZnPg==",
+		"[letter-d]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjE5IDUgMjYyIDI5MCIgd2lkdGg9IjI2MiIgaGVpZ2h0PSIyOTAiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozMDAsImgiOjMwMH0sInN0cm9rZXMiOltdLCJzaGFwZXMiOlt7ImlkIjoiYzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJ0ZXh0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOm51bGwsImdlb20iOnsiY3giOjE1MCwiY3kiOjE1MH0sImluayI6IiNiMzI2MWUiLCJsYWJlbCI6IkQiLCJ0ZXh0U2l6ZSI6MjAwLCJ0ZXh0Rm9udCI6ImxldHRlcnM6cmVsaWVmIn1dLCJ2aWV3Ijp7IngiOjE5LCJ5Ijo1LCJ3IjoyNjIsImgiOjI5MH19PC9tZXRhZGF0YT48c3R5bGU+QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXtbZmlsbD0iI2IzMjYxZSJde2ZpbGw6I2ZmODY3Nn19PC9zdHlsZT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDQ3LjIgNDApIiBkPSJNMTAwOSA1NzNjLTI2LTItNzItNzYtODctOTkgMCAzMCAxNiA0NyAyMSA3My03LTUtMTQtMTAtMjEtMTQtMzEgNTEgMTE3IDE0MSAxMDEgMTcxLTQ5LTE0LTYyLTk2LTExMi0xMTAtMTIgMTQtNSAyNiA0IDQxLTIyIDMtMzUgNS0zMiAzMi0yNCA2LTYwIDQ1LTU1IDY5LTIzLTgtMzIgMC0zOSAyMS0xOCAwLTMxIDMtMzUgMjItMTggNC0yMCA3LTMxIDIwLTYgNy0yNC0yLTI5IDExLTYgMTMgMTE2IDExNCAxMTYgMTQ0LTMxIDktMTM0LTE5My0xNTItMTE2LTEzLTEtMjEtMy0zMiAzIDEwIDQ2IDEwMyA5OSAxMDUgMTM3LTMyIDE1LTEzMC0xOTEtMTQ4LTExNS0xMi02LTE5LTktMzItOC0xIDEzIDkgMjIgMTMgMzUtMjEtNy0zMi0zNy01OS0zNS0xIDM1IDg4IDEwMiAxMDIgMTQwLTE1IDEwLTY1IDYtODAtNy0xNC0xMi04NS0xMjktODQtMTQyIDQ2IDMwIDcwIDEyMCAxMjMgMTQyIDktMTUtNzEtMTI3LTkxLTE0MC0xNi0xMC0yNyAwLTQyLTctMTUtNy0yMS0xNy0zOC0xMCA3IDU1IDg4IDk0IDEwMyAxNDctMzEgMTItNTEtNDUtNjgtNjctMzEtNDAtMTczLTI1Mi0yMTEtMjQ0IDE3IDU1IDg4IDk0IDEwMCAxNTBsLTI0IDNjLTkgMzIgOTcgMTEwIDEwMyAxNTEtNzggNjEtMTMyLTE3MC0xODctMTQwIDMgMzIgMTIwIDE0NCAxMTUgMTU0LTcgMTUtNjMgMTEtNzIgMC0zMC00MS0yNTEtMjk5LTI1NC0zMTgtNS0zNyA3Mi0xNTIgODgtMTkzIDAtMS0yMS0xMzEtMTgtMTYwIDMtMzYgNDEtNzMgNDAtMTA1IDAtMjctMTE2LTE4NS04OS0xOTkgNjQtMzUgMTUyIDMyIDIyMCAzMiA2NC0xIDE0OS01MyAyMDYtNDEgMTYgNCAzMyAxOCA0OSAyNCAyMzIgOTEgMjk4IDIyMyA0MjUgNDIyIDIxIDMzIDg4IDgyIDg4IDEyNnpNMjExIDY5Yy0xOC05LTE0Ny01MS0xNTgtMzEtMiA0IDgyIDEzMyA4MyAxNzEgMiAzOC00MCA5NC0zOCAxNTQgMSAzMCAzNiA3OCAyNyAxMDQtMjIgNjMtODAgMTI4LTg4IDE5MyAzNyAxNSA4NS0xNCAxMjMtMTcgNyAwIDI5IDMgMzMtNCA4LTE2IDMtNzQgMzctNzIgMzggMiAyNCA2MyAzOCA3OSA3IDggMjYgNCAzNSA1IDMxIDMgNjAgMjggOTEgMzMgMzUgNiA3OS04IDExMi0xOCAxNDAtNDMgMjc5LTE2MiAyNzctMzIxLTEtMTQzLTE3NC0yNDctMjg3LTI5NS0yMC04LTU1LTI4LTc3LTI0LTQwIDctNzYgMzAtMTE1IDQzLTkgMy0yNiAwLTM0IDctMTQgMTMgNSA2Mi0zMyA2Ni0zNyA0LTI2LTU2LTI2LTczek02OTEgMjE4Yy00Ny0yMy0xODAtMTY5LTI0MS0xMzMtOC03LTE5LTIzLTMxLTE5LTMwIDgtODAgMTI2LTkxIDE1Ni0xMCAyOSAyNiA4MCAyOCAxMTMgMiA2MS00MCAxMTItNDEgMTQ2LTEgNTIgNTMgOTUgNTggMTQyLTIyLTEzLTg2LTExNS04Mi0xNDIgNS00NCA1MS03OCA1Mi0xMjkgNC0xMzktODItODggMzAtMjQ4IDEzLTE3IDQtMzggMjEtNDkgNTItMzMgMjk1IDEwMiAyOTcgMTYzek0zNjggNzNjLTE2IDEyLTYwIDIwLTcwIDM1LTkgMTItOCAyOC0xNiA0MC01NSA4OS0xMDMtMTctMTI2LTY1IDQ1LTcgMjUgODcgODEgODEgNDgtNSA0MC01MiA1Mi02OCAxMS0xMyA2NS0yNyA3OS0yM3pNNDEzIDk0YzE5LTEwIDcxIDEwNyA4MCAxMjkgMTIgMzAtMjggNzMtMzIgMTA1LTEwIDcxIDI2IDEwNSAyNyAxNTMgMSAxNy03NiAxMzgtODcgMTM3LTcgMC02Ni0xMTEtNjktMTI2LTUtMzYgMzctNzYgNDEtMTEzIDEwLTgzLTI5LTExNi0yOC0xNTMgMC0xMSA1OS0xMjkgNjgtMTMyek00NTkgOTdjMjAgNiA3OCAxMjAgNzUgMTQzLTUgMjgtMjkgNTItMzMgODEtOSA1MyAzMSAxNTcgMjggMTY3LTcgMjctMzIgMzctNDIgNTYtMTUgMzEtMzEgNjctNjEgODggMTctNTAgNjUtODggODEtMTQwIDktMzItMjctODYtMjgtMTIyLTEtNDggMzctOTkgMzUtMTM3LTMtNDktNTItODgtNTUtMTM2ek0xNTIgMTc0YzYzIDI3LTcgOTMtMTYgMTM2LTE0IDc1IDM0IDEzNCAzMSAxNTQtMTAgNTUtNzQgOTgtNzQgMTU0IDgwIDIwIDg4LTExMSAxMzQtMTAxIDUwIDExIDQ5IDY1IDczIDk3IDE2IDIyIDEwMSAzMiAxMjIgMjAgMTcgMzIgMTY4LTI5IDE5MS01NSA2My02NyAxNDgtMTUzIDEyNi0yNTUtNy0zMC0yNy01NS0zNC04NSAxNyAyIDMwIDIxIDM3IDM2IDQ5IDk2LTkgMjM0LTg5IDI5OC05NiA3NS0yNDQgMTIyLTM1OCA1OS0xOS0xMS0xNi04Ni02NS05MS0zNy0zLTQ0IDYyLTU5IDgwLTYgNy04NiAyNS05NSAyMS0xNy05IDYxLTEzOSA2OS0xNjggOS0zMi0yNC04MS0yNS0xMTUtMy02NiA0My0xMDcgNDQtMTQwIDEtMTYtMTAtMzAtMTItNDV6TTIyNCAyNzJjNDEtMTQgMzggMjEgNTggNDEgMTcgMTcgNTMgMTkgMzYgNTctNyAxNi0yNCAxMy0zNSAyNC0xNSAxNS00IDM0LTMyIDQzLTM0IDExLTMxLTE1LTQ5LTI5LTIwLTE1LTU4LTIzLTQ0LTYzIDgtMjEgMjQtMTggMzUtMzEgMTItMTYgNy0zNCAzMS00MnpNNjE2IDI3NWMyNS03IDk0IDY4IDg5IDkxLTMgMjEtMjYgMjQtMzcgMzktMTEgMTQtOCAzMC0yOSAzNi00NSAxMi0zOC0xNS02Mi0zNi0yMi0yMS01Ni0yMi0zMy02NyA4LTE2IDI2LTEzIDM3LTI0IDE0LTE0IDEyLTMyIDM1LTM5ek0yMjMgMzM5Yy0xMDkgMi0zOCA4MCA3IDEzIDYgMTgtMTUgMzMtOCA1MyAyIDcgNyAxMyAxNSAxNSAzNyA2IDE1LTM3IDEyLTUwIDE0LTYgMzQgOSA0Ny0xIDQzLTMyLTE2LTM1LTM4LTI2LTQtMTMgOS0yOSAyLTQzLTQtOC0xMS0xMS0xOS0xMi0zOC00LTIyIDMwLTE4IDUxek02MTIgMzQyYy0xNCA2LTMxLTYtNDYgMi05IDUtMTEgMTctOCAyNiA5IDI5IDQ3LTE0IDU2LTE3IDE1LTUgNTIgNDcgNjkgMTcgMjEtMzktMzEtMjYtNDctMjggMTQtNzctNDYtNTgtMjQgMHpNNjI4IDM3MWMtNzcgMjAgNDQgMTAxIDAgMHpNOTUwIDU1NGMyMyAxMiA3MiA1OCA3MCA4NC0yNSAyLTY2LTYxLTcwLTg0ek05NzEgNzA1YzIwIDAgNDkgMjYgMzEgNDgtMTQtOS0yNS0zMS0zMS00OHpNODI4IDczN2MxNiA1IDExNiAxMTAgMTE1IDEyMi0yNSA2LTk1LTk4LTExNS0xMjJ6TTk0MyA3MzVjMTcgOSA1MiAzNiA1MiA1NS0yMiA2LTQ5LTM1LTUyLTU1ek05MDEgNzUxYzIzIDEyIDM0IDM5IDU2IDUzIDExIDggMjQgMzQgMCAyNy0xNi01LTU0LTY2LTU2LTgwek04MjEgNzg5YzIyIDMgOTEgNzcgOTIgOTgtMTQgNi04OC03OC05Mi05OHpNNzgyIDgwNWMxNiA4IDk5IDk2IDk4IDEwNC0yNyAxMC04NS03NC05OC05OSAxLTEgMC0zIDAtNXpNMjQ2IDgzMWMyMSAyMiA5NyAxMjggMTIwIDEyNi02LTI0LTEwMy0xNzctMTIwLTEyNnpNNzQ3IDgyN2M4IDAgMTAwIDk0IDEwMiAxMDItNSA0LTEwIDEwLTE4IDUtNy0zLTgxLTk5LTg0LTEwN3pNMTc3IDg0MWMxIDIzIDM4IDc0IDY0IDc1LTQtMjEtNDEtNzUtNjQtNzV6TTMzOSA4NDFjMTggOCAxMTIgMTE4IDEwOCAxMzMtOCAxLTE2IDMtMjQtMy0xMC0xMC03OS0xMTUtODQtMTMwek02NjcgODQ1YzE3IDkgMTA2IDEwNiAxMDggMTIyLTcgNC0xMiA5LTIxIDUtNC0yLTg2LTEyMC04Ny0xMjd6TTU4NiA4NjljMjkgMTIgOTUgODQgMTAyIDExNi0xNiAxMC05My05Mi0xMDItMTE2ek01ODMgOTE4YzE4IDQgNjEgNTQgNjMgNzQtMjYgMTItNTUtNDgtNjMtNzR6Ii8+PC9nPjwvZz48L3N2Zz4=",
+		"[letter-p]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjIyIDUgMjU2IDI5MCIgd2lkdGg9IjI1NiIgaGVpZ2h0PSIyOTAiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozMDAsImgiOjMwMH0sInN0cm9rZXMiOltdLCJzaGFwZXMiOlt7ImlkIjoiYzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJ0ZXh0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOm51bGwsImdlb20iOnsiY3giOjE1MCwiY3kiOjE1MH0sImluayI6IiNiMzI2MWUiLCJsYWJlbCI6IlAiLCJ0ZXh0U2l6ZSI6MjAwLCJ0ZXh0Rm9udCI6ImxldHRlcnM6ZmllbGQifV0sInZpZXciOnsieCI6MjIsInkiOjUsInciOjI1NiwiaCI6MjkwfX08L21ldGFkYXRhPjxzdHlsZT5AbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOmRhcmspe1tmaWxsPSIjYjMyNjFlIl17ZmlsbDojZmY4Njc2fX08L3N0eWxlPjxnIGRhdGEtc2hhcGUtaWQ9ImMxIiBkYXRhLWJydXNoPSJpbmsiPjxnIGZpbGw9IiNiMzI2MWUiIGZpbGwtcnVsZT0iZXZlbm9kZCI+PHBhdGggdHJhbnNmb3JtPSJtYXRyaXgoMC4yIDAgMCAwLjIgNTIuOCA0MCkiIGQ9Ik0zNiAxYzIwLTQgMzIgOSA1MCAxMSA0MyAzIDg5IDMgMTMyIDMgMTc1LTMgMzQ4IDQgNTIyIDQgMjggMCAyMTYtNyAyMjUgMyAxNiAxOSA1IDE3MCA1IDIwMS00IDE4My03IDM2OSAwIDU1MiAxIDMxIDggMjEyLTEyIDIxNy0yOCA5LTE4My0yLTIyNC0zLTEzOC0yLTI3NSAxLTQxMyAwLTQwIDAtODQgOS0xMjMgMGwtMTQyLTFjLTE0IDItMjYgMTItMzkgMTItNyAwLTEwLTMtMTQtNy05LTEzIDAtMTc4IDAtMjA1IDctMTkwLTMtMzc5IDQtNTY5IDEtMzQtNy0xODEgMy0yMDEgNi0xMSAxNS0xNCAyNi0xN3pNNzAgNDFjMTggNyA0NSA3IDYwLTctMTQtMTAtNDktNi02MCA3ek0xODMgMzhjMTkgMjEgNzkgMTIgMTA4IDEzIDQ5IDAgMzIxIDggMzQ3LTMgMC03IDItMTItNy0xNy05LTUtMjAgNi0zMCA3LTIxIDItNDYtNy02OS02LTU2IDItMzIxLTctMzQ5IDZ6TTY0NSA0NGMyNiAyNiAxNTIgMiAxOTEgNCA4IDEgMTUgNiAyMyA2IDE0IDAgNjUtNiA3MyA0IDEzIDE3IDcgMTYyIDYgMTkxLTYgMTY5IDIgMzM4LTIgNTA2LTEgMjMgMyAxOTItNyAxOTktMjYgMTUtNzcgMi0xMDYgMy03NCAyLTE0OC00LTIyMi05LTI2LTEtNTUgOC04MiA3LTQxLTEtOTgtMTktMTMyIDgtMTgtMTMtMjA0LTE1LTIyMyAwIDE4IDE1IDIwMiAxNyAyMjMgMCAxMiAyMCA1NiAxNCA3OSAxMyA3Ni0xIDE1Mi0xIDIyOC0zIDM0LTEgMjM2IDE1IDI1Mi0zIDIxLTI2IDgtMTc4IDktMjE4IDAtMTYzIDQtMzI2IDUtNDkwIDAtNDUgOS0xODItOC0yMTgtOS0xNy01NC0xMS03MC0xMC0xNiAxLTMxIDctNDYgOC01IDEtMTEtNS0xNi01LTE5LTItMTUwLTQtMTYyLTItNyAxLTkgNS0xMyA5ek0zMyA3OGMtMTEgMjUtMTIgMTg3LTMgMjEyIDE2LTE0IDE2LTE4OSAzLTIxMnpNODc5IDE5M2MtMTUtMzQtMzgtNDkgMTAtNzYgMC0yNS01NC0zMS03My0xMy00OCA0NCA2IDEyMyA2MyA4OXpNMTI1IDEyNGMxOCAxMSA1MCAyMSA2MSA0MyAyNiA1MCAxMyAxMjAgMTIgMTc1LTEgMTA4IDAgMjE2IDEgMzI0IDAgNTQgNyAxMjMtOCAxNzUtMTMgNDUtNjAgMzItODEgNjMgOCAxMCA0NiAzIDYyIDIgMzQtMyAxOTYgMTAgMjEwLTYtMjQtMTMtNTMtMTAtNzUtMzEtMzYtMzUtMTktMTYwLTIwLTIxMCAwLTIxLTctMTAxIDEwLTExMiAxMy04IDEwNiAwIDEyNiAwIDEyNSAyIDI5MCAyOSAzNjYtOTkgMTYtMjcgMzAtNjEgMjktOTMtMTItMjc5LTI1Mi0yMzQtNDU4LTIzNS0zNyAwLTIxNS04LTIzNSA0ek03MjkgMTMwYzggMTcgMzQgMTcgNDggNC0xMy0xMi0zMS03LTQ4LTR6TTM5NyAxNDBjODEtMyAyMTYtMTUgMjc2IDUwIDY4IDczIDY5IDIzNS0xMSAzMDAtMzEgMjUtNzkgMzMtMTE3IDM0LTI3IDEtMjQ2LTMtMjU0LTEwLTgtMTAtNC0xMDQtNC0xMjMtMS00MS0xMC0yMTQgMjAtMjM0IDIzLTE2IDYyLTE2IDkwLTE3ek00NzMgMTgzYy04IDUtMjcgMy0zMSA3LTkgOS0xOSA4OS0xNCAxMDIgMSAzIDE3IDIxIDI1IDM3IDIyLTUgMTQtMTggMjYtMjkgNy02IDE1LTQgMjMtNyAyMS05IDQwLTUzIDQyLTc0LTIyLTEyLTU1LTE4LTcxLTM2ek01ODUgMjA4YzkgNSA0MS05IDQwLTI1LTE4LTItMjggMTQtNDAgMjV6TTk2IDE4NmMwIDE5IDE4IDExOCAzMyAxMjggNi0xNiAxNC0zNiAxNS01MiAzLTI2LTE2LTgxLTQ4LTc2ek0zNjcgMjA1Yy0xMCAxNC00MiAxOC00NyAzNC0xMSAzOSA1NiAxMDkgODMgMTI3IDktMTkgMS0yMyAxLTQxIDEtNyAxMC05IDEwLTE2IDAtMjgtNC04Ny0yNC0xMDYtOSA4LTEzIDctMjMgMnpNNTI5IDMzOGwtNCAxMGMxNSAxMyAxMDQgMiAxMTQtMTYgMTItMjAtMTAtNjItMjQtNzQtMzQtMzItNTUgNS03OSAzMS00IDUtMTUgNy0xNyAxMy00IDEwIDMgMzAgMTAgMzZ6TTMzIDQ0MGMxLTI4IDEzLTEwNCAwLTEyNC0xMSAxMi04IDExMyAwIDEyNHpNMzIxIDMzOWMtNyAzMCAyOCA3NyA1OCA3NWwtNS0xNmM0LTUgNS04IDktMTMtMTItMTktNDAtNDctNjItNDZ6TTExNiAzNDNjLTQgMjggMTcgNjIgMjAgOTEgMyAyMy0xIDg4IDI5IDkzIDUtMTYtMzYtMTcyLTQ5LTE4NHpNNDEzIDQyMmMxMy0xIDEwNy00NyA2Ni02NS0yNy0xMy03NSA0MC02NiA2NXpNNTI5IDQwMWMtMTMgMC0xOS0yLTIzIDEwIDE0IDQgMzEtNCA0MCAxMC0xOSA3LTM4LTYtNTYgMyA0IDEyIDE0MiA0NSAxNTkgMzctNC0yNyAxNi02MS0xLTgzLTExLTE1LTExMiAwLTExOSAyM3pNODkgNDE4Yy04IDE3IDcgMjQgMjQgMjAgMC0xNi05LTE5LTI0LTIwek0zMyA0NTFjLTkgMTYtOSA1OSAwIDczIDQtMjQgMy00OSAwLTczek0zODAgNDkzYzE4LTMgMjgtMjggMTctNDItMTggNi0yNSAyNi0xNyA0MnpNNDM2IDQ1MGMtMTkgMjQgODMgNDcgMTAxIDM0LTMtMTItMzQtMzUtNDgtMzUtMTktMS04IDEzLTUzIDF6TTc5NiA0NzdjNyAxNyAyMyAzMSAzMyA0NiAyOS00LTQtNjYtMzMtNDZ6TTg3NCA0OTBjMTUgNyAzMCAyIDI5LTE2LTEwIDQtMjMgNi0yOSAxNnpNODMgNTQwYzE4IDYgMzYtNyA1Ni0zLTEtMjQtNDktMTctNTYgM3pNNzgzIDYyM2MxMS01IDExLTE0IDIwLTIyIDMyLTI2IDUzIDE2IDYwIDM3IDE2LTggMjQtMjYgMjMtNDUtMy0xMDktMTYwLTQyLTEwMyAzMHpNMzQwIDY4NmMtMTAtNi0xNC0xMi0yNS0xMCA1IDE4IDE3IDI3IDI1IDQzIDkgMTcgMSA0NyAyMCA1NiA2LTggOS0xOTMgNC0yMDgtMzItMy04IDk3LTI0IDExOXpNNDE2IDU3OWMtMTAgMTMgOSAxMTYgNSAxNDYtNiA0MC03NSA1NS02MSAxMTAgNDQgNyA4NC04IDExOSAyOSAxMiAxMiAxOCAzMSAzMCA0MSAxNC00NC0xNy05Ni02Ni0xMDAtMjAtMS00MSAxMC02MCAxMyAxLTE4IDE2LTMxIDI3LTQ1IDM0LTQzIDYwLTY1IDExNS04MiAyMy03IDY0IDIgNzYtMTktMTktMTYtNDIgMS02NS0zIDctMjUgNDQtNDEgMjktNzUtNTEgOC0yMiAxMDEtMTEyIDEwMC04LTM1IDE2LTEwMi0zNy0xMTV6TTg0IDYwNmM5IDYgMTMgNiAyNCAzLTQtMTQtMTYtMTUtMjQtM3pNMTUxIDY1MmMxMSA5IDE4IDYgMjUtNi0xMi03LTE5LTUtMjUgNnpNMzAgNjU0Yy0xMSAyOC0xOSAyNjktMTAgMjk5IDkgMjkgODkgMjcgMTA1IDEwLTE2LTE3LTgxIDEtODgtMjAtNC0xMCAyLTIyIDEtMzMtMi00MC0xLTI0Mi04LTI1NnpNNjU5IDY2OWMxOCA1IDQwIDUgNTYgMTYtMjYgMC0xNTktMTItOTAgNTEgMTMgMTMgMiAzMCAxNiA0MGwtMiAxNWM3IDMgMTAgMyAxOSAybDMgMTVjOC0yIDEyLTIgMTkgMC0xIDctMSA5LTYgMTYgNiAwIDE1LTEgMjMgMGwwIDE1YzE0LTggMjctMTYgNDAtMjUgOSA3IDEyIDggMjQgNyA1LTE2IDEzLTI3IDE5LTQ1bDExIDJjMTktNjEtOTEtMTYwLTEzMi0xMDl6TTEyMiA3NjljMi0xNSA3LTE2IDE4LTI0LTYtMTMgNS0yMC02LTMzbDktMTMtOC0xMGM1LTcgNC05IDQtMTctNzAtMjMtODQgOTItNTYgMTAzIDEzIDUgMjctMiAzOS02ek00NTkgNzQxYzUgMTMgMTcgMTIgMzAgMjAgMTkgMTQgNzQgNjggODYgNzMgMTktNjEtNjMtMTExLTExNi05M3pNODA3IDgwMWMzNiAyOSA1OSA1IDY0LTM2LTIzLTgtNTEgMTgtNjQgMzZ6TTc5MyA4MzhjLTExIDI4IDQ5IDc1IDczIDY2IDUtNDYtMzEtNzMtNzMtNjZ6TTczMCA5MTVjMzQtNSA0OC0yOSA1NC02MS05LTYtMTEtMy0yMSAzLTMyIDIyLTIyIDIzLTMzIDU4eiIvPjwvZz48L2c+PC9zdmc+",
+		"[letter-t]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjEwIDUgMjgwIDI5MCIgd2lkdGg9IjI4MCIgaGVpZ2h0PSIyOTAiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozMDAsImgiOjMwMH0sInN0cm9rZXMiOltdLCJzaGFwZXMiOlt7ImlkIjoiYzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJ0ZXh0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOm51bGwsImdlb20iOnsiY3giOjE1MCwiY3kiOjE1MH0sImluayI6IiNiMzI2MWUiLCJsYWJlbCI6IlQiLCJ0ZXh0U2l6ZSI6MjAwLCJ0ZXh0Rm9udCI6ImxldHRlcnM6cmVsaWVmIn1dLCJ2aWV3Ijp7IngiOjEwLCJ5Ijo1LCJ3IjoyODAsImgiOjI5MH19PC9tZXRhZGF0YT48c3R5bGU+QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXtbZmlsbD0iI2IzMjYxZSJde2ZpbGw6I2ZmODY3Nn19PC9zdHlsZT48ZyBkYXRhLXNoYXBlLWlkPSJjMSIgZGF0YS1icnVzaD0iaW5rIj48ZyBmaWxsPSIjYjMyNjFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIHRyYW5zZm9ybT0ibWF0cml4KDAuMiAwIDAgMC4yIDM4LjkgNDApIiBkPSJNMTEwNCA0MjBjLTM3LTEzLTEwMS0xNzctMTQ0LTE3My0xIDIyIDE5IDQwIDI0IDYyLTEwLTMtMTgtOS0yOC0xMS01IDE0IDQgMjcgNyA0MmwtMjEgMWMtNCAzMCA0OCA3MiA2MCAxMDEtMjAtMTUtMzItNDQtNTctNDggMiAzNiA0MSA3NCA1OCAxMDQtMTUtMTItMjgtNDUtNDctNDMtOCA0MCAzNiA1NiAzNSA5MS0xNS05LTIxLTMxLTM3LTM0LTUgMTkgMTAgMzMgMTIgNTItMTctOC0yOC0yOC00OC0yMyA2IDUwIDEyMyAxMjcgMTE2IDE3MS00My03LTEwOS0xNTctMTU5LTE5MC0xNC05LTQzLTEyLTYxLTE5IDQgMTAgOSAyOCAxMSA0MS0yNC0yMC0zNC01NC02NC02NS03IDQ3IDcxIDgyIDcxIDEyOC00MS0xMi0xMTItMTgyLTE2Mi0yMDYtMTAgMjIgMTYgNDcgMjIgNjktNDMgMCAyIDUxIDIgNzEtOC02LTExLTktMjEtMTEtOSAyMiAxNyAzOSAxNCA2M2wtMTctNGMtMTIgNzEgMTY0IDIxNCAxNzMgMjY2LTQxIDAtMTA0LTE1Mi0xNTItMTczLTUgMzQgMjEgNTYgMzMgODUtMzMgMzYgNDIgODcgNDggMTIxLTI5LTE3LTQwLTUzLTc4LTU3bC03IDE1Yy0xOS0xMS0zMi0yNS01NC0zMGwtNiAxMmMtMTUtOC0yMi0yMS0zOS0xOSA1IDIzIDI0IDM5IDM0IDYwLTE5LTE2LTU4LTg3LTg0LTY3IDcgMTQgMjMgMjMgMjIgNDAtNDAtMjAtMTQyLTE5NC0xNjUtMTkyIDkgNTkgMTAxIDE0NCAxMjggMjA1LTE5LTE0LTM5LTYwLTY3LTU2LTIgNTAgMTEwIDEyOSAxMDEgMTYyLTM5LTExLTEwNi0xODAtMTUxLTE1OSAxNiA2NyA5NCAxMDQgMTIzIDE2Ni03MyA4My0xMzUtMTU5LTIwMS0xNDgtNiA0MiAxMDMgMTE3IDExMCAxNTktMTggMy0xNTQtMTc2LTE3NS0yMDUtMjItMzEtNjgtNzAtNzctMTA2LTgtMzEgMzMtNDMgMTMtNzgtNDAtNjktMTkxLTIxNy0xOTktMjg2LTItMjQtNS04NSA3LTEwNiA2LTExIDI3LTYgMzAtMjEgNS0yNi0yMy0yNS0zMC00My00LTEyLTQtMTI3IDItMTMwIDE2LTExIDQ2IDggNjQgMTEgNTUgMTEgMTE0LTIwIDE3My0xNCAzNCA0IDY1IDI0IDk5IDI4IDQ0IDUgOTYgMTMgMTQxIDUgMzctNiA3MS0yMCAxMDktMTkgNTIgMiAxMDEgMjEgMTUyIDIyIDI3IDEgNTItMTYgNzgtNSAxNSA2IDE0NiAxNzYgMTU0IDE5NCAxNyAzOCAxMzUgMTY5IDEyNSAxOTR6TTQ4IDEzMWMtNi0xNi0yOC0xMzEgMTctNzQtMzggNTUgNjIgMTA2IDQgMTQ0bC0xMS0xMGMtNTUgMTgtNjkgMTM2IDM4IDg1IDcwLTM0IDEzNy0xOTkgMTU4LTE3NCA4NCAxMDEgMyAxNjUgMiAyNTggMCA0NSAzMSA5MCAxOSAxMzUtNiAyNS02OCAxNTEtNTkgMTU5IDYgNCAxMjgtMjAgMTM2LTI1IDEzLTEwIDEyLTcwIDQ2LTYxIDMyIDggMTMgNDcgMjggNjEgMTEgMTEgMTIxIDM0IDEzOSAyNS01LTUzLTUxLTEwNy01Ny0xNjMtNS0zOCAzMi04MCAzNS0xMjAgNS01My0yMy04Mi0yNC0xMjAgMC0yOSAxNS0xMzIgNTUtMTM1IDU2LTUgNjUgMTA3IDkyIDE0MiAyNiAzNCA1NCA0NyA5MiA2NCA4IDMgMjggMTEgMzUgMiAxMS0xNCAxMi02OCA0LTgzLTEzLTIyLTM4LTctNDAtNDMtMi00MSA3Ni02OSA0My0xMzctNS0xMi03NCAxLTg4IDAtMzItMS02My0xNy05NS0yMC0zOC0zLTY3IDExLTEwMyAxNi0yMiAzLTUwIDAtNjkgMTAtMSA0My0xMyA2My01MCA4MSAzNiA0NiA1MC01OCA3MC02NSAzMy0xMSA5MS0yMCAxMjctMjAgNDMtMSA4NCAyMSAxMjcgMjMgMTUgMSA1NC0xNyA2NCAwIDI2IDQ3LTM1IDYxLTM5IDk4LTQgMjQgMTcgMzEgMTcgNTMtOTEtMTggMTItMTEwIDEwLTEyNy0xLTUtMi04LTYtOS0xNC03LTM4LTEtNTMtMS0yOC0xLTU2LTI2LTgzLTE5LTkgNDggNTYgMTEwIDU4IDE1OS01MS0xMS00OC0xNDktOTItMTU4LTE1LTQtMzEgMTUtNDYgMTgtOC0xNi02Ni0xNS04MC0xLTIyIDI0LTggNzQtNTQgODItNDggOC00My05Ni0xMTktOTYgMTAgMzkgNDUgMTI0IDM5IDE2Mi01IDMxLTUyIDU3LTQ0IDEzNSAyIDI2IDIyIDQ5IDI4IDc0IDYgMzEtMzEgMTIxLTU2IDEzMSAwLTM4IDMwLTc1IDM2LTExNCA0LTMzLTE4LTc2LTE4LTExMyAwLTY4IDQyLTk0IDI1LTE2OS04LTMyLTIyLTEyNy02Ny0xMjctMzIgMC00MCA3NC02NCA4NCA5LTM2IDMzLTY1IDM1LTEwMiA0Ni0yMCAxMTkgMzAgMTU5IDUxIDQtNyAxMy0yNCA3LTMyLTYtOC0zOC0xMi00OS0xNS0yNi02LTQ4LTIwLTc0LTI1LTU1LTExLTExNSA2LTE3MCA4LTE0IDAtNDgtMTAtNjAtMy0yNSAxNS03IDEwNCAyNSAxMDF6TTUzMiAxMzBjLTYgMzgtMzEgNzktMjggMTE3IDMgNDMgMzAgODQgMjYgMTI4LTMgMzItNDEgODAtMzggMTAyIDQgNDEgNTMgMTM0IDQ3IDE2My0xNiAxLTg5LTE1LTk5LTI5LTEzLTIwLTEwLTYxLTM5LTY4LTEzLTMtMjYgOC0zOSA4IDQ5LTg1IDcxIDI1IDkyIDQ5IDcgOCA0NyAyMSA1NyAyMSAxMy0yNy0zMC0xMDAtMzYtMTM0LTYtMzYgMzEtNjUgMzgtMTAyIDgtNTEtMjAtNzItMjctMTE2LTYtMzQgMTUtMTIzIDQ2LTEzOXpNMTE4IDIyN2MtNiAyMy00OSA0Ni03MiAzOCAxMC0xNCA1NC0yOCA3Mi0zOHpNNzY1IDI0NWMxNCA4IDMxIDUzIDQgNTctMjAgMy02Ny0yOS03MS00NiAyOCA3IDc4IDcyIDY3LTExek0zMjcgMzU0YzEyIDI3IDI0IDMyIDUzIDI2IDcgODUgNDggNTQgMzQtNSAxNyAwIDMzIDE1IDUwIDMgNDMtMzAtNDEtMzMtNDYtMzUgMjItNzgtNDItNTQtMzgtMjUgMiAxMSAxNSAyMiAxOSAzMi0yOC02LTM3LTE2LTY5LTggNC0yMSAyMC0xNyAzNi0yNyAxNi0xMiAxMy0zNSAzOS0zOCAyOC0zIDI3IDMwIDQyIDQ0IDE4IDE3IDUwIDEwIDQxIDUwLTQgMTktMjUgMjAtMzcgMjktMTUgMTEtMTMgMzAtMzEgMzgtMzMgMTQtMTA2LTU3LTkzLTg0ek05ODggMzEzYzM1IDIxIDY1IDEwOSAxMDkgMTEwIDkgMCAxNSAzMSA5IDM2LTExIDEwLTExMC0xMTQtMTE4LTE0NnpNMjE0IDQwOWMtMjAtNy0yNC0xLTM1IDE0LTY1LTggMjkgODAgMzcgMTA3LTMzLTgtNDktODktODMtODEtNSAyOCA1NyAxMjAgODQgMTI5IDM5LTQ0IDE4LTY1LTUtMTEyIDExIDEwIDIzIDI4IDQxIDI2IDYtMjQtMjctNTMtMzItNzYgNyAxMyAxNSAyMSAyOCAyNCAxLTIwLTMtNDYtMTQtNjMtMTkgMi0yMiAxNS0yMSAzMnpNMTAwNSA0NDNjMjAgMTQgMTAwIDExMiA5NiAxMjgtMTgtNC04OS0xMDUtOTYtMTI4ek0xMDUxIDQ1MWMyMCAxMyA1NSA0MiA1MCA2Ny0xNi0zLTQ3LTQ5LTUwLTY3ek03MzcgNTM4YzIxIDE3IDEwNSAxMTggOTUgMTM5LTMzLTE4LTg3LTEwMS05NS0xMzl6TTk5OSA1NTVjMTYgMiA5OSAxMDAgOTggMTE2LTIxIDMtOTEtOTItOTgtMTE2ek0zNTIgNTYyYzEyIDUwLTY3IDgxLTEwNyA2Ny0yLTE1IDEtMjMgMTUtMzAgMjAgMTUgNTYgOSA3OS0yIDAtMTUgMC0yNSAxMy0zNXpNNzE2IDU3MmMyMyAxMCAxNDAgMTY4IDEzMCAxODYtMTctMTEtMTIyLTE2MS0xMzAtMTg2ek04NTMgNTc5YzE5IDE1IDU5IDU1IDU3IDc5LTI4LTEwLTUyLTUxLTU3LTc5ek04OTYgNTgyYzI4IDE0IDc0IDgxIDg0IDExMS0yMCA4LTgzLTg2LTg0LTExMXpNOTc3IDU4MmMxNiA1IDExOCAxMzQgMTE0IDE0Ni0zMC03LTEwMy0xMTQtMTE0LTE0NnpNNzA4IDYxNWMyNiAyMCA3MyA4MSA3OCAxMTMtMjgtMTEtODAtODMtNzgtMTEzek02NDEgNzYwYzc5LTM1LTUyLTU0IDAgMHpNODA2IDc1NmMxOCAwIDQwIDMzIDM3IDUwLTE2LTUtMzItMzMtMzctNTB6TTM2OSA4MTNjLTUgMjIgOTAgMTMzIDExNyAxNDUgMTUtMjItODMtMTQzLTExNy0xNDV6TTc3OSA4MzVjMzQgMzAgMTg1IDIyOCA0MyAxNDQgMS03IDMtMTMgNy0xOSAxNyAyIDI2IDE4IDQwIDE1LTYtMTEtMjMtMjItMzMtMzQtNi04LTItMjEtNi0yOS0xNS0yNy00MC00Ni01MS03N3pNNzAxIDg2MGMyMiAxMiAxMTMgMTIwIDExMSAxMzYtMTkgMC0xMTItMTE3LTExMS0xMzZ6TTYyNCA4NzFjMjMgMjMgOTMgODMgOTIgMTE0LTM3LTMtODUtODEtOTItMTE0ek01ODYgODgzYzIwIDE1IDU0IDQ4IDU5IDc0LTI5IDQtNDYtNTMtNTktNzR6TTU1NyA4OTljMTQgMTcgMzMgMzAgNDIgNTEtMjMgMjAtMzctMzYtNDItNTF6TTY5NiA5MTJjMjEgNiA3MCA2MCA3NSA4MS0yNiAxNC03MC01Ny03NS04MXoiLz48L2c+PC9nPjwvc3ZnPg==",
+		"[letter-m]: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjE5IDUgMjYyIDI5MCIgd2lkdGg9IjI2MiIgaGVpZ2h0PSIyOTAiIGNvbG9yPSIjMTIxMjEyIj48bWV0YWRhdGEgaWQ9InJhcGllci1kcmF3Ij57InZlcnNpb24iOjEsImNhbnZhcyI6eyJ3IjozMDAsImgiOjMwMH0sInN0cm9rZXMiOltdLCJzaGFwZXMiOlt7ImlkIjoiYzEiLCJzdHJva2UiOm51bGwsInJlY29nbml6ZWQiOiJ0ZXh0IiwiYXNEcmF3biI6ZmFsc2UsImJydXNoIjoiaW5rIiwic3R5bGUiOm51bGwsImdlb20iOnsiY3giOjE1MCwiY3kiOjE1MH0sImluayI6IiNiMzI2MWUiLCJsYWJlbCI6Ik0iLCJ0ZXh0U2l6ZSI6MjAwLCJ0ZXh0Rm9udCI6ImxldHRlcnM6ZmllbGQifV0sInZpZXciOnsieCI6MTksInkiOjUsInciOjI2MiwiaCI6MjkwfX08L21ldGFkYXRhPjxzdHlsZT5AbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOmRhcmspe1tmaWxsPSIjYjMyNjFlIl17ZmlsbDojZmY4Njc2fX08L3N0eWxlPjxnIGRhdGEtc2hhcGUtaWQ9ImMxIiBkYXRhLWJydXNoPSJpbmsiPjxnIGZpbGw9IiNiMzI2MWUiIGZpbGwtcnVsZT0iZXZlbm9kZCI+PHBhdGggdHJhbnNmb3JtPSJtYXRyaXgoMC4yIDAgMCAwLjIgNDkuOCA0MCkiIGQ9Ik00MzIgMWMxNDMtMiAyODYgNiA0MjkgNCAyMiAwIDEzMS03IDEzOSA5IDExIDI0LTMgMTU3LTEgMTkzIDUgMTIxIDAgMjQzLTIgMzY1LTIgNjUgNCAxMzAgMyAxOTUtMSAzNSA5IDE5NC0yIDIxMi01IDktMTQgMTEtMjMgMTItMTA3IDUtMjE2IDEtMzIzIDAtMzMgMC02NyA3LTEwMSA2LTgyLTEtMTY1LTktMjQ4LTUtMTIgMC0yMyA3LTM1IDgtOSAxLTE1LTctMjMtOC0zOS0xLTIxMCA4LTIzMi02LTE1LTEwLTctMTgxLTgtMjA5LTQtMTA3LTEtMjEzLTEtMzE5IDAtOTEtMTEtMTg0IDAtMjc0IDQtMjUtOS0xNjMgMy0xNzMgMjEtMTYgMTAzLTggMTMwLTYgOTggNiAxOTgtMiAyOTUtNHpNNTkgMjFjLTExIDAtMjQgMTItMjcgMjItOCAzMS0zIDE1MC0zIDE5MCAwIDE3OSAyIDM1OCAzIDUzOCAxIDM1LTEyIDE2NCA0IDE4OSA2IDEwIDE5MiA5IDIxOCA5IDEyNCA0IDI0OC00IDM3Mi0yIDg1IDIgMTcwIDMgMjU1IDMgMjQgMCA1MCA1IDc1IDIgMzYtNCAyMC0xNzcgMjEtMjExIDEtMTAxIDYtMjAzIDQtMzAzLTItNzMtOS0xNTAtNC0yMjIgMi0zMCAxMi0xODAgMC0xOTktMTItMTgtMTkyLTE0LTIyNC0xNS0xMTMtMi0yMjYgMy0zMzkgMi0xMTggMC0yMzctOC0zNTUtM3pNNTIgNDBjMTMtMTAgMTUyIDEgMTgwIDEgMTc0IDAgMzUwLTUgNTI1IDEgMjggMSAxOTggMSAyMDIgOCAxMyAyNSA0IDExNSAzIDE0Ny0xIDExNyAyIDIzNSAwIDM1Mi0xIDk5LTIgMTk4LTEgMjk3IDAgMjMgMTAgODgtOCAxMDQtMTIgMTEtMTQ0IDAtMTcwIDEtNTEgMi0xMDItMy0xNTQtMi0xMjYgMi0yNTIgMy0zNzggMi0yNSAwLTE5MiA3LTIwMi00LTktMTAtNS0xMTEtNS0xMzEtMy0xMjctMS0yNTQgMS0zODEgMi05OS0xLTE5OCAyLTI5NyAwLTE2LTYtOTAgNS05OHpNNDI3IDEwNWM3LTUgMTQtOSAyMS0xMy03LTE2LTQ2LTM1LTYzLTIzLTE4IDEzIDM3IDMzIDQyIDM2ek00ODkgOTZjMjYtOCA1OCAwIDc3LTIzLTIwLTIzLTY5IDAtNzcgMjN6TTEwMCA5MmMxMSAyMiA2MCAyOSA3NiA2NiAxOCA0MCA0IDEyNyA0IDE3Mi0xIDkwIDEzIDQyNy05IDQ5MC0xNCA0MC02MSAzMC03OCA1OCAxMCA4IDE5NSAxMCAyMDMgNC0yMC0zMC02OC0yNS04My02Ni0xNi00My05LTM4Mi03LTQ1MCAxLTM0LTEwLTExMiA2LTEzOCAyMiAxNyA1NCA5OCA2NSAxMjcgMzQgODYgODIgMTcyIDEyNyAyNTIgMTYgMjggMzAgODIgNTYgOTggMjctMTggNDktMTA4IDY1LTE0MSA1Ni0xMTIgMTA3LTIyNyAxNTgtMzQxIDExLTI0IDE3LTYxIDM1LTc5IDE0IDIxLTMgMTM1LTEgMTcwIDggMTEyLTcgMjI0LTMgMzM2IDEgNTMgOSAxMzktMTkgMTg2LTE5IDMxLTU0IDI1LTc4IDQ2IDQgNCAyNzMgNiAyNzkgMy0yMi0yNi02My0xOC04Mi02Mi0xOC00NC01LTEzMS0zLTE3OSA0LTExOSAxLTIzOCA4LTM1NiAyLTQ0LTEyLTEwMCA2LTE0MiAxNC0zMyA1Ny0yNyA3OS00Ny0yMS0xNy03MS0zLTk4LTMtMjctMS03MC0xMS05NSAyLTI3IDEzLTQwIDc3LTUyIDEwMi0yNyA1Ny0xNDAgMzQwLTE3MCAzNjItMjktMTgtNDEtODEtNTctMTExLTQ2LTg1LTg0LTE3My0xMzEtMjU4LTE0LTI2LTIyLTc0LTQ3LTkzLTktOC0xMzktMTItMTU0LTh6TTUyOCAxMTVjNiAxNCAyMiAzIDM2IDcgNiAyIDQgOSA4IDEzIDE0IDEwIDQ5LTIgNTctMTMtMjAtMjktNzMtMjAtMTAxLTd6TTMzNCAxMjhjMjAgMzAgNzIgMTkgODctMTAtMTgtMTctNzAtNy04NyAxMHpNNDExIDE4MmMwLTctMS03LTMtMTItNDUgMjAtMzQgMTU5IDEzIDE3NCA2LTgtMjUtNTYtMjAtODIgOCAxNiAyMSA5NCA1MiA2NWwxNyA4YzE1LTI1IDM3LTM4IDI4LTY3IDgtNiAxOC0xMiAyNi0xOS0zLTUtMi01LTUtMTAgNS02IDEwLTExIDE2LTE2LTgtMTMtMy0yMi0xOS0zMCAzLTUgMy03IDMtMTMtMTItMi0yMi0yLTM0IDBsNy05Yy03LTctMTQtNS0yMi0xMC03LTMtMTAtMTUtMTctMTktMTggMTAtMjcgMjctNDIgNDB6TTkxMyAxNzNjLTE1IDI5LTggNjYtMjMgOTUtNy0yMC0yLTU0LTMzLTUyLTYgMjEgOCA1MyAyNyA2Mi0yIDQxLTUxIDc3LTUyIDk1IDAgMTAgMTEgNyAxNiAxMyAxNiAxOCAzNCAyOSA0NiA1MSA2IDEzIDYgMjggMTMgNDEgMzgtNDgtMTItODctNTItMTAyIDQtMTggMjMtMzIgMzItNDkgMjEtMzkgNDgtMTExIDMwLTE1M2wtNC0xek0xMTEgMTgyYy0yMiA0OCAyIDkxLTYgMTM5LTgtNy0xMy0xNC0yNS03IDcgMTYgMjUgMTkgMzggMzIgMTMgMTQgMTIgMzggMzEgNDYgNC0xNi03LTI2LTctNDIgMC0zMiAxMy03MyA4LTEwMS0xOCA5LTIwIDM0LTI2IDUyLTE4LTM5LTItODAtMTMtMTE5ek02NjUgMzUxYzE0LTIgMTctMTEgMTAtMjItMTAgNi0xMiAxMC0xMCAyMnpNNDQwIDQwMGMxMC00IDE5LTEwIDI2LTE3LTYtNS0xMS05LTE2LTE1LTE1IDMtMTkgMTktMTAgMzJ6TTYyNiAzODljMTMgMTYgNTIgMjEgNjcgMTAtMTEtMjEtNTAtMjYtNjctMTB6TTQ1MCA0MjRjNCAzIDUgOSAxMyA3IDE1LTQgODUtMzMgODgtNDItMTktMTQtODggMTYtMTAxIDM1ek02MjMgNDA4Yy01IDI2IDE4IDUyIDM5IDY0IDEzLTI1LTEwLTYzLTM5LTY0ek03OCA0ODFjMTUtMSAxMy0xNyAyNi0yMiAxNC02IDM0IDMgNDktMyA4LTY0LTg3LTIyLTc1IDI1ek0yNzEgNDMwYy0yMSAyMi0xNCA4MCAxMyA5NCAyMi0xNyAwLTc3LTEzLTk0ek00NjYgNDM3YzAgOSAxNyA0OCAyMyA1NiAzOC05IDEyLTU5LTIzLTU2ek0yMzIgNDk5YzAgNDUgMTQyIDEzMiAxNTAgMTk4LTMxLTctMTIyLTgyLTE1Mi00MCAxMCAxNSAxMjAgOSAxNTIgODFsLTE1IDdjNiAxMSAyMSAxNiAzNCAyMS0xLTEwLTctMTYtMTMtMjVsMTMtNmM0MCAzNCAyNiAxNTggMzkgMTczIDE4LTcgMTktMzUgMjUtNTMgMTctNDkgNTktNjQgODktMTAwLTE2LTI4LTgyIDUxLTk0IDY2LTE2LTgtMjMtNTYtMjktNzYtMTQtNDEtNDktNzAtNjMtMTA4LTEwLTI1LTQtNTctMTktNzktMTIgNS0xMiAxMS0xNiAyNS0zMC0xMy02OS04Ni0xMDEtODR6TTgzNiA1MTBjLTIgMjcgMjcgMzMgMzAgNTkgNCAzMC0zNCA2NS0xOCAxMTAgMjctMTAgMjYtNDEgMzYtNjQgMzEgMzMgMjQgMTIwIDQgMTU5LTUgMTAtMjEgNS0yNiAxNi02IDE1IDggMjYgMjIgMjMgMTgtMyAyOC01OSAzMS03NSAxMS01Ny0xMy0yMTAtNzktMjI4ek02MzMgNTE2Yy0yNCAyLTIzIDM3IDMgMzUgMjYtMiAyNC0zNy0zLTM1ek05OCA1ODFjMTMtNCA0MSA0IDUyLTcgNi01IDQtMTUgMi0yMi0yMi01OC04OC0yMi01NCAyOXpNNTkyIDcwMmw1LTE3YzcgMyAxMiA0IDE5IDQgMC0xMS01LTE2LTktMjYgNy03IDgtMTIgOC0yMyA3LTEgMTMgMCAxOSAwLTEtNy0yLTEyLTctMTlsOS0xMGMtNS0yMS0xMy0yMy0xLTQyLTM3LTUyLTExOCA3MS05OCAxMzAgMiA3IDYgMTkgMTQgMjAgMTkgNCAyNC0xNyA0MS0xN3pNMTM3IDY5NmMxNiAxOS05IDM3LTEwIDU1IDI1LTggNDAtNjkgNC03MS02MS0yLTU0IDExOS05IDU4IDktMTMgNS0zMSAxNS00MnpNMzAwIDcyNWMtNDIgNi02MCA4Ni02IDc1IDY0LTEzIDc3LTg1IDYtNzV6TTQ4MSA4NTVjMjIgMyA1NC0yMCA3Ny0yNiAyNC03IDQ0LTEgNjctMy0xMi00Ny0xNTAtMjctMTQ0IDI5eiIvPjwvZz48L2c+PC9zdmc+",
 	].join('\n');
 }
 
@@ -4300,7 +4334,13 @@ function _rapierRemoveBlockWrapper(wrapper) {
 function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	const container = document.getElementById('editor-blocks');
 	if (!container || !fragment) return;
-	if (container.hasAttribute('data-rapier-welcome-paint')) { container.removeAttribute('data-rapier-welcome-paint'); globalThis.RapierFirstScreenHold?.take(container, () => String(rapier.identity.authority) + '|' + rapier.document.source.rootId); container.replaceChildren(); }
+	if (container.hasAttribute('data-rapier-welcome-paint')) {
+		container.removeAttribute('data-rapier-welcome-paint');
+		// The first screen painted the welcome. It stays over the editor only while the editor's first document is that
+		// welcome; a document that arrived ahead of it (a shared item, a recovery, a carried file) is what the person must see.
+		if (_rapierIsBuiltInWelcomeDocument()) globalThis.RapierFirstScreenHold?.take(container, () => String(rapier.identity.authority) + '|' + rapier.document.source.rootId);
+		container.replaceChildren();
+	}
 	const sameDocument = options?.sameDocument === true;
 	if (document.activeElement === container) {
 		try { container.blur(); } catch (_) {}
@@ -4407,6 +4447,7 @@ async function _rapierLoadMarkdownSourceOnly(sourceMarkdown, filename, loadToken
 	if (options.carriedLedger) _rapierLedgerInstall(options.carriedLedger);
 	const commitReceipt = _rapierCaptureLoadCommitReceipt();
 	if (!options.restore && !options.deferFlush) rapierFlushDirty({ snapshot: true, durable: true });
+	if (options.sourceOnly === true) return _rapierLoadResult(options, commitReceipt);
 	const reason = rapier.document.projection.reason.replace(/^wysiwyg_/, '').replaceAll('_', ' ');
 	showToast('Opened as source; the formatted view can’t show this document (' + reason + ')', 'info');
 	srAnnounce('Opened as source. The formatted view can’t show this document: ' + reason + '.');
@@ -4415,6 +4456,10 @@ async function _rapierLoadMarkdownSourceOnly(sourceMarkdown, filename, loadToken
 
 async function _loadMarkdownDoc(markdown, filename, loadToken, options) {
 	options = options || {};
+	if (options.sourceOnly === true) {
+		return _rapierLoadMarkdownSourceOnly(String(markdown ?? ''), filename, loadToken, options,
+			{ code: 'held_recovery' });
+	}
 	const restoredRevisionState = _rapierRestoredRevisionState(options);
 	const sourceCommitGuard = options.sourceCommitGuard || null;
 	const loadCommitGuard = options.loadCommitGuard || null;
@@ -6647,18 +6692,32 @@ function _rapierInitBlockInteractionRouter() {
 		const context = _activeBlockEditContext();
 		if (context) _rapierHandleEditInput(context.editDiv, event);
 	});
-	host.addEventListener('focusin', () => {
+	host.addEventListener('focusin', event => {
+		const away = event.target === host && host._rapierWindowAway;
+		if (event.target === host) host._rapierWindowAway = false;
 		const context = _activeBlockEditContext();
 		if (!context) return;
 
 		clearTimeout(context.editDiv._rapierBlurTimer);
 		context.editDiv._rapierBlurTimer = null;
 		context.editDiv._rapierBlurStreakStart = null;
+		// The window comes back after a window of the browser's own (the phone's spelling menu) had the focus: the browser took the keyboard
+		// down when it left and does not raise it on return, so the editor asks for its focus again (the surface, then the host, where it
+		// stood), which is what raises it.
+		if (away) setTimeout(() => {
+			const live = _activeBlockEditContext();
+			if (!live || live.editDiv !== context.editDiv || document.activeElement !== host) return;
+			_rapierFocusEditingHost(live.editDiv);
+			host.focus({ preventScroll: true });
+		}, 0);
 	});
 	host.addEventListener('focusout', event => {
 		if (event.target !== host) return;
 		const context = _activeBlockEditContext();
 		if (context) _rapierScheduleEditBlur(context.editDiv, context.block.id);
+		// The page lost the window's focus and the host is still the active element: the focus did not move to another element.
+		host._rapierWindowAway = !!context && !event.relatedTarget && document.activeElement === host &&
+			_rapierInteractionRuntime.recentPointerModality === 'touch';
 	});
 
 	// The gap between two blocks, and the gutter beside a line, belong to the nearest words, as in Word or Docs: a
@@ -10677,17 +10736,20 @@ function _taskListRawFromText(rawOrText) {
 
 function _replaceOneBlockWithRawSet(block, rawList, caretTargetIndex, caretOffset, options = {}) {
 	const blockIndex = rapier.document.blocks.findIndex(b => b.id === block.id);
-	if (blockIndex === -1) return false;
-	const blocksBefore = [_rapierHistoryBlock(block)];
+	if (blockIndex === -1 || (options.nextBlock &&
+		(rapier.document.blocks[blockIndex] !== block || rapier.document.blocks[blockIndex + 1] !== options.nextBlock))) return false;
+	const replaceCount = options.nextBlock ? 2 : 1;
+	const blocksBefore = rapier.document.blocks.slice(blockIndex, blockIndex + replaceCount).map(_rapierHistoryBlock);
 	// The editing surface speaks LF: the first raw is laid back onto the block's own line endings and
 	// every new one takes the file's (_rapierReconcileMarkdownEditRaw), as a typed edit is.
 	// options.keepEmpty keeps an empty line as a block of its own (a table left or removed); an empty task keeps the
 	// space after its box (_rapierEmptyTaskSpace).
-	const clean = rawList.map(raw => _rapierEmptyTaskSpace(String(raw || '').trim())).filter((raw, idx) => raw || (options.keepEmpty && (idx > 0 || rawList.length === 1)))
-		.map((raw, idx) => _rapierReconcileMarkdownEditRaw(idx === 0 ? block.raw : '', raw));
+	const clean = rawList.map(raw => options.preserveRaw ? String(raw ?? '') : _rapierEmptyTaskSpace(String(raw || '').trim())).filter((raw, idx) => raw || (options.keepEmpty && (idx > 0 || rawList.length === 1)))
+		.map((raw, idx) => options.preserveRaw ? raw : _rapierReconcileMarkdownEditRaw(idx === 0 ? block.raw : '', raw));
 	if (!clean.length) return false;
+	let nextBlockId = _rapierBlockIdCeiling(rapier.document.blocks);
 	const newBlocks = clean.map((raw, idx) => ({
-		id: idx === 0 ? block.id : _nextBlockId(),
+		id: idx === 0 ? block.id : nextBlockId++,
 		raw,
 		rendered: renderBlock(raw),
 		dirty: false,
@@ -10695,16 +10757,24 @@ function _replaceOneBlockWithRawSet(block, rawList, caretTargetIndex, caretOffse
 		order: idx === 0 ? block.order : undefined,
 		leading: idx === 0
 			? (typeof block.leading === 'string' ? block.leading : null)
-			: _rapierBlockSeparator(),
+			: (options.leading?.[idx] || _rapierBlockSeparator()),
 	}));
 	const blocksAfter = newBlocks.map(_rapierHistoryBlock);
-	rapier.document.blocks.splice(blockIndex, 1, ...newBlocks);
-	_reassignOrderForRange(blockIndex, newBlocks.length);
+	// Parsed source and its separators are prepared before publishing any rows or IDs. A refused
+	// source commit must leave the projection, caret and ordinary Undo branch as they stood.
 	const committed = _rapierCommitBlockRange(blockIndex, blocksBefore, blocksAfter);
+	if (!committed) return false;
+	if (newBlocks.length > 1) rapier.identity.nextBlockId = nextBlockId;
+	if (options.activeContext?.editDiv) options.activeContext.editDiv._rapierSkipBlurCommit = true;
+	if (options.nextBlock) hideFormatToolbar();
+	rapier.document.blocks.splice(blockIndex, replaceCount, ...newBlocks);
+	_reassignOrderForRange(blockIndex, newBlocks.length);
+	if (options.nextBlock) rapier.autosave.dirty.delete(options.nextBlock.id);
 	newBlocks.forEach(b => rapier.autosave.dirty.add(b.id));
 	_bumpDocGeneration();
 	_rapierArmAutosave();
-	_spliceBlockDOM(blockIndex, 1, newBlocks);
+	_spliceBlockDOM(blockIndex, replaceCount, newBlocks);
+	if (options.nextBlock) _rapierSyncMarkdownSourceFromBlocks();
 	_notifyHistoryState();
 	updateStats();
 	assignHeadingSlugs();
@@ -11064,35 +11134,126 @@ function _rapierApplyExactBlock(cmd, state) {
 	return _rapierApplyRawRange(state, [next], { keepEditing: true });
 }
 
-// Heading, paragraph or quote with the caret inside a list item rewrites that one item, the way
-// the ul/ol kind toggle above already reads the block's own outermost list items: every other
-// item -- its marker, its checkbox, its continuation lines -- is rebuilt byte for byte, only the
-// caret's own item's first line changes (miss 2, wysiwyg-lines-audit.md). The item's own first
-// line is read through the same parser-shape helpers the whole-block path uses above, just scoped
-// to that one line, so a heading inside an item (`- ## words`) or a quote (`- > words`) is found
-// and stripped or added the same way. An item with continuation lines (a multi-paragraph item, a
-// nested sub-list, a lazy line) is the leaf planner's below: the caret's own paragraph, its lines only.
+// A heading on an ordinary outer item leaves its list: its first line is the heading, its
+// continuations outdent, and the lists above and below keep their source (the latter continues
+// the count of the former). The parser owns the resulting blocks and exact separators. A caret
+// in a nested leaf, and paragraph/quote commands, retain the leaf planner's own scope below.
 function _rapierApplyExactBlockListItem(cmd, state, raw) {
 	const items = _rapierListItemSpans(raw);
 	if (!items.length || !items[0].marker) return null;
 	const index = _rapierOutermostListItemIndexForRange(state.range);
 	if (index < 0 || index >= items.length) return null;
 	const item = items[index];
-	if (!item.continuationLines.length && item.checkbox != null && /^(h[1-6]|quote)$/.test(cmd)) return null;
-	if (item.continuationLines.length) {
-		const next = _rapierPlanListLeafBlock(raw, _rapierListLeafIndexForRange(state.range, _liveBlockEl(state.wrappers[0])), cmd);
-		return next == null ? null : next === raw ? true : _rapierApplyRawRange(state, [next], { keepEditing: true });
+	const level = /^h[1-6]$/.test(cmd) ? Number(cmd[1]) : 0;
+	const continued = item.continuationLines.some(line => line.trim());
+	if (!continued && item.checkbox != null && /^(h[1-6]|quote)$/.test(cmd)) return null;
+	let firstEnd = -1;
+	if (continued) {
+		const leafIndex = _rapierListLeafIndexForRange(state.range, _liveBlockEl(state.wrappers[0]));
+		let outerLeaf = false;
+		if (level && item.checkbox == null) try {
+			// Use the existing parser's containers and leaf order: a nested caret never styles its
+			// ancestor. The item's first physical line must itself start a paragraph or heading.
+			const tokens = md.parse(raw, {});
+			let depth = 0, quotes = 0, outer = -1, leaf = -1, first = null, itemLine = -1;
+			tokens.forEach((token, at) => {
+				if (token.type === 'list_item_open') {
+					if (++depth === 1 && ++outer === index) { first = tokens[at + 1]; itemLine = token.map?.[0]; }
+				} else if (token.type === 'list_item_close') depth--;
+				else if (token.type === 'blockquote_open') quotes++;
+				else if (token.type === 'blockquote_close') quotes--;
+				else if ((token.type === 'paragraph_open' || token.type === 'heading_open') && token.map && ++leaf === leafIndex) {
+					outerLeaf = depth === 1 && quotes === 0 && outer === index && first?.map?.[0] === itemLine &&
+						(first.type === 'paragraph_open' || first.type === 'heading_open');
+				}
+			});
+			if (outerLeaf && first.map) firstEnd = first.map[1];
+		} catch (_) { return null; }
+		if (!outerLeaf) {
+			const next = _rapierPlanListLeafBlock(raw, leafIndex, cmd);
+			return next == null ? null : next === raw ? true : _rapierApplyRawRange(state, [next], { keepEditing: true });
+		}
 	}
 	const heading = _rapierHeadingShape(item.firstLineRest);
 	const body = heading ? heading.body : _rapierSimpleBlockBody(item.firstLineRest);
 	if (body == null) return null;
-	const level = /^h[1-6]$/.test(cmd) ? Number(cmd[1]) : 0;
 	const atLevel = level > 0 && !!heading && heading.level === level;
 	const quoted = /^>\s?/.test(item.firstLineRest.trim());
 	let nextRest;
 	if (cmd === 'quote') nextRest = quoted ? body : '> ' + body;
 	else if (cmd === 'p' || atLevel) nextRest = body;
 	else nextRest = '#'.repeat(level) + ' ' + body;
+	if (level && atLevel) {
+		// An item already at the asked level toggles its heading off in place, on its own line alone: the heading
+		// syntax leaves, the marker and every other byte of the list stay.
+		const sourceLines = String(raw).split('\n');
+		const lineIndex = items.slice(0, index).reduce((count, row) => count + 1 + row.continuationLines.length, 0);
+		const line = sourceLines[lineIndex], ending = line.endsWith('\r') ? '\r' : '';
+		sourceLines[lineIndex] = line.slice(0, item.oldPrefixWidth) + body + ending;
+		const next = sourceLines.join('\n');
+		return next === raw ? true : _rapierApplyRawRange(state, [next], { keepEditing: true });
+	}
+	if (level) {
+		const block = _rapierBoundBlock(state.wrappers[0]);
+		if (!block) return null;
+		const sourceLines = String(raw).split('\n');
+		const lineIndex = items.slice(0, index).reduce((count, row) => count + 1 + row.continuationLines.length, 0);
+		const line = sourceLines[lineIndex], ending = line.endsWith('\r') ? '\r' : '';
+		const own = line.slice(item.oldPrefixWidth, line.length - ending.length);
+		// A first paragraph wrapped over several source lines joins into the one heading line, as the leaf rule has it
+		// (an ATX heading is one line); the lines after it outdent. The existing heading syntax stays literal; otherwise
+		// only the list/quote marker leaves. In particular, neither this item's trailing spaces nor a sibling's checkbox
+		// spacing is trimmed.
+		const outdented = continued ? _rapierListItemOutdentLines(item) : [];
+		const wrapped = continued && !heading && !quoted && firstEnd > lineIndex + 1 ? Math.min(firstEnd - lineIndex - 1, outdented.length) : 0;
+		const joined = wrapped ? [own, ...outdented.slice(0, wrapped).map(text => text.replace(/\r$/, ''))].join('\n').replace(/[ \t]*\n+[ \t]*/g, ' ') : own;
+		sourceLines[lineIndex] = (heading
+			? own.replace(/^([ \t]{0,3})#{1,6}(?=[ \t]|$)/, (_, indent) => indent + '#'.repeat(level))
+			: '#'.repeat(level) + ' ' + (quoted ? own.replace(/^>[ \t]?/, '') : joined)) + ending;
+		if (wrapped) sourceLines.splice(lineIndex + 1, wrapped);
+		outdented.slice(wrapped).forEach((text, offset) => { sourceLines[lineIndex + 1 + offset] = text; });
+		const following = items[index + 1], ordered = /^(\d+)[.)][ \t]+$/.exec(items[0].marker);
+		let followingLine = lineIndex + 1 + item.continuationLines.length - wrapped;
+		let next = sourceLines.join('\n');
+		if (following) {
+			// The parser says where the next list stands: at the following item (the ordinary case), or begun by the
+			// item's own child list lifted out ahead of it, whose first marker then already owns the count.
+			const listAt = () => md.parse(next, {}).find(token => token.level === 0 &&
+				/^(?:ordered|bullet)_list_open$/.test(token.type) && token.map && token.map[0] <= followingLine && followingLine < token.map[1]);
+			let list = continued ? listAt() : null;
+			if (continued && !list) {
+				// A numbered list starting above one cannot interrupt a lifted paragraph. Add its
+				// required blank only when parsing proves the original separator no longer suffices.
+				const blank = sourceLines[followingLine - 1].endsWith('\r') ? '\r' : '';
+				sourceLines.splice(followingLine, 0, blank); followingLine++;
+				next = sourceLines.join('\n');
+				list = listAt();
+				if (!list) return null;
+			}
+			if (ordered && (!continued || list.map[0] === followingLine)) {
+				const start = Number(ordered[1]) + index;
+				// CommonMark accepts at most nine digits in a list marker.
+				if (String(start).length > 9) return null;
+				const at = followingLine;
+				const marker = /^\d+/.exec(sourceLines[at]);
+				if (!marker) return null;
+				const digits = String(start), delta = digits.length - marker[0].length;
+				sourceLines[at] = digits + sourceLines[at].slice(marker[0].length);
+				if (delta) _rapierListItemOutdentLines(following, digits + following.marker.slice(marker[0].length))
+					.forEach((text, offset) => { sourceLines[at + 1 + offset] = text; });
+				next = sourceLines.join('\n');
+			}
+		}
+		// The source parser owns the sections and their exact separators, including loose-list blanks.
+		const parsed = _rapierFinalizeParsedBlocks(_splitByTokenStream(next), next), target = index ? 1 : 0;
+		if (parsed[target]?.type !== 'heading') return null;
+		const rawList = parsed.map(row => row.raw);
+		rawList[0] = String(parsed._rapierPrefix || '') + rawList[0];
+		rawList[rawList.length - 1] += String(parsed._rapierTail || '');
+		return _replaceOneBlockWithRawSet(block, rawList, target, Infinity, {
+			preserveRaw: true, leading: parsed.map(row => row.leading),
+		});
+	}
 	if (nextRest === item.firstLineRest) return true;
 	const nextItems = items.slice();
 	nextItems[index] = Object.assign({}, item, { firstLineRest: nextRest });
@@ -12222,6 +12383,25 @@ function _rapierListItemSpans(raw) {
 	if (body == null) return [];
 	const bodyLines = body.split('\n');
 	return [{ oldPrefixWidth: 0, checkbox: null, firstLineRest: bodyLines[0] || '', continuationLines: bodyLines.slice(1) }];
+}
+
+// Lift an item's continuation lines out of its marker's indent, or into another marker's indent.
+// Tabs are measured at their original four-column stops before the necessary indent change;
+// checkbox text is content, not part of the marker indent. Blank lines keep every source byte.
+function _rapierListItemOutdentLines(item, targetMarker = '') {
+	const columns = text => Array.from(text).reduce((column, char) => column + (char === '\t' ? 4 - column % 4 : 1), 0);
+	const indent = marker => {
+		if (!marker) return 0;
+		const token = /^(?:[-*+]|\d+[.)])/.exec(marker)?.[0] || '';
+		const gap = columns(marker) - token.length;
+		return token.length + (gap >= 1 && gap <= 4 ? gap : 1);
+	};
+	const delta = indent(targetMarker) - indent(item.marker);
+	return item.continuationLines.map(line => {
+		if (!delta || !line.trim()) return line;
+		const lead = /^[ \t]*/.exec(line)[0];
+		return ' '.repeat(Math.max(0, columns(lead) + delta)) + line.slice(lead.length);
+	});
 }
 
 // A continuation line's leading whitespace shifts by exactly a marker's width delta; a blank line
@@ -16663,6 +16843,7 @@ function _rapierApplyModalIsolation() {
 	}
 	document.documentElement.classList.toggle('rapier-engine-modal-locked', !!top);
 	if (!stack.length) _rapierDialogRuntime.baseline = null;
+	if (!top) _rapierSeenSweep();
 }
 
 function _rapierCaptureEngineDialogTarget() {
@@ -17309,6 +17490,7 @@ function _rapierTrackEditorViewportScroll() {
 	const source = rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown';
 	const host = document.getElementById(source ? 'source-textarea' : 'editor-blocks');
 	if (!host) return;
+	if (host._rapierScrollPin && host._rapierScrollPin.intent !== _rapierViewIntent) host._rapierScrollPin = null;
 	const pin = host._rapierScrollPin;
 	if (pin) {
 		if (Math.abs(host.scrollTop - pin.top) > .5 || Math.abs(host.scrollLeft - pin.left) > .5) {
@@ -25213,17 +25395,30 @@ function _rapierHeldRecoveries(dbState) {
 		.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
 }
 
-async function _rapierClearHeldRecovery(slot = _rapierHeldSlot()) {
+async function _rapierClearHeldRecovery(record, current = null) {
 	try {
 		const db = await openRapierDB();
-		await _rapierEnqueuePersistence(() => new Promise((resolve, reject) => {
-			const tx = _rapierDbTransaction(db, ['checkpoints'], 'readwrite', 'relaxed');
-			tx.objectStore('checkpoints').delete(slot);
-			tx.oncomplete = resolve;
+		return await _rapierEnqueuePersistence(() => new Promise((resolve, reject) => {
+			const tx = _rapierDbTransaction(db, ['checkpoints'], 'readwrite', 'strict');
+			const store = tx.objectStore('checkpoints');
+			const slot = record.slot || _rapierHeldSlot();
+			const request = store.get(slot);
+			let removed = false;
+			request.onsuccess = () => {
+				const held = request.result;
+				// A delayed Restore or export receipt must never retire a newer parked copy.
+				if (held && held.docId === record.docId && held.filename === record.filename &&
+						held.updatedAt === record.updatedAt && held.canonicalText === record.canonicalText &&
+						_rapierIntegrityMatches(held.integrity, record.integrity) && (!current || current())) {
+					store.delete(slot);
+					removed = true;
+					if (typeof tx.commit === 'function') tx.commit();
+				}
+			};
+			tx.oncomplete = () => resolve(removed);
 			tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction failed'));
-			if (typeof tx.commit === 'function') tx.commit();
 		}));
-	} catch (error) { console.warn('[rapier] could not clear the held document', error); }
+	} catch (error) { console.warn('[rapier] could not clear the held document', error); return false; }
 }
 
 // One held record at a time, as a file; the next is offered once the person has this one. A newer offer
@@ -25231,39 +25426,93 @@ async function _rapierClearHeldRecovery(slot = _rapierHeldSlot()) {
 // never pile up over the page.
 function _rapierOfferHeldRecovery(record, rest = []) {
 	const name = String(record.filename || 'untitled.md');
+	const text = String(record.canonicalText || '');
 	const setAside = record.setAside === true;
+	const canRestore = typeof record.canonicalText === 'string' && record.docId === RAPIER_DOC_ID && _rapierIsHeldSlot(record.slot) &&
+		text.length <= RapierTextCodec.maxDocumentBytes && new Blob([text]).size <= RapierTextCodec.maxDocumentBytes &&
+		RapierTextCodec.isDocumentFragment(text) && _rapierIntegrityMatches(record.integrity, text);
 	for (const close of document.querySelectorAll('#toast-root .toast[data-rapier-held-offer] .toast__close')) close.click();
 	showToast(setAside
 		? 'The unsaved work in "' + name + '" is kept here, set aside when another document opened.'
 		: 'Rapier could not finish starting with "' + name + '" twice, so it opened without it. Your unsaved work is kept.',
 	setAside ? 'info' : 'error', {
-		label: 'save it',
+		label: canRestore ? 'restore' : 'save it',
 		fn: async () => {
-			const blob = new Blob([String(record.canonicalText || '')], { type: 'text/markdown' });
-			const files = window.RapierPlatform && window.RapierPlatform.files;
-			const exportFile = files && (
-				typeof files.exportArtifact === 'function' ? files.exportArtifact :
-				typeof files.saveAs === 'function' ? files.saveAs : null
-			);
-			let result = null;
+			let retired = false;
 			try {
-				result = exportFile ? await exportFile(blob, name) : await _download(blob, name);
+				if (canRestore) {
+					const decision = Object.freeze(_rapierMutationStamp());
+					const choice = await rapierConfirm({
+						title: 'restore ' + name,
+						message: 'Open the kept source as a separate document. Any current unsaved work stays kept. Save it instead to download a copy.',
+						confirmLabel: 'restore', secondaryLabel: 'save it',
+					});
+					if (choice !== true && choice !== 'secondary') return;
+					if (choice === true) {
+						const admitted = await _rapierWithSettledExternalDocument(() =>
+							_rapierMutationStampIsCurrent(decision) ? {stamp: decision, dirty: _rapierIsDirty()} : null,
+							{ quiet: true });
+						if (!admitted.settled || !admitted.value) {
+							showToast('The current document changed; try restoring again after the edit.', 'info');
+							return;
+						}
+						const guard = admitted.value.stamp;
+						if (admitted.value.dirty && !await _rapierSetAsideOutgoing(guard)) return;
+						const openEpoch = ++rapier.identity.userLoadEpoch;
+						// A held record owns words, never its previous file binding or history. The hold parked after
+						// repeated boot failures skips the formatted parse that could not finish, and so does a record
+						// above the size the formatted view refuses; a set-aside document the view can show takes the
+						// ordinary load and degrades itself if it cannot.
+						const sourceOnly = !setAside || text.length > _RAPIER_WYSIWYG_SOURCE_LIMIT;
+						const loaded = await rapierLoad(text, _rapierDocumentNameIsAdmissible(name) ? name : 'recovered.txt', {
+							restore: true, saveAsRequired: true, ...(sourceOnly ? {sourceOnly: true} : {}),
+							restoredRevisionState: {generation: 0, documentRevision: 0, nextBlockId: 1, savedGeneration: -1},
+							expectedMutationStamp: guard, returnReceipt: true,
+						});
+						const current = () => loaded && openEpoch === rapier.identity.userLoadEpoch && _rapierLoadReceiptIsCurrent(loaded);
+						if (!current()) return;
+						const files = window.RapierPlatform?.files;
+						if (files?.detach) await files.detach(guard.documentAuthority);
+						if (!current()) return;
+						const kept = await rapierFlushDirty({ snapshot: true, durable: true });
+						if (kept !== true || !current()) return;
+						retired = await _rapierClearHeldRecovery(record, current);
+						if (retired && !setAside) { try { window.RapierBootAttempts?.release(); } catch (_) {} }
+						if (retired && rest.length) _rapierOfferHeldRecovery(rest[0], rest.slice(1));
+						return;
+					}
+				}
+				const blob = new Blob([text], { type: 'text/markdown' });
+				const files = window.RapierPlatform && window.RapierPlatform.files;
+				const exportFile = files && (
+					typeof files.exportArtifact === 'function' ? files.exportArtifact :
+					typeof files.saveAs === 'function' ? files.saveAs : null
+				);
+				let result = null;
+				try {
+					result = exportFile ? await exportFile(blob, name) : await _download(blob, name);
+				} catch (error) {
+					console.warn('[rapier] held recovery export failed', error);
+					return;
+				}
+				// This slot is the only copy. A click, or a host that only says the dialog opened, is not a receipt.
+				const receipt = result && typeof result === 'object' ? result : null;
+				const confirmed = !!(receipt && receipt.confirmed === true && receipt.verified === true &&
+					receipt.status !== 'cancelled');
+				if (!confirmed) {
+					if (result === false || (receipt && receipt.status === 'cancelled')) return;
+					showToast('download started, but Rapier can’t confirm it finished, so this stays kept', 'warning');
+					return;
+				}
+				retired = !record.slot || await _rapierClearHeldRecovery(record);
+				if (retired && !setAside) { try { window.RapierBootAttempts?.release(); } catch (_) {} }
+				if (retired && rest.length) _rapierOfferHeldRecovery(rest[0], rest.slice(1));
 			} catch (error) {
-				console.warn('[rapier] held recovery export failed', error);
-				return;
+				console.warn('[rapier] held recovery restore failed', error);
+				showToast('The kept source is still available. Try again or save a copy.', 'error');
+			} finally {
+				if (!retired) _rapierOfferHeldRecovery(record, rest);
 			}
-			// This slot is the only copy. A click, or a host that only says the dialog opened, is not a receipt.
-			const receipt = result && typeof result === 'object' ? result : null;
-			const confirmed = !!(receipt && receipt.confirmed === true && receipt.verified === true &&
-				receipt.status !== 'cancelled');
-			if (!confirmed) {
-				if (result === false || (receipt && receipt.status === 'cancelled')) return;
-				showToast('download started, but Rapier can’t confirm it finished, so this stays kept', 'warning');
-				return;
-			}
-			await _rapierClearHeldRecovery(record.slot || _rapierHeldSlot());
-			if (!setAside) { try { window.RapierBootAttempts?.release(); } catch (_) {} }
-			if (rest.length) _rapierOfferHeldRecovery(rest[0], rest.slice(1));
 		},
 	});
 	const shown = document.getElementById('toast-root')?.lastElementChild;
@@ -27182,11 +27431,13 @@ function _insertBlockAfter(afterId, raw, options) {
 	const scrollHost = document.getElementById('editor-blocks');
 	const keptTop = scrollHost ? scrollHost.scrollTop : 0;
 	const keptLeft = scrollHost ? scrollHost.scrollLeft : 0;
-	if (scrollHost) scrollHost._rapierScrollPin = { top: keptTop, left: keptLeft };
+	// The pin holds the page while focus lands on the new block; a finger or wheel after it (the view intent moving) wins.
+	const pinnedIntent = _rapierViewIntent;
+	if (scrollHost) scrollHost._rapierScrollPin = { top: keptTop, left: keptLeft, intent: pinnedIntent };
 	const releasePin = () => { if (scrollHost) scrollHost._rapierScrollPin = null; };
 	const putBack = () => {
 		const live = document.getElementById('editor-blocks');
-		if (!live) return;
+		if (!live || _rapierViewIntent !== pinnedIntent) return;
 		if (Math.abs(live.scrollTop - keptTop) > .5 || Math.abs(live.scrollLeft - keptLeft) > .5) {
 			_rapierNoteViewportWrite();
 			live.scrollTop = keptTop;
@@ -28785,12 +29036,19 @@ function _rapierBuildPastePlan(context, pastedBlocks) {
 			raw: String(block && block.raw || ''),
 			leading: block && typeof block.leading === 'string' ? block.leading : null,
 			type: block && block.type,
-		}))
-		.filter(block => block.raw.trim());
-	if (!context || !pasted.length) return null;
+		}));
+	if (!context || (!pasted.length && !pastePrefix && !pasteTail)) return null;
+	if (!pasted.length) pasted.push({ raw: '', leading: null, type: 'paragraph' });
 
-	if (pastePrefix && !/[\r\n]/.test(pastePrefix)) pasted[0].raw = pastePrefix + pasted[0].raw;
-	if (pasteTail && !/[\r\n]/.test(pasteTail)) pasted[pasted.length - 1].raw += pasteTail;
+	// The parser has already moved block separators out of raw. Empty edge paragraphs
+	// give its prefix and tail a place in the block model without discarding their bytes.
+	if (/[\r\n]/.test(pastePrefix)) {
+		pasted[0].leading = pastePrefix + String(pasted[0].leading || '');
+		pasted.unshift({ raw: '', leading: null, type: 'paragraph' });
+	} else if (pastePrefix) pasted[0].raw = pastePrefix + pasted[0].raw;
+	if (/[\r\n]/.test(pasteTail)) {
+		pasted.push({ raw: '', leading: pasteTail, type: 'paragraph' });
+	} else if (pasteTail) pasted[pasted.length - 1].raw += pasteTail;
 
 	let nextBlockId = Number(rapier.identity.nextBlockId || 1);
 	const usedIds = new Set();
@@ -28807,7 +29065,6 @@ function _rapierBuildPastePlan(context, pastedBlocks) {
 	};
 	const append = (raw, preferred = null, source = null, leading = null) => {
 		const value = String(raw == null ? '' : raw);
-		if (!value.trim()) return -1;
 		const index = entries.length;
 		entries.push({
 			id: takeId(preferred), raw: value, rendered: null, dirty: false,
@@ -28828,24 +29085,22 @@ function _rapierBuildPastePlan(context, pastedBlocks) {
 	const firstBlock = pasted[0];
 	const lastBlock = pasted[pasted.length - 1];
 
-	if (!prefix && (!firstBlock.type || firstBlock.type === 'paragraph')) firstBlock.raw = firstBlock.raw.replace(/^[ \t\u00a0]+/, '');
-	if (!suffix && (!lastBlock.type || lastBlock.type === 'paragraph')) lastBlock.raw = lastBlock.raw.replace(/[ \t\u00a0]+$/, '');
 	const first = firstBlock.raw;
 	const last = lastBlock.raw;
 	const prefixSafe = !prefix || _isRawInlineSafe(prefix) || headingMergePrefix;
 	const suffixSafe = !suffix || _isRawInlineSafe(suffix);
-	const firstSafe = _isRawInlineSafe(first);
-	const lastSafe = _isRawInlineSafe(last);
+	const firstSafe = !first.trim() || _isRawInlineSafe(first);
+	const lastSafe = !last.trim() || _isRawInlineSafe(last);
 	let caretIndex = -1;
 	let caretRaw = '';
 
-	if (pasted.length === 1 && prefixSafe && firstSafe && suffixSafe) {
+	if (pasted.length === 1 && (prefixSafe || !first) && firstSafe && (suffixSafe || !last)) {
 		caretRaw = _joinInlineMarkdownParts(prefix, first);
 		caretIndex = append(_joinInlineMarkdownParts(caretRaw, suffix), context.startBlock, firstBlock);
 	} else {
 		let firstIndex;
-		if (prefix && prefixSafe && firstSafe) {
-			firstIndex = append(_joinInlineMarkdownParts(prefix, first), context.startBlock, firstBlock);
+		if (prefix && (prefixSafe || !first) && firstSafe) {
+			firstIndex = append(_joinInlineMarkdownParts(prefix, first), context.startBlock, first ? firstBlock : context.startBlock);
 		} else {
 			if (prefix) append(prefix, context.startBlock);
 
@@ -28857,8 +29112,8 @@ function _rapierBuildPastePlan(context, pastedBlocks) {
 				append(pasted[index].raw, null, pasted[index], pasted[index].leading);
 			}
 			caretRaw = last;
-			if (suffix && lastSafe && suffixSafe) {
-				caretIndex = append(_joinInlineMarkdownParts(last, suffix), null, lastBlock, lastBlock.leading);
+			if (suffix && lastSafe && (suffixSafe || !last)) {
+				caretIndex = append(_joinInlineMarkdownParts(last, suffix), null, last ? lastBlock : context.endBlock, lastBlock.leading);
 			} else {
 				caretIndex = append(last, null, lastBlock, lastBlock.leading);
 				if (suffix) append(suffix, context.endBlock.id === context.startBlock.id ? null : context.endBlock);
@@ -29068,7 +29323,7 @@ function _rapierReplaceRangeWithBlocks(range, pastedBlocks) {
 
 async function _rapierReplaceRangeWithMarkdown(range, markdown, options = null) {
 	const pasted = await splitPastedMarkdownBlocksAsync(markdown, options);
-	return pasted.length ? _rapierReplaceRangeWithBlocks(range, pasted) : false;
+	return _rapierReplaceRangeWithBlocks(range, pasted);
 }
 
 function _crossBlockDelete(range, clipboardData, { pushHistory = true } = {}) {
@@ -32247,7 +32502,9 @@ function _bindScrollFab(fab, host, virtual) {
 		const h = host();
 		const rect = h === document.documentElement ? { top: 0, bottom: window.innerHeight } : h.getBoundingClientRect();
 		const bar = topBar && topBar.getClientRects().length ? topBar.getBoundingClientRect() : null;
-		const top = Math.max(rect.top, bar ? bar.bottom : rect.top) + 16;
+		// The circle rests below the page's first line, never over the top bar and never over the first heading's own
+		// chevron at the same edge: a gutter and one H1 line (the same rest the stylesheet gives it before it is placed).
+		const top = Math.max(rect.top, bar ? bar.bottom : rect.top) + 72;
 		// The track's floor is the highest bottom-pinned bar that is up -- the docked format strip, the picture
 		// tools, the page-break tools -- so the circle never stands over a control a finger is about to reach
 		// for (bottom-surfaces-live, live-wrap at 390 px). On the app's edge-to-edge page the host's rect runs
@@ -32957,20 +33214,11 @@ async function _rapierEmbedLoadRun(data, respond) {
 			if (draft.content === content) {
 				_rapierEmbedClearDraft(revision);
 			} else {
-				const answer = await rapierConfirm({
-					title: 'recover draft',
-					message: 'There is an unsaved draft of this document here. Cancel keeps it for next time.',
-					confirmLabel: 'recover',
-					secondaryLabel: 'discard draft',
-					destructive: true,
-				});
-				if (operation !== _rapierEmbed.loadToken) return;
-				if (answer === true) {
-					content = draft.content;
-					recoveredDraft = true;
-				} else if (answer === 'secondary') {
-					_rapierEmbedClearDraft(revision);
-				}
+				// The draft is the person's unsaved work on this very revision (its key names the revision): it opens as the
+				// document, the host's text stays the saved baseline (marked below), and the draft stays in its slot until a
+				// save. Nothing is asked; one notice says it once the load has committed.
+				content = draft.content;
+				recoveredDraft = true;
 			}
 		}
 
@@ -33015,6 +33263,7 @@ async function _rapierEmbedLoadRun(data, respond) {
 
 		rapierSetReadOnly(!!RapierPreferences.read('readOnly'));
 		rapierSetMode('read');
+		if (recoveredDraft) showToast('Your unsaved draft is back', 'info');
 		respond('load-ack', { revision: _rapierEmbed.baseRevision, recoveredDraft, readOnly });
 	} catch (error) {
 		console.warn('[rapier-embed] document load failed', error);
@@ -33861,6 +34110,17 @@ function _rapierCandidateIsDirty(candidate) {
 // recovery asks nothing. The unsaved work goes to the held slot first, landed before the incoming document
 // takes the record, and the boot offers it as a file (_rapierOfferHeldAtBoot). True means the recovery
 // must be restored instead: another opener already took the boot, or the store would not take the words.
+// Whether an incoming document would land over unsaved work of the person's: the recovery candidate is
+// dirty, is not the untouched welcome, and is not the incoming text itself. Nothing else is at stake.
+async function _rapierBootOutgoingAtStake(context, incomingText) {
+	const candidate = await _rapierBootRecoveryCandidate(context);
+	if (context.documentConsumed || context.handledShortcut) return false;
+	if (!candidate || !_rapierCandidateIsDirty(candidate)) return false;
+	const candidateText = String(candidate.text || '');
+	if (incomingText != null && candidateText === String(incomingText)) return false;
+	return !(_rapierRecoveryIsUntouchedWelcome(candidate) || candidateText === rapierWelcomeMarkdown());
+}
+
 async function _rapierBootSetAside(context, incomingText) {
 	const candidate = await _rapierBootRecoveryCandidate(context);
 	if (context.documentConsumed || context.handledShortcut) return true;
@@ -34118,9 +34378,11 @@ async function _rapierConsumeShareTarget(context) {
 						try { name = decodeURIComponent(encodedName) || name; } catch (_) {}
 					}
 					// A share-target POST is untrusted intake: the service worker cannot tell the OS share sheet
-					// from a cross-site form post, so the page asks every time, over an empty, welcome or saved
-					// document as much as a dirty one.
-					const wanted = await rapierConfirm({
+					// from a cross-site form post. Over an empty, welcome or saved document nothing is at stake, so
+					// the item opens and the page says so; only unsaved work of the person's is asked about, and it
+					// is set aside before the item lands whatever they answer.
+					const atStake = await _rapierBootOutgoingAtStake(context, text);
+					const wanted = !atStake || await rapierConfirm({
 						title: 'open shared item',
 						message: 'Open "' + name + '" shared to Rapier from outside? It replaces the current document.',
 						confirmLabel: 'open',
@@ -34129,6 +34391,7 @@ async function _rapierConsumeShareTarget(context) {
 						const opened = await rapierOpenPlatformPayload({text, name, transient: true}, {outgoingSettled: true});
 						if (opened !== false) {
 							context.documentConsumed = true;
+							if (!atStake) showToast('Opened "' + name + '" shared to Rapier.', 'info');
 						}
 					}
 				}
@@ -35836,6 +36099,18 @@ function _rapierMergeBoundaryPair(leftBlock, leftWrapper, leftEditDiv,
 
 	const mergedRaw = _markdownFromEditHTML(mergedRoot.outerHTML);
 	if (!mergedRaw) return false;
+	if (Array.isArray(restRaw)) {
+		// List paragraphs already have their exact source and parser separators. Keep the first
+		// line's trailing spaces too: the editing-surface writer trims them at its outer edge.
+		const ending = /[ \t]+$/.exec(String(rightWords ?? ''))?.[0] || '';
+		const joined = _rapierReconcileMarkdownEditRaw(leftBlock.raw, mergedRaw) + ending;
+		const rawList = [joined + (restRaw.length ? '' : String(restRaw._rapierTail || '')), ...restRaw.map(row => row.raw)];
+		return _replaceOneBlockWithRawSet(leftBlock, rawList, 0, leftSurface.textLength, {
+			preserveRaw: true, nextBlock: rightBlock, activeContext,
+			leading: [leftBlock.leading, ...restRaw.map(row => row.leading)],
+			caretBefore: activeContext?.block?.id === leftBlock.id ? {blockId: leftBlock.id, offset: leftSurface.textLength} : null,
+		});
+	}
 	return _rapierCommitMergedPair(leftBlock, rightBlock, mergedRaw, leftSurface.textLength, activeContext, restRaw);
 }
 
@@ -35921,16 +36196,43 @@ function _rapierJoinIntoContainer(container, paragraph, paragraphWrapper, paragr
 
 // Delete at the end of a paragraph or heading right above a list or a quote: the first item's own words (the quote's first line) join the
 // paragraph, as they do in Word, the list keeps its other items (the quote its other lines), and the caret stands where they joined, one
-// Undo step. An item that holds a nested list or several paragraphs, a callout, an empty item or a first line that is itself block syntax
-// is left as it is: the caret goes into it.
+// Undo step. The item's remaining paragraphs leave the list as separate blocks. A nested list,
+// callout, empty item or first line that is itself block syntax is left as it is: the caret goes into it.
 function _rapierJoinFromContainer(paragraph, paragraphWrapper, paragraphEditDiv, container, activeContext) {
 	if (_rapierWholeBlock(paragraph) || _rapierWholeBlock(container)) return false;
-	const raw = String(container.raw || ''), lines = raw.split('\n'), items = _rapierListItemSpans(raw);
-	const list = !!items[0]?.marker, quote = lines.every(line => /^ {0,3}>/.test(line));
-	if (!(list || quote) || (list && items[0].continuationLines.length) || (quote && /^ {0,3}>[ \t]*(?:\[!\w+\]|$)/.test(lines[0]))) return false;
-	const words = list ? items[0].firstLineRest : lines[0].replace(/^ {0,3}>[ \t]?/, '');
+	const raw = String(container.raw || ''), parts = raw.split(/(\r\n?|\n)/);
+	const lines = parts.filter((_, index) => index % 2 === 0), items = _rapierListItemSpans(lines.join('\n'));
+	const list = !!items[0]?.marker, quoteLines = raw.split('\n'), quote = quoteLines.every(line => /^ {0,3}>/.test(line));
+	if (!(list || quote) || (quote && /^ {0,3}>[ \t]*(?:\[!\w+\]|$)/.test(quoteLines[0]))) return false;
+	const words = list ? items[0].firstLineRest : quoteLines[0].replace(/^ {0,3}>[ \t]?/, '');
 	if (/^\s*(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>|`{3,}|~{3,}|\|)/.test(words)) return false;
-	const rest = lines.slice(1).join('\n').replace(quote ? /^(?: {0,3}>[ \t]*\n)+/ : /^(?:[ \t]*\n)+/, '');
+	if (list) {
+		const tokens = md.parse(raw, {}), first = tokens.findIndex(token => token.type === 'list_item_open');
+		if (first < 0 || tokens[first + 1]?.type !== 'paragraph_open') return false;
+		for (let at = first + 1; at < tokens.length; at++) {
+			if (tokens[at].type === 'list_item_close' && tokens[at].level === tokens[first].level) break;
+			if (/^(?:bullet|ordered)_list_open$/.test(tokens[at].type)) return false;
+		}
+		const continuation = _rapierListItemOutdentLines(items[0]);
+		const body = continuation.map((line, index) => line + (index + 1 < continuation.length ? parts[(index + 1) * 2 + 1] || '' : '')).join('');
+		const remaining = parts.slice((continuation.length + 1) * 2).join('');
+		const firstBreak = parts[1] || '', lastBreak = continuation.length ? parts[continuation.length * 2 + 1] || '' : '';
+		const newline = firstBreak || rapier.document.sourceNewline || '\n';
+		const paragraphGap = value => {
+			let gap = value;
+			for (let count = (gap.match(/\r\n?|\n/g) || []).length; count < 2; count++) gap += newline;
+			return gap;
+		};
+		const rest = _rapierFinalizeParsedBlocks(_splitByTokenStream(body), body);
+		if (rest.length) {
+			rest[0].leading = paragraphGap(firstBreak + String(rest._rapierPrefix || ''));
+			if (remaining) rest.push({raw: remaining, leading: paragraphGap(String(rest._rapierTail || '') + lastBreak)});
+			else rest[rest.length - 1].raw += String(rest._rapierTail || '');
+		} else if (remaining) rest.push({raw: remaining, leading: paragraphGap(firstBreak + body + lastBreak)});
+		else rest._rapierTail = firstBreak + body;
+		return _rapierMergeBoundaryPair(paragraph, paragraphWrapper, paragraphEditDiv, container, null, null, activeContext, rest, words);
+	}
+	const rest = quoteLines.slice(1).join('\n').replace(/^(?: {0,3}>[ \t]*\n)+/, '');
 	return _rapierMergeBoundaryPair(paragraph, paragraphWrapper, paragraphEditDiv, container, null, null, activeContext, rest.trim() ? rest : '', words);
 }
 
@@ -37144,7 +37446,7 @@ async function _rapierRunLargePaste(record, payload) {
 
 		const pasted = await splitPastedMarkdownBlocksAsync(
 			content.markdown, { plainText: content.plainText });
-		if (job.cancelled || !pasted.length) return false;
+		if (job.cancelled) return false;
 		const target = _rapierRestorePasteTarget(record);
 		if (!target) throw new Error('paste target changed');
 		const context = _rapierCapturePasteContext(target.range);
@@ -37362,8 +37664,7 @@ function _rapierInlineWhitespacePayload(payload) {
 	const value = payload || {};
 	const plain = String(value.plain || '');
 	if (!plain || /[\r\n]/.test(plain) || /\S/.test(plain)) return '';
-	const markdown = String(value.markdown || '');
-	if (markdown && /\S/.test(markdown)) return '';
+	if (String(value.markdown || '') || String(value.html || '').trim()) return '';
 	return plain;
 }
 
@@ -37430,7 +37731,7 @@ function _rapierPasteLineIntoContainer(editDiv, payload) {
 	const text = content ? String(content.markdown || '').replace(/\r\n?/g, '\n') : '';
 	// renderBlock keeps a word's trailing separator through its existing space owner. Trimming
 	// here joined the pasted word to the item's first word before that owner could preserve it.
-	const lines = text.split('\n').filter(line => line.trim());
+	const lines = text.split('\n');
 	const inItem = !!_listItemAtCaret(editDiv, range, _nodeAsElement(range.startContainer));
 	const inQuote = !inItem && !!_nodeAsElement(range.startContainer)?.closest('blockquote');
 	if (!lines.length || lines.length > 200 || (lines.length > 1 && !inItem && !inQuote) ||
@@ -37463,7 +37764,6 @@ function _rapierPasteIntoCode(editDiv, payload) {
 	// Inline code holds lines but never a blank one (a blank line ends the paragraph): lines pasted there stay
 	// its characters; a paste with a blank line is paragraphs, and the block plan places them.
 	if (where === 'inline') {
-		text = text.replace(/\n+$/, '');
 		if (!text.includes('\n') || /\n[ \t]*\n/.test(text)) return false;
 	}
 	if (!text) return false;
@@ -37557,7 +37857,12 @@ function _rapierHandlePaste(event) {
 	// the Notes head's tap ends it (notes/notes.js _rapierNotesHeadTap), and the paste lands after it.
 	if (rapier.composition.block && !rapier.composition.source && !_rapierMutationBarrierActive()) {
 		const composing = _activeBlockEditContext()?.editDiv;
-		if (composing) _rapierHandleEditCompositionEnd(composing);
+		if (composing) {
+			_rapierHandleEditCompositionEnd(composing);
+			// Ending the word here emits no compositionend. Promote a new Notes title before the paste
+			// captures its heading boundary, as the Notes body tap does after ending the same word.
+			if (typeof _rapierNotesHeadTurn === 'function') _rapierNotesHeadTurn();
+		}
 	}
 	const pasteWrapper = _activeBlockEditContext()?.wrapper;
 	if (pasteWrapper) globalThis.RapierImageFlow?.unproject?.(pasteWrapper);
@@ -41610,8 +41915,8 @@ async function _rapierWaitForUser(input, ctx) {
 	const owns = key => Object.prototype.hasOwnProperty.call(request, key);
 	const event = request.event;
 	if (typeof event !== 'string' ||
-			(event !== 'selection' && event !== 'edit' && event !== 'message')) {
-		return { outcome: 'invalid', reason: 'invalid_event', message: 'event must be "selection", "edit", or "message"; call wait_for_user again with one of those.' };
+			(event !== 'selection' && event !== 'edit' && event !== 'message' && event !== 'delivery')) {
+		return { outcome: 'invalid', reason: 'invalid_event', message: 'event must be "selection", "edit", "message", or "delivery"; call wait_for_user again with one of those.' };
 	}
 	if (owns('context_handle') && (typeof request.context_handle !== 'string' ||
 			!request.context_handle.length || request.context_handle.length > _RAPIER_WAIT_HANDLE_LIMIT)) {
@@ -41641,6 +41946,15 @@ async function _rapierWaitForUser(input, ctx) {
 		return { outcome: 'refused', reason: 'read_only', event, timeoutMs };
 	}
 
+	const deliveryScope = event === 'delivery' ? _rapierCallerScopeLenient(ctx) : null;
+	if (event === 'delivery' && !deliveryScope) {
+		return { outcome: 'refused', reason: 'caller_unnamed', message: 'Your calling channel could not be identified for this wait; call wait_for_user again from an ordinary call.', event, timeoutMs };
+	}
+
+	if (event === 'delivery' && _rapierSeenUndelivered(deliveryScope) === 0) {
+		return { outcome: 'delivery', reason: '', event, timeoutMs, waitedMs: 0 };
+	}
+
 	if (event === 'message') {
 		const spoken = _rapierMessageQueueTake();
 		if (spoken) {
@@ -41655,6 +41969,7 @@ async function _rapierWaitForUser(input, ctx) {
 	const state = {
 		event, timeoutMs, startedAt, deadline: startedAt + timeoutMs,
 		quietMs: event === 'selection' ? _RAPIER_WAIT_SELECTION_QUIET_MS : _RAPIER_WAIT_EDIT_QUIET_MS,
+		deliveryScope,
 		lastActivityAt: startedAt, pointerActive: false, selectionMoved: false,
 		baseRevision: 0, evaluatedRevision: 0, identity: _rapierDocumentIdentity(),
 		flatSurface: _rapierFlatSurface(), baselineFlat: null, baselineBlocks: null,
@@ -41665,7 +41980,7 @@ async function _rapierWaitForUser(input, ctx) {
 
 	_rapierWaitRuntime.pending = state;
 
-	if (event !== 'message') {
+	if (event !== 'message' && event !== 'delivery') {
 		const read = await _rapierWithSettledExternalDocument(
 			() => _rapierWaitCaptureBaseline(state, handleId), { quiet: true }).catch(error => {
 				_rapierWaitDispose(state);
@@ -41715,7 +42030,12 @@ async function _rapierWaitForUser(input, ctx) {
 				return;
 			}
 
-			if (state.pointerActive || !_rapierWaitDocumentSettled()) activity();
+			if (state.event === 'delivery') {
+				if (_rapierSeenUndelivered(state.deliveryScope) === 0) {
+					finish({ outcome: 'delivery', reason: '' });
+					return;
+				}
+			} else if (state.pointerActive || !_rapierWaitDocumentSettled()) activity();
 			else if (_rapierNow() - state.lastActivityAt >= state.quietMs) {
 				const value = state.evaluate();
 				if (value) { finish(value); return; }
@@ -41732,7 +42052,7 @@ async function _rapierWaitForUser(input, ctx) {
 			});
 		} else if (event === 'selection') listen(document, 'selectionchange', selectionActivity, false);
 		else if (event === 'edit') listen(document, 'input', activity, true);
-		if (event !== 'message') {
+		if (event !== 'message' && event !== 'delivery') {
 			listen(window, 'pointerdown', pointerDown, { capture: true, passive: true });
 			listen(window, 'pointerup', pointerRelease, { capture: true, passive: true });
 			listen(window, 'pointercancel', pointerRelease, { capture: true, passive: true });
@@ -42675,39 +42995,44 @@ function _rapierWillReviewActions(ready, places = 0) {
 	if (!holder || !pending || pending.done) return;
 	holder.replaceChildren();
 	holder.dataset.visible = 'true';
+	const check = pending.presentation?.kind === 'check';
 	const status = document.createElement('p');
 	status.className = 'compare-law-review__status';
-	status.textContent = pending.byPosture ? 'PROPOSED · NOT APPLIED' : 'HELD BY THIS DOCUMENT · NOT APPLIED';
+	status.textContent = check
+		? 'CHANGES SINCE REVISION ' + pending.presentation.baseRevision +
+			(pending.presentation.includesHumanChanges ? ' · INCLUDES HUMAN EDITS' : '')
+		: pending.byPosture ? 'PROPOSED · NOT APPLIED' : 'HELD BY THIS DOCUMENT · NOT APPLIED';
 	const keep = document.createElement('button');
 	keep.type = 'button';
 	keep.className = 'compare-law-review__action compare-law-review__action--primary';
-	keep.textContent = 'KEEP HELD';
+	keep.textContent = check ? 'NOT YET' : 'KEEP HELD';
 	keep.addEventListener('click', event => {
 		if (event.isTrusted === true) {
-			_rapierSinceOpenDecision(pending, false);
+			_rapierSeenWitnessDecision(pending, false);
 			_rapierWillReviewDecide(pending, false, _RAPIER_WILL_TRUSTED_DECISION);
 		}
 	});
 	const allow = document.createElement('button');
 	allow.type = 'button';
 	allow.className = 'compare-law-review__action compare-law-review__action--allow';
-	allow.textContent = 'ALLOW THIS ONCE';
+	allow.textContent = check ? 'REVIEWED' : 'ALLOW THIS ONCE';
 	allow.disabled = ready !== true;
 	allow.setAttribute('aria-disabled', ready === true ? 'false' : 'true');
 	if (Number(places) > 1) {
 
 		allow.dataset.places = String(places);
-		allow.setAttribute('aria-label', 'allow this once, in ' + places + ' places');
+		allow.setAttribute('aria-label', check ? 'reviewed, ' + places + ' changes'
+			: 'allow this once, in ' + places + ' places');
 	}
 	allow.addEventListener('click', event => {
 		if (event.isTrusted !== true) return;
 		const kept = _rapierWillReviewKeptIds(pending);
 		if (kept && !kept.length) {
-			_rapierSinceOpenDecision(pending, false);
+			_rapierSeenWitnessDecision(pending, false);
 			_rapierWillReviewDecide(pending, false, _RAPIER_WILL_TRUSTED_DECISION);
 			return;
 		}
-		_rapierSinceOpenDecision(pending, true);
+		_rapierSeenWitnessDecision(pending, true);
 		_rapierWillReviewDecide(pending, true, _RAPIER_WILL_TRUSTED_DECISION, kept && pending.dropped?.size ? kept : null);
 	});
 	holder.append(status, keep, allow);
@@ -42839,7 +43164,7 @@ function _rapierWillReviewPeekRefresh(pending) {
 		}
 	}
 	const allow = document.querySelector('#compare-law-review .compare-law-review__action--allow');
-	if (allow && total > 1) {
+	if (allow && total > 1 && !pending?.presentation) {
 		const keptCount = total - droppedCount;
 		allow.textContent = droppedCount ? (keptCount ? 'ALLOW ' + keptCount + ' OF ' + total : 'KEEP HELD') : 'ALLOW THIS ONCE';
 		allow.setAttribute('aria-label', droppedCount ? (keptCount ? 'allow ' + keptCount + ' of ' + total + ' changes' : 'keep all held') : 'allow this once, in ' + total + ' places');
@@ -42848,7 +43173,7 @@ function _rapierWillReviewPeekRefresh(pending) {
 
 function _rapierWillReviewPeekControls(section, index) {
 	const pending = _rapierWillReviewSlot.pending;
-	if (!_rapierCompareRuntime.lawReview || !pending || !pending.hunkChanges || _rapierWillReviewDecidableHunks(pending) < 2 || !pending.hunkChanges[index]?.length) return;
+	if (!_rapierCompareRuntime.lawReview || !pending || pending.presentation || !pending.hunkChanges || _rapierWillReviewDecidableHunks(pending) < 2 || !pending.hunkChanges[index]?.length) return;
 	const row = document.createElement('div');
 	row.className = 'compare-hunk__peek';
 	for (const [peek, label, icon] of [['keep', 'keep this change', 'check'], ['drop', 'drop this change', 'cross']]) {
@@ -42893,6 +43218,12 @@ function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, pr
 	const currentText = _rapierWillReviewCurrentText(resolved);
 	if (currentText == null) return Promise.resolve({ allowed: false, reason: 'target_changed' });
 	const proposedText = String(replacement == null ? '' : replacement);
+	const check = presentation?.kind === 'check';
+	if (check && (typeof presentation.baseline !== 'string' || proposedText !== currentText ||
+			!Number.isSafeInteger(presentation.baseRevision) || presentation.baseRevision < 0)) {
+		return Promise.resolve({ allowed: false, reason: 'review_evidence_unavailable' });
+	}
+	const baseline = check ? presentation.baseline : currentText;
 	let resolve;
 	const decision = new Promise(done => { resolve = done; });
 	const signal = ctx && ctx.signal;
@@ -42908,6 +43239,8 @@ function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, pr
 		interval: _rapierWillReviewIntervalKey(resolved),
 
 		byPosture: byPosture === true,
+		presentation: check ? {kind: 'check', baseline, baseRevision: presentation.baseRevision,
+			includesHumanChanges: presentation.includesHumanChanges === true} : null,
 		scope: byPosture === true ? _rapierCallerScopeLenient(ctx) : null,
 		currentText,
 		replacement: proposedText,
@@ -42921,8 +43254,8 @@ function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, pr
 	c.lens = 'law';
 	c.changeId = null;
 	try {
-		_rapierCompareStart(currentText, 'CURRENT · HELD', pending.replacement,
-			presentation?.base ? String(rapier.document.filename || 'document.md') + ' · proposed by ' + presentation.base.by + ', ' + new Date(presentation.base.at).toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : 'PROPOSED · AGENT', { lawReview: true });
+		_rapierCompareStart(baseline, check ? 'EARLIER' : 'CURRENT · HELD', pending.replacement,
+			check ? 'CURRENT' : presentation?.base ? String(rapier.document.filename || 'document.md') + ' · proposed by ' + presentation.base.by + ', ' + new Date(presentation.base.at).toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : 'PROPOSED · AGENT', { lawReview: true });
 	} catch (_) {
 
 		_rapierWillReviewSettle(pending, false, 'diff_failed', true);
@@ -43235,8 +43568,8 @@ function _rapierSinceOpenWanted() {
 function _rapierSinceOpenClear() {
 	document.querySelectorAll('#editor-blocks > .since-open-hunk')
 		.forEach(node => node.remove());
-	document.querySelectorAll('#editor-blocks > .block-wrapper[data-since-open-changed]')
-		.forEach(node => { delete node.dataset.sinceOpenChanged; });
+	document.querySelectorAll('#editor-blocks > .block-wrapper[data-seen-unit]')
+		.forEach(node => { delete node.dataset.sinceOpenChanged; delete node.dataset.seenUnit; });
 }
 
 function _rapierSinceOpenAnchored(render) {
@@ -43265,6 +43598,7 @@ function _rapierSinceOpenClose() {
 	const wasActive = _rapierSinceOpen.active;
 	_rapierSinceOpen.active = false;
 	_rapierSinceOpenSettle(null);
+	_rapierSeenRelease();
 	_rapierSinceOpenAnchored(_rapierSinceOpenClear);
 	if (wasActive) _rapierAgentBarRender();
 }
@@ -43288,10 +43622,8 @@ function _rapierSinceOpenLineOffsets(text) {
 
 function _rapierSinceOpenDone() {
 	if (!_rapierSinceOpen.active || !(_rapierSinceOpen.units instanceof Map)) return false;
-	// A completed look acknowledges only the exact revision the lens finished comparing.
-	if (_rapierSinceOpen.revision !== Number(rapier.revision.settled || 0) ||
-			_rapierSinceOpen.text !== _rapierSourceText()) { _rapierSinceOpenRefresh(); return false; }
-	for (const [id, digest] of _rapierSinceOpen.units) _rapierSinceOpenAcknowledge([id], digest);
+	const units = _rapierSinceOpen.units;
+	for (const unit of [...units.keys()]) _rapierSeenDeliver(unit);
 	_rapierSinceOpenClose();
 	return true;
 }
@@ -43340,12 +43672,15 @@ function _rapierSinceOpenRender(result) {
 			const to = firstAdd ? blockIndexOfLine(lastAdd) : index;
 			const change = rows.map(row => row.type + '\u0000' + String(row.text == null ? '' : row.text))
 				.join('\n');
+			let unit = '';
 			for (let at = from; at >= 0 && at <= to && at < wrappers.length; at++) {
 				const id = wrappers[at].dataset.blockId;
 				if (!id) continue;
 				raw.set(id, raw.has(id) ? raw.get(id) + '\n' + change : change);
+				if (!unit) unit = id;
 				if (!firstAdd) continue;
 
+				wrappers[at].dataset.seenUnit = id;
 				if (draw) wrappers[at].dataset.sinceOpenChanged = '';
 			}
 			if (!draw) continue;
@@ -43354,6 +43689,7 @@ function _rapierSinceOpenRender(result) {
 			strip.setAttribute('contenteditable', 'false');
 			strip.setAttribute('aria-label', 'changed since your last look');
 
+			if (unit && !firstAdd) strip.dataset.seenUnit = unit;
 			for (const row of rows) strip.appendChild(_rapierCompareRow(row));
 			host.insertBefore(strip, index < 0 ? null : wrappers[index] || null);
 		}
@@ -43361,6 +43697,7 @@ function _rapierSinceOpenRender(result) {
 		for (const [id, change] of raw) units.set(id, _rapierSeenDigest(change));
 		_rapierSinceOpen.units = units;
 	});
+	_rapierSeenObserve();
 
 	_rapierAgentBarRender();
 }
@@ -43460,11 +43797,12 @@ function _rapierSinceOpenRefresh() {
 	}, _RAPIER_SINCE_OPEN_REFRESH_MS);
 }
 
+const _RAPIER_SEEN_DWELL_MS = 1000;
 const _RAPIER_SEEN_LEDGER_LIMIT = 4096;
 
 const _RAPIER_SEEN_UNNAMED = '';
 
-const _RAPIER_POSTURES = Object.freeze(['free', 'ask']);
+const _RAPIER_POSTURES = Object.freeze(['free', 'check', 'ask']);
 
 function _rapierPosture() {
 	const held = rapier.review.posture;
@@ -43493,13 +43831,26 @@ function _rapierSeenSpend() {
 	rapier.review.decided = null;
 }
 
-function _rapierSinceOpenAcknowledge(ids, digest) {
+function _rapierSeenWitnessBlocks(ids, digest) {
 	for (const id of ids) {
 		rapier.review.moved.delete(String(id));
 		rapier.review.shown.delete(String(id));
-		rapier.review.shown.set(String(id), { digest: digest == null ? null : String(digest) });
+		rapier.review.shown.set(String(id), { digest: digest == null ? null : String(digest), at: Date.now() });
 	}
 	_rapierSeenBound(rapier.review.shown);
+	globalThis.RapierAgentBrowser?.contextChanged('review');
+}
+
+function _rapierSeenHandSaw(ids) {
+	const root = document.getElementById('editor-blocks');
+	const view = root && root.getBoundingClientRect();
+	if (!view || view.height <= 0) return true;
+	return ids.every(id => {
+		const wrapper = root.querySelector(':scope > [data-block-id="' + id + '"]');
+		if (!wrapper) return false;
+		const shown = _rapierSeenShown(wrapper, view);
+		return _rapierSeenWhole([[shown.lo, shown.hi]], shown.height);
+	});
 }
 
 function _rapierSeenRecordTransaction(transaction) {
@@ -43508,22 +43859,26 @@ function _rapierSeenRecordTransaction(transaction) {
 	rapier.review.decided = null;
 	if (transaction.actor.kind === 'human') {
 
-		_rapierSinceOpenAcknowledge(ids, null);
+		if (_rapierSeenHandSaw(ids)) _rapierSeenWitnessBlocks(ids, null);
 		return;
 	}
 
 	const admitted = decided ? ids.filter(id => decided.includes(id)) : [];
-	if (admitted.length) _rapierSinceOpenAcknowledge(admitted, null);
+	if (admitted.length) _rapierSeenWitnessBlocks(admitted, null);
+	const owner = Object.freeze({
+		actor: transaction.actor,
+		transport: transaction.transport === 'webmcp' ? 'webmcp' : 'platform',
+	});
 	if (ids.length) {
 		for (const id of ids) {
 			if (admitted.includes(id)) continue;
 			rapier.review.shown.delete(id);
 			rapier.review.moved.delete(id);
-			rapier.review.moved.set(id, true);
+			rapier.review.moved.set(id, owner);
 		}
 		_rapierSeenBound(rapier.review.moved);
 	} else {
-		rapier.review.moved.set(_RAPIER_SEEN_UNNAMED, true);
+		rapier.review.moved.set(_RAPIER_SEEN_UNNAMED, owner);
 	}
 
 	_rapierSinceOpenRefresh();
@@ -43544,28 +43899,202 @@ function _rapierSeenBlockIdsOfResolved(resolved) {
 	return blocks.slice(first, last + 1).map(block => String(block.id));
 }
 
-function _rapierSinceOpenDecision(pending, allowed) {
+function _rapierSeenWitnessDecision(pending, allowed) {
 	const ids = _rapierSeenBlockIdsOfResolved(pending && pending.resolved);
 	if (!ids.length) return;
-	_rapierSinceOpenAcknowledge(ids, null);
+	_rapierSeenWitnessBlocks(ids, null);
 	rapier.review.decided = allowed ? ids : null;
 	_rapierAgentBarRender();
 }
 
-function _rapierSinceOpenCount() {
-	if (!_rapierSinceOpenAvailable() || !_rapierSinceOpen.units) return null;
+function _rapierSeenUndelivered(scope = null) {
+	if (!_rapierSinceOpenAvailable()) return null;
+	const units = _rapierSinceOpen.units;
+
+	if (!units) {
+		if (!scope || (rapier.review.seen && rapier.review.seen.restored)) return null;
+		for (const owner of rapier.review.moved.values()) {
+			if (_rapierScopeOwns(scope, owner.actor, owner.transport)) return null;
+		}
+		return 0;
+	}
 	let count = 0;
-	for (const [id, digest] of _rapierSinceOpen.units) {
-		const shown = rapier.review.shown.get(id);
-		if (!shown || (shown.digest !== null && shown.digest !== digest)) count++;
+	for (const [id, digest] of units) {
+		const witness = rapier.review.shown.get(id);
+		if (witness && (witness.digest === null || witness.digest === digest)) continue;
+		if (scope) {
+
+			const owner = rapier.review.moved.get(id);
+
+			if (!owner) { if (rapier.review.seen && rapier.review.seen.restored) return null; continue; }
+			if (!_rapierScopeOwns(scope, owner.actor, owner.transport)) continue;
+		}
+		count++;
 	}
 	return count;
 }
 
 function _rapierSeenAwaiting() {
 	if (!rapier.review.moved.size) return false;
-	const count = _rapierSinceOpenCount();
+	const count = _rapierSeenUndelivered();
 	return count == null ? true : count > 0;
+}
+
+const _rapierSeenDelivery = Object.seal({
+	observer: null, watched: new Map(), timer: 0, moved: false, hands: null,
+});
+
+function _rapierSeenDrop() {
+	for (const cover of _rapierSeenDelivery.watched.values()) cover.since = 0;
+	clearTimeout(_rapierSeenDelivery.timer);
+	_rapierSeenDelivery.timer = 0;
+}
+
+function _rapierSeenViewMovedByAgent() {
+	_rapierSeenDelivery.moved = true;
+	_rapierSeenDrop();
+}
+
+function _rapierSeenShown(element, view) {
+	const box = element.getBoundingClientRect();
+	return {
+		lo: Math.max(box.top, view.top) - box.top,
+		hi: Math.min(box.bottom, view.bottom) - box.top,
+		height: box.height,
+	};
+}
+
+const _RAPIER_SEEN_EDGE_PX = 1;
+
+function _rapierSeenWhole(spans, height) {
+	return spans.some(span => span[0] <= _RAPIER_SEEN_EDGE_PX &&
+		span[1] >= height - _RAPIER_SEEN_EDGE_PX);
+}
+
+function _rapierSeenHeld(cover, lo, hi) {
+	cover.held = cover.held.concat([[lo, hi]]).sort((a, b) => a[0] - b[0])
+		.reduce((held, span) => {
+			const last = held[held.length - 1];
+			if (last && span[0] <= last[1] + _RAPIER_SEEN_EDGE_PX) last[1] = Math.max(last[1], span[1]);
+			else held.push(span.slice());
+			return held;
+		}, []);
+}
+
+function _rapierSeenPending(unit) {
+	const units = _rapierSinceOpen.units;
+	if (!units || !units.has(unit)) return false;
+	const witness = rapier.review.shown.get(unit);
+	return !witness || (witness.digest !== null && witness.digest !== units.get(unit));
+}
+
+function _rapierSeenSweep() {
+	const root = document.getElementById('editor-blocks');
+	if (!root) return;
+	clearTimeout(_rapierSeenDelivery.timer);
+	_rapierSeenDelivery.timer = 0;
+
+	if (document.documentElement.classList.contains('rapier-engine-modal-locked') ||
+			_rapierSeenDelivery.moved) { _rapierSeenDrop(); return; }
+	const view = root.getBoundingClientRect();
+	const now = _rapierNow();
+	const whole = new Map();
+	let wait = 0;
+	for (const [element, cover] of _rapierSeenDelivery.watched) {
+		const unit = element.dataset.seenUnit;
+		if (!element.isConnected || !_rapierSeenPending(unit)) { cover.since = 0; continue; }
+		const shown = _rapierSeenShown(element, view);
+		const digest = _rapierSinceOpen.units.get(unit);
+
+		if (cover.digest !== digest || cover.height !== shown.height) {
+			cover.digest = digest;
+			cover.height = shown.height;
+			cover.held = [];
+			cover.since = 0;
+		}
+		if (shown.hi > shown.lo) {
+			const lo = Math.max(cover.lo, shown.lo);
+			const hi = Math.min(cover.hi, shown.hi);
+			if (cover.since && hi > lo) { cover.lo = lo; cover.hi = hi; }
+			else { cover.lo = shown.lo; cover.hi = shown.hi; cover.since = now; }
+			if (now - cover.since >= _RAPIER_SEEN_DWELL_MS) {
+				_rapierSeenHeld(cover, cover.lo, cover.hi);
+				cover.lo = shown.lo;
+				cover.hi = shown.hi;
+				cover.since = now;
+			}
+		} else {
+			cover.since = 0;
+		}
+		if (_rapierSeenWhole(cover.held, cover.height)) {
+			if (!whole.has(unit)) whole.set(unit, true);
+			continue;
+		}
+		whole.set(unit, false);
+		if (cover.since) {
+			const left = cover.since + _RAPIER_SEEN_DWELL_MS - now;
+			wait = wait ? Math.min(wait, left) : left;
+		}
+	}
+	for (const [unit, covered] of whole) if (covered) _rapierSeenDeliver(unit);
+	if (wait > 0) _rapierSeenDelivery.timer = setTimeout(_rapierSeenSweep, wait);
+}
+
+function _rapierSeenDeliver(unit) {
+	if (!_rapierSeenPending(unit)) return false;
+	rapier.review.moved.delete(unit);
+	rapier.review.shown.delete(unit);
+	rapier.review.shown.set(unit, { digest: _rapierSinceOpen.units.get(unit), at: _rapierNow() });
+	_rapierSeenBound(rapier.review.shown);
+	_rapierAgentBarRender();
+	globalThis.RapierAgentBrowser?.contextChanged('review');
+	return true;
+}
+
+function _rapierSeenObserve() {
+	const host = document.getElementById('editor-blocks');
+	if (!host) return;
+	if (_rapierSeenDelivery.observer && _rapierSeenDelivery.observer.root !== host) {
+		_rapierSeenDelivery.observer.disconnect();
+		_rapierSeenDelivery.observer = null;
+	}
+	if (!_rapierSeenDelivery.observer) {
+		_rapierSeenDelivery.observer = new IntersectionObserver(_rapierSeenSweep,
+			{ root: host, threshold: [0, 0.5] });
+	}
+	if (!_rapierSeenDelivery.hands) {
+
+		const acted = event => {
+			if (event.isTrusted !== true) return;
+			_rapierSeenDelivery.moved = false;
+			_rapierSeenSweep();
+		};
+		const options = { capture: true, passive: true };
+
+		const kinds = ['pointerdown', 'wheel', 'keydown', 'touchstart'];
+		for (const kind of kinds) window.addEventListener(kind, acted, options);
+		_rapierSeenDelivery.hands = () => {
+			for (const kind of kinds) window.removeEventListener(kind, acted, options);
+		};
+	}
+	_rapierSeenDelivery.observer.disconnect();
+
+	const previous = _rapierSeenDelivery.watched;
+	_rapierSeenDelivery.watched = new Map();
+	for (const element of host.querySelectorAll(':scope > [data-seen-unit]')) {
+		_rapierSeenDelivery.watched.set(element, previous.get(element) ||
+			{ digest: null, height: 0, held: [], lo: 0, hi: 0, since: 0 });
+		_rapierSeenDelivery.observer.observe(element);
+	}
+	_rapierSeenSweep();
+}
+
+function _rapierSeenRelease() {
+	if (_rapierSeenDelivery.observer) _rapierSeenDelivery.observer.disconnect();
+	if (_rapierSeenDelivery.hands) { _rapierSeenDelivery.hands(); _rapierSeenDelivery.hands = null; }
+	_rapierSeenDelivery.moved = false;
+	_rapierSeenDrop();
+	_rapierSeenDelivery.watched.clear();
 }
 
 const _rapierAgentBar = Object.seal({
@@ -43591,6 +44120,20 @@ function _rapierAgentBarMarkAcorn(invocation) {
 	bar.acornLast = String(invocation.operation || '');
 	clearTimeout(bar.acornTimer);
 	bar.acornTimer = setTimeout(() => { bar.acornTimer = 0; _rapierAgentBarRender(); }, _RAPIER_ACORN_LINGER_MS + 60);
+}
+
+// The DISCONNECT AGENTS press: the app retires the agents' capability (agent/apps.js disconnectAgents); a Disconnect that
+// went through clears the row's connected mark, and the posture row is drawn again either way.
+function _rapierPostureDisconnectPressed(event) {
+	Promise.resolve(window.RapierMcpApp?.disconnectAgents?.(event)).then(done => { if (done === true) _rapierAgentBarDisconnected(); }).finally(_rapierPostureRender);
+}
+// Disconnect retires the agents' capability: the row stops saying CONNECTED at once, not when the last call's half hour
+// runs out.
+function _rapierAgentBarDisconnected() {
+	const bar = _rapierAgentBar;
+	bar.connectedUntil = 0; bar.connectedAuthority = ''; bar.connectedEpoch = 0;
+	clearTimeout(bar.connectedTimer); bar.connectedTimer = 0;
+	_rapierAgentBarRender();
 }
 
 function _rapierAgentBarMarkConnected(invocation) {
@@ -43738,6 +44281,8 @@ function _rapierAgentBarHandleBlock(handleId) {
 }
 
 function _rapierAgentBarInvocationStructural(operation, input) {
+	if (rapier.document.docKind === 'markdown') return operation === 'document.get_outline' ||
+		(operation === 'document.find' && !!(input && typeof input.kind === 'string'));
 	if (!_rapierStructureDocKind()) return false;
 	if (operation === 'document.find') return !!(input && typeof input.kind === 'string');
 	return operation === 'document.get_outline' || operation === 'document.read_context' ||
@@ -43922,7 +44467,7 @@ function _rapierAgentBarRender() {
 	if (delta) {
 		const lens = _rapierSinceOpen.active;
 
-		const owed = _rapierSinceOpenCount();
+		const owed = _rapierSeenUndelivered();
 
 		delta.hidden = !_rapierSinceOpenAvailable() || !(lens || owed > 0);
 		delta.dataset.on = lens ? 'true' : 'false';
@@ -43941,7 +44486,7 @@ function _rapierAgentBarRender() {
 		const doneReady = _rapierSinceOpen.units instanceof Map;
 		done.disabled = !doneReady;
 		done.setAttribute('aria-label', doneReady
-			? 'keep this change and close the comparison' : 'comparison is still loading');
+			? 'close the comparison; the change stays' : 'comparison is still loading');
 		const undo = document.getElementById('agent-row-undo');
 		const canUndo = _rapierSinceOpenUndoAvailable();
 		undo.disabled = !canUndo;
@@ -43951,12 +44496,17 @@ function _rapierAgentBarRender() {
 
 	const parkedNow = !!(parked && parked.event === 'message' && parked.reply);
 	const spoken = row.hidden ? [] : _rapierMessageQueueHere();
+	// The hosted page offers no message box: what is typed there queues for a page-local wait
+	// (document.wait_for_user) a hosted agent never reads, so the words would sit unread.
+	const hosted = globalThis.RAPIER_APPS_HOST === true;
+	const box = document.getElementById('agent-row-note');
+	if (box) box.hidden = hosted;
 	if (note) {
-		note.disabled = row.hidden;
+		note.disabled = row.hidden || hosted;
 		note.placeholder = parkedNow ? (parked.prompt || 'reply')
 			: spoken.length ? 'message queued' : 'message';
 	}
-	if (send) send.disabled = row.hidden;
+	if (send) send.disabled = row.hidden || hosted;
 
 	const queuedLine = document.getElementById('agent-row-queued');
 	if (queuedLine) {
@@ -44018,13 +44568,13 @@ function _rapierAgentBarRender() {
 
 	const lingering = !usingAcorn && _rapierNow() < bar.acornUntil &&
 		bar.acornAuthority === authority && bar.acornEpoch === epoch;
-	const acorn = !!_rapierStructureDocKind() && (usingAcorn || lingering);
+	const acorn = (!!_rapierStructureDocKind() || rapier.document.docKind === 'markdown') && (usingAcorn || lingering);
 
 	const doing = executing.length === 1 ? (_RAPIER_AGENT_DOING[executing[0].operation] || 'Working') : (executing.length ? 'Working' : '');
 
 	const where = parkedMessage ? ''
 		: doing ? (usingAcorn ? 'Using Acorn · ' : '') + doing + (heading ? ' under ' + heading : (symbol ? ' in ' + symbol : ''))
-		: lingering ? 'Acorn ' + (_RAPIER_ACORN_DONE[bar.acornLast] || 'used')
+		: lingering ? 'Acorn ' + ((_rapierStructureDocKind() && _RAPIER_ACORN_DONE[bar.acornLast]) || 'read the structure')
 		: (heading ? 'Under ' + heading : (symbol ? 'in ' + symbol : ''));
 	document.getElementById('agent-row-under').textContent = where;
 
@@ -44063,8 +44613,11 @@ function _rapierPostureRender() {
 	if (agents) {
 		const app = globalThis.RAPIER_APPS_HOST === true ? window.RapierMcpApp : null;
 		agents.hidden = row.hidden || !app;
-		const share = document.getElementById('posture-share');
-		if (share) share.hidden = !app?.status?.agentsDisconnected;
+		// Once the agents are disconnected the only door is Share; Disconnect has nothing left to do.
+		const disconnected = !!app?.status?.agentsDisconnected;
+		const share = document.getElementById('posture-share'), disconnect = document.getElementById('posture-disconnect');
+		if (share) share.hidden = !disconnected;
+		if (disconnect) disconnect.hidden = disconnected;
 	}
 }
 
@@ -44076,7 +44629,7 @@ document.getElementById('posture-row')?.addEventListener('click', event => {
 		return;
 	}
 	if (event.target.closest('#posture-disconnect')) {
-		Promise.resolve(window.RapierMcpApp?.disconnectAgents?.(event)).finally(_rapierPostureRender);
+		_rapierPostureDisconnectPressed(event);
 		return;
 	}
 	if (event.target.closest('#posture-share')) {
@@ -45687,7 +46240,8 @@ function renderSettings() {
 		renderSwitch(refs[field + 'Switch'], field === 'theme' && _rapierEmbed.theme ? _rapierEmbed.theme : RapierPreferences.read(field));
 	}
 
-	refs.primaryActions.hidden = embedded;
+	// A paired page (mcp/paired.mjs) edits its one workspace: no New or Open.
+	refs.primaryActions.hidden = embedded || typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string';
 	refs.openChevron.hidden = !facts.recents;
 	refs.recentDrawer.hidden = !facts.recents || embedded;
 	refs.recentDrawer.dataset.open = _rapierUi.recentOpen ? 'true' : 'false';
@@ -46537,6 +47091,9 @@ function _rapierUpdateToastLift() {
 		if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return null;
 		return {box, style};
 	};
+	// A notice standing in Draw's surface stands over its canvas (draw/draw.js _rapierDrawToastHome): the stage is the paper under it, not a
+	// control it covers. The sheet, the sampler's bar, the handles and the text editor's parts are, and are cleared as any surface is.
+	const inDraw = !!root.closest('.rapier-draw-surface');
 	const collect = skip => {
 		const surfaces = [];
 		const inventory = model.surfaces.inventory;
@@ -46563,6 +47120,15 @@ function _rapierUpdateToastLift() {
 				if (!seen) continue;
 				const {box, style} = seen;
 				if (style.pointerEvents === 'none' && (style.opacity === '0' || parseFloat(style.opacity) === 0)) continue;
+				// Over the canvas a layer that takes no finger (the text editor's frame, the colour sampler's layer) covers nothing of its own;
+				// what it holds that does take one is what a notice must clear: the text box, its controls, the sampler's bar.
+				if (inDraw && style.pointerEvents === 'none') {
+					for (const part of matches[i].children) {
+						const inner = painted(part);
+						if (inner && inner.style.pointerEvents !== 'none') surfaces.push({id: decl.id + '>' + surfaces.length, role: decl.role, interactive: true, rect: {left: inner.box.left, top: inner.box.top, right: inner.box.right, bottom: inner.box.bottom}});
+					}
+					continue;
+				}
 				const surface = {
 					id: many ? decl.id + ':' + i : decl.id,
 					role: decl.role,
@@ -46634,7 +47200,7 @@ function _rapierUpdateToastLift() {
 		if (typeof _rapierNotesSnackPlace === 'function') try { _rapierNotesSnackPlace(); } catch (_) {}
 		return;
 	}
-	const surfaces = collect(new Set(['toast-container']));
+	const surfaces = collect(new Set(inDraw ? ['toast-container', 'draw-stage'] : ['toast-container']));
 	let result = model.viewport.placeViewportTransient({
 		sample: view.sample,
 		epoch: view.epoch,

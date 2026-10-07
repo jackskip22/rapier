@@ -102,6 +102,12 @@ class WorkspaceStorage {
     try { const result=fn(); if(result?.then) throw new TypeError('A storage transaction must be synchronous'); return result; }
     catch(error) {this.values=before;throw error;}
   }
+  async transaction(fn) {
+    if(this.failed) throw refusal('STATE_RELOAD_REQUIRED','The workspace must be reloaded after a storage failure.',503);
+    const before=structuredClone(this.values);
+    try { return await fn(); }
+    catch(error) {this.values=before;throw error;}
+  }
   async sync() {
     if(this.failed) throw refusal('STATE_RELOAD_REQUIRED','The workspace must be reloaded after a storage failure.',503);
     const next={...this.record,values:[...structuredClone(this.values)],alarm:this.alarm};

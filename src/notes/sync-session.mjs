@@ -212,7 +212,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 	let devices = Object.freeze([]);
 	let pending = null, pendingHeads = null;
 	const pendingSizes = new Map();
-	const transports = new Set(), credentials = new Map(), answeredBuckets = new Set();
+	const transports = new Set(), credentials = new Map(), answeredBuckets = new Set(), r2Refusals = new Map();
 	const bucketAddress = target => JSON.stringify([target.accountId, target.jurisdiction, target.bucket]);
 	const status = () => Object.freeze({stage, mode, authorized: mode === 'companion' ? !!connection : mode === 'r2-key' || other && !signsIn ? !!key && !!connection?.credential : !!grant && !needsRevoke, provider, unlocked: !!key,
 		rememberDevice, rememberAvailable: !!device && device.available !== false, hasConnection: !!connection, credentialStored: !!connection?.credential, rejoinRequired,
@@ -356,7 +356,14 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		transports.add(result);
 		return result;
 	}
+	function checkR2Retry(accountId) {
+		if (mode !== 'oauth') return;
+		const held = r2Refusals.get(accountId), remaining = held && held.until - now();
+		if (remaining > 0) throw Object.assign(fail(held.code, held.message), {retryAfterMs: Math.ceil(remaining)});
+		r2Refusals.delete(accountId);
+	}
 	async function withTransport(target, ticket, fn, pair = null) {
+		active(ticket); checkR2Retry(target.accountId);
 		const tr = await transport(target, ticket, pair);
 		const destination = mode === 'r2-key' ? bucketAddress(target) : null;
 		// Transports end after each operation. Keep response evidence for this bucket
@@ -364,6 +371,12 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		const known = answeredBuckets.has(destination) || mode === 'r2-key' && connection?.credential && bucketAddress(connection.target) === destination;
 		try { return await fn(tr); }
 		catch (error) {
+			// A transport ends after each operation; this grant's session keeps the account's provider bound.
+			// Only the R2 owner's fixed rate/server refusal enters this state, never a raw provider response.
+			if (mode === 'oauth' && ['rate', 'server'].includes(error.code) && Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0) {
+				const until = Math.min(Number.MAX_SAFE_INTEGER, now() + error.retryAfterMs);
+				r2Refusals.set(target.accountId, {until: Math.max(r2Refusals.get(target.accountId)?.until || 0, until), code: error.code, message: error.message});
+			}
 			if (mode === 'r2-key' && destination && !known && !tr.answered && error.code === 'network' && error.unanswered && error.unconfirmed) {
 				// Fetch cannot distinguish CORS, DNS, offline or TLS failure. This is advice,
 				// never an acknowledgement that a request failed to reach the bucket.
@@ -373,8 +386,9 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			throw error;
 		} finally { if (destination && tr.answered) answeredBuckets.add(destination); tr.pause(); transports.delete(tr); }
 	}
-	async function withSetup(ticket, fn) {
+	async function withSetup(ticket, fn, accountId = null) {
 		if (mode !== 'oauth') throw fail('config', 'automatic setup uses cloudflare sign-in.');
+		active(ticket); checkR2Retry(accountId);
 		const token = await authority(ticket); active(ticket);
 		const setup = createCloudflareSetup({fetch: fetchFn, token});
 		transports.add(setup);
@@ -523,7 +537,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			announce('revocation-pending', removalError?.code === 'revoke' ? removalError.message : 'sync stopped, but ' + who + ' has not confirmed revocation. retry here, or revoke rapier in ' + who + ' before you close this page.');
 			throw fail('revoke', notice);
 		}
-		grant = null; accounts = null; storage = null; needsRevoke = false;
+		grant = null; accounts = null; storage = null; needsRevoke = false; r2Refusals.clear();
 		return removalError;
 	}
 	function revokeGrant() {
@@ -602,7 +616,7 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 		cloudflareStorage(accountId) { return run(async ticket => {
 			if (!accounts?.some(account => account.id === accountId)) throw fail('account', 'choose one of your cloudflare accounts.');
 			storage = null;
-			storage = await withSetup(ticket, setup => setup.storage(accountId));
+			storage = await withSetup(ticket, setup => setup.storage(accountId), accountId);
 			return {...storage, vaults: storage.vaults.map(target => ({address: connectionCode(target)}))};
 		}); },
 		inspect() { return run(async ticket => {

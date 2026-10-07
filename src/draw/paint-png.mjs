@@ -24,20 +24,28 @@ export function createPaintPNGCodec() {
 		const bytes = Uint8Array.from(atob(raster.slice(22)), c => c.charCodeAt(0)), v = new DataView(bytes.buffer);
 		if (bytes.length < 57 || v.getUint32(0) !== 0x89504e47 || v.getUint32(4) !== 0x0d0a1a0a) throw new Error('Invalid painting PNG');
 		const width = v.getUint32(16), height = v.getUint32(20);
-		if (bytes[24] !== 8 || bytes[25] !== 6 || bytes[28] !== 0) return null;
+		const colour = bytes[25], channels = {0: 1, 2: 3, 4: 2, 6: 4}[colour];
+		if (bytes[24] !== 8 || !channels || bytes[26] !== 0 || bytes[27] !== 0 || bytes[28] !== 0) return null;
 		if (!width || !height || width * height > 12000000) throw new Error('Painting PNG is too large');
 		const parts = []; let profiled = false;
 		for (let at = 8; at + 12 <= bytes.length;) { const n = v.getUint32(at); if (at + n + 12 > bytes.length || crc(bytes.subarray(at + 4, at + n + 8)) !== v.getUint32(at + n + 8)) throw new Error('Damaged painting PNG'); const tag = v.getUint32(at + 4); if ([0x69434350,0x67414d41,0x6348524d,0x65584966].includes(tag)) profiled = true; if (tag === 0x49444154) parts.push(bytes.subarray(at + 8, at + 8 + n)); at += n + 12; }
 		// Imported profiles/orientation belong to the browser's colour-managed reader. Our working
 		// PNGs carry untagged straight sRGB and are the only pixels this raw path owns.
 		if (profiled) return null;
-		const limit = (width * 4 + 1) * height, reader = new Blob(parts).stream().pipeThrough(new DecompressionStream('deflate')).getReader(), raw = new Uint8Array(limit); let used = 0;
+		const limit = (width * channels + 1) * height, reader = new Blob(parts).stream().pipeThrough(new DecompressionStream('deflate')).getReader(), raw = new Uint8Array(limit); let used = 0;
 		try { for (;;) { const {done, value} = await reader.read(); if (done) break; if (used + value.length > limit) throw new Error('Invalid painting PNG size'); raw.set(value, used); used += value.length; } } finally { await reader.cancel(); }
 		if (used !== limit) throw new Error('Truncated painting PNG');
-		const stride = width * 4, data = new Uint8ClampedArray(stride * height);
+		const stride = width * channels, data = new Uint8ClampedArray(stride * height);
 		const paeth = (a,b,c) => { const p = a+b-c, x = Math.abs(p-a), y = Math.abs(p-b), z = Math.abs(p-c); return x <= y && x <= z ? a : y <= z ? b : c; };
-		for (let y = 0; y < height; y++) { const filter = raw[y * (stride + 1)]; if (filter > 4) throw new Error('Invalid painting PNG filter'); for (let x = 0; x < stride; x++) { const at = y * stride + x, a = x >= 4 ? data[at - 4] : 0, b = y ? data[at - stride] : 0, c = y && x >= 4 ? data[at - stride - 4] : 0; data[at] = (raw[y * (stride + 1) + x + 1] + (filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a+b) >> 1 : paeth(a,b,c))) & 255; } }
-		return {width, height, data};
+		for (let y = 0; y < height; y++) { const filter = raw[y * (stride + 1)]; if (filter > 4) throw new Error('Invalid painting PNG filter'); for (let x = 0; x < stride; x++) { const at = y * stride + x, a = x >= channels ? data[at - channels] : 0, b = y ? data[at - stride] : 0, c = y && x >= channels ? data[at - stride - channels] : 0; data[at] = (raw[y * (stride + 1) + x + 1] + (filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a+b) >> 1 : paeth(a,b,c))) & 255; } }
+		if (colour === 6) return {width, height, data};
+		// A decoded JPEG XL may expose opaque RGB or grey PNG channels. Expand them directly;
+		// no premultiplication or colour conversion stands between this reader and the material.
+		const rgba = new Uint8ClampedArray(width * height * 4);
+		for (let p = 0, q = 0; p < data.length; p += channels, q += 4) {
+			rgba[q] = data[p]; rgba[q + 1] = colour === 2 ? data[p + 1] : data[p]; rgba[q + 2] = colour === 2 ? data[p + 2] : data[p]; rgba[q + 3] = colour === 4 ? data[p + 1] : 255;
+		}
+		return {width, height, data: rgba};
 	}
 	// The synchronous PNG is stored, not compressed (about 5.3 characters a pixel): its zlib header 78 01 and a stored
 	// first block, read from the first 48 bytes. No budget weighs it: it is never the form a painting is kept in.

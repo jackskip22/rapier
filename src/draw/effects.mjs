@@ -33,6 +33,14 @@ export function copierPreset(id = 'photocopy', seed = 1337) {
 	return { type: 'copier', version: 1, preset: id, seed, ...DEFAULTS, ...preset.values };
 }
 
+// A caller that names a preset and leaves numbers out is given the preset's own for them: `{preset: 'fax'}` is a whole effect. What it
+// sends stands as sent and is admitted as sent; a caller that names no preset is not completed.
+export function fillCopier(input) {
+	if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.preset !== 'string') return input;
+	const start = copierPreset(input.preset, input.seed);
+	return start ? { ...start, ...input } : input;
+}
+
 // Unknown or malformed author data is refused, not silently removed at Save.
 export function admitCopier(raw) {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.type !== 'copier' || raw.version !== 1 ||

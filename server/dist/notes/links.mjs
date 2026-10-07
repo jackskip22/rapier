@@ -15,6 +15,7 @@ import {parseFrontMatter, aliasesOf} from './frontmatter.mjs';
 // so an arrival can still shadow an earlier target.
 import {noteFileName, noteTitle, projectCard} from './model.mjs';
 import {markdownParser, escapeImageAlt} from '../spec/md-assets.mjs';
+import {_rapierNextHeadingSlug} from '../editor/source-facts.mjs';
 
 const ASSET_EXT = /\.(?:png|jpe?g|gif|webp|svg|jxl|bmp|ico|pdf|mp3|mp4|wav|m4a|ogg|webm|json|csv|zip|html?|txt|css|js)$/i;
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -660,9 +661,7 @@ export function headingAnchors(text) {
 	if (i === 0 && s[0] === '\uFEFF') i = 1;
 	const push = (slugSrc, display, level, start) => {
 		const stripped = String(display).replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_`~]/g, '').trim();
-		let slug = githubSlug(stripped);
-		if (seen[slug]) { const n = seen[slug]++; slug = slug + '-' + n; }
-		else seen[slug] = 1;
+		const slug = _rapierNextHeadingSlug(githubSlug(stripped), seen);
 		out.push({slug, text: stripped, level, start});
 	};
 	while (i <= s.length) {
@@ -892,7 +891,10 @@ function installLinks(out, inn, from, links) {
 		if (next.length) inn.set(target, next); else inn.delete(target);
 	}
 	if (!links) out.delete(from); else out.set(from, links);
-	for (const L of links || []) if (L.resolved.file) inn.set(L.resolved.file, (inn.get(L.resolved.file) || []).concat({from, start: L.start, end: L.end}));
+	// One concatenation per target, not one per link: a note whose thousands of links reach one note would be quadratic.
+	const added = new Map();
+	for (const L of links || []) if (L.resolved.file) { const rows = added.get(L.resolved.file); const row = {from, start: L.start, end: L.end}; if (rows) rows.push(row); else added.set(L.resolved.file, [row]); }
+	for (const [target, rows] of added) inn.set(target, (inn.get(target) || []).concat(rows));
 }
 
 function resolvedLinks(links, from, files, aliases, names) {
@@ -910,9 +912,74 @@ function resolvedLinks(links, from, files, aliases, names) {
 // left to one resolveLinkIndex pass at the end instead of one per arrival. Off it, the predecessor
 // is untouched and shadowed aliases are re-resolved at once, as the model's witnesses hold.
 export function updateLinkIndex(index, file, text, {stream = false, mapLink} = {}) {
-	const projection = text == null ? null : {aliases: aliasesOf(text),
-		out: scanLinks(text).map(L => mapLink ? mapLink(kept(L)) : kept(L))};
+	if (stream) linkRevisions.set(index, (linkRevisions.get(index) || 0) + 1);
+	const projection = text == null ? null : projectLinks(text, {mapLink});
 	return installLinkProjection(index, file, projection, stream);
+}
+export function projectLinks(text, {mapLink} = {}) {
+	return {aliases: aliasesOf(text), out: scanLinks(text).map(L => mapLink ? mapLink(kept(L)) : kept(L))};
+}
+
+const linkRevisions = new WeakMap();
+// The one whole-graph pass: every link resolved again against every name now known, privately and in bounded
+// steps; one final pointer publishes the complete graph. A concurrent change restarts only this derived pass.
+export function* stageLinkIndex(index) {
+	const revision = linkRevisions.get(index) || 0;
+	const check = () => { if ((linkRevisions.get(index) || 0) !== revision) throw new Error('link_index_changed'); };
+	let work = 0;
+	const files = new Set(), aliases = new Map(), out = new Map(), inn = new Map(), folded = new Map(), named = new Map();
+	for (const name of index.files) { files.add(name); if (++work % 64 === 0) { yield; check(); } }
+	for (const [name, values] of index.aliases) { aliases.set(name, values); if (++work % 64 === 0) { yield; check(); } }
+	for (const name of files) { const key = name.toLowerCase(), values = folded.get(key) || []; values.push(name); folded.set(key, values); if (++work % 64 === 0) { yield; check(); } }
+	for (const [name, values] of aliases) {
+		const seen = new Set();
+		if (files.has(name)) for (const value of values) {
+			const key = value.normalize('NFC').toLowerCase();
+			if (!seen.has(key)) { seen.add(key); const rows = named.get(key) || []; rows.push(name); named.set(key, rows); }
+			if (++work % 64 === 0) { yield; check(); }
+		}
+		if (++work % 64 === 0) { yield; check(); }
+	}
+	for (const [from, links] of index.out) {
+		const resolved = [];
+		for (const link of links) {
+			const next = resolveLinkWithNames(link, {from, files, aliases}, {folded, named});
+			resolved.push({...link, resolved: next});
+			if (next.file) pushIn(inn, next.file, {from, start: link.start, end: link.end});
+			if (++work % 64 === 0) { yield; check(); }
+		}
+		out.set(from, resolved);
+		if (++work % 64 === 0) { yield; check(); }
+	}
+	check(); return {out, in: inn, files, aliases};
+}
+
+// One note's own links, installed alone. Its rows are resolved in bounded steps against the names as they will
+// stand with it installed, then put in over that note and its backlinks in one step (in place while the folder is
+// streaming in, as updateLinkIndex's stream mode does; otherwise on a copy, the predecessor untouched). The other
+// notes' links are not visited: when this note's names changed, the caller owes the one whole-graph pass above.
+// Returns {index, changedNames}. A concurrent change restarts only this installation.
+export function* stageLinkNote(index, {file, projection, stream = false} = {}) {
+	const revision = linkRevisions.get(index) || 0;
+	const check = () => { if ((linkRevisions.get(index) || 0) !== revision) throw new Error('link_index_changed'); };
+	const names = projection ? projection.aliases : [], before = index.aliases.get(file) || [];
+	const changedNames = projection === null || !index.files.has(file) || names.length !== before.length || names.some((name, i) => name !== before[i]);
+	let rows = null;
+	if (projection) {
+		const files = new Set(index.files).add(file), aliases = new Map(index.aliases).set(file, names), lookup = resolutionNames(files, aliases);
+		rows = [];
+		for (const link of projection.out) {
+			rows.push({...link, resolved: resolveLinkWithNames(link, {from: file, files, aliases}, lookup)});
+			if (rows.length % 64 === 0) { yield; check(); }
+		}
+	}
+	check();
+	const out = stream ? index.out : new Map(index.out), inn = stream ? index.in : new Map(index.in), files = stream ? index.files : new Set(index.files), aliases = stream ? index.aliases : new Map(index.aliases);
+	if (projection === null) { files.delete(file); aliases.delete(file); }
+	else { files.add(file); aliases.set(file, names); }
+	installLinks(out, inn, file, rows);
+	if (stream) linkRevisions.set(index, revision + 1);
+	return {index: stream ? index : {out, in: inn, files, aliases}, changedNames};
 }
 
 // Both cold projection and hydration enter the same installer and resolver. No cached resolution
@@ -937,6 +1004,7 @@ function installLinkProjection(index, file, projection, stream) {
 // pending is the caller's shared unread/edit queue (Map or Set), not a second link queue. Stream
 // mode owns the maps and leaves the final resolveLinkIndex pass to the existing folder owner.
 export function hydrateLinkIndex(index, reuse, {stream = false, pending = new Set()} = {}) {
+	if (stream) linkRevisions.set(index, (linkRevisions.get(index) || 0) + 1);
 	const next = stream ? index : {out: new Map(index.out), in: new Map(index.in), files: new Set(index.files), aliases: new Map(index.aliases)};
 	for (const {file, projection} of reuse) {
 		if (next.out.has(file) || pending.has(file)) continue;
@@ -947,6 +1015,7 @@ export function hydrateLinkIndex(index, reuse, {stream = false, pending = new Se
 
 // After a stream: every link resolved once more against every name now known, in place.
 export function resolveLinkIndex(index) {
+	linkRevisions.set(index, (linkRevisions.get(index) || 0) + 1);
 	const {out, in: inn, files, aliases} = index, names = resolutionNames(files, aliases);
 	for (const [from, links] of out) {
 		const next = resolvedLinks(links, from, files, aliases, names);

@@ -1,4 +1,4 @@
-import {createHTTP, asBytes, byteCount as size, fail, refuse, jsonBody} from './provider-http.mjs';
+import {createHTTP, asBytes, byteCount as size, fail, refuse, jsonBody, retryAfter} from './provider-http.mjs';
 import {objectKey, objectPrefix, listOptions} from './provider-objects.mjs';
 // Cloudflare REST, exclusively inside the network-enabled companion. No ambient fetch, no endpoint
 // override, no VDK, no mutable head, no implicit DELETE. Application scope is NOT a narrower
@@ -47,7 +47,7 @@ export function createR2Transport(options = {}) {
 				if (response.status < 200 || response.status >= 300) refuse('http', 'the provider refused the operation (HTTP ' + response.status + ')');
 			},
 		}), response => response.status === 429 || response.status >= 500
-			? {error: fail(response.status === 429 ? 'rate' : 'server', 'the provider is temporarily refusing requests; work is kept')} : null,
+			? {error: fail(response.status === 429 ? 'rate' : 'server', 'the provider is temporarily refusing requests; work is kept'), delay: retryAfter(response)} : null,
 		true, attempt => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempt));
 		if (res.status === 404) return null;
 		if (!json) return {bytes: res.bytes, etag: res.headers?.get('etag') || '', size: res.bytes.length};

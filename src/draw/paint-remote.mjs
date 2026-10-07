@@ -18,9 +18,11 @@ export async function paintDigestMatches(data, digest, options = {}) {
 	return await sha256Yielding(bytes, options) === digest;
 }
 const schedule = fn => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(fn, 16);
+const paintReplaySession = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+let paintRemoteIdentity = 0;
 
 export class RemotePaintSurface {
-	constructor(remote, id, width, height) {
+	constructor(remote, id, width, height, options = {}) {
 		this.remote = remote; this.id = id;
 		// What the page will see once every command it has queued has run (grow and a cancelled stroke are the only
 		// ones that change the shape; the painter confirms them in each reply).
@@ -28,6 +30,8 @@ export class RemotePaintSurface {
 		// What the painter last confirmed.
 		this.meta = {width, height, revision: 0, bounds: null, growBox: undefined, toothOX: 0, toothOY: 0, wetState: false, wet: false, _wetWork: false, wetPending: 0, opStats: null};
 		this.pending = 0; this.structural = 0; this.failure = null; this.display = null; this.gone = false;
+		this.options = structuredClone(options); this.importOffset = [0, 0]; this.replay = null; this.replayQueue = []; this.gravity = [0, 0]; this.paper = null;
+		this.sheetId = remote._identity + '-' + id;
 	}
 	// A revision that differs from every confirmed one while anything is queued for this surface: "the same as when
 	// I read it" is only ever true of a surface nothing has touched since.
@@ -51,13 +55,14 @@ export class RemotePaintSurface {
 		return entry;
 	}
 	tilt(gx, gy) {
+		this.gravity = [gx, gy];
 		const queue = this.remote._queue, last = queue[queue.length - 1];
 		// Two tilts with nothing between them are one: the second wins, exactly as it would have run.
-		if (last && last.wire.method === 'tilt' && last.wire.id === this.id) { last.wire.args = [gx, gy]; return; }
+		if (last && last.wire.method === 'tilt' && last.wire.id === this.id) { last.wire.args = [gx, gy]; if (last.replayCommand) last.replayCommand.args = [gx, gy]; return; }
 		this._push({target: 'surface', id: this.id, method: 'tilt', args: [gx, gy]});
 	}
 	set(name, value) {
-		if (name === 'toothOX') this.toothOX = value; else if (name === 'toothOY') this.toothOY = value; else if (name === 'scale') this.scale = value;
+		if (name === 'toothOX') this.toothOX = value; else if (name === 'toothOY') this.toothOY = value; else if (name === 'scale') this.scale = value; else if (name === 'paper') this.paper = value;
 		this._push({target: 'surface', id: this.id, method: 'set', args: [name, value]}, {structural: name === 'toothOX' || name === 'toothOY'});
 	}
 	settleWet() { this._push({target: 'surface', id: this.id, method: 'settleWet', args: []}); }
@@ -65,6 +70,7 @@ export class RemotePaintSurface {
 	// One bounded drying slice in the painter; resolves with whether the paper is dry.
 	dryWet(feed = 8, slice = 8) { return this._push({target: 'surface', id: this.id, method: 'dryWet', args: [feed, slice]}, {ticket: true}).promise; }
 	fromRGBA8(data, width, height, x = 0, y = 0) {
+		this.importOffset = [x, y];
 		const buffer = data.buffer;
 		this._push({target: 'surface', id: this.id, method: 'fromRGBA8', args: [data, width, height, x, y]}, {transfer: buffer instanceof ArrayBuffer && data.byteOffset === 0 && data.byteLength === buffer.byteLength ? buffer : null});
 	}
@@ -76,16 +82,34 @@ export class RemotePaintSurface {
 		return {dx: left, dy: top};
 	}
 	// A stroke's checkpoint lives in the painter. The token names it and what shape the page restores on a cancel.
-	beginStroke() {
+	beginStroke({record = false} = {}) {
 		const token = {id: ++this.remote._tokens, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY};
+		if (this.replay) {
+			const box = this.bounds();
+			if (box) this.replay.crop = [box.x0, box.y0, box.x1, box.y1];
+			this.replayQueue.push(this.replay); this.replay = null;
+		}
+		if (record) this.replay = {id: this.sheetId + '-' + token.id, actor: 'human',
+			sheet: {id: this.sheetId, width: this.width, height: this.height, options: structuredClone(this.options), offset: this.importOffset.slice(), scale: this.scale, toothOX: this.toothOX, toothOY: this.toothOY, paper: structuredClone(this.paper)},
+			brushes: [], commands: [{target: 'surface', id: this.id, method: 'tilt', args: this.gravity.slice()}]};
 		this._push({target: 'surface', id: this.id, method: 'beginStroke', args: [token.id]}, {mutates: false});
 		return token;
 	}
 	endStroke(token, cancel = false) {
 		if (!token) return false;
-		if (cancel) { this.width = token.width; this.height = token.height; this.toothOX = token.toothOX; this.toothOY = token.toothOY; }
+		if (cancel) { this.width = token.width; this.height = token.height; this.toothOX = token.toothOX; this.toothOY = token.toothOY; this.replay = null; }
 		this._push({target: 'surface', id: this.id, method: 'endStroke', args: [token.id, cancel === true]}, {structural: cancel === true});
 		return true;
+	}
+	// A lifted revision takes the admitted commands at the same boundary as its pixel read.
+	// Drying after the lift is included; the next stroke opens a new contribution.
+	peekReplay() { return [...this.replayQueue, ...(this.replay ? [this.replay] : [])]; }
+	takeReplay() { const records = this.peekReplay(); this.replay = null; this.replayQueue = []; return records.length ? records : null; }
+	// A refused encode has kept the live material: its captured commands return to this same
+	// ordered custody until a later revision can publish them with those pixels.
+	restoreReplay(records) {
+		const held = new Set(this.peekReplay().map(record => record.id));
+		this.replayQueue.unshift(...(records || []).filter(record => !held.has(record.id)));
 	}
 	// Everything queued so far has run and the mirror is the painter's own.
 	sync() { return this.remote.sync(this); }
@@ -103,9 +127,16 @@ export class RemotePaintBrush {
 		this.rapier = definition.rapier ? {...definition.rapier} : null;
 		this.base = definition.settings.map(row => row.base);
 		this.loadFuel = null;
+		this.definition = structuredClone(Object.fromEntries(['settings', 'rapier', 'wet', 'wetInputs', 'tool'].filter(key => definition[key] != null).map(key => [key, definition[key]])));
+		this.replaySetup = [];
 	}
 	getBaseValue(name) { return this.base[SETTING_AT[name]]; }
-	_command(method, args) { this.remote._enqueue({wire: {target: 'brush', id: this.id, method, args}, surface: null, mutates: false}); }
+	_command(method, args) {
+		const wire = {target: 'brush', id: this.id, method, args};
+		if (method === 'seed') this.replaySetup = [];
+		this.replaySetup.push(structuredClone(wire));
+		this.remote._enqueue({wire, surface: null, mutates: false});
+	}
 	seed(value) { this._command('seed', [value]); }
 	setColor(r, g, b) { this._command('setColor', [r, g, b]); }
 	setBaseValue(name, value) { this.base[SETTING_AT[name]] = value; this._command('setBaseValue', [name, value]); }
@@ -128,13 +159,13 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 	let serial = 0, flying = 0, wanted = false, failure = null;
 	const surfaces = new Map(), brushes = new Map();
 	const remote = {
-		client, _queue: [], _tokens: 0, _tickets: new Set(),
+		client, _queue: [], _tokens: 0, _tickets: new Set(), _identity: paintReplaySession + '-' + ++paintRemoteIdentity,
 		get failure() { return failure; },
 		get idle() { return !remote._queue.length && !flying && !failure; },
 		get inFlight() { return flying; },
 		surface(width, height, options = {}) {
 			if (failure) throw failure;
-			const id = ++serial, surface = new RemotePaintSurface(remote, id, width, height);
+			const id = ++serial, surface = new RemotePaintSurface(remote, id, width, height, options);
 			surfaces.set(id, surface);
 			remote.flush().catch(() => {});
 			client.request('create', {surfaceId: id, width, height, options}).then(reply => remote._state(reply), remote._fail);
@@ -150,6 +181,23 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 		},
 		_enqueue(entry) {
 			if (failure) throw failure;
+			const wire = entry.wire;
+			if (wire.target === 'brush') {
+				for (const surface of surfaces.values()) if (surface.replay?.brushes.some(row => row.id === wire.id)) surface.replay.commands.push(structuredClone(wire));
+			} else if (entry.surface?.replay) {
+				const record = entry.surface.replay;
+				if (wire.target === 'stroke') {
+					if (!record.brushes.some(row => row.id === entry.brush.id)) {
+						record.brushes.push({id: entry.brush.id, definition: structuredClone(entry.brush.definition)});
+						record.commands.push(...structuredClone(entry.brush.replaySetup));
+					}
+					record.commands.push(structuredClone(wire));
+				} else if (!['beginStroke', 'endStroke', 'fromRGBA8'].includes(wire.method)) {
+					entry.replayRecord = record; entry.replayCommand = structuredClone(wire);
+					record.commands.push(entry.replayCommand);
+					if (wire.method === 'dryWet') wire.record = true;
+				}
+			}
 			remote._queue.push(entry);
 			if (entry.reject) remote._tickets.add(entry);
 			remote.requestFrame();
@@ -193,7 +241,14 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 			let at = 0;
 			for (const entry of entries) {
 				if (entry.surface) { entry.surface.pending--; if (entry.structural) entry.surface.structural--; }
-				if (entry.wire.target === 'surface') { const value = reply.values[at++]; remote._tickets.delete(entry); entry.settle?.(value); }
+				if (entry.wire.target === 'surface') {
+					const value = reply.values[at], work = reply.replayWork?.[at]; at++;
+					if (entry.replayRecord && work) {
+						const commands = entry.replayRecord.commands, position = commands.indexOf(entry.replayCommand);
+						if (position >= 0) commands.splice(position, 1, ...work);
+					}
+					remote._tickets.delete(entry); entry.settle?.(value);
+				}
 			}
 			for (const state of reply.surfaces || []) remote._state(state);
 			for (const [id, stats] of Object.entries(reply.brushes || {})) { const brush = brushes.get(+id); if (brush) brush.loadFuel = stats.loadFuel ?? null; }

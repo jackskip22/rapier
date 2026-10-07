@@ -1,6 +1,6 @@
 ---
 name: rapier-markdown
-description: Write or check Self-contained Markdown, one .md file that carries its pictures, layout, colour and editable SVG drawings over CommonMark and GFM, and that every Markdown app can read. Use when writing a Rapier document, when asked for a self-contained or portable Markdown file, or before making an editable page with rapier-html. An ordinary chat answer in Markdown does not need this skill.
+description: Write or check Self-contained Markdown, one .md file that carries its pictures, layout, colour, editable SVG drawings with their canvas skies and Mermaid flowcharts as text, over CommonMark and GFM, and that every Markdown app can read. Use when writing a Rapier document, when asked for a self-contained or portable Markdown file, or before making an editable page with rapier-html. An ordinary chat answer in Markdown does not need this skill.
 ---
 
 # Self-contained Markdown
@@ -14,11 +14,13 @@ know. Nothing is lost when the file travels: no image folder, no zip, no account
 what makes it a better carrier than DOCX: plain text, diffable, readable everywhere, and complete.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.75`. Rapier renders it exactly and
+https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.76`. Rapier renders it exactly and
 writes it back byte for byte; any editor may.
 
-Supported Mermaid flowchart fences also draw offline in Rapier's look, so an agent can write a fence or use figures.
-In an active Rapier document, insert the diagram with an inspected source edit or `document.draw`.
+Rapier has two separate kinds of diagram: native SVG drawings, made with `document.draw` as movable, editable
+figures, and Mermaid flowchart fences, which render offline in Rapier's look and stay plain text in the file.
+In an active Rapier document, insert a Mermaid fence with an inspected source edit, or make an SVG drawing
+with `document.draw`.
 Pass Markdown directly to tools, without an outer display fence. Close every Mermaid fence before the
 next paragraph. If source is requested in chat, never wrap Markdown containing Mermaid in another
 triple-backtick fence; use an outer fence longer than every backtick run in the source, or attach the file.

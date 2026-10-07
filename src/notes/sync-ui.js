@@ -567,10 +567,38 @@ const _rapierNotesSyncUi = (() => {
 	// Choices this device made that another device's later choice replaced (notes/personal.mjs's ledger).
 	let replaced = [];
 	async function keptChoices() { if (typeof _rapierPersonal === 'undefined') return; try { replaced = await _rapierPersonal.ledger(); } catch (_) { replaced = []; } }
-	async function syncOnce() {
+	async function syncOnce(guard = () => {}) {
 		syncing = true;
-		try { await flush(); await session.syncNow(); await _rapierNotesFolderChanged(); await keptChoices(); }
+		try { await flush(); guard(); const result = await session.syncNow(); await _rapierNotesFolderChanged(); await keptChoices(); return result; }
 		finally { syncing = false; wearBox(); }
+	}
+	// A tool can run the saved connection. It cannot enter any setup or sign-in path.
+	async function syncNow({signal, guard} = {}) {
+		const stopped = () => { if (signal?.aborted) throw new DOMException('The sync request was cancelled.', 'AbortError'); guard?.(); };
+		const refused = reason => ({action: 'now', synced: false, reason});
+		try {
+			stopped();
+			if (!session) {
+				if (!api()) return refused('notes_sync_not_configured');
+				await _rapierNotesReady(); await _rapierNotesStore.kind(); stopped();
+				const saved = await api().readSyncState(_rapierNotesStore.folder); stopped();
+				if (!saved.vault) return refused('notes_sync_not_configured');
+				await owner(); stopped();
+			}
+			const current = status();
+			if (!current.hasConnection || current.rejoinRequired) return refused('notes_sync_not_configured');
+			if (!current.unlocked) return refused('notes_sync_locked');
+			if (!current.authorized) return refused('notes_sync_sign_in_required');
+			if (acting || syncing || current.busy) return refused('notes_sync_busy');
+			const result = await syncOnce(stopped); stopped();
+			const skipped = Array.isArray(result.skipped) ? result.skipped.length : 0, missing = Array.isArray(result.missing) ? result.missing.length : 0;
+			return {action: 'now', synced: true, complete: result.caughtUp !== false && !skipped && !missing,
+				unchanged: result.unchanged === true, skipped, missing, backedUpAt: status().backedUpAt ?? null};
+		} catch (error) {
+			if (error?.code === 'notes_locked') throw error;
+			if (error?.name === 'AbortError') return {refused: 'cancelled'};
+			return refused(error?.code === 'locked' ? 'notes_sync_locked' : error?.code === 'auth' ? 'notes_sync_sign_in_required' : 'notes_sync_failed');
+		}
 	}
 	async function connectAndSync() {
 		await syncOnce(); automatic = status().unlocked && status().authorized; schedule(60000);
@@ -780,5 +808,5 @@ const _rapierNotesSyncUi = (() => {
 			if (!intakeJoin && visible && screen === view && !status().hasConnection && !status().rejoinRequired) await loadAccounts();
 		});
 	}
-	return Object.freeze({open, consume, status, changed});
+	return Object.freeze({open, consume, status, changed, syncNow});
 })();

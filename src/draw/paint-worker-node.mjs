@@ -3,11 +3,14 @@
 import {Worker, parentPort, workerData, isMainThread} from 'node:worker_threads';
 import {createPaintWorker,createPaintWorkerClient} from './paint-worker.mjs';
 import {installPaintRowWorker} from './paint-parallel.mjs';
+import {readFile} from 'node:fs/promises';
+import {configureHostedPaintRaster} from '../mcp/paint-raster.mjs';
 if(!isMainThread) {
  if(workerData?.row) {
   const scope={postMessage:message=>parentPort.postMessage(message)};
   installPaintRowWorker(scope); parentPort.on('message',data=>scope.onmessage({data}));
  } else {
+  configureHostedPaintRaster(await readFile(new URL('../tools/vendor/jxl-oxide/jxl_oxide_wasm_bg.wasm', import.meta.url)));
   const receive=createPaintWorker({isolated:true,postMessage:(m,t)=>parentPort.postMessage(m,t),spawnRows:openNodePaintRow});
   parentPort.on('message',receive);
  }

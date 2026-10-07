@@ -135,35 +135,9 @@ function _rapierBgCommit(next) {
 }
 
 const _rapierBgCopy = bg => bg ? JSON.parse(JSON.stringify(bg)) : null;
-function _rapierBgStopsFrom(bg) {
-	if (bg?.stops) return _rapierBgCopy(bg.stops);
-	if (bg?.kind === 'solid') return [{ at: 0, color: bg.color }, { at: 1, color: bg.color }];
-	if (bg?.kind === 'freeform') return bg.points.slice(0, 2).map((p, i) => ({ at: i, color: p.color })).concat(bg.points.length < 2 ? [{ at: 1, color: '#ffffff' }] : []);
-	return [{ at: 0, color: '#ffd6a5' }, { at: 1, color: '#bdb2ff', ease: 'smooth' }];
-}
-// Turning one kind into another keeps the colours the person already chose.
-function _rapierBgAsKind(kind, from) {
-	if (kind === 'none') return null;
-	const stops = _rapierBgStopsFrom(from), first = stops[0].color;
-	if (kind === 'solid') return { kind, color: from?.kind === 'solid' ? from.color : first };
-	if (kind === 'linear') return { kind, x1: from?.x1 ?? 0, y1: from?.y1 ?? 0, x2: from?.x2 ?? 1, y2: from?.y2 ?? 1, stops };
-	if (kind === 'radial') return { kind, cx: from?.cx ?? 0.5, cy: from?.cy ?? 0.5, r: from?.r ?? 1, stops };
-	if (kind === 'wave') return { kind, x1: from?.x1 ?? 0, y1: from?.y1 ?? 0.2, x2: from?.x2 ?? 1, y2: from?.y2 ?? 0.8, flow: 0.6, size: 0.2, seed: 7, stops };
-	if (kind === 'bloom') return { kind, petals: 8, layers: 6, cx: 0.5, cy: 0.5, size: 0.75, twist: 0.08, glow: 0.6, stops };
-	if (kind === 'ribbon') return { kind, points: [{ x: -0.05, y: 0.2 }, { x: 0.4, y: 0.35 }, { x: 0.5, y: 0.65 }, { x: 1.05, y: 0.85 }], width: 0.5, bands: 9, glow: 0.5, stops };
-	if (kind === 'flow') return { kind, seed: 4, lines: 220, scale: 0.35, swirl: 0.4, weight: 0.3, glow: 0, stops };
-	if (kind === 'texture') return { kind, texture: from?.texture || 'weave', scale: 0.025, strength: 0.6, seed: 1 };
-	if (kind === 'aurora') return { kind, seed: 3, curtains: 3, height: 0.6, sway: 0.5, rays: 0.6, stars: 0.5, glow: 0.4, stops };
-	if (kind === 'topo') return { kind, seed: 8, lines: 96, scale: 0.4, swirl: 0.3, weight: 0.3, glow: 0, stops };
-	if (kind === 'grid') return { kind, lines: 20, horizon: 0.35, sun: 0.6, glow: 0.7, tilt: 0.3, stops };
-	if (kind === 'glyphs') return { kind, style: 'marks', glow: 0.7, cols: 24, seed: 3, x1: 0.2, y1: 0.2, x2: 0.8, y2: 0.8, density: 0.85, wobble: 0.8, stops };
-	if (kind === 'rays') return { kind, glow: 0.5, form: 'hourglass', count: 20, cx: 0.5, cy: 0.5, spread: 0.55, curve: 0.45, stops };
-	if (kind === 'echo') return { kind, x1: 0.6, y1: 0.8, x2: 0.4, y2: 0.25, count: 32, size: 0.65, round: 0.35, turn: 0.1, stops };
-	if (kind === 'rails') return { kind, form: from?.form || 'spiral', count: from?.count || 24, glow: 0.5, bend: 0.4, cx: from?.cx ?? 0.5, cy: from?.cy ?? 0.5, stops };
-	if (from?.kind === 'freeform') return _rapierBgCopy(from);
-	const spots = [[0.2, 0.25], [0.8, 0.3], [0.5, 0.85], [0.15, 0.8], [0.85, 0.85]];
-	return { kind, points: stops.slice(0, 5).map((s, i) => ({ x: spots[i][0], y: spots[i][1], color: s.color, spread: 0.9 })) };
-}
+// Turning one kind into another keeps the colours the person already chose. The starting points are draw/backgrounds.mjs's one
+// table (the door starts a kind from it too); None is this panel's own word for no background.
+function _rapierBgAsKind(kind, from) { return kind === 'none' ? null : _rapierBg._rapierDrawBackgroundStart(kind, from); }
 
 function _rapierBgSyncPanel() {
 	const panel = _rapierBgPanel();

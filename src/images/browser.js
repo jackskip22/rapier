@@ -564,6 +564,12 @@ const _rapierEmbeddedImages = (() => {
         if (previous && (previous.authority !== authority || previous.signature !== record?.url)) {
           visibility?.unobserve(image); watched.delete(image); image.removeAttribute('data-rapier-asset-state');
         }
+        // A picture torn out of the page and put back keeps the nodes it had (a virtualized block sleeps by parking
+        // its nodes and wakes by appending the same ones), and with them the state it wore: `waiting` after its
+        // observer let it go at the tear-out, or `loading` after its reveal was cut there. Nobody is taking that step
+        // any more; the state is stale, so it is dropped and the picture is placed again as a new one is.
+        const state = image.dataset.rapierAssetState;
+        if (state === 'waiting' && !watched.has(image) || state === 'loading' && !revealing.has(image)) image.removeAttribute('data-rapier-asset-state');
         if (image.dataset.rapierAssetState) {
           if (!previous) presented.set(image, {signature: record?.url, authority, dark: darkPaper()});
           continue;

@@ -8,27 +8,29 @@ import { parseWill, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, 
 import { diffLines } from './diff.mjs';
 import { outlineMarkdown } from './markdown.mjs';
 import { changedReferenceRegion } from './references.mjs';
-import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage } from '../images/assets.mjs';
-import { _rapierDrawNormalizeAgentRecipe, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
+import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
+import { RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawMergeAgentRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
 import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput, MAX_EXPORT_BYTES } from './catalog.mjs';
+import { FIND_KINDS } from './structure-request.mjs';
 import { _rapierTransformSplices as transformSplices } from '../kit/ledger/journal-records.mjs';
 import { pairMarkers, pairInkSpans, scanInkMarkers, scanColorMarkers, hasInkMarker, hasColorMarker } from '../spec/md-marks.mjs';
 import { markdownSourcePositions } from '../spec/md-source.mjs';
 import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentUndoSplice, imageCommentTarget} from './comments.mjs';
 import {visualRequest, visualResult} from './visual.mjs';
+import {paintUndoPlan} from './paint-undo.mjs';
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
 
 export const LIMITS = Object.freeze({
-  documentBytes: 25 * 1024 * 1024, editChars: 262144, edits: 16,
+  documentBytes: 25 * 1024 * 1024, editChars: 262144, drawingWorkChars: 786432, edits: 16,
   readChars: 4096, resultBytes: 12288, handles: 64, refs: 128, cursors: 64,
-  authorityBytes: 1024 * 1024, lifetimeMs: 300000,
+  authorityBytes: 1024 * 1024, lifetimeMs: 300000, retryMs: 24 * 60 * 60 * 1000,
   journalEntries: 500, journalBytes: 4 * 1024 * 1024,
   compareBytes: 8 * 1024 * 1024, compareLines: 100000, compareChanges: 1200,
-  humanContexts: 8, presenceMs: 15000, reviewMs: 120000, principals: 16, invocationKeys: 256,
+  humanContexts: 8, presenceMs: 15000, reviewMs: 120000, reviewDecisions: 128, principals: 16, invocationKeys: 256,
   drawAlt: 240,
 });
 const encoder = new TextEncoder();
@@ -44,6 +46,8 @@ const HINTS = {
   document_replaced: 'The document was replaced; call get_context, then read again before editing.',
   document_changed: 'The document changed since this handle was read; read_context again and resend with the fresh handle.',
   target_changed: 'The passage changed since it was read; read_context again and resend with the fresh handle.',
+  draw_surface_changed: 'The settled drawing changed; read its current occurrence again before editing.',
+  operation_retry_expired: 'The retry receipt has expired. Inspect the current document before starting another operation.',
   context_handle_wrong_kind: 'This handle is not for this call: edit with a handle from find or read_context, decide a comparison with a change handle, edit a drawing with its recipe_handle.',
   authority_mismatch: 'This handle or ref belongs to another caller; obtain your own with find, read_context or get_outline.',
   change_not_inspected: 'Read each difference with read_context by its change handle before accepting it.',
@@ -73,6 +77,7 @@ const HINTS = {
   notes_open: 'The person has this note open, so the change waits for them to keep or drop.',
   notes_history_unavailable: 'The note\'s History could not take the person\'s words first, so the change waits for them to keep or drop.',
   world_changed: 'The document changed during the call; call again.',
+  kind_not_applicable: 'Code kinds search code, Markdown kinds search Markdown, and an open comparison takes no kind; search words with no kind.',
   outline_changed: 'The document changed during the call; call get_outline again.',
   search_changed: 'The document changed during the call; call find again.',
   read_snapshot_changed: 'The document changed during the call; read_context again.',
@@ -85,6 +90,8 @@ const HINTS = {
 // The figure kinds draw/core.mjs admits (_rapierDrawFigureFault's kind check), answered beside a refused figures list.
 const FIGURE_KINDS = Object.freeze(['rect', 'ellipse', 'circle', 'triangle', 'diamond', 'hexagon', 'cylinder', 'subroutine', 'asymmetric', 'text', 'line', 'arrow', 'group', 'paint']);
 const failure = (reason, outcome = 'refused', detail = {}) => ({ outcome, reason, ...(HINTS[reason] && !Object.hasOwn(detail, 'hint') ? { hint: HINTS[reason] } : {}), ...detail });
+// A refused recipe names the first field, or shape, that stopped it admitting (draw/core.mjs _rapierDrawRecipeFault).
+const recipeInvalid = fault => failure('recipe_invalid', 'invalid', fault ? { field: fault.field, hint: 'The recipe was refused at ' + fault.field + ': send it as read_context returned it, or with the values the tool description lists for it.' } : {});
 const accepted = value => ({ outcome: 'ok', ...value });
 // The object under the finger (focus.kind), derived from text and image facts, never sent by a door.
 function pointedKind(text, start, end, images) {
@@ -204,11 +211,64 @@ function digest(text) {
 }
 
 // Sorted keys; array order kept. No cycle guard: input is decoded JSON.
+const sansView = recipe => { const {view, ...rest} = recipe; return rest; };
 function canonicalJson(value) {
   if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
   if (value && typeof value === 'object') return '{' + Object.keys(value).sort()
     .map(key => JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}';
   return JSON.stringify(value === undefined ? null : value);
+}
+
+function sourceDrawing(text, label) {
+  const asset = documentAssets(text).assets.get(normalizeLabel(label));
+  if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return null;
+  try {
+    const recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));
+    return recipe ? {asset, recipe} : null;
+  } catch { return null; }
+}
+
+// The receiver proves semantic metadata against the exact source transaction before its fence
+// admits it. The shared asset and comment owners reconstruct every derived source byte.
+export function verifyDrawingPatch(envelope, beforeText, afterText) {
+  try {
+    if (!envelope || typeof beforeText !== 'string' || typeof afterText !== 'string' ||
+        !envelope.occurrence || !envelope.targetOccurrence) return false;
+    const before = sourceDrawing(beforeText, envelope.asset), after = sourceDrawing(afterText, envelope.reference);
+    if (!before || !after || canonicalJson(before.recipe) !== canonicalJson(envelope.sourceRecipeBefore) ||
+        canonicalJson(after.recipe) !== canonicalJson(envelope.sourceRecipeAfter)) return false;
+    if (envelope.assetGeneration !== sha256(before.asset.url)) return false;
+    const applied = _rapierDrawApplyShapesPatch(envelope.recipeBefore, envelope.patch);
+    const admitted = applied && _rapierDrawAdmitRecipe(applied), expected = _rapierDrawAdmitRecipe(envelope.recipeAfter);
+    if (!admitted || !expected || canonicalJson(admitted) !== canonicalJson(expected)) return false;
+    const occurrence = envelope.occurrence, target = envelope.targetOccurrence;
+    if (![occurrence.start, occurrence.end, target.start, target.end].every(safeInt) ||
+        occurrence.end <= occurrence.start || target.end <= target.start) return false;
+    const oldText = beforeText.slice(occurrence.start, occurrence.end), newText = afterText.slice(target.start, target.end);
+    const oldRef = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\]$/.exec(oldText);
+    const newRef = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\]$/.exec(newText);
+    if (!oldRef || !newRef || oldRef[1] !== newRef[1] || normalizeLabel(oldRef[2]) !== normalizeLabel(envelope.asset) ||
+        normalizeLabel(newRef[2]) !== normalizeLabel(envelope.reference) ||
+        normalizeLabel(occurrence.reference) !== normalizeLabel(envelope.asset) ||
+        normalizeLabel(target.reference) !== normalizeLabel(envelope.reference)) return false;
+    if (envelope.undo === true) {
+      return verifyDrawingPatch({...envelope, undo: false, asset: envelope.reference, reference: envelope.asset,
+        occurrence: target, targetOccurrence: occurrence, assetGeneration: sha256(after.asset.url), sourceRecipeBefore: after.recipe, sourceRecipeAfter: before.recipe,
+        recipeBefore: envelope.recipeAfter, recipeAfter: envelope.recipeBefore,
+        patch: _rapierDrawRecipeDelta(envelope.recipeAfter, envelope.recipeBefore)}, afterText, beforeText);
+    }
+    if (canonicalJson(envelope.recipeAfter) !== canonicalJson(after.recipe)) return false;
+    const rows = [{pos: occurrence.start, removed: oldText, inserted: newText}];
+    let text = transformSplices(beforeText, rows);
+    if (text == null) return false;
+    const retired = imageDeletionSplices(beforeText, text, rows, 'agent');
+    if (retired.length) { text = transformSplices(text, retired); rows.push(...retired); }
+    const appended = appendAssetText(text, {...after.asset, label: envelope.reference, id: normalizeLabel(envelope.reference)});
+    if (appended.added) { rows.push({pos: text.length, removed: '', inserted: appended.suffix}); text = appended.source; }
+    const comments = commentSplices(beforeText, rows);
+    if (comments.length) text = transformSplices(text, comments);
+    return text === afterText;
+  } catch { return false; }
 }
 
 // Filenames the receipt's structural parse applies to.
@@ -266,19 +326,21 @@ export function createState({ id, documentId, filename = 'Untitled.md', text = '
   if (!['markdown', 'text', 'code'].includes(kind)) throw new TypeError('document_kind_invalid');
   const resolvedId = documentId || id || (typeof mintId === 'function' ? mintId('doc_') : null);
   if (!resolvedId) throw new TypeError('document_id_required');
-  if (!['free', 'ask'].includes(posture)) throw new TypeError('posture_invalid');
+  if (!['free', 'check', 'ask'].includes(posture)) throw new TypeError('posture_invalid');
   return {
     documentId: String(resolvedId), revision: safeInt(revision) ? revision : 0,
-    filename, docKind: kind, text, readOnly: false, posture, selection: null, focus: null,
+    filename, docKind: kind, text, readOnly: false, posture, selection: null, focus: null, drawing: null,
     journal: [], handles: {}, refs: {}, cursors: {}, compare: null,
-    humanContexts: {}, contextSequences: {}, review: null, resume: {}, proposalReads: {}, proposalBase: null, ledgerRoot: null,
-    history: { earliestRevision: safeInt(revision) ? revision : 0, trimmedBytes: 0, complete: true },
+    humanContexts: {}, contextSequences: {}, review: null, reviewDecisions: {entries: [], omitted: 0}, reviewed: {}, resume: {}, proposalReads: {}, proposalBase: null, ledgerRoot: null,
+    history: { earliestRevision: safeInt(revision) ? revision : 0, trimmedBytes: 0, complete: true,
+      unreviewed: {}, unknownReviewRevision: 0 }, reviewedRevision: 0,
     clock: 0,
   };
 }
 
 function journalBytes(entry) {
-  return entry.splices.reduce((sum, row) => sum + bytes(row.removed) + bytes(row.inserted), 0);
+  return entry.splices.reduce((sum, row) => sum + bytes(row.removed) + bytes(row.inserted), 0) +
+    (entry.drawingPatch ? bytes(JSON.stringify(entry.drawingPatch)) : 0);
 }
 
 // Existing discussions belong to document.comment. Agent text writes cannot change their record,
@@ -547,7 +609,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   let state = supplied ? clone(supplied) : createState({ mintId });
   if (!state || typeof state.text !== 'string' || !state.documentId || !safeInt(state.revision) ||
       !Array.isArray(state.journal) || !state.handles || !state.refs || !state.cursors || !state.history ||
-      !state.humanContexts || !state.contextSequences || !state.resume || !state.proposalReads || !['free', 'ask'].includes(state.posture)) {
+      !state.humanContexts || !state.contextSequences || !state.reviewed || !state.resume || !state.proposalReads ||
+      !Array.isArray(state.reviewDecisions?.entries) || !safeInt(state.reviewDecisions.omitted)) {
     throw new TypeError('Invalid Rapier state');
   }
   let queue = Promise.resolve();
@@ -557,63 +620,70 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   let pendingInspection = null;
   // Surface-fact continuations: ephemeral, never journalled.
   const pendingFacts = new Map();
-  // Invocation journal: top-level invocations by key once settled; a retransmission replays, anything else collides. "Same base revision" means the
-  // revision the original SETTLED at: nothing else has moved the document since. inputDigest must match too: a reused name with different arguments
-  // collides. A seeded row without a digest is skipped. An identity acts once: a read's receipt is bounded (a replayed read only recomputes); a
-  // mutation's is kept for the document's life, its output bounded -- past the bound only its settled revision and a short digest remain (`spent`),
-  // enough to replay or collide and never to run again.
+  // A retry belongs to one caller, document and operation identity. Whole receipts last 24 hours;
+  // spent mutation identities remain until the document is discarded, so expiry never repeats a write.
   const invocationJournal = new Map(), readJournal = new Map(), spentJournal = new Map();
   const reading = operation => getTool(operation)?.effect === 'read';
-  const short = value => String(value).slice(0, 12);
+  const short = value => String(value);
+  const invocationOwner = who => JSON.stringify([who.transport, who.actor, who.principal]);
+  const invocationScope = (key, owner, documentId) => JSON.stringify([owner, documentId, key]);
   function bound() {
     while (readJournal.size > LIMITS.invocationKeys) readJournal.delete(readJournal.keys().next().value);
     while (invocationJournal.size > LIMITS.invocationKeys) {
-      const [key, record] = invocationJournal.entries().next().value;
-      invocationJournal.delete(key);
-      spentJournal.set(key, { settledRevision: record.settledRevision, digest: short(record.inputDigest) });
+      const [scope, record] = invocationJournal.entries().next().value;
+      invocationJournal.delete(scope);
+      const {key, owner, documentId, operation, settledRevision, expiresAt} = record;
+      spentJournal.set(scope, {key, owner, documentId, operation, settledRevision, expiresAt, digest: short(record.inputDigest)});
     }
   }
-  // Reseeded by a door that re-creates the kernel per request (mcp/worker.mjs). Malformed or undigested rows are skipped, never thrown.
   if (Array.isArray(suppliedJournal)) {
     for (const entry of suppliedJournal) {
       if (Array.isArray(entry?.spent)) {
-        for (const row of entry.spent) if (Array.isArray(row) && typeof row[0] === 'string' && row[0] && typeof row[2] === 'string')
-          spentJournal.set(row[0], { settledRevision: safeInt(row[1]) ? row[1] : 0, digest: row[2] });
+        for (const row of entry.spent) if (Array.isArray(row) && typeof row[0] === 'string' && row[0] &&
+            typeof row[2] === 'string' && typeof row[3] === 'string' && typeof row[4] === 'string' &&
+            typeof row[5] === 'string' && safeInt(row[6])) {
+          const [key, settledRevision, digest, owner, documentId, operation, expiresAt] = row;
+          spentJournal.set(invocationScope(key, owner, documentId), {key, owner, documentId, operation,
+            settledRevision: safeInt(settledRevision) ? settledRevision : 0, digest, expiresAt});
+        }
         continue;
       }
-      if (!entry || typeof entry.key !== 'string' || !entry.key || typeof entry.operation !== 'string' || !entry.documentId || typeof entry.inputDigest !== 'string') continue;
-      (reading(entry.operation) ? readJournal : invocationJournal).set(entry.key, { operation: entry.operation, documentId: entry.documentId,
-        settledRevision: safeInt(entry.settledRevision) ? entry.settledRevision : 0, output: clone(entry.output ?? {}), inputDigest: entry.inputDigest });
+      if (!entry || typeof entry.key !== 'string' || !entry.key || typeof entry.owner !== 'string' ||
+          typeof entry.operation !== 'string' || !entry.documentId || typeof entry.inputDigest !== 'string' || !safeInt(entry.expiresAt)) continue;
+      (reading(entry.operation) ? readJournal : invocationJournal).set(invocationScope(entry.key, entry.owner, entry.documentId),
+        {key: entry.key, owner: entry.owner, operation: entry.operation, documentId: entry.documentId,
+          settledRevision: safeInt(entry.settledRevision) ? entry.settledRevision : 0, output: clone(entry.output ?? {}),
+          inputDigest: entry.inputDigest, expiresAt: entry.expiresAt});
     }
     bound();
   }
-  function recordInvocation(key, operation, documentId, output, inputDigest) {
+  function recordInvocation(key, operation, documentId, output, inputDigest, who) {
     if (!key) return;
-    invocationJournal.delete(key); readJournal.delete(key); spentJournal.delete(key);
-    (reading(operation) ? readJournal : invocationJournal).set(key, { operation, documentId, settledRevision: output.documentRevision, output: clone(output), inputDigest });
+    const owner = invocationOwner(who), scope = invocationScope(key, owner, documentId);
+    const expiresAt = (invocationJournal.get(scope) || readJournal.get(scope) || spentJournal.get(scope))?.expiresAt ?? now() + LIMITS.retryMs;
+    invocationJournal.delete(scope); readJournal.delete(scope); spentJournal.delete(scope);
+    (reading(operation) ? readJournal : invocationJournal).set(scope,
+      {key, owner, operation, documentId, settledRevision: output.documentRevision, output: clone(output), inputDigest, expiresAt});
     bound();
   }
-  // The receipt for a key: whole, or spent (a mutation whose output the bound let go). Null when the key never acted.
-  function priorInvocation(key) {
-    const whole = invocationJournal.get(key) || readJournal.get(key);
+  function priorInvocation(key, who) {
+    const scope = invocationScope(key, invocationOwner(who), state.documentId);
+    const whole = invocationJournal.get(scope) || readJournal.get(scope);
     if (whole) return whole;
-    const spent = spentJournal.get(key);
-    return spent ? { spent: true, settledRevision: spent.settledRevision, digest: spent.digest } : null;
+    const spent = spentJournal.get(scope);
+    return spent ? {...spent, spent: true} : null;
   }
-  // Replay, or null when the key collides: the same arguments on the revision the original settled at.
   function replayOf(prior, name, inputDigest) {
-    if (prior.spent) return prior.settledRevision === state.revision && prior.digest === short(inputDigest)
-      ? stamp({ outcome: 'replayed', replayed: true, reason: 'receipt_output_spent' }) : null;
-    return prior.operation === name && prior.documentId === state.documentId && prior.settledRevision === state.revision &&
-      prior.inputDigest === inputDigest ? { ...clone(prior.output), replayed: true } : null;
+    if (prior.operation !== name || (prior.spent ? prior.digest !== short(inputDigest) : prior.inputDigest !== inputDigest)) return null;
+    if (now() > prior.expiresAt) return stamp(failure('operation_retry_expired', 'refused', {retryExpiresAt: prior.expiresAt}));
+    if (prior.settledRevision !== state.revision) return null;
+    return prior.spent ? stamp({outcome: 'replayed', replayed: true, reason: 'receipt_output_spent'})
+      : {...clone(prior.output), replayed: true};
   }
-  // Beside `state`, never in it. Oldest first, JSON-round-trippable: one row of spent identities ([key, revision, digest]),
-  // then whole mutations, then reads.
   function invocationJournalEntries() {
-    const whole = ([key, record]) => ({ key, operation: record.operation, documentId: record.documentId,
-      settledRevision: record.settledRevision, output: clone(record.output), inputDigest: record.inputDigest });
-    return (spentJournal.size ? [{ spent: [...spentJournal].map(([key, record]) => [key, record.settledRevision, record.digest]) }] : [])
-      .concat([...invocationJournal].map(whole), [...readJournal].map(whole));
+    return (spentJournal.size ? [{spent: [...spentJournal.values()].map(record => [record.key, record.settledRevision,
+      record.digest, record.owner, record.documentId, record.operation, record.expiresAt])}] : [])
+      .concat([...invocationJournal.values(), ...readJournal.values()].map(clone));
   }
   const current = () => ({ documentId: state.documentId, documentRevision: state.revision, representation: 'source' });
   const stamp = result => ({ ...current(), ...result });
@@ -674,10 +744,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     state.review.status = 'invalidated'; state.review.reason = reason; state.review.decidedAt = now();
   }
 
-  // A handle-carrying proposal survives edits: changes relocate through their handles (a review is decided over time).
+  // Handle-carrying reviews survive edits through their retained evidence.
   // review.changes[i].handleId aligns with splices[i] and changeIds[i] (storage order, last-first). Other reviews invalidate on change.
   function reviewSurvivesEdits(review = state.review) {
-    return review?.status === 'pending' && review.kind === 'proposal'
+    return review?.status === 'pending' && ['proposal', 'inline'].includes(review.kind)
       && Array.isArray(review.handleIds) && review.handleIds.length
       && Array.isArray(review.changes) && review.changes.length
       && !review.options?.compareDecision;
@@ -715,7 +785,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         handleId: paired?.handleId ?? null, offset: paired?.offset ?? 0,
         // Evidence: the handle's span, revision, content and (Draw) asset identity, cloned while fresh.
         ...(held ? { evidence: { start: held.start, end: held.end, revision: held.revision, text: held.text,
-          digest: digest(held.text), ...(held.kind === 'draw' ? { assetLabel: held.assetLabel, assetDigest: held.assetDigest } : {}) } } : {}),
+          digest: digest(held.text), ...(['draw', 'svg'].includes(held.kind) ? { assetLabel: held.assetLabel, assetDigest: held.assetDigest,
+            ...(held.drawSession ? {drawSession: held.drawSession, surfaceGeneration: held.surfaceGeneration, surfaceRecipeDigest: held.surfaceRecipeDigest} : {}) } : {}) } } : {}),
         ...(assets?.[index] ? { asset: assets[index] } : {}) };
     });
   }
@@ -735,7 +806,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       invalidateReview();
       return;
     }
-    if (review.revision === state.revision && review.sourceDigest === digest(state.text)) return;
+    if (review.revision === state.revision && review.sourceDigest === digest(state.text) &&
+        !(review.changes || []).some(change => change.status === 'pending' && change.evidence?.drawSession && drawBindingFailure(change.evidence, change.evidence))) return;
     const who = participant(review, mintId);
     if (review.splices.length > review.changes.length) review.splices = review.splices.slice(0, review.changes.length);
     let pending = 0;
@@ -760,6 +832,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       const range = relocate(change.evidence);
       if (range.outcome) { change.status = 'stale'; change.reason = range.reason; continue; }
+      const canvasChanged = drawBindingFailure(change.evidence, range);
+      if (canvasChanged) { change.status = 'stale'; change.reason = canvasChanged.reason; continue; }
       // Advance the anchor so a later history trim cannot orphan evidence.
       change.evidence = { ...change.evidence, start: range.start, end: range.end, revision: state.revision, text: state.text.slice(range.start, range.end) };
       const splice = review.splices[index];
@@ -801,7 +875,60 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     review.revision = state.revision;
     review.sourceDigest = digest(state.text);
+    if (review.kind === 'inline') review.authoredSplices = clone(review.splices);
     refreshReviewExpiry(review);
+  }
+
+  function rememberReviewDecision(review, decision, changeIds) {
+    for (const changeId of changeIds) {
+      const index = (review.changes || []).findIndex(row => row.id === changeId);
+      const splices = index >= 0 ? [review.splices[index]] :
+        state.journal.find(row => row.id === changeId)?.splices || [];
+      const removed = splices.map(row => row.removed).join(''), inserted = splices.map(row => row.inserted).join('');
+      state.reviewDecisions.entries.push({reviewId: review.id, changeId, decision, kind: review.kind,
+        revision: state.revision, at: now(), operation: review.operation,
+        removed: clip(removed, 160), inserted: clip(inserted, 160), removedChars: removed.length, insertedChars: inserted.length});
+    }
+    const excess = state.reviewDecisions.entries.length - LIMITS.reviewDecisions;
+    if (excess > 0) {state.reviewDecisions.entries.splice(0, excess); state.reviewDecisions.omitted += excess;}
+  }
+
+  function continuationContext(will, budget) {
+    const decisions = state.reviewDecisions.entries, intents = (will?.regions || []).filter(row => row.intent);
+    const pending = state.review?.status === 'pending' ? state.review : null;
+    const selected = decisions.slice(-8), selectedIntents = will?.faults.length ? [] : intents.slice(0, 8);
+    const changes = pending ? pendingChangeIds(pending) : [], selectedChanges = changes.slice(0, 16);
+    const project = () => ({
+      person: {kept: selected.filter(row => row.decision === 'kept').map(clone), dropped: selected.filter(row => row.decision === 'dropped').map(clone),
+        decisionsComplete: state.reviewDecisions.omitted === 0 && selected.length === decisions.length,
+        omittedDecisions: state.reviewDecisions.omitted + decisions.length - selected.length,
+        intents: selectedIntents.map(row => ({region: row.index, law: row.law, start: row.start, end: row.end, text: row.intent})),
+        intentsComplete: !will?.faults.length && selectedIntents.length === intents.length, omittedIntents: intents.length - selectedIntents.length},
+      agent: {reviewId: pending?.id || null, ...(pending ? {kind: pending.kind, cause: reviewCause(pending)} : {}),
+        pendingChangeIds: [...selectedChanges], inDocument: pending?.kind === 'check', complete: selectedChanges.length === changes.length,
+        omitted: changes.length - selectedChanges.length},
+    });
+    let result = project();
+    while (bytes(JSON.stringify(result)) > budget && (selected.length || selectedIntents.length || selectedChanges.length)) {
+      if (selected.length) selected.shift();
+      else if (selectedIntents.length) selectedIntents.pop();
+      else selectedChanges.pop();
+      result = project();
+    }
+    return result;
+  }
+
+  function exportReadiness() {
+    // CHECK writes are current source, but an exported file has no review carrier.
+    const uncheckedHistory = state.history.unknownReviewRevision > state.reviewedRevision ||
+      Object.entries(state.history.unreviewed).some(([owner, revision]) => revision > Math.max(state.reviewedRevision, state.reviewed[owner]?.revision || 0));
+    const unchecked = state.posture === 'check' && (uncheckedHistory || state.journal.some(row =>
+      row.actor === 'agent' && row.splices.length && !row.sourceTransactionId && !row.humanReviewed &&
+      row.revision > Math.max(state.reviewedRevision, state.reviewed[row.owner]?.revision || 0) &&
+      !state.journal.some(next => next.sourceTransactionId === row.id)));
+    return unchecked || state.review?.status === 'pending' && state.review.kind === 'check'
+      ? failure('human_review_required', 'pending', {cause: 'check', ...(state.review?.status === 'pending'
+        ? {reviewId: state.review.id, review: reviewSummary()} : {})}) : accepted();
   }
 
   // Model-facing: ids, statuses, counts and a bounded inserted excerpt; never splice text. changes keep storage order (get_context's contract).
@@ -810,7 +937,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   // Explain the existing review owner; a protected passage can need a decision even under FREE.
-  const reviewCause = review => review.law ? 'will' : review.byPosture ? 'ask' : 'proposal';
+  const reviewCause = review => review.law ? 'will' : review.kind === 'check' ? 'check' : review.byPosture ? 'ask' : 'proposal';
 
   function reviewSummary(review = state.review, context = false) {
     if (!review) return null;
@@ -818,14 +945,112 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const changes = publicReviewChanges(review, false);
     return { id: review.id, kind: review.kind, status: review.status, cause: reviewCause(review), revision: review.revision,
       expiresAt: review.expiresAt, label: review.label, editCount: review.editCount,
-      ...(Array.isArray(review.changeIds) ? { changeIds: context ? pending : sortChangeIds(pending) } : {}),
-      ...(changes ? { changes: context ? changes.map((row, index) => {
+      ...(review.kind !== 'check' && Array.isArray(review.changeIds) ? { changeIds: context ? pending : sortChangeIds(pending) } : {}),
+      ...(review.kind !== 'check' && changes ? { changes: context ? changes.map((row, index) => {
         const text = row.status === 'pending' ? review.splices[index]?.inserted : null;
         return text ? { ...row, excerpt: clip(text, 80) } : row;
       }) : changes.slice().sort((a, b) => Number(String(a.id).split('.').pop()) - Number(String(b.id).split('.').pop())) } : {}),
+      ...(review.baseRevision != null ? { baseRevision: review.baseRevision, scope: 'changes_since_revision',
+        includesHumanChanges: review.includesHumanChanges === true } : {}),
       ...(review.law ? { law: review.law, region: review.region } : {}),
       ...(review.reason ? { reason: review.reason } : {}),
       ...(review.decision ? { decision: clone(review.decision) } : {}) };
+  }
+
+  function normalizeDrawing(value) {
+    if (value == null) return null;
+    if (!value || typeof value !== 'object' || value.open !== true || typeof value.session !== 'string' ||
+        !value.session || value.session.length > 128 || !safeInt(value.surfaceGeneration)) return false;
+    let occurrence = null;
+    if (value.occurrence != null) {
+      const row = value.occurrence;
+      if (!safeBoundary(state.text, row.start) || !safeBoundary(state.text, row.end) || row.end <= row.start ||
+          typeof row.reference !== 'string') return false;
+      const match = DRAW_OCCURRENCE.exec(state.text.slice(row.start, row.end));
+      const asset = documentAssets(state.text).assets.get(normalizeLabel(row.reference));
+      if (!match || normalizeLabel(match[2]) !== normalizeLabel(row.reference) || !asset ||
+          value.assetGeneration !== sha256(asset.url)) return false;
+      occurrence = {reference: row.reference, position: row.start, start: row.start, end: row.end,
+        ...(row.blockId != null ? {blockId: String(row.blockId)} : {}),
+        ...(safeInt(row.imageIndex) ? {imageIndex: row.imageIndex} : {})};
+    } else if (value.assetGeneration != null) return false;
+    const result = {open: true, session: value.session, surfaceGeneration: value.surfaceGeneration,
+      assetGeneration: occurrence ? value.assetGeneration : null, occurrence};
+    const allowed = ['selectedObjects', 'paintTarget', 'bounds', 'transform', 'transforms', 'busy', 'tool', 'brushes', 'limits'];
+    for (const field of allowed) if (own(value, field)) result[field] = clone(value[field]);
+    if (bytes(JSON.stringify(result)) > LIMITS.authorityBytes) return false;
+    if (typeof value.recipeUnavailable === 'string') result.recipeUnavailable = clip(value.recipeUnavailable, 128);
+    if (value.recipe != null) {
+      // The open canvas's recipe is measured as a caller is shown it (disclosedRecipe): its pixels and histories are the document's.
+      let text;
+      try { text = JSON.stringify(Array.isArray(value.recipe?.shapes) ? disclosedRecipe(value.recipe) : value.recipe); } catch (_) { return false; }
+      if (text.length > LIMITS.editChars || bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
+      else {
+        const recipe = _rapierDrawAdmitRecipe(value.recipe);
+        if (!recipe) return false;
+        result.recipe = recipe;
+      }
+    }
+    if (Array.isArray(value.receipts)) result.receipts = value.receipts.slice(-16).filter(row =>
+      typeof row?.transactionId === 'string' && ['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'].includes(row.status) &&
+      state.journal.some(entry => entry.id === row.transactionId && entry.drawingPatch)).map(row =>
+        ({transactionId: row.transactionId, status: row.status, ...(typeof row.reason === 'string' ? {reason: clip(row.reason, 128)} : {})}));
+    return result;
+  }
+
+  function currentDrawing() {
+    const direct = state.drawing && normalizeDrawing(state.drawing);
+    if (direct) return direct;
+    const contexts = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > now() &&
+      row.revision === state.revision && row.drawing).sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const row of contexts) { const value = normalizeDrawing(row.drawing); if (value) return value; }
+    return null;
+  }
+
+  function drawingSummary(value = currentDrawing()) {
+    if (!value) return null;
+    const {recipe, ...summary} = value;
+    const result = clone(summary), lists = [
+      [result, 'selectedObjects', 'selectedObjectCount', 'selectedObjectsComplete'],
+      [result.brushes, 'paint', 'paintCount', 'paintComplete'],
+      [result.brushes, 'vector', 'vectorCount', 'vectorComplete'],
+      [result, 'receipts', 'receiptCount', 'receiptsComplete'],
+    ].filter(([owner, field]) => Array.isArray(owner?.[field]));
+    for (const [owner, field, count, complete] of lists) {
+      owner[count] = owner[field].length;
+      owner[field] = owner[field].slice(0, 128);
+      owner[complete] = owner[field].length === owner[count];
+    }
+    // A full canvas selection and installed brushes are useful facts, but they must share
+    // one reply with the document. Counts make bounded lists explicit; raw recipes stay private.
+    while (bytes(JSON.stringify(result)) > LIMITS.resultBytes / 3) {
+      const list = lists.filter(([owner, field]) => owner[field].length)
+        .sort((a, b) => bytes(JSON.stringify(b[0][b[1]])) - bytes(JSON.stringify(a[0][a[1]])))[0];
+      if (!list) return {open: result.open, session: result.session, occurrence: result.occurrence,
+        assetGeneration: result.assetGeneration, surfaceGeneration: result.surfaceGeneration,
+        summaryUnavailable: 'drawing_context_over_budget', ...(result.recipeUnavailable ? {recipeUnavailable: result.recipeUnavailable} : {})};
+      const [owner, field, , complete] = list;
+      owner[field] = owner[field].slice(0, Math.floor(owner[field].length / 2)); owner[complete] = false;
+    }
+    return result;
+  }
+
+  function drawingFor(start, end, assetLabel) {
+    const value = currentDrawing(), row = value?.occurrence;
+    return row && row.start === start && row.end === end && normalizeLabel(row.reference) === normalizeLabel(assetLabel) ? value : null;
+  }
+
+  function drawingBinding(value) {
+    return value?.recipe ? {drawSession: value.session, surfaceGeneration: value.surfaceGeneration,
+      surfaceRecipeDigest: sha256(canonicalJson(value.recipe))} : {};
+  }
+
+  function drawBindingFailure(held, range) {
+    if (!held.drawSession) return null;
+    const live = drawingFor(range.start, range.end, held.assetLabel);
+    return !live || live.session !== held.drawSession || live.surfaceGeneration !== held.surfaceGeneration ||
+      !live.recipe || sha256(canonicalJson(live.recipe)) !== held.surfaceRecipeDigest
+      ? failure('draw_surface_changed', 'conflict') : null;
   }
 
   function collaboration() {
@@ -836,11 +1061,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       .sort((a, b) => b.updatedAt - a.updatedAt);
     const target = targets.find(row => row.selection || row.focus) || targets[0];
     const editing = contexts.some(row => row.editing);
+    const drawing = drawingSummary();
     const presence = contexts.length ? { active: true, editing,
       revision: target?.revision ?? state.revision,
       selection: target?.selection ? clone(target.selection) : null,
       focus: target?.focus ? clone(target.focus) : null,
-      expiresAt: Math.max(...contexts.map(row => row.expiresAt)) } : null;
+      expiresAt: Math.max(...contexts.map(row => row.expiresAt)),
+      ...(drawing ? {drawing} : {}) } : null;
     const review = reviewSummary();
     if (review && state.review.status === 'pending') {
       review.documentId = state.review.documentId;
@@ -890,9 +1117,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ? { start: value.start, end: value.end } : null;
     const time = now(), selection = range(input.selection), focus = range(input.focus);
     if ((input.selection != null && !selection) || (input.focus != null && !focus)) return stamp(failure('human_context_range_invalid', 'invalid'));
+    const drawing = normalizeDrawing(input.drawing);
+    if (drawing === false) return stamp(failure('human_context_drawing_invalid', 'invalid'));
     if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
     state.humanContexts[key] = { owner: ownerOf(who), sequence: input.sequence, revision: input.expectedRevision,
-      visible: true, editing: input.editing, selection, focus, updatedAt: time, expiresAt: time + LIMITS.presenceMs };
+      visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + LIMITS.presenceMs };
     recordSequence();
     return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: time + LIMITS.presenceMs }));
   }
@@ -901,7 +1130,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     humanParticipant(context);
     if (input.expectedRevision !== state.revision) return stamp(failure('document_changed', 'conflict'));
     if ((!own(input, 'posture') && !own(input, 'readOnly')) ||
-        (own(input, 'posture') && !['free', 'ask'].includes(input.posture)) ||
+        (own(input, 'posture') && !['free', 'check', 'ask'].includes(input.posture)) ||
         (own(input, 'readOnly') && typeof input.readOnly !== 'boolean')) return stamp(failure('policy_invalid', 'invalid'));
     let changed = false;
     for (const key of ['posture', 'readOnly']) if (own(input, key) && state[key] !== input[key]) { state[key] = input[key]; changed = true; }
@@ -1066,6 +1295,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const row = state.journal.shift(), cost = journalBytes(row);
       retained -= cost; state.history.trimmedBytes += cost; state.history.earliestRevision = row.revision;
       state.history.complete = false;
+      if (row.actor === 'agent' && row.splices.length && !row.sourceTransactionId && !row.humanReviewed &&
+          row.revision > Math.max(state.reviewedRevision || 0, state.reviewed[row.owner]?.revision || 0) &&
+          !state.journal.some(entry => entry.sourceTransactionId === row.id)) {
+        state.history.unreviewed[row.owner] = Math.max(state.history.unreviewed[row.owner] || 0, row.revision);
+        const keys = Object.keys(state.history.unreviewed);
+        while (keys.length > LIMITS.principals) {
+          const key = keys.shift();
+          state.history.unknownReviewRevision = Math.max(state.history.unknownReviewRevision, state.history.unreviewed[key]);
+          delete state.history.unreviewed[key];
+        }
+      }
     }
     outlineCache = null;
     imageCache = null;
@@ -1086,9 +1326,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(who.hostAgent ? {hostAgent: who.hostAgent} : {}),
       operation, requestId: who.requestId, invocationKey: who.invocationKey, label: clip(options.label || operation, 120),
       splices: clone(splices), createdAt: now(), sourceTransactionId: options.sourceTransactionId || null,
+      humanReviewed: options.humanReviewed === true,
       ...(agent ? { agent } : {}),
       ...(derivedCommentIndex == null ? {} : {derivedCommentIndex}),
     };
+    if (options.drawingPatch) entry.drawingPatch = {...clone(options.drawingPatch), transactionId: entry.id};
     state.text = text; state.revision = revision;
     if (state.selection) {
       const moved = transportInterval(state.selection.start, state.selection.end, splices);
@@ -1098,7 +1340,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const focus = transportInterval(state.focus.start, state.focus.end, splices);
       state.focus = focus ? { ...state.focus, ...focus } : null;
     }
+    const moveDrawing = drawing => {
+      if (!drawing?.occurrence) return drawing;
+      const moved = transportInterval(drawing.occurrence.start, drawing.occurrence.end, splices);
+      return moved ? {...drawing, occurrence: {...drawing.occurrence, ...moved, position: moved.start}} : null;
+    };
+    state.drawing = moveDrawing(state.drawing);
     for (const row of Object.values(state.humanContexts)) {
+      row.drawing = moveDrawing(row.drawing);
       if (row.revision !== baseRevision) { row.selection = null; row.focus = null; continue; }
       for (const key of ['selection', 'focus']) if (row[key]) {
         const move = row.editing ? transportTouchedInterval : transportInterval;
@@ -1158,6 +1407,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         invalidateReview();
         state.text = incoming.text; state.revision = safeInt(target) ? target : base + 1;
         state.journal = []; state.history.earliestRevision = state.revision; state.history.complete = false;
+        state.history.unknownReviewRevision = Math.max(state.history.unknownReviewRevision, state.revision);
         state.compare = null; outlineCache = null;
         for (const row of Object.values(state.humanContexts)) { row.selection = null; row.focus = null; }
       } else {
@@ -1165,6 +1415,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           'document.human_edit', { revision: safeInt(target) ? target : base + 1 });
       }
     }
+    if (own(incoming, 'drawing')) state.drawing = normalizeDrawing(incoming.drawing) || null;
     if (own(incoming, 'proposalBase')) state.proposalBase = proposalBase;
     if (own(incoming, 'ledgerRoot')) state.ledgerRoot = typeof incoming.ledgerRoot === 'string' ? incoming.ledgerRoot : null;
     if (state.filename !== filename || state.docKind !== nextKind) invalidateReview('document_metadata_changed');
@@ -1179,7 +1430,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (own(incoming, 'readOnly') && state.readOnly !== (incoming.readOnly === true)) { state.readOnly = incoming.readOnly === true; invalidateReview('policy_changed'); }
     // Notes' cards over the document: the host refuses edits behind them.
     state.notes = own(incoming, 'notes') && incoming.notes && typeof incoming.notes === 'object' ? { open: incoming.notes.open === true, current: typeof incoming.notes.current === 'string' ? incoming.notes.current : null } : null;
-    if (own(incoming, 'posture') && ['free', 'ask'].includes(incoming.posture) && state.posture !== incoming.posture) { state.posture = incoming.posture; invalidateReview('policy_changed'); }
+    if (own(incoming, 'posture') && ['free', 'check', 'ask'].includes(incoming.posture) && state.posture !== incoming.posture) { state.posture = incoming.posture; invalidateReview('policy_changed'); }
+    if (safeInt(incoming.reviewedRevision) && incoming.reviewedRevision <= state.revision) {
+      state.reviewedRevision = Math.max(state.reviewedRevision || 0, incoming.reviewedRevision);
+    }
     if (typeof incoming.closedComparisonId === 'string' && state.compare?.id === incoming.closedComparisonId) {
       state.compare = null;
     }
@@ -1241,13 +1495,58 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const row = documentAssets(state.text).assets.get(normalizeLabel(label));
     return row ? digest(row.url) : null;
   }
-  function drawHandle(start, end, recipeJSON, assetLabel, who) {
-    if (recipeJSON.length > LIMITS.editChars || bytes(recipeJSON) > LIMITS.authorityBytes) return null;
+  // The recipe the document holds under a label, read from its definition (draw/core.mjs: the SVG's own metadata and image resources);
+  // null for a definition that is not a Rapier drawing or cannot be read.
+  function storedRecipe(assetLabel) {
+    const row = documentAssets(state.text).assets.get(normalizeLabel(assetLabel));
+    if (!row || !/^data:image\/svg\+xml;base64,/i.test(row.url)) return null;
+    try { return _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(row.url))); }
+    catch (_) { return null; }
+  }
+  function drawInspection(assetLabel) {
+    const recipe = storedRecipe(assetLabel);
+    return recipe ? JSON.stringify(recipe) : null;
+  }
+  // Past the budget of what a caller is shown there is the work an edit does: a contribution decodes every raster, replays every
+  // history and encodes them again, in the host's memory and time, and that work follows what the definition holds and the caller is
+  // not shown (the pixels and histories: the full text less the shown text). A drawing holding more of it than
+  // LIMITS.drawingWorkChars is not offered for editing, whatever its shown text weighs, and the read names which bar it met. A large
+  // background or many shapes are shown text, cheap to rebuild, and meet the shown-text budget alone.
+  function drawHandleRefusal(disclosed, fullChars) {
+    if (disclosed == null || disclosed.length > LIMITS.editChars || bytes(disclosed) > LIMITS.authorityBytes) return 'target_over_edit_budget';
+    if (fullChars - disclosed.length > LIMITS.drawingWorkChars) return 'target_over_work_budget';
+    return null;
+  }
+  // A recipe handle holds no recipe of the document's. Its digest binds the definition the caller was shown, so a re-read and an edit read
+  // the recipe again from that definition, pixels and histories included: those bytes are the document's, and no handle's size follows them.
+  // Its budget is the text the caller was shown (disclosedRecipe), what it can edit; a drawing shown more than LIMITS.editChars gets no
+  // handle. A read hands in the text it has just paged; create and edit, which return no text, measure the definition they have just
+  // written. The one recipe a handle keeps is the open canvas's, when the read came from the surface (a binding): the document does not
+  // hold that recipe, and an edit is laid against what the caller saw of it (drawEdit). The page's kernel alone has a surface.
+  function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null) {
+    const recipe = storedRecipe(assetLabel);
+    if (!recipe) return null;
+    const shown = disclosed ?? JSON.stringify(disclosedRecipe(recipe));
+    if (drawHandleRefusal(shown, JSON.stringify(recipe).length)) return null;
     const text = state.text.slice(start, end);
-    return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', recipeJSON, assetLabel, assetDigest: assetDigest(assetLabel) }, who);
+    return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', assetLabel, assetDigest: assetDigest(assetLabel),
+      ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}) }, who);
   }
 
-  // Exactly one drawing occurrence discloses its recipe JSON, never SVG bytes; the handle covers the occurrence.
+  function svgHandle(start, end, nodeIds, assetLabel, who) {
+    const text = state.text.slice(start, end);
+    return mint('handles', 'ctx_', {start, end, revision: state.revision, text, used: false,
+      kind: 'svg', nodeIds: [...nodeIds], assetLabel, assetDigest: assetDigest(assetLabel)}, who);
+  }
+
+  function svgInspection(assetLabel) {
+    const asset = documentAssets(state.text).assets.get(normalizeLabel(assetLabel));
+    if (!asset || !/^data:image\/svg\+xml;base64,/i.test(asset.url)) return null;
+    try { return JSON.stringify(inspectSVG(decodeDataImage(asset.url), {nodes: true})); }
+    catch (_) { return null; }
+  }
+
+  // A picture occurrence discloses its native recipe or its bounded imported node tree. The handle covers that occurrence.
   const DRAW_OCCURRENCE = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\](?:[ \t]*<!--md-layout:v1[^>]*-->)?$/;
   function drawingAt(start, end) {
     const slice = state.text.slice(start, end), lead = slice.length - slice.trimStart().length;
@@ -1258,9 +1557,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let recipe;
     try { recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(row.url))); }
     catch (_) { return null; }
-    if (!recipe) return null;
     const occurrence = '![' + match[1] + '][' + match[2] + ']';
-    return { targetStart: start + lead, targetEnd: start + lead + occurrence.length, draw: { recipeText: JSON.stringify(recipe), assetLabel: row.label } };
+    const targetStart = start + lead, targetEnd = targetStart + occurrence.length;
+    if (recipe) {
+      // A drawing the person has open is read as the canvas stands, settled, never as the saved bytes behind it.
+      const live = drawingFor(targetStart, targetEnd, row.label);
+      return {targetStart, targetEnd, draw: {recipeText: JSON.stringify(live?.recipe || recipe), assetLabel: row.label,
+        ...(live ? {drawing: drawingSummary(live), binding: drawingBinding(live)} : {})}};
+    }
+    const inspectionText = svgInspection(row.label);
+    return inspectionText ? {targetStart, targetEnd, svg: {inspectionText, assetLabel: row.label}} : null;
   }
 
   function readTarget(input, who) {
@@ -1270,9 +1576,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (input.cursor) {
       const cursor = lookup('cursors', input.cursor, who);
       if (cursor.outcome) return cursor;
-      if (!['read', 'draw-read'].includes(cursor.kind)) return failure('cursor_kind_mismatch');
+      if (!['read', 'draw-read', 'svg-read'].includes(cursor.kind)) return failure('cursor_kind_mismatch');
       if (cursor.revision !== state.revision) return failure('read_snapshot_changed', 'conflict');
-      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? { draw: { recipeText: cursor.recipeText, assetLabel: cursor.assetLabel } } : {}) };
+      if (cursor.kind === 'draw-read') {
+        const stale = drawBindingFailure(cursor, {start: cursor.targetStart, end: cursor.targetEnd});
+        if (stale) return stale;
+      }
+      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? {draw: {recipeText: cursor.recipeText, assetLabel: cursor.assetLabel,
+        binding: {drawSession: cursor.drawSession, surfaceGeneration: cursor.surfaceGeneration, surfaceRecipeDigest: cursor.surfaceRecipeDigest},
+        drawing: drawingSummary(drawingFor(cursor.targetStart, cursor.targetEnd, cursor.assetLabel))}} : {}),
+        ...(cursor.kind === 'svg-read' ? {svg: {inspectionText: cursor.inspectionText, assetLabel: cursor.assetLabel}} : {}) };
     }
     if (input.context_handle) {
       const change = changeOf(input.context_handle);
@@ -1282,9 +1595,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const range = relocate(held);
       if (range.outcome) return range;
       // A reread must not bind an old recipe to a person's newer asset definition.
-      if (held.kind === 'draw' && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+      if (['draw', 'svg'].includes(held.kind) && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+      if (held.kind === 'draw') { const stale = drawBindingFailure(held, range); if (stale) return stale; }
+      const inspectionText = held.kind === 'svg' ? svgInspection(held.assetLabel) : null;
+      if (held.kind === 'svg' && !inspectionText) return failure('target_changed', 'conflict');
+      const recipeText = held.kind === 'draw' ? drawInspection(held.assetLabel) : null;
+      if (held.kind === 'draw' && !recipeText) return failure('target_changed', 'conflict');
       return { ...range, targetStart: range.start, targetEnd: range.end, offset: range.start, coverage: [],
-        ...(held.kind === 'draw' ? { draw: { recipeText: held.recipeJSON, assetLabel: held.assetLabel } } : {}) };
+        ...(held.kind === 'draw' ? drawingAt(range.start, range.end) || {draw: {recipeText, assetLabel: held.assetLabel}} : {}),
+        ...(inspectionText ? {svg: {inspectionText, assetLabel: held.assetLabel}} : {}) };
     }
     if (input.ref) {
       const change = changeOf(input.ref);
@@ -1335,11 +1654,19 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   // Recipe paging walks the recipe string ('draw-read' cursor) and never disclose(): a font's data: URI would false-match redaction.
   // Only the completing page mints a handle. Paint rasters disclose their data-URL length, not payload.
+  function inspectPaintRecord(paint) {
+    return paint?.replay ? {...paint, replay: {kept: true, entries: paint.replay.entries.length}} : paint;
+  }
+  // The recipe as a caller is shown it: each paint layer's pixels and history are named, never carried, and a replace that keeps the
+  // marker keeps the layer's own bytes. This text is what a recipe handle's budget measures: what a caller can edit, not what the document holds.
+  function disclosedRecipe(recipe) {
+    return {...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
+      raster: { kept: true, bytes: shape.raster.length, type: shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl' },
+      ...(shape.paint ? {paint: inspectPaintRecord(shape.paint)} : {})})};
+  }
   function readDrawContext(target, input, who) {
-    const recipeText = target.draw.recipeText, recipe = JSON.parse(recipeText);
-    for (const shape of recipe.shapes) if (shape.recognized === 'paint') {
-      shape.raster = { kept: true, bytes: shape.raster.length, type: shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl' };
-    }
+    const picture = target.svg || target.draw, imported = !!target.svg, drawing = target.draw?.drawing;
+    const recipeText = picture.inspectionText || picture.recipeText, stored = JSON.parse(recipeText), recipe = imported ? stored : disclosedRecipe(stored);
     const law = documentLaw(target.targetStart, target.targetEnd);
     const text = JSON.stringify(recipe), limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
     const offset = target.cursor ? target.offset : 0;
@@ -1347,20 +1674,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let end = Math.min(text.length, offset + limit);
     if (!safeBoundary(text, end)) end--;
     let page = text.slice(offset, end);
-    while (bytes(JSON.stringify({ ...current(), ...law, text: page })) > LIMITS.resultBytes - 1600 && page.length) {
+    while (bytes(JSON.stringify({ ...current(), ...law, text: page, ...(drawing ? {drawing} : {}) })) > LIMITS.resultBytes - 1600 && page.length) {
       end = offset + clip(text.slice(offset, end), Math.floor((end - offset) * 0.8)).length;
       page = text.slice(offset, end);
     }
     const complete = end >= text.length;
-    const disclosedHandle = complete ? drawHandle(target.targetStart, target.targetEnd, recipeText, target.draw.assetLabel, who) : null;
-    const next = !complete ? mint('cursors', 'read_', { kind: 'draw-read', revision: state.revision,
-      targetStart: target.targetStart, targetEnd: target.targetEnd, recipeText, assetLabel: target.draw.assetLabel, offset: end }, who) : null;
+    const disclosedHandle = complete && !drawing?.recipeUnavailable ? imported
+      ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who)
+      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text, target.draw.binding?.drawSession ? recipeText : null) : null;
+    const next = !complete ? mint('cursors', 'read_', { kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
+      targetStart: target.targetStart, targetEnd: target.targetEnd, ...(imported ? {inspectionText: recipeText} : {recipeText, ...target.draw.binding}), assetLabel: picture.assetLabel, offset: end }, who) : null;
     if (target.cursor) delete state.cursors[target.cursor.id];
     return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: page,
       ...law,
-      complete, remaining: text.length - end, handle: disclosedHandle?.id || null,
+      complete, remaining: text.length - end, handle: disclosedHandle?.id || null, recipe_handle: disclosedHandle?.id || null,
+      ...(drawing ? {drawing} : {}),
       coverage: { disclosed: end, chars: text.length, complete },
-      ...(complete && !disclosedHandle ? { edit_unavailable: 'target_over_edit_budget' } : {}),
+      ...(complete && !disclosedHandle ? { edit_unavailable: drawing?.recipeUnavailable || (imported ? null : drawHandleRefusal(text, recipeText.length)) || 'target_over_edit_budget' } : {}),
       next_cursor: next?.id || null, expires_in_ms: LIMITS.lifetimeMs };
   }
 
@@ -1371,11 +1701,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const facts = await markdownFacts(context);
     if (facts?.outcome) return facts;
     const layout = facts?.layout, images = facts?.images;
-    if (!target.draw && !target.cursor) {
+    if (!target.draw && !target.svg && !target.cursor) {
       const drawing = drawingAt(target.targetStart, target.targetEnd);
       if (drawing) target = { ...target, ...drawing, offset: 0, coverage: [] };
     }
-    if (target.draw) return readDrawContext(target, input, who);
+    if (target.draw || target.svg) return readDrawContext(target, input, who);
     const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
     const start = target.offset;
     let end = Math.min(target.targetEnd, start + limit);
@@ -1384,6 +1714,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (hiddenAtEnd) end = Math.min(target.targetEnd, hiddenAtEnd.end);
     let projection = disclose(state.text, start, end), text = projection.text;
     const base = { ...current(), outcome: 'ok', start, end, text, ...documentLaw(start, end),
+      ...(drawingSummary() ? {drawing: drawingSummary()} : {}),
       complete: end === target.targetEnd && !projection.omissions.length, remaining: target.targetEnd - end,
       ...(projection.omissions.length ? { omissions: projection.omissions.slice(0, 4), omissionCount: projection.omissions.length } : {}) };
     const initialLayout = layoutInRange(layout, start, end);
@@ -1441,13 +1772,27 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   const noNotes = file => accepted({ availability: 'unavailable', reason: 'notes_not_configured',
     message: 'Notes is not set up on this host.', complete: true, remaining: 0, next_cursor: null,
     ...(file === undefined ? {notes: []} : {file, found: false, text: null}) });
+  const unavailableNotes = (got, file) => ['locked', 'unavailable'].includes(got?.availability)
+    ? accepted({availability: got.availability, ...(file ? {file} : {}),
+      ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
+      ...(typeof got.hint === 'string' ? {hint: clip(got.hint, 512), message: clip(got.hint, 512)} : {})}) : null;
+  const notesRefused = got => got?.refused ? failure(got.refused, got.refused === 'notes_changed' ? 'conflict' : 'refused') : null;
   async function notesList(input, who, context) {
     if (typeof host.notesList !== 'function') return noNotes();
+    let held = null, query = input.query || '';
+    if (input.cursor) {
+      held = lookup('cursors', input.cursor, who);
+      if (held.outcome) return held;
+      if (held.kind !== 'notes-list') return failure('notes_cursor_wrong_kind', 'invalid');
+      if (input.query !== undefined && input.query !== held.query) return failure('notes_cursor_wrong_query', 'invalid');
+      query = held.query;
+    }
     cancelled(context);
-    const rows = await host.notesList({ ...who, signal: context.signal });
+    const rows = await host.notesList({query, ...who, signal: context.signal });
     cancelled(context);
     // undefined: no door. null or non-array: the folder could not answer.
     if (rows === undefined) return noNotes();
+    const unavailable = unavailableNotes(rows) || notesRefused(rows); if (unavailable) return unavailable;
     if (!Array.isArray(rows)) return failure('notes_folder_unreadable');
     const sorted = rows.map(row => ({
       file: clip(String(row?.file || ''), 256),
@@ -1463,12 +1808,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     });
     const version = digest(JSON.stringify(sorted));
     let offset = 0;
-    if (input.cursor) {
-      const cursor = lookup('cursors', input.cursor, who);
-      if (cursor.outcome) return cursor;
-      if (cursor.kind !== 'notes-list') return failure('notes_cursor_wrong_kind', 'invalid');
-      if (cursor.version !== version) return failure('notes_changed', 'conflict');
-      offset = cursor.offset || 0;
+    if (held) {
+      if (held.version !== version) return failure('notes_changed', 'conflict');
+      offset = held.offset || 0;
     }
     const limit = bounded(input.limit, 32, 1, 64);
     const page = [];
@@ -1480,7 +1822,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (page.length >= limit) break;
     }
     const end = offset + page.length;
-    const next = end < sorted.length ? mint('cursors', 'notes_list_', { kind: 'notes-list', offset: end, version }, who) : null;
+    const next = end < sorted.length ? mint('cursors', 'notes_list_', { kind: 'notes-list', offset: end, version, query }, who) : null;
     if (input.cursor) delete state.cursors[input.cursor];
     return accepted({ availability: 'available', notes: page, complete: end >= sorted.length, remaining: Math.max(0, sorted.length - end), next_cursor: next?.id || null,
       ...(!sorted.length ? {message: 'Notes has nothing yet.'} : {}) });
@@ -1505,10 +1847,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     cancelled(context);
     const of = typeof input.of === 'string' ? input.of : '';
     const got = await host.notesPropose({ text, title: typeof input.title === 'string' ? input.title : '', of, base: of ? noteReads.get(ownerOf(who) + '\u0000' + of) : undefined,
-      by: agentLabel(who.agent) || 'An agent', ...who, signal: context.signal });
+      by: agentLabel(who.agent) || 'An agent', ...who, signal: context.signal, guard: context.notesGuard });
     cancelled(context);
     if (got === undefined) return unavailable();
-    if (got?.refused) return failure(got.refused, 'invalid');
+    const blocked = unavailableNotes(got) || notesRefused(got); if (blocked) return blocked;
     if (typeof got?.file !== 'string') return failure('notes_folder_unwritable');
     if (got.applied === true && typeof got.saved === 'string') rememberNote(who, got.file, got.saved);
     return accepted({ availability: 'available', file: got.file, applied: got.applied === true,
@@ -1518,16 +1860,19 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const file = typeof input.file === 'string' ? input.file : '';
     if (!file) return failure('notes_file_required', 'invalid');
     if (typeof host.notesRead !== 'function') return noNotes(file);
-    let cursor = null;
+    let cursor = null, selectedVersion = input.version ?? null;
     if (input.cursor) {
       cursor = lookup('cursors', input.cursor, who);
       if (cursor.outcome) return cursor;
       if (cursor.kind !== 'notes-read' || cursor.file !== file) return failure('notes_cursor_wrong_kind', 'invalid');
+      if (input.version !== undefined && input.version !== cursor.selectedVersion) return failure('notes_cursor_wrong_version', 'invalid');
+      selectedVersion = cursor.selectedVersion;
     }
     cancelled(context);
-    const got = await host.notesRead({ file, ...who, signal: context.signal });
+    const got = await host.notesRead({ file, ...(selectedVersion === null ? {} : {version: selectedVersion}), ...who, signal: context.signal });
     cancelled(context);
     if (got === undefined) return noNotes(file);
+    const unavailable = unavailableNotes(got, file) || notesRefused(got); if (unavailable) return unavailable;
     if (!got && cursor) return failure('notes_changed', 'conflict');
     if (!got) return accepted({availability: 'available', file, found: false, text: null, complete: true,
       remaining: 0, next_cursor: null, reason: 'notes_not_found', message: 'This note is not in Notes. List notes to choose an available file.'});
@@ -1551,10 +1896,66 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const complete = end >= text.length;
     const whole = offset === 0 || cursor?.whole === true;
-    if (complete && whole) rememberNote(who, file, text);
-    const next = !complete ? mint('cursors', 'notes_read_', { kind: 'notes-read', file, offset: end, version, whole }, who) : null;
+    if (complete && whole && selectedVersion === null) rememberNote(who, file, text);
+    const next = !complete ? mint('cursors', 'notes_read_', { kind: 'notes-read', file, offset: end, version, selectedVersion, whole }, who) : null;
     if (input.cursor) delete state.cursors[input.cursor];
-    return accepted({ availability: 'available', found: true, file, text: page, start: offset, end, complete, remaining: Math.max(0, text.length - end), next_cursor: next?.id || null });
+    return accepted({ availability: 'available', found: true, file, ...(selectedVersion === null ? {} : {version: selectedVersion}), text: page, start: offset, end, complete, remaining: Math.max(0, text.length - end), next_cursor: next?.id || null });
+  }
+
+  async function notesSet(input, who, context) {
+    if (typeof host.notesSet !== 'function') return noNotes(input.file);
+    cancelled(context);
+    const got = await host.notesSet({...input, ...who, signal: context.signal, guard: context.notesGuard});
+    cancelled(context);
+    if (got === undefined) return noNotes(input.file);
+    const unavailable = unavailableNotes(got, input.file) || notesRefused(got); if (unavailable) return unavailable;
+    if (got?.file !== input.file || !got.changed || !got.previous) return failure('notes_folder_unwritable');
+    return accepted({availability: 'available', file: got.file, changed: got.changed, previous: got.previous, ...(got.reminder ? {reminder: got.reminder} : {})});
+  }
+  async function notesHistory(input, who, context) {
+    if (typeof host.notesHistory !== 'function') return noNotes(input.file);
+    let cursor = null;
+    if (input.cursor) {
+      cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'notes-history' || cursor.file !== input.file) return failure('notes_cursor_wrong_kind', 'invalid');
+    }
+    cancelled(context);
+    const got = await host.notesHistory({file: input.file, ...who, signal: context.signal});
+    cancelled(context);
+    if (got === undefined) return noNotes(input.file);
+    const unavailable = unavailableNotes(got, input.file) || notesRefused(got); if (unavailable) return unavailable;
+    if (!got || !Array.isArray(got.versions)) return failure('notes_history_unavailable');
+    const versions = got.versions;
+    if (versions.some(row => !Number.isSafeInteger(row.version) || row.version < 1 || !Number.isSafeInteger(row.time) || row.time < 0 ||
+      !Number.isSafeInteger(row.size) || row.size < 0 || typeof row.reason !== 'string')) return failure('notes_history_unavailable');
+    const version = digest(JSON.stringify(versions));
+    if (cursor && cursor.version !== version) return failure('notes_changed', 'conflict');
+    const offset = cursor?.offset || 0, limit = bounded(input.limit, 32, 1, 64), page = [];
+    for (let i = offset; i < versions.length && page.length < limit; i++) {
+      const row = versions[i], item = {version: row.version, time: row.time, reason: clip(row.reason, 64), size: row.size, current: row.current === true};
+      if (bytes(JSON.stringify([...page, item])) > LIMITS.resultBytes - 1800) break;
+      page.push(item);
+    }
+    const end = offset + page.length, next = end < versions.length ? mint('cursors', 'notes_history_', {kind: 'notes-history', file: input.file, offset: end, version}, who) : null;
+    if (input.cursor) delete state.cursors[input.cursor];
+    return accepted({availability: 'available', file: input.file, found: got.found === true, versions: page, complete: end >= versions.length,
+      remaining: Math.max(0, versions.length - end), next_cursor: next?.id || null,
+      ...(Number.isSafeInteger(got.tidied) ? {tidied: got.tidied, tidiedAt: got.tidiedAt ?? null} : {})});
+  }
+  async function notesSync(input, who, context) {
+    if (typeof host.notesSync !== 'function') return noNotes();
+    cancelled(context);
+    const got = await host.notesSync({action: input.action, ...who, signal: context.signal, guard: context.notesGuard});
+    cancelled(context);
+    if (got === undefined) return noNotes();
+    const unavailable = unavailableNotes(got) || notesRefused(got); if (unavailable) return unavailable;
+    if (typeof got?.synced !== 'boolean') return failure('notes_sync_failed');
+    return accepted({availability: 'available', action: 'now', synced: got.synced,
+      ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
+      ...(typeof got.complete === 'boolean' ? {complete: got.complete} : {}), ...(typeof got.unchanged === 'boolean' ? {unchanged: got.unchanged} : {}),
+      ...(Number.isSafeInteger(got.skipped) ? {skipped: got.skipped} : {}), ...(Number.isSafeInteger(got.missing) ? {missing: got.missing} : {}),
+      ...(Number.isSafeInteger(got.backedUpAt) ? {backedUpAt: got.backedUpAt} : {})});
   }
 
   async function outline(context) {
@@ -1654,7 +2055,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!safeBoundary(state.text, end)) end--;
     const project = () => {
       const value = disclose(state.text, start, end);
-      return { start, end, sectionEnd, text: value.text,
+      return { source: 'document', authority: false, start, end, sectionEnd, text: value.text,
         complete: section.complete && end === sectionEnd && !value.omissions.length,
         remaining: sectionEnd - end, ...(!section.complete ? {reason: 'markdown_work_bound'} : {}),
         ...(value.omissions.length ? {omissions: value.omissions.slice(0, 4)} : {}) };
@@ -1712,7 +2113,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function find(input, who, context) {
-    if (typeof input.query !== 'string' || !input.query || input.query.length > 512 ||
+    // A Markdown kind with no words lists every element of that kind; text and code names need a query.
+    if (typeof input.query !== 'string' || (!input.query && !FIND_KINDS.markdown.includes(input.kind)) || input.query.length > 512 ||
         /[\uD800-\uDFFF]/u.test(input.query)) return failure('query_invalid', 'invalid');
     if (state.compare) {
       // Source-search-only fields under an open comparison are a wrong-tool call: refuse naming
@@ -1723,6 +2125,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return findInComparison(input, who);
     }
     if (input.kind && Object.hasOwn(input, 'case_sensitive')) return failure('case_sensitive_not_applicable', 'invalid');
+    // The document kind decides the analyzer: Markdown kinds search a Markdown document, code kinds a code one.
+    if (input.kind && FIND_KINDS.markdown.includes(input.kind) !== (state.docKind === 'markdown')) return failure('kind_not_applicable', 'invalid');
     let range = { start: 0, end: state.text.length }, offset = 0;
     const signature = JSON.stringify([input.query, !!input.case_sensitive, input.kind || '', input.within || '']);
     if (input.within) {
@@ -1740,7 +2144,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let found = [], complete = true, windowed = false, structuralRemaining = 0, sectionEntries = null;
     const limit = bounded(input.limit, 8, 1, 16);
     if (input.kind) {
-      const requirements = { mode: 'find', filename: state.filename, query: input.query, kind: input.kind, within: range, offset };
+      const requirements = { mode: 'find', filename: state.filename, docKind: state.docKind, query: input.query, kind: input.kind, within: range, offset };
       const resolved = worldOrPending(context, 'find', requirements, fact =>
         fact.query === input.query && fact.kind === input.kind && fact.offset === offset &&
         JSON.stringify(fact.within) === JSON.stringify(range));
@@ -1750,8 +2154,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       found = (value?.matches || []).filter(row => safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end));
       complete = value?.complete !== false;
       windowed = value?.windowed === true; structuralRemaining = Number(value?.remaining) || 0;
-      sectionEntries = (value?.entries || []).map(row => ({ start: row.start, end: row.extentEnd ?? row.end,
-        label: display(row.label || row.name || '', 192), kind: row.kind || 'declaration' }));
+      // Code reports its own sections; a Markdown find leaves them to the outline, below.
+      sectionEntries = Array.isArray(value?.entries) ? value.entries.map(row => ({ start: row.start, end: row.extentEnd ?? row.end,
+        label: display(row.label || row.name || '', 192), kind: row.kind || 'declaration' })) : null;
     } else {
       const haystack = input.case_sensitive ? state.text : state.text.toLocaleLowerCase('und');
       const needle = input.case_sensitive ? input.query : input.query.toLocaleLowerCase('und');
@@ -1836,12 +2241,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     catch (error) { return { parse: 'not_checked', reason: 'structure_unavailable' }; }
   }
 
+  const reviewedThrough = who => Math.max(state.reviewedRevision || 0, state.reviewed[ownerOf(who)]?.revision || 0);
+  const missingReviewHistory = who => Math.max(state.history.unknownReviewRevision, state.history.unreviewed[ownerOf(who)] || 0) > reviewedThrough(who);
+
   // Guidance, not new authority: an inspected target and the commit gate still decide each write.
-  function editingState(together, will) {
+  function editingState(who, together, will) {
     if (state.readOnly) return { mode: 'read_only', reason: 'document_read_only' };
     if (state.review?.status === 'pending') return { mode: 'review_pending', reason: reviewCause(state.review) };
     if (will?.faults.length) return { mode: 'blocked', reason: 'document_law' };
     if (state.posture === 'ask') return { mode: 'review_required', reason: 'ask' };
+    if (state.posture === 'check') {
+      if (missingReviewHistory(who)) return { mode: 'blocked', reason: 'review_history_unavailable' };
+      if (activeChanges(who).some(row => !row.humanReviewed && row.revision > reviewedThrough(who)))
+        return { mode: 'review_required', reason: 'check' };
+    }
     return { mode: 'inspect', reason: 'inspect_target' };
   }
 
@@ -1851,15 +2264,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     while (entries.length > LIMITS.principals) delete pool[entries.shift()[0]];
   }
 
-  function commitGate(splices, who, restores = false, approved = false) {
+  function commitGate(splices, who, restores = false, approved = false, drawingTarget = null) {
     expireCollaboration();
     if (state.readOnly) return failure('document_read_only');
     if (who.actor !== 'agent') return null;
     // A live human hand wins over an autonomous commit; an `approved` review cannot lose to the person's own restored caret.
     if (!approved) {
-      const ranges = [state.selection?.active && state.selection.start !== state.selection.end ? state.selection : null,
+      const sameDrawing = value => drawingTarget && value?.occurrence && value.occurrence.start === drawingTarget.occurrence?.start &&
+        value.occurrence.end === drawingTarget.occurrence?.end && normalizeLabel(value.occurrence.reference) === normalizeLabel(drawingTarget.asset);
+      const ranges = sameDrawing(state.drawing) ? [] : [state.selection?.active && state.selection.start !== state.selection.end ? state.selection : null,
         state.focus?.active ? state.focus : null];
-      for (const row of Object.values(state.humanContexts)) if (row.visible && row.editing && row.revision === state.revision) {
+      for (const row of Object.values(state.humanContexts)) if (row.visible && row.editing && row.revision === state.revision && !sameDrawing(row.drawing)) {
         ranges.push(row.selection, row.focus);
       }
       const hands = ranges.filter(Boolean).map(range => ({original: range, moved: range}));
@@ -1869,50 +2284,70 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         for (const hand of hands) hand.moved = transportInterval(hand.moved.start, hand.moved.end, [row]);
       }
     }
-    if (!restores && !approved && state.posture === 'ask') return failure('human_review_required', 'pending');
+    if (!restores && !approved && state.posture === 'ask') return failure('human_review_required', 'pending', { reviewKind: 'proposal' });
+    if (!restores && !approved && state.posture === 'check' && missingReviewHistory(who)) return failure('review_history_unavailable', 'conflict');
+    if (!restores && !approved && state.posture === 'check' && activeChanges(who).some(row => !row.humanReviewed && row.revision > reviewedThrough(who))) {
+      return failure('human_review_required', 'pending', { reviewKind: 'check' });
+    }
     return null;
   }
 
   async function stageReview(kind, splices, who, context, operation, options = {}) {
     expireCollaboration();
-    const rows = splices;
+    let rows = splices, changeIds = [], changes = [], baseRevision, includesHumanChanges = false;
+    if (kind === 'check') {
+      const changes = activeChanges(who).filter(row => !row.humanReviewed && row.revision > reviewedThrough(who));
+      if (!changes.length) return failure('nothing_to_review');
+      baseRevision = Math.min(...changes.map(row => row.baseRevision));
+      const journal = since(baseRevision);
+      if (!journal) return failure('review_history_unavailable', 'conflict');
+      rows = [];
+      for (const entry of journal.slice().reverse()) {
+        for (const row of entry.splices.slice().reverse()) rows.push({ pos: row.pos, removed: row.inserted, inserted: row.removed });
+      }
+      if (transformSplices(state.text, rows) == null) return failure('review_history_unavailable', 'conflict');
+      changeIds = changes.map(row => row.id);
+      includesHumanChanges = journal.some(row => row.actor === 'human');
+    }
     const signature = digest(JSON.stringify({ kind, rows, operation, metadata: options.metadata || null }));
-    const requirements = { revision: state.revision, kind, editCount: options.editCount || rows.length };
+    const requirements = { revision: state.revision, kind, editCount: kind === 'check' ? changeIds.length : options.editCount || rows.length };
     const prior = state.review;
     if (prior?.status === 'pending') {
       if (prior.owner === ownerOf(who) && prior.revision === state.revision && prior.signature === signature) {
         return { outcome: 'pending', reason: 'human_review_required', cause: reviewCause(prior), reviewId: prior.id, review: reviewSummary(),
           pending: { kind: 'human-review', proposalId: prior.id, requirements } };
       }
-      // After authority lapse a fresh proposal is a new review.
-      if (!(Number.isFinite(prior.expiresAt) && prior.expiresAt <= now())) {
-        return failure('review_pending', 'pending', { cause: reviewCause(prior), reviewId: prior.id, review: reviewSummary() });
-      }
+      return failure('review_pending', 'pending', { cause: reviewCause(prior), reviewId: prior.id, review: reviewSummary() });
     }
     if (prior?.status === 'declined' && prior.owner === ownerOf(who) && prior.revision === state.revision && prior.signature === signature) {
       return failure('review_declined', 'refused', { review: reviewSummary() });
     }
     const time = now();
-    // Inline and proposal reviews share expiry and revalidation.
-    const handleExpiry = (options.handleIds || []).map(id => state.handles[id]?.expiresAt).filter(Number.isFinite);
+    // 'inline' shares proposal expiry and revalidation; 'check' carries no handles.
+    const tracksHandles = kind === 'proposal' || kind === 'inline';
+    const handleExpiry = (tracksHandles ? options.handleIds || [] : []).map(id => state.handles[id]?.expiresAt).filter(Number.isFinite);
     const id = mintId('review_');
     // Change ids derive from the review's; only authored splices are keepable, derived ones follow. Stored last-first; ".1" is first in document order.
-    const authored = options.authoredCount ?? rows.length;
-    const changes = initReviewChanges(id, rows, authored, options.handlePairs || [], options.drawAssets);
-    const changeIds = changes.map(row => row.id);
+    if (kind !== 'check') {
+      const authored = tracksHandles ? options.authoredCount ?? rows.length : rows.length;
+      changes = initReviewChanges(id, rows, authored, tracksHandles ? options.handlePairs || [] : [], options.drawAssets);
+      changeIds = changes.map(row => row.id);
+    }
     state.review = { id, kind, status: 'pending', documentId: state.documentId,
       revision: state.revision, sourceDigest: digest(state.text), filename: state.filename, docKind: state.docKind,
       createdAt: time, expiresAt: Math.min(time + LIMITS.reviewMs, ...handleExpiry), owner: ownerOf(who), ...who, operation,
-      label: clip(kind === 'inline' ? (options.label || 'Edit review')
+      label: clip(kind === 'check' ? 'Review changes before continuing' : kind === 'inline' ? (options.label || 'Edit review')
         : options.label || 'Proposed edits', 120),
       splices: clone(rows), authoredSplices: clone(options.authoredSplices || rows),
-      handleIds: [...(options.handleIds || [])],
-      editCount: options.editCount || rows.length,
+      handleIds: tracksHandles ? [...(options.handleIds || [])] : [],
+      editCount: tracksHandles ? options.editCount || rows.length : changeIds.length,
       reviewedRegion: options.reviewedRegion ?? null, changeIds, changes, signature,
       byPosture: options.byPosture === true, ...(options.law ? { law: options.law, region: options.region } : {}),
+      ...(baseRevision != null ? { baseRevision, includesHumanChanges } : {}),
       options: { label: options.label, editCount: options.editCount, authoredCount: options.authoredCount, rebased: options.rebased === true,
         keepCompare: options.keepCompare === true, compareDecision: options.compareDecision || null,
-        metadata: options.metadata || null, note: options.note || null },
+        metadata: options.metadata || null, note: options.note || null,
+        ...(options.drawingPatch ? {drawingPatch: clone(options.drawingPatch), fence: clone(options.fence), watched: options.watched === true} : {}) },
     };
     let presentation = null;
     // Inline review presents at the edit through its own adapter path, not host.presentReview.
@@ -1987,12 +2422,27 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let { text, splices: withRetirements, authoredSplices } = computed;
     splices = withRetirements;
     options = {...options, authoredCount, editCount: options.editCount ?? authoredCount};
+    if (options.drawingPatch) {
+      const candidate = clone(options.drawingPatch);
+      const index = splices.findIndex(row => {
+        const match = DRAW_OCCURRENCE.exec(row.removed);
+        return match && normalizeLabel(match[2]) === normalizeLabel(candidate.asset);
+      });
+      if (index < 0) return failure('draw_patch_invalid', 'conflict');
+      const authored = splices[index];
+      const target = transportInterval(authored.pos, authored.pos + authored.inserted.length, splices.slice(index + 1));
+      if (!target) return failure('draw_patch_invalid', 'conflict');
+      candidate.occurrence = {...candidate.occurrence, start: authored.pos, end: authored.pos + authored.removed.length, position: authored.pos};
+      candidate.targetOccurrence = {...candidate.targetOccurrence, ...target, position: target.start};
+      if (!verifyDrawingPatch(candidate, beforeText, text)) return failure('draw_patch_invalid', 'conflict');
+      options = {...options, drawingPatch: candidate, fence: {...options.fence, drawingPatch: candidate}};
+    }
     const invalid = admissibleSnapshotText(text);
     if (invalid) return failure(invalid, 'invalid');
     const metadataChanged = options.metadata && (options.metadata.filename !== state.filename || options.metadata.docKind !== state.docKind);
     if (text === beforeText && !metadataChanged) return { outcome: 'unchanged', changeId: null, editCount: 0 };
     const approved = options.approvedReview && state.review?.id === options.approvedReview && state.review.status === 'pending';
-    let gate = commitGate(splices, who, options.restores === true, approved);
+    let gate = commitGate(splices, who, options.restores === true, approved, options.drawingPatch);
     if (gate && gate.reason !== 'human_review_required') return gate;
     if (state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.comment' &&
         options.restores !== true && !options.sourceTransactionId &&
@@ -2020,6 +2470,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (law || gate || options.propose) {
       const reviewed = reviewableLaw(beforeText, authoredSplices, law);
       if (law && reviewed == null) return failure('document_law', 'refused', law);
+      if (gate?.reviewKind === 'check') return stageReview('check', [], who, context, operation, options);
       // Human review is a typed pending outcome, decided on a continuation (reviewDecision).
       const inline = !options.propose && options.reviewInline !== false && authoredSplices.length === 1 && host.inlineReview === true;
       return stageReview(inline ? 'inline' : 'proposal', splices, who, context, operation,
@@ -2050,20 +2501,22 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (suppliedDocumentId != null && suppliedDocumentId !== documentId) return uncertain('document_replaced_after_commit');
         const suppliedRevision = result.revision;
         revision = suppliedRevision == null ? revision : suppliedRevision;
-        presentation = result.presentation;
+        presentation = result.drawingReceipt || result.presentation;
       } catch { return uncertain('host_commit_unconfirmed'); }
     } else cancelled(context);
     if (!safeInt(revision) || revision <= baseRevision) return result ? uncertain('host_revision_invalid') : failure('host_revision_invalid');
-    const entry = appendCommit(text, splices, who, operation, { ...options, derivedCommentIndex: computed.derivedCommentIndex, revision, id: transactionId || undefined });
+    const entry = appendCommit(text, splices, who, operation, { ...options, derivedCommentIndex: computed.derivedCommentIndex, revision, humanReviewed: !!approved || !!reviewToken, id: transactionId || undefined });
     if (options.metadata) { state.filename = options.metadata.filename; state.docKind = options.metadata.docKind; state.handles = {}; state.refs = {}; state.cursors = {}; }
     const structure = structureReceipt(beforeText, text, state.filename, context);
-    return { outcome: options.rebased ? 'rebased' : 'applied', changeId: entry.id, editCount: options.editCount || splices.length,
-      ...(presentation ? {presentation} : {}),
+    const output = { outcome: options.rebased ? 'rebased' : 'applied', changeId: entry.id, editCount: options.editCount || splices.length,
+      ...(presentation ? {presentation, ...(result?.drawingReceipt ? {drawingReceipt: result.drawingReceipt} : {})} : {}),
+      ...(entry.drawingPatch ? {drawingPatch: clone(entry.drawingPatch)} : {}),
       ...(structure ? { structure } : {}),
       // law/region are the record of what governed this commit.
       ...(reviewedRegion == null ? {} : { law: 'keep', region: reviewedRegion }),
       transaction: { transactionId: entry.id, baseRevision, revision, actor: who.actor, principal: who.principal,
         operation, sourceTransactionId: options.sourceTransactionId || null } };
+    return operation === 'document.draw' || options.drawingPatch ? drawingReceipt(output) : output;
   }
 
   async function applyEdits(input, who, context, propose = false) {
@@ -2082,7 +2535,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const held = lookup('handles', edit.context_handle, who);
       if (held.outcome) return { ...held, editIndex: index };
       // A recipe_handle authorizes document.draw on that picture only.
-      if (held.kind === 'draw' || held.kind === 'image-comment') return failure('context_handle_wrong_kind', 'invalid', { editIndex: index });
+      if (['draw', 'svg', 'image-comment'].includes(held.kind)) return failure('context_handle_wrong_kind', 'invalid', { editIndex: index });
       const range = relocate(held);
       if (range.outcome) return { ...range, editIndex: index };
       rebased ||= range.rebased;
@@ -2125,14 +2578,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   async function reviewDecision(input, context) {
     const caller = humanParticipant(context);
-    const inputDigest = digest(canonicalJson(input));
+    const inputDigest = sha256(canonicalJson(input));
     if (!context.continues) {
-      const prior = priorInvocation(caller.invocationKey);
+      const prior = priorInvocation(caller.invocationKey, caller);
       if (prior) return replayOf(prior, 'document.review_decide', inputDigest) || stamp(failure('invocation_key_collision', 'invalid'));
     }
     const finish = result => {
       const output = stamp(result);
-      recordInvocation(caller.invocationKey, 'document.review_decide', state.documentId, output, inputDigest);
+      recordInvocation(caller.invocationKey, 'document.review_decide', state.documentId, output, inputDigest, caller);
       return output;
     };
     // One finalizer, as execute(): an error that can only precede a commit (cancellation, TypeError) is recorded; anything else re-throws.
@@ -2168,17 +2621,25 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         review.sourceDigest !== digest(state.text) || review.filename !== state.filename || review.docKind !== state.docKind) {
       invalidateReview(); return finish(failure('review_document_changed', 'conflict', { review: reviewSummary() }));
     }
-    const closedKind = review.kind === 'inline' || !!review.options.compareDecision;
+    const closedKind = review.kind === 'check' || review.kind === 'inline' || !!review.options.compareDecision;
     if ((input.action === 'apply' || input.action === 'drop') && closedKind) {
       return finish(failure('review_decision_invalid', 'invalid', { review: reviewSummary() }));
     }
     if (input.action === 'decline') {
+      if (review.kind !== 'check') rememberReviewDecision(review, 'dropped', pendingChangeIds(review));
       if (Array.isArray(review.changes)) for (const row of review.changes) if (row.status === 'pending') row.status = 'dropped';
       review.status = 'declined'; review.decidedAt = now();
       review.decision = { action: 'decline', outcome: 'ok', revision: state.revision };
       return finish(accepted({ review: reviewSummary() }));
     }
     const who = participant(review, mintId);
+    if (review.kind === 'check') {
+      rememberReviewDecision(review, 'kept', pendingChangeIds(review));
+      remember(state.reviewed, who, { revision: review.revision });
+      review.status = 'approved'; review.decidedAt = now();
+      review.decision = { action: 'approve', outcome: 'ok', revision: state.revision };
+      return finish(accepted({ acknowledged: true, review: reviewSummary() }));
+    }
     // A surviving review's handles were checked through surviveReview (with the evidence fallback); a second lookup here would reimpose the lapsed window.
     // Other reviews keep the direct check.
     if (!reviewSurvivesEdits(review)) {
@@ -2202,6 +2663,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
     }
     if (input.action === 'drop') {
+      rememberReviewDecision(review, 'dropped', [...new Set(namedIds)]);
       const drop = new Set(namedIds);
       for (const row of review.changes) if (row.status === 'pending' && drop.has(row.id)) row.status = 'dropped';
       refreshReviewExpiry(review);
@@ -2235,6 +2697,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...((Array.isArray(review.changes) && review.changes.length) || namedIds !== null
         ? { authoredCount: splices.length, editCount: splices.length } : {}) });
     if (['applied', 'rebased', 'unchanged'].includes(result.outcome)) {
+      rememberReviewDecision(review, 'kept', ownPending.filter(id => keep.has(id)));
+      if (input.action === 'approve') rememberReviewDecision(review, 'dropped', ownPending.filter(id => !keep.has(id)));
       if (Array.isArray(review.changes) && review.changes.length) {
         for (const row of review.changes) {
           if (row.status === 'pending' && keep.has(row.id)) {
@@ -2267,7 +2731,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return finish({ ...result, review: reviewSummary() });
     } catch (error) {
       if (error?.name === 'AbortError' || context.signal?.aborted) return finish(failure('cancelled'));
-      if (error instanceof TypeError || error?.code === 'invalid_arguments') return finish(failure(clip(error.message, 160), 'invalid'));
+      // A schema fault names its field, as every other refusal does.
+      if (error instanceof TypeError || error?.code === 'invalid_arguments') return finish(failure(clip(error.message, 160), 'invalid', error?.path ? {field: String(error.path).replace(/^arguments\.?/, '')} : undefined));
       throw error;
     }
   }
@@ -2285,6 +2750,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       return { outcome: 'review_missing' };
     }
     const keepIds = changeIds === undefined ? null : changeIds;
+    if (review.kind === 'check') {
+      return keepIds === null ? { outcome: 'ok', text: state.text } : { outcome: 'review_decision_invalid' };
+    }
     if (keepIds !== null && (!Array.isArray(keepIds) || !keepIds.length || keepIds.length > 128 || keepIds.some(id => typeof id !== 'string'))) {
       return { outcome: 'review_decision_invalid' };
     }
@@ -2393,6 +2861,46 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return operations;
   }
 
+  async function paintInverse(entry, who, context) {
+    if (typeof host.paintReplay !== 'function') return null;
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    const plan = paintUndoPlan(source, entry, since(entry.revision));
+    if (!plan) return null;
+    const recipe = clone(plan.recipe);
+    for (const change of plan.changes) {
+      const index = recipe.shapes.findIndex(shape => shape.id === change.id), before = recipe.shapes[index];
+      const replayed = await host.paintReplay(before, change.omitIds, {signal: context.signal});
+      cancelled(context);
+      if (!replayed || replayed.id !== before.id || replayed.recognized !== 'paint' ||
+          canonicalJson(replayed.geom) !== canonicalJson(before.geom) ||
+          canonicalJson(replayed.paint?.px) !== canonicalJson(before.paint?.px) || replayed.paint?.scale !== before.paint?.scale)
+        return failure('paint_replay_unavailable', 'conflict');
+      const omitted = new Set(change.omitIds);
+      const expected = {...before.paint.replay, entries: before.paint.replay.entries.map(row => omitted.has(row.id) ? {...row, removed: true} : row)};
+      if (canonicalJson(replayed.paint?.replay) !== canonicalJson(expected)) return failure('paint_replay_changed', 'conflict');
+      recipe.shapes[index] = {...before, raster: replayed.raster, paint: replayed.paint};
+    }
+    const svg = _rapierDrawBuildSVG(recipe);
+    if (!svg) return failure('paint_replay_unavailable', 'conflict');
+    const title = _rapierDrawNextAssetName(documentAssets(source).assets.values());
+    const asset = await createAsset(encoder.encode(svg), null, {codec: 'image/svg+xml', title});
+    cancelled(context);
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    const raw = '![' + plan.alt + '][' + asset.label + ']';
+    const authored = [{pos: plan.start, removed: plan.raw, inserted: raw}];
+    const changed = transformSplices(source, authored);
+    if (changed == null) return failure('document_changed', 'conflict');
+    // This is a new material result, not the old definition restored verbatim. Derive retirement
+    // through the image owner before the ordinary Undo commit appends its replacement asset.
+    const splices = authored.concat(imageDeletionSplices(source, changed, authored, who.actor));
+    return {splices, authoredCount: 1, drawAssets: [{id: normalizeLabel(asset.label), label: asset.label, url: asset.url, title: asset.title}],
+      fence: {operation: 'document.draw', drawingAsset: plan.asset, shapesOnly: true,
+        paintTargets: plan.changes.map(change => plan.recipe.shapes.find(shape => shape.id === change.id))},
+      result: {replaced: plan.asset, asset: {reference: asset.label, title}}};
+  }
+
   async function undo(input, who, context) {
     const changes = activeChanges(who);
     const label = who.agent || '';
@@ -2411,17 +2919,40 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (other) return failure('other_agent_latest', 'refused', other);
       return failure(input.change_id ? 'change_not_owned_or_unavailable' : 'no_agent_change', 'target_gone');
     }
-    let splices = inverse(entry);
+    let splices = inverse(entry), painting = null;
     if (splices.reason === 'change_interleaved') {
       const row = commentUndoSplice(state.text, entry, since(entry.revision));
       if (row) splices = [row];
     }
+    if (splices.reason === 'change_interleaved' && entry.operation === 'document.draw') {
+      try { painting = await paintInverse(entry, who, context); }
+      catch { cancelled(context); return failure('paint_replay_unavailable', 'conflict'); }
+      if (painting?.outcome) return painting;
+      if (painting) splices = painting.splices;
+    }
     if (splices.outcome) return splices;
+    // The exact source inverse reaches an open canvas as the inverse of the original semantic change. A selective Undo that repaints a layer
+    // writes a new material result, not the inverse, so it has its own hand-off (agent/browser.js, the repainted layers).
+    let drawingPatch = null;
+    if (entry.drawingPatch && !painting) {
+      const original = entry.drawingPatch;
+      const saved = sourceDrawing(state.text, original.reference);
+      if (!saved) return failure('target_changed', 'conflict');
+      drawingPatch = {undo: true, patch: _rapierDrawRecipeDelta(original.recipeAfter, original.recipeBefore),
+        occurrence: clone(original.targetOccurrence), targetOccurrence: clone(original.occurrence),
+        asset: original.reference, reference: original.asset, assetGeneration: sha256(saved.asset.url),
+        sourceRecipeBefore: clone(original.sourceRecipeAfter), sourceRecipeAfter: clone(original.sourceRecipeBefore),
+        recipeBefore: clone(original.recipeAfter), recipeAfter: clone(original.recipeBefore)};
+    }
     const result = await commit(splices, who, context, 'document.undo_agent_change', {
       label: `Undo ${entry.label}`, sourceTransactionId: entry.id, restores: true, editCount: splices.length,
+      ...(painting ? {authoredCount: painting.authoredCount, drawAssets: painting.drawAssets, fence: painting.fence}
+        : drawingPatch ? {drawingPatch, fence: {operation: 'document.draw', drawingAsset: drawingPatch.asset,
+          shapesOnly: true, drawingPatch}} : {}),
     });
     if (result.outcome === 'applied') {
       result.undoneChangeId = entry.id;
+      if (painting) Object.assign(result, painting.result);
       if (other) Object.assign(result, other);
     }
     return result;
@@ -2585,6 +3116,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!rows.length) return { outcome: 'unchanged', decided: 0 };
     const acknowledge = status => {
       for (const row of rows) row.status = status;
+      if (who.actor === 'human' && compared.reviewOnly && compared.changes.every(row => row.status !== 'pending')) {
+        const entry = state.journal.find(row => row.id === compared.changeId);
+        if (entry) entry.humanReviewed = true;
+      }
     };
     if ((!compared.reviewOnly && !accept) || (compared.reviewOnly && accept)) {
       acknowledge(accept ? 'accepted' : 'rejected'); return { outcome: 'applied', decided: rows.length };
@@ -2675,15 +3210,29 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const base = readBase({...state.proposalBase || {text: state.text, sha256: digest, revision: state.ledgerRoot || digest, name: state.filename},
       by: input.by.trim(), at: new Date(now()).toISOString()});
     if (typeof host.proposalPage === 'string') {
+      const {format, ...file} = await exportDocument({format: 'html', text: input.text, base}, context);
+      if (file.outcome !== 'ok') return file;
       const result = await stageProposal({base, text: input.text}, who);
       if (result.outcome !== 'ok' && result.reason !== 'human_review_required') return result;
-      return accepted({page: host.proposalPage, sha256: base.sha256, baseRevision: base.revision, ...(result.reviewId ? {reviewId: result.reviewId} : {})});
+      return {...file, page: host.proposalPage, sha256: base.sha256, baseRevision: base.revision, ...(result.reviewId ? {reviewId: result.reviewId} : {})};
     }
     if (typeof host.propose !== 'function') return failure('proposal_page_unavailable');
     cancelled(context);
     const result = await host.propose({documentId: state.documentId, revision: state.revision, filename: state.filename, text: input.text, base, ...who, signal: context.signal});
     cancelled(context);
     return typeof result?.page === 'string' && result.page ? accepted({page: result.page, sha256: base.sha256, baseRevision: base.revision}) : failure(result?.reason || 'proposal_page_unavailable');
+  }
+
+  async function exportDocument({format, text = state.text, base}, context) {
+    if (typeof host.exportFile !== 'function') return failure('export_unavailable');
+    const file = await host.exportFile({format, filename: state.filename, docKind: state.docKind, text,
+      ...(base ? {base} : {}), signal: context.signal});
+    cancelled(context);
+    return !file?.bytes ? failure(file?.reason || 'export_unavailable', 'refused', {
+      ...(safeInt(file?.limitBytes) ? {limitBytes: file.limitBytes} : {}), ...(safeInt(file?.byteLength) ? {bytes: file.byteLength} : {})})
+      : file.bytes.byteLength > MAX_EXPORT_BYTES ? failure('export_too_large', 'refused', {limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength})
+      : accepted({format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength,
+          ...(file.id ? {exportId: file.id} : {})});
   }
 
   async function openText(input, who, context) {
@@ -2706,6 +3255,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const reviewed = reviewableLaw(state.text, splices, law);
         if (law && reviewed == null) return failure('document_law', 'refused', law);
         const open = { label: 'Open document', metadata: { filename, docKind: kind }, authoredCount: splices.length, editCount: splices.length };
+        if (gate?.reviewKind === 'check') return stageReview('check', [], who, context, 'document.open_text', open);
         if (law || gate) return stageReview('proposal', splices, who, context, 'document.open_text',
           { ...open, reviewedRegion: reviewed, authoredSplices: splices, byPosture: !!gate, ...(reviewed == null ? {} : { law: 'keep', region: reviewed }) });
       }
@@ -2739,30 +3289,63 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return { ...result, filename, docKind: kind };
   }
 
-  // One entry point, registry row and commit owner: recipe_handle selects drawEdit, else drawCreate.
+  function drawingReceipt(result) {
+    const committed = ['applied', 'rebased', 'unchanged'].includes(result.outcome);
+    const states = ['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'];
+    const supplied = result.presentation?.status || result.presentation;
+    const presentation = states.includes(supplied) ? supplied : committed &&
+      Object.values(state.humanContexts).some(row => row.visible && row.expiresAt > now()) ? 'presentation_deferred' : 'unavailable';
+    return {...result, receipt: {state: committed ? 'committed' : result.outcome === 'pending' && result.pending?.kind === 'human-review'
+      ? 'pending_review' : result.outcome === 'uncertain' ? 'uncertain' : 'unavailable',
+      presentation: result.outcome === 'uncertain' ? 'uncertain' : presentation}};
+  }
+
+  // Typed picture handles select their owner; creation uses an ordinary source placement.
   async function drawPicture(input, who, context) {
     if (state.docKind !== 'markdown') return failure('draw_requires_markdown', 'invalid');
-    if (changeOf(input.recipe_handle) || changeOf(input.context_handle)) return failure('context_handle_wrong_kind', 'invalid');
-    return input.recipe_handle ? drawEdit(input, who, context) : drawCreate(input, who, context);
+    if (changeOf(input.recipe_handle) || changeOf(input.svg_handle) || changeOf(input.context_handle)) return failure('context_handle_wrong_kind', 'invalid');
+    return drawingReceipt(await (input.svg_handle != null || input.svgNodeEdits != null ? drawSVGEdit(input, who, context)
+      : input.recipe_handle ? drawEdit(input, who, context) : drawCreate(input, who, context)));
   }
 
   // `{kind: 'paint', strokes}` is paint an agent authors: the host lays the strokes with the paint engine (draw/agent-paint.mjs)
   // and hands back the paint shape the recipe keeps. A host without the engine (the document build) refuses it by name.
-  async function paintFigures(list, context) {
+  async function paintFigures(list, context, field = 'figures', existing = null) {
     if (!Array.isArray(list) || !list.some(row => row?.kind === 'paint')) return { list };
     if (typeof host.paint !== 'function') return { refusal: failure('paint_unavailable') };
     const out = [];
-    for (const row of list) {
+    for (const [index, row] of list.entries()) {
       if (row?.kind !== 'paint') { out.push(row); continue; }
-      const { kind, strokes, id, ...rest } = row;
-      if (Object.keys(rest).length) return { refusal: failure('paint_strokes_invalid', 'invalid') };
+      const { kind, strokes, id, seed = 1, ...rest } = row;
+      const at = field + '[' + index + ']';
+      if (Object.keys(rest).length) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.' + Object.keys(rest)[0]}) };
+      if (!Number.isInteger(seed) || seed < 0 || seed > 0x7fffffff) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.seed'}) };
+      const target = existing?.find(shape => shape.id === id && shape.recognized === 'paint') || null;
+      if (existing && !target) return {refusal: failure('paint_target_invalid', 'invalid', {field: at + '.id'})};
+      if (target?.locked) return {refusal: failure('paint_target_locked', 'refused', {field: at + '.id'})};
       let shape = null;
-      try { shape = await host.paint(strokes); } catch (_) { shape = null; }
       cancelled(context);
-      if (!shape) return { refusal: failure('paint_strokes_invalid', 'invalid') };
+      try { shape = await host.paint(strokes, {seed, target, contribution: mintId('paint_'), signal: context.signal}); }
+      catch (error) {
+        cancelled(context);
+        return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : 'invalid')};
+      }
+      cancelled(context);
+      if (!shape) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.strokes'}) };
       out.push(id == null ? shape : { ...shape, id });
     }
     return { list: out };
+  }
+
+  async function paintOperations(operations, context) {
+    const out = [];
+    for (const [index, operation] of (operations || []).entries()) {
+      if (operation.type !== 'create') { out.push(operation); continue; }
+      const painted = await paintFigures(operation.figures, context, 'operations[' + index + '].figures');
+      if (painted.refusal) return painted;
+      out.push({...operation, figures: painted.list});
+    }
+    return {list: out};
   }
 
   // A paint shape that keeps strokes is replayed on the open drawing on the sheet it names; that sheet must be the one
@@ -2770,7 +3353,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // engine keeps no strokes layer at all.
   function paintSheetsHold(recipe) {
     for (const shape of recipe?.shapes || []) {
-      if (shape?.recognized !== 'paint' || shape.paint?.strokes == null) continue;
+      if (shape?.recognized !== 'paint' || shape.paint?.strokes == null && shape.paint?.replay == null) continue;
       if (typeof host.paintSheet !== 'function' || host.paintSheet(shape.paint) !== true) return false;
     }
     return true;
@@ -2786,7 +3369,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (input.context_handle) {
       held = lookup('handles', input.context_handle, who);
       if (held.outcome) return held;
-      if (held.kind === 'image-comment') return failure('context_handle_wrong_kind', 'invalid');
+      if (held.kind === 'svg' || held.kind === 'image-comment') return failure('context_handle_wrong_kind', 'invalid');
       const range = relocate(held);
       if (range.outcome) return range;
       const facts = await outline(context);
@@ -2802,6 +3385,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const early = commitGate([{ pos: position, removed: '', inserted: '' }], who);
     if (early && early.reason !== 'human_review_required') return early;
+    if (early?.reviewKind === 'check') {
+      const fenced = commitFenceRefusal({ splices: [{ pos: position, removed: '', inserted: '' }] });
+      if (fenced) return fenced;
+      return stageReview('check', [], who, context, 'document.draw', { label: input.label || 'Draw a picture' });
+    }
     let painted = null;
     if (input.figures?.some?.(row => row?.kind === 'paint')) {
       const result = await paintFigures(input.figures, context);
@@ -2819,14 +3407,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       recipe = recipeInput && _rapierDrawNormalizeAgentRecipe(recipeInput);
       // A refused figure names itself (draw/core.mjs _rapierDrawFigureFault): the index, the field and what the field takes,
       // and the kinds a figure may name (the list draw/core.mjs admits).
-      if (!recipe) return input.figures != null && input.recipe == null ? failure('figures_invalid', 'invalid', { ...(_rapierDrawFigureFault(input.figures, [], input.direction) || {}), kinds: FIGURE_KINDS }) : failure('recipe_invalid', 'invalid');
-      recipe = applyOperations(recipe, input.operations || []).recipe;
+      if (!recipe) return input.figures != null && input.recipe == null ? failure('figures_invalid', 'invalid', { ...(_rapierDrawFigureFault(input.figures, [], input.direction) || {}), kinds: FIGURE_KINDS }) : recipeInvalid(_rapierDrawRecipeFault(recipeInput));
+      const operations = await paintOperations(input.operations, context);
+      if (operations.refusal) return operations.refusal;
+      recipe = applyOperations(recipe, operations.list).recipe;
       if (!recipe.shapes.length || recipe.shapes.length > 128) return failure('draw_shape_limit', 'invalid');
       if (!paintSheetsHold(recipe)) return failure('paint_sheet_invalid', 'invalid');
       svg = _rapierDrawBuildSVG(recipe);
     }
-    catch (error) { return failure(error?.code || 'draw_render_failed'); }
+    catch (error) { return failure(error?.code || 'draw_render_failed', error?.field ? 'invalid' : 'refused', error?.field ? {field: error.field} : {}); }
     if (!svg) return failure('recipe_invalid', 'invalid');
+    recipe = _rapierDrawReadRecipeFromSVGText(svg);
+    if (!recipe) return failure('recipe_invalid', 'invalid');
     const source = state.text, revision = state.revision, documentId = state.documentId;
     const title = _rapierDrawNextAssetName(assets.assets.values());
     let asset, appended, prospective, raw, prefix, suffix;
@@ -2864,18 +3456,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     });
     if (!['applied', 'rebased'].includes(result.outcome)) return result;
     if (held) held.used = true;
-    const recipeHandle = drawHandle(occStart, occStart + raw.length, JSON.stringify(recipe), appended.reference, who);
+    const recipeHandle = drawHandle(occStart, occStart + raw.length, appended.reference, who);
     return { ...result, asset: {reference: appended.reference, title}, width: asset.width, height: asset.height,
       recipe_handle: recipeHandle?.id || null };
   }
 
-  // Patches the recipe disclosed at mint, never a re-read, so relocate() catches a person's edit. New content-addressed asset;
-  // occurrence rewritten in place; the old definition retires via imageDeletionSplices. One definition throughout.
+  // Patches the recipe of the definition the handle was minted over, read from the document and never held: a person's edit is a changed
+  // target (relocate() for the occurrence, the digest for the definition), and only the text the caller was shown counts against the
+  // budget, whatever the pixels and histories weigh. New content-addressed asset; occurrence rewritten in place; the old definition
+  // retires via imageDeletionSplices. One definition throughout.
   async function drawEdit(input, who, context) {
     if (input.figures != null || input.recipe != null && input.shapes != null) return failure('draw_edit_recipe_conflict', 'invalid');
     if (input.context_handle != null) return failure('draw_edit_placement_conflict', 'invalid');
     const patch = input.shapes;
-    if (input.recipe == null && input.alt == null && !input.operations?.length && !(patch && (patch.add?.length || patch.replace?.length || patch.remove?.length))) return failure('draw_edit_empty', 'invalid');
+    if (input.recipe == null && input.alt == null && !input.operations?.length && !(patch && (patch.add?.length || patch.replace?.length || patch.remove?.length || Object.keys(patch.set || {}).length))) return failure('draw_edit_empty', 'invalid');
     if (input.alt != null && (typeof input.alt !== 'string' || !input.alt.trim())) return failure('draw_alt_required', 'invalid');
     const held = lookup('handles', input.recipe_handle, who);
     if (held.outcome) return held;
@@ -2883,16 +3477,46 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const range = relocate(held);
     if (range.outcome) return range;
     if (held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
-    const early = commitGate([{ pos: range.start, removed: held.text, inserted: '' }], who);
+    const staleSurface = drawBindingFailure(held, range);
+    // The digest proves the definition is the one the caller was shown, and nothing awaits before it is read. What the caller saw is that
+    // definition, or the open canvas's recipe the handle kept when the read came from the surface.
+    const stored = storedRecipe(held.assetLabel);
+    if (!stored) return failure('target_changed', 'conflict');
+    const inspected = held.recipeJSON != null ? JSON.parse(held.recipeJSON) : stored;
+    const live = drawingFor(range.start, range.end, held.assetLabel);
+    if (live?.recipeUnavailable) return failure('draw_surface_unavailable', 'conflict', {detail: live.recipeUnavailable});
+    if (staleSurface && (!live?.recipe || live.session !== held.drawSession)) return staleSurface;
+    // The view record is derived by every build, never a hand's decision: it says nothing about whether the canvas moved. The open
+    // surface reports the pen settings a definition omits (draw.js: its baseline fills smooth and nib with the defaults), so the
+    // comparison fills the same, or a definition no hand touched reads as a canvas that moved. The merge still sees every difference.
+    const penned = recipe => ({...recipe, smooth: recipe.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT, nib: recipe.nib ?? RAPIER_DRAW_NIB_DEFAULT});
+    const surfaceDiffers = !!live?.recipe && (!!staleSurface || canonicalJson(sansView(live.recipe)) !== canonicalJson(sansView(inspected)));
+    const rebasedSurface = surfaceDiffers && (!!staleSurface || canonicalJson(sansView(penned(live.recipe))) !== canonicalJson(sansView(penned(inspected))));
+    const writeBase = live?.recipe || inspected;
+    const writeBinding = {assetLabel: held.assetLabel, ...drawingBinding(live)};
+    const early = commitGate([{ pos: range.start, removed: held.text, inserted: '' }], who, false, false,
+      {asset: held.assetLabel, occurrence: {start: range.start, end: range.end}});
     if (early && early.reason !== 'human_review_required') return early;
-    // An open Draw's fence admits only a plain shapes patch: anything else would be overwritten by the person's Done.
-    const editingFence = { operation: 'document.draw', drawingAsset: held.assetLabel || '',
-      shapesOnly: !!input.shapes && input.recipe == null && !input.operations?.length && input.alt == null };
-    // The host alone attests the open drawing; commit() re-establishes both fence facts at the boundary.
+    // Object patches, operations, dials and a whole recipe share the open Draw owner's semantic hand-off: only a verified change enters the
+    // live drawing owner, and the final fence below carries the admitted delta, never the caller's recipe or operation spelling. A caption
+    // is source outside the canvas and keeps the ordinary fence.
+    const editingFence = {operation: 'document.draw', drawingAsset: held.assetLabel || '',
+      shapesOnly: input.alt == null, occurrence: {start: range.start, end: range.end, reference: held.assetLabel}};
+    if (input.shapes?.replace?.some(row => row?.kind === 'paint')) {
+      editingFence.paintTargets = clone(input.shapes.replace.filter(row => row?.kind === 'paint')
+        .map(row => inspected.shapes.find(shape => shape.id === row.id && shape.recognized === 'paint')).filter(Boolean));
+    }
+    // Early read only, deciding the CHECK branch; commit() re-establishes it at the boundary (DS-02). Never from the wire.
     const watched = !!commitFenceRefusal() && !commitFenceRefusal(editingFence);
+    // A CHECK draw on the open drawing lands immediately; elsewhere unchanged.
+    if (early?.reviewKind === 'check' && !watched) {
+      const fenced = commitFenceRefusal({ ...editingFence, splices: [{ pos: range.start, removed: held.text, inserted: '' }] });
+      if (fenced) return fenced;
+      return stageReview('check', [], who, context, 'document.draw', { label: input.label || 'Edit a drawing' });
+    }
     let svg, recipe;
     try {
-      let base = JSON.parse(held.recipeJSON);
+      let base = clone(inspected);
       if (input.recipe != null) {
         // A whole inspected recipe reaches canvas, paper, strokes and fonts without replacing the document.
         // Redacted pixels are restored only from the same held paint id, as for a shapes replacement.
@@ -2902,14 +3526,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           if (shape?.raster?.kept !== true) { shapes.push(shape); continue; }
           const original = base.shapes.find(original => original.id === shape.id && original.recognized === 'paint');
           if (!original || shape.recognized !== 'paint') return failure('recipe_invalid', 'invalid');
-          if (canonicalJson(shape.paint ?? null) !== canonicalJson(original.paint ?? null)) return failure('paint_kept_recipe_changed', 'invalid');
-          shapes.push({ ...shape, raster: original.raster });
+          if (canonicalJson(shape.paint ?? null) !== canonicalJson(inspectPaintRecord(original.paint) ?? null)) return failure('paint_kept_recipe_changed', 'invalid');
+          shapes.push({ ...shape, raster: original.raster, paint: original.paint });
         }
         base = _rapierDrawNormalizeAgentRecipe({ ...input.recipe, shapes });
-        if (!base) return failure('recipe_invalid', 'invalid');
+        if (!base) return recipeInvalid(_rapierDrawRecipeFault({ ...input.recipe, shapes }));
       }
       if (input.shapes) {
-        const add = await paintFigures(input.shapes.add, context), replace = await paintFigures(input.shapes.replace, context);
+        const add = await paintFigures(input.shapes.add, context, 'shapes.add'), replace = await paintFigures(input.shapes.replace, context, 'shapes.replace', base.shapes);
         if (add.refusal || replace.refusal) return add.refusal || replace.refusal;
         // Kept bytes belong to this held paint id, never to a new shape or an array position.
         const shapes = { ...input.shapes, add: add.list, replace: replace.list?.slice() };
@@ -2919,26 +3543,94 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           if (shape.recognized !== 'paint' || shape.raster?.kept !== true) continue;
           const original = base.shapes.find(original => original.id === shape.id && original.recognized === 'paint');
           if (!original) return failure('recipe_invalid', 'invalid');
-          if (canonicalJson(shape.paint ?? null) !== canonicalJson(original.paint ?? null)) return failure('paint_kept_recipe_changed', 'invalid');
-          shapes.replace[i] = { ...shape, raster: original.raster };
+          if (canonicalJson(shape.paint ?? null) !== canonicalJson(inspectPaintRecord(original.paint) ?? null)) return failure('paint_kept_recipe_changed', 'invalid');
+          shapes.replace[i] = { ...shape, raster: original.raster, paint: original.paint };
         }
         const patched = _rapierDrawApplyShapesPatch(base, shapes, input.direction);
         // A figure that cannot be added names itself, as on a create; a shape or a replace that cannot land stays a bare refusal.
         if (!patched) return failure('draw_shapes_patch_invalid', 'invalid', _rapierDrawFigureFault((shapes.add || []).filter(raw => raw && typeof raw.kind === 'string'), base.shapes, input.direction) || {});
+        // The dials of `set` are admitted with the rest of the recipe, whole; a refusal names the field that stopped it.
+        const fault = shapes.set && _rapierDrawRecipeFault(patched);
+        if (fault) return recipeInvalid(fault);
         base = patched;
       }
-      recipe = applyOperations(base, input.operations || []).recipe;
-      if (!recipe.shapes.length || recipe.shapes.length > 128) return failure('draw_shape_limit', 'invalid');
+      const operations = await paintOperations(input.operations, context);
+      if (operations.refusal) return operations.refusal;
+      recipe = applyOperations(base, operations.list).recipe;
+      // The agent worked on the drawing it inspected; the canvas has moved on since (the person drew). Its change is laid over the canvas as
+      // it stands, by the one merge, and an object or dial both hands touched refuses here, before anything is written.
+      if (surfaceDiffers) {
+        recipe = _rapierDrawMergeAgentRecipe(writeBase, inspected, recipe);
+        if (!recipe) return failure('draw_surface_changed', 'conflict');
+      }
+      // The drawing's own budget (2048 shapes, admitted with the recipe) is the one limit: a canvas the person has filled is still editable.
       if (!paintSheetsHold(recipe)) return failure('paint_sheet_invalid', 'invalid');
       svg = _rapierDrawBuildSVG(recipe);
-    } catch (error) { return failure(error?.code || 'draw_render_failed'); }
+    } catch (error) { return failure(error?.code || 'draw_render_failed', error?.field ? 'invalid' : 'refused', error?.field ? {field: error.field} : {}); }
+    if (!recipe.shapes.length && !recipe.background) {
+      // Done removes an emptied existing drawing. Its occurrence and orphaned definition retire
+      // through the source owner, in one transaction. An open canvas needs an occurrence to follow.
+      const source = state.text, revision = state.revision, documentId = state.documentId;
+      const refreshed = await refresh(context);
+      if (refreshed) return refreshed;
+      if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+      const result = await commit([{pos: range.start, removed: held.text, inserted: ''}], who, context, 'document.draw', {
+        fence: {...editingFence, shapesOnly: false}, label: input.label || 'Remove an empty drawing',
+        editCount: 1, authoredCount: 1, handleIds: [held.id], reviewInline: false,
+        handlePairs: [{handleId: held.id, offset: 0}],
+      });
+      if (!['applied', 'rebased'].includes(result.outcome)) return result;
+      held.used = true;
+      return {...result, removed: true, replaced: held.assetLabel || null, recipe_handle: null};
+    }
     if (!svg) return failure('recipe_invalid', 'invalid');
+    // The recipe the asset will hold, read back from its own bytes: the semantic change is proved against exactly what the source stores.
+    recipe = _rapierDrawReadRecipeFromSVGText(svg);
+    if (!recipe) return failure('recipe_invalid', 'invalid');
+    return commitPictureEdit(input, who, context, held, range, encoder.encode(svg), {recipe, editingFence, watched, writeBase, writeBinding, live, rebased: !!rebasedSurface});
+  }
+
+  async function drawSVGEdit(input, who, context) {
+    if (typeof input.svg_handle !== 'string') return failure('svg_handle_required', 'invalid', {field: 'svg_handle'});
+    if (input.alt != null && (typeof input.alt !== 'string' || !input.alt.trim())) return failure('draw_alt_required', 'invalid', {field: 'alt'});
+    for (const field of ['recipe_handle', 'recipe', 'figures', 'shapes', 'operations', 'direction', 'context_handle']) {
+      if (input[field] != null) return failure('svg_edit_conflict', 'invalid', {field});
+    }
+    if (!Array.isArray(input.svgNodeEdits) || !input.svgNodeEdits.length) return failure('svg_node_edit_invalid', 'invalid', {field: 'svgNodeEdits'});
+    const held = lookup('handles', input.svg_handle, who);
+    if (held.outcome) return held;
+    if (held.kind !== 'svg') return failure('context_handle_wrong_kind', 'invalid', {field: 'svg_handle'});
+    const range = relocate(held);
+    if (range.outcome) return range;
+    if (assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+    const disclosed = new Set(held.nodeIds);
+    for (let index = 0; index < input.svgNodeEdits.length; index++) {
+      if (!disclosed.has(input.svgNodeEdits[index].nodeId)) return failure('svg_node_edit_invalid', 'invalid', {field: 'svgNodeEdits[' + index + '].nodeId'});
+    }
+    const early = commitGate([{pos: range.start, removed: held.text, inserted: ''}], who);
+    if (early && early.reason !== 'human_review_required') return early;
+    const editingFence = {operation: 'document.draw', drawingAsset: held.assetLabel, shapesOnly: false};
+    if (early?.reviewKind === 'check') {
+      const fenced = commitFenceRefusal({...editingFence, splices: [{pos: range.start, removed: held.text, inserted: ''}]});
+      if (fenced) return fenced;
+      return stageReview('check', [], who, context, 'document.draw', {label: input.label || 'Edit an SVG'});
+    }
+    const asset = documentAssets(state.text).assets.get(normalizeLabel(held.assetLabel));
+    let edited;
+    try { edited = editSVGNodes(decodeDataImage(asset.url), input.svgNodeEdits); }
+    catch (error) { return failure(error.code || 'svg_node_edit_invalid', 'invalid', {field: error.field || 'svgNodeEdits'}); }
+    return commitPictureEdit(input, who, context, held, range, edited, {nodeIds: held.nodeIds, editingFence, watched: false});
+  }
+
+  // The one commit of a picture edit, native or imported. A native recipe edit also carries the verified semantic change (the envelope) to
+  // the open canvas, bound to the surface and the occurrence it was made for.
+  async function commitPictureEdit(input, who, context, held, range, svgBytes, {recipe, nodeIds, editingFence, watched, writeBase, writeBinding, live, rebased}) {
     const source = state.text, revision = state.revision, documentId = state.documentId;
     const occStart = range.start, oldOccText = held.text;
     let asset, appended, raw, title;
     try {
       title = _rapierDrawNextAssetName(documentAssets(source).assets.values());
-      asset = await createAsset(encoder.encode(svg), null, {codec: 'image/svg+xml', title});
+      asset = await createAsset(svgBytes, null, {codec: 'image/svg+xml', title});
       cancelled(context);
       // Omitted alt keeps the existing caption, or none.
       const altSource = input.alt != null ? escapeImageAlt(input.alt) : (DRAW_OCCURRENCE.exec(oldOccText)?.[1] ?? '');
@@ -2960,19 +3652,38 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const refreshed = await refresh(context);
     if (refreshed) return refreshed;
+    const settled = writeBinding ? drawBindingFailure(writeBinding, range) : null;
+    if (settled) return settled;
     if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    // Captions are source outside the canvas. Even a combined caption/recipe edit keeps the ordinary source fence; only a recipe change
+    // carries authority into an open Draw session.
+    let drawingPatch = null;
+    if (recipe && input.alt == null) {
+      const saved = sourceDrawing(source, held.assetLabel);
+      if (!saved) return failure('target_changed', 'conflict');
+      const delta = _rapierDrawRecipeDelta(writeBase, recipe);
+      if (!delta) return failure('draw_patch_invalid', 'conflict');
+      drawingPatch = {patch: delta,
+        occurrence: {...(live?.occurrence || {}), start: occStart, end: occStart + oldOccText.length, reference: held.assetLabel},
+        targetOccurrence: {start: occStart, end: occStart + raw.length, reference: appended.reference},
+        asset: held.assetLabel, reference: appended.reference, assetGeneration: sha256(saved.asset.url),
+        ...(writeBinding?.drawSession ? {session: writeBinding.drawSession, surfaceGeneration: writeBinding.surfaceGeneration} : {}),
+        sourceRecipeBefore: saved.recipe, sourceRecipeAfter: recipe, recipeBefore: writeBase, recipeAfter: recipe};
+    }
     const result = await commit(splices, who, context, 'document.draw', {
-      fence: editingFence, watched,
+      fence: {...editingFence, ...(drawingPatch ? {drawingPatch} : {})}, ...(drawingPatch ? {drawingPatch} : {}),
+      watched, rebased,
       label: input.label || 'Edit a drawing', editCount: 1, authoredCount: splices.length, handleIds: [held.id], reviewInline: false,
       handlePairs: [{ handleId: held.id, offset: occStart - range.start }],
       drawAssets: [{ id: normalizeLabel(appended.reference), label: appended.reference, url: asset.url, title: asset.title }],
     });
     if (!['applied', 'rebased'].includes(result.outcome)) return result;
     held.used = true;
-    const recipeHandle = drawHandle(occStart, occStart + raw.length, JSON.stringify(recipe), appended.reference, who);
+    const nextHandle = recipe ? drawHandle(occStart, occStart + raw.length, appended.reference, who)
+      : svgHandle(occStart, occStart + raw.length, nodeIds, appended.reference, who);
     // `replaced`: the picture the handle held; the replay matches on it. Never from the wire.
     return { ...result, asset: {reference: appended.reference, title}, replaced: held.assetLabel || null,
-      width: asset.width, height: asset.height, recipe_handle: recipeHandle?.id || null };
+      width: asset.width, height: asset.height, ...(recipe ? {recipe_handle: nextHandle?.id || null} : {svg_handle: nextHandle?.id || null}) };
   }
 
   function sourceChanges(who) {
@@ -3074,7 +3785,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (held.kind === 'image-comment' && kind !== 'image') return failure('context_handle_wrong_kind', 'invalid');
         range = relocate(held);
         if (range.outcome) return range;
-        if (held.kind === 'draw' && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+        if (['draw', 'svg'].includes(held.kind) && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
         if (kind === 'drawing' && held.kind !== 'draw') return failure('context_handle_wrong_kind', 'invalid');
       }
       const anchor = commentAnchor(kind, range?.start, range?.end, state.text, parsed, input.object_id);
@@ -3106,9 +3817,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   function inspectVisual(input, context) {
     const pointing = collaboration().presence;
-    const prepared = visualRequest({...state, selection: pointing?.selection || state.selection,
+    const drawing = drawingSummary();
+    const prepared = visualRequest({...state, drawing, selection: pointing?.selection || state.selection,
       focus: pointing?.focus || state.focus}, input);
-    if (prepared.outcome !== 'ok') return prepared;
+    if (prepared.outcome !== 'ok') return {...prepared, ...(drawing ? {drawing} : {})};
     const mode = 'visual:' + prepared.request.scope;
     if (context.continues) {
       const invalid = checkContinuation(context, mode);
@@ -3117,22 +3829,23 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       pendingFacts.delete(context.continues);
       if (canonicalJson(prior.requirements?.sourceRange) !== canonicalJson(prepared.request.sourceRange)) return failure('visual_target_changed');
     }
-    if (context.world?.visual) return visualResult(prepared.request, context.world.visual);
+    if (context.world?.visual) return {...visualResult(prepared.request, context.world.visual), ...(drawing ? {drawing} : {})};
     const requestId = mintId('fact_');
     pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements: prepared.request});
     while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
-    return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements: prepared.request}};
+    return {outcome: 'pending', reason: 'surface_fact_required', ...(drawing ? {drawing} : {}), pending: {kind: 'surface-fact', requestId, requirements: prepared.request}};
   }
 
   async function execute(name, input, context) {
     pendingInspection = null;
-    const who = participant(context, mintId);
+    const namedOperation = typeof input?.operation_id === 'string' && input.operation_id.length > 0 && input.operation_id.length <= 128 ? input.operation_id : null;
+    const who = participant(namedOperation ? {...context, invocationKey: namedOperation} : context, mintId);
     // Digest before admission: clipping or ignoring fields must not hide different retry arguments.
-    const inputDigest = digest(canonicalJson(input));
+    const inputDigest = sha256(canonicalJson(input));
     // One finalizer inside the invocation boundary: every outcome records its code. A collision is not recorded; a replay writes no second row.
     const finalize = (result, { record = true } = {}) => {
       const output = stamp(result || failure('operation_failed'));
-      if (record) recordInvocation(who.invocationKey, name, state.documentId, output, inputDigest);
+      if (record) recordInvocation(who.invocationKey, name, state.documentId, output, inputDigest, who);
       return output;
     };
     try {
@@ -3142,7 +3855,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     // A continuation reuses the key; skip dedupe or it replays its predecessor's pending forever. It still overwrites the record.
     if (!context.continues) {
-      const prior = priorInvocation(who.invocationKey);
+      const prior = priorInvocation(who.invocationKey, who);
       // inputDigest must match; an undigested row never matches and collides. A replay says it is the record, so a caller
       // that meant a new operation under an old name learns that nothing new ran. First owner wins the key; a collision is
       // never recorded.
@@ -3167,17 +3880,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const returns = typeof host.returns === 'function' ? await host.returns() : [];
         const will = state.docKind === 'markdown' ? parseWill(state.text) : null;
         const together = collaboration(), pointing = together.presence;
+        const drawing = drawingSummary(), presence = pointing && {...pointing};
+        if (presence) delete presence.drawing;
         const selected = pointing?.selection || state.selection;
         const focused = pointing?.focus || state.focus;
         const focus = focused && reference(focused.start, focused.end, who, { kind: 'focus' });
         result = accepted({ filename: state.filename, docKind: state.docKind, chars: state.text.length,
-          surface: pointing?.active ? { kind: 'editor', next: 'continue' } : { kind: 'headless', next: 'deliver_page' },
-          editing: editingState(together, will),
+          surface: pointing?.active || drawing ? { kind: 'editor', next: 'continue' } : { kind: 'headless', next: 'deliver_page' },
+          editing: editingState(who, together, will),
           readOnly: state.readOnly, posture: state.posture, ...(state.notes ? { notes: state.notes } : {}), selection: selected ? { start: selected.start, end: selected.end } : null,
           focus: focus ? { ref: focus.id, chars: focus.end - focus.start, kind: pointedKind(state.text, focus.start, focus.end, images) } : null,
-          collaboration: { posture: together.posture, readOnly: together.readOnly, presence: together.presence,
+          collaboration: { posture: together.posture, readOnly: together.readOnly, presence,
             review: contextReviewProjection(state.review) },
           sourceChanges: sourceChanges(who),
+          ...(drawing ? {drawing} : {}),
           ...(state.docKind === 'markdown' ? {comments: commentSummary(state.text)} : {}),
           ...(liveAgents(who).length ? { agents: liveAgents(who) } : {}),
           ...(images ? { images: { scope: 'markdown', total: images.total, indexed: images.entries.length,
@@ -3195,16 +3911,21 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
             complete: layout.complete, omitted: Math.max(0, layout.total - layout.entries.length),
             ...(layout.reason ? { reason: layout.reason } : {}) } } : {}),
           history: { complete: state.history.complete, earliestRevision: state.history.earliestRevision,
-            retainedChanges: state.journal.length, trimmedBytes: state.history.trimmedBytes },
+            retainedChanges: state.journal.length, trimmedBytes: state.history.trimmedBytes,
+            reviewEvidenceComplete: !missingReviewHistory(who) },
+          ...(typeof host.paintBrushes === 'function' ? {paint: host.paintBrushes()} : {}),
           // Structure is a declared world fact; `available` names only the size bound (agent/structure-request.mjs).
-          ...(/\.(?:[cm]?js|html?)$/i.test(state.filename) ? { structure: { engine: 'acorn@8.19.0',
+          ...(state.docKind === 'markdown' ? { structure: { engine: 'markdown-it',
+            available: state.text.length <= 8 * 1024 * 1024, supports: ['outline', ...FIND_KINDS.markdown] } }
+            : /\.(?:[cm]?js|html?)$/i.test(state.filename) ? { structure: { engine: 'acorn@8.19.0',
             available: state.text.length <= 8 * 1024 * 1024,
-            supports: ['outline', 'declaration', 'reference', 'call', 'construct', 'write', 'member', 'import', 'export'] } } : {}),
+            supports: ['outline', ...FIND_KINDS.code] } } : {}),
           ...(will?.present ? { law: { default: will.faults.length ? 'keep' : 'edit', regions: will.regions.length,
             laws: [...new Set(will.regions.map(row => row.law))], ...(will.faults.length ? { faults: will.faults.slice(0, 4), faultCount: will.faults.length } : {}) } } : {}),
           ...(state.compare ? { compare: comparisonFields() } : {}),
           returns, returnWaiting: returns.length > 0,
         });
+        result.continuation = continuationContext(will, Math.min(3072, LIMITS.resultBytes - bytes(JSON.stringify(result)) - bytes(JSON.stringify(current())) - 768));
         const brief = await continuationBrief(context, Math.min(3072, LIMITS.resultBytes - bytes(JSON.stringify(result)) - bytes(JSON.stringify(current())) - 128));
         if (brief?.outcome) result = brief;
         else if (brief) result.brief = brief;
@@ -3281,21 +4002,35 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       case 'document.draw': result = await drawPicture(input, who, context); break;
       // The host retains a file from settled source; document source, revision and edit history stay unchanged.
+      // A selected review is exported beside its original, never applied or approved by the export.
       case 'document.export': {
         if (typeof host.exportFile !== 'function') { result = failure('export_unavailable'); break; }
-        const file = await host.exportFile({ format: input.format, filename: state.filename, docKind: state.docKind, text: state.text, signal: context.signal });
-        cancelled(context);
-        result = !file?.bytes ? failure(file?.reason || 'export_unavailable', 'refused', {
-          ...(safeInt(file?.limitBytes) ? {limitBytes: file.limitBytes} : {}), ...(safeInt(file?.byteLength) ? {bytes: file.byteLength} : {})})
-          : file.bytes.byteLength > MAX_EXPORT_BYTES ? failure('export_too_large', 'refused', { limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength })
-          : accepted({ format: input.format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength,
-              ...(file.id ? {exportId: file.id} : {}) });
+        const readiness = exportReadiness();
+        if (readiness.outcome !== 'ok') {result = readiness; break;}
+        if (input.review_id === undefined) { result = await exportDocument({format: input.format}, context); break; }
+        if (input.format !== 'html') { result = failure('review_requires_html'); break; }
+        const preview = previewReview({reviewId: input.review_id});
+        if (preview.outcome !== 'ok') { result = failure(preview.outcome); break; }
+        // The page carries both sources in the portable proposal format, its baseline verified by SHA-256.
+        const baseDigest = sha256(state.text);
+        const base = readBase({text: state.text, sha256: baseDigest, revision: state.ledgerRoot || baseDigest,
+          name: state.filename, by: state.review.agent || 'Agent', at: new Date(state.review.createdAt).toISOString()});
+        result = await exportDocument({format: 'html', text: preview.text, base}, context);
+        if (result.outcome === 'ok') result = {...result, reviewId: input.review_id};
         break;
       }
       case 'notes.list': result = await notesList(input, who, context); break;
       case 'notes.read': result = await notesRead(input, who, context); break;
       case 'notes.propose': result = await notesPropose(input, who, context); break;
+      case 'notes.set': result = await notesSet(input, who, context); break;
+      case 'notes.history': result = await notesHistory(input, who, context); break;
+      case 'notes.sync': result = await notesSync(input, who, context); break;
       default: result = failure('operation_unknown', 'invalid');
+    }
+    if (result?.drawingPatch && bytes(JSON.stringify(stamp(result))) > LIMITS.resultBytes) {
+      const {asset, reference, occurrence, targetOccurrence, transactionId} = result.drawingPatch;
+      result = {...result, drawingPatch: {asset, reference, occurrence, targetOccurrence, transactionId,
+        complete: false, reason: 'semantic_patch_in_journal'}};
     }
     const output = stamp(result || failure('operation_failed'));
     let finalOutput = output;
@@ -3308,7 +4043,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       for (const id of Object.keys(state.handles)) if (!beforeHandles.has(id)) delete state.handles[id];
       finalOutput = ['applied', 'rebased', 'unchanged'].includes(output.outcome) || output.saved
         ? stamp({ outcome: output.outcome, changeId: output.changeId || null,
-            ...(output.transaction ? { transaction: output.transaction } : {}), ...(output.saved ? { saved: true, verified: output.verified === true } : {}),
+            ...(output.transaction ? { transaction: output.transaction } : {}), ...(output.receipt ? {receipt: output.receipt} : {}), ...(output.drawingPatch ? {drawingPatch: output.drawingPatch} : {}), ...(output.saved ? { saved: true, verified: output.verified === true } : {}),
             complete: false, omissions: [{ domain: 'receipt', reason: 'result_over_budget' }] })
         : stamp(failure('result_over_budget', 'refused', { complete: false }));
     }
@@ -3316,7 +4051,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return finalize(finalOutput);
     } catch (error) {
       if (error?.name === 'AbortError' || context.signal?.aborted) return finalize(failure('cancelled'));
-      if (error instanceof TypeError || error?.code === 'invalid_arguments') return finalize(failure(clip(error.message, 160), 'invalid'));
+      // A schema fault names its field, as every other refusal does.
+      if (error instanceof TypeError || error?.code === 'invalid_arguments') return finalize(failure(clip(error.message, 160), 'invalid', error?.path ? {field: String(error.path).replace(/^arguments\.?/, '')} : undefined));
       throw error;
     }
   }
@@ -3333,5 +4069,5 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return result;
   }
 
-  return Object.freeze({ invoke, snapshot, reconcile, humanContext, setPolicy, decideReview, collaboration, previewReview, stageProposal, invocationJournal: invocationJournalEntries });
+  return Object.freeze({ invoke, snapshot, reconcile, humanContext, setPolicy, decideReview, collaboration, drawingContext: drawingSummary, previewReview, stageProposal, invocationJournal: invocationJournalEntries });
 }
