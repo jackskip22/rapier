@@ -295,6 +295,7 @@ function _rapierKeepPortableTemplate() {
     if (rest.length !== 1) throw new Error('Editor interface records are invalid');
     sheets.push(..._rapierStyleElements(rest[0].source, sheets.at(-1)));
     for (const span of await sharedPending) await _rapierExecuteBootSource(span);
+    /* RAPIER_BUILTIN_PLUGINS_READY */
     const ui = await uiPending;
     const editor = await editorPending;
     if (ui.length !== 1) throw new Error('Editor interface records are invalid');

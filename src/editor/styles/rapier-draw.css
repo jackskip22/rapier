@@ -72,7 +72,7 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-canvas-toggle rect{rx:0;ry:0;fill:none}
 .rapier-draw-canvas-toggle rect+rect{stroke-width:1.5;fill:var(--draw-paper,var(--color-bg))}
 /* One inverted, left-anchored chooser; selection reaches both edges. */
-.rapier-draw-tool-menu{position:absolute;z-index:8;top:100%;left:0;box-sizing:border-box;width:min(224px,var(--draw-safe-width));max-height:calc(100dvh - 52px - var(--draw-safe-top) - var(--draw-safe-bottom));overflow-y:auto;padding:0;background:var(--color-icon);color:var(--color-bg)}
+.rapier-draw-tool-menu{position:absolute;z-index:8;top:100%;left:0;box-sizing:border-box;width:min(224px,var(--draw-safe-width));height:calc(100dvh - 52px - var(--draw-safe-top) - var(--draw-safe-bottom));overflow-y:auto;padding:0;background:var(--color-icon);color:var(--color-bg)}
 .rapier-draw-tool-menu-item{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:var(--space-3);width:100%;height:calc(var(--draw-cell) + 2 * var(--space-1));padding:0 var(--space-3);border:0;border-radius:0;background:transparent;color:inherit;font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;text-align:left;cursor:pointer;touch-action:manipulation}
 /* While the list is open everything outside it is dimmed as the settings panel dims what it stands over (the same scrim, in each theme); the tool box button stays whole. */
 .rapier-draw-surface--choosing::after{content:"";position:absolute;inset:0;z-index:7;background:var(--color-scrim)}
@@ -82,7 +82,7 @@ body.light .rapier-draw-btn--done{color:#fff}
 /* Three sections, TOOLS, SVG and RASTER: a small all-caps subtitle above each, the sections set apart by clear space. */
 .rapier-draw-tool-menu-section{padding-bottom:var(--space-2)}
 .rapier-draw-tool-menu-section:last-child{padding-bottom:var(--space-3)}
-.rapier-draw-tool-menu-head{padding:var(--space-5) var(--space-3) var(--space-2);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;line-height:1;opacity:.6}
+.rapier-draw-tool-menu-head{padding:var(--space-8) var(--space-3) var(--space-2);font:var(--fw-medium) var(--text-sm) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;line-height:1;opacity:.6}
 /* The first title fills the band beside the panel bar (52px, as the bar), so the first tool starts where the bar ends. */
 .rapier-draw-tool-menu-section:first-child .rapier-draw-tool-menu-head{box-sizing:border-box;height:52px;padding-top:0;padding-bottom:0;display:flex;align-items:center}
 .rapier-draw-tool-menu-item[aria-pressed="true"]{background:var(--color-bg);color:var(--color-icon)}

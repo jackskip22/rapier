@@ -2205,7 +2205,8 @@ button.settings-text-action:disabled { opacity: .6; cursor: wait; }
 	*, *::before, *::after {
 		animation-duration: 0.01ms !important;
 		animation-delay: 0ms !important;
-		transition-duration: 0.01ms !important;
+		/* A nonzero all-property transition animates SVG measurement geometry. */
+		transition-duration: 0s !important;
 		transition-delay: 0ms !important;
 		scroll-behavior: auto !important;
 	}

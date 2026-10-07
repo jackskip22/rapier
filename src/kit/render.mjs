@@ -157,7 +157,7 @@ function _rapierProjectStyledRoot(semanticRoot, options) {
 		});
 
 		root.querySelectorAll('math[display="block"]').forEach(math => {
-			if (math.closest('.math-display-wrap')) return;
+			if (math.closest('svg') || math.closest('.math-display-wrap')) return;
 			const wrap = document.createElement('span');
 			wrap.className = 'math-display-wrap';
 			math.parentNode.insertBefore(wrap, math);

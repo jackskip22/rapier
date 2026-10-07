@@ -24,19 +24,42 @@ const RAPIER_SANITIZE_OPTIONS = Object.freeze({
 	}),
 });
 
-// Snapshot current math text before a Markdown writer collapses whitespace. The parsed copy
-// stays inert; the writer still admits raw source through its shared math grammar.
+const DIAGRAM_LABEL_HTML = new Set('div span p br strong em b i s u del code sub sup'.split(' '));
+const DIAGRAM_LABEL_MATH = new Set(('math mrow mi mn mo mtext mspace ms msub msup msubsup mfrac msqrt mroot mstyle merror '
+	+ 'mpadded mphantom mfenced menclose munder mover munderover mtable mtr mtd mlabeledtr mmultiscripts mprescripts none semantics').split(' '));
+const DIAGRAM_LABEL_MATH_ATTRIBUTES = new Set(('display mathvariant mathsize mathcolor mathbackground dir accent accentunder '
+	+ 'columnalign columnlines columnspacing columnspan columnwidth depth displaystyle equalcolumns equalrows fence frame framespacing '
+	+ 'height largeop linebreak linethickness lspace maxsize minsize movablelimits notation rowalign rowlines rowspacing rowspan rspace '
+	+ 'scriptlevel scriptminsize scriptsizemultiplier separator stretchy subscriptshift superscriptshift valign voffset width').split(' '));
+const DIAGRAM_LABEL_CLASSES = new Set('nodeLabel edgeLabel labelBkg markdown-node-label katex messageText'.split(' '));
+const DIAGRAM_LABEL_CSS = new Set(('color fill stroke background-color font-family font-size font-style font-weight font-variant '
+	+ 'font-variant-ligatures font-feature-settings line-height letter-spacing word-spacing text-align vertical-align white-space '
+	+ 'word-break overflow-wrap text-wrap text-transform text-decoration text-decoration-line text-decoration-style text-decoration-color '
+	+ 'text-decoration-thickness text-underline-offset align-items align-content justify-content justify-items flex-direction flex-wrap '
+	+ 'width height min-width min-height max-width max-height margin margin-top margin-right margin-bottom margin-left '
+	+ 'padding padding-top padding-right padding-bottom padding-left').split(' '));
+const DIAGRAM_LABEL_SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const DIAGRAM_LABEL_HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
+const DIAGRAM_LABEL_MATH_NAMESPACE = 'http://www.w3.org/1998/Math/MathML';
+
+// Snapshot current math text before a Markdown writer collapses whitespace. Rendered SVG
+// glyphs have no textContent: put their retained source in this inert copy so the writer's
+// blank-node rule cannot discard an equation or its containing paragraph/list item.
 function prepareMathSource(input, DOMParser) {
 	const html = typeof input === 'string';
-	const MARK = 'span[data-rapier-math-source]';
-	if (html ? !/data-rapier-math-source/i.test(input) : typeof input?.cloneNode !== 'function' ||
+	const MARK = 'span[data-rapier-math-source],span.math-rendered[data-math-src]';
+	if (html ? !/data-(?:rapier-math-source|math-src)/i.test(input) : typeof input?.cloneNode !== 'function' ||
 		!(input.matches?.(MARK) || input.querySelector?.(MARK))) return input;
 	const root = html ? new DOMParser().parseFromString(
 		'<x-turndown id="turndown-root">' + input + '</x-turndown>', 'text/html').getElementById('turndown-root') : input.cloneNode(true);
 	const nodes = Array.from(root.querySelectorAll(MARK));
-	const sourceRoot = root.nodeName === 'SPAN' && root.hasAttribute('data-rapier-math-source');
+	const sourceRoot = root.nodeName === 'SPAN' && root.matches(MARK);
 	if (sourceRoot) nodes.push(root);
 	for (const node of nodes) {
+		if (node.classList.contains('math-rendered') && node.hasAttribute('data-math-src')) {
+			try { node.textContent = decodeURIComponent(node.getAttribute('data-math-src')); } catch (_) {}
+			continue;
+		}
 		try { node.setAttribute('data-rapier-math-source', encodeURIComponent(node.textContent || '')); }
 		catch (_) { node.removeAttribute('data-rapier-math-source'); }
 	}
@@ -47,6 +70,89 @@ function prepareMathSource(input, DOMParser) {
 function createRenderSanitizer(runtime) {
   const {CSSStyleSheet, DOMPurify, RAPIER_RASTER_DATA_URL_RE, URL, _rapierCssDeclaration, _rapierDropRemoteDeclarations, _rapierRemoteContent, _rapierRuleDescriptorIsRemote, _rapierSanitizeRuntime, _rapierVerifyRasterBytes, document, globalThis, location} = runtime;
 
+// Only the diagram reader and its styled export admit static foreignObject labels. The
+// ordinary SVG reader still rejects HTML subdocuments. The export class selects scope;
+// every descendant is checked again, so a copied class never confers authority.
+function diagramLabelRoot(node) {
+	for (let current = node; current?.nodeType === 1; current = current.parentElement) {
+		if (current.localName?.toLowerCase() === 'foreignobject') return current;
+	}
+	return null;
+}
+
+function diagramLabelStyle(property, value) {
+	property = String(property).toLowerCase();
+	value = String(value).trim();
+	if (property === 'display') return /^(?:none|block|inline|inline-block|table|table-cell|flex|inline-flex)$/.test(value);
+	if (/^overflow(?:-[xy])?$/.test(property)) return /^(?:hidden|clip)$/.test(value);
+	if (property === 'contain') return value === 'content';
+	if (property === 'isolation') return value === 'isolate';
+	if (!DIAGRAM_LABEL_CSS.has(property)) return false;
+	const declaration = document.createElement('span').style;
+	declaration.setProperty(property, value);
+	const parsed = declaration.getPropertyValue(property);
+	if (!parsed || /(?:url|image-set|element|paint|attr)\s*\(/i.test(parsed)) return false;
+	// SVG paint accepts resource references; a custom property must not smuggle one in.
+	return !/^(?:fill|stroke)$/.test(property) || !/var\s*\(/i.test(parsed);
+}
+
+function diagramLabelElement(node) {
+	if (node.nodeType !== 1) return;
+	const label = diagramLabelRoot(node);
+	if (!label) return;
+	if (node === label) {
+		const svg = node.parentElement?.closest('svg');
+		if (node.namespaceURI !== DIAGRAM_LABEL_SVG_NAMESPACE || !svg || diagramLabelRoot(node.parentElement) ||
+				(_rapierSanitizeRuntime.context !== 'diagram' && !svg.classList.contains('rapier-diagram'))) node.remove();
+		return;
+	}
+	const name = node.localName?.toLowerCase();
+	if (!(node.namespaceURI === DIAGRAM_LABEL_HTML_NAMESPACE && DIAGRAM_LABEL_HTML.has(name)) &&
+			!(node.namespaceURI === DIAGRAM_LABEL_MATH_NAMESPACE && DIAGRAM_LABEL_MATH.has(name))) node.remove();
+}
+
+function diagramLabelAttribute(node, data) {
+	const label = diagramLabelRoot(node);
+	if (!label) return;
+	data.forceKeepAttr = false;
+	const name = String(data.attrName).toLowerCase();
+	const value = String(data.attrValue);
+	if (name === 'style') {
+		const declaration = document.createElement('span').style;
+		declaration.cssText = value;
+		for (const property of Array.from(declaration)) {
+			if (!diagramLabelStyle(property, declaration.getPropertyValue(property))) declaration.removeProperty(property);
+		}
+		data.attrValue = declaration.cssText;
+		data.keepAttr = !!data.attrValue;
+		return;
+	}
+	if (name === 'class') {
+		data.attrValue = value.split(/\s+/).filter(token => DIAGRAM_LABEL_CLASSES.has(token)).join(' ');
+		data.keepAttr = !!data.attrValue;
+		return;
+	}
+	if (name === 'xmlns') {
+		data.keepAttr = value === node.namespaceURI;
+		return;
+	}
+	if (node === label) {
+		data.keepAttr = name === 'transform' || /^(?:x|y|width|height)$/.test(name) &&
+			/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?(?:px|%)?$/i.test(value) && Number.isFinite(parseFloat(value)) &&
+			(!/^(?:width|height)$/.test(name) || parseFloat(value) >= 0);
+		return;
+	}
+	data.keepAttr = node.namespaceURI === DIAGRAM_LABEL_MATH_NAMESPACE
+		? DIAGRAM_LABEL_MATH_ATTRIBUTES.has(name)
+		: name === 'dir' && /^(?:ltr|rtl|auto)$/.test(value);
+}
+
+function diagramLabelContained(node) {
+	const label = diagramLabelRoot(node);
+	if (!label) return;
+	if (node === label) node.style.setProperty('overflow', 'hidden', 'important');
+	else if (node.parentElement === label) node.style.setProperty('contain', 'content', 'important');
+}
 
 function _rapierInstallSanitizeHooks() {
 	DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
@@ -148,11 +254,24 @@ function sanitizeRapierHtml(value, context = 'render') {
 	// (the hook) without an id the chrome owns. 'source' is Markdown source HTML, written and never shown: the render
 	// profile's admission, and the block on remote content stays the reader's (a remote picture's URL is the person's words).
 	const selected = context === 'raw' || context === 'export' || context === 'source' || RAPIER_SANITIZE_OPTIONS[context] ? context : 'render';
-	const options = selected === 'raw' ? { ...RAPIER_SANITIZE_OPTIONS.render, ALLOW_DATA_ATTR: false } : RAPIER_SANITIZE_OPTIONS[selected] || RAPIER_SANITIZE_OPTIONS.render;
+	let options = selected === 'raw' ? { ...RAPIER_SANITIZE_OPTIONS.render, ALLOW_DATA_ATTR: false } : RAPIER_SANITIZE_OPTIONS[selected] || RAPIER_SANITIZE_OPTIONS.render;
+	const labels = selected === 'diagram' || selected === 'export';
+	if (labels) {
+		options = {...options, USE_PROFILES: {...options.USE_PROFILES, mathMl: true}, ADD_TAGS: ['foreignobject'],
+			HTML_INTEGRATION_POINTS: {foreignobject: true}, FORBID_TAGS: options.FORBID_TAGS.filter(tag => tag !== 'foreignobject')};
+		DOMPurify.addHook('uponSanitizeElement', diagramLabelElement);
+		DOMPurify.addHook('uponSanitizeAttribute', diagramLabelAttribute);
+		DOMPurify.addHook('afterSanitizeAttributes', diagramLabelContained);
+	}
 	_rapierSanitizeRuntime.context = selected;
 	try {
 		return DOMPurify.sanitize(value == null ? '' : String(value), options);
 	} finally {
+		if (labels) {
+			DOMPurify.removeHook('uponSanitizeElement', diagramLabelElement);
+			DOMPurify.removeHook('uponSanitizeAttribute', diagramLabelAttribute);
+			DOMPurify.removeHook('afterSanitizeAttributes', diagramLabelContained);
+		}
 		_rapierSanitizeRuntime.context = 'render';
 	}
 }
@@ -237,6 +356,6 @@ function _rapierDropRemoteRules(rules, owner) {
 	}
 }
 
-  return {_rapierInstallSanitizeHooks, sanitizeRapierHtml, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
+  return {_rapierInstallSanitizeHooks, sanitizeRapierHtml, diagramLabelStyle, escapeRapierHtmlText, _rapierChromeOwnsId, _rapierSafeRasterDataUrl, _rapierCssPresentationIsRemote, _rapierRemoteSubresourceOrigin, _rapierStyleWithoutRemoteUrls, _rapierStylesheetWithoutRemoteUrls, _rapierDropRemoteRules};
 }
 export {RAPIER_SANITIZE_FORBID_TAGS as forbidTags, RAPIER_SANITIZE_FORBID_ATTR as forbidAttributes, createRenderSanitizer, RAPIER_SANITIZE_OPTIONS as options, prepareMathSource};

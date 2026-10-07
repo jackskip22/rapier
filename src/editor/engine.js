@@ -1145,7 +1145,7 @@ function _rapierFinishSanitizedBlock(sanitizedHtml, raw) {
 		wrap.appendChild(table);
 	}
 	for (const math of box.querySelectorAll('math[display="block"]')) {
-		if (math.closest('.math-display-wrap')) continue;
+		if (math.closest('svg,.math-display-wrap')) continue;
 		const wrap = document.createElement('span');
 		wrap.className = 'math-display-wrap';
 		math.parentNode.insertBefore(wrap, math);
@@ -4763,184 +4763,13 @@ function _rapierBlockMayContainDiagram(block) {
 const _rapierDiagramSvgCache = new Map();
 let _rapierDiagramObserver = null;
 
-// Mermaid draws to fit the column it lands in: a flowchart a thousand points wide arrives on a
-// phone at a third of its size, with labels smaller than any type Rapier sets anywhere else. The
-// drawing keeps the width it was drawn at and the block scrolls sideways instead, the way a wide
-// table already does -- the width Mermaid wrote as a ceiling (`max-width`) is that width. Paper
-// gets the fitting back in the print rule beside the rest of the diagram's look; it cannot scroll.
+// Keep the renderer's intrinsic width. Wide diagrams scroll in their existing block;
+// print fits the paper. Styled labels never trigger a second geometry layout.
 function _rapierDiagramKeepsItsWidth(svg) {
-	if (!svg || svg.tagName !== 'svg' || !svg.style || !svg.style.maxWidth) return;
-	svg.style.width = svg.style.maxWidth;
+	const width = svg?.viewBox?.baseVal.width;
+	if (!(width > 0 && Number.isFinite(width))) return;
+	svg.style.width = width + 'px';
 	svg.style.maxWidth = 'none';
-}
-
-function _rapierDiagramLabelRoom(drawing) {
-	// Measure after the generator's styles have been removed, in the same document type as the
-	// visible diagram. Hidden caches and detached exports cannot supply SVG geometry themselves.
-	const parent = drawing.parentNode, next = drawing.nextSibling, measure = document.createElement('div');
-	measure.className = 'md-render';
-	measure.setAttribute('aria-hidden', 'true');
-	measure.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;contain:layout style;';
-	const view = drawing.viewBox.baseVal, before = {x: view.x, y: view.y, width: view.width, height: view.height};
-	if (!(before.width > 0 && before.height > 0)) return;
-	const oldWidth = drawing.style.width, oldHeight = drawing.style.height, oldMax = drawing.style.maxWidth;
-	drawing.style.width = before.width + 'px'; drawing.style.height = before.height + 'px'; drawing.style.maxWidth = 'none';
-	measure.appendChild(drawing); document.body.appendChild(measure);
-	try {
-		const point = (matrix, x, y) => new DOMPoint(x, y).matrixTransform(matrix);
-		const matrix = element => drawing.getScreenCTM().inverse().multiply(element.getScreenCTM());
-		const box = element => {
-			const b = element.getBBox(), m = matrix(element), points = [point(m, b.x, b.y), point(m, b.x + b.width, b.y),
-				point(m, b.x, b.y + b.height), point(m, b.x + b.width, b.y + b.height)];
-			const x = Math.min(...points.map(p => p.x)), y = Math.min(...points.map(p => p.y));
-			return {x, y, width: Math.max(...points.map(p => p.x)) - x, height: Math.max(...points.map(p => p.y)) - y};
-		};
-		const pad = (b, n) => ({x: b.x - n, y: b.y - n, width: b.width + n * 2, height: b.height + n * 2});
-		const overlaps = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-		const shift = (element, x, y) => {
-			const m = matrix(element.parentNode).inverse(), zero = point(m, 0, 0), to = point(m, x, y);
-			element.setAttribute('transform', 'translate(' + (to.x - zero.x) + ' ' + (to.y - zero.y) + ') ' + (element.getAttribute('transform') || ''));
-		};
-		const words = [...drawing.querySelectorAll('text')].filter(text => text.textContent.trim() && getComputedStyle(text).display !== 'none');
-		// Share carries no font file. Fix each line's measured advance, as Draw does, so a
-		// receiver's fallback face cannot spill a label out of the room reserved here.
-		for (const text of words) {
-			const rows = [...text.querySelectorAll(':scope > tspan')];
-			for (const line of rows.length ? rows : [text]) {
-				const length = line.getComputedTextLength();
-				if (length > 0) { line.setAttribute('textLength', length); line.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
-			}
-		}
-		const bodies = [...drawing.querySelectorAll('.node,g.classGroup')].map(node => ({node,
-			shape: [...node.children].find(child => child.matches('rect,circle,ellipse,polygon,path'))})).filter(row => row.shape);
-		for (const shape of drawing.querySelectorAll('rect.actor,rect.er.entityBox,rect.note,.statediagram-note rect'))
-			if (!bodies.some(body => body.shape === shape)) bodies.push({node: shape.parentNode, shape});
-		for (const {node, shape} of bodies) {
-			const label = node.matches('.node') && node.querySelector(':scope > .label');
-			if (label && label.textContent.trim()) {
-				const a = box(shape), b = box(label);
-				shift(label, a.x + a.width / 2 - b.x - b.width / 2, a.y + a.height / 2 - b.y - b.height / 2);
-			}
-		}
-		let scale = 1;
-		for (const {node, shape} of bodies) {
-			const inverse = matrix(shape).inverse();
-			for (const text of words.filter(text => node.contains(text))) {
-				const b = box(text), cx = b.x + b.width / 2, cy = b.y + b.height / 2;
-				// Convex node bodies own the text's room; an open line is never mistaken for a box.
-				if (!shape.isPointInFill(point(inverse, cx, cy))) continue;
-				const fits = factor => [-1, 0, 1].every(x => [-1, 0, 1].every(y => shape.isPointInFill(point(inverse,
-					cx + x * (b.width / 2 + 6) / factor, cy + y * (b.height / 2 + 6) / factor))));
-				let high = 1;
-				while (high < 1024 && !fits(high)) high *= 2;
-				if (!fits(high)) continue;
-				let low = 1;
-				for (let i = 0; i < 16 && high > low; i++) { const mid = (low + high) / 2; if (fits(mid)) high = mid; else low = mid; }
-				scale = Math.max(scale, high);
-			}
-		}
-		const original = words.map(text => ({text, bounds: box(text), local: text.getBBox()}));
-		const edgeUnits = [...drawing.querySelectorAll('g.edgeLabel,g.classLabel')].filter(group => group.querySelector('text')?.textContent.trim());
-		for (const text of [...edgeUnits.flatMap(unit => [...unit.querySelectorAll('text')]), ...drawing.querySelectorAll('.cluster-label text')]) {
-			const label = box(text), x = label.x + label.width / 2, y = label.y + label.height / 2;
-			for (const {shape} of bodies) {
-				const b = box(shape), dx = Math.max(b.x - x, x - b.x - b.width, 0), dy = Math.max(b.y - y, y - b.y - b.height, 0);
-				const needed = Math.min(dx ? (label.width / 2 + 7) / dx : Infinity, dy ? (label.height / 2 + 7) / dy : Infinity);
-				if (Number.isFinite(needed)) scale = Math.max(scale, needed);
-			}
-		}
-		// Geometry moves apart as one piece; text keeps its measured size and centre. Paths, binds,
-		// group frames and their title bands therefore stay aligned without a second graph layout.
-		for (let i = 0; i < original.length; i++) for (let j = i + 1; j < original.length; j++) {
-			const a = original[i].bounds, b = original[j].bounds;
-			if (!overlaps(pad(a, 2), pad(b, 2))) continue;
-			const dx = Math.abs(a.x + a.width / 2 - b.x - b.width / 2), dy = Math.abs(a.y + a.height / 2 - b.y - b.height / 2);
-			const needed = Math.min(dx ? ((a.width + b.width) / 2 + 4) / dx : Infinity,
-				dy ? ((a.height + b.height) / 2 + 4) / dy : Infinity);
-			if (Number.isFinite(needed)) scale = Math.max(scale, needed);
-		}
-		scale = Math.ceil(scale * 1000) / 1000;
-		if (scale > 1) {
-			const geometry = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-			geometry.setAttribute('transform', 'scale(' + scale + ')');
-			for (const child of [...drawing.children]) if (!child.matches('defs,title,desc,metadata')) geometry.appendChild(child);
-			drawing.appendChild(geometry);
-			for (const {text, local: b} of original) {
-				const x = b.x + b.width / 2, y = b.y + b.height / 2;
-				text.setAttribute('transform', (text.getAttribute('transform') || '') + ' translate(' + x + ' ' + y + ') scale(' + 1 / scale + ') translate(' + -x + ' ' + -y + ')');
-			}
-			for (const shape of drawing.querySelectorAll('path,rect,circle,ellipse,polygon,line,polyline')) shape.setAttribute('vector-effect', 'non-scaling-stroke');
-			for (const marker of drawing.querySelectorAll('marker')) for (const name of ['markerWidth', 'markerHeight']) {
-				const value = Number(marker.getAttribute(name)); if (value > 0) marker.setAttribute(name, value / scale);
-			}
-		}
-		const occupied = bodies.map(({shape}) => pad(box(shape), 3));
-		for (const text of words) if (!text.closest('g.edgeLabel,g.classLabel')) occupied.push(pad(box(text), 3));
-		const lines = [...drawing.querySelectorAll('.flowchart-link,.edgePath .path,.transition,.relation,.er.relationshipLine')]
-			.filter(path => path.getTotalLength).map(path => ({path, bounds: box(path), points: null}));
-		const crosses = (b, own) => lines.some(line => {
-			if (line.path === own || !overlaps(pad(b, 2), pad(line.bounds, 1))) return false;
-			if (!line.points) {
-				const m = matrix(line.path), length = line.path.getTotalLength();
-				const steps = Math.max(1, Math.ceil(length * Math.max(Math.hypot(m.a, m.b), Math.hypot(m.c, m.d)) / 4));
-				line.points = Array.from({length: steps + 1}, (_, i) => { const p = line.path.getPointAtLength(length * i / steps); return point(m, p.x, p.y); });
-			}
-			const near = pad(b, 2);
-			return line.points.some(p => p.x >= near.x && p.x <= near.x + near.width && p.y >= near.y && p.y <= near.y + near.height);
-		});
-		for (const unit of edgeUnits) {
-			const labels = [...unit.querySelectorAll('text')], boxes = labels.map(box), left = Math.min(...boxes.map(b => b.x)), top = Math.min(...boxes.map(b => b.y));
-			let bounds = pad({x: left, y: top, width: Math.max(...boxes.map(b => b.x + b.width)) - left, height: Math.max(...boxes.map(b => b.y + b.height)) - top}, 5);
-			const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
-			const paths = unit.parentNode.parentNode.querySelector(':scope > .edgePaths');
-			const path = paths?.children[[...unit.parentNode.children].indexOf(unit)];
-			if (occupied.some(b => overlaps(bounds, b)) || crosses(bounds, path)) {
-				const candidates = [];
-				if (path?.getTotalLength) {
-					const length = path.getTotalLength(), m = matrix(path);
-					for (const fraction of [.5, .4, .6, .3, .7, .2, .8, .1, .9]) {
-						const p = path.getPointAtLength(length * fraction), at = point(m, p.x, p.y);
-						candidates.push(at);
-						const a = path.getPointAtLength(Math.max(0, length * fraction - 1)), z = path.getPointAtLength(Math.min(length, length * fraction + 1));
-						const from = point(m, a.x, a.y), to = point(m, z.x, z.y), span = Math.hypot(to.x - from.x, to.y - from.y);
-						if (span) {
-							const nx = (from.y - to.y) / span, ny = (to.x - from.x) / span, gap = (Math.abs(nx) * bounds.width + Math.abs(ny) * bounds.height) / 2 + 8;
-							for (const sign of [-1, 1]) candidates.push({x: at.x + nx * gap * sign, y: at.y + ny * gap * sign});
-						}
-					}
-				}
-				// A crowded edge gets a nearby clear label, preserving every word. The diagram's
-				// viewport is fitted afterwards, so a label outside Mermaid's old canvas is still kept.
-				for (let ring = 1; ring <= occupied.length + 1; ring++) for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]])
-					candidates.push({x: x + dx * ring * (bounds.width + 8), y: y + dy * ring * (bounds.height + 8)});
-				const chosen = candidates.map(at => ({at, b: {x: at.x - bounds.width / 2, y: at.y - bounds.height / 2, width: bounds.width, height: bounds.height}}))
-					.filter(({b}) => !occupied.some(other => overlaps(b, other)) && !crosses(b, path)).sort((a, b) => Math.hypot(a.at.x - x, a.at.y - y) - Math.hypot(b.at.x - x, b.at.y - y))[0];
-				if (chosen) { shift(unit, chosen.at.x - x, chosen.at.y - y); bounds = chosen.b; }
-			}
-			occupied.push(bounds);
-			for (const old of unit.querySelectorAll('rect')) old.remove();
-			for (const text of labels) {
-				const b = text.getBBox(), wrap = document.createElementNS('http://www.w3.org/2000/svg', 'g'), paper = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-				// Put the paper in the text's own coordinate system, including its original transform.
-				// Five user units: four of room, and one so a drawing printed smaller, or a fallback face
-				// that misses textLength by a fraction, still clears the four.
-				wrap.setAttribute('transform', text.getAttribute('transform') || ''); text.removeAttribute('transform');
-				text.parentNode.insertBefore(wrap, text); wrap.append(paper, text);
-				paper.setAttribute('class', 'labelBkg');
-				for (const [name, value] of Object.entries(pad(b, 5))) paper.setAttribute(name, value);
-			}
-		}
-		const content = drawing.getBBox(), margin = 8;
-		const x = Math.min(before.x * scale, content.x - margin), y = Math.min(before.y * scale, content.y - margin);
-		const width = Math.max((before.x + before.width) * scale, content.x + content.width + margin) - x;
-		const height = Math.max((before.y + before.height) * scale, content.y + content.height + margin) - y;
-		drawing.setAttribute('viewBox', [x, y, width, height].join(' '));
-		drawing.style.maxWidth = width + 'px';
-	} finally {
-		drawing.style.width = oldWidth; drawing.style.height = oldHeight;
-		if (drawing.style.maxWidth === 'none') drawing.style.maxWidth = oldMax;
-		parent.insertBefore(drawing, next); measure.remove();
-	}
 }
 
 // Draw owns these attribute-only dark selectors and their geometry. Project their cascade into
@@ -5000,15 +4829,16 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 	// Export admits no stylesheet from document content. Resolve the generator's already
 	// sanitized, root-scoped rules onto their own SVG elements BEFORE that boundary. Parsing
 	// uses a detached CSSStyleSheet: no page-global rules, resource loads or theme snapshot.
-	// Mermaid 10's selectors are compound IDs/classes/types and combinators; no pseudo-class
-	// matches are needed except :root (which correctly matches no element inside this SVG).
+	// Rules are matched only within this SVG; the detached sheet never enters the document.
 	const styles = Array.from(drawing.querySelectorAll('style'));
 	const winners = new Map();
-	const offer = (element, declaration, specificity) => {
+	const labelStyle = _rapierRenderModule('render-sanitize').diagramLabelStyle;
+	const offer = (element, declaration, specificity, authored = specificity[0] === 1) => {
 		let properties = winners.get(element);
 		if (!properties) winners.set(element, properties = new Map());
 		for (let i = 0; i < declaration.length; i++) {
 			const property = declaration[i], important = declaration.getPropertyPriority(property) === 'important';
+			if (element.closest('foreignObject') && !labelStyle(property, declaration.getPropertyValue(property))) continue;
 			const rank = [Number(important), ...specificity], previous = properties.get(property);
 			if (previous) {
 				const difference = rank.findIndex((value, at) => value !== previous.rank[at]);
@@ -5016,9 +4846,19 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 			}
 			// Mermaid writes `style` inline and `classDef` as important rules; its theme rules are ordinary.
 			properties.set(property, {value: declaration.getPropertyValue(property), important, rank,
-				authored: specificity[0] === 1 || important});
+				authored: authored || important});
 		}
 	};
+	// Presentation attributes are the lowest cascade tier, but can carry authored colours
+	// (for example C4 relationship styles). Keep their paint with the same portable dark pair.
+	const attributes = document.createElement('span').style;
+	for (const element of [drawing, ...drawing.querySelectorAll('*')]) {
+		attributes.cssText = '';
+		for (const property of ['fill', 'stroke', 'color', 'stop-color']) {
+			if (element.hasAttribute(property)) attributes.setProperty(property, element.getAttribute(property));
+		}
+		if (attributes.length) offer(element, attributes, [0, 0, 0, 0], true);
+	}
 	for (const style of styles) {
 		const sheet = new CSSStyleSheet();
 		sheet.replaceSync(style.textContent);
@@ -5066,12 +4906,12 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 	for (const [element, properties] of winners) {
 		for (const [property, value] of properties) {
 			let presentation = value.value, important = value.important && value.rank[1];
-			if (value.authored && (property === 'fill' || property === 'stroke')) {
+			if (value.authored && /^(?:fill|stroke|color|stop-color)$/.test(property)) {
 				const pair = colour(value.value);
 				if (pair) {
 					presentation = 'light-dark(' + value.value + ', ' + pair.dark + ')';
 					const node = property === 'fill' && /^(?:rect|circle|ellipse|polygon|path)$/.test(element.localName)
-						&& element.closest('.node,.cluster');
+						&& element.closest('.node,.cluster,.c4-shape');
 					if (node) filledNodes.set(node, pair);
 				}
 				important = true;
@@ -5083,14 +4923,16 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 	// on dark paper; light keeps the author's ink, or the page's ordinary ink. CSS carries the pair into
 	// a script-free export and print, so changing theme never mutates source or needs another render.
 	for (const [node, pair] of filledNodes) {
-		for (const label of node.querySelectorAll('text,tspan')) {
-			let light = 'var(--color-text)';
+		for (const label of node.querySelectorAll('text,tspan,foreignObject,foreignObject [style]')) {
+			if (label.closest('.node,.cluster,.c4-shape') !== node) continue;
+			let light = 'var(--md-color-text)';
 			for (let ancestor = label; ancestor && ancestor !== node.parentElement; ancestor = ancestor.parentElement) {
 				const properties = winners.get(ancestor), fill = properties?.get('fill'), color = properties?.get('color');
 				const ink = fill?.authored ? fill : color?.authored ? color : null;
 				if (ink?.authored) { light = ink.value; break; }
 			}
-			label.style.setProperty('fill', 'light-dark(' + light + ', ' + pair.ink + ')', 'important');
+			const property = label.closest('foreignObject') ? 'color' : 'fill';
+			label.style.setProperty(property, 'light-dark(' + light + ', ' + pair.ink + ')', 'important');
 		}
 	}
 	drawing.classList.add('rapier-diagram');
@@ -5098,7 +4940,6 @@ function _rapierApplyDiagramSvg(host, svg, native = false) {
 	// The cache holds unrenamed generator output. Every use gets its own local reference map,
 	// including two copies of the SAME source in the live document or a later export clone.
 	_rapierPrefixPortableAnchors(pending, 'diagram-' + crypto.randomUUID());
-	_rapierDiagramLabelRoom(drawing);
 	_rapierDiagramKeepsItsWidth(drawing);
 	host.replaceChildren(drawing);
 	return clean;

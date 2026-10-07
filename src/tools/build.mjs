@@ -27,6 +27,7 @@ import {SIZE_BUDGETS} from './profile-budgets.mjs';
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections, welcomePaintHtml} from './seo-page.mjs';
+import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
@@ -937,11 +938,11 @@ const codecScript = '<!-- RAPIER_JXL_BEGIN -->\n' +
 // shell's RAPIER_PLATFORM slot; the runtime
 // loader runs it first. No plain script after the slot may read a
 // platform global at parse time (gated below).
+const platformSpans = [];
 {
-  const spans = [];
   for (const [name, path] of [['rapier-platform.js', 'shell/platform.js'], ['rapier-bundle-io.js', 'shell/bundle-io.js'], ['rapier-plugin-loader.js', 'shell/plugin-loader.js']]) {
     const source = await lean(await read(path), name);
-    spans.push({name, source});
+    platformSpans.push({name, source});
   }
   const slot = /<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n/;
   if (!slot.test(html)) throw new Error('The shell carries no RAPIER_PLATFORM slot');
@@ -950,7 +951,7 @@ const codecScript = '<!-- RAPIER_JXL_BEGIN -->\n' +
     const type = /\btype\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1]?.toLowerCase();
     if ((!type || ['text/javascript', 'application/javascript'].includes(type)) && /\b(?:Rapier(?:TextCodec|Storage|Preferences|Platform|BundleIO)|_rapierProviders)\b/.test(source)) throw new Error('A plain script after the platform slot reads a platform-stage global at parse time');
   }
-  const platformScript = '<!-- RAPIER_PLATFORM_BEGIN -->\n' + await packedSpans('rapier-platform-runtime', 'application/rapier-runtime', spans) + '<!-- RAPIER_PLATFORM_END -->\n';
+  const platformScript = '<!-- RAPIER_PLATFORM_BEGIN -->\n' + await packedSpans('rapier-platform-runtime', 'application/rapier-runtime', platformSpans) + '<!-- RAPIER_PLATFORM_END -->\n';
   // (A function replacement: the text carries `$`.)
   html = html.replace(slot, () => platformScript);
 }
@@ -974,9 +975,10 @@ const dropFunction = (text, name) => {
 };
 const base124Source = dropFunction((await read('tools/base124.mjs')).replace(/^export /gm, ''), 'encodeBase124');
 if (/encodeBase124/.test(base124Source)) throw new Error('The base124 encoder is still in the shell');
-const runtimeLoader = await lean('const _rapierBase124 = (() => {\n' + base124Source +
+const runtimeLoaderSource = 'const _rapierBase124 = (() => {\n' + base124Source +
   '\nreturn Object.freeze({decodeBase124});\n})();\n' +
-  (await read('tools/text-pack.mjs')).replace(/^export /gm, '') + '\n' + await read('tools/runtime-loader.js'), 'rapier-loader.js');
+  (await read('tools/text-pack.mjs')).replace(/^export /gm, '') + '\n' + await read('tools/runtime-loader.js');
+const runtimeLoader = await lean(runtimeLoaderSource, 'rapier-loader.js');
 new vm.Script(runtimeLoader, {filename: 'rapier-runtime-loader.js'});
 const firstScreenBinder = await lean(await read('tools/first-screen-binder.js'), 'rapier-first-screen-binder.js');
 const welcomePaint = welcomePaintHtml(await read('editor/engine.js'));
@@ -1013,12 +1015,18 @@ if (bodyEnd < 0) throw new Error('Editor body is missing');
 html = html.slice(0, bodyEnd) + codecScript + runtimeScript + html.slice(bodyEnd);
 html = stripMarkupComments(html);
 html = html.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/g, (_, open, css, close) => open + stripStyleComments(css) + close);
+let inlineRuntimeLoader = null;
 {
   const inline = /(<script\b([^>]*)>)([\s\S]*?)(<\/script>)/g;
   const leaned = await Promise.all([...html.matchAll(inline)].map(async ([whole, open, attrs, source, close]) => {
     const type = /\btype\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1]?.toLowerCase();
     if (type && !['text/javascript', 'application/javascript'].includes(type)) return whole;
-    return open + safeScript(await lean(source, 'rapier-inline.js')) + close;
+    const compiled = safeScript(await lean(source, 'rapier-inline.js'));
+    if (source.trim() === safeScript(runtimeLoader)) {
+      if (inlineRuntimeLoader !== null) throw new Error('The page has more than one runtime loader');
+      inlineRuntimeLoader = compiled;
+    }
+    return open + compiled + close;
   }));
   let at = 0;
   html = html.replace(inline, () => leaned[at++]);
@@ -1033,7 +1041,7 @@ const BUDGET = SIZE_BUDGETS[PROFILE];
 await writeFile(resolve(root, OUTPUT_FILE), html);
 
 // The PWA and the Apps bridge are the full profile's only.
-let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null, appsSpans = null;
+let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null, appsSpans = null, appPlugins = null;
 if (PROFILE === 'full') {
   const shellRows = [];
   for (const path of ['rapier.html', 'manifest.json', 'icon-192.png', 'icon-512.png']) {
@@ -1056,11 +1064,30 @@ if (PROFILE === 'full') {
   if (html.split('id="rapier-ui-runtime"').length !== 2 || !interfaceElement.test(html)) throw new Error('The Apps copy needs the one interface element to pack without the commercial sheet');
   const recorded = packedRecord.length;
   const appsInterface = await packedScript('rapier-ui-runtime', 'application/rapier-runtime', 'rapier-ui.html', appsUi);
-  const [appsInterfaceRow] = packedRecord.splice(recorded);
-  appsSpans = packedRecord.map(row => row.element === 'rapier-ui-runtime' ? appsInterfaceRow : row);
+  const plugins = await builtinPlugins(root, packedSpans);
+  appPlugins = plugins.groups;
+  const appsPluginLoader = await lean(fillBuiltinSlot(fillBuiltinSlot(await read('shell/plugin-loader.js'),
+    '/* RAPIER_BUILTIN_PLUGIN_EXECUTE */', builtinExecution),
+    '/* RAPIER_BUILTIN_FILES_REUSE */', builtinFilesReuse), 'rapier-app-plugin-loader.js');
+  const appsPlatform = await packedSpans('rapier-platform-runtime', 'application/rapier-runtime', [
+    ...platformSpans.slice(0, -1),
+    {name: 'rapier-bundled-plugins.js', source: await lean(await read('shell/bundled-plugins.js'), 'rapier-bundled-plugins.js')},
+    {name: 'rapier-app-plugin-loader.js', source: appsPluginLoader},
+  ]);
+  const appRows = packedRecord.splice(recorded);
+  const replacementElements = new Set(['rapier-ui-runtime', 'rapier-platform-runtime']);
+  appsSpans = packedRecord.filter(row => !replacementElements.has(row.element)).concat(appRows);
+  const appRuntimeLoader = await lean(fillBuiltinSlot(runtimeLoaderSource,
+    '/* RAPIER_BUILTIN_PLUGINS_READY */', 'await RapierBundledPlugins.ready();'), 'rapier-app-loader.js');
+  new vm.Script(appRuntimeLoader, {filename: 'rapier-app-loader.js'});
+  const platformElement = /<script type="application\/rapier-runtime" id="rapier-platform-runtime">[^<]*<\/script>\n/;
+  if (!platformElement.test(html) || !inlineRuntimeLoader || html.split(inlineRuntimeLoader).length !== 2)
+    throw new Error('The built-in editor needs its platform and runtime loader');
+  const inventory = '<script type="application/json" id="rapier-builtin-plugins">' + safeScript(JSON.stringify(appPlugins)) + '</script>\n';
   // Nor does it claim rapier.website as its address or its description: the search words are the site's page alone.
   appHtml = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n?/, '').replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n<script>globalThis.RAPIER_APPS_HOST = true;</script>')
-    .replace(seoRegion, '').replace(interfaceElement, () => appsInterface).replace(editorElement, element => element + appsScript);
+    .replace(seoRegion, '').replace(interfaceElement, () => appsInterface).replace(editorElement, element => element + appsScript + plugins.html)
+    .replace(platformElement, () => inventory + appsPlatform).replace(inlineRuntimeLoader, () => safeScript(appRuntimeLoader));
   const destination = resolve(root, 'dist/chatgpt');
   await mkdir(destination, {recursive: true});
   await writeFile(resolve(destination, 'rapier-app.html'), appHtml);
@@ -1094,7 +1121,7 @@ const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, canonical: toolchainCanonical};
 // `mode`: 'development' for any fast/zlib pack
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans} : priorReceipt?.apps ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: appPlugins} : priorReceipt?.apps ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 // `dist/` may not exist in a fresh copy.
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');

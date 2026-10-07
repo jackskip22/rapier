@@ -1,5 +1,6 @@
 import {agentActorId} from '../kit/ledger/format.mjs';
 import { createKernel, createState, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, LIMITS } from '../agent/kernel.mjs';
+import {prepareDoorLetters} from './letters.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
@@ -92,7 +93,7 @@ const receivedReturns = head => (head.returns || []).filter(row => row.receivedA
 const returnMetadata = row => ({ return_id: row.id, name: row.name, receivedAt: row.receivedAt, bytes: row.bytes, chars: row.chars });
 const CHUNK_CHARS = 32768;
 const MAX_RECEIPTS = 64;
-const MAX_UI_BYTES = 8 * 1024 * 1024;
+const MAX_UI_BYTES = 16 * 1024 * 1024;
 // The body bound is three times MAX_TEXT_BYTES plus envelope room (JSON escaping), never the text law itself.
 export const MAX_RPC_BODY_BYTES = MAX_TEXT_BYTES * 3 + 1024 * 1024;
 const VIEW_LEASE_MS = 15000;
@@ -1470,6 +1471,7 @@ export class RapierDocument {
   }
 
   async operate(input, waitResult, visual) {
+    await prepareDoorLetters();
     const { operation, args, capabilityHash, ownerKey } = input;
     try { if (this.ctx.storage) this.ctx.storage.operation = operation; } catch {}
     let head = structuredClone(this.ctx.storage.kv.get('head'));

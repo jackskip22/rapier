@@ -218,6 +218,7 @@
 				return Promise.resolve();
 			}
 			if (m.prepare) m.prepare();
+			/* RAPIER_BUILTIN_PLUGIN_EXECUTE */
 			var url = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
 			return new Promise(function (resolve, reject) {
 				var s = document.createElement('script');
@@ -316,51 +317,25 @@
 	_rapierVerifiedPlugin({
 		key: 'math', noun: 'math', name: 'MathJax', dash: ' — ',
 		version: MATHJAX_VERSION,
-		cdn: 'https://cdn.jsdelivr.net/npm/mathjax@' + MATHJAX_VERSION + '/tex-svg.js',
-		file: 'mathjax-tex-svg.js',
+		cdn: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/math/mathjax-' + MATHJAX_VERSION + '.offline-svg.js',
+		file: 'mathjax-' + MATHJAX_VERSION + '.offline-svg.js',
 		// The exact length and SHA-384 of the pinned file: a download is bounded by the first as it streams (a longer body
 		// refused before it is held, a shorter one after) and held to the second before anything stores or runs it.
-		bytes: 1849625,
-		sri: 'my9P1jDckpHD+5LZsLQ0gaiCl/RMO32HaqwBtbo/25QIMVr6xXIUCg1jvdSRcvb4',
-		cacheKey: 'mathjax-tex-svg-v' + MATHJAX_VERSION,
-		missing: 'MathJax loaded but tex2svg is missing — cache purged',
-		usable: function () { return !!(window.MathJax && typeof window.MathJax.tex2svg === 'function'); },
-		prepare: function () {
-			window.MathJax = {
-				loader: { load: ['[tex]/ams','[tex]/newcommand','[tex]/configmacros'] },
-				tex: {
-					packages: { '[+]': ['ams','newcommand','configmacros'] },
-					inlineMath: [], displayMath: [],
-				},
-				// MathJax 4 breaks inline math into one <svg> per breakable piece; the page takes one drawing per
-				// equation, so an inline equation is drawn whole, on the prose's baseline, and wraps as a word does.
-				svg: { fontCache: 'none', linebreaks: { inline: false } },
-				options: {
-					skipHtmlTags: { '[+]': [] },
-					ignoreHtmlClass: '.*',
-					processHtmlClass: '__rapier_never__',
-				},
-				startup: { typeset: false },
-			};
-		},
-		started: function () {
-			return window.MathJax && window.MathJax.startup && window.MathJax.startup.promise;
-		},
+		bytes: 11948066,
+		sri: 'wDGx1UhqWHiww1a2D8xGpGfoo5DNg2fGlytVMPYeyL2w9kz5HfO+i6h6IxNBnrB+',
+		cacheKey: 'mathjax-offline-svg-v' + MATHJAX_VERSION,
+		missing: 'MathJax loaded but its SVG renderer is missing — cache purged',
+		usable: function () { return !!(window.RapierMath && typeof window.RapierMath.renderToString === 'function'); },
 		render: function (src, opts, ready) {
 			if (!ready) throw new Error('math plug-in is unavailable');
-			var display = !!(opts && opts.displayMode);
-			var node = window.MathJax.tex2svg(String(src == null ? '' : src), { display: display });
-			var svg = (node && node.tagName && node.tagName.toLowerCase() === 'svg')
-				? node
-				: (node && node.querySelector ? node.querySelector('svg') : null);
-			// A reader without sight is given the equation as it was written.
-			if (svg) svg.setAttribute('aria-label', String(src == null ? '' : src));
-			return svg ? svg.outerHTML : (node && node.outerHTML ? node.outerHTML : '');
+			return window.RapierMath.renderToString(src, opts);
 		},
 	});
 
-	// ---- Mermaid: diagrams, strict and without HTML labels, rendered asynchronously. --------------
-	var MERMAID_VERSION = '10.9.8';
+	// ---- Mermaid: diagrams with inert labels and native MathML, rendered asynchronously. ----------
+	var MERMAID_VERSION = '12.1.0';
+	var MERMAID_FONT_FAMILY = 'Geist, system-ui, sans-serif';
+	var MERMAID_FONT_SIZE = 14;
 	var MAX_SOURCE_LENGTH = 32768;
 	var MAX_NODE_COUNT = 240;
 	var MAX_EDGE_COUNT = 480;
@@ -421,13 +396,47 @@
 		return null;
 	}
 
+	function _diagramResourceText(src) {
+		var text = String(src == null ? '' : src), previous;
+		do {
+			previous = text;
+			text = text.replace(/\/\*[\s\S]*?\*\//g, '')
+				.replace(/\\(?:u([\da-fA-F]{4})|U([\da-fA-F]{8})|x([\da-fA-F]{2}))/g, function (_, short, long, byte) {
+					var code = parseInt(short || long || byte, 16);
+					return code <= 0x10ffff ? String.fromCodePoint(code) : '\ufffd';
+				})
+				.replace(/\\(?:([\da-f]{1,6})(?:\r\n|[ \t\n\r\f])?|([^\n\r\f]))/gi, function (_, hex, char) {
+					var code = hex ? parseInt(hex, 16) : 0;
+					return hex ? code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '\ufffd' : char;
+				});
+		} while (text !== previous);
+		return text;
+	}
+
+	function _diagramResourceHit(src) {
+		// Some diagram families attach authored CSS, and image shapes start an Image load before
+		// Mermaid returns any SVG to Rapier's sanitizer. Refuse those resource instructions before
+		// layout. This is a read-only check: neither a refused source nor ordinary link text changes.
+		var source = String(src == null ? '' : src), text = _diagramResourceText(source);
+		if (/(?:^|[^\w-])(?:url|src|image|(?:-webkit-)?image-set)\s*\(|@import\b/i.test(text)) {
+			return 'Diagram CSS cannot load resources';
+		}
+		// The metadata's YAML can form an img key through an alias or sequence too. Inspect its
+		// whole body, preserving quoted braces while finding the closing delimiter.
+		var metadata = source.match(/@\{(?:[^"}]|"(?:[^"\\]|\\.)*")*\}/g) || [];
+		if (metadata.some(function (body) { return /\bimg\b/i.test(_diagramResourceText(body)); })) {
+			return 'Diagram image resources are unavailable';
+		}
+		return null;
+	}
+
 	_rapierVerifiedPlugin({
 		key: 'mermaid', noun: 'diagram', name: 'diagram', dash: ' -- ',
 		version: MERMAID_VERSION,
 		cdn: 'https://cdn.jsdelivr.net/npm/mermaid@' + MERMAID_VERSION + '/dist/mermaid.min.js',
 		file: 'mermaid.min.js',
-		bytes: 3337857,
-		sri: 'N3QqR/7q+xm3BGX+CBbNI8AUmRRqcsDzToy+0z1NLDI0QmTKW8zvwLvqulJgk3dP',
+		bytes: 5493176,
+		sri: 'EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4',
 		cacheKey: 'mermaid-min-v' + MERMAID_VERSION,
 		missing: 'diagram plug-in loaded but render is missing -- cache purged',
 		present: function () { return !!(window.mermaid && typeof window.mermaid.render === 'function'); },
@@ -439,23 +448,65 @@
 			window.mermaid.initialize({
 				startOnLoad: false,
 				securityLevel: 'strict',
-				htmlLabels: false,
-				fontFamily: 'inherit',
+				suppressErrorRendering: true,
+				htmlLabels: true,
+				legacyMathML: false,
+				forceLegacyMathML: false,
+				maxTextSize: MAX_SOURCE_LENGTH,
+				maxEdges: MAX_EDGE_COUNT,
+				// Source configuration cannot weaken the host's markup, error or resource boundaries.
+				secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'maxEdges',
+					'suppressErrorRendering', 'htmlLabels', 'dompurifyConfig', 'legacyMathML',
+					'forceLegacyMathML', 'themeCSS', 'fontFamily', 'fontSize'],
+				// Mermaid sanitizes labels before attaching them for measurement. No label can carry
+				// a URL, style, event, media element or page identity into that connected subtree.
+				dompurifyConfig: {
+					ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'strong', 'em', 'b', 'i', 's', 'u', 'del', 'code', 'sub', 'sup',
+						'math', 'mrow', 'mi', 'mn', 'mo', 'mtext', 'mspace', 'ms', 'msub', 'msup', 'msubsup', 'mfrac', 'msqrt',
+						'mroot', 'mstyle', 'merror', 'mpadded', 'mphantom', 'mfenced', 'menclose', 'munder', 'mover', 'munderover',
+						'mtable', 'mtr', 'mtd', 'mlabeledtr', 'mmultiscripts', 'mprescripts', 'none', 'semantics'],
+					ALLOWED_ATTR: ['xmlns', 'display', 'mathvariant', 'mathsize', 'mathcolor', 'mathbackground', 'dir', 'accent',
+						'accentunder', 'columnalign', 'columnlines', 'columnspacing', 'columnspan', 'columnwidth', 'depth',
+						'displaystyle', 'equalcolumns', 'equalrows', 'fence', 'frame', 'framespacing', 'height', 'largeop',
+						'linebreak', 'linethickness', 'lspace', 'maxsize', 'minsize', 'movablelimits', 'notation', 'rowalign',
+						'rowlines', 'rowspacing', 'rowspan', 'rspace', 'scriptlevel', 'scriptminsize', 'scriptsizemultiplier',
+						'separator', 'stretchy', 'subscriptshift', 'superscriptshift', 'valign', 'voffset', 'width'],
+					ALLOW_DATA_ATTR: false,
+					ALLOW_ARIA_ATTR: false,
+				},
+				fontFamily: MERMAID_FONT_FAMILY,
+				fontSize: MERMAID_FONT_SIZE,
 				theme: 'neutral',
-				flowchart: { htmlLabels: false, useMaxWidth: true },
+				themeVariables: { fontSize: MERMAID_FONT_SIZE + 'px', quadrantPointFill: '#333333' },
+				flowchart: { useMaxWidth: true },
 				sequence: { useMaxWidth: true },
-				gantt: { useMaxWidth: true, fontSize: 12, sectionFontSize: 12, barHeight: 24, barGap: 6 },
+				gantt: { useMaxWidth: true, fontSize: MERMAID_FONT_SIZE, sectionFontSize: MERMAID_FONT_SIZE, barHeight: 24, barGap: 6 },
 				er: { useMaxWidth: true },
 			});
 		},
 		render: function (src, opts, ready) {
 			var hit = _boundHit(src);
 			if (hit) return Promise.reject(new Error(hit));
+			var resourceHit = _diagramResourceHit(src);
+			if (resourceHit) return Promise.reject(new Error(resourceHit));
 			if (!ready) return Promise.reject(new Error('diagram plug-in is unavailable'));
 			var id = 'rapier-d' + (++_renderSeq);
-			return window.mermaid.render(id, String(src == null ? '' : src)).then(function (out) {
-				if (typeof out === 'string') return out;
-				return (out && out.svg) ? out.svg : '';
+			// Start the actual font before measuring; fonts.ready alone need not load an unused face.
+			return document.fonts.load(MERMAID_FONT_SIZE + 'px ' + MERMAID_FONT_FAMILY).then(function () {
+				return document.fonts.ready;
+			}).then(function () {
+				// Mermaid needs connected DOM while laying out. Every call owns its entire scratch subtree,
+				// including partial output left by a parser, layout or serialization failure.
+				var container = document.createElement('div');
+				container.setAttribute('aria-hidden', 'true');
+				container.inert = true;
+				container.style.cssText = 'position:fixed;left:0;top:0;width:100%;opacity:0;visibility:hidden;pointer-events:none;contain:layout style paint;isolation:isolate;overflow:hidden';
+				document.body.appendChild(container);
+				return Promise.resolve().then(function () {
+					return window.mermaid.render(id, String(src == null ? '' : src), container);
+				}).then(function (out) {
+					return out.svg;
+				}).finally(function () { container.remove(); });
 			});
 		},
 	});
@@ -473,6 +524,7 @@
 	//   m: {key, noun, dash, version, files: [{name, url, bytes, sri}], timeoutMs, pack(bytes), unpack(value), store}
 	//   `pack`/`unpack` shape what the store holds (gzip on the page); `store` is a test double's (RapierBundleIO's otherwise).
 	function _rapierVerifiedFiles(m) {
+		/* RAPIER_BUILTIN_FILES_REUSE */
 		var KEY = m.version;
 		var total = m.files.reduce(function (sum, file) { return sum + file.bytes; }, 0);
 		var Cache = m.store || RapierBundleIO.store(RapierStorage.optional[m.key + 'Db'], 'bundle');

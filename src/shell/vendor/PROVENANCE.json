@@ -119,6 +119,14 @@
       "license": "MIT (agent/vendor/NOTICE.txt)",
       "bytes": 246643,
       "sha256": "b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df"
+    },
+    "mathjax-4.1.3.offline-svg.js": {
+      "package": "mathjax",
+      "version": "4.1.3",
+      "path": "source-derived SVG bundle; tools/vendor-math.mjs; shell/math-resources.json",
+      "license": "Apache-2.0 AND MIT AND LicenseRef-GUST-Font AND LicenseRef-bboldx-font AND LicenseRef-BBM-Font-Permission AND LicenseRef-DoubleStroke-Font-Permission (shell/vendor/math-NOTICE.txt; MIT adapter)",
+      "bytes": 11948066,
+      "sha256": "d77471a9072faac317b62f000891370a45aaf28996fdc116fe72f7b74c62b855"
     }
   }
 }
