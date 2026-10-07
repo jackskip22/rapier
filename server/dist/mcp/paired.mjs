@@ -22,26 +22,32 @@ export function readCookie(request, name) {
 export const setCookie = (id, name, value, seconds) => `${name}=${value}; Path=/d/${id}; Max-Age=${seconds}; Secure; HttpOnly; SameSite=Lax`;
 
 export function newCode() {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return Array.from(bytes, byte => LETTERS[byte % LETTERS.length]).join('');
+  // Reject the partial alphabet bucket so each permitted letter has the same probability.
+  const bound = Math.floor(256 / LETTERS.length) * LETTERS.length;
+  let code = '';
+  while (code.length < 4) {
+    const bytes = crypto.getRandomValues(new Uint8Array(4 - code.length));
+    for (const byte of bytes) if (byte < bound) code += LETTERS[byte % LETTERS.length];
+  }
+  return code;
 }
 export const newSecret = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
 
 async function pairKey(secret) {
   return crypto.subtle.importKey('raw', editorSecretKeyMaterial(secret, 'rapier-pair-v1:'), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign', 'verify']);
 }
-// A paired session names its workspace, the workspace's pairing epoch (a rotation retires every session) and its end.
+// A paired session names its workspace, its own nonce, the workspace's pairing epoch and its end.
 export async function mintSession(secret, id, epoch, now = Date.now()) {
-  const body = `${epoch}.${now + PAIR_SESSION_MS}`;
+  const body = `${epoch}.${now + PAIR_SESSION_MS}.${newSecret()}`;
   const tag = new Uint8Array(await crypto.subtle.sign('HMAC', await pairKey(secret), encoder.encode(id + '.' + body)));
   return 'pp1.' + body + '.' + base64url(tag);
 }
 export async function verifySession(secret, id, value, now = Date.now()) {
-  const parts = /^pp1\.(0|[1-9][0-9]{0,8})\.([0-9]{13})\.([A-Za-z0-9_-]{43})$/.exec(value || '');
+  const parts = /^pp1\.(0|[1-9][0-9]{0,8})\.([0-9]{13})\.([A-Za-z0-9_-]{43})\.([A-Za-z0-9_-]{43})$/.exec(value || '');
   if (!parts || !editorSecretUsable(secret) || Number(parts[2]) <= now || Number(parts[2]) > now + PAIR_SESSION_MS + 60000) return null;
-  const tag = fromBase64url(parts[3]);
-  if (base64url(tag) !== parts[3]) return null;
-  const valid = await crypto.subtle.verify('HMAC', await pairKey(secret), tag, encoder.encode(id + '.' + parts[1] + '.' + parts[2]));
+  const tag = fromBase64url(parts[4]);
+  if (base64url(tag) !== parts[4] || base64url(fromBase64url(parts[3])) !== parts[3]) return null;
+  const valid = await crypto.subtle.verify('HMAC', await pairKey(secret), tag, encoder.encode(id + '.' + parts[1] + '.' + parts[2] + '.' + parts[3]));
   return valid ? {epoch: Number(parts[1]), expiresAt: Number(parts[2])} : null;
 }
 

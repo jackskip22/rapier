@@ -2,6 +2,7 @@
 // Paint reads straight channels. A display canvas cannot own a raster at low alpha.
 import {createPaintPNGCodec} from '../draw/paint-png.mjs';
 import {inspectJPEGXL} from './header.mjs';
+import {inspectRaster} from './raster.mjs';
 
 const png = createPaintPNGCodec(), JXL = 'data:image/jxl;base64,';
 let hostedDecoder = null;
@@ -51,4 +52,24 @@ export async function decodePaintRaster(raster, {signal} = {}) {
 	check(signal);
 	if (pixels && (pixels.width !== read.info.width || pixels.height !== read.info.height || !(pixels.data instanceof Uint8Array || pixels.data instanceof Uint8ClampedArray) || pixels.data.length !== pixels.width * pixels.height * 4)) throw new Error('The paint decoder returned a different raster');
 	return pixels;
+}
+
+// A recipe may carry an imported PNG the straight-channel reader does not own
+// (a profile, palette or interlace), or pixels beyond that reader's allocation
+// budget. The browser's native reader can attest those bytes without rewriting
+// them. A host without that reader must say it cannot validate this raster.
+export async function validatePaintRaster(raster, {signal, nativeRead} = {}) {
+	check(signal);
+	if (typeof raster !== 'string' || !/^data:image\/(?:png|jxl);base64,/.test(raster)) throw new Error('Invalid painting raster');
+	const bytes = Uint8Array.from(atob(raster.slice(raster.indexOf(',') + 1)), c => c.charCodeAt(0));
+	const info = raster.startsWith(JXL) ? inspectJPEGXL(bytes) : inspectRaster(bytes);
+	const pixels = info.width * info.height <= png.pixelLimit ? await decodePaintRaster(raster, {signal}) : null;
+	check(signal);
+	if (pixels) return true;
+	if (typeof nativeRead === 'function') {
+		const valid = await nativeRead(raster, {signal});
+		check(signal);
+		if (valid === true) return true;
+	}
+	throw Object.assign(new Error('This host cannot fully decode this painting raster.'), {code: 'paint_raster_decoder_unavailable'});
 }

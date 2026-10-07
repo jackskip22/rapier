@@ -442,9 +442,6 @@
 				</div>
 			</div>
 
-			<button type="button" class="settings-text-action" id="source-image-data" hidden
-				aria-controls="source-textarea" aria-expanded="false" data-action="toggle-source-image-data">Show image data</button>
-
 			<!-- Primary document controls. Deliberately untitled and centered. -->
 			<div class="settings-action-row settings-primary-actions">
 				<div class="settings-action-pair" id="settings-open-pair">
@@ -497,7 +494,7 @@
 			     above, centred under compare with equal air above and below; it opens a fresh canvas exactly as /draw does,
 			     and on the site the address becomes /draw. -->
 			<button type="button" class="settings-draw-btn" id="settings-draw-btn" data-action="open-draw" aria-label="draw a picture" data-tip="draw">
-				<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
+				<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
 			</button>
 
 			<div id="settings-upload-section" hidden>
@@ -691,6 +688,11 @@
 							</div>
 						</div>
 					</div>
+				</div>
+
+				<!-- Assets: the source view folds a document's trailing image records away unless this is on (off by default). -->
+				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-assets" data-switch="assets" data-switch-label="Image data" data-on="true" data-off="false" role="group" aria-label="image data in the source view" style="width:100%">
+					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">IMAGE DATA OFF</button>
 				</div>
 
 						</div>
@@ -2244,12 +2246,15 @@ SOFTWARE.</pre>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="keep"><span class="export-choice__label">google keep</span><span class="export-choice__description">a takeout zip, or the json and pictures from its keep folder</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="obsidian"><span class="export-choice__label">obsidian</span><span class="export-choice__description">your vault as a zip, or its .md files and pictures</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="logseq"><span class="export-choice__label">logseq</span><span class="export-choice__description">your graph folder as a zip, or its pages</span></button>
+				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="roam"><span class="export-choice__label">roam research</span><span class="export-choice__description">the json export</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="bear"><span class="export-choice__label">bear</span><span class="export-choice__description">the markdown or textbundle export</span></button>
+				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="textbundle"><span class="export-choice__label">textbundle / textpack</span><span class="export-choice__description">a .textpack, or the bundle's files</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="joplin"><span class="export-choice__label">joplin</span><span class="export-choice__description">a .jex export, or the raw export's files</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="notion"><span class="export-choice__label">notion</span><span class="export-choice__description">the markdown & csv export zip</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="evernote"><span class="export-choice__label">evernote</span><span class="export-choice__description">an .enex notebook export</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="simplenote"><span class="export-choice__label">simplenote</span><span class="export-choice__description">the export zip</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="standardnotes"><span class="export-choice__label">standard notes</span><span class="export-choice__description">a decrypted backup zip</span></button>
+				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="dayone"><span class="export-choice__label">day one</span><span class="export-choice__description">the json export zip</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="zoho"><span class="export-choice__label">zoho notebook</span><span class="export-choice__description">the html export</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="craft"><span class="export-choice__label">craft</span><span class="export-choice__description">the markdown or textbundle export</span></button>
 				<button type="button" class="export-choice export-choice--compact" data-action="notes-import-pick" data-value="upnote"><span class="export-choice__label">upnote</span><span class="export-choice__description">the markdown or html export</span></button>

@@ -38,6 +38,7 @@ img[data-rapier-asset-state="error"] { outline:1px solid var(--color-error); pad
 	--color-error:#ec5156;
 	--color-error-foreground:#000;
 	--color-pop-negative:color-mix(in srgb,var(--color-error) 80%,#000); /* the pop-up's bottom box, white text on it in both themes */
+	--color-pop-affirm:#ffffff; --color-pop-affirm-ink:#000000; /* the pop-up's top box: the theme's highlight, pure white with black words here */
 	--color-error-muted:rgba(236,81,86,0.10);
 	--color-success:#45d483;
 	--color-success-muted:rgba(69,212,131,0.10);
@@ -141,6 +142,7 @@ body.light{
 	--format-toolbar-bg:rgba(255,255,255,0.65);
 	--color-error:#c00;
 	--color-pop-negative:color-mix(in srgb,var(--color-error) 80%,#000);
+	--color-pop-affirm:#000000; --color-pop-affirm-ink:#ffffff; /* the top box in the light theme: black with white words */
 	--color-error-foreground:#fff;
 	--color-error-muted:rgba(204,0,0,0.10);
 	--color-success:#188844;

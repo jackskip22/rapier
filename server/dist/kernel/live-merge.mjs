@@ -141,6 +141,41 @@ export function mergeSplices(client, splices, log) {
 // Merge a sequential local journal over remote edits. Return the exact committed
 // journal and reciprocal acknowledgement; source size does not become a diff budget.
 export function mergeSource(base, edits, client, log) {
+	const merged = mergeSourceEdits(base, edits, client, log);
+	if (log.length && edits.length) {
+		// The reciprocal receipt proves replay of this projection, not the other
+		// arrival order. Descending disjoint local edits also form a valid batch:
+		// higher edits cannot move or replace the lower edit's base. Prove both
+		// representations; choosing singleton rows alone can hide a grouped conflict.
+		const rows = edits.map(row => ({at: row.pos, remove: row.removed.length, insert: row.inserted}));
+		const grouped = [];
+		for (const row of rows) {
+			let entry = grouped.at(-1);
+			if (!entry || row.at + row.remove > entry.splices.at(-1).at) {
+				entry = {client, splices: []}; grouped.push(entry);
+			}
+			entry.splices.push(row);
+		}
+		for (const entry of grouped) entry.splices.reverse();
+		const submitted = transformSplices(base, edits);
+		if (replay(base, grouped) !== submitted) throw new RangeError('source_merge_diverged');
+		for (let opposite of [rows.map(row => ({client, splices: [row]})), ...(grouped.length < rows.length ? [grouped] : [])]) {
+			let before = base, other = submitted;
+			for (const row of log) {
+				const authored = row.splices.slice().reverse().map(splice => ({pos: splice.at,
+					removed: before.slice(splice.at, splice.at + splice.remove), inserted: splice.insert}));
+				const reversed = mergeSourceEdits(before, authored, row.client, opposite);
+				before = applySplices(before, row.splices);
+				other = reversed.text;
+				opposite = reversed.remote;
+			}
+			if (other !== merged.text) throw new RangeError('source_merge_diverged');
+		}
+	}
+	return merged;
+}
+
+function mergeSourceEdits(base, edits, client, log) {
 	const submitted = transformSplices(base, edits);
 	if (submitted === null) throw new RangeError('source_edits_invalid');
 	let text = replay(base, log), remote = log;

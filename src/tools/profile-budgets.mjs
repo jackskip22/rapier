@@ -31,18 +31,13 @@ export const PAINT_STROKE_BUDGETS = Object.freeze({
 	'rapier/oil':                  Object.freeze({medianMs: 451, worstMs: 593}),
 	'rapier/bristle':              Object.freeze({medianMs: 260, worstMs: 389}),
 	'rapier/scumble':              Object.freeze({medianMs: 300, worstMs: 450}),
-	// The seven Tools as operators: ~3x the median for tiny strokes, 2x otherwise. This witness paints on BLANK paper. Water and Wet flat are wet
-	// operators (_opWet); hairs pool one settle per dab (opFlush).
-	'rapier/water':                Object.freeze({medianMs: 991, worstMs: 1044}),
-	'rapier/watercolour':          Object.freeze({medianMs: 462, worstMs: 653}),
+	// The Tools as operators: ~3x the median for tiny strokes, 2x otherwise. This witness paints on BLANK paper; hairs pool one settle per dab (opFlush).
 	'rapier/pencil':               Object.freeze({medianMs: 329, worstMs: 348}),
 	'rapier/pen':                  Object.freeze({medianMs: 405, worstMs: 442}),
-	'rapier/marker':               Object.freeze({medianMs: 492, worstMs: 569}),
 	'rapier/smudge':               Object.freeze({medianMs: 168, worstMs: 188}),
 	'rapier/blend':                Object.freeze({medianMs: 92,  worstMs: 128}),
 	'rapier/dissolve':             Object.freeze({medianMs: 30,  worstMs: 50}),
 	'rapier/erode':                Object.freeze({medianMs: 30,  worstMs: 55}),
-	'rapier/wetflat':              Object.freeze({medianMs: 4062, worstMs: 4066}),
 	// The Erase tool's own preset, the `erase` operator: measured median 9.0 ms, worst 9.9.
 	'rapier/eraser':               Object.freeze({medianMs: 30,  worstMs: 55}),
 });

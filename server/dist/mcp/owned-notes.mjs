@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Owned Notes stores signed ciphertext only. Enrollment belongs to the account authority; content tools terminate at an enrolled endpoint.
-import {verifyLiveEnvelope, LIVE_ENVELOPE_MAX_BYTES} from '../notes/live-envelope.mjs';
+import {verifyLiveEnvelope, LIVE_ENVELOPE_MAX_BYTES, KINDS} from '../notes/live-envelope.mjs';
 
 const HEAD = 'owned:head', TYPE = 'owned-notes', MAX_PAGE = 16;
 const MAX_BODY_BYTES = Math.ceil(LIVE_ENVELOPE_MAX_BYTES / 3) * 4 + 2048;
-const MESSAGE_KINDS = new Set(['edit', 'proposal', 'decision', 'comment', 'presence', 'checkpoint', 'rotate', 'notes-call', 'notes-result']);
 const CODEC_ERRORS = new Set(['live_envelope_bytes', 'live_envelope_frame', 'live_envelope_header', 'live_envelope_scope', 'live_envelope_key', 'live_envelope_signature']);
 const SAFE = Symbol('owned Notes failure'), te = new TextEncoder();
 const clone = value => structuredClone(value);
@@ -115,7 +114,7 @@ export class RapierOwnedNotes {
     const actors = config.actors.map(value => {
       exact(value, ['actorIndex', 'publicJwk', 'messageKinds'], undefined, 'owned_notes_enrollment');
       if (!integer(value.actorIndex) || seen.has(value.actorIndex) || !Array.isArray(value.messageKinds) || !value.messageKinds.length ||
-          new Set(value.messageKinds).size !== value.messageKinds.length || value.messageKinds.some(kind => !MESSAGE_KINDS.has(kind))) fail('owned_notes_enrollment');
+          new Set(value.messageKinds).size !== value.messageKinds.length || value.messageKinds.some(kind => !KINDS.has(kind))) fail('owned_notes_enrollment');
       seen.add(value.actorIndex);
       return {actorIndex: value.actorIndex, publicJwk: publicJwk(value.publicJwk), messageKinds: [...value.messageKinds].sort(), revoked: false};
     }).sort((a, b) => a.actorIndex - b.actorIndex);

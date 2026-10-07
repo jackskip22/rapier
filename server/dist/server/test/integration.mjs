@@ -37,6 +37,8 @@ export async function serverCells() {
     const wire=await response.json(); return wire.result || wire.error || wire;
   };
   const call = async (name,args={},scope='') => {const wire=await rpc('tools/call',{name,arguments:args},scope);return wire.structuredContent || wire;};
+  const editorCall = async (name,args) => {const wire=await rpc('tools/call',{name,arguments:args,
+    _meta:{'rapier/editorKey':args.editorKey}});return wire.structuredContent || wire;};
   const named = document => ({document, operation_id:randomUUID()});
   try {
     await start();
@@ -74,7 +76,8 @@ export async function serverCells() {
     assert(corpus.wordRoundTrips>=125);
     if(corpus.codecRefusals.length)console.log('CODEC REFUSAL (not a Word round trip): '+JSON.stringify(corpus.codecRefusals));
     const original='Original agent document.\r\n';
-    const opened=await call('rapier.open',{text:original,filename:'agent.md'}); assert(opened.document,JSON.stringify(opened));
+    const opening=await rpc('tools/call',{name:'rapier.open',arguments:{text:original,filename:'agent.md'}});
+    const opened=opening.structuredContent; assert(opened.document,JSON.stringify(opened));
     assert.equal(await readFile(join(root,'agent.md'),'utf8'),original);
     const scoped=await call('rapier.open',{},'?document=nested%2Fsecond.md'); assert(scoped.document,JSON.stringify(scoped));
     const read=await call('document.read_context',{...named(opened.document),start:0,end:original.length}); assert.equal(read.text,original);
@@ -97,16 +100,23 @@ export async function serverCells() {
     const undo=await call('document.undo_agent_change',{...named(opened.document),change_id:edit.changeId}); assert.equal(undo.outcome,'applied',JSON.stringify(undo));
     assert.equal(await readFile(join(root,'agent.md'),'utf8'),original,'the actual persisted kernel undoes to the exact original');
     const resource=await rpc('resources/read',{uri:UI_RESOURCE});
-    const editorKey=/globalThis\.RAPIER_EDITOR_KEY = "([^"]+)"/.exec(resource.contents?.[0]?.text || '')?.[1];
-    assert(editorKey,'the actual served MCP App mints an editor key');
+    assert.doesNotMatch(resource.contents?.[0]?.text || '',/globalThis\.RAPIER_EDITOR_KEY\s*=\s*["']/,'the served resource grants no editor key');
+    const editorKey=opening._meta?.rapier?.editorKey;
+    assert(editorKey,'the workspace tool result delivers its key through private metadata');
+    assert.equal(opening._meta.rapier.editorDocument,opened.document);
+    assert(!JSON.stringify({content:opening.content,structuredContent:opened}).includes(editorKey),'model-visible results keep no editor key');
     const forged=await call('document.rotate_capability',{document:opened.document,editorKey:'not-an-editor-key'});
     assert.match(JSON.stringify(forged),/HUMAN_AUTHORITY_REQUIRED/,'an agent cannot rotate with invented editor authority');
-    const rotation=await call('document.rotate_capability',{document:opened.document,editorKey});
+    const argumentOnly=await call('document.rotate_capability',{document:opened.document,editorKey});
+    assert.match(JSON.stringify(argumentOnly),/HUMAN_AUTHORITY_REQUIRED/,'a model-filled key argument cannot supply page authority');
+    const foreignKey=await editorCall('document.sync',{document:scoped.document,editorKey});
+    assert.match(JSON.stringify(foreignKey),/HUMAN_AUTHORITY_REQUIRED/,'one document key cannot authorize another workspace');
+    const rotation=await editorCall('document.rotate_capability',{document:opened.document,editorKey});
     assert.equal(rotation.rotated,true,JSON.stringify(rotation));assert(!rotation.document,'the successor is not exposed as agent-readable text');
     const successor=await unsealForEditor(editorKey,rotation.sealed);assert.match(successor,/^rpr_/);
     // Disconnect is the owner's stored decision: the editor shares the successor again before an agent uses it.
-    const synced=await call('document.sync',{document:successor,editorKey});
-    const shared=await call('document.set_policy',{document:successor,editorKey,expectedRevision:synced.documentRevision,expectedVersion:synced.version,agentAccess:true,decisionId:'share-again'});
+    const synced=await editorCall('document.sync',{document:successor,editorKey});
+    const shared=await editorCall('document.set_policy',{document:successor,editorKey,expectedRevision:synced.documentRevision,expectedVersion:synced.version,agentAccess:true,decisionId:'share-again'});
     assert.equal(shared.outcome,'ok',JSON.stringify(shared));
     const returned=await call('document.create_return',named(successor));
     assert.equal(new URL(returned.return_url).origin,server.origin,'a returned file belongs to this business server, not the public deployment');
@@ -137,22 +147,25 @@ export async function serverCells() {
     const willEdit=await call('document.apply_edits',{...named(will.document),edits:[{context_handle:willRead.handle,text:'Unapproved replacement.\n'}]});
     assert.notEqual(willEdit.outcome,'applied','the filesystem door cannot bypass Will keep');
     assert.equal(await readFile(join(root,'governed.md'),'utf8'),guarded);
-    const review=await call('rapier.open',{text:'Before review.\n',filename:'review.md'});assert(review.document);
-    const editorState=()=>call('document.sync',{document:review.document,editorKey});
+    const reviewOpening=await rpc('tools/call',{name:'rapier.open',arguments:{text:'Before review.\n',filename:'review.md'}});
+    const review=reviewOpening.structuredContent;assert(review.document);
+    const reviewKey=reviewOpening._meta?.rapier?.editorKey;assert(reviewKey);
+    assert.equal(reviewOpening._meta.rapier.editorDocument,review.document);
+    const editorState=()=>editorCall('document.sync',{document:review.document,editorKey:reviewKey});
     const position=value=>({expectedRevision:value.documentRevision,expectedVersion:value.version ?? value.acceptedVersion});
     let state=await editorState();
-    const policy=await call('document.set_policy',{document:review.document,editorKey,...position(state),posture:'ask',decisionId:randomUUID()});
+    const policy=await editorCall('document.set_policy',{document:review.document,editorKey:reviewKey,...position(state),posture:'ask',decisionId:randomUUID()});
     assert(['ok','applied','unchanged'].includes(policy.outcome),JSON.stringify(policy));
     const beforeReview=await call('document.read_context',{...named(review.document),start:0,end:15});
     const staged=await call('document.apply_edits',{...named(review.document),edits:[{context_handle:beforeReview.handle,text:'After approval.\n'}]});
     assert.equal(staged.outcome,'pending',JSON.stringify(staged));
     assert.equal(await readFile(join(root,'review.md'),'utf8'),'Before review.\n','ASK cannot publish an unapproved proposal to disk');
     state=await editorState();
-    const approved=await call('document.review_decide',{document:review.document,editorKey,...position(state),
+    const approved=await editorCall('document.review_decide',{document:review.document,editorKey:reviewKey,...position(state),
       reviewId:staged.pending.reviewId ?? staged.pending.proposalId ?? staged.pending.requestId,action:'approve',decisionId:randomUUID()});
     assert(['ok','applied','rebased','unchanged'].includes(approved.outcome),JSON.stringify(approved));
     assert.equal(await readFile(join(root,'review.md'),'utf8'),'After approval.\n','the person approves the exact staged words');
-    const deleting=await call('document.delete',{document:review.document,editorKey});
+    const deleting=await editorCall('document.delete',{document:review.document,editorKey:reviewKey});
     assert(!deleting.isError,JSON.stringify(deleting));assert.equal(await readFile(join(root,'review.md'),'utf8'),'After approval.\n','workspace deletion never deletes the business file');
     // A fault after each durable cut leaves the same recoverable kernel snapshot. The
     // production adapter is exercised; only the crash moment is injected.

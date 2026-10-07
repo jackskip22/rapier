@@ -9,8 +9,9 @@ export function createJPEGXLCodec({encoderFactory}) {
   return Object.freeze({
     async encode(image, options = {}) {
       stage = 'checking image';
-      const {width, height} = boundedDimensions(image?.width, image?.height), data = byteView(image.data);
-      if (data.byteLength !== width * height * 4) throw codecError('JXL_RGBA', 'JPEG XL encoding requires one RGBA value per pixel.');
+      const {width, height} = boundedDimensions(image?.width, image?.height);
+      const data = image.data instanceof Uint16Array || image.data instanceof Float32Array ? image.data : byteView(image.data);
+      if (data.length !== width * height * 4) throw codecError('JXL_RGBA', 'JPEG XL encoding requires one RGBA value per pixel.');
       if (!options || typeof options !== 'object' || Array.isArray(options)) throw codecError('JXL_OPTIONS', 'JPEG XL options are invalid.');
       const lossless = options.lossless === true, quality = lossless ? 100 : options.quality ?? 90, effort = options.effort ?? 3;
       if (!Number.isFinite(quality) || quality < 1 || quality > 100 || !Number.isInteger(effort) || effort < 1 || effort > 9) throw codecError('JXL_OPTIONS', 'JPEG XL quality must be 1–100 and effort 1–9.');
@@ -18,7 +19,7 @@ export function createJPEGXLCodec({encoderFactory}) {
       stage = 'starting encoder';
       encoder ||= encoderFactory();
       stage = 'encoding image';
-      return encoder.encode(data, width, height, {quality, effort, photo: options.photo === true});
+      return encoder.encode(data, width, height, {...options, quality, effort, photo: options.photo === true});
     },
     async transcode(input) {
       stage = 'checking image';

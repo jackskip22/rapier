@@ -1715,15 +1715,16 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	gap: var(--space-2);
 	margin-bottom: var(--space-3);
 }
-/* The Draw door under compare: one box tall, centred, the same air above (the actions' own 20px margin plus 20px) as the
-   export title keeps above its word (--settings-air, 40px), wider than the 8px between boxes. */
+/* The Draw door under compare: the brush twice its old size at the same stroke (the glyph's stroke-width
+   halved as its box doubled), centred, with the same air above (the actions' own 20px margin plus 24px) as below (the export
+   title's --settings-air, 40px, plus the word's leading): evenly between compare and export. */
 .settings-draw-btn {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 48px;
-	height: 48px;
-	margin: var(--space-5) auto 0;
+	width: 52px;
+	height: 52px;
+	margin: calc(var(--space-8) + var(--space-2)) auto 0;
 	padding: 0;
 	border: 0;
 	background: none;
@@ -1803,18 +1804,22 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 /* The destructive verb stands the thumb-exclusion radius from every other tappable box; last in reading order. */
 .settings-action-btn--apart { margin-top: calc(var(--thumb-exclusion) - var(--space-2)); }
 
-/* ONE LAYOUT FOR EVERY POP-UP THAT ASKS (editor/pop.js owns which box is which). Top to bottom: the title; the words; the
-   affirmative boxes; a big space; the destructive or Cancel box at the bottom, a flat box in a slightly darkened red with
-   white text in both themes. The gap is one measure on the left, the right and the bottom. No positioning: the panel is a
-   column and the bottom box takes the rest of the room above it as margin. */
-.rapier-pop { min-height: min(72dvh, 32rem); }
+/* ONE LAYOUT FOR EVERY POP-UP THAT ASKS (editor/pop.js owns which box is which), composed like a magazine page. Top to
+   bottom: the title; the words; the options in one column with one even gap. The first affirmative box, what the person
+   came to do, stands first in the theme's highlight (black with white words in the light theme, white with black words in
+   the dark theme); further affirmative boxes are the plain grey boxes between; the destructive or Cancel box is last, a flat
+   box in a slightly darkened red with white text in both themes, set apart by one clear gap of three measures and no more.
+   The panel is as tall as its words and options; no positioning. */
 .rapier-pop .settings-panel__body { display: flex; flex-direction: column; padding: var(--space-5); }
 .rapier-pop p { overflow-wrap: anywhere; }
-.rapier-pop__actions { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: flex-start; gap: var(--space-2); margin: 0; padding-top: var(--space-6); }
+.rapier-pop__actions { display: flex; flex-direction: column; justify-content: flex-start; gap: var(--space-2); margin: 0; padding-top: var(--space-5); }
 .rapier-pop__actions[hidden] { display: none; }
-.rapier-pop__actions > [data-pop-bottom] { margin-top: auto; background: var(--color-pop-negative); color: #fff; }
+.rapier-pop__actions > [data-pop-top] { background: var(--color-pop-affirm); color: var(--color-pop-affirm-ink); }
+.rapier-pop__actions > [data-pop-top]:focus-visible { background: color-mix(in srgb, var(--color-pop-affirm) 84%, var(--color-pop-affirm-ink)); }
+.rapier-pop__actions > [data-pop-bottom] { margin-top: var(--space-6); background: var(--color-pop-negative); color: #fff; }
 .rapier-pop__actions > [data-pop-bottom]:focus-visible { background: color-mix(in srgb, var(--color-pop-negative) 88%, #000); }
 @media (hover: hover) and (pointer: fine) {
+	.rapier-pop__actions > [data-pop-top]:hover { background: color-mix(in srgb, var(--color-pop-affirm) 84%, var(--color-pop-affirm-ink)); }
 	.rapier-pop__actions > [data-pop-bottom]:hover { background: color-mix(in srgb, var(--color-pop-negative) 88%, #000); }
 }
 

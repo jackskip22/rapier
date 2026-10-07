@@ -1,5 +1,5 @@
 {
-  "release": "1.1.77",
+  "release": "1.1.78",
   "core": [
     {
       "name": "document.inspect_visual",
@@ -33,7 +33,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -163,7 +163,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -316,7 +316,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -468,7 +468,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -1431,7 +1431,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -1635,6 +1635,33 @@
             "pattern": "^[A-Za-z0-9_-]+$",
             "description": "The handle can change this object alone; the whole drawing is still read."
           },
+          "paintSample": {
+            "type": "object",
+            "properties": {
+              "objectId": {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "point": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000,
+                  "maximum": 1000000
+                }
+              }
+            },
+            "required": [
+              "objectId",
+              "point"
+            ],
+            "additionalProperties": false,
+            "description": "Sample a paint layer in this inspected native drawing at [x,y] drawing units. Returns its material sample without changing it; use the same passage or drawing handle as the read."
+          },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
@@ -1642,7 +1669,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -1716,6 +1743,10 @@
             "maxLength": 64,
             "minLength": 1,
             "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "paintSample": {
+            "type": "object",
+            "additionalProperties": true
           },
           "sha256": {
             "type": "string",
@@ -1892,7 +1923,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -2048,7 +2079,7 @@
     {
       "name": "document.apply_edits",
       "title": "Edit inspected text",
-      "description": "Applies a batch of changes to inspected passages when revising text. A pending outcome leaves the batch unapplied. A Mermaid flowchart is a mermaid fence written into the Markdown source here; Rapier renders it and keeps it as text.",
+      "description": "Applies a batch of changes to inspected passages when revising text. An applied or rebased result can return a handle for one inserted span. A pending outcome leaves the batch unapplied. A Mermaid flowchart is a mermaid fence written into the Markdown source here; Rapier renders it and keeps it as text.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -2104,7 +2135,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -2199,6 +2230,11 @@
             "type": "object",
             "additionalProperties": true
           },
+          "handle": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "A handle for one inserted span of the successful batch, when that span admits an edit handle."
+          },
           "pending": {
             "type": [
               "object",
@@ -2273,7 +2309,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -2437,7 +2473,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -2596,7 +2632,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -2730,7 +2766,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -2888,7 +2924,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3068,7 +3104,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3202,7 +3238,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3304,7 +3340,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3406,7 +3442,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3504,7 +3540,8 @@
             "type": "integer",
             "minimum": 1000,
             "maximum": 120000,
-            "description": "How long to wait, in milliseconds."
+            "description": "How long to wait: 1,000 to 120,000 milliseconds; 20,000 by default.",
+            "default": 20000
           },
           "agent": {
             "type": "string",
@@ -3513,7 +3550,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3604,7 +3641,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3705,7 +3742,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -3797,7 +3834,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. A drawing's recipe also carries its paper, background with every number its kind has, copier effect, light, letters and embedded fonts: read the drawing and send the whole recipe back with recipe_handle to change them; while the person has that drawing open, shapes patches and operations are admitted. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with svgNodeEdits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
+      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. Read the drawing for recipe_handle. Change a drawing dial with shapes.set; a background kind or effect preset alone takes its starting values. Change an object with an operation. A complete recipe replaces the inspected recipe, including strokes and fonts, and uses the same open-canvas hand-off as a patch. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with node_edits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -3815,7 +3852,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. get_context.paint lists every brush and control, including smudge, smear and blend. Size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected paint layer id and paints into its existing material."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. Water uses {\"kind\":\"paint\",\"mode\":\"water\",\"seed\":1,\"paper\":\"cold-press\",\"actions\":[{\"kind\":\"stroke\",\"brush\":\"water/round\",\"pigment\":\"ultramarine\",\"paths\":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists its pigment palette, paper settings and action controls beside the Paint brushes. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {\"kind\":\"text\",\"text\":\"Hi\",\"at\":[10,10],\"textSize\":16}; Trace uses {\"kind\":\"trace\",\"shapeId\":\"outline\"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform."
           },
           "direction": {
             "type": "string",
@@ -3955,7 +3992,7 @@
                   "type": "object",
                   "additionalProperties": true
                 },
-                "description": "Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape. A kind:paint figure with id and strokes paints into that existing paint layer, preserving its material and transform."
+                "description": "Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape. A kind:paint figure with id and strokes paints into that existing Paint layer. Water uses id, mode:water and actions. Both preserve the inspected material and transform."
               },
               "remove": {
                 "type": "array",
@@ -5039,9 +5076,9 @@
           "svg_handle": {
             "type": "string",
             "maxLength": 128,
-            "description": "Edit an imported SVG: the handle from its completed node-tree read. Use with svgNodeEdits, without recipe, figures, shapes or operations."
+            "description": "Edit an imported SVG: the handle from its completed node-tree read. Use with node_edits, without recipe, figures, shapes or operations."
           },
-          "svgNodeEdits": {
+          "node_edits": {
             "type": "array",
             "minItems": 1,
             "maxItems": 128,
@@ -5049,7 +5086,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "nodeId": {
+                "id": {
                   "type": "string",
                   "maxLength": 1024,
                   "pattern": "^svg:0(?:\\.[0-9]+)*$",
@@ -5206,7 +5243,7 @@
                 }
               },
               "required": [
-                "nodeId"
+                "id"
               ],
               "additionalProperties": false
             }
@@ -5239,7 +5276,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -5400,7 +5437,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -5551,7 +5588,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -5771,7 +5808,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -5897,7 +5934,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -6050,7 +6087,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -6173,7 +6210,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           }
         },
@@ -6265,7 +6302,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "expectedRevision": {
@@ -6421,7 +6458,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "status": {
@@ -6579,13 +6616,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
-          },
-          "editorKey": {
-            "type": "string",
-            "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
           },
           "action": {
             "type": "string",
@@ -6803,7 +6835,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "agent": {
@@ -7778,7 +7810,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "within": {
@@ -7988,13 +8020,8 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
-          },
-          "editorKey": {
-            "type": "string",
-            "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
           },
           "return_id": {
             "type": "string",
@@ -8040,6 +8067,33 @@
             "minLength": 1,
             "pattern": "^[A-Za-z0-9_-]+$",
             "description": "The handle can change this object alone; the whole drawing is still read."
+          },
+          "paintSample": {
+            "type": "object",
+            "properties": {
+              "objectId": {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "point": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000,
+                  "maximum": 1000000
+                }
+              }
+            },
+            "required": [
+              "objectId",
+              "point"
+            ],
+            "additionalProperties": true,
+            "description": "Sample a paint layer in this inspected native drawing at [x,y] drawing units. Returns its material sample without changing it; use the same passage or drawing handle as the read."
           },
           "agent": {
             "type": "string",
@@ -8118,6 +8172,10 @@
             "maxLength": 64,
             "minLength": 1,
             "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "paintSample": {
+            "type": "object",
+            "additionalProperties": true
           },
           "sha256": {
             "type": "string",
@@ -8265,7 +8323,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "query": {
@@ -8500,7 +8558,7 @@
     {
       "name": "document.apply_edits",
       "title": "Edit inspected text",
-      "description": "Applies a batch of changes to inspected passages when revising text. A pending outcome leaves the batch unapplied. A Mermaid flowchart is a mermaid fence written into the Markdown source here; Rapier renders it and keeps it as text.",
+      "description": "Applies a batch of changes to inspected passages when revising text. An applied or rebased result can return a handle for one inserted span. A pending outcome leaves the batch unapplied. A Mermaid flowchart is a mermaid fence written into the Markdown source here; Rapier renders it and keeps it as text.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -8512,7 +8570,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "edits": {
@@ -8655,6 +8713,11 @@
             "type": "object",
             "additionalProperties": true
           },
+          "handle": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "A handle for one inserted span of the successful batch, when that span admits an edit handle."
+          },
           "pending": {
             "type": [
               "object",
@@ -8727,7 +8790,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "context_handle": {
@@ -8892,7 +8955,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "edits": {
@@ -9116,7 +9179,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "change_id": {
@@ -9278,7 +9341,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "change_id": {
@@ -9445,7 +9508,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "action": {
@@ -9665,7 +9728,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "text": {
@@ -9840,7 +9903,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "context_handle": {
@@ -9953,7 +10016,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "context_handle": {
@@ -10103,7 +10166,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "agent": {
@@ -10219,7 +10282,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "mode": {
@@ -10239,7 +10302,8 @@
             "type": "integer",
             "minimum": 1000,
             "maximum": 120000,
-            "description": "How long to wait, in milliseconds."
+            "description": "How long to wait: 1,000 to 120,000 milliseconds; 20,000 by default.",
+            "default": 20000
           },
           "agent": {
             "type": "string",
@@ -10357,7 +10421,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "agent": {
@@ -10473,7 +10537,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "format": {
@@ -10606,7 +10670,7 @@
     {
       "name": "document.draw",
       "title": "Draw a picture",
-      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. A drawing's recipe also carries its paper, background with every number its kind has, copier effect, light, letters and embedded fonts: read the drawing and send the whole recipe back with recipe_handle to change them; while the person has that drawing open, shapes patches and operations are admitted. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with svgNodeEdits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
+      "description": "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. Read the drawing for recipe_handle. Change a drawing dial with shapes.set; a background kind or effect preset alone takes its starting values. Change an object with an operation. A complete recipe replaces the inspected recipe, including strokes and fonts, and uses the same open-canvas hand-off as a patch. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with node_edits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -10618,7 +10682,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "recipe": {
@@ -10633,7 +10697,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. get_context.paint lists every brush and control, including smudge, smear and blend. Size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected paint layer id and paints into its existing material."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. Water uses {\"kind\":\"paint\",\"mode\":\"water\",\"seed\":1,\"paper\":\"cold-press\",\"actions\":[{\"kind\":\"stroke\",\"brush\":\"water/round\",\"pigment\":\"ultramarine\",\"paths\":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists its pigment palette, paper settings and action controls beside the Paint brushes. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {\"kind\":\"text\",\"text\":\"Hi\",\"at\":[10,10],\"textSize\":16}; Trace uses {\"kind\":\"trace\",\"shapeId\":\"outline\"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform."
           },
           "direction": {
             "type": "string",
@@ -10773,7 +10837,7 @@
                   "type": "object",
                   "additionalProperties": true
                 },
-                "description": "Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape. A kind:paint figure with id and strokes paints into that existing paint layer, preserving its material and transform."
+                "description": "Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape. A kind:paint figure with id and strokes paints into that existing Paint layer. Water uses id, mode:water and actions. Both preserve the inspected material and transform."
               },
               "remove": {
                 "type": "array",
@@ -11857,9 +11921,9 @@
           "svg_handle": {
             "type": "string",
             "maxLength": 128,
-            "description": "Edit an imported SVG: the handle from its completed node-tree read. Use with svgNodeEdits, without recipe, figures, shapes or operations."
+            "description": "Edit an imported SVG: the handle from its completed node-tree read. Use with node_edits, without recipe, figures, shapes or operations."
           },
-          "svgNodeEdits": {
+          "node_edits": {
             "type": "array",
             "minItems": 1,
             "maxItems": 128,
@@ -11867,7 +11931,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "nodeId": {
+                "id": {
                   "type": "string",
                   "maxLength": 1024,
                   "pattern": "^svg:0(?:\\.[0-9]+)*$",
@@ -12024,7 +12088,7 @@
                 }
               },
               "required": [
-                "nodeId"
+                "id"
               ],
               "additionalProperties": true
             }
@@ -12220,7 +12284,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "query": {
@@ -12387,7 +12451,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "file": {
@@ -12568,7 +12632,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "file": {
@@ -12799,7 +12863,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "file": {
@@ -12989,7 +13053,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "action": {
@@ -13130,7 +13194,7 @@
           "operation_id": {
             "type": "string",
             "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged call at the same returned revision replays for 24 hours. Reusing it with changed arguments or revision refuses; an expired mutation identity never executes again. Inspect before starting another operation. Calls without it never replay.",
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
           },
           "text": {
@@ -13458,13 +13522,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.77.html",
+          "resourceUri": "ui://rapier/editor-1.1.78.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.77.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.78.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -14829,7 +14893,7 @@
     {
       "name": "document.pair_browser",
       "title": "Pair a browser",
-      "description": "Connects the browser showing this four-letter code to this one workspace for a day, when the person gives you the code from the page at editor_url. One use; a code lasts one minute.",
+      "description": "Names the four-letter code the person gives you from editor_url. The person then chooses ALLOW on that page to connect this browser to this workspace for a day. One use; a code lasts one minute. Five misses lock pairing for the code window.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -14857,7 +14921,7 @@
           "outcome": {
             "type": "string",
             "enum": [
-              "paired",
+              "confirmation_required",
               "refused",
               "uncertain"
             ]
@@ -14927,7 +14991,7 @@
     {
       "name": "document.pair_status",
       "title": "Show the pairing code",
-      "description": "Returns the pairing code the paired editor page shows, and whether an agent confirmed it.",
+      "description": "Returns the page's pairing state. After the agent names the code, the page posts the person's allow or cancel decision; polling grants no session.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -14935,6 +14999,13 @@
             "type": "string",
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "cancel"
+            ]
           }
         },
         "required": [
@@ -14949,7 +15020,9 @@
             "type": "string",
             "enum": [
               "waiting",
+              "confirmation_required",
               "paired",
+              "cancelled",
               "refused",
               "uncertain"
             ]

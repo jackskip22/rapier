@@ -79,6 +79,12 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-surface--choosing .rapier-draw-current-tool{position:relative;z-index:9}
 .rapier-draw-tool-menu-item svg{width:22px;height:22px;flex:none}
 .rapier-draw-tool-menu-item span{flex:1}
+/* Three sections, TOOLS, SVG and RASTER: a small all-caps subtitle above each, the sections set apart by clear space. */
+.rapier-draw-tool-menu-section{padding-bottom:var(--space-2)}
+.rapier-draw-tool-menu-section:last-child{padding-bottom:var(--space-3)}
+.rapier-draw-tool-menu-head{padding:var(--space-5) var(--space-3) var(--space-2);font:var(--fw-medium) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;line-height:1;opacity:.6}
+/* The first title fills the band beside the panel bar (52px, as the bar), so the first tool starts where the bar ends. */
+.rapier-draw-tool-menu-section:first-child .rapier-draw-tool-menu-head{box-sizing:border-box;height:52px;padding-top:0;padding-bottom:0;display:flex;align-items:center}
 .rapier-draw-tool-menu-item[aria-pressed="true"]{background:var(--color-bg);color:var(--color-icon)}
 /* The canvas menu is the tool menu, shorter. Its CANVAS row is the canvas itself: the paper's colour fills the whole row and the word
    is the paper's ink. ADAPTIVE is an on/off row: pressed is the highlighted one, as a settings-panel switch's. BACKGROUND stands inert
@@ -575,3 +581,8 @@ body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 .rapier-draw-resize-strip .rapier-draw-chip{flex:1;min-width:0;padding:0;background:transparent;color:var(--color-bg)}
 .rapier-draw-resize-strip .rapier-draw-chip[aria-pressed="true"]{color:var(--color-accent)}
 .rapier-draw-resize-strip .rapier-draw-resize-done{flex:none;height:auto;min-height:0}
+/* Water uses the existing floating strips and controls; pigment names remain beside their swatches. */
+.rapier-draw-water-pigment-name{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:44px;font:var(--fw-medium) var(--text-sm) var(--font-mono);color:var(--color-text-secondary)}
+.rapier-draw-water-pigment-name>span{min-width:0;overflow-wrap:anywhere}
+.rapier-draw-water-tools .rapier-draw-chip--glyph{min-width:44px;padding:0 var(--space-1)}
+.rapier-draw-water-load .rapier-draw-metric{padding:0}

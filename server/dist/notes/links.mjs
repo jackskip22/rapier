@@ -1091,7 +1091,7 @@ export function importLinkPatches(notes, fileMap) {
 	const roots = new Map();
 	for (const rec of fileMap || []) {
 		const rootId = String(rec.rootId || '');
-		if (!roots.has(rootId)) roots.set(rootId, {files: new Set(), paths: new Map(), aliases: new Map(), names: null});
+		if (!roots.has(rootId)) roots.set(rootId, {files: new Set(), paths: new Map(), aliases: new Map(), wikiAliases: new Map(), names: null});
 		const root = roots.get(rootId), path = rec.sourceName || rec.sourcePath;
 		root.files.add(path);
 		const atPath = root.paths.get(path) || []; atPath.push(rec); root.paths.set(path, atPath);
@@ -1099,15 +1099,20 @@ export function importLinkPatches(notes, fileMap) {
 		for (const alias of new Set(rec.sourceAliases || [])) {
 			const atAlias = root.aliases.get(alias) || []; atAlias.push(rec); root.aliases.set(alias, atAlias);
 		}
+		for (const alias of new Set(rec.sourceWikiAliases || [])) {
+			const atAlias = root.wikiAliases.get(alias) || []; atAlias.push(rec); root.wikiAliases.set(alias, atAlias);
+		}
 	}
 	return (notes || []).map(note => {
 		const text = String(note.text ?? ''), rootId = String(note.rootId || '');
 		const from = String(note.sourceName || note.sourcePath || note.file);
-		const root = roots.get(rootId) || {files: new Set(), paths: new Map(), aliases: new Map(), names: null};
+		const root = roots.get(rootId) || {files: new Set(), paths: new Map(), aliases: new Map(), wikiAliases: new Map(), names: null};
 		const files = root.files;
 		const changed = [], unresolved = [], spans = new Map();
 		for (const link of scanLinks(text)) {
-			const aliasHits = root.aliases.get(link.dest) || [];
+			// A page titled with a URL names a wiki page, never a replacement for an external link.
+			const aliasHits = [...new Set([...(root.aliases.get(link.dest) || []),
+				...(['wikilink', 'embed'].includes(link.kind) ? root.wikiAliases.get(link.dest) || [] : [])])];
 			const resolved = aliasHits.length ? (aliasHits.length === 1 ? {file: aliasHits[0].sourceName || aliasHits[0].sourcePath} : {unresolved: 'ambiguous'}) : resolveLinkWithNames(link, {from, files, sourceFiles: true}, root.names ||= resolutionNames(files));
 			if (resolved.unresolved === 'outside') continue;
 			if (resolved.unresolved === 'notNote') {

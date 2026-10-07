@@ -506,6 +506,13 @@
 				"kind": "static-template",
 				"reason": "The on-canvas handles: cleared to '' or fixed circle/line markup whose only interpolations are numbers computed here and colours taken from an admitted background's points (hex only)."
 			}
+		},
+		"draw/water-tool.js": {
+			"_rapierWaterUpdate": {
+				"count": 5,
+				"kind": "static-template",
+				"reason": "The four Water strip writes build fixed button markup. Brush, tool and paper chip ids and names, including imported brush names, pass through _rapierDrawEscapeAttr. Brush image sources come only from the local Paint PNG codec encoding CPU Water previews. Pigment ids and hex swatch colours come from the immutable WATER_PIGMENTS catalog; pigment names are escaped. The fifth write shows the selected tool's trusted static icon and fixed label on its toolbar button. Icons come from the existing Draw glyph table and fixed Water glyphs. Selected states are booleans; material, imported JSON and typed words never become raw markup."
+			}
 		}
 	}
 }

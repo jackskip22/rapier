@@ -5,7 +5,8 @@ import {zipStored} from './zip-records.mjs';
 export {crc32, zipStored};
 // Pure archive reader; refuses what it does not carry rather than parse it partially.
 
-// ---- Reading: stored and deflate (DecompressionStream('deflate-raw')) only; other methods refused by name. ZIP64 refused (locator and sentinels).
+// ---- Reading: stored and deflate (DecompressionStream('deflate-raw')) only; other methods refused by name.
+// ZIP64 entry fields fit the same bounds; ZIP64 end records remain a named refusal.
 // Declared sizes are summed against ZIP_READ_MAX_BYTES before inflating; the inflate loop aborts past an entry's declared size.
 export const ZIP_READ_MAX_BYTES = 512 * 1024 * 1024;
 // 0xffff is ZIP64's sentinel, not a usable classic-ZIP count. One policy for every source.
@@ -26,13 +27,37 @@ function findEndRecord(bytes, view) {
 
 function checkExtra(bytes, start, length, name) {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), end = start + length;
+	let zip64 = null;
 	for (let at = start; at < end;) {
 		if (at + 4 > end) throw new Error(`readZip: "${name}" has a truncated extra field`);
 		const id = view.getUint16(at, true), size = view.getUint16(at + 2, true);
-		if (id === 1) throw new Error(`readZip: "${name}" uses ZIP64, which this reader does not support`);
+		if (at + 4 + size > end) throw new Error(`readZip: "${name}" has a truncated extra field`);
+		if (id === 1) {
+			if (zip64) throw new Error(`readZip: "${name}" has a duplicate ZIP64 extra field`);
+			zip64 = bytes.subarray(at + 4, at + 4 + size);
+		}
 		at += 4 + size;
-		if (at > end) throw new Error(`readZip: "${name}" has a truncated extra field`);
 	}
+	return zip64;
+}
+// PKWARE APPNOTE 6.3.10 sections 4.5.3 and 4.4.8–9: sentinel fields alone occur,
+// in uncompressed/compressed/offset/disk order. A local ZIP64 field carries both sizes.
+function zip64Fields(fields, extra, name, local = false) {
+	const keys = local ? ['size', 'compSize'] : ['size', 'compSize', 'localOffset', 'disk'];
+	const required = keys.filter(key => fields[key] === (key === 'disk' ? 0xFFFF : 0xFFFFFFFF));
+	if (required.length && !extra) throw new Error(`readZip: "${name}" is missing ZIP64 size or offset information`);
+	if (!extra) return fields;
+	const length = required.reduce((sum, key) => sum + (key === 'disk' ? 4 : 8), 0);
+	if (!length || extra.length !== length || local && required.length !== 2) throw new Error(`readZip: "${name}" has an inconsistent ZIP64 extra field length`);
+	const view = new DataView(extra.buffer, extra.byteOffset, extra.byteLength), resolved = {...fields};
+	let at = 0;
+	for (const key of required) {
+		if (key === 'disk') { resolved[key] = view.getUint32(at, true); at += 4; continue; }
+		const low = view.getUint32(at, true), high = view.getUint32(at + 4, true);
+		if (high > 0x1FFFFF) throw new Error(`readZip: "${name}" has a ZIP64 value outside the safe integer range`);
+		resolved[key] = high * 0x100000000 + low; at += 8;
+	}
+	return resolved;
 }
 function equalBytes(a, b) { return a.length === b.length && a.every((value, i) => value === b[i]); }
 
@@ -58,9 +83,9 @@ function* scanZip(length, {maxBytes = ZIP_READ_MAX_BYTES, maxEntries = ZIP_MAX_E
 		const central = yield [at, 46], cv = new DataView(central.buffer, central.byteOffset, central.byteLength);
 		if (cv.getUint32(0, true) !== 0x02014b50) throw new Error(`readZip: bad central directory entry at index ${i}`);
 		const flags = cv.getUint16(8, true), method = cv.getUint16(10, true), crc = cv.getUint32(16, true);
-		const compSize = cv.getUint32(20, true), size = cv.getUint32(24, true);
+		const rawCompSize = cv.getUint32(20, true), rawSize = cv.getUint32(24, true);
 		const nameLen = cv.getUint16(28, true), extraLen = cv.getUint16(30, true), commentLen = cv.getUint16(32, true);
-		const localOffset = cv.getUint32(42, true), next = at + 46 + nameLen + extraLen + commentLen;
+		const next = at + 46 + nameLen + extraLen + commentLen;
 		if (next > eocd) throw new Error(`readZip: central directory entry at index ${i} is truncated`);
 		const extra = yield [at + 46, nameLen + extraLen], nameBytes = extra.subarray(0, nameLen);
 		let name;
@@ -69,13 +94,14 @@ function* scanZip(length, {maxBytes = ZIP_READ_MAX_BYTES, maxEntries = ZIP_MAX_E
 		if (!name || name.includes('\\') || name.includes('\0') || name.startsWith('/') || /^[a-z]:/i.test(name) || name.split('/').some((part, n, list) => part === '..' || part === '.' || !part && n !== list.length - 1)) throw new Error(`readZip: "${name}" is not a safe relative name`);
 		if (names.has(name)) throw new Error(`readZip: duplicate entry "${name}"`);
 		names.add(name);
-		if (compSize === 0xFFFFFFFF || size === 0xFFFFFFFF || localOffset === 0xFFFFFFFF) throw new Error(`readZip: "${name}" uses ZIP64, which this reader does not support`);
-		if (cv.getUint16(34, true)) throw new Error(`readZip: "${name}" belongs to a split archive`);
+		const central64 = checkExtra(extra, nameLen, extraLen, name);
+		const {compSize, size, localOffset, disk} = zip64Fields({compSize: rawCompSize, size: rawSize,
+			localOffset: cv.getUint32(42, true), disk: cv.getUint16(34, true)}, central64, name);
+		if (disk) throw new Error(`readZip: "${name}" belongs to a split archive`);
 		if (flags & ~0x080E) throw new Error(`readZip: "${name}" uses unsupported or encrypted flags`);
 		if (method !== 0 && method !== 8) throw new Error(`readZip: "${name}" uses compression method ${method}, which this reader does not support (only stored and deflate)`);
 		if (size > budget) throw zipAdmissionError('bytes', `"${name}" is listed as ${attachmentSizeWords(size)}; the archive size limit is ${attachmentSizeWords(byteLimit)}. Export fewer files at a time.`);
 		budget -= size;
-		checkExtra(extra, nameLen, extraLen, name);
 		if (localOffset + 30 > cdOffset) throw new Error(`readZip: "${name}" has no valid local header`);
 		const local = yield [localOffset, 30], lv = new DataView(local.buffer, local.byteOffset, local.byteLength);
 		if (lv.getUint32(0, true) !== 0x04034b50) throw new Error(`readZip: "${name}" has no valid local header`);
@@ -85,15 +111,22 @@ function* scanZip(length, {maxBytes = ZIP_READ_MAX_BYTES, maxEntries = ZIP_MAX_E
 		const localExtra = yield [localOffset + 30, localNameLen + localExtraLen];
 		if (flags !== lv.getUint16(6, true) || method !== lv.getUint16(8, true) || cv.getUint16(6, true) !== lv.getUint16(4, true)
 			|| cv.getUint32(12, true) !== lv.getUint32(10, true) || !equalBytes(nameBytes, localExtra.subarray(0, localNameLen))) throw new Error(`readZip: "${name}" has a local header that disagrees with its central directory`);
-		checkExtra(localExtra, localNameLen, localExtraLen, name);
-		const localFields = [lv.getUint32(14, true), lv.getUint32(18, true), lv.getUint32(22, true)], expected = [crc, compSize, size];
+		const local64 = checkExtra(localExtra, localNameLen, localExtraLen, name);
+		if ((central64 || local64) && cv.getUint16(6, true) < 45) throw new Error(`readZip: "${name}" uses ZIP64 without version 4.5 headers`);
+		const localSizes = zip64Fields({compSize: lv.getUint32(18, true), size: lv.getUint32(22, true)}, local64, name, true);
+		const localFields = [lv.getUint32(14, true), localSizes.compSize, localSizes.size], expected = [crc, compSize, size];
 		if (localFields.some((value, j) => value !== expected[j] && (!(flags & 8) || value !== 0))) throw new Error(`readZip: "${name}" has CRC or sizes that disagree between headers`);
 		let localEnd = dataEnd;
 		if (flags & 8) {
-			const descriptor = yield [dataEnd, Math.min(16, cdOffset - dataEnd)], dv = new DataView(descriptor.buffer, descriptor.byteOffset, descriptor.byteLength);
-			const matches = start => start + 12 <= descriptor.length && expected.every((value, j) => dv.getUint32(start + j * 4, true) === value);
-			if (descriptor.length >= 4 && dv.getUint32(0, true) === 0x08074b50 && matches(4)) localEnd += 16;
-			else if (matches(0)) localEnd += 12;
+			// APPNOTE 4.3.9: ZIP64 sizes are eight bytes even for small files; signatures are optional.
+			const wide = !!(central64 || local64), width = wide ? 20 : 12;
+			const descriptor = yield [dataEnd, Math.min(width + 4, cdOffset - dataEnd)], dv = new DataView(descriptor.buffer, descriptor.byteOffset, descriptor.byteLength);
+			const sizeMatches = (start, value) => dv.getUint32(start, true) === value % 0x100000000 && dv.getUint32(start + 4, true) === Math.floor(value / 0x100000000);
+			const matches = start => start + width <= descriptor.length && dv.getUint32(start, true) === crc && (wide
+				? sizeMatches(start + 4, compSize) && sizeMatches(start + 12, size)
+				: dv.getUint32(start + 4, true) === compSize && dv.getUint32(start + 8, true) === size);
+			if (descriptor.length >= 4 && dv.getUint32(0, true) === 0x08074b50 && matches(4)) localEnd += width + 4;
+			else if (matches(0)) localEnd += width;
 			else throw new Error(`readZip: "${name}" has a missing or inconsistent data descriptor`);
 		}
 		records.push({name, crc, method, size, compSize, localOffset, localEnd, dataStart});

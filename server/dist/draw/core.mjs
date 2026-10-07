@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {svgElements, svgXmlValue} from '../images/assets.mjs';
 import {getStrokePoints} from './freehand.mjs';
 import {penPath, strokeHasPressure as _rapierDrawStrokeHasPressure} from './pen-path.mjs';
 import {DRAW_TEXT_MAX, GARDEN_COLOURS, admitText, layoutText, letterInputFont, restoreLetters} from './text.mjs';
@@ -8,7 +9,10 @@ import {COPIER_PRESETS, copierPreset, admitCopier, fillCopier, copierBounds, cop
 import {_rapierColorForDarkPaper, _rapierContrastRatio} from '../editor/colour-math.mjs';
 import {normalizeBackground, backgroundSVG, BACKGROUND_PRESETS, BACKGROUND_KINDS, backgroundStart, fillBackground, sampleStops as _rapierDrawSampleStops} from './backgrounds.mjs';
 import {admitPaintStrokeRecords, admitPaintReplay} from './paint-history.mjs';
+import {admitWaterActions, waterPaperById} from './water-data.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
+import {inspectJPEGXL} from '../images/header.mjs';
+import {inspectRaster} from '../images/raster.mjs';
 
 export const _rapierDrawAssetGeneration = sha256;
 
@@ -148,15 +152,15 @@ function _rapierDrawFigureTraits(raw, kind) {
 	return out;
 }
 
-// A paint layer's pixels travel as one PNG data URL (draw/paint.mjs paints them, draw/draw.js
+// A paint layer's pixels travel as one raster data URL (draw/paint.mjs paints them, draw/draw.js
 // encodes them); the SVG carries them as an <image data-rapier-paint> and the recipe metadata omits
-// them (restorePaint puts them back on read, the way fonts round-trip). Base64 PNG only, bounded.
+// them (restorePaint puts them back on read, the way fonts round-trip).
 const RAPIER_DRAW_RASTER_MAX = 8 * 1024 * 1024, RAPIER_DRAW_RASTER_TOTAL = 24 * 1024 * 1024;
 // A painting is admitted as PNG or as JPEG XL, each pinned to its own magic bytes in the base64:
 // the PNG signature, and JPEG XL's bare-codestream (0xFF 0x0A) or ISOBMFF container start. A
 // painting is kept as JPEG XL: a textured oil painting is essentially noise, so lossless PNG of
-// one is enormous (8300 KiB against an 8 MiB ceiling). The narrowing that matters: a data URL, one
-// of two image types, each proved by its own signature, and nothing else.
+// one is enormous (8300 KiB against an 8 MiB ceiling). The prefix is a cheap first check;
+// the shared readers check each header and its dimension limits.
 // The JPEG XL signatures, verified against the encoder's own output: a bare codestream begins 0xFF
 // 0x0A, whose base64 is '/w' then one of o p q r (the third byte's top two bits land in that
 // sextet); the ISOBMFF container begins 00 00 00 0C 'JXL ', which is 'AAAADEpYTCA'.
@@ -165,8 +169,20 @@ const _RAPIER_DRAW_RASTER = /^data:image\/(?:png;base64,iVBORw0KGgo|jxl;base64,(
 function _rapierDrawAgentStrokes(raw) {
 	return admitPaintStrokeRecords(raw);
 }
+function _rapierDrawRasterInfo(value, max = RAPIER_DRAW_RASTER_MAX) {
+	if (typeof value !== 'string' || value.length < 60 || value.length > max || !_RAPIER_DRAW_RASTER.test(value)) return null;
+	const encoded = value.slice(value.indexOf(',') + 1);
+	if (encoded.length % 4) return null;
+	try {
+		const binary = atob(encoded);
+		if (btoa(binary) !== encoded) return null;
+		const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+		// A live uncompressed painting keeps its existing byte policy; its dimensions still admit.
+		return value.startsWith('data:image/png;') ? inspectRaster(bytes, {maximumBytes: max === Infinity ? Infinity : undefined}) : inspectJPEGXL(bytes);
+	} catch { return null; }
+}
 function _rapierDrawValidRaster(value, max = RAPIER_DRAW_RASTER_MAX) {
-	return typeof value === 'string' && value.length >= 60 && value.length <= max && _RAPIER_DRAW_RASTER.test(value) ? value : null;
+	return _rapierDrawRasterInfo(value, max) ? value : null;
 }
 
 function _rapierDrawShapeInk(shape) {
@@ -3393,12 +3409,24 @@ function _rapierDrawRestoreSVGRecipe(raw, svg) {
 // Returns null for any SVG that is not a Rapier drawing; throws (code drawing_restore_failed) for one
 // that claims to be and cannot be read.
 function _rapierDrawReadRecipeFromSVGText(svg) {
-	if (typeof svg !== 'string' || !/^\s*<svg[\s>]/.test(svg)) return null;
-	const matches = [...svg.matchAll(/<metadata id="rapier-draw">([\s\S]*?)<\/metadata>/g)];
+	if (typeof svg !== 'string' || !/^\s*</.test(svg)) return null;
+	const metadata = []; let root;
+	try {
+		// The XML reader owns namespaces and element structure; recipe admission owns the drawing.
+		// Node inspection limits do not change whether an existing drawing can be reopened.
+		svgElements(svg, {inspect: false, visit(node) {
+			if (!node.parentId) root = node;
+			if (node.local === 'metadata' && node.attributes.get('id')?.value === 'rapier-draw') metadata.push(node);
+		}});
+	} catch { return null; }
+	if (!root || root.local !== 'svg' || root.ns && root.ns !== 'http://www.w3.org/2000/svg') return null;
+	const matches = metadata.filter(node => node.ns === root.ns);
 	if (!matches.length) return null;
 	try {
-		if (matches.length !== 1) throw new Error('Invalid drawing metadata');
-		const text = matches[0][1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+		if (matches.length !== 1 || matches[0].children) throw new Error('Invalid drawing metadata');
+		const raw = svg.slice(matches[0].contentStart, matches[0].contentEnd);
+		const text = raw.split(/(<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>)/).map(part =>
+			part.startsWith('<![CDATA[') ? part.slice(9, -3) : part.startsWith('<!--') || part.startsWith('<?') ? '' : svgXmlValue(part)).join('');
 		return _rapierDrawRestoreSVGRecipe(JSON.parse(text), svg);
 	} catch (error) {
 		throw Object.assign(new Error('Drawing could not be read: ' + String(error.message || error)), { code: 'drawing_restore_failed' });
@@ -3689,7 +3717,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	for (const key of ['smooth', 'nib']) if (finite(input[key])) out[key] = key === 'smooth' ? _rapierDrawSmoothLevel(input[key]) : _rapierDrawNibLevel(input[key]);
 	// The tool the drawing was last edited with: Edit reopens on it. Bounded to the tool names Draw
 	// has; anything else is dropped and Edit opens in Select.
-	if (typeof input.tool === 'string' && /^(select|brush|pen|paint|shape|text|erase|effects)$/.test(input.tool)) out.tool = input.tool;
+	if (typeof input.tool === 'string' && /^(select|brush|pen|paint|water|shape|text|erase|effects)$/.test(input.tool)) out.tool = input.tool;
 	if (finite(input.light)) out.light = input.light % (Math.PI * 2);
 	// A whole-drawing rotate (layout's picture rotate grip) bakes the turn into every shape's own
 	// geometry and only keeps this as a cumulative record in whole degrees, so Edit reopens at the
@@ -3778,18 +3806,20 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 			shape.border = border;
 		}
 		if (kind === 'paint') {
-			const raster = _rapierDrawValidRaster(raw.raster, keepRasters ? Infinity : RAPIER_DRAW_RASTER_MAX);
-			if (!raster || !keepRasters && (rasterUnits += raster.length) > RAPIER_DRAW_RASTER_TOTAL) return null;
-			shape.raster = raster;
+			const raster = _rapierDrawRasterInfo(raw.raster, keepRasters ? Infinity : RAPIER_DRAW_RASTER_MAX);
+			if (!raster || !keepRasters && (rasterUnits += raw.raster.length) > RAPIER_DRAW_RASTER_TOTAL) return null;
+			shape.raster = raw.raster;
 			const paint = raw.paint;
 			if (paint != null) {
 				if (typeof paint !== 'object' || Array.isArray(paint)) return null;
 				const record = {};
+				if (paint.mode != null) { if (paint.mode !== 'water' || !waterPaperById(paint.paper)) return null; record.mode = 'water'; record.paper = paint.paper; }
+				if (paint.actions != null) { const actions = admitWaterActions(paint.actions); if (record.mode !== 'water' || !actions) return null; record.actions = actions; }
 				if (paint.brush != null) { if (typeof paint.brush !== 'string' || paint.brush.length > 96) return null; record.brush = paint.brush; }
 				// A person's painting names its own pixel grid, up to the raster ceiling. Strokes are an agent's
 				// layer: the sheet they name is the one the replay allocates, so it stops at the paint side
 				// (draw/agent-paint.mjs AGENT_PAINT_LIMITS.side) rather than the raster ceiling.
-				if (paint.px != null) { const side = paint.strokes != null ? 2048 : 16384; if (!Array.isArray(paint.px) || paint.px.length !== 2 || !paint.px.every(n => Number.isInteger(n) && n > 0 && n <= side)) return null; record.px = paint.px.slice(); }
+				if (paint.px != null) { const side = paint.strokes != null ? 2048 : 16384; if (!Array.isArray(paint.px) || paint.px.length !== 2 || !paint.px.every(n => Number.isInteger(n) && n > 0 && n <= side) || paint.px[0] !== raster.width || paint.px[1] !== raster.height) return null; record.px = paint.px.slice(); }
 				if (paint.scale != null) { if (!finite(paint.scale) || paint.scale <= 0 || paint.scale > 16) return null; record.scale = paint.scale; }
 				// The group a lossless piece belongs to is the FIRST piece's own shape id (paint-tool.js
 				// `_rapierPaintSplitShapeSync`), so it is admitted as an id (`paint-raster-admission`: as an
@@ -3810,6 +3840,8 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 					if (!replay || !record.px || !keepRasters && (rasterUnits += JSON.stringify(replay).length) > RAPIER_DRAW_RASTER_TOTAL) return null;
 					record.replay = replay;
 				}
+				if (record.mode === 'water' && (!record.px || !record.scale || !record.replay || record.replay.mode !== 'water')) return null;
+				if (record.replay?.mode === 'water' && record.mode !== 'water') return null;
 				if (Object.keys(record).length) shape.paint = record;
 			}
 		} else if (raw.raster != null) return null;

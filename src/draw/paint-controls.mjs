@@ -10,9 +10,8 @@ export const PAINT_BRUSH_CONTROLS = Object.freeze({
 });
 // Each brush's first-use size: the width the Paint tool opens the brush at, and the width an agent stroke takes when it names
 // none, so the person's first stroke and the agent's are the same brush. Smudge is a fingertip, not a thumb: 30, the width at
-// which a pull on the phone reads as a fingertip's. Watercolour is a wash: at 50 it lays a 21-point tube with a dark rim, a
-// marker's line; at 62 a passage that glazes what it crosses, for the same drying.
-export const PAINT_SIZE_DEFAULTS = Object.freeze({'rapier/flat': 66, 'rapier/scumble': 89, 'rapier/smudge': 30, 'rapier/watercolour': 62});
+// which a pull on the phone reads as a fingertip's.
+export const PAINT_SIZE_DEFAULTS = Object.freeze({'rapier/flat': 66, 'rapier/scumble': 89, 'rapier/smudge': 30});
 export const paintSizeDefault = id => Object.hasOwn(PAINT_SIZE_DEFAULTS, id) ? PAINT_SIZE_DEFAULTS[id] : PAINT_BRUSH_CONTROLS.size.default;
 export const PAINT_DIP_MIN = 14, PAINT_DIP_MAX = 260, PAINT_DIP_FULL = .97;
 export const paintBrushRadiusOffset = (size = 50) => (size - 50) / 50 * Math.log(8) + Math.log(2);

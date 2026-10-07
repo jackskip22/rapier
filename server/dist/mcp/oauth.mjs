@@ -2,6 +2,7 @@
 // The provider owns OAuth. This module owns the anonymous browser identity and explicit consent.
 import {base64url, fromBase64url} from '../agent/door-identity.mjs';
 import {editorSecretUsable, editorSecretKeyMaterial} from './editor-keys.mjs';
+import {DOOR_LIMITS} from './limits.mjs';
 
 export const OAUTH_SCOPES = Object.freeze(['rapier:read', 'rapier:write', 'offline_access']);
 export const OAUTH_ACCESS_SECONDS = 15 * 60;
@@ -11,6 +12,7 @@ const OWNER_PATTERN = /^owner_[A-Za-z0-9_-]{43}$/;
 const CONNECTION_PATTERN = /^connection_[A-Za-z0-9_-]{43}$/;
 const servers = new Map();
 const encoder = new TextEncoder();
+const REFRESH_DIGEST = Symbol('rapier-refresh-digest');
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character]);
@@ -33,8 +35,8 @@ export function oauthOrigin(env = {}) {
 }
 
 async function authorizationServer(env) {
-  const OAuthAuthorizationServer = env.OAUTH_AUTHORIZATION_SERVER;
-  if (typeof OAuthAuthorizationServer !== 'function') throw new Error('OAuth provider is unavailable.');
+  const OAuthAuthorizationServer = env.OAUTH_AUTHORIZATION_SERVER, OAuthError = env.OAUTH_ERROR;
+  if (typeof OAuthAuthorizationServer !== 'function' || typeof OAuthError !== 'function') throw new Error('OAuth provider is unavailable.');
   const issuer = oauthOrigin(env);
   // The hosted deployment supplies the real provider; the shared local-server import tree stays self-contained.
   if (!servers.has(issuer)) servers.set(issuer, new OAuthAuthorizationServer({issuer, resources: [issuer + '/mcp', issuer + '/muse'], defaultResource: issuer + '/muse',
@@ -43,7 +45,15 @@ async function authorizationServer(env) {
       accessTokenTTL: OAUTH_ACCESS_SECONDS, refreshTokenTTL: OAUTH_OWNER_SECONDS,
       refreshTokenIdleTTL: OAUTH_OWNER_SECONDS, clientRegistrationTTL: OAUTH_OWNER_SECONDS,
       clientIdMetadataDocumentEnabled: true,
-      tokenExchangeCallback({scope}) {
+      tokenExchangeCallback({grantType, scope, props, env: requestEnv}) {
+        if (grantType === 'refresh_token') {
+          const digest = requestEnv[REFRESH_DIGEST], {usedRefreshDigest, ...accessTokenProps} = props;
+          // The provider retains the previous refresh token for retries. A spent token must instead
+          // revoke this public client's grant. Keep the consumed digest in its encrypted grant props,
+          // never the access token. The provider owns storage and revokes on invalid_grant.
+          if (!digest || digest === usedRefreshDigest) throw new OAuthError('invalid_grant', {description: 'The refresh token was already used.'});
+          return {newProps: {...accessTokenProps, usedRefreshDigest: digest}, accessTokenProps};
+        }
         return scope.includes('offline_access') ? undefined : {refreshTokenTTL: 0};
       },
       // Provider errors become protocol responses; credentials and request bodies are never logged.
@@ -140,13 +150,19 @@ function browserAuthority(ownerId) {
 
 // Public authorization traffic shares the deployment's hourly meter. Without the meter only development proceeds.
 const PUBLIC_AUTHORIZATION_PER_HOUR = 5000;
-async function metered(env, key) {
+async function metered(env, key, limit = PUBLIC_AUTHORIZATION_PER_HOUR) {
   if (!env.BUDGET?.get || !env.BUDGET?.idFromName) return env.ALLOW_UNMETERED_CREATE === 'true';
   try {
     const response = await env.BUDGET.get(env.BUDGET.idFromName('oauth:' + key)).fetch(new Request('https://rapier.internal/take', {method: 'POST',
-      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({limit: PUBLIC_AUTHORIZATION_PER_HOUR, windowMs: 3600000})}));
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({limit, windowMs: DOOR_LIMITS.hourMs})}));
     return response.ok && (await response.json()).allowed === true;
   } catch { return false; }
+}
+async function registrationAllowed(request, env) {
+  // Cloudflare supplies this address. Missing edge metadata shares one conservative allowance.
+  const address = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const key = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode('rapier-registration-address-v1\0' + address))));
+  return await metered(env, 'registration-address:' + key, DOOR_LIMITS.registrationsPerHour) && await metered(env, 'registrations');
 }
 
 async function boundedRequest(request, limit = 64 * 1024) {
@@ -174,13 +190,39 @@ function formHandle(form) {
   const handles = form.getAll('handle');
   return handles.length === 1 && typeof handles[0] === 'string' && handles[0].length < 256 ? handles[0] : '';
 }
+function repeatedParameter(parameters) {
+  const seen = new Set();
+  for (const name of parameters.keys()) {
+    // RFC 8707 permits repeated resource indicators; the provider admits their meaning.
+    if (name === 'resource') continue;
+    if (seen.has(name)) return true;
+    seen.add(name);
+  }
+  return false;
+}
+function validChallenge(challenge) {
+  return typeof challenge === 'string' && /^[A-Za-z0-9_-]{43}$/.test(challenge) &&
+    base64url(fromBase64url(challenge)) === challenge;
+}
+async function publicRegistration(request) {
+  let metadata;
+  try { metadata = await request.clone().json(); } catch { return request; }
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return request;
+  const method = Object.hasOwn(metadata, 'token_endpoint_auth_method') ? metadata.token_endpoint_auth_method : 'none';
+  if (method !== 'none' || Object.hasOwn(metadata, 'client_secret') ||
+      Array.isArray(metadata.token_endpoint_auth_methods_supported) && metadata.token_endpoint_auth_methods_supported.some(method => typeof method === 'string' && method.startsWith('client_secret')))
+    return json(400, {error: 'invalid_client_metadata', error_description: 'Rapier uses public clients with no client secret.'});
+  const out = new Headers(request.headers); out.delete('Content-Length');
+  return new Request(request, {headers: out, body: JSON.stringify({...metadata, token_endpoint_auth_method: 'none'})});
+}
 
 async function consent(request, env, api) {
   if (!editorSecretUsable(env.EDITOR_KEY_SECRET)) return json(503, {error: 'authentication_unavailable'});
   if (request.method === 'GET') {
     if (!await metered(env, 'consents')) return json(429, {error: 'temporarily_unavailable'}, {'Retry-After': '600'});
+    if (repeatedParameter(new URL(request.url).searchParams)) return json(400, {error: 'invalid_request', message: 'Authorization parameters must not be repeated.'});
     const parsed = await api.parseAuthRequest(request);
-    if (!parsed.codeChallenge || parsed.codeChallengeMethod !== 'S256') return json(400, {error: 'invalid_request', message: 'S256 PKCE is required.'});
+    if (!validChallenge(parsed.codeChallenge) || parsed.codeChallengeMethod !== 'S256') return json(400, {error: 'invalid_request', message: 'A valid S256 PKCE challenge is required.'});
     if (parsed.scope.some(scope => !OAUTH_SCOPES.includes(scope))) return json(400, {error: 'invalid_scope'});
     const redirect = new URL(parsed.redirectUri);
     if (redirect.hostname.includes('*')) return json(400, {error: 'invalid_request'});
@@ -189,10 +231,10 @@ async function consent(request, env, api) {
     const write = askedScopes(parsed.scope).includes('rapier:write'), offline = parsed.scope.includes('offline_access');
     const callbackSource = ['https:', 'http:'].includes(redirect.protocol) ? redirect.origin : redirect.protocol;
     return html(200, 'Connect Rapier',
-      `<p><strong>${escapeHTML(description.clientName)}</strong> asks to ${write ? 'read and edit' : 'read'} your Rapier documents${write ? '' : '. It cannot change them'}.</p>` +
+      `<p><strong><bdi>${escapeHTML(description.clientName)}</bdi></strong> asks to ${write ? 'read and edit' : 'read'} your Rapier documents${write ? '' : '. It cannot change them'}.</p>` +
       '<p>No account is needed. To open a document in a browser, open the link your assistant gives you; the page shows a four-letter code to tell your assistant.</p>' +
       (offline ? '<p>The connection stays between chats until you revoke it on the <a href="/oauth/disconnect" target="_blank" rel="noopener noreferrer">connections page</a>.</p>' : '') +
-      `<p class="where">Returns to ${escapeHTML(description.redirectHost)}${description.clientDomain ? '<br>Client domain ' + escapeHTML(description.clientDomain) : ''}` +
+      `<p class="where">Returns to <bdi>${escapeHTML(description.redirectHost)}</bdi>${description.clientDomain ? '<br>Client domain <bdi>' + escapeHTML(description.clientDomain) + '</bdi>' : ''}` +
       (description.redirectIsLoopback ? '<br>An app on this computer: any local process could be listening at that address.' : '') + '</p>' +
       `<form method="post" action="/authorize"><input type="hidden" name="handle" value="${escapeHTML(transaction.handle)}">` +
       `<button type="submit" name="decision" value="allow">${write ? 'Allow' : 'Allow reading'}</button>` +
@@ -248,7 +290,7 @@ async function disconnect(request, env, api) {
   const grants = await api.listUserGrants(ownerId, {limit: 30, cursor});
   // A connection is named by the app the person approved; an expired registration keeps its client ID.
   const names = await Promise.all(grants.items.map(grant => api.lookupClient(grant.clientId).then(client => client?.clientName || grant.clientId, () => grant.clientId)));
-  const rows = grants.items.map((grant, index) => `<li><p>${escapeHTML(names[index])} — ${escapeHTML(grant.scope.join(', '))}</p><form method="post" action="/oauth/disconnect"><input type="hidden" name="grant" value="${escapeHTML(grant.id)}"><button type="submit" class="negative">Revoke connection</button></form></li>`).join('');
+  const rows = grants.items.map((grant, index) => `<li><p><bdi>${escapeHTML(names[index])}</bdi> — ${escapeHTML(grant.scope.join(', '))}</p><form method="post" action="/oauth/disconnect"><input type="hidden" name="grant" value="${escapeHTML(grant.id)}"><button type="submit" class="negative">Revoke connection</button></form></li>`).join('');
   return html(200, 'Rapier connections', `<p>Connections approved by this browser:</p>${rows ? `<ul>${rows}</ul>` : '<p>No active connections.</p>'}` +
     (grants.cursor ? `<p><a href="/oauth/disconnect?cursor=${encodeURIComponent(grants.cursor)}">More connections</a></p>` : ''));
 }
@@ -279,12 +321,34 @@ export async function handleOAuth(request, env, ctx, next) {
       const server = await authorizationServer(env), api = server.getOAuthApi(env);
       if (url.pathname === '/authorize') return await consent(request, env, api);
       if (url.pathname === '/oauth/disconnect') return await disconnect(request, env, api);
-      // Hosts register afresh on every connection: a deployment-wide hourly cap, the same for every client.
-      if (url.pathname === '/oauth/register' && request.method === 'POST' && !await metered(env, 'registrations'))
+      // Registration shares the deployment meter and also preserves an allowance for each address.
+      if (url.pathname === '/oauth/register' && request.method === 'POST' && !await registrationAllowed(request, env))
         return json(429, {error: 'temporarily_unavailable', error_description: 'Too many registrations this hour. Try again later.'}, {'Retry-After': '600'});
-      const limited = await boundedRequest(request);
+      let limited = await boundedRequest(request);
       if (!limited) return json(413, {error: 'request_too_large'});
-      const response = await server.fetch(limited, env, ctx);
+      let providerEnv = env;
+      if (url.pathname === '/oauth/register' && request.method === 'POST') {
+        limited = await publicRegistration(limited);
+        if (limited instanceof Response) return limited;
+      }
+      if (url.pathname === '/oauth/token' && request.method === 'POST' &&
+          limited.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() === 'application/x-www-form-urlencoded') {
+        const form = new URLSearchParams(await limited.clone().text());
+        if (repeatedParameter(new URLSearchParams([...url.searchParams, ...form]))) return json(400, {error: 'invalid_request', error_description: 'Token parameters must not be repeated.'});
+        if (request.headers.has('Authorization') || form.has('client_secret') || form.has('client_assertion') || form.has('client_assertion_type'))
+          return json(400, {error: 'invalid_client', error_description: 'Rapier uses public clients with no client secret.'});
+        if (form.get('grant_type') === 'authorization_code' && !/^[A-Za-z0-9._~-]{43,128}$/.test(form.get('code_verifier') || ''))
+          return json(400, {error: 'invalid_request', error_description: 'A valid PKCE verifier is required.'});
+        if (form.get('grant_type') === 'refresh_token') providerEnv = {...env,
+          [REFRESH_DIGEST]: base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(form.get('refresh_token') || ''))))};
+      }
+      const response = await server.fetch(limited, providerEnv, ctx);
+      if (url.pathname === '/.well-known/oauth-authorization-server' && request.method !== 'HEAD' && response.ok) {
+        const metadata = await response.json();
+        metadata.token_endpoint_auth_methods_supported = ['none'];
+        delete metadata.token_endpoint_auth_signing_alg_values_supported;
+        return json(response.status, metadata, response.headers);
+      }
       return new Response(response.body, {status: response.status, statusText: response.statusText, headers: headers(response.headers)});
     }
     if (bearer !== null) {

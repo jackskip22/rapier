@@ -19,6 +19,8 @@
   let boundFile = null, fileOpenEpoch = 0, pendingFileResult = null;
   let receiveSequence = 0, latestOpenSequence = 0, deferredOpen = null;
   const fileHydrations = new Map(), fileAttempts = new Map(), hydratedFiles = new Set(), fileBindings = new Map();
+  const editorKeys = new Map();
+  let editorActivity = '';
   let contextFlight = null, contextTimer = 0, contextExpiryTimer = 0, contextEpoch = 0, contextSequence = 0, contextFailures = 0;
   let contextQueued = false, contextAck = null, contextIssue = '', unsubscribeContext;
   let modelFlight = null, modelQueued = false, modelAvailable = true, modelFailures = 0, modelSent = '';
@@ -100,13 +102,42 @@
     } finally { clearTimeout(timer); }
   }
 
+  function editorKeyFor(document) {
+    if (pairedId) return document === pairedId && typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
+    return editorKeys.get(document) || '';
+  }
+
+  function rememberEditorKey(result, document = result?.structuredContent?.document) {
+    const meta = metadata(result);
+    // Only the host's private result channel supplies a key. Concurrent opens may hydrate before becoming the active document.
+    if (result?.isError || !validToken(document) || meta.editorDocument !== document ||
+        typeof meta.editorKey !== 'string' || !meta.editorKey.length || meta.editorKey.length > 512) return;
+    if (pairedId) {
+      if (document === pairedId) globalThis.RAPIER_EDITOR_KEY = meta.editorKey;
+    } else editorKeys.set(document, meta.editorKey);
+  }
+
+  function recordEditorActivity(event) {
+    if (event?.isTrusted === true && base && token && !closed && !closing && !switching && visible()) editorActivity = token;
+  }
+
   function call(name, args, timeout, human = false) {
     if (!initialized || !object(capabilities.serverTools)) return Promise.reject(new Error('HOST_UNAVAILABLE'));
-    // Editor operations carry the editor key: proof the call came from the person's editor.
+    // Widget-only proof travels outside model arguments. The paired page already has its cookie route's page authority.
     const own = globalThis.RapierAgentCatalog?.getTool?.(name)?.visibility?.includes('app') ||
       (human && ['document.comment', 'document.read_context'].includes(name));
-    const editorKey = typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
-    const run = () => request('tools/call', {name, arguments: own && editorKey ? {...args, editorKey} : args}, timeout);
+    const editorKey = own ? editorKeyFor(args?.document) : '';
+    const run = async () => {
+      const params = {name, arguments: editorKey ? {...args, editorKey} : args};
+      if (editorKey && !pairedId) params._meta = {'rapier/editorKey': editorKey};
+      if (editorKey && editorActivity === args?.document && ['document.commit', 'document.human_context'].includes(name)) {
+        params._meta = {...params._meta, 'rapier/editorActivity': true};
+        editorActivity = '';
+      }
+      const result = await request('tools/call', params, timeout);
+      rememberEditorKey(result, args?.document);
+      return result;
+    };
     return !own && host?.trackInvocation ? host.trackInvocation(name, args, run, crypto.randomUUID()) : run();
   }
 
@@ -151,7 +182,7 @@
     const text = {
       opening: 'Opening document', reconnecting: 'Reconnecting', offline: 'Connection interrupted',
       unpaired: 'This browser is not paired with the document',
-      unavailable: 'Document unavailable', expired: 'This editor session has expired. Reload to keep editing',
+      unavailable: 'Document unavailable', expired: 'This editor session has expired. Open the document again from your assistant’s link',
       unsupported: 'This host cannot connect to Rapier', detached: 'This document is open elsewhere',
       blocked: 'This update needs attention',
       review_waiting: 'A change is ready for review',
@@ -884,6 +915,7 @@
   async function receive(result, sequence = ++receiveSequence) {
     let data = result?.structuredContent;
     if (!object(data)) return;
+    rememberEditorKey(result);
     const created = !result.isError && data.created === true && data.outcome === 'created' && validToken(data.document);
     if (created) {
       if (sequence > latestOpenSequence && pendingFileResult && pendingFileResult.structuredContent?.document !== data.document) {
@@ -1034,13 +1066,17 @@
     // The acknowledgement includes concurrent edits. Rebase any further typing from
     // the submitted draft before moving the base; a failed CAS keeps this receipt live.
     const {sourceEdits, mergeSource, replay} = RapierLiveMerge;
-    const remote = value.draftEdits;
+    const remote = value.draftEdits, client = value.draftClient;
     if (!Array.isArray(remote) || remote.some(row => typeof row.client !== 'string' || !Array.isArray(row.splices)) ||
+        typeof client !== 'string' || !client ||
         replay(sent.text, remote) !== value.text) throw new Error('MISSING_COMMIT_EDITS');
     const kept = continuation?.commitId === sent.commitId ? continuation : null;
-    const continued = kept
-      ? mergeSource(value.text, [...kept.splices, ...sourceEdits(kept.text, local.text, local.journal)], 'human', [])
-      : mergeSource(sent.text, sourceEdits(sent.text, local.text, local.journal), 'human', remote);
+    let continued;
+    try {
+      continued = kept
+        ? mergeSource(value.text, [...kept.splices, ...sourceEdits(kept.text, local.text, local.journal)], client, [])
+        : mergeSource(sent.text, sourceEdits(sent.text, local.text, local.journal), client, remote);
+    } catch (_) { throw new Error('DRAFT_BASE_UNAVAILABLE'); }
     const {text} = continued;
     const adopted = {...value, text,
       filename: local.filename === (sent.filename ?? continuation?.metadata?.filename ?? base.filename) ? value.filename : local.filename,
@@ -1082,6 +1118,8 @@
   function cycle(force = false) {
     if (running) return running;
     if (closed || switching || !initialized || !token || !host || (!force && (!visible() || failures >= 5))) return Promise.resolve(false);
+    // A host may announce tool input before its private result. That result starts the first authorized cycle.
+    if (!editorKeyFor(token)) return Promise.resolve(false);
     running = (async () => {
       if (viewFlight?.status === 'expired') await acknowledgeView();
       if (!base) {
@@ -1670,9 +1708,8 @@
   async function disconnectAgents(event) {
     if (event?.isTrusted !== true || !base || switching || closed || decisionFlight) return false;
     const target = {document: token, documentId: base.documentId};
-    const editorKey = typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
     const unseal = globalThis.RapierDoorIdentity?.unsealForEditor;
-    if (!editorKey || typeof unseal !== 'function') { host.notify('This editor cannot disconnect agents here.', 'info'); return false; }
+    if (!editorKeyFor(target.document) || typeof unseal !== 'function') { host.notify('This editor cannot disconnect agents here.', 'info'); return false; }
     // No sheet: the press is the decision. The editor keeps the document, the row says what happened, and Share lets an
     // agent back in from here.
     if (!await flush()) { host.notify('Finish the current edit, then try again.', 'info'); return false; }
@@ -1681,6 +1718,8 @@
     switching = true;
     lock();
     try {
+      // Flush can renew the page key. Snapshot the proof at the rotation's synchronous call boundary.
+      const editorKey = editorKeyFor(target.document);
       const result = await call('document.rotate_capability', {document: target.document});
       if (result?.isError || result?.structuredContent?.rotated !== true) {
         if (result?.structuredContent?.code === 'DOCUMENT_UNAVAILABLE' || result?.structuredContent?.code === 'HUMAN_AUTHORITY_REQUIRED') ensureResult(result);
@@ -1695,6 +1734,7 @@
         host.notify('The new capability could not be read. Copy your draft.', 'error');
         return false;
       }
+      rememberEditorKey(result, pairedId || next);
       withheld = true;
       if (Number.isSafeInteger(result.structuredContent.version)) version = result.structuredContent.version;
       if (agentAccess !== null) agentAccess = false;
@@ -2100,8 +2140,8 @@
     return connecting;
   }
 
-  // The pairing dialog, in the house pop-up: the code to tell the assistant, polled until an agent confirms it. A code
-  // lasts a minute; the route draws the next one. Cancel leaves the page unpaired, with Retry.
+  // The code only identifies this pending browser. The page grants a session after the person chooses ALLOW;
+  // a poll, a matched code or a stale decision never opens the editor on its own.
   async function pair() {
     const pop = housePop('rapier-app-pair-title', 'Pair this browser', 'rapier-app-pairing');
     const lead = document.createElement('p');
@@ -2111,19 +2151,58 @@
     code.setAttribute('aria-live', 'polite');
     code.textContent = '····';
     const words = document.createElement('p');
-    words.textContent = 'It lets this browser edit this document for a day. A code works once and changes every minute.';
-    let open = true;
+    words.textContent = 'Then choose Allow here to edit this document for a day. A code works once and changes every minute.';
+    let open = true, deciding = false, poll = null;
+    const close = () => { open = false; pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); };
+    const decide = async decision => {
+      if (!open || deciding) return;
+      deciding = true;
+      allow.disabled = cancel.disabled = true;
+      // Finish any initial code request first, so Cancel retires the cookie the browser has just received.
+      await poll;
+      let value = null;
+      try { value = (await call('document.pair_status', {document: pairedId, decision}))?.structuredContent; } catch (_) {}
+      if (!open) return;
+      if (decision === 'cancel') { close(); return; }
+      if (value?.outcome === 'paired') { location.reload(); return; }
+      deciding = false;
+      allow.disabled = cancel.disabled = false;
+      lead.textContent = 'Pairing could not finish. Try again.';
+    };
+    const allow = popButton('allow', 'affirm', () => { void decide('allow'); });
+    const cancel = popButton('cancel', 'cancel', () => { void decide('cancel'); });
+    allow.hidden = true;
     // An unpaired page stays inert behind its notice: nothing typed there could reach the workspace.
-    pop.row.append(popButton('cancel', 'cancel', () => { open = false; pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); }));
+    pop.row.append(allow, cancel);
+    pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
     pairDialog = pop.overlay;
     pop.show(lead, code, words);
     lock();
     while (open && !closed) {
-      let value = null;
-      try { value = (await call('document.pair_status', {document: pairedId}))?.structuredContent; } catch (_) {}
+      if (deciding) { await new Promise(resolve => setTimeout(resolve, 2000)); continue; }
+      poll = call('document.pair_status', {document: pairedId}).then(result => result?.structuredContent).catch(() => null);
+      const value = await poll;
       if (!open) return;
-      if (value?.outcome === 'paired') { location.reload(); return; }
-      if (value?.outcome === 'waiting' && /^[A-Z]{4}$/.test(value.pairingCode)) code.textContent = value.pairingCode;
+      if (deciding) continue;
+      if (value?.outcome === 'confirmation_required') {
+        lead.textContent = 'Allow this browser to edit the document?';
+        words.textContent = 'This browser stays connected for a day. Disconnect agents in the document to stop agent access.';
+        if (allow.hidden) {
+          allow.hidden = false;
+          globalThis._rapierPopArrange?.(pop.row);
+          allow.focus({preventScroll: true});
+        }
+      } else if (value?.outcome === 'waiting' && /^[A-Z]{4}$/.test(value.pairingCode)) {
+        allow.hidden = true;
+        code.textContent = value.pairingCode;
+        lead.textContent = 'Tell your assistant this code.';
+        words.textContent = 'Then choose Allow here to edit this document for a day. A code works once and changes every minute.';
+      }
+      else if (value?.reason === 'busy') {
+        allow.hidden = true;
+        code.textContent = '';
+        lead.textContent = 'Pairing is busy. Try again in a minute.';
+      }
       else if (value?.code === 'DOCUMENT_UNAVAILABLE') {
         code.textContent = '';
         lead.textContent = 'This document is no longer available.';
@@ -2166,6 +2245,7 @@
       window.addEventListener(type, blockBeforeOpen, {capture: true, signal: listeners.signal});
     }
     const options = {capture: true, signal: listeners.signal};
+    for (const type of ['pointerdown', 'keydown', 'beforeinput', 'compositionend']) document.addEventListener(type, recordEditorActivity, options);
     document.addEventListener('beforeinput', event => { if (event.isTrusted) humanEdit(); }, options);
     document.addEventListener('compositionstart', event => { if (event.isTrusted) { composing = true; humanEdit(); } }, options);
     document.addEventListener('compositionend', event => { if (event.isTrusted) { composing = false; humanEdit(); } }, options);

@@ -23,6 +23,7 @@
   "draw/effects-tool.js",
   "draw/background-tool.js",
   "draw/paint-tool.js",
+  "draw/water-tool.js",
   "notes/notes.js",
   "notes/todo.js",
   "notes/library.js",

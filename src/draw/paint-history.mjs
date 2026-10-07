@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Stored paint commands are document data. Admission does not load the material engine.
+import {admitWaterActions, waterPaperById} from './water-data.mjs';
+import {PAINT_REPLAY_MAX_BYTES,paintReplayFits} from './paint-limits.mjs';
+export {PAINT_REPLAY_MAX_BYTES,paintReplayFits};
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 const unit = n => finite(n) && n >= 0 && n <= 1;
 const integer = n => Number.isSafeInteger(n) && n >= 0;
@@ -37,17 +40,13 @@ const dataOnly = (value, depth = 0) => {
   return Object.values(value).every(v => dataOnly(v, depth + 1));
 };
 
-// Replay custody fits the document's material budget, captured brush definitions included: a history past this many
-// serialized characters is never admitted, and each writer drops a history before it grows past it (the Paint tool,
-// draw/paint-tool.js _rapierPaintReplayAt; an agent's contribution, draw/agent-paint.mjs encodeAgentPainting), so a long
-// painting keeps its raster and keeps accepting strokes.
-export const PAINT_REPLAY_MAX_BYTES = 8 * 1024 * 1024;
-// The one measure: admission and both writers ask whether a history serialises within the bound.
-export function paintReplayFits(history) {
-  try {return JSON.stringify(history).length <= PAINT_REPLAY_MAX_BYTES;} catch (_) {return false;}
-}
+// Replay custody fits the document's material budget (draw/paint-limits.mjs owns the bound: the UTF-8 bytes of every retained command,
+// captured brush definition and base raster); a history past it is never admitted. The Paint tool may drop replay while its source
+// transaction owns Undo (draw/paint-tool.js _rapierPaintReplayAt); an agent contribution requires selective Undo and refuses instead
+// (draw/agent-paint.mjs encodeAgentPainting), preserving the kept painting and its replay.
 export function admitPaintReplay(raw, validRaster = value => typeof value === 'string' && /^data:image\/(png|jxl);base64,/.test(value)) {
-  if (!object(raw) || !validRaster(raw.baseRaster) || !dimensions(raw.px) || !scale(raw.scale) || !Array.isArray(raw.entries)) return null;
+  if (!object(raw) || !(raw.mode === 'water' && raw.baseRaster === null || validRaster(raw.baseRaster)) || !dimensions(raw.px) || !scale(raw.scale) || !Array.isArray(raw.entries)) return null;
+  if (raw.mode != null && raw.mode !== 'water' || raw.mode === 'water' && !waterPaperById(raw.paper)) return null;
   if (!paintReplayFits(raw)) return null;
   const views = [];
   if (raw.views != null) {
@@ -61,10 +60,27 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
       views.push({at: view.at, crop: view.crop.slice()}); previous = view.at;
     }
   }
-  const entries = [], ids = new Set();
+  const entries = [], ids = new Set(); let waterSeen = false;
   for (const entry of raw.entries) {
     if (!object(entry) || !identity(entry.id) || ids.has(entry.id)) return null;
     ids.add(entry.id);
+    if (entry.mode === 'water') {
+      if(raw.mode !== 'water')return null;
+      waterSeen = true;
+      const actions = admitWaterActions(entry.actions);
+      if (!actions || !['agent', 'human'].includes(entry.actor)) return null;
+      if (entry.actor === 'agent') {
+        if (!integer(entry.seed) || entry.seed > 0x7fffffff || !waterPaperById(entry.paper) || !dimensions(entry.px) || !scale(entry.scale) || !Array.isArray(entry.grow) || entry.grow.length !== 4 || !entry.grow.every(n => integer(n) && n <= 16384)) return null;
+        const kept = {id: entry.id, actor: 'agent', mode: 'water', actions, seed: entry.seed, paper: entry.paper, px: entry.px.slice(), scale: entry.scale, grow: entry.grow.slice()};
+        if (entry.removed != null) {if (typeof entry.removed !== 'boolean') return null; kept.removed = entry.removed;}
+        entries.push(kept); continue;
+      }
+      const sheet = entry.sheet, crop = entry.crop;
+      if (!object(sheet) || !(identity(sheet.id) || Number.isSafeInteger(sheet.id) && sheet.id > 0) || !dimensions([sheet.width, sheet.height]) || !Array.isArray(sheet.offset) || sheet.offset.length !== 2 || !sheet.offset.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 16384) || !scale(sheet.scale) || !object(sheet.options) || sheet.options.mode !== 'water' || !waterPaperById(sheet.options.paper) || !dataOnly(sheet)) return null;
+      if (!Array.isArray(crop) || crop.length !== 4 || !crop.every(integer) || crop[2] < crop[0] || crop[3] < crop[1] || !dimensions([crop[2]-crop[0]+1,crop[3]-crop[1]+1])) return null;
+      entries.push({id:entry.id,actor:'human',mode:'water',sheet:copy(sheet),actions,crop:crop.slice()}); continue;
+    }
+    if (entry.mode != null || waterSeen) return null;
     if (entry.actor === 'agent') {
       const strokes = admitPaintStrokeRecords(entry.strokes);
       if (!strokes || !integer(entry.seed) || entry.seed > 0x7fffffff || !dimensions(entry.px) || !scale(entry.scale) ||
@@ -103,5 +119,5 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
     if (!Array.isArray(entry.crop) || entry.crop.length !== 4 || !entry.crop.every(integer) || entry.crop[2] < entry.crop[0] || entry.crop[3] < entry.crop[1] || !dimensions([entry.crop[2] - entry.crop[0] + 1, entry.crop[3] - entry.crop[1] + 1])) return null;
     entries.push(copy(entry));
   }
-  return {baseRaster: raw.baseRaster, px: raw.px.slice(), scale: raw.scale, entries, ...(views.length ? {views} : {})};
+  return {baseRaster: raw.baseRaster, px: raw.px.slice(), scale: raw.scale, entries, ...(raw.mode === 'water' ? {mode: 'water', paper: raw.paper} : {}), ...(views.length ? {views} : {})};
 }

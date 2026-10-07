@@ -14,7 +14,6 @@ import {readImportText, reportCharacterChange, finishImportCharacters} from './i
 const ENCODER = new TextEncoder();
 const PICTURE_MIME = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', jxl: 'image/jxl', bmp: 'image/bmp', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif', tif: 'image/tiff', tiff: 'image/tiff'};
 const STRUCTURAL_FOLDER = new Set(['pages', 'journals', 'assets', '.obsidian', '.trash']);
-const LOGSEQ_MARKS = {TODO: ' ', DOING: ' ', LATER: ' ', NOW: ' ', DONE: 'x'};
 function literalText(text, title) {
 	const body = literalBlock(text);
 	return '# ' + literalInline(title) + (body ? '\n\n' + body : '') + (body.endsWith('\n') ? '' : '\n');
@@ -67,14 +66,17 @@ function fmTime(properties, keys, warnings) {
 	}
 }
 
-// A hashtag is metadata only for the explicit Bear/Obsidian row. Scanner ranges exclude every
+// A hashtag is metadata only for the explicit Bear/Obsidian row, or for a TextBundle that names Bear. This is the
+// one grammar of Bear's tags and both readers call it: a bare word, nested with `/`, `.` or `-` (`#recipes/italian`),
+// or wrapped in a second hash (`#vacation plans#`, the form a name with spaces needs); letters carry their combining
+// marks. A name of digits alone (`#123`, an issue number) is prose, never a tag. Scanner ranges exclude every
 // protected region, including YAML; a tag-looking Python comment is never an import command.
-function tagsIn(text, mask) {
-	const found = [], re = /(^|[\s([{])(#([\p{L}\p{N}_/-]+(?: [\p{L}\p{N}_/-]+)+)#|#([\p{L}\p{N}_][\p{L}\p{N}_/-]*))/gu;
+export function tagsIn(text, mask) {
+	const found = [], re = /(^|[\s([{])(#(?:([\p{L}\p{M}\p{N}_](?:[\p{L}\p{M}\p{N}_/ .-]*[\p{L}\p{M}\p{N}_])?)#|([\p{L}\p{M}\p{N}_]+(?:[/.-][\p{L}\p{M}\p{N}_]+)*)))/gu;
 	let m;
 	while ((m = re.exec(text))) {
 		const name = m[3] || m[4], start = m.index + m[1].length, end = start + m[2].length;
-		if (/^\d+$/.test(name.replace(/[\s/_-]/g, '')) || !clear(mask, start, end)) continue;
+		if (/^\p{Nd}+$/u.test(name.replace(/[\s./_-]/g, '')) || !clear(mask, start, end)) continue;
 		found.push({name, start, end});
 	}
 	return found;
@@ -90,27 +92,6 @@ function convertBear(text, tags) {
 	}
 	return applyPatches(text, patches);
 }
-function logseqProperties(text) {
-	const data = Object.create(null);
-	for (const line of linesOf(text[0] === '\uFEFF' ? text.slice(1) : text)) {
-		const kv = /^([A-Za-z][A-Za-z0-9_-]*)::[ \t]?(.*)$/.exec(line.text);
-		if (!kv) break;
-		data[kv[1].toLowerCase()] = kv[2].trim();
-	}
-	const unbracket = s => s.replace(/^\[\[(.*)\]\]$/, '$1').trim();
-	return {title: unbracket(data.title || ''), tags: (data.tags || '').split(',').map(s => unbracket(s.trim())).filter(Boolean)};
-}
-function convertLogseq(text, mask) {
-	const patches = [];
-	for (const line of linesOf(text)) {
-		const m = /^([ \t]*[-*][ \t]+)(TODO|DOING|LATER|NOW|DONE)(?=[ \t]|$)/.exec(line.text);
-		if (!m) continue;
-		const start = line.start + m[1].length, end = start + m[2].length;
-		if (clear(mask, line.start, end)) patches.push({start, end, text: '[' + LOGSEQ_MARKS[m[2]] + ']'});
-	}
-	return applyPatches(text, patches);
-}
-
 export async function importMarkdown(entries, options) {
 	const list = Array.isArray(entries) ? entries : [], opts = options && typeof options === 'object' ? options : {};
 	const pool = Array.isArray(opts.existing) ? opts.existing.filter(n => typeof n === 'string').slice() : [];
@@ -169,7 +150,7 @@ export async function importMarkdown(entries, options) {
 			}
 			// `tags` is everything this file says its tags are, for the category below. `lifted` is the
 			// subset that would otherwise be nowhere in the note after import -- a tag line Bear's own
-			// conversion takes out of the body, a Logseq `tags::` property no other reader knows -- and
+			// conversion takes out of the body -- and
 			// that is what gets written into the note's own metadata block. A tag already in the bytes
 			// (a block's own list, a hashtag left in the body) is left exactly where the person put it.
 			let tags = plain ? [] : tagsOf(raw), lifted = [], text = raw;
@@ -188,12 +169,6 @@ export async function importMarkdown(entries, options) {
 					// A refused edit leaves the note exactly as it arrived rather than half written.
 					text = warnings.length === said ? written : raw;
 				}
-			} else if (flavour === 'logseq') {
-				const native = logseqProperties(raw); tags = tags.concat(native.tags); lifted = native.tags;
-				projectionTitle ||= native.title; text = convertLogseq(raw, linkMask(raw));
-				// The `key:: value` lines stay in the body either way, so a refused edit costs nothing
-				// but the block's copy, and the task conversion stands.
-				if (lifted.length) text = importTags(text, lifted, warnings, name);
 			}
 			const title = projectionTitle || (plain ? '' : headingAnchors(raw)[0]?.text) || fileTitle;
 			const file = noteFileName('# ' + title, pool); pool.push(file);

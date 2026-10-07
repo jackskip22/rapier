@@ -3,8 +3,8 @@
 Rapier's own JPEG XL encoder: JavaScript reference, MIT (`LICENSE`), no runtime dependency. The core needs no
 WebAssembly or build step; the optional `wasm.mjs` effort door uses inlined integer/SIMD kernels and falls back to
 JavaScript. `KERNELS.md` documents that door, its private arena and reproducible WAT source. It
-writes what Rapier keeps and nothing more: 8-bit grey, grey with alpha, RGB and RGBA pictures as bare codestreams
-that every JPEG XL decoder reads, the same bytes in every JavaScript engine.
+writes 8-, 10-, 12- and 16-bit integer, IEEE binary16 and binary32 grey/RGB pictures with optional alpha as bare JPEG XL
+codestreams, with deterministic JavaScript bytes. The public API names the tested decoder versions and output-format qualifications.
 
 The doors (`package.json`'s exports, each with its declaration beside it):
 
@@ -50,9 +50,30 @@ The doors (`package.json`'s exports, each with its declaration beside it):
 - `jpeg-ans.mjs` and `photo-ans.mjs`: the corresponding checked door with an optional shared ANS candidate at
   effort 2. Their default remains prefix effort 1. The ordinary doors and page do not import ANS.
 
-Every pixel door takes `{colorSpace: 'srgb' | 'display-p3'}`, declared in the header by enumeration (`frame.mjs`, 21
+Every pixel door takes `{colorSpace: 'srgb' | 'display-p3' | 'rec2020'}`, declared in the header by enumeration (`frame.mjs`, 21
 bits for Display P3), the samples written as they are; the carrier reads a JPEG's ICC profile by what it does
 (`jfif.mjs`, `profileSpace`: the colorants and every channel's curve) and declares sRGB or Display P3, or refuses.
+
+Native precision is shared by the checked pixel doors and the writer's pixel primitives. `admitSampleFormat` owns
+array type, integer code-value range, bit depth, float exponent width, transfer (`srgb`, `linear`, `pq`, `hlg`),
+intensity target and alpha association. `lossless.mjs` uses signed 32-bit group planes and bounded token histograms
+for native samples; floating input is its raw IEEE words, without a colour transform. Palettes compete with direct
+planes; integer effort 2 also prices RGB beside YCoCg. Alpha keeps its source format and every bit. Native lossy
+rounds RGB code values or mantissas during plane filling, then uses the same reversible coder, keeping the exact
+candidate if smaller. The existing 8-bit paths keep their encoded bytes. Public numeric error bounds and source
+formats are in `public/API.md`.
+
+The optional `source.mjs` reads PNG16 (all filters and Adam7) and uniform HALF/FLOAT OpenEXR scanlines with NONE,
+RLE, ZIPS or ZIP. It carries supported colour declarations and alpha association without an 8-bit intermediate.
+Its bounded decompression and file layout checks end at typed samples; compression policy stays in the encoder.
+The page adapter, public worker example and worker pool preserve those typed samples and options.
+
+Local candidate search stops when already-written sections reach the smallest complete stream kept so far.
+The remaining format structures can only increase length. `groupPass` and the pool distinguish that rejection
+from hurry, so later colour transforms still compete. Emitted tokens own context classification; zero copies do
+not need per-pixel context arrays. Screen candidates share a palette inspection, and raw weighted residuals do
+not compute an unused context bin. The fixed-work CPU benchmark in `public/bench/phone-budget.mjs` measures
+caller, aggregate CPU and governed wall time separately and checks exact output against a supplied reference.
 
 The JPEG and photograph doors read effort, default 1. Effort 2 keeps effort 1's work; 3 also tries a 32-cluster
 budget at creation cost 160; 4 also tries one coefficient order learned from integer nonzero counts. Each keeps

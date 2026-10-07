@@ -109,10 +109,25 @@ not round is held at; `follow: true` turns the head with the stroke instead, and
 take paint off with its own head (a brush that works the paint already on the layer, such as smudge or blend,
 ignores it). A figure's `seed` (an integer from 0 to 2,147,483,647, default 1) fixes the brush's random choices,
 so the same strokes paint the same marks. Brush ids come from the shipped registry, including `rapier/scumble`,
-`rapier/watercolour`, `rapier/pencil`, `rapier/pen` and `rapier/marker`. A paint figure takes at most
-32 strokes, 1,024 points per stroke and 4,096 points in total, within a 2,048-pixel sheet. An eraser or
+`rapier/flat`, `rapier/pencil` and `rapier/pen`. A paint figure takes at most
+32 strokes, 1,024 points per stroke and 4,096 points in total, counting one stationary starting sample
+added to each new stroke, within a 2,048-pixel sheet. An eraser or
 blender needs existing pigment in that same layer; an empty resulting picture is refused. Painting
 is not available in a build without Paint. Do not claim a refused call created marks.
+
+A paint figure with `mode: "water"` paints pigment into wet paper instead. It takes `actions` in place of `strokes`
+(`stroke`, `water`, `lift`, `fill`, `dry`, `advance`, `paper`, `tip`, `text` and `trace`; stroke points are
+`[x, y, pressure, tick]` with 60 ticks a second), and `get_context.paint` lists the Water brushes, pigments, papers and
+tools with an example of every action. A paper changes only how the paint behaves; the layer stays transparent over the
+drawing's own canvas and background. `document.read_context` with `paintSample: {objectId, point}` reads the pigment at
+a point of an inspected Water layer. A figure that mixes strokes and actions is refused as `paint_mode_mismatch`.
+
+## Edit an imported SVG
+
+Read the picture occurrence with `document.read_context`. When every node-tree page has been read,
+pass its handle as `svg_handle` with `node_edits`. Each entry names a disclosed `id` and the changed
+`text`, `attributes`, `style` or `geometry`; `null` removes an optional attribute or style property.
+Untouched SVG bytes stay intact. Unsafe values are refused with the field named.
 
 ## Change one object
 
@@ -150,16 +165,15 @@ Do not use a source-text handle as a recipe handle or guess IDs from the rendere
   `recipe_handle`. Keep every unrelated field and paint marker. Do not combine
   `recipe` with `shapes` or `figures`; an `operations` batch may follow the recipe change.
 
-A whole-recipe or caption edit does not bypass the person's open drawing or Notes fence. While a person
-has the drawing open, a `shapes` patch (its `set` included) and an `operations` batch land on their canvas as
-one Undo step; a whole `recipe` or a caption waits until they close it (`draw_session_open`).
+While a person has the drawing open, a `shapes` patch (its `set` included), an `operations` batch and a
+complete inspected `recipe` use the same canvas hand-off. An admitted change commits to the document and
+lands on their canvas as one Undo step; while a gesture is active, presentation waits for their hand to lift.
+A caption waits until they close the drawing (`draw_session_open`). The Notes fence still applies.
 A shape or dial the person has changed on the canvas and not yet saved stays theirs: the agent's change is in
 the document and one Undo away. A refused recipe names the first field that stopped it (`field`).
 
 Keep the change ID for inspection and Undo. Where the person has painted on a layer since, `undo_agent_change`
 takes back the agent's strokes by replaying the layer's history without them, so the person's strokes stay. A
-painting keeps that history while it fits 8 MiB; on a very large painting only the latest contribution stays undoable. Whichever stroke would pass that, the Paint tool's or an
-agent's, the history is dropped before it does: the picture stays, the painting goes on taking strokes, an agent's
-next stroke lays on the picture as it is and starts a new history, and an undo of an earlier contribution beside
-later work then answers `change_interleaved`. If the person changed the image meanwhile, a fresh read establishes
-the new recipe.
+new agent contribution whose replay would exceed 8 MiB is refused as `paint_history_full`; the painting
+and its existing replay stay intact. Use `shapes.add` to paint on a new layer. If the person changed the
+image meanwhile, a fresh read establishes the new recipe.

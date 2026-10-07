@@ -503,6 +503,12 @@
       reviews.delete(request.reviewToken);
       return fail('review_lapsed');
     }
+    // Pending surface input belongs to its own human transaction, before this
+    // candidate's source is admitted and before an agent compound can own it.
+    if (!_rapierSettlePendingDocumentChange()) {
+      reviews.delete(request.reviewToken);
+      return fail('document_not_settled');
+    }
     const refused = commitAdmission(request);
     if (refused) { reviews.delete(request.reviewToken); return fail(refused, refused === 'document_changed' ? 'conflict' : 'refused'); }
     reviews.delete(request.reviewToken);
@@ -1326,9 +1332,9 @@
     }
   }
 
-  let paintedLayers = [];
   const host = {
     snapshot, commit, reveal,
+    paintRaster: (raster, options) => globalThis.RapierEmbeddedImages.validatePaintRaster(raster, options),
     presence: value => {
       if (caret.point && !value.pointers?.some(point => point.id === caret.point.id && point.status !== 'expired' && point.expiresAt > Date.now())) caretPut('pointer_cleared');
       const pointers = apps ? (value.pointers || []).filter(point => point.status !== 'shown' || point.id === caret.point?.id) : value.pointers;
@@ -1342,17 +1348,15 @@
     },
     compare: showComparison, closeCompare: closeComparison, presentReview: presentKernelReview,
     // An agent's paint strokes, laid by the paint engine (draw/agent-paint.mjs) in the painter's own worker where the page has one (draw/draw.js); absent in the document build, where the kernel refuses them.
-    // The layers a document.draw lays ride in the semantic change the kernel hands the open canvas. The layers a selective Undo repaints are
-    // remembered for the call instead: that Undo writes a new material result, not an inverse, so Draw is handed the layers themselves.
+    // Draw edits and selective material Undo both carry the kernel's verified semantic change to the open canvas.
     ...(globalThis.RapierDrawAgentPaint ? {
       paint: (strokes, options = {}) => (typeof _rapierDrawPaintAgentStrokes === 'function' ? _rapierDrawPaintAgentStrokes : globalThis.RapierDrawAgentPaint.paintAgentStrokes)(strokes, options.seed, options.target, options),
-      paintReplay: async (shape, omitIds, options) => {
-        const replayed = await (typeof _rapierDrawPaintReplay === 'function' ? _rapierDrawPaintReplay : globalThis.RapierDrawAgentPaint.replayAgentPainting)(shape, omitIds, options);
-        if (replayed) paintedLayers.push(replayed);
-        return replayed;
-      },
+      paintReplay: (shape, omitIds, options) => (typeof _rapierDrawPaintReplay === 'function' ? _rapierDrawPaintReplay : globalThis.RapierDrawAgentPaint.replayAgentPainting)(shape, omitIds, options),
       paintSheet: paint => globalThis.RapierDrawAgentPaint.agentPaintSheetHolds(paint),
       paintBrushes: () => globalThis.RapierDrawAgentPaint.agentPaintBrushRegistry(),
+      paintSample: (shape, point, options) => typeof globalThis._rapierDrawPaintSample === 'function'
+        ? globalThis._rapierDrawPaintSample(shape, point, options)
+        : globalThis.RapierDrawAgentPaint.sampleAgentPainting(shape, point, options),
     } : {}),
     // notes.list / notes.read: the folder is answered by the Notes shell's own door where the build
     // carries Notes (notes/notes.js sets globalThis.rapierNotesHost at install); the document profile
@@ -1552,7 +1556,6 @@
       }
       return result;
     };
-    if (name === 'document.undo_agent_change') paintedLayers = [];
     const result = await (who.actor === 'agent'
       ? _rapierAgentInvocationTracked(name, args, run, who.requestId) : run());
     if (name === 'document.apply_edits' && ['applied', 'rebased'].includes(result.outcome)) {
@@ -1560,21 +1563,27 @@
       _rapierAgentNoteShow();
       try { agentCaret(result.changeId, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName); } catch (_) {}
     }
-    // A drawing change reaches the open canvas inside the commit above, as the kernel's verified semantic change (commit, projectRemoteDrawing),
-    // so the person watches it arrive in the order it was written, or after the gesture in their hand. The one hand-off with no such change is
-    // a selective Undo that repainted a layer: that wrote a new material result, not an inverse, so Draw is handed the repainted layers.
-    // Guarded because the document profile ships no Draw UI at all (tools/check-profile-seams.mjs).
-    if (name === 'document.undo_agent_change' && result.outcome === 'applied' && result.replaced && paintedLayers.length
-        && typeof _rapierDrawAgentPatch === 'function') {
-      try { _rapierDrawAgentPatch({replace: paintedLayers}, {asset: result.replaced, reference: result.asset?.reference, transactionId: result.changeId, name: doorName}); }
-      catch (_) {}
-    }
     // Any call can be the first thing to relocate a pending review's changes through
     // document.get_context's own collaboration() read -- a stale change from a human edit
     // elsewhere becomes visible here, not only on the next agent-initiated decision.
     _rapierReviewSpansRefresh();
     publishEmbedReview();
     return result;
+  }
+
+  // Draw's own Undo has already chosen this exact history entry before waiting for Paint.
+  // Its journal row supplies the caller identity, including the existing unverified local
+  // owner of a carried Apps transaction. No tool arguments can select a different owner.
+  async function undoDrawingChange(entry, session) {
+    await ready;
+    const drawing = typeof _rapierDrawState === 'object' ? _rapierDrawState : null;
+    if (!drawing?.open || drawing.session !== session || !drawing.undoStack.includes(entry)) return false;
+    const id = entry?.agent?.transactionId;
+    const row = id && current().journal.find(row => row.id === id);
+    if (!row || row.actor !== 'agent' || row.operation !== 'document.draw') return false;
+    const result = await invoke('document.undo_agent_change', {change_id: id},
+      {actor: row.actor, principal: row.principal, transport: row.transport});
+    return result.outcome === 'applied';
   }
 
   function status() {
@@ -2319,7 +2328,7 @@
     return sheet;
   }
 
-  globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status, ownedNotesAdapter, ownedNotesCheckpoint,
+  globalThis.RapierAgentBrowser = Object.freeze({ready, snapshot, invoke, refresh, status, undoDrawingChange, ownedNotesAdapter, ownedNotesCheckpoint,
     sheet: houseSheet,
     presence: host.presence,
     trackInvocation: (operation, input, run, invocationId) => _rapierAgentInvocationTracked(operation, input, run, invocationId),

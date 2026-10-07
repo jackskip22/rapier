@@ -1,12 +1,14 @@
 // One contiguous source window hides the trailing image appendix. Canonical
 // bytes, edits, selection offsets and history remain owned by the source store.
+// The records show only when the person turns ASSETS on under CODE in the settings panel (off by default).
 globalThis.RapierSourceAssets = (() => {
   let authority = '', expanded = false, root = '', boundary = -1, cached = null;
   const active = () => _rapierHeavyRuntime.window?.assetFold === true;
+  const wanted = () => !!RapierPreferences.read('assets');
   function identity() {
     if (authority === rapier.identity.authority) return;
     authority = rapier.identity.authority;
-    expanded = false; root = ''; boundary = -1; cached = null;
+    expanded = wanted(); root = ''; boundary = -1; cached = null;
   }
   function info(source) {
     identity();
@@ -36,8 +38,6 @@ globalThis.RapierSourceAssets = (() => {
     return cached;
   }
   function refresh() {
-    const button = document.getElementById('source-image-data');
-    if (!button) return;
     identity();
     const visible = rapier.view.mode === 'source' && rapier.document.docKind === 'markdown';
     const summary = visible ? info(_rapierSourceText()) : null;
@@ -53,17 +53,8 @@ globalThis.RapierSourceAssets = (() => {
         rapier.selection.scope = 'window';
         _rapierHeavyWindowReset();
         _rapierHeavyWindowMountFromString(_rapierSourceText(), start, end, {scrollTop});
-        return;
       }
     }
-    button.hidden = !summary;
-    if (!summary) return;
-    const folded = active();
-    button.textContent = folded ? 'Show image data (' + summary.count + ')' : 'Hide image data';
-    button.title = summary.bytes.toLocaleString() + ' bytes in ' + summary.records +
-      (summary.records === 1 ? ' image reference' : ' image references');
-    button.setAttribute('aria-expanded', folded ? 'false' : 'true');
-    button.disabled = _rapierMutationBarrierActive() || rapier.composition.block || rapier.composition.source;
   }
   function mount(source, options = {}) {
     const ta = document.getElementById('source-textarea');
@@ -114,5 +105,11 @@ globalThis.RapierSourceAssets = (() => {
     ta.focus({preventScroll: true});
     return true;
   }
-  return Object.freeze({active, mount, refresh, toggle});
+  // The switch under CODE: show the records when it is on, fold them when it is off.
+  async function sync() {
+    if (rapier.view.mode !== 'source' || wanted() !== active()) return false;
+    return toggle();
+  }
+  RapierPreferences.subscribe('assets', () => { void sync(); });
+  return Object.freeze({active, mount, refresh, toggle, sync});
 })();

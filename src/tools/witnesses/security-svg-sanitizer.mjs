@@ -29,9 +29,9 @@ async function importedNodeCells() {
   assert.equal(outline.style['stroke-width'], '2', 'inline style is inspectable document data');
   assert.equal(outline.geometry.d, 'M 0 0 L 80 0 L 80 60 Z', 'path geometry is inspectable document data');
   const edits = [
-    {nodeId:word.id, text:'fresh <words> & snow ☃'},
-    {nodeId:outline.id, geometry:{d:'M 0 0 L 90 0 L 90 70 Z'}, attributes:{'data-note':'a "quote"'}, style:{'stroke-width':'3',opacity:null}},
-    {nodeId:echo.id, geometry:{x:105}},
+    {id:word.id, text:'fresh <words> & snow ☃'},
+    {id:outline.id, geometry:{d:'M 0 0 L 90 0 L 90 70 Z'}, attributes:{'data-note':'a "quote"'}, style:{'stroke-width':'3',opacity:null}},
+    {id:echo.id, geometry:{x:105}},
   ];
   const changed = assets.editSVGNodes(original.bytes, edits), text = new TextDecoder().decode(changed);
   const expected = IMPORTED.replace('these &amp; words', 'fresh &lt;words&gt; &amp; snow ☃')
@@ -45,23 +45,23 @@ async function importedNodeCells() {
   const reopened = assets.inspectSVG(saved.bytes, {nodes:true});
   assert.deepEqual(reopened.nodes.map(node => node.id), inspected.nodes.map(node => node.id), 'value edits keep inspected object identities stable');
   assert.equal(reopened.nodes.find(node => node.id === word.id).text, 'fresh <words> & snow ☃');
-  assert.deepEqual(assets.editSVGNodes(changed, [{nodeId:word.id,text:'fresh <words> & snow ☃'}]), changed, 'an exact no-op keeps original escaped bytes');
+  assert.deepEqual(assets.editSVGNodes(changed, [{id:word.id,text:'fresh <words> & snow ☃'}]), changed, 'an exact no-op keeps original escaped bytes');
   const refused = [
-    [{nodeId:outline.id, attributes:{onclick:'alert(1)'}}, 'attributes.onclick'],
-    [{nodeId:outline.id, attributes:{'evil:href':'#outline'}}, 'attributes.evil:href'],
-    [{nodeId:outline.id, attributes:{xmlns:'http://www.w3.org/1999/xhtml'}}, 'attributes.xmlns'],
-    [{nodeId:outline.id, attributes:{'xmlns:evil':'http://example.invalid/ns'}}, 'attributes.xmlns:evil'],
-    [{nodeId:echo.id, attributes:{href:'javascript:alert(1)'}}, 'attributes.href'],
-    [{nodeId:echo.id, attributes:{'xlink:href':'https://example.invalid/picture.svg'}}, 'attributes.xlink:href'],
-    [{nodeId:outline.id, attributes:{style:'fill:red; background:url(https://example.invalid/a)'}}, 'attributes.style'],
-    [{nodeId:outline.id, style:{fill:'u\\72l(https://example.invalid/a)'}}, 'style.fill'],
-    [{nodeId:outline.id, style:{stroke:'red; fill:blue'}}, 'style.stroke'],
-    [{nodeId:outline.id, geometry:{d:'M 0 0 L Infinity 1'}}, 'geometry.d'],
-    [{nodeId:caption.id, text:'discard the tspan'}, 'text'],
-    [{nodeId:outline.id, element:'script'}, 'element'],
+    [{id:outline.id, attributes:{onclick:'alert(1)'}}, 'attributes.onclick'],
+    [{id:outline.id, attributes:{'evil:href':'#outline'}}, 'attributes.evil:href'],
+    [{id:outline.id, attributes:{xmlns:'http://www.w3.org/1999/xhtml'}}, 'attributes.xmlns'],
+    [{id:outline.id, attributes:{'xmlns:evil':'http://example.invalid/ns'}}, 'attributes.xmlns:evil'],
+    [{id:echo.id, attributes:{href:'javascript:alert(1)'}}, 'attributes.href'],
+    [{id:echo.id, attributes:{'xlink:href':'https://example.invalid/picture.svg'}}, 'attributes.xlink:href'],
+    [{id:outline.id, attributes:{style:'fill:red; background:url(https://example.invalid/a)'}}, 'attributes.style'],
+    [{id:outline.id, style:{fill:'u\\72l(https://example.invalid/a)'}}, 'style.fill'],
+    [{id:outline.id, style:{stroke:'red; fill:blue'}}, 'style.stroke'],
+    [{id:outline.id, geometry:{d:'M 0 0 L Infinity 1'}}, 'geometry.d'],
+    [{id:caption.id, text:'discard the tspan'}, 'text'],
+    [{id:outline.id, element:'script'}, 'element'],
   ];
   for (const [edit, field] of refused) {
-    assert.throws(() => assets.editSVGNodes(original.bytes, [edit]), error => error.field === 'svgNodeEdits[0].' + field,
+    assert.throws(() => assets.editSVGNodes(original.bytes, [edit]), error => error.field === 'node_edits[0].' + field,
       'a refused SVG edit must name its exact input field: ' + field);
     assert.deepEqual(original.bytes, bytes, 'a refused SVG edit cannot mutate the imported bytes');
   }
@@ -74,33 +74,33 @@ async function importedNodeCells() {
   edge('empty namespace stays outside SVG authority', () => {
     const foreign = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><g xmlns=""><text>outside</text></g></svg>');
     const node = assets.inspectSVG(foreign,{nodes:true}).nodes.find(node => node.element === 'text');
-    assert.throws(() => assets.editSVGNodes(foreign,[{nodeId:node.id,text:'changed'}]), error => error.field === 'svgNodeEdits[0].nodeId');
+    assert.throws(() => assets.editSVGNodes(foreign,[{id:node.id,text:'changed'}]), error => error.field === 'node_edits[0].id');
   });
   edge('duplicate id outside inspected nodes is refused', () => {
     const distant = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path id="first" d="M 0 0 L 1 1"/>' + '<path d="M 0 0 L 1 1"/>'.repeat(260) + '<path id="taken" d="M 0 0 L 1 1"/></svg>');
     const node = assets.inspectSVG(distant,{nodes:true}).nodes.find(node => node.attributes.id === 'first');
-    assert.throws(() => assets.editSVGNodes(distant,[{nodeId:node.id,attributes:{id:'taken'}}]), error => error.field === 'svgNodeEdits[0].attributes.id');
+    assert.throws(() => assets.editSVGNodes(distant,[{id:node.id,attributes:{id:'taken'}}]), error => error.field === 'node_edits[0].attributes.id');
   });
   edge('missing local style reference names its property', () => {
-    assert.throws(() => assets.editSVGNodes(bytes,[{nodeId:outline.id,style:{fill:'url(#missing)'}}]), error => error.field === 'svgNodeEdits[0].style.fill');
+    assert.throws(() => assets.editSVGNodes(bytes,[{id:outline.id,style:{fill:'url(#missing)'}}]), error => error.field === 'node_edits[0].style.fill');
   });
   edge('a split CSS identifier cannot consume the next property', () => {
     const comment = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="M 0 0 L 1 1" style="st/*keep*/roke-width:2;fill:red"/></svg>');
     const node = assets.inspectSVG(comment,{nodes:true}).nodes.find(node => node.element === 'path');
-    const changed = assets.editSVGNodes(comment,[{nodeId:node.id,style:{'stroke-width':null}}]);
+    const changed = assets.editSVGNodes(comment,[{id:node.id,style:{'stroke-width':null}}]);
     assert(new TextDecoder().decode(changed).includes('fill:red'), 'the untouched fill declaration must survive');
     const style = assets.inspectSVG(changed,{nodes:true}).nodes.find(candidate => candidate.id === node.id).attributes.style;
     assert(/(?:^|;)fill:red$/.test(style), 'deleting one style must not join its prefix onto the next property');
   });
   edge('the source BOM cannot disappear outside the edit', () => {
     const bom = new Uint8Array(bytes.length + 3); bom.set([0xef,0xbb,0xbf]); bom.set(bytes,3);
-    assert.throws(() => assets.editSVGNodes(bom,[{nodeId:word.id,text:'updated'}]), error => error.field === 'svgNodeEdits');
+    assert.throws(() => assets.editSVGNodes(bom,[{id:word.id,text:'updated'}]), error => error.field === 'node_edits');
   });
   edge('root sizing cannot be silently restored', () => {
-    assert.throws(() => assets.editSVGNodes(bytes,[{nodeId:inspected.nodes[0].id,geometry:{width:null}}]), error => error.field === 'svgNodeEdits[0].geometry.width');
+    assert.throws(() => assets.editSVGNodes(bytes,[{id:inspected.nodes[0].id,geometry:{width:null}}]), error => error.field === 'node_edits[0].geometry.width');
   });
   edge('an undefined field cannot delete an attribute', () => {
-    assert.throws(() => assets.editSVGNodes(bytes,[{nodeId:outline.id,attributes:{fill:undefined}}]), error => error.field === 'svgNodeEdits[0].attributes.fill');
+    assert.throws(() => assets.editSVGNodes(bytes,[{id:outline.id,attributes:{fill:undefined}}]), error => error.field === 'node_edits[0].attributes.fill');
   });
   if (edgeFailures.length) { for (const failure of edgeFailures) console.error(failure); assert.fail(edgeFailures.join('\n')); }
   return 'imported SVG nodes keep untouched bytes through inspection, edits and the asset writer; ' + refused.length + ' unsafe or destructive fields refused';

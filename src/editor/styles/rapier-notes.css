@@ -44,7 +44,7 @@ html.rapier-notes-start body>*:not(.rapier-notes-surface):not(#toast-root):not(#
 /* The cards' margins are the cards' gap: the scroller's side padding is --notes-gap, the same 8 px
    that stands between two cards of a row. */
 /* The quiet line under the head: what the storage is, in the cards' own margin, until a backup exists. */
-.rapier-notes-storage{flex:none;margin:0;padding:0 var(--notes-gap) var(--space-2);color:var(--color-text-muted);font:var(--text-xs)/1.5 var(--font-mono)}
+.rapier-notes-storage{flex:none;margin:0;padding:0 var(--notes-gap) var(--space-2);color:var(--color-text-muted);font:var(--text-xs)/1.5 var(--font-mono);text-align:center}
 .rapier-notes-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:0 var(--notes-gap) calc(var(--notes-foot) + var(--space-2));scrollbar-width:none}
 .rapier-notes-scroll::-webkit-scrollbar{display:none;width:0;height:0}
 .rapier-notes-scroll{padding-top:calc(var(--space-2) + var(--notes-bar-room,0px))}
@@ -116,7 +116,7 @@ div.rapier-notes-section-head{cursor:default;min-height:0;padding:var(--space-1)
 /* Trash's own promise, under its title, in the head's own secondary colour -- a sentence, not shouted caps */
 .rapier-notes-grid{position:relative;min-height:0}
 .rapier-notes-section--closed .rapier-notes-grid{display:none}
-.rapier-notes-empty{padding:var(--space-2) 0;color:var(--color-text-muted);font:var(--text-sm) var(--font-mono)}
+.rapier-notes-empty{padding:var(--space-2) 0;color:var(--color-text-muted);font:var(--text-sm) var(--font-mono);text-align:center}
 .rapier-notes-card-unread{color:var(--color-text-secondary);font:var(--text-sm) var(--font-mono)}
 /* The card's ground is its colour's mate for the theme, or the surface's card ground when it has
    none (white on the light page, black on the dark one: a flat box, marked by its fill -- no

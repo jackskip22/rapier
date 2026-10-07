@@ -227,7 +227,7 @@ function svgCharacters(value, field) {
   }
   return value;
 }
-function svgXmlValue(raw, field = 'svgNodeEdits') {
+export function svgXmlValue(raw, field = 'node_edits') {
   if (/&(?!amp;|lt;|gt;|quot;|apos;|#(?:[0-9]+|x[0-9a-fA-F]+);)/.test(raw)) svgNodeFail(field, 'The SVG contains an invalid XML entity.');
   return svgCharacters(raw.replace(/&(#(?:[0-9]+|x[0-9a-fA-F]+)|amp|lt|gt|quot|apos);/g, (entity, token) => {
     if (token[0] !== '#') return {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"}[token];
@@ -236,37 +236,37 @@ function svgXmlValue(raw, field = 'svgNodeEdits') {
     return String.fromCodePoint(n);
   }), field);
 }
-function svgElements(text) {
-  if (text.length > IMAGE_LIMITS.bytes) svgNodeFail('svgNodeEdits', 'The SVG exceeds the image limit.');
+export function svgElements(text, {visit, inspect = true} = {}) {
+  if (inspect && text.length > IMAGE_LIMITS.bytes) svgNodeFail('node_edits', 'The SVG exceeds the image limit.');
   const nodes = [], stack = [], ids = new Set(), idCounts = new Map(), links = [];
   const references = {has: id => { links.push(id); return true; }};
   let at = 0, totalNodes = 0, roots = 0;
-  const invalid = () => svgNodeFail('svgNodeEdits', 'The SVG must be well-formed XML.');
+  const invalid = () => svgNodeFail('node_edits', 'The SVG must be well-formed XML.');
   while (at < text.length) {
     if (text[at] !== '<') {
       const end = text.indexOf('<', at), until = end < 0 ? text.length : end, raw = text.slice(at, until);
       if (!stack.length && raw.trim() || raw.includes(']]>')) invalid();
       const value = svgXmlValue(raw);
-      if (stack.at(-1)?.local === 'style') svgCss(value,references);
+      if (inspect && stack.at(-1)?.local === 'style') svgCss(value,references);
       at = until; continue;
     }
     if (text.startsWith('<!--', at) || text.startsWith('<![CDATA[', at) || text.startsWith('<?', at)) {
       const comment = text.startsWith('<!--', at), cdata = text.startsWith('<![CDATA[', at), close = comment ? '-->' : cdata ? ']]>' : '?>';
       const start = at + (comment ? 4 : cdata ? 9 : 2), end = text.indexOf(close, start);
-      if (end < 0 || comment && text.slice(start, end).includes('--') || cdata && !stack.length || !comment && !cdata && (stack.length || !/^xml\s/.test(text.slice(start, end)))) invalid();
+      if (end < 0 || comment && text.slice(start, end).includes('--') || cdata && !stack.length || inspect && !comment && !cdata && (stack.length || !/^xml\s/.test(text.slice(start, end)))) invalid();
       if (stack.length) stack.at(-1).markup = true;
-      if (cdata && stack.at(-1)?.local === 'style') svgCss(text.slice(start,end),references);
+      if (inspect && cdata && stack.at(-1)?.local === 'style') svgCss(text.slice(start,end),references);
       at = end + close.length; continue;
     }
     if (text.startsWith('</', at)) {
       const match = /^<\/([A-Za-z_][A-Za-z0-9_.:-]*)\s*>/.exec(text.slice(at)), node = stack.pop();
       if (!match || !node || node.element !== match[1]) invalid();
-      node.contentEnd = at; node.end = at + match[0].length; at = node.end; continue;
+      node.contentEnd = at; node.end = at + match[0].length; at = node.end; visit?.(node); continue;
     }
     const start = at, match = /^<([A-Za-z_][A-Za-z0-9_.:-]*)/.exec(text.slice(at));
     if (!match || match[1].split(':').length > 2) invalid();
     const element = match[1], parent = stack.at(-1), attributes = new Map(), namespace = new Map(parent?.namespace || [['xml','http://www.w3.org/XML/1998/namespace']]);
-    if (!parent && (++roots !== 1 || element !== 'svg')) invalid();
+    if (!parent && (++roots !== 1 || (inspect ? element !== 'svg' : element.split(':').at(-1) !== 'svg'))) invalid();
     if (parent) parent.children++;
     const id = parent ? parent.id + '.' + (parent.children - 1) : 'svg:0';
     at += match[0].length;
@@ -287,23 +287,24 @@ function svgElements(text) {
       else if (name.startsWith('xmlns:')) namespace.set(name.slice(6), value);
       if (name === 'id') { ids.add(value); idCounts.set(value,(idCounts.get(value) || 0) + 1); }
       if ((name === 'href' || name === 'xlink:href') && value.startsWith('#')) links.push(value.slice(1));
-      if (value.includes('(')) svgCss(value,references);
+      if (inspect && value.includes('(')) svgCss(value,references);
       at = insertAt = valueEnd + 1;
     }
     if (text[at - 1] !== '>') invalid();
     const split = element.split(':'), prefix = split.length === 2 ? split[0] : '';
     if (prefix && !namespace.has(prefix)) invalid();
-    const ns = namespace.has(prefix) ? namespace.get(prefix) : parent?.ns ?? SVG_NS;
+    const ns = namespace.has(prefix) ? namespace.get(prefix) : inspect ? parent?.ns ?? SVG_NS : '';
     const node = {id, parentId:parent?.id || null, element, local:split.at(-1), ns, namespace, attributes,
       start, openEnd:at, contentStart:at, contentEnd:at, end:at, insertAt, slashAt, children:0, markup:false};
     totalNodes++;
     if (nodes.length < SVG_NODE_LIMITS.nodes) nodes.push(node);
-    if (slashAt < 0) { stack.push(node); if (stack.length > SVG_NODE_LIMITS.depth) svgNodeFail('svgNodeEdits', 'The SVG exceeds the node depth limit.'); }
+    if (slashAt < 0) { stack.push(node); if (inspect && stack.length > SVG_NODE_LIMITS.depth) svgNodeFail('node_edits', 'The SVG exceeds the node depth limit.'); }
+    else visit?.(node);
   }
   if (stack.length || roots !== 1) invalid();
   return {nodes, totalNodes, ids, idCounts, links};
 }
-function svgStyle(raw, field = 'svgNodeEdits') {
+function svgStyle(raw, field = 'node_edits') {
   const starts = [], ends = []; let value = '';
   for (let at = 0; at < raw.length;) {
     const start = at, entity = raw[at] === '&' ? /^&(?:#(?:[0-9]+|x[0-9a-fA-F]+)|amp|lt|gt|quot|apos);/.exec(raw.slice(at)) : null;
@@ -448,10 +449,10 @@ function svgNodeObject(value, field, allowed) {
   return keys;
 }
 export function editSVGNodes(bytes, edits) {
-  if (!Array.isArray(edits) || !edits.length || edits.length > SVG_NODE_LIMITS.edits) svgNodeFail('svgNodeEdits', 'Use one to ' + SVG_NODE_LIMITS.edits + ' node edits.');
+  if (!Array.isArray(edits) || !edits.length || edits.length > SVG_NODE_LIMITS.edits) svgNodeFail('node_edits', 'Use one to ' + SVG_NODE_LIMITS.edits + ' node edits.');
   const original = svgText(bytes), parsed = svgElements(original), inspected = svgNodeInspection(parsed,original);
   const admitted = normalizeSVG(bytes), input = bytesOf(bytes);
-  if (admitted.length !== input.length || admitted.some((byte,index) => byte !== input[index])) svgNodeFail('svgNodeEdits', 'The SVG must already be admitted by the image importer.');
+  if (admitted.length !== input.length || admitted.some((byte,index) => byte !== input[index])) svgNodeFail('node_edits', 'The SVG must already be admitted by the image importer.');
   const visible = new Set(inspected.nodes.map(node => node.id)), used = new Set(), patches = [], idFields = [], hrefFields = [], resourceFields = [];
   const splice = (start,end,text,field) => patches.push({start,end,text,field});
   const scalar = (value,field,numeric = false) => {
@@ -461,12 +462,12 @@ export function editSVGNodes(bytes, edits) {
     return svgCharacters(value,field);
   };
   for (let index = 0; index < edits.length; index++) {
-    const edit = edits[index], field = 'svgNodeEdits[' + index + ']';
-    svgNodeObject(edit,field,new Set(['nodeId','text','attributes','style','geometry']));
-    if (typeof edit.nodeId !== 'string' || !visible.has(edit.nodeId) || used.has(edit.nodeId)) svgNodeFail(field + '.nodeId', 'Use a disclosed node once in this edit.');
-    used.add(edit.nodeId);
-    const node = parsed.nodes.find(node => node.id === edit.nodeId);
-    if (node.ns !== SVG_NS || /^(?:script|foreignObject|iframe|embed|object|handler|listener)$/i.test(node.local)) svgNodeFail(field + '.nodeId', 'Only SVG elements can be edited.');
+    const edit = edits[index], field = 'node_edits[' + index + ']';
+    svgNodeObject(edit,field,new Set(['id','text','attributes','style','geometry']));
+    if (typeof edit.id !== 'string' || !visible.has(edit.id) || used.has(edit.id)) svgNodeFail(field + '.id', 'Use a disclosed node once in this edit.');
+    used.add(edit.id);
+    const node = parsed.nodes.find(node => node.id === edit.id);
+    if (node.ns !== SVG_NS || /^(?:script|foreignObject|iframe|embed|object|handler|listener)$/i.test(node.local)) svgNodeFail(field + '.id', 'Only SVG elements can be edited.');
     if (Object.keys(edit).length < 2) svgNodeFail(field, 'Provide a node change.');
     const added = [], assigned = new Set();
     const attribute = (name,value,path) => {
@@ -535,12 +536,12 @@ export function editSVGNodes(bytes, edits) {
   }
   for (const href of hrefFields) if (!final.ids.has(href.value)) svgNodeFail(href.field,'Reference an existing SVG id.');
   for (const resource of resourceFields) if (svgCss(resource.value,final.ids) !== resource.value) svgNodeFail(resource.field,'Reference an existing SVG id.');
-  if (sanitizeSvgText(next) !== next) svgNodeFail(idFields.at(-1)?.field || patches.at(-1)?.field || 'svgNodeEdits','The change must preserve safe SVG references.');
+  if (sanitizeSvgText(next) !== next) svgNodeFail(idFields.at(-1)?.field || patches.at(-1)?.field || 'node_edits','The change must preserve safe SVG references.');
   const result = new TextEncoder().encode(next);
-  if (result.length > IMAGE_LIMITS.bytes) svgNodeFail('svgNodeEdits','The SVG exceeds the image limit.');
+  if (result.length > IMAGE_LIMITS.bytes) svgNodeFail('node_edits','The SVG exceeds the image limit.');
   let normalized;
-  try { normalized = svgText(normalizeSVG(result)); } catch (_) { svgNodeFail(patches.at(-1)?.field || 'svgNodeEdits','Keep valid image dimensions.'); }
-  if (normalized !== next) svgNodeFail(patches.at(-1)?.field || 'svgNodeEdits','The change must retain the exact SVG accepted by the image importer.');
+  try { normalized = svgText(normalizeSVG(result)); } catch (_) { svgNodeFail(patches.at(-1)?.field || 'node_edits','Keep valid image dimensions.'); }
+  if (normalized !== next) svgNodeFail(patches.at(-1)?.field || 'node_edits','The change must retain the exact SVG accepted by the image importer.');
   return result;
 }
 export async function hashAsset(value) {

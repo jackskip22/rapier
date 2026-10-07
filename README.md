@@ -19,9 +19,9 @@ no account.
 - **Pictures.** Stored inside the `.md` file; new rasters as JPEG XL from
   [Rapier's own encoder](https://github.com/jackskip22/rapier-jxl). Text wraps around a picture's shape.
 - **Draw.** Editable SVG: pen, pressure brush, shapes, arrows that stay attached, text, backgrounds.
-- **Paint.** MyPaint brushes, watercolour that flows and dries, smudge and blend.
+- **Paint and Water.** MyPaint brushes, smudge and blend; Water, watercolour whose pigments mix, flow and dry on textured paper.
 - **Notes.** One Markdown file per note: colours, pins, checklists, reminders, links, history, and search that reads
-  text in pictures. Imports from eighteen notes apps. Backup as a zip; encrypted sync to your own Cloudflare
+  text in pictures. Imports from twenty notes apps. Backup as a zip; encrypted sync to your own Cloudflare
   storage, Google Drive, OneDrive or Dropbox.
 - **Files.** Opens Markdown, text, code, Word and PDF. Saves Markdown and never overwrites a file changed
   elsewhere. Exports Word, PDF, an offline web page with the source inside, HTML and text.

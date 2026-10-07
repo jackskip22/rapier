@@ -15,10 +15,13 @@ function recipeAt(assets, label) {
   try {return _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));}
   catch {return null;}
 }
-const replayBase = replay => ({baseRaster: replay.baseRaster, px: replay.px, scale: replay.scale, views: replay.views || []});
+const replayBase = replay => ({baseRaster: replay.baseRaster, px: replay.px, scale: replay.scale, views: replay.views || [],
+  ...(replay.mode != null ? {mode: replay.mode} : {}), ...(replay.paper != null ? {paper: replay.paper} : {})});
 function nonMaterial(shape) {
   const {raster, paint, geom, ...rest} = shape;
-  const {brush, strokes, seed, replay, px, ...kept} = paint || {};
+  const {brush, strokes, actions, seed, replay, px, ...kept} = paint || {};
+  // Water paper changes are replayed material actions; the mode and replay's base paper stay invariant.
+  if (paint?.mode === 'water') delete kept.paper;
   return {...rest, paint: kept};
 }
 
@@ -41,29 +44,49 @@ function growthHolds(before, after, entries) {
     Math.abs(value - frame[i][j]) <= 1e-9 * Math.max(1, Math.abs(value), Math.abs(frame[i][j]))));
 }
 
+// A newly added layer can leave its empty sheet under later human material. Everything
+// authored in the layer must be recorded agent paint, without another kind of shape edit.
+// The material owner proves the base's decoded bytes are empty before applying this inverse.
+function createdContribution(shape) {
+  const replay = shape.paint?.replay;
+  if (shape.recognized !== 'paint' || !replay?.entries?.length || replay.views?.length ||
+      !same(nonMaterial(shape), {id: shape.id, stroke: null, recognized: 'paint', asDrawn: false,
+        brush: 'ink', style: null, paint: {scale: shape.paint.scale}}) ||
+      replay.entries.some(row => row.actor !== 'agent' || row.removed || typeof row.id !== 'string')) return null;
+  return {id: shape.id, replay, omitIds: replay.entries.map(row => row.id), requireEmptyBase: true};
+}
+
 // Refuse mixed or ambiguous changes: a semantic paint inverse cannot claim to undo another
-// kind of authored edit. Exact textual Undo remains the first path for every transaction.
+// kind of authored edit. Later material requires replay even when the source inverse still fits.
 function contributions(before, after) {
   const {shapes: oldShapes, ...oldRest} = before, {shapes: newShapes, ...newRest} = after;
-  if (!same(oldRest, newRest) || oldShapes.length !== newShapes.length) return null;
-  const changes = [];
-  for (let index = 0; index < oldShapes.length; index++) {
-    const was = oldShapes[index], now = newShapes[index];
-    if (was.id !== now.id) return null;
+  if (!same(oldRest, newRest)) return null;
+  const changes = [], oldIds = new Set(oldShapes.map(shape => shape.id));
+  let index = 0;
+  for (const now of newShapes) {
+    const was = oldShapes[index];
+    if (was?.id !== now.id) {
+      if (oldIds.has(now.id)) return null;
+      const created = createdContribution(now);
+      if (!created) return null;
+      changes.push(created); continue;
+    }
+    index++;
     if (same(was, now)) continue;
     if (was.recognized !== 'paint' || now.recognized !== 'paint' || !same(nonMaterial(was), nonMaterial(now))) return null;
     const prior = was.paint?.replay, next = now.paint?.replay;
     if (!next?.entries?.length) return null;
     const prefix = prior?.entries || [];
     if (prior ? !same(replayBase(prior), replayBase(next))
-      : next.baseRaster !== was.raster || !same(next.px, was.paint?.px) || next.scale !== was.paint?.scale) return null;
+      : next.baseRaster !== was.raster || !same(next.px, was.paint?.px) || next.scale !== was.paint?.scale ||
+        (next.mode ?? null) !== (was.paint?.mode ?? null) || !same(next.paper ?? null, was.paint?.paper ?? null)) return null;
     if (!same(next.entries.slice(0, prefix.length), prefix)) return null;
     const added = next.entries.slice(prefix.length);
     if (!added.length || added.some(row => row.actor !== 'agent' || row.removed || typeof row.id !== 'string')) return null;
     if (!growthHolds(was, now, added)) return null;
     changes.push({id: now.id, replay: next, omitIds: added.map(row => row.id)});
   }
-  return changes.length ? changes : null;
+  return index === oldShapes.length && changes.length ? changes : null;
 }
 
 function carries(recipe, changes) {
@@ -91,7 +114,7 @@ function carries(recipe, changes) {
   });
 }
 
-export function paintUndoPlan(text, entry, later) {
+export function paintUndoPlan(text, entry, later, drawing = null) {
   if (entry?.operation !== 'document.draw' || !Array.isArray(later)) return null;
   let after = text;
   for (let index = later.length - 1; index >= 0; index--) {
@@ -100,12 +123,22 @@ export function paintUndoPlan(text, entry, later) {
   }
   const before = transformSplices(after, entry.splices, true);
   if (before == null) return null;
-  const rows = entry.splices.filter(row => occurrence.test(row.removed) && occurrence.test(row.inserted));
+  const rows = entry.splices.filter(row => (occurrence.test(row.removed) || row.removed === '') && occurrence.test(row.inserted.trim()));
   if (rows.length !== 1) return null;
-  const oldOccurrence = occurrence.exec(rows[0].removed), newOccurrence = occurrence.exec(rows[0].inserted);
-  if (oldOccurrence[1] !== newOccurrence[1]) return null;
-  const prior = recipeAt(documentAssets(before), oldOccurrence[2]), following = recipeAt(documentAssets(after), newOccurrence[2]);
-  if (!prior || !following) return null;
+  const oldOccurrence = occurrence.exec(rows[0].removed), newOccurrence = occurrence.exec(rows[0].inserted.trim());
+  if (oldOccurrence && oldOccurrence[1] !== newOccurrence[1]) return null;
+  const following = recipeAt(documentAssets(after), newOccurrence[2]);
+  if (!following) return null;
+  let prior = oldOccurrence && recipeAt(documentAssets(before), oldOccurrence[2]);
+  if (oldOccurrence && !prior) return null;
+  if (!oldOccurrence) {
+    // A newly inserted painting has no previous occurrence. Only its default drawing
+    // envelope supports the retained paint; authored effects, frames and controls are
+    // separate edits that omitting material commands cannot undo.
+    if (following.strokes.length || Object.keys(following).some(key =>
+      !['version', 'canvas', 'strokes', 'shapes', 'view'].includes(key))) return null;
+    prior = {...following, shapes: []};
+  }
   const changes = contributions(prior, following);
   if (!changes) return null;
   const facts = outlineMarkdown(text, {limit: 0}, markdownParser());
@@ -114,14 +147,20 @@ export function paintUndoPlan(text, entry, later) {
   for (const image of facts.images.entries) {
     if (!image.drawing || !image.id) continue;
     if (!recipes.has(image.id)) recipes.set(image.id, recipeAt(assets, image.id));
-    const recipe = recipes.get(image.id);
-    if (!carries(recipe, changes)) continue;
+    const sourceRecipe = recipes.get(image.id);
     const block = text.slice(image.blockStart, image.blockEnd);
     const match = occurrence.exec(block.trim());
     if (!match || normalizeLabel(match[2]) !== image.id) continue;
     const raw = '![' + match[1] + '][' + match[2] + ']';
     const start = image.blockStart + block.length - block.trimStart().length;
-    candidates.push({start, end: start + raw.length, raw, alt: match[1], asset: match[2], recipe, changes});
+    const bound = drawing?.occurrence;
+    const live = bound?.start === start && bound.end === start + raw.length &&
+      normalizeLabel(bound.reference) === image.id;
+    // Unsaved human strokes belong to this exact open occurrence. Their recorded inputs must
+    // carry the same contribution as a saved layer before the material owner can omit it.
+    const recipe = live ? drawing.recipe : sourceRecipe;
+    if (!carries(recipe, changes)) continue;
+    candidates.push({start, end: start + raw.length, raw, alt: match[1], asset: match[2], recipe, sourceRecipe, changes});
   }
   return candidates.length === 1 ? candidates[0] : null;
 }

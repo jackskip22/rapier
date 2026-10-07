@@ -33,10 +33,12 @@ const POOL = typeof Worker === 'function' && typeof location === 'object' && loc
 export function createJPEGXLEncoder() {
   configureKernels('auto');
   return {
-    async encode(data, width, height, {quality, effort, photo}) {
-      if (photo && quality < 100 && !inspectPixels(data, width, height).palette) return encodePhoto(data, width, height, {quality});
+    async encode(data, width, height, options) {
+      const {quality, effort, photo} = options;
+      if (photo && quality < 100 && (data instanceof Uint8Array || data instanceof Uint8ClampedArray) && !inspectPixels(data, width, height).palette)
+        return encodePhoto(data, width, height, {...options, effort: undefined});
       const pooled = POOL > 1 && quality >= 100 && Math.ceil(width / 256) * Math.ceil(height / 256) >= POOL_GROUPS;
-      const job = pooled ? encodePool(data, width, height, {quality, effort}, {spawn: () => new Worker(location.href), workers: POOL}) : encodeSteps(data, width, height, {quality, effort});
+      const job = pooled ? encodePool(data, width, height, options, {spawn: () => new Worker(location.href), workers: POOL}) : encodeSteps(data, width, height, options);
       let mark = null;
       for (let step = await job.next(); !step.done; step = await job.next()) {
         const now = performance.now(), done = step.value;

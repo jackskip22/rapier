@@ -133,11 +133,11 @@ function webp(bytes, view) {
 
 // Encoded dimensions bound the input before native decode; decoded dimensions
 // are checked again by the caller before canvas allocation or JPEG XL encoding.
-export function inspectRaster(input) {
+export function inspectRaster(input, {maximumBytes = JPEG_XL_LIMITS.bytes} = {}) {
   const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) :
     input instanceof Uint8Array || input instanceof Uint8ClampedArray ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength) : null;
   if (!bytes) fail('RASTER_INPUT', 'Image input must be bytes.');
-  if (!bytes.length || bytes.length > JPEG_XL_LIMITS.bytes) fail('RASTER_SIZE', 'This image is empty or exceeds 16 MiB.');
+  if (!bytes.length || bytes.length > maximumBytes) fail('RASTER_SIZE', 'This image is empty or exceeds 16 MiB.');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return png(bytes, view);
   if (bytes.length >= 2 && bytes[0] === 255 && bytes[1] === 0xd8) return jpeg(bytes, view);

@@ -146,7 +146,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
   if(operation==='replayAgent') {
    const signal=agentJobs.get(request.id)?.signal;
    if(signal?.aborted)throw paintAbort();
-   const value=await replayAgentPainting(request.shape,request.omitIds,{signal,
+   const value=await replayAgentPainting(request.shape,request.omitIds,{signal,requireEmptyBase:request.requireEmptyBase===true,
     onProgress:request.progress===true?value=>postMessage({id:request.id,progress:true,value}):undefined});
    if(signal?.aborted)throw paintAbort();
    return value;
@@ -191,7 +191,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    } catch(error) {
     const cancelled=error.name==='AbortError'&&agentJobs.get(id)?.signal.aborted;
     if(!cancelled)failed=error;
-    postMessage({id,error:{name:error.name,message:String(error.message||error)},...(cancelled?{recoverable:true}:{})});
+    postMessage({id,error:{name:error.name,message:String(error.message||error),...(typeof error.code==='string'?{code:error.code}:{})},...(cancelled?{recoverable:true}:{})});
    } finally {agentJobs.delete(id);}
   };
   chain=chain.then(run); return chain;
@@ -222,7 +222,7 @@ export function createPaintWorkerClient({postMessage,terminate=()=>{}}) {
   receive(message) {
    const job=pending.get(message?.id); if(!job) return false;
    if(message.error) {
-    const error=Object.assign(new Error(message.error.message),{name:message.error.name||'Error'});
+    const error=Object.assign(new Error(message.error.message),{name:message.error.name||'Error',...(typeof message.error.code==='string'?{code:message.error.code}:{})});
     if(message.recoverable===true&&error.name==='AbortError'){pending.delete(message.id);job.cleanup?.();job.reject(error);}
     else fail(error);
    }

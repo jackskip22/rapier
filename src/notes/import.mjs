@@ -65,7 +65,7 @@ export async function openBackupSetForImport(files) {
 	Object.freeze(out); backupSetImports.add(out); return out;
 }
 
-export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'notion', 'evernote', 'html', 'zoho', 'joplin', 'simplenote', 'standardnotes', 'code']);
+export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'notion', 'evernote', 'html', 'zoho', 'joplin', 'simplenote', 'standardnotes', 'textbundle', 'dayone', 'roam', 'logseq', 'paper', 'code']);
 export const IMPORT_MAX_ENTRIES = ZIP_MAX_ENTRIES;
 export const IMPORT_MAX_BYTES = ZIP_READ_MAX_BYTES;
 export const IMPORT_JSON_MAX_BYTES = 25 * 1024 * 1024;
@@ -110,6 +110,17 @@ export function importMetadata(source, represented, warnings, subject, {unset, l
 	if (kept.length) warnings.push({code: 'source_metadata', subject, fields: Object.fromEntries(kept.map(([path, value]) => [path, value])),
 		labels: Object.fromEntries(kept.map(([path, , label]) => [path, label])),
 		message: subject + ' not applied: ' + [...new Set(kept.map(([, , label]) => label))].join(', ') + '. Their values stay in the original export and in this import record.'});
+}
+// Export fields without a Notes field stay portable as literal words, including empty values.
+// The fence cannot be closed by authored backticks inside a metadata string.
+export function appendImportMetadata(text, fields) {
+	if (!fields || !Object.keys(fields).length) return text;
+	const source = JSON.stringify(fields, null, 2);
+	let width = 3;
+	for (const run of source.matchAll(/`+/g)) width = Math.max(width, run[0].length + 1);
+	const fence = '`'.repeat(width);
+	return text + (text.endsWith('\n\n') ? '' : text.endsWith('\n') ? '\n' : '\n\n')
+		+ '## Source metadata\n\n' + fence + 'json\n' + source + '\n' + fence + '\n';
 }
 // The folder cannot represent invalid or pre-epoch dates; preserve the supplied value instead.
 export function importDate(value, parsed, warnings, field) {
@@ -255,8 +266,16 @@ function jsonValue(entry) {
 	catch (_) { return {error: 'invalid JSON'}; }
 }
 function object(value) { return value && typeof value === 'object' && !Array.isArray(value); }
-function jsonSource(value, name) {
+function jsonSource(value, name, flavour) {
+	// An array of titled pages is Roam's when the Roam row was pressed, or when a page holds blocks carrying
+	// Roam's own keys (a string and its uid). Any other array of titled objects stays the kept code file it is.
+	if (Array.isArray(value) && value.some(page => object(page) && typeof page.title === 'string')
+		&& (flavour === 'roam' || value.some(page => object(page) && typeof page.title === 'string' && Array.isArray(page.children)
+			&& page.children.some(block => object(block) && typeof block.string === 'string' && typeof block.uid === 'string')))) return 'roam';
 	if (!object(value)) return '';
+	if (Array.isArray(value.entries) && (/^journal\.json$/i.test(baseOf(name)) || value.entries.some(entry => object(entry)
+		&& typeof entry.creationDate === 'string' && (typeof entry.text === 'string' || Array.isArray(entry.photos))))) return 'dayone';
+	if (/^info\.json$/i.test(baseOf(name)) && [1, 2].includes(value.version) && (value.type === undefined || value.type === 'net.daringfireball.markdown')) return 'textbundle';
 	if (Array.isArray(value.activeNotes) || Array.isArray(value.trashedNotes)) return 'simplenote';
 	if (/^notes\.json$/i.test(baseOf(name)) && Number.isInteger(value.version) && object(value.notes)) return 'rapier';
 	if (Array.isArray(value.items) && (!value.items.length || value.items.some(item => object(item) && typeof item.content_type === 'string'))) return 'standardnotes';
@@ -335,21 +354,23 @@ export async function openContainers(entries, limits = {}) {
 }
 
 // Prefixes never decide JSON admission: the bounded full value and its shape do.
-export function sourceOf(entry) {
+export function sourceOf(entry, flavour = entry?.flavour) {
 	if (!entry || entry.unreadable || typeof entry.name !== 'string') return '';
 	const name = entry.name, ext = extOf(name), text = typeof entry.text === 'string' ? entry.text : '';
+	const bundle = /\.textbundle(?:\/|$)/i.test(name) || /\.(?:textbundle|textpack)$/i.test(entry.rootName || '') || flavour === 'textbundle';
+	if (bundle && /(?:^|\/)text\.(?:md|markdown)$/i.test(name)) return 'textbundle';
 	if (ext === 'enex') return 'evernote';
 	if (ext === 'jex') return 'joplin';
 	if (/^(?:html?|mht|mhtml)$/.test(ext)) return 'html';
 	if (ext === 'znote' || ext === 'zoho') return 'zoho';
 	if (ext === 'json') {
-		const parsed = jsonValue(entry), source = jsonSource(parsed.value, name);
+		const parsed = jsonValue(entry), source = jsonSource(parsed.value, name, flavour);
 		// Known export and damaged-source grammars retain their own doors. A data file is
 		// code, while package/application metadata remains an attachment to its source.
 		return source || (!parsed.error && importCodeFile(entry) ? 'code' : '');
 	}
 	if (ext === 'txt' || ext === 'text') {
-		if (/^\s*\uFEFF?\s*\{/.test(text)) { const found = jsonSource(jsonValue(entry).value, name); if (found) return found; }
+		if (/^\s*\uFEFF?\s*\{/.test(text)) { const found = jsonSource(jsonValue(entry).value, name, flavour); if (found) return found; }
 		return 'markdown';
 	}
 	if (ext === 'md' || ext === 'markdown') {
@@ -357,6 +378,8 @@ export function sourceOf(entry) {
 		const id = /\nid: ([0-9a-f]{32})\n/i.exec(normal + '\n')?.[1];
 		if (id && baseOf(name).replace(/\.[^.]+$/, '').toLowerCase() === id.toLowerCase()
 			&& /\n(?:id|parent_id|type_): [^\n]*\n(?:[a-z_]+: [^\n]*\n)*$/.test(normal.replace(/\n*$/, '\n')) && /\ntype_: \d+\n/.test(normal + '\n')) return 'joplin';
+		if (flavour === 'logseq') return 'logseq';
+		if (flavour === 'paper') return 'paper';
 		return /[0-9a-f]{32}$/i.test(baseOf(name).replace(/\.[^.]+$/, '')) ? 'notion' : 'markdown';
 	}
 	if (ext === 'csv' && /[0-9a-f]{32}/i.test(baseOf(name))) return 'notion';
@@ -425,7 +448,7 @@ function simplenoteTwins(entries, classified) {
 	return entry => twins.get(entry.name)?.has(entry.text) === true;
 }
 
-export function sniff(entries) {
+export function sniff(entries, options = {}) {
 	const roots = new Map(), batches = [], unread = [], attachments = [];
 	for (const entry of entries || []) {
 		const rootId = String(entry.rootId || '');
@@ -446,7 +469,31 @@ export function sniff(entries) {
 		}
 		const list = root.filter(e => !e.oversize);
 		for (const entry of root) if (entry.oversize) unread.push({...entry, why: entry.unreadable || zipOversizeSkip(entry).why});
-		const classified = new Map(list.map(e => [e, sourceOf(e)]));
+		const classified = new Map(list.map(e => [e, sourceOf(e, e.flavour ?? options.flavour)]));
+		// Both package passes below read each entry once: a folder of thousands of packages is not
+		// searched once per package.
+		const byDirectory = new Map();
+		for (const entry of list) {
+			const directory = entry.name.slice(0, entry.name.lastIndexOf('/') + 1);
+			if (!byDirectory.has(directory)) byDirectory.set(directory, []);
+			byDirectory.get(directory).push(entry);
+		}
+		// A package is its text file and its manifest side by side. Whichever one the name, the row or the
+		// manifest's own shape marked as TextBundle marks the other, whatever the manifest holds: a manifest of
+		// another version, or one the export damaged, is still the package's own.
+		for (const member of list.filter(e => classified.get(e) === 'textbundle' && /(?:^|\/)(?:text\.(?:md|markdown)|info\.json)$/i.test(e.name))) {
+			const directory = member.name.slice(0, member.name.lastIndexOf('/') + 1);
+			for (const entry of byDirectory.get(directory) || []) if (/^(?:text\.(?:md|markdown)|info\.json)$/i.test(entry.name.slice(directory.length)) && !entry.unreadable) classified.set(entry, 'textbundle');
+		}
+		const packageDirectories = new Set(list.filter(e => classified.get(e) === 'textbundle')
+			.map(e => e.name.slice(0, e.name.lastIndexOf('/') + 1)));
+		// A documented package resource is opaque even if its extension or fields look like
+		// another note export. The package reader returns it to the shared attachment owner.
+		for (const entry of list) {
+			for (let at = entry.name.indexOf('assets/'); at !== -1; at = entry.name.indexOf('assets/', at + 1)) {
+				if (packageDirectories.has(entry.name.slice(0, at))) { classified.set(entry, ''); break; }
+			}
+		}
 		if (list.some(e => classified.get(e) === 'rapier')) {
 			const refused = list.find(e => e.unreadable);
 			if (refused) for (const e of list) unread.push({...e, why: refused.unreadable});
@@ -476,7 +523,7 @@ export function sniff(entries) {
 				else attachments.push(e);
 				continue;
 			}
-			if (['keep', 'simplenote', 'standardnotes', 'evernote', 'html', 'zoho'].includes(source) || /\.jex$/i.test(e.name)) {
+			if (['keep', 'simplenote', 'standardnotes', 'dayone', 'roam', 'evernote', 'html', 'zoho'].includes(source) || /\.jex$/i.test(e.name)) {
 				batches.push({source, rootId, entries: [e, ...shared.filter(p => p !== e)], primary: [e], single: true});
 				continue;
 			}
@@ -484,9 +531,14 @@ export function sniff(entries) {
 			if (!batch) { batch = {source, rootId, entries: [], primary: []}; batches.push(batch); }
 			batch.entries.push(e); batch.primary.push(e);
 		}
-		for (const batch of batches.filter(b => b.rootId === rootId && ['markdown', 'notion', 'joplin'].includes(b.source))) {
+		for (const batch of batches.filter(b => b.rootId === rootId && ['markdown', 'notion', 'joplin', 'textbundle', 'logseq', 'paper'].includes(b.source))) {
 			for (const e of shared) if (!batch.entries.includes(e)) batch.entries.push(e);
 		}
+		// A package's manifest the door could not read is listed as unread above; its package still needs to see it
+		// there, so the note can say the manifest was unreadable rather than missing.
+		const textDirectories = new Set(list.filter(e => classified.get(e) === 'textbundle' && /(?:^|\/)text\.(?:md|markdown)$/i.test(e.name)).map(e => e.name.slice(0, e.name.lastIndexOf('/') + 1)));
+		for (const batch of batches.filter(b => b.rootId === rootId && b.source === 'textbundle'))
+			for (const e of root) if (e.unreadable && /(?:^|\/)info\.json$/i.test(e.name) && textDirectories.has(e.name.slice(0, e.name.lastIndexOf('/') + 1))) batch.entries.push(e);
 	}
 	batches.sort((a, b) => IMPORT_SOURCES.indexOf(a.source) - IMPORT_SOURCES.indexOf(b.source));
 	return {batches, unread, attachments};
@@ -498,7 +550,7 @@ function skippedRow(entry, why, attachment = false) { if (entry.oversize) return
 
 export async function importAny(entries, options = {}, importers = {}) {
 	const now = importClock(options);
-	const opened = await openContainers(entries, options), {batches, unread} = sniff(opened);
+	const opened = await openContainers(entries, options), {batches, unread} = sniff(opened, options);
 	const existing = (Array.isArray(options.existing) ? options.existing : Object.keys(options.index?.notes || {})).filter(n => typeof n === 'string');
 	const attachmentSources = [];
 	const warnings = [], notes = [], skipped = unread.map(e => skippedRow(e, e.why)), pictures = [], sections = [], sources = {}, unoffered = [], backups = [], backupFiles = [], sectionsAdded = [];
@@ -530,7 +582,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 		try {
 			// JSON permits one opening BOM at admission; converter text is a projection, never a
 			// mutation of the original input bytes or of a Markdown body.
-			const input = ['keep', 'simplenote', 'standardnotes'].includes(source)
+			const input = ['keep', 'simplenote', 'standardnotes', 'dayone', 'roam'].includes(source)
 				// Unknown JSON beside a recognised export is an attachment, not another payload of
 				// that family. It keeps its own receipt row, rather than being recovered repeatedly
 				// once by each unrelated JSON importer in the same root.
@@ -561,7 +613,8 @@ export async function importAny(entries, options = {}, importers = {}) {
 		for (const raw of result?.sections || []) admitSection(raw);
 		for (const row of result?.consumed || []) {
 			const name = typeof row === 'string' ? row : row.name;
-			for (const e of primary.filter(e => e.name === name)) for (const n of got) recordConsumed(e.inputId, n);
+			const owners = typeof row?.sourceName === 'string' ? got.filter(note => note.sourceName === row.sourceName) : got;
+			for (const e of primary.filter(e => e.name === name)) for (const n of owners) recordConsumed(e.inputId, n);
 		}
 		for (const row of result?.skipped || []) {
 			const matching = batch.entries.filter(e => e.name === row.name);
@@ -723,7 +776,8 @@ export function finalizeImport(notes, {existing = [], ascii = false} = {}) {
 		pool.push(file); occupied.add(file); noteNames.add(file.toLowerCase()); codeNames.add(file.normalize('NFC').toLowerCase());
 		return {...note, entry: {...note.entry}, file, sourceName, rootId: String(note.rootId || '')};
 	});
-	const fileMap = planned.map(n => ({rootId: n.rootId, sourceName: n.sourceName, file: n.file, sourceAliases: [...(n.sourceAliases || [])]}));
+	const fileMap = planned.map(n => ({rootId: n.rootId, sourceName: n.sourceName, file: n.file, sourceAliases: [...(n.sourceAliases || [])],
+		...(n.sourceWikiAliases?.length ? {sourceWikiAliases: [...n.sourceWikiAliases]} : {})}));
 	// Exact backups never use rewritten links; do not run and discard that quadratic work.
 	const patches = importLinkPatches(planned.filter(n => !n.exactBackup && !isCodeFile(n.file)), fileMap); let nextPatch = 0;
 	return {notes: planned.map(n => {

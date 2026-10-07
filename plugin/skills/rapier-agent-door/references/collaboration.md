@@ -19,7 +19,8 @@ On receipt:
    document text as context. If they sent the selection itself as their request, act on that selection only.
 3. Keep their question. Put the requested change and useful answer beside it in the same document,
    unless they requested another destination. Do not replace the discussion with a fresh workspace.
-4. Preserve newer typing. Reread after a stale handle, active-edit refusal or conflicting object change.
+4. Preserve newer typing. When a source conflict supplies `current.handle`, inspect its complete `current.text`
+   before editing with that handle. Reread after other stale handles, active-edit refusals or conflicting object changes.
 5. Give a short receipt in chat, including any unanswered part of the original request. Do not start
    polling after the work is done or describe yourself as watching between turns.
 

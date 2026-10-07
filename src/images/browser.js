@@ -170,11 +170,33 @@ const _rapierEmbeddedImages = (() => {
   // resolves, the picture is transparent). Where ImageDecoder reads JPEG XL its complete-frame decode is the test: a refusal of the
   // data (EncodingError, RangeError) is damage. Any other answer leaves the picture to the <img> that loaded it.
   async function jxlDamaged(bytes) {
-    if (typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported('image/jxl').catch(() => false)) return false;
+    if (typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported('image/jxl').catch(() => false)) return null;
     let decoder;
     try { decoder = new ImageDecoder({data: bytes, type: 'image/jxl'}); (await decoder.decode()).image.close(); return false; }
-    catch (error) { return error?.name === 'EncodingError' || error?.name === 'RangeError'; }
+    catch (error) { return error?.name === 'EncodingError' || error?.name === 'RangeError' ? true : null; }
     finally { decoder?.close(); }
+  }
+  async function validatePaintRaster(url, {signal} = {}) {
+    const {bytes, codec} = assets.decodeDataImageBytes(url), size = assets.imageDimensions(bytes, codec);
+    const nativeRead = async () => {
+      if (codec === 'image/jxl' && !await whenJxlDisplayKnown()) {
+        throw Object.assign(new Error('This browser cannot fully decode this painting raster.'), {code: 'paint_raster_decoder_unavailable'});
+      }
+      let image;
+      try {
+        image = await nativeImage(url, {signal});
+        if (image.naturalWidth !== size.width || image.naturalHeight !== size.height) throw new Error('Painting raster dimensions changed during decoding');
+        if (codec === 'image/jxl') {
+          const damaged = await jxlDamaged(bytes);
+          if (damaged == null) throw Object.assign(new Error('This browser cannot verify a complete JPEG XL frame.'), {code: 'paint_raster_decoder_unavailable'});
+          if (damaged) throw new Error('Damaged painting JPEG XL');
+        }
+        signal?.throwIfAborted();
+        return true;
+      } finally { image?.removeAttribute('src'); }
+    };
+    return globalThis.RapierDrawAgentPaint?.validatePaintRaster
+      ? globalThis.RapierDrawAgentPaint.validatePaintRaster(url, {signal, nativeRead}) : nativeRead();
   }
   async function canvasUrl(draw, width, height) {
     const canvas = document.createElement('canvas');
@@ -1159,6 +1181,6 @@ const _rapierEmbeddedImages = (() => {
     const row = await rasterRecord(source, id, indexForSource(source));
     return {url: presentUrl(row), width: row.width, height: row.height, type: row.type, signature: row.signature, undisplayable: !!row.undisplayable, damaged: !!row.damaged};
   }
-  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex()});
+  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex()});
 })();
 globalThis.RapierEmbeddedImages = _rapierEmbeddedImages;

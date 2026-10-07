@@ -715,13 +715,13 @@ async function _rapierNotesStorageKind() {
 // What the storage is, in one sentence: the quiet line under the head, and the first sentence of the settings' own.
 function _rapierNotesStorageKindSentence() {
 	const kind = _rapierNotes.storageKnown;
-	return kind === 'native' ? 'Notes are saved in this app.'
-		: kind === 'memory' ? 'Notes disappear when this page closes. Back up before closing.'
-		: kind === 'fault' ? 'Saves are unconfirmed. Keep this page open; save a copy.'
-		: kind === 'indexeddb' ? 'Your browser may delete these notes. Keep a backup.'
-		: kind === 'persistent' ? 'Your browser protects these notes from automatic cleanup.'
-		: kind === 'evictable' ? 'Low storage can make your browser delete these notes. Back up.'
-		: kind === 'unknown' ? 'Browser storage protection is unconfirmed.'
+	return kind === 'native' ? 'Saved in this app.'
+		: kind === 'memory' ? 'Gone when this page closes. Back up.'
+		: kind === 'fault' ? 'Saves unconfirmed. Save a copy.'
+		: kind === 'indexeddb' ? 'The browser may delete these. Back up.'
+		: kind === 'persistent' ? 'Protected from browser cleanup.'
+		: kind === 'evictable' ? 'Low storage. Back up.'
+		: kind === 'unknown' ? 'Storage protection unconfirmed.'
 		: 'Open Notes to check storage.';
 }
 // The two places the storage answer is written: the settings panel's sentence (whole: space, backups), and the quiet
@@ -2855,7 +2855,8 @@ function _rapierNotesRender() {
 		if (head.tagName === 'BUTTON') head.setAttribute('aria-expanded', String(!closed));
 		grid.replaceChildren();
 		if (!files.length) {
-			const empty = _rapierNotesEl('div', 'rapier-notes-empty', id === 'skills' ? 'A skill is a note your agent can fetch: write one here and it lives with the rest.' : id === 'others' ? (state.query ? (state.reading && !state.reading.complete ? 'Nothing yet: still reading the notes, ' + state.reading.done + ' of ' + state.reading.total + '.' : (typeof _rapierNotesLibraryNotice === 'function' && _rapierNotesLibraryNotice() && _rapierNotesLibraryNotice().stage !== 'complete') ? 'Nothing yet. ' + _rapierNotesLibraryNotice().message : (typeof _rapierNotesLibraryPartial === 'function' && _rapierNotesLibraryPartial()) ? (_rapierNotesLibraryPartial().unread ? 'Some notes could not be searched. Open Notes again to retry.' : 'Nothing yet: still searching, ' + _rapierNotesLibraryPartial().done + ' of ' + _rapierNotesLibraryPartial().total + ' notes.') : 'Nothing matches.') : 'Notes you take appear here. Press + to add one.') : own ? 'No notes in this section yet.' : '');
+			// The system lines are centred like the section titles and say the least.
+			const empty = _rapierNotesEl('div', 'rapier-notes-empty', id === 'skills' ? 'A note your agent can fetch. Write one here.' : id === 'others' ? (state.query ? (state.reading && !state.reading.complete ? 'Reading notes, ' + state.reading.done + ' of ' + state.reading.total + '.' : (typeof _rapierNotesLibraryNotice === 'function' && _rapierNotesLibraryNotice() && _rapierNotesLibraryNotice().stage !== 'complete') ? _rapierNotesLibraryNotice().message : (typeof _rapierNotesLibraryPartial === 'function' && _rapierNotesLibraryPartial()) ? (_rapierNotesLibraryPartial().unread ? 'Some notes unsearched. Open Notes again.' : 'Searching, ' + _rapierNotesLibraryPartial().done + ' of ' + _rapierNotesLibraryPartial().total + '.') : 'Nothing matches.') : 'Press + to add a note.') : own ? 'No notes yet.' : '');
 			grid.appendChild(empty); grid.style.height = ''; delete state.windows[id]; continue;
 		}
 		// A closed section draws nothing: its cards are derived when it opens (the toggle draws again).
@@ -6020,27 +6021,18 @@ function _rapierNotesInk(file, n) {
 
 // ---- Import: every app whose export can be read
 // --------------------------------------------------
-// IMPORT opens a sheet naming every app; a row opens the file chooser with that app's own kinds of
-// file. The files decide, not the row: every picked file is opened once and sent to the importer
-// whose format it is (notes/import.mjs, the one door -- by name and first bytes), so a Takeout zip
-// under the wrong row still lands. Each pure importer turns its files into Markdown text and a
-// sidecar entry; a picture that was picked, or that an export carried, rides inside its note as a
-// data URL, because a note is one file, and one that was not is named in the note so it can be
-// fetched later. Nothing already in the folder is touched: a name that collides counts up, keys
-// land after everything, the sections a batch needs are made first, and the import is one write of
-// the sidecar. The sheet is the one place in Rapier that names Google Keep.
-const RAPIER_NOTES_IMPORT_ACCEPT = {
-	restore: '.zip,application/zip',
-	rapier: '.zip,application/zip,.md,.markdown,.json',
-	keep: '.zip,application/zip,.json,application/json,image/*',
-	obsidian: '.zip,.md,.markdown,.txt,image/*', logseq: '.zip,.md,.markdown,image/*', bear: '.zip,.md,.markdown,.txt,.textpack,.json,image/*',
-	joplin: '.jex,.zip,.md,.markdown,image/*', notion: '.zip,.md,.markdown,.csv,image/*', evernote: '.enex',
-	simplenote: '.zip,.json,.txt', standardnotes: '.zip,.txt,.json', zoho: '.zip,.html,.htm,image/*',
-	craft: '.zip,.md,.markdown,.txt,.textpack,image/*', upnote: '.zip,.md,.markdown,.html,.htm,image/*', amplenote: '.zip,.md,.markdown,image/*',
-	nextcloud: '.zip,.md,.markdown,.txt,image/*', apple: '.md,.markdown,.zip,image/*', paper: '.md,.markdown,.zip,image/*',
-	onenote: '.mht,.mhtml,.html,.htm,.docx,.zip,image/*', samsung: '.txt,.docx,.zip', any: '.md,.markdown,.txt,.html,.htm,.mht,.mhtml,.zip,.docx,.enex,.jex,.json,.csv,image/*',
-};
-const RAPIER_NOTES_IMPORT_SOURCE_WORDS = { rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes' };
+// IMPORT opens a sheet naming every app; a row opens the file chooser, which lists every file (only
+// the restore row narrows it, to zips). The files decide, not the row: every picked file is opened
+// once and sent to the importer whose format it is (notes/import.mjs, the one door -- by name and
+// first bytes), so a Takeout zip under the wrong row still lands. Each pure importer turns its files
+// into Markdown text and a sidecar entry; a picture that was picked, or that an export carried, rides
+// inside its note as a data URL, because a note is one file, and one that was not is named in the
+// note so it can be fetched later. Nothing already in the folder is touched: a name that collides
+// counts up, keys land after everything, the sections a batch needs are made first, and the import
+// is one write of the sidecar. The sheet is the one place in Rapier that names Google Keep.
+const RAPIER_NOTES_RESTORE_ACCEPT = '.zip,application/zip';
+const RAPIER_NOTES_IMPORT_SOURCE_WORDS = { rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes',
+	textbundle: 'textbundle', dayone: 'day one', roam: 'roam research', logseq: 'logseq', paper: 'dropbox paper' };
 async function _rapierNotesImport() {
 	try { await _rapierNotesReady(); } catch (error) { showToast('Notes could not open for import. Reopen Notes and try again.', 'error'); return; }
 	const overlay = document.getElementById('notes-import-overlay');
@@ -6055,7 +6047,7 @@ async function _rapierNotesImportPick(source) {
 	_rapierNotesImportClose();
 	if (typeof _rapierPrepareFileChooser === 'function') await _rapierPrepareFileChooser('notes-import');
 	const input = document.createElement('input');
-	input.type = 'file'; input.multiple = true; input.accept = source === 'restore' ? RAPIER_NOTES_IMPORT_ACCEPT.restore : '';  input.hidden = true;
+	input.type = 'file'; input.multiple = true; input.accept = source === 'restore' ? RAPIER_NOTES_RESTORE_ACCEPT : '';  input.hidden = true;
 	document.body.appendChild(input);
 	input.addEventListener('cancel', () => input.remove(), { once: true });
 	input.addEventListener('change', () => {
@@ -6073,6 +6065,9 @@ function _rapierNotesImporters() {
 		notion: pick(g.RapierNotesImportNotion, 'importNotion'), evernote: pick(g.RapierNotesImportEnex, 'importEnex'),
 		html: pick(g.RapierNotesImportHtml, 'importHtml'), joplin: pick(g.RapierNotesImportJoplin, 'importJoplin'),
 		simplenote: pick(g.RapierNotesImportSimplenote, 'importSimplenote'), standardnotes: pick(g.RapierNotesImportStandardNotes, 'importStandardNotes'),
+		textbundle: pick(g.RapierNotesImportTextBundle, 'importTextBundle'), dayone: pick(g.RapierNotesImportDayOne, 'importDayOne'),
+		roam: pick(g.RapierNotesImportRoam, 'importRoam'), logseq: pick(g.RapierNotesImportLogseq, 'importLogseq'),
+		paper: pick(g.RapierNotesImportMarkdown, 'importMarkdown'),
 	};
 	for (const k of Object.keys(table)) if (!table[k]) delete table[k];
 	return table;
@@ -6199,7 +6194,7 @@ async function _rapierNotesImportFiles(files, source) {
 	// and Obsidian's and Logseq's own spans into ordinary Markdown. Only the ROW decides: a flavour
 	// is never inferred from a file, because guessing one wrong would rewrite spans that were not
 	// that app's to begin with.
-	const flavour = ['bear', 'obsidian', 'logseq'].includes(String(source || '')) ? String(source) : undefined;
+	const flavour = ['bear', 'obsidian', 'logseq', 'paper', 'textbundle', 'dayone', 'roam'].includes(String(source || '')) ? String(source) : undefined;
 	const result = await D.importAny(opened, { existing, index: state.index, ascii, lastOrder, sections: (state.index.sections || []).map(s => s.name), audioExisting: recordings, attachmentExisting: attachmentNames,
 		...(flavour ? {flavour} : {}),
 		...(typeof P?.importPictures === 'function' ? {pictureImporter: P.importPictures} : {}) }, _rapierNotesImporters());

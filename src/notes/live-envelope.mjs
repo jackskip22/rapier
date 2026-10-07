@@ -5,7 +5,7 @@ import {seal, open, SEAL_VERSION, NONCE_BYTES, TAG_BYTES, VDK_BYTES} from './vau
 export const LIVE_ENVELOPE_MAX_BYTES = 256 * 1024;
 const HEADER_MAX_BYTES = 2048, SIGNATURE_BYTES = 64, SEAL_OVERHEAD = 1 + NONCE_BYTES + TAG_BYTES;
 const FIELDS = ['workspaceId', 'documentId', 'keyEpoch', 'actorIndex', 'operationId', 'baseSequence', 'messageKind'];
-const KINDS = new Set(['edit', 'proposal', 'decision', 'comment', 'presence', 'checkpoint', 'rotate', 'notes-call', 'notes-result']);
+export const KINDS = new Set(['edit', 'proposal', 'decision', 'comment', 'presence', 'checkpoint', 'rotate', 'notes-call', 'notes-result']);
 const DOMAIN = 'rapier-owned-live-v1\0', te = new TextEncoder(), td = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
 const SIGNATURE_DOMAIN = te.encode('rapier-owned-live-signature-v1\0');
 const P256_ORDER = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;

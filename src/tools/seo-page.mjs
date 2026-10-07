@@ -36,11 +36,11 @@ Editable SVG with a pressure-sensitive brush, shapes, connected arrows and text;
 
 ## Paint
 
-MyPaint brushes, oil, bristle, marker, pencil and watercolour that flows and dries, painted into a layer inside the drawing, with undo.
+MyPaint brushes, oil, bristle, scumble, pencil and pen, painted into a layer inside the drawing, with undo. Water lays watercolour whose pigments mix, flow and dry on textured paper, as a transparent layer.
 
 ## Notes
 
-Notes are Markdown files with cards, checklists, recordings, attachments, tags and search. Import from Google Keep, Evernote, Notion, Obsidian and 14 more apps; back up as a zip, or sync, encrypted, to storage you own.
+Notes are Markdown files with cards, checklists, recordings, attachments, tags and search. Import from Google Keep, Evernote, Notion, Obsidian and 16 more apps; back up as a zip, or sync, encrypted, to storage you own.
 
 ## Files in and out
 

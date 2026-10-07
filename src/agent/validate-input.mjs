@@ -32,20 +32,28 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
     }
     if (type === 'object') {
       if (!value || typeof value !== 'object' || Array.isArray(value)) { invalid('expected an object'); return; }
-      const properties = schema.properties || {}, required = schema.required || [];
+      const properties = schema.properties || {}, required = schema.required || [], keys = Object.keys(value);
       const admitted = agent && schema.properties && schema.additionalProperties !== false ? {} : value;
+      if (keys.length < (schema.minProperties || 0) || keys.length > (schema.maxProperties ?? Infinity)) invalid('object property count outside bounds');
+      const name = key => schema.propertyNames && visit({type: 'string', ...schema.propertyNames}, key, path + '.' + key, depth + 1, key);
       for (const key of Object.keys(properties)) {
         if (Object.hasOwn(value, key)) {
+          name(key);
           const field = visit(properties[key], value[key], path + '.' + key, depth + 1, key);
           if (admitted !== value) admitted[key] = field;
         }
         else if (required.includes(key)) invalid('missing ' + key);
       }
       for (const key of required) if (!Object.hasOwn(properties, key) && !Object.hasOwn(value, key)) invalid('missing ' + key);
-      if (schema.additionalProperties === false) for (const key of Object.keys(value)) {
+      for (const key of keys) if (!Object.hasOwn(properties, key)) {
+        name(key);
         // In the agent's projected schema only an authored object closes its fields, so the field is named; the door's
         // raw schema names it for authored objects alone.
-        if (!Object.hasOwn(properties, key)) invalid('unknown field ' + key, schema['x-rapier-strict'] || agent ? path + '.' + key : path);
+        if (schema.additionalProperties === false) invalid('unknown field ' + key, schema['x-rapier-strict'] || agent ? path + '.' + key : path);
+        else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+          const field = visit(schema.additionalProperties, value[key], path + '.' + key, depth + 1, key);
+          if (admitted !== value) Object.defineProperty(admitted, key, {value: field, enumerable: true, configurable: true, writable: true});
+        }
       }
       value = admitted;
     } else if (type === 'array') {
@@ -74,9 +82,9 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
       if (schema.pattern && !new RegExp(schema.pattern).test(value)) invalid('string does not match ' + schema.pattern);
       if (length > maximum) invalid('string longer than ' + schema.maxLength);
     } else if (type === 'number') {
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity)) invalid('number outside bounds');
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity) || value <= (schema.exclusiveMinimum ?? -Infinity) || value >= (schema.exclusiveMaximum ?? Infinity)) invalid('number outside bounds');
     } else if (type === 'integer') {
-      if (!Number.isSafeInteger(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity)) invalid('integer outside bounds');
+      if (!Number.isSafeInteger(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity) || value <= (schema.exclusiveMinimum ?? -Infinity) || value >= (schema.exclusiveMaximum ?? Infinity)) invalid('integer outside bounds');
     } else if (type === 'boolean' && typeof value !== 'boolean') invalid('expected a boolean');
     if (schema.enum && !schema.enum.includes(value)) invalid('unknown value');
     if (Object.hasOwn(schema, 'const') && schema.const !== value) invalid('unexpected value');

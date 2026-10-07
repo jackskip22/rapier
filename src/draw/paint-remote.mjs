@@ -26,7 +26,7 @@ export class RemotePaintSurface {
 		this.remote = remote; this.id = id;
 		// What the page will see once every command it has queued has run (grow and a cancelled stroke are the only
 		// ones that change the shape; the painter confirms them in each reply).
-		this.width = width; this.height = height; this.toothOX = 0; this.toothOY = 0; this.scale = 1;
+		this.width = width; this.height = height; this.toothOX = 0; this.toothOY = 0; this.scale = options.mode==='water'?(options.pixelScale??3)/3:1;
 		// What the painter last confirmed.
 		this.meta = {width, height, revision: 0, bounds: null, growBox: undefined, toothOX: 0, toothOY: 0, wetState: false, wet: false, _wetWork: false, wetPending: 0, opStats: null};
 		this.pending = 0; this.structural = 0; this.failure = null; this.display = null; this.gone = false;
@@ -78,12 +78,14 @@ export class RemotePaintSurface {
 		left = Math.max(0, Math.ceil(left)); top = Math.max(0, Math.ceil(top)); right = Math.max(0, Math.ceil(right)); bottom = Math.max(0, Math.ceil(bottom));
 		if (!(left || top || right || bottom)) return {dx: 0, dy: 0};
 		this.width += left + right; this.height += top + bottom; this.toothOX -= left; this.toothOY -= top;
+		if(this.options.mode==='water')this.importOffset=[this.importOffset[0]+left,this.importOffset[1]+top];
 		this._push({target: 'surface', id: this.id, method: 'grow', args: [left, top, right, bottom]}, {structural: true});
 		return {dx: left, dy: top};
 	}
 	// A stroke's checkpoint lives in the painter. The token names it and what shape the page restores on a cancel.
 	beginStroke({record = false} = {}) {
-		const token = {id: ++this.remote._tokens, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY};
+		const token = {id: ++this.remote._tokens, width: this.width, height: this.height, toothOX: this.toothOX, toothOY: this.toothOY, importOffset:this.importOffset.slice()};
+		if(this.options.mode==='water')this.waterCheckpoint=token;
 		if (this.replay) {
 			const box = this.bounds();
 			if (box) this.replay.crop = [box.x0, box.y0, box.x1, box.y1];
@@ -98,6 +100,7 @@ export class RemotePaintSurface {
 	endStroke(token, cancel = false) {
 		if (!token) return false;
 		if (cancel) { this.width = token.width; this.height = token.height; this.toothOX = token.toothOX; this.toothOY = token.toothOY; this.replay = null; }
+		if(cancel && this.options.mode==='water')this.importOffset=token.importOffset.slice();
 		this._push({target: 'surface', id: this.id, method: 'endStroke', args: [token.id, cancel === true]}, {structural: cancel === true});
 		return true;
 	}
@@ -117,6 +120,15 @@ export class RemotePaintSurface {
 	async readRGBA8(box = null) { return (await this.remote.read(this, {box})).pixels; }
 	// The painted box and its pixels at this point of the order; `box` and `pixels` are null for an empty surface.
 	readBounds(options = {}) { return this.remote.read(this, {bounds: true, ...options}); }
+	waterSheet() { return {id:this.sheetId,width:this.width,height:this.height,offset:this.importOffset.slice(),scale:this.scale,toothOX:this.toothOX,toothOY:this.toothOY,options:{...structuredClone(this.options),mode:'water',paper:this.options.paper || 'cold-press'}}; }
+	applyWater(action) {
+		const data=structuredClone(action),dx=this.toothOX/(this.scale*3),dy=this.toothOY/(this.scale*3),point=([x,y,...rest])=>[x+dx,y+dy,...rest];
+		if(data.paths)data.paths=data.paths.map(path=>path.map(point));if(data.at)data.at=point(data.at);
+		return this._push({target:'surface',id:this.id,method:'applyWater',args:[data]},{ticket:true}).promise;
+	}
+	loadWaterReplay(replay,{offset=[0,0],expected=null}={}) { this.importOffset=offset.slice(); return this._push({target:'surface',id:this.id,method:'fromWaterReplay',args:[structuredClone(replay),offset.slice(),expected]},{ticket:true}).promise; }
+	readMaterial(box=null) { return this.remote.read(this,{box,snapshot:true}); }
+	samplePigment(x,y) { return this.remote.read(this,{sample:[x+this.toothOX/(this.scale*3),y+this.toothOY/(this.scale*3)],verify:false}).then(reply=>reply.sample || reply.pigment || null); }
 	drop() { this.remote.dropSurface(this); }
 }
 
@@ -127,7 +139,7 @@ export class RemotePaintBrush {
 		this.rapier = definition.rapier ? {...definition.rapier} : null;
 		this.base = definition.settings.map(row => row.base);
 		this.loadFuel = null;
-		this.definition = structuredClone(Object.fromEntries(['settings', 'rapier', 'wet', 'wetInputs', 'tool'].filter(key => definition[key] != null).map(key => [key, definition[key]])));
+		this.definition = structuredClone(Object.fromEntries(['settings', 'rapier', 'wet', 'wetInputs', 'tool', 'water'].filter(key => definition[key] != null).map(key => [key, definition[key]])));
 		this.replaySetup = [];
 	}
 	getBaseValue(name) { return this.base[SETTING_AT[name]]; }
@@ -139,6 +151,7 @@ export class RemotePaintBrush {
 	}
 	seed(value) { this._command('seed', [value]); }
 	setColor(r, g, b) { this._command('setColor', [r, g, b]); }
+	setPigment(pigment) { this._command('setPigment',[structuredClone(pigment)]); }
 	setBaseValue(name, value) { this.base[SETTING_AT[name]] = value; this._command('setBaseValue', [name, value]); }
 	// The held head angle (degrees, or null to turn with the hand) and whether the stroke erases with its own head: the engine's, in the painter.
 	setHead(held, erasing = false) { this._command('setHead', [held, !!erasing]); }
@@ -235,13 +248,28 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 				apply(reply, true);
 				if (remote._queue.length) remote.requestFrame();
 				return reply;
-			}, error => { flying--; throw remote._fail(error); });
+			}, error => {
+				flying--;
+				if(error.recoverable) {
+					for(const entry of entries.slice(completed)) {if(entry.surface){entry.surface.pending--;if(entry.structural)entry.surface.structural--;}remote._tickets.delete(entry);entry.reject?.(error);}
+					// The Water owner cancels its open checkpoints before refusing a command.
+					// Restore the predicted frame before the next queued barrier confirms it.
+					for(const surface of surfaces.values())if(surface.waterCheckpoint){const token=surface.waterCheckpoint;surface.width=token.width;surface.height=token.height;surface.toothOX=token.toothOX;surface.toothOY=token.toothOY;surface.importOffset=token.importOffset.slice();surface.replay=null;}
+					throw error;
+				}
+				throw remote._fail(error);
+			});
 		},
 		_reply(entries, reply) {
 			let at = 0;
 			for (const entry of entries) {
 				if (entry.surface) { entry.surface.pending--; if (entry.structural) entry.surface.structural--; }
 				if (entry.wire.target === 'surface') {
+					if(entry.wire.method==='endStroke' && entry.surface?.waterCheckpoint?.id===entry.wire.args[0])entry.surface.waterCheckpoint=null;
+					if(entry.wire.method==='fromWaterReplay' && entry.surface) {
+						const confirmed=reply.surfaces?.find(state=>state.surfaceId===entry.surface.id)?.meta;
+						if(confirmed){entry.surface.toothOX=confirmed.toothOX;entry.surface.toothOY=confirmed.toothOY;}
+					}
 					const value = reply.values[at], work = reply.replayWork?.[at]; at++;
 					if (entry.replayRecord && work) {
 						const commands = entry.replayRecord.commands, position = commands.indexOf(entry.replayCommand);
@@ -275,6 +303,7 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 		},
 		async read(surface, request = {}) {
 			const {signal, ...wire} = request;
+			const waterSheet=surface.options.mode==='water'?surface.waterSheet():null;
 			const live = () => {
 				if (failure) throw failure;
 				checkByteAbort(signal);
@@ -285,7 +314,7 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 			live(); remote.flush().catch(() => {});
 			let reply;
 			try { reply = await client.request('read', {surfaceId: surface.id, ...wire}); }
-			catch (error) { throw remote._fail(error); }
+			catch (error) { throw error.recoverable ? error : remote._fail(error); }
 			live();
 			let verified = false;
 			if (reply.pixels && request.verify !== false) {
@@ -296,7 +325,7 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 			// Hashing may yield while a later ordered reply updates the mirror. Return this read's
 			// snapshot, but never rewind the mirror or publish metadata from a refused read.
 			if (!surface.gone && surfaces.get(surface.id) === surface && reply.meta && reply.meta.revision >= surface.meta.revision) surface.meta = {...surface.meta, ...reply.meta};
-			return {...reply, verified};
+			return {...reply, verified, ...(waterSheet?{waterSheet}: {})};
 		},
 		// A small picture of a brush (a glyph, the Dip's sample): the painter paints it on a scratch sheet of its own.
 		async preview(request) {

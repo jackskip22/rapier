@@ -251,7 +251,8 @@ export function appendImportReceipt(index, receipt) {
 }
 
 // The import door's source keys, in the shell's existing words; never infer an app from a path.
-export const IMPORT_SOURCE_WORDS = Object.freeze({rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', code: 'code files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes'});
+export const IMPORT_SOURCE_WORDS = Object.freeze({rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', code: 'code files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes',
+	textbundle: 'textbundle', dayone: 'day one', roam: 'roam research', logseq: 'logseq', paper: 'dropbox paper'});
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const get = (rows, key) => rows instanceof Map ? rows.get(key) : object(rows) && own(rows, key) ? rows[key] : undefined;
