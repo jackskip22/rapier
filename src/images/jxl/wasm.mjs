@@ -1,5 +1,5 @@
-// Optional all-in-one accelerated effort door. MIT (images/jxl/LICENSE).
-// The one-file build owns the same hooks as its encoder, unlike two separate minified files.
+// Optional all-in-one accelerated effort entry point. MIT (images/jxl/LICENSE).
+// Bundling the encoder and kernels together preserves their shared hooks.
 import {configureKernels, kernelMode} from './kernels.mjs';
 import {encode, encodeSteps, LIMITS} from './effort.mjs';
 configureKernels('auto');

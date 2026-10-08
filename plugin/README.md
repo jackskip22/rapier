@@ -5,7 +5,7 @@ pictures, Notes and the diff of a change, on a phone or any browser. The offline
 connector keeps shared work in a hosted workspace. Neither requires a Rapier account. Long documents open and scroll
 fast. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.83 notes.md` makes one HTML file that is the whole editor with the
+**A file to hand a person.** `npx rapier-html@1.1.84 notes.md` makes one HTML file that is the whole editor with the
 document inside. They open it in a browser, edit, draw and paint in it, review a proposed change as a diff and
 save it. An optional one-use Send back address returns their edited copy for the assistant to read.
 

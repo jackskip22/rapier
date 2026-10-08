@@ -1,8 +1,8 @@
 {
   "name": "rapier-jxl",
-  "version": "2.6.0",
-  "description": "A JPEG XL encoder in pure JavaScript for the browser, workers, Node and Deno: lossless and lossy, the core one file of __CORE_KB__ kB (__CORE_GZIP_KB__ kB gzipped); photographs and JPEGs are optional doors. Optional inlined WebAssembly SIMD kernels; no runtime dependencies.",
-  "keywords": ["jpeg-xl", "jpegxl", "jxl", "encoder", "image-compression", "image", "lossless", "lossy", "jpeg", "transcode", "photo", "canvas", "browser", "web-worker", "javascript", "no-dependencies", "rapier"],
+  "version": "3.0.0",
+  "description": "JavaScript JPEG XL encoder for single-file HTML apps and photography tools. Lossless and lossy RGBA, exact alpha, HDR, and optional WebAssembly. Offline, no runtime dependencies.",
+  "keywords": ["jpeg-xl", "jpegxl", "jxl", "javascript", "encoder", "image-compression", "lossless", "lossy", "hdr", "offline", "single-file-html", "webassembly", "photography", "exif", "xmp", "browser", "zero-dependency", "agent-skills"],
   "license": "MIT",
   "type": "module",
   "main": "./index.mjs",
@@ -24,6 +24,8 @@
     "./effort/min": {"types": "./effort.d.mts", "default": "./effort.min.mjs"},
     "./writer": {"types": "./writer.d.mts", "default": "./writer.mjs"},
     "./source": {"types": "./source.d.mts", "default": "./source.mjs"},
+    "./metadata": {"types": "./metadata.d.mts", "default": "./metadata.mjs"},
+    "./metadata/min": {"types": "./metadata.d.mts", "default": "./metadata.min.mjs"},
     "./package.json": "./package.json",
     "./kernels": {"types": "./kernels.d.mts", "default": "./kernels.mjs"},
     "./wasm": {"types": "./wasm.d.mts", "default": "./wasm.mjs"},
@@ -31,5 +33,7 @@
   },
   "sideEffects": ["./wasm.mjs", "./wasm.min.mjs"],
   "engines": {"node": ">=18"},
-  "homepage": "https://rapier.website"
+  "repository": {"type": "git", "url": "git+https://github.com/jackskip22/rapier-jxl.git"},
+  "bugs": {"url": "https://github.com/jackskip22/rapier-jxl/issues"},
+  "homepage": "https://github.com/jackskip22/rapier-jxl#readme"
 }
