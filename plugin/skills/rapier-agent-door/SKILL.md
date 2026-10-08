@@ -46,7 +46,7 @@ the drawing for movable, editable shapes and the fence for a flowchart that must
 Read [diagrams and drawing examples](references/diagrams.md) for the supported Mermaid grammar, native
 figures, spatial composition and object edits. Read [collaboration](references/collaboration.md) for
 in-document requests, returned pages, continuation and recovery. Read the [catalog](references/AGENT-TOOLS.json)
-(the document and door tools) or the [Notes catalog](references/AGENT-TOOLS-notes.json) only for the schema needed. Structure reads and scoped edits keep long documents out of context; the
+(the document and door tools), the [Notes catalog](references/AGENT-TOOLS-notes.json), or the [editor-only catalog](references/AGENT-TOOLS-editor.json) only for the schema needed. Structure reads and scoped edits keep long documents out of context; the
 [measurement](references/token-saving.md) describes a measured workload, not a universal per-edit cost.
 
 ## Create a useful first result

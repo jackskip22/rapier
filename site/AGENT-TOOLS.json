@@ -1,5 +1,5 @@
 {
-  "release": "1.1.81",
+  "release": "1.1.82",
   "core": [
     {
       "name": "document.set_view",
@@ -161,33 +161,6 @@
               },
               "reason": {
                 "type": "string"
-              },
-              "issues": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "severity": {
-                      "type": "string"
-                    },
-                    "count": {
-                      "type": "integer"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "severity",
-                    "count",
-                    "message"
-                  ],
-                  "additionalProperties": false
-                }
               }
             },
             "required": [
@@ -277,60 +250,25 @@
       }
     },
     {
-      "name": "document.ask_editor",
-      "title": "Ask the open editor",
-      "description": "Asks the open editor for what needs the person's device: one card the person taps to read a passage aloud, copy it, open a device file or install a plug-in, or a Word or PDF export returned as a file link without a tap. Receipts say waiting, done, declined or unavailable.",
+      "name": "document.read_aloud",
+      "title": "Read a passage aloud",
+      "description": "Asks the open editor to speak one passage on the person's device. Supply text or an inspected context_handle. The person taps a confirmation card before speech starts; the receipt says waiting, done, declined or unavailable.",
       "effect": "view",
       "class": "write",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "action": {
-            "type": "string",
-            "enum": [
-              "read_aloud",
-              "copy",
-              "open_file",
-              "export_word",
-              "export_pdf",
-              "install_plugin"
-            ],
-            "description": "read_aloud and copy take text or a context_handle, and copy with format complete takes a context_handle; install_plugin takes a plugin; open_file, export_word and export_pdf take nothing more."
-          },
           "text": {
             "type": "string",
             "maxLength": 4096,
-            "description": "The passage to read aloud or copy.",
+            "description": "The passage. Supply exactly one of text or context_handle.",
             "minLength": 1
           },
           "context_handle": {
             "type": "string",
             "maxLength": 128,
-            "description": "The handle of an inspected passage to read aloud or copy."
-          },
-          "format": {
-            "type": "string",
-            "enum": [
-              "markdown",
-              "plain",
-              "formatted",
-              "complete"
-            ],
-            "description": "How copy writes the passage: markdown when absent."
-          },
-          "plugin": {
-            "type": "string",
-            "enum": [
-              "math",
-              "mermaid",
-              "pdf",
-              "ocr",
-              "letters-field",
-              "letters-relief",
-              "letters-leaf",
-              "letters-arabesque"
-            ],
-            "description": "The plug-in install_plugin installs."
+            "description": "An inspected passage of at most 4,096 characters. Supply exactly one of context_handle or text.",
+            "minLength": 1
           },
           "agent": {
             "type": "string",
@@ -343,10 +281,8 @@
             "minLength": 1
           }
         },
-        "required": [
-          "action"
-        ],
-        "additionalProperties": true
+        "required": [],
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
@@ -439,33 +375,6 @@
               },
               "reason": {
                 "type": "string"
-              },
-              "issues": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "severity": {
-                      "type": "string"
-                    },
-                    "count": {
-                      "type": "integer"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "severity",
-                    "count",
-                    "message"
-                  ],
-                  "additionalProperties": false
-                }
               }
             },
             "required": [
@@ -499,26 +408,509 @@
               }
             },
             "additionalProperties": true
-          },
-          "filename": {
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "document.copy",
+      "title": "Copy a passage to the clipboard",
+      "description": "Asks the open editor to replace the device clipboard with one passage. Supply text or an inspected context_handle; complete excerpts require context_handle and include their embedded images. The person taps a confirmation card before copying; the receipt says waiting, done, declined or unavailable.",
+      "effect": "write",
+      "class": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 4096,
+            "description": "The passage. Supply exactly one of text or context_handle.",
+            "minLength": 1
           },
-          "mimeType": {
+          "context_handle": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "An inspected passage of at most 4,096 characters. Supply exactly one of context_handle or text.",
+            "minLength": 1
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "plain",
+              "formatted",
+              "complete"
+            ],
+            "description": "markdown by default; plain strips formatting, formatted writes rich text, complete carries embedded images and requires context_handle."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
             "type": "string",
             "maxLength": 128
           },
-          "bytes": {
-            "type": "integer",
-            "minimum": 0
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "exportId": {
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "receipt": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "waiting",
+                  "done",
+                  "declined",
+                  "unavailable"
+                ]
+              },
+              "preference": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "previous": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "superseded": {
+                "type": "boolean"
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "document.open_file",
+      "title": "Open a device file",
+      "description": "Asks the person to choose a local file in the open editor. After confirmation, the device file picker opens; the editor's usual save and document-replacement controls apply. Unavailable inside an embedded editor. A done receipt confirms the picker was requested, not that a file was chosen or saved.",
+      "effect": "destructive",
+      "class": "sensitive-write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
             "type": "string",
             "maxLength": 128
           },
-          "exportExpiresAt": {
+          "document": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "receipt": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "waiting",
+                  "done",
+                  "declined",
+                  "unavailable"
+                ]
+              },
+              "preference": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "previous": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "superseded": {
+                "type": "boolean"
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "document.install_plugin",
+      "title": "Install a built-in editor plug-in",
+      "description": "Asks the open editor to install one named Rapier plug-in on this device. The person taps a confirmation card before its verified resources are downloaded and loaded. Only the listed built-in plug-ins are accepted. The receipt says waiting, done, declined or unavailable.",
+      "effect": "create",
+      "class": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "math",
+              "mermaid",
+              "pdf",
+              "ocr",
+              "letters-field",
+              "letters-relief",
+              "letters-leaf",
+              "letters-arabesque"
+            ],
+            "description": "The built-in plug-in to install on this device; no URL or custom executable is accepted."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "plugin"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "receipt": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "waiting",
+                  "done",
+                  "declined",
+                  "unavailable"
+                ]
+              },
+              "preference": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "previous": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "superseded": {
+                "type": "boolean"
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
           }
         },
         "required": [
@@ -1997,33 +2389,6 @@
                     },
                     "reason": {
                       "type": "string"
-                    },
-                    "issues": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "code": {
-                            "type": "string"
-                          },
-                          "severity": {
-                            "type": "string"
-                          },
-                          "count": {
-                            "type": "integer"
-                          },
-                          "message": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "code",
-                          "severity",
-                          "count",
-                          "message"
-                        ],
-                        "additionalProperties": false
-                      }
                     }
                   },
                   "required": [
@@ -6921,8 +7286,8 @@
     },
     {
       "name": "notes.propose",
-      "title": "Propose a note",
-      "description": "Creates a note or replaces a fully inspected, unchanged note, retaining its previous text in History. Unread, changed or open notes receive proposals for review.",
+      "title": "Create or update a note",
+      "description": "Creates a new note immediately when of is omitted. With of, replaces an unchanged note only after this caller has read its complete current text, retaining the previous text in History. Unread, changed or open notes receive a separate proposal for review. The applied receipt states whether the requested change was written immediately.",
       "effect": "write",
       "class": "write",
       "inputSchema": {
@@ -6931,17 +7296,17 @@
           "text": {
             "type": "string",
             "maxLength": 26214400,
-            "description": "The note's Markdown."
+            "description": "The complete Markdown for the new note or replacement."
           },
           "title": {
             "type": "string",
             "maxLength": 200,
-            "description": "A title for a new note."
+            "description": "A title for a new note or review proposal; direct replacements use text unchanged."
           },
           "of": {
             "type": "string",
             "maxLength": 256,
-            "description": "The listed note this changes."
+            "description": "The listed note to update. Omit to create a new note."
           },
           "agent": {
             "type": "string",
@@ -7013,10 +7378,12 @@
               "string",
               "null"
             ],
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "The created or updated note, or the separate proposal file when applied is false."
           },
           "applied": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "true for an immediate creation or replacement; false when the requested update waits for review."
           }
         },
         "required": [
@@ -7038,12 +7405,6 @@
             "type": "string",
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
-          },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
           },
           "view": {
             "type": "string",
@@ -7094,6 +7455,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -7192,33 +7559,6 @@
               },
               "reason": {
                 "type": "string"
-              },
-              "issues": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "severity": {
-                      "type": "string"
-                    },
-                    "count": {
-                      "type": "integer"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "severity",
-                    "count",
-                    "message"
-                  ],
-                  "additionalProperties": false
-                }
               }
             },
             "required": [
@@ -7331,9 +7671,9 @@
       }
     },
     {
-      "name": "document.ask_editor",
-      "title": "Ask the open editor",
-      "description": "Asks the open editor for what needs the person's device: one card the person taps to read a passage aloud, copy it, open a device file or install a plug-in, or a Word or PDF export returned as a file link without a tap. Receipts say waiting, done, declined or unavailable.",
+      "name": "document.read_aloud",
+      "title": "Read a passage aloud",
+      "description": "Asks the open editor to speak one passage on the person's device. Supply text or an inspected context_handle. The person taps a confirmation card before speech starts; the receipt says waiting, done, declined or unavailable.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -7342,69 +7682,33 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "read_aloud",
-              "copy",
-              "open_file",
-              "export_word",
-              "export_pdf",
-              "install_plugin"
-            ],
-            "description": "read_aloud and copy take text or a context_handle, and copy with format complete takes a context_handle; install_plugin takes a plugin; open_file, export_word and export_pdf take nothing more."
-          },
           "text": {
             "type": "string",
             "maxLength": 4096,
-            "description": "The passage to read aloud or copy.",
+            "description": "The passage. Supply exactly one of text or context_handle.",
             "minLength": 1
           },
           "context_handle": {
             "type": "string",
             "maxLength": 128,
-            "description": "The handle of an inspected passage to read aloud or copy."
-          },
-          "format": {
-            "type": "string",
-            "enum": [
-              "markdown",
-              "plain",
-              "formatted",
-              "complete"
-            ],
-            "description": "How copy writes the passage: markdown when absent."
-          },
-          "plugin": {
-            "type": "string",
-            "enum": [
-              "math",
-              "mermaid",
-              "pdf",
-              "ocr",
-              "letters-field",
-              "letters-relief",
-              "letters-leaf",
-              "letters-arabesque"
-            ],
-            "description": "The plug-in install_plugin installs."
+            "description": "An inspected passage of at most 4,096 characters. Supply exactly one of context_handle or text.",
+            "minLength": 1
           },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
-          "document",
-          "action"
+          "document"
         ],
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
@@ -7497,33 +7801,6 @@
               },
               "reason": {
                 "type": "string"
-              },
-              "issues": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "severity": {
-                      "type": "string"
-                    },
-                    "count": {
-                      "type": "integer"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "severity",
-                    "count",
-                    "message"
-                  ],
-                  "additionalProperties": false
-                }
               }
             },
             "required": [
@@ -7557,26 +7834,6 @@
               }
             },
             "additionalProperties": true
-          },
-          "filename": {
-            "type": "string",
-            "maxLength": 256
-          },
-          "mimeType": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "bytes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "exportId": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "exportExpiresAt": {
-            "type": "string",
-            "maxLength": 64
           }
         },
         "required": [
@@ -7585,7 +7842,593 @@
         "additionalProperties": true
       },
       "annotations": {
-        "title": "Ask the open editor",
+        "title": "Read a passage aloud",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          }
+        ],
+        "website.rapier/tool-class": "write",
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Working in Rapier.",
+        "openai/toolInvocation/invoked": "Rapier has replied."
+      }
+    },
+    {
+      "name": "document.copy",
+      "title": "Copy a passage to the clipboard",
+      "description": "Asks the open editor to replace the device clipboard with one passage. Supply text or an inspected context_handle; complete excerpts require context_handle and include their embedded images. The person taps a confirmation card before copying; the receipt says waiting, done, declined or unavailable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "The passage. Supply exactly one of text or context_handle.",
+            "minLength": 1
+          },
+          "context_handle": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "An inspected passage of at most 4,096 characters. Supply exactly one of context_handle or text.",
+            "minLength": 1
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "plain",
+              "formatted",
+              "complete"
+            ],
+            "description": "markdown by default; plain strips formatting, formatted writes rich text, complete carries embedded images and requires context_handle."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "receipt": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "waiting",
+                  "done",
+                  "declined",
+                  "unavailable"
+                ]
+              },
+              "preference": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "previous": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "superseded": {
+                "type": "boolean"
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Copy a passage to the clipboard",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          }
+        ],
+        "website.rapier/tool-class": "write",
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Working in Rapier.",
+        "openai/toolInvocation/invoked": "Rapier has replied."
+      }
+    },
+    {
+      "name": "document.open_file",
+      "title": "Open a device file",
+      "description": "Asks the person to choose a local file in the open editor. After confirmation, the device file picker opens; the editor's usual save and document-replacement controls apply. Unavailable inside an embedded editor. A done receipt confirms the picker was requested, not that a file was chosen or saved.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "receipt": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "waiting",
+                  "done",
+                  "declined",
+                  "unavailable"
+                ]
+              },
+              "preference": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "previous": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "superseded": {
+                "type": "boolean"
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Open a device file",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          }
+        ],
+        "website.rapier/tool-class": "sensitive-write",
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Working in Rapier.",
+        "openai/toolInvocation/invoked": "Rapier has replied."
+      }
+    },
+    {
+      "name": "document.install_plugin",
+      "title": "Install a built-in editor plug-in",
+      "description": "Asks the open editor to install one named Rapier plug-in on this device. The person taps a confirmation card before its verified resources are downloaded and loaded. Only the listed built-in plug-ins are accepted. The receipt says waiting, done, declined or unavailable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "math",
+              "mermaid",
+              "pdf",
+              "ocr",
+              "letters-field",
+              "letters-relief",
+              "letters-leaf",
+              "letters-arabesque"
+            ],
+            "description": "The built-in plug-in to install on this device; no URL or custom executable is accepted."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document",
+          "plugin"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "pending",
+              "target_gone",
+              "conflict",
+              "invalid",
+              "refused",
+              "uncertain",
+              "replayed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "receipt": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "waiting",
+                  "done",
+                  "declined",
+                  "unavailable"
+                ]
+              },
+              "preference": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "previous": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "superseded": {
+                "type": "boolean"
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Install a built-in editor plug-in",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -7620,12 +8463,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "expectedRevision": {
             "type": "integer",
             "minimum": 0,
@@ -7645,6 +8482,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -7776,12 +8619,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "status": {
             "type": "string",
             "enum": [
@@ -7802,6 +8639,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -7934,12 +8777,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "action": {
             "type": "string",
             "enum": [
@@ -7983,6 +8820,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -8153,15 +8996,15 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
           "operation_id": {
             "type": "string",
             "maxLength": 128,
             "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
-          },
-          "agent": {
-            "type": "string",
-            "description": "This assistant's display name."
           }
         },
         "required": [
@@ -9165,33 +10008,6 @@
                     },
                     "reason": {
                       "type": "string"
-                    },
-                    "issues": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "code": {
-                            "type": "string"
-                          },
-                          "severity": {
-                            "type": "string"
-                          },
-                          "count": {
-                            "type": "integer"
-                          },
-                          "message": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "code",
-                          "severity",
-                          "count",
-                          "message"
-                        ],
-                        "additionalProperties": false
-                      }
                     }
                   },
                   "required": [
@@ -9277,12 +10093,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "within": {
             "type": "string",
             "maxLength": 128,
@@ -9302,6 +10112,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -9487,12 +10303,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "return_id": {
             "type": "string",
             "maxLength": 128,
@@ -9562,12 +10372,18 @@
               "objectId",
               "point"
             ],
-            "additionalProperties": true,
+            "additionalProperties": false,
             "description": "Sample a paint layer in this inspected native drawing at [x,y] drawing units. Returns its material sample without changing it; use the same passage or drawing handle as the read."
           },
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -9790,12 +10606,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "query": {
             "type": "string",
             "maxLength": 512,
@@ -9850,6 +10660,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -10037,12 +10853,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "edits": {
             "type": "array",
             "minItems": 1,
@@ -10089,6 +10899,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -10257,12 +11073,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "context_handle": {
             "type": "string",
             "maxLength": 128
@@ -10290,6 +11100,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -10422,12 +11238,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "edits": {
             "type": "array",
             "minItems": 1,
@@ -10481,6 +11291,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -10646,12 +11462,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "change_id": {
             "type": "string",
             "maxLength": 128,
@@ -10667,6 +11477,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -10808,12 +11624,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "change_id": {
             "type": "string",
             "maxLength": 128,
@@ -10829,6 +11639,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -10975,12 +11791,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "action": {
             "type": "string",
             "enum": [
@@ -11015,6 +11825,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -11195,12 +12011,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "text": {
             "type": "string",
             "maxLength": 26214400,
@@ -11223,6 +12033,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -11370,12 +12186,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "context_handle": {
             "type": "string",
             "maxLength": 128,
@@ -11384,6 +12194,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -11483,12 +12299,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "context_handle": {
             "type": "string",
             "maxLength": 128
@@ -11513,6 +12323,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -11633,15 +12449,15 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
           "operation_id": {
             "type": "string",
             "maxLength": 128,
             "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
-          },
-          "agent": {
-            "type": "string",
-            "description": "This assistant's display name."
           }
         },
         "required": [
@@ -11749,12 +12565,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "mode": {
             "type": "string",
             "enum": [
@@ -11778,6 +12588,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -11888,15 +12704,15 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
           "operation_id": {
             "type": "string",
             "maxLength": 128,
             "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
-          },
-          "agent": {
-            "type": "string",
-            "description": "This assistant's display name."
           }
         },
         "required": [
@@ -12004,12 +12820,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "format": {
             "type": "string",
             "enum": [
@@ -12030,6 +12840,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -12213,12 +13029,6 @@
             "type": "string",
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
-          },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
           },
           "recipe": {
             "type": "object",
@@ -12787,7 +13597,7 @@
                     "x",
                     "y"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": false
                 },
                 "local": {
                   "type": "boolean",
@@ -12838,7 +13648,7 @@
                     "ax",
                     "ay"
                   ],
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "description": "connect: start anchor; null detaches."
                 },
                 "end": {
@@ -12869,7 +13679,7 @@
                     "ax",
                     "ay"
                   ],
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "description": "connect: end anchor; null detaches."
                 },
                 "properties": {
@@ -13401,11 +14211,11 @@
                         }
                       },
                       "required": [],
-                      "additionalProperties": true
+                      "additionalProperties": false
                     }
                   },
                   "required": [],
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "description": "properties: authored object properties, including its native geometry."
                 },
                 "newIds": {
@@ -13445,7 +14255,7 @@
               "required": [
                 "type"
               ],
-              "additionalProperties": true
+              "additionalProperties": false
             }
           },
           "recipe_handle": {
@@ -13625,7 +14435,7 @@
               "required": [
                 "id"
               ],
-              "additionalProperties": true
+              "additionalProperties": false
             }
           },
           "context_handle": {
@@ -13652,6 +14462,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -13816,12 +14632,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "query": {
             "type": "string",
             "maxLength": 2048,
@@ -13841,6 +14651,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -13983,12 +14799,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "file": {
             "type": "string",
             "maxLength": 256,
@@ -14020,6 +14830,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -14164,12 +14980,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "file": {
             "type": "string",
             "maxLength": 256,
@@ -14267,6 +15077,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -14395,12 +15211,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "file": {
             "type": "string",
             "maxLength": 256,
@@ -14420,6 +15230,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -14585,12 +15401,6 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
-          "operation_id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
-            "minLength": 1
-          },
           "action": {
             "type": "string",
             "enum": [
@@ -14600,6 +15410,12 @@
           "agent": {
             "type": "string",
             "description": "This assistant's display name."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
+            "minLength": 1
           }
         },
         "required": [
@@ -14716,8 +15532,8 @@
     },
     {
       "name": "notes.propose",
-      "title": "Propose a note",
-      "description": "Creates a note or replaces a fully inspected, unchanged note, retaining its previous text in History. Unread, changed or open notes receive proposals for review.",
+      "title": "Create or update a note",
+      "description": "Creates a new note immediately when of is omitted. With of, replaces an unchanged note only after this caller has read its complete current text, retaining the previous text in History. Unread, changed or open notes receive a separate proposal for review. The applied receipt states whether the requested change was written immediately.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -14726,30 +15542,30 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
+          "text": {
+            "type": "string",
+            "maxLength": 26214400,
+            "description": "The complete Markdown for the new note or replacement."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "A title for a new note or review proposal; direct replacements use text unchanged."
+          },
+          "of": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "The listed note to update. Omit to create a new note."
+          },
+          "agent": {
+            "type": "string",
+            "description": "This assistant's display name."
+          },
           "operation_id": {
             "type": "string",
             "maxLength": 128,
             "description": "Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.",
             "minLength": 1
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 26214400,
-            "description": "The note's Markdown."
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 200,
-            "description": "A title for a new note."
-          },
-          "of": {
-            "type": "string",
-            "maxLength": 256,
-            "description": "The listed note this changes."
-          },
-          "agent": {
-            "type": "string",
-            "description": "This assistant's display name."
           }
         },
         "required": [
@@ -14812,10 +15628,12 @@
               "string",
               "null"
             ],
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "The created or updated note, or the separate proposal file when applied is false."
           },
           "applied": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "true for an immediate creation or replacement; false when the requested update waits for review."
           }
         },
         "required": [
@@ -14824,7 +15642,7 @@
         "additionalProperties": true
       },
       "annotations": {
-        "title": "Propose a note",
+        "title": "Create or update a note",
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
@@ -14902,8 +15720,8 @@
     },
     {
       "name": "rapier.open",
-      "title": "Rapier editor",
-      "description": "Creates an editable workspace from text or a host file, or resumes one by its document value. Returns editor_url, the live workspace in a browser. It makes two kinds of diagram: native SVG drawings (document.draw) and Mermaid flowcharts as fences in the source (document.apply_edits). Workspaces expire after 30 idle days.",
+      "title": "Open a shared editable document",
+      "description": "Creates a shared workspace from text or a host file, or resumes one by its document value. Use for documents the person and assistant will edit together: drafts, plans, guides, drawings and reviewed revisions. Returns editor_url. Native SVG drawings use document.draw; Mermaid stays in Markdown through document.apply_edits. document.export keeps an independent Markdown file or offline editor. Workspaces expire after 30 idle days.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -15035,7 +15853,7 @@
         }
       ],
       "annotations": {
-        "title": "Rapier editor",
+        "title": "Open a shared editable document",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -15057,13 +15875,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.81.html",
+          "resourceUri": "ui://rapier/editor-1.1.82.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.81.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.82.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -16725,8 +17543,6 @@
                       "read_aloud",
                       "copy",
                       "open_file",
-                      "export_word",
-                      "export_pdf",
                       "install_plugin"
                     ]
                   },
@@ -16757,71 +17573,10 @@
                   "reason": {
                     "type": "string",
                     "maxLength": 96
-                  },
-                  "issues": {
-                    "type": "array",
-                    "maxItems": 8,
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "maxLength": 64,
-                          "pattern": "^[a-z]+(?:-[a-z]+)*$"
-                        },
-                        "severity": {
-                          "type": "string",
-                          "enum": [
-                            "info",
-                            "warning"
-                          ]
-                        },
-                        "count": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "message": {
-                          "type": "string",
-                          "maxLength": 512
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "severity",
-                        "count",
-                        "message"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "description": "The notices of a finished Word or PDF export; only a done export receipt carries them."
                   }
                 },
                 "required": [
                   "status"
-                ],
-                "additionalProperties": false
-              },
-              "file": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "maxLength": 256
-                  },
-                  "mimeType": {
-                    "type": "string",
-                    "maxLength": 128
-                  },
-                  "data": {
-                    "type": "string",
-                    "maxLength": 11184812
-                  }
-                },
-                "required": [
-                  "name",
-                  "mimeType",
-                  "data"
                 ],
                 "additionalProperties": false
               }
@@ -16931,33 +17686,6 @@
               },
               "reason": {
                 "type": "string"
-              },
-              "issues": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "severity": {
-                      "type": "string"
-                    },
-                    "count": {
-                      "type": "integer"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "severity",
-                    "count",
-                    "message"
-                  ],
-                  "additionalProperties": false
-                }
               }
             },
             "required": [

@@ -19,7 +19,9 @@ import { markdownSourcePositions } from '../spec/md-source.mjs';
 import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentUndoSplice, imageCommentTarget} from './comments.mjs';
 import {visualRequest, visualResult} from './visual.mjs';
 import {paintUndoPlan} from './paint-undo.mjs';
-import {editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
+import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
+import {PAGE_RESULT_BYTES, resultBytes, boundedResult} from './page-result.mjs';
+export {PAGE_RESULT_BYTES, resultBytes, boundedResult};
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
@@ -1443,8 +1445,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
   }
 
-  function mint(pool, prefix, row, who) {
-    const time = now(), id = mintId(prefix);
+  function mint(pool, prefix, row, who, id = mintId(prefix)) {
+    const time = now();
     state[pool][id] = { ...row, id, owner: ownerOf(who), documentId: state.documentId,
       createdAt: time, expiresAt: time + LIMITS.lifetimeMs };
     prune();
@@ -1710,9 +1712,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return null;
   }
 
-  function documentLaw(start, end) {
+  function documentLaw(start, end, will = null) {
     if (state.docKind !== 'markdown') return {};
-    const will = parseWill(state.text);
+    will ||= parseWill(state.text);
     if (!will.present) return {};
     return { law: willGovern(will, start, end), ...(willIntentOf(will, start, end) ? { intent: willIntentOf(will, start, end) } : {}) };
   }
@@ -1723,12 +1725,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       digest: digest(state.text.slice(start, end)), ...info }, who);
   }
 
-  function handle(start, end, who, info = {}) {
+  function handleText(start, end) {
     if (!safeBoundary(state.text, start) || !safeBoundary(state.text, end) || end < start) return null;
     const text = state.text.slice(start, end);
     if (text.length > LIMITS.editChars || bytes(text) > LIMITS.authorityBytes ||
         imageSpans().some(row => row.start < end && start < row.end)) return null;
-    return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, ...info }, who);
+    return text;
+  }
+
+  function handle(start, end, who, info = {}, id) {
+    const text = handleText(start, end);
+    if (text === null) return null;
+    return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, ...info }, who, id);
   }
 
   // A recipe handle spans the occurrence, never the definition bytes; relocate()'s integrity check applies unmodified.
@@ -1774,20 +1782,20 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // A read hands in the text it has just paged; create and edit, which return no text, measure the definition they have just
   // written. The one recipe a handle keeps is the open canvas's, when the read came from the surface (a binding): the document does not
   // hold that recipe, and an edit is laid against what the caller saw of it (drawEdit). The page's kernel alone has a surface.
-  function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null, objectId = null) {
+  function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null, objectId = null, id) {
     const recipe = storedRecipe(assetLabel);
     if (!recipe) return null;
     const shown = disclosed ?? JSON.stringify(disclosedRecipe(recipe));
     if (drawHandleRefusal(shown, JSON.stringify(recipe).length, objectId)) return null;
     const text = state.text.slice(start, end);
     return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', assetLabel, assetDigest: assetDigest(assetLabel),
-      ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}), ...(objectId ? {objectId} : {}) }, who);
+      ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}), ...(objectId ? {objectId} : {}) }, who, id);
   }
 
-  function svgHandle(start, end, nodeIds, assetLabel, who) {
+  function svgHandle(start, end, nodeIds, assetLabel, who, id) {
     const text = state.text.slice(start, end);
     return mint('handles', 'ctx_', {start, end, revision: state.revision, text, used: false,
-      kind: 'svg', nodeIds: [...nodeIds], assetLabel, assetDigest: assetDigest(assetLabel)}, who);
+      kind: 'svg', nodeIds: [...nodeIds], assetLabel, assetDigest: assetDigest(assetLabel)}, who, id);
   }
 
   function svgInspection(assetLabel) {
@@ -1952,31 +1960,60 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const offset = target.cursor ? target.offset : 0;
     if (!safeBoundary(text, offset)) return failure('range_invalid', 'invalid');
     let end = Math.min(text.length, offset + limit);
-    if (!safeBoundary(text, end)) end--;
-    let page = text.slice(offset, end);
-    while (bytes(JSON.stringify({ ...current(), ...law, text: page, ...(drawing ? {drawing} : {}), ...(paintSample ? {paintSample} : {}) })) > LIMITS.resultBytes - 1600 && page.length) {
-      end = offset + clip(text.slice(offset, end), Math.floor((end - offset) * 0.8)).length;
-      page = text.slice(offset, end);
-    }
-    const complete = end >= text.length;
+    while (!safeBoundary(text, end)) end--;
+    const ids = {handle: mintId('ctx_'), cursor: mintId('read_')};
     const unavailable = drawing?.recipeUnavailable || (imported ? null : drawingEditAvailability(picture.assetLabel, text, objectId).edit_unavailable);
+    const page = fitReadPage(text, offset, end, until => {
+      const complete = until === text.length;
+      return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: text.slice(offset, until),
+        ...law, ...(objectId ? {objectId} : {}), complete, remaining: text.length - until,
+        handle: complete && !unavailable ? ids.handle : null, recipe_handle: complete && !unavailable ? ids.handle : null,
+        ...(drawing ? {drawing} : {}), ...(paintSample ? {paintSample} : {}),
+        coverage: {disclosed: until, chars: text.length, complete},
+        ...(unavailable ? unavailableEdit(unavailable) : {}),
+        next_cursor: complete ? null : ids.cursor, expires_in_ms: LIMITS.lifetimeMs};
+    });
+    if (!page) return failure('result_over_budget', 'refused', {complete: false});
+    end = page.end;
+    const complete = end === text.length;
     const disclosedHandle = complete && !unavailable ? imported
-      ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who)
-      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text, target.draw.binding?.drawSession ? recipeText : null, objectId) : null;
-    const next = !complete ? mint('cursors', 'read_', { kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
-      targetStart: target.targetStart, targetEnd: target.targetEnd, ...(imported ? {inspectionText: recipeText} : {recipeText, objectId, ...target.draw.binding}), assetLabel: picture.assetLabel, offset: end }, who) : null;
+      ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who, ids.handle)
+      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text,
+          target.draw.binding?.drawSession ? recipeText : null, objectId, ids.handle) : null;
+    const next = !complete ? mint('cursors', 'read_', {kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
+      targetStart: target.targetStart, targetEnd: target.targetEnd,
+      ...(imported ? {inspectionText: recipeText} : {recipeText, objectId, ...target.draw.binding}),
+      assetLabel: picture.assetLabel, offset: end}, who, ids.cursor) : null;
+    const result = {...page.result, handle: disclosedHandle?.id || null, recipe_handle: disclosedHandle?.id || null,
+      ...(complete && !disclosedHandle && !unavailable ? unavailableEdit(
+        (imported ? null : drawHandleRefusal(text, recipeText.length, objectId)) || 'target_over_edit_budget') : {}),
+      next_cursor: next?.id || null};
+    if (bytes(JSON.stringify(result)) > LIMITS.resultBytes) {
+      if (disclosedHandle) delete state.handles[disclosedHandle.id];
+      if (next) delete state.cursors[next.id];
+      return failure('result_over_budget', 'refused', {complete: false});
+    }
     if (target.cursor) delete state.cursors[target.cursor.id];
-    const editUnavailable = complete && !disclosedHandle
-      ? drawing?.recipeUnavailable || (imported ? null : drawHandleRefusal(text, recipeText.length, objectId)) || 'target_over_edit_budget' : null;
-    return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: page,
-      ...law,
-      ...(objectId ? {objectId} : {}),
-      complete, remaining: text.length - end, handle: disclosedHandle?.id || null, recipe_handle: disclosedHandle?.id || null,
-      ...(drawing ? {drawing} : {}),
-      ...(paintSample ? {paintSample} : {}),
-      coverage: { disclosed: end, chars: text.length, complete },
-      ...(unavailable ? unavailableEdit(unavailable) : editUnavailable ? (imported ? {edit_unavailable: editUnavailable} : unavailableEdit(editUnavailable)) : {}),
-      next_cursor: next?.id || null, expires_in_ms: LIMITS.lifetimeMs };
+    return result;
+  }
+
+  // Measure the complete serialized envelope before minting authority or consuming a cursor.
+  // Character limits are upper bounds; UTF-8 and JSON escapes decide the actual page boundary.
+  function fitReadPage(source, start, end, project) {
+    const first = project(end);
+    if (bytes(JSON.stringify(first)) <= LIMITS.resultBytes) return {end, result: first};
+    let low = start, high = end - 1, fitted = null;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      let until = middle;
+      while (until > start && !safeBoundary(source, until)) until--;
+      const result = project(until);
+      if (bytes(JSON.stringify(result)) <= LIMITS.resultBytes) {
+        fitted = {end: until, result}; low = middle + 1;
+      } else high = until - 1;
+    }
+    // An empty successful page would return a cursor that can never advance.
+    return fitted && (fitted.end > start || start === end) ? fitted : null;
   }
 
   async function readContext(input, who, context) {
@@ -1992,65 +2029,58 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     if (target.draw || target.svg) return readDrawContext(target, input, who, context);
     if (input.objectId || input.paintSample) return failure('drawing_object_scope', 'invalid');
-    const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
-    const start = target.offset;
+    const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars), start = target.offset;
     let end = Math.min(target.targetEnd, start + limit);
-    if (!safeBoundary(state.text, end)) end--;
+    while (!safeBoundary(state.text, end)) end--;
     const hiddenAtEnd = imageSpans().find(row => row.start < end && end < row.end);
     if (hiddenAtEnd) end = Math.min(target.targetEnd, hiddenAtEnd.end);
-    let projection = disclose(state.text, start, end), text = projection.text;
-    const base = { ...current(), outcome: 'ok', start, end, text, ...documentLaw(start, end),
-      ...(drawingSummary() ? {drawing: drawingSummary()} : {}),
-      complete: end === target.targetEnd && !projection.omissions.length, remaining: target.targetEnd - end,
-      ...(projection.omissions.length ? { omissions: projection.omissions.slice(0, 4), omissionCount: projection.omissions.length } : {}) };
-    const initialLayout = layoutInRange(layout, start, end);
-    if (initialLayout) base.layout = initialLayout;
-    const initialImages = imagesInRange(images, start, end);
-    if (initialImages) base.images = initialImages;
-    while (bytes(JSON.stringify(base)) > LIMITS.resultBytes - 1600 && text.length) {
-      const narrowed = clip(state.text.slice(start, end), Math.floor((end - start) * 0.8)); end = start + narrowed.length;
-      projection = disclose(state.text, start, end); text = projection.text;
-      Object.assign(base, { end, text, ...documentLaw(start, end), complete: end === target.targetEnd && !projection.omissions.length, remaining: target.targetEnd - end });
-      if (projection.omissions.length) Object.assign(base, { omissions: projection.omissions.slice(0, 4), omissionCount: projection.omissions.length });
-      else { delete base.omissions; delete base.omissionCount; }
-      const pageLayout = layoutInRange(layout, start, end);
-      if (pageLayout) base.layout = pageLayout; else delete base.layout;
-      const pageImages = imagesInRange(images, start, end);
-      if (pageImages) base.images = pageImages; else delete base.images;
-    }
-    const disclosed = projection.omissions.length ? null : handle(start, end, who);
-    const coverage = [...(target.coverage || []), ...(projection.omissions.length ? [] : [[start, end]])];
-    let reached = target.targetStart;
-    for (const row of coverage.slice().sort((a, b) => a[0] - b[0])) {
-      if (row[0] > reached) break;
-      reached = Math.max(reached, row[1]);
-    }
-    const whole = reached >= target.targetEnd;
-    let completeHandle = null;
-    if (whole && (start !== target.targetStart || end !== target.targetEnd)) {
-      completeHandle = handle(target.targetStart, target.targetEnd, who, { disclosure: 'paged' });
-    }
-    const next = end < target.targetEnd ? mint('cursors', 'read_', {
-      kind: 'read', revision: state.revision, targetStart: target.targetStart, targetEnd: target.targetEnd,
-      offset: end, coverage, ref: target.ref || null,
-    }, who) : null;
+    const ids = {handle: mintId('ctx_'), complete: mintId('ctx_'), comment: mintId('ctx_'), cursor: mintId('read_')};
+    const sha = sha256(state.text), drawing = drawingSummary(), will = state.docKind === 'markdown' ? parseWill(state.text) : null;
+    const coverageAt = (until, omitted) => {
+      const coverage = [...(target.coverage || []), ...(omitted ? [] : [[start, until]])];
+      let reached = target.targetStart;
+      for (const row of coverage.slice().sort((a, b) => a[0] - b[0])) {
+        if (row[0] > reached) break;
+        reached = Math.max(reached, row[1]);
+      }
+      return {coverage, reached, whole: reached >= target.targetEnd};
+    };
+    const page = fitReadPage(state.text, start, end, until => {
+      const projection = disclose(state.text, start, until), omitted = projection.omissions.length;
+      const {reached, whole} = coverageAt(until, omitted);
+      const canEdit = !omitted && handleText(start, until) !== null;
+      const pageLayout = layoutInRange(layout, start, until), pageImages = imagesInRange(images, start, until);
+      const comment = until === target.targetEnd && !whole && state.docKind === 'markdown' &&
+        imageCommentTarget(state.text, target.targetStart, target.targetEnd);
+      return {...current(), outcome: 'ok', start, end: until, text: projection.text, ...documentLaw(start, until, will),
+        ...(drawing ? {drawing} : {}), complete: until === target.targetEnd && !omitted, remaining: target.targetEnd - until,
+        ...(omitted ? {omissions: projection.omissions.slice(0, 4), omissionCount: omitted} : {}),
+        ...(pageLayout ? {layout: pageLayout} : {}), ...(pageImages ? {images: pageImages} : {}),
+        sha256: sha, handle: canEdit ? ids.handle : null, ...(target.ref ? {ref: target.ref} : {}),
+        coverage: {disclosed: Math.max(0, reached - target.targetStart), chars: target.targetEnd - target.targetStart, complete: whole},
+        ...(whole && (start !== target.targetStart || until !== target.targetEnd) ? {complete_handle: ids.complete} : {}),
+        ...(comment ? {comment_handle: ids.comment} : {}),
+        ...(!canEdit ? {edit_unavailable: omitted ? 'source_redacted' : 'target_over_edit_budget'} : {}),
+        next_cursor: until < target.targetEnd ? ids.cursor : null, expires_in_ms: LIMITS.lifetimeMs};
+    });
+    if (!page) return failure('result_over_budget', 'refused', {complete: false});
+    end = page.end;
+    const omitted = page.result.omissionCount || 0, {coverage, whole} = coverageAt(end, omitted);
+    const disclosed = !omitted ? handle(start, end, who, {sha256: sha}, ids.handle) : null;
+    const completeHandle = whole && (start !== target.targetStart || end !== target.targetEnd)
+      ? handle(target.targetStart, target.targetEnd, who, {disclosure: 'paged', sha256: sha}, ids.complete) : null;
+    const next = end < target.targetEnd ? mint('cursors', 'read_', {kind: 'read', revision: state.revision,
+      targetStart: target.targetStart, targetEnd: target.targetEnd, offset: end, coverage, ref: target.ref || null}, who, ids.cursor) : null;
+    // Redacted image bytes cannot grant source editing. This typed handle permits only a comment.
+    const commentHandle = page.result.comment_handle ? mint('handles', 'ctx_', {kind: 'image-comment', revision: state.revision,
+      start: target.targetStart, end: target.targetEnd, digest: digest(state.text.slice(target.targetStart, target.targetEnd)), used: false}, who, ids.comment) : null;
     if (target.cursor) delete state.cursors[target.cursor.id];
-    // Redacted image bytes cannot grant source editing. This separate typed handle permits
-    // only an image comment at the fully inspected image occurrence, including inline data URLs.
-    const commentHandle = end === target.targetEnd && !whole && state.docKind === 'markdown' &&
-      imageCommentTarget(state.text, target.targetStart, target.targetEnd)
-      ? mint('handles', 'ctx_', {kind: 'image-comment', revision: state.revision, start: target.targetStart, end: target.targetEnd,
-        digest: digest(state.text.slice(target.targetStart, target.targetEnd)), used: false}, who) : null;
-    base.sha256 = sha256(state.text);
-    remember(state.proposalReads, who, {revision: state.revision, sha256: base.sha256});
-    if (disclosed) disclosed.sha256 = base.sha256;
-    if (completeHandle) completeHandle.sha256 = base.sha256;
-    return { ...base, handle: disclosed?.id || null, ...(target.ref ? { ref: target.ref } : {}),
-      coverage: { disclosed: Math.max(0, reached - target.targetStart), chars: target.targetEnd - target.targetStart, complete: whole },
-      ...(completeHandle ? { complete_handle: completeHandle.id } : {}),
-      ...(commentHandle ? {comment_handle: commentHandle.id} : {}),
-      ...(!disclosed ? { edit_unavailable: projection.omissions.length ? 'source_redacted' : 'target_over_edit_budget' } : {}),
-      next_cursor: next?.id || null, expires_in_ms: LIMITS.lifetimeMs };
+    remember(state.proposalReads, who, {revision: state.revision, sha256: sha});
+    const result = {...page.result, handle: disclosed && state.handles[disclosed.id] ? disclosed.id : null, next_cursor: next?.id || null};
+    if (completeHandle && state.handles[completeHandle.id]) result.complete_handle = completeHandle.id;
+    else delete result.complete_handle;
+    if (commentHandle) result.comment_handle = commentHandle.id; else delete result.comment_handle;
+    return result;
   }
 
   // The notes store is injected; never import notes/model.mjs (the document profile has no Notes).
@@ -4583,7 +4613,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'document.list_comments': result = listComments(input, who); break;
       case 'document.comment': result = await comment(input, who, context); break;
       case 'document.inspect_visual': result = inspectVisual(input, context); break;
-      case 'document.ask_editor': result = askEditor(name, input, who, context); break;
+      case 'document.read_aloud':
+      case 'document.copy':
+      case 'document.open_file':
+      case 'document.install_plugin':
+        result = askEditor('document.ask_editor', {...input, action: EDITOR_TOOL_ACTIONS[name]}, who, context); break;
       case 'document.read_context':
         result = input.return_id !== undefined && input.paintSample ? failure('drawing_object_scope', 'invalid') : input.return_id !== undefined
           ? typeof host.readReturn === 'function' ? await host.readReturn(input) : failure('return_unavailable')
@@ -4704,11 +4738,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
     } else {
       for (const id of Object.keys(state.handles)) if (!beforeHandles.has(id)) delete state.handles[id];
-      finalOutput = ['applied', 'rebased', 'unchanged'].includes(output.outcome) || output.saved
-        ? stamp({ outcome: output.outcome, changeId: output.changeId || null,
-            ...(output.transaction ? { transaction: output.transaction } : {}), ...(output.receipt ? {receipt: output.receipt} : {}), ...(output.drawingPatch ? {drawingPatch: output.drawingPatch} : {}), ...(output.saved ? { saved: true, verified: output.verified === true } : {}),
-            complete: false, omissions: [{ domain: 'receipt', reason: 'result_over_budget' }] })
-        : stamp(failure('result_over_budget', 'refused', { complete: false }));
+      finalOutput = boundedResult(output, {limit: LIMITS.resultBytes + 1, readOnly: descriptor.effect === 'read'});
+      if (output.pending?.kind === 'surface-fact' && finalOutput.outcome !== 'pending') pendingFacts.delete(output.pending.requestId);
     }
     // Recorded for fresh invocations and settled continuations; a plain retry never reaches here.
     return finalize(finalOutput);

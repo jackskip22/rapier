@@ -2,13 +2,13 @@
 import {PREFERENCE_DEFINITIONS} from '../shell/preferences.mjs';
 
 export const EDITOR_LIMITS = Object.freeze({textChars: 4096, preferenceChars: 256, receipts: 32, contextBytes: 4096, cardMs: 300000,
-  issueRows: 8, issueCodeChars: 64, issueMessageChars: 512, previewHead: 360, previewTail: 120});
-export const EDITOR_ISSUE_CODE_PATTERN = '^[a-z]+(?:-[a-z]+)*$';
-export const EDITOR_ACTIONS = Object.freeze(['read_aloud', 'copy', 'open_file', 'export_word', 'export_pdf', 'install_plugin']);
+  previewHead: 360, previewTail: 120});
+// Public tools select one fixed device action. The editor queue is internal and accepts no export work.
+export const EDITOR_TOOL_ACTIONS = Object.freeze({'document.read_aloud': 'read_aloud', 'document.copy': 'copy',
+  'document.open_file': 'open_file', 'document.install_plugin': 'install_plugin'});
+export const EDITOR_ACTIONS = Object.freeze(Object.values(EDITOR_TOOL_ACTIONS));
 export const EDITOR_PLUGINS = Object.freeze(['math', 'mermaid', 'pdf', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque']);
 export const EDITOR_COPY_FORMATS = Object.freeze(['markdown', 'plain', 'formatted', 'complete']);
-export const EDITOR_EXPORT_TYPES = Object.freeze({export_word: Object.freeze({extension: '.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}),
-  export_pdf: Object.freeze({extension: '.pdf', mimeType: 'application/pdf'})});
 export const PREFERENCE_SCHEMAS = Object.freeze(Object.fromEntries(Object.entries(PREFERENCE_DEFINITIONS).map(([name, definition]) => [name,
   Object.freeze({...definition.values ? {type: typeof definition.fallback, enum: [...definition.values]}
     : typeof definition.fallback === 'boolean' ? {type: 'boolean'} : {type: 'string', maxLength: EDITOR_LIMITS.preferenceChars},
@@ -23,18 +23,6 @@ const encoder = new TextEncoder();
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
-const issueCode = new RegExp(EDITOR_ISSUE_CODE_PATTERN);
-const exportIssues = value => {
-  if (!Array.isArray(value) || value.length > EDITOR_LIMITS.issueRows) return null;
-  const rows = [];
-  for (const row of value) {
-    if (!object(row) || typeof row.code !== 'string' || row.code.length > EDITOR_LIMITS.issueCodeChars || !issueCode.test(row.code) ||
-        !['info', 'warning'].includes(row.severity) || !integer(row.count) || typeof row.message !== 'string' ||
-        [...row.message].length > EDITOR_LIMITS.issueMessageChars) return null;
-    rows.push({code: row.code, severity: row.severity, count: row.count, message: row.message});
-  }
-  return rows;
-};
 // What a card shows of the passage the person is asked to let the editor read or copy: all of it when it is short, otherwise its start,
 // the count of characters between and its end, so the card keeps its buttons in reach while the person still sees both ends of what
 // will be read or written. The action itself always takes the whole passage.
@@ -43,7 +31,7 @@ export function editorPreview(text) {
   if (points.length <= head + tail + 60) return {head: points.join(''), omitted: 0, tail: ''};
   return {head: points.slice(0, head).join(''), omitted: points.length - head - tail, tail: points.slice(-tail).join('')};
 }
-export const editorNeedsTap = request => request?.operation === 'document.ask_editor' && ['read_aloud', 'copy', 'open_file', 'install_plugin'].includes(request.action);
+export const editorNeedsTap = request => request?.operation === 'document.ask_editor' && EDITOR_ACTIONS.includes(request.action);
 export const editorFailure = reason => ({outcome: 'refused', reason, receipt: {status: 'unavailable', reason},
   ...(reason === 'editor_unavailable' ? {hint: 'Open this document in Rapier, then ask the editor again.'} : {})});
 
@@ -87,7 +75,7 @@ export function editorRequest(state, operation, args = {}) {
   return {outcome: 'ok', request};
 }
 
-// Return only the receipt: passages and export bytes never enter the invocation journal through a fact.
+// Return only the receipt: passages never enter the invocation journal through a fact.
 export function editorResult(request, fact) {
   if (!object(request) || request.kind !== 'editor' || !object(fact) || fact.kind !== 'editor' ||
       fact.documentId !== request.documentId || fact.revision !== request.revision || fact.operation !== request.operation)
@@ -110,15 +98,9 @@ export function editorResult(request, fact) {
   } else if (receipt.status === 'waiting' || receipt.status === 'declined') {
     if (!editorNeedsTap(request)) return editorFailure('editor_receipt_invalid');
   } else if (receipt.status === 'done') {
-    if (request.operation !== 'document.ask_editor' || EDITOR_EXPORT_TYPES[request.action] && !object(fact.file)) return editorFailure('editor_receipt_invalid');
+    if (!editorNeedsTap(request)) return editorFailure('editor_receipt_invalid');
   }
-  if (fact.file && (receipt.status !== 'done' || !EDITOR_EXPORT_TYPES[request.action])) return editorFailure('editor_receipt_invalid');
-  if (receipt.issues !== undefined) {
-    const issues = exportIssues(receipt.issues);
-    if (receipt.status !== 'done' || request.operation !== 'document.ask_editor' || !own(EDITOR_EXPORT_TYPES, request.action) || !issues)
-      return editorFailure('editor_receipt_invalid');
-    observed.issues = issues;
-  }
+  if (fact.file !== undefined || receipt.issues !== undefined) return editorFailure('editor_receipt_invalid');
   if (receipt.reason !== undefined) {
     if (typeof receipt.reason !== 'string' || !/^[a-z][a-z0-9_]{0,95}$/.test(receipt.reason)) return editorFailure('editor_receipt_invalid');
     observed.reason = receipt.reason;
@@ -142,11 +124,7 @@ export function editorContext(value) {
       Object.assign(result, {value: row.value, previous: row.previous});
       if (row.superseded === true && validPreference(row.preference, row.current)) Object.assign(result, {superseded: true, current: row.current});
     }
-    if (row.issues !== undefined) {
-      const issues = exportIssues(row.issues);
-      if (row.status !== 'done' || !own(EDITOR_EXPORT_TYPES, row.action) || !issues) return [];
-      result.issues = issues;
-    }
+    if (row.issues !== undefined) return [];
     if (typeof row.reason === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(row.reason)) result.reason = row.reason;
     return [result];
   }) : [];
@@ -154,17 +132,4 @@ export function editorContext(value) {
   const size = () => encoder.encode(JSON.stringify({preferences, receipts})).byteLength;
   while (receipts.length && size() > EDITOR_LIMITS.contextBytes) receipts.shift();
   return {preferences, receipts};
-}
-
-export function editorFile(request, file, maxBytes) {
-  const format = EDITOR_EXPORT_TYPES[request?.action];
-  if (!format || !object(file) || file.mimeType !== format.mimeType || typeof file.name !== 'string' ||
-      !file.name.length || [...file.name].length > 256 || /[\\/\u0000-\u001f\u007f]/.test(file.name) ||
-      !file.name.toLowerCase().endsWith(format.extension) || typeof file.data !== 'string' || !file.data.length ||
-      file.data.length > Math.ceil(maxBytes / 3) * 4 || file.data.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.data)) return null;
-  let binary;
-  try {binary = atob(file.data);} catch {return null;}
-  if (!binary.length || binary.length > maxBytes || btoa(binary) !== file.data ||
-      (request.action === 'export_pdf' ? !binary.startsWith('%PDF-') : !binary.startsWith('PK\x03\x04'))) return null;
-  return {name: file.name, mimeType: file.mimeType, bytes: Uint8Array.from(binary, char => char.charCodeAt(0))};
 }

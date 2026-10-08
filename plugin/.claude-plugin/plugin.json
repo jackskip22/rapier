@@ -1,8 +1,8 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.81+skills.fbc2ae980b0de0517c888c4b1e89365f072ab253d465d356ba11500241a2e480",
-  "description": "Rapier is a fast Markdown editor that Claude works in beside you, on your phone or in any browser. Ask for a document, a plan, a diagram, a drawing or a painting and Claude puts it on a page you can read and edit while it works. Claude reads only the passage it needs and changes only that. You keep or drop each change where it lands, and your own typing always comes first. You set the pace: FREE lets Claude edit as it goes, CHECK pauses it until you have seen its last change, ASK makes every edit a proposal. Claude has every control you have: it draws SVG diagrams you can move by hand, gives a canvas an aurora or topo sky and turns the dials, paints with real brushes, writes Mermaid flowcharts as text, and reads the shape of a document or a code file before its words. Everything is plain Markdown with its pictures inside, so you can save it, share it or open it in any Markdown app. Export as Word, PDF or a web page that works offline. No account, no ads, no tracking. What you share with Claude stays in a private workspace that expires after 30 idle days.",
+  "version": "1.1.82+skills.0462f3a217eaceb907c32b3bc3bf15a1b55f5ca3571d64ac9708440f14b31b5a",
+  "description": "Rapier is a fast Markdown editor for writing, drawing and revision with your assistant. Create drafts, plans and illustrated guides you can edit by hand, revisit and keep. The assistant reads current passages or drawing objects and changes exactly what it inspected. Your typing comes first. Review attributed changes, compare versions, and undo an assistant change while preserving later human edits. Choose FREE, CHECK or ASK to control how changes land. Move SVG diagram shapes, paint with brushes, and keep Mermaid diagrams as editable Markdown source. Text, pictures and drawings travel in one Markdown file. Export exact Markdown, an offline editor, plain text or a rendered web page; an open editor also supplies Word and PDF. Downloaded files remain independent of the hosted workspace. No Rapier account is needed. Shared documents and working history stay in a private workspace that expires after 30 idle days.",
   "author": {
     "name": "Jack Skipworth",
     "url": "https://rapier.website"
@@ -15,6 +15,8 @@
     "editor",
     "document",
     "offline",
+    "portable",
+    "collaboration",
     "single-file",
     "self-contained",
     "agent",

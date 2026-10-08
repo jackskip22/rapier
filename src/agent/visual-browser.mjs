@@ -23,9 +23,41 @@ async function loadImage(window, url, signal) {
   return image;
 }
 
+// Re-encode the same complete observation at a smaller resolution until both the image and
+// its serialized door envelope fit. PNG keeps transparent drawing pixels and has one validator.
+function encodeCanvas(canvas, check, imageBudget) {
+  const originalWidth = canvas.width, originalHeight = canvas.height;
+  let width = originalWidth, height = originalHeight, surface = canvas, resized;
+  try {
+    for (;;) {
+      check();
+      const url = surface.toDataURL('image/png');
+      check();
+      if (!url.startsWith('data:image/png;base64,')) throw error('visual_render_unavailable');
+      const data = url.slice('data:image/png;base64,'.length), image = {mimeType: 'image/png', data, width, height};
+      const decodedBytes = data.length / 4 * 3 - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0);
+      const maxChars = Math.min(Math.floor(VISUAL_LIMITS.imageBytes / 3) * 4,
+        imageBudget ? imageBudget(image) : Infinity);
+      if (decodedBytes <= VISUAL_LIMITS.imageBytes && data.length <= maxChars) return image;
+      if (!(maxChars > 0) || width === 1 && height === 1) throw error('visual_too_large');
+      const scale = Math.min(0.85, Math.sqrt(maxChars / data.length) * 0.9);
+      width = Math.max(1, Math.floor(width * scale)); height = Math.max(1, Math.floor(height * scale));
+      resized ||= canvas.ownerDocument.createElement('canvas');
+      resized.width = width; resized.height = height;
+      const context = resized.getContext('2d');
+      if (!context) throw error('visual_render_unavailable');
+      context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
+      context.drawImage(canvas, 0, 0, originalWidth, originalHeight, 0, 0, width, height);
+      surface = resized;
+    }
+  } finally {
+    if (resized) { resized.width = 0; resized.height = 0; }
+  }
+}
+
 // The settled recipe is a read snapshot. Rendering it neither finishes a gesture nor touches
 // Draw's live DOM, raster stores or history. The normal drawing owner supplies all SVG content.
-export async function captureDrawing({recipe, clip, signal, current}) {
+export async function captureDrawing({recipe, clip, signal, current, imageBudget}) {
   const document = globalThis.document, window = document?.defaultView;
   if (!document || !window) throw error('visual_render_unavailable');
   if (!clip || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(clip[key])) ||
@@ -94,12 +126,7 @@ export async function captureDrawing({recipe, clip, signal, current}) {
     const context = canvas.getContext('2d');
     if (!context) throw error('visual_render_unavailable');
     context.drawImage(image, 0, 0);
-    const url = canvas.toDataURL('image/png');
-    check();
-    if (!url.startsWith('data:image/png;base64,')) throw error('visual_render_unavailable');
-    const data = url.slice('data:image/png;base64,'.length);
-    if (data.length > Math.ceil(VISUAL_LIMITS.imageBytes / 3) * 4) throw error('visual_too_large');
-    return {mimeType: 'image/png', data, width, height};
+    return encodeCanvas(canvas, check, imageBudget);
   } catch (failure) {
     if (signal?.aborted) throw error('cancelled');
     if (controller.signal.aborted) throw error('visual_capture_expired');
@@ -112,10 +139,15 @@ export async function captureDrawing({recipe, clip, signal, current}) {
   }
 }
 
-export async function captureVisual({root, clip, signal, current}) {
+export async function captureVisual({root, clip, signal, current, imageBudget}) {
   const document = root?.ownerDocument, window = document?.defaultView;
   if (!document || !window || !root.isConnected) throw error('visual_render_unavailable');
-  const width = Math.ceil(clip?.width), height = Math.ceil(clip?.height);
+  const sourceWidth = Math.ceil(clip?.width), sourceHeight = Math.ceil(clip?.height);
+  if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1 ||
+      !Number.isFinite(clip?.x) || !Number.isFinite(clip?.y)) throw error('visual_target_unavailable');
+  const captureScale = Math.min(1, VISUAL_LIMITS.edge / sourceWidth, VISUAL_LIMITS.edge / sourceHeight,
+    Math.sqrt(VISUAL_LIMITS.pixels / (sourceWidth * sourceHeight)));
+  const width = Math.max(1, Math.floor(sourceWidth * captureScale)), height = Math.max(1, Math.floor(sourceHeight * captureScale));
   if (!visualDimensions(width, height)) throw error('visual_too_large');
   const controller = new AbortController(), cancelled = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', cancelled, {once: true});
@@ -185,8 +217,10 @@ export async function captureVisual({root, clip, signal, current}) {
     const bounds = source.getBoundingClientRect();
     const naturalWidth = source.naturalWidth || source.width, naturalHeight = source.naturalHeight || source.height;
     if (!naturalWidth || !naturalHeight) throw error('visual_resources_unavailable');
-    const scale = Math.max(bounds.width / naturalWidth, bounds.height / naturalHeight);
-    const w = Math.max(1, Math.ceil(naturalWidth * scale)), h = Math.max(1, Math.ceil(naturalHeight * scale));
+    const scale = Math.min(Math.max(bounds.width / naturalWidth, bounds.height / naturalHeight) * captureScale,
+      VISUAL_LIMITS.edge / naturalWidth, VISUAL_LIMITS.edge / naturalHeight,
+      Math.sqrt(VISUAL_LIMITS.pixels / (naturalWidth * naturalHeight)));
+    const w = Math.max(1, Math.floor(naturalWidth * scale)), h = Math.max(1, Math.floor(naturalHeight * scale));
     if (!visualDimensions(w, h)) throw error('visual_too_large');
     // Overlapping picture layers must not multiply capture memory without a bound. This admits
     // sixteen million source pixels (64 MiB RGBA); the separate output remains four million.
@@ -208,7 +242,7 @@ export async function captureVisual({root, clip, signal, current}) {
   };
   const screenRoot = root.getBoundingClientRect();
   const screenClip = {left: screenRoot.left + clip.x - root.scrollLeft, top: screenRoot.top + clip.y - root.scrollTop,
-    right: screenRoot.left + clip.x - root.scrollLeft + width, bottom: screenRoot.top + clip.y - root.scrollTop + height};
+    right: screenRoot.left + clip.x - root.scrollLeft + sourceWidth, bottom: screenRoot.top + clip.y - root.scrollTop + sourceHeight};
   const cloneNode = async (source, top = false) => {
     check();
     if (source.nodeType === 3) return document.createTextNode(charge(source.nodeValue || ''));
@@ -301,7 +335,7 @@ export async function captureVisual({root, clip, signal, current}) {
     clone.setAttribute('xmlns', XHTML);
     const svg = document.createElementNS(SVG, 'svg');
     svg.setAttribute('xmlns', SVG); svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height));
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('viewBox', `0 0 ${sourceWidth} ${sourceHeight}`);
     const definitions = document.createElementNS(SVG, 'defs'), copied = new Set();
     for (const [url, target] of references) {
       if (copied.has(url)) continue;
@@ -332,12 +366,7 @@ export async function captureVisual({root, clip, signal, current}) {
     context.fillStyle = background ? window.getComputedStyle(background).backgroundColor : '#fff';
     context.fillRect(0, 0, width, height);
     context.drawImage(image, 0, 0);
-    const url = canvas.toDataURL('image/png');
-    check();
-    if (!url.startsWith('data:image/png;base64,')) throw error('visual_render_unavailable');
-    const data = url.slice('data:image/png;base64,'.length);
-    if (data.length > Math.ceil(VISUAL_LIMITS.imageBytes / 3) * 4) throw error('visual_too_large');
-    return {mimeType: 'image/png', data, width, height};
+    return encodeCanvas(canvas, check, imageBudget);
   } catch (failure) {
     if (signal?.aborted) throw error('cancelled');
     if (controller.signal.aborted) throw error('visual_capture_expired');

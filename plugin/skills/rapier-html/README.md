@@ -3,6 +3,9 @@
 Give a person a document they can read, edit and keep: one command writes one HTML file that is the whole
 editor, offline, with the document inside.
 
+Use it for a plan to rearrange, an illustrated guide to annotate, a draft to continue writing, or a revision
+to review. Text and drawings stay editable, and the file remains usable independently of a hosted workspace.
+
 - The page writes, draws and paints, saves Markdown, exports a web page and prints, with no account and nothing
   fetched to open, edit or save.
 - `--return` adds a one-use Send back address from the agent door: the person edits offline, presses Send back,
@@ -14,17 +17,22 @@ editor, offline, with the document inside.
 Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.1.81 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.1.81 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.1.81 notes.md --view notes             # opens the Notes library
-npx -- rapier-html@1.1.81 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.1.81 proposal.md --base original.md    # opens on the diff of a proposed change
-npx -- rapier-html@1.1.81 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.1.81 notes.md out.html                 # a named output
-npm install rapier-html@1.1.81                              # as a library: wrap, unwrap
+npx -- rapier-html@1.1.82 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.1.82 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.1.82 notes.md --view notes             # opens the Notes library
+npx -- rapier-html@1.1.82 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.1.82 proposal.md --base original.md    # opens on the diff of a proposed change
+npx -- rapier-html@1.1.82 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.1.82 notes.md out.html                 # a named output
+npm install rapier-html@1.1.82                              # as a library: wrap, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
+
+For live shared editing, open the document through Rapier's MCP tools. Read the person's current text or
+drawing before revising it, show the attributed changes, and export Markdown or an offline editor when the
+result needs an independent copy. Send back returns an edited offline copy for inspection and review alongside
+the hosted document.
 
 The page is the whole editor: write, draw and paint, the Notes library, Find and replace, Undo, a
 source view of the exact bytes; save to the device, share the page on, export Markdown or a web page, print; all

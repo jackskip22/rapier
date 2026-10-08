@@ -5,17 +5,18 @@ pictures, Notes and the diff of a change, on a phone or any browser. The offline
 connector keeps shared work in a hosted workspace. Neither requires a Rapier account. Long documents open and scroll
 fast. An assistant gets two things.
 
-**A file to hand a person.** `npx rapier-html@1.1.81 notes.md` makes one HTML file that is the whole editor with the
-document inside. They open it with one click, edit, draw and paint in it, review a proposed change as a diff, save it
-and send it back exactly.
+**A file to hand a person.** `npx rapier-html@1.1.82 notes.md` makes one HTML file that is the whole editor with the
+document inside. They open it in a browser, edit, draw and paint in it, review a proposed change as a diff and
+save it. An optional one-use Send back address returns their edited copy for the assistant to read.
 
 **An editor to work in beside them.** Through the MCP door (`https://mcp.rapier.website/mcp`, no account) an assistant reads a document
-by structure and changes the passage or drawing object it inspected; the person sees each change land, keeps or drops
-it, and can undo an agent's change without losing their own. Diagrams are drawn by recipe: name the boxes and arrows,
+by structure and changes the passage or drawing object it inspected. Changes apply directly or wait for review
+under the person's controls. Agent Undo preserves later human work. Diagrams are drawn by recipe: name the boxes and arrows,
 and Rapier places and routes them.
 
-The hosted tools export Markdown or an offline HTML page through download links that expire after 24 hours. Word and
-PDF export, and device Notes, are available in the full editor. The hosted tools cannot access device Notes.
+The hosted tools export exact Markdown, an offline editor, plain text or a rendered web page. An open editor
+also supplies Word and PDF. Export links last up to 24 hours; hosted workspaces expire after 30 idle days.
+Download the file to keep an independent copy. Notes access uses the configured local store or enrolled endpoint.
 
 Portable comment threads attach to passages, pictures and drawing objects. An explicit Ask action sends a
 request; ordinary comments remain document content. Visual inspection returns the current rendered region

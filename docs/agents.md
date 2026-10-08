@@ -1,10 +1,12 @@
 # Work with a document in Rapier
 
-Rapier is a document the person can read, edit and keep, that you edit beside them: one offline HTML page is
-the whole editor, you change only the passage you inspected, and the person keeps or drops each change. Use it
-when the person needs a document, a plan, a diagram, a draft or a revision they can open, change and keep. Do
-not wait for them to name Rapier, diagram or diff. Keep short answers in chat and honour a requested format or
-tool.
+Rapier is a shared Markdown editor for drafts, plans, guides and drawings that the person and agent can
+continue editing together. Read current source, revise inspected passages or objects, and review attributed
+changes. Use the document already open for follow-up work. Honor the requested format, destination and tool;
+keep short answers in chat.
+
+Keep an independent copy with `document.export`: exact Markdown, or one offline HTML file containing the
+whole editor and document. The downloaded file remains usable after the hosted workspace expires.
 
 Start with useful content: a system and its failure paths, a movable garden plan, or a story map. Invite
 one relevant next action: annotate, choose, move, revise or ask beneath the work. Both the person and the
@@ -81,6 +83,17 @@ Before finishing, use inspected edits to update it or, if none exists, add one a
 | Continue beside the person's annotations | Current selection/focus and a fresh passage or drawing read; keep their words and answer in place |
 | Keep working after the conversation | `rapier-html` with the source inside; optionally a one-use return address |
 
+For example: create an illustrated garden plan, add a native drawing with named beds, and let the person
+move or annotate those beds. Read the changed drawing before revising the planting notes. Propose the
+revision, let the person keep or drop it, and export the plan as Markdown or an offline editor. The same
+document carries the writing and drawing through creation, direct editing, review and continued offline use.
+
+Useful requests:
+
+- "Create a garden plan in Rapier with a diagram I can rearrange, and keep it as one Markdown file."
+- "Revise the introduction in my open draft and show the exact changes for me to keep or undo."
+- "Update the guide around my changes to the diagram, then give me an offline editable copy."
+
 Rapier makes two kinds of diagram, kept apart. `document.draw` makes a native SVG drawing in the document:
 figures the person can move and edit, a spatial sketch or a brush painting. A Mermaid flowchart is a
 `mermaid` fence written into the Markdown source with `document.apply_edits`; Rapier renders it and keeps
@@ -118,7 +131,7 @@ resources, unavailable regions or concurrent edits produce a refusal. A visual o
 handle; reread source before a change. Image bytes expire after the response and a later replay asks for a
 fresh observation. A headless workspace cannot supply rendered pixels.
 
-**The editor's own controls.** The open editor's device controls reach an agent through two tools, answered by the
+**The editor's own controls.** The open editor's device controls use separate tools, answered by the
 open editor with a receipt. For a device control, `document.set_view` takes a `preference` (theme, accent, text size, headings, layout,
 the code view, the pen, the read-aloud button, the Notes view and the other controls the tool's schema lists) and
 a `value` from that control's own domain. The editor applies it at once and answers `applied` with the
@@ -127,13 +140,14 @@ person's later choice of it wins and is reported in `get_context` (`editor.recei
 `current`). Read-only mode, Notes skills and assets are the person's alone: an agent's request for any of them is refused
 (`human_authority_required`) on every door, and a host that fixes the theme or accent refuses a change of it
 (`host_owns_preference`).
-`document.ask_editor` asks for what needs the person's device. Read aloud (`text`, or a `context_handle` for a
-passage you inspected), `copy` (`format` markdown, plain, formatted, or a complete excerpt of an inspected
-passage), opening a device file and installing a named plug-in each show the person one card and act only on
+`document.read_aloud` takes `text` or a `context_handle` for an inspected passage. `document.copy` takes the
+same passage input and a `format`: markdown, plain, formatted, or a complete excerpt of an inspected passage.
+`document.open_file` opens the device file picker; `document.install_plugin` installs one named Rapier add-on.
+Each shows the person one card and acts only on
 their tap; a passage over 540 characters shows its first 360, the count between and its last 120, and the whole
-passage is what is read or copied. The first answer is `waiting`, and `get_context` later reports `done` or `declined`. `export_word`
-and `export_pdf` need no tap: the editor builds the file from the exact document and the receipt carries a file
-link as `document.export` does, with any conversion notices. An editor that is absent, hidden or on another document
+passage is what is read or copied. The first answer is `waiting`, and `get_context` later reports `done` or `declined`.
+`document.export` with `format: "docx"` or `"pdf"` needs no tap: the open editor builds the file from the exact
+document and returns its file link with any conversion notices. An editor that is absent, hidden or on another document
 answers `unavailable` with its reason, `editor_unavailable` when none is open. `get_context.editor` holds the
 editor's current preferences and its latest receipts.
 
@@ -377,7 +391,10 @@ workspace deletion have the distinct effects listed below.
 | `document.list_comments` | Read | Reads anchored discussions and their status. |
 | `document.inspect_visual` | Read | Requests a revision-bound observation from the connected editor. |
 | `document.set_view` | Write | Requests the formatted document, exact source or Notes cards at idle, or sets a device preference and returns its previous value for Undo; the person's later choice wins. |
-| `document.ask_editor` | Write | Asks the open editor to read a passage aloud, copy it, open a device file or install a plug-in on the person's tap, or to export Word or PDF without one. |
+| `document.read_aloud` | Write | Queues a passage for the open editor to read aloud on the person's tap. |
+| `document.copy` | Write | Queues a passage to replace the device clipboard on the person's tap. |
+| `document.open_file` | Sensitive write | Opens the device file picker on the person's tap; the selected file replaces the working document. |
+| `document.install_plugin` | Write | Installs a named Rapier add-on from the supported catalog on the person's tap. |
 | `document.apply_edits` | Write | Applies inspected text edits in one transaction. |
 | `document.draw` | Write | Adds or changes editable drawings and brush paintings. |
 | `document.comment` | Write | Adds discussion messages or changes a thread's status. |

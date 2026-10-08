@@ -36,6 +36,10 @@ edit, only add to, or must leave alone ([Will/1](docs/will.md)). [llms.txt](site
 [AGENT-TOOLS.json](site/AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the [skills](plugin/skills/README.md) say the
 rest.
 
+Create a plan with an editable diagram, move its objects by hand, then ask the agent to revise the same
+document around those changes. Review the revision and keep exact Markdown or an offline editor through
+`document.export`. The downloaded file stays editable independently of the hosted workspace.
+
 ```sh
 claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier
 npx rapier-html notes.md                         # one offline page: the editor with the document inside

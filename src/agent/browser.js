@@ -1,5 +1,5 @@
 (() => {
-  const {createKernel, createState, measurementsRequired, receiptStructureEligible, receiptStructureFact, exportFilename, exportFidelity} = globalThis.RapierKernel;
+  const {createKernel, createState, measurementsRequired, receiptStructureEligible, receiptStructureFact, exportFilename, exportFidelity, PAGE_RESULT_BYTES, resultBytes, boundedResult} = globalThis.RapierKernel;
   const {resolveCaller} = globalThis.RapierDoorIdentity;
   const {TOOLS, PAGE_TOOLS, MAX_EXPORT_BYTES, getTool, annotations, validateInput} = globalThis.RapierAgentCatalog;
   const editorProtocol = globalThis.RapierAgentEditor;
@@ -519,8 +519,6 @@
     if (prior) {
       if (prior.signature !== signature) return editorFact(request, 'unavailable', {reason: 'editor_request_changed'});
       if (options.onReceipt) prior.callbacks.add(options.onReceipt);
-      if (editorProtocol.EDITOR_EXPORT_TYPES[request.action] && prior.fact?.receipt.status === 'done' && !prior.fact.file)
-        return editorFact(request, 'unavailable', {reason: 'export_expired'});
       return prior.fact || editorFact(request, 'unavailable', {reason: 'editor_busy'});
     }
     const stamp = expected || {expectedDocumentId: request.documentId, expectedRevision: request.revision,
@@ -537,8 +535,7 @@
     while (editorRequests.size > editorProtocol.EDITOR_LIMITS.receipts) {
       const entry = [...editorRequests].find(([, row]) => row !== record && row !== editorCard);
       if (!entry) break;
-      if (entry[1].url) URL.revokeObjectURL(entry[1].url);
-      clearTimeout(entry[1].fileTimer); editorRequests.delete(entry[0]);
+      editorRequests.delete(entry[0]);
     }
     if (request.operation === 'document.set_view') {
       if (_rapierEmbed.active && ((request.preference === 'theme' && _rapierEmbed.theme) ||
@@ -563,36 +560,7 @@
       editorShowCard(record);
       return fact;
     }
-    try {
-      const artifact = await _rapierBuildEditorExport(request.action, record.expected,
-        {signal: request.signal, current: () => editorCurrent(record), maxBytes: MAX_EXPORT_BYTES});
-      if (!editorCurrent(record)) return editorPublish(record, refused('document_changed'), false);
-      if (!(artifact.bytes instanceof Uint8Array) || artifact.bytes.byteLength > MAX_EXPORT_BYTES) return editorPublish(record, refused('export_too_large'), false);
-      let binary = '';
-      for (let offset = 0; offset < artifact.bytes.length; offset += 32768) binary += String.fromCharCode(...artifact.bytes.subarray(offset, offset + 32768));
-      const file = {name: artifact.filename, mimeType: artifact.mimeType, data: btoa(binary)};
-      if (!editorProtocol.editorFile(request, file, MAX_EXPORT_BYTES)) return editorPublish(record, refused('export_invalid'), false);
-      // Bytes live only at the adapter boundary, outside receipts and the invocation journal.
-      // Retain one export for a bounded retry, releasing the previous page URL and payload.
-      for (const prior of editorRequests.values()) if (prior.fact?.file) {
-        if (prior.url) URL.revokeObjectURL(prior.url);
-        clearTimeout(prior.fileTimer); prior.url = null;
-        const {file: released, ...retained} = prior.fact;
-        prior.fact = retained;
-      }
-      record.fileTimer = setTimeout(() => {
-        if (record.url) URL.revokeObjectURL(record.url);
-        record.url = null;
-        const {file: released, ...retained} = record.fact;
-        record.fact = retained;
-      }, editorProtocol.EDITOR_LIMITS.cardMs);
-      return editorPublish(record, {...editorFact(request, 'done', artifact.issues?.length ? {issues: artifact.issues} : {}), file}, false);
-    } catch (error) {
-      const reason = request.signal?.aborted ? 'cancelled' : /^WILL LOST/.test(String(error?.message)) ? 'will_lost' :
-        ['document_changed', 'stale_context'].includes(error?.code) ? 'document_changed' :
-        typeof error?.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) ? error.code : 'export_unavailable';
-      return editorPublish(record, refused(reason), false);
-    }
+    return editorPublish(record, refused('editor_action_invalid'), false);
   }
 
   function capturePlace() {
@@ -1468,6 +1436,21 @@
 
   // Pixels are an observation of exactly this source, never a source handle. Apps supplies its
   // already-verified local snapshot separately because local and server revision counters differ.
+  function visualImageBudget(result, request) {
+    const {pending, reason, ...base} = result;
+    return image => {
+      const bytes = image.data.length / 4 * 3 - (image.data.endsWith('==') ? 2 : image.data.endsWith('=') ? 1 : 0);
+      const output = {...base, outcome: 'ok', representation: 'visual', observation: {
+        documentId: request.documentId, revision: request.revision, scope: request.scope,
+        mimeType: image.mimeType, width: image.width, height: image.height, bytes,
+        ...(request.drawing ? {drawing: globalThis.RapierAgentVisual.visualDrawingIdentity(request.drawing)} : {}),
+        ...(request.sourceRange ? {sourceRange: {...request.sourceRange}} : {})},
+        content: [{type: 'image', mimeType: image.mimeType, data: ''}]};
+      // Base64 is ASCII without JSON escapes, so each content character costs exactly one byte.
+      return PAGE_RESULT_BYTES - 1 - resultBytes(output);
+    };
+  }
+
   async function inspectDrawingVisual(request, expected, drawing) {
     const visual = globalThis.RapierAgentVisual;
     const identity = {documentId: request.documentId, revision: request.revision, scope: request.scope,
@@ -1499,7 +1482,7 @@
         selected: request.scope === 'selection' ? next?.selectedObjects : null});
     };
     try {
-      const image = await globalThis.RapierVisualCapture.captureDrawing({recipe: drawing.recipe, clip, signal: controller.signal, current});
+      const image = await globalThis.RapierVisualCapture.captureDrawing({recipe: drawing.recipe, clip, signal: controller.signal, current, imageBudget: request.imageBudget});
       return current() ? {...identity, outcome: 'ok', image} : refuse('visual_target_changed');
     } catch (error) {
       return refuse(request.signal?.aborted ? 'cancelled' : error?.code || 'visual_render_unavailable');
@@ -1578,7 +1561,7 @@
       Number(rapier.revision.generation) === generation && _rapierSourceText() === text &&
       geometry.every((value, index) => value === [root.scrollLeft, root.scrollTop, root.clientWidth, root.clientHeight][index]);
     try {
-      const image = await globalThis.RapierVisualCapture.captureVisual({root, clip, signal: controller.signal, current});
+      const image = await globalThis.RapierVisualCapture.captureVisual({root, clip, signal: controller.signal, current, imageBudget: request.imageBudget});
       if (!current()) return refuse('document_changed');
       return {...identity, outcome: 'ok', image, ...(target ? {sourceRange: {start: target.start, end: target.end}} : {})};
     } catch (error) {
@@ -1862,7 +1845,7 @@
     // outside the invocation boundary, because those are this door's facts, not a kernel outcome.
     if (tool && TOOLS.includes(tool)) {
       const reason = admission();
-      if (reason) return name === 'document.set_view' || name === 'document.ask_editor'
+      if (reason) return name === 'document.set_view' || editorProtocol.EDITOR_TOOL_ACTIONS[name]
         ? editorProtocol.editorFailure(reason === 'embed_agent_not_granted' ? reason : 'editor_unavailable') : {outcome: 'refused', reason};
     }
     // resolveCaller is the one caller-resolution and invocation-identity implementation every door
@@ -1917,7 +1900,9 @@
             continue;
           }
           if (result.pending.requirements?.kind === 'visual') {
-            visualFact = await inspectVisual({...result.pending.requirements, signal: who.signal});
+            const requirements = result.pending.requirements;
+            visualFact = await inspectVisual({...requirements, signal: who.signal,
+              ...(who.transport === 'webmcp' ? {imageBudget: visualImageBudget(result, requirements)} : {})});
             result = await kernel.invoke(name, args, {...who, continues: result.pending.requestId, world: {visual: visualFact}});
             continue;
           }
@@ -1956,18 +1941,13 @@
           ...(result.observation.sourceRange ? {sourceRange: result.observation.sourceRange} : {})};
         // A read receipt may replay after its pixels were released. Re-observe that exact source
         // and target; never return metadata alone as though an image had reached the caller.
-        visualFact ||= await inspectVisual({...requirements, signal: who.signal});
+        visualFact ||= await inspectVisual({...requirements, signal: who.signal,
+          ...(who.transport === 'webmcp' ? {imageBudget: visualImageBudget(result, requirements)} : {})});
         const validated = globalThis.RapierAgentVisual.visualResult(requirements, visualFact);
         if (validated.outcome !== 'ok') return {...result, ...validated, observation: undefined};
         return {...result, ...validated, content: [{type: 'image', mimeType: 'image/png', data: visualFact.image.data}]};
       }
-      if (result.receipt?.status === 'done' && editorProtocol.EDITOR_EXPORT_TYPES[args.action]) {
-        const record = editorRequests.get(result.receipt.id);
-        const file = record?.fact?.file;
-        if (!file) return {...editorProtocol.editorFailure('export_expired')};
-        record.url ||= URL.createObjectURL(new Blob([editorProtocol.editorFile(record.request, file, MAX_EXPORT_BYTES).bytes], {type: file.mimeType}));
-        return {...result, content: [{type: 'resource_link', name: file.name, mimeType: file.mimeType, uri: record.url}]};
-      }
+
       return result;
     };
     const result = await (who.actor === 'agent'
@@ -2047,8 +2027,9 @@
             for (const signal of signals) signal.addEventListener('abort', cancel, {once: true});
             if (signals.some(signal => signal.aborted)) cancel();
             try {
-              return await invoke(tool.name, args, {actor: 'agent', principal: 'webmcp', transport: 'webmcp',
+              const result = await invoke(tool.name, args, {actor: 'agent', principal: 'webmcp', transport: 'webmcp',
                 requestId: crypto.randomUUID(), signal: tool.name === 'document.set_view' ? AbortSignal.any(signals) : flight.signal});
+              return boundedResult(result, {readOnly: tool.effect === 'read'});
             } finally {
               for (const signal of signals) signal.removeEventListener('abort', cancel);
             }

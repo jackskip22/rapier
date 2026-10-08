@@ -163,7 +163,8 @@ cancellation still cannot make the helper start unbounded parallel writes. See t
 
 ## 2.3 Editor preferences and device actions
 
-The `agent` grant admits `document.set_view` and `document.ask_editor` through the existing agent door. They
+The `agent` grant admits `document.set_view`, `document.read_aloud`, `document.copy`, `document.open_file`
+and `document.install_plugin` through the existing agent door. They
 add no port command and cannot change the host's capabilities, accepted settings, document identity or revision.
 An absent, disconnected or unready editor returns `editor_unavailable` with a hint to open the editor.
 
@@ -176,14 +177,15 @@ of that preference: the request cannot clear the host override or rewrite the fr
 controls retain their existing ability to take over from the host. A later human preference change takes
 precedence and is reported by `document.get_context`.
 
-`document.ask_editor` requests read aloud of a passage, copying, opening a device file, installing a plug-in, or
-exporting Word or PDF. Clipboard, file-picker, read-aloud and plug-in requests each show one card and wait for
+`document.read_aloud` requests spoken playback of a passage, `document.copy` copies a passage in its chosen
+format, `document.open_file` requests the device file picker, and `document.install_plugin` installs one add-on
+from the supported Rapier catalog. Each request shows one card and waits for
 the person's tap. Dismissal produces a declined receipt. The request does not grant clipboard access, user
 activation, audio permission, download permission or a feature that the host excluded. A denied feature or
 unavailable device capability produces an unavailable receipt with its reason; no action is reported as done
 merely because a card was shown.
 
-Word and PDF byte exports require no tap. The editor builds the file from the request's captured document and
+`document.export` supplies Word or PDF with `format: "docx"` or `"pdf"`, without a tap. The open editor builds the file from the request's captured document and
 hands the bytes to the export store for a download receipt. A changed document invalidates an unfinished
 export, and a print dialog never stands in for the file. Word uses the same native OOXML writer as the
 document's Export control, so the bytes are the Export control's own. Conversion notices travel with the
