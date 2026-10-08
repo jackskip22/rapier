@@ -139,7 +139,7 @@ const HINTS = {
   human_review_required: 'The person\'s review is required before this applies; wait_for_user or check get_context, do not resend.',
   review_pending: 'One review at a time; wait for the pending one to settle.',
   editor_not_present: 'No editor is open on this workspace: get_context reports headless, so deliver the page through a file surface or ask the person to open Rapier.',
-  editor_unavailable: 'Open the document in Rapier for Word or PDF. Without an editor, export markdown, html, txt or page.',
+  editor_unavailable: 'Open the paired Rapier editor and keep it visible for painting, sampling, visual inspection, Word or PDF. Without an editor, export markdown, html, txt or page.',
   export_render_limit: 'This document is too large for the worker to write as txt or page; export markdown or html, or open it in Rapier for Word or PDF.',
   export_render_unavailable: 'This host could not write the txt or page file; export markdown or html instead.',
   presentation_already_pending: 'A reveal is already pending; check its view status in get_context before another.',
@@ -160,6 +160,7 @@ const HINTS = {
   comment_text_invalid: 'Send a nonempty comment of at most 4096 UTF-8 bytes.',
   comment_anchor_invalid: 'Read the exact passage or drawing again, then use that handle and an existing object id.',
   comments_appendix_unavailable: 'Finish the unclosed Markdown block at the end of the document before adding a comment.',
+  comments_notes_changed: 'The portable review notes changed. Keep those source edits; the old thread record cannot safely update them.',
 };
 // The figure kinds draw/core.mjs admits (_rapierDrawFigureFault's kind check), answered beside a refused figures list.
 const FIGURE_KINDS = Object.freeze(['rect', 'ellipse', 'circle', 'triangle', 'diamond', 'hexagon', 'cylinder', 'subroutine', 'asymmetric', 'text', 'line', 'arrow', 'group', 'paint']);
@@ -1155,7 +1156,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         try {
           const candidate = appendAssetText(transformSplices(state.text, [{ ...splice, pos }]), change.asset).source;
           const occurrence = pos + splice.inserted.length - splice.inserted.trimStart().length;
-          placed = drawingPlacement(candidate, occurrence, splice.inserted.trim(), change.asset.id).placed;
+          placed = drawingPlacement(candidate, occurrence, splice.inserted.trim(), change.asset.id, true).placed;
         } catch {}
         if (!placed) { change.status = 'stale'; change.reason = 'draw_placement_unavailable'; continue; }
       }
@@ -1424,9 +1425,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       surfaceRecipeDigest: value.recipeDigest || sha256(canonicalJson(value.recipe))} : {};
   }
 
-  function drawBindingFailure(held, range) {
+  function drawBindingFailure(held, range, live) {
     if (!held.drawSession) return null;
-    const live = drawingFor(range.start, range.end, held.assetLabel);
+    if (live === undefined) live = drawingFor(range.start, range.end, held.assetLabel);
     return !live || live.session !== held.drawSession || live.surfaceGeneration !== held.surfaceGeneration ||
       (live.recipeDigest || (live.recipe && sha256(canonicalJson(live.recipe)))) !== held.surfaceRecipeDigest
       ? failure('draw_surface_changed', 'conflict') : null;
@@ -1852,6 +1853,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         state.journal = []; state.history.earliestRevision = state.revision; state.history.complete = false;
         state.history.unknownReviewRevision = Math.max(state.history.unknownReviewRevision, state.revision);
         state.compare = null; outlineCache = null;
+        // An authoritative replacement may reuse a revision; document cursors still belong to its former source.
+        for (const [id, cursor] of Object.entries(state.cursors)) if (own(cursor, 'revision')) delete state.cursors[id];
         for (const row of Object.values(state.humanContexts)) { row.selection = null; row.focus = null; }
       } else {
         appendCommit(incoming.text, inferred.removed || inferred.inserted ? [inferred] : [], who,
@@ -1981,14 +1984,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   // A recipe handle holds no recipe of the document's. Its digest binds the definition the caller was shown, so a re-read and an edit read
   // the recipe again from that definition, pixels and histories included: those bytes are the document's, and no handle's size follows them.
   // Its budget is the text the caller may edit: the disclosed recipe, or the named object alone for an object-scoped handle.
-  // A read hands in the text it has just paged; create and edit, which return no text, measure the definition they have just
+  // A read hands in its completed disclosure and full size; create and edit, which return no text, measure the definition they have just
   // written. The one recipe a handle keeps is the open canvas's, when the read came from the surface (a binding): the document does not
   // hold that recipe, and an edit is laid against what the caller saw of it (drawEdit). The page's kernel alone has a surface.
-  function drawHandle(start, end, assetLabel, who, binding = {}, disclosed = null, surfaceRecipeJSON = null, objectId = null, id) {
-    const recipe = storedRecipe(assetLabel);
-    if (!recipe) return null;
-    const shown = disclosed ?? JSON.stringify(disclosedRecipe(recipe));
-    if (drawHandleRefusal(shown, JSON.stringify(recipe).length, objectId)) return null;
+  function drawHandle(start, end, assetLabel, who, binding = {}, inspection = null, surfaceRecipeJSON = null, objectId = null, id) {
+    if (!inspection) {
+      const recipe = storedRecipe(assetLabel);
+      if (!recipe) return null;
+      inspection = {text: JSON.stringify(disclosedRecipe(recipe)), fullChars: JSON.stringify(recipe).length};
+    }
+    if (drawHandleRefusal(inspection.text, inspection.fullChars, objectId)) return null;
     const text = state.text.slice(start, end);
     return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', assetLabel, assetDigest: assetDigest(assetLabel),
       ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}), ...(objectId ? {objectId} : {}) }, who, id);
@@ -2011,11 +2016,18 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   const DRAW_OCCURRENCE = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\](?:[ \t]*<!--md-layout:v1[^>]*-->)?$/;
   // An image may share a paragraph or stand inside a list or quote. Only the parser's exact image span proves its placement;
   // a block start or a sibling with the same reference cannot authorize this occurrence, including inside literal code.
-  function drawingPlacement(source, start, raw, assetLabel) {
+  function drawingPlacement(source, start, raw, assetLabel, standalone = false) {
     const end = start + raw.length, match = DRAW_OCCURRENCE.exec(raw);
     if (!match || normalizeLabel(match[2]) !== normalizeLabel(assetLabel) || source.slice(start, end) !== raw) return {placed: false, complete: true};
     const facts = structureMarkdown({source, kinds: ['image'], within: {start, end}, matchLimit: 1}, markdownParser());
-    return {placed: facts.matches?.some(row => row.start === start && row.end === end) === true, complete: facts.complete === true};
+    const matched = facts.matches?.some(row => row.start === start && row.end === end) === true;
+    if (!matched || !standalone) return {placed: matched, complete: facts.complete === true};
+    // A new drawing was proposed as its own block. Later prose may leave the image token
+    // valid while joining it to a paragraph; that changes the proposal's placement.
+    // Existing inline drawings remain editable through the exact occurrence check above.
+    const blocks = outlineMarkdown(source, {limit: 0}, markdownParser()).blocks;
+    return {placed: blocks?.entries?.some(row => row.start <= start && row.end >= end &&
+      source.slice(row.start, row.end).trim() === raw) === true, complete: facts.complete === true && blocks?.complete === true};
   }
   function drawingAt(start, end) {
     const slice = state.text.slice(start, end), lead = slice.length - slice.trimStart().length;
@@ -2053,10 +2065,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (!['read', 'draw-read', 'svg-read'].includes(cursor.kind)) return failure('cursor_kind_mismatch');
       if (cursor.revision !== state.revision) return failure('read_snapshot_changed', 'conflict');
       if (cursor.kind === 'draw-read') {
+        if (typeof cursor.disclosedText !== 'string') return failure('read_snapshot_changed', 'conflict');
         const stale = drawBindingFailure(cursor, {start: cursor.targetStart, end: cursor.targetEnd});
         if (stale) return stale;
       }
-      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? {draw: {recipeText: cursor.recipeText, assetLabel: cursor.assetLabel, objectId: cursor.objectId || null,
+      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? {draw: {assetLabel: cursor.assetLabel, objectId: cursor.objectId || null,
         binding: {drawSession: cursor.drawSession, surfaceGeneration: cursor.surfaceGeneration, surfaceRecipeDigest: cursor.surfaceRecipeDigest},
         drawing: drawingSummary(drawingFor(cursor.targetStart, cursor.targetEnd, cursor.assetLabel))}} : {}),
         ...(cursor.kind === 'svg-read' ? {svg: {inspectionText: cursor.inspectionText, assetLabel: cursor.assetLabel}} : {}) };
@@ -2127,22 +2140,35 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(!analysis.complete ? { reason: analysis.reason || 'markdown_image_index_limited' } : {}) };
   }
 
-  // Recipe paging walks the recipe string ('draw-read' cursor) and never disclose(): a font's data: URI would false-match redaction.
+  // Recipe paging retains only the disclosed string ('draw-read' cursor), never private rasters or replay history.
+  // It does not use disclose(): a font's data: URI would false-match redaction.
   // Only the completing page mints a handle. Paint rasters disclose their data-URL length, not payload.
   async function readDrawContext(target, input, who, context) {
     const picture = target.svg || target.draw, imported = !!target.svg, drawing = target.draw?.drawing;
-    const recipeText = picture.inspectionText || picture.recipeText, stored = JSON.parse(recipeText);
+    const recipeText = picture.inspectionText || picture.recipeText, continuation = !imported && target.cursor;
+    const stored = continuation ? null : JSON.parse(recipeText);
+    const text = continuation ? target.cursor.disclosedText : JSON.stringify(imported ? stored : disclosedRecipe(stored));
+    const fullChars = continuation ? target.cursor.fullChars : recipeText.length;
+    const storedRecipeDigest = continuation ? target.cursor.storedRecipeDigest : drawing?.recipeUnavailable ? drawingRecipeDigest(stored) : null;
     if (imported && input.objectId) return failure('drawing_object_scope', 'invalid');
     const objectId = imported ? null : picture.objectId || input.objectId || null;
     const storedSurface = !imported && objectId && drawing?.recipeUnavailable &&
-      drawing.recipeDigest === drawingRecipeDigest(stored);
+      drawing.recipeDigest === storedRecipeDigest;
     if (input.objectId && picture.objectId && input.objectId !== picture.objectId) return failure('drawing_object_scope', 'invalid');
-    if (objectId && !stored.shapes.some(row => row.id === objectId)) return failure('drawing_object_missing', 'target_gone');
+    if (objectId && (!continuation || !picture.objectId) && !(stored || JSON.parse(text)).shapes.some(row => row.id === objectId)) {
+      return failure('drawing_object_missing', 'target_gone');
+    }
     let paintSample = null;
     if (input.paintSample) {
       if (imported || objectId && input.paintSample.objectId !== objectId) return failure('drawing_object_scope', 'invalid');
       if (drawing?.recipeUnavailable) return failure(drawing.recipeUnavailable);
-      const shape = stored.shapes.find(row => row.id === input.paintSample.objectId && row.recognized === 'paint');
+      // Sampling needs material only for this invocation, never as retained cursor state.
+      const live = drawingFor(target.targetStart, target.targetEnd, picture.assetLabel);
+      const stale = drawBindingFailure({...target.draw.binding, assetLabel: picture.assetLabel},
+        {start: target.targetStart, end: target.targetEnd}, live);
+      if (stale) return stale;
+      const sampled = stored || (target.draw.binding?.drawSession ? live?.recipe : storedRecipe(picture.assetLabel));
+      const shape = sampled?.shapes.find(row => row.id === input.paintSample.objectId && row.recognized === 'paint');
       if (!shape) return failure('paint_target_invalid', 'invalid');
       if (typeof host.paintSample !== 'function' && typeof host.material !== 'function') return failure('paint_sample_unavailable');
       const documentId = state.documentId, revision = state.revision, digest = assetDigest(picture.assetLabel);
@@ -2165,15 +2191,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (!paintSample || typeof paintSample !== 'object' || Array.isArray(paintSample)) return failure('paint_sample_invalid', 'invalid');
       paintSample = {...paintSample, objectId: shape.id, point: input.paintSample.point.slice()};
     }
-    const recipe = imported ? stored : disclosedRecipe(stored);
     const law = documentLaw(target.targetStart, target.targetEnd);
-    const text = JSON.stringify(recipe), limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
+    const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
     const offset = target.cursor ? target.offset : 0;
     if (!safeBoundary(text, offset)) return failure('range_invalid', 'invalid');
     let end = Math.min(text.length, offset + limit);
     while (!safeBoundary(text, end)) end--;
     const ids = {handle: mintId('ctx_'), cursor: mintId('read_')};
-    const unavailable = (!storedSurface && drawing?.recipeUnavailable) || (imported ? null : drawingEditAvailability(picture.assetLabel, text, objectId).edit_unavailable);
+    const unavailable = (!storedSurface && drawing?.recipeUnavailable) || (imported ? null : drawHandleRefusal(text, fullChars, objectId));
     const page = fitReadPage(text, offset, end, until => {
       const complete = until === text.length;
       return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: text.slice(offset, until),
@@ -2187,17 +2212,27 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!page) return failure('result_over_budget', 'refused', {complete: false});
     end = page.end;
     const complete = end === text.length;
+    // A completing live handle needs the exact inspected merge base. Revalidate after the parser or material reader yielded.
+    let surfaceRecipeJSON = null;
+    if (complete && target.draw?.binding?.drawSession) {
+      const live = drawingFor(target.targetStart, target.targetEnd, picture.assetLabel);
+      const stale = drawBindingFailure({...target.draw.binding, assetLabel: picture.assetLabel},
+        {start: target.targetStart, end: target.targetEnd}, live);
+      if (stale) return stale;
+      if (!storedSurface) surfaceRecipeJSON = continuation ? JSON.stringify(live.recipe) : recipeText;
+    }
     const disclosedHandle = complete && !unavailable ? imported
-      ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who, ids.handle)
-      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text,
-          target.draw.binding?.drawSession && !storedSurface ? recipeText : null, objectId, ids.handle) : null;
+      ? svgHandle(target.targetStart, target.targetEnd, stored.nodes.map(node => node.id), picture.assetLabel, who, ids.handle)
+      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, {text, fullChars},
+          surfaceRecipeJSON, objectId, ids.handle) : null;
     const next = !complete ? mint('cursors', 'read_', {kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
       targetStart: target.targetStart, targetEnd: target.targetEnd,
-      ...(imported ? {inspectionText: recipeText} : {recipeText, objectId, ...target.draw.binding}),
+      ...(imported ? {inspectionText: recipeText} : {disclosedText: text, fullChars, objectId, ...target.draw.binding,
+        ...(storedRecipeDigest ? {storedRecipeDigest} : {})}),
       assetLabel: picture.assetLabel, offset: end}, who, ids.cursor) : null;
     const result = {...page.result, handle: disclosedHandle?.id || null, recipe_handle: disclosedHandle?.id || null,
       ...(complete && !disclosedHandle && !unavailable ? unavailableEdit(
-        (imported ? null : drawHandleRefusal(text, recipeText.length, objectId)) || 'target_over_edit_budget') : {}),
+        (imported ? null : drawHandleRefusal(text, fullChars, objectId)) || 'target_over_edit_budget') : {}),
       next_cursor: next?.id || null};
     if (bytes(JSON.stringify(result)) > LIMITS.resultBytes) {
       if (disclosedHandle) delete state.handles[disclosedHandle.id];
@@ -4091,7 +4126,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const committed = ['applied', 'rebased', 'unchanged'].includes(result.outcome);
     const states = ['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'];
     const supplied = result.presentation?.status || result.presentation;
-    const presentation = states.includes(supplied) ? supplied : committed &&
+    const intent = state.journal.find(row => row.id === result.changeId)?.drawingIntent;
+    const presentation = intent?.status === 'unavailable' ? 'unavailable' : states.includes(supplied) ? supplied : committed &&
       Object.values(state.humanContexts).some(row => row.visible && row.expiresAt > now()) ? 'presentation_deferred' : 'unavailable';
     return {...result, receipt: {...(result.reason === 'cancelled' ? {landed: 0} : {}), state: result.reason === 'cancelled' ? 'cancelled' : committed ? 'committed' : result.outcome === 'pending' && result.pending?.kind === 'human-review'
       ? 'pending_review' : result.outcome === 'pending' && result.pending?.requirements?.kind === 'material' ? 'accepted' : result.outcome === 'uncertain' ? 'uncertain' : 'unavailable',
@@ -4297,7 +4333,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const occStart = position + prefix.length;
     // One authored splice, the occurrence; appended.source only validates. The definition derives at commit.
     const splices = [{pos: position, removed: '', inserted: prefix + raw + suffix}];
-    const placement = drawingPlacement(appended.source, occStart, raw, appended.reference);
+    const placement = drawingPlacement(appended.source, occStart, raw, appended.reference, true);
     if (!placement.placed) {
       return failure(placement.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
     }
@@ -4659,6 +4695,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const items = [], rows = thread ? thread.messages : threads, budget = LIMITS.resultBytes - 2048;
     const publicMessage = row => ({id: row.id, text: row.text,
       author: {kind: row.author.kind, name: display(row.author.name, 64)}, createdAt: row.createdAt,
+      ...(row.date !== undefined ? {date: row.date} : {}),
+      ...(row.replyTo !== undefined ? {replyTo: row.replyTo} : {}),
       ...(row.recipient ? {recipient: display(row.recipient, 64)} : {})});
     while (offset < rows.length) {
       const row = rows[offset];
@@ -4666,7 +4704,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         complete: textOffset + clip(row.text.slice(textOffset), 2048).length === row.text.length, chars: row.text.length} : null;
       const item = thread ? message : {id: row.id, resolved: row.resolved, anchor: publicCommentAnchor(row.anchor, parsed),
         messages: row.messages.length, lastMessage: {...publicMessage(row.messages.at(-1)), text: display(row.messages.at(-1).text, 240)}};
-      if (bytes(JSON.stringify([...items, item])) > budget) break;
+      if (bytes(JSON.stringify([...items, item])) > budget) {
+        // Exact metadata cannot be clipped or paged as message text. A cursor must advance.
+        if (!items.length) {
+          if (input.cursor) delete state.cursors[input.cursor];
+          return failure('result_over_budget', 'refused', {complete: false});
+        }
+        break;
+      }
       items.push(item);
       if (message && !message.complete) { textOffset += message.text.length; break; }
       offset++; textOffset = 0;

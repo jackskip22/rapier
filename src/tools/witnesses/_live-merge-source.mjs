@@ -26,7 +26,7 @@ function randomSplices(text, random) {
 	return out;
 }
 
-export default async function(_page, t) {
+export function liveMergeSourceCells() {
 	const source = 'Before\r\nAlpha 😀\r\nAfter', start = source.indexOf('Alpha'), end = start + 5;
 	// A replacement's retained boundary character must not hide part of the person's new source.
 	for (const [replacement, split] of [
@@ -167,5 +167,7 @@ export default async function(_page, t) {
 	// Undo of an edit a neighbour typed inside keeps the neighbour's text.
 	const w = run(createDoc('x'), ed('ann', 1, 0, sp(1, 0, 'abcdef')), ed('bob', 1, 1, sp(4, 0, 'ZZ')));
 	assert.equal(applyEdit(w, undoEdit(w, 'ann', 2)).state.text, 'xZZ');
-	return t.pass('pairs 4000, schedule 1000 edits (' + held + ' held), final ' + server.text.length + ' chars, trimmed log at most ' + longest + ' of ' + server.log.length);
+	return 'pairs 4000, schedule 1000 edits (' + held + ' held), final ' + server.text.length + ' chars, trimmed log at most ' + longest + ' of ' + server.log.length;
 }
+
+export default function(_page, t) { return t.pass(liveMergeSourceCells()); }

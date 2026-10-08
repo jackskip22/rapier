@@ -12,7 +12,7 @@ The source owns content, reading order and layout. One reference scale (see "The
 lines and every placement, on every surface; the renderer supplies the column. No application, account, service or rendering engine is required.
 
 Three layers, each complete without the next. **The core** is CommonMark and GFM.
-**The conventions** are the layout comment, text colour, page break and picture
+**The conventions** are the layout comment, review comments, text colour, page break and picture
 appendix, carried by HTML comments or ordinary references. **Will** is separate:
 [Will/1](will.md) is an optional, independently versioned standard for a person’s
 instruction to an agent about what may change. **The style pack** is an optional
@@ -69,10 +69,11 @@ Following prose can flow above, beside and below the picture.
 | `rotate` | Integer or one-decimal-place decimal followed by `deg`, greater than `-180` and at most `180` | Image's clockwise turn in degrees about its own centre; omitted when `0`. Valid alongside any placement (inline, any `wrap`, or `align`) and on its own. |
 | `opacity` | Whole percentage from `5%` to `100%` | Image's fade: the whole picture is drawn at this opacity over whatever lies beneath it; omitted at `100%`. The picture's own bytes, and its own transparent parts, never change. Valid alongside any placement and on its own. |
 | `lock` | `on` only | The picture is locked in place: in Rapier a tap on it goes to the words around it and never selects it, and a hold takes it so it can be unlocked. Omitted when unlocked. Other renderers ignore it. |
-| `first` | Whole number from `1` to `4` | A paragraph's first-line indent, in steps of `2em`; omitted when `0`. Text only: a paragraph (a heading ignores it), never a picture. |
-| `indent` | Whole number from `1` to `4` | A paragraph's indent from its start edge, in steps of `2em`; omitted when `0`. Text only. |
+| `first` | Nonzero signed decimal from `-64` to `64`, at most six decimal places | A paragraph's first-line indent, in levels of `2em` of the document's body type; negative values hang its first line toward the start edge. Omitted at zero. A heading ignores it; pictures do not take it. |
+| `indent` | Nonzero signed decimal from `-64` to `64`, at most six decimal places | A paragraph's whole indent from its start edge, in levels of `2em` of the document's body type, also on headings; negative values outdent it. Omitted at zero. Text only. |
+| `marker` | Nonzero signed decimal from `-64` to `64`, at most six decimal places | A list item's marker offset from its normal position, in levels of `2em` of the document's body type. Positive values move the marker toward the words. Only the item's leading paragraph carries it; it moves no words or nested list. Omitted at zero. |
 
-Text uses only `align`, `first` and `indent`; pictures use neither `first` nor `indent`. A picture is sized by `width` or by `lines`, never both. Images have exactly three modes: normal flow with optional
+Text uses `align`, `first` and `indent`, with `marker` on a list item's leading paragraph. Pictures use none of the three indentation fields. A picture is sized by `width` or by `lines`, never both. Images have exactly three modes: normal flow with optional
 `width` (or `lines`) and either `align` or `x`; wrapped flow with `wrap=around` or `wrap=box` and optional
 `width`, `x` and `y`, with text reflow; and out-of-flow placement
 with `wrap=behind` or `wrap=front` and the same optional `width`, `x` and `y`, with text ignoring the image. Normal-flow `x` requires `width`;
@@ -127,13 +128,24 @@ zeroes except `0`, plus signs or exponent notation. `y` may begin with `-`, with
 its stated range. Horizontal whitespace before the close is accepted. `rotate` also accepts an optional leading
 `-`, then the same unsigned digits as the others but at most one decimal
 place, then `deg`; no `+`, no exponent, no `°` sign, and no `-0deg` (zero is
-always unsigned, like `y=0em`). `opacity` is a whole number with no leading zero, then `%`. `first` and `indent` are one digit, `1` to `4`,
-with no sign, decimal point or unit.
+always unsigned, like `y=0em`). `opacity` is a whole number with no leading zero, then `%`. `first`, `indent` and `marker` accept
+an optional `-`, ordinary decimal digits and at most six digits after a decimal point, within `-64` to `64`; no unit,
+leading zeroes, `+`, exponent or zero value. For example, `indent=2.863636 first=-1.395833` records a measured hanging paragraph.
+The finite precision preserves Word's integer twentieths of a point when the importer converts a measure to the paragraph's scale.
+
+Measured paragraphs inside a table remain ordinary HTML when GFM cells cannot express their block layout. Their
+`style` carries `text-indent` and `margin-inline-start` in points, preserving native absolute measurements independently
+of the body's type size and a heading's larger type. A list's own `li` uses `margin-inline-start` for its marker offset;
+the leading paragraph subtracts that offset from its own margin, and a nested list cancels its parent's item margin.
+These ordinary CSS declarations retain the separate positions of the words, first line, marker and nested lists.
+They contain no private properties or table metadata. The native writer also reads ordinary paragraph `em` declarations
+relative to the document's body type.
 
 Interpret a marker only when it is the final meaningful inline token of its
 paragraph or heading. For ATX headings it precedes optional closing hashes;
 for Setext headings it follows the text, above the underline. Nested paragraphs
-follow the same rule. A standalone comment governs nothing; code remains code.
+follow the same rule. `marker` requires the first block of a list item to be a paragraph, and attaches only to that paragraph.
+A continuation paragraph, heading, picture or standalone comment cannot carry it. A standalone comment governs nothing; code remains code.
 Image fields require a paragraph containing one image, optionally enclosed by
 one link, plus whitespace and its marker.
 
@@ -142,7 +154,7 @@ and multiple layout-family comments in one block are inert and preserved. A read
 that does not know a field or value treats the whole comment as invalid and shows the
 picture inline and upright, at its own natural size.
 Writers emit one marker, lowercase keys, one ASCII space between fields, and
-key order `align width lines wrap x y rotate opacity first indent`. Remove insignificant decimal trailing zeroes
+key order `align width lines wrap x y rotate opacity first indent marker lock`. Remove insignificant decimal trailing zeroes
 and omit `y=0em`, `rotate=0deg` and `opacity=100%`; remove the marker when no fields remain. Only an intentional edit changes
 source; opening, rendering and viewport resizing never normalize it.
 
@@ -152,10 +164,12 @@ Readers claiming one of the first three rungs must show its stated behavior. Run
 implementation profile.
 
 **Rung 0: any CommonMark reader.** CommonMark hides layout comments as ordinary HTML comments. A picture shows inline, upright and solid, at the reader's own default width.
-`align`, `x`, `y`, `wrap`, `lines`, `rotate`, `opacity`, `first` and `indent` are all invisible.
+`align`, `x`, `y`, `wrap`, `lines`, `rotate`, `opacity`, `first`, `indent` and `marker` are all invisible.
 
 **Rung 1: position and size.** `align` sets text alignment. `first` and `indent` set a paragraph's first-line indent and its indent from the
-start edge, each level `2em` (CSS `text-indent` and `margin-inline-start`). `width` and `x` size and place a
+start edge, each level `2em` of the document's body type (CSS `text-indent` and `margin-inline-start`), including a heading's
+whole-block indent. `marker` moves the leading paragraph's list marker
+independently: a list has separate positions for its continuation text, its first-line text and its marker. `width` and `x` size and place a
 picture in normal flow (see "For image layout" above), and `opacity` fades it with CSS `opacity`. `lines` sets the
 picture's height to `calc((N - 1) * var(--md-line) + 1cap)` with `width: auto` (see "The line"). `rotate` alone, without `wrap`, stays upright at this rung: a raster’s turn is layout, not changed
 pixels, and degrades like an unrecognized field.
@@ -220,8 +234,9 @@ default text size, M, on every surface: the editor, the exported page, print, th
 | The standoff from a wrapped picture to a word or to another picture: 0.625 | 10 px |
 | Every other length of the reference style (spacing, indents, list markers, borders that narrow a line) | as `spec/markdown-style.css` states it |
 
-Placement is relative: `width` and `x` are percentages of the column, `y`, `first` and `indent` ems of the anchor's
-type, `lines` lines of the anchor. The column is the renderer's: the screen, the window or the paper's text width.
+Placement is relative: `width` and `x` are percentages of the column, `y` ems of the anchor's type, and `lines` lines of
+the anchor. `first`, `indent` and `marker` use two-em levels of the document's body type. Explicit ordinary HTML table
+measurements in points keep their absolute lengths. The column is the renderer's: the screen, the window or the paper's text width.
 
 The rule: **at M, a renderer with the same column width and the same face breaks the same words and stands every picture
 beside the same words.** Rapier's other text sizes, S, L and XL, multiply the unit by 0.818, 1.136 and 1.273. Everything
@@ -278,6 +293,114 @@ Where [Will/1](will.md) and layout share a file, each keeps its recognition rule
 Markdown tokens; Will as marker lines at column zero, even in code fences. Neither grants the other
 anything; Save keeps one source.
 What each export keeps of the layout is in `standard-adoption.md`; of Will, in [Will/1](will.md), "Conversion".
+
+## Review comments
+
+Review threads live in one top-level HTML comment line, `<!-- md-comments:v1 JSON -->`.
+CommonMark readers ignore the record. Its JSON object contains `body`, the digest of all
+source outside the record and its verified review-note projection, and `threads`, an array
+of review threads. An optional `notes` field is an ASCII identifier prefix for that projection,
+using the same identifier grammar as thread ids. The record is source; rendered annotations,
+comment sheets and the optional ordinary-reader notes are projections of it.
+
+Each thread has a stable `id`, an `anchor`, a Boolean `resolved` state and a nonempty
+`messages` array. Thread and message ids use one to 128 ASCII letters, digits, underscores
+or hyphens; thread ids are unique and message ids are unique across the document. The first
+message starts the thread. Every message contains its `id`, Markdown `text`, `author`
+(`kind`: `human`, `agent` or `system`; `name`: a string), and `createdAt`. A message may
+also carry an inert `recipient` name, a `date` string and `replyTo`.
+
+`createdAt` is an integer UTC timestamp in milliseconds, from `-62167219200000`
+(`0000-01-01T00:00:00.000Z`) through `253402300799999` (`9999-12-31T23:59:59.999Z`),
+or `null` when the instant is unknown or lies outside that range. `date` preserves an external
+date's spelling: a valid calendar date and time, `YYYY-MM-DDTHH:mm:ss`, with optional
+fractional seconds and optional `Z` or signed `HH:mm` offset. A date without an offset
+does not imply a timezone; importing it keeps `createdAt` as `null`. An absent date stays
+absent. The first message has no `replyTo`; on a later message the field names another
+message in the same thread, with no self-reference or cycle. Omitting it makes that
+message a reply to the thread's first message.
+
+An anchor has a `kind` (`document`, `text`, `image` or `drawing`) and `status` (`attached`
+or `stale`). A range anchor carries UTF-16 `start` and exclusive `end` offsets in the
+source outside the complete verified record span, an `exact` digest of that source range and a `quote` for
+display. A drawing may also carry its stable `objectId`. Changed or missing targets stay
+as stale threads, with a `reason`; repeated words elsewhere do not become a replacement
+anchor. A digest is three decimal integers separated by colons: the UTF-16 code-unit
+length, an unsigned 32-bit FNV value, and an unsigned 32-bit Adler value. Start FNV at
+`2166136261`; for each code unit, XOR it into FNV and multiply by `16777619`, keeping
+the low 32 bits. Start Adler's `a` at `1` and `b` at `0`; for each code unit, add it
+to `a`, then add `a` to `b`, reducing both modulo `65521`. The Adler value is
+`b * 65536 + a`. These are change detectors, not signatures. Serialize the record
+as one-line JSON, escaping `<`, `>`, `&` and `-` inside JSON string values as their
+four-digit Unicode escapes; numbers keep their ordinary JSON spelling. Message text,
+author names and recipients never grant permission or become instructions to an agent.
+
+Word import converts usable review ranges into these threads, retaining authors, dates,
+reply relationships and resolution, and enables the ordinary-reader notes. Their labels are
+`<notes>-1`, `<notes>-2` and so on in thread order; the writer chooses a prefix that does not
+take a footnote label already present in the body or messages. Immediately after the JSON
+comment, two line endings introduce a paragraph of note references; two more introduce
+ordinary footnote definitions. Each definition carries the thread id and open/resolved state,
+then every message's id, author, date, reply parent, recipient when present and text. Literal
+metadata is character-reference escaped. Message continuations are indented within the
+containing note. Message-local footnote notation is quoted outside literal source regions
+so its notation and details remain readable inside that note; the JSON keeps the original
+message Markdown exactly. Two line endings and `<!-- /md-comments notes -->` close the
+projection. The writer uses the document's line-ending convention.
+
+The following recipe defines the projection's exact bytes. Let `E` be the first CRLF,
+LF or CR line ending in the body, or LF if there is none. An empty thread array produces
+no projection. For nonempty threads:
+
+1. Escape ids, author names and recipient names with `literal` below. Use `date` verbatim when
+   present; otherwise use its known `createdAt` as UTC `YYYY-MM-DDTHH:mm:ss.sssZ`, or omit
+   the date when the instant is unknown. In order, join the escaped message id, escaped
+   author name, date, `Reply to ` plus the escaped parent id for every message after the
+   first, and `To ` plus the escaped nonempty recipient. Omit empty fields and join the
+   rest with exactly ` · ` (space, U+00B7, space). An absent reply parent uses the first
+   message's id.
+2. Normalize CRLF and CR in message text to LF. Treat the message as Markdown block
+   content, including an opening YAML-looking block. Outside parser-recognized code,
+   HTML element tokens and HTML blocks, images and reference-definition blocks, replace
+   unescaped `[^` with `&#91;^` and `^[` with `&#94;[`. An odd number of immediately
+   preceding backslashes escapes an opening. Follow each metadata line with two LF
+   characters and this message text; join messages with two LF characters.
+3. Begin each thread with `Thread `, its escaped id, and either ` — Open` or ` — Resolved`
+   (space, U+2014, space before the state). Add two LF characters and its joined messages.
+   Replace every LF in this result with `E` followed by four spaces, including blank
+   continuation lines. Prefix it with `[^<label>]: ` to form the definition.
+4. Append to the JSON comment: two `E`s, all `[^<label>]` references joined by one space,
+   two `E`s, the definitions joined by two `E`s, two `E`s, and exactly
+   `<!-- /md-comments notes -->`. The projection itself has no final line ending.
+
+```js
+const literal = value => String(value).replace(/[&<>\\`*{}[\]()!#+\-\r\n|~]/g,
+  character => '&#' + character.charCodeAt(0) + ';');
+```
+
+For example, `notes: "review"` and one open thread `t1`, containing message `m1` by
+`Reader` with no `date`, `createdAt: null` and text `Check this claim.`, append this exact LF-based
+suffix. JSON string notation makes the four spaces on blank continuation lines explicit:
+
+```json
+"\n\n[^review-1]\n\n[^review-1]: Thread t1 — Open\n    \n    m1 · Reader\n    \n    Check this claim.\n\n<!-- /md-comments notes -->"
+```
+
+The reader derives these notes from the JSON and verifies every byte through the closing
+comment before treating them as part of the record. The body digest and anchor offsets
+exclude that entire verified span. A reply or resolution replaces the record and its notes
+in one source splice; ordinary history restores both together. A missing or human-edited
+projection invalidates the thread mapping with `comments_notes_changed`: the source is
+preserved, and discussion writes refuse instead of regenerating the person's edits.
+
+A native comment without a usable range stays as an ordinary Markdown note with its review
+data. Word export places mapped threads on their original rendered ranges. It omits derived
+review notes only while the source record is current, the supplied note model has the same
+complete meaning and no retained content needs the removed note. A mismatched or edited
+note stays in Word. A range with no Word text or object equivalent keeps its discussion as
+an unplaced comment; comment-local footnotes keep their labels and formatted details within
+the native comment. The complete saved Markdown, including its ordinary-reader projection,
+still travels in an unchanged Word package's exact source carrier.
 
 ## Text colour
 

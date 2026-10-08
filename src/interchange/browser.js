@@ -161,20 +161,24 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
       onProgress: progress => _rapierImportProgress(run, typeof progress === 'string' ? progress :
         'Reading page ' + progress.page + (progress.pages ? ' of ' + progress.pages : '') + '…')});
     checkCurrent();
-    // Flow images carry labels; ordinary HTML tables carry their converted data URLs.
-    const inert = document.createElement('template');
-    inert.innerHTML = result.html;
-    const expectedImages = _rapierImportedImageSources(inert.content, assets, true);
-    let text = turndown.turndown(inert.content).trim();
-    if (!text) throw new Error(kind === 'pdf' ? 'This PDF has no editable text. Import it as page images.' : 'This document has no supported content.');
-    for (const asset of assets.values()) {
-      checkCurrent();
-      text = (await RapierImageAssets.appendAsset(text, asset)).source;
+    let text = result.canonical;
+    if (typeof text !== 'string') {
+      // Flow images carry labels; ordinary HTML tables carry their converted data URLs.
+      const inert = document.createElement('template');
+      inert.innerHTML = result.html;
+      const expectedImages = _rapierImportedImageSources(inert.content, assets, true);
+      text = turndown.turndown(inert.content).trim();
+      for (const asset of assets.values()) {
+        checkCurrent();
+        text = (await RapierImageAssets.appendAsset(text, asset)).source;
+      }
+      const actualImages = _rapierImportedMarkdownImageSources(text, assets);
+      if (actualImages.length !== expectedImages.length || actualImages.some((src, index) => src !== expectedImages[index]))
+        throw new Error('The pictures could not all be preserved in Markdown. The current document is unchanged.');
+      text += text.endsWith('\n') ? '' : '\n';
+      if (kind === 'docx') text = globalThis.RapierDocxImport.finishDocxMarkdown(text, result, {convertHtml: html => turndown.turndown(html)});
+      if (!text.trim()) throw new Error(kind === 'pdf' ? 'This PDF has no editable text. Import it as page images.' : 'This document has no supported content.');
     }
-    const actualImages = _rapierImportedMarkdownImageSources(text, assets);
-    if (actualImages.length !== expectedImages.length || actualImages.some((src, index) => src !== expectedImages[index]))
-      throw new Error('The pictures could not all be preserved in Markdown. The current document is unchanged.');
-    text += text.endsWith('\n') ? '' : '\n';
     const admittedBytes = new TextEncoder().encode(text).length;
     RapierTextCodec.normalizeDocument(text, admittedBytes);
     checkCurrent();
@@ -212,7 +216,7 @@ async function _rapierOpenImportedFile(file, name = file?.name || '', options = 
       showToast('The document changed; open the file again', 'info'); return false;
     }
     const opened = await rapierOpenPlatformPayload({name: result.filename, text: result.text,
-      admittedBytes: result.admittedBytes, transient: true}, {...options, expectedMutationStamp: result.importStamp});
+      admittedBytes: result.admittedBytes, bom: result.text.charCodeAt(0) === 0xFEFF, transient: true}, {...options, expectedMutationStamp: result.importStamp});
     if (opened) _rapierAcceptDocumentImport(result);
     return !!opened;
   } catch (error) {

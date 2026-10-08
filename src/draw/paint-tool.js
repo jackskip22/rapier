@@ -2400,16 +2400,33 @@ function _rapierPaintRecordLiveBox(layer, box) {
 	if (b) { b.x0 = Math.min(b.x0, box.x0); b.y0 = Math.min(b.y0, box.y0); b.x1 = Math.max(b.x1, box.x1); b.y1 = Math.max(b.y1, box.y1); }
 	else layer.liveBox = {...box};
 }
-// The painter's reply for this sheet: the rectangles that changed, laid straight on the overlay (`putImageData` at each box). A grown or
-// rolled-back sheet comes with its whole readout, and the overlay takes its new size in the same turn, so no frame shows it blank.
+function _rapierPaintReplaceDisplay(layer, meta) {
+	const surface = layer.surface;
+	if (surface.gone || layer.pendingDisplay?.generation === surface.displayGeneration) return;
+	const {canvas} = _rapierPaintBlankCanvas(meta.width, meta.height, null, 'water');
+	canvas.style.visibility = 'hidden';
+	layer.pendingDisplay = {canvas, generation: surface.displayGeneration + 1};
+	surface.bindDisplay(canvas.transferControlToOffscreen()).catch(() => {});
+}
+// Adopt complete pixels and their placement together; the worker releases the prior canvas only after acknowledgement.
 function _rapierPaintDisplay(layer, reply) {
 	const canvas = layer.canvas, meta = reply.meta, patch = reply.patch;
 	if (!canvas || layer.surface?.gone) return;
 	if (layer.gpuDisplay) {
-		if (reply.display?.generation !== layer.surface.displayGeneration || !reply.display.submitted) return;
+		const display = reply.display;
+		if (display?.generation !== layer.surface.displayGeneration) return;
+		if (display.replace) { _rapierPaintReplaceDisplay(layer, meta); return; }
+		if (!display.submitted) return;
+		const pending = layer.pendingDisplay;
+		if (pending?.generation === display.canvasGeneration) {
+			canvas.replaceWith(pending.canvas); layer.canvas = pending.canvas; layer.pendingDisplay = null;
+			_rapierPaintWatchOverlay(layer);
+		} else if (layer.canvasGeneration && layer.canvasGeneration !== display.canvasGeneration) return;
+		layer.canvasGeneration = display.canvasGeneration;
 		layer.displayMeta = {...meta}; layer.displayReady = true; layer.lost = false; layer.liveBox = null;
 		if (meta.bounds) _rapierPaintRecordLiveBox(layer,meta.bounds);
 		_rapierPaintPlaceLive(layer); _rapierPaintShowLive(layer.liveWanted,layer);
+		layer.surface.adoptDisplay(display.canvasGeneration);
 		if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
 		return;
 	}
@@ -2468,8 +2485,9 @@ function _rapierPaintDryTick(layer) {
 	const state = _rapierDrawState;
 	layer.dryRaf = 0;
 	if (state.paintLayer !== layer || !layer.surface || (!layer.surface.wetState && !layer.dryFinishing)) return;
-	// A new stroke owns the layer and drains a suspended operation at its checkpoint; a slice the painter has not answered is not asked again.
-	if (state.gesture || layer.dryBusy) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
+	// Admitted gestures keep their place ahead of idle work after the pointer lifts.
+	const admitted = layer.mode === 'water' && state.waterStrokes?.some(receipt => !receipt.finished && receipt.session === state.session && receipt.tool === _rapierDrawTool() && receipt.gesture?.paint && !receipt.gesture.paint.discarded);
+	if (state.gesture || admitted || layer.dryBusy) { layer.dryRaf = requestAnimationFrame(() => _rapierPaintDryTick(layer)); return; }
 	const now = performance.now(), elapsed = Math.max(0, now - layer.dryAt);
 	layer.dryAt = now;
 	layer.dryBusy = true;
@@ -2802,12 +2820,13 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer) {
 		if (!state.open || state.session !== session || gesture.paint?.discarded) return 'gone';
 		if (_rapierPaintLayer() !== layer) return false;
 	}
-	// The earlier stroke is now sealed, including every cap sheet. This gesture gets its own step.
+	// Keep the prior contribution's identity for cancellation.
+	const previousStroke = layer.flipStroke;
 	layer.flipStroke = null;
 	const props = {};
 	for (const key of ['id', 'raster', 'geom', 'origin', 'frame', 'retire', 'checkpoint', 'pendingOverflow', 'setPending', 'paintVersion', 'paintReplay', 'waterCapture', 'waterSheet', 'waterPaper']) props[key] = _rapierDrawHistoryCopy(layer[key]);
 	// The checkpoint itself lives in the painter (beginStroke is the first command of the stroke's batch); the page keeps its name.
-	gesture.paintRollback = {layer, props, pixels: surface.beginStroke({record: !!layer.paintReplay}), recipe: _rapierDrawHistoryRecipe(), undo: state.undoStack.slice(), redo: state.redoStack.slice(), view: {..._rapierDrawView()}};
+	gesture.paintRollback = {layer, props, previousStroke, pixels: surface.beginStroke({record: !!layer.paintReplay}), recipe: _rapierDrawHistoryRecipe(), undo: state.undoStack.slice(), redo: state.redoStack.slice(), view: {..._rapierDrawView()}};
 }
 function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	const saved = gesture.paintRollback, state = _rapierDrawState;
@@ -2835,7 +2854,7 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	const layer = saved.layer;
 	// The sheet the stroke began on goes back to its baseline in the painter (a sheet the cap's flip left behind was restored then).
 	if (!saved.restored) layer.surface.endStroke(saved.pixels, true);
-	Object.assign(layer, saved.props);
+	Object.assign(layer, saved.props); layer.flipStroke = saved.previousStroke;
 	state.paintLayer = layer; state.recipe = _rapierDrawRestoreRecipe(saved.recipe);
 	state.undoStack = saved.undo; state.redoStack = saved.redo; state.view = saved.view;
 	if (!layer.surface || layer.surface.gone || layer.surface.failure) return;
@@ -2954,12 +2973,13 @@ async function _rapierPaintApplyQueued(gesture, admitted = false) {
 	// target/tool/document facts captured at queue time are.
 	if (!paint?.pending || paint.discarded || !state.open || state.session !== paint.session || _rapierDrawTool() !== paint.tool) { if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture); return; }
 	const queued = paint;
-	try { await _rapierPaintInitStroke(queued.downEvt, gesture, queued.settings, queued.geom); }
-	catch (error) { _rapierPaintStrokeFailed(gesture, error); throw error; }
-	// The stroke was handed back to its target's decode, or abandoned while it waited: nothing more to replay here.
-	if (gesture.paint === queued || gesture.paint?.discarded) return;
-	if (queued.moveEvents.length) _rapierPaintMove(queued.moveEvents, gesture);
-	if (queued.ended) _rapierPaintEnd(queued.endEvt, gesture);
+	try {
+		await _rapierPaintInitStroke(queued.downEvt, gesture, queued.settings, queued.geom);
+		// The target's decode still owns this gesture, or it was cancelled while waiting.
+		if (gesture.paint === queued || gesture.paint?.discarded) return;
+		if (queued.moveEvents.length) _rapierPaintMove(queued.moveEvents, gesture);
+		if (queued.ended) _rapierPaintEnd(queued.endEvt, gesture);
+	} catch (error) { _rapierPaintStrokeFailed(gesture, error); throw error; }
 }
 // The target's decode failed, or its frame could not be resolved: paint the queued gesture onto a
 // fresh blank layer rather than lose the samples -- a new, empty layer is still better than a

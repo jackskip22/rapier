@@ -12,6 +12,7 @@
 // trim() drops what no client can still be behind. Every function returns new values, never mutates.
 
 import {diffChars} from '../agent/diff.mjs';
+import {parseComments, commentSplices} from '../agent/comments.mjs';
 import {_rapierTransformSplices as transformSplices} from '../kit/ledger/journal-records.mjs';
 
 // Prefer the editor's exact local history. Its revision numbers are local; replayed
@@ -141,6 +142,78 @@ export function mergeSplices(client, splices, log) {
 // Merge a sequential local journal over remote edits. Return the exact committed
 // journal and reciprocal acknowledgement; source size does not become a diff budget.
 export function mergeSource(base, edits, client, log) {
+	const submitted = transformSplices(base, edits);
+	if (submitted === null) throw new RangeError('source_edits_invalid');
+	const current = replay(base, log);
+	if (edits.length && log.length && [base, submitted, current].some(text => {
+		const parsed = parseComments(text); return parsed.record && !parsed.reason;
+	})) {
+		// The discussion carrier contains both authored messages and derived source facts.
+		// Ordinary text OT must not turn two derived replacements into adjacent records.
+		const local = derivedCommentEdits(base, edits);
+		let merged, initial = [], correction;
+		if (local) {
+			merged = mergeSourceText(base, local.edits, client, log);
+			correction = commentSplices(current, merged.splices);
+			initial = asLog(local.restore, client);
+		} else {
+			const remote = derivedCommentEdits(base, sequentialSource(base, log));
+			if (!remote) throw new RangeError('source_comments_conflict');
+			merged = mergeSourceText(base, edits, client, asLog(remote.edits, client));
+			correction = commentSplices(submitted, sequentialSource(submitted, merged.remote));
+			merged.splices.unshift(...remote.restore);
+		}
+		const text = transformSplices(merged.text, correction);
+		const splices = [...merged.splices, ...correction];
+		const remote = [...initial, ...merged.remote, ...asLog(correction, client)];
+		if (text === null || transformSplices(current, splices) !== text || replay(submitted, remote) !== text)
+			throw new RangeError('source_replay_mismatch');
+		return {text, splices, remote};
+	}
+	return mergeSourceText(base, edits, client, log);
+}
+
+// Discard a carrier rewrite only when the comment owner proves every changed byte
+// is derivable from the body journal. Authored replies, resolution and literal edits
+// fail this equality and remain on the other side of the merge, or in a refused draft.
+function derivedCommentEdits(base, edits) {
+	const parsed = parseComments(base), submitted = transformSplices(base, edits);
+	if (parsed.reason || submitted === null) return null;
+	if (!parsed.record) return parseComments(submitted).record ? null : {edits, restore: []};
+	let start = parsed.record.start, end = parsed.record.end;
+	const body = [];
+	for (const row of edits) {
+		const stop = row.pos + row.removed.length, delta = row.inserted.length - row.removed.length;
+		if (row.pos < end && stop > start || row.pos > start && row.pos < end) {
+			if (row.pos < start || stop > end) return null;
+			end += delta;
+		} else {
+			body.push({...row, pos: row.pos >= end ? row.pos - (end - start) + parsed.record.raw.length : row.pos});
+			if (stop <= start) { start += delta; end += delta; }
+		}
+	}
+	const clean = transformSplices(base, body), derived = commentSplices(base, body);
+	if (clean === null || transformSplices(clean, derived) !== submitted) return null;
+	const restore = derived.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed}));
+	return {edits: body, restore};
+}
+
+function sequentialSource(base, log) {
+	const rows = [];
+	for (const entry of log) {
+		for (const row of entry.splices.slice().reverse()) {
+			rows.push({client: entry.client, pos: row.at, removed: base.slice(row.at, row.at + row.remove), inserted: row.insert});
+			base = applySplices(base, [row]);
+		}
+	}
+	return rows;
+}
+
+function asLog(rows, client) {
+	return rows.map(row => ({client: row.client ?? client, splices: [{at: row.pos, remove: row.removed.length, insert: row.inserted}]}));
+}
+
+function mergeSourceText(base, edits, client, log) {
 	const merged = mergeSourceEdits(base, edits, client, log);
 	if (log.length && edits.length) {
 		// The reciprocal receipt proves replay of this projection, not the other

@@ -1,6 +1,6 @@
 {
   "name": "rapier-jxl",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "JavaScript JPEG XL encoder for single-file HTML apps and photography tools. Lossless and lossy RGBA, exact alpha, HDR, and optional WebAssembly. Offline, no runtime dependencies.",
   "keywords": ["jpeg-xl", "jpegxl", "jxl", "javascript", "encoder", "image-compression", "lossless", "lossy", "hdr", "offline", "single-file-html", "webassembly", "photography", "exif", "xmp", "browser", "zero-dependency", "agent-skills"],
   "license": "MIT",
@@ -29,9 +29,12 @@
     "./package.json": "./package.json",
     "./kernels": {"types": "./kernels.d.mts", "default": "./kernels.mjs"},
     "./wasm": {"types": "./wasm.d.mts", "default": "./wasm.mjs"},
-    "./wasm/min": {"types": "./wasm.d.mts", "default": "./wasm.min.mjs"}
+    "./wasm/min": {"types": "./wasm.d.mts", "default": "./wasm.min.mjs"},
+    "./rapier": {"types": "./rapier.d.mts", "default": "./rapier.mjs"},
+    "./rapier/min": {"types": "./rapier.d.mts", "default": "./rapier.min.mjs"},
+    "./rapier/worker": {"types": "./rapier-worker.d.mts", "default": "./dist/rapier-worker.js"}
   },
-  "sideEffects": ["./wasm.mjs", "./wasm.min.mjs"],
+  "sideEffects": ["./wasm.mjs", "./wasm.min.mjs", "./dist/rapier-worker.js"],
   "engines": {"node": ">=18"},
   "repository": {"type": "git", "url": "git+https://github.com/jackskip22/rapier-jxl.git"},
   "bugs": {"url": "https://github.com/jackskip22/rapier-jxl/issues"},

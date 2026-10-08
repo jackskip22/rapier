@@ -139,6 +139,13 @@ export class RemotePaintSurface {
 			if(!this.gone&&this.displayGeneration===generation)this.remote._state(reply);
 		},error=>{throw this.remote._fail(error);});
 	}
+	adoptDisplay(canvasGeneration) {
+		if(this.gone||this.displayAdopted===canvasGeneration)return;
+		this.displayAdopted=canvasGeneration;
+		this.remote.client.request('adoptDisplay',{surfaceId:this.id,canvasGeneration}).then(reply=>{
+			if(!this.gone)this.remote._state(reply);
+		},error=>{this.remote._fail(error);});
+	}
 	// Pixels of a box (the whole surface when none), as the painter holds them after everything queued so far.
 	async readRGBA8(box = null) { return (await this.remote.read(this, {box})).pixels; }
 	// The painted box and its pixels at this point of the order; `box` and `pixels` are null for an empty surface.

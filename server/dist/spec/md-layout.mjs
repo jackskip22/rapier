@@ -4,17 +4,25 @@
 // `opacity`: a picture's fade, a whole percent from 5 to 100, omitted at 100; the picture's bytes never change.
 // `lines`: a picture's height in lines of the text beside it, set as a drop cap is (CSS `initial-letter`): its top on the first line's cap height, its foot on the
 // Nth line's baseline, its width from its own aspect. A whole number 1 to 12; never with `width`.
-// `first`/`indent`: a paragraph's first-line indent and its whole-block indent, in levels of one step (2em), a whole number from 1 to 4, omitted when 0; text
-// only.
+// `first`/`indent`: signed levels of 2em, at most six decimals, in [-64,64], omitted at zero. `marker` moves a list
+// item's marker independently of its words, on the same scale; only the item's leading paragraph carries it.
 // `lock=on`: a picture locked in place: a tap goes to the words, never the picture; a hold takes it to unlock it. Omitted when off.
-export const fields = new Set(['align', 'width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity', 'first', 'indent', 'lock']);
+export const fields = new Set(['align', 'width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity', 'first', 'indent', 'marker', 'lock']);
 export const alignments = new Set(['left', 'center', 'right', 'justify']);
 // `behind`/`front`: out of flow; the paragraph lays out as though the picture were absent.
 export const wraps = new Set(['around', 'box', 'behind', 'front']);
 const has = (value, key) => Object.hasOwn(value, key);
 const percent = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
 const lineCount = value => Number.isInteger(value) && value >= 1 && value <= 12;
-const level = value => Number.isInteger(value) && value >= 1 && value <= 4;
+export const INDENT_LIMIT = 64;
+export const indentLevel = value => typeof value === 'number' && Number.isFinite(value) && value !== 0 &&
+  Math.abs(value) <= INDENT_LIMIT && Number(value.toFixed(6)) === value;
+// A key press advances an imported measure by one level without truncating its fraction or jumping across zero.
+export function stepIndent(value, step) {
+  const next = Number(((value || 0) + step).toFixed(6));
+  if (Math.abs(next) > INDENT_LIMIT) return value || 0;
+  return !value && step < 0 || value && Math.sign(value) !== Math.sign(next) ? 0 : next;
+}
 const oneDecimalDegrees = value => typeof value === 'number' && Number.isFinite(value) &&
   value > -180 && value <= 180 && Math.abs(value * 10 - Math.round(value * 10)) < 1e-9;
 
@@ -30,7 +38,8 @@ export function validLayout(value) {
     (!has(value, 'y') || typeof value.y === 'number' && Number.isFinite(value.y) && value.y >= -50 && has(value, 'wrap')) &&
     (!has(value, 'rotate') || oneDecimalDegrees(value.rotate)) &&
     (!has(value, 'opacity') || Number.isInteger(value.opacity) && value.opacity >= 5 && value.opacity <= 100) &&
-    (!has(value, 'first') || level(value.first)) && (!has(value, 'indent') || level(value.indent)) &&
+    (!has(value, 'first') || indentLevel(value.first)) && (!has(value, 'indent') || indentLevel(value.indent)) &&
+    (!has(value, 'marker') || indentLevel(value.marker)) &&
     (!has(value, 'lock') || value.lock === 'on') &&
     !(has(value, 'align') && (has(value, 'wrap') || has(value, 'x')));
 }
@@ -69,8 +78,8 @@ export function parseLayout(comment) {
     } else if (key === 'lines') {
       if (!/^[1-9]\d?$/.test(raw)) return null;
       value.lines = Number(raw);
-    } else if (key === 'first' || key === 'indent') {
-      if (!/^[1-4]$/.test(raw)) return null;
+    } else if (key === 'first' || key === 'indent' || key === 'marker') {
+      if (!/^-?(?:0|[1-9]\d?)(?:\.\d{1,6})?$/.test(raw)) return null;
       value[key] = Number(raw);
     } else value[key] = raw;
   }
@@ -84,6 +93,38 @@ export function decodeLayoutAttribute(value) {
 }
 
 export const parseLayoutAttribute = value => parseLayout(decodeLayoutAttribute(value));
+
+// Indentation uses the document's body type, including on headings. Native table measurements
+// become ordinary CSS points; an item's margin is compensated by its paragraph and nested list.
+export function textStyle(value, {portable = false, pointSize, indentOffset = 0} = {}) {
+  if (!validLayout(value)) return '';
+  const property = {first: 'text-indent', indent: 'margin-inline-start'};
+  return (portable ? ['first', 'indent'] : ['first', 'indent', 'marker'])
+    .filter(key => has(value, key) || key === 'indent' && indentOffset).map(key => {
+      const level = (value[key] || 0) + (key === 'indent' ? indentOffset : 0);
+      const measure = decimal(Number((level * 2).toFixed(6)));
+      return (portable ? property[key] : '--md-' + key) + ':' + (portable ?
+        pointSize ? decimal(Math.round(level * pointSize * 40) / 20) + 'pt' : measure + 'em' :
+        'calc(' + measure + ' * var(--md-text-body))');
+    }).join(';');
+}
+
+// Raw HTML tables carry ordinary paragraph CSS. Read the browser's parsed declarations on the same
+// admitted scale; the native caller supplies the body's point size. A list marker belongs to its own li,
+// never to a paragraph or a picture.
+export function textLayout(style, {listMarker = false, pointSize, offset = 0} = {}) {
+  const value = {};
+  for (const [key, property] of (listMarker ? [['marker', 'margin-inline-start']] : [['first', 'text-indent'], ['indent', 'margin-inline-start']])) {
+    const raw = style?.getPropertyValue(property).trim() || '';
+    const match = /^(-?(?:0|[1-9]\d*)(?:\.\d{1,6})?)(em|pt)$/.exec(raw);
+    const level = Number(((match ? Number(match[1]) / (match[2] === 'pt' ? pointSize : 1) / 2 : 0) +
+      (key === 'first' ? 0 : offset)).toFixed(6));
+    // Public CSS may compensate an enclosing item's margin; the resolved native coordinate,
+    // rather than each intermediate declaration, is the measurement the writer must keep.
+    if (Number.isFinite(level) && level) value[key] = level;
+  }
+  return value;
+}
 
 // The picture's own CSS: its normal-flow width and x, its height in lines, and its fade. `1cap` is the cap height of the
 // picture's own text; a renderer that sets the picture beside its anchor measures that paragraph's line and cap instead.

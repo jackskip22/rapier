@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {unpackFiles, ARCHIVE_LIMITS, crc32} from '../images/archive.mjs';
 import {zipStored} from '../notes/zip-records.mjs';
-import {formatLayout, parseLayout, decodeLayoutAttribute} from '../spec/md-layout.mjs';
+import {formatLayout, parseLayout, decodeLayoutAttribute, indentLevel, textStyle as indentStyle, textLayout} from '../spec/md-layout.mjs';
 import {parseInkBody} from '../spec/md-marks.mjs';
 import {readDocumentSettings} from '../spec/document-settings.mjs';
 import {willMarkerOf} from '../agent/will.mjs';
 import {inspectRaster, isJxl, dataImage} from '../images/assets.mjs';
+import {markdownParser, markdownBodyOffset, documentAssets} from '../spec/md-assets.mjs';
+import {parseComments, commentThreads, commentAnchor, writeComments, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
 
 export const DOCX_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, totalXmlBytes: 12 * 1024 * 1024,
   elements: 200000, depth: 96, styles: 2048, paragraphs: 50000, images: 1024, tableColumns: 64});
@@ -20,9 +22,53 @@ const NS = Object.freeze({
   rel: ['http://schemas.openxmlformats.org/package/2006/relationships'],
   ct: ['http://schemas.openxmlformats.org/package/2006/content-types'],
   mc: ['http://schemas.openxmlformats.org/markup-compatibility/2006'],
+  w14: ['http://schemas.microsoft.com/office/word/2010/wordml'],
+  w15: ['http://schemas.microsoft.com/office/word/2012/wordml'],
+  w16cid: ['http://schemas.microsoft.com/office/word/2016/wordml/cid'],
+  w16cex: ['http://schemas.microsoft.com/office/word/2018/wordml/cex'],
   v: ['urn:schemas-microsoft-com:vml'], o: ['urn:schemas-microsoft-com:office:office']
 });
 const utf8 = new TextEncoder();
+const DOCX_SOURCE = Object.freeze({path: 'rapier/source.json',
+  type: 'application/vnd.rapier.markdown-source+json',
+  relationship: 'https://rapier.website/relationships/markdown-source'});
+const sha256 = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+  byte => byte.toString(16).padStart(2, '0')).join('');
+
+async function docxSourceRecord(entries, source) {
+  const bytes = utf8.encode(source);
+  if (bytes.length > ARCHIVE_LIMITS.bytes || source.includes('\u0000') || new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes) !== source)
+    return fail('DOCX source is not an admitted UTF-8 document.', 'docx_source_invalid');
+  const parts = [];
+  for (const entry of [...entries].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    parts.push({name: entry.name, bytes: entry.bytes.length, sha256: await sha256(entry.bytes)});
+  return utf8.encode(JSON.stringify({format: 'md-source:v1', source, sha256: await sha256(bytes), parts}));
+}
+
+// The source is used only while every native part still has the exported bytes.
+// This is a consistency check, not an authorship signature or a trust boundary.
+async function readDocxSource(files, path, checkCurrent) {
+  const bytes = files.get(path);
+  if (!bytes || bytes.length > ARCHIVE_LIMITS.bytes) return null;
+  let record;
+  try { record = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes)); }
+  catch (_) { return null; }
+  if (!record || record.format !== 'md-source:v1' || typeof record.source !== 'string' ||
+      record.source.length > ARCHIVE_LIMITS.bytes || typeof record.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(record.sha256) ||
+      !Array.isArray(record.parts) || record.parts.length !== files.size - 1) return null;
+  const source = utf8.encode(record.source);
+  if (source.length > ARCHIVE_LIMITS.bytes || record.source.includes('\u0000') || new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(source) !== record.source ||
+      await sha256(source) !== record.sha256) return null;
+  const native = [...files].filter(([name]) => name !== path).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  for (let index = 0; index < native.length; index++) {
+    checkCurrent();
+    const [name, content] = native[index], part = record.parts[index];
+    if (!part || part.name !== name || part.bytes !== content.length || typeof part.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(part.sha256) ||
+        await sha256(content) !== part.sha256) return null;
+  }
+  checkCurrent();
+  return record.source;
+}
 const is = (node, family, name) => node?.nodeType === 1 && NS[family].includes(node.namespaceURI) && (!name || node.localName === name);
 const children = (node, family, name) => Array.from(node?.children || []).filter(child => is(child, family, name));
 const child = (node, family, name) => {
@@ -96,6 +142,18 @@ function xmlText(bytes) {
 
 function paragraphProperties(node) {
   const out = {}, number = child(node, 'w', 'numPr');
+  const indent = child(node, 'w', 'ind');
+  const left = attr(indent, 'w', 'start') ?? attr(indent, 'w', 'left');
+  if (left != null) out.leftIndent = integer(left, null, -2147483648);
+  // Either first-line form replaces the inherited form, including an explicit zero.
+  const hanging = attr(indent, 'w', 'hanging'), first = attr(indent, 'w', 'firstLine');
+  if (hanging != null) out.firstIndent = -integer(hanging);
+  else if (first != null) out.firstIndent = integer(first);
+  for (const tab of children(child(node, 'w', 'tabs'), 'w', 'tab')) {
+    const position = integer(attr(tab, 'w', 'pos'), null, -2147483648);
+    if (position == null) return fail('DOCX tab stop has no position.');
+    (out.tabs ||= new Map()).set(position, attr(tab, 'w', 'val'));
+  }
   for (const [name, key] of [['jc', 'align'], ['outlineLvl', 'outline']]) {
     const value = val(child(node, 'w', name));
     if (value != null) out[key] = value;
@@ -109,6 +167,13 @@ function paragraphProperties(node) {
     if (value != null) out[key] = integer(value, null, 0, name === 'ilvl' ? 8 : 2147483647);
   }
   return out;
+}
+
+// Tab declarations inherit by position; a clear remains in the cascade so later layers cannot revive it.
+function mergeParagraphProperties(...layers) {
+  const result = Object.assign({}, ...layers), tabs = new Map(layers.flatMap(layer => [...(layer?.tabs || [])]));
+  if (tabs.size) result.tabs = tabs;
+  return result;
 }
 
 const DOCX_HIGHLIGHT_TO_RAPIER = Object.freeze({yellow:'yellow', green:'green', red:'red', blue:'blue', magenta:'purple'});
@@ -325,8 +390,11 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     if (files.has(path)) for (const node of children(readXml(path, 'rel', 'Relationships'), 'rel', 'Relationship')) {
       const id = node.getAttribute('Id'), type = node.getAttribute('Type'), target = node.getAttribute('Target'), mode = node.getAttribute('TargetMode');
       if (!id || !type || !target || result.has(id) || mode && mode !== 'Internal' && mode !== 'External') return fail('DOCX relationships are invalid.');
-      const kind = NS.r.flatMap(namespace => type.startsWith(namespace + '/') ? [type.slice(namespace.length + 1)] : [])[0] || '';
-      result.set(id, {kind, target, external: mode === 'External', path: mode === 'External' ? null : partPath(source, target)});
+      const kind = NS.r.flatMap(namespace => type.startsWith(namespace + '/') ? [type.slice(namespace.length + 1)] : [])[0] ||
+        ({'http://schemas.microsoft.com/office/2011/relationships/commentsExtended': 'commentsExtended',
+          'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds': 'commentsIds',
+          'http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible': 'commentsExtensible'}[type] || '');
+      result.set(id, {kind, type, target, external: mode === 'External', path: mode === 'External' ? null : partPath(source, target)});
     }
     relationCache.set(source, result);
     return result;
@@ -354,6 +422,14 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
   const contentType = path => overrides.get(path) || defaults.get(path.slice(path.lastIndexOf('.') + 1).toLowerCase()) || '';
   if (contentType(mainPath) !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml')
     return fail('Only ordinary DOCX documents can be imported.');
+  const sourceParts = [...relationships('').values()].filter(row => row.type === DOCX_SOURCE.relationship);
+  let canonical = null;
+  if (sourceParts.length) {
+    const sourcePart = sourceParts[0];
+    if (sourceParts.length === 1 && !sourcePart.external && contentType(sourcePart.path) === DOCX_SOURCE.type)
+      canonical = await readDocxSource(files, sourcePart.path, checkCurrent);
+    if (canonical === null) warn('The stored Markdown does not match this Word file. Current Word content was imported.');
+  }
   const main = readXml(mainPath, 'w', 'document'), body = child(main, 'w', 'body');
   if (!body) return fail('DOCX has no document body.');
   const stylesPath = related(mainPath, 'styles'), numberingPath = related(mainPath, 'numbering');
@@ -388,7 +464,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     if (!node) { warn('Some referenced styles were missing; their text was retained.'); return {p: {}, r: {}}; }
     const parent = val(child(node, 'w', 'basedOn')), parentNode = styles.get(parent);
     const base = parentNode && attr(parentNode, 'w', 'type') === attr(node, 'w', 'type') ? style(parent, [...chain, id]) : {p: {}, r: {}};
-    const result = {p: {...base.p, ...paragraphProperties(child(node, 'w', 'pPr'))}, r: mergeRunStyle(base.r, propertiesOf(child(node, 'w', 'rPr')))};
+    const result = {p: mergeParagraphProperties(base.p, paragraphProperties(child(node, 'w', 'pPr'))), r: mergeRunStyle(base.r, propertiesOf(child(node, 'w', 'rPr')))};
     styleCache.set(id, result);
     return result;
   };
@@ -466,6 +542,29 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     const marker = formatLayout(layout);
     return marker ? ' data-md-layout="' + escape(encodeURIComponent(marker)) + '"' : '';
   };
+  const measuredLevel = levels => {
+    const value = Number(levels.toFixed(6));
+    if (value && !indentLevel(value)) return fail('DOCX paragraph indentation exceeds the Markdown limit. Open the original in Word to keep its measurements.', 'docx_indent_limit');
+    return value;
+  };
+  const paragraphLayout = (properties, heading, list, base) => {
+    const layout = {}, align = alignment(properties);
+    if (align) layout.align = align;
+    const step = referenceType(null).body * 40;
+    const left = properties.leftIndent ?? base;
+    const indent = measuredLevel((left - base) / step);
+    if (indent) layout.indent = indent;
+    // Headings keep the list text base but only carry their admitted whole-block indent.
+    if (list && !heading) {
+      const hanging = list.tag === 'ol' ? 660 : 240;
+      const numberTab = [...(properties.tabs || [])].filter(([, kind]) => kind === 'num' || kind === 'left').sort(([a], [b]) => a - b)[0]?.[0];
+      const first = measuredLevel(((numberTab ?? left) - left) / step);
+      const marker = measuredLevel((left + (properties.firstIndent ?? -hanging) - (base - hanging)) / step);
+      if (first) layout.first = first;
+      if (marker) layout.marker = marker;
+    } else if (!heading && properties.firstIndent) layout.first = measuredLevel(properties.firstIndent / step);
+    return layout;
+  };
   const chooseAlternate = node => {
     for (const choice of children(node, 'mc', 'Choice')) {
       const required = (choice.getAttribute('Requires') || '').trim().split(/\s+/);
@@ -483,7 +582,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         if (node.localName !== 'customXml') warn('Revision history was removed; current text was retained.');
         blocks.push(...sequence(node));
       } else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
-      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) continue;
+      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) blocks.push(node);
       else if (is(node, 'w') && ['sectPr','tcPr','tblPr','tblGrid','trPr','bookmarkStart','bookmarkEnd','proofErr','permStart','permEnd'].includes(node.localName)) continue;
       else return fail('DOCX contains an unsupported document block: ' + node.localName);
     }
@@ -605,10 +704,12 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     if (!content) return fail('DOCX is missing the text of a referenced note.');
     if (!notes.has(label)) {
       const ordinal = notes.size + 1;
-      const author = kind === 'comment' ? attr(content, 'w', 'author') || '' : '', date = kind === 'comment' ? attr(content, 'w', 'date') || '' : '';
-      const metadata = author || date ? '<p>' + importedText(author) + (author && date ? '<br>' : '') + importedText(date) + '</p>' : '';
+      const review = kind === 'comment' ? commentInfo.get(id) : null;
+      const author = kind === 'comment' ? attr(content, 'w', 'author') || '' : '', date = review?.date || '';
+      const metadata = (author || date ? '<p>' + importedText(author) + (author && date ? '<br>' : '') + importedText(date) + '</p>' : '') +
+        (review?.resolved ? '<p>Resolved</p>' : '') + (review?.parent != null ? '<p>Reply to Word comment ' + review.parent + '</p>' : '');
       notes.set(label, {label, ordinal, content, metadata, context: {...context, path: part.path, p: {}, note: true, tableCell: false, width: context.sectionWidth || context.width}});
-      stats[kind + 's']++;
+      if (kind !== 'comment') stats[kind + 's']++;
     }
     return '<sup class="footnote-ref"><a href="#fn-' + label + '" data-footnote-label="' + label + '">' + notes.get(label).ordinal + '</a></sup>';
   };
@@ -621,7 +722,78 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     return registerNote(kind, id, context);
   };
   const commentPart = notePart('comment', false);
-  if (commentPart?.records.size) warn('Comments became Markdown notes; review ranges were not retained.');
+  const commentInfo = new Map(), commentByParagraph = new Map(), activeComments = new Set(), commentGroups = [];
+  const descendants = (node, family, name) => {
+    const found = [], pending = [...node.children].reverse();
+    while (pending.length) {
+      const item = pending.pop();
+      if (!family || is(item, family, name)) found.push(item);
+      pending.push(...[...item.children].reverse());
+    }
+    return found;
+  };
+  for (const [id, node] of commentPart?.records || []) {
+    const paragraph = descendants(node, 'w', 'p').at(-1), paraId = attr(paragraph, 'w14', 'paraId');
+    if (paraId && (!/^[\da-f]{8}$/i.test(paraId) || commentByParagraph.has(paraId.toUpperCase())))
+      return fail('DOCX comments have ambiguous paragraph identifiers.', 'docx_comments_invalid');
+    if (paraId) commentByParagraph.set(paraId.toUpperCase(), id);
+    commentInfo.set(id, {id, node, parent: null, resolved: false, date: attr(node, 'w', 'date'), starts: [], ends: []});
+  }
+  stats.comments = commentInfo.size;
+  const extendedPath = related(mainPath, 'commentsExtended');
+  if (extendedPath) {
+    const seen = new Set();
+    for (const node of children(readXml(extendedPath, 'w15', 'commentsEx'), 'w15', 'commentEx')) {
+      const key = attr(node, 'w15', 'paraId')?.toUpperCase(), parent = attr(node, 'w15', 'paraIdParent')?.toUpperCase();
+      const info = commentInfo.get(commentByParagraph.get(key)), done = attr(node, 'w15', 'done');
+      if (!info || seen.has(key) || parent && !commentByParagraph.has(parent) || done != null && !['0','1','true','false','on','off'].includes(done))
+        return fail('DOCX comment threads have invalid links or state.', 'docx_comments_invalid');
+      seen.add(key); info.parent = parent ? commentByParagraph.get(parent) : null; info.resolved = ['1','true','on'].includes(done);
+    }
+  }
+  const commentIdsPath = related(mainPath, 'commentsIds'), extensiblePath = related(mainPath, 'commentsExtensible');
+  if (commentIdsPath || extensiblePath) {
+    const durable = new Map();
+    if (commentIdsPath) for (const node of children(readXml(commentIdsPath, 'w16cid', 'commentsIds'), 'w16cid', 'commentId')) {
+      const key = attr(node, 'w16cid', 'durableId')?.toUpperCase(), paragraph = attr(node, 'w16cid', 'paraId')?.toUpperCase();
+      if (!/^[\da-f]{8}$/i.test(key || '') || durable.has(key) || !commentByParagraph.has(paragraph))
+        return fail('DOCX comment identifiers are invalid.', 'docx_comments_invalid');
+      durable.set(key, commentInfo.get(commentByParagraph.get(paragraph)));
+    }
+    if (extensiblePath) {
+      const seen = new Set();
+      for (const node of children(readXml(extensiblePath, 'w16cex', 'commentsExtensible'), 'w16cex', 'commentExtensible')) {
+        const key = attr(node, 'w16cex', 'durableId')?.toUpperCase(), info = durable.get(key);
+        if (!info || seen.has(key)) return fail('DOCX extended comments have invalid identifiers.', 'docx_comments_invalid');
+        seen.add(key);
+        const date = attr(node, 'w16cex', 'dateUtc');
+        if (date != null) info.date = date;
+      }
+    }
+  }
+  let reviewOrder = 0;
+  for (const node of descendants(body, 'w')) {
+    if (!['commentRangeStart','commentRangeEnd','commentReference'].includes(node.localName)) continue;
+    const id = integer(attr(node, 'w', 'id')), info = commentInfo.get(id);
+    if (!info) return fail('DOCX is missing the text of a referenced comment.', 'docx_comments_invalid');
+    if (node.localName !== 'commentReference') info[node.localName === 'commentRangeStart' ? 'starts' : 'ends'].push(reviewOrder++);
+  }
+  for (const info of commentInfo.values()) {
+    let root = info, chain = new Set();
+    while (root.parent != null && !chain.has(root.id)) { chain.add(root.id); root = commentInfo.get(root.parent); }
+    if (chain.has(root.id)) { warn('A comment thread with circular replies became Markdown notes.'); continue; }
+    if (root.starts.length !== 1 || root.ends.length !== 1 || root.starts[0] >= root.ends[0]) continue;
+    let group = commentGroups.find(group => group.id === root.id);
+    if (!group) { group = {id: root.id, resolved: root.resolved, records: [root]}; commentGroups.push(group); }
+    if (info !== root) group.records.push(info);
+    activeComments.add(info.id); activeComments.add(root.id);
+  }
+  const commentMarker = '\uFDD0RapierWordComment0\uFDD1';
+  const commentBoundary = node => {
+    const id = integer(attr(node, 'w', 'id'));
+    return commentGroups.some(group => group.id === id) ? sourceToken(commentMarker + id + (node.localName === 'commentRangeStart' ? 'S' : 'E') + commentMarker) : '';
+  };
+  if ([...commentInfo.keys()].some(id => !activeComments.has(id))) warn('Comments without an attached range became Markdown notes.');
   const inline = async (container, context, inherited = {}) => {
     const pieces = [];
     for (const node of container.children) {
@@ -677,9 +849,10 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         if (node.localName === 'fldSimple') warn('Fields became their stored displayed text.');
         pieces.push(...await inline(node, context, inherited));
       } else if (is(node, 'w') && ['del','moveFrom'].includes(node.localName)) warn('Revision history was removed; current text was retained.');
+      else if (is(node, 'w', 'commentReference') && activeComments.has(integer(attr(node, 'w', 'id')))) continue;
       else if (is(node, 'w') && ['footnoteReference','endnoteReference','commentReference'].includes(node.localName)) pieces.push({html: noteReference(node, context), semantic: true});
       else if (is(node, 'w') && ['instrText','fldChar'].includes(node.localName)) warn('Fields became their stored displayed text.');
-      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) continue;
+      else if (is(node, 'w') && ['commentRangeStart','commentRangeEnd'].includes(node.localName)) pieces.push({html: commentBoundary(node), semantic: true});
       else if (is(node, 'w') && ['pPr','rPr','bookmarkStart','bookmarkEnd','proofErr','lastRenderedPageBreak','permStart','permEnd','footnoteRef','endnoteRef'].includes(node.localName)) continue;
       else return fail('DOCX contains unsupported inline content: ' + node.localName);
     }
@@ -688,12 +861,16 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
   const paragraph = async (node, context) => {
     if (++stats.paragraphs > DOCX_LIMITS.paragraphs) return fail('DOCX contains too many paragraphs.');
     const properties = child(node, 'w', 'pPr'), id = val(child(properties, 'w', 'pStyle')) || defaultStyle;
-    const named = style(id), direct = paragraphProperties(properties), base = {...defaultParagraph, ...context.p, ...named.p, ...direct};
-    const list = numbering(base, id), effective = {...defaultParagraph, ...context.p, ...list?.p, ...named.p, ...direct};
+    const named = style(id), direct = paragraphProperties(properties), base = mergeParagraphProperties(defaultParagraph, context.p, named.p, direct);
+    const list = numbering(base, id), effective = mergeParagraphProperties(defaultParagraph, context.p, list?.p, named.p, direct);
+    // A directly applied list level outranks the style's indent; style-owned numbering instead fills only omissions.
+    const indents = child(properties, 'w', 'numPr') ? mergeParagraphProperties(defaultParagraph, context.p, named.p, list?.p, direct) : effective;
+    for (const key of ['leftIndent', 'firstIndent', 'tabs']) if (Object.hasOwn(indents, key)) effective[key] = indents[key];
     const align = alignment(effective), outline = integer(effective.outline, null, 0, 9);
     if (outline !== null && outline >= 6 && outline < 9) warn('Headings deeper than level six became ordinary paragraphs.');
     const heading = outline !== null && outline < 6 ? outline + 1 : null;
     const inferredHeading = !heading && outline === null && /^Heading[1-6]$/i.test(id || '') ? Number(id.slice(-1)) : heading;
+    if (inferredHeading && effective.firstIndent) warn('First-line indentation on headings was not retained; the Markdown standard ignores it.');
     const tag = inferredHeading ? 'h' + inferredHeading : 'p';
     const runs = children(node, 'w', 'r');
     if (runs.length && runs.every(run => {
@@ -706,18 +883,28 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
             Array.from(node.children).some(part => !is(part, 'w') || !['pPr','r','bookmarkStart','bookmarkEnd','proofErr'].includes(part.localName)) ||
             runs.some(run => Array.from(run.children).some(part => !is(part, 'w') || !['rPr','t'].includes(part.localName))))
           return fail('The document’s Will cannot be preserved at this position.');
-        return {html: account('<p>' + sourceToken(marker) + '</p>'), list: null};
+        return {html: () => account('<p>' + sourceToken(marker) + '</p>'), list: null};
       }
     }
     const pieces = await inline(node, context, mergeRunStyle(defaultRun, named.r)), output = [];
     if (effective.pageBreakBefore) pieces.unshift({pageBreak: true, semantic: true});
     const annotation = layout => {
       if (!context.tableCell) return layoutAttribute(layout);
+      if (['first', 'indent', 'marker'].some(key => Object.hasOwn(layout, key))) {
+        const {marker, ...paragraph} = layout;
+        const css = indentStyle(paragraph, {portable: true, pointSize: referenceType(null).body, indentOffset: -(marker || 0)}) +
+          (layout.align ? ';text-align:' + layout.align : '');
+        return layoutAttribute(layout) + ' style="' + escape(css) + '"';
+      }
       if (Object.keys(layout).length) warn('Individual paragraph alignment and picture sizing inside table cells were not retained; Markdown column alignment remains.');
       return '';
     };
     let text = '';
-    const flush = () => { if (text) { output.push('<' + tag + annotation(align ? {align} : {}) + '>' + text + '</' + tag + '>'); text = ''; } };
+    const flush = () => { if (text) {
+      const body = text;
+      output.push(base => '<' + tag + annotation(paragraphLayout(effective, inferredHeading, list, base)) + '>' + body + '</' + tag + '>');
+      text = '';
+    } };
     for (const piece of pieces) {
       if (piece.displayMath) { flush(); output.push('<p>' + piece.html + '</p>'); continue; }
       if (piece.pageBreak) {
@@ -739,21 +926,28 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     flush();
     if (!output.length) output.push('<p><br></p>');
     if (pieces.some(piece => piece.image) && pieces.some(piece => piece.html?.trim())) warn('Pictures within text became separate source-order paragraphs.');
-    return {html: output.join(''), list};
+    return {html: base => output.map(piece => typeof piece === 'function' ? piece(base) : piece).join(''),
+      layout: base => paragraphLayout(effective, inferredHeading, list, base), list, tableCell: context.tableCell};
   };
   const groupLists = blocks => {
     let html = ''; const stack = [];
     const close = () => { const level = stack.pop(); html += '</li></' + level.tag + '>'; };
     for (const block of blocks) {
-      if (!block.list) { while (stack.length) close(); html += block.html; continue; }
+      if (!block.list) { while (stack.length) close(); html += block.html(0); continue; }
       const list = block.list;
       while (stack.length && (stack.at(-1).level > list.level || stack.at(-1).level === list.level && (stack.at(-1).id !== list.id || stack.at(-1).tag !== list.tag))) close();
       if (stack.length && stack.at(-1).level === list.level) html += '</li>';
       else {
-        html += '<' + list.tag + (list.tag === 'ol' ? ' start="' + list.ordinal + '" data-rapier-list-numbering="authored" data-rapier-list-delimiter="' + list.delimiter + '"' : '') + '>';
-        stack.push(list);
+        const parentMarker = block.tableCell && stack.at(-1)?.marker;
+        html += '<' + list.tag + (list.tag === 'ol' ? ' start="' + list.ordinal + '" data-rapier-list-numbering="authored" data-rapier-list-delimiter="' + list.delimiter + '"' : '') +
+          (parentMarker ? ' style="' + indentStyle({indent: -parentMarker}, {portable: true, pointSize: referenceType(null).body}) + '"' : '') + '>';
+        stack.push({...list, base: (stack.at(-1)?.base || 0) + (list.tag === 'ol' ? 660 : 300)});
       }
-      html += '<li' + (list.tag === 'ol' ? ' data-rapier-list-ordinal="' + list.ordinal + '"' : '') + '>' + block.html;
+      const base = stack.at(-1).base, marker = block.layout(base).marker;
+      stack.at(-1).marker = marker;
+      html += '<li' + (list.tag === 'ol' ? ' data-rapier-list-ordinal="' + list.ordinal + '"' : '') +
+        (marker ? ' style="' + (block.tableCell ? indentStyle({indent: marker}, {portable: true, pointSize: referenceType(null).body}) :
+          indentStyle({marker})) + '"' : '') + '>' + block.html(base);
     }
     while (stack.length) close();
     return html;
@@ -763,7 +957,11 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
     for (let index = 0; index < nodes.length; index++) {
       checkCurrent();
       const node = nodes[index], active = sectionContexts ? {...context, ...sectionContexts[index]} : context;
-      blocks.push(is(node, 'w', 'p') ? await paragraph(node, active) : {html: await table(node, active), list: null});
+      if (is(node, 'w', 'p')) blocks.push(await paragraph(node, active));
+      else {
+        const html = is(node, 'w', 'tbl') ? await table(node, active) : commentBoundary(node);
+        blocks.push({html: () => html, list: null});
+      }
     }
     return groupLists(blocks);
   };
@@ -805,7 +1003,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         const cellWidth = child(p, 'w', 'tcW'), widthType = attr(cellWidth, 'w', 'type'), widthValue = integer(attr(cellWidth, 'w', 'w'), null, 0, 3168000);
         const width = widthValue && widthType === 'dxa' ? widthValue * 635 : widthValue && widthType === 'pct' ? context.width * widthValue / 5000 : context.width / Math.max(1, cells.length);
         const cellBlocks = sequence(cell);
-        const html = await renderBlocks(cellBlocks, {...context, tableCell: true, width: Math.min(context.width, width), p: {...context.p, ...named.p}});
+        const html = await renderBlocks(cellBlocks, {...context, tableCell: true, width: Math.min(context.width, width), p: mergeParagraphProperties(context.p, named.p)});
         const previous = spanning.get(column);
         if (continuation) {
           if (!previous || previous.span !== span) return fail('DOCX contains an invalid merged table cell.');
@@ -831,7 +1029,8 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         (cell.align && cell.align !== 'justify' ? ' style="text-align:' + cell.align + '"' : '') + '>' + cell.html + '</' + tag + '>';
     }).join('') + '</tr>').join('') + '</tbody></table>';
     const complex = !output[0]?.header || output.slice(1).some(row => row.header) || output.some(row => row.cells.some(cell =>
-      cell.span > 1 || cell.rows > 1 || (cell.html.match(/<p(?: |>)/g) || []).length > 1 || /<(?:table|[ou]l|h[1-6])(?: |>)/.test(cell.html)));
+      cell.span > 1 || cell.rows > 1 || cell.html.includes(' data-md-layout=') ||
+      (cell.html.match(/<p(?: |>)/g) || []).length > 1 || /<(?:table|[ou]l|h[1-6])(?: |>)/.test(cell.html)));
     if (!complex || context.tableCell) return html;
     const placeholder = '<p>' + sourceToken(html) + '</p>';
     rawTables.push({placeholder, html});
@@ -847,7 +1046,7 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
   }
   let html = await renderBlocks(nodes, {path: mainPath, p: {}}, contexts);
   const unplaced = [];
-  for (const id of commentPart?.records.keys() || []) if (!notes.has('docx-comment-' + id))
+  for (const id of commentPart?.records.keys() || []) if (!activeComments.has(id) && !notes.has('docx-comment-' + id))
     unplaced.push(registerNote('comment', id, {path: mainPath, p: {}, ...currentSection}));
   if (unplaced.length) html += '<p>' + unplaced.join(' ') + '</p>';
   if (notes.size) {
@@ -858,6 +1057,44 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
         note.metadata + await renderBlocks(sequence(note.content), note.context) + '</li>');
     }
     html += '<section class="footnotes"><ol>' + items.join('') + '</ol></section>';
+  }
+  const comments = {marker: commentMarker, threads: []};
+  for (const group of commentGroups) {
+    const messages = [];
+    for (const info of group.records) {
+      const date = info.date;
+      if (date != null && !validCommentDate(date))
+        return fail('DOCX contains an invalid comment date.', 'docx_comments_invalid');
+      const instant = date && /(?:Z|[+-]\d{2}:\d{2})$/.test(date) ? Date.parse(date) : null;
+      const createdAt = validCommentTimestamp(instant) ? instant : null;
+      messages.push({id: 'word-message-' + info.id, author: {kind: 'human', name: attr(info.node, 'w', 'author') || ''},
+        createdAt, ...(date != null ? {date} : {}), ...(info.parent != null ? {replyTo: 'word-message-' + info.parent} : {}),
+        html: await renderBlocks(sequence(info.node),
+          {path: commentPart.path, p: {}, note: true, ...currentSection})});
+    }
+    comments.threads.push({id: 'word-thread-' + group.id, wordId: group.id, resolved: group.resolved, messages});
+  }
+  if (comments.threads.length) {
+    // Wait until actual note and message conversion has read all emitted source parts. Authored
+    // text and attributes are escaped; only our exact staging spans may receive a new marker.
+    const inputs = [];
+    for (const root of xmlCache.values()) {
+      inputs.push(root.textContent);
+      for (const node of [root, ...descendants(root)]) for (const attribute of node.attributes) inputs.push(attribute.value);
+    }
+    for (let counter = 1; inputs.some(value => value.includes(comments.marker)); counter++)
+      comments.marker = '\uFDD0RapierWordComment' + counter + '\uFDD1';
+    if (comments.marker !== commentMarker) {
+      const spans = new Map(comments.threads.flatMap(thread => ['S', 'E'].map(edge => {
+        const boundary = thread.wordId + edge;
+        return [sourceToken(commentMarker + boundary + commentMarker), sourceToken(comments.marker + boundary + comments.marker)];
+      })));
+      const restage = value => value.replace(/<span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span>/g,
+        span => spans.get(span) || span);
+      html = restage(html);
+      for (const table of rawTables) table.html = restage(table.html);
+      for (const thread of comments.threads) for (const message of thread.messages) message.html = restage(message.html);
+    }
   }
   checkCurrent();
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
@@ -874,10 +1111,64 @@ export async function readDocx(blob, {embedImage, checkCurrent = () => {}} = {})
       return fail('DOCX picture conversion did not return embedded image bytes.', 'docx_image_conversion');
     imageResults.push({reference, url});
   }
-  for (const table of rawTables) html = html.replaceAll(table.placeholder, () => '<p>' + sourceToken(docxPortableHtml(table.html, new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url])))) + '</p>');
+  for (const table of rawTables) {
+    const replacement = '<p>' + sourceToken(docxPortableHtml(table.html, new Map(imageResults.map((image, index) => ['docx-pending-' + index, image.url])))) + '</p>';
+    html = html.replaceAll(table.placeholder, () => replacement);
+    for (const thread of comments.threads) for (const message of thread.messages) message.html = message.html.replaceAll(table.placeholder, () => replacement);
+  }
   html = html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
   if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
-  return {html, warnings: [...warnings], stats};
+  for (const thread of comments.threads) for (const message of thread.messages)
+    message.html = message.html.replace(/data-rapier-asset="(docx-pending-\d+)"/g, (_, key) => 'data-rapier-asset="' + references.get(key) + '"');
+  return {html, warnings: [...warnings], stats, ...(comments.threads.length ? {comments} : {}),
+    ...(canonical === null ? {} : {canonical})};
+}
+
+// Conversion changes Markdown delimiters and paragraph prefixes. Resolve Word's boundaries only
+// after that one writer has produced its final source; no quote search can disambiguate repeats.
+export function finishDocxMarkdown(source, result, {convertHtml} = {}) {
+  if (typeof result?.canonical === 'string') return result.canonical;
+  const review = result?.comments;
+  if (!review?.threads.length) return source;
+  if (typeof source !== 'string' || typeof convertHtml !== 'function') throw new TypeError('docx_comments_writer_required');
+  const events = [], ranges = new Map();
+  for (const thread of review.threads) {
+    const range = {};
+    for (const [edge, suffix] of [['start','S'], ['end','E']]) {
+      const token = review.marker + thread.wordId + suffix + review.marker;
+      let at = source.indexOf(token), count = 0;
+      while (at !== -1) { events.push({at, token, range, edge}); count++; at = source.indexOf(token, at + token.length); }
+      if (count !== 1) range.invalid = true;
+    }
+    ranges.set(thread, range);
+  }
+  events.sort((a, b) => a.at - b.at);
+  let body = '', cursor = 0;
+  for (const event of events) {
+    if (event.at < cursor) return fail('DOCX comment boundaries overlap.', 'docx_comments_invalid');
+    body += source.slice(cursor, event.at); event.range[event.edge] = body.length; cursor = event.at + event.token.length;
+  }
+  body += source.slice(cursor);
+  const attached = [], fallback = [];
+  for (const thread of review.threads) {
+    const range = ranges.get(thread);
+    const messages = thread.messages.map(({html, ...message}) => ({...message, text: convertHtml(html).trim()}));
+    if (!range.invalid && range.end > range.start) attached.push({id: thread.id, resolved: thread.resolved, messages,
+      anchor: commentAnchor('text', range.start, range.end, body, parseComments(body))});
+    else fallback.push({thread, messages});
+  }
+  for (const {thread, messages} of fallback) {
+    const label = 'docx-comment-' + thread.wordId;
+    const content = messages.map(message => [message.id, convertHtml('<p>' + importedText(message.author.name) + '</p>').trim(),
+      message.date || '', thread.resolved ? 'Resolved' : '', message.replyTo ? 'Reply to ' + message.replyTo : '',
+      message.text].filter(Boolean).join('\n\n')).join('\n\n');
+    body += (body.endsWith('\n\n') ? '' : body.endsWith('\n') ? '\n' : '\n\n') + '[^' + label + ']\n\n[^' + label + ']: ' + content.replace(/\n/g, '\n    ') + '\n';
+  }
+  if (fallback.length && !result.warnings.includes('Comments without an attached range became Markdown notes.'))
+    result.warnings.push('Comments without an attached range became Markdown notes.');
+  if (!attached.length) return body;
+  const parsed = parseComments(body), splice = writeComments(body, [...commentThreads(body, parsed), ...attached], parsed, {notes: true});
+  return body.slice(0, splice.pos) + splice.inserted + body.slice(splice.pos + splice.removed.length);
 }
 
 // Convert trusted import staging to ordinary HTML for raw tables and the Notes HTML importer.
@@ -975,13 +1266,13 @@ function footnoteTail(value) { const m = /fn(?:ref)?[-:]?([A-Za-z0-9_.]+)$/.exec
 // Register only destinations actually carried by the writer. Word bookmark names are short,
 // ASCII identifiers; a document-local ordinal distinguishes Unicode, punctuation and truncation
 // collisions. Duplicate HTML ids resolve to the first target, as they do in the document.
-function docxNavigation(blocks) {
+function docxNavigation(blocks, firstId = 0, parent) {
   const bookmarks = new Map(), targets = new Map(), links = new Set();
   const visit = value => {
     if (Array.isArray(value)) { value.forEach(visit); return; }
     if (!value || typeof value !== 'object') return;
     if (value.type === 'bookmarkStart') {
-      const id = bookmarks.size, anchor = value.bookmark.anchor;
+      const id = firstId + bookmarks.size, anchor = value.bookmark.anchor;
       const name = 'b_' + anchor.replace(/[^a-z0-9_]/gi, '_').slice(0, 28) + '_' + id;
       const mark = {id, name};
       bookmarks.set(value.bookmark, mark);
@@ -994,14 +1285,147 @@ function docxNavigation(blocks) {
   const resolve = href => {
     let anchor = href.slice(1);
     try { anchor = decodeURIComponent(anchor); } catch (_) {}
-    return targets.get(anchor);
+    return targets.get(anchor) || parent?.resolve(href);
   };
   return {bookmarks, resolve, unresolvedLinks: [...links].filter(href => !resolve(href)).length};
 }
 
+// Each slot is an actual writer leaf. Paragraph boundaries are separate from its text, so a
+// range across paragraphs cannot accidentally attach to identical words in another block.
+function commentProjection(blocks) {
+  let text = ''; const slots = [];
+  const leaf = (value, valueText) => {
+    const start = text.length; text += valueText;
+    slots.push({value, start, end: text.length});
+  };
+  const runs = list => {
+    for (const run of list || []) {
+      if (run.type === 'text') leaf(run, run.text);
+      else if (run.type === 'image') leaf(run, '\uFFFC');
+      else if (run.type === 'math') leaf(run, (run.display ? '$$' : '$') + run.tex + (run.display ? '$$' : '$'));
+      else if (run.type === 'footnote') leaf(run, '\uFFFC');
+    }
+  };
+  const paragraph = runList => { runs(runList); text += '\u2029'; };
+  const visit = list => {
+    for (const block of list || []) {
+      if (block.type === 'list') for (const item of block.items) item.continuation ? visit(item.blocks) : paragraph(item.runs);
+      else if (block.type === 'table') for (const row of [block.header, ...block.rows]) for (const value of row) {
+        const cell = Array.isArray(value) ? {runs: value} : value;
+        if (cell.blocks) visit(cell.blocks); else paragraph(cell.runs);
+      }
+      else if (block.type === 'image') { leaf(block, '\uFFFC'); text += '\u2029'; }
+      else if (block.type === 'code') { leaf(block, block.text); text += '\u2029'; }
+      else if (block.type === 'math') { leaf(block, '$$' + block.tex + '$$'); text += '\u2029'; }
+      else if (block.type !== 'will') paragraph(block.runs);
+    }
+  };
+  visit(blocks);
+  return {text, slots};
+}
+
+const docxRoots = new WeakMap();
+function commentMessageBlocks(model) {
+  const blocks = [...model.blocks];
+  // Word comments cannot contain footnote references. Keep each local note with its
+  // matching label and rich content inside the message, without touching document notes.
+  for (const [id, note] of model.notes) {
+    const label = {type: 'text', text: '[' + id + '] ', sup: true}, content = note.blocks;
+    if (content[0]?.runs) content[0].runs.unshift(label);
+    else blocks.push({type: 'paragraph', runs: [label]});
+    blocks.push(...content);
+  }
+  const flatten = value => {
+    if (Array.isArray(value)) { value.forEach(flatten); return; }
+    if (!value || typeof value !== 'object') return;
+    if (value.type === 'footnote') Object.assign(value, {type: 'text', text: '[' + value.id + ']', sup: true});
+    for (const key of ['runs', 'items', 'header', 'rows', 'blocks']) if (value[key]) flatten(value[key]);
+  };
+  flatten(blocks);
+  return blocks;
+}
+
+function projectDocxComments(root, model, canonical) {
+  const parsed = parseComments(canonical), threads = commentThreads(canonical, parsed);
+  if (!threads.length) return model;
+  // This parser is the same source owner used by the editor. Sentinels never enter the
+  // exported document: the two unmarked text streams must agree before any range is placed.
+  const parser = markdownParser(), references = documentAssets(canonical).references, render = (source, env = {}) => {
+    const template = root.ownerDocument.createElement('template');
+    env.references = {...references};
+    template.innerHTML = parser.render(source.slice(markdownBodyOffset(source)), env);
+    return docxBlocksFromDom(template.content);
+  };
+  const source = parsed.body, original = commentProjection(render(source).blocks);
+  if (parsed.notes && parsed.current) {
+    const env = {}, full = render(canonical, env), fullProjection = commentProjection(full.blocks), actualProjection = commentProjection(model.blocks);
+    const labels = new Set(parsed.noteLabels), ids = new Set((env.footnotes?.list || []).flatMap((note, index) => labels.has(note.label) ? [String(index + 1)] : []));
+    const referencesOf = projection => projection.slots.filter(slot => slot.value.type === 'footnote').map(slot => slot.value.id);
+    const noteProof = note => JSON.stringify(note, (_, value) => value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+    // Only a byte-verified source appendix and its exact parser-owned references may be
+    // omitted from native Word. A different portable model keeps all of its visible notes.
+    if (ids.size === labels.size && fullProjection.text === actualProjection.text &&
+        JSON.stringify(referencesOf(fullProjection)) === JSON.stringify(referencesOf(actualProjection)) &&
+        [...ids].every(id => full.notes.has(id) && model.notes.has(id) && noteProof(full.notes.get(id)) === noteProof(model.notes.get(id)))) {
+      const blocks = model.blocks.filter(block => !(block.type === 'paragraph' && block.runs.some(run => run.type === 'footnote' && ids.has(run.id)) &&
+        block.runs.every(run => run.type === 'footnote' && ids.has(run.id) || run.type === 'text' && !run.text.trim() || ['bookmarkStart', 'bookmarkEnd'].includes(run.type))));
+      const remaining = commentProjection(blocks);
+      const survivingNotes = [...model.notes].filter(([id]) => !ids.has(id));
+      if (remaining.text === original.text && !referencesOf(remaining).some(id => ids.has(id)) &&
+          !survivingNotes.some(([, note]) => referencesOf(commentProjection(note.blocks)).some(id => ids.has(id)))) {
+        model.blocks = blocks;
+        for (const id of ids) model.notes.delete(id);
+      }
+    }
+  }
+  const actual = commentProjection(model.blocks);
+  let marker = '\uFDD0RapierWordRange0\uFDD1';
+  for (let counter = 1; source.includes(marker) || actual.text.includes(marker); counter++) marker = '\uFDD0RapierWordRange' + counter + '\uFDD1';
+  const insertions = [], candidates = new Map();
+  model.comments = threads.map((thread, index) => {
+    const messages = thread.messages.map(message => ({...message, blocks: commentMessageBlocks(render(message.text))}));
+    const review = {id: index, resolved: thread.resolved, messages, attached: false};
+    const anchor = thread.anchor;
+    if (anchor.status === 'attached' && anchor.kind !== 'document') {
+      const start = marker + index + 'S' + marker, end = marker + index + 'E' + marker;
+      candidates.set(review, {start, end});
+      insertions.push({at: anchor.start, token: start}, {at: anchor.end, token: end});
+    }
+    return review;
+  });
+  if (!candidates.size || original.text !== actual.text) return model;
+  insertions.sort((a, b) => b.at - a.at);
+  let marked = source;
+  for (const entry of insertions) marked = marked.slice(0, entry.at) + entry.token + marked.slice(entry.at);
+  const projected = commentProjection(render(marked).blocks).text, removals = [];
+  for (const [review, range] of candidates) for (const edge of ['start','end']) {
+    const token = range[edge], at = projected.indexOf(token);
+    if (at < 0 || projected.indexOf(token, at + token.length) !== -1) range.invalid = true;
+    else removals.push({at, token, range, edge, review});
+  }
+  removals.sort((a, b) => a.at - b.at);
+  let clean = '', cursor = 0;
+  for (const entry of removals) {
+    clean += projected.slice(cursor, entry.at); entry.range[entry.edge + 'At'] = clean.length; cursor = entry.at + entry.token.length;
+  }
+  clean += projected.slice(cursor);
+  if (clean !== original.text) return model;
+  for (const [review, range] of candidates) {
+    if (range.invalid || range.endAt <= range.startAt) continue;
+    const start = actual.slots.find(slot => slot.start <= range.startAt && range.startAt < slot.end),
+      end = [...actual.slots].reverse().find(slot => slot.start < range.endAt && range.endAt <= slot.end);
+    if (!start || !end) continue;
+    (start.value.commentEvents ||= []).push({at: range.startAt - start.start, id: review.id, start: true});
+    (end.value.commentEvents ||= []).push({at: range.endAt - end.start, id: review.id, start: false});
+    review.attached = true;
+  }
+  return model;
+}
+
 // The DOM may be the semantic render (data attributes) or the portable projection the exports
 // share (inline styles, prefixed ids): both are read.
-export function docxBlocksFromDom(root) {
+export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(typeof canonical === 'string' ? readDocumentSettings(canonical) : null).body, indentOffset = 0} = {}) {
   const blocks = [], refs = new Map(), notes = new Map();
   // Layout via spec/md-layout.mjs, never an ad hoc parse.
   const layoutOf = element => {
@@ -1017,7 +1441,9 @@ export function docxBlocksFromDom(root) {
       if (parsed) return parsed;
     }
     const align = element.getAttribute?.('data-md-align');
-    return align ? {align} : null;
+    const layout = /^(?:P|H[1-6])$/.test(element.tagName) ? textLayout(element.style, {pointSize, offset: indentOffset}) : {};
+    if (align) layout.align = align;
+    return Object.keys(layout).length ? layout : null;
   };
   const runsOf = (node, style = {}, out = []) => {
     const anchor = node.getAttribute?.('id') || (node.tagName === 'A' && node.getAttribute('name'));
@@ -1076,12 +1502,14 @@ export function docxBlocksFromDom(root) {
     if (bookmark) out.push({type: 'bookmarkEnd', bookmark});
     return out;
   };
-  const listItems = (list, level, items) => {
+  const listItems = (list, level, items, inheritedOffset = indentOffset) => {
     const ordered = list.tagName === 'OL';
+    const listOffset = textLayout(list.style, {pointSize, offset: inheritedOffset}).indent || 0;
     let start = ordered ? parseInt(list.getAttribute('start') || '1', 10) : null;
     for (const li of Array.from(list.children)) {
       if (li.tagName !== 'LI') continue;
       const own = li.cloneNode(true);
+      const itemOffset = textLayout(own.style, {listMarker: true, pointSize, offset: listOffset}).marker || 0;
       const isList = child => /^(UL|OL)$/.test(child.tagName);
       const text = Array.from(own.childNodes).filter(child => !isList(child)).map(child => child.textContent || '').join('');
       const task = /^\s*[☐☒]/.test(text) ? text.trim().startsWith('☒') : null;
@@ -1104,7 +1532,9 @@ export function docxBlocksFromDom(root) {
           runs.unshift({type: 'bookmarkStart', bookmark});
           runs.push({type: 'bookmarkEnd', bookmark});
         }
-        items.push({level, ordered, task, start, runs, layout: paragraph?.layout || null,
+        const layout = {...paragraph?.layout};
+        if (paragraph?.type === 'paragraph' && itemOffset && !Object.hasOwn(layout, 'marker')) layout.marker = itemOffset;
+        items.push({level, ordered, task, start, runs, layout: Object.keys(layout).length ? layout : null,
           heading: paragraph?.type === 'heading' ? paragraph.level : null,
           quote: paragraph?.type === 'quote', code: paragraph?.type === 'code'});
         first = false;
@@ -1117,7 +1547,7 @@ export function docxBlocksFromDom(root) {
           while ((edge = group.childNodes[fromStart ? 0 : group.childNodes.length - 1])?.nodeType === 3 && /^[ \r\n]*$/.test(edge.nodeValue)) edge.remove();
         }
         if (!group.childNodes.length) return;
-        const content = nestedBlocks(group);
+        const content = nestedBlocks(group, itemOffset);
         if (first) {
           if (content[0]?.type === 'image') {
             const image = content.shift();
@@ -1136,7 +1566,7 @@ export function docxBlocksFromDom(root) {
         if (isList(child)) {
           flush();
           if (first) begin(null);
-          listItems(child, Math.min(8, level + 1), items);
+          listItems(child, Math.min(8, level + 1), items, itemOffset);
         } else if (child.nodeType === 1 && !INLINE_TAGS.has(child.tagName)) {
           flush(); group.appendChild(child); flush();
         } else group.appendChild(child);
@@ -1146,9 +1576,9 @@ export function docxBlocksFromDom(root) {
       if (ordered) start++;
     }
   };
-  const nestedBlocks = node => {
-    if (Array.from(node.children).some(child => !INLINE_TAGS.has(child.tagName))) return docxBlocksFromDom(node).blocks;
-    return [{type: 'paragraph', runs: runsOf(node), layout: null}];
+  const nestedBlocks = (node, offset = indentOffset) => {
+    if (Array.from(node.children).some(child => !INLINE_TAGS.has(child.tagName))) return docxBlocksFromDom(node, {pointSize, indentOffset: offset}).blocks;
+    return [{type: 'paragraph', runs: runsOf(node), layout: offset ? {indent: offset} : null}];
   };
   const cellText = cell => ({blocks: nestedBlocks(cell),
     colspan: integer(cell.getAttribute('colspan'), 1, 1, DOCX_LIMITS.tableColumns),
@@ -1216,7 +1646,9 @@ export function docxBlocksFromDom(root) {
     }
     blocks.push({type: 'paragraph', runs: runsOf(element), layout: null});
   }
-  return {blocks, refs, notes, unresolvedLinks: docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]).unresolvedLinks};
+  const model = {blocks, refs, notes, unresolvedLinks: docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]).unresolvedLinks};
+  docxRoots.set(model, {root, canonical});
+  return typeof canonical === 'string' ? projectDocxComments(root, model, canonical) : model;
 }
 
 function rPrXml(style) {
@@ -1243,7 +1675,7 @@ function pPrXml({styleId, outline, align, numId, ilvl, vanish, borders, shading,
   const bits = [];
   if (styleId) bits.push('<w:pStyle w:val="' + escape(styleId) + '"/>');
   if (numId != null) bits.push('<w:numPr><w:ilvl w:val="' + (ilvl || 0) + '"/><w:numId w:val="' + numId + '"/></w:numPr>');
-  if (numTab != null) bits.push('<w:tabs><w:tab w:val="num" w:pos="' + numTab + '"/></w:tabs>');
+  if (numTab != null) bits.push('<w:tabs><w:tab w:val="num" w:pos="' + integer(numTab, null, -2147483648) + '"/></w:tabs>');
   if (align && ['left', 'right', 'center', 'both'].includes(align)) bits.push('<w:jc w:val="' + align + '"/>');
   if (ind) bits.push(ind);
   if (outline != null) bits.push('<w:outlineLvl w:val="' + outline + '"/>');
@@ -1260,15 +1692,19 @@ function jcOf(layout) {
   return value === 'justify' ? 'both' : ['left', 'right', 'center'].includes(value) ? value : null;
 }
 
-// One step of `indent` or `first` is 2em of the paragraph's type. A point is 20 twips.
+// One step of `indent` or `first` is 2em of the document's body type. A point is 20 twips.
 // A heading ignores `first`. `w:left` is the start edge of a left-to-right paragraph, the edge the key indents from.
-function indOf(layout, {first = true, base = 0, pointSize = 12, hanging = 0} = {}) {
+function indOf(layout, {first = true, base = 0, pointSize = referenceType(null).body, hanging = null} = {}) {
   const step = pointSize * 40;
   const left = Math.round(base + (layout?.indent || 0) * step);
-  const firstLine = first && layout?.first ? Math.round(layout.first * step) : 0;
-  if (!left && !firstLine && !hanging) return '';
+  const firstLine = first && layout?.first ? Math.round(layout.first * step) : -Math.round(hanging);
+  // Compensated public CSS must finish in the same native integer domain the reader admits.
+  integer(left, null, -2147483648);
+  integer(Math.abs(firstLine));
+  if (!left && !firstLine && hanging == null) return '';
   return '<w:ind' + (left ? ' w:left="' + left + '"' : '') +
-    (firstLine ? ' w:firstLine="' + firstLine + '"' : hanging ? ' w:hanging="' + Math.round(hanging) + '"' : '') + '/>';
+    (firstLine > 0 ? ' w:firstLine="' + firstLine + '"' : firstLine < 0 ? ' w:hanging="' + -firstLine + '"' :
+      hanging != null ? ' w:hanging="0"' : '') + '/>';
 }
 
 // `rewriteDocument` writes the Will markers into word/document.xml in the one pass.
@@ -1324,9 +1760,18 @@ function corePropertiesXml(settings) {
     '</cp:coreProperties>';
 }
 
-export async function writeDocx(input, {convertImage, rewriteDocument, canonical} = {}) {
-  const {blocks, refs, notes} = input && typeof input === 'object' && Array.isArray(input.blocks) ? input : docxBlocksFromDom(input);
+export async function writeDocx(input, {convertImage, rewriteDocument, canonical, bom = false} = {}) {
+  const model = input && typeof input === 'object' && Array.isArray(input.blocks) ? input : docxBlocksFromDom(input);
+  const projection = docxRoots.get(model);
+  if (typeof canonical === 'string' && projection && projection.canonical !== canonical) {
+    for (const {value} of commentProjection(model.blocks).slots) delete value.commentEvents;
+    delete model.comments; projectDocxComments(projection.root, model, canonical); projection.canonical = canonical;
+  }
+  const {blocks, refs, notes} = model;
+  const comments = model.comments || (typeof canonical === 'string' ? commentThreads(canonical).map((thread, id) =>
+    ({id, resolved: thread.resolved, messages: thread.messages, attached: false})) : []);
   const settings = typeof canonical === 'string' ? readDocumentSettings(canonical) : null;
+  const carrySource = typeof canonical === 'string';
   const bodyPointSize = referenceType(settings).body;
   const navigation = docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]);
   const rels = [], media = [];
@@ -1427,50 +1872,63 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
 
   const resolveSrc = run => run.src || (run.ref ? refs.get(String(run.ref).toLowerCase()) : null);
 
-  const emitRuns = async (runList) => {
+  const commentEventXml = event => event.start ? '<w:commentRangeStart w:id="' + event.id + '"/>' :
+    '<w:commentRangeEnd w:id="' + event.id + '"/><w:r><w:commentReference w:id="' + event.id + '"/></w:r>';
+  const commentedTextXml = (text, style, start = 0, end = text.length) => {
+    const events = (style.commentEvents || []).filter(event => event.at >= start && event.at <= end)
+      .sort((a, b) => a.at - b.at || Number(a.start) - Number(b.start) || a.id - b.id);
+    let xml = '', at = start;
+    for (const event of events) { if (event.at > at) xml += tXml(text.slice(at, event.at), style); xml += commentEventXml(event); at = event.at; }
+    if (at < end) xml += tXml(text.slice(at, end), style);
+    return xml;
+  };
+  const commentObjectXml = (inner, value) => (value.commentEvents || []).filter(event => event.at === 0).map(commentEventXml).join('') +
+    inner + (value.commentEvents || []).filter(event => event.at === 1).map(commentEventXml).join('');
+
+  const emitRuns = async (runList, targets = navigation) => {
     let xml = '';
     for (const run of runList) {
       if (run.type === 'bookmarkStart' || run.type === 'bookmarkEnd') {
-        const mark = navigation.bookmarks.get(run.bookmark);
+        const mark = targets.bookmarks.get(run.bookmark);
         xml += run.type === 'bookmarkStart'
           ? '<w:bookmarkStart w:id="' + mark.id + '" w:name="' + mark.name + '"/>'
           : '<w:bookmarkEnd w:id="' + mark.id + '"/>';
         continue;
       }
       const internal = run.href?.startsWith('#');
-      const target = internal && navigation.resolve(run.href);
+      const target = internal && targets.resolve(run.href);
       const link = inner => target ? '<w:hyperlink w:anchor="' + target.name + '">' + inner + '</w:hyperlink>' : inner;
       if (run.type === 'image') {
         const src = resolveSrc(run);
         if (!src) continue;
-        xml += link(pictureXml(await assetFor(src, run.alt, false), run.alt, run.layout || null));
+        xml += commentObjectXml(link(pictureXml(await assetFor(src, run.alt, false), run.alt, run.layout || null)), run);
         continue;
       }
       if (run.type === 'footnote') {
         if (!noteMap.has(run.id)) noteMap.set(run.id, {id: noteMap.size + 1, content: notes.get(run.id) || ''});
-        xml += '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="' + noteMap.get(run.id).id + '"/></w:r>';
+        xml += commentObjectXml('<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="' + noteMap.get(run.id).id + '"/></w:r>', run);
         continue;
       }
       if (run.type === 'math') {
         const marker = run.display ? '$$' : '$';
-        xml += link(tXml(marker + run.tex + marker, run));
+        xml += link(commentedTextXml(marker + run.tex + marker, run));
         continue;
       }
       const text = run.text ?? '';
       if (!text) continue;
-      if (internal) xml += link(tXml(text, target ? {...run, underline: true} : run));
+      if (internal) xml += link(commentedTextXml(text, target ? {...run, underline: true} : run));
       else if (run.href) {
         const id = nextRid();
         rels.push({id, type: 'hyperlink', target: run.href, external: true});
-        xml += '<w:hyperlink r:id="' + id + '">' + tXml(text, {...run, underline: true}) + '</w:hyperlink>';
-      } else xml += tXml(text, run);
+        xml += '<w:hyperlink r:id="' + id + '">' + commentedTextXml(text, {...run, underline: true}) + '</w:hyperlink>';
+      } else xml += commentedTextXml(text, run);
     }
     return xml;
   };
 
   const quoteBorders = '<w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="777777"/></w:pBdr>';
   const codeShading = '<w:shd w:val="clear" w:color="auto" w:fill="F4F4F4"/>';
-  const emitBlocks = async (blocks, inset = 0) => {
+  const emitBlocks = async (blocks, inset = 0, targets = navigation) => {
    const bodyParts = [];
    const paragraphInd = layout => indOf(layout, {base: inset, pointSize: bodyPointSize});
    const tableInd = inset ? '<w:tblInd w:w="' + Math.round(inset) + '" w:type="dxa"/>' : '';
@@ -1484,25 +1942,25 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       continue;
     }
     if (block.type === 'heading') {
-      const inner = await emitRuns(block.runs);
+      const inner = await emitRuns(block.runs, targets);
       bodyParts.push(pXml(inner, {styleId: 'Heading' + block.level, outline: block.level - 1, align: jcOf(block.layout), ind: indOf(block.layout, {first: false, base: inset, pointSize: bodyPointSize})}));
       continue;
     }
     if (block.type === 'math') {
-      bodyParts.push(pXml(tXml('$$' + block.tex + '$$'), {ind: paragraphInd(null)}));
+      bodyParts.push(pXml(commentedTextXml('$$' + block.tex + '$$', block), {ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'image') {
       const src = block.src || (block.ref ? refs.get(String(block.ref).toLowerCase()) : null);
       if (!src) continue;
       const drawing = /^data:image\/svg\+xml/i.test(src);
-      bodyParts.push(pXml(pictureXml(await assetFor(src, block.alt, drawing), block.alt, block.layout), {align: jcOf(block.layout), ind: paragraphInd(null)}));
+      bodyParts.push(pXml(commentObjectXml(pictureXml(await assetFor(src, block.alt, drawing), block.alt, block.layout), block), {align: jcOf(block.layout), ind: paragraphInd(null)}));
       if (block.caption) bodyParts.push(pXml(tXml('Figure: ' + block.caption), {align: 'center', ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'callout') {
       const label = tXml('[!' + block.kind + ']', {bold: true});
-      const body = await emitRuns(block.runs);
+      const body = await emitRuns(block.runs, targets);
       const border = '<w:pBdr><w:left w:val="single" w:sz="24" w:space="8" w:color="0969DA"/></w:pBdr>';
       bodyParts.push('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>' + tableInd + '<w:tblBorders>' +
         '<w:left w:val="single" w:sz="24" w:space="0" w:color="0969DA"/>' +
@@ -1513,7 +1971,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       continue;
     }
     if (block.type === 'quote') {
-      bodyParts.push(pXml(await emitRuns(block.runs), {
+      bodyParts.push(pXml(await emitRuns(block.runs, targets), {
         borders: quoteBorders, ind: paragraphInd(null)
       }));
       continue;
@@ -1524,7 +1982,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       for (const item of block.items) {
         if (item.continuation) {
           while (idAt.length && idAt[idAt.length - 1].level > item.level) idAt.pop();
-          bodyParts.push(await emitBlocks(item.blocks, leftAt[item.level] ?? inset));
+          bodyParts.push(await emitBlocks(item.blocks, leftAt[item.level] ?? inset, targets));
           continue;
         }
         // The reference column advances 2.75 units for numbers and 1.25 for bullets.
@@ -1532,11 +1990,11 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         const advance = item.ordered ? 660 : 300;
         const left = (leftAt[item.level - 1] ?? inset + item.level * advance) + advance;
         leftAt.length = item.level + 1; leftAt[item.level] = left;
-        const pointSize = item.heading ? 12 : bodyPointSize;
+        const pointSize = bodyPointSize;
         const authoredIndent = (item.layout?.indent || 0) * pointSize * 40;
         const numTab = Math.round(left + authoredIndent + (item.heading ? 0 : item.layout?.first || 0) * pointSize * 40);
         const ind = indOf(item.layout, {first: false, base: left, pointSize,
-          hanging: (item.ordered ? 660 : 240) + authoredIndent});
+          hanging: (item.ordered ? 660 : 240) + authoredIndent - (item.layout?.marker || 0) * pointSize * 40});
         while (idAt.length && idAt[idAt.length - 1].level > item.level) idAt.pop();
         const top = idAt[idAt.length - 1];
         let numId;
@@ -1553,7 +2011,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         }
         if (freshLevel) idAt.push({level: item.level, ordered: item.ordered, numId});
         const prefix = item.task == null ? '' : (item.task ? '[x] ' : '[ ] ');
-        const inner = (prefix ? tXml(prefix) : '') + await emitRuns(item.runs);
+        const inner = (prefix ? tXml(prefix) : '') + await emitRuns(item.runs, targets);
         bodyParts.push(pXml(inner, {styleId: item.heading ? 'Heading' + item.heading : 'ListParagraph',
           outline: item.heading ? item.heading - 1 : null, numId, ilvl: item.level, align: jcOf(item.layout), ind, numTab,
           borders: item.quote ? quoteBorders : null, shading: item.code ? codeShading : null}));
@@ -1591,7 +2049,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       const width = Math.max(1, Math.floor(9000 / cols));
       const cell = async value => {
         const span = value.colspan || 1;
-        const inner = value.continuation ? pXml('') : value.blocks ? await emitBlocks(value.blocks) : pXml(await emitRuns(value.runs || []));
+        const inner = value.continuation ? pXml('') : value.blocks ? await emitBlocks(value.blocks, 0, targets) : pXml(await emitRuns(value.runs || [], targets));
         return '<w:tc><w:tcPr><w:tcW w:w="' + width * span + '" w:type="dxa"/>' +
           (span > 1 ? '<w:gridSpan w:val="' + span + '"/>' : '') +
           (value.continuation ? '<w:vMerge/>' : value.rowspan > 1 ? '<w:vMerge w:val="restart"/>' : '') + '</w:tcPr>' +
@@ -1612,18 +2070,45 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       continue;
     }
     if (block.type === 'code') {
-      for (const line of String(block.text || '').split('\n')) bodyParts.push(pXml(tXml(line, {code: true}), {shading: codeShading, ind: paragraphInd(null)}));
+      const text = String(block.text || ''); let at = 0;
+      for (const line of text.split('\n')) {
+        bodyParts.push(pXml(commentedTextXml(text, {...block, code: true}, at, at + line.length), {shading: codeShading, ind: paragraphInd(null)}));
+        at += line.length + 1;
+      }
       continue;
     }
     if (block.rule) {
       bodyParts.push(pXml('', {borders: '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>', ind: paragraphInd(null)}));
       continue;
     }
-    bodyParts.push(pXml(await emitRuns(block.runs), {align: jcOf(block.layout), ind: paragraphInd(block.layout)}));
+    bodyParts.push(pXml(await emitRuns(block.runs, targets), {align: jcOf(block.layout), ind: paragraphInd(block.layout)}));
    }
    return bodyParts.join('') || pXml('');
   };
-  const bodyXml = await emitBlocks(blocks);
+  const bodyXml = await emitBlocks(blocks) + comments.filter(comment => !comment.attached)
+    .map(comment => pXml('<w:r><w:commentReference w:id="' + comment.id + '"/></w:r>')).join('');
+  const commentXml = [], commentExXml = [];
+  let nextComment = comments.length, nextBookmark = navigation.bookmarks.size;
+  for (const comment of comments) {
+    const identifiers = new Map(comment.messages.map((message, index) => [message.id, index ? nextComment++ : comment.id]));
+    for (let index = 0; index < comment.messages.length; index++) {
+      const message = comment.messages[index], id = identifiers.get(message.id), paraId = (id + 1).toString(16).toUpperCase().padStart(8, '0');
+      const parent = index ? identifiers.get(message.replyTo) ?? comment.id : null;
+      const date = message.date ?? (message.createdAt === null ? null : new Date(message.createdAt).toISOString());
+      const targets = docxNavigation(message.blocks || [], nextBookmark, navigation);
+      nextBookmark += targets.bookmarks.size;
+      let body = message.blocks ? await emitBlocks(message.blocks, 0, targets) : pXml(tXml(message.text));
+      // Word's thread key is the last paragraph of the comment, including a last paragraph
+      // inside a table. Each message gets its own key; replies point at their actual parent.
+      const paragraphs = [...body.matchAll(/<w:p(?=>)/g)], last = paragraphs.at(-1)?.index;
+      if (last == null) body += '<w:p w14:paraId="' + paraId + '"/>';
+      else body = body.slice(0, last) + '<w:p w14:paraId="' + paraId + '"' + body.slice(last + 4);
+      commentXml.push('<w:comment w:id="' + id + '" w:author="' + escape(message.author.name) + '"' +
+        (date ? ' w:date="' + escape(date) + '"' : '') + '>' + body + '</w:comment>');
+      commentExXml.push('<w15:commentEx w15:paraId="' + paraId + '" w15:done="' + (comment.resolved ? 1 : 0) + '"' +
+        (parent != null ? ' w15:paraIdParent="' + (parent + 1).toString(16).toUpperCase().padStart(8, '0') + '"' : '') + '/>');
+    }
+  }
   const noteXml = [];
   for (const note of noteMap.values()) {
     const body = typeof note.content === 'string' ? pXml(tXml(note.content)) : await emitBlocks(note.content.blocks);
@@ -1669,9 +2154,14 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   const footnoteXml = noteMap.size ? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:footnotes xmlns:w="' + NS.w[0] +
     '" xmlns:r="' + NS.r[0] + '" xmlns:a="' + NS.a[0] + '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '">' +
     noteXml.join('') + '</w:footnotes>' : null;
+  const commentsXml = commentXml.length ? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:comments xmlns:w="' + NS.w[0] +
+    '" xmlns:r="' + NS.r[0] + '" xmlns:a="' + NS.a[0] + '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] +
+    '" xmlns:w14="' + NS.w14[0] + '" xmlns:mc="' + NS.mc[0] + '" mc:Ignorable="w14">' + commentXml.join('') + '</w:comments>' : null;
+  const commentsExtendedXml = commentsXml ? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w15:commentsEx xmlns:w15="' +
+    NS.w15[0] + '">' + commentExXml.join('') + '</w15:commentsEx>' : null;
 
   const relXml = list => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="' + NS.rel[0] + '">' +
-    list.map(row => '<Relationship Id="' + escape(row.id) + '" Type="' + NS.r[0] + '/' + row.type +
+    list.map(row => '<Relationship Id="' + escape(row.id) + '" Type="' + (row.type.startsWith('http:') ? row.type : NS.r[0] + '/' + row.type) +
       '" Target="' + escape(row.target) + '"' + (row.external ? ' TargetMode="External"' : '') + '/>').join('') +
     '</Relationships>';
 
@@ -1680,6 +2170,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     {id: numberingRid, type: 'numbering', target: 'numbering.xml'},
     ...(footnoteXml ? [{id: footnotesRid, type: 'footnotes', target: 'footnotes.xml'}] : []),
     ...(footerId ? [{id: footerId, type: 'footer', target: 'footer1.xml'}] : []),
+    ...(commentsXml ? [{id: nextRid(), type: 'comments', target: 'comments.xml'},
+      {id: nextRid(), type: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended', target: 'commentsExtended.xml'}] : []),
     ...rels
   ];
   const types = ['png', 'jpeg'].filter(ext => media.some(row => row.name.endsWith('.' + ext)));
@@ -1694,13 +2186,17 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   ];
   if (footnoteXml) overrides.push('<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>');
   if (footerId) overrides.push('<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>');
+  if (commentsXml) overrides.push('<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>',
+    '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/>');
   const coreXml = corePropertiesXml(settings);
   if (coreXml) overrides.push('<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>');
+  if (carrySource) overrides.push('<Override PartName="/' + DOCX_SOURCE.path + '" ContentType="' + DOCX_SOURCE.type + '"/>');
   const contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="' + NS.ct[0] + '">' +
     defaults + overrides.join('') + '</Types>';
 
   const packageRels = relXml([{id: 'rIdDoc', type: 'officeDocument', target: 'word/document.xml'}])
-    .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') + '</Relationships>');
+    .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') +
+      (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' : '') + '</Relationships>');
   const entries = [
     {name: '[Content_Types].xml', bytes: xmlBytes(contentTypesXml)},
     {name: '_rels/.rels', bytes: xmlBytes(packageRels)},
@@ -1716,13 +2212,24 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     if (noteRels.length) entries.push({name: 'word/_rels/footnotes.xml.rels', bytes: xmlBytes(relXml(noteRels))});
   }
   if (footerId) entries.push({name: 'word/footer1.xml', bytes: xmlBytes(pageNumberFooterXml())});
+  if (commentsXml) {
+    entries.push({name: 'word/comments.xml', bytes: xmlBytes(commentsXml)}, {name: 'word/commentsExtended.xml', bytes: xmlBytes(commentsExtendedXml)});
+    const used = new Set([...commentsXml.matchAll(/\br:(?:id|embed)="([^"]+)"/g)].map(match => match[1]));
+    const commentRels = rels.filter(row => used.has(row.id));
+    if (commentRels.length) entries.push({name: 'word/_rels/comments.xml.rels', bytes: xmlBytes(relXml(commentRels))});
+  }
   if (coreXml) entries.push({name: 'docProps/core.xml', bytes: xmlBytes(coreXml)});
   for (const row of media) entries.push({name: 'word/media/' + row.name, bytes: row.bytes});
   const packed = packDocx(entries);
   if (packed.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
-  if (typeof rewriteDocument !== 'function') return packed;
+  if (typeof rewriteDocument !== 'function' && !carrySource) return packed;
   // The limit is the plain package's, decided before the markers are asked for.
-  const at = entries.findIndex(entry => entry.name === 'word/document.xml');
-  entries[at] = {name: entries[at].name, bytes: xmlBytes(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};
-  return packDocx(entries);
+  if (typeof rewriteDocument === 'function') {
+    const at = entries.findIndex(entry => entry.name === 'word/document.xml');
+    entries[at] = {name: entries[at].name, bytes: xmlBytes(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};
+  }
+  if (carrySource) entries.push({name: DOCX_SOURCE.path, bytes: await docxSourceRecord(entries, (bom === true ? '\uFEFF' : '') + canonical)});
+  const complete = packDocx(entries);
+  if (complete.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
+  return complete;
 }

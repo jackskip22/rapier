@@ -14,7 +14,10 @@ export function configurePaintRasterDecoder(decoder) {
 function jxlBytes(raster) {
 	if (typeof raster !== 'string' || !raster.startsWith(JXL)) return null;
 	if (raster.length > 24 * 1024 * 1024) throw new Error('Painting raster exceeds its byte budget');
-	const bytes = Uint8Array.from(atob(raster.slice(JXL.length)), c => c.charCodeAt(0)), info = inspectJPEGXL(bytes);
+	// Keep one byte allocation, without a character list proportional to the encoded painting.
+	const binary = atob(raster.slice(JXL.length)), bytes = new Uint8Array(binary.length);
+	for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
+	const info = inspectJPEGXL(bytes);
 	if (info.width > 16384 || info.height > 16384 || info.width * info.height > 12000000) throw new Error('Painting raster exceeds its pixel budget');
 	return {bytes, info};
 }
@@ -61,7 +64,8 @@ export async function decodePaintRaster(raster, {signal} = {}) {
 export async function validatePaintRaster(raster, {signal, nativeRead} = {}) {
 	check(signal);
 	if (typeof raster !== 'string' || !/^data:image\/(?:png|jxl);base64,/.test(raster)) throw new Error('Invalid painting raster');
-	const bytes = Uint8Array.from(atob(raster.slice(raster.indexOf(',') + 1)), c => c.charCodeAt(0));
+	const binary = atob(raster.slice(raster.indexOf(',') + 1)), bytes = new Uint8Array(binary.length);
+	for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
 	const info = raster.startsWith(JXL) ? inspectJPEGXL(bytes) : inspectRaster(bytes);
 	const pixels = info.width * info.height <= png.pixelLimit ? await decodePaintRaster(raster, {signal}) : null;
 	check(signal);

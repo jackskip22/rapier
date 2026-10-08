@@ -1,8 +1,9 @@
-// Authored HTML cannot manufacture editor controls. No appearance or generated-HTML snapshots.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Authored HTML cannot manufacture editor controls.
 import assert from 'node:assert/strict';
 import {editorAcceptanceParser} from './_exactness-browser-parser.mjs';
 
-export default async function (_page, t) {
+export function rawHtmlAuthoritySourceCells() {
   const parser = editorAcceptanceParser({
     sanitizeRapierHtml() { throw new Error('A raw fragment was independently parsed as a complete tree'); },
     _rapierChromeOwnsId: id => id === 'source-textarea',
@@ -36,5 +37,7 @@ export default async function (_page, t) {
   const title = 'the words data-table-action=delete are an example';
   const output = parser.render('<div id="section" title="' + title + '">Words</div>');
   assert(output.includes('id="section"') && output.includes('title="' + title + '"'), 'safe authored metadata changed');
-  return t.pass('raw block and inline fragments strip editor hooks and reserved ids; safe authored metadata stays intact; final browser sanitization is separate');
+  return 'raw fragments strip editor hooks and reserved ids; authored metadata and public anchors remain data';
 }
+
+export default function(_page, t) { return t.pass(rawHtmlAuthoritySourceCells()); }

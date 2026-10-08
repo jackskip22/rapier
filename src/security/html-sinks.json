@@ -97,11 +97,6 @@
 				"kind": "static-template",
 				"reason": "btn.innerHTML receives _rapierDrawKindGlyph(kind)'s own fixed SVG for one of the eleven built-in shape kinds; the kind is read from internal state and matched against RAPIER_DRAW_SHAPE_KINDS, and no document or person-supplied text reaches it."
 			},
-			"_rapierDrawRefreshColourRow": {
-				"count": 1,
-				"kind": "static-template",
-				"reason": "row.innerHTML receives _rapierDrawPalette's own fixed template -- the same one the colour row is built from everywhere else; its only interpolated values are the eleven built-in ink ids and this device's own remembered colours, each admitted by _rapierDrawValidInk and escaped with _rapierDrawEscapeAttr."
-			},
 			"_rapierDrawOpenDropper": {
 				"count": 1,
 				"kind": "static-template",
@@ -409,6 +404,13 @@
 				"count": 1,
 				"kind": "sanitized-document",
 				"reason": "template.innerHTML = sanitizeRapierHtml(md.render(markdown, {}), 'export'); the template's content is additionally inert and only queried for img/data-rapier-remote-src elements, never attached."
+			}
+		},
+		"interchange/docx.mjs": {
+			"render": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "The shared Markdown parser's output is parsed into detached template.content to derive Word comment ranges and message blocks. The inert fragment is never attached or executed; the DOCX writer reads supported nodes and admits links and embedded image bytes through its existing owners."
 			}
 		},
 		"interchange/browser.js": {

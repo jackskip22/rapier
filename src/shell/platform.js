@@ -195,11 +195,8 @@ const RapierStorage = Object.freeze({
 
 
 
-// A boot that restores a saved document and never settles (a renderer crash on a low-memory phone,
-// mid-render) is counted here, in localStorage, which survives the crash. Two such boots in a row
-// on the same document hold the third restore back, so the page opens and the person keeps the work
-// as a file instead of a crash loop the Android app gives up on after three. Pure over the one key:
-// the engine names no key of its own (tools/check-engine-ownership.mjs).
+// Count recovery before saved payloads are read. Two unfinished attempts hold automatic recovery;
+// the editor opens without those payloads and offers manual recovery. The counter survives reloads.
 const RapierBootAttempts = (function () {
 	var key = RapierStorage.bootAttempt, HOLD_AFTER = 2;
 	function read() {
@@ -211,7 +208,7 @@ const RapierBootAttempts = (function () {
 	function write(value) { try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); } catch (_) {} }
 	return Object.freeze({
 		holdAfter: HOLD_AFTER,
-		// Before a restore renders `stamp`: held when this stamp's last boots never settled; else counted.
+		// Begin before the operation can allocate its saved payload.
 		begin: function (stamp) {
 			var value = read(), count = value && value.stamp === stamp ? value.count : 0;
 			if (count >= HOLD_AFTER) { if (!value.held) write({stamp: stamp, count: count, held: true, at: Date.now()}); return {held: true, count: count}; }

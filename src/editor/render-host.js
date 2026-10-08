@@ -141,14 +141,21 @@ async function _rapierServerRenderDocument({source, filename = 'document.md', fo
 async function _rapierServerReadWord(base64) {
   await _rapierServerRenderReady();
   const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
-  let index = 0;
+  let index = 0; const pictures = new Map();
   const result = await globalThis.RapierDocxImport.readDocx(new Blob([bytes]), {embedImage: async image => {
     const reference = 'server-word-' + (++index);
     const url = await _rapierBlobDataUrl(new Blob([image.bytes], {type: image.type}));
+    pictures.set(reference, url);
     return {reference, url};
   }});
   if (result.error) throw new Error(result.error);
-  return result;
+  let markdown = result.canonical;
+  if (typeof markdown !== 'string') {
+    markdown = turndown.turndown(result.html).trim();
+    for (const [reference, url] of pictures) markdown += '\n\n[' + reference + ']: ' + url;
+    markdown = globalThis.RapierDocxImport.finishDocxMarkdown(markdown + '\n', result, {convertHtml: html => turndown.turndown(html)});
+  }
+  return {...result, markdown};
 }
 if (globalThis.__rapierServerRenderHost === true) {
   Object.defineProperty(globalThis, 'RapierServerRenderer', {value: Object.freeze({render: _rapierServerRenderDocument, readWord: _rapierServerReadWord})});

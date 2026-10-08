@@ -2,6 +2,9 @@
 // Water's portable material vocabulary. Admission never loads a painter or a codec.
 export const WATER_TICK_HZ = 60;
 export const WATER_BANDS = 8;
+// Binary time keeps finer resolution than the 1/240-second transport interval.
+export const WATER_TIME_MAX_SECONDS = Number.MAX_SAFE_INTEGER / 256;
+export const waterTimeFits = seconds => Number.isFinite(seconds) && seconds >= 0 && seconds <= WATER_TIME_MAX_SECONDS;
 import {encodeHex,WHITE} from './water-color.mjs';
 import {PAPER_KINDS,BRUSHES,CUSTOM_PARAMS} from './water-materials.mjs';
 export const WATER_ACTION_MAX_POINTS = 131072;
@@ -90,7 +93,7 @@ export function waterBrushDefinition(id='water/round',options={}){
 }
 export function admitWaterAction(raw){
  if(!object(raw)||typeof raw.kind!=='string')return null;
- if(raw.kind==='advance'){if(!ownKeys(raw,['kind','ticks','dt'])||!integer(raw.ticks)||raw.dt!=null&&(!finite(raw.dt)||raw.dt<1/240||raw.dt>1/30))return null;return {kind:'advance',ticks:raw.ticks,...(raw.dt!=null?{dt:raw.dt}:{})};}
+ if(raw.kind==='advance'){const dt=raw.dt??1/60;if(!ownKeys(raw,['kind','ticks','dt'])||!integer(raw.ticks)||!waterTimeFits(dt)||dt<=0||!waterTimeFits(dt*raw.ticks))return null;return {kind:'advance',ticks:raw.ticks,...(raw.dt!=null?{dt:raw.dt}:{})};}
  if(raw.kind==='dry')return ownKeys(raw,['kind'])?{kind:'dry'}:null;
  if(raw.kind==='paper')return ownKeys(raw,['kind','paper'])&&waterPaperById(raw.paper)?{kind:'paper',paper:raw.paper}:null;
  if(raw.kind==='tip'){

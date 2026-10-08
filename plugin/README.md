@@ -1,15 +1,14 @@
 # Rapier, the Claude plugin
 
-[Rapier](https://rapier.website) is a very fast Markdown editor in one offline HTML file: writing, drawing, painting,
-pictures, Notes and the diff of a change, on a phone or any browser. The offline editor runs on your device; the
-connector keeps shared work in a hosted workspace. Neither requires a Rapier account. Long documents open and scroll
-fast. An assistant gets two things.
+[Rapier](https://rapier.website) is a Markdown editor for writing, drawing, painting, Notes and reviewing changes.
+The offline editor runs on your device; the connector keeps shared work in a hosted workspace.
+Neither requires a Rapier account.
 
-**A file to hand a person.** `npx rapier-html@1.1.84 notes.md` makes one HTML file that is the whole editor with the
-document inside. They open it in a browser, edit, draw and paint in it, review a proposed change as a diff and
-save it. An optional one-use Send back address returns their edited copy for the assistant to read.
+**An offline file.** `npx rapier-html@1.1.85 notes.md` creates one HTML file containing the editor and
+document. Open it in a browser to edit, draw, paint, review changes and save.
+An optional one-use Send back address returns the edited copy to the assistant.
 
-**An editor to work in beside them.** Through the MCP door (`https://mcp.rapier.website/mcp`, no account) an assistant reads a document
+**A shared editor.** Through the MCP endpoint (`https://mcp.rapier.website/mcp`, no account) an assistant reads a document
 by structure and changes the passage or drawing object it inspected. Changes apply directly or wait for review
 under the person's controls. Agent Undo preserves later human work. Diagrams are drawn by recipe: name the boxes and arrows,
 and Rapier places and routes them.
@@ -20,12 +19,11 @@ Download the file to keep an independent copy. Notes access uses the configured 
 
 Portable comment threads attach to passages, pictures and drawing objects. An explicit Ask action sends a
 request; ordinary comments remain document content. Visual inspection returns the current rendered region
-when an editor is present, while exact source reads establish edit authority. Use those together to move
-between a codebase, its diagram, a human-edited sketch and screenshot annotations.
+when an editor is present. Exact source reads establish edit authority.
 
 
 
-The documents are Self-contained Markdown, an open convention on CommonMark: pictures, layout, colour, page breaks and
+Self-contained Markdown extends CommonMark: pictures, layout, colour, page breaks and
 editable SVG drawings travel inside one `.md` file every Markdown app can read.
 
 ## The four skills

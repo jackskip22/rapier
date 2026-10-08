@@ -1295,7 +1295,8 @@ html[data-linenums="all"][data-linefit="resize"] .source-mode--code .source-high
    renderLineFurniture() from the RapierStorage.preferences.layout preference. */
 html[data-layout="plain"] [data-md-align]{text-align:inherit!important}
 html[data-layout="plain"] .md-render p[data-md-first]{text-indent:0}
-html[data-layout="plain"] .md-render p[data-md-indent]{margin-inline-start:0}
+html[data-layout="plain"] .md-render :is(p,h1,h2,h3,h4,h5,h6)[data-md-indent]{margin-inline-start:0}
+html[data-layout="plain"] .md-render li[data-md-marker]{--md-marker:0px!important}
 html[data-layout="plain"] .md-render p[data-md-align="center"]>img,
 html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;margin-right:0}
 .block-wrapper--diagram-source {
@@ -1308,6 +1309,7 @@ html[data-layout="plain"] .md-render p[data-md-align="right"]>img{margin-left:0;
 	max-width: 100%;
 	overflow: auto;
 }
+span[data-rapier-markdown-image][data-rapier-remote-src]:not(.rapier-remote-image) { overflow-wrap: anywhere; }
 .rapier-remote-image {
 	display: inline-flex;
 	align-items: baseline;

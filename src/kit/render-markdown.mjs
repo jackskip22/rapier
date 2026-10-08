@@ -119,6 +119,17 @@ function initMarkdownIt() {
 		if (!env.rapierPage && typeof globalThis.RapierEmbeddedImages?.imageHtml === 'function' &&
 			(_rapierEmbedAssetSource?.(src) || asset && (reference || asset.codec === 'image/jxl' || asset.codec === 'image/svg+xml'))) return globalThis.RapierEmbeddedImages.imageHtml(
 			reference, alt, title, size, layout, rawAlt, token.meta?.mdImage?.source, src);
+		let loadable = false;
+		try { loadable = !!src.trim() && /^(?:https?|file|blob|data):$/.test(new URL(src, document?.baseURI || globalThis.location?.href || 'https://rapier.invalid/').protocol); } catch (_) {}
+		if (!loadable) {
+			const escape = md.utils.escapeHtml;
+			return '<span data-rapier-markdown-image="" data-rapier-remote-src="' + escape(src) + '" data-rapier-remote-alt="' + escape(alt) + '"'
+				+ (title ? ' data-rapier-remote-title="' + escape(title) + '"' : '')
+				+ (size ? ' data-rapier-image-alt-source="' + escape(rawAlt) + '"' : '')
+				+ (layout ? ' data-rapier-image-layout="' + escape(encodeURIComponent(layout)) + '"' : '')
+				+ (token.meta?.mdImage?.source ? ' data-rapier-image-source="' + escape(encodeURIComponent(token.meta.mdImage.source)) + '"' : '')
+				+ '>' + escape(alt || src) + '</span>';
+		}
 		if (!env.rapierPage && !_rapierRemoteContent.allowed && _rapierRemoteSubresourceOrigin(src)) {
 			const html = _rapierRemoteImagePlaceholder(src, alt, title, size, layout, rawAlt);
 			return html.replace('<span ', '<span data-rapier-markdown-image="" ' +
@@ -906,9 +917,9 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 	// consumers that read HTML -- publishing/fragment export, TXT. DOCX is not an HTML consumer: its
 	// writer (interchange/docx.mjs) reads the layout comment itself, so stripping it first and
 	// handing back CSS only throws the fact away before the writer ever sees it. `keepLayoutData`
-	// leaves `data-rapier-image-layout` (width, align AND rotation) and the paragraph's
-	// `data-md-align` exactly as the semantic root already carries them, instead of the CSS-only
-	// projection, so the one existing layout representation reaches the writer.
+	// leaves the image and text layout records, ink meaning and paragraph alignment exactly as
+	// the semantic root carries them. Ordinary paragraph/list CSS measurements also reach their
+	// native reader; no derived private CSS is needed.
 	const keepLayoutData = !!opts.keepLayoutData;
 	const root = semanticRoot.cloneNode(true), nativeElements = new Set();
 	// A source soft break is a reading space, never the editor's invisible token.
@@ -986,10 +997,16 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 	root.querySelectorAll('*').forEach(element => {
 		if (nativeElements.has(element)) return;
 		const lang = element.tagName === 'CODE' ? _rapierLanguageClass(element) : '';
+		// The native note reader needs these transient roles to omit the renderer's
+		// separator and return-link spacing before it compares source-owned review notes.
+		const footnoteRole = keepLayoutData ? ['footnote-backref', 'footnotes-sep']
+			.filter(name => element.classList.contains(name)).join(' ') : '';
 		const columnAlignment = /^(TH|TD)$/.test(element.tagName) && /^(left|center|right)$/.test(element.style.textAlign)
 			? element.style.textAlign : '';
 		const alignment = globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-md-layout'))?.align || columnAlignment;
 		const imageLayout = element.tagName === 'IMG' ? globalThis.RapierMarkdownLayout.parseLayoutAttribute(element.getAttribute('data-rapier-image-layout')) : null;
+		const measurements = keepLayoutData && /^(?:P|H[1-6]|LI|OL|UL)$/.test(element.tagName)
+			? ['text-indent', 'margin-inline-start'].map(property => [property, element.style.getPropertyValue(property)]) : [];
 
 		const colorHex = element.tagName === 'SPAN' ? element.getAttribute('data-md-color') : null;
 
@@ -1002,14 +1019,16 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 		const isPageBreak = element.hasAttribute('data-md-break');
 		Array.from(element.attributes).forEach(attribute => {
 			const name = attribute.name.toLowerCase();
-			if (keepLayoutData && (name === 'data-rapier-image-layout' || name === 'data-md-align')) return;
+			if (keepLayoutData && (name === 'data-rapier-image-layout' || name === 'data-md-layout' || name === 'data-md-align' || name === 'data-rapier-ink')) return;
 			if (name === 'class' || name === 'style' || name.startsWith('data-')
 					|| name === 'contenteditable' || name === 'spellcheck'
 					|| name === 'tabindex' || name === 'disabled' || name === 'aria-disabled') {
 				element.removeAttribute(attribute.name);
 			}
 		});
+		if (footnoteRole) element.className = footnoteRole;
 		if (lang) element.className = 'language-' + lang;
+		for (const [property, value] of measurements) if (value) element.style.setProperty(property, value);
 		if (alignment) element.style.textAlign = alignment;
 		if (imageLayout && !keepLayoutData) {
 			const pictureStyle = globalThis.RapierMarkdownLayout.imageStyle(imageLayout);
@@ -1051,11 +1070,11 @@ function _rapierPictureWords(alt, src) {
 	return alt ? '[Image: ' + alt + ']' : '[Image]';
 }
 
-// A remote picture written as Markdown stands in the editor, until the person allows remote content, as a placeholder: its words, its origin and a
-// button. The text file says the picture as it does once the person has allowed it, its words and its address, never the placeholder's controls.
+// Held Markdown and HTML pictures keep their addresses as inert data. Text export reads them before
+// the portable projection removes editor attributes, without restoring a fetching image source.
 function _rapierHeldPicturesAsWords(root) {
 	const copy = root.cloneNode(true);
-	copy.querySelectorAll('span[data-rapier-remote-src]').forEach(held => held.replaceWith(document.createTextNode(
+	copy.querySelectorAll('span[data-rapier-remote-src],img[data-rapier-remote-src]').forEach(held => held.replaceWith(document.createTextNode(
 		_rapierPictureWords(String(held.getAttribute('data-rapier-remote-alt') || '').trim(), String(held.getAttribute('data-rapier-remote-src') || '').trim()))));
 	return copy;
 }
@@ -1133,7 +1152,7 @@ function _rapierPortablePlainText(root, options) {
 	const opts = options || {};
 	const blocks = [];
 	const blockTags = new Set([
-		'ADDRESS','ARTICLE','ASIDE','BLOCKQUOTE','DETAILS','DIV','DL','FIELDSET','FIGURE','FOOTER',
+		'ADDRESS','ARTICLE','ASIDE','BLOCKQUOTE','DETAILS','DIV','DL','FIELDSET','FIGCAPTION','FIGURE','FOOTER',
 		'FORM','H1','H2','H3','H4','H5','H6','HEADER','HR','MAIN','NAV','OL','P','PRE','SECTION','TABLE','UL'
 	]);
 
@@ -1233,13 +1252,6 @@ function _rapierPortablePlainText(root, options) {
 			const summary = node.querySelector(':scope > summary');
 			if (summary) pushBlock(_rapierNormalizeInlineText(_rapierPortableInlineText(summary, opts)), false);
 			Array.from(node.children).filter(child => child !== summary).forEach(collectBlock);
-			return;
-		}
-		if (tag === 'FIGURE') {
-			const image = node.querySelector(':scope > img');
-			if (image) pushBlock(_rapierPortableInlineText(image, opts), false);
-			const caption = node.querySelector(':scope > figcaption');
-			if (caption) pushBlock(_rapierNormalizeInlineText(_rapierPortableInlineText(caption, opts)), false);
 			return;
 		}
 		collectChildren(node);

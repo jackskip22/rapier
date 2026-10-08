@@ -4,7 +4,9 @@
 import { PaintSurface, PaintBrush, parseBrush, serializeBrush, createPaintPNGCodec, PAINT_BRUSH_CONTROLS, PAINT_DIP_FULL, paintSizeDefault, paintBrushRadiusOffset, paintBrushDip, paintBrushHead } from './paint.mjs';
 import { RAPIER_PAINT_BRUSHES, paintBrushById } from './brushes.mjs';
 import {admitPaintReplay, paintReplayFits, PAINT_REPLAY_MAX_BYTES} from './paint-history.mjs';
+import {AGENT_PAINT_LIMITS, storedPaintPointCount} from './paint-limits.mjs';
 export {PAINT_REPLAY_MAX_BYTES, paintReplayFits};
+export {AGENT_PAINT_LIMITS};
 import {canonicalJSON} from '../kit/ledger/data.mjs';
 import {WaterSurface, waterReady} from './water.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
@@ -21,7 +23,6 @@ export const AGENT_PAINT_WET = Object.freeze({dryingTime: 1600, cell: 3, maxByte
 	flow: 0.55, pin: 1.2, bleed: 0.6, grain: 1, granulation: 0.2, tooth: 0.85, edgeDarkening: 1});
 // A hand's pace in drawing units a second: the time between two points, so speed-driven settings see a hand.
 const HAND_PACE = 200;
-export const AGENT_PAINT_LIMITS = Object.freeze({strokes: 32, points: 1024, total: 4096, side: 2048});
 
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 const unit = n => finite(n) && n >= 0 && n <= 1;
@@ -70,7 +71,7 @@ const WATER_AGENT_ACTIONS = Object.freeze({
 });
 
 // One stroke as the wire gives it, admitted or null. `size` is the tool's 0..100 slider; `load` and `water` the Dip's axes.
-export function admitAgentStroke(raw) {
+export function admitAgentStroke(raw, stored = false) {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 	const entry = typeof raw.brush === 'string' ? paintBrushById(raw.brush) : null;
 	if (!entry || typeof raw.colour !== 'string' || !HEX.test(raw.colour)) return null;
@@ -78,7 +79,8 @@ export function admitAgentStroke(raw) {
 	if (raw.load != null && !unit(raw.load) || raw.water != null && !unit(raw.water)) return null;
 	if (raw.angle != null && !(finite(raw.angle) && raw.angle >= 0 && raw.angle <= 179)) return null;
 	if (raw.follow != null && typeof raw.follow !== 'boolean' || raw.erase != null && typeof raw.erase !== 'boolean') return null;
-	if (!Array.isArray(raw.points) || raw.points.length < 1 || raw.points.length > AGENT_PAINT_LIMITS.points) return null;
+	if (!Array.isArray(raw.points) || raw.points.length < 1 ||
+		(stored ? storedPaintPointCount(raw.points) : raw.points.length) > AGENT_PAINT_LIMITS.points) return null;
 	const points = [];
 	for (const p of raw.points) {
 		if (!Array.isArray(p) || p.length < 2 || p.length > 3 || !finite(p[0]) || !finite(p[1]) || Math.abs(p[0]) > 1e6 || Math.abs(p[1]) > 1e6) return null;
@@ -90,20 +92,20 @@ export function admitAgentStroke(raw) {
 	if (raw.water != null && raw.water > 0.005) stroke.water = raw.water;
 	return stroke;
 }
-export function admitAgentStrokes(raw) {
+export function admitAgentStrokes(raw, stored = false) {
 	if (!Array.isArray(raw) || !raw.length || raw.length > AGENT_PAINT_LIMITS.strokes) return null;
-	const strokes = raw.map(admitAgentStroke);
-	if (strokes.some(s => !s) || strokes.reduce((n, s) => n + s.points.length, 0) > AGENT_PAINT_LIMITS.total) return null;
+	const strokes = raw.map(stroke => admitAgentStroke(stroke, stored));
+	if (strokes.some(s => !s) || strokes.reduce((n, s) => n + (stored ? storedPaintPointCount(s.points) : s.points.length), 0) > AGENT_PAINT_LIMITS.total) return null;
 	return strokes;
 }
 
-// A new stroke seats the brush with a second stationary sample. Keep that sample in its own
-// record and count it at admission; replay executes existing records without changing them.
+// A new stroke seats the brush with a second stationary sample. Retain it outside the
+// authored allowance so replay executes the exact accepted material without adding samples.
 function prepareAgentStrokes(raw) {
 	const strokes = admitAgentStrokes(raw);
 	if (!strokes) return null;
 	for (const stroke of strokes) stroke.points.unshift(stroke.points[0].slice());
-	return admitAgentStrokes(strokes);
+	return admitAgentStrokes(strokes, true);
 }
 
 // The brush a stroke means: the preset, dipped as the tool dips it (paint-tool.js _rapierPaintApplyDip).
@@ -271,10 +273,10 @@ const round = n => Math.round(n * 1000) / 1000;
 // `replayCreate`, `replay`). A declared size is not that sheet, and it is not allocated.
 export function agentPaintReplayPlan(paint) {
 	if (paint?.mode === 'water') return waterReplayPlan(paint);
-	const strokes = admitAgentStrokes(paint?.strokes), px = paint?.px;
+	const strokes = admitAgentStrokes(paint?.strokes, true), px = paint?.px;
 	if (!strokes || !Array.isArray(px) || px.length !== 2 || !px.every(n => Number.isInteger(n) && n >= 1 && n <= AGENT_PAINT_LIMITS.side)) return null;
 	const replay = admitPaintReplay(paint.replay), last = replay?.entries.at(-1), sheet = replay && replayPaintSheet(replay);
-	if (!last || last.actor !== 'agent' || last.removed || !sheet || sheet.px[0] !== px[0] || sheet.px[1] !== px[1] || last.px[0] !== px[0] || last.px[1] !== px[1] || replay.views?.some(view => view.at === replay.entries.length) || !sameScale(sheet.scale, paint.scale) || JSON.stringify(admitAgentStrokes(last.strokes)) !== JSON.stringify(strokes) || last.seed !== paint.seed) return null;
+	if (!last || last.actor !== 'agent' || last.removed || !sheet || sheet.px[0] !== px[0] || sheet.px[1] !== px[1] || last.px[0] !== px[0] || last.px[1] !== px[1] || replay.views?.some(view => view.at === replay.entries.length) || !sameScale(sheet.scale, paint.scale) || JSON.stringify(admitAgentStrokes(last.strokes, true)) !== JSON.stringify(strokes) || last.seed !== paint.seed) return null;
 	return {strokes, frame: {x: 0, y: 0, w: px[0], h: px[1]}, seed: paint.seed, scale: paint.scale, replay};
 }
 // The same plan as a run on a surface of its own, for a host that lays it in this realm.
@@ -454,7 +456,7 @@ async function replayPaintEntries(replay, options = {}) {
 			live = null; brushes = new Map();
 			const grow = entry.grow, width = pixels.width + grow[0] + grow[2], height = pixels.height + grow[1] + grow[3];
 			if (!boundedSheet(width, height) || entry.px[0] !== width || entry.px[1] !== height) throw new Error('The paint replay sheet does not match its growth');
-			const strokes = admitAgentStrokes(entry.strokes);
+			const strokes = admitAgentStrokes(entry.strokes, true);
 			if (!strokes) throw new Error('The paint replay brush is unavailable');
 			const run = new AgentPaintRun(strokes, {x: 0, y: 0, w: width, h: height}, entry.seed, {pixels, offset: grow.slice(0, 2), scale: entry.scale, deferSettle: true});
 			if (!entry.removed) await finishRun(run, options);

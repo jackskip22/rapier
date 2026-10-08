@@ -3926,6 +3926,12 @@ async function rapierLoad(content, filename, options) {
 			content = saved.text;
 		} catch (error) { showToast(String(error.message), 'error'); return false; }
 	}
+	const incomingText = String(content == null ? '' : content);
+	if (incomingText.length > RapierTextCodec.maxDocumentBytes / 3 &&
+			globalThis.RapierSourceStore.encoder.encode(incomingText).byteLength > RapierTextCodec.maxDocumentBytes) {
+		showToast('document is too large for Rapier (max 25 MiB)', 'error');
+		return false;
+	}
 	const incomingName = String(filename || rapier.document.filename || 'untitled.md');
 	if (!_rapierDocumentNameIsAdmissible(incomingName)) return false;
 	if (options.sameDocument !== true && typeof _rapierEmbed !== 'undefined' &&
@@ -21554,9 +21560,13 @@ function _rapierRenderSemanticRoot(...args) { return _rapierRenderModule('render
 // leaving a paragraph or heading also means the exported page's own embedded reflow script
 // (_rapierArtifactLayoutScript) finds nothing to wrap and is not emitted at all.
 function _rapierStripPlainLayoutFacts(root) {
-	root.querySelectorAll('[data-md-layout]').forEach(node => {
+	root.querySelectorAll('[data-md-layout],li[data-md-marker]').forEach(node => {
 		node.removeAttribute('data-md-layout');
 		node.removeAttribute('data-md-align');
+		for (const key of ['first', 'indent', 'marker']) {
+			node.removeAttribute('data-md-' + key);
+			node.style.removeProperty('--md-' + key);
+		}
 		node.removeAttribute('data-md-layout-tight');
 	});
 	root.querySelectorAll('img[data-rapier-image-layout]').forEach(image => {
@@ -22210,8 +22220,8 @@ async function _rapierBuildDocxHtml(context) {
 		}
 	}
 	stats.svgNodes = Array.from(semanticRoot.querySelectorAll('svg')).filter(node => !node.closest('.callout__label')).length;
-	// DOCX reads the layout comment itself (interchange/docx.mjs), never the portable HTML
-	// projection's CSS -- keep the fact on the root this writer actually consumes.
+	// DOCX reads admitted layout records and ordinary raw-HTML measurements (interchange/docx.mjs).
+	// Keep those facts on the root this writer actually consumes.
 	const portableRoot = _rapierProjectPortableRoot(semanticRoot, { baseName: context.baseName, keepLayoutData: true });
 	portableRoot.querySelectorAll('img').forEach(_rapierDocxReplaceImage);
 	let imageBytes = 0;
@@ -22225,7 +22235,7 @@ async function _rapierBuildDocxHtml(context) {
 	stats.embeddedImageBytes = imageBytes;
 	_rapierDocxFlattenDefinitions(portableRoot);
 	portableRoot.querySelectorAll('details').forEach(details => { details.open = true; });
-	const blocks = globalThis.RapierDocxImport.docxBlocksFromDom(portableRoot);
+	const blocks = globalThis.RapierDocxImport.docxBlocksFromDom(portableRoot, {canonical: context.canonical});
 	stats.docxUnresolvedLinks = blocks.unresolvedLinks;
 	// The native OOXML writer consumes these blocks directly; no HTML document is needed.
 	return {
@@ -22233,6 +22243,7 @@ async function _rapierBuildDocxHtml(context) {
 		willMarkers: plan ? plan.markers : null,
 		willSentinel: plan ? plan.sentinel : null,
 		canonical: context.canonical,
+		bom: context.metadata.bom === true,
 	};
 }
 
@@ -22323,7 +22334,7 @@ async function _rapierConvertPortableHtmlToDocx(prepared) {
 	// The Will markers ride in through the writer, which carries them into word/document.xml as it
 	// packs; the package is never unzipped again to take them.
 	const marked = prepared.willMarkers && prepared.willMarkers.length;
-	const packed = await docx.writeDocx(prepared.blocks, {convertImage: _rapierDocxRasterImage, canonical: prepared.canonical,
+	const packed = await docx.writeDocx(prepared.blocks, {convertImage: _rapierDocxRasterImage, canonical: prepared.canonical, bom: prepared.bom,
 		...(marked ? {rewriteDocument: xml => _rapierCarryWillMarkersXml(xml, prepared.willMarkers, prepared.willSentinel)} : {})});
 	return new Blob([packed], {type: RAPIER_DOCX_MIME});
 }
@@ -24777,26 +24788,42 @@ async function _restoreCanonicalDocument(text, filename, generation, documentRev
 	return true;
 }
 
-function _rapierReadDbState(db) {
+function _rapierReadDbState(db, kind = 'all') {
 	return new Promise((resolve, reject) => {
 		const state = { meta: null, undo: null, checkpoints: [], seen: null, agent: null };
+		const source = kind === 'all' || kind === 'source';
+		const auxiliary = kind === 'all' || kind === 'auxiliary';
+		const held = kind === 'all' || kind === 'held';
 		let settled = false;
-		const tx = db.transaction(['meta', 'undo-state', 'checkpoints'], 'readonly');
-		const metaReq = tx.objectStore('meta').get(RAPIER_DOC_ID);
-		const undoReq = tx.objectStore('undo-state').get(RAPIER_DOC_ID);
-		const checkpointReq = tx.objectStore('checkpoints').getAll();
-		// The agent kernel's own retained slice, same store, its own key (RAPIER_AGENT_SLOT above) --
-		// read in the same transaction as the document record, never a second round trip.
-		const agentReq = tx.objectStore('meta').get(RAPIER_AGENT_SLOT);
-		metaReq.onsuccess = () => { state.meta = metaReq.result || null; };
-		undoReq.onsuccess = () => { state.undo = undoReq.result || null; };
-		agentReq.onsuccess = () => { state.agent = agentReq.result?.state || null; };
-		checkpointReq.onsuccess = () => {
-			const rows = (checkpointReq.result || []).filter(item => item && item.docId === RAPIER_DOC_ID);
-
-			state.checkpoints = rows.filter(item => item.slot !== RAPIER_SEEN_SLOT);
-			state.seen = rows.find(item => item.slot === RAPIER_SEEN_SLOT) || null;
-		};
+		const stores = ['checkpoints'];
+		if (source || auxiliary) stores.push('meta');
+		if (auxiliary) stores.push('undo-state');
+		const tx = db.transaction(stores, 'readonly');
+		if (source) {
+			const request = tx.objectStore('meta').get(RAPIER_DOC_ID);
+			request.onsuccess = () => { state.meta = request.result || null; };
+		}
+		if (auxiliary) {
+			const undo = tx.objectStore('undo-state').get(RAPIER_DOC_ID);
+			const agent = tx.objectStore('meta').get(RAPIER_AGENT_SLOT);
+			const seen = tx.objectStore('checkpoints').get(RAPIER_SEEN_SLOT);
+			undo.onsuccess = () => { state.undo = undo.result || null; };
+			agent.onsuccess = () => { state.agent = agent.result?.state || null; };
+			seen.onsuccess = () => { state.seen = seen.result || null; };
+		}
+		if (source || held) {
+			const store = tx.objectStore('checkpoints'), keys = store.getAllKeys();
+			keys.onsuccess = () => {
+				for (const key of keys.result || []) {
+					if (key === RAPIER_SEEN_SLOT || (_rapierIsHeldSlot(key) ? !held : !source)) continue;
+					const request = store.get(key);
+					request.onsuccess = () => {
+						const row = request.result;
+						if (row && row.docId === RAPIER_DOC_ID) state.checkpoints.push(row);
+					};
+				}
+			};
+		}
 		tx.oncomplete = () => {
 			if (settled) return;
 			settled = true;
@@ -25014,10 +25041,6 @@ async function _rapierRetireForeignRecoveryBinding(candidate, restoreEpoch) {
 	return restoreEpoch === Number(rapier.identity.userLoadEpoch || 0);
 }
 
-function _rapierRestoreAttemptStamp(candidate) {
-	return [candidate.filename || '', candidate.generation, candidate.documentRevision].map(String).join('#');
-}
-
 // A held boot parks the document it set aside in the checkpoints store (the welcome that opens
 // instead writes the current record, so the words must live under their own slot), and every boot
 // offers the parked words as a file until the person has them; then the slot and the hold go
@@ -25193,11 +25216,58 @@ function _rapierOfferHeldRecovery(record, rest = []) {
 }
 
 // Every boot, whichever document it opens, offers what is held.
-async function _rapierOfferHeldAtBoot() {
+async function _rapierOfferHeldAtBoot(context) {
 	if (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true) return;
+	if (_rapierBeginBootRecovery(context).held) {
+		await _rapierHoldBootRecovery(null);
+		_rapierOfferUnreadRecovery();
+		return;
+	}
 	let held = [];
-	try { held = _rapierHeldRecoveries(await _rapierReadDbState(await openRapierDB())); } catch (_) { return; }
+	try { held = _rapierHeldRecoveries(await _rapierReadDbState(await openRapierDB(), 'held')); } catch (_) { return; }
 	if (held.length) _rapierOfferHeldRecovery(held[0], held.slice(1));
+}
+
+function _rapierBeginBootRecovery(context) {
+	if (!context.recoveryAttempt) context.recoveryAttempt = window.RapierBootAttempts?.begin('browser-recovery') || {held: false};
+	// The recovery action supplies the notice after the interface is mounted.
+	if (context.recoveryAttempt.held) _rapierPersistenceRuntime.recoveryHeld = true;
+	return context.recoveryAttempt;
+}
+
+function _rapierOfferUnreadRecovery() {
+	showToast('The saved draft stays untouched. Use Save As for new work, or recover the saved draft.', 'error', {
+		label: 'recover',
+		fn: async () => {
+			try {
+				const recovery = await _rapierReadBootRecovery({}, {manual: true});
+				const candidate = recovery.selection.candidate;
+				if (candidate) {
+					const parked = await _rapierParkHeldRecovery(candidate);
+					if (!parked) {
+						_rapierOfferHeldRecovery({filename: candidate.filename, canonicalText: candidate.text});
+						return;
+					}
+					if (recovery.readable && !recovery.selection.integrityIssue) _rapierPersistenceRuntime.recoveryHeld = false;
+					_rapierOfferHeldRecovery(parked);
+					return;
+				}
+				const held = _rapierHeldRecoveries(await _rapierReadDbState(await openRapierDB(), 'held'));
+				if (held.length) {
+					if (recovery.readable) _rapierPersistenceRuntime.recoveryHeld = false;
+					_rapierOfferHeldRecovery(held[0], held.slice(1));
+					return;
+				}
+				if (recovery.readable) {
+					_rapierPersistenceRuntime.recoveryHeld = false;
+					window.RapierBootAttempts?.release();
+					showToast('No saved draft was found.', 'info');
+					return;
+				}
+			} catch (error) { console.warn('[rapier] saved draft remains unread', error); }
+			_rapierOfferUnreadRecovery();
+		},
+	});
 }
 
 function _rapierRecoveryIsUntouchedWelcome(record) {
@@ -25220,30 +25290,39 @@ async function _rapierHoldBootRecovery(candidate) {
 
 // Intake and ordinary restoration share this admission. An unread or refused copy is
 // evidence of work, never absence; neither path may replace it with an incoming document.
-async function _rapierReadBootRecovery(context) {
+async function _rapierReadBootRecovery(context, {manual = false} = {}) {
 	if (!context._recovery) context._recovery = (async () => {
-		let snapshot = null;
+		let snapshot = null, readable = true;
 		let dbState = {meta: null, checkpoints: [], undo: null, seen: null};
 		if (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true)
 			return {dbState, selection: {candidate: null}, outcome: 'absent'};
+		if (!manual && _rapierBeginBootRecovery(context).held) {
+			await _rapierHoldBootRecovery(null);
+			return {dbState, selection: {candidate: null}, outcome: 'blocked', readable: false};
+		}
 		try { snapshot = _readLocalSnapshot(); }
 		catch (error) {
+			readable = false;
 			await _rapierHoldBootRecovery(null);
 			console.warn('[rapier] safety recovery storage unavailable', error);
 		}
 		try {
-			dbState = await _rapierReadDbState(await openRapierDB());
-			_rapierPersistenceRuntime.recoveryBase = _rapierRecoveryStamp(dbState.meta);
+			const recoveryBase = _rapierPersistenceRuntime.recoveryBase;
+			dbState = await _rapierReadDbState(await openRapierDB(), 'source');
+			if (_rapierPersistenceRuntime.recoveryBase === recoveryBase) _rapierPersistenceRuntime.recoveryBase = _rapierRecoveryStamp(dbState.meta);
 		} catch (error) {
+			readable = false;
 			await _rapierHoldBootRecovery(null);
 			console.warn('[rapier] primary recovery storage unavailable; trying safety copy', error);
 		}
 		const selection = _rapierSelectRestoreCandidate(_rapierAdmitRecoveryRecords(dbState, snapshot));
 		// Held slots keep their own source and are offered separately; they do not own the current draft slot.
 		if (!selection.candidate && (dbState.meta || snapshot ||
-				dbState.checkpoints.some(record => !_rapierIsHeldSlot(record.slot))))
+				dbState.checkpoints.some(record => !_rapierIsHeldSlot(record.slot)))) {
+			readable = false;
 			await _rapierHoldBootRecovery(null);
-		return {dbState, selection, outcome: _rapierPersistenceRuntime.recoveryHeld
+		}
+		return {dbState, selection, readable, outcome: _rapierPersistenceRuntime.recoveryHeld
 			? 'blocked' : selection.candidate ? 'candidate' : 'absent'};
 	})();
 	return context._recovery;
@@ -25277,16 +25356,6 @@ async function rapierTryRestore(context) {
 			catch (error) { console.warn('[rapier] could not detach stale recovery binding', error); }
 			if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
 		}
-		// Two boots that began this same restore and never settled hold the third back: the page opens on
-		// the welcome and the kept work is offered as a file, so a document that crashes a low-memory
-		// phone locks nobody out (the Android app gives up after three renderer crashes). The count lives
-		// in localStorage (shell/platform.js RapierBootAttempts), which survives.
-		const attempts = window.RapierBootAttempts;
-		const attempt = attempts ? attempts.begin(_rapierRestoreAttemptStamp(candidate)) : null;
-		if (attempt && attempt.held) {
-			const held = await _rapierHoldBootRecovery(candidate);
-			return restoreEpoch !== rapier.identity.userLoadEpoch ? 'superseded' : held;
-		}
 		const restored = await _restoreCanonicalDocument(
 			candidate.text,
 			candidate.filename,
@@ -25303,6 +25372,16 @@ async function rapierTryRestore(context) {
 		if (!restored) return await _rapierHoldBootRecovery(candidate);
 		sourceRestored = true;
 		_notifyDirtyState();
+		const loaded = {stamp: _rapierMutationStamp(), root: rapier.document.source.rootId};
+		try {
+			const auxiliary = await _rapierReadDbState(await openRapierDB(), 'auxiliary');
+			dbState.undo = auxiliary.undo; dbState.agent = auxiliary.agent; dbState.seen = auxiliary.seen;
+		} catch (error) {
+			await _rapierHoldBootRecovery(null);
+			console.warn('[rapier] source restored without its retained history', error);
+		}
+		if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
+		if (!_rapierMutationStampIsCurrent(loaded.stamp) || loaded.root !== rapier.document.source.rootId) return 'opened';
 		// The document restore just above succeeded -- stamp the agent kernel's own retained slice (if
 		// any) onto the same boot `context` every other boot step already threads through by parameter,
 		// for `_rapierPublishBootReady` to hand to its one consumer. agent/browser.js's own
@@ -27712,11 +27791,13 @@ function _maybeAutoConvert(editDiv, block, options = null) {
 	if (!enter && (!typed || (options && typeof options.data === 'string' &&
 			options.data.replace(/\u00a0/g, ' ').slice(-1) !== typed))) return false;
 
-	// Where the caret stands: the start of a lone paragraph, or of a bullet item not yet a task.
+	// A new document's first paragraph has no paragraph element yet; its bare edit surface
+	// takes the same line-start markers as an existing paragraph.
 	const item = node.parentElement.closest('li');
 	const only = editDiv.children.length === 1 ? editDiv.firstElementChild : null;
-	const scope = item && editDiv.contains(item) ? item : only && only.tagName === 'P' && only.contains(node) ? only : null;
-	const where = !scope ? null : scope === only ? 'paragraph' :
+	const bare = Array.from(editDiv.children).every(child => !/^(?:P|DIV|UL|OL|BLOCKQUOTE|PRE|TABLE|H[1-6]|HR|DETAILS|FIGURE)$/.test(child.tagName));
+	const scope = item && editDiv.contains(item) ? item : only && only.tagName === 'P' && only.contains(node) ? only : bare ? editDiv : null;
+	const where = !scope ? null : scope === only || scope === editDiv ? 'paragraph' :
 		scope.parentElement?.tagName === 'UL' && !scope.querySelector('input[type="checkbox"]') ? 'item' : null;
 	let head = null, tail = '';
 	if (where && !markOnly && (enter || typed === ' ')) {
@@ -34100,6 +34181,7 @@ async function _rapierConsumeShareTarget(context) {
 						const opened = await rapierOpenPlatformPayload({text, name, transient: true}, {outgoingSettled: true});
 						if (opened !== false) {
 							context.documentConsumed = true;
+							context.epoch = rapier.identity.userLoadEpoch;
 							if (!atStake) showToast('Opened "' + name + '" shared to Rapier.', 'info');
 						}
 					}
@@ -34245,7 +34327,7 @@ async function _rapierRestoreBootDocument(context) {
 	if (restored === 'superseded' || _rapierBootSuperseded(context)) return false;
 	// What is held (a boot's set-aside above, a held boot's parked document, an Open or New before) is offered
 	// now, whichever document this boot opens, before that document lands.
-	await _rapierOfferHeldAtBoot();
+	await _rapierOfferHeldAtBoot(context);
 	if (restored !== 'opened') {
 		// A page without a carried document opens on the Welcome.
 		if (carried && restored !== 'blocked') {
@@ -34340,9 +34422,10 @@ function _rapierPublishBootReady(context) {
 		const door = /^https?:$/.test(location.protocol) && /^\/(privacy|commercial)\/?$/.exec(location.pathname);
 		if (door && document.getElementById(door[1] + '-overlay')) _rapierUiOpenPrivacy(door[1]);
 	} catch (_) {}
-	// Open-work item 5: the boot has settled once two frames have painted after it; the attempt that
-	// rapierTryRestore began is cleared, a held one stays held until the person has the work.
-	requestAnimationFrame(() => requestAnimationFrame(() => { try { window.RapierBootAttempts?.settle(); } catch (_) {} }));
+	// Read and restore share one attempt. A held attempt survives shell readiness.
+	requestAnimationFrame(() => requestAnimationFrame(() => {
+		if (!_rapierPersistenceRuntime.recoveryHeld) { try { window.RapierBootAttempts?.settle(); } catch (_) {} }
+	}));
 }
 
 const _rapierWriterRuntime = Object.seal({ release: null, attempt: null, retryTimer: null, promotionReloading: false, lostFlush: null, reload: () => location.reload() });
@@ -34522,8 +34605,6 @@ async function _rapierBoot() {
 	try { promoted = !!window.RapierWriterPromotion?.consume(); } catch (_) {}
 	const ownsWriterLease = await _rapierAcquireWriterLease(document.visibilityState === 'visible' || promoted);
 	rapier.access.leaseReadOnly = !ownsWriterLease;
-	_rapierPersistenceRuntime.recoveryBase = await _rapierReadRecoveryStamp();
-	if (!_rapierBootWatchdogDone()) return;
 	const context = {
 		epoch: rapier.identity.userLoadEpoch,
 		params: new URLSearchParams(location.search),
@@ -34531,6 +34612,14 @@ async function _rapierBoot() {
 		documentConsumed: false,
 		handledShortcut: false,
 	};
+	if (window.RapierPlatform?.recovery.ownsStore !== true && !_rapierEmbed.active && globalThis.RAPIER_APPS_HOST !== true) {
+		if (_rapierBeginBootRecovery(context).held) await _rapierHoldBootRecovery(null);
+		else {
+			_rapierPersistenceRuntime.recoveryBase = await _rapierReadRecoveryStamp();
+			if (_rapierPersistenceRuntime.recoveryBase === null) await _rapierHoldBootRecovery(null);
+		}
+	}
+	if (!_rapierBootWatchdogDone()) return;
 
 	_rapierInitializeBootRuntime();
 	_rapierInitializeBootPresentation();
@@ -34563,19 +34652,6 @@ function _rapierWhenDomReady(callback) {
 	else queueMicrotask(callback);
 }
 _rapierWhenDomReady(_rapierBoot);
-
-if (_rapierPwaFrameAdmission(window.self === window.top) &&
-		window.RapierPlatform && window.RapierPlatform.environment.allowsServiceWorker === true && 'serviceWorker' in navigator &&
-		(location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-	const registerWorker = () => {
-
-		try {
-			navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).catch(() => {});
-		} catch (_) {}
-	};
-	if (document.readyState === 'complete') queueMicrotask(registerWorker);
-	else window.addEventListener('load', registerWorker, {once: true});
-}
 
 if (_rapierFrameAuthoritySideEffectsAllowed(_rapierEmbed.refused) &&
 		window.RapierPlatform && window.RapierPlatform.environment.allowsBrowserIntake === true &&
@@ -35643,10 +35719,38 @@ function _rapierEditBlockIsEmpty(editDiv, wrapper) {
 	if (!editDiv || !wrapper) return false;
 
 	if (editDiv.querySelector('li, table')) return false;
-	return (editDiv.textContent || '')
+	const lead = _rapierCalloutLeadIn(editDiv);
+	const words = lead ? editDiv.cloneNode(true) : editDiv;
+	if (lead) {
+		const clonedLead = _rapierCalloutLeadIn(words);
+		const label = clonedLead.classList.contains('callout__label') ? clonedLead : clonedLead.previousElementSibling;
+		label.remove();
+		if (clonedLead !== label) clonedLead.remove();
+		if (words.querySelector('img,svg,math,video,audio,canvas,iframe,object,embed,hr,input,.math-rendered,[data-math-src]')) return false;
+	}
+	return (words.textContent || '')
 		.replace(/\u00a0/g, ' ')
 		.replace(/\u200b/g, '')
 		.trim() === '';
+}
+
+// Only this surface's leading callout label is decoration. A nested callout, or words
+// between a same-line label and its first break, must still count as authored content.
+function _rapierCalloutLeadIn(surface) {
+	const quote = surface?.matches?.('blockquote.callout') ? surface : surface?.firstElementChild;
+	if (!quote?.matches('blockquote.callout')) return null;
+	if (quote !== surface) for (let node = surface.firstChild; node && node !== quote; node = node.nextSibling) {
+		if (node.nodeType !== Node.TEXT_NODE || node.textContent.trim()) return null;
+	}
+	const paragraph = quote.firstElementChild;
+	const label = paragraph?.tagName === 'P' ? paragraph.firstElementChild : null;
+	if (!label?.classList.contains('callout__label')) return null;
+	for (let node = paragraph.firstChild; node && node !== label; node = node.nextSibling) {
+		if (node.nodeType !== Node.TEXT_NODE || node.textContent.trim()) return null;
+	}
+	let next = label.nextSibling;
+	while (next?.nodeType === Node.TEXT_NODE && !next.textContent.trim()) next = next.nextSibling;
+	return next?.nodeType === Node.ELEMENT_NODE && next.classList.contains('rapier-source-token--softbreak') ? next : label;
 }
 
 function _rapierBlockSnapshot(block) {
@@ -35706,7 +35810,8 @@ function _rapierCaretAtSurfaceEdge(scope, range, direction) {
 	const probe = document.createRange();
 	try {
 		if (direction === 'backward') {
-			probe.setStart(scope, 0);
+			const lead = _rapierCalloutLeadIn(scope);
+			if (lead) probe.setStartAfter(lead); else probe.setStart(scope, 0);
 			probe.setEnd(range.startContainer, range.startOffset);
 		} else {
 			probe.setStart(range.endContainer, range.endOffset);
@@ -35969,11 +36074,17 @@ function _rapierLeaveListAtItem(block, index, caretBefore = null) {
 }
 
 // Backspace at the start of a quote takes the `>` first, the words staying where they are; a quote of several paragraphs keeps
-// the rest as a quote below. A callout, or a quote that is not plain quoted lines, is left as it is.
+// the rest as a quote below. A callout first becomes a quote with the same words.
 function _rapierUnquoteAtStart(block, caretBefore = null) {
 	const lines = String(block.raw || '').split('\n');
 	const marker = /^ {0,3}>[ \t]?/;
-	if (!lines.length || !lines.every(line => marker.test(line)) || /^ {0,3}>[ \t]*\[!\w+\]/.test(lines[0])) return false;
+	if (!lines.length || !lines.every(line => marker.test(line))) return false;
+	const callout = /^( {0,3}>[ \t]*)\[!\w+\][ \t]*(.*)$/.exec(lines[0]);
+	if (callout) {
+		const first = callout[2] ? callout[1] + callout[2] : null;
+		const plain = (first === null ? lines.slice(1) : [first, ...lines.slice(1)]).join('\n');
+		return !!plain.trim() && _replaceOneBlockWithRawSet(block, [plain], 0, 0, { caretBefore });
+	}
 	const inner = lines.map(line => line.replace(marker, ''));
 	const gap = inner.findIndex(line => !line.trim());
 	const head = (gap < 0 ? inner : inner.slice(0, gap)).join('\n');
@@ -37283,6 +37394,8 @@ function _rapierHtmlTableNeedsHtml(table) {
 		if (['colspan', 'rowspan'].some(name => cell.hasAttribute(name) && String(cell.getAttribute(name)).trim() !== '1')) return true;
 		if (cell.querySelector('address,article,aside,blockquote,details,dialog,div,dl,fieldset,figure,footer,form,h1,h2,h3,h4,h5,h6,header,hgroup,hr,main,nav,ol,pre,section,ul')) return true;
 		const paragraphs = cell.querySelectorAll('p');
+		// Only presence matters here; the native writer supplies the document's body scale when it reads the measurement.
+		if (Array.from(paragraphs).some(paragraph => Object.keys(globalThis.RapierMarkdownLayout.textLayout(paragraph.style, {pointSize: 1})).length)) return true;
 		return paragraphs.length > 1 || paragraphs.length === 1 && Array.from(cell.childNodes).some(node =>
 			node !== paragraphs[0] && (node.nodeType === 1 || node.nodeType === 3 && /\S/.test(node.nodeValue || '')));
 	});
@@ -43823,12 +43936,14 @@ function _rapierAgentBarMarkAcorn(invocation) {
 function _rapierPostureDisconnectPressed(event) {
 	Promise.resolve(window.RapierMcpApp?.disconnectAgents?.(event)).then(done => { if (done === true) _rapierAgentBarDisconnected(); }).finally(_rapierPostureRender);
 }
-// Disconnect retires the agents' capability: the row stops saying CONNECTED at once, not when the last call's half hour
-// runs out.
+// Retire invocation ownership so completed calls cannot restore connection indicators.
 function _rapierAgentBarDisconnected() {
 	const bar = _rapierAgentBar;
+	bar.invocations.clear();
 	bar.connectedUntil = 0; bar.connectedAuthority = ''; bar.connectedEpoch = 0;
 	clearTimeout(bar.connectedTimer); bar.connectedTimer = 0;
+	bar.acornUntil = 0; bar.acornAuthority = ''; bar.acornEpoch = 0; bar.acornLast = '';
+	clearTimeout(bar.acornTimer); bar.acornTimer = 0;
 	_rapierAgentBarRender();
 }
 
@@ -44452,10 +44567,12 @@ async function _rapierAgentInvocationTracked(operation, input, run, invocationId
 	try {
 		return await run();
 	} finally {
-		_rapierAgentBar.invocations.delete(invocation);
+		const owned = _rapierAgentBar.invocations.delete(invocation);
 		_rapierAgentBar.running--;
-		_rapierAgentBarMarkConnected(invocation);
-		_rapierAgentBarMarkAcorn(invocation);
+		if (owned) {
+			_rapierAgentBarMarkConnected(invocation);
+			_rapierAgentBarMarkAcorn(invocation);
+		}
 		_rapierAgentBarRender();
 	}
 }

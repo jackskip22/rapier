@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import {fields, parseLayout, formatLayout, validLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, linesHeightCss, wrapTextBlock, wrapNeighbour, wrapColumnFloor} from '../spec/md-layout.mjs';
+import {fields, parseLayout, formatLayout, validLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, textStyle, textLayout, stepIndent, linesHeightCss, wrapTextBlock, wrapNeighbour, wrapColumnFloor} from '../spec/md-layout.mjs';
 
-export {parseLayout, formatLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, linesHeightCss, wrapTextBlock, wrapNeighbour, wrapColumnFloor};
+export {parseLayout, formatLayout, decodeLayoutAttribute, parseLayoutAttribute, imageStyle, textStyle, textLayout, stepIndent, linesHeightCss, wrapTextBlock, wrapNeighbour, wrapColumnFloor};
 
 const installed = new WeakSet();
 const horizontal = /^[ \t]*$/;
 const family = /^<!--[ \t]*md-layout(?=[: \t\r\n-]|$)/i;
 
-function validTargetLayout(value, imageOnly) {
+function validTargetLayout(value, imageOnly, listMarker = false) {
   // `rotate` and `opacity` join width/wrap/x/y as picture-only: text has no turn or fade to carry. A picture has no first
   // line or indent to set: `first` and `indent` are text's, as `width` and its kin are a picture's.
-  return validLayout(value) && (imageOnly ? value.align !== 'justify' && !['first', 'indent'].some(key => Object.hasOwn(value, key)) :
-    !['width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity'].some(key => Object.hasOwn(value, key)));
+  return validLayout(value) && (!Object.hasOwn(value, 'marker') || listMarker) &&
+    (imageOnly ? value.align !== 'justify' && !['first', 'indent', 'marker'].some(key => Object.hasOwn(value, key)) :
+      !['width', 'lines', 'wrap', 'x', 'y', 'rotate', 'opacity'].some(key => Object.hasOwn(value, key)));
 }
 
 const whitespaceToken = token => token.type === 'text' && !token.content.trim();
@@ -31,7 +32,7 @@ function malformedText(inline) {
   return false;
 }
 
-function inspectInline(inline, paragraph) {
+function inspectInline(inline, paragraph, listMarker) {
   const children = inline.children || [];
   const candidates = children.filter(token => token.type === 'html_inline' && family.test(token.content));
   let tail = children.length - 1;
@@ -48,10 +49,11 @@ function inspectInline(inline, paragraph) {
   const images = visible.filter(token => token.type === 'image');
   const imageOnly = paragraph && images.length === 1 && (visible.length === 1 ||
     visible.length === 3 && visible[0].type === 'link_open' && visible[1].type === 'image' && visible[2].type === 'link_close');
-  if (!reason && parsed && !validTargetLayout(parsed, imageOnly)) {
-    reason = imageOnly ? 'invalid_image_alignment' : 'image_layout_on_prose';
+  if (!reason && parsed && !validTargetLayout(parsed, imageOnly, listMarker)) {
+    reason = Object.hasOwn(parsed, 'marker') && !listMarker ? 'marker_outside_list' :
+      imageOnly ? 'invalid_image_alignment' : 'image_layout_on_prose';
   }
-  return {layout: !reason && parsed ? parsed : {}, marker, markerToken, imageOnly, image: imageOnly ? images[0] : null, reason};
+  return {layout: !reason && parsed ? parsed : {}, marker, markerToken, imageOnly, listMarker, image: imageOnly ? images[0] : null, reason};
 }
 
 function lineStarts(source) {
@@ -70,6 +72,7 @@ function sourceTarget(source, starts, opener, inline, info) {
   const line = map[1] - (setext ? 2 : 1);
   const result = {start, end, insert: null, marker: null, layout: info.layout, imageOnly: info.imageOnly, level: opener.level,
     kind: opener.type === 'heading_open' ? 'heading' : 'paragraph'};
+  if (info.listMarker) result.listMarker = true;
   if (info.reason) result.reason = info.reason;
   if (line < map[0] || starts[line] === undefined) return {...result, reason: result.reason || 'unmapped_layout_tail'};
   const lineStart = starts[line], lineStop = starts[line + 1] ?? source.length;
@@ -111,11 +114,16 @@ function sourceTarget(source, starts, opener, inline, info) {
 export function annotateMarkdownLayout(state) {
   const tokens = state.tokens || [], source = typeof state.src === 'string' ? state.src : '';
   let starts;
-  for (let index = 1; index < tokens.length; index++) {
+  const items = [];
+  for (let index = 0; index < tokens.length; index++) {
     const inline = tokens[index], opener = tokens[index - 1];
+    if (inline.type === 'list_item_close') items.pop();
+    const item = items.at(-1);
+    if (item && !item.first && inline.level === item.token.level + 1 && inline.block && inline.nesting !== -1) item.first = inline;
+    if (inline.type === 'list_item_open') items.push({token: inline, first: null});
     if (inline.type !== 'inline' || !Array.isArray(inline.children) ||
-        (opener.type !== 'paragraph_open' && opener.type !== 'heading_open')) continue;
-    const info = inspectInline(inline, opener.type === 'paragraph_open');
+        (opener?.type !== 'paragraph_open' && opener?.type !== 'heading_open')) continue;
+    const info = inspectInline(inline, opener.type === 'paragraph_open', item?.first === opener && opener.type === 'paragraph_open');
     starts ||= lineStarts(source);
     const target = sourceTarget(source, starts, opener, inline, info);
     inline.meta ||= {};
@@ -133,6 +141,12 @@ export function annotateMarkdownLayout(state) {
     if (info.layout.align) opener.attrSet('data-md-align', info.layout.align);
     if (info.layout.first) opener.attrSet('data-md-first', String(info.layout.first));
     if (info.layout.indent) opener.attrSet('data-md-indent', String(info.layout.indent));
+    const style = textStyle(info.layout);
+    if (style) opener.attrSet('style', (opener.attrGet('style') || '') + ';' + style);
+    if (info.layout.marker) {
+      item.token.attrSet('data-md-marker', String(info.layout.marker));
+      item.token.attrSet('style', (item.token.attrGet('style') || '') + ';' + textStyle({marker: info.layout.marker}));
+    }
     if (tight) {
       // A paragraph owns its own alignment; the enclosing li also owns children.
       opener.hidden = false;
@@ -217,7 +231,7 @@ export function editLayout(source, parser, range, patch, env = {}) {
       if (change[key] == null) delete value[key];
       else value[key] = change[key];
     }
-    if (!validTargetLayout(value, target.imageOnly)) {
+    if (!validTargetLayout(value, target.imageOnly, target.listMarker)) {
       return {edits: [], targets, reason: 'invalid_layout_patch'};
     }
     const text = formatLayout(value);

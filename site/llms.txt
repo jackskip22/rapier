@@ -7,13 +7,13 @@ Work in the same document:
 - Read a passage or drawing before editing it. Scoped edits preserve surrounding work; attributed changes can be reviewed and undone while keeping later human edits.
 - Draw native SVG with `document.draw`: the person moves the objects, then the agent reads and revises the changed drawing. Mermaid diagrams remain editable fences in the Markdown source.
 - Review proposed changes before applying them. The Will marks passages to edit, append to or keep.
-- Export the exact Markdown, an offline editor, plain text, a rendered web page, Word or PDF with `document.export`.
+- Export exact Markdown, an offline editor, plain text or a rendered web page with `document.export`; an open editor also supplies Word and PDF.
 
 Use Rapier when a task needs a document that stays editable: a plan to rearrange, a guide with diagrams, a draft to revise, or changes to inspect together. Start from the current document when one is already open. Short answers stay in the chat.
 
 Keep a portable copy: `npx rapier-html document.md` writes one HTML file containing the whole editor and document. It opens offline in a browser without an account. An optional one-use Send back address returns the person's edited copy for the agent to read. Hosted workspaces expire after 30 idle days and export links last up to 24 hours; downloaded files remain independent of both.
 
-Connect through https://mcp.rapier.website/mcp, or use the Rapier plugin in a supported host. Call `rapier.guide` when the host supplies no instructions. ChatGPT can open Rapier in a conversation, from its sidebar, or for supported Markdown/text files. File edits use guarded saves; Save to ChatGPT Files keeps a new copy where that host capability is available.
+Connect through https://mcp.rapier.website/mcp, use https://mcp.rapier.website/muse for Muse, or install the Rapier plugin in a supported host. Call `rapier.guide` for tool instructions. ChatGPT can open Rapier in a conversation, from its sidebar, or for supported Markdown/text files. File edits use guarded saves; Save to ChatGPT Files keeps a new copy where supported.
 
 For your own app, `rapier-embed` mounts the editor with your storage and revisions. `rapier-markdown-kit` reads and renders Self-contained Markdown; `rapier-jxl` supplies the image codec.
 

@@ -2,27 +2,13 @@
 // bits.mjs): 24 megapixels for pixels the page encodes (a lossy picture holds its squeezed planes whole), 64 for a JPEG
 // the carrier keeps whole (its coefficients, two bytes a sample).
 import {LIMITS, JPEG_LIMITS} from './jxl/bits.mjs';
+import {codecError, byteView, boundedDimensions} from './jxl/worker-input.mjs';
 // The one owner of the limits is the encoder (images/jxl/bits.mjs): what the page admits is what the codec takes.
 export const JPEG_XL_LIMITS = LIMITS;
 // The largest picture the page keeps: a JPEG carried whole; a stored JPEG XL is admitted up to it.
 export const JPEG_XL_PICTURE_LIMITS = JPEG_LIMITS;
 
-export function codecError(code, message) {
-  return Object.assign(new Error(message), {code});
-}
-
-export function byteView(value) {
-  if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  if (value instanceof Uint8Array || value instanceof Uint8ClampedArray) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  throw codecError('JXL_INPUT', 'JPEG XL input must be bytes.');
-}
-
-export function boundedDimensions(width, height, limits = JPEG_XL_LIMITS) {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > limits.edge || height > limits.edge || width * height > limits.pixels) {
-    throw codecError('JXL_DIMENSIONS', 'This image exceeds the ' + limits.pixels / 1e6 + ' megapixel image limit.');
-  }
-  return {width, height};
-}
+export {codecError, byteView, boundedDimensions};
 
 // SizeHeader and ImageMetadata field order from the pinned libjxl source.
 // Inspect dimensions before the C++ decoder can allocate its output planes.

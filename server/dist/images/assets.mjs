@@ -565,7 +565,10 @@ export function decodeDataImageBytes(url) {
   if (!info) return fail('image_data_invalid');
   let text;
   try { text = atob(url.slice(info.payloadStart)); } catch (_) { return fail('image_data_invalid'); }
-  return {bytes: Uint8Array.from(text, char => char.charCodeAt(0)), codec: info.codec};
+  // The decoded binary string already has one code unit per byte; avoid an intermediate character list.
+  const bytes = new Uint8Array(text.length);
+  for (let at = 0; at < text.length; at++) bytes[at] = text.charCodeAt(at);
+  return {bytes, codec: info.codec};
 }
 export function decodeDataImage(url) {
   const {bytes, codec} = decodeDataImageBytes(url);

@@ -136,7 +136,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
    finally { pool?.detach(run.surface); }
   }
   if(operation==='replayCreate') {
-   const strokes=admitAgentStrokes(request.strokes),id=idOf(request.surfaceId),frame=request.frame;
+   const strokes=admitAgentStrokes(request.strokes,true),id=idOf(request.surfaceId),frame=request.frame;
    if(!strokes||!frame||!Number.isSafeInteger(frame.w)||!Number.isSafeInteger(frame.h)||frame.w<1||frame.h<1||frame.w*frame.h>12000000||!Number.isFinite(frame.x)||!Number.isFinite(frame.y)||surfaces.has(id)) throw new Error('Invalid paint replay');
    const run=request.replay ? await agentPaintReplayRun({strokes,px:[frame.w,frame.h],seed:request.seed,scale:request.scale,replay:request.replay}) : new AgentPaintRun(strokes,frame,request.seed);
    if(!run)throw new Error('Invalid paint replay material');

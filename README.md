@@ -9,7 +9,7 @@ no account.
   browser.
 - **On Android:** the Rapier app on Google Play. It has no Internet permission.
 - **On Windows:** [download Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe), the same editor as a desktop app.
-- **With an agent:** the Claude plugin, the ChatGPT app, or any MCP client at `https://mcp.rapier.website/mcp`.
+- **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
 
 ## What it does
 
@@ -22,19 +22,19 @@ no account.
 - **Paint and Water.** MyPaint brushes, smudge and blend; Water, watercolour whose pigments mix, flow and dry on textured paper.
 - **Notes.** One Markdown file per note: colours, pins, checklists, reminders, links, history, and search that reads
   text in pictures. Imports from twenty notes apps. Backup as a zip; encrypted sync to your own Cloudflare
-  storage, Google Drive, OneDrive or Dropbox.
+  R2 bucket with an existing storage key.
 - **Files.** Opens Markdown, text, code, Word and PDF. Saves Markdown and never overwrites a file changed
   elsewhere. Exports Word, PDF, an offline web page with the source inside, HTML and text.
-- **Privacy.** Everything runs on the device. No analytics, no cookies. Remote pictures load only when you allow
-  them. Browsers can clear stored notes: back up from **Notes settings → BACKUP**.
+- **Privacy.** Editing and local Notes run on your device without analytics. Connected agent workspaces use
+  hosted storage. Remote pictures load only when you allow them. Back up browser-stored notes from **Notes settings → BACKUP**.
 
 ## For agents
 
 The agent and the person share one page. The agent reads only the passages it needs and changes exactly what it
 read; the person's typing comes first, and an agent's change undoes on its own. The Will marks what an agent may
 edit, only add to, or must leave alone ([Will/1](docs/will.md)). [llms.txt](site/llms.txt),
-[AGENT-TOOLS.json](site/AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the [skills](plugin/skills/README.md) say the
-rest.
+[AGENT-TOOLS.json](site/AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the [skills](plugin/skills/README.md)
+describe the tools and workflows.
 
 Create a plan with an editable diagram, move its objects by hand, then ask the agent to revise the same
 document around those changes. Review the revision and keep exact Markdown or an offline editor through
@@ -67,7 +67,7 @@ const editor = Rapier.mount(document.querySelector('#editor'), {
 
 `save` returns `{revision}` once storage confirms the bytes, or throws `Rapier.conflict(currentRevision)`. Pin a
 version at `https://rapier.website/embed/<version>/rapier-document.html`. The
-[embed contract](docs/embed-contract.md) and the [embed skill](plugin/skills/embed-rapier/SKILL.md) have the rest.
+[embed contract](docs/embed-contract.md) and the [embed skill](plugin/skills/embed-rapier/SKILL.md) document the API.
 
 ## Markdown
 

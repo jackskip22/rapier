@@ -8,12 +8,12 @@ let _rapierRuntimeReady;
 
 async function _rapierInflateVendor(id) {
   const text = document.getElementById(id)?.textContent;
-  if (!text) throw new Error(id);
+  if (!text) throw new Error(id, {cause: new Error('Packed resource is missing')});
   const groupMarker = _RAPIER_STORED_GROUP_MARKER.exec(text);
-  if (!groupMarker || groupMarker[2] && groupMarker[2] !== 'words2') throw new Error(id);
+  if (!groupMarker || groupMarker[2] && groupMarker[2] !== 'words2') throw new Error(id, {cause: new Error('Packed header is invalid')});
   const groupFrom = text.indexOf('*/', groupMarker.index) + 3;
   const groupTo = text.indexOf('/* RAPIER_VENDOR_GROUP_END */', groupFrom);
-  if (groupFrom < 3 || groupTo < groupFrom) throw new Error(id);
+  if (groupFrom < 3 || groupTo < groupFrom) throw new Error(id, {cause: new Error('Packed resource is incomplete')});
   let combined;
   try {
     const compressed = _rapierBase124.decodeBase124(text.slice(groupFrom, groupTo));
@@ -24,7 +24,7 @@ async function _rapierInflateVendor(id) {
   } catch (error) {
     throw new Error(id, {cause: error});
   }
-  if (combined.byteLength !== Number(groupMarker[1])) throw new Error(id);
+  if (combined.byteLength !== Number(groupMarker[1])) throw new Error(id, {cause: new Error('Unpacked length does not match')});
   const marked = new RegExp(_RAPIER_STORED_SPAN_MARKER.source, 'g');
   const sources = [];
   let covered = 0;
@@ -122,26 +122,27 @@ if (window.self !== window.top) {
   globalThis.RapierEarlyConnects = Object.freeze({take() { removeEventListener('message', hold); return held.splice(0); }});
 }
 
-// A packed block is whole only once the parser has moved past it. On a slow or streamed load the element is
-// in the document while its text is still arriving; reading it then unpacks half a library and the boot fails
-// (seen on phones over mobile data and from the service worker's copy). So it counts when something follows
-// it, or when the document has finished parsing.
+// The terminal marker follows the entire packed manifest. A sibling can be inserted
+// while the parser is still receiving this script, so DOM position cannot prove completion.
 function _rapierRuntimeComplete(id) {
   const element = document.getElementById(id);
-  return !!element && (element.nextSibling !== null || document.readyState !== 'loading');
+  if (!element) return false;
+  if (element.tagName === 'SCRIPT') return element.textContent.endsWith('/* RAPIER_VENDOR_SPANS_END */\n');
+  return element.nextSibling !== null || document.readyState !== 'loading';
 }
 function _rapierWhenRuntime(id) {
   if (_rapierRuntimeComplete(id)) return Promise.resolve();
+  if (document.readyState !== 'loading') return Promise.reject(new Error(id, {cause: new Error('Packed resource is incomplete')}));
   return new Promise((resolve, reject) => {
     const finish = () => {
       observer.disconnect();
       document.removeEventListener('DOMContentLoaded', finish);
       removeEventListener('load', finish);
       if (_rapierRuntimeComplete(id)) resolve();
-      else reject(new Error(id));
+      else reject(new Error(id, {cause: new Error('Packed resource is incomplete')}));
     };
     const observer = new MutationObserver(() => { if (_rapierRuntimeComplete(id)) finish(); });
-    observer.observe(document.documentElement, {childList: true, subtree: true});
+    observer.observe(document.documentElement, {childList: true, characterData: true, subtree: true});
     document.addEventListener('DOMContentLoaded', finish);
     addEventListener('load', finish);
   });
@@ -282,6 +283,17 @@ function _rapierKeepPortableTemplate() {
     // Nothing is shown before the shell can say whether a carried file is waiting, and nothing
     // visible is unbound: the first screen's controls are bound by the script that precedes this one.
     for (const {name, source} of await _rapierInflateVendor('rapier-platform-runtime')) _rapierExecuteVendorSource(name, source);
+    // A failed editor must still discover a repaired application release.
+    if (_rapierPwaFrameAdmission(window.self === window.top) &&
+        window.RapierPlatform?.environment.allowsServiceWorker === true && 'serviceWorker' in navigator &&
+        (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      const registerWorker = () => {
+        try { navigator.serviceWorker.register('./sw.js', {scope: './', updateViaCache: 'none'}).catch(() => {}); }
+        catch (_) {}
+      };
+      if (document.readyState === 'complete') queueMicrotask(registerWorker);
+      else addEventListener('load', registerWorker, {once: true});
+    }
     await _rapierWhenRuntime('rapier-styles-runtime');
     const styles = await _rapierInflateVendor('rapier-styles-runtime');
     if (styles.length !== 1) throw new Error('Editor interface records are invalid');
@@ -333,7 +345,12 @@ function _rapierKeepPortableTemplate() {
     try { window.RapierPlatform?.files?.clearIntake?.(); } catch (_) {}
     document.body.classList.add('rapier-boot-failed');
     const detail = document.getElementById('rapier-boot-failure-detail');
-    if (detail) detail.textContent = 'The editor could not finish starting. Reload this file. Your document has not been opened or changed. Startup resource: ' + String(error?.message || 'unknown').slice(0, 160) + '.';
+    const reasons = [];
+    for (let cause = error, depth = 0; cause && depth < 3; cause = cause.cause, depth++) {
+      const message = String(cause.message || cause);
+      if (!reasons.includes(message)) reasons.push(message);
+    }
+    if (detail) detail.textContent = 'The editor could not finish starting. Reload this file. Your document has not been opened or changed. Startup resource: ' + (reasons.join(': ') || 'unknown').slice(0, 240) + '.';
     console.error('[rapier] runtime could not load', error);
   }
 })();

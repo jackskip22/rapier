@@ -8,7 +8,7 @@ import {searchCacheVersion} from './search-cache-version.mjs';
 import {zopfliGzip, FAST_PACK} from './zopfli.mjs';
 import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
-import {buildJPEGXLWorker} from '../images/codec-build.mjs';
+import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import {TOOLS, PAGE_TOOLS, UI_RESOURCE, mcpDescriptors} from '../agent/catalog.mjs';
 import {encodeBase124} from './base124.mjs';
@@ -878,7 +878,7 @@ async function packedSpans(id, type, spans) {
     packedRecord.push({element: id, name: spans[i].name, bytes: bytes.length, sha256: checksum(bytes)});
     offset += bytes.length;
   }
-  return out + '</script>\n';
+  return out + '/* RAPIER_VENDOR_SPANS_END */\n</script>\n';
 }
 // A single payload is a one-span group (same store, same loader path as packedSpans -- one owner,
 // not two marker formats for the same runtime to understand).
@@ -894,7 +894,10 @@ for (const id of Object.keys(VENDOR_GROUPS)) {
   const packed = await packedSpans(id, 'text/rapier-vendor', spans);
   html = html.replace(element, () => packed);
 }
-const jxlWorker = await lean(await buildJPEGXLWorker(root, {profile: PROFILE}), 'rapier-jxl-worker.js');
+const jxlArtifact = await buildJPEGXLArtifact(root, {profile: PROFILE});
+const jxlWorker = jxlArtifact.bytes.toString('utf8');
+const jxl = PROFILE === 'full' ? {version: jxlArtifact.version, modules: jxlArtifact.modules.map(name => 'images/jxl/' + name),
+  worker: {bytes: jxlArtifact.bytes.length, sha256: jxlArtifact.sha256}} : null;
 const codecScript = '<!-- RAPIER_JXL_BEGIN -->\n' +
   await packedScript('rapier-jxl-worker', 'application/rapier-jxl-worker', 'rapier-jxl-worker.js', jxlWorker) +
   '<!-- RAPIER_JXL_END -->\n';
@@ -1016,12 +1019,17 @@ await writeFile(resolve(root, OUTPUT_FILE), html);
 let shellDigest = null, appHtml = null, appHtmlBytes = null, appHtmlSha256 = null, appsSpans = null, appPlugins = null;
 if (PROFILE === 'full') {
   const shellRows = [];
+  let shellPageDigest = null;
   for (const path of ['rapier.html', 'manifest.json', 'icon-192.png', 'icon-512.png']) {
     const body = await readFile(resolve(root, path));
-    shellRows.push(`./${path}\t${body.length}\t${checksum(body)}`);
+    const digest = checksum(body);
+    if (path === 'rapier.html') shellPageDigest = digest;
+    shellRows.push(`./${path}\t${body.length}\t${digest}`);
   }
   shellDigest = checksum(shellRows.join('\n'));
-  const worker = (await read('sw.js')).replace(/const SHELL_RELEASE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_RELEASE_SHA256 = '${shellDigest}';`);
+  const worker = (await read('sw.js'))
+    .replace(/const SHELL_RELEASE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_RELEASE_SHA256 = '${shellDigest}';`)
+    .replace(/const SHELL_PAGE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_PAGE_SHA256 = '${shellPageDigest}';`);
   new vm.Script(worker, {filename: 'sw.js'});
   await writeFile(resolve(root, 'sw.js'), worker);
 
@@ -1089,11 +1097,11 @@ const priorProfiles = Object.fromEntries(Object.entries(priorReceipt?.profiles &
 const BUILT_AT = new Date().toISOString(), PACK_MODE = FAST_PACK ? 'development' : 'release', PACKING = FAST_PACK ? 'fast (zlib; not a release)' : 'zopfli';
 // `spans`: provenance of every packed span; the Apps copy adds its bridge.
 const pageSpans = packedRecord.filter(row => row.element !== 'rapier-apps-runtime');
-const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html), budget: BUDGET, spans: pageSpans, shakenExports,
+const profileRecord = {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html), budget: BUDGET, spans: pageSpans, shakenExports, jxl,
   builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, canonical: toolchainCanonical};
 // `mode`: 'development' for any fast/zlib pack
 // (`RAPIER_PACK=fast`), 'release' for Zopfli; tools/release-gate.mjs checks it.
-const receipt = {release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: appPlugins} : priorReceipt?.apps ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
+const receipt = {release: VERSION, builtAt: BUILT_AT, node: process.version, mode: PACK_MODE, packing: PACKING, validation: 'JavaScript syntax and source assembly only; no runtime or host verification', profile: PROFILE, jxl, profiles: {...priorProfiles, [PROFILE]: profileRecord}, editor: {path: OUTPUT_FILE, bytes: Buffer.byteLength(html), sha256: checksum(html)}, apps: PROFILE === 'full' ? {path: 'dist/chatgpt/rapier-app.html', bytes: appHtmlBytes, sha256: appHtmlSha256, spans: appsSpans, plugins: appPlugins} : priorReceipt?.apps ?? null, shell: PROFILE === 'full' ? {sha256: shellDigest} : priorReceipt?.shell ?? null, htmlSinks: {named: htmlSinks.total, files: htmlSinks.files, inventory: 'security/html-sinks.json'}, tools: TOOLS.map(row => row.name), toolchain: {canonical: toolchainCanonical, node: {expected: toolchain.node.version, actual: process.version}}, unchecked};
 // `dist/` may not exist in a fresh copy.
 await mkdir(resolve(root, 'dist'), {recursive: true});
 await writeFile(resolve(root, 'dist/runtime-symbols-' + PROFILE + '.json'), JSON.stringify(lean.symbols) + '\n');

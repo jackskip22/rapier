@@ -2,6 +2,7 @@
 // Threads are ordinary ignored HTML comments in the exact Markdown source. There is no
 // second durable owner, and neither a message nor a named recipient is an instruction.
 import {markdownParser, markdownBodyOffset, documentAssets, parseAssets, projectImageDefinitions} from '../spec/md-assets.mjs';
+import {markdownSourcePositions} from '../spec/md-source.mjs';
 import {decodeDataImage} from '../images/assets.mjs';
 import {_rapierDrawReadRecipeFromSVGText} from '../draw/core.mjs';
 import {_rapierTransformSplices as transformSplices} from '../kit/ledger/journal-records.mjs';
@@ -17,6 +18,21 @@ const id = value => typeof value === 'string' && value.length <= 128 && /^[A-Za-
 const text = value => typeof value === 'string' && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\uD800-\uDFFF]/u.test(value);
 let memo = null;
 const grammar = new WeakMap();
+
+export function validCommentTimestamp(value) {
+  return value === null || Number.isSafeInteger(value) && value >= -62167219200000 && value <= 253402300799999;
+}
+
+export function validCommentDate(value) {
+  if (typeof value !== 'string') return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))?$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, zoneHour, zoneMinute] = match.map((part, index) => index ? Number(part) : part);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1] && hour <= 23 && minute <= 59 && second <= 59 &&
+    (match[7] === undefined || zoneHour <= 14 && zoneMinute <= 59 && (zoneHour !== 14 || zoneMinute === 0));
+}
 
 export function commentDigest(value) {
   let fnv = 0x811c9dc5, a = 1, b = 0;
@@ -42,20 +58,99 @@ function validAnchor(anchor) {
 }
 
 function validData(data) {
-  if (!exactKeys(data, ['body', 'threads']) || !text(data.body) || !Array.isArray(data.threads)) return false;
+  if (!exactKeys(data, ['body', 'threads'], ['notes']) || !text(data.body) || !Array.isArray(data.threads) ||
+      data.notes !== undefined && !id(data.notes)) return false;
   const threadIds = new Set(), messageIds = new Set();
   return data.threads.every(thread => {
     if (!exactKeys(thread, ['id', 'anchor', 'resolved', 'messages']) || !id(thread.id) || threadIds.has(thread.id) ||
         !validAnchor(thread.anchor) || typeof thread.resolved !== 'boolean' || !Array.isArray(thread.messages) || !thread.messages.length) return false;
     threadIds.add(thread.id);
-    return thread.messages.every(message => {
-      if (!exactKeys(message, ['id', 'text', 'author', 'createdAt'], ['recipient']) || !id(message.id) || messageIds.has(message.id) ||
-          !text(message.text) || !int(message.createdAt) || !exactKeys(message.author, ['kind', 'name']) ||
+    const localMessageIds = new Set(thread.messages.map(message => message?.id));
+    const validMessages = thread.messages.every((message, index) => {
+      if (!exactKeys(message, ['id', 'text', 'author', 'createdAt'], ['recipient', 'date', 'replyTo']) || !id(message.id) || messageIds.has(message.id) ||
+          !text(message.text) || !validCommentTimestamp(message.createdAt) ||
+          message.date !== undefined && !validCommentDate(message.date) ||
+          !exactKeys(message.author, ['kind', 'name']) ||
           !['human', 'agent', 'system'].includes(message.author.kind) || !text(message.author.name) ||
-          (message.recipient !== undefined && !text(message.recipient))) return false;
+          (message.recipient !== undefined && !text(message.recipient)) || (message.replyTo !== undefined &&
+            (!index || !id(message.replyTo) || message.replyTo === message.id || !localMessageIds.has(message.replyTo)))) return false;
       messageIds.add(message.id); return true;
     });
+    if (!validMessages) return false;
+    const parents = new Map(thread.messages.map(message => [message.id, message.replyTo])), finished = new Set();
+    for (const message of thread.messages) {
+      const seen = new Set(); let at = message.id;
+      while (at !== undefined && !finished.has(at)) {
+        if (seen.has(at)) return false;
+        seen.add(at); at = parents.get(at);
+      }
+      for (const id of seen) finished.add(id);
+    }
+    return true;
   });
+}
+
+const noteLabels = (threads, prefix) => threads.map((_, index) => prefix + '-' + (index + 1));
+const noteLiteral = value => String(value).replace(/[&<>\\`*{}[\]()!#+\-\r\n|~]/g,
+  character => '&#' + character.charCodeAt(0) + ';');
+
+function noteMessageSource(source) {
+  if (!/\[\^|\^\[/.test(source)) return source;
+  // Markdown footnotes do not nest. Preserve local note notation and detail as ordinary text
+  // inside its owning review note, without changing code or raw HTML recognized by the parser.
+  // A message is block content, so an opening YAML-looking block is not document frontmatter.
+  const prefix = 'Review\n\n', positions = markdownSourcePositions(prefix + source, markdownParser());
+  return source.replace(/\[\^|\^\[/g, (opening, at) => {
+    if (positions.isText(prefix.length + at)) return opening;
+    let before = at;
+    while (before > 0 && source[before - 1] === '\\') before--;
+    if ((at - before) % 2) return opening;
+    return opening === '[^' ? '&#91;^' : '&#94;[';
+  });
+}
+
+// Imported discussions have an ordinary Markdown projection for readers without threads.
+// Its prefix is source data; its bytes are derived from this same record, never a second owner.
+function commentNoteParts(threads, prefix, eol) {
+  if (!threads.length) return [];
+  const labels = noteLabels(threads, prefix);
+  const definitions = threads.map((thread, index) => {
+    const heading = 'Thread ' + noteLiteral(thread.id) + ' — ' + (thread.resolved ? 'Resolved' : 'Open');
+    const discussion = thread.messages.map((message, index) => {
+      const date = message.date ?? (message.createdAt === null ? '' : new Date(message.createdAt).toISOString());
+      const metadata = [noteLiteral(message.id), noteLiteral(message.author.name), date,
+        index ? 'Reply to ' + noteLiteral(message.replyTo || thread.messages[0].id) : '',
+        message.recipient ? 'To ' + noteLiteral(message.recipient) : ''].filter(Boolean).join(' · ');
+      return metadata + '\n\n' + noteMessageSource(message.text.replace(/\r\n?/g, '\n'));
+    }).join('\n\n');
+    return '[^' + labels[index] + ']: ' + (heading + '\n\n' + discussion).replace(/\n/g, eol + '    ');
+  });
+  return [labels.map(label => '[^' + label + ']').join(' '), ...definitions, '<!-- /md-comments notes -->'];
+}
+
+function commentNotes(threads, prefix, eol) {
+  return commentNoteParts(threads, prefix, eol).map(part => eol + eol + part).join('');
+}
+
+// Match the writer's complete carrier before projecting its already-parsed editor blocks.
+export function commentProjectionParts(raw) {
+  const opening = /^(<!-- md-comments:v1 [^\r\n]*? -->)(?=\r|\n|$)/.exec(raw)?.[1];
+  if (!opening) return null;
+  let data;
+  try { data = JSON.parse(opening.slice(MARKER.length, -4)); } catch { return null; }
+  if (!validData(data)) return null;
+  const eol = /^(?:\r\n|\n|\r)/.exec(raw.slice(opening.length))?.[0] || '\n';
+  const parts = [opening, ...(data.notes ? commentNoteParts(data.threads, data.notes, eol) : [])];
+  if (parts.join(eol + eol) !== raw) return null;
+  return {parts, eol};
+}
+
+function commentsNotesPrefix(threads, body, requested) {
+  if (!requested) return undefined;
+  const occupied = body + JSON.stringify(threads);
+  let prefix = typeof requested === 'string' ? requested : 'review';
+  for (let counter = 1; occupied.toLowerCase().includes('[^' + prefix.toLowerCase() + '-'); counter++) prefix = 'review' + counter;
+  return prefix;
 }
 
 // Block recognition belongs to the Markdown parser. A pasted code example, frontmatter or
@@ -114,8 +209,16 @@ function scanComments(source, verifyBody = true, definitions) {
   let data;
   try { data = JSON.parse(record.raw.slice(MARKER.length, -4)); } catch { return result({...empty, reason: 'comments_malformed'}); }
   if (!validData(data)) return result({...empty, reason: 'comments_malformed'});
+  if (data.notes) {
+    const eol = /^(?:\r\n|\n|\r)/.exec(source.slice(record.end))?.[0] || '\n';
+    const projection = commentNotes(data.threads, data.notes, eol);
+    if (!source.startsWith(projection, record.end)) return result({...empty, reason: 'comments_notes_changed'});
+    record.end += projection.length;
+    record.raw += projection;
+  }
   const body = source.slice(0, record.start) + source.slice(record.end);
-  return result({record, threads: data.threads, body, current: verifyBody && data.body === commentDigest(body)});
+  return result({record, threads: data.threads, body, current: verifyBody && data.body === commentDigest(body),
+    ...(data.notes ? {notes: data.notes, noteLabels: noteLabels(data.threads, data.notes)} : {})});
 }
 
 function remember(source, parsed, context = grammar.get(parsed)) {
@@ -125,6 +228,7 @@ function remember(source, parsed, context = grammar.get(parsed)) {
     Object.freeze(thread.messages); Object.freeze(thread);
   }
   Object.freeze(parsed.threads);
+  if (parsed.noteLabels) Object.freeze(parsed.noteLabels);
   if (parsed.record) Object.freeze(parsed.record);
   if (context) grammar.set(parsed, context);
   memo = {source, parsed: Object.freeze(parsed)};
@@ -188,23 +292,24 @@ export function commentThreads(source, parsed = parseComments(source)) {
   });
 }
 
-export function serializeComments(threads, body) {
-  const data = {body: commentDigest(body), threads};
+export function serializeComments(threads, body, {notes, eol = /\r\n|\n|\r/.exec(body)?.[0] || '\n'} = {}) {
+  const prefix = commentsNotesPrefix(threads, body, notes);
+  const data = {body: commentDigest(body), threads, ...(prefix ? {notes: prefix} : {})};
   // The writer admits exactly the format the reader accepts. Existing records take the same
   // gate as a newly appended one; a bad recipient or display name cannot poison earlier work.
   if (!validData(data)) throw new TypeError('comments_data_invalid');
-  const json = JSON.stringify(data).replace(/[<>&-]/g,
-    value => '\\u' + value.charCodeAt(0).toString(16).padStart(4, '0'));
-  return MARKER + json + ' -->';
+  const json = JSON.stringify(data).replace(/"(?:[^"\\]|\\.)*"/g, value => value.replace(/[<>&-]/g,
+    character => '\\u' + character.charCodeAt(0).toString(16).padStart(4, '0')));
+  return MARKER + json + ' -->' + (prefix ? commentNotes(threads, prefix, eol) : '');
 }
 
-export function writeComments(source, threads, parsed = parseComments(source)) {
+export function writeComments(source, threads, parsed = parseComments(source), {notes = parsed.notes} = {}) {
   if (parsed.reason) throw new TypeError(parsed.reason);
-  if (parsed.record) return {pos: parsed.record.start, removed: parsed.record.raw, inserted: serializeComments(threads, parsed.body)};
+  if (parsed.record) return {pos: parsed.record.start, removed: parsed.record.raw, inserted: serializeComments(threads, parsed.body, {notes})};
   const eol = /\r\n|\n|\r/.exec(source)?.[0] || '\n';
   const prefix = !source || /(?:\r\n|\n|\r){2}$/.test(source) ? '' : /[\r\n]$/.test(source) ? eol : eol + eol;
   const body = source + prefix + eol;
-  const inserted = prefix + serializeComments(threads, body) + eol;
+  const inserted = prefix + serializeComments(threads, body, {notes, eol}) + eol;
   const next = parseComments(source + inserted);
   if (!next.record || next.reason) throw new TypeError('comments_appendix_unavailable');
   return {pos: source.length, removed: '', inserted};
@@ -268,7 +373,8 @@ export function commentSplices(before, splices) {
   if (row.inserted !== row.removed) {
     const final = after.slice(0, row.pos) + row.inserted + after.slice(row.pos + row.removed.length);
     const context = grammar.get(next);
-    remember(final, {...next, current: true, threads,
+    const notes = commentsNotesPrefix(threads, next.body, next.notes);
+    remember(final, {...next, current: true, threads, ...(notes ? {notes, noteLabels: noteLabels(threads, notes)} : {}),
       record: {...next.record, raw: row.inserted, end: row.pos + row.inserted.length}},
       context && {...context, blocks: carryDefinitions(final, context.blocks, [row])});
   }

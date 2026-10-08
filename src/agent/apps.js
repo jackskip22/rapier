@@ -727,6 +727,14 @@
     }
   }
 
+  function pauseMaterial() {
+    const row = materialFlight;
+    // The durable job keeps its deadline and source binding. An answer already sent
+    // keeps its exact retry bytes; an unsent computation can restart on return.
+    if (!row || row.settled || row.dispatched || row.cancelReason) return;
+    cancelMaterial('editor_unavailable', {forget: true});
+  }
+
   function reconcileMaterial() {
     const row = materialFlight;
     if (row && (row.document !== token || !materialIntentMatches(row, incoming || base)))
@@ -743,12 +751,14 @@
       row.settled = true; row.args = null; row.request = null; row.local = null;
       return;
     }
+    if (!visible()) { pauseMaterial(); return; }
     row.sending = true;
     try {
       if (row.args.fact.outcome === 'ok') {
         const current = await host.snapshot();
         if (materialFlight !== row || row.settled || !row.args) return;
-        if (row.controller.signal.aborted || dirty || composing || editing() || !visible() ||
+        if (!visible()) { pauseMaterial(); return; }
+        if (row.controller.signal.aborted || dirty || composing || editing() ||
             !same(current, row.local) || current.revision !== row.local.revision || current.generation !== row.local.generation ||
             current.drawing?.busy?.human || !materialIntentMatches(row, incoming || base) ||
             !globalThis.RapierKernel.materialMatches(row.request, {...current, revision: row.revision}, current.drawing))
@@ -781,7 +791,7 @@
 
   function presentMaterial(local, expected) {
     const intent = base?.materialIntent;
-    if (!intent || intent.status !== 'pending' || intent.documentId !== base.documentId || intent.revision !== base.revision) return;
+    if (!visible() || !intent || intent.status !== 'pending' || intent.documentId !== base.documentId || intent.revision !== base.revision) return;
     if (materialFlight) { void acknowledgeMaterial(materialFlight); return; }
     const row = {id: intent.id, job: intent.job, document: token, documentId: intent.documentId, revision: intent.revision,
       expiresAt: intent.expiresAt, request: intent, local, controller: new AbortController(), cancelReason: '',
@@ -2643,7 +2653,7 @@
     document.addEventListener('visibilitychange', () => {
       contextChanged();
       if (visible()) schedule(0);
-      else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); cancelMaterial('editor_unavailable'); clearTimeout(timer); void publishHumanContext(true); void flush(); }
+      else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); pauseMaterial(); clearTimeout(timer); void publishHumanContext(true); void flush(); }
     }, {signal: listeners.signal});
     window.addEventListener('pagehide', () => {
       cancelEditorRequests('editor_unavailable', {forget: true});

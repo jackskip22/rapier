@@ -11,9 +11,8 @@
    holds. The release digest below deliberately changes this worker whenever any
    shell member changes; qualification derives and verifies it from those bytes.
    Navigations remain network-first; the shell mainly protects users who next
-   launch fully offline. Install is the only writer: once it has verified a
-   generation's bytes, nothing ever mutates that cache again, so a worker's own
-   generation is always exactly what its own install checked.
+   launch fully offline. Install is the only writer. Navigation fallback verifies
+   the stored page before using it.
 */
 
 /* CacheStorage is shared by every service-worker scope on an origin. Include
@@ -27,7 +26,8 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '53fbc10da64f8a40b1c3c12c7f0e1a24ff868a541c126aa89a09628171ddc184';
+const SHELL_RELEASE_SHA256 = '6c85d3712f7f088b3c6120a1937be492c68d4b4169de8e2cf76178d61975afd9';
+const SHELL_PAGE_SHA256 = 'fa00b5942f9d746585436dda8b102e20cf3c9c68965760ee020ceb7e66aba438';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */
@@ -200,7 +200,11 @@ async function cachedNavigationResponse(request) {
   if (requested.origin !== root.origin ||
       (requested.pathname !== root.pathname && requested.pathname !== page.pathname && !door)) return null;
   const cache = await shellCache();
-  return (await cache.match(request)) || cache.match(SHELL_PAGE_URL);
+  const copy = (await cache.match(request)) || await cache.match(SHELL_PAGE_URL);
+  if (!copy?.ok || !/^text\/html(?:;|$)/i.test((copy.headers.get('Content-Type') || '').trim())) return null;
+  // Stored bytes can be damaged after install. Refuse them without cancelling a healthy network body.
+  const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
+  return digest === SHELL_PAGE_SHA256 ? copy : null;
 }
 
 let shellCachePromise = null;

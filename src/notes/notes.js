@@ -6073,7 +6073,7 @@ function _rapierNotesImporters() {
 	return table;
 }
 // A Word file (OneNote's or Samsung's own export, or anyone's) goes through the DOCX reader the
-// editor already has, and arrives at the door as a web page with its pictures inside it.
+// editor already has. Its source, pictures and review threads enter Notes together.
 async function _rapierNotesDocxEntry(file) {
 	const A = globalThis.RapierNotesAttachments, decision = A.attachmentIntake([file]);
 	if (decision.refusal) return {name: file.name, oversize: true, size: file.size, unreadable: decision.refusal};
@@ -6091,7 +6091,15 @@ async function _rapierNotesDocxEntry(file) {
 				pictures.set(reference, url);
 				return {reference, url};
 			}});
-			if (typeof result?.html === 'string') body = D.docxPortableHtml(result.html, pictures);
+			if (typeof result?.canonical === 'string') return {name: name.replace(/\.docx$/i, '') + '.md',
+				text: result.canonical, attachmentEntry: {name, bytes}};
+			if (typeof result?.html === 'string') {
+				let text = turndown.turndown(result.html).trim();
+				for (const [reference, url] of pictures) text += '\n\n[' + reference + ']: ' + url;
+				text += '\n\n[Original Word file](' + href + ')\n';
+				text = D.finishDocxMarkdown(text, result, {convertHtml: html => turndown.turndown(html)});
+				return {name: name.replace(/\.docx$/i, '') + '.md', text, attachmentEntry: {name, bytes}};
+			}
 		}
 	} catch (_) { /* The complete original, including embedded objects, remains an ordinary file. */ }
 	const html = '<html><head><title>' + escape(file.name.replace(/\.docx$/i, '')) + '</title></head><body>' + body + '<p><a href="' + href + '">Original Word file</a></p></body></html>';

@@ -132,14 +132,8 @@
 :where(.md-render) [data-md-align="center"]{text-align:center!important}
 :where(.md-render) [data-md-align="right"]{text-align:right!important}
 :where(.md-render) [data-md-align="justify"]{text-align:justify!important}
-:where(.md-render) p[data-md-first="1"]{text-indent:2em}
-:where(.md-render) p[data-md-first="2"]{text-indent:4em}
-:where(.md-render) p[data-md-first="3"]{text-indent:6em}
-:where(.md-render) p[data-md-first="4"]{text-indent:8em}
-:where(.md-render) p[data-md-indent="1"]{margin-inline-start:2em}
-:where(.md-render) p[data-md-indent="2"]{margin-inline-start:4em}
-:where(.md-render) p[data-md-indent="3"]{margin-inline-start:6em}
-:where(.md-render) p[data-md-indent="4"]{margin-inline-start:8em}
+:where(.md-render) p[data-md-first]{--md-first:0px;text-indent:var(--md-first)}
+.md-render :is(p,h1,h2,h3,h4,h5,h6)[data-md-indent]{--md-indent:0px;margin-inline-start:var(--md-indent)}
 .md-render p[data-md-align="center"]>img{margin-inline:auto}
 .md-render p[data-md-align="right"]>img{margin-left:auto;margin-right:0}
 :where(.md-render) p[data-md-layout-tight]{margin-block:0!important}
@@ -264,10 +258,10 @@
 .md-render p{margin:0 0 var(--md-line)}
 .md-render ul,.md-render ol{margin:0 0 var(--md-line);padding-inline-start:var(--md-space-5)}
 .md-render ul{list-style:none}
-.md-render ul>li{position:relative}
+.md-render ul>li{position:relative;--md-marker:0px}
 
 .md-render ul>li::before{
-	content:'';position:absolute;inset-inline-start:calc(-1*var(--md-space-4));top:.66em;
+	content:'';position:absolute;inset-inline-start:calc(-1*var(--md-space-4) + var(--md-marker, 0px));top:.66em;
 	width:7px;height:7px;border-radius:50%;background:currentColor}
 .md-render ul ul>li::before{
 	box-sizing:border-box;background:transparent;border:2px solid currentColor}
@@ -347,6 +341,7 @@
 }
 .md-render ol>li{
 	position:relative;
+	--md-marker:0px;
 	counter-increment:rapier-ol;
 	min-height:calc(2 * var(--md-unit));
 	padding-top:calc(0.15 * var(--md-unit));
@@ -355,7 +350,7 @@
 	content:counter(rapier-ol);
 	position:absolute;
 	/* The circle is centred on the item's first line: the li's own padding, plus half of what the 2rem circle is taller than one line. */
-	inset-inline-start:calc(-2.75 * var(--md-unit)); top:calc(calc(0.15 * var(--md-unit)) + (var(--md-line) - calc(2 * var(--md-unit))) / 2);
+	inset-inline-start:calc(-2.75 * var(--md-unit) + var(--md-marker, 0px)); top:calc(calc(0.15 * var(--md-unit)) + (var(--md-line) - calc(2 * var(--md-unit))) / 2);
 	width:calc(2 * var(--md-unit)); height:calc(2 * var(--md-unit));
 	display:flex; align-items:center; justify-content:center;
 	border:2px solid var(--md-color-line);
@@ -372,7 +367,7 @@
 	content:'';
 	position:absolute;
 
-	inset-inline-start:calc(calc(-1.75 * var(--md-unit)) - 1.5px);
+	inset-inline-start:calc(calc(-1.75 * var(--md-unit)) - 1.5px + var(--md-marker, 0px));
 	top:calc(2.2 * var(--md-unit));
 	bottom:calc(var(--md-line) / -4);
 	border-inline-start:3px dotted var(--md-color-line);

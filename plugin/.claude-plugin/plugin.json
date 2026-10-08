@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.84+skills.60a8f0d05c66f2c695c3776c53c9b8ca2c7ae4654945dedf4728492cb428b23f",
+  "version": "1.1.85+skills.ad538e3271d977d6583f2a9c2038c86d9b09ed690909d7d82ff4a4b75d829d0a",
   "description": "Rapier is a fast Markdown editor for writing, drawing and revision with your assistant. Create drafts, plans and illustrated guides you can edit by hand, revisit and keep. The assistant reads current passages or drawing objects and changes exactly what it inspected. Your typing comes first. Review attributed changes, compare versions, and undo an assistant change while preserving later human edits. Choose FREE, CHECK or ASK to control how changes land. Move SVG diagram shapes, paint with brushes, and keep Mermaid diagrams as editable Markdown source. Text, pictures and drawings travel in one Markdown file. Export exact Markdown, an offline editor, plain text or a rendered web page; an open editor also supplies Word and PDF. Downloaded files remain independent of the hosted workspace. No Rapier account is needed. Shared documents and working history stay in a private workspace that expires after 30 idle days.",
   "author": {
     "name": "Jack Skipworth",

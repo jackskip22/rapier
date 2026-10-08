@@ -1505,7 +1505,7 @@
           },
           {
             "property": "inset-inline-start",
-            "value": "calc(-1*var(--md-space-4))",
+            "value": "calc(-1*var(--md-space-4) + var(--md-marker, 0px))",
             "important": false
           },
           {
@@ -1534,7 +1534,7 @@
           },
           {
             "property": "inset-inline-start",
-            "value": "calc(-2.75 * var(--md-unit))",
+            "value": "calc(-2.75 * var(--md-unit) + var(--md-marker, 0px))",
             "important": false
           },
           {
@@ -1563,7 +1563,7 @@
           },
           {
             "property": "inset-inline-start",
-            "value": "calc(calc(-1.75 * var(--md-unit)) - 1.5px)",
+            "value": "calc(calc(-1.75 * var(--md-unit)) - 1.5px + var(--md-marker, 0px))",
             "important": false
           },
           {
@@ -1597,7 +1597,7 @@
           },
           {
             "property": "inset-inline-start",
-            "value": "calc(calc(-1.75 * var(--md-unit)) - 1.5px)",
+            "value": "calc(calc(-1.75 * var(--md-unit)) - 1.5px + var(--md-marker, 0px))",
             "important": false
           },
           {

@@ -122,6 +122,9 @@ function _rapierLayoutEmptyLine(wrapper, change) {
   try { marker = layout.formatLayout(next); } catch (_) { return false; }
   if (marker) line.setAttribute('data-md-layout', encodeURIComponent(marker)); else line.removeAttribute('data-md-layout');
   for (const key of ['align', 'first', 'indent']) { if (next[key]) line.setAttribute('data-md-' + key, String(next[key])); else line.removeAttribute('data-md-' + key); }
+  for (const key of ['first', 'indent']) line.style.removeProperty('--md-' + key);
+  const style = layout.textStyle(next);
+  if (style) line.setAttribute('style', (line.getAttribute('style') || '') + ';' + style);
   _rapierSeatCaretAtBlockStart(edit);
   _rapierRememberToolbarSelection(window.getSelection(), edit);
   _rapierUpdateAlignmentButton(window.getSelection());
@@ -157,10 +160,10 @@ async function rapierAlign(align) {
     wrapper => _rapierAlignEmptyLine(wrapper, align), () => _rapierUpdateAlignmentButton(window.getSelection()));
 }
 
-// Tab in a paragraph of its own (Shift+Tab takes one off): the first line is indented one more level, up to the grammar's four, as Word's Tab at a
+// Tab in a paragraph of its own (Shift+Tab takes one off): the first line is indented one more level within the grammar's bound, as Word's Tab at a
 // paragraph's start sets a first-line indent; written as `first` in the layout comment, one Undo step, never as characters in the words.
 function rapierFirstLine(step) {
-  const change = target => { const level = Math.max(0, Math.min(4, (target.layout.first || 0) + step)); return {first: level || null}; };
+  const change = target => ({first: globalThis.RapierMarkdownLayout.stepIndent(target.layout.first, step) || null});
   return _rapierEditLayout(change, 'document.first-line', wrapper => {
     const line = wrapper.querySelector(':scope > .block-edit > p');
     const now = line && globalThis.RapierMarkdownLayout.parseLayoutAttribute(line.getAttribute('data-md-layout'));
@@ -169,9 +172,9 @@ function rapierFirstLine(step) {
 }
 
 // Ctrl+M indents a paragraph one step, Ctrl+Shift+M outdents it (Docs' keys). One step is the standard's unit
-// (`indent` in the layout comment, levels 1 to 4). One Undo step. The words on the line are not touched.
+// (`indent` in the layout comment). One Undo step. The words on the line are not touched.
 function rapierIndent(step) {
-  const change = target => { const level = Math.max(0, Math.min(4, (target.layout.indent || 0) + step)); return {indent: level || null}; };
+  const change = target => ({indent: globalThis.RapierMarkdownLayout.stepIndent(target.layout.indent, step) || null});
   return _rapierEditLayout(change, 'document.indent', wrapper => {
     const line = wrapper.querySelector(':scope > .block-edit > p, :scope > .block-edit > h1, :scope > .block-edit > h2, :scope > .block-edit > h3, :scope > .block-edit > h4, :scope > .block-edit > h5, :scope > .block-edit > h6');
     const now = line && globalThis.RapierMarkdownLayout.parseLayoutAttribute(line.getAttribute('data-md-layout'));

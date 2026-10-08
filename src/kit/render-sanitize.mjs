@@ -270,7 +270,7 @@ function _rapierInstallSanitizeHooks() {
 			&& _rapierSafeRasterDataUrl(compact);
 		if (!rasterAllowed) data.keepAttr = false;
 	});
-	// Paste and render sanitise: a remote <img src> would fetch the instant its markup lands in the page,
+	// Paste, render and export sanitise: a remote <img src> would fetch the instant its markup lands in the page,
 	// so the src the hook below is about to strip never survives. Move it to a data-* attribute first
 	// (DOMPurify already leaves data-* alone, and the sanitizer's own inert document never fetches it
 	// either), so the picture and its alt text still reach Turndown's rapierImage rule as a live
@@ -279,7 +279,7 @@ function _rapierInstallSanitizeHooks() {
 	// only the three this hook sets on the node it holds back stay. A picture inside a link is the same
 	// node with the same fix: the outer <a> rule reads this img's own converted markdown as its content.
 	DOMPurify.addHook('uponSanitizeElement', node => {
-		if (_rapierRemoteContent.allowed || !/^(?:paste|render|raw)$/.test(_rapierSanitizeRuntime.context)) return;
+		if (_rapierRemoteContent.allowed || !/^(?:paste|render|raw|export)$/.test(_rapierSanitizeRuntime.context)) return;
 		if (!node || node.nodeName !== 'IMG' || node.hasAttribute('data-rapier-remote-src')) return;
 		const src = node.getAttribute('src') || '';
 		if (!src || !_rapierRemoteSubresourceOrigin(src)) return;
@@ -318,6 +318,8 @@ function _rapierInstallSanitizeHooks() {
 			return;
 		}
 		const attribute = String(data.attrName || '').toLowerCase();
+		// These attributes carry authored text, never resource requests.
+		if (attribute === 'alt' || attribute === 'title') return;
 		if (/^data-rapier-remote-(?:src|alt|title)$/.test(attribute) && node && node._rapierHeldBack === true) { data.forceKeepAttr = true; return; }
 		if (attribute.startsWith('data-')) return;
 		const element = String(node && node.nodeName || '').toUpperCase();

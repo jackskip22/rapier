@@ -22,7 +22,10 @@ export function createPaintPNGCodec() {
 	async function compressed(px) { const raw = rows(px), stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate')); return url(png(px, new Uint8Array(await new Response(stream).arrayBuffer()))); }
 	async function decode(raster) {
 		if (!raster.startsWith('data:image/png;base64,')) return null;
-		const bytes = Uint8Array.from(atob(raster.slice(22)), c => c.charCodeAt(0)), v = new DataView(bytes.buffer);
+		// A binary string is already byte-indexed; do not retain a character list beside the painting.
+		const binary = atob(raster.slice(22)), bytes = new Uint8Array(binary.length);
+		for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
+		const v = new DataView(bytes.buffer);
 		if (bytes.length < 57 || v.getUint32(0) !== 0x89504e47 || v.getUint32(4) !== 0x0d0a1a0a) throw new Error('Invalid painting PNG');
 		const width = v.getUint32(16), height = v.getUint32(20);
 		const colour = bytes[25], channels = {0: 1, 2: 3, 4: 2, 6: 4}[colour];

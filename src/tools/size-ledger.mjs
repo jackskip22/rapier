@@ -13,7 +13,7 @@ import acorn from '../agent/vendor/acorn.mjs';
 import {decodeBase124} from './base124.mjs';
 import {decodeTextPack} from './text-pack.mjs';
 import {restoreSymbols} from './runtime-symbols.mjs';
-import {JPEG_XL_MODULES} from '../images/codec-build.mjs';
+import {buildJPEGXLArtifact} from '../images/codec-build.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const OUTPUT = {full: 'rapier.html', document: 'rapier-document.html'};
@@ -39,7 +39,7 @@ function edits(source, ranges) {
 
 // --- The omissions: each edits its syntax anchors exactly once in a copy. The encoder row measures the encoder, not the worker. ---
 export function omitEncoder(source) {
-  const call = one(find(source, n => n.type === 'CallExpression' && n.callee.name === 'buildJPEGXLWorker'), 'JPEG XL worker build');
+  const call = one(find(source, n => n.type === 'CallExpression' && n.callee.name === 'buildJPEGXLArtifact'), 'JPEG XL worker build');
   assert.equal(call.arguments[1]?.type, 'ObjectExpression', 'the worker build takes its profile as an options object');
   return edits(source, [[call.arguments[1].start, call.arguments[1].end, "{profile: 'document'}"]]);
 }
@@ -223,11 +223,9 @@ export const GROUPS = [
   {id: 'qr', name: 'QR encoder (the selectable device code and sheet stay)', edits: {'notes/sync-session.mjs': omitQR},
     inputs: () => ['notes/qr-code.mjs'], carries: a => modules(a).has('notes/qr-code.mjs')},
   {id: 'jxl', name: 'JPEG XL encoder (the worker, its adapter and its refusal stay)', edits: {'tools/build.mjs': omitEncoder},
-    inputs: () => JPEG_XL_MODULES.map(name => 'images/' + name),
-    // The worker is compiled (tools/minify.mjs): its declarations merge and lose their spaces, and an
-    // `undefined` is printed `void 0`, so the anchors read the statement, not its spelling.
-    carries: a => /\bencoderFactory\s*=\s*createJPEGXLEncoder\b/.test(a.text('rapier-jxl-worker.js')),
-    leaves: a => /\bencoderFactory\s*=\s*(?:undefined|void 0)\b/.test(a.text('rapier-jxl-worker.js'))},
+    inputs: (a, ctx) => ctx.jxlModules,
+    carries: a => a.jxl?.modules.includes('images/jxl/rapier.mjs') === true,
+    leaves: (a, ctx) => hash(a.text('rapier-jxl-worker.js')) === ctx.documentWorkerSha256},
   {id: 'fonts', name: 'Geist + Geist Mono (the two wght400–700 faces, inside the packed stylesheet record)', edits: {'shell/fonts/fonts.css': omitFonts},
     inputs: () => ['shell/fonts/fonts.css', 'shell/fonts/Geist.wght400-700.woff2', 'shell/fonts/GeistMono.wght400-700.woff2'],
     carries: a => fontRules(packedStyles(a)).length > 0 || fontRules(a.html).length > 0},
@@ -258,7 +256,8 @@ export async function context(root) {
   const buildSource = await readFile(join(root, 'tools/build.mjs'), 'utf8');
   const vendors = one(find(buildSource, node => node.type === 'VariableDeclarator' && node.id?.name === 'VENDOR_GROUPS'), 'vendor groups').init;
   assert.equal(vendors.type, 'ObjectExpression', 'vendor groups are an explicit inventory');
-  return {vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
+  const [completeWorker, documentWorker] = await Promise.all([buildJPEGXLArtifact(root), buildJPEGXLArtifact(root, {profile: 'document'})]);
+  return {jxlModules: completeWorker.modules.map(name => 'images/jxl/' + name), documentWorkerSha256: documentWorker.sha256, vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
     styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')),
     drawScripts: await Promise.all(scripts.map(async path => ({path, functions: scriptFunctions(await readFile(join(root, path), 'utf8'))})))};
 }
@@ -272,7 +271,7 @@ export function proveOmission(group, baseline, without, ctx) {
     return 'not in this profile: the omission build is byte-identical';
   }
   assert(!group.carries(without, ctx), group.id + ': the omission build still carries it');
-  if (group.leaves) assert(group.leaves(without), group.id + ': the omission build lost what it must keep');
+  if (group.leaves) assert(group.leaves(without, ctx), group.id + ': the omission build lost what it must keep');
   return 'decoded: absent from the omission build, every other payload still present';
 }
 
@@ -288,7 +287,7 @@ export function verifyBuild(dir, profile, packing, started) {
   assert.equal(receipt.editor?.path, OUTPUT[profile], 'receipt artifact');
   assert.equal(receipt.editor.bytes, html.length, 'receipt bytes');
   assert.equal(receipt.editor.sha256, hash(html), 'receipt SHA-256');
-  return {html: html.toString('utf8'), bytes: html.length, sha256: receipt.editor.sha256, builtAt: receipt.builtAt, node: receipt.node, canonical: receipt.toolchain?.canonical === true};
+  return {jxl: receipt.jxl ?? null, html: html.toString('utf8'), bytes: html.length, sha256: receipt.editor.sha256, builtAt: receipt.builtAt, node: receipt.node, canonical: receipt.toolchain?.canonical === true};
 }
 async function build(dir, profile, packing, log) {
   // A full build reads its previous output as the shell, so the file is aged, never removed.
@@ -325,7 +324,9 @@ async function measureProfile(frozen, work, profile, packing, logs) {
       console.log(`[size-ledger] ${profile} ${label} (${packing})`);
       const built = await build(dir, profile, packing, join(logs, `${profile}-${label}.log`));
       const symbols = JSON.parse(await readFile(join(dir, 'dist/runtime-symbols-' + profile + '.json'), 'utf8'));
-      return {...built, artifact: inspect(built.html, symbols)};
+      const artifact = {...inspect(built.html, symbols), jxl: built.jxl};
+      if (built.jxl) assert.equal(hash(artifact.text('rapier-jxl-worker.js')), built.jxl.worker.sha256, 'the receipt describes the decoded worker');
+      return {...built, artifact};
     } finally { await rm(dir, {recursive: true, force: true}); }
   }
   const baseline = await variant('baseline'), groups = [];

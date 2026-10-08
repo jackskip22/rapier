@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Stored paint commands are document data. Admission does not load the material engine.
 import {admitWaterActions, waterPaperById} from './water-data.mjs';
-import {PAINT_REPLAY_MAX_BYTES,paintReplayFits} from './paint-limits.mjs';
+import {AGENT_PAINT_LIMITS,storedPaintPointCount,PAINT_REPLAY_MAX_BYTES,paintReplayFits} from './paint-limits.mjs';
 export {PAINT_REPLAY_MAX_BYTES,paintReplayFits};
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 const unit = n => finite(n) && n >= 0 && n <= 1;
@@ -13,14 +13,15 @@ const scale = n => finite(n) && n > 0 && n <= 16;
 const copy = v => structuredClone(v);
 
 export function admitPaintStrokeRecords(raw) {
-  if (!Array.isArray(raw) || !raw.length || raw.length > 32) return null;
+  if (!Array.isArray(raw) || !raw.length || raw.length > AGENT_PAINT_LIMITS.strokes) return null;
   const strokes = []; let total = 0;
   for (const s of raw) {
     if (!object(s) || typeof s.brush !== 'string' || !s.brush || s.brush.length > 96 || typeof s.colour !== 'string' || !/^#[0-9a-f]{6}$/.test(s.colour)) return null;
     if (!(finite(s.size) && s.size >= 0 && s.size <= 100) || s.load != null && !unit(s.load) || s.water != null && !unit(s.water)) return null;
     if (s.angle != null && !(finite(s.angle) && s.angle >= 0 && s.angle <= 179)) return null;
     if (s.follow != null && typeof s.follow !== 'boolean' || s.erase != null && typeof s.erase !== 'boolean') return null;
-    if (!Array.isArray(s.points) || !s.points.length || s.points.length > 1024 || (total += s.points.length) > 4096) return null;
+    if (!Array.isArray(s.points) || !s.points.length || storedPaintPointCount(s.points) > AGENT_PAINT_LIMITS.points ||
+        (total += storedPaintPointCount(s.points)) > AGENT_PAINT_LIMITS.total) return null;
     if (!s.points.every(p => Array.isArray(p) && (p.length === 2 || p.length === 3 && unit(p[2])) && finite(p[0]) && finite(p[1]) && Math.abs(p[0]) <= 1e6 && Math.abs(p[1]) <= 1e6)) return null;
     const stroke = {brush: s.brush, colour: s.colour, size: s.size, points: s.points.map(p => p.slice())};
     for (const key of ['load', 'water', 'angle', 'follow', 'erase']) if (s[key] != null) stroke[key] = s[key];

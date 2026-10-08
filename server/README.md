@@ -1,12 +1,12 @@
 # rapier-server
 
-Display, search and export Markdown from a folder or an S3-compatible bucket you control. The same Rapier renderer writes the page, the same Word owner writes the document, and the existing agent-door kernel commits edits. There is no Rapier account service, telemetry or runtime package download. Bucket mode uses only the storage endpoint you configure.
+Display, search, edit and export Markdown from a folder or an S3-compatible bucket you control. Rapier's renderer and agent tools preserve the document across these operations. The server requires no Rapier account and downloads no runtime packages. Bucket mode connects only to your configured storage endpoint.
 
-This package is **AGPL-3.0-only**. Rapier's commercial licence is the alternative for businesses that cannot accept those terms. The extracted rendering/style factories in `rapier-markdown-kit/render` are **MIT**; that grant does not relicense this service, the editor, or the agent kernel.
+This package is **AGPL-3.0-only**, with a commercial licence available. The rendering functions in `rapier-markdown-kit/render` are **MIT**; that licence does not cover this service, the editor or the agent kernel.
 
 ## Run
 
-The administrator supplies Node 22 or later, a local Chromium executable, its exact four-part version, and either an existing service-owned folder or a private bucket. Use the toolchain pins and build receipt from the release you deploy. The server does not install a browser or silently accept another browser version.
+Supply Node 22 or later, a local Chromium executable, its exact four-part version, and a service-owned folder or private bucket. Use the deployed release's tested toolchain. The server refuses a different browser version.
 
 From a staged package:
 
@@ -16,7 +16,7 @@ node dist/server/cli.mjs serve /srv/rapier/documents \
   --chromium-version "$(/usr/bin/chromium --version | sed -E 's/^[^0-9]*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
 ```
 
-The command above selects the locally installed version explicitly; it is not evidence that this version is qualified for your deployment. In managed configuration, write the qualified number as a literal. `RAPIER_SERVER_CHROMIUM` and `RAPIER_SERVER_CHROMIUM_VERSION` can supply the same options. After installing a staged local package with npm, the equivalent entry is `rapier-server serve <folder>`.
+The command selects your installed browser version. For deployment, pin a tested version explicitly. You can also set `RAPIER_SERVER_CHROMIUM` and `RAPIER_SERVER_CHROMIUM_VERSION`. After installing the package with npm, use `rapier-server serve <folder>`.
 
 ### Bucket storage
 
@@ -29,11 +29,11 @@ rapier-server serve --bucket documents --endpoint https://s3.us-east-1.amazonaws
   --chromium /usr/bin/chromium --chromium-version 154.0.8037.57
 ```
 
-Use the exact browser version qualified for your deployment. For R2 the endpoint is the account's S3 endpoint origin, `https://ACCOUNT_ID.r2.cloudflarestorage.com`; no bucket path, user information, query or fragment belongs in `--endpoint`. The bucket name becomes the path prefix. HTTPS is required except for loopback HTTP used by the in-process witness. Redirects are refused: configure the correct endpoint directly.
+For R2, use the account's S3 origin: `https://ACCOUNT_ID.r2.cloudflarestorage.com`. The endpoint accepts no bucket path, credentials, query or fragment; the bucket name supplies the path prefix. HTTPS is required except on loopback. Redirects are refused.
 
 Only environment variables supply S3 credentials: `RAPIER_BUCKET_KEY_ID`, `RAPIER_BUCKET_SECRET`, and optionally `RAPIER_BUCKET_SESSION_TOKEN`. Set `RAPIER_BUCKET_REGION` for a regional service; the default is `auto` for an R2 endpoint and `us-east-1` otherwise. The programmatic entry is `createServer({bucket, endpoint, ...browserOptions})`; `{root, ...browserOptions}` retains the folder store, and selecting both is refused. `bucketRegion` and `bucketTimeoutMs` configure region and the bounded storage-request deadline (30 seconds by default, at most five minutes). They never carry credentials.
 
-The service signs requests using the existing SigV4 owner and Node's crypto API, without an SDK. Grant bucket listing, object reads and conditional object writes, including the private `.rapier-server/` prefix. No object deletion permission is used. The provider must enforce `If-Match` and `If-None-Match` atomically and provide strongly consistent reads; a proxy or provider that ignores conditions is not supported. Keep the **whole bucket private**: the HTTP read surface hides private state, but it cannot make a provider's public bucket private. Credentials are not printed or written into bucket state; provider response bodies, redirects and nested transport diagnostics never become public errors.
+The service signs requests with SigV4 using Node's crypto API. Grant bucket listing, object reads and conditional writes, including `.rapier-server/`; deletion permission is unnecessary. The provider must enforce `If-Match` and `If-None-Match` atomically and provide strongly consistent reads. Keep the **whole bucket private**. Credentials never enter logs or bucket state, and public errors omit provider response bodies and transport diagnostics.
 
 The listener defaults to `127.0.0.1:8383`. It serves ordinary HTTP. The business supplies TLS, firewall rules and any user authentication at a reverse proxy. A non-loopback listener requires an exact HTTPS origin, for example:
 
@@ -56,9 +56,9 @@ SIGINT and SIGTERM close connections, stop render work, release the root lock an
 | `GET /d/report.md` | Self-contained Share HTML with the original source and SHA-256 carrier. |
 | `GET /d/nested/report.md` | A document below the root. Hidden paths and links are refused. |
 | `GET /search?q=words` | The Notes result shape, including `results` and `confirm`. Literal queries are confirmed against current source text. |
-| `GET /d/report.md.docx` | Word through the existing Rapier Word writer. |
-| `GET /d/report.md.pdf` | Chromium prints the existing Rapier print artifact, using the same semantic render and print styles. |
-| `POST /mcp` | The existing MCP tool catalogue and kernel, with the selected durable storage adapter. |
+| `GET /d/report.md.docx` | Word document. |
+| `GET /d/report.md.pdf` | PDF rendered by Chromium with Rapier's print styles. |
+| `POST /mcp` | Rapier's MCP tools with the configured durable storage. |
 | `POST /mcp?document=nested%2Freport.md` | Open that existing file and restrict workspace calls to that path. |
 | `GET /export/<handle>` | A retained immutable file, authenticated with the deployment bearer. HEAD returns its metadata. |
 | `POST /return/<handle>` | One returned copy for the expiring receipt, authenticated with the deployment bearer. |
@@ -110,13 +110,13 @@ A crash before head publication leaves the previous document and kernel readable
 
 The folder limits also apply here: 16 MiB per document read/write, 10,000 Markdown documents and 256 MiB of source per search scan, configurable through the store options. As with the folder, document-count and aggregate-byte limits bound scans; they are not a cross-document storage quota or create-admission transaction. Private state remains bounded separately. Listing is paged and respects hidden paths; search does not walk the private parts tree. Invalid UTF-8, missing/hash-mismatched parts, malformed heads and incomplete/pagination-invalid listing responses are refused rather than served partially.
 
-Immutable parts, including abandoned parts from failed writes and prior revisions, are retained. No automatic garbage collector or migration is added. Monitor bucket storage, do not apply age-based deletion to parts that may still be referenced, and stop all writers for a coordinated backup of heads **and** the private prefix. A live provider run remains separate from the deterministic loopback witness.
+Immutable parts, including failed writes and prior revisions, remain stored. Monitor bucket usage and avoid age-based deletion of parts that may still be referenced. Stop all writers before backing up heads **and** the private prefix. Test conditional writes against your chosen provider before deployment.
 
 ## Rendering and network boundary
 
-`rapier-markdown-kit/render` supplies the extracted production functions. The editor delegates to them; there is no separately authored Markdown or HTML renderer. The MIT factory API takes explicit parser, DOM, sanitizer and image/layout host ports. It is not a dependency-free DOM implementation for bare Node.
+`rapier-markdown-kit/render` supplies the editor's rendering functions. Its MIT API requires a parser, DOM, sanitizer and image/layout dependencies.
 
-For complete parity with the existing owners, this service uses the retained **document-profile runtime inside a local Chromium document realm for HTML and Word as well as PDF**. It skips editor boot/recovery/UI state and initializes the retained render libraries directly. This deliberately costs more memory than a pure-Node string renderer. Each operation has an isolated browser context, a deadline and a bounded cache/queue. The only browser control connection is a pipe, not a listening debug port.
+HTML, Word and PDF export use the bundled document runtime in local Chromium. Each operation has an isolated browser context, a deadline and bounded caching and queuing. Browser control uses a pipe with no listening debug port.
 
 Retained bytes are installed in an in-memory page. Page network requests are refused; no source URL can become a server-side fetch. The narrow digest bridge only computes SHA-256/SHA-512 locally when an in-memory origin has no WebCrypto digest. Random UUIDs use the browser's native random values. No browser policy is disabled to allow navigation. The browser launches with the release toolchain’s `JXLImageFormat` feature flag. A browser without JPEG XL decoding refuses Word conversion of a JPEG XL picture instead of dropping it; the test output names that codec refusal separately from successful round trips.
 
@@ -132,7 +132,7 @@ RAPIER_PROFILE=full node tools/build.mjs
 node tools/stage-server.mjs
 ```
 
-The default output is `dist/rapier-server`. The stage follows literal module imports from the CLI, service and tests; refuses external npm dependencies, computed imports and symlinks; verifies retained page/App hashes and version; includes the existing MIT/AGPL/vendor notices and MCP skill snapshot; and runs the public-package boundary check. `BUILD.json` names every staged runtime file and its hash. It does not recursively copy private repository directories. `tools/stage-public.mjs` places the same AGPL package at `server/` in the public repository and retains the renderer factory sources needed to rebuild the page.
+The output is `dist/rapier-server`, including runtime dependencies, licence notices and MCP skills. Staging verifies the bundled page hashes and versions; `BUILD.json` lists each runtime file and its hash. The public repository includes this package under `server/` and its rebuildable source.
 
 Release staging refuses noncanonical or development-packed profiles. For a deliberately nonrelease local build only:
 
@@ -142,11 +142,11 @@ RAPIER_PACK=fast RAPIER_PROFILE=full node tools/build.mjs
 node tools/stage-server.mjs --development
 ```
 
-That output is labelled development. This command does not turn an unqualified toolchain into a release. Nothing here publishes a package or deploys a server.
+The output is labelled development. Staging does not publish or deploy it.
 
 ## Tests
 
-The repository's existing rows own the new cells; no new row is required:
+From the source checkout:
 
 ```sh
 RAPIER_SERVER_CHROMIUM=/usr/bin/chromium \
@@ -154,6 +154,6 @@ RAPIER_SERVER_CHROMIUM_VERSION=YOUR_EXACT_QUALIFIED_VERSION \
 node tools/witness-node.mjs html-export-corpus mcp-create-isolation
 ```
 
-The HTML row retains all 226 baseline writer byte checks and 126 original Markdown-owner HTML hashes, covering the writer sources, kit conformance documents and welcome. The Word cells additionally round-trip the source corpus through real DOM owners, checking heading levels/text and table-cell words. The filesystem preservation cells also inject late in-place/rename/recreation edits, retain a writer’s open descriptor, and kill real writer processes at prepared, candidate, displaced, linked, source-synced and state-synced boundaries. The server row opens real HTTP sockets and real files, renders through the installed browser, reads the exact source back, exercises Word/PDF and Notes search, and uses the real kernel for persisted edits, Undo, Will, ASK approval, rotation, restart, collision/stale refusals and recovery at all three durable cut points. Its bucket cells exercise an in-process HTTP S3 peer with independent SigV4 verification, real body-only ETags and conditional 412 responses: byte parity with folder create/read/edit/restart/retry/Undo/search, encoded paged paths, independent-writer and state-only races, both sides of head publication, limits, corrupt/incomplete objects, and credential-safe errors and CLI startup. It also stages a package and runs its standalone tests from the copied tree. There are no screenshot or appearance assertions.
+Tests cover source recovery, Word/PDF export, search, authorization, Undo, interrupted writes, concurrent changes and restart recovery. Bucket tests use a local S3 server with independent SigV4 verification and conditional writes.
 
-Inside a staged package, `npm test` or `node dist/server/test/run.mjs` runs those service cells, with the same explicit browser environment. Root-only test containers must explicitly set `RAPIER_SERVER_NO_SANDBOX=1`; that receipt is not production sandbox qualification. Release acceptance still requires the project's pinned toolchain, canonical build and public-stage proof.
+Inside the package, run `npm test` or `node dist/server/test/run.mjs` with the same browser environment. Root-only test containers require `RAPIER_SERVER_NO_SANDBOX=1`. Keep Chromium's sandbox enabled in production.

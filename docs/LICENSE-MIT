@@ -49,3 +49,7 @@ re-imports and re-exports that surface unchanged (one owner, no copy) and keeps 
 needs the AGPL decoders, so it is AGPL-3.0-only like the rest of the editor. The `rapier-markdown-kit`
 package re-exports `spec/md-assets.mjs` directly, never `images/assets.mjs`, so its import graph
 never touches AGPL code.
+
+The JPEG XL encoder and worker modules in `images/jxl/` carry their MIT license in
+`images/jxl/LICENSE`. The MIT-marked `images/encoder.mjs` and `images/codec.mjs`
+re-export those modules. Their runtime import graph contains no editor code.

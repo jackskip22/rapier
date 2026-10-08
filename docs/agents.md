@@ -359,8 +359,8 @@ tool that finds no open store answers its `availability` and `reason` with a pla
 no notes and a read `found: false`. A locked endpoint never falls back to another folder. The person's Will and
 existing review govern document changes.
 
-**Hosts.** A tool name keeps its meaning for good, and Rapier checks authority, revision and effect on every
-call whatever a host allows. WebMCP harnesses pass `executeTool` arguments as objects.
+**Hosts.** Rapier checks authority, revision and effect on every call. Native Chrome WebMCP
+`executeTool` takes serialized JSON arguments. The in-page helper and registered tool callbacks take objects.
 
 ## The worker
 

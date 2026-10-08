@@ -703,7 +703,7 @@ function _rapierDrawRenderShapes(onlyIds) {
 }
 function _rapierDrawRenderAll() {
 	const state = _rapierDrawState, recipe = state.recipe;
-	// The viewBox follows the recipe's canvas (a canvas grown by Paint, or shrunk back by Undo).
+	// Project the current camera; drawing changes never choose a new view.
 	_rapierDrawApplyView();
 	_rapierDrawRenderShapes();
 	_rapierDrawUpdateMenu();
@@ -2433,7 +2433,7 @@ function _rapierDrawSetToolMenu(open) {
 const RAPIER_DRAW_BACKGROUND_WIRED = true;
 const RAPIER_DRAW_RESIZE_PRESETS = [['free', 'Free'], ['1:1', '1:1'], ['4:3', '4:3'], ['16:9', '16:9'], ['page', 'Page']];
 const RAPIER_DRAW_CANVAS_ACTS = ['canvas', 'canvasSwap', 'canvasBackground', 'canvasResize', 'canvasAdaptive'];
-const RAPIER_DRAW_RESIZE_MIN = 16, RAPIER_DRAW_RESIZE_MAX = 65536, RAPIER_DRAW_RESIZE_SNAP_PX = 10, RAPIER_DRAW_RESIZE_MARGIN = 36, RAPIER_DRAW_RESIZE_EASE_MS = 300;
+const RAPIER_DRAW_RESIZE_MIN = 16, RAPIER_DRAW_RESIZE_MAX = 65536, RAPIER_DRAW_RESIZE_SNAP_PX = 10;
 function _rapierDrawOpenBackgroundPanel() { _rapierDrawSetCanvasMenu(false); if (typeof _rapierDrawOpenBackground === 'function') _rapierDrawOpenBackground(); }
 function _rapierDrawSetCanvasMenu(open) {
 	const state = _rapierDrawState, menu = state.surface?.querySelector('.rapier-draw-canvas-menu'), trigger = state.surface?.querySelector('[data-draw-act="canvas"]');
@@ -2503,53 +2503,19 @@ function _rapierDrawResizeDraw() {
 	const at = { nw: [b.left, b.top], n: [cx, b.top], ne: [b.right, b.top], e: [b.right, cy], se: [b.right, b.bottom], s: [cx, b.bottom], sw: [b.left, b.bottom], w: [b.left, cy] };
 	for (const target of layer.children) { const p = at[target.dataset.drawResize]; if (p) target.style.cssText = 'left:' + (p[0] - 22) + 'px;top:' + (p[1] - 22) + 'px'; }
 }
-// A critically damped spring, the pinch landing's own (editor/pinch-zoom.js): the window's centre and its zoom ease to the target.
-function _rapierDrawAnimateView(to, done) {
-	const state = _rapierDrawState, v = _rapierDrawView(), base = _rapierDrawViewBase();
-	_rapierDrawStopAnimation();
-	const centre = (x, y, k) => ({ x: x + base.w / k / 2, y: y + base.h / k / 2 }), from = { ...centre(v.x, v.y, v.k), k: v.k }, end = { ...centre(to.x, to.y, to.k), k: to.k };
-	const apply = e => { const k = from.k * Math.pow(end.k / from.k, e), cx = from.x + (end.x - from.x) * e, cy = from.y + (end.y - from.y) * e; v.k = k; v.x = cx - base.w / k / 2; v.y = cy - base.h / k / 2; _rapierDrawApplyView(); _rapierDrawUpdateHandles(); };
-	if (typeof requestAnimationFrame !== 'function' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { apply(1); done?.(); return; }
-	const omega = 5.8 / (RAPIER_DRAW_RESIZE_EASE_MS / 1000), start = performance.now(), anim = state.viewAnim = { frame: 0 };
-	const tick = () => {
-		anim.frame = 0;
-		if (state.viewAnim !== anim) return;
-		const seconds = (performance.now() - start) / 1000, e = 1 - (1 + omega * seconds) * Math.exp(-omega * seconds);
-		const finished = seconds > RAPIER_DRAW_RESIZE_EASE_MS * 2.2 / 1000 || (seconds > .1 && Math.abs(1 - e) < .0015);
-		apply(finished ? 1 : e);
-		if (finished) { state.viewAnim = null; done?.(); return; }
-		anim.frame = requestAnimationFrame(tick);
-	};
-	anim.frame = requestAnimationFrame(tick);
-}
-function _rapierDrawStopAnimation() {
-	const state = _rapierDrawState;
-	if (state.viewAnim) { cancelAnimationFrame(state.viewAnim.frame); state.viewAnim = null; }
-}
-// The window that shows a whole frame under the strip with room round it for its caps.
-function _rapierDrawResizeFit(frame) {
-	const state = _rapierDrawState, rect = state.svgRoot.getBoundingClientRect(), base = _rapierDrawViewBase(), strip = state.surface.querySelector('[data-draw-resize-strip]');
-	const m = RAPIER_DRAW_RESIZE_MARGIN, W = Math.max(1, rect.width), H = Math.max(1, rect.height), top = Math.max(0, strip.getBoundingClientRect().bottom - rect.top) + m;
-	const availW = Math.max(40, W - 2 * m), availH = Math.max(40, H - top - m), s0 = Math.min(W / base.w, H / base.h);
-	const k = _rapierDrawClamp(Math.min(availW / frame.w, availH / frame.h) / s0, RAPIER_DRAW_ZOOM_MIN, RAPIER_DRAW_ZOOM_MAX);
-	const w = base.w / k, h = base.h / k, t = Math.min(W / w, H / h), offX = (W - w * t) / 2, offY = (H - h * t) / 2;
-	return { k, x: frame.x + frame.w / 2 - (W / 2 - offX) / t, y: frame.y + frame.h / 2 - (top + availH / 2 - offY) / t };
-}
 function _rapierDrawResizeStart() {
 	const state = _rapierDrawState;
 	if (state.resize || !state.open || !state.recipe) return;
 	_rapierDrawSetSelection([]); _rapierDrawCloseSettingPanels('');
-	const frame = _rapierDrawStartFrame(), v = _rapierDrawView();
-	state.resize = { frame, start: { ...frame }, preset: 'free', ratio: null, view0: { x: v.x, y: v.y, k: v.k }, ink: _rapierDrawUnionView(state.recipe) };
+	const frame = _rapierDrawStartFrame();
+	state.resize = { frame, start: { ...frame }, preset: 'free', ratio: null, ink: _rapierDrawUnionView(state.recipe) };
 	state.surface.classList.add('rapier-draw-surface--resizing');
 	state.surface.querySelector('[data-draw-resize-strip]').hidden = false;
 	_rapierDrawResizeSyncStrip(); _rapierDrawApplyView();
-	_rapierDrawAnimateView(_rapierDrawResizeFit(frame));
 }
-// A drawing opened fresh is never mid-resize: the strip, the mode and the animation are put away.
+// A new drawing starts with the resize controls closed.
 function _rapierDrawResizeReset() {
 	const state = _rapierDrawState;
-	_rapierDrawStopAnimation();
 	state.surface.classList.remove('rapier-draw-surface--resizing');
 	const strip = state.surface.querySelector('[data-draw-resize-strip]');
 	if (strip) strip.hidden = true;
@@ -2559,7 +2525,7 @@ function _rapierDrawResizeSyncStrip() {
 	const resize = _rapierDrawState.resize;
 	for (const chip of _rapierDrawState.surface.querySelectorAll('[data-draw-preset]')) chip.setAttribute('aria-pressed', String(!!resize && chip.dataset.drawPreset === resize.preset));
 }
-// DONE keeps the frame (one undoable step, adaptive off); cancelling leaves the drawing as it was. The window goes back to where it was.
+// Done keeps the frame in one undoable step. Cancel leaves it unchanged; both preserve the camera.
 function _rapierDrawResizeDone(cancel = false) {
 	const state = _rapierDrawState, resize = state.resize;
 	if (!resize) return;
@@ -2568,11 +2534,11 @@ function _rapierDrawResizeDone(cancel = false) {
 	state.surface.classList.remove('rapier-draw-surface--resizing');
 	state.surface.querySelector('[data-draw-resize-strip]').hidden = true;
 	const f = resize.frame, x = Math.floor(f.x), y = Math.floor(f.y), frame = { x, y, w: Math.max(1, Math.ceil(f.x + f.w) - x), h: Math.max(1, Math.ceil(f.y + f.h) - y) };
-	const back = () => { if (!state.open) return; _rapierDrawResizeDraw(); _rapierDrawSyncCanvasMenu(); _rapierDrawAnimateView(resize.view0); };
-	if (cancel) { _rapierDrawApplyView(); back(); return; }
-	return Promise.resolve(_rapierDrawCommand(() => { state.recipe.frame = frame; })).then(() => { _rapierDrawApplyView(); back(); });
+	const finish = () => { if (!state.open) return; _rapierDrawApplyView(); _rapierDrawSyncCanvasMenu(); };
+	if (cancel) { finish(); return; }
+	return Promise.resolve(_rapierDrawCommand(() => { state.recipe.frame = frame; })).then(finish);
 }
-// A preset reshapes the frame about its centre and fits it back into view; FREE lets the edges go where the finger does.
+// A preset reshapes the frame about its centre; Free releases the ratio.
 function _rapierDrawResizePreset(id) {
 	const state = _rapierDrawState, resize = state.resize;
 	if (!resize) return;
@@ -2591,13 +2557,11 @@ function _rapierDrawResizePreset(id) {
 	w = _rapierDrawClamp(w, RAPIER_DRAW_RESIZE_MIN, RAPIER_DRAW_RESIZE_MAX); h = _rapierDrawClamp(h, RAPIER_DRAW_RESIZE_MIN, RAPIER_DRAW_RESIZE_MAX);
 	resize.frame = { x: cx - w / 2, y: cy - h / 2, w, h };
 	_rapierDrawResizeSyncStrip(); _rapierDrawApplyView(); _rapierDrawResizeDraw();
-	_rapierDrawAnimateView(_rapierDrawResizeFit(resize.frame));
 }
 // A finger on a cap or a corner moves that edge or those two; the opposite edge stays. A locked ratio keeps the shape; an edge that
 // crosses the ink's own edge snaps to it with a light tick (navigator.vibrate where the device has it).
 function _rapierDrawResizeDown(evt) {
 	const state = _rapierDrawState, target = evt.target.closest?.('[data-draw-resize]');
-	_rapierDrawStopAnimation();
 	state.pointerId = evt.pointerId; state.strokeStartT = evt.timeStamp;
 	const point = _rapierDrawSurfacePoint(evt), svgRect = state.svgRoot.getBoundingClientRect(), scale = _rapierDrawViewTransform(svgRect, state.svgRoot.viewBox.baseVal).scale;
 	state.gesture = { kind: 'resize', tool: _rapierDrawTool(), scale, origin: point, selection: [], touch: evt.pointerType === 'touch', pointerType: evt.pointerType, changed: false, dragged: false,
@@ -3893,11 +3857,6 @@ function _rapierDrawPalette(ink, scope) {
 		_rapierDrawRecentInks().map(value => '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--recent" data-draw-colour-value="' + _rapierDrawEscapeAttr(value) + '" data-draw-colour-scope="' + scope + '" aria-label="Recent colour ' + _rapierDrawEscapeAttr(value) + '" data-tip="recent" aria-pressed="' + (!clearOn && (ink || '').toLowerCase() === value.toLowerCase()) + '"><span style="background:' + _rapierDrawDisplayInk(value) + '"></span></button>').join('') +
 		(clearRow ? '<button type="button" class="rapier-draw-swatch rapier-draw-swatch--clear" data-draw-clear aria-label="Clear: the brush erases" data-tip="erase" aria-pressed="' + clearOn + '"><span><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="1" y1="23" x2="23" y2="1"></line></svg></span></button>' : '') + '</span>';
 }
-// The colour row rebuilds in place, so a new recent shows the moment it is earned.
-function _rapierDrawRefreshColourRow() {
-	const state = _rapierDrawState, row = state.surface?.querySelector('.rapier-draw-colours');
-	if (row && state.colourOpen && !row.hidden) row.innerHTML = _rapierDrawPalette(state.ink, 'next');
-}
 // The dropper: the pop-up steps aside to reveal the full canvas, the finger drags over it while a
 // small pop-up shows the sampled colour live, and Done takes it.
 //
@@ -4293,18 +4252,13 @@ function _rapierDrawApplyView() {
 	// The displayed paper includes filtered output without feeding its reach back into the
 	// authored canvas. Otherwise every seal would grow the whole-drawing filter again.
 	const extent = _rapierDrawPaperView(recipe, state.resize?.frame || recipe.frame);
-	// The window may travel past the paper -- painting up to a corner needs room beyond it -- but not
-	// so far that the paper leaves the screen entirely.
-	const slackX = Math.max(extent.w, w) * 0.9, slackY = Math.max(extent.h, h) * 0.9;
-	v.x = Math.min(Math.max(v.x, extent.x - slackX), extent.x + extent.w + slackX - w);
-	v.y = Math.min(Math.max(v.y, extent.y - slackY), extent.y + extent.h + slackY - h);
+	// Paper, filters and frames cannot move the camera. Only navigation chooses its view.
 	const box = _rapierDrawFmt(v.x) + ' ' + _rapierDrawFmt(v.y) + ' ' + _rapierDrawFmt(w) + ' ' + _rapierDrawFmt(h);
 	if (svg.getAttribute('viewBox') !== box) svg.setAttribute('viewBox', box);
 	const paper = svg.querySelector('.rapier-draw-paper');
 	if (paper) for (const [key, value] of Object.entries({ x: extent.x, y: extent.y, width: extent.w, height: extent.h })) paper.setAttribute(key, value);
 	if (typeof _rapierDrawBackgroundSync === 'function') _rapierDrawBackgroundSync();
-	// The paint overlay is a raster positioned over the stage, not an SVG child, so it is placed again
-	// against the new window or it would sit still while everything under it moved.
+	// Apply any pending material-origin change to the live raster's SVG mount.
 	if (typeof _rapierPaintPlaceLive === 'function') _rapierPaintPlaceLive();
 	_rapierDrawResizeDraw();
 }
@@ -4750,7 +4704,6 @@ function _rapierDrawTryBeginPinch(evt) {
 	const state = _rapierDrawState, gesture = state.gesture;
 	if (evt.pointerType !== 'touch' || state.secondPointerId != null || !gesture || !state.pointerScreen || evt.pointerId === state.pointerId) return;
 	// Two touches are always navigation, including over selected objects and their handles.
-	_rapierDrawStopAnimation();
 	if (gesture.kind === 'resize') { if (gesture.resize && state.resize) state.resize.frame = { ...gesture.resize.start }; }
 	else if (gesture.kind === 'paint') _rapierPaintReleaseStroke(gesture, true);
 	else if (gesture.before) {
@@ -5187,7 +5140,7 @@ function _rapierDrawUpdateInkBtn(palette = true) {
 	const selected = picking ? _rapierDrawSelectedShapes() : [];
 	if (picking && !selected.length && state.colourOpen) state.colourOpen = false;
 	const colourScope = selected.length ? 'selection' : 'next';
-	const colourInk = selected.length ? (selected[0].ink || state.ink) : state.ink;
+	const colourInk = selected.length ? selected[0].ink : state.ink;
 	const colours = palette && state.colourOpen ? _rapierDrawPalette(colourInk, colourScope) : '';
 	if (btn) {
 		const was = btn.querySelector('.rapier-draw-ink-dot')?.style.background || '';
@@ -5226,7 +5179,7 @@ function _rapierDrawChooseColour(scope, ink, continuous = false) {
 	_rapierDrawRememberInk(ink);
 	_rapierDrawSetColour(scope, ink, continuous);
 	_rapierDrawState.colourEdit = false; _rapierDrawState.sweepBase = null;
-	_rapierDrawUpdateInkBtn(); _rapierPaintUpdateStrip(); _rapierDrawUpdateMenu(); _rapierDrawRefreshColourRow();
+	_rapierDrawUpdateInkBtn(); _rapierPaintUpdateStrip(); _rapierDrawUpdateMenu();
 }
 function _rapierDrawCommitHex(input) {
 	const ink = _rapierDrawReadHex(input.value);
@@ -5294,7 +5247,7 @@ function _rapierDrawMenuAction(evt) {
 	}
 	const dropper = evt.target.closest('[data-draw-act="dropper"]');
 	if (dropper) { void _rapierDrawOpenDropper(dropper.dataset.drawColourScope || 'next'); return; }
-	if (evt.target.closest('[data-draw-clear]')) { _rapierPaintHeadClear(true); _rapierDrawRefreshColourRow(); return; }
+	if (evt.target.closest('[data-draw-clear]')) { _rapierPaintHeadClear(true); _rapierDrawUpdateInkBtn(); return; }
 	const swatch = evt.target.closest('[data-draw-colour-value]');
 	if (swatch) { _rapierDrawChooseColour(swatch.dataset.drawColourScope, swatch.dataset.drawColourValue); return; }
 	const btn = evt.target.closest('[data-draw-menu-act]'), shape = _rapierDrawShapeById(state.menuShapeId);
@@ -6037,7 +5990,7 @@ function _rapierDrawFreshSession() {
 	return {
 		pasteStreak: null, ink: null, inkChosen: false, colourOpen: false, snap: true, repeat: false,
 		lastTap: null, proportions: false, resizeFromCenter: false, settingEdit: null, colourEdit: false, fadeEdit: false,
-		toolMenuOpen: false, canvasMenuOpen: false, resize: null, viewAnim: null, settingsCollapsed: false, kindsOpen: false, paintPicker: null, imageImporting: false,
+		toolMenuOpen: false, canvasMenuOpen: false, resize: null, settingsCollapsed: false, kindsOpen: false, paintPicker: null, imageImporting: false,
 		effectsScope: 'drawing', effectsSelection: [], effectsLayer: null, effectsSweep: null, effectsCompare: false,
 	};
 }
@@ -6244,7 +6197,10 @@ function _rapierDrawFollowStage() {
 	// (device rotated) is a reason for a still-empty canvas to move; the canvas never moves for a
 	// keyboard.
 	if (innerWidth === state.openWindow.w && innerHeight === state.openWindow.h) return;
-	if (recipe.strokes.length || _rapierDrawHasContent(recipe) || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
+	// Lifted input still owns its admitted coordinates while the painter or decoder is busy.
+	const pending = state.waterStrokes?.some(receipt => !receipt.finished || receipt.running) ||
+		state.paintRehydrateWaiters?.some(gesture => gesture.paint?.pending && !gesture.paint.discarded);
+	if (pending || recipe.strokes.length || _rapierDrawHasContent(recipe) || state.undoStack.length || state.redoStack.length || state.paintLayer?.surface?.bounds()) { state.canvasFollowsStage = false; return; }
 	state.openWindow = { w: innerWidth, h: innerHeight };
 	const rect = state.svgRoot.getBoundingClientRect(), w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height - (state.viewInset || 0)));
 	if (w === recipe.canvas.w && h === recipe.canvas.h) return;

@@ -21,20 +21,43 @@
   };
   const message = value => host()?.notify(value, 'info');
 
-  // This projection writes only the already-committed hidden record. It never owns source,
-  // schedules a second write, or changes the person's live prose/selection.
+  // Project the committed carrier without replacing the person's active prose block.
   function project(rows) {
-    for (const row of rows) for (const block of rapier.document.blocks) {
-      const raw = String(block.raw || '');
-      if (block.type !== 'html_block' || ![row.removed, row.removed + '\n', row.removed + '\r', row.removed + '\r\n'].includes(raw)) continue;
-      block.raw = block.raw.replace(row.removed, row.inserted);
-      block.rendered = renderBlock(block.raw); block.dirty = false;
-      rapier.autosave.dirty.add(block.id);
-      const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');
-      if (wrapper) {
-        wrapper._rapierBlockRaw = block.raw;
-        // A thread record is an HTML-comment block and therefore has no rendered children.
-        wrapper.querySelector('.block-read')?.replaceChildren();
+    for (const row of rows) {
+      const before = globalThis.RapierComments.commentProjectionParts(row.removed);
+      const after = globalThis.RapierComments.commentProjectionParts(row.inserted);
+      if (!before || !after || before.parts.length !== after.parts.length) continue;
+      const blocks = rapier.document.blocks;
+      for (let start = 0; start < blocks.length; start++) {
+        if (blocks[start].type !== 'html_block' || !String(blocks[start].raw || '').startsWith(before.parts[0])) continue;
+        const owned = blocks.slice(start, start + before.parts.length);
+        if (owned.length !== before.parts.length || owned.some((block, index) => block.type !==
+          (!index || index === owned.length - 1 ? 'html_block' : index === 1 ? 'paragraph' : 'footnote_reference'))) continue;
+        const raw = owned.map((block, index) => (index ? String(block.leading || '') : '') + String(block.raw || '')).join('');
+        if (!raw.startsWith(row.removed) || !/^(?:\r\n|\n|\r)?$/.test(raw.slice(row.removed.length))) continue;
+        const tail = raw.slice(row.removed.length), changed = [];
+        owned.forEach((block, index) => {
+          const next = after.parts[index] + (index === owned.length - 1 ? tail : '');
+          const leading = index ? after.eol + after.eol : block.leading;
+          if (block.raw === next && block.leading === leading) return;
+          block.raw = next; block.leading = leading; block.dirty = false;
+          rapier.autosave.dirty.add(block.id); changed.push(index);
+        });
+        const referencesChanged = changed.some(index => index > 0) && rebuildReferenceIndex(blocks);
+        for (const index of changed) {
+          const block = owned[index];
+          block.rendered = renderBlock(block.raw);
+          if (index) _spliceBlockDOM(start + index, 1, [block]);
+          else {
+            const wrapper = document.querySelector('.block-wrapper[data-block-id="' + block.id + '"]');
+            if (wrapper) {
+              wrapper._rapierBlockRaw = block.raw;
+              wrapper.querySelector('.block-read')?.replaceChildren();
+            }
+          }
+        }
+        if (referencesChanged) _rapierRefreshReferenceConsumers(new Set(owned.map(block => block.id)));
+        break;
       }
     }
   }
@@ -80,7 +103,7 @@
     }
     rapierCloseDocumentNavigator(false);
     const sheet = node('dialog');
-    sheet.style.cssText = 'font:inherit;color:var(--color-text);background:var(--color-bg);border:0;padding:24px;box-sizing:border-box;width:min(560px,calc(100vw - 32px));max-height:85dvh;overflow:auto';
+    sheet.style.cssText = 'font:inherit;color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-border);margin:auto;padding:24px;box-sizing:border-box;width:min(560px,calc(100vw - 32px));max-height:85dvh;overflow:auto';
     const title = node('h2', 'Comments'), list = node('div'), status = node('p');
     title.id = 'rapier-comments-title'; sheet.setAttribute('aria-labelledby', title.id);
     status.setAttribute('aria-live', 'polite');
@@ -135,8 +158,8 @@
         if (thread.anchor.kind !== 'document') article.append(node('blockquote', thread.anchor.quote));
         if (thread.anchor.status === 'stale') article.append(node('p', 'The original location changed; this thread is kept without a live anchor.'));
         for (const item of thread.messages) {
-          const by = item.author.kind === 'human' ? 'Person' : item.author.name;
-          article.append(node('p', by + (item.recipient ? ' → ' + item.recipient : '')), node('p', item.text));
+          const by = item.author.kind === 'human' ? item.author.name || 'Person' : item.author.name;
+          article.append(node('p', by + (item.recipient ? ' → ' + item.recipient : '') + (item.date ? ' · ' + item.date : '')), node('p', item.text));
         }
         const actions = node('div', null, 'settings-action-row');
         actions.append(button('Reply', e => {

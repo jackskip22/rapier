@@ -118,8 +118,9 @@ Keep a downloaded copy when it matters.
    `undo_agent_change({change_id})` to reverse it while preserving later human work. Accept a comparison
    only when the person's instructions and current policy authorize it, after reading its changes.
    A comparison summary is bounded: `find({scope: "comparison", query: ""})` enumerates changes;
-   a nonempty query searches them. Follow `next_cursor` and page `read_context({change_id})` until
-   inspected completely. Use `scope: "source"` when searching the working text during a comparison.
+   a nonempty query searches them. Follow `next_cursor`, then use `read_context({context_handle: change_id})`
+   for each difference and follow its read cursors until inspected completely. Use `scope: "source"`
+   when searching the working text during a comparison.
 6. When the person edits, reread the affected passage or drawing rather than recreate the document.
    Answer in place for an in-document request, keeping their question and surrounding work. Give a
    brief chat receipt and answer any remaining questions there.
@@ -133,12 +134,17 @@ MCP `operation_id` is optional: a nonempty string ≤128 characters, reused only
 Give material work an `operation_id` before sending it. A pending material requirement with
 `receipt.state: "accepted"` means the job was retained; it is neither committed source nor a request
 for human approval. The job can continue after the observing call disconnects. Retry the same operation
-ID with identical arguments to observe progress or obtain its result. Do not duplicate it with a new ID.
+ID with identical arguments to observe progress or obtain its result. Each pending job has a one-minute
+deadline and can wait for the person to return to the paired editor. Do not duplicate it with a new ID.
+If retry reports `material_request_expired`, reread current context and renew with a new operation ID.
 
 Read `rapier.guide({topic: "paint"})` for supported modes, brushes, actions and current limits; Paint and
 Water have different budgets. The paired browser runs the full editor and supplies real painting,
-sampling and replay. Material work needs an active, authorized, settled editor; Water additionally needs
-WebGPU. Registry support alone does not prove availability. Report capability refusals as returned.
+sampling and replay. Computation needs a visible, authorized, settled editor; return to it resumes accepted
+material work while the job is current. Without an initial presentation target, it can commit without opening the canvas.
+A changed source or live drawing binding invalidates the job.
+Water additionally needs WebGPU. Registry support alone does not prove availability. Report capability
+refusals as returned. Rapier cannot make the conversation host and a paired phone browser visible together.
 For large paintings, read a fitting object scope or add a new layer or drawing, preserving the original
 and its history. Do not flatten, discard or replace the person's workspace merely to fit a budget.
 

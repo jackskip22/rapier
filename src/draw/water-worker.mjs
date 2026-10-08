@@ -12,25 +12,31 @@ const yieldWork=()=>new Promise(resolve=>setTimeout(resolve,0));
 export function createWaterWorker({postMessage}={}){
  const surfaces=new Map(),brushes=new Map(),checkpoints=new Map(),runs=new Map(),jobs=new Map(),queued=new Set(),displayed=new Map(),displays=new Map();let serial=0,chain=Promise.resolve(),completed=0,closed=false,device=null;
  const watchDevice=next=>{if(device===next)return;device=next;next.lost.then(()=>{if(!closed&&device===next)postMessage({failure:{name:'Error',code:'WATER_DEVICE_LOST',message:'The GPU stopped. The last published painting is safe; reopen Water to continue.'}});});};
- const dropDisplay=id=>{const display=displays.get(id);if(display){display.context.unconfigure();display.canvas.width=display.canvas.height=0;displays.delete(id);}};
+ const releaseDisplay=display=>{if(display){display.context.unconfigure();display.canvas.width=display.canvas.height=0;}};
+ const dropDisplay=id=>{const display=displays.get(id);if(display){releaseDisplay(display.previous);releaseDisplay(display);displays.delete(id);}};
  const need=(map,id)=>{if(!integer(id)||!map.has(id))throw waterError('WATER_INPUT','The Water object is not live');return map.get(id);};
  const metadata=s=>{const stats=s.stats();return {width:s.width,height:s.height,revision:s.revision,bounds:s.bounds(),growBox:s.growBox,toothOX:s.toothOX,toothOY:s.toothOY,wetState:!!s.wetState,wet:s.wet,_wetWork:!!s._wetWork,wetPending:s.wetPending,opStats:stats,stats,tick:s.tick,mode:'water'};};
  const state=async(id,full=false,display=true)=>{
-  const s=need(surfaces,id);await s._finishWetWork();watchDevice(s.gpu.device);let box=display?s.takeDirty():null;
+  const s=need(surfaces,id);await s._finishWetWork();watchDevice(s.gpu.device);
+  const bound=displays.get(id);
+  if(bound){
+   if(!display)return {surfaceId:id,meta:metadata(s),patch:null};
+   const changed=bound.material!==s||bound.width!==s.width||bound.height!==s.height||bound.toothOX!==s.toothOX||bound.toothOY!==s.toothOY;
+   // A submitted canvas keeps its pixels and placement until the page adopts its replacement.
+   if(bound.submitted&&(bound.invalid||!bound.adopted||changed))return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,canvasGeneration:bound.canvasGeneration,submitted:false,replace:!!bound.invalid||bound.adopted&&changed}};
+  }
+  let box=display?s.takeDirty():null;
   if(display&&full){
    // Canonical display covers the cubic support and every earlier dirty pixel, including clears and rollback.
    const kept=s.bounds();if(kept)box=box?{x0:Math.min(box.x0,kept.x0),y0:Math.min(box.y0,kept.y0),x1:Math.max(box.x1,kept.x1),y1:Math.max(box.y1,kept.y1)}:kept;
   }
   // Every changed material cell influences the surrounding cubic readout, including live patches.
   if(box){const pad=(s.cell || 1)*2+2;box={x0:Math.max(0,box.x0-pad),y0:Math.max(0,box.y0-pad),x1:Math.min(s.width-1,box.x1+pad),y1:Math.min(s.height-1,box.y1+pad)};}
-  const bound=displays.get(id);
   if(bound){
-   if(!display)return {surfaceId:id,meta:metadata(s),patch:null};
-   const resized=bound.width!==s.width||bound.height!==s.height;
-   if(resized){bound.canvas.width=s.width;bound.canvas.height=s.height;bound.width=s.width;bound.height=s.height;}
-   if(bound.material!==s||resized){bound.context.configure({device:s.gpu.device,format:'rgba8unorm',alphaMode:'premultiplied',colorSpace:'srgb'});bound.material=s;box={x0:0,y0:0,x1:s.width-1,y1:s.height-1};}
+   if(!bound.submitted){bound.canvas.width=s.width;bound.canvas.height=s.height;bound.width=s.width;bound.height=s.height;bound.toothOX=s.toothOX;bound.toothOY=s.toothOY;bound.context.configure({device:s.gpu.device,format:'rgba8unorm',alphaMode:'premultiplied',colorSpace:'srgb'});bound.material=s;full=true;}
    if(box||full){await s.gpu.present(bound.context.getCurrentTexture(),full?null:[box.x0,box.y0,box.x1+1,box.y1+1]);displayed.set(id,performance.now());}
-   return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,revision:s.revision,width:s.width,height:s.height,submitted:!!box||full}};
+   bound.submitted=true;
+   return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,canvasGeneration:bound.canvasGeneration,revision:s.revision,width:s.width,height:s.height,submitted:!!box||full}};
   }
   const patch=box?{...await s.toRGBA8(box,true,full?'final':'live'),box}:null;if(patch)displayed.set(id,performance.now());
   return {surfaceId:id,meta:metadata(s),patch};
@@ -41,9 +47,10 @@ export function createWaterWorker({postMessage}={}){
  async function command(c,changed,used,progress=null){
   if(!c||typeof c!=='object'||!Array.isArray(c.args))throw waterError('WATER_INPUT','The Water command is not valid');
   if(c.target==='brush'){if(!brushMethods.has(c.method))throw waterError('WATER_INPUT','The brush command is not valid');await need(brushes,c.id)[c.method](...c.args);return {surface:false};}
-  if(c.target==='stroke'){const s=need(surfaces,c.surfaceId),b=need(brushes,c.brushId),cp=checkpoints.get(c.surfaceId);if(cp&&!cp.brushes.has(c.brushId))cp.brushes.set(c.brushId,brushState(b));await b.strokeTo(s,...c.args);changed.add(c.surfaceId);used.add(c.brushId);return {surface:false};}
+  if(c.target==='stroke'){const s=need(surfaces,c.surfaceId),b=need(brushes,c.brushId),cp=checkpoints.get(c.surfaceId);if(cp?.error)throw cp.error;if(cp&&!cp.brushes.has(c.brushId))cp.brushes.set(c.brushId,brushState(b));await b.strokeTo(s,...c.args);changed.add(c.surfaceId);used.add(c.brushId);return {surface:false};}
   if(c.target!=='surface')throw waterError('WATER_INPUT','The Water command target is not valid');
-  const s=need(surfaces,c.id);let value;
+  const s=need(surfaces,c.id),checkpoint=checkpoints.get(c.id);let value;
+  if(checkpoint?.error&&c.method!=='endStroke')throw checkpoint.error;
   if(c.method==='set'){
    const [name,v]=c.args;if(!['paper','scale','toothOX','toothOY','wetPending'].includes(name))throw waterError('WATER_INPUT','The Water property is not valid');
    if(name==='scale'&&(!(v>0)||!Number.isFinite(v)))throw waterError('WATER_INPUT','The Water scale is not valid');
@@ -60,7 +67,15 @@ export function createWaterWorker({postMessage}={}){
   }else if(c.method==='beginStroke'){
    if(checkpoints.has(c.id))throw waterError('WATER_BUSY','A Water gesture is already open');checkpoints.set(c.id,{id:c.args[0],value:await s.beginStroke(),brushes:new Map()});
   }else if(c.method==='endStroke'){
-   const cp=checkpoints.get(c.id);if(!cp&&c.args[1]===true)value=false;else{if(!cp||cp.id!==c.args[0])throw waterError('WATER_INPUT','The Water gesture does not match its checkpoint');value=await s.endStroke(cp.value,c.args[1]===true);if(c.args[1]===true)restoreBrushes(cp,brushes);checkpoints.delete(c.id);}if(c.args[1]===true)s._dirty={x0:0,y0:0,x1:s.width-1,y1:s.height-1};
+   const cp=checkpoint,cancel=c.args[1]===true;
+   if(!cp&&cancel)value=false;
+   else {
+    if(!cp||cp.id!==c.args[0])throw waterError('WATER_INPUT','The Water gesture does not match its checkpoint');
+    if(cp.error){if(!cancel)throw cp.error;value=false;}
+    else {value=await s.endStroke(cp.value,cancel);if(cancel)restoreBrushes(cp,brushes);}
+    checkpoints.delete(c.id);
+   }
+   if(cancel)s._dirty={x0:0,y0:0,x1:s.width-1,y1:s.height-1};
   }else if(c.method==='applyWater'){for await(const step of s.applyWaterSteps(c.args[0])){await progress?.(c.id);await yieldWork();}value=true;}
   else if(c.method==='dryWet'){value=await s.dryWet(0,c.args[0]??8,c.args[1]??8);}
   else {if(!methods.has(c.method))throw waterError('WATER_INPUT','The Water surface command is not valid');value=await s[c.method](...c.args);if(value===s)value=true;}
@@ -80,13 +95,23 @@ export function createWaterWorker({postMessage}={}){
    const s=need(surfaces,request.surfaceId);await s.ready;
    if(!integer(request.generation)||typeof request.canvas?.getContext!=='function'||displays.has(request.surfaceId)&&request.generation<=displays.get(request.surfaceId).generation)throw waterError('WATER_INPUT','The Water display identity is not current');
    const context=request.canvas.getContext('webgpu');if(!context)throw waterError('water_webgpu_unavailable','Water could not create its GPU display.');
-   dropDisplay(request.surfaceId);displays.set(request.surfaceId,{canvas:request.canvas,context,generation:request.generation,material:null,width:0,height:0});
-   return state(request.surfaceId,true);
+   const current=displays.get(request.surfaceId),previous=current?.adopted?current:current?.previous;
+   if(current&&!current.adopted)releaseDisplay(current);
+   const bound={canvas:request.canvas,context,generation:request.generation,canvasGeneration:request.generation,material:null,submitted:false,adopted:false,previous};
+   displays.set(request.surfaceId,bound);
+   try{return await state(request.surfaceId,true);}
+   catch(error){releaseDisplay(bound);if(previous)displays.set(request.surfaceId,previous);else displays.delete(request.surfaceId);throw error;}
   }
   if(op==='display'){
    const bound=displays.get(request.surfaceId);
    if(!bound||!integer(request.generation)||request.generation<bound.generation)throw waterError('WATER_INPUT','The Water display identity is not current');
-   bound.generation=request.generation;bound.material=null;return state(request.surfaceId,true);
+   bound.generation=request.generation;bound.invalid=true;return state(request.surfaceId,true);
+  }
+  if(op==='adoptDisplay'){
+   const bound=displays.get(request.surfaceId);
+   if(!bound||bound.canvasGeneration!==request.canvasGeneration||bound.adopted)return {};
+   bound.adopted=true;releaseDisplay(bound.previous);bound.previous=null;
+   return state(request.surfaceId);
   }
   if(op==='create'){
    if(!integer(request.surfaceId)||surfaces.has(request.surfaceId))throw waterError('WATER_INPUT','The Water surface identity is not valid');
@@ -99,6 +124,7 @@ export function createWaterWorker({postMessage}={}){
    if(!Array.isArray(request.commands))throw waterError('WATER_INPUT','The Water batch is not valid');
    const changed=new Set(request.include||[]),used=new Set(),values=[],replayWork=[];let done=0;
    for(const c of request.commands){const out=await command(c,changed,used,request.progress?async id=>{if(displayed.has(id)&&performance.now()-displayed.get(id)<32)return;const value={completed:0,surfaces:[await state(id)],values:[],replayWork:[],brushes:{}};postMessage({id:request.id,progress:true,value},transferOf(value));}:null);if(out.surface){values.push(out.value);replayWork.push(null);}done++;completed++;}
+   for(const id of request.include||[])if(checkpoints.get(id)?.error)throw checkpoints.get(id).error;
    const structural=request.commands.some(c=>c.target==='surface'&&['grow','clear','fromRGBA8','fromSnapshot','fromWaterMaterial','endStroke'].includes(c.method));
    const liveStroke=request.final!==true&&!structural&&request.commands.some(c=>c.target==='stroke');
    // Input and material remain ordered. Only superseded display patches wait; dirty pixels survive until a later readout.
@@ -109,6 +135,7 @@ export function createWaterWorker({postMessage}={}){
   }
   if(op==='read'){
    const s=need(surfaces,request.surfaceId);
+   if(checkpoints.get(request.surfaceId)?.error)throw checkpoints.get(request.surfaceId).error;
    // Journal admission observes the same ordered contact boundary without taking custody of pixels.
    if(request.metadataOnly===true){await s._finishWetWork();const meta=metadata(s);return {box:meta.bounds,meta,stats:meta.stats,waterReplay:s.waterReplay()};}
    const box=request.bounds?s.bounds():request.box||null;
@@ -145,11 +172,17 @@ export function createWaterWorker({postMessage}={}){
     if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting cancelled'),{name:'AbortError',code:'WATER_CANCELLED'});
     postMessage({id,value},transferOf(value));
    }catch(error){
-    for(const [sid,cp]of checkpoints){const s=surfaces.get(sid);try{if(s)await s.endStroke(cp.value,true);}catch(_){}restoreBrushes(cp,brushes);if(s)s._dirty={x0:0,y0:0,x1:s.width-1,y1:s.height-1};checkpoints.delete(sid);}
+    for(const [sid,cp]of checkpoints){
+     if(cp.error)continue;
+     const s=surfaces.get(sid);try{if(s)await s.endStroke(cp.value,true);}catch(restoreError){if(['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(restoreError.code)){restoreError.cause??=error;error=restoreError;}}restoreBrushes(cp,brushes);
+     if(s)s._dirty={x0:0,y0:0,x1:s.width-1,y1:s.height-1};
+     // Keep the refusal until its owner cancels; queued tails cannot paint after rollback.
+     checkpoints.set(sid,{id:cp.id,error});
+    }
     const reopen=['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error.code);
     // A poisoned GPU cannot roll back a live sheet. The page's existing painter-loss owner
     // restores its last publication and starts a fresh painter on the next gesture.
-    if(reopen){for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();runs.clear();displayed.clear();}
+    if(reopen){for(const id of displays.keys())dropDisplay(id);for(const surface of surfaces.values())surface.dispose();surfaces.clear();brushes.clear();checkpoints.clear();runs.clear();displayed.clear();}
     postMessage({id,error:{name:error.name||'Error',code:error.code||'WATER_INPUT',message:String(error.message||error)},recoverable:!reopen&&error.recoverable!==false});
    }finally{jobs.delete(id);}
   };

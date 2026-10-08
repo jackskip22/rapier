@@ -5,6 +5,7 @@ import {WaterContact} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
 import {encodeRgb,toLinear} from './water-color.mjs';
 import {buildWaterFill} from './water-fill.mjs';
+import {waterTimeFits} from './water-data.mjs';
 import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState} from './water-data.mjs';
 export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState};
 export {waterReady,waterHandSheetFits};
@@ -57,7 +58,7 @@ export class WaterSurface {
  _sourceRoom(bytes){if(this._bytes+bytes>WATER_SOURCE_MAX_BYTES)throw waterError('WATER_REPLAY_BUDGET','The complete Water journal is full. Start a new layer to keep contribution Undo.');}
  _appendAction(action){
   const last=this._actions.at(-1);
-  if(action.kind==='advance'&&last?.kind==='advance'&&last.dt===action.dt){const next={...last,ticks:last.ticks+action.ticks};if(!integer(next.ticks))throw waterError('WATER_INPUT','The Water time is not representable.');const extra=sourceBytes(next)-sourceBytes(last);this._sourceRoom(extra);Object.assign(last,next);this._bytes+=extra;return last;}
+  if(action.kind==='advance'&&last?.kind==='advance'&&last.dt===action.dt){const next={...last,ticks:last.ticks+action.ticks};if(!integer(next.ticks)||!waterTimeFits(next.ticks*(next.dt??1/60)))throw waterError('WATER_INPUT','The Water time is not representable.');const extra=sourceBytes(next)-sourceBytes(last);this._sourceRoom(extra);Object.assign(last,next);this._bytes+=extra;return last;}
   const extra=sourceBytes(action)+(this._actions.length?1:0);this._sourceRoom(extra);const saved=clone(action);this._actions.push(saved);this._bytes+=extra;return saved;
  }
  _appendFrame(brush,dt,count,end){const frame=[dt,count,end],extra=sourceBytes(frame)+(brush.action.frames.length?1:0);this._sourceRoom(extra);brush.action.frames.push(frame);this._bytes+=extra;}
@@ -78,7 +79,7 @@ export class WaterSurface {
  async endStroke(checkpoint,cancel=false){
   await this.ready;if(checkpoint!==this._transaction)throw waterError('WATER_INPUT','The Water checkpoint is not current.');
   if(!cancel)await this._finishContact();
-  this.gpu.endTransaction(checkpoint.gpu,cancel);this._transaction=null;
+  await this.gpu.endTransaction(checkpoint.gpu,cancel);this._transaction=null;
   if(cancel){const f=checkpoint.frame;this.width=f.width;this.height=f.height;this.origin=f.origin.slice();this.scale=f.scale/3;this.paperId=f.paper;this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.tick=checkpoint.tick;this.revision=checkpoint.revision;this._bounds=checkpoint.bounds;this._actions=checkpoint.actions;this._bytes=checkpoint.bytes;this._actionStart=checkpoint.start;this._restoreTips(checkpoint.tips);this._brush=null;this._pendingDt=0;this._dirty={x0:0,y0:0,x1:this.width-1,y1:this.height-1};}
   this._sync();return true;
  }
@@ -87,6 +88,7 @@ export class WaterSurface {
   const brush=this._brush;if(!brush?.contact)return false;
   const contact=brush.contact,count=contact.queue.length;if(!count&&!finish&&dt==null)return false;
   const elapsed=seconds(dt??(this._pendingDt||1/60));
+  this.gpu._age(elapsed);
   // Reserve the complete frame record before submitting a material change.
   this._appendFrame(brush,elapsed,count,finish);
   if(finish)contact.finish();contact.frame(elapsed);await this.gpu.step(elapsed);this.tick++;this.revision++;this._pendingDt=0;brush.loadFuel=contact.loadFuel;this._sync();
@@ -94,16 +96,17 @@ export class WaterSurface {
   return true;
  }
  async _finishContact(){if(this._brush?.contact)await this._flushContact(null,true);}
- async _advance(dt){const ran=await this.gpu.step(seconds(dt));this.tick++;if(ran)this.revision++;this._sync();return ran;}
+ async _advance(dt){const ran=await this.gpu.step(dt);this.tick++;if(ran)this.revision++;this._sync();return ran;}
  async step(ticks=1,dt=1/60){
   await this.ready;if(!integer(ticks)||!integer(this.tick+ticks))throw waterError('WATER_INPUT','The Water time is not representable.');
+  if(ticks)this.gpu._age(dt*ticks);
   for(let i=0;i<ticks;i++)await this._advance(dt);return {ticks,wet:this.wet};
  }
  async stepWet(ms=1000/60){
   await this.ready;if(!Number.isFinite(ms)||ms<0)throw waterError('WATER_INPUT','The Water frame time is not valid.');
-  if(!ms)return !this.wet;const dt=seconds(ms/1000);
-  if(this._brush?.contact){if(!this._brush.absoluteInputTime)this._brush.time+=ms;await this._flushContact(dt);}
-  else if(this.wet){this._appendAction({kind:'advance',ticks:1,dt});await this._advance(dt);}
+  if(!ms)return !this.wet;const dt=ms/1000;
+  if(this._brush?.contact){if(!this._brush.absoluteInputTime)this._brush.time+=ms;await this._flushContact(seconds(dt));}
+  else if(this.wet){this.gpu._age(dt);this._appendAction({kind:'advance',ticks:1,dt});await this._advance(dt);}
   return !this.wet;
  }
  async advanceWet(ms){return this.stepWet(ms);}
@@ -144,7 +147,7 @@ export class WaterSurface {
   await this.ready;await this._finishContact();const own=!this._transaction,checkpoint=own?await this.beginStroke():this._transaction;let complete=false,record=true;
   try{
    this._sourceRoom(sourceBytes(action)+1);
-   if(action.kind==='advance'){for(let i=0;i<action.ticks;i++){await this._advance(action.dt??1/60);yield {kind:'advance',tick:this.tick};}}
+   if(action.kind==='advance'){if(action.ticks)this.gpu._age((action.dt??1/60)*action.ticks);for(let i=0;i<action.ticks;i++){await this._advance(action.dt??1/60);yield {kind:'advance',tick:this.tick};}}
    else if(action.kind==='dry'){this.gpu.dry();while(this.gpu.fixTimer>0){await this._advance(1/60);yield {kind:'dry',tick:this.tick};}}
    else if(action.kind==='paper'){this.gpu.setPaper(action.paper);this.revision++;this._sync();}
    else if(action.kind==='tip')record=this._declareTip(action.brush);

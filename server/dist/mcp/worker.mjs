@@ -2052,7 +2052,8 @@ export class RapierDocument {
       material: request => {
         if (material?.results.has(request.job)) return material.results.get(request.job);
         if (material?.failure) return {...materialDescription(request), outcome: 'refused', reason: material.failure};
-        if (!kernel.collaboration().presence?.active) return {...materialDescription(request), outcome: 'refused', reason: 'editor_not_present'};
+        // Acceptance keeps the authorized job while the person returns from chat.
+        // Only a visible, settled editor can prepare its still-current material.
         if (material) material.request = request;
         return null;
       },

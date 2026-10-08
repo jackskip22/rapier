@@ -155,14 +155,16 @@ const body = {
  return vec4<f32>(select(0.0,1.0,peak>0.004),0,0,1);
  }`,
  // Native pixel coordinates keep procedural grain independent of the allocated rectangle.
- paperField: PAPER_WGSL+`@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
- let point=(vec2<f32>(p.x,u.v[0].y-p.y)+u.v[13].xy)*u.v[12].x;
- return vec4<f32>(clamp(waterPaperField(point,u.v[12].y,u32(u.v[12].z)),vec3<f32>(0),vec3<f32>(1)),1);
+ paperField: PAPER_WGSL+`override paperKind:u32=0u;
+ @fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
+ let point=(vec2<f32>(p.x+u.v[14].x,u.v[14].w-(p.y+u.v[14].y))+u.v[13].xy)*u.v[12].x;
+ return vec4<f32>(clamp(waterPaperField(point,u.v[12].y,paperKind),vec3<f32>(0),vec3<f32>(1)),1);
  }`,
  paperLight: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
- let q=uv(p);let h=1.0/u.v[0].xy;let field=nearest(t0,q);
- let dx=nearest(t0,q+cardinal(0u,h)).r-nearest(t0,q+cardinal(1u,h)).r;
- let dy=nearest(t0,q+cardinal(2u,h)).r-nearest(t0,q+cardinal(3u,h)).r;
+ let pixel=vec2<i32>(p.xy)-vec2<i32>(u.v[14].xy);let last=vec2<i32>(textureDimensions(t0))-1;
+ let field=textureLoad(t0,clamp(pixel,vec2<i32>(0),last),0);
+ let dx=textureLoad(t0,clamp(pixel+vec2<i32>(-1,0),vec2<i32>(0),last),0).r-textureLoad(t0,clamp(pixel+vec2<i32>(1,0),vec2<i32>(0),last),0).r;
+ let dy=textureLoad(t0,clamp(pixel+vec2<i32>(0,1),vec2<i32>(0),last),0).r-textureLoad(t0,clamp(pixel+vec2<i32>(0,-1),vec2<i32>(0),last),0).r;
  let normal=normalize(vec3<f32>(vec2<f32>(dx,dy)*u.v[12].w,1));let light=normalize(vec3<f32>(-0.5,0.6,0.62));
  let relief=0.5+1.3*(dot(normal,light)-light.z)+0.25*(field.x-0.5);
  return vec4<f32>(clamp(relief,0.0,1.0),field.rgb);
