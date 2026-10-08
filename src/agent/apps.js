@@ -23,8 +23,9 @@
   let editorActivity = '';
   let contextFlight = null, contextTimer = 0, contextExpiryTimer = 0, contextEpoch = 0, contextSequence = 0, contextFailures = 0;
   let contextQueued = false, contextAck = null, contextIssue = '', unsubscribeContext;
+  const pendingDrawingReceipts = new Map();
   let modelFlight = null, modelQueued = false, modelAvailable = true, modelFailures = 0, modelSent = '';
-  let policyQueued = null, reviewQueued = null, presentedReview = null, viewFlight = null, visualFlight = null, exportFlight = null;
+  let policyQueued = null, reviewQueued = null, presentedReview = null, viewFlight = null, visualFlight = null, exportFlight = null, materialFlight = null;
   const editorRequests = new Map();
   let editorFlight = null, editorResolving = false;
   let openingSwitch = false;
@@ -168,8 +169,12 @@
 
   function setStatus(value) {
     status = value;
-    if (['unavailable', 'expired', 'unsupported', 'detached', 'unpaired'].includes(value)) cancelEditorRequests('editor_unavailable', {forget: true});
-    else if (value === 'offline') cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    if (['unavailable', 'expired', 'unsupported', 'detached', 'unpaired'].includes(value)) {
+      cancelEditorRequests('editor_unavailable', {forget: true});
+      cancelMaterial('editor_unavailable', {forget: true});
+    } else if (value === 'offline') {
+      cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    }
     if (value === 'ready') void explainImageSupport();
     if (!notice) return;
     // Stranded drafts keep the notice (and its Copy/Download draft) up whatever this cycle's status says.
@@ -410,6 +415,7 @@
   function contextChanged(event) {
     contextEpoch++;
     if (typeof event?.editing === 'boolean') { contextEditing = event.editing; contextEditingAt = Date.now(); }
+    if (event?.editing === true) cancelMaterial('human_edit_in_progress');
     contextQueued = true;
     contextFailures = 0;
     if (event?.trusted === true && object(event.policy)) queuePolicy(event.policy);
@@ -444,15 +450,33 @@
       const args = {document: documentToken, expectedRevision: source.revision, contextId: nonce,
         sequence: ++contextSequence, visible: active, editing: busy};
       if (active && captured?.documentId === source.documentId && ['formatted', 'source', 'notes'].includes(captured?.context?.view)) args.view = captured.context.view;
+      if (active && captured?.documentId === source.documentId && Number.isSafeInteger(captured?.context?.navigationSequence)) args.navigationSequence = captured.context.navigationSequence;
+      if (active && exact) {
+        const receipts = new Map((captured?.context?.drawingReceipts || []).map(row => [row.transactionId, row]));
+        for (const row of pendingDrawingReceipts.values()) if (row.documentId === source.documentId) receipts.set(row.transactionId, row);
+        if (receipts.size) args.drawingReceipts = [...receipts.values()];
+      }
       const ranges = active && contextRanges(captured, source);
       if (ranges) Object.assign(args, ranges);
       if (active && exact && captured.context?.drawing?.open) {
         args.drawing = {...captured.context.drawing};
         if (args.drawing.recipe) {
-          const recipe = JSON.stringify(args.drawing.recipe), limits = globalThis.RapierKernel.LIMITS;
+          const recipe = JSON.stringify(globalThis.RapierKernel.disclosedRecipe(args.drawing.recipe)), limits = globalThis.RapierKernel.LIMITS;
+          args.drawing.recipeDigest = globalThis.RapierKernel.drawingRecipeDigest(args.drawing.recipe);
           if (new TextEncoder().encode(recipe).byteLength > limits.authorityBytes) {
             delete args.drawing.recipe;
             args.drawing.recipeUnavailable = 'target_over_edit_budget';
+          } else {
+            // Only acknowledged identical canvas content may omit its retained pixels and history.
+            const held = contextAck?.drawing, occurrence = args.drawing.occurrence, priorOccurrence = held?.occurrence;
+            const sameOccurrence = !occurrence && !priorOccurrence || occurrence && priorOccurrence &&
+              occurrence.start === priorOccurrence.start && occurrence.end === priorOccurrence.end && occurrence.reference === priorOccurrence.reference;
+            if (contextAck?.documentId === source.documentId && contextAck.revision === source.revision && held?.recipeReference === true &&
+                held.session === args.drawing.session && held.surfaceGeneration === args.drawing.surfaceGeneration &&
+                held.assetGeneration === args.drawing.assetGeneration && held.recipeDigest === args.drawing.recipeDigest && sameOccurrence) {
+              delete args.drawing.recipe;
+              args.drawing.recipeReference = true;
+            }
           }
         }
       }
@@ -462,6 +486,10 @@
       }
       const result = await call('document.human_context', args, 5000);
       if (token !== documentToken || closed) return false;
+      if (result.structuredContent?.reason === 'human_context_recipe_required' || result.structuredContent?.code === 'HUMAN_CONTEXT_RECIPE_REQUIRED') {
+        contextAck = null; contextQueued = true; contextIssue = ''; contextFailures = 0;
+        return false;
+      }
       if (result.isError) {
         contextIssue = result.structuredContent?.code === 'HUMAN_CONTEXT_STALE' ? 'stale' : 'unavailable';
         captureIncoming(result);
@@ -471,11 +499,14 @@
       contextFailures = 0;
       const receipt = result.structuredContent;
       if (receipt?.acknowledged !== true || receipt.contextId !== nonce || receipt.sequence !== args.sequence) return false;
+      for (const row of args.drawingReceipts || []) if (pendingDrawingReceipts.get(row.transactionId) === row) pendingDrawingReceipts.delete(row.transactionId);
       contextIssue = '';
-      contextAck = {revision: source.revision, epoch,
+      const drawingAck = args.drawing && {...args.drawing, recipeReference: !!(args.drawing.recipe || args.drawing.recipeReference)};
+      if (drawingAck) delete drawingAck.recipe;
+      contextAck = {documentId: source.documentId, revision: source.revision, epoch,
         selection: receipt.revision === source.revision ? args.selection || null : null,
         focus: receipt.revision === source.revision ? args.focus || null : null,
-        visible: active, editing: busy, ...(args.drawing ? {drawing: args.drawing} : {})};
+        visible: active, editing: busy, ...(drawingAck ? {drawing: drawingAck} : {})};
       clearTimeout(contextExpiryTimer);
       if (Number.isFinite(receipt.contextExpiresAt)) contextExpiryTimer = setTimeout(() => {
         contextAck = null;
@@ -664,6 +695,118 @@
     captureIncoming(result);
   }
 
+  const materialIdentity = row => ({kind: 'material', documentId: row.documentId, revision: row.revision, job: row.job});
+  const materialRefusal = (row, reason) => ({...materialIdentity(row), outcome: 'refused',
+    reason: /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(reason || '') ? reason : 'material_unavailable'});
+  const materialIntentMatches = (row, source) => source?.documentId === row.documentId && source.revision === row.revision &&
+    source.materialIntent?.status === 'pending' && source.materialIntent.id === row.id && source.materialIntent.job === row.job &&
+    source.materialIntent.documentId === row.documentId && source.materialIntent.revision === row.revision;
+
+  function cancelMaterial(reason, {forget = false} = {}) {
+    const row = materialFlight;
+    if (!row) return;
+    row.cancelReason ||= reason;
+    row.controller.abort();
+    if (row.args?.fact.outcome === 'ok') {
+      // An uncertain send is retried byte-for-byte only while its source is still current.
+      // Once that source changes, retire it here; the kernel checks any answer already sent.
+      if (row.dispatched) {
+        row.settled = true; row.args = null; row.request = null; row.local = null;
+        clearTimeout(row.timer);
+      }
+      else row.args = {...row.args, fact: materialRefusal(row, row.cancelReason)};
+    }
+    if (reason === 'material_request_expired') {
+      clearTimeout(row.timer);
+      row.settled = true; row.request = null; row.local = null; row.args = null;
+    }
+    if (forget) {
+      clearTimeout(row.timer);
+      row.request = null; row.local = null; row.args = null;
+      materialFlight = null;
+    }
+  }
+
+  function reconcileMaterial() {
+    const row = materialFlight;
+    if (row && (row.document !== token || !materialIntentMatches(row, incoming || base)))
+      cancelMaterial('material_request_replaced', {forget: true});
+  }
+
+  async function acknowledgeMaterial(row) {
+    if (materialFlight !== row || row.sending || row.settled || !row.args) return;
+    if (closed || closing || switching || openingSwitch || row.document !== token) {
+      cancelMaterial('editor_unavailable', {forget: true}); return;
+    }
+    if (row.expiresAt <= Date.now()) {
+      cancelMaterial('material_request_expired');
+      row.settled = true; row.args = null; row.request = null; row.local = null;
+      return;
+    }
+    row.sending = true;
+    try {
+      if (row.args.fact.outcome === 'ok') {
+        const current = await host.snapshot();
+        if (materialFlight !== row || row.settled || !row.args) return;
+        if (row.controller.signal.aborted || dirty || composing || editing() || !visible() ||
+            !same(current, row.local) || current.revision !== row.local.revision || current.generation !== row.local.generation ||
+            current.drawing?.busy?.human || !materialIntentMatches(row, incoming || base) ||
+            !globalThis.RapierKernel.materialMatches(row.request, {...current, revision: row.revision}, current.drawing))
+          cancelMaterial('document_changed');
+      }
+      if (materialFlight !== row || row.settled || !row.args) return;
+      if (closed || closing || switching || openingSwitch || row.document !== token || !materialIntentMatches(row, incoming || base)) {
+        cancelMaterial('material_request_replaced', {forget: true}); return;
+      }
+      const sent = row.args;
+      row.dispatched = true;
+      const result = await call('document.material_ack', sent, 20000);
+      if (materialFlight !== row) return;
+      captureIncoming(result);
+      if (result?.isError) {
+        const data = result.structuredContent;
+        if (data?.outcome === 'uncertain' || ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_UNACKNOWLEDGED'].includes(data?.code))
+          throw new Error('MATERIAL_ACK_UNCONFIRMED');
+        if (data?.code) ensureResult(result);
+      } else if (result?.structuredContent?.outcome !== 'ok' || result.structuredContent.materialId !== row.id)
+        throw new Error('INVALID_MATERIAL_ACK');
+      row.settled = true;
+      clearTimeout(row.timer);
+      row.args = null; row.request = null; row.local = null;
+      schedule(0);
+    } catch (error) {
+      if (materialFlight === row && !row.settled) failed(error);
+    } finally { row.sending = false; }
+  }
+
+  function presentMaterial(local, expected) {
+    const intent = base?.materialIntent;
+    if (!intent || intent.status !== 'pending' || intent.documentId !== base.documentId || intent.revision !== base.revision) return;
+    if (materialFlight) { void acknowledgeMaterial(materialFlight); return; }
+    const row = {id: intent.id, job: intent.job, document: token, documentId: intent.documentId, revision: intent.revision,
+      expiresAt: intent.expiresAt, request: intent, local, controller: new AbortController(), cancelReason: '',
+      args: null, sending: false, dispatched: false, settled: false};
+    materialFlight = row;
+    row.timer = setTimeout(() => { if (materialFlight === row) cancelMaterial('material_request_expired'); },
+      Math.max(0, intent.expiresAt - Date.now()));
+    // Preparation must not occupy cycle(): source sync, a human edit, and a replacement
+    // request all remain able to cancel this private computation while its GPU work runs.
+    void (async () => {
+      let fact;
+      try {
+        fact = typeof host.prepareMaterial === 'function'
+          ? await host.prepareMaterial({...intent, signal: row.controller.signal}, expected)
+          : materialRefusal(row, 'material_unavailable');
+      } catch (_) { fact = materialRefusal(row, 'material_unavailable'); }
+      if (materialFlight !== row || row.settled) return;
+      row.args = {document: row.document, expectedRevision: row.revision, materialId: row.id,
+        fact: fact?.outcome === 'ok' && !row.cancelReason
+          ? {...materialIdentity(row), outcome: 'ok', value: fact.value}
+          : materialRefusal(row, row.cancelReason || fact?.reason)};
+      await acknowledgeMaterial(row);
+    })();
+  }
+
   function editorContextBusy() {
     return editorResolving || !!editorFlight || [...editorRequests.values()].some(row => row.initial || row.later);
   }
@@ -796,8 +939,30 @@
     await acknowledgeEditor();
   }
 
+  async function presentDrawing(expected) {
+    const intent = base?.collaboration?.drawingIntent;
+    if (!intent || !['pending', 'replaying'].includes(intent.status) || intent.documentId !== base.documentId || intent.revision !== base.revision ||
+        typeof host.presentDrawing !== 'function' || intent.contextId && intent.contextId !== nonce) return;
+    const documentToken = token;
+    const keepReceipt = value => {
+      if (token !== documentToken || closed || closing || switching || value?.transactionId !== intent.transactionId || value.documentId !== intent.documentId) return;
+      pendingDrawingReceipts.set(value.transactionId, value);
+      contextChanged();
+      schedule(0);
+    };
+    const expanded = globalThis.RapierKernel.expandDrawingIntent(intent, base);
+    const result = expanded ? await host.presentDrawing(expanded, {...expected,
+      ...(Number.isSafeInteger(intent.navigationSequence) ? {expectedNavigationSequence: intent.navigationSequence} : {})}, {
+      onReceipt: keepReceipt
+    }) : {transactionId: intent.transactionId, documentId: intent.documentId, status: 'unavailable',
+      reason: 'drawing_history_unavailable', presentation: {status: 'unavailable'}};
+    keepReceipt(result);
+    if (token === documentToken && !closed) await publishHumanContext();
+  }
+
   async function presentCollaboration() {
     reconcileEditorRequests();
+    reconcileMaterial();
     const review = base?.collaboration?.review;
     if (presentedReview && (reviewSignature(review) !== presentedReview.signature || review.status !== 'pending' ||
         base.revision !== presentedReview.serverRevision || base.text !== presentedReview.text)) {
@@ -812,10 +977,14 @@
     if (!same(local, base)) { dirty = true; contextChanged(); return; }
     const expected = {expectedDocumentId: local.documentId, expectedRevision: local.revision,
       expectedText: local.text, expectedGeneration: local.generation};
+    if (base.materialIntent?.status === 'pending') { presentMaterial(local, expected); return; }
     if (base.exportIntent?.status === 'pending') { await presentExport(local, expected); return; }
     if (base.editorIntent) { await presentEditor(expected); return; }
     if (base.visualIntent?.status === 'pending') { await presentVisual(local, expected); return; }
-    if (review?.status === 'pending' && review.revision === base.revision) {
+    if (['pending', 'replaying'].includes(base.collaboration?.drawingIntent?.status)) { await presentDrawing(expected); return; }
+    const reviewPointer = base.viewIntent?.status === 'pending' && base.viewIntent.reviewId === review?.id &&
+      review?.changes?.some(row => row.id === base.viewIntent.changeId && row.status === 'pending');
+    if (review?.status === 'pending' && review.revision === base.revision && !(reviewPointer && presentedReview?.visible)) {
       if (presentedReview?.id === review.id) {
         if (presentedReview.failed || presentedReview.dismissed) setStatus('review_waiting');
         return;
@@ -879,6 +1048,7 @@
     lastEdit = Date.now();
     if (base) dirty = true;
     cancelEditorRequests('document_changed', {waitingOnly: true});
+    cancelMaterial('document_changed');
     updateCompareControls();
     contextChanged();
     schedule(500);
@@ -1013,7 +1183,9 @@
   }
 
   async function useHostFileVersion(store, resource, onlyIfUnedited = false) {
-    if (!resource || activeFile() !== store || resource !== store.incoming || switching || closed || closing || !await flush()) return false;
+    if (!resource || activeFile() !== store || resource !== store.incoming || switching || closed || closing) return false;
+    cancelMaterial('document_changed');
+    if (!await flush()) return false;
     const local = await host.snapshot(), currentBase = base;
     if (activeFile() !== store || resource !== store.incoming || !same(local, currentBase) || dirty || composing) return false;
     if (onlyIfUnedited && (local.text !== store.resource.text || editing())) return false;
@@ -1152,6 +1324,10 @@
         (!base || value.documentId === base.documentId) && (!incoming || nextVersion >= incomingVersion)) {
       incoming = value;
       incomingVersion = nextVersion;
+      if (materialFlight) {
+        if (!materialIntentMatches(materialFlight, value)) cancelMaterial('material_request_replaced', {forget: true});
+        else if (materialFlight.local && !same(value, materialFlight.local)) cancelMaterial('document_changed');
+      }
       learnAccess(value);
     }
   }
@@ -1391,6 +1567,7 @@
     if (pairedId) { host.notify('This page edits one document. Ask your assistant to open another.', 'info'); return false; }
     if (Object.hasOwn(args, 'document') || Object.hasOwn(args, 'file') || switching || closing || closed || fileHydrations.size) return false;
     cancelEditorRequests('document_changed', {waitingOnly: true});
+    cancelMaterial('document_changed');
     if (base && !await flush()) return false;
     if (base) await saveHostFile();
     if (!base && token) return false;
@@ -1412,6 +1589,7 @@
       });
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
       cancelEditorRequests('document_changed', {forget: true});
+      cancelMaterial('document_changed', {forget: true});
       token = nextToken;
       base = value;
       continuation = null;
@@ -1454,6 +1632,7 @@
     const nextToken = data.document;
     if (!snapshot(value) || nextVersion === null || !validToken(nextToken) || !base || value.documentId === base.documentId) return false;
     openingSwitch = true;
+    cancelMaterial('document_changed');
     try {
       let notice = '';
       cancelEditorRequests('document_changed', {waitingOnly: true});
@@ -1500,6 +1679,7 @@
       }
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
       cancelEditorRequests('document_changed', {forget: true});
+      cancelMaterial('document_changed', {forget: true});
       token = nextToken;
       base = value;
       continuation = null;
@@ -1899,11 +2079,13 @@
     // No sheet: the press is the decision. The editor keeps the document, the row says what happened, and Share lets an
     // agent back in from here.
     cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    cancelMaterial('editor_unavailable');
     if (!await flush()) { host.notify('Finish the current edit, then try again.', 'info'); return false; }
     if (token !== target.document || base?.documentId !== target.documentId || switching || closed || closing) return false;
     clearTimeout(timer);
     switching = true;
     cancelEditorRequests('editor_unavailable', {forget: true});
+    cancelMaterial('editor_unavailable', {forget: true});
     lock();
     try {
       // Flush can renew the page key. Snapshot the proof at the rotation's synchronous call boundary.
@@ -2198,6 +2380,7 @@
   async function teardown(id) {
     closing = true;
     cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    cancelMaterial('editor_unavailable');
     clearTimeout(timer);
     const saved = await flush();
     await saveHostFile();
@@ -2233,6 +2416,7 @@
     }
     boundFile?.store.dispose();
     cancelEditorRequests('editor_unavailable', {forget: true});
+    cancelMaterial('editor_unavailable', {forget: true});
     post({id, result: {}});
     closed = true;
     exportFlight = null;
@@ -2332,8 +2516,8 @@
     return connecting;
   }
 
-  // The code only identifies this pending browser. The page grants a session after the person chooses ALLOW;
-  // a poll, a matched code or a stale decision never opens the editor on its own.
+  // The code identifies this pending browser. A connected workspace also needs its owner's independent approval;
+  // the target's ALLOW only collects that grant. Polling, a matched code or a stale decision grants nothing.
   async function pair() {
     const pop = housePop('rapier-app-pair-title', 'Pair this browser', 'rapier-app-pairing');
     const lead = document.createElement('p');
@@ -2343,7 +2527,11 @@
     code.setAttribute('aria-live', 'polite');
     code.textContent = '····';
     const words = document.createElement('p');
-    words.textContent = 'Then choose Allow here to edit this document for a day. A code works once and changes every minute.';
+    words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
+    const ownerApproval = document.createElement('p'), ownerLink = document.createElement('a');
+    ownerLink.textContent = 'Open browser approval';
+    ownerLink.target = '_blank'; ownerLink.rel = 'noopener noreferrer';
+    ownerApproval.append(ownerLink); ownerApproval.hidden = true;
     let open = true, deciding = false, poll = null;
     const close = () => { open = false; pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); };
     const decide = async decision => {
@@ -2368,7 +2556,7 @@
     pop.row.append(allow, cancel);
     pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
     pairDialog = pop.overlay;
-    pop.show(lead, code, words);
+    pop.show(lead, code, words, ownerApproval);
     lock();
     while (open && !closed) {
       if (deciding) { await new Promise(resolve => setTimeout(resolve, 2000)); continue; }
@@ -2376,7 +2564,18 @@
       const value = await poll;
       if (!open) return;
       if (deciding) continue;
-      if (value?.outcome === 'confirmation_required') {
+      ownerApproval.hidden = true;
+      if (value?.outcome === 'owner_confirmation_required') {
+        allow.hidden = true;
+        lead.textContent = 'Approve this browser with Rapier.';
+        words.textContent = 'Open the approval link in the browser where you connected Rapier. Return here once approved.';
+        try {
+          const url = new URL(value.owner_approval_url);
+          if (url.origin === location.origin && url.pathname === '/d/' + pairedId && /^\?pair=[a-f0-9]{64}$/.test(url.search) && !url.hash) {
+            ownerLink.href = url.href; ownerApproval.hidden = false;
+          }
+        } catch (_) {}
+      } else if (value?.outcome === 'confirmation_required') {
         lead.textContent = 'Allow this browser to edit the document?';
         words.textContent = 'This browser stays connected for a day. Disconnect agents in the document to stop agent access.';
         if (allow.hidden) {
@@ -2388,7 +2587,7 @@
         allow.hidden = true;
         code.textContent = value.pairingCode;
         lead.textContent = 'Tell your assistant this code.';
-        words.textContent = 'Then choose Allow here to edit this document for a day. A code works once and changes every minute.';
+        words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
       }
       else if (value?.reason === 'busy') {
         allow.hidden = true;
@@ -2444,9 +2643,12 @@
     document.addEventListener('visibilitychange', () => {
       contextChanged();
       if (visible()) schedule(0);
-      else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); clearTimeout(timer); void publishHumanContext(true); void flush(); }
+      else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); cancelMaterial('editor_unavailable'); clearTimeout(timer); void publishHumanContext(true); void flush(); }
     }, {signal: listeners.signal});
-    window.addEventListener('pagehide', () => cancelEditorRequests('editor_unavailable', {forget: true}), {signal: listeners.signal});
+    window.addEventListener('pagehide', () => {
+      cancelEditorRequests('editor_unavailable', {forget: true});
+      cancelMaterial('editor_unavailable', {forget: true});
+    }, {signal: listeners.signal});
     window.addEventListener('beforeunload', event => { if (dirty || flight || decisionFlight || policyQueued || reviewQueued || strandedDrafts.length > 0 || fileDirty() || uploadRunning || fileHydrations.size) { event.preventDefault(); event.returnValue = ''; } }, {signal: listeners.signal});
     unsubscribe = host.subscribe(event => { if (event?.actor === 'human') humanEdit(); });
     unsubscribeContext = host.subscribeContext(contextChanged);

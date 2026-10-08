@@ -27,6 +27,7 @@ import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections, welcomePaintHtml} from './seo-page.mjs';
+import {DOORS} from '../door-worker.js';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
 import {buildExportAssets} from './build-export-assets.mjs';
@@ -662,7 +663,8 @@ else {
     // (door-worker.js). Search engines read the site's name and its logo from here. Same words as the application's own.
     const origin = 'https://rapier.website', site = origin + '/#website', publisher = origin + '/#organization';
     const identity = {'@context': 'https://schema.org', '@graph': [
-      {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: data.alternateName, description: data.description, inLanguage: 'en', publisher: {'@id': publisher}},
+      {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: data.alternateName, description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
+        hasPart: Object.entries(DOORS).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name}))},
       {'@type': 'Organization', '@id': publisher, name: data.name, url: origin + '/', logo: {'@type': 'ImageObject', url: origin + '/icon-512.png', width: 512, height: 512}, sameAs}]};
     return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs, publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
   });

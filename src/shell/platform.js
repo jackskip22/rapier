@@ -3405,24 +3405,31 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	_rapierPlatformPortRuntime.port = _createPlatformPort(rawPlatform);
 })();
 
-// /notes and /draw are the page itself (repo/_redirects). The path names the surface while it is up, / once the editor is; only at the
+// The Notes and drawing addresses serve the page itself. The path names the surface while it is up, / once the editor is; only at the
 // site root or a door (a page served as rapier.html keeps its path), never the hash or the query.
 function _rapierDoorPathMark(door, on) {
 	try {
+		// Water is Draw with its watercolor brush selected; retain its dedicated address until the canvas closes.
+		if (door === 'draw' && /^\/watercolor\/?$/.test(location.pathname)) door = 'watercolor';
 		if (!/^https?:$/.test(location.protocol) || !new RegExp('^\\/(' + door + '\\/?)?$').test(location.pathname)) return;
 		const path = on ? '/' + door : '/';
 		// A document's address (#d/<id>) stays on the editor's entry, never the door's.
 		const hash = on && /^#d\//.test(location.hash) ? '' : location.hash;
 		if (location.pathname !== path || hash !== location.hash) history.replaceState(history.state, '', path + location.search + hash);
+		if (on && (door === 'draw' || door === 'watercolor') && _rapierBackEntries.held === 2) _rapierBackEntries.canvasAddress = location.href;
+		// The Back guard briefly borrows / before restoring a canvas address. Render the final route's head
+		// after that synchronous navigation, including an empty Done that never changes the filename.
+		queueMicrotask(() => window.dispatchEvent(new Event('rapier:door-path-changed')));
 	} catch (_) {}
 }
 
 // The page holds its own entries so Back lands in Rapier: the guard (depth 1), a canvas (depth 2). The engine's _rapierBackWant says how many; Notes
 // holds its own (notes/notes.js). The held depth is set before a pop made here, so that pop is never read as the person's Back.
-const _rapierBackEntries = {armed: false, held: 0, want: 0, popping: false, leaving: false};
+const _rapierBackEntries = {armed: false, held: 0, want: 0, popping: false, leaving: false, canvasAddress: null};
 function _rapierBackEntriesHold(want) {
 	const rt = _rapierBackEntries;
 	rt.want = Math.max(0, Math.min(2, Number(want) || 0));
+	if (rt.want < 2) rt.canvasAddress = null;
 	if (!rt.armed) {
 		if (!rt.want) return;
 		rt.armed = true;
@@ -3436,9 +3443,10 @@ function _rapierBackEntriesHold(want) {
 		// Never over Notes' entries and never from under them: the cards push theirs over the guard.
 		if (history.state?.rapierNotes) return;
 		while (rt.held < rt.want) {
-			// The canvas's entry is the one /draw names; the guard under it keeps the editor's address.
+			// The guard keeps the editor's address; a canvas push or Back rearm retains that canvas's own route.
+			const address = rt.held === 1 ? (rt.canvasAddress ||= location.href) : location.href;
 			if (rt.held === 1) _rapierDoorPathMark('draw', false);
-			history.pushState({rapierBack: ++rt.held}, '');
+			history.pushState({rapierBack: ++rt.held}, '', address);
 		}
 		if (rt.held > rt.want) {
 			const delta = rt.want - rt.held;

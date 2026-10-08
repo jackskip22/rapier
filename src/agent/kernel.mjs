@@ -5,7 +5,7 @@ import {transportInterval, transportTouchedInterval} from '../kit/ledger/merge.m
 // Rapier shared document kernel. SPDX-License-Identifier: AGPL-3.0-only.
 import { parseWill, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, willIntentOf, stripOneTerminator } from './will.mjs';
 import { diffLines } from './diff.mjs';
-import { outlineMarkdown } from './markdown.mjs';
+import { outlineMarkdown, structureMarkdown } from './markdown.mjs';
 import { changedReferenceRegion } from './references.mjs';
 import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
 import { RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawMergeAgentRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
@@ -22,9 +22,11 @@ import {paintUndoPlan} from './paint-undo.mjs';
 import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
 import {PAGE_RESULT_BYTES, resultBytes, boundedResult} from './page-result.mjs';
 export {PAGE_RESULT_BYTES, resultBytes, boundedResult};
+import {materialRequest, materialDescription, materialMatches, admitMaterialResult} from './material.mjs';
 
 // The door and the editor replay exactly one splice law, including every intermediate row.
 export { transformSplices };
+export { materialMatches, admitMaterialResult };
 
 // The file's name, by format; the editor's answer for Word or PDF must carry exactly this name.
 export function exportFilename(filename, format) {
@@ -112,26 +114,22 @@ const HINTS = {
   compare_not_open: 'No comparison is open; open one with compare, or show one of your changes with show_changes.',
   edits_overlap: 'Two edits cover the same text; merge them into one edit.',
   batch_too_large: 'Send fewer edits in one call.',
-  paint_history_full: 'Paint on a new layer so the existing painting and its undoable contributions stay intact.',
   draw_shape_limit: 'A drawing holds 1 to 128 shapes; send fewer.',
   draw_alt_required: 'Give alt, a short caption of the drawing.',
-  paint_history_full: 'This layer keeps its painting and undo history; paint on a new layer with shapes.add.',
-  target_over_edit_budget: 'This drawing has more editable recipe data than one edit admits; keep it and create a separate drawing with document.draw, or edit another passage.',
-  target_over_work_budget: 'This painting holds more pixel and replay data than one edit can process; keep it and create a separate drawing with document.draw, or edit another passage.',
   draw_requires_markdown: 'Drawings live in Markdown documents only.',
   paint_history_full: 'This layer has reached its editable history limit. Continue on a new layer with shapes.add.',
   paint_layer_full: 'This layer has reached its image size limit. Continue on a new layer with shapes.add.',
   paint_mode_mismatch: 'Use mode:water and actions for a Water layer, or strokes for a Paint layer. Add a new layer with shapes.add to use another mode.',
   paint_sheet_invalid: 'Read the drawing again for its current material, or add a new layer with shapes.add.',
   paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
-  paint_sample_invalid: 'Sample an existing Water layer at a point in its drawing coordinates.',
+  paint_sample_invalid: 'Sample an existing Paint or Water layer at a point in its drawing coordinates.',
   water_webgpu_unavailable: 'Water needs WebGPU in the active editor. The drawing is unchanged.',
   WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer; the drawing is unchanged.',
   WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer; the drawing is unchanged.',
   WATER_GPU_MEMORY: 'The graphics device could not allocate this Water operation. Use a smaller layer; the drawing is unchanged.',
   WATER_GPU_FAILED: 'The graphics device refused this Water operation. The drawing is unchanged; reopen the editor before retrying.',
   WATER_DEVICE_LOST: 'The Water graphics device is no longer available. The drawing is unchanged; reopen the editor before retrying.',
-  paint_replay_unavailable: 'This material can be selectively undone only while its painting session remains available. The current drawing is unchanged.',
+  paint_replay_unavailable: 'This turn cannot be replayed separately from the retained material. The current drawing is unchanged.',
   figures_invalid: 'Each figure names a kind from kinds and the fields the tool description lists for it.',
   recipe_invalid: 'Send figures, or a recipe exactly as read_context returned it.',
   target_over_edit_budget: 'Read a fitting object with document.read_context and objectId, then pass its recipe_handle to document.draw with shapes or operations.',
@@ -350,8 +348,77 @@ function sourceDrawing(text, label) {
 // The receiver proves semantic metadata against the exact source transaction before its fence
 // admits it. The shared asset and comment owners reconstruct every derived source byte.
 export function verifyDrawingPatch(envelope, beforeText, afterText) {
-  return drawingPatchSource(envelope, beforeText, afterText);
+  return drawingPatchSource(expandDrawingPatch(envelope, beforeText, afterText), beforeText, afterText);
 }
+
+// A retained drawing replay borrows its recipes from the exact source transaction.
+// Only live canvas differences need separate data; the drawing owner derives the patch.
+export function expandDrawingPatch(envelope, beforeText, afterText) {
+  if (!envelope || typeof envelope !== 'object') return null;
+  if (!envelope.sourceReplay) return clone(envelope); // An immediate, full host envelope.
+  try {
+    const {sourceReplay, ...metadata} = envelope;
+    if (typeof beforeText !== 'string' || typeof afterText !== 'string' ||
+        sourceReplay.beforeSha256 !== sha256(beforeText) || sourceReplay.afterSha256 !== sha256(afterText)) return null;
+    const before = sourceDrawing(beforeText, envelope.asset), after = sourceDrawing(afterText, envelope.reference);
+    if (!before || !after || sha256(before.asset.url) !== envelope.assetGeneration) return null;
+    const recipeBefore = sourceReplay.before ? _rapierDrawApplyShapesPatch(before.recipe, sourceReplay.before) : before.recipe;
+    const recipeAfter = sourceReplay.after ? _rapierDrawApplyShapesPatch(after.recipe, sourceReplay.after) : after.recipe;
+    const patch = _rapierDrawRecipeDelta(recipeBefore, recipeAfter);
+    if (!patch) return null;
+    return {...clone(metadata), sourceRecipeBefore: before.recipe, sourceRecipeAfter: after.recipe,
+      recipeBefore, recipeAfter, patch};
+  } catch { return null; }
+}
+
+export function expandJournalDrawingPatch(snapshot, transactionId) {
+  if (!snapshot || typeof snapshot.text !== 'string' || !Array.isArray(snapshot.journal)) return null;
+  try {
+    let after = snapshot.text, revision = snapshot.revision;
+    for (let index = snapshot.journal.length - 1; index >= 0; index--) {
+      const row = snapshot.journal[index];
+      if (!row || row.revision !== revision || !safeInt(row.baseRevision) || row.baseRevision + 1 !== revision) return null;
+      const before = transformSplices(after, row.splices, true);
+      if (before == null) return null;
+      if (row.id === transactionId) {
+        const expanded = expandDrawingPatch(row.drawingPatch, before, after);
+        return drawingPatchSource(expanded, before, after) ? expanded : null;
+      }
+      after = before; revision = row.baseRevision;
+    }
+  } catch { return null; }
+  return null;
+}
+
+export function expandDrawingIntent(intent, snapshot) {
+  if (!intent || intent.documentId !== snapshot?.documentId || !Array.isArray(snapshot.journal)) return null;
+  const entry = snapshot.journal.find(row => row.id === intent.transactionId);
+  if (!entry?.drawingIntent || entry.drawingIntent.documentId !== snapshot.documentId ||
+      entry.drawingIntent.revision !== snapshot.revision || intent.revision !== snapshot.revision ||
+      !['pending', 'replaying'].includes(entry.drawingIntent.status)) return null;
+  if (entry.drawingIntent.patchRequired && !entry.drawingPatch) return null;
+  const drawingPatch = entry.drawingPatch ? expandJournalDrawingPatch(snapshot, entry.id) : null;
+  if (entry.drawingPatch && !drawingPatch) return null;
+  return {...clone(entry.drawingIntent), ...(drawingPatch ? {drawingPatch} : {})};
+}
+
+function compactDrawingPatch(envelope, beforeText, afterText) {
+  const expanded = expandDrawingPatch(envelope, beforeText, afterText);
+  if (!drawingPatchSource(expanded, beforeText, afterText)) return null;
+  const {sourceRecipeBefore, sourceRecipeAfter, recipeBefore, recipeAfter, patch, ...metadata} = expanded;
+  // Property insertion order is not a canvas difference and must not duplicate a raster.
+  const delta = (from, to) => _rapierDrawRecipeDelta(JSON.parse(canonicalJson(from)), JSON.parse(canonicalJson(to)));
+  const before = delta(sourceRecipeBefore, recipeBefore);
+  const after = delta(sourceRecipeAfter, recipeAfter);
+  if (!before || !after) return null;
+  const compact = {...metadata, sourceReplay: {beforeSha256: sha256(beforeText), afterSha256: sha256(afterText),
+    ...(Object.keys(before).length ? {before} : {}), ...(Object.keys(after).length ? {after} : {})}};
+  const restored = expandDrawingPatch(compact, beforeText, afterText);
+  if (!restored || canonicalJson(restored.recipeBefore) !== canonicalJson(recipeBefore) ||
+      canonicalJson(restored.recipeAfter) !== canonicalJson(recipeAfter) || !drawingPatchSource(restored, beforeText, afterText)) return null;
+  return compact;
+}
+
 function drawingPatchSource(envelope, beforeText, afterText, restoreDefinition = false) {
   try {
     if (!envelope || typeof beforeText !== 'string' || typeof afterText !== 'string' ||
@@ -482,7 +549,9 @@ export function createState({ id, documentId, filename = 'Untitled.md', text = '
 
 function journalBytes(entry) {
   return entry.splices.reduce((sum, row) => sum + bytes(row.removed) + bytes(row.inserted), 0) +
-    (entry.drawingPatch ? bytes(JSON.stringify(entry.drawingPatch)) : 0);
+    (entry.drawingPatch ? bytes(JSON.stringify(entry.drawingPatch)) : 0) +
+    (entry.drawingIntent ? bytes(JSON.stringify(entry.drawingIntent)) : 0) +
+    (entry.drawingReceipt ? bytes(JSON.stringify(entry.drawingReceipt)) : 0);
 }
 
 // Existing discussions belong to document.comment. Agent text writes cannot change their record,
@@ -745,6 +814,24 @@ export function measurementsRequired(op, args = {}) {
     return { structure: { mode: 'find', query: args.query, kind: args.kind, within: args.within || null, offset: 0 } };
   }
   return null;
+}
+
+function inspectPaintRecord(paint) {
+  return paint ? {...paint,
+    ...(paint.actions ? {actions: {kept: true, count: paint.actions.length}} : {}),
+    ...(paint.replay ? {replay: {kept: true, entries: paint.replay.entries.length}} : {})} : paint;
+}
+// The recipe as a caller is shown it: each paint layer's pixels and history are named, never carried, and a replace that keeps the
+// marker keeps the layer's own bytes. The whole-recipe edit budget measures this text; an object handle measures its named shape.
+export function disclosedRecipe(recipe) {
+  return {...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
+    raster: { kept: true, bytes: shape.raster.length, type: shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl' },
+    ...(shape.paint ? {paint: inspectPaintRecord(shape.paint)} : {})})};
+}
+
+export function drawingRecipeDigest(recipe) {
+  const admitted = _rapierDrawAdmitRecipe(recipe);
+  return admitted ? sha256(canonicalJson(admitted)) : null;
 }
 
 export function createKernel({ state: supplied, host = {}, clock, mintId, invocationJournal: suppliedJournal, inFlight: suppliedInFlight = [] } = {}) {
@@ -1068,8 +1155,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         try {
           const candidate = appendAssetText(transformSplices(state.text, [{ ...splice, pos }]), change.asset).source;
           const occurrence = pos + splice.inserted.length - splice.inserted.trimStart().length;
-          const facts = outlineMarkdown(candidate, { limit: 0 }, markdownParser());
-          placed = facts.images?.entries.some(row => row.blockStart === occurrence && row.id === change.asset.id);
+          placed = drawingPlacement(candidate, occurrence, splice.inserted.trim(), change.asset.id).placed;
         } catch {}
         if (!placed) { change.status = 'stale'; change.reason = 'draw_placement_unavailable'; continue; }
       }
@@ -1178,10 +1264,74 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(review.decision ? { decision: clone(review.decision) } : {}) };
   }
 
+  // Presentation acknowledges an already committed transaction. It is never edit authority.
+  function normalizeDrawingReceipts(rows) {
+    return rows.flatMap(row => {
+      const entry = state.journal.find(entry => entry.id === row?.transactionId);
+      if (!entry || (!entry.drawingIntent && !entry.drawingPatch) ||
+          row.documentId != null && row.documentId !== state.documentId ||
+          !['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'].includes(row.status)) return [];
+      const kept = {transactionId: entry.id, documentId: state.documentId, status: row.status,
+        ...(typeof row.reason === 'string' ? {reason: clip(row.reason, 128)} : {})};
+      const presented = row.presentation;
+      const targets = [entry.drawingIntent?.originalOccurrence, entry.drawingIntent?.occurrence, entry.drawingPatch?.targetOccurrence].filter(Boolean);
+      const target = targets.find(target => presented?.occurrence?.start === target.start && presented?.occurrence?.end === target.end &&
+        normalizeLabel(presented?.occurrence?.reference || '') === normalizeLabel(target.reference || entry.drawingIntent?.reference || '')) || targets[0];
+      if (presented != null) {
+        if (!['deferred', 'replaying', 'completed', 'skipped', 'interrupted', 'unavailable'].includes(presented.status)) return [];
+        if (presented.occurrence && (!target || presented.occurrence.start !== target.start || presented.occurrence.end !== target.end ||
+            normalizeLabel(presented.occurrence.reference || '') !== normalizeLabel(target.reference || entry.drawingIntent?.reference || ''))) return [];
+        if (['replaying', 'completed', 'skipped'].includes(presented.status) && (!presented.occurrence ||
+            typeof presented.session !== 'string' || !safeInt(presented.surfaceGeneration))) return [];
+        kept.presentation = {status: presented.status,
+          ...(typeof presented.session === 'string' && presented.session.length <= 128 ? {session: presented.session} : {}),
+          ...(safeInt(presented.surfaceGeneration) ? {surfaceGeneration: presented.surfaceGeneration} : {}),
+          ...(presented.occurrence ? {occurrence: clone(target)} : {})};
+      }
+      return [kept];
+    });
+  }
+
+  function drawingPresentationBinding() {
+    const row = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > now() && row.revision === state.revision)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    return row ? {contextId: row.contextId, contextOwner: row.owner, navigationSequence: row.navigationSequence || 0} : null;
+  }
+
+  function pendingDrawingIntent() {
+    const entry = state.journal.find(row => ['pending', 'replaying'].includes(row.drawingIntent?.status));
+    if (!entry) return null;
+    return {...clone(entry.drawingIntent), ...(entry.drawingPatch ? {drawingPatch: clone(entry.drawingPatch)} : {})};
+  }
+
+  function drawingPatchForEntry(entry) {
+    return expandJournalDrawingPatch(state, entry.id);
+  }
+
+  function retireDrawingPresentation(entry, reason) {
+    const intent = entry.drawingIntent;
+    if (!intent || !['pending', 'replaying', 'awaiting_receipt'].includes(intent.status)) return;
+    intent.status = 'unavailable'; intent.reason = reason;
+    entry.drawingReceipt = {transactionId: entry.id, documentId: state.documentId, status: 'unavailable', reason,
+      presentation: {status: 'unavailable', reason}};
+    for (const record of invocationJournal.values()) if (record.output?.changeId === entry.id) {
+      record.output = {...record.output, drawingReceipt: clone(entry.drawingReceipt),
+        ...(record.output.receipt ? {receipt: {...record.output.receipt, presentation: 'unavailable'}} : {})};
+    }
+  }
+
+  function drawingTurnSummary() {
+    const entry = state.journal.findLast(row => row.drawingIntent);
+    const intent = entry?.drawingIntent;
+    return intent ? {transactionId: entry.id, status: intent.status,
+      occurrence: clone(intent.occurrence), reference: intent.reference,
+      presentation: entry.drawingReceipt?.presentation ? clone(entry.drawingReceipt.presentation) : {status: intent.status}} : null;
+  }
+
   function normalizeDrawing(value) {
     if (value == null) return null;
     if (!value || typeof value !== 'object' || value.open !== true || typeof value.session !== 'string' ||
-        !value.session || value.session.length > 128 || !safeInt(value.surfaceGeneration)) return false;
+        !value.session || value.session.length > 128 || !safeInt(value.surfaceGeneration) || value.recipeReference != null) return false;
     let occurrence = null;
     if (value.occurrence != null) {
       const row = value.occurrence;
@@ -1200,22 +1350,30 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const allowed = ['selectedObjects', 'paintTarget', 'bounds', 'transform', 'transforms', 'busy', 'tool', 'brushes', 'limits'];
     for (const field of allowed) if (own(value, field)) result[field] = clone(value[field]);
     if (bytes(JSON.stringify(result)) > LIMITS.authorityBytes) return false;
+    if (value.recipeDigest != null) {
+      if (typeof value.recipeDigest !== 'string' || !/^[a-f0-9]{64}$/.test(value.recipeDigest)) return false;
+      result.recipeDigest = value.recipeDigest;
+    }
     if (typeof value.recipeUnavailable === 'string') result.recipeUnavailable = clip(value.recipeUnavailable, 128);
     if (value.recipe != null) {
       // The open canvas's recipe is measured as a caller is shown it (disclosedRecipe): its pixels and histories are the document's.
       let text;
       try { text = JSON.stringify(Array.isArray(value.recipe?.shapes) ? disclosedRecipe(value.recipe) : value.recipe); } catch (_) { return false; }
+      const recipe = _rapierDrawAdmitRecipe(value.recipe);
+      if (!recipe) return false;
+      const recipeDigest = sha256(canonicalJson(recipe));
+      if (result.recipeDigest && result.recipeDigest !== recipeDigest) return false;
+      result.recipeDigest = recipeDigest;
       if (bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
-      else {
-        const recipe = _rapierDrawAdmitRecipe(value.recipe);
-        if (!recipe) return false;
-        result.recipe = recipe;
-      }
+      else result.recipe = recipe;
     }
-    if (Array.isArray(value.receipts)) result.receipts = value.receipts.slice(-16).filter(row =>
-      typeof row?.transactionId === 'string' && ['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'].includes(row.status) &&
-      state.journal.some(entry => entry.id === row.transactionId && entry.drawingPatch)).map(row =>
-        ({transactionId: row.transactionId, status: row.status, ...(typeof row.reason === 'string' ? {reason: clip(row.reason, 128)} : {})}));
+    if (Array.isArray(value.receipts)) result.receipts = normalizeDrawingReceipts(value.receipts);
+    if (value.event != null) {
+      const event = value.event;
+      if (event.kind !== 'human' || !safeInt(event.sequence) || event.session !== value.session ||
+          !safeInt(event.surfaceGeneration) || event.surfaceGeneration > value.surfaceGeneration) return false;
+      result.event = {kind: 'human', sequence: event.sequence, session: event.session, surfaceGeneration: event.surfaceGeneration};
+    }
     return result;
   }
 
@@ -1262,15 +1420,15 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   function drawingBinding(value) {
-    return value?.recipe ? {drawSession: value.session, surfaceGeneration: value.surfaceGeneration,
-      surfaceRecipeDigest: sha256(canonicalJson(value.recipe))} : {};
+    return value?.recipe || value?.recipeDigest ? {drawSession: value.session, surfaceGeneration: value.surfaceGeneration,
+      surfaceRecipeDigest: value.recipeDigest || sha256(canonicalJson(value.recipe))} : {};
   }
 
   function drawBindingFailure(held, range) {
     if (!held.drawSession) return null;
     const live = drawingFor(range.start, range.end, held.assetLabel);
     return !live || live.session !== held.drawSession || live.surfaceGeneration !== held.surfaceGeneration ||
-      !live.recipe || sha256(canonicalJson(live.recipe)) !== held.surfaceRecipeDigest
+      (live.recipeDigest || (live.recipe && sha256(canonicalJson(live.recipe)))) !== held.surfaceRecipeDigest
       ? failure('draw_surface_changed', 'conflict') : null;
   }
 
@@ -1308,7 +1466,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     for (const pointer of Object.values(state.pointers)) if (pointer.status !== 'expired') expiries.push(pointer.expiresAt);
     if (state.review?.status === 'pending' && state.review.expiresAt > now()) expiries.push(state.review.expiresAt);
     return { posture: state.posture, readOnly: state.readOnly, presence, agentPresence: agentPresence(), review,
-      nextExpiryAt: expiries.length ? Math.min(...expiries) : null };
+      drawingIntent: pendingDrawingIntent(), nextExpiryAt: expiries.length ? Math.min(...expiries) : null };
   }
 
   function humanParticipant(context) {
@@ -1323,7 +1481,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (typeof input.contextId !== 'string' || !input.contextId || input.contextId.length > 128 ||
         !safeInt(input.sequence) || !safeInt(input.expectedRevision) ||
         typeof input.visible !== 'boolean' || typeof input.editing !== 'boolean' ||
-        input.view != null && !['formatted', 'source', 'notes'].includes(input.view)) return stamp(failure('human_context_invalid', 'invalid'));
+        input.view != null && !['formatted', 'source', 'notes'].includes(input.view) ||
+        input.navigationSequence != null && !safeInt(input.navigationSequence) ||
+        input.drawingReceipts != null && !Array.isArray(input.drawingReceipts)) return stamp(failure('human_context_invalid', 'invalid'));
     expireCollaboration();
     const key = ownerOf(who) + ':' + input.contextId, prior = state.humanContexts[key], priorSequence = state.contextSequences[key];
     if (priorSequence && input.sequence <= priorSequence.sequence) return stamp(accepted({ acknowledged: false, sequence: priorSequence.sequence, expiresAt: prior?.expiresAt || null }));
@@ -1342,12 +1502,36 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ? { start: value.start, end: value.end, ...(typeof value.objectId === 'string' ? {objectId: value.objectId} : {}) } : null;
     const time = now(), selection = range(input.selection), focus = range(input.focus);
     if ((input.selection != null && !selection) || (input.focus != null && !focus)) return stamp(failure('human_context_range_invalid', 'invalid'));
-    const drawing = normalizeDrawing(input.drawing);
+    let drawingInput = input.drawing, referencedRecipe = null;
+    if (drawingInput?.recipeReference === true) {
+      // A reference borrows this editor's live attestation, never another editor or saved asset bytes.
+      const held = prior?.drawing, occurrence = drawingInput.occurrence, priorOccurrence = held?.occurrence;
+      const sameOccurrence = !occurrence && !priorOccurrence || occurrence && priorOccurrence &&
+        occurrence.start === priorOccurrence.start && occurrence.end === priorOccurrence.end && occurrence.reference === priorOccurrence.reference;
+      if (drawingInput.recipe != null || drawingInput.recipeUnavailable != null || !held?.recipe || prior.revision !== input.expectedRevision ||
+          held.session !== drawingInput.session || held.surfaceGeneration !== drawingInput.surfaceGeneration ||
+          held.assetGeneration !== drawingInput.assetGeneration || held.recipeDigest !== drawingInput.recipeDigest || !sameOccurrence)
+        return stamp(failure('human_context_recipe_required', 'conflict'));
+      referencedRecipe = held.recipe;
+      const {recipeReference, ...value} = drawingInput;
+      drawingInput = value;
+    }
+    const drawing = normalizeDrawing(drawingInput);
     if (drawing === false) return stamp(failure('human_context_drawing_invalid', 'invalid'));
+    if (referencedRecipe) drawing.recipe = referencedRecipe;
     if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
-    state.humanContexts[key] = { owner: ownerOf(who), sequence: input.sequence, revision: input.expectedRevision,
+    state.humanContexts[key] = { owner: ownerOf(who), contextId: input.contextId, navigationSequence: input.navigationSequence || 0, sequence: input.sequence, revision: input.expectedRevision,
       ...(input.view ? {view: input.view} : {}),
       visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + LIMITS.presenceMs };
+    for (const receipt of normalizeDrawingReceipts([...(input.drawingReceipts || []), ...(drawing?.receipts || [])])) {
+      const entry = state.journal.find(row => row.id === receipt.transactionId), intent = entry?.drawingIntent;
+      if (!intent || intent.contextId !== input.contextId || intent.contextOwner && intent.contextOwner !== ownerOf(who) || !['pending', 'replaying', 'awaiting_receipt', 'superseded'].includes(intent.status)) continue;
+      const status = receipt.presentation?.status;
+      if (['completed', 'skipped', 'interrupted', 'unavailable'].includes(status)) intent.status = status;
+      else if (status === 'replaying' && intent.status !== 'superseded' && intent.status !== 'awaiting_receipt') intent.status = 'replaying';
+      else if (receipt.status === 'unavailable' || receipt.status === 'uncertain') intent.status = receipt.status;
+      entry.drawingReceipt = receipt;
+    }
     recordSequence();
     return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: time + LIMITS.presenceMs }));
   }
@@ -1513,15 +1697,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   function retain(entry, approvedReview) {
     state.journal.push(entry);
     let retained = state.journal.reduce((sum, row) => sum + journalBytes(row), 0);
-    // Optional canvas replay data yields before exact source Undo. Replace only the stored row:
-    // the current commit still owns its semantic change for the immediate drawing hand-off.
-    for (let index = 0; retained > LIMITS.journalBytes && index < state.journal.length; index++) {
-      const row = state.journal[index];
-      if (!row.drawingPatch) continue;
-      retained -= bytes(JSON.stringify(row.drawingPatch));
-      const kept = {...row}; delete kept.drawingPatch;
-      state.journal[index] = kept;
-    }
     // Before a trim, advance pending review anchors to this revision while the journal is whole (the one exception to "never on the commit path").
     // Skipped when this commit is that review's own decision: its change still reads pending and would stale itself.
     if (state.journal.length > 1 && (state.journal.length > LIMITS.journalEntries || retained > LIMITS.journalBytes) &&
@@ -1530,6 +1705,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     while (state.journal.length > 1 && (state.journal.length > LIMITS.journalEntries || retained > LIMITS.journalBytes)) {
       const row = state.journal.shift(), cost = journalBytes(row);
+      retireDrawingPresentation(row, 'drawing_history_unavailable');
       retained -= cost; state.history.trimmedBytes += cost; state.history.earliestRevision = row.revision;
       state.history.complete = false;
       if (row.actor === 'agent' && row.splices.length && !row.sourceTransactionId && !row.humanReviewed &&
@@ -1570,9 +1746,31 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       ...(agent ? { agent } : {}),
       ...(derivedCommentIndex == null ? {} : {derivedCommentIndex}),
     };
-    if (options.drawingPatch) entry.drawingPatch = {...clone(options.drawingPatch), transactionId: entry.id};
+    if (options.drawingPresentation) {
+      const requested = options.drawingPresentation, occurrence = requested.occurrence;
+      const found = DRAW_OCCURRENCE.exec(text.slice(occurrence.start, occurrence.end));
+      const asset = documentAssets(text).assets.get(normalizeLabel(requested.reference));
+      if (found && normalizeLabel(found[2]) === normalizeLabel(requested.reference) && asset) {
+        entry.drawingIntent = {...clone(requested), id: entry.id, transactionId: entry.id,
+          documentId: state.documentId, revision, status: requested.contextId ? 'pending' : 'unavailable',
+          ...(options.drawingPatch ? {patchRequired: true} : {}),
+          occurrence: {...occurrence, reference: requested.reference}, originalOccurrence: {...occurrence, reference: requested.reference}, assetGeneration: sha256(asset.url)};
+      }
+    }
+    if (options.drawingPatch) {
+      const retained = compactDrawingPatch(options.drawingPatch, state.text, text);
+      if (retained) entry.drawingPatch = {...clone(retained), transactionId: entry.id};
+      else retireDrawingPresentation(entry, 'drawing_history_unavailable');
+    }
     for (const [key, pointer] of Object.entries(state.pointers)) if (pointer.status !== 'expired') {
       pointer.status = 'expired'; pointer.reason = who.actor === 'agent' && key === presenceKey(who) ? 'agent_changed' : 'document_changed';
+    }
+    for (const prior of state.journal) {
+      const intent = prior.drawingIntent;
+      if (!intent || !['pending', 'replaying'].includes(intent.status)) continue;
+      const moved = transportInterval(intent.occurrence.start, intent.occurrence.end, splices);
+      if (!moved) {intent.status = intent.status === 'replaying' ? 'awaiting_receipt' : 'superseded'; continue;}
+      intent.occurrence = {...intent.occurrence, ...moved}; intent.revision = revision;
     }
     state.text = text; state.revision = revision;
     if (state.selection) {
@@ -1649,6 +1847,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         // The snapshot is authoritative, not a licence to invent an unencodable undo row.
         // A repair touching existing damage is adopted with explicitly unavailable history.
         invalidateReview();
+        for (const entry of state.journal) retireDrawingPresentation(entry, 'drawing_history_unavailable');
         state.text = incoming.text; state.revision = safeInt(target) ? target : base + 1;
         state.journal = []; state.history.earliestRevision = state.revision; state.history.complete = false;
         state.history.unknownReviewRevision = Math.max(state.history.unknownReviewRevision, state.revision);
@@ -1712,6 +1911,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return null;
   }
 
+  // Derived read targets belong to one exact source, including when a parser yields.
+  const readSnapshot = () => ({documentId: state.documentId, revision: state.revision,
+    filename: state.filename, docKind: state.docKind, text: state.text});
+  const sameReadSnapshot = snapshot => snapshot?.documentId === state.documentId && snapshot.revision === state.revision &&
+    snapshot.filename === state.filename && snapshot.docKind === state.docKind && snapshot.text === state.text;
+
   function documentLaw(start, end, will = null) {
     if (state.docKind !== 'markdown') return {};
     will ||= parseWill(state.text);
@@ -1757,16 +1962,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const recipe = storedRecipe(assetLabel);
     return recipe ? JSON.stringify(recipe) : null;
   }
-  // Past the budget of what a caller is shown there is the work an edit does: a contribution decodes every raster, replays every
-  // history and encodes them again, in the host's memory and time, and that work follows what the definition holds and the caller is
-  // not shown (the pixels and histories: the full text less the shown text). A drawing holding more of it than
-  // LIMITS.drawingWorkChars is not offered for editing, whatever its shown text weighs, and the read names which bar it met. A large
-  // background or many shapes are shown text, cheap to rebuild, and meet the shown-text budget alone.
+  // Handle admission measures disclosed editable scope. Retained pixels are not work:
+  // a vector edit preserves them byte for byte. The actual paint/material operation
+  // admits its own target, actions, pixel and result budgets before computation.
   function drawHandleRefusal(disclosed, fullChars, objectId = null) {
     const editable = objectId && disclosed != null
       ? JSON.stringify(JSON.parse(disclosed).shapes.find(shape => shape.id === objectId)) : disclosed;
     if (editable == null || editable.length > LIMITS.editChars || bytes(editable) > LIMITS.authorityBytes) return 'target_over_edit_budget';
-    if (fullChars - disclosed.length > LIMITS.drawingWorkChars) return 'target_over_work_budget';
     return null;
   }
   const unavailableEdit = reason => ({edit_unavailable: reason, ...(HINTS[reason] ? {hint: HINTS[reason]} : {})});
@@ -1807,6 +2009,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   // A picture occurrence discloses its native recipe or its bounded imported node tree. The handle covers that occurrence.
   const DRAW_OCCURRENCE = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\](?:[ \t]*<!--md-layout:v1[^>]*-->)?$/;
+  // An image may share a paragraph or stand inside a list or quote. Only the parser's exact image span proves its placement;
+  // a block start or a sibling with the same reference cannot authorize this occurrence, including inside literal code.
+  function drawingPlacement(source, start, raw, assetLabel) {
+    const end = start + raw.length, match = DRAW_OCCURRENCE.exec(raw);
+    if (!match || normalizeLabel(match[2]) !== normalizeLabel(assetLabel) || source.slice(start, end) !== raw) return {placed: false, complete: true};
+    const facts = structureMarkdown({source, kinds: ['image'], within: {start, end}, matchLimit: 1}, markdownParser());
+    return {placed: facts.matches?.some(row => row.start === start && row.end === end) === true, complete: facts.complete === true};
+  }
   function drawingAt(start, end) {
     const slice = state.text.slice(start, end), lead = slice.length - slice.trimStart().length;
     const match = DRAW_OCCURRENCE.exec(slice.trim());
@@ -1835,6 +2045,11 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (input.cursor) {
       const cursor = lookup('cursors', input.cursor, who);
       if (cursor.outcome) return cursor;
+      if (cursor.kind === 'compare-read') {
+        if (cursor.revision !== state.revision || cursor.compareId !== state.compare?.id) return failure('compare_changed', 'conflict');
+        const change = changeOf(cursor.changeId);
+        return change ? {change, cursor} : failure('change_missing', 'target_gone');
+      }
       if (!['read', 'draw-read', 'svg-read'].includes(cursor.kind)) return failure('cursor_kind_mismatch');
       if (cursor.revision !== state.revision) return failure('read_snapshot_changed', 'conflict');
       if (cursor.kind === 'draw-read') {
@@ -1914,23 +2129,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   // Recipe paging walks the recipe string ('draw-read' cursor) and never disclose(): a font's data: URI would false-match redaction.
   // Only the completing page mints a handle. Paint rasters disclose their data-URL length, not payload.
-  function inspectPaintRecord(paint) {
-    return paint ? {...paint,
-      ...(paint.actions ? {actions: {kept: true, count: paint.actions.length}} : {}),
-      ...(paint.replay ? {replay: {kept: true, entries: paint.replay.entries.length}} : {})} : paint;
-  }
-  // The recipe as a caller is shown it: each paint layer's pixels and history are named, never carried, and a replace that keeps the
-  // marker keeps the layer's own bytes. The whole-recipe edit budget measures this text; an object handle measures its named shape.
-  function disclosedRecipe(recipe) {
-    return {...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
-      raster: { kept: true, bytes: shape.raster.length, type: shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl' },
-      ...(shape.paint ? {paint: inspectPaintRecord(shape.paint)} : {})})};
-  }
   async function readDrawContext(target, input, who, context) {
     const picture = target.svg || target.draw, imported = !!target.svg, drawing = target.draw?.drawing;
     const recipeText = picture.inspectionText || picture.recipeText, stored = JSON.parse(recipeText);
     if (imported && input.objectId) return failure('drawing_object_scope', 'invalid');
     const objectId = imported ? null : picture.objectId || input.objectId || null;
+    const storedSurface = !imported && objectId && drawing?.recipeUnavailable &&
+      drawing.recipeDigest === drawingRecipeDigest(stored);
     if (input.objectId && picture.objectId && input.objectId !== picture.objectId) return failure('drawing_object_scope', 'invalid');
     if (objectId && !stored.shapes.some(row => row.id === objectId)) return failure('drawing_object_missing', 'target_gone');
     let paintSample = null;
@@ -1939,10 +2144,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (drawing?.recipeUnavailable) return failure(drawing.recipeUnavailable);
       const shape = stored.shapes.find(row => row.id === input.paintSample.objectId && row.recognized === 'paint');
       if (!shape) return failure('paint_target_invalid', 'invalid');
-      if (typeof host.paintSample !== 'function') return failure('paint_sample_unavailable');
+      if (typeof host.paintSample !== 'function' && typeof host.material !== 'function') return failure('paint_sample_unavailable');
       const documentId = state.documentId, revision = state.revision, digest = assetDigest(picture.assetLabel);
       cancelled(context);
-      try { paintSample = await host.paintSample(shape, input.paintSample.point, {signal: context.signal}); }
+      try {
+        if (typeof host.material === 'function') {
+          const prepared = await prepareMaterial('sample', {position: 'sample:' + shape.id, shape, point: input.paintSample.point}, context);
+          if (prepared.refusal) return prepared.refusal;
+          paintSample = prepared.value;
+        } else paintSample = await host.paintSample(shape, input.paintSample.point, {signal: context.signal});
+      }
       catch (error) { cancelled(context); return failure(error?.code || 'paint_sample_invalid', 'invalid'); }
       cancelled(context);
       const refreshed = await refresh(context);
@@ -1962,7 +2173,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let end = Math.min(text.length, offset + limit);
     while (!safeBoundary(text, end)) end--;
     const ids = {handle: mintId('ctx_'), cursor: mintId('read_')};
-    const unavailable = drawing?.recipeUnavailable || (imported ? null : drawingEditAvailability(picture.assetLabel, text, objectId).edit_unavailable);
+    const unavailable = (!storedSurface && drawing?.recipeUnavailable) || (imported ? null : drawingEditAvailability(picture.assetLabel, text, objectId).edit_unavailable);
     const page = fitReadPage(text, offset, end, until => {
       const complete = until === text.length;
       return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: text.slice(offset, until),
@@ -1979,7 +2190,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const disclosedHandle = complete && !unavailable ? imported
       ? svgHandle(target.targetStart, target.targetEnd, recipe.nodes.map(node => node.id), picture.assetLabel, who, ids.handle)
       : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, text,
-          target.draw.binding?.drawSession ? recipeText : null, objectId, ids.handle) : null;
+          target.draw.binding?.drawSession && !storedSurface ? recipeText : null, objectId, ids.handle) : null;
     const next = !complete ? mint('cursors', 'read_', {kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
       targetStart: target.targetStart, targetEnd: target.targetEnd,
       ...(imported ? {inspectionText: recipeText} : {recipeText, objectId, ...target.draw.binding}),
@@ -2017,10 +2228,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function readContext(input, who, context) {
+    const snapshot = readSnapshot();
     let target = readTarget(input, who);
     if (target.outcome) return target;
-    if (target.change) return input.paintSample ? failure('drawing_object_scope', 'invalid') : readChange({ change_id: target.change.id }, who);
+    if (target.change) return input.paintSample ? failure('drawing_object_scope', 'invalid') : readChange({...input, change_id: target.change.id}, who, target.cursor);
     const facts = await markdownFacts(context);
+    if (!sameReadSnapshot(snapshot)) return failure('read_snapshot_changed', 'conflict');
     if (facts?.outcome) return facts;
     const layout = facts?.layout, images = facts?.images;
     if (!target.draw && !target.svg && !target.cursor) {
@@ -2275,8 +2488,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function outline(context) {
-    if (outlineCache?.revision === state.revision && outlineCache.filename === state.filename) return outlineCache.value;
-    const text = state.text, revision = state.revision, filename = state.filename;
+    if (sameReadSnapshot(outlineCache)) return outlineCache.value;
+    const snapshot = readSnapshot(), {text, revision, filename} = snapshot;
     let value;
     if (state.docKind === 'markdown') {
       const rows = typeof host.markdown === 'function' ? await host.markdown({ text, limit: 2048, signal: context.signal }) : outlineMarkdown(text, { limit: 2048 }, markdownParser());
@@ -2288,7 +2501,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       value = resolved.value;
     }
     cancelled(context);
-    if (state.revision !== revision || state.filename !== filename) return failure('document_changed', 'conflict');
+    if (!sameReadSnapshot(snapshot)) return failure('document_changed', 'conflict');
     const blockRows = Array.isArray(value?.blocks?.entries) ? value.blocks.entries : [];
     const blocks = blockRows.filter(row => safeBoundary(text, row.start) && safeBoundary(text, row.end) && row.end > row.start);
     const layoutRows = (value?.layout?.entries || []).slice(0, 2048);
@@ -2356,7 +2569,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         complete: value?.layout?.complete === true && layouts.length === layoutRows.length,
         ...(value?.layout?.reason || !value?.layout ? { reason: value?.layout?.reason || value?.reason || 'markdown_parser_unavailable' } : {}) } } : {}),
       total: Number(value?.total) || entries.length, ...(value?.reason ? { reason: value.reason } : {}) };
-    outlineCache = { revision, filename, value };
+    outlineCache = {...snapshot, value};
     return value;
   }
 
@@ -2390,7 +2603,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // spent continuation: the handle is checked first and consumed after, cache hit or not.
     const bad = checkContinuation(context, 'outline');
     if (bad) return bad;
-    const analysis = await outline(context);
+    const snapshot = readSnapshot(), analysis = await outline(context);
+    if (!sameReadSnapshot(snapshot)) return failure('document_changed', 'conflict');
     if (context?.continues) pendingFacts.delete(context.continues);
     if (analysis.outcome) return analysis;
     let entries = analysis.entries;
@@ -2429,10 +2643,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function find(input, who, context) {
+    const snapshot = readSnapshot();
     // A Markdown kind with no words lists every element of that kind; text and code names need a query.
-    if (typeof input.query !== 'string' || (!input.query && !FIND_KINDS.markdown.includes(input.kind)) || input.query.length > 512 ||
+    if (typeof input.query !== 'string' || (!input.query && !(state.compare && input.scope !== 'source') && !FIND_KINDS.markdown.includes(input.kind)) || input.query.length > 512 ||
         /[\uD800-\uDFFF]/u.test(input.query)) return failure('query_invalid', 'invalid');
-    if (state.compare) {
+    if (input.scope === 'comparison' && !state.compare) return failure('compare_not_open');
+    if (state.compare && input.scope !== 'source') {
       // Source-search-only fields under an open comparison are a wrong-tool call: refuse naming
       // the field rather than silently ignoring it.
       for (const field of ['case_sensitive', 'within', 'kind']) {
@@ -2457,6 +2673,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (cursor.kind !== 'find' || cursor.revision !== state.revision || cursor.signature !== signature) return failure('search_changed', 'conflict');
       offset = cursor.offset;
     }
+    // Hidden comment data never occupies a search page or its cursor's offset.
+    const record = state.docKind === 'markdown' && state.text.includes('md-comments:') ? parseComments(state.text).record : null;
+    const outsideRecord = row => !record || row.end <= record.start || row.start >= record.end;
     let found = [], complete = true, windowed = false, structuralRemaining = 0, sectionEntries = null;
     const limit = bounded(input.limit, 8, 1, 16);
     if (input.kind) {
@@ -2482,7 +2701,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         pattern.lastIndex = range.start;
         for (const match of state.text.matchAll(pattern)) {
           if (match.index >= range.end) break;
-          if (match.index + match[0].length <= range.end) found.push({ start: match.index, end: match.index + match[0].length });
+          const row = { start: match.index, end: match.index + match[0].length };
+          if (row.end <= range.end && outsideRecord(row)) found.push(row);
           if (found.length >= offset + limit + 1) { complete = false; break; }
         }
       } else {
@@ -2490,7 +2710,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         while (at <= range.end) {
           const start = haystack.indexOf(needle, at);
           if (start < 0 || start + input.query.length > range.end) break;
-          found.push({ start, end: start + input.query.length });
+          const row = { start, end: start + input.query.length };
+          if (outsideRecord(row)) found.push(row);
           at = start + Math.max(1, input.query.length);
           if (found.length >= offset + limit + 1) { complete = false; break; }
         }
@@ -2499,12 +2720,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!sectionEntries && (state.docKind === 'markdown' ||
         (/\.(?:[cm]?js|html?)$/i.test(state.filename) && worldHasFact(context, 'outline')))) {
       const mapped = await outline(context);
-      if (!mapped.outcome) sectionEntries = mapped.entries;
+      if (mapped.outcome) return mapped;
+      sectionEntries = mapped.entries;
     }
+    if (!sameReadSnapshot(snapshot)) return failure('read_snapshot_changed', 'conflict');
     sectionEntries = (sectionEntries || []).filter(row => safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end));
     // The comment record is data the comment tools read; a match inside it is never offered as editable text.
-    const record = state.docKind === 'markdown' && state.text.includes('md-comments:') ? parseComments(state.text).record : null;
-    if (record) found = found.filter(row => row.end <= record.start || row.start >= record.end);
+    if (record) found = found.filter(outsideRecord);
     const sectionRefs = new Map();
     const localOffset = windowed ? 0 : offset;
     const page = found.slice(localOffset, localOffset + limit), matches = [];
@@ -2531,8 +2753,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       if (bytes(JSON.stringify(matches)) + bytes(JSON.stringify(item)) > LIMITS.resultBytes - 1400) {
         if (held) delete state.handles[held.id];
-        if (sectionRef && !sectionRef.listed) delete state.refs[sectionRef.id];
-        break;
+        if (matches.length) {
+          if (sectionRef && !sectionRef.listed) delete state.refs[sectionRef.id];
+          break;
+        }
+        // A complete declaration or paragraph can exceed one reply. Keep its location and a
+        // bounded excerpt, without editing authority; read_context discloses the full range.
+        item.handle = null; item.complete = false; item.reason = 'match_over_result_budget';
+        while (item.matched.length && bytes(JSON.stringify(matches)) + bytes(JSON.stringify(item)) > LIMITS.resultBytes - 1400) {
+          item.matched = clip(item.matched, Math.floor(item.matched.length * 0.8));
+        }
       }
       matches.push(item);
       if (sectionRef) sectionRef.listed = true;
@@ -2723,6 +2953,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         ...(options.contribution ? {contribution: options.contribution} : {}),
         keepCompare: options.keepCompare === true, compareDecision: options.compareDecision || null,
         metadata: options.metadata || null, note: options.note || null,
+        ...(options.drawingPresentation ? {drawingPresentation: clone(options.drawingPresentation)} : {}),
         ...(options.drawingPatch ? {drawingPatch: clone(options.drawingPatch), fence: clone(options.fence), watched: options.watched === true} : {}) },
     };
     let presentation = null;
@@ -2812,13 +3043,29 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       candidate.occurrence = {...candidate.occurrence, start: authored.pos, end: authored.pos + authored.removed.length, position: authored.pos};
       candidate.targetOccurrence = {...candidate.targetOccurrence, ...target, position: target.start};
       if (!verifyDrawingPatch(candidate, beforeText, text)) return failure('draw_patch_invalid', 'conflict');
+      const retainedDrawingPatch = compactDrawingPatch(candidate, beforeText, text);
+      if (!retainedDrawingPatch) return failure('draw_patch_invalid', 'conflict');
       options = {...options, drawingPatch: candidate, fence: {...options.fence, drawingPatch: candidate}};
+    }
+    if (options.drawingPresentation) {
+      const requested = options.drawingPresentation;
+      let occurrence = null;
+      for (let index = 0; index < splices.length && !occurrence; index++) {
+        const splice = splices[index], images = /!\[((?:\\.|[^\]\\])*)\]\[([^\]\n]+)\]/g;
+        for (let match; (match = images.exec(splice.inserted));) {
+          if (normalizeLabel(match[2]) !== normalizeLabel(requested.reference)) continue;
+          occurrence = transportInterval(splice.pos + match.index, splice.pos + match.index + match[0].length, splices.slice(index + 1));
+          break;
+        }
+      }
+      options = {...options, drawingPresentation: occurrence ? {...requested, occurrence} : null};
     }
     const invalid = admissibleSnapshotText(text);
     if (invalid) return failure(invalid, 'invalid');
     const metadataChanged = options.metadata && (options.metadata.filename !== state.filename || options.metadata.docKind !== state.docKind);
     if (text === beforeText && !metadataChanged) return { outcome: 'unchanged', changeId: null, editCount: 0 };
     const approved = options.approvedReview && state.review?.id === options.approvedReview && state.review.status === 'pending';
+    if (approved && options.drawingPresentation) options = {...options, drawingPresentation: {...options.drawingPresentation, ...drawingPresentationBinding()}};
     let gate = commitGate(splices, who, options.restores === true, approved, options.drawingPatch);
     if (gate && gate.reason !== 'human_review_required') return gate;
     if (state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.comment' &&
@@ -2890,7 +3137,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const output = { outcome: options.rebased ? 'rebased' : 'applied', changeId: entry.id, editCount: options.editCount || splices.length,
       ...(options.contribution ? {contribution: options.contribution} : {}),
       ...(presentation ? {presentation, ...(result?.drawingReceipt ? {drawingReceipt: result.drawingReceipt} : {})} : {}),
-      ...(entry.drawingPatch ? {drawingPatch: clone(entry.drawingPatch)} : {}),
+      ...(options.drawingPatch ? {drawingPatch: {...clone(options.drawingPatch), transactionId: entry.id}} : {}),
       ...(structure ? { structure } : {}),
       // law/region are the record of what governed this commit.
       ...(reviewedRegion == null ? {} : { law: 'keep', region: reviewedRegion }),
@@ -3281,7 +3528,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function paintInverse(entry, who, context, interleaved) {
-    if (typeof host.paintReplay !== 'function') return null;
+    if (typeof host.paintReplay !== 'function' && typeof host.material !== 'function') return null;
     const source = state.text, revision = state.revision, documentId = state.documentId;
     const plan = paintUndoPlan(source, entry, since(entry.revision), currentDrawing());
     if (!plan) return null;
@@ -3296,7 +3543,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const recipe = clone(plan.recipe);
     for (const change of plan.changes) {
       const index = recipe.shapes.findIndex(shape => shape.id === change.id), before = recipe.shapes[index];
-      const replayed = await host.paintReplay(before, change.omitIds, {signal: context.signal, requireEmptyBase: change.requireEmptyBase === true});
+      let replayed;
+      if (typeof host.material === 'function') {
+        const prepared = await prepareMaterial('replay', {position: 'undo:' + change.id, shape: before,
+          omitIds: change.omitIds, requireEmptyBase: change.requireEmptyBase === true}, context);
+        if (prepared.refusal) return ['paint_replay_unavailable', 'material_result_invalid', 'material_unavailable'].includes(prepared.refusal.reason)
+          ? failure('paint_replay_unavailable', 'conflict') : prepared.refusal;
+        replayed = prepared.value;
+      } else replayed = await host.paintReplay(before, change.omitIds, {signal: context.signal, requireEmptyBase: change.requireEmptyBase === true});
       cancelled(context);
       if (!replayed || replayed.id !== before.id || replayed.recognized !== 'paint' ||
           canonicalJson(replayed.geom) !== canonicalJson(before.geom) ||
@@ -3307,6 +3561,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (canonicalJson(replayed.paint?.replay) !== canonicalJson(expected)) return failure('paint_replay_changed', 'conflict');
       recipe.shapes[index] = {...before, raster: replayed.raster, paint: replayed.paint};
     }
+    const rasterRefusal = await paintRastersHold(recipe, plan.recipe, context);
+    if (rasterRefusal) return rasterRefusal;
     const svg = _rapierDrawBuildSVG(recipe);
     if (!svg) return failure('paint_replay_unavailable', 'conflict');
     const title = _rapierDrawNextAssetName(documentAssets(source).assets.values());
@@ -3367,6 +3623,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   }
 
   async function undo(input, who, context) {
+    const retainedBinding = typeof host.drawingPresentationBinding === 'function' ? host.drawingPresentationBinding() : undefined;
+    const presentationBinding = retainedBinding === undefined ? drawingPresentationBinding() : retainedBinding;
     if (input.contribution && input.change_id) return failure('change_target_ambiguous', 'invalid');
     const changes = activeChanges(who);
     const label = who.agent || '';
@@ -3406,7 +3664,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     let drawingPatch = null;
     // One member's drawing delta is the whole inverse only when the name holds that one change; a longer name returns its source whole.
     if (entry.drawingPatch && !painting && !(group?.length > 1)) {
-      const original = entry.drawingPatch;
+      const original = drawingPatchForEntry(entry);
+      if (!original) return failure('drawing_history_unavailable', 'conflict');
       const saved = sourceDrawing(state.text, original.reference);
       if (!saved) return failure('target_changed', 'conflict');
       drawingPatch = {undo: true, patch: _rapierDrawRecipeDelta(original.recipeAfter, original.recipeBefore),
@@ -3415,9 +3674,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         sourceRecipeBefore: clone(original.sourceRecipeAfter), sourceRecipeAfter: clone(original.sourceRecipeBefore),
         recipeBefore: clone(original.recipeAfter), recipeAfter: clone(original.recipeBefore)};
     }
+    const inversePatch = painting?.drawingPatch || drawingPatch;
     const result = await commit(splices, who, context, 'document.undo_agent_change', {
       label: `Undo ${contribution || entry.label}`, sourceTransactionId: group?.length > 1 ? null : entry.id,
       ...(group ? {contribution, sourceTransactionIds: group.map(row => row.id)} : {}), restores: true, editCount: splices.length,
+      ...(inversePatch ? {drawingPresentation: {...presentationBinding, presentation: {open: false, replay: false},
+        reference: inversePatch.reference}} : {}),
       ...(painting ? {authoredCount: painting.authoredCount, drawAssets: painting.drawAssets, fence: painting.fence, drawingPatch: painting.drawingPatch}
         : drawingPatch ? {drawingPatch, fence: {operation: 'document.draw', drawingAsset: drawingPatch.asset,
           shapesOnly: true, drawingPatch}} : {}),
@@ -3461,20 +3723,24 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   function comparisonFields() {
     if (!state.compare) return null;
-    return {
+    const fields = {
       compareId: state.compare.id, name: state.compare.name,
       ...(state.compare.contribution ? {contribution: state.compare.contribution, changeIds: [...state.compare.changeIds]} : {}),
       changes: state.compare.changes.length,
-      // `remaining`, not `pending`: the envelope's pending is the typed outcome.
       open: state.compare.changes.filter(row => row.status === 'pending').length,
       accepted: state.compare.changes.filter(row => row.status === 'accepted').length,
       rejected: state.compare.changes.filter(row => row.status === 'rejected').length,
-      items: state.compare.changes.slice(0, 24).map(row => ({ change_id: row.id, status: row.status,
-        removed_chars: row.removed.length, inserted_chars: row.inserted.length,
-        preview: clip(row.inserted ? disclose(state.compare.incoming, row.incomingStart, row.incomingEnd).text
-          : disclose(state.compare.baseline, row.start, row.end).text, 96) })),
-      remaining: Math.max(0, state.compare.changes.length - 24),
+      items: [], remaining: state.compare.changes.length,
+      enumerate: {tool: 'document.find', arguments: {scope: 'comparison', query: ''}},
     };
+    for (const row of state.compare.changes) {
+      const item = {change_id: row.id, status: row.status, removed_chars: row.removed.length, inserted_chars: row.inserted.length,
+        preview: clip(row.inserted ? disclose(state.compare.incoming, row.incomingStart, row.incomingEnd).text
+          : disclose(state.compare.baseline, row.start, row.end).text, 96)};
+      if (bytes(JSON.stringify(stamp({...fields, items: [...fields.items, item]}))) > LIMITS.resultBytes - 1024) break;
+      fields.items.push(item); fields.remaining--;
+    }
+    return fields;
   }
 
   const comparisonContext = () => {
@@ -3528,22 +3794,36 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return changeOf(id) || failure('change_missing', 'target_gone');
   }
 
-  function readChange(input, who) {
+  function readChange(input, who, cursor = null) {
     const row = getComparisonChange(input.change_id);
     if (row.outcome) return row;
-    const removed = disclose(state.compare.baseline, row.start, row.end);
-    const inserted = disclose(state.compare.incoming, row.incomingStart, row.incomingEnd);
-    const omitted = removed.omissions.length + inserted.omissions.length;
-    const total = row.removed.length + row.inserted.length;
-    if (omitted || total > LIMITS.readChars || bytes(row.removed) + bytes(row.inserted) > LIMITS.resultBytes - 2048) {
-      return accepted({ change_id: row.id, status: row.status, removed_chars: row.removed.length,
-        inserted_chars: row.inserted.length, removed: clip(removed.text, 1200), inserted: clip(inserted.text, 1200),
-        complete: false, reason: omitted ? 'source_redacted' : 'change_over_read_budget',
-        ...(omitted ? { omissions: [...removed.omissions, ...inserted.omissions].slice(0, 4) } : {}) });
-    }
-    pendingInspection = { row, owner: ownerOf(who) };
-    return accepted({ change_id: row.id, status: row.status, start: row.start, end: row.end,
-      removed: row.removed, inserted: row.inserted, complete: true });
+    const compared = state.compare, source = row.removed + row.inserted, total = source.length;
+    const start = cursor?.offset || 0, limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
+    let end = Math.min(total, start + limit);
+    while (!safeBoundary(source, end)) end--;
+    const cursorId = mintId('compare_read_');
+    const page = fitReadPage(source, start, end, until => {
+      const removedStart = Math.min(start, row.removed.length), removedEnd = Math.min(until, row.removed.length);
+      const insertedStart = Math.max(0, start - row.removed.length), insertedEnd = Math.max(0, until - row.removed.length);
+      const removed = disclose(compared.baseline, row.start + removedStart, row.start + removedEnd);
+      const inserted = disclose(compared.incoming, row.incomingStart + insertedStart, row.incomingStart + insertedEnd);
+      const omissions = [...removed.omissions, ...inserted.omissions];
+      const redacted = cursor?.redacted === true || omissions.length > 0;
+      return stamp(accepted({change_id: row.id, compareId: compared.id, status: row.status, start: row.start, end: row.end,
+        removed: removed.text, inserted: inserted.text, removed_start: removedStart, removed_end: removedEnd,
+        inserted_start: insertedStart, inserted_end: insertedEnd, removed_chars: row.removed.length, inserted_chars: row.inserted.length,
+        complete: until === total && !redacted, remaining: total - until,
+        coverage: {disclosed: redacted ? cursor?.disclosed || 0 : until, chars: total, complete: until === total && !redacted},
+        ...(redacted ? {reason: 'source_redacted'} : {}), ...(omissions.length ? {omissions, omissionCount: omissions.length} : {}),
+        next_cursor: until < total ? cursorId : null, expires_in_ms: LIMITS.lifetimeMs}));
+    });
+    if (!page) return failure('result_over_budget', 'refused', {complete: false});
+    const next = page.end < total ? mint('cursors', 'compare_read_', {kind: 'compare-read', compareId: compared.id,
+      changeId: row.id, revision: state.revision, offset: page.end, redacted: page.result.reason === 'source_redacted',
+      disclosed: page.result.coverage.disclosed}, who, cursorId) : null;
+    if (page.result.complete) pendingInspection = {row, owner: ownerOf(who)};
+    if (cursor) delete state.cursors[cursor.id];
+    return {...page.result, next_cursor: next?.id || null};
   }
 
   // document.find returns change handles directly: one match shape, in comparison order.
@@ -3814,7 +4094,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const presentation = states.includes(supplied) ? supplied : committed &&
       Object.values(state.humanContexts).some(row => row.visible && row.expiresAt > now()) ? 'presentation_deferred' : 'unavailable';
     return {...result, receipt: {...(result.reason === 'cancelled' ? {landed: 0} : {}), state: result.reason === 'cancelled' ? 'cancelled' : committed ? 'committed' : result.outcome === 'pending' && result.pending?.kind === 'human-review'
-      ? 'pending_review' : result.outcome === 'uncertain' ? 'uncertain' : 'unavailable',
+      ? 'pending_review' : result.outcome === 'pending' && result.pending?.requirements?.kind === 'material' ? 'accepted' : result.outcome === 'uncertain' ? 'uncertain' : 'unavailable',
       presentation: result.outcome === 'uncertain' ? 'uncertain' : presentation}};
   }
 
@@ -3822,15 +4102,35 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   async function drawPicture(input, who, context) {
     if (state.docKind !== 'markdown') return failure('draw_requires_markdown', 'invalid');
     if (changeOf(input.recipe_handle) || changeOf(input.svg_handle) || changeOf(input.context_handle)) return failure('context_handle_wrong_kind', 'invalid');
+    const retained = typeof host.drawingPresentationBinding === 'function' ? host.drawingPresentationBinding() : undefined;
+    context = {...context, drawingPresentation: {binding: retained === undefined ? drawingPresentationBinding() : retained,
+      presentation: {open: input.presentation?.open !== false, replay: input.presentation?.replay !== false}}};
     return drawingReceipt(await (input.svg_handle != null || input.node_edits != null ? drawSVGEdit(input, who, context)
       : input.recipe_handle ? drawEdit(input, who, context) : drawCreate(input, who, context)));
+  }
+
+  // The hosted painter asks the connected editor for private material. The returned value
+  // passes the same recipe, raster and commit owners as local paint; it grants no read or write authority.
+  async function prepareMaterial(task, payload, context) {
+    const request = materialRequest(state, task, payload, currentDrawing());
+    cancelled(context);
+    const fact = await host.material(request, {signal: context.signal});
+    cancelled(context);
+    if (!materialMatches(request, state, currentDrawing())) return {refusal: failure('document_changed', 'conflict')};
+    if (fact == null) {
+      const requestId = mintId('fact_');
+      return {refusal: {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId,
+        requirements: materialDescription(request)}}};
+    }
+    const result = admitMaterialResult(request, fact);
+    return result.outcome === 'ok' ? {value: result.value} : {refusal: failure(result.reason)};
   }
 
   // Paint figures carry strokes; Water figures carry mode and actions. The host returns the material shape the recipe keeps.
   // Only the kernel supplies the inspected recipe used to resolve Trace sources.
   async function paintFigures(list, context, field = 'figures', recipe = null, replace = false) {
     if (!Array.isArray(list) || !list.some(row => row?.kind === 'paint')) return { list };
-    if (typeof host.paint !== 'function') return { refusal: failure('paint_unavailable') };
+    if (typeof host.paint !== 'function' && typeof host.material !== 'function') return { refusal: failure('paint_unavailable') };
     const out = [];
     for (const [index, row] of list.entries()) {
       if (row?.kind !== 'paint') { out.push(row); continue; }
@@ -3846,8 +4146,16 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (target?.locked) return {refusal: failure('paint_target_locked', 'refused', {field: at + '.id'})};
       let shape = null;
       cancelled(context);
-      try { shape = await host.paint(water ? null : strokes, {seed, target, contribution: mintId('paint_'), signal: context.signal,
-        ...(water ? {mode, actions, ...(paper != null ? {paper} : {}), ...(recipe ? {recipe} : {})} : {})}); }
+      try {
+        const options = {seed, target, contribution: mintId('paint_'),
+          ...(water ? {mode, actions, ...(paper != null ? {paper} : {}), ...(recipe ? {recipe} : {})} : {})};
+        if (typeof host.material === 'function') {
+          const prepared = await prepareMaterial('paint', {position: at, strokes: water ? null : strokes, ...options}, context);
+          if (prepared.refusal) return {refusal: prepared.refusal.reason === 'paint_strokes_invalid'
+            ? failure('paint_strokes_invalid', 'invalid', {field: at + (water ? '.actions' : '.strokes')}) : prepared.refusal};
+          shape = prepared.value;
+        } else shape = await host.paint(water ? null : strokes, {...options, signal: context.signal});
+      }
       catch (error) {
         cancelled(context);
         return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : ['paint_history_full','paint_layer_full','water_webgpu_unavailable','WATER_BUDGET','WATER_REPLAY_BUDGET','WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error?.code) ? 'refused' : 'invalid')};
@@ -3909,6 +4217,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (input.recipe != null && input.figures != null) return failure('draw_recipe_figures_conflict', 'invalid');
     if (input.recipe?.figures != null && input.direction != null && input.recipe.direction != null && input.direction !== input.recipe.direction) return failure('draw_direction_conflict', 'invalid');
     if (typeof input.alt !== 'string' || !input.alt.trim()) return failure('draw_alt_required', 'invalid');
+    // Placement and drawing authority belong to this source, before any asynchronous preparation.
+    const source = state.text, revision = state.revision, documentId = state.documentId;
     const assets = documentAssets(state.text);
     let position = assets.appendixStart, held = null, rebased = false, heldOffset = 0;
     if (input.context_handle) {
@@ -3966,7 +4276,6 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (!svg) return failure('recipe_invalid', 'invalid');
     recipe = _rapierDrawReadRecipeFromSVGText(svg);
     if (!recipe) return failure('recipe_invalid', 'invalid');
-    const source = state.text, revision = state.revision, documentId = state.documentId;
     const title = _rapierDrawNextAssetName(assets.assets.values());
     let asset, appended, prospective, raw, prefix, suffix;
     try {
@@ -3988,15 +4297,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const occStart = position + prefix.length;
     // One authored splice, the occurrence; appended.source only validates. The definition derives at commit.
     const splices = [{pos: position, removed: '', inserted: prefix + raw + suffix}];
-    const facts = outlineMarkdown(appended.source, {limit: 0}, markdownParser());
-    if (!facts.images?.entries.some(row => row.blockStart === occStart && row.id === normalizeLabel(appended.reference))) {
-      return failure(facts.blocks?.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
+    const placement = drawingPlacement(appended.source, occStart, raw, appended.reference);
+    if (!placement.placed) {
+      return failure(placement.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
     }
     const refreshed = await refresh(context);
     if (refreshed) return refreshed;
     if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
     const result = await commit(splices, who, context, 'document.draw', {
       label: input.label || 'Draw a picture', editCount: 1, authoredCount: 1, rebased,
+      drawingPresentation: {...context.drawingPresentation?.binding, presentation: context.drawingPresentation?.presentation,
+        occurrence: {start: occStart, end: occStart + raw.length}, reference: appended.reference},
       contribution: input.contribution, propose: !!input.contribution,
       handleIds: held ? [held.id] : [], reviewInline: false,
       handlePairs: [{ handleId: held ? held.id : null, offset: heldOffset }],
@@ -4020,6 +4331,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const patch = input.shapes;
     if (input.recipe == null && input.alt == null && !input.operations?.length && !(patch && (patch.add?.length || patch.replace?.length || patch.remove?.length || Object.keys(patch.set || {}).length))) return failure('draw_edit_empty', 'invalid');
     if (input.alt != null && (typeof input.alt !== 'string' || !input.alt.trim())) return failure('draw_alt_required', 'invalid');
+    const source = state.text, revision = state.revision, documentId = state.documentId;
     const held = lookup('handles', input.recipe_handle, who);
     if (held.outcome) return held;
     if (held.kind !== 'draw') return failure('context_handle_wrong_kind', 'invalid');
@@ -4038,7 +4350,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (unavailable) return failure(unavailable, 'refused', {field: 'recipe'});
     }
     const live = drawingFor(range.start, range.end, held.assetLabel);
-    if (live?.recipeUnavailable) return failure('draw_surface_unavailable', 'conflict', {detail: live.recipeUnavailable});
+    if (live?.recipeUnavailable && live.recipeDigest !== drawingRecipeDigest(stored)) return failure('draw_surface_unavailable', 'conflict', {detail: live.recipeUnavailable});
     if (staleSurface && (!live?.recipe || live.session !== held.drawSession)) return staleSurface;
     // The view record is derived by every build, never a hand's decision: it says nothing about whether the canvas moved. The open
     // surface reports the pen settings a definition omits (draw.js: its baseline fills smooth and nib with the defaults), so the
@@ -4054,7 +4366,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     // Object patches, operations, dials and a whole recipe share the open Draw owner's semantic hand-off: only a verified change enters the
     // live drawing owner, and the final fence below carries the admitted delta, never the caller's recipe or operation spelling. A caption
     // is source outside the canvas and keeps the ordinary fence.
-    const editingFence = {operation: 'document.draw', drawingAsset: held.assetLabel || '',
+    const editingFence = {operation: 'document.draw', surfaceRecipeDigest: drawingRecipeDigest(writeBase), drawingAsset: held.assetLabel || '',
       shapesOnly: input.alt == null, occurrence: {start: range.start, end: range.end, reference: held.assetLabel}};
     if (input.shapes?.replace?.some(row => row?.kind === 'paint')) {
       editingFence.paintTargets = clone(input.shapes.replace.filter(row => row?.kind === 'paint')
@@ -4094,8 +4406,10 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         if (!base) return recipeInvalid(_rapierDrawRecipeFault({ ...input.recipe, shapes }));
       }
       if (input.shapes) {
-        const add = await paintFigures(input.shapes.add, context, 'shapes.add', base), replace = await paintFigures(input.shapes.replace, context, 'shapes.replace', base, true);
-        if (add.refusal || replace.refusal) return add.refusal || replace.refusal;
+        const add = await paintFigures(input.shapes.add, context, 'shapes.add', base);
+        if (add.refusal) return add.refusal;
+        const replace = await paintFigures(input.shapes.replace, context, 'shapes.replace', base, true);
+        if (replace.refusal) return replace.refusal;
         // Kept bytes belong to this held paint id, never to a new shape or an array position.
         const shapes = { ...input.shapes, add: add.list, replace: replace.list?.slice() };
         if (shapes.add?.some(shape => shape.raster?.kept === true)) return failure('recipe_invalid', 'invalid');
@@ -4132,13 +4446,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (rasterRefusal) return rasterRefusal;
       svg = _rapierDrawBuildSVG(recipe);
     } catch (error) { cancelled(context); return failure(error?.code || 'draw_render_failed', error?.field ? 'invalid' : 'refused', error?.field ? {field: error.field} : {}); }
+    // Rendering may await a worker while recovery reconciles a new document or a human edit.
+    // The earlier inspected recipe must not acquire that newer source's revision at commit.
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
     if (!recipe.shapes.length && !recipe.background) {
       // Done removes an emptied existing drawing. Its occurrence and orphaned definition retire
       // through the source owner, in one transaction. An open canvas needs an occurrence to follow.
-      const source = state.text, revision = state.revision, documentId = state.documentId;
-      const refreshed = await refresh(context);
-      if (refreshed) return refreshed;
-      if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
       const result = await commit([{pos: range.start, removed: held.text, inserted: ''}], who, context, 'document.draw', {
         fence: {...editingFence, shapesOnly: false}, label: input.label || 'Remove an empty drawing',
         contribution: input.contribution, propose: !!input.contribution,
@@ -4212,9 +4527,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const splices = [{ pos: occStart, removed: oldOccText, inserted: raw }];
     const validated = transformSplices(appended.source, splices);
     if (validated == null) return failure('document_changed', 'conflict');
-    const facts = outlineMarkdown(validated, {limit: 0}, markdownParser());
-    if (!facts.images?.entries.some(row => row.blockStart === occStart && row.id === normalizeLabel(appended.reference))) {
-      return failure(facts.blocks?.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
+    const placement = drawingPlacement(validated, occStart, raw, appended.reference);
+    if (!placement.placed) {
+      return failure(placement.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
     }
     const refreshed = await refresh(context);
     if (refreshed) return refreshed;
@@ -4239,6 +4554,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const result = await commit(splices, who, context, 'document.draw', {
       fence: {...editingFence, ...(drawingPatch ? {drawingPatch} : {})}, ...(drawingPatch ? {drawingPatch} : {}),
       watched, rebased,
+      ...(recipe ? {drawingPresentation: {...context.drawingPresentation?.binding, presentation: context.drawingPresentation?.presentation,
+        occurrence: {start: occStart, end: occStart + raw.length}, reference: appended.reference}} : {}),
       contribution: input.contribution, propose: !!input.contribution,
       label: input.label || 'Edit a drawing', editCount: 1, authoredCount: splices.length, handleIds: [held.id], reviewInline: false,
       handlePairs: [{ handleId: held.id, offset: occStart - range.start }],
@@ -4283,6 +4600,39 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return { sinceRevision: observed, throughRevision: state.revision, complete: !!retained && entries.length <= rows.length,
       retainedChanges: entries.length, omitted: entries.length - rows.length, changes,
       ...(!retained ? { reason: 'retained_history_limited' } : {}) };
+  }
+
+  // Context is one bounded observation. Keep permissions, review decisions, current source
+  // identity and the pointer; optional lists share the remaining bytes, with omissions explicit.
+  function fitContext(result, budget) {
+    const omitted = domain => {
+      const rows = result.omissions ||= [];
+      let row = rows.find(row => row.domain === domain);
+      if (!row) rows.push(row = {domain, reason: 'result_budget', omitted: 0});
+      row.omitted++; result.complete = false;
+    };
+    const lists = [
+      [result.sourceChanges, 'changes', row => {
+        result.sourceChanges.complete = false; result.sourceChanges.omitted++;
+        for (const target of row.targets) delete state.refs[target.ref];
+      }],
+      [result.editor, 'receipts', () => omitted('editor_receipts')],
+      [result.drawing, 'selectedObjects', () => {result.drawing.selectedObjectsComplete = false;}],
+      [result.drawing?.brushes, 'paint', () => {result.drawing.brushes.paintComplete = false;}],
+      [result.drawing?.brushes, 'vector', () => {result.drawing.brushes.vectorComplete = false;}],
+      [result.drawing, 'receipts', () => {result.drawing.receiptsComplete = false;}],
+      [result.compare, 'items', () => {result.compare.remaining++; omitted('comparison_items');}],
+      [result, 'agents', () => omitted('agent_names')],
+      [result, 'returns', () => omitted('returned_pages')],
+    ].filter(([owner, field]) => Array.isArray(owner?.[field]));
+    while (bytes(JSON.stringify(stamp(result))) > budget) {
+      const list = lists.find(([owner, field]) => owner[field].length);
+      if (!list) break;
+      const [owner, field, record] = list;
+      // Keep recent changes and receipts; comparison items retain their first-page order.
+      record(field === 'items' ? owner[field].pop() : owner[field].shift());
+    }
+    return result;
   }
 
   function publicCommentAnchor(anchor, parsed) {
@@ -4447,6 +4797,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   async function point(input, who, context) {
     if (!!input.context_handle === !!input.change_id) return failure('point_target_ambiguous', 'invalid');
     let target, reveal = host.reveal;
+    surviveReview();
+    const pendingReview = state.review, pendingChange = input.change_id && pendingReview?.changes?.find(row => row.id === input.change_id);
     const change = changeOf(input.change_id || input.context_handle);
     if (change) {
       if (state.compare.owner !== ownerOf(who) && !state.compare.hostCompareId) return failure('compare_not_owned');
@@ -4455,6 +4807,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         removed: change.removed, inserted: change.inserted, currentText: state.compare.baseline, incomingText: state.compare.incoming,
         index: state.compare.changes.indexOf(change)};
       reveal = host.revealChange;
+    } else if (pendingChange) {
+      if (pendingReview.owner !== ownerOf(who)) return failure('authority_mismatch');
+      if (pendingReview.status !== 'pending' || pendingChange.status !== 'pending') return failure('review_change_not_pending', 'target_gone');
+      const range = pendingChange.target;
+      if (pendingReview.documentId !== state.documentId || pendingReview.revision !== state.revision ||
+          !range || range.revision !== state.revision || !safeBoundary(state.text, range.start) || !safeBoundary(state.text, range.end))
+        return failure('review_target_changed', 'conflict');
+      target = {start: range.start, end: range.end, reviewId: pendingReview.id, changeId: pendingChange.id};
     } else if (input.change_id) {
       const entry = activeChanges(who).find(row => row.id === input.change_id);
       if (!entry) return failure('change_not_owned_or_unavailable', 'target_gone');
@@ -4484,6 +4844,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       owner: ownerOf(who), ...(who.agent ? {agent: who.agent} : {}), start: target.start, end: target.end,
       ...(target.objectId ? {objectId: target.objectId} : {}), ...(target.assetLabel ? {assetLabel: target.assetLabel} : {}),
       ...(target.compareId ? {compareId: target.compareId, changeId: target.changeId} : {}),
+      ...(target.reviewId ? {reviewId: target.reviewId, changeId: target.changeId} : {}),
       words: input.words, createdAt, expiresAt: createdAt + lifetime * 1000, status: 'deferred'};
     state.pointers[key] = pointer;
     const retained = Object.entries(state.pointers).sort((a, b) => a[1].createdAt - b[1].createdAt);
@@ -4544,6 +4905,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const beforeHandles = new Set(Object.keys(state.handles));
     const unsettled = await refresh(context, name);
     if (unsettled) return finalize(unsettled);
+    if (context.materialBinding && !materialMatches(context.materialBinding, state, currentDrawing()))
+      return finalize(failure('document_changed', 'conflict'));
     prune();
     let result;
     let resumed = false;
@@ -4557,6 +4920,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         const will = state.docKind === 'markdown' ? parseWill(state.text) : null;
         const together = collaboration(), pointing = together.presence;
         const drawing = drawingSummary(), presence = pointing && {...pointing};
+        const paint = typeof host.paintBrushes === 'function' ? host.paintBrushes() : null;
         if (presence) delete presence.drawing;
         const selected = pointing?.selection || state.selection;
         const focused = pointing?.focus || state.focus;
@@ -4568,7 +4932,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           readOnly: state.readOnly, posture: state.posture, ...(state.notes ? { notes: state.notes } : {}), selection: selected ? { start: selected.start, end: selected.end, ...(selected.objectId ? {objectId: selected.objectId} : {}) } : null,
           focus: focus ? { ref: focus.id, chars: focus.end - focus.start, kind: pointedKind(state.text, focus.start, focus.end, images) } : null,
           collaboration: { posture: together.posture, readOnly: together.readOnly, presence, agentPresence: agentPresence(who, true),
-            review: contextReviewProjection(state.review) },
+            review: contextReviewProjection(state.review), drawingIntent: drawingTurnSummary() },
           sourceChanges: sourceChanges(who),
           ...(drawing ? {drawing} : {}),
           ...(state.docKind === 'markdown' ? {comments: commentSummary(state.text)} : {}),
@@ -4590,7 +4954,9 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           history: { complete: state.history.complete, earliestRevision: state.history.earliestRevision,
             retainedChanges: state.journal.length, trimmedBytes: state.history.trimmedBytes,
             reviewEvidenceComplete: !missingReviewHistory(who) },
-          ...(typeof host.paintBrushes === 'function' ? {paint: host.paintBrushes()} : {}),
+          ...(paint ? {paint: {modes: paint.modes, limits: paint.limits, renderer: {status: typeof host.material === 'function'
+            ? (drawingPresentationBinding() ? 'attached' : 'unavailable') : 'local', water: 'unprobed'}, brushes: paint.brushes.map(({id, mode, size}) => ({id, mode, size})),
+            complete: false, guide: {tool: 'rapier.guide', arguments: {topic: 'paint'}}}} : {}),
           // Structure is a declared world fact; `available` names only the size bound (agent/structure-request.mjs).
           ...(state.docKind === 'markdown' ? { structure: { engine: 'markdown-it',
             available: state.text.length <= 8 * 1024 * 1024, supports: ['outline', ...FIND_KINDS.markdown] } }
@@ -4600,8 +4966,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           ...(will?.present ? { law: { default: will.faults.length ? 'keep' : 'edit', regions: will.regions.length,
             laws: [...new Set(will.regions.map(row => row.law))], ...(will.faults.length ? { faults: will.faults.slice(0, 4), faultCount: will.faults.length } : {}) } } : {}),
           ...(state.compare ? { compare: comparisonFields() } : {}),
-          returns, returnWaiting: returns.length > 0,
+          returns: returns.slice(), returnWaiting: returns.length > 0,
         });
+        // The complete registry is read through the guide, without document state competing
+        // for its reply. Every brush stays discoverable here; details use actual residual space.
+        const contextBudget = LIMITS.resultBytes - 768;
+        fitContext(result, contextBudget);
+        for (const field of ['controls', 'papers', 'pigments', 'tools', 'actions']) {
+          if (paint?.[field] === undefined) continue;
+          const detailed = {...result.paint, [field]: paint[field]};
+          if (bytes(JSON.stringify(stamp({...result, paint: detailed}))) <= contextBudget) result.paint = detailed;
+        }
         result.continuation = continuationContext(will, Math.min(3072, LIMITS.resultBytes - bytes(JSON.stringify(result)) - bytes(JSON.stringify(current())) - 768));
         const brief = await continuationBrief(context, Math.min(3072, LIMITS.resultBytes - bytes(JSON.stringify(result)) - bytes(JSON.stringify(current())) - 128));
         if (brief?.outcome) result = brief;

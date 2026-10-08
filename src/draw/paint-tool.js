@@ -706,6 +706,7 @@ function _rapierPaintPainterLost(holder, error) {
 	const gesture = state.gesture, saved = gesture?.paintRollback;
 	if (gesture?.kind === 'paint') {
 		if (gesture.paint) gesture.paint.discarded = true;
+		if (gesture.waterStroke) _rapierPaintWaterFinish(gesture);
 		if (saved) {
 			delete gesture.paintRollback;
 			state.recipe = _rapierDrawRestoreRecipe(saved.recipe); state.undoStack = saved.undo; state.redoStack = saved.redo; state.view = saved.view;
@@ -725,7 +726,7 @@ function _rapierPaintPainterLost(holder, error) {
 		for (const ok of layer.wetWaiters?.splice(0) || []) ok();
 		if (layer.pngWorker) { try { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); } catch (_) {} layer.pngWorker = null; }
 		layer.mount?.remove();
-		if (layer.canvas) layer.canvas.width = layer.canvas.height = 0;
+		if (layer.canvas && !layer.gpuDisplay) layer.canvas.width = layer.canvas.height = 0;
 		layer.previousFlip = layer.nextFlip = null;
 	}
 	state.paintLayer = null; state.paintSetting = false; state.paintFlipping = false;
@@ -734,6 +735,7 @@ function _rapierPaintPainterLost(holder, error) {
 	_rapierDrawRenderAll();
 }
 function _rapierPaintStrokeFailed(gesture, error) {
+	if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture);
 	if (error?.recoverable || /^(WATER_|paint_history_full)/.test(error?.code || '')) {
 		_rapierPaintReleaseStroke(gesture, true); if (_rapierDrawState.gesture === gesture) _rapierDrawEndGesture();
 		showToast(String(error.message || error), 'error'); return;
@@ -1635,7 +1637,7 @@ function _rapierPaintRetireRevisionLayer(layer) {
 	layer.previousFlip = layer.nextFlip = null;
 	if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
 	layer.mount?.remove();
-	if (layer.canvas) layer.canvas.width = layer.canvas.height = 0;
+	if (layer.canvas && !layer.gpuDisplay) layer.canvas.width = layer.canvas.height = 0;
 	_rapierPaintReleaseSurface(layer);
 	_rapierPaintReattachLive();
 	return next;
@@ -1907,18 +1909,24 @@ function _rapierPaintFollowGrowth(layer, grown) {
 }
 // Whatever a lifted stroke owes the recipe is published now, in order: its revision is asked for if it has not been, the painter's readout
 // awaited, and the pixels in hand encoded here in the stored form rather than waiting on the compressor. Null when nothing is owed.
-function _rapierPaintFlushRevision(layer = _rapierPaintLayer()) {
+function _rapierPaintFlushRevision(layer = _rapierPaintLayer(), keepWorker = false) {
 	const layers = _rapierPaintRevisionLayers(layer);
 	if (!layers.some(pending => pending.pendingLift || pending.pendingCommit)) return null;
-	return _rapierPaintFlushLayers(layers);
+	return _rapierPaintFlushLayers(layers, keepWorker);
 }
-async function _rapierPaintFlushLayers(layers) {
+async function _rapierPaintFlushLayers(layers, keepWorker = false) {
 	for (const pending of layers) {
 		_rapierPaintDropSnapshots(pending);
 		// A lift still deciding what the paper is (wet or dry) says so first; a wet one is the wash's, settled by Paint's other owner.
 		const lift = pending.pendingLift;
 		if (lift?.deciding) await lift.decided;
 		_rapierPaintFlushLift(pending);
+		// A new Water contact waits on the same ordered publication, while its healthy encoder
+		// keeps the immutable capture off the page. Urgent close and failure still flush below.
+		if (keepWorker && pending.pngWorker && !pending.pendingOverflow) {
+			while (pending.pendingCommit) await pending.pendingCommit.promise;
+			continue;
+		}
 		const owner = pending.pngWorker;
 		if (owner) {
 			owner.worker.onmessage = owner.worker.onerror = owner.worker.onmessageerror = null;
@@ -2083,6 +2091,23 @@ function _rapierPaintGroupMembers(target, frame) {
 function _rapierPaintGroupKey(target, members) {
 	return [target, ...members].map(_rapierPaintMemberKey).join(';');
 }
+function _rapierPaintWaterTargetUnion(target, frame, members) {
+	// Keep the native raster grid, including every grouped piece. A current-session
+	// sheet also owns water outside its visible crop; its whole recorded field fits.
+	let x0 = 0, y0 = 0, x1 = frame.pw, y1 = frame.ph;
+	for (const shape of members) {
+		const other = _rapierPaintTargetFrame(shape), x = Math.round((other.c0[0] - frame.c0[0]) * frame.scale), y = Math.round((other.c0[1] - frame.c0[1]) * frame.scale);
+		x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + other.pw); y1 = Math.max(y1, y + other.ph);
+	}
+	if (!members.length && globalThis.RapierDrawAgentPaint.waterPaintingIsLive(target, _rapierWaterSession())) {
+		const replay = target.paint.replay, entry = replay.entries.at(-1);
+		if (entry?.actor === 'human' && !replay.views?.some(view => view.at === replay.entries.length)) {
+			x0 = Math.min(x0, -entry.crop[0]); y0 = Math.min(y0, -entry.crop[1]);
+			x1 = Math.max(x1, entry.sheet.width - entry.crop[0]); y1 = Math.max(y1, entry.sheet.height - entry.crop[1]);
+		}
+	}
+	return {x0:frame.c0[0]+x0/frame.scale, y0:frame.c0[1]+y0/frame.scale, w:(x1-x0)/frame.scale, h:(y1-y0)/frame.scale};
+}
 // Whether the open layer can still take another stroke: its shape is on the canvas, unlocked, and
 // exactly what the layer last wrote (undo, a move or an edit makes it a different picture) -- and,
 // for an already-committed layer, still the resolved target (painting a different selected or
@@ -2199,7 +2224,7 @@ function _rapierPaintReattachLive() {
 	for (const layer of _rapierPaintRevisionLayers()) {
 		if (!layer.mount || !layer.canvas) continue;
 		_rapierPaintPositionMount(layer.mount, layer.id);
-		_rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer);
+		_rapierPaintShowLive(layer.liveWanted ?? layer.canvas.style.visibility !== 'hidden', layer);
 	}
 }
 // The paper is what is seen, never a square canvas cut inside a portrait phone. A whole-canvas
@@ -2233,32 +2258,35 @@ function _rapierPaintStageUnion(recipe, pad = RAPIER_PAINT_EDGE_PAD) {
 	}
 	return { x0: x0 - pad, y0: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
 }
-function _rapierPaintBlankSheet(w, h, scale, prepared = null, mode = _rapierPaintMode()) {
+function _rapierPaintBlankSheet(w, h, scale, prepared = null, mode = _rapierPaintMode(), material = null) {
 	const remote = _rapierPaintRemoteNow(mode);
 	if (!remote) throw new Error('The painter is not ready');
 	// The surface is the painter's: the page holds its mirror. Its sheet is blank paper at this raster scale.
-	const surface = remote.surface(w, h, mode === 'water' ? {mode: 'water', pixelScale: scale, paper: _rapierWaterState().paper, waterSession: _rapierWaterSession(), trackedGrowth: true} : {wet: RAPIER_PAINT_WET, trackedGrowth: true});
+	const surface = remote.surface(w, h, mode === 'water' ? {mode: 'water', pixelScale: scale, paper: _rapierWaterState().paper, waterSession: _rapierWaterSession(), trackedGrowth: true, ...material} : {wet: RAPIER_PAINT_WET, trackedGrowth: true});
 	if (mode !== 'water') surface.set('paper', RAPIER_PAINT_PAPER); surface.set('scale', scale / RAPIER_PAINT_GRAIN);
-	const {canvas, ctx} = _rapierPaintBlankCanvas(w, h, prepared);
+	const {canvas, ctx} = _rapierPaintBlankCanvas(w, h, prepared, mode);
+	if (!ctx) surface.bindDisplay(canvas.transferControlToOffscreen()).catch(() => {});
 	return {surface, canvas, ctx};
 }
 // The overlay a sheet is shown on: a canvas of the sheet's own size (one made ahead of a cap's flip is adopted).
-function _rapierPaintBlankCanvas(w, h, prepared = null) {
+function _rapierPaintBlankCanvas(w, h, prepared = null, mode = 'paint') {
 	const canvas = prepared?.canvas || document.createElement('canvas');
 	canvas.className = 'rapier-draw-paint-live';
 	if (canvas.width !== w) canvas.width = w;
 	if (canvas.height !== h) canvas.height = h;
 	canvas.setAttribute('aria-hidden', 'true');
+	// Transfer before choosing a context. Hosts without transferable canvases keep their existing 2D display.
+	if (mode === 'water' && typeof canvas.transferControlToOffscreen === 'function') return {canvas, ctx:null};
 	const ctx = prepared?.ctx || canvas.getContext('2d');
 	// Touch the backing store while the blank sheet is still detached from the scene.
 	ctx.putImageData(new ImageData(1, 1), 0, 0);
 	return {canvas, ctx};
 }
-function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = null, emptyUnion = null, prepared = null, mode = _rapierPaintMode()) {
+function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = null, emptyUnion = null, prepared = null, mode = _rapierPaintMode(), material = null) {
 	const state = _rapierDrawState, recipe = state.recipe;
 	_rapierPaintCloseLayer();
-	// Only a cap's new, empty sheet supplies its own box. Reopening existing paint always keeps the
-	// full scene bounds below; no caller may use an empty sheet's narrower allocation to crop it.
+	// A cap, first Water contact or complete retained Water field supplies its own box.
+	// Existing pixels must all fit; the supplied Water box includes its full native material.
 	let union = emptyUnion || _rapierPaintStageUnion(recipe);
 	// When the union will not fit, the layer shrinks back to the CANVAS BOX: the canvas box is the
 	// one region the committed painting is guaranteed to live inside.
@@ -2275,7 +2303,7 @@ function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = nul
 	}
 	if (!emptyUnion && w * h > RAPIER_PAINT_AREA_MAX * 2) { union = { x0: 0, y0: 0, w: recipe.canvas.w, h: recipe.canvas.h }; w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale)); }
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Canvas is too large to paint on');
-	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, scale, prepared, mode);
+	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, scale, prepared, mode, material);
 	// The overlay holds every pixel of the surface at all times. An EMPTY one is safe to leave
 	// showing -- there is nothing on it to double with the committed picture -- so a fresh layer's
 	// overlay does not wait for the stroke to make it visible; a decoded target's still must, because
@@ -2284,9 +2312,10 @@ function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = nul
 	const mount = _rapierPaintMountLive(canvas, atShapeId);
 	if (!Object.getOwnPropertyDescriptor(state.surface, 'rapierPaintFacts')) Object.defineProperty(state.surface, 'rapierPaintFacts', { enumerable: false, get: _rapierPaintFacts });
 	surface.tilt(_rapierPaintTilt.gx, _rapierPaintTilt.gy); _rapierPaintTiltOn();
-	const layer = { mode, waterPaper: mode === 'water' ? _rapierWaterState().paper : null, session: state.session, surface, canvas, mount, ctx, scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: null, origin: [union.x0, union.y0], setPending: true, liveBox: null };
+	const layer = { mode, gpuDisplay:!ctx, displayReady:!!ctx, liveWanted:!ctx ? atShapeId == null : undefined, waterPaper: mode === 'water' ? _rapierWaterState().paper : null, session: state.session, surface, canvas, mount, ctx, scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: null, origin: [union.x0, union.y0], setPending: true, liveBox: null };
 	surface.display = reply => _rapierPaintDisplay(layer, reply);
 	state.paintLayer = layer;
+	if (layer.gpuDisplay) _rapierPaintShowLive(layer.liveWanted,layer);
 	_rapierPaintWatchOverlay(layer);
 	_rapierPaintPlaceLive();
 	return layer;
@@ -2304,7 +2333,7 @@ function _rapierPaintOpenLocalLayer(frame, atShapeId = null, mode = _rapierPaint
 	const mount = _rapierPaintMountLive(canvas, atShapeId);
 	if (!Object.getOwnPropertyDescriptor(state.surface, 'rapierPaintFacts')) Object.defineProperty(state.surface, 'rapierPaintFacts', { enumerable: false, get: _rapierPaintFacts });
 	surface.tilt(_rapierPaintTilt.gx, _rapierPaintTilt.gy); _rapierPaintTiltOn();
-	const layer = { mode, waterPaper: mode === 'water' ? _rapierWaterState().paper : null, session: state.session, surface, canvas, mount, ctx, scale: frame.scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: { ...frame, pad }, setPending: true, liveBox: null };
+	const layer = { mode, gpuDisplay:!ctx, displayReady:!!ctx, liveWanted:!ctx ? false : undefined, waterPaper: mode === 'water' ? _rapierWaterState().paper : null, session: state.session, surface, canvas, mount, ctx, scale: frame.scale, id: null, raster: null, geom: null, brush: null, brushId: null, raf: 0, holdRaf: 0, dryRaf: 0, dryAt: 0, frame: { ...frame, pad }, setPending: true, liveBox: null };
 	surface.display = reply => _rapierPaintDisplay(layer, reply);
 	state.paintLayer = layer;
 	_rapierPaintWatchOverlay(layer);
@@ -2321,13 +2350,19 @@ function _rapierPaintOpenLocalLayer(frame, atShapeId = null, mode = _rapierPaint
 // math, and no separate reason for it to drift from where the shapes around it actually sit.
 function _rapierPaintPlaceLive(layer = _rapierDrawState.paintLayer) {
 	if (!layer?.mount || !layer.canvas) return;
-	const mount = layer.mount, canvas = layer.canvas, w = canvas.width, h = canvas.height;
+	const mount = layer.mount, canvas = layer.canvas, display = layer.gpuDisplay ? layer.displayMeta : null;
+	const w = display?.width ?? canvas.width, h = display?.height ?? canvas.height;
 	mount.setAttribute('width', w); mount.setAttribute('height', h);
 	canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
 	const f = layer.frame;
 	const matrix = f
 		? [f.eux, f.euy, f.evx, f.evy, f.c0[0] - f.pad * f.eux - f.pad * f.evx, f.c0[1] - f.pad * f.euy - f.pad * f.evy]
 		: [1 / layer.scale, 0, 0, 1 / layer.scale, layer.origin?.[0] || 0, layer.origin?.[1] || 0];
+	// Input may already name queued growth. Place the submitted frame at its own material origin.
+	if (display) {
+		const dx = display.toothOX - layer.surface.toothOX, dy = display.toothOY - layer.surface.toothOY;
+		matrix[4] += dx * matrix[0] + dy * matrix[2]; matrix[5] += dx * matrix[1] + dy * matrix[3];
+	}
 	mount.setAttribute('transform', 'matrix(' + matrix.map(n => (Number.isFinite(n) ? n : 0)).join(',') + ')');
 }
 // The overlay's pixels are the browser's to take. A phone short of GPU memory -- a big painting is exactly that
@@ -2339,14 +2374,16 @@ function _rapierPaintWatchOverlay(layer) {
 	const canvas = layer.canvas;
 	// The display store is replaced only by a new element; a delayed event from a retired canvas must never hide or repaint the store
 	// now owned by the same material layer.
-	canvas.addEventListener('contextlost', () => { if (layer.canvas !== canvas) return; layer.lost = true; _rapierPaintShowLive(canvas.style.visibility !== 'hidden', layer); });
+	canvas.addEventListener('contextlost', () => { if (layer.canvas !== canvas) return; layer.lost = true; _rapierPaintShowLive(layer.liveWanted ?? canvas.style.visibility !== 'hidden', layer); });
 	canvas.addEventListener('contextrestored', () => {
 		if (layer.canvas !== canvas) return;
+		const wanted = layer.liveWanted ?? canvas.style.visibility !== 'hidden';
 		layer.lost = false;
 		if (_rapierDrawState.paintLayer !== layer) return;
+		if (layer.gpuDisplay) layer.displayReady = false;
 		// The painter still holds every pixel: its whole readout is laid again.
 		_rapierPaintRepaintAll(layer);
-		_rapierPaintShowLive(layer.canvas.style.visibility !== 'hidden', layer);
+		_rapierPaintShowLive(wanted, layer);
 	});
 }
 function _rapierPaintOverlayLost(layer) { return !!layer?.lost || !!layer?.ctx?.isContextLost?.(); }
@@ -2368,6 +2405,14 @@ function _rapierPaintRecordLiveBox(layer, box) {
 function _rapierPaintDisplay(layer, reply) {
 	const canvas = layer.canvas, meta = reply.meta, patch = reply.patch;
 	if (!canvas || layer.surface?.gone) return;
+	if (layer.gpuDisplay) {
+		if (reply.display?.generation !== layer.surface.displayGeneration || !reply.display.submitted) return;
+		layer.displayMeta = {...meta}; layer.displayReady = true; layer.lost = false; layer.liveBox = null;
+		if (meta.bounds) _rapierPaintRecordLiveBox(layer,meta.bounds);
+		_rapierPaintPlaceLive(layer); _rapierPaintShowLive(layer.liveWanted,layer);
+		if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
+		return;
+	}
 	if (canvas.width !== meta.width || canvas.height !== meta.height) {
 		const whole = patch && patch.box.x0 === 0 && patch.box.y0 === 0 && patch.box.x1 === meta.width - 1 && patch.box.y1 === meta.height - 1;
 		if (!whole) { _rapierPaintRepaintAll(layer); return; }
@@ -2387,6 +2432,7 @@ function _rapierPaintDisplay(layer, reply) {
 function _rapierPaintRepaintAll(layer) {
 	const surface = layer.surface;
 	if (!surface || surface.gone || surface.failure) return;
+	if (layer.gpuDisplay) { surface.repaintDisplay().catch(() => {}); return; }
 	surface.readRGBA8().then(px => {
 		if (layer.surface !== surface || surface.gone || !layer.canvas) return;
 		if (layer.canvas.width !== px.width || layer.canvas.height !== px.height) { layer.canvas.width = px.width; layer.canvas.height = px.height; _rapierPaintPlaceLive(layer); }
@@ -2469,6 +2515,7 @@ function _rapierPaintScheduleBlit() {
 function _rapierPaintShowLive(on, layer = _rapierDrawState.paintLayer) {
 	const state = _rapierDrawState;
 	if (!layer?.canvas || !_rapierPaintRevisionLayers().includes(layer)) return;
+	if (layer.gpuDisplay) { layer.liveWanted = on; on = on && layer.displayReady && !_rapierPaintOverlayLost(layer); }
 	const visibility = on ? '' : 'hidden';
 	if (layer.canvas.style.visibility !== visibility) layer.canvas.style.visibility = visibility;
 	// An overlay whose pixels the browser took away shows nothing: the kept picture stays up under it.
@@ -2657,13 +2704,13 @@ function _rapierPaintPressed(value, from, patch) {
 function _rapierPaintHoldNeeded(brush) { try { return brush.getBaseValue('dabs_per_second') > 0; } catch (_) { return false; } }
 function _rapierPaintScheduleHold(gesture) {
 	const layer = _rapierPaintLayer(), paint = gesture?.paint;
-	if (!layer || !paint || !paint.holdNeeded || paint.pending || layer.holdRaf) return;
+	if (!layer || !paint || !paint.holdNeeded || paint.pending || paint.holdPending || layer.holdRaf) return;
 	layer.holdRaf = requestAnimationFrame(() => _rapierPaintHoldTick(gesture));
 }
 function _rapierPaintHoldTick(gesture) {
 	const state = _rapierDrawState, layer = _rapierPaintLayer(), paint = gesture?.paint;
 	if (layer) layer.holdRaf = 0;
-	if (!layer || !paint || paint.pending || state.gesture !== gesture) return;
+	if (!layer || !paint || paint.pending || paint.holdPending || paint.discarded || state.gesture !== gesture) return;
 	// paint.last lives in the pointer event clock (evt.timeStamp), which a real move or end event
 	// keeps advancing in the same domain; performance.now() is read here only through the fixed
 	// offset measured at the gesture's first event, so a held stroke's dt and a moved stroke's dt
@@ -2671,8 +2718,21 @@ function _rapierPaintHoldTick(gesture) {
 	const now = performance.now() - paint.clockOffset, dt = _rapierDrawClamp((now - paint.last) / 1000, 0.001, 0.5);
 	paint.last = now;
 	if (layer.mode === 'water') {
-		void layer.surface.advanceWet(dt * 1000).catch(() => {});
-		_rapierPaintScheduleBlit(); _rapierPaintScheduleHold(gesture);
+		// A held frame is admitted only after its predecessor completes. Pointer samples keep
+		// their own order; a busy painter never owes a queue of obsolete animation frames.
+		const surface = layer.surface, pending = surface.advanceWet(dt * 1000);
+		paint.holdPending = pending;
+		const current = () => state.gesture === gesture && _rapierPaintLayer() === layer && layer.surface === surface && !paint.discarded;
+		void pending.then(() => {
+			if (paint.holdPending !== pending) return;
+			paint.holdPending = null;
+			if (current() && !surface.failure && !surface.gone) _rapierPaintScheduleHold(gesture);
+		}, error => {
+			if (paint.holdPending !== pending) return;
+			paint.holdPending = null;
+			if (current()) _rapierPaintStrokeFailed(gesture, error);
+		});
+		_rapierPaintScheduleBlit();
 		return;
 	}
 	// The last REAL tilt and twist a move or the initial dab reported: a held hand does not typically
@@ -2722,7 +2782,7 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer) {
 	surface.finishWetWork();
 	if (!surface.settled) await surface.sync();
 	if (layer.dryFinishing && !surface.wetState) { const flushed = _rapierPaintFlushWet(); if (flushed) await flushed; }
-	const flush = _rapierPaintFlushRevision(layer);
+	const flush = _rapierPaintFlushRevision(layer, layer.mode === 'water');
 	if (flush) await flush;
 	if (layer.mode === 'water' && layer.flipStroke?.entry && surface.revision !== layer.checkpoint?.revision) {
 		// Preserve the previous gesture at the wet state the next hand actually meets.
@@ -2754,6 +2814,7 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	if (gesture.paint?.brush) gesture.paint.brush.inStroke = false;
 	if (!gesture.paint?.mouse) { state.headEl?.setAttribute('d', ''); state.headAt = null; }
 	if (gesture.paint?.pending) gesture.paint.discarded = true;
+	if (gesture.waterStroke && (cancel || gesture.paint?.discarded || !gesture.paint?.lifted)) _rapierPaintWaterFinish(gesture);
 	if (!saved) return;
 	delete gesture.paintRollback;
 	_rapierPaintDropNextSheet(saved.layer); _rapierPaintDropNextSheet(state.paintLayer);
@@ -2768,7 +2829,7 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 		if (layer.pngWorker) { layer.pngWorker.worker.terminate(); URL.revokeObjectURL(layer.pngWorker.url); layer.pngWorker = null; }
 		layer.previousFlip = layer.nextFlip = null; layer.flipStroke = null;
 		layer.mount?.remove();
-		if (layer !== saved.layer) { _rapierPaintReleaseSurface(layer); if (layer.canvas) layer.canvas.width = layer.canvas.height = 0; }
+		if (layer !== saved.layer) { _rapierPaintReleaseSurface(layer); if (layer.canvas && !layer.gpuDisplay) layer.canvas.width = layer.canvas.height = 0; }
 	}
 	state.paintSetting = false;
 	const layer = saved.layer;
@@ -2779,12 +2840,30 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 	state.undoStack = saved.undo; state.redoStack = saved.redo; state.view = saved.view;
 	if (!layer.surface || layer.surface.gone || layer.surface.failure) return;
 	layer.surface.display = reply => _rapierPaintDisplay(layer, reply);
-	layer.canvas.width = layer.surface.width; layer.canvas.height = layer.surface.height;
+	if (layer.gpuDisplay) { layer.displayReady = false; _rapierPaintShowLive(layer.liveWanted,layer); }
+	else { layer.canvas.width = layer.surface.width; layer.canvas.height = layer.surface.height; }
 	layer.liveBox = null;
 	layer.mount = _rapierPaintMountLive(layer.canvas, layer.id);
 	_rapierPaintPlaceLive(); _rapierPaintRepaintAll(layer);
 	// Whether the baseline was wet is the painter's to say once the restore has run.
 	layer.surface.sync().then(() => { if (state.paintLayer === layer && layer.surface?.wetState) _rapierPaintScheduleDry(layer); }, () => {});
+}
+function _rapierPaintOpenGestureLayer(evt, settings, geom) {
+	if (settings.mode !== 'water') return _rapierPaintOpenLayer(undefined, null, null, null, settings.mode || 'paint');
+	// The admitted hand can reserve its reachable window when the material allocator
+	// leaves room for rollback and growth. Oversized views start at the actual contact.
+	const scale = _rapierPaintLayerScale(), nominal = _rapierPaintStageUnion(_rapierDrawState.recipe);
+	const width = Math.max(1, Math.round(nominal.w * scale)), height = Math.max(1, Math.round(nominal.h * scale));
+	const growth = globalThis.RapierDrawPaint.paintGrowStep(1);
+	if (globalThis.RapierDrawWater.waterHandSheetFits(width, height, growth, settings.definition.water?.tip)) return _rapierPaintOpenLayer(scale, null, nominal, null, 'water');
+	const point = _rapierDrawMapPoint(evt.clientX, evt.clientY, geom.rect, geom.vb);
+	const reach = Math.exp(settings.definition.settings[3].base + settings.radiusOffset) / RAPIER_PAINT_GRAIN * scale + RAPIER_PAINT_GROW_MARGIN;
+	const x0 = Math.floor(point[0] * scale - reach), y0 = Math.floor(point[1] * scale - reach);
+	const x1 = Math.ceil(point[0] * scale + reach + 1), y1 = Math.ceil(point[1] * scale + reach + 1);
+	// A smaller allocation samples the same nominal paper field; its size and corner
+	// must not change the grain. The shader's second origin coordinate starts at the bottom.
+	const paperOrigin = [x0 - nominal.x0 * scale, nominal.y0 * scale + height - y1];
+	return _rapierPaintOpenLayer(scale, null, {x0:x0/scale, y0:y0/scale, w:(x1-x0)/scale, h:(y1-y0)/scale}, null, 'water', {paperHeight:height, paperOrigin});
 }
 async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	const state = _rapierDrawState, session = state.session;
@@ -2798,7 +2877,7 @@ async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 			if (target) { _rapierPaintQueueGesture(target, evt, gesture, settings, geom); return; }
 			const closing = _rapierPaintCloseLayer();
 			if (closing) { await closing; if (gone()) return; }
-			layer = _rapierPaintOpenLayer(undefined, null, null, null, settings.mode || 'paint');
+			layer = _rapierPaintOpenGestureLayer(evt, settings, geom);
 		}
 		checkpoint = await _rapierPaintStrokeCheckpoint(gesture, layer);
 		if (checkpoint === 'gone' || gone()) return;
@@ -2866,13 +2945,14 @@ async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 // the samples and the lift that arrived while it waited, in the order they came. Stale (a target, tool or document change since it was
 // queued) discards silently rather than paint the wrong picture, with the exact settings and coordinate transform admitted back at queue
 // time -- never whatever the strip, the clock or the screen currently read.
-async function _rapierPaintApplyQueued(gesture) {
+async function _rapierPaintApplyQueued(gesture, admitted = false) {
+	if (gesture?.waterStroke && !admitted) return _rapierPaintWaterRun(gesture, () => _rapierPaintApplyQueued(gesture, true));
 	const state = _rapierDrawState, paint = gesture?.paint;
 	// A gesture that ended normally already nulled state.gesture (draw.js _rapierDrawEndGesture), so
 	// that identity is never the staleness test; `discarded` (set by the same function on an actual
 	// cancel -- a tool switch, Undo/Redo, a lost pointer -- or by a changed target below) and the
 	// target/tool/document facts captured at queue time are.
-	if (!paint?.pending || paint.discarded || !state.open || state.session !== paint.session || _rapierDrawTool() !== paint.tool) return;
+	if (!paint?.pending || paint.discarded || !state.open || state.session !== paint.session || _rapierDrawTool() !== paint.tool) { if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture); return; }
 	const queued = paint;
 	try { await _rapierPaintInitStroke(queued.downEvt, gesture, queued.settings, queued.geom); }
 	catch (error) { _rapierPaintStrokeFailed(gesture, error); throw error; }
@@ -2890,7 +2970,7 @@ async function _rapierPaintApplyQueued(gesture) {
 // now-different shape, below).
 function _rapierPaintQueueFallback(gesture) {
 	const state = _rapierDrawState, paint = gesture?.paint;
-	if (!paint?.pending || paint.discarded || !state.open || state.session !== paint.session || _rapierDrawTool() !== paint.tool) return;
+	if (!paint?.pending || paint.discarded || !state.open || state.session !== paint.session || _rapierDrawTool() !== paint.tool) { if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture); return; }
 	if (_rapierPaintIsMaterialTool(paint.settings?.brushId)) {
 		// Every admitted mark lands or is refused in words: a browser without a JPEG XL decoder reads no
 		// finished painting back, and a tool that works its paint has nothing to work.
@@ -2906,6 +2986,7 @@ function _rapierPaintQueueFallback(gesture) {
 // `_rapierDrawEndGesture` sets for a tool switch or Undo mid-decode), never paint them onto a
 // surprise fresh layer -- that would put the person's touch on paint they never chose.
 function _rapierPaintDiscardChangedTarget(gesture) {
+	if (gesture?.waterStroke) _rapierPaintWaterFinish(gesture);
 	const paint = gesture?.paint;
 	if (!paint || paint.discarded) return;
 	paint.discarded = true; paint.pending = false;
@@ -3010,7 +3091,7 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 			// Mount the live layer at the target's OWN current place in the scene order (`again.id`, the
 			// shape being picked back up), not the default top -- a lower painting keeps painting under an
 			// upper vector or an upper painting even while a stroke is down.
-			const layer = simple ? _rapierPaintOpenLayer(frame.scale, again.id, null, null, mode) : _rapierPaintOpenLocalLayer(frame, again.id, mode);
+			const layer = simple ? _rapierPaintOpenLayer(frame.scale, again.id, mode === 'water' ? _rapierPaintWaterTargetUnion(again, frame, group) : null, null, mode) : _rapierPaintOpenLocalLayer(frame, again.id, mode);
 			for (const { shape, image, pixels } of loaded) {
 				let px = pixels;
 				if (!px) {
@@ -3057,6 +3138,14 @@ function _rapierPaintPendingStroke(finishWet = false) {
 }
 function _rapierPaintPendingStrokeOwed(finishWet = false) {
 	const state = _rapierDrawState;
+	const water = _rapierPaintWaterPending();
+	if (water) {
+		if (finishWet || (typeof document !== 'undefined' && document.hidden)) for (const layer of _rapierPaintRevisionLayers()) {
+			_rapierPaintDropSnapshots(layer); layer.surface?.finishWetWork?.();
+			if (layer.pendingLift) _rapierPaintWakeLift(layer, layer.pendingLift);
+		}
+		return water;
+	}
 	for (const layer of _rapierPaintRevisionLayers()) {
 		const surface = layer.surface;
 		// Pagehide and native pause can stop animation frames. Their urgent checkpoint finishes
@@ -3184,6 +3273,38 @@ function _rapierPaintQueueGesture(target, evt, gesture, settings, geom) {
 	paint.targetId = target.id;
 	_rapierPaintRehydrateFor(target, gesture);
 }
+// Each admitted Water gesture keeps its existing input record and owns material until its lift
+// publishes. A later queued start cannot borrow its lift token or reset its brush/history head.
+function _rapierPaintWaterPending() {
+	// One authority barrier owes the complete lifted prefix, including gestures not started yet.
+	return _rapierDrawState.waterStrokes?.findLast(receipt => receipt.ended)?.promise || null;
+}
+function _rapierPaintWaterFinish(gesture) {
+	const receipt = gesture?.waterStroke;
+	if (!receipt) return;
+	receipt.finished = true;
+	if (receipt.running) return;
+	const queue = _rapierDrawState.waterStrokes, at = queue?.indexOf(receipt) ?? -1;
+	if (at >= 0) queue.splice(at, 1);
+	receipt.resolve();
+}
+async function _rapierPaintWaterRun(gesture, work) {
+	const receipt = gesture.waterStroke, state = _rapierDrawState;
+	// Waiting also owns this receipt: cancelling a middle gesture must still wait for its
+	// predecessor, or the following gesture could overtake that predecessor's material.
+	receipt.running++;
+	try {
+		await receipt.before;
+		if (receipt.finished || gesture.paint?.discarded || !state.open || state.session !== receipt.session || _rapierDrawTool() !== receipt.tool) {
+			if (gesture.paint) gesture.paint.discarded = true;
+			_rapierPaintWaterFinish(gesture); return;
+		}
+		return await work();
+	} finally {
+		receipt.running--;
+		if (receipt.finished || gesture.paint?.discarded || !state.open || state.session !== receipt.session || _rapierDrawTool() !== receipt.tool) _rapierPaintWaterFinish(gesture);
+	}
+}
 function _rapierPaintBegin(evt, gesture) {
 	// The first dab's own clock (a measurement): when the stroke began, when its layer stood, when
 	// its brush was ready, when the seat was laid, when the first frame showed it. Read through
@@ -3197,7 +3318,15 @@ function _rapierPaintBegin(evt, gesture) {
 	// An eraser keeps the path it was swept along, so the same rub can be laid on every other painting under it (_rapierPaintEraseFan).
 	if (!gesture.fanReplay && !gesture.trail && (gesture.eraseInk || settings.erasing || settings.brushId === RAPIER_PAINT_ERASER_ID)) gesture.trail = { down: evt, moves: [], end: null, geom };
 	const queued = gesture.paint = { pending: true, session: _rapierDrawState.session, tool: _rapierDrawTool(), settings, geom, downEvt: evt, moveEvents: [], ended: false, endEvt: null };
-	void _rapierPaintStart(evt, gesture, queued, timing).catch(error => _rapierPaintStrokeFailed(gesture, error));
+	let start;
+	if (settings.mode === 'water') {
+		const queue = _rapierDrawState.waterStrokes || (_rapierDrawState.waterStrokes = []);
+		let resolve;
+		const receipt = gesture.waterStroke = {gesture, session: queued.session, tool: queued.tool, before: queue.at(-1)?.promise, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve(), running: 0, finished: false, ended: false};
+		queue.push(receipt);
+		start = _rapierPaintWaterRun(gesture, () => _rapierPaintStart(evt, gesture, queued, timing));
+	} else start = _rapierPaintStart(evt, gesture, queued, timing);
+	void start.catch(error => _rapierPaintStrokeFailed(gesture, error));
 }
 async function _rapierPaintStart(evt, gesture, queued, timing) {
 	const state = _rapierDrawState, {settings, geom} = queued;
@@ -3206,7 +3335,8 @@ async function _rapierPaintStart(evt, gesture, queued, timing) {
 	if (!_rapierPaintRemoteNow(settings.mode || 'paint')) { await _rapierPaintStartPainter(settings.mode || 'paint'); if (!live()) return; }
 	// Resolve a new gesture's target after earlier cap sheets have reached the recipe. Otherwise a
 	// material tool on the clean sheet could start decoding the picture from before that flip.
-	if (_rapierPaintLayer()?.previousFlip || _rapierPaintLayer()?.pendingLift) { const wait = _rapierPaintFlushRevision(); if (wait) { await wait; if (!live()) return; } }
+	const preceding = _rapierPaintLayer();
+	if (preceding?.previousFlip || preceding?.pendingLift) { const wait = _rapierPaintFlushRevision(preceding, settings.mode === 'water'); if (wait) { await wait; if (!live()) return; } }
 	const drying = _rapierPaintLayer();
 	if (drying?.dryFinishing) {
 		drying.surface.finishWetWork();
@@ -3219,7 +3349,7 @@ async function _rapierPaintStart(evt, gesture, queued, timing) {
 		// The sheet this one replaces settles first (a stroke the budget refused is kept, a wash dried), as closing a layer always owes.
 		const closing = _rapierPaintCloseLayer();
 		if (closing) { await closing; if (!live()) return; }
-		_rapierPaintOpenLayer(undefined, null, null, null, settings.mode || 'paint');
+		_rapierPaintOpenGestureLayer(evt, settings, geom);
 		timing.opened = true;
 	}
 	timing.layer = performance.now();
@@ -3508,11 +3638,12 @@ function _rapierPaintMove(events, gesture) {
 }
 function _rapierPaintEnd(evt, gesture) {
 	if (typeof _rapierDrawBackupTouch === 'function') _rapierDrawBackupTouch();
+	if (gesture.waterStroke) gesture.waterStroke.ended = true;
 	const layer = _rapierPaintLayer(), paint = gesture.paint;
-	if (!paint || paint.discarded) return;
+	if (!paint || paint.discarded) { if (gesture.waterStroke) _rapierPaintWaterFinish(gesture); return; }
 	if (paint.pending) { paint.ended = true; paint.endEvt = evt; return; }
 	paint.lifted = true;
-	if (!layer) return;
+	if (!layer) { if (gesture.waterStroke) _rapierPaintWaterFinish(gesture); return; }
 	if (layer.holdRaf) { cancelAnimationFrame(layer.holdRaf); layer.holdRaf = 0; }
 	const p = _rapierPaintEventPoint(evt, paint.geom, layer);
 	paint.reached = paint.reached || p.reach;
@@ -3520,13 +3651,15 @@ function _rapierPaintEnd(evt, gesture) {
 	if (layer.mode === 'water') {
 		paint.brush.strokeTo(layer.surface, p.x * RAPIER_PAINT_GRAIN, p.y * RAPIER_PAINT_GRAIN, 0, p.tiltX, p.tiltY, Math.max(0, (p.t - paint.last) / 1000), 1, 0, p.twist, paint.inputKind, p.t);
 		const held = _rapierPaintLiftHold(layer);
+		const receipt = gesture.waterStroke;
+		if (receipt) receipt.running++;
 		void _rapierWaterPreflight(layer).then(() => {
 			_rapierPaintReleaseStroke(gesture); layer.paintVersion = (layer.paintVersion || 0) + 1;
-			return layer.surface.sync().then(() => _rapierPaintEndDecide(layer,held));
+			return layer.surface.sync().then(() => { _rapierPaintEndDecide(layer,held); return held.promise; });
 		}).catch(error => {
 			if (layer.pendingLift === held) layer.pendingLift = null; held.decide(); held.resolve();
 			_rapierPaintStrokeFailed(gesture,error);
-		});
+		}).finally(() => { if (receipt) { receipt.running--; _rapierPaintWaterFinish(gesture); } });
 		_rapierPaintScheduleBlit(); return;
 	}
 	paint.tail.push({ p, dt: _rapierDrawClamp((p.t - paint.last) / 1000, 0.0005, 0.5), press: 0, at: paint.travel });
@@ -3931,9 +4064,12 @@ function _rapierPaintWarmView(geom = _rapierDrawPointerGeometry()) {
 function _rapierPaintWarmTarget() {
 	const state = _rapierDrawState;
 	if (!state.open || !['paint', 'water'].includes(_rapierDrawTool()) || state.gesture || _rapierPaintLayerValid()) return;
+	const target = _rapierPaintTarget();
+	// An untouched Water view owns no material. The first admitted gesture or action
+	// allocates its sheet; merely opening the view must not consume its GPU budget.
+	if (_rapierDrawTool() === 'water' && !target) return;
 	// The painter starts the first time Paint is up, ahead of the hand, so that the first stroke does not wait for it.
 	if (!_rapierPaintRemoteNow()) { _rapierPaintStartPainter().then(() => _rapierPaintWarmTarget(), () => {}); return; }
-	const target = _rapierPaintTarget();
 	if (target) { _rapierPaintRehydrateFor(target); return; }
 	// Nothing to pick up and nothing drawn yet: the empty surface and its overlay are built now,
 	// while the hand is still on its way, instead of on the frame the first dab needs. Only a

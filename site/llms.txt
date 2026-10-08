@@ -22,4 +22,7 @@ For your own app, `rapier-embed` mounts the editor with your storage and revisio
 - [Self-contained Markdown](https://rapier.website/markdown-standard): CommonMark with embedded pictures and layout in one .md file.
 - [Will/1](https://rapier.website/will): regions to edit, append to or keep.
 - [The editor](https://rapier.website): open it, install it, or download rapier.html and keep it.
+- [Notes](https://rapier.website/notes): Markdown notes with pictures, cards, checklists and recordings.
+- [Draw](https://rapier.website/draw): editable shapes, diagrams, lettering and paint in your document.
+- [Watercolor](https://rapier.website/watercolor): paint with flowing pigments and wet washes, then keep transparent artwork in an editable drawing.
 - [Everything, in one file](https://rapier.website/llms-full.txt): the public documents in full.

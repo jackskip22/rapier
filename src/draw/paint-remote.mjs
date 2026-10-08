@@ -76,7 +76,9 @@ export class RemotePaintSurface {
 		this._push({target: 'surface', id: this.id, method: 'fromRGBA8', args: [data, width, height, x, y]}, {transfer: buffer instanceof ArrayBuffer && data.byteOffset === 0 && data.byteLength === buffer.byteLength ? buffer : null});
 	}
 	fromWaterMaterial(replay,session) {
-		return this._push({target:'surface',id:this.id,method:'fromWaterMaterial',args:[structuredClone(replay),session,this.importOffset.slice()]},{structural:true,ticket:true}).promise;
+		const work=this._push({target:'surface',id:this.id,method:'fromWaterMaterial',args:[structuredClone(replay),session,this.importOffset.slice()]},{structural:true,ticket:true}).promise;
+		// Explicit awaited material work must also progress while page/native pause stops frames.
+		this.remote.flush().catch(()=>{});return work;
 	}
 	grow(left = 0, top = 0, right = 0, bottom = 0) {
 		left = Math.max(0, Math.ceil(left)); top = Math.max(0, Math.ceil(top)); right = Math.max(0, Math.ceil(right)); bottom = Math.max(0, Math.ceil(bottom));
@@ -120,15 +122,34 @@ export class RemotePaintSurface {
 	}
 	// Everything queued so far has run and the mirror is the painter's own.
 	sync() { return this.remote.sync(this); }
+	bindDisplay(canvas) {
+		if(this.options.mode!=='water'||this.gone)throw new Error('The Water display is no longer live');
+		const generation=this.displayGeneration=(this.displayGeneration||0)+1;
+		this.remote.flush().catch(()=>{});
+		return this.remote.client.request('bindDisplay',{surfaceId:this.id,generation,canvas},[canvas]).then(reply=>{
+			if(!this.gone&&this.displayGeneration===generation)this.remote._state(reply);
+		},error=>{throw this.remote._fail(error);});
+	}
+	repaintDisplay() {
+		if(this.gone)return Promise.resolve();
+		// A full repaint also fences any submitted pre-rollback or pre-loss reply already in flight.
+		const generation=++this.displayGeneration;
+		this.remote.flush().catch(()=>{});
+		return this.remote.client.request('display',{surfaceId:this.id,generation}).then(reply=>{
+			if(!this.gone&&this.displayGeneration===generation)this.remote._state(reply);
+		},error=>{throw this.remote._fail(error);});
+	}
 	// Pixels of a box (the whole surface when none), as the painter holds them after everything queued so far.
 	async readRGBA8(box = null) { return (await this.remote.read(this, {box})).pixels; }
 	// The painted box and its pixels at this point of the order; `box` and `pixels` are null for an empty surface.
+	// Water's metadataOnly option returns the ordered journal and box, without pixels or verified custody.
 	readBounds(options = {}) { return this.remote.read(this, {bounds: true, ...options}); }
 	waterSheet() { return {id:this.sheetId,width:this.width,height:this.height,offset:this.importOffset.slice(),scale:this.scale,toothOX:this.toothOX,toothOY:this.toothOY,options:{...structuredClone(this.options),mode:'water',paper:this.options.paper || 'cold-press'}}; }
 	applyWater(action) {
 		const data=structuredClone(action),dx=this.toothOX/(this.scale*3),dy=this.toothOY/(this.scale*3),point=([x,y,...rest])=>[x+dx,y+dy,...rest];
 		if(data.paths)data.paths=data.paths.map(path=>path.map(point));if(data.at)data.at=point(data.at);
-		return this._push({target:'surface',id:this.id,method:'applyWater',args:[data]},{ticket:true}).promise;
+		const work=this._push({target:'surface',id:this.id,method:'applyWater',args:[data]},{ticket:true}).promise;
+		this.remote.flush().catch(()=>{});return work;
 	}
 	readMaterial(box=null) { return this.remote.read(this,{box,snapshot:true}); }
 	samplePigment(x,y) { return this.remote.read(this,{sample:[x+this.toothOX/(this.scale*3),y+this.toothOY/(this.scale*3)],verify:false}).then(reply=>reply.sample || reply.pigment || null); }
@@ -368,5 +389,6 @@ export function createPaintRemote(client, {onFailure = null, frame = schedule} =
 		},
 		close() { remote._fail(new Error('Paint remote is closed')); return client.close?.(); },
 	};
+	client.watchFailure?.(remote._fail);
 	return remote;
 }

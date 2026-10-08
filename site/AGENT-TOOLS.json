@@ -1,5 +1,5 @@
 {
-  "release": "1.1.82",
+  "release": "1.1.83",
   "core": [
     {
       "name": "document.set_view",
@@ -1290,6 +1290,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -1714,6 +1718,10 @@
               "remaining": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "enumerate": {
+                "type": "object",
+                "additionalProperties": true
               }
             },
             "additionalProperties": true
@@ -1853,6 +1861,13 @@
                     "type": "boolean"
                   }
                 },
+                "additionalProperties": true
+              },
+              "drawingIntent": {
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "additionalProperties": true
               }
             },
@@ -2648,7 +2663,7 @@
           "cursor": {
             "type": "string",
             "maxLength": 128,
-            "description": "Continues a long passage."
+            "description": "Continues a long passage or both sides of a comparison difference."
           },
           "start": {
             "type": "integer",
@@ -2723,6 +2738,7 @@
             "type": "string",
             "enum": [
               "ok",
+              "pending",
               "target_gone",
               "conflict",
               "yielded",
@@ -2777,6 +2793,33 @@
           "omitted": {
             "type": "integer",
             "minimum": 0
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
           },
           "objectId": {
             "type": "string",
@@ -2888,6 +2931,26 @@
           "inserted_chars": {
             "type": "integer",
             "minimum": 0
+          },
+          "compareId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "removed_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "removed_end": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inserted_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inserted_end": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -2908,7 +2971,15 @@
           "query": {
             "type": "string",
             "maxLength": 512,
-            "description": "The text to find. With kind: a code name, or the element's words (a heading also by # to ######, a task by [ ] or [x]); empty lists every Markdown element of the kind."
+            "description": "The text to find. Empty enumerates every comparison difference. With kind: a code name, or the element's words (a heading also by # to ######, a task by [ ] or [x]); empty lists every Markdown element of the kind."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "source",
+              "comparison"
+            ],
+            "description": "Search source even while a comparison is open, or search comparison differences. Defaults to the open comparison, otherwise source."
           },
           "case_sensitive": {
             "type": "boolean",
@@ -3231,6 +3302,10 @@
           },
           "representation": {
             "const": "source"
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -3568,6 +3643,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -3686,6 +3765,7 @@
             "type": "string",
             "enum": [
               "applied",
+              "pending",
               "unchanged",
               "target_gone",
               "conflict",
@@ -3725,6 +3805,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -3761,6 +3845,33 @@
           },
           "receipt": {
             "type": "object",
+            "additionalProperties": true
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
             "additionalProperties": true
           },
           "replaced": {
@@ -3898,6 +4009,10 @@
           "remaining": {
             "type": "integer",
             "minimum": 0
+          },
+          "enumerate": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": "string",
@@ -4060,9 +4175,17 @@
             "type": "integer",
             "minimum": 0
           },
+          "enumerate": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "visible": {
             "type": "boolean",
             "description": "Present only when a local editor confirmed the comparison. Omitted for asynchronous hosted rendering; this is not editor presence. get_context reports presence."
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -4198,6 +4321,10 @@
           },
           "representation": {
             "const": "source"
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -4346,7 +4473,7 @@
     {
       "name": "document.point",
       "title": "Point to inspected work",
-      "description": "Points at an inspected passage, drawing object or change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.",
+      "description": "Points at an inspected passage, drawing object, applied change or pending review change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.",
       "effect": "view",
       "class": "write",
       "inputSchema": {
@@ -4945,6 +5072,21 @@
       "inputSchema": {
         "type": "object",
         "properties": {
+          "presentation": {
+            "type": "object",
+            "properties": {
+              "open": {
+                "type": "boolean",
+                "description": "Open the committed drawing in the attached editor; true by default. Human navigation takes priority."
+              },
+              "replay": {
+                "type": "boolean",
+                "description": "Show the accepted turn through Draw replay; true by default. This never changes material simulation time."
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          },
           "recipe": {
             "type": "object",
             "additionalProperties": true,
@@ -4957,7 +5099,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. Water uses {\"kind\":\"paint\",\"mode\":\"water\",\"seed\":1,\"paper\":\"cold-press\",\"actions\":[{\"kind\":\"stroke\",\"brush\":\"water/round\",\"pigment\":\"ultramarine\",\"paths\":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists its pigment palette, paper settings and action controls beside the Paint brushes. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {\"kind\":\"text\",\"text\":\"Hi\",\"at\":[10,10],\"textSize\":16}; Trace uses {\"kind\":\"trace\",\"shapeId\":\"outline\"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. Water uses {\"kind\":\"paint\",\"mode\":\"water\",\"seed\":1,\"paper\":\"cold-press\",\"actions\":[{\"kind\":\"stroke\",\"brush\":\"water/round\",\"pigment\":\"ultramarine\",\"paths\":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists every brush; rapier.guide with topic paint lists the complete pigment palette, paper settings, controls and actions. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {\"kind\":\"text\",\"text\":\"Hi\",\"at\":[10,10],\"textSize\":16}; Trace uses {\"kind\":\"trace\",\"shapeId\":\"outline\"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform."
           },
           "direction": {
             "type": "string",
@@ -6435,6 +6577,10 @@
           },
           "representation": {
             "const": "source"
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -8881,6 +9027,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -9333,6 +9483,10 @@
               "remaining": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "enumerate": {
+                "type": "object",
+                "additionalProperties": true
               }
             },
             "additionalProperties": true
@@ -9472,6 +9626,13 @@
                     "type": "boolean"
                   }
                 },
+                "additionalProperties": true
+              },
+              "drawingIntent": {
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "additionalProperties": true
               }
             },
@@ -10321,7 +10482,7 @@
           "cursor": {
             "type": "string",
             "maxLength": 128,
-            "description": "Continues a long passage."
+            "description": "Continues a long passage or both sides of a comparison difference."
           },
           "start": {
             "type": "integer",
@@ -10398,6 +10559,7 @@
             "type": "string",
             "enum": [
               "ok",
+              "pending",
               "target_gone",
               "conflict",
               "yielded",
@@ -10452,6 +10614,33 @@
           "omitted": {
             "type": "integer",
             "minimum": 0
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
           },
           "objectId": {
             "type": "string",
@@ -10563,6 +10752,26 @@
           "inserted_chars": {
             "type": "integer",
             "minimum": 0
+          },
+          "compareId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "removed_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "removed_end": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inserted_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inserted_end": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -10609,7 +10818,15 @@
           "query": {
             "type": "string",
             "maxLength": 512,
-            "description": "The text to find. With kind: a code name, or the element's words (a heading also by # to ######, a task by [ ] or [x]); empty lists every Markdown element of the kind."
+            "description": "The text to find. Empty enumerates every comparison difference. With kind: a code name, or the element's words (a heading also by # to ######, a task by [ ] or [x]); empty lists every Markdown element of the kind."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "source",
+              "comparison"
+            ],
+            "description": "Search source even while a comparison is open, or search comparison differences. Defaults to the open comparison, otherwise source."
           },
           "case_sensitive": {
             "type": "boolean",
@@ -10960,6 +11177,10 @@
           },
           "representation": {
             "const": "source"
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -11351,6 +11572,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -11497,6 +11722,7 @@
             "type": "string",
             "enum": [
               "applied",
+              "pending",
               "unchanged",
               "target_gone",
               "conflict",
@@ -11536,6 +11762,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -11572,6 +11802,33 @@
           },
           "receipt": {
             "type": "object",
+            "additionalProperties": true
+          },
+          "pending": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "surface-fact",
+                  "human-review"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "proposalId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "requirements": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
             "additionalProperties": true
           },
           "replaced": {
@@ -11737,6 +11994,10 @@
           "remaining": {
             "type": "integer",
             "minimum": 0
+          },
+          "enumerate": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": "string",
@@ -11927,9 +12188,17 @@
             "type": "integer",
             "minimum": 0
           },
+          "enumerate": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "visible": {
             "type": "boolean",
             "description": "Present only when a local editor confirmed the comparison. Omitted for asynchronous hosted rendering; this is not editor presence. get_context reports presence."
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -12092,6 +12361,10 @@
           },
           "representation": {
             "const": "source"
+          },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
           },
           "changeId": {
             "type": [
@@ -12290,7 +12563,7 @@
     {
       "name": "document.point",
       "title": "Point to inspected work",
-      "description": "Points at an inspected passage, drawing object or change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.",
+      "description": "Points at an inspected passage, drawing object, applied change or pending review change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -13030,6 +13303,21 @@
             "maxLength": 64,
             "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
           },
+          "presentation": {
+            "type": "object",
+            "properties": {
+              "open": {
+                "type": "boolean",
+                "description": "Open the committed drawing in the attached editor; true by default. Human navigation takes priority."
+              },
+              "replay": {
+                "type": "boolean",
+                "description": "Show the accepted turn through Draw replay; true by default. This never changes material simulation time."
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          },
           "recipe": {
             "type": "object",
             "additionalProperties": true,
@@ -13042,7 +13330,7 @@
               "type": "object",
               "additionalProperties": true
             },
-            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. Water uses {\"kind\":\"paint\",\"mode\":\"water\",\"seed\":1,\"paper\":\"cold-press\",\"actions\":[{\"kind\":\"stroke\",\"brush\":\"water/round\",\"pigment\":\"ultramarine\",\"paths\":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists its pigment palette, paper settings and action controls beside the Paint brushes. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {\"kind\":\"text\",\"text\":\"Hi\",\"at\":[10,10],\"textSize\":16}; Trace uses {\"kind\":\"trace\",\"shapeId\":\"outline\"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform."
+            "description": "Figures use kind, not type. Example: [{\"kind\":\"rect\",\"id\":\"start\",\"label\":\"Start\"},{\"kind\":\"rect\",\"id\":\"end\",\"label\":\"Finish\"},{\"kind\":\"arrow\",\"from\":\"start\",\"to\":\"end\"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {\"kind\":\"paint\",\"seed\":1,\"strokes\":[{\"brush\":\"rapier/oil\",\"colour\":\"#2255cc\",\"size\":50,\"points\":[[x,y,pressure],...]}]}. Water uses {\"kind\":\"paint\",\"mode\":\"water\",\"seed\":1,\"paper\":\"cold-press\",\"actions\":[{\"kind\":\"stroke\",\"brush\":\"water/round\",\"pigment\":\"ultramarine\",\"paths\":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists every brush; rapier.guide with topic paint lists the complete pigment palette, paper settings, controls and actions. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {\"kind\":\"text\",\"text\":\"Hi\",\"at\":[10,10],\"textSize\":16}; Trace uses {\"kind\":\"trace\",\"shapeId\":\"outline\"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform."
           },
           "direction": {
             "type": "string",
@@ -14523,6 +14811,10 @@
           "representation": {
             "const": "source"
           },
+          "collaboration": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "changeId": {
             "type": [
               "string",
@@ -15668,10 +15960,18 @@
     {
       "name": "rapier.guide",
       "title": "How to use Rapier",
-      "description": "Returns Rapier's usage guide and workflows when host instructions are unavailable.",
+      "description": "Returns Rapier's usage guide and workflows when host instructions are unavailable. With topic paint, returns the complete painting registry.",
       "inputSchema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "paint"
+            ],
+            "description": "Read the complete Paint and Water brush, control, paper, pigment and action registry."
+          }
+        },
         "required": [],
         "additionalProperties": true
       },
@@ -15686,6 +15986,10 @@
           },
           "instructions": {
             "type": "string"
+          },
+          "paint": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "required": [
@@ -15875,13 +16179,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.82.html",
+          "resourceUri": "ui://rapier/editor-1.1.83.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.82.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.83.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -15917,7 +16221,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "afterRevision": {
             "type": "integer",
@@ -16026,7 +16330,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -16183,7 +16487,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -16329,7 +16633,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -16416,6 +16720,18 @@
               "end"
             ],
             "additionalProperties": false
+          },
+          "navigationSequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "drawingReceipts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
           },
           "drawing": {
             "type": [
@@ -16749,7 +17065,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -16881,7 +17197,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -17031,7 +17347,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -17250,7 +17566,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -17443,6 +17759,167 @@
       }
     },
     {
+      "name": "document.material_ack",
+      "title": "Return prepared material",
+      "description": "Supplies private Water pixels or a material sample for the exact pending request; the kernel retains source-edit authority.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "editorKey": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "materialId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "fact": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "material"
+              },
+              "documentId": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "job": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "refused"
+                ]
+              },
+              "value": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "kind",
+              "documentId",
+              "revision",
+              "job",
+              "outcome"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "document",
+          "editorKey",
+          "expectedRevision",
+          "materialId",
+          "fact"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "refused",
+              "uncertain"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "will",
+              "ask",
+              "check",
+              "proposal"
+            ]
+          },
+          "reviewId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "document": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private."
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "type": "integer"
+          },
+          "representation": {
+            "const": "source"
+          },
+          "materialId": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Return prepared material",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          }
+        ],
+        "website.rapier/tool-class": "write",
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        },
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Working in Rapier.",
+        "openai/toolInvocation/invoked": "Rapier has replied."
+      }
+    },
+    {
       "name": "document.editor_ack",
       "title": "Return an editor receipt",
       "description": "Records the editor's receipt for one exact preference or device request, including the person's later choice of a preference.",
@@ -17457,7 +17934,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -17747,7 +18224,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           },
           "expectedRevision": {
             "type": "integer",
@@ -17870,7 +18347,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           }
         },
         "required": [
@@ -17972,7 +18449,7 @@
     {
       "name": "document.pair_browser",
       "title": "Pair a browser",
-      "description": "Names the four-letter code the person gives you from editor_url. The person then chooses ALLOW on that page to connect this browser to this workspace for a day. One use; a code lasts one minute. Five misses lock pairing for the code window.",
+      "description": "Names the four-letter code the person gives you from editor_url. A connected workspace returns owner_approval_url for approval in the browser where Rapier was connected; then the target browser chooses ALLOW. One use; code lasts one minute; five misses lock pairing for the window.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -18036,6 +18513,10 @@
           },
           "paired": {
             "type": "boolean"
+          },
+          "owner_approval_url": {
+            "type": "string",
+            "maxLength": 2048
           }
         },
         "required": [
@@ -18070,7 +18551,7 @@
     {
       "name": "document.pair_status",
       "title": "Show the pairing code",
-      "description": "Returns the page's pairing state. After the agent names the code, the page posts the person's allow or cancel decision; polling grants no session.",
+      "description": "Returns the page's pairing state. A connected workspace first requires approval in its owner's connected browser, then the target page collects the person's allow or cancel decision; polling grants no session.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -18099,6 +18580,7 @@
             "type": "string",
             "enum": [
               "waiting",
+              "owner_confirmation_required",
               "confirmation_required",
               "paired",
               "cancelled",
@@ -18145,6 +18627,10 @@
           "codeExpiresAt": {
             "type": "string",
             "maxLength": 64
+          },
+          "owner_approval_url": {
+            "type": "string",
+            "maxLength": 2048
           }
         },
         "required": [
@@ -18196,7 +18682,7 @@
           "editorKey": {
             "type": "string",
             "maxLength": 512,
-            "description": "The editor key from the Apps UI resource, held by the host and editor alone."
+            "description": "The editor key from private tool-result _meta.rapier, held by the host and editor alone."
           }
         },
         "required": [

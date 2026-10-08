@@ -72,6 +72,8 @@ fn fillWeight(p:vec4<f32>,cumulative:bool)->f32 {
 `;
 
 const body = {
+ // The retained output is straight sRGB; a transparent canvas receives premultiplied sRGB.
+ present: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { let color=textureLoad(t0,vec2<i32>(p.xy),0);return vec4<f32>(color.rgb*color.a,color.a); }`,
  stampInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=footprint(uv(p));return Pair(u.v[7]*f,u.v[8]*f); }`,
  stampWet: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return vec4<f32>(u.v[6].y*footprint(uv(p)),0,0,0); }`,
  splatInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=gaussian(uv(p));return Pair(u.v[7]*f,u.v[8]*f); }`,
@@ -152,8 +154,9 @@ const body = {
  }}
  return vec4<f32>(select(0.0,1.0,peak>0.004),0,0,1);
  }`,
+ // Native pixel coordinates keep procedural grain independent of the allocated rectangle.
  paperField: PAPER_WGSL+`@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
- let point=(uv(p)*u.v[0].xy+u.v[13].xy)*u.v[12].x;
+ let point=(vec2<f32>(p.x,u.v[0].y-p.y)+u.v[13].xy)*u.v[12].x;
  return vec4<f32>(clamp(waterPaperField(point,u.v[12].y,u32(u.v[12].z)),vec3<f32>(0),vec3<f32>(1)),1);
  }`,
  paperLight: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {

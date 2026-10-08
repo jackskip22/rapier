@@ -1,6 +1,8 @@
+import {sha256} from '../kit/ledger/hash.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
-import { createKernel, createState, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, LIMITS } from '../agent/kernel.mjs';
+import { createKernel, createState, canonicalJson, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, LIMITS } from '../agent/kernel.mjs';
 import {prepareDoorLetters} from './letters.mjs';
+import {normalizeLabel} from '../images/assets.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
@@ -16,9 +18,10 @@ import { visualResult, sameVisualDrawing } from '../agent/visual.mjs';
 import {editorResult, editorFailure, editorPreferences, EDITOR_LIMITS, EDITOR_TOOL_ACTIONS} from '../agent/editor.mjs';
 import { createRequestWait } from './request-lifetime.mjs';
 import { exportRenderer } from './export-port.mjs';
-import {handleOAuth, oauthChallenge, oauthForbidden, oauthOrigin, HOUSE_STYLE} from './oauth.mjs';
+import {handleOAuth, oauthChallenge, oauthForbidden, oauthOrigin, HOUSE_STYLE, validGrantReference, oauthGrantCurrent} from './oauth.mjs';
 import { PAIRED_PATH, PAIR_CODE, PAIR_CODE_MS, MAX_PAIRINGS, PAIR_SESSION_MS, PAGE_CSP, sessionCookie, pendingCookie, readCookie, setCookie, newCode, newSecret, mintSession, verifySession, pageFlags } from './paired.mjs';
 import {DOOR_LIMITS} from './limits.mjs';
+import {MATERIAL_LIMITS, materialDescription, materialMatches, admitMaterialResult} from '../agent/material.mjs';
 
 // Two eras on one endpoint (MCP 2026-07-28 dual-era): legacy `initialize` plus header, modern per-request `_meta`. Stateless in both;
 // PROTOCOL_VERSION names the legacy era.
@@ -46,16 +49,23 @@ const EDITOR_ONLY_TOOLS = new Set(HOST_TOOLS.filter(tool => tool.visibility?.inc
 const EDITOR_REQUEST_TOOLS = new Set(['document.set_view', ...Object.keys(EDITOR_TOOL_ACTIONS)]);
 // /muse lists what an agent calls and carries no embedded editor: the person edits at editor_url, the paired page,
 // which calls the editor's own operations over its own route.
-// The Muse host holds a tool call well under 20 s (the host evidence), so its door bounds a wait to MUSE_WAIT_MS through the one wait
-// adapter and its listing says so; /mcp keeps the catalogue's range.
+// This endpoint bounds interactive waits to MUSE_WAIT_MS; /mcp keeps the catalogue's range.
 const MUSE_WAIT_MS = 15000;
-const museWait = tool => tool.name !== 'document.wait_for_user' ? tool : {...tool, inputSchema: {...tool.inputSchema, properties: {...tool.inputSchema.properties,
-  timeout_ms: {...tool.inputSchema.properties.timeout_ms, maximum: MUSE_WAIT_MS, description: 'How long to wait: 1,000 to 15,000 milliseconds on this door; 15,000 by default.'}}}};
-const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museWait));
+const museDescriptor = tool => {
+  if (tool.name === 'rapier.open') {
+    const {file, ...properties} = tool.inputSchema.properties;
+    return {...tool, description: 'Creates an editable workspace from document text, or resumes one by its document value. Returns editor_url for the live workspace in a browser. Use document.draw for editable SVG drawings and document.apply_edits for Mermaid fences. Workspaces expire after 30 idle days.',
+      inputSchema: {...tool.inputSchema, properties}};
+  }
+  return tool.name !== 'document.wait_for_user' ? tool : {...tool, inputSchema: {...tool.inputSchema, properties: {...tool.inputSchema.properties,
+    timeout_ms: {...tool.inputSchema.properties.timeout_ms, maximum: MUSE_WAIT_MS, description: 'How long to wait: 1,000 to 15,000 milliseconds on this door; 15,000 by default.'}}}};
+};
+const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museDescriptor));
 const PAIR_BROWSER = 'document.pair_browser', PAIR_STATUS = 'document.pair_status';
 const MUSE_EXPORT_TEXT_CHARS = 60000;
 // Without a connection, on /mcp, the document value is the whole authority.
 const ANONYMOUS = Object.freeze({source: 'anonymous', scopes: Object.freeze(['rapier:read', 'rapier:write'])});
+const remotePrincipal = input => 'remote:' + input.capabilityHash + (input.connectionKey ? ':connection:' + input.connectionKey : '');
 const editorSecret = env => (editorSecretUsable(env.EDITOR_KEY_SECRET) ? env.EDITOR_KEY_SECRET : '');
 // One deployment verdict, read by /health and every entry point: a missing piece is refused, never permissive.
 // Development is ALLOW_UNMETERED_CREATE=true, never inferred. An absent or non-32-byte root secret serves no editor page.
@@ -196,7 +206,7 @@ async function rotatedCapability(capability, env) {
 }
 const ROTATE = 'document.rotate_capability';
 
-// Creation retries are names within one authenticated owner's namespace.
+// Creation retries belong to the verified connection; document ownership remains owner-scoped.
 const CREATE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 function createTokenRefusal(token) {
   if (!CREATE_TOKEN.test(token)) return 'createToken must be 1 to 128 URL-safe characters (A-Z a-z 0-9 _ -).';
@@ -208,8 +218,8 @@ function secretTokenRefusal(token) {
   if (new Set(token).size < 8) return 'Generate createToken at random: this one has too few distinct characters to keep the workspace private.';
   return null;
 }
-async function tokenCapability(token, env, ownerKey) {
-  const payload = encoder.encode(ownerKey ? 'rapier-create:' + ownerKey + ':' + token : 'rapier-create-v2:' + token);
+async function tokenCapability(token, env, ownerNamespace) {
+  const payload = encoder.encode(ownerNamespace ? 'rapier-create:' + ownerNamespace + ':' + token : 'rapier-create-v2:' + token);
   const secret = editorSecret(env);
   let raw;
   if (secret) {
@@ -229,6 +239,12 @@ const mintId = prefix => prefix + crypto.randomUUID().replaceAll('-', '');
 
 function snapshot(state, collaboration, viewIntent, visualIntent, exportIntent, editorIntent) {
   const compare = state.compare ? { id: state.compare.id, revision: state.compare.revision, baseline: state.compare.baseline, incoming: state.compare.incoming, name: state.compare.name, ...(state.compare.contribution ? {contribution: state.compare.contribution} : {}), reviewOnly: state.compare.reviewOnly === true, changes: state.compare.changes.map(({ id, start, end, incomingStart, incomingEnd, removed, inserted, status }) => ({ id, start, end, incomingStart, incomingEnd, removed, inserted, status })) } : null;
+  if (collaboration?.drawingIntent?.drawingPatch) {
+    // The source transaction carries presentation material once. The admitted editor expands
+    // its exact journal entry only when handing that turn to Draw.
+    const {drawingPatch, ...drawingIntent} = collaboration.drawingIntent;
+    collaboration = {...collaboration, drawingIntent};
+  }
   return { documentId: state.documentId, revision: state.revision, text: state.text, filename: state.filename, docKind: state.docKind, journal: state.journal, proposalBase: state.proposalBase, compare, collaboration, viewIntent: viewIntent || null, ...(visualIntent ? {visualIntent} : {}), ...(exportIntent ? {exportIntent} : {}), ...(editorIntent ? {editorIntent} : {}) };
 }
 
@@ -251,16 +267,21 @@ function agentReport(head) {
   return call ? { agent: { id: call.id, ago: Math.max(0, Date.now() - call.at), operation: call.operation, ...(call.kind ? { kind: call.kind } : {}) } } : {};
 }
 
+function drawingTurn(value) {
+  return value ? Object.fromEntries(['id', 'transactionId', 'documentId', 'revision', 'status', 'presentation', 'occurrence', 'reference', 'reason']
+    .filter(field => value[field] !== undefined).map(field => [field, value[field]])) : null;
+}
+
 function collaborationSummary(value) {
   const presence = value.presence, review = value.review;
-  return { posture: value.posture, readOnly: value.readOnly, agentPresence: value.agentPresence, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes } : {}), ...(review.splices ? { splices: review.splices } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
+  return { posture: value.posture, readOnly: value.readOnly, ...(value.drawingIntent ? {drawingIntent: drawingTurn(value.drawingIntent)} : {}), agentPresence: value.agentPresence, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes } : {}), ...(review.splices ? { splices: review.splices } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
 }
 
 // Model-facing: ids, statuses, counts; never splices. Built from the same collaboration() as collaborationSummary, without the editor's
 // aggregate of every agent's pointer (their words and owners): a caller's own presence is get_context's, never a shared fact.
 function collaborationContext(value) {
   const presence = value.presence, review = value.review;
-  return { posture: value.posture, readOnly: value.readOnly, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes.map(({ id, status, reason }) => ({ id, status, ...(reason ? { reason } : {}) })) } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
+  return { posture: value.posture, readOnly: value.readOnly, ...(value.drawingIntent ? {drawingIntent: drawingTurn(value.drawingIntent)} : {}), presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes.map(({ id, status, reason }) => ({ id, status, ...(reason ? { reason } : {}) })) } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
 }
 
 // Sorted defensively; storage order is not promised.
@@ -282,7 +303,8 @@ function viewChanged(before, after) {
 function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollaboration = true } = {}) {
   if (head) meta = {...meta, editorIssuedAt: head.editorIssuedAt ?? head.createdAt};
   const isError = value.isError || ['refused', 'invalid', 'conflict', 'yielded', 'target_gone'].includes(value.outcome);
-  const collaboration = value.collaboration ?? (fallbackCollaboration ? modelFacing ? head?.collaborationContext : head?.collaboration : undefined);
+  let collaboration = value.collaboration ?? (fallbackCollaboration ? modelFacing ? head?.collaborationContext : head?.collaboration : undefined);
+  if (modelFacing && collaboration?.drawingIntent) collaboration = {...collaboration, drawingIntent: drawingTurn(collaboration.drawingIntent)};
   const result = { ...value, outcome: value.outcome || 'ok', ...(head ? { documentId: head.documentId, revision: head.revision, documentRevision: value.documentRevision ?? head.revision, ...(value.replayed && value.documentRevision !== undefined ? {currentRevision: head.revision} : {}), version: head.version, filename: head.filename, docKind: head.docKind, chars: head.chars, ...(collaboration !== undefined ? {collaboration} : {}), ...(head.viewIntent ? { view: { ...value.view, id: head.viewIntent.id, kind: head.viewIntent.kind, revision: head.viewIntent.revision, status: head.viewIntent.status, ...(head.viewIntent.view ? {requested: head.viewIntent.view} : {}), ...(head.viewIntent.reason ? { reason: head.viewIntent.reason } : {}) } } : {}), expiresAt: new Date(head.expiresAt).toISOString() } : {}) };
   if (modelFacing && collaboration?.review && encoder.encode(JSON.stringify(result)).byteLength > LIMITS.resultBytes) {
     const review = collaboration.review;
@@ -293,10 +315,10 @@ function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollabo
 }
 
 function operationEnvelope(operation, recorded, head) {
-  const {hostedDownload, ...value} = recorded;
+  const {hostedDownload, drawingPatch, ...value} = recorded;
   if (operation === 'document.save' && value.saved) Object.assign(value, {verified: true, destination: 'workspace', durable: true});
   // A context refusal has no caller-scoped presence. The shared projection cannot substitute for it, in a first result or its replay.
-  const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.get_context'});
+  const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, drawingPatch ? {drawingPatch} : {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.get_context'});
   if (hostedDownload) result.content.push(hostedDownload);
   return result;
 }
@@ -477,7 +499,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
   const rawArgs = args;
   const humanNamed = ['document.comment', 'document.read_context'].includes(name) && (Object.hasOwn(args, 'editorKey') || typeof editorProof === 'string');
-  if (humanNamed && authority.source !== 'page' && typeof editorProof !== 'string') return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This operation needs the editor's own authority."));
+  if (humanNamed && (door === '/muse' || authority.source !== 'page' && typeof editorProof !== 'string')) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This operation needs the editor's own authority."));
   const keyArgument = humanNamed ? args.editorKey ?? editorProof : undefined;
   if (humanNamed) { args = {...args}; delete args.editorKey; }
   try { args = validateInput(descriptor.inputSchema, args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
@@ -488,8 +510,9 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return {isError: true, content: [{type: 'text', text: JSON.stringify(result.structuredContent)}]};
   }
   if (humanNamed) args.editorKey = keyArgument;
-  if (name === 'rapier.guide') return envelope(guideResult());
+  if (name === 'rapier.guide') return envelope(guideResult(args, args.topic === 'paint' ? agentPaintBrushRegistry() : null));
   if (name === PAIR_STATUS) return toolError(failure('PAIRING_PAGE_ONLY', 'Only the paired editor page asks for its own pairing code, on its own route.'));
+  if (door === '/muse' && name === 'rapier.open' && args.file) return toolError(failure('HOST_FILE_UNAVAILABLE', 'Host file references require an embedded editor. Read the file and pass its text to rapier.open.'));
   for (const field of ['text', 'query']) if (typeof args[field] === 'string' && contentBytes(args[field]) > MAX_TEXT_BYTES) return toolError(failure('TEXT_TOO_LARGE', `${field} exceeds the UTF-8 text limit.`, { limitBytes: MAX_TEXT_BYTES }));
   const verdict = deployment(env, {authentication: authority.source === 'server' ? 'server-bearer' : 'oauth'});
   if (!verdict.documents) return toolError(failure('STORAGE_UNAVAILABLE', 'The document storage binding is unavailable.'));
@@ -499,7 +522,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (name === 'rapier.open' && args.file && (/[\\/\u0000-\u001f\u007f]/.test(args.file.name) || !args.file.resourceUri.trim())) return toolError(failure('INVALID_DOCUMENT_INPUT', 'A host file needs a filename without a path and a nonempty resource URI.'));
   if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', 'Use the document value returned by rapier.open.'));
   const connectedOwner = page || anonymous ? null : await digest(authority.ownerId);
-  // A connection's retry name belongs to its verified owner; without a connection the createToken is a secret.
+  // A connection's retry name belongs to that verified connection; without one the createToken is a secret.
   // Without one, every create is a new workspace.
   const createToken = typeof args.createToken === 'string' ? args.createToken : null;
   if (create && createToken !== null) {
@@ -507,7 +530,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (refusal) return toolError(failure('INVALID_CREATE_TOKEN', refusal));
   }
   if (!create && args.createToken !== undefined) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'createToken belongs to a create. Reopening uses the existing document value.'));
-  const minted = create ? (createToken !== null ? await tokenCapability(createToken, env, connectedOwner) : newCapability()) : null;
+  const createNamespace = authority.source === 'oauth' ? connectedOwner + ':connection:' + authority.connectionId : connectedOwner;
+  const minted = create ? (createToken !== null ? await tokenCapability(createToken, env, createNamespace) : newCapability()) : null;
   // Cloudflare supplies the anonymous address; forwarding headers and document handles cannot select a new allowance.
   // Connected tokens share their verified connection's window, including refreshed tokens and calls from another address.
   const createBudget = create ? { takeId: await takeIdOf(minted), retryable: createToken !== null,
@@ -518,6 +542,9 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const document = create ? minted : page ? null : args.document;
   const ownerKey = page ? null : anonymous ? await anonymousOwner(document) : connectedOwner;
   const capabilityHash = document ? await digest(document) : null;
+  // Observation and retry authority belongs to the verified connection, across token refreshes.
+  // This private field is never taken from tool arguments; workspace ownership stays owner-scoped.
+  const connectionKey = authority.source === 'oauth' ? await digest(authority.connectionId) : null;
   const documentAddress = page ? page.address : await workspaceAddress(document, ownerKey);
   if (door === '/muse' && name === 'document.wait_for_user') args = {...args, timeout_ms: waitTimeout(args.timeout_ms, MUSE_WAIT_MS)};
   const editorBinding = {workspace: documentAddress, connection: page ? page.authority.ownerKey || '' : authority.connectionId || authority.ownerId || ''};
@@ -563,7 +590,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   }
   // Pending observations and private paint work follow client disconnects. The
   // operation still owns its durable receipt after cancellation or publication.
-  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(['document.wait_for_user', 'document.inspect_visual', 'document.draw', 'document.undo_agent_change'].includes(name) || EDITOR_REQUEST_TOOLS.has(name) || name === 'document.export' && ['docx', 'pdf'].includes(input.format) ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: serializeJson({ operation: name, args: input, create, ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(['document.export', 'document.propose'].includes(name) ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
+  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(['document.wait_for_user', 'document.inspect_visual', 'document.draw', 'document.undo_agent_change'].includes(name) || name === 'document.read_context' && input.paintSample || EDITOR_REQUEST_TOOLS.has(name) || name === 'document.export' && ['docx', 'pdf'].includes(input.format) ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: serializeJson({ operation: name, args: input, create, ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(['document.export', 'document.propose'].includes(name) ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
   if (!response.ok) {
     const identity = ['operation_id', 'commitId', 'decisionId', 'createToken'].find(key => args[key] !== undefined);
     const retryable = Boolean(identity) || !create && (EDITOR_ONLY_TOOLS.has(name) || descriptor.annotations.readOnlyHint);
@@ -576,7 +603,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const result = await response.json();
   if (result.isError) return result;
   const issuedAt = result._meta?.rapier?.editorIssuedAt;
-  if ((name === 'rapier.open' || editorSource === 'page' && editorActivity === true) && Number.isSafeInteger(issuedAt)) {
+  if (door !== '/muse' && (name === 'rapier.open' || editorSource === 'page' && editorActivity === true) && Number.isSafeInteger(issuedAt)) {
     result._meta = {...result._meta, rapier: {...result._meta?.rapier, editorKey: await mintEditorKey(editorSecret(env), issuedAt, editorBinding), editorDocument: page ? page.id : document}};
   }
   if (successor && result.structuredContent?.rotated === true) {
@@ -587,6 +614,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   // The paired page names its workspace by id and never receives a reference.
   if (page) return result;
   result.structuredContent = { ...result.structuredContent, document, ...(name === 'rapier.open' ? { editor_url: new URL('/d/' + pageId(documentAddress), request.url).href } : {}) };
+  if (name === PAIR_BROWSER && /^[a-f0-9]{64}$/.test(result.structuredContent.ownerApprovalId || '')) {
+    const {ownerApprovalId, ...value} = result.structuredContent;
+    result.structuredContent = {...value, owner_approval_url: new URL('/d/' + pageId(documentAddress) + '?pair=' + ownerApprovalId, request.url).href};
+  }
   if (file || create && Object.keys(args).length === 0) result._meta = {...result._meta, rapier: {...result._meta?.rapier, ...(file ? {hostFile: file} : {home: true})}};
   return result;
 }
@@ -710,7 +741,7 @@ async function handleRequest(request, env, authority) {
     if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return new Response(null, {status: 503, headers});
     try {
       return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(new Request('https://rapier.internal/export', {
-        method: request.method, headers: granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId)},
+        method: request.method, headers: granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId), ...(authority.grant ? {'X-Rapier-Grant': JSON.stringify(authority.grant)} : {})},
       }));
     } catch { return new Response(null, {status: 503, headers}); }
   }
@@ -733,6 +764,8 @@ async function handleRequest(request, env, authority) {
     if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return refused('Return storage is unavailable.', 503);
     try {
       const headers = new Headers(request.headers);
+      headers.delete('X-Rapier-Grant');
+      if (authority?.grant) headers.set('X-Rapier-Grant', JSON.stringify(authority.grant));
       if (granted) headers.set('X-Rapier-Return-Hash', await digest(token));
       else {
         headers.set('X-Rapier-Return-ID', match[2]);
@@ -781,6 +814,7 @@ async function handleRequest(request, env, authority) {
   if (door === '/muse' && !authority) return oauthChallenge(request, env, ['rapier:read', 'rapier:write', 'offline_access']);
   if (door === '/mcp') authority ??= ANONYMOUS;
   if (paired) {
+    if (url.searchParams.has('pair')) return approvePairing(request, env, paired[1], authority);
     authority = await pageCaller(request, env, paired[1], authority);
     if (!authority) return new Response('Not found', { status: 404 });
     if (['GET', 'HEAD'].includes(request.method)) return pairedPage(request, env, authority);
@@ -886,6 +920,7 @@ async function handleRequest(request, env, authority) {
         }
         if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
         result = await callTool(params.name, params.arguments || {}, env, request, authority, modern ? meta['io.modelcontextprotocol/clientInfo']?.name : null, door, meta['rapier/editorKey'], meta['rapier/editorActivity']);
+        if (authority?.grant && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(request, env));
         // The page that disconnects agents keeps its own pairing; every other paired browser loses it.
         if (door === 'page' && params.name === ROTATE && result.structuredContent?.rotated === true)
           cookies.push(setCookie(authority.id, sessionCookie(authority.id), await mintSession(editorSecret(env), authority.id, result.structuredContent.rotations), PAIR_SESSION_MS / 1000));
@@ -930,6 +965,11 @@ async function handleRequest(request, env, authority) {
     if (message.method === 'tools/call') result = toolError(failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry an editor commit only with the same commitId.'));
     else return rpcError(id, -32603, 'The server could not complete this request.');
   }
+  // This door has no widget channel. Editor credentials and private snapshots never enter its results.
+  if (door === '/muse' && result._meta) {
+    const {_meta, ...publicResult} = result;
+    result = publicResult;
+  }
   // Some clients expose only content to the model. Mirror the final public result, after the
   // document capability is attached. Never serialize _meta (editor snapshots) or app-only results.
   if (message.method === 'tools/call' && !EDITOR_ONLY_TOOLS.has(params.name) && plain(result.structuredContent)) {
@@ -947,6 +987,49 @@ async function handleRequest(request, env, authority) {
   const reply = json({ jsonrpc: '2.0', id, result }, 200, headers);
   for (const cookie of cookies) reply.headers.append('Set-Cookie', cookie);
   return reply;
+}
+
+// An OAuth client cannot grant itself editor authority. The existing owner cookie authorizes exactly one
+// pending browser; the URL names that row and grants nothing. The anonymous Apps kind has its host boundary.
+async function approvePairing(request, env, id, authority) {
+  const url = new URL(request.url), reference = url.searchParams.get('pair');
+  const display = (status, body) => {
+    const nonce = crypto.randomUUID();
+    return new Response(request.method === 'HEAD' ? null : `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Approve a browser · Rapier</title><link rel="stylesheet" href="/fonts.css"><style nonce="${nonce}">${HOUSE_STYLE}</style><main><h1>Approve a browser</h1>${body}</main></html>`, {
+      status, headers: {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'strict-origin',
+        'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+        'Content-Security-Policy': `default-src 'none'; style-src 'self' 'nonce-${nonce}'; font-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`},
+    });
+  };
+  const unavailable = () => display(404, '<p>This browser request is unavailable or has expired.</p>');
+  if (!/^[a-f0-9]{64}$/.test(reference || '') || [...url.searchParams].length !== 1 || url.hash || pageId(pageAddress(id)) !== id) return unavailable();
+  if (!['GET', 'HEAD', 'POST'].includes(request.method)) return new Response(null, {status: 405, headers: {Allow: 'GET, HEAD, POST'}});
+  // OAuth headers and another paired session are not the independent owner's credential.
+  if (authority?.source !== 'browser') return display(401, '<p>Open this link in the browser where you connected Rapier. That browser approves access to this document.</p>');
+  let action = 'owner-status';
+  if (request.method === 'POST') {
+    if (request.headers.get('Origin') !== url.origin || request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() !== 'application/x-www-form-urlencoded')
+      return display(403, '<p>Approve this request on its Rapier page.</p>');
+    let form;
+    try { form = new URLSearchParams(await readTextBody(request, 1024, 'browser approval')); }
+    catch { return display(400, '<p>The browser decision is invalid.</p>'); }
+    const decision = form.get('decision');
+    if ([...form].length !== 1 || !['allow', 'cancel'].includes(decision)) return display(400, '<p>Choose Allow or Cancel.</p>');
+    action = 'owner-' + decision;
+  }
+  if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return display(503, '<p>Browser approval is temporarily unavailable.</p>');
+  try {
+    const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(pageAddress(id))).fetch(new Request('https://rapier.internal/pair', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action, secretHash: reference, ownerKey: await digest(authority.ownerId)}),
+    }));
+    if (!response.ok) return display(503, '<p>Browser approval is temporarily unavailable.</p>');
+    const value = await response.json();
+    if (value.status === 'owner-approved') return display(200, '<p>Approved. Choose Allow in the browser showing the code to finish connecting it.</p>');
+    if (value.status === 'cancelled') return display(200, '<p>This browser request was cancelled.</p>');
+    if (value.status !== 'owner-required') return unavailable();
+    const escape = text => String(text).replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
+    return display(200, `<p>Connect the browser showing <strong>${escape(value.code)}</strong> to <strong>${escape(value.filename)}</strong>?</p><p>It can read and edit this document and control its agent permissions for one day.</p><form method="post" action="${escape(url.pathname + url.search)}"><button type="submit" name="decision" value="allow">Allow browser</button><button type="submit" name="decision" value="cancel" class="negative">Cancel</button></form>`);
+  } catch { return display(503, '<p>The browser decision could not be confirmed. Retry the same request.</p>'); }
 }
 
 // The paired editor's authority over one workspace: the owner's browser (its owner cookie), or a browser paired by
@@ -1026,6 +1109,8 @@ async function pairStatus(request, env, page, args, cookies) {
     const status = await ask({action: args.decision || 'status', secretHash: await digest(held)});
     if (status.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
     if (status.status === 'waiting') return envelope({outcome: 'waiting', paired: false, pairingCode: status.code, codeExpiresAt: new Date(status.expiresAt).toISOString()});
+    if (status.status === 'owner-required') return envelope({outcome: 'owner_confirmation_required', paired: false,
+      owner_approval_url: new URL('/d/' + page.id + '?pair=' + await digest(held), request.url).href});
     if (status.status === 'confirmation_required') return envelope({outcome: 'confirmation_required', paired: false});
     if (status.status === 'cancelled') {
       cookies.push(setCookie(page.id, pendingCookie(page.id), '', 0));
@@ -1156,13 +1241,40 @@ export class RapierDocument {
     return this.cachedJournal;
   }
 
-  async persist(head, state, journal, contextOnly = false, exported = null) {
+  readMaterial(head = this.ctx.storage.kv.get('head')) {
+    return head?.materialParts ? JSON.parse(this.readParts('material:', head.materialParts)) : null;
+  }
+
+  requestAuthority(request) {
+    const reference = request.headers.get('X-Rapier-Grant');
+    return reference ? {oauthGrant: JSON.parse(reference), ownerKey: request.headers.get('X-Rapier-Owner')} : {};
+  }
+
+  retainedAuthority(input) {
+    return Object.fromEntries(['ownerKey', 'connectionKey', 'oauthGrant'].filter(field => input[field] !== undefined).map(field => [field, input[field]]));
+  }
+
+  async assertAuthority(input) {
+    if (Array.isArray(input)) { for (const authority of input) if (authority) await this.assertAuthority(authority); return; }
+    if (!input.oauthGrant && !input.connectionKey) return;
+    const reference = input.oauthGrant;
+    if (!validGrantReference(reference) || input.ownerKey !== await digest(reference.ownerId) ||
+        input.connectionKey && input.connectionKey !== await digest(reference.connectionId) ||
+        !await oauthGrantCurrent(reference, this.env))
+      throw failure('OAUTH_AUTHORITY_REVOKED', 'This connection no longer authorizes the pending operation.');
+  }
+
+  async persist(head, state, journal, contextOnly = false, exported = null, material = undefined, authority = null) {
     const admittedUntil = head.expiresAt;
     const assertUnexpired = () => {
       if (admittedUntil !== undefined && admittedUntil <= Date.now()) throw failure('DOCUMENT_UNAVAILABLE', 'This workspace expired before the operation could commit.');
     };
     assertUnexpired();
-    let text, human, journalText;
+    let text, human, journalText, materialText;
+    if (material !== undefined) {
+      materialText = material === null ? '' : serializeJson(material);
+      head.materialBytes = contentBytes(materialText);
+    }
     const expired = (head.exports || []).filter(row => row.expiresAt <= Date.now() || row.owner !== head.capabilityHash);
     if (expired.length) head.exports = head.exports.filter(row => !expired.includes(row));
     head.exportBytes = (head.exports || []).reduce((sum, row) => sum + row.bytes, 0);
@@ -1180,22 +1292,27 @@ export class RapierDocument {
         journalText = JSON.stringify(journal);
         head.journalBytes = contentBytes(journalText);
       }
-      if (!Number.isSafeInteger(head.stateBytes) || head.stateBytes + head.contextBytes + (head.journalBytes || 0) + head.exportBytes + contentBytes(JSON.stringify(head.exports || [])) > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Open the alternative as a separate workspace or let temporary exports expire.', { limitBytes: this.maxStateBytes });
+
     }
     const expiresAt = Date.now() + this.retention;
     const renew = !(head.expiresAt > expiresAt - 60000);
-    if (!state && !renew && !expired.length && !exported) return;
+    if (!state && !renew && !expired.length && !exported && material === undefined) return;
     // Source and its expiry alarm commit together; a lost acknowledgement must not retain an unscheduled workspace.
     if (renew) head.expiresAt = expiresAt;
     const records = [
       {prefix: 'state:', field: 'parts', text},
       {prefix: 'human:', field: 'contextParts', text: human},
       {prefix: 'journal:', field: 'journalParts', text: journalText},
+      {prefix: 'material:', field: 'materialParts', text: materialText},
     ].filter(row => row.text !== undefined).map(row => ({...row, previous: head[row.field] || 0}));
     for (const row of records) head[row.field] = Math.ceil(row.text.length / CHUNK_CHARS);
+    const retainedBytes = (head.stateBytes || 0) + (head.contextBytes || 0) + (head.journalBytes || 0) +
+      head.exportBytes + (head.returnBytes || 0) + (head.materialBytes || 0) + contentBytes(JSON.stringify(head));
+    if (retainedBytes > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Let pending work or temporary exports finish before adding more.', {limitBytes: this.maxStateBytes});
     // SQLite limits a key and value together to 2 MB; leave room for the key and serialization.
     if (contentBytes(JSON.stringify(head)) > 2_000_000 - 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The workspace metadata is full. Let temporary exports expire before creating another.', {limitBytes: this.maxStateBytes});
     await this.ctx.storage.transaction(async () => {
+      if (authority) await this.assertAuthority(authority);
       assertUnexpired();
       for (const row of expired) for (let index = 0; index < row.parts; index++) this.ctx.storage.kv.delete('export:' + row.id + ':' + index);
       if (exported) for (let index = 0; index < exported.grant.parts; index++) {
@@ -1209,7 +1326,7 @@ export class RapierDocument {
         for (let index = head[row.field]; index < row.previous; index++) this.ctx.storage.kv.delete(row.prefix + index);
       }
       this.ctx.storage.kv.put('head', head);
-      if (renew) await this.ctx.storage.setAlarm(head.expiresAt);
+      await this.ctx.storage.setAlarm(Math.min(head.expiresAt, head.materialIntent?.expiresAt || Infinity));
     });
     await this.ctx.storage.sync();
     if (state) this.cachedState = state;
@@ -1217,7 +1334,7 @@ export class RapierDocument {
   }
 
   describe(state, head, version, collaboration) {
-    const expiries = [collaboration.nextExpiryAt, head.viewIntent?.status === 'pending' && head.viewIntent.kind !== 'mode' ? head.viewIntent.expiresAt : null, head.editorIntent?.expiresAt].filter(value => Number.isFinite(value) && value > 0);
+    const expiries = [collaboration.nextExpiryAt, head.viewIntent?.status === 'pending' && head.viewIntent.kind !== 'mode' ? head.viewIntent.expiresAt : null, head.editorIntent?.expiresAt, head.materialIntent?.expiresAt].filter(value => Number.isFinite(value) && value > 0);
     return { ...head, documentId: state.documentId, revision: state.revision, filename: state.filename, docKind: state.docKind, chars: state.text.length, version, collaboration: collaborationSummary(collaboration), collaborationContext: collaborationContext(collaboration), nextExpiryAt: expiries.length ? Math.min(...expiries) : null };
   }
 
@@ -1245,14 +1362,22 @@ export class RapierDocument {
         Object.assign(input, { capabilityHash: replaying ? head.rotation.predecessorHash : head.capabilityHash, ownerKey: head.ownerKey,
           ...(input.operation === ROTATE ? {pageRetry: input.page.rotationRetry, ...(input.page.pairSessionHash ? {pageSessionHash: input.page.pairSessionHash} : {})} : {}) });
       }
-      if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
+      if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || (input.connectionKey !== undefined && (!/^[a-f0-9]{64}$/.test(input.connectionKey) || !validGrantReference(input.oauthGrant))) || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
       // Mint once per incoming call, before any observation continuation can re-enter operate().
       input.operationId ??= crypto.randomUUID();
+      if (input.operation === 'document.material_ack') {
+        const result = await this.exclusive(() => this.operate(input));
+        await this.resumeMaterial();
+        return json(result);
+      }
+      if (input.operation === 'document.sync') await this.resumeMaterial();
       if (input.operation === 'document.wait_for_user') return await this.waitForReturn(input, request.signal);
       if (input.operation === 'document.inspect_visual') return await this.inspectVisual(input, request.signal);
       if (input.operation === 'document.export' && ['docx', 'pdf'].includes(input.args.format)) return await this.exportDocument(input, request.signal);
       if (EDITOR_REQUEST_TOOLS.has(input.operation)) return await this.requestEditor(input, request.signal);
+      if (['document.draw', 'document.undo_agent_change'].includes(input.operation) ||
+          input.operation === 'document.read_context' && input.args.paintSample) return await this.requestMaterials(input, request.signal);
       return await this.exclusive(async () => {
         const result = await this.operate(input, undefined, undefined, undefined, request.signal);
         if (input.editorAuthorized === true && input.editorActivity === true && !result.isError && ['document.commit', 'document.human_context'].includes(input.operation)) {
@@ -1301,15 +1426,27 @@ export class RapierDocument {
       const live = (head.pairings || []).filter(row => row.confirmedAt ? row.confirmedAt + 2 * PAIR_CODE_MS > now : row.expiresAt > now);
       const save = async () => {
         head.pairings = live;
-        this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
-        await this.ctx.storage.sync();
+        await this.persist(head, this.readState(head), this.readJournal(), true);
       };
+      if (['owner-status', 'owner-allow', 'owner-cancel'].includes(body.action)) {
+        if (head.bearer || body.ownerKey !== head.ownerKey) return json({status: 'absent'});
+        const row = live.find(entry => entry.secretHash === body.secretHash && entry.confirmedAt);
+        if (!row) return json({status: 'absent'});
+        if (body.action === 'owner-cancel') {
+          live.splice(live.indexOf(row), 1); await save();
+          return json({status: 'cancelled'});
+        }
+        if (body.action === 'owner-allow' && !row.ownerApprovedAt) { row.ownerApprovedAt = now; await save(); }
+        return json(row.ownerApprovedAt ? {status: 'owner-approved'} : {status: 'owner-required', code: row.code, filename: head.filename});
+      }
       if (['status', 'allow', 'cancel'].includes(body.action)) {
         const row = live.find(entry => entry.secretHash === body.secretHash);
         if (!row) { await save(); return json({ status: 'expired' }); }
-        if (body.action === 'status') return json(row.confirmedAt
+        const ownerRequired = row.confirmedAt && !head.bearer && !row.ownerApprovedAt;
+        if (body.action === 'status') return json(ownerRequired ? {status: 'owner-required'} : row.confirmedAt
           ? {status: 'confirmation_required'} : {status: 'waiting', code: row.code, expiresAt: row.expiresAt});
         if (body.action === 'allow' && !row.confirmedAt) return json({status: 'not_ready'});
+        if (body.action === 'allow' && ownerRequired) return json({status: 'owner-required'});
         live.splice(live.indexOf(row), 1);
         await save();
         return json(body.action === 'allow' ? {status: 'paired', epoch: head.pairEpoch || 0} : {status: 'cancelled'});
@@ -1328,6 +1465,8 @@ export class RapierDocument {
     const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox', 'Referrer-Policy': 'no-referrer'};
     try {
       const head = this.ctx.storage.kv.get('head'), byHash = request.headers.get('X-Rapier-Export-Hash');
+      const authority = this.requestAuthority(request);
+      await this.assertAuthority(authority);
       // An anonymous workspace's link is its own grant; a connected workspace's link needs its owner.
       if (head && (byHash ? !head.bearer : head.bearer || head.ownerKey !== request.headers.get('X-Rapier-Owner'))) return new Response(null, {status: 404, headers});
       if (!head || head.expiresAt <= Date.now()) return new Response(null, {status: 410, headers});
@@ -1342,6 +1481,7 @@ export class RapierDocument {
       }
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
       if (hash !== row.sha256) throw new Error('export changed');
+      await this.assertAuthority(authority);
       const name = encodeURIComponent(row.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
       return new Response(request.method === 'HEAD' ? null : bytes, {headers: {...headers, 'Content-Type': row.mimeType + '; charset=utf-8',
         'Content-Length': String(row.bytes), 'Content-Disposition': "attachment; filename*=UTF-8''" + name}});
@@ -1352,6 +1492,8 @@ export class RapierDocument {
     try {
       try { this.ctx.storage.operation = 'return'; } catch {}
       const head = structuredClone(this.ctx.storage.kv.get('head')), byHash = request.headers.get('X-Rapier-Return-Hash');
+      const authority = this.requestAuthority(request);
+      await this.assertAuthority(authority);
       if (head && (byHash ? !head.bearer : head.bearer || head.ownerKey !== request.headers.get('X-Rapier-Owner'))) return returnRefused('This return address is unknown.', 404);
       if (!head || head.expiresAt <= Date.now()) return returnRefused('This return session has expired or was deleted.', 410);
       const grant = head.returns?.find(row => byHash ? row.hash === byHash : row.id === request.headers.get('X-Rapier-Return-ID'));
@@ -1370,6 +1512,10 @@ export class RapierDocument {
       Object.assign(grant, { sequence: head.returnSequence, name, receivedAt: new Date().toISOString(), bytes, chars: text.length, parts: Math.ceil(text.length / CHUNK_CHARS) });
       head.returnBytes = (head.returnBytes || 0) + bytes;
       // The source and the spent capability commit together. Neither can outlive the other.
+      await this.assertAuthority(authority);
+      if ((head.stateBytes || 0) + (head.contextBytes || 0) + (head.journalBytes || 0) + (head.materialBytes || 0) +
+          (head.exportBytes || 0) + head.returnBytes + contentBytes(JSON.stringify(head)) > this.maxStateBytes)
+        return returnRefused('The workspace cannot retain this return.', 507);
       this.ctx.storage.transactionSync(() => {
         for (let index = 0; index < grant.parts; index++) this.ctx.storage.kv.put('return:' + grant.id + ':' + index, text.slice(index * CHUNK_CHARS, (index + 1) * CHUNK_CHARS));
         this.ctx.storage.kv.put('head', head);
@@ -1416,7 +1562,7 @@ export class RapierDocument {
       const head = this.ctx.storage.kv.get('head'), mode = input.args.mode || 'message';
       const refused = reason => ({ value: { outcome: 'refused', reason } });
       if (!head || head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.agentAccess === false || head.expiresAt <= Date.now()) return refused('return_unavailable');
-      const key = resolveCaller({ actor: 'agent', principal: 'remote:' + input.capabilityHash, requestId: input.operationId }, { transport: 'mcp' }).invocationKey;
+      const key = resolveCaller({ actor: 'agent', principal: remotePrincipal(input), requestId: input.operationId }, { transport: 'mcp' }).invocationKey;
       if (this.readJournal().some(row => row.key === key || row.spent?.some(([heldKey]) => heldKey === key))) return { value: null };
       if (this.returnWaiter) return refused('wait_already_pending');
       if (mode === 'selection' && input.args.after_return_id !== undefined) return refused('return_cursor_needs_message_mode');
@@ -1429,7 +1575,7 @@ export class RapierDocument {
       waiter.mode = mode;
       waiter.capabilityHash = input.capabilityHash;
       waiter.operationId = input.operationId;
-      waiter.caller = {...resolveCaller({actor: 'agent', principal: 'remote:' + input.capabilityHash,
+      waiter.caller = {...resolveCaller({actor: 'agent', principal: remotePrincipal(input),
         requestId: input.operationId}, {transport: 'mcp'}), agent: input.args.agent};
       this.returnWaiter = waiter;
       return {promise: waiter.promise};
@@ -1445,6 +1591,88 @@ export class RapierDocument {
 
   inspectVisual(input, signal) { return this.requestSurface(input, signal, 'visual'); }
   exportDocument(input, signal) { return this.requestSurface(input, signal, 'export'); }
+
+  materialCaller(input) {
+    const actor = input.humanTool === true ? 'human' : 'agent';
+    return {...resolveCaller({actor, principal: actor === 'human' ? 'remote:' + input.capabilityHash : remotePrincipal(input),
+      ...(actor === 'human' ? {session: 'editor'} : {}), requestId: input.operationId}, {transport: 'mcp'}), agent: input.args.agent};
+  }
+
+  // Acceptance is a durable operation, independent of the lifetime of any observing RPC.
+  // The editor receives one current job; each acknowledgement resumes the original invocation.
+  async requestMaterials(input, signal) {
+    if (signal?.aborted) return new Response(null, {status: 499});
+    await this.resumeMaterial();
+    return this.exclusive(async () => json(await this.advanceMaterial(input)));
+  }
+
+  async advanceMaterial(input, stored = this.readMaterial()) {
+    const caller = this.materialCaller(input), key = caller.invocationKey;
+    const argumentsHash = await digest(canonicalJson({operation: input.operation, args: input.args}));
+    if (stored && stored.key === key && stored.argumentsHash !== argumentsHash) return this.operate(input);
+    if (stored && stored.key === key) {
+      const head = this.ctx.storage.kv.get('head');
+      if (head.materialIntent?.status === 'pending' && head.materialIntent.expiresAt > Date.now() &&
+          !stored.results.some(([job]) => job === stored.request.job)) return this.operate(input);
+    }
+    const own = stored?.key === key ? stored : null;
+    const work = {key, argumentsHash, caller, input: own?.input || Object.fromEntries([
+      'operation', 'args', 'ownerKey', 'capabilityHash', 'connectionKey', 'oauthGrant', 'operationId', 'hostAgent',
+      'humanTool', 'editorAuthorized', 'page'].filter(field => input[field] !== undefined).map(field => [field,
+        input[field]])),
+      record: own, results: new Map(own?.results || []), acks: own?.acks || [], request: null,
+      binding: own?.binding || null, presentationBinding: own ? own.presentationBinding : undefined, resumeId: own?.id || null,
+      failure: stored && !own ? 'material_busy' : null};
+    if (own) {
+      const intent = this.ctx.storage.kv.get('head')?.materialIntent;
+      if (!intent || intent.status === 'refused') work.failure = intent?.reason || 'document_changed';
+      else if (intent.expiresAt <= Date.now() && !work.results.has(own.request.job)) work.failure = 'material_request_expired';
+    }
+    try {
+      const result = await this.operate(work.input, undefined, undefined, undefined, undefined, work);
+      if (own && result.structuredContent?.pending?.requirements?.kind !== 'material' && this.readMaterial()?.key === key) {
+        const head = this.ctx.storage.kv.get('head');
+        if (head) await this.retireMaterial(stored, head.agentAccess === false ? 'agent_access_disconnected'
+          : result.structuredContent?.reason || 'document_changed');
+      }
+      return result;
+    } catch (error) {
+      this.cachedState = null; this.cachedJournal = null;
+      if (own && error?.code === 'OAUTH_AUTHORITY_REVOKED') {
+        const head = this.ctx.storage.kv.get('head');
+        if (head) await this.retireMaterial(stored, 'oauth_authority_revoked');
+      }
+      if (own && error?.code === 'WORKSPACE_STATE_LIMIT') {
+        // The accepted answer remains recoverable through transient storage failures. A
+        // deterministic publication limit must instead free the job and keep editor sync usable.
+        await this.retireMaterial(stored, 'workspace_state_limit');
+        return this.operate(input);
+      }
+      throw error;
+    }
+  }
+
+  async retireMaterial(record, reason) {
+    const head = this.ctx.storage.kv.get('head');
+    if (!head || this.readMaterial(head)?.key !== record.key) return;
+    const journal = this.readJournal(), row = journal.find(row => row.key === record.key && row.output?.pending?.requestId === record.id);
+    if (row) {
+      const {pending, ...output} = row.output;
+      row.output = {...output, outcome: 'refused', reason,
+        ...(output.receipt ? {receipt: {...output.receipt, state: 'unavailable', presentation: 'unavailable'}} : {})};
+    }
+    head.materialIntent = null; head.materialOwner = null; head.materialReceipts = record.acks; head.version++;
+    await this.persist(head, this.readState(head), journal, false, null, null);
+  }
+
+  async resumeMaterial() {
+    return this.exclusive(async () => {
+      const stored = this.readMaterial(), head = this.ctx.storage.kv.get('head');
+      if (!stored || head.materialIntent?.status === 'pending' && head.materialIntent.expiresAt > Date.now()) return;
+      try { return await this.advanceMaterial(stored.input, stored); }
+      catch (error) { if (error?.code !== 'OAUTH_AUTHORITY_REVOKED') throw error; }
+    });
+  }
 
   // A request the editor answers waits outside the document's commit queue so the editor can acknowledge it. Only the small
   // request is durable until the checked answer is published with its receipt; observation pixels and file bytes exist for this response alone.
@@ -1470,17 +1698,16 @@ export class RapierDocument {
       if (!result.structuredContent.collaboration?.presence?.active) return {result: await resume(refuse(exporting ? 'editor_unavailable' : 'editor_not_present'))};
       const timeoutMs = exporting ? EXPORT_LEASE_MS : VIEW_LEASE_MS;
       const wait = createRequestWait({signal, timeoutMs});
-      const capture = {wait, id: pending.requestId, request, capabilityHash: input.capabilityHash,
+      const capture = {wait, input, id: pending.requestId, request, capabilityHash: input.capabilityHash,
         operationId: input.operationId,
-        caller: {...resolveCaller({actor: 'agent', principal: 'remote:' + input.capabilityHash,
+        caller: {...resolveCaller({actor: 'agent', principal: remotePrincipal(input),
           requestId: input.operationId}, {transport: 'mcp'}), agent: input.args.agent}};
       this[slot] = capture;
       try {
         const head = structuredClone(this.ctx.storage.kv.get('head'));
         head[intentKey] = {id: capture.id, ...request, status: 'pending', expiresAt: Date.now() + timeoutMs};
         head.version++;
-        this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
-        await this.ctx.storage.sync();
+        await this.persist(head, this.readState(head), this.readJournal(), true, null, undefined, input);
       } catch (error) {
         wait.finish(refuse(exporting ? 'export_unavailable' : 'visual_render_unavailable'));
         // A lost acknowledgment can leave the intent committed. If storage is
@@ -1538,16 +1765,16 @@ export class RapierDocument {
       if (head.editorIntent || this.editorWaiter) return {result: await resume(refuse('editor_request_pending'))};
       if (!result.structuredContent.collaboration?.presence?.active) return {result: await resume(refuse('editor_unavailable'))};
       const timeoutMs = VIEW_LEASE_MS;
-      const wait = createRequestWait({signal, timeoutMs}), capture = {id: request.id, request, capabilityHash: input.capabilityHash, wait,
+      const wait = createRequestWait({signal, timeoutMs}), capture = {id: request.id, input, request, capabilityHash: input.capabilityHash, wait,
         operationId: input.operationId,
-        caller: {...resolveCaller({actor: 'agent', principal: 'remote:' + input.capabilityHash,
+        caller: {...resolveCaller({actor: 'agent', principal: remotePrincipal(input),
           requestId: input.operationId}, {transport: 'mcp'}), agent: input.args.agent}};
       this.editorWaiter = capture;
       try {
         head.editorIntent = {...request, status: 'pending', expiresAt: Date.now() + timeoutMs};
+        head.editorAuthority = {id: request.id, ...this.retainedAuthority(input)};
         head.version++;
-        this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
-        await this.ctx.storage.sync();
+        await this.persist(head, this.readState(head), this.readJournal(), true, null, undefined, input);
       } catch (error) {
         wait.finish(refuse('editor_unavailable'));
         try {await this.retireEditorIntent(capture.id, undefined, 'editor_unavailable');} catch {}
@@ -1582,7 +1809,8 @@ export class RapierDocument {
     return next;
   }
 
-  async operate(input, waitResult, observation, editor, signal) {
+  async operate(input, waitResult, observation, editor, signal, material) {
+    await this.assertAuthority(input);
     await prepareDoorLetters();
     const { operation, args, capabilityHash, ownerKey } = input;
     try { if (this.ctx.storage) this.ctx.storage.operation = operation; } catch {}
@@ -1611,7 +1839,7 @@ export class RapierDocument {
         const kernel = createKernel({ state, clock: Date.now, mintId, invocationJournal: this.readJournal() });
         const collaboration = kernel.collaboration();
         head = this.describe(state, head, head.version, collaboration);
-        await this.persist(head);
+        await this.persist(head, null, null, false, null, undefined, input);
         return envelope({ outcome: 'created', created: true, replayed: true, message: 'Reopened the existing workspace; no new document was created.' }, head, { snapshot: snapshot(state, collaboration) });
       }
       // Admission shares the document's serialized operation owner. Concurrent token retries
@@ -1626,7 +1854,7 @@ export class RapierDocument {
       const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: args.text ?? '', docKind: args.docKind }), clock: Date.now, mintId });
       const collaboration = kernel.collaboration(), state = kernel.snapshot();
       head = this.describe(state, { ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null }, 1, collaboration);
-      await this.persist(head, state, kernel.invocationJournal());
+      await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
       return envelope({ outcome: 'created', created: true }, head, { snapshot: snapshot(state, collaboration) });
     }
     if (!head || head.capabilityHash !== capabilityHash) {
@@ -1642,12 +1870,13 @@ export class RapierDocument {
     if (head.agentAccess === false && input.editorAuthorized !== true) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
     // Pending observations are live requests owned by their existing waiters. A fresh kernel
     // receives those callers as transient facts; none survives request settlement or a restart.
-    const inFlight = [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter].filter(row => row &&
-      row.capabilityHash === capabilityHash && row.operationId !== input.operationId).map(row => row.caller);
     const principal = 'remote:' + capabilityHash;
     const actor = ['document.comment', 'document.read_context'].includes(operation) && input.humanTool === true ? 'human' : 'agent';
-    const agentCaller = () => ({...resolveCaller({ actor, principal, ...(actor === 'human' ? {session: 'editor'} : {}), requestId: input.operationId }, { transport: 'mcp' }), ...(actor === 'agent' && input.hostAgent ? {hostAgent: input.hostAgent} : {})});
-    if (getTool(operation) && !observation && !editor) {
+    const agentCaller = () => ({...resolveCaller({ actor, principal: actor === 'human' ? principal : remotePrincipal(input), ...(actor === 'human' ? {session: 'editor'} : {}), requestId: input.operationId }, { transport: 'mcp' }), ...(actor === 'agent' && input.hostAgent ? {hostAgent: input.hostAgent} : {})});
+    const invocationKey = agentCaller().invocationKey;
+    const inFlight = [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter, head.materialOwner].filter(row => row &&
+      row.capabilityHash === capabilityHash && row.caller.invocationKey !== invocationKey).map(row => row.caller);
+    if (getTool(operation) && !observation && !editor && !material?.resumeId) {
       const caller = agentCaller(), journal = this.readJournal();
       // A retained receipt is read before maintenance can require another write. The key
       // is only a quick candidate check; the kernel owns caller, document, digest and expiry.
@@ -1674,6 +1903,7 @@ export class RapierDocument {
       head = await this.retireEditorIntent(editorIntent.id, head, reason);
     }
     if (operation === 'document.delete') {
+      await this.assertAuthority(input);
       this.cachedState = null;
       this.cachedJournal = null;
       await this.ctx.storage.deleteAll();
@@ -1698,11 +1928,18 @@ export class RapierDocument {
       if (!head.bearer) { head.agentAccess = false; head.version++; }
       head.pairEpoch = (head.pairEpoch || 0) + 1;
       head.pairings = [];
+      head.materialIntent = null; head.materialOwner = null; head.materialReceipts = [];
+      const materialParts = head.materialParts || 0;
+      head.materialParts = 0; head.materialBytes = 0;
       head.rotatedAt = Date.now();
       head.rotations = (head.rotations || 0) + 1;
       // No agent holds the successor yet; the editor must not show the one that held the predecessor as present.
       delete head.agentCall;
-      this.ctx.storage.transactionSync(() => { this.ctx.storage.kv.put('head', head); });
+      await this.assertAuthority(input);
+      this.ctx.storage.transactionSync(() => {
+        for (let index = 0; index < materialParts; index++) this.ctx.storage.kv.delete('material:' + index);
+        this.ctx.storage.kv.put('head', head);
+      });
       await this.ctx.storage.sync();
       this.returnWaiter?.finish({ outcome: 'refused', reason: 'document_disconnected' });
       this.visualWaiter?.wait.finish({...this.visualWaiter.request, outcome: 'refused', reason: 'document_changed'});
@@ -1719,15 +1956,16 @@ export class RapierDocument {
       const row = (head.pairings || []).find(entry => entry.code === code && !entry.confirmedAt && entry.expiresAt > now);
       if (!row) {
         head.pairingAttempts = {...attempts, misses: attempts.misses + 1};
-        this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
-        await this.ctx.storage.sync();
+        await this.persist(head, this.readState(head), this.readJournal(), true, null, undefined, input);
         return head.pairingAttempts.misses >= DOOR_LIMITS.pairingMissesPerWindow ? locked()
           : envelope({outcome: 'refused', reason: 'pairing_code_unknown', message: 'No browser is waiting with that code. A code works once, for one minute: ask for the code the page shows now.'}, head);
       }
       row.confirmedAt = now;
       this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
       await this.ctx.storage.sync();
-      return envelope({outcome: 'confirmation_required', paired: false, message: 'The browser showing that code can now choose ALLOW or CANCEL.'}, head);
+      return envelope({outcome: 'confirmation_required', paired: false, ...(head.bearer
+        ? {message: 'The browser showing that code can now choose ALLOW or CANCEL.'}
+        : {ownerApprovalId: row.secretHash, message: 'Open owner_approval_url in the browser where Rapier was connected and approve this browser. Then choose ALLOW on the page showing the code.'})}, head);
     }
     const elapsed = head.nextExpiryAt !== null && head.nextExpiryAt <= Date.now();
     if (operation === 'document.sync' && !elapsed &&
@@ -1752,18 +1990,72 @@ export class RapierDocument {
           kind !== 'mode' && !(pointer && prior.pointer)) return { ok: false, reason: 'presentation_already_pending' };
       head.viewIntent = { id: crypto.randomUUID(), kind, revision: request.revision, status: 'pending', expiresAt: pointer?.expiresAt ?? Date.now() + VIEW_LEASE_MS,
         ...(pointer ? {pointer} : {}),
-        ...(kind === 'mode' ? {view: request.view, fromView: presence.view} : kind === 'document' ? { start: request.start, end: request.end } : { compareId: request.compareId, changeId: request.changeId }) };
+        ...(kind === 'mode' ? {view: request.view, fromView: presence.view} : kind === 'document' ? { start: request.start, end: request.end, ...(request.reviewId ? {reviewId: request.reviewId, changeId: request.changeId} : {}) } : { compareId: request.compareId, changeId: request.changeId }) };
       return { pending: true, viewId: head.viewIntent.id, ...(!presence?.active ? {reason: 'editor_not_present'} : presence.editing ? {reason: 'human_edit_in_progress'} : {}) };
     };
     // Seed from the persisted journal, or a DO retry finds an empty one and acts twice.
-    let exported = null;
+    let exported = null, watchedDrawing;
+    const presentationBinding = () => {
+      if (material?.presentationBinding !== undefined) return material.presentationBinding;
+      const row = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > Date.now() && row.revision === state.revision)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      const binding = row ? {contextId: row.contextId, contextOwner: row.owner, navigationSequence: row.navigationSequence || 0} : null;
+      if (material) material.presentationBinding = binding;
+      return binding;
+    };
+    // Only the authenticated visible canvas can admit its own shapes edit through ASK/CHECK.
+    // Both the early policy decision and final source publication meet this exact occurrence.
+    const commitFence = fact => {
+      const drawing = kernel.drawingContext();
+      if (!drawing?.open) return '';
+      if (!fact) return 'draw_session_open';
+      const occurrence = drawing.occurrence, target = fact.occurrence;
+      if (occurrence && normalizeLabel(fact.drawingAsset || '') !== normalizeLabel(occurrence.reference) && Array.isArray(fact.splices)) {
+        // Source outside the canvas's enclosing parsed block remains editable. Move the held
+        // block through sequential splices with the same closed-boundary rule as Draw.
+        const blocks = analyzeMarkdown({text: state.text}).blocks;
+        const held = blocks?.entries.find(row => row.start <= occurrence.start && row.end >= occurrence.end);
+        if (held && blocks.complete) {
+          let {start, end} = held, intact = true;
+          for (const splice of fact.splices) {
+            const from = splice.pos, to = from + splice.removed.length;
+            if (from <= end && to >= start) { intact = false; break; }
+            if (to < start) { const delta = splice.inserted.length - splice.removed.length; start += delta; end += delta; }
+          }
+          if (intact) return '';
+        }
+      }
+      if (!fact.shapesOnly || !drawing.recipeDigest || fact.surfaceRecipeDigest !== drawing.recipeDigest || !occurrence || !target ||
+          normalizeLabel(fact.drawingAsset || '') !== normalizeLabel(occurrence.reference) ||
+          normalizeLabel(target.reference || '') !== normalizeLabel(occurrence.reference) ||
+          target.start !== occurrence.start || target.end !== occurrence.end || drawing.busy?.human)
+        return 'draw_session_open';
+      const binding = canonicalJson({session: drawing.session, surfaceGeneration: drawing.surfaceGeneration,
+        assetGeneration: drawing.assetGeneration, occurrence, recipeDigest: drawing.recipeDigest});
+      if (watchedDrawing !== undefined && watchedDrawing !== binding) return 'draw_surface_changed';
+      watchedDrawing = binding;
+      const patch = fact.drawingPatch;
+      if (patch && (patch.session !== drawing.session || patch.surfaceGeneration !== drawing.surfaceGeneration ||
+          patch.assetGeneration !== drawing.assetGeneration || sha256(canonicalJson(patch.recipeBefore)) !== drawing.recipeDigest))
+        return 'draw_surface_changed';
+      if (drawing.recipe && fact.paintTargets?.some(target => !drawing.recipe.shapes.some(shape => shape.id === target.id && canonicalJson(shape) === canonicalJson(target))))
+        return 'paint_target_changed';
+      return '';
+    };
     const kernel = createKernel({ state, inFlight, host: { proposalPage: UI_RESOURCE, exportFile: async request => {
       if (!editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
       const file = request.file || await exportFile(this.env, request);
       exported = file.bytes && file.bytes.byteLength <= MAX_EXPORT_BYTES ? {...file, id: mintId('export_')} : file;
       return exported;
-    }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences,
+    }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, commitFence, drawingPresentationBinding: presentationBinding,
       paint: (strokes, options = {}) => paintAgentStrokes(strokes, options.seed, options.target, options),
+      material: request => {
+        if (material?.results.has(request.job)) return material.results.get(request.job);
+        if (material?.failure) return {...materialDescription(request), outcome: 'refused', reason: material.failure};
+        if (!kernel.collaboration().presence?.active) return {...materialDescription(request), outcome: 'refused', reason: 'editor_not_present'};
+        if (material) material.request = request;
+        return null;
+      },
       paintSheet: agentPaintSheetHolds, paintBrushes: agentPaintBrushRegistry, paintReplay: replayAgentPainting, paintRaster: validatePaintRaster, paintSample: sampleAgentPainting,
       setView: request => queueView('mode', request), view: () => ({current: kernel.collaboration().presence?.view || null}),
       editorContext: () => ({preferences: head.editorPreferences || null, receipts: (head.editorReceipts || []).map(row => row.receipt)}),
@@ -1785,7 +2077,8 @@ export class RapierDocument {
       save: async () => ({ ok: true }), reveal: request => queueView('document', request), revealChange: request => queueView('compare', request) }, clock: Date.now, mintId,
       // A fresh kernel consumes the returned surface observation as a checked world fact. Its ephemeral
       // continuation map belongs to one instance; retire only this read's pending receipt.
-      invocationJournal: observation || editor ? this.readJournal().filter(row => row.output?.pending?.requestId !== (observation || editor).requestId) : this.readJournal() });
+      invocationJournal: observation || editor || material?.resumeId ? this.readJournal().filter(row =>
+        row.output?.pending?.requestId !== ((observation || editor)?.requestId || material.resumeId)) : this.readJournal() });
     // decide does not await host.structure for surface facts (structure freshness).
     const resolveStructureFact = requirements => {
       if (!requirements || !['outline', 'find'].includes(requirements.mode) || state.filename !== requirements.filename) return null;
@@ -1815,6 +2108,12 @@ export class RapierDocument {
         else if (view.revision !== next.revision || (view.kind === 'compare' && view.compareId !== next.compare?.id)) head.viewIntent = { ...view, status: 'invalidated', reason: 'document_changed' };
         else if (view.expiresAt <= Date.now()) head.viewIntent = { ...view, status: 'expired', reason: 'presentation_expired' };
       }
+      if (head.materialIntent?.status === 'pending' &&
+          (!materialMatches(head.materialIntent, next, kernel.drawingContext()) || head.materialIntent.expiresAt <= Date.now())) {
+        head.materialIntent = {...head.materialIntent, status: 'refused', reason:
+          head.materialIntent.expiresAt <= Date.now() ? 'material_request_expired' : 'document_changed'};
+        head.version++;
+      }
       const nextViewKey = JSON.stringify(head.viewIntent);
       const changed = viewChanged(state, next) || nextViewKey !== viewKey ||
         (head.collaboration?.agentPresence?.inFlight || 0) !== collaboration.agentPresence.inFlight;
@@ -1826,11 +2125,55 @@ export class RapierDocument {
     // Without collaboration or a view to expire, the initial refresh only advances the
     // kernel's clock. Its final snapshot owns that clock; do not clone the whole source twice.
     refresh(elapsed || !!state.review || Object.keys(state.humanContexts).length > 0 || !!head.viewIntent);
-    if (elapsed || head.version !== initialVersion || (initialExpiry !== null && initialExpiry <= Date.now())) await this.persist(head, state, kernel.invocationJournal());
-    const current = () => ({...snapshot(state, collaboration, head.viewIntent, head.visualIntent, head.exportIntent, head.editorIntent), ...(head.bearer ? {} : {agentAccess: head.agentAccess !== false})});
+    if (elapsed || head.version !== initialVersion || (initialExpiry !== null && initialExpiry <= Date.now())) {
+      // A continuation omits its pending receipt only inside this fresh kernel. Keep
+      // the durable original until the terminal result and source publish together.
+      const journal = observation || editor || material?.resumeId ? this.readJournal() : kernel.invocationJournal();
+      await this.persist(head, state, journal, false, null, undefined, input);
+    }
+    const current = () => ({...snapshot(state, collaboration, head.viewIntent, head.visualIntent, head.exportIntent, head.editorIntent),
+      ...(head.materialIntent ? {materialIntent: {...head.materialIntent,
+        ...(head.materialIntent.status === 'pending' ? {payload: this.readMaterial(head)?.request.payload} : {})}} : {}),
+      ...(head.bearer ? {} : {agentAccess: head.agentAccess !== false})});
+    if (operation === 'document.material_ack') {
+      const record = this.readMaterial(head);
+      const answerHash = await digest(canonicalJson(args.fact));
+      const previous = [...record?.acks || [], ...head.materialReceipts || []].find(row => row.id === args.materialId);
+      if (previous) return envelope(previous.hash === answerHash && previous.capabilityHash === capabilityHash
+        ? {outcome: 'ok', materialId: args.materialId, replayed: true} : {outcome: 'refused', reason: 'material_result_mismatch'}, head);
+      if (!record || record.id !== args.materialId || record.input.capabilityHash !== capabilityHash)
+        return envelope({outcome: 'refused', reason: 'material_request_expired'}, head);
+      try { await this.assertAuthority(record.input); }
+      catch (error) {
+        if (error?.code !== 'OAUTH_AUTHORITY_REVOKED') throw error;
+        await this.retireMaterial(record, 'oauth_authority_revoked');
+        return envelope({outcome: 'refused', reason: 'oauth_authority_revoked'}, this.ctx.storage.kv.get('head'));
+      }
+      if (head.materialIntent?.status !== 'pending' || args.expectedRevision !== state.revision ||
+          !materialMatches(record.request, state, kernel.drawingContext()))
+        return envelope({outcome: 'refused', reason: 'document_changed'}, head);
+      const checked = admitMaterialResult(record.request, args.fact);
+      if (checked.reason === 'material_result_mismatch' || args.fact.outcome === 'ok' && checked.outcome !== 'ok') return envelope(checked, head);
+      record.results.push([record.request.job, {...materialDescription(record.request), ...checked}]);
+      if (contentBytes(serializeJson(record.results)) > MATERIAL_LIMITS.bytes) {
+        record.results.pop();
+        record.results.push([record.request.job, {...materialDescription(record.request), outcome: 'refused', reason: 'material_too_large'}]);
+      }
+      record.acks.push({id: record.id, hash: answerHash, capabilityHash});
+      head.materialIntent = {...head.materialIntent, status: 'prepared'};
+      head.version++;
+      await this.persist(head, state, kernel.invocationJournal(), false, null, record, [input, record.input]);
+      return envelope({outcome: 'ok', materialId: args.materialId}, head);
+    }
     if (operation === 'document.export_ack') {
       const capture = this.exportWaiter;
       if (!capture || capture.id !== args.exportId || capture.capabilityHash !== capabilityHash) return toolError(failure('EXPORT_UNAVAILABLE', 'This export is no longer pending.'), head);
+      await this.assertAuthority(input);
+      try { await this.assertAuthority(capture.input); }
+      catch (error) {
+        if (error?.code === 'OAUTH_AUTHORITY_REVOKED') capture.wait.finish({...capture.request, outcome: 'refused', reason: 'oauth_authority_revoked'});
+        throw error;
+      }
       if (args.expectedRevision !== state.revision || capture.request.revision !== state.revision) {
         capture.wait.finish({...capture.request, outcome: 'refused', reason: 'document_changed'});
         return toolError(failure('REVISION_CONFLICT', 'The document changed before the export arrived.'), head);
@@ -1848,6 +2191,16 @@ export class RapierDocument {
       const prior = head.editorReceipts?.find(row => row.receipt.id === args.editorId);
       const request = active || prior?.request;
       if (!request) return envelope(editorFailure('editor_request_unavailable'), head);
+      if (active && head.editorAuthority?.id === args.editorId) {
+        try { await this.assertAuthority(head.editorAuthority); }
+        catch (error) {
+          if (error?.code === 'OAUTH_AUTHORITY_REVOKED') {
+            await this.retireEditorIntent(args.editorId, head, 'oauth_authority_revoked');
+            this.editorWaiter?.wait.finish({...request, receipt: {id: args.editorId, status: 'unavailable', reason: 'oauth_authority_revoked'}});
+          }
+          throw error;
+        }
+      }
       const acknowledge = (row, replayed = false) => {
         // A committed receipt survives a lost storage acknowledgment. Its retry
         // must release the original waiter as well as return the retained result.
@@ -1866,7 +2219,7 @@ export class RapierDocument {
           retainEditorReceipt(head, request, receipt);
           if (head.editorPreferences) head.editorPreferences = {...head.editorPreferences, [receipt.preference]: receipt.current};
           head.version++;
-          await this.persist(head, state, kernel.invocationJournal());
+          await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, [input, active ? head.editorAuthority : null]);
           return acknowledge(head.editorReceipts.find(row => row.receipt.id === args.editorId));
         }
         if (JSON.stringify(receipt) === JSON.stringify(prior?.receipt)) return acknowledge(prior, true);
@@ -1879,12 +2232,18 @@ export class RapierDocument {
       if (receipt.status === 'applied' && head.editorPreferences) head.editorPreferences = {...head.editorPreferences, [receipt.preference]: receipt.value};
       head.editorIntent = receipt.status === 'waiting' ? {...active, status: 'waiting', expiresAt: Date.now() + EDITOR_LIMITS.cardMs} : null;
       head.version++;
-      await this.persist(head, state, kernel.invocationJournal());
+      await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, [input, active ? head.editorAuthority : null]);
       return acknowledge(head.editorReceipts.find(row => row.receipt.id === args.editorId));
     }
     if (operation === 'document.visual_ack') {
       const capture = this.visualWaiter;
       if (!capture || capture.id !== args.visualId || capture.capabilityHash !== capabilityHash) return toolError(failure('VISUAL_UNAVAILABLE', 'This visual observation is no longer pending.'), head);
+      await this.assertAuthority(input);
+      try { await this.assertAuthority(capture.input); }
+      catch (error) {
+        if (error?.code === 'OAUTH_AUTHORITY_REVOKED') capture.wait.finish({...capture.request, outcome: 'refused', reason: 'oauth_authority_revoked'});
+        throw error;
+      }
       if (args.expectedRevision !== state.revision || capture.request.revision !== state.revision) {
         capture.wait.finish({...capture.request, outcome: 'refused', reason: 'document_changed'});
         return toolError(failure('REVISION_CONFLICT', 'The document changed before the observation arrived.'), head);
@@ -1900,7 +2259,7 @@ export class RapierDocument {
     }
     if (operation === 'rapier.open' || operation === 'document.sync') {
       // A read-only sync does not slide expiry.
-      if (operation === 'rapier.open') await this.persist(head);
+      if (operation === 'rapier.open') await this.persist(head, null, null, false, null, undefined, input);
       return envelope({ outcome: 'current', unchanged: false, ...(operation === 'document.sync' ? agentReport(head) : {}) }, head, { snapshot: current() });
     }
     if (operation === 'document.human_context') {
@@ -1919,8 +2278,8 @@ export class RapierDocument {
         }
       }
       refresh();
-      await this.persist(head, state, kernel.invocationJournal(), head.version === priorVersion);
-      if (value.outcome === 'ok' && args.visible && args.selection && this.returnWaiter?.mode === 'selection') this.returnWaiter.finish({ outcome: 'ok', selection: args.selection });
+      await this.persist(head, state, kernel.invocationJournal(), head.version === priorVersion, null, undefined, input);
+      if (value.outcome === 'ok' && value.acknowledged === true && args.visible && args.selection && this.returnWaiter?.mode === 'selection') this.returnWaiter.finish({ outcome: 'ok', selection: args.selection });
       return envelope({ ...value, contextId: args.contextId, contextExpiresAt: value.expiresAt ?? null, ...(value.outcome === 'conflict' ? { code: 'HUMAN_CONTEXT_STALE' } : {}) }, head);
     }
     if (operation === 'document.view_ack') {
@@ -1931,7 +2290,7 @@ export class RapierDocument {
         const value = kernel.pointResult({pointerId: view.pointer.id, status: 'expired', reason: args.reason || 'dismissed'}, human(args.viewId));
         head.viewIntent = {...view, status: 'expired', reason: args.reason || 'dismissed', pointer: {...view.pointer, status: 'expired'}};
         refresh();
-        await this.persist(head, state, kernel.invocationJournal());
+        await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
         return envelope({...value, outcome: 'ok', viewId: view.id, presented: false}, head);
       }
       if (view.status !== 'pending') {
@@ -1943,7 +2302,7 @@ export class RapierDocument {
       if (view.pointer) kernel.pointResult({pointerId: view.pointer.id,
         status: args.status === 'presented' ? 'shown' : 'expired', ...(args.reason ? {reason: args.reason} : {})}, human(args.viewId));
       refresh();
-      await this.persist(head, state, kernel.invocationJournal());
+      await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
       return envelope({ outcome: 'ok', viewId: view.id, presented: args.status === 'presented' }, head);
     }
     if (['document.compare_decide', 'document.set_policy', 'document.review_decide'].includes(operation)) {
@@ -1953,7 +2312,7 @@ export class RapierDocument {
       const receipt = head.receipts.find(entry => entry.id === args.decisionId);
       if (receipt) {
         if (receipt.hash !== hash) return toolError(failure('DECISION_ID_REUSED', 'This decisionId already identifies a different operation.'), head, { snapshot: current() });
-        await this.persist(head);
+        await this.persist(head, null, null, false, null, undefined, input);
         return envelope({ ...receipt.result, replayed: true, decisionId: receipt.id, acceptedRevision: receipt.revision, acceptedVersion: receipt.version }, head, { snapshot: current() });
       }
       if (args.expectedRevision !== state.revision || args.expectedVersion !== head.version) return toolError(failure('REVISION_CONFLICT', 'The document or decision changed. Inspect the current state before deciding again.'), head, { snapshot: current() });
@@ -1974,7 +2333,7 @@ export class RapierDocument {
       const accepted = ['ok', 'applied', 'rebased', 'unchanged'].includes(value.outcome);
       if (accepted) head.receipts = [...head.receipts, { id: args.decisionId, hash, revision: state.revision, version: head.version,
         result: { outcome: value.outcome, ...(value.decided !== undefined ? { decided: value.decided } : {}), ...(value.closed !== undefined ? { closed: value.closed } : {}), ...(value.changeId ? { changeId: value.changeId } : {}), ...(value.review ? { review: value.review } : {}) } }].slice(-MAX_RECEIPTS);
-      await this.persist(head, state, kernel.invocationJournal());
+      await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
       return envelope({ ...value, decisionId: args.decisionId, ...(accepted ? { acceptedRevision: state.revision, acceptedVersion: head.version } : {}) }, head, { snapshot: current() });
     }
     if (operation === 'document.commit') {
@@ -1987,7 +2346,7 @@ export class RapierDocument {
       const receipt = head.receipts.find(entry => entry.id === args.commitId);
       if (receipt) {
         if (receipt.hash !== hash) return toolError(failure('COMMIT_ID_REUSED', 'This commitId already identifies different content. Keep an identifier stable only for an identical retry.'), head, { snapshot: current() });
-        await this.persist(head);
+        await this.persist(head, null, null, false, null, undefined, input);
         const draftEdits = state.commitResults?.find(row => row.id === receipt.id)?.edits || [];
         const text = replay(args.text, draftEdits);
         const accepted = {...(head.version === receipt.version ? current() : { documentId: head.documentId, revision: receipt.revision, text, filename: receipt.filename, docKind: receipt.docKind }), draftEdits, draftClient: client(who)};
@@ -2040,7 +2399,7 @@ export class RapierDocument {
       // The accepted result can differ from the submitted draft. Keep that difference
       // with the chunked, size-bounded source, never in the single-key receipt index.
       if (draftEdits.length) state.commitResults = [...(state.commitResults || []), {id: args.commitId, edits: draftEdits}];
-      await this.persist(head, state, kernel.invocationJournal());
+      await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
       return envelope({ outcome: 'committed', commitId: args.commitId, acceptedRevision: state.revision, acceptedVersion: head.version }, head, { snapshot: {...current(), draftEdits, draftClient: client(who)} });
     }
     if (!getTool(operation)) return toolError(failure('UNKNOWN_TOOL', 'Unknown operation.'));
@@ -2048,7 +2407,7 @@ export class RapierDocument {
     // WORKER_PRESENCE: unknown is not absent. Surface-fact continuations keep the incoming call's key.
     // The verified editor mode is part of the invocation identity. The same
     // operation_id cannot replay an agent's handles or review as a human call.
-    let value = await kernel.invoke(operation, args, { ...agentCaller(), signal, world: { presence: WORKER_PRESENCE, ...(observation ? {[operation === 'document.export' ? 'export' : 'visual']: observation.fact} : {}), ...(editor ? {editor: editor.fact} : {}) } });
+    let value = await kernel.invoke(operation, args, { ...agentCaller(), signal, ...(material?.binding ? {materialBinding: material.binding} : {}), world: { presence: WORKER_PRESENCE, ...(observation ? {[operation === 'document.export' ? 'export' : 'visual']: observation.fact} : {}), ...(editor ? {editor: editor.fact} : {}) } });
     // pending is a complete outcome: each pass invokes again with continues set, never a wait inside the kernel.
     for (let guard = 0; guard < 4 && value.outcome === 'pending' && value.pending?.kind === 'surface-fact'; guard++) {
       const fact = resolveStructureFact(value.pending.requirements);
@@ -2091,8 +2450,31 @@ export class RapierDocument {
         // this link without renewing it; the download owner still decides availability.
         record.output = structuredClone(value);
       }
-      await this.persist(head, state, journal, false, publication);
+      let retainedMaterial;
+      if (material && !material.failure) {
+        const pending = value.pending;
+        if (value.outcome === 'pending' && pending?.requirements?.kind === 'material' && material.request) {
+          material.binding ||= materialDescription(material.request);
+          retainedMaterial = {key: material.key, argumentsHash: material.argumentsHash, input: material.input,
+            id: pending.requestId, binding: material.binding, presentationBinding: material.presentationBinding ?? null, request: material.request,
+            results: [...material.results], acks: material.acks};
+          head.materialIntent = {...materialDescription(material.request), id: pending.requestId, status: 'pending',
+            expiresAt: Date.now() + MATERIAL_LIMITS.lifetimeMs};
+          head.materialOwner = {capabilityHash, caller: material.caller};
+          head.version++;
+        } else if (material.record) {
+          retainedMaterial = null;
+          head.materialReceipts = material.acks;
+          head.materialIntent = null; head.materialOwner = null; head.version++;
+        }
+      } else if (material?.record) {
+        retainedMaterial = null;
+        head.materialReceipts = material.acks;
+        head.materialIntent = null; head.materialOwner = null; head.version++;
+      }
+      await this.persist(head, state, journal, false, publication, retainedMaterial, input);
     }
+    await this.assertAuthority(input);
     const result = operationEnvelope(operation, value, head);
     if (operation === 'document.inspect_visual' && value.outcome === 'ok' && observation?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
     return result;
@@ -2108,7 +2490,15 @@ export class RapierDocument {
         await this.ctx.storage.deleteAll();
         await this.ctx.storage.sync();
       }
-      else await this.ctx.storage.setAlarm(head.expiresAt);
+      else {
+        const material = this.readMaterial(head);
+        if (material && head.materialIntent?.expiresAt <= Date.now()) {
+          try { await this.advanceMaterial(material.input, material); }
+          catch (error) { if (error?.code !== 'OAUTH_AUTHORITY_REVOKED') throw error; }
+        }
+        const current = this.ctx.storage.kv.get('head');
+        if (current) await this.ctx.storage.setAlarm(Math.min(current.expiresAt, current.materialIntent?.expiresAt || Infinity));
+      }
     });
   }
 }

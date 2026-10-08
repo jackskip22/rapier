@@ -48,7 +48,8 @@
   let comparisonOwner = null, comparisonKernelId = null, comparisonGeneration = -1, remoteComparison = null;
   let contextSequence = 0, humanSequence = 0, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, policyAvailable = false, remoteReview = null, projecting = 0, viewFlight = null;
-  let visualFlight = null;
+  let visualFlight = null, materialFlight = null;
+  let drawingNavigationSequence = 0;
   let pendingView = null, viewTimer = 0;
   const editorRequests = new Map(), preferenceVersions = new Map(), agentPreferenceWrites = new Set();
   let editorCard = null;
@@ -183,11 +184,26 @@
       const value = {sequence: contextSequence, visible: visible(), editing: editing(), reason};
       for (const notify of contextSubscribers) { try { notify(value); } catch (_) {} }
       if (pendingView?.status === 'pending') void drainView();
+      if (!apps && kernel && ['drawing', 'drawing_presentation', 'drawing_navigation', 'visibility'].includes(reason)) {
+        try {
+          const value = current();
+          kernel.reconcile(value, {actor: 'system', principal: 'bootstrap'});
+          kernel.humanContext({contextId: doorSession, sequence: contextSequence, expectedRevision: value.revision,
+            visible: visible(), editing: editing(), navigationSequence: drawingNavigationSequence,
+            drawing: value.drawing, drawingReceipts: value.drawingReceipts}, {actor: 'human', principal: 'local', transport: 'platform'});
+        } catch (_) {}
+      }
     });
+  }
+
+  function drawingNavigationChanged() {
+    drawingNavigationSequence++;
+    contextChanged('drawing_navigation');
   }
 
   function humanActivity(event) {
     if (event.isTrusted !== true || projecting) return;
+    if (['pointerdown', 'keydown', 'beforeinput', 'compositionstart'].includes(event.type)) drawingNavigationSequence++;
     const target = event.target;
     if (target?.closest?.('.rapier-draw-surface')) {
       humanSequence++;
@@ -200,6 +216,7 @@
     viewFlight?.abort();
     lastPointerAt = Date.now();
     if (['beforeinput', 'input', 'compositionstart', 'compositionend'].includes(event.type)) {
+      materialFlight?.abort();
       lastInputAt = Date.now();
       clearTimeout(contextTimer);
       contextTimer = setTimeout(() => { rememberPointer(); contextChanged('settled'); }, 950);
@@ -211,12 +228,16 @@
     return typeof _rapierDrawContext === 'function' ? _rapierDrawContext() : null;
   }
 
+  function drawingPresentationReceipts() {
+    return typeof _rapierDrawPresentationReceipts === 'function' ? _rapierDrawPresentationReceipts() : [];
+  }
+
   async function humanContext() {
     const basic = {documentId: String(rapier.identity.authority), revision: Number(rapier.revision.settled),
       generation: Number(rapier.revision.generation)};
     if (!readyDone || admission() || _rapierMutationBarrierActive()) {
       return {...fail('document_not_settled', 'yielded'), ...basic,
-        context: {sequence: contextSequence, visible: visible(), editing: visible() && editing(), view: viewMode(), selection: null, focus: null}};
+        context: {sequence: contextSequence, navigationSequence: drawingNavigationSequence, drawingReceipts: drawingPresentationReceipts(), visible: visible(), editing: visible() && editing(), view: viewMode(), selection: null, focus: null}};
     }
     const drawing = drawingContext();
     if (drawing?.open) {
@@ -225,13 +246,13 @@
       const value = documentState();
       const focus = drawing.occurrence && Number.isSafeInteger(drawing.occurrence.start) && Number.isSafeInteger(drawing.occurrence.end)
         ? {start: drawing.occurrence.start, end: drawing.occurrence.end, active: false} : null;
-      return {ok: true, ...value, context: {sequence: contextSequence, visible: visible(), editing: false, view: viewMode(),
+      return {ok: true, ...value, context: {sequence: contextSequence, navigationSequence: drawingNavigationSequence, drawingReceipts: drawingPresentationReceipts(), visible: visible(), editing: false, view: viewMode(),
         selection: null, focus, drawing, posture: value.posture, readOnly: value.readOnly}};
     }
     // Read the kept source and its live focus without checkpointing a draft or composition.
     // The hosted adapter maps this range to its acknowledged source before publishing it.
     const busy = () => ({...fail('document_not_settled', 'yielded'), ...documentState(),
-      context: {...editorFocus(), sequence: contextSequence, visible: visible(), editing: visible() && editing(), view: viewMode()}});
+      context: {...editorFocus(), sequence: contextSequence, navigationSequence: drawingNavigationSequence, drawingReceipts: drawingPresentationReceipts(), visible: visible(), editing: visible() && editing(), view: viewMode()}});
     if (composing() || Date.now() - lastInputAt < 900) return busy();
     const captured = await _rapierWithSettledExternalDocument(documentState, {quiet: true});
     if (!captured.settled) return busy();
@@ -241,7 +262,7 @@
       : {selection: null, focus: null};
     return {ok: true, documentId: value.documentId, revision: value.revision, generation: value.generation,
       filename: value.filename, docKind: value.docKind, text: value.text,
-      context: {...pointer, sequence: contextSequence, visible: visible(), editing: visible() && editing(true), view: viewMode(),
+      context: {...pointer, sequence: contextSequence, navigationSequence: drawingNavigationSequence, drawingReceipts: drawingPresentationReceipts(), visible: visible(), editing: visible() && editing(true), view: viewMode(),
         posture: value.posture, readOnly: value.readOnly,
         ...(value.reviewedRevision == null ? {} : {reviewedRevision: value.reviewedRevision})}};
   }
@@ -365,7 +386,7 @@
         ...(Array.isArray(tx.sourceTransactionIds) ? {sourceTransactionIds: tx.sourceTransactionIds.slice()} : {}),
         splices: splices.map(row => ({pos: row.pos, removed: row.removed, inserted: row.inserted}))}] : [];
     });
-    return {...documentState(), ...editorFocus(), drawing: drawingContext(), journal, externalComparison: externalComparison(),
+    return {...documentState(), ...editorFocus(), drawing: drawingContext(), navigationSequence: drawingNavigationSequence, drawingReceipts: drawingPresentationReceipts(), journal, externalComparison: externalComparison(),
       closedComparisonId: !apps && comparisonKernelId && !ownsComparison(comparisonOwner) ? comparisonKernelId : null};
   }
 
@@ -744,10 +765,8 @@
       if (typeof _rapierDrawFollow === 'function') _rapierDrawFollow(request.splices);
       committed = {ok: true, revision: result.commitReceipt.documentRevision,
         documentId: result.commitReceipt.documentAuthority, transactionId: result.transaction?.id};
-      if (request.actor === 'agent' && request.fence?.drawingPatch) {
-        committed.drawingReceipt = projectRemoteDrawing(request.fence.drawingPatch,
-          {transactionId: committed.transactionId, name: request.hostAgent || doorName});
-      }
+      // Local presentation starts from invoke's durable intent after the kernel records this
+      // receipt. Publishing Draw context here would reconcile source before that record exists.
       if (caret.point) caretPut('document_changed');
       if (committed.transactionId && !request.carriedLedger) {
         transactionPrincipals.set(committed.transactionId, {principal: request.principal, hostAgent: request.hostAgent});
@@ -892,7 +911,43 @@
     return await drainView();
   }
 
+  async function revealReviewChange(request, suppliedReview = null) {
+    const navigation = drawingNavigationSequence;
+    const target = () => {
+      const review = suppliedReview || remoteReview?.review || kernel?.collaboration()?.review;
+      const change = review?.changes?.find(row => row.id === request.changeId);
+      return matches(request) && visible() && !covered() && navigation === drawingNavigationSequence &&
+        review?.id === request.reviewId && review.status === 'pending' && change?.status === 'pending' &&
+        change.pos === request.start && change.pos + String(change.removed || '').length === request.end ? {review, change} : null;
+    };
+    if (!target()) return fail('review_target_changed');
+    if (request.pointer?.expiresAt <= Date.now()) return fail('pointer_expired');
+    let element, scroller, scrolled;
+    if (rapier.compare?.active) {
+      const record = remoteReview;
+      if (record?.review.id !== request.reviewId || record.pending.done || !expectedCurrent(record.expected) ||
+          rapier.compare.currentText !== record.image.baseline || rapier.compare.incomingText !== record.image.incoming)
+        return fail('review_presentation_unavailable');
+      const index = record.pending.hunkChanges?.findIndex(ids => ids.includes(request.changeId)) ?? -1;
+      if (index < 0) return fail('review_change_not_visible');
+      _rapierSeenViewMovedByAgent();
+      const focused = _rapierCompareFocusChange(index);
+      element = focused.target; scroller = focused.scroller; scrolled = focused.scrolled;
+    } else {
+      _rapierReviewSpansRefresh();
+      element = document.querySelector('#editor-blocks .rapier-review-change[data-review-change="' + CSS.escape(request.changeId) + '"]');
+      if (!element) return fail('review_change_not_visible');
+      _rapierSeenViewMovedByAgent();
+      element.scrollIntoView({block: 'center', behavior: 'instant'});
+    }
+    if (scrolled && !await _rapierAwaitScrollRest(scroller, request.signal || idleSignal)) return fail('view_changed');
+    abort(request);
+    if (!target() || !element?.isConnected || request.pointer?.expiresAt <= Date.now()) return fail('review_target_changed');
+    return request.pointer && agentCaret(request.pointer.id, request.pointer.words, request, element) ? {ok: true} : fail('review_change_not_visible');
+  }
+
   async function reveal(request) {
+    if (request.reviewId) return revealReviewChange(request);
     if (!matches(request) || rapier.compare?.active) return fail('view_changed');
     abort(request);
     if (request.pointer?.expiresAt <= Date.now()) return fail('pointer_expired');
@@ -988,6 +1043,31 @@
       (expected.expectedGeneration == null || expected.expectedGeneration === Number(rapier.revision.generation));
   }
 
+  async function presentDrawing(intent, expected, {onReceipt, signal} = {}) {
+    await ready;
+    const transactionId = String(intent?.transactionId || '');
+    const unavailable = reason => ({transactionId, documentId: intent?.documentId, status: 'unavailable', reason,
+      presentation: {status: 'unavailable', session: null, surfaceGeneration: 0}});
+    if (!intent || !['pending', 'replaying'].includes(intent.status) || !expected || typeof _rapierDrawPresentCommitted !== 'function') return unavailable('drawing_unavailable');
+    const sequence = expected.expectedNavigationSequence ?? intent.navigationSequence ?? drawingNavigationSequence;
+    const controller = new AbortController(), abortPresentation = () => controller.abort();
+    signal?.addEventListener('abort', abortPresentation, {once: true});
+    const isCurrent = () => !admission() && visible() && !signal?.aborted && !controller.signal.aborted && expectedCurrent(expected) &&
+      drawingNavigationSequence === sequence && !composing() && !_rapierMutationBarrierActive() &&
+      !drawingContext()?.busy?.human && (drawingContext()?.open || !editing());
+    const changed = () => { if (!isCurrent()) controller.abort(); };
+    contextSubscribers.add(changed);
+    subscribers.add(changed);
+    try {
+      return await _rapierDrawPresentCommitted(intent, {current: isCurrent, signal: controller.signal,
+        onReceipt: value => { contextChanged('drawing_presentation'); try { onReceipt?.(value); } catch (_) {} }});
+    } finally {
+      signal?.removeEventListener('abort', abortPresentation);
+      contextSubscribers.delete(changed);
+      subscribers.delete(changed);
+    }
+  }
+
   async function applyView(intent, expected, value, options = {}) {
     await ready;
     if (!intent || intent.status !== 'pending' || !['document', 'compare', 'mode'].includes(intent.kind)) return fail('view_invalid', 'invalid');
@@ -1000,7 +1080,9 @@
     if (!value || value.documentId !== expected?.expectedDocumentId || value.text !== expected.expectedText ||
         value.revision !== intent.revision || !expectedCurrent(expected)) return fail('document_changed', 'conflict');
     if (!visible()) return fail('view_hidden');
-    if (!hand.ok || hand.context.editing || remoteReview || _rapierWillReviewSlot.settling) return fail('human_edit_in_progress', 'yielded');
+    const reviewTarget = intent.kind === 'document' && intent.reviewId && value.collaboration?.review?.id === intent.reviewId &&
+      value.collaboration.review.status === 'pending' && value.collaboration.review.changes?.some(row => row.id === intent.changeId && row.status === 'pending');
+    if (!hand.ok || hand.context.editing || remoteReview && !reviewTarget || _rapierWillReviewSlot.settling) return fail('human_edit_in_progress', 'yielded');
     if (!Number.isFinite(intent.expiresAt) || intent.expiresAt <= Date.now()) return fail('view_expired');
     viewFlight?.abort();
     const controller = new AbortController();
@@ -1014,7 +1096,9 @@
       if (intent.kind === 'document') {
         if (!Number.isSafeInteger(intent.start) || !Number.isSafeInteger(intent.end) || intent.start < 0 ||
             intent.end < intent.start || intent.end > value.text.length) return fail('view_range_invalid', 'invalid');
-        result = await reveal({...request, start: intent.start, end: intent.end});
+        result = intent.reviewId ? await revealReviewChange({...request, start: intent.start, end: intent.end,
+          reviewId: intent.reviewId, changeId: intent.changeId}, value.collaboration?.review)
+          : await reveal({...request, start: intent.start, end: intent.end});
       } else {
         const compare = value.compare;
         const change = compare?.id === intent.compareId && compare.changes?.find(row => row.id === intent.changeId);
@@ -1572,6 +1656,72 @@
     }
   }
 
+  // The hosted kernel may ask this editor to prepare Water pixels. This bridge uses the
+  // painter's private surface and returns a bound fact; it never applies a drawing or source edit.
+  async function prepareMaterial(request, expected) {
+    await ready;
+    const identity = {kind: 'material', documentId: request?.documentId, revision: request?.revision, job: request?.job};
+    const refuse = reason => ({...identity, outcome: 'refused', reason});
+    if (request?.signal?.aborted) return refuse('cancelled');
+    if (request?.kind !== 'material' || !['paint', 'replay', 'sample'].includes(request.task) ||
+        !request.payload || typeof request.payload !== 'object') return refuse('material_request_invalid');
+    if (materialFlight && !materialFlight.signal.aborted) return refuse('material_busy');
+    if (admission() || !visible()) return refuse('editor_unavailable');
+    const before = documentState(), revision = expected?.expectedRevision ?? request.revision;
+    if (before.documentId !== request.documentId || before.revision !== revision ||
+        (expected && (expected.expectedDocumentId !== before.documentId || expected.expectedText !== before.text ||
+          expected.expectedGeneration !== before.generation))) return refuse('document_changed');
+    const controller = new AbortController(), abortMaterial = () => controller.abort(request.signal?.reason);
+    request.signal?.addEventListener('abort', abortMaterial, {once: true});
+    if (request.signal?.aborted) abortMaterial();
+    materialFlight = controller;
+    let reason = 'cancelled';
+    const current = () => {
+      if (controller.signal.aborted) return false;
+      if (!visible() || admission()) { reason = 'editor_unavailable'; return false; }
+      if (Number.isFinite(request.expiresAt) && request.expiresAt <= Date.now()) { reason = 'material_request_expired'; return false; }
+      const state = documentState(), drawing = drawingContext();
+      if (state.documentId !== before.documentId || state.revision !== revision || state.generation !== before.generation ||
+          state.text !== before.text || state.filename !== before.filename || state.docKind !== before.docKind) {
+        reason = 'document_changed'; return false;
+      }
+      if (_rapierMutationBarrierActive() || composing() || drawing?.busy?.human || (!drawing?.open && editing())) {
+        reason = 'human_edit_in_progress'; return false;
+      }
+      // Local and hosted revisions have different counters. The exact local snapshot was
+      // checked above; the request's server revision binds the returned material fact.
+      if (!globalThis.RapierKernel.materialMatches(request, {...state, revision: request.revision}, drawing)) {
+        reason = 'material_target_changed'; return false;
+      }
+      return true;
+    };
+    const changed = () => { if (!current()) controller.abort(); };
+    contextSubscribers.add(changed);
+    subscribers.add(changed);
+    try {
+      if (!current()) return refuse(reason);
+      const payload = structuredClone(request.payload), options = {...payload, signal: controller.signal};
+      let value;
+      if (request.task === 'paint' && typeof host.paint === 'function')
+        value = await host.paint(payload.strokes, options);
+      else if (request.task === 'replay' && typeof host.paintReplay === 'function')
+        value = await host.paintReplay(payload.shape, payload.omitIds, options);
+      else if (request.task === 'sample' && typeof host.paintSample === 'function')
+        value = await host.paintSample(payload.shape, payload.point, options);
+      else return refuse('material_unavailable');
+      if (!current()) return refuse(reason);
+      return {...identity, ...globalThis.RapierKernel.admitMaterialResult(request, {...identity, outcome: 'ok', value})};
+    } catch (error) {
+      return refuse(controller.signal.aborted ? reason : /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(error?.code || '')
+        ? error.code : 'material_unavailable');
+    } finally {
+      request.signal?.removeEventListener('abort', abortMaterial);
+      contextSubscribers.delete(changed);
+      subscribers.delete(changed);
+      if (materialFlight === controller) materialFlight = null;
+    }
+  }
+
   let exportFlight = null;
   const retainedExports = new Map();
   const RETAINED_EXPORTS = 4, EXPORT_LIFETIME_MS = 86400000;
@@ -1712,7 +1862,9 @@
   }
 
   const host = {
-    snapshot, commit, reveal, setView, view: viewContext, exportFile, editorContext,
+    snapshot, commit, reveal, setView, view: viewContext, exportFile, editorContext, presentDrawing,
+    drawingPresentationBinding: () => !apps && visible() && !admission()
+      ? {contextId: doorSession, navigationSequence: drawingNavigationSequence} : undefined,
     paintRaster: (raster, options) => globalThis.RapierEmbeddedImages.validatePaintRaster(raster, options),
     presence: value => {
       if (caret.point && !value.pointers?.some(point => point.id === caret.point.id && point.status !== 'expired' && point.expiresAt > Date.now())) caretPut('pointer_cleared');
@@ -1733,8 +1885,8 @@
       paintReplay: (shape, omitIds, options) => (typeof _rapierDrawPaintReplay === 'function' ? _rapierDrawPaintReplay : globalThis.RapierDrawAgentPaint.replayAgentPainting)(shape, omitIds, options),
       paintSheet: paint => globalThis.RapierDrawAgentPaint.agentPaintSheetHolds(paint),
       paintBrushes: () => globalThis.RapierDrawAgentPaint.agentPaintBrushRegistry(),
-      paintSample: (shape, point, options) => typeof globalThis._rapierDrawPaintSample === 'function'
-        ? globalThis._rapierDrawPaintSample(shape, point, options)
+      paintSample: (shape, point, options) => typeof _rapierDrawPaintSample === 'function'
+        ? _rapierDrawPaintSample(shape, point, options)
         : globalThis.RapierDrawAgentPaint.sampleAgentPainting(shape, point, options),
     } : {}),
     // notes.list / notes.read: the folder is answered by the Notes shell's own door where the build
@@ -1834,9 +1986,9 @@
   async function invoke(name, args = {}, request = {}) {
     // The public guide never enters document admission, read grants or the invocation journal.
     if (name === 'rapier.guide') {
-      try { validateInput(getTool(name).inputSchema, args); }
+      try { args = validateInput(getTool(name).inputSchema, args, 'arguments', true); }
       catch (error) { return {outcome: 'invalid', reason: error.message}; }
-      return guideResult();
+      return guideResult(args, args.topic === 'paint' && typeof host.paintBrushes === 'function' ? host.paintBrushes() : null);
     }
     await ready;
     const tool = getTool(name);
@@ -1876,7 +2028,7 @@
     // front -- a structural find past its first page, a review this call turns out to need -- still
     // resolves below, from the pending outcome itself.
     const eager = measurementsRequired(name, args);
-    const beforeText = _rapierSourceText();
+    const beforeText = _rapierSourceText(), beforeNavigation = drawingNavigationSequence;
     const run = async () => {
       let world, visualFact, editorObservation;
       if (eager?.structure?.mode === 'outline') {
@@ -1918,6 +2070,17 @@
           continue;
         }
         break;
+      }
+      const drawingIntent = kernel.collaboration().drawingIntent;
+      if (['pending', 'replaying'].includes(drawingIntent?.status) && drawingIntent.documentId === String(rapier.identity.authority) &&
+          drawingIntent.revision === Number(rapier.revision.settled)) {
+        const expanded = globalThis.RapierKernel.expandDrawingIntent(drawingIntent, kernel.snapshot());
+        const drawingReceipt = expanded ? await presentDrawing(expanded, {expectedDocumentId: drawingIntent.documentId,
+          expectedRevision: drawingIntent.revision, expectedText: _rapierSourceText(), expectedGeneration: Number(rapier.revision.generation),
+          expectedNavigationSequence: drawingIntent.navigationSequence ?? beforeNavigation}, {signal: who.signal}) :
+          {transactionId: drawingIntent.transactionId, documentId: drawingIntent.documentId, status: 'unavailable',
+            reason: 'drawing_history_unavailable', presentation: {status: 'unavailable'}};
+        if (result.changeId === drawingIntent.transactionId) result = {...result, drawingReceipt};
       }
       // The receipt's structural parse check: decide never awaits a host for it --
       // structureReceipt reads only context.world, matched to the exact before/after digest pair,
@@ -2232,7 +2395,7 @@
           } catch (_) { return null; }
         } else if (pointer.objectId) return null;
         else if (image) box = image.getBoundingClientRect();
-        else if (rapier.compare?.active) box = element?.getBoundingClientRect();
+        else if (rapier.compare?.active || request.reviewId) box = element?.getBoundingClientRect();
         else if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source') {
           box = _rapierSourceRectForOffset(document.getElementById('source-textarea'), _rapierTaPos(request.start));
         } else {
@@ -2521,15 +2684,22 @@
         try {
           journal = remoteJournal(value, before);
           let source = before.text;
+          const expanded = [];
           for (const entry of journal || []) {
             const after = RapierLedger._rapierTransformSplices(source, entry.splices);
-            if (entry.drawingPatch && !globalThis.RapierKernel.verifyDrawingPatch(entry.drawingPatch, source, after))
-              return fail('snapshot_drawing_invalid', 'invalid');
+            let drawingPatch;
+            if (entry.drawingPatch) {
+              drawingPatch = globalThis.RapierKernel.expandDrawingPatch(entry.drawingPatch, source, after);
+              if (!drawingPatch || !globalThis.RapierKernel.verifyDrawingPatch(drawingPatch, source, after))
+                return fail('snapshot_drawing_invalid', 'invalid');
+            }
+            expanded.push(drawingPatch ? {...entry, drawingPatch} : entry);
             source = after;
           }
+          if (journal) journal = expanded;
           plan = journal ? remoteDrawingPlan(journal) : {fence: null, entries: new Set()};
           if (plan.reason) return fail(plan.reason, 'yielded');
-          carriedLedger = remoteLedger(value, before, (entry, id) => mapped.set(entry, id));
+          carriedLedger = remoteLedger(value, before, (entry, id) => mapped.set(entry.id, id));
         }
         catch (_) { return fail('snapshot_history_invalid', 'invalid'); }
         const tip = rapier.undo.ledger.at(-1)?.transaction?.id;
@@ -2539,7 +2709,7 @@
         if (!committed.ok) return committed;
         for (const entry of journal || []) if (entry.drawingPatch) {
           drawingReceipts.push(projectRemoteDrawing(entry.drawingPatch, {
-            transactionId: mapped.get(entry) || committed.transactionId, remoteTransactionId: entry.id,
+            transactionId: mapped.get(entry.id) || committed.transactionId, remoteTransactionId: entry.id,
             name: entry.hostAgent || doorName,
             ...(plan.entries.has(entry) ? {committedReference: plan.committedReference, committedPosition: plan.committedPosition} : {}),
           }));
@@ -2734,8 +2904,8 @@
     pointState: () => caret.point ? {...caret.point} : null,
     clearPoint: (id, reason = 'view_changed') => { if (!id || caret.point?.id === id) caretPut(reason); },
     nameAtDoor, noteRemoteCall, doorName: () => doorName, stageCarriedProposal, proposalExport,
-    replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual, exportDocument,
-    resolveEditorRequest, cancelEditorRequest, editorContext,
+    replaceDocument, acknowledge, compareSelection, humanContext, contextChanged, setPolicy, inspectVisual, exportDocument, prepareMaterial,
+    resolveEditorRequest, cancelEditorRequest, editorContext, presentDrawing, drawingNavigationChanged,
     policyReady: () => policyAvailable, applyView, presentReview, dismissReview, presentationChanged, readFile, notify,
     pendingReviewSnapshot, reviewSnapshot, decideReviewChange, representPendingReview, agentRecoveryState,
     publishEmbedReview,
@@ -2749,7 +2919,7 @@
     document.addEventListener(type, humanActivity, {capture: true, passive: true});
   }
   document.addEventListener('visibilitychange', () => {
-    if (!visible()) { retainedPointer = null; viewFlight?.abort(); visualFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); }
+    if (!visible()) { retainedPointer = null; viewFlight?.abort(); visualFlight?.abort(); materialFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); }
     else if (!apps && kernel?.collaboration()?.review?.status === 'pending' && kernel.collaboration().review.kind !== 'proposal') {
       void representPendingReview().catch(() => {});
     }
@@ -2757,7 +2927,8 @@
   });
   window.addEventListener('blur', () => { contextChanged('blur'); });
   window.addEventListener('focus', () => { contextChanged('focus'); });
-  window.addEventListener('pagehide', () => { retireView(); visualFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); retire(); for (const endpoint of ownedNotesEndpoints) void endpoint.lock(); });
+  window.addEventListener('popstate', drawingNavigationChanged);
+  window.addEventListener('pagehide', () => { retireView(); visualFlight?.abort(); materialFlight?.abort(); if (editorCard) cancelEditorRequest(editorCard.request.id); retire(); for (const endpoint of ownedNotesEndpoints) void endpoint.lock(); });
   window.addEventListener('pageshow', () => { void refresh(); });
   queueMicrotask(() => { void refresh(); });
 })();

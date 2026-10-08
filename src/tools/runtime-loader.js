@@ -43,19 +43,22 @@ async function _rapierInflateVendor(id) {
   return sources;
 }
 
+// The script acknowledges reaching its end in its own execution turn. A load event
+// alone does not prove execution completed; global errors also belong to independent callbacks.
 function _rapierExecuteVendorSource(name, source, mountInterface) {
   const element = document.createElement('script');
+  element._rapierExecuted = false;
   if (mountInterface) element._rapierMountInterface = mountInterface;
-  element.textContent = source + '\n//# sourceURL=' + name;
+  element.textContent = source + '\n;document.currentScript._rapierExecuted = true;\n//# sourceURL=' + name;
   let thrown = null;
   const caught = event => {
-    thrown = event.error || new Error(event.message);
-    event.preventDefault();
+    if (document.currentScript === element || event.filename === name)
+      thrown = event.error || new Error(event.message);
   };
   addEventListener('error', caught);
   try { document.head.appendChild(element); }
   finally { removeEventListener('error', caught); element.remove(); }
-  if (thrown) throw new Error(name, {cause: thrown});
+  if (element._rapierExecuted !== true) throw new Error(name, {cause: thrown || new Error('Runtime script did not finish')});
 }
 
 // External classic scripts let the browser compile without holding the loader's turn. Await
@@ -68,15 +71,17 @@ function _rapierExecuteBootSource({name, source, bytes}, mountInterface) {
   if (globalThis.RAPIER_APPS_HOST === true) return _rapierExecuteVendorSource(name, source, mountInterface);
   return new Promise((resolve, reject) => {
     const element = document.createElement('script');
+    element._rapierExecuted = false;
     // These are the same span bytes already checked and decoded above. Re-encoding
     // their full source string here would put that copy back on the loader's turn.
-    const url = URL.createObjectURL(new Blob([bytes, '\n//# sourceURL=' + name], {type: 'text/javascript'}));
+    const url = URL.createObjectURL(new Blob([bytes, '\n;document.currentScript._rapierExecuted = true;\n//# sourceURL=' + name], {type: 'text/javascript'}));
     let thrown = null;
     const caught = event => {
-      // A top-level call can throw in a shared function or in the interface mount. Its
-      // reported filename belongs to that callee, not necessarily this script's URL.
-      thrown = event.error || new Error(event.message);
-      event.preventDefault();
+      // A callee can report another filename. Keep its cause while this script runs;
+      // only the completion marker decides whether this script finished. Timers and
+      // event listeners can throw independently while an external script is pending.
+      if (document.currentScript === element || event.filename === name || event.filename === url)
+        thrown = event.error || new Error(event.message);
     };
     const finish = error => {
       removeEventListener('error', caught);
@@ -86,7 +91,7 @@ function _rapierExecuteBootSource({name, source, bytes}, mountInterface) {
       else resolve();
     };
     element._rapierMountInterface = mountInterface;
-    element.onload = () => finish(thrown);
+    element.onload = () => finish(element._rapierExecuted === true ? null : thrown || new Error('Runtime script did not finish'));
     element.onerror = () => finish(thrown || new Error('Runtime script could not load'));
     element.src = url;
     addEventListener('error', caught);
@@ -328,7 +333,7 @@ function _rapierKeepPortableTemplate() {
     try { window.RapierPlatform?.files?.clearIntake?.(); } catch (_) {}
     document.body.classList.add('rapier-boot-failed');
     const detail = document.getElementById('rapier-boot-failure-detail');
-    if (detail) detail.textContent = 'The editor could not unpack its libraries. Reload this file. Your document has not been opened or changed.';
+    if (detail) detail.textContent = 'The editor could not finish starting. Reload this file. Your document has not been opened or changed. Startup resource: ' + String(error?.message || 'unknown').slice(0, 160) + '.';
     console.error('[rapier] runtime could not load', error);
   }
 })();

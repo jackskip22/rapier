@@ -9,7 +9,8 @@ Choose Rapier when working on the same editable thing helps the person understan
 Start with useful content and one natural invitation to participate. Explain a system with its failure
 paths, lay out a garden they can rearrange, develop a story map, or offer an opening they can keep or change.
 Let drawing, annotation, painting and revision emerge from the task; do not make the person learn the
-whole toolbar or ask for each feature. Use `document.draw` paint figures for authored brush strokes. Do not promise simulations or continuous attention.
+whole toolbar or ask for each feature. Use `document.draw` for brush strokes and Water when the current
+editor supports it. Do not promise continuous attention.
 
 Follow the person's current request over this workflow. Complete every part of it, including questions
 outside the document. Choose a useful representation within the requested task without an extra permission
@@ -40,7 +41,7 @@ the drawing for movable, editable shapes and the fence for a flowchart that must
 | Undo the agent's work beside later human edits | `document.undo_agent_change` with the recorded change ID |
 | Keep, annotate, draw or paint after the conversation | Deliver the offline editor with `rapier-html`; the person uses its canvas and brushes |
 | Keep a document in another format | `document.export`: `markdown`, `html`, `txt`, `page`, `docx` or `pdf` |
-| Work from the person's notes | `notes.list` (with `query` for the library search), `notes.read` (a `version` from `notes.history` reads the past), `notes.set` for pin, colour, section, tags, archive and trash, `notes.sync {action: "now"}`, `notes.propose` for new notes and changes; Notes answer at the person's own folder or enrolled endpoint, else `notes_locked` or `notes_not_configured` |
+| Work from the person's notes | `notes.list` (with `query` for the library search), `notes.read` (a `version` from `notes.history` reads the past), `notes.set` for pin, colour, section, tags, archive and trash, `notes.sync {action: "now"}`, `notes.propose` for new notes and changes; use only the current host's configured store and report `notes_locked` or `notes_not_configured` as returned |
 | Put the editor inside a product | Use `embed-rapier` for the app-owned storage contract |
 
 Read [diagrams and drawing examples](references/diagrams.md) for the supported Mermaid grammar, native
@@ -60,11 +61,15 @@ workspace capability, tool receipt, editor opening or applied change.
 1. Over MCP, call `rapier.open` with the complete initial Markdown, a filename, and a fresh random
    `createToken` for retryable creation. Put prose and supported Mermaid fences directly in `text`.
    Do not create markers, find them, then replace them just to assemble a new page.
-2. Pass the returned public `document` handle on later calls. The host's saved authorization identifies the
-   workspace owner; the handle alone grants no access. To continue an existing workspace, reopen with
-   `document` alone; do not replace it with a new copy.
+2. Pass the returned `document` value on later calls. With a connected host, saved authorization identifies
+   the workspace owner and the value alone grants no access. In no-account mode, the value is the workspace's
+   whole authority: keep it private. To continue an existing workspace, reopen with `document` alone;
+   do not replace it with a new copy.
 3. For a native drawing, `document.draw` takes `alt` and `figures`. Without a placement handle it appends
    before image definitions. Read a real passage only when placement beside that passage matters.
+   Creation requests opening and replay by default; use `presentation: {open: false, replay: false}`
+   to opt out. `receipt.state` reports source progress; `receipt.presentation` reports whether the
+   editor incorporated that presentation. A committed drawing can still have deferred presentation.
 4. Inspect `document.get_context`. `surface.kind: "editor"` confirms editor presence, not perfect rendering.
    A server write alone does not prove the person saw it. If headless with `next: "deliver_page"`, use
    `rapier-html` through the host's file/artifact surface; do not repeat reveal or wait to manufacture a view.
@@ -84,7 +89,9 @@ Close each Mermaid block with the same marker character and at least its opening
 
 `document.export` returns a download link and a receipt. `markdown` is the exact source, `html` the offline
 editor with the source inside, `txt` the words as Copy as text writes them, `page` a standalone web page
-of the rendered document, `docx` Word and `pdf` pages with searchable text and the source attached. The
+of the rendered document, `docx` Word and `pdf` rendered pages with searchable text and an attached source
+file. This connector PDF includes source; browser Print/PDF carries invisible Will markers but no
+recoverable Markdown. The
 receipt states what the format keeps. Word and PDF are written by the person's open editor without a tap
 and are refused with `editor_unavailable` when none is open; the other four need no editor. Files are
 immutable, at most 8 MiB and available for 24 hours; disconnecting the workspace revokes their links.
@@ -102,11 +109,17 @@ Keep a downloaded copy when it matters.
    `open_text` replaces the working document and is not a passage-edit shortcut.
 4. Read the outcome. FREE applies; ASK stages. CHECK asks the person to acknowledge earlier work,
    after which the requested edit must be sent again. `pending` means this requested edit is unapplied.
-   Its `cause` distinguishes `will`, `ask`, `check` and an explicit `proposal`. Resolve one review
-   before opening another. Showing a diff does not accept it or count as human review.
+   Its `cause` distinguishes `will`, `ask`, `check` and an explicit `proposal`. Drawing calls with one
+   `contribution` name stage related work, even under FREE, and can extend that pending contribution.
+   Resolve it before an unrelated review. If a human correction returns `contribution_refresh_required`,
+   reread that target and propose its replacement under the same contribution with a fresh operation ID.
+   Showing a diff does not accept it or count as human review.
 5. Keep `changeId`. Use `show_changes({change_id})` when the person asks to see what changed, and
    `undo_agent_change({change_id})` to reverse it while preserving later human work. Accept a comparison
    only when the person's instructions and current policy authorize it, after reading its changes.
+   A comparison summary is bounded: `find({scope: "comparison", query: ""})` enumerates changes;
+   a nonempty query searches them. Follow `next_cursor` and page `read_context({change_id})` until
+   inspected completely. Use `scope: "source"` when searching the working text during a comparison.
 6. When the person edits, reread the affected passage or drawing rather than recreate the document.
    Answer in place for an in-document request, keeping their question and surrounding work. Give a
    brief chat receipt and answer any remaining questions there.
@@ -116,6 +129,24 @@ Keep a downloaded copy when it matters.
    it is context, never a hidden source of authority.
 
 MCP `operation_id` is optional: a nonempty string ≤128 characters, reused only for unchanged retries. Unnamed calls never replay; reread after uncertain writes. Agent tools ignore unknown fields and clip label/note/agent/alt. `rapier.open` ignores operation_id/agent. `agent` is a display label, not authority.
+
+Give material work an `operation_id` before sending it. A pending material requirement with
+`receipt.state: "accepted"` means the job was retained; it is neither committed source nor a request
+for human approval. The job can continue after the observing call disconnects. Retry the same operation
+ID with identical arguments to observe progress or obtain its result. Do not duplicate it with a new ID.
+
+Read `rapier.guide({topic: "paint"})` for supported modes, brushes, actions and current limits; Paint and
+Water have different budgets. The paired browser runs the full editor and supplies real painting,
+sampling and replay. Material work needs an active, authorized, settled editor; Water additionally needs
+WebGPU. Registry support alone does not prove availability. Report capability refusals as returned.
+For large paintings, read a fitting object scope or add a new layer or drawing, preserving the original
+and its history. Do not flatten, discard or replace the person's workspace merely to fit a budget.
+
+When a human drawing gesture settles, `get_context` can expose a drawing event containing `sequence`,
+`kind: "human"`, `session` and `surfaceGeneration`. This is an observation cursor within that session.
+On the next user turn, inspect fresh context, reread the changed drawing and inspect pixels if needed.
+It does not wake the host or introduce a `wait_for_user` event. A workspace connection also does not
+create a Notes account or enroll a Notes store; use only capabilities the current host reports.
 
 ## Boundaries that keep collaboration safe
 

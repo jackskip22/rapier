@@ -2,10 +2,11 @@
 // What a crawler reads in rapier.html without running a byte of it. The page's own words are packed: to a reader that does not execute it
 // the body is script text. The home guide combines the feature summary below and the welcome document, evaluated from editor/engine.js
 // and rendered with the page's Markdown grammar (agent/markdown-spec.mjs) with its pictures left out. Each door takes its own welcome
-// sections or the interface's policy sheet. The build writes all guides between the body's RAPIER_SEO markers, the door guides in inert
+// sections (including Watercolor) or the interface's policy sheet. The build writes all guides between the body's RAPIER_SEO markers, the door guides in inert
 // templates for the Worker to select. The head's style hides the active guide from the first paint and its <noscript> style shows it
 // where scripting is off, so no person who runs the editor ever sees it; it carries no `hidden` attribute, because a reader that ignores
-// stylesheets (a crawler, a reader mode) drops what carries one.
+// stylesheets (a crawler, a reader mode) drops what carries one. The visible user guide remains the content owner;
+// this static fallback does not promise that a search engine will index text hidden by the running editor.
 import {formatColorRun} from '../spec/md-marks.mjs';
 import vm from 'node:vm';
 import {VERSION} from '../version.mjs';
@@ -36,7 +37,7 @@ Editable SVG with a pressure-sensitive brush, shapes, connected arrows and text;
 
 ## Paint
 
-MyPaint brushes, oil, bristle, scumble, pencil and pen, painted into a layer inside the drawing, with undo. Water lays watercolour whose pigments mix, flow and dry on textured paper, as a transparent layer.
+MyPaint brushes, oil, bristle, scumble, pencil and pen, painted into a layer inside the drawing, with undo. [Watercolor](https://rapier.website/watercolor) mixes flowing pigments and wet washes on textured paper, in a transparent layer.
 
 ## Notes
 
@@ -56,9 +57,9 @@ Work on the same page as an AI agent. It reads only the passages it needs, chang
 
 ## Where it runs
 
-In a browser, installed as an app, or as one HTML file under 2 MB that you keep in a folder. After the first load it works offline.
+In a browser, installed as an app, or as one HTML file that you keep in a folder. After the first load it works offline.
 
-[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://github.com/jackskip22/rapier/blob/main/docs/agents.md) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial licence](https://rapier.website/commercial)
+[Rapier](https://rapier.website/) · [Rapier Notes](https://rapier.website/notes) · [Rapier Draw](https://rapier.website/draw) · [Rapier Watercolor](https://rapier.website/watercolor) · [Source](https://github.com/jackskip22/rapier) · [Agent guide](https://github.com/jackskip22/rapier/blob/main/docs/agents.md) · [llms.txt](https://rapier.website/llms.txt) · [Privacy and terms](https://rapier.website/privacy) · [Commercial licence](https://rapier.website/commercial)
 `;
 
 function declarations(node, name, found = []) {
@@ -109,7 +110,7 @@ const plain = html => html
 	.replace(/ class="(?:callout callout-[a-z]+|contains-task-list|task-list-item enabled)"/g, '')
 	.replace(/<input class="task-list-item-checkbox"( checked="")? type="checkbox">/g, (_, checked) => checked ? '☑' : '☐');
 // Under the page's own <h1>: the guide's title is a second-level heading, its sections third.
-const demoted = html => html.replace(/<(\/?)h([1-6])>/g, (_, close, level) => '<' + close + 'h' + Math.min(6, Number(level) + 1) + '>');
+const shiftHeadings = (html, by) => html.replace(/<(\/?)h([1-6])>/g, (_, close, level) => '<' + close + 'h' + Math.max(1, Math.min(6, Number(level) + by)) + '>');
 
 // The welcome as the first paint draws it (tools/build.mjs, tools/runtime-loader.js): the same blocks
 // the editor will lay out, with each picture's box reserved from the picture's own width and height.
@@ -257,7 +258,7 @@ export function welcomePaintHtml(engineSource) {
 export function seoSection(engineSource) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
 	const summary = plain(parser.render(SUMMARY, {docId: 'summary'}));
-	const guide = demoted(plain(parser.render(withoutPictures(welcomeMarkdown(engineSource)), {docId: 'guide'})));
+	const guide = shiftHeadings(plain(parser.render(withoutPictures(welcomeMarkdown(engineSource)), {docId: 'guide'})), 1);
 	const section = '<section id="rapier-seo">\n<h1>Rapier</h1>\n' + summary + '<article>\n' + guide + '</article>\n</section>';
 	// Words only: no picture, script, style, form or comment, and no picture's bytes.
 	if (/<(?:img|svg|script|style|iframe|form|input|!--)|data:|RAPIER_/i.test(section)) throw new Error('The search words must be plain text and links');
@@ -311,7 +312,7 @@ function sheetGuide(markup, name) {
 		.replace(/[ \t]*\n[ \t]*/g, '\n').trim();
 }
 
-// Each address gets the same words as its view in the editor. The connector's published privacy
+// Each address describes its editor view. The connector's published privacy
 // document is derived from the same sheet, so its link introduces no second copy of the policy.
 export function seoDoorSections(engineSource, uiMarkup) {
 	const parser = applyMarkdownSpec(markdownit(RAPIER_MARKDOWN_SPEC.options), markdownPlugins);
@@ -323,6 +324,7 @@ export function seoDoorSections(engineSource, uiMarkup) {
 	const bodies = {
 		'/notes': render(welcomeGuidePart(source, 'Notes', {omitTitle: true}), 'notes'),
 		'/draw': render(welcomeGuidePart(source, 'Drawing', {omitSpecimens: true}) + '\n' + welcomeGuidePart(source, 'Paint'), 'draw'),
+		'/watercolor': shiftHeadings(render(welcomeGuidePart(source, 'Watercolor', {omitTitle: true}), 'watercolor'), -2),
 		'/privacy': sheetGuide(uiMarkup, 'privacy-words') + '\n<p><a href="https://github.com/jackskip22/rapier-plugins/blob/main/PRIVACY.md">Connector privacy and terms</a> use the same policy.</p>\n',
 		'/commercial': sheetGuide(uiMarkup, 'commercial-words') + '\n',
 	};
@@ -331,8 +333,11 @@ export function seoDoorSections(engineSource, uiMarkup) {
 		if (!bodies[path]) throw new Error('The site door has no guide: ' + path);
 		const links = [['/', 'Rapier'], ...Object.entries(DOORS).filter(([other]) => other !== path).map(([other, value]) => [other, value.name])]
 			.map(([address, label]) => '<a href="https://rapier.website' + address + '">' + escape(label) + '</a>').join(' · ');
-		const section = '<section id="rapier-seo">\n<h1>' + escape(door.name) + '</h1>\n' + bodies[path] + '<nav><p>' + links + '</p></nav>\n</section>';
-		if (/<(?:img|svg|script|style|iframe|form|input|button|!--)|data:|RAPIER_/i.test(section)) throw new Error('The door guide must be plain text and links');
+		const picture = door.picture ? '<figure><img src="https://rapier.website/' + escape(door.picture) + '" alt="' + escape(door.imageAlt) +
+			'" width="1200" height="630" style="display:block;max-width:100%;height:auto;background:#fff"><figcaption>Overlapping pigment washes painted with Rapier Water.</figcaption></figure>\n' : '';
+		const section = '<section id="rapier-seo">\n<h1>' + escape(door.name) + '</h1>\n' + picture + bodies[path] + '<nav aria-label="Rapier pages"><p>' + links + '</p></nav>\n</section>';
+		if (/<(?:svg|script|style|iframe|form|input|button|!--)|data:|RAPIER_/i.test(section) ||
+			[...section.matchAll(/<img\b[^>]*>/g)].some(image => !picture.includes(image[0]))) throw new Error('The door guide must contain only its authored picture, text and links');
 		return [path, section];
 	}));
 }

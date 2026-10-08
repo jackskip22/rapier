@@ -3697,6 +3697,36 @@ function rapierWelcomeMarkdown() {
 		"",
 		"aint with your finger. **Paint Brush** is real paint: oil, bristle, marker, pencil, pen and watercolor. Rapier runs its own mobile paint engine and MyPaint brushes. Watercolor spreads and dries. Smudge, smear, blend and erase paint that's already down. A painting is just a picture layer on your canvas, saved losslessly, which you can resize, export or continue painting.",
 		"",
+		"### Watercolor",
+		"",
+		"Paint watercolor online with Rapier Water. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pressure-sensitive pen. The editor is free, with no account or installation required.",
+		"",
+		"Water needs a compatible browser with WebGPU; the editor reports whether it is available.",
+		"",
+		"#### Start a watercolor painting",
+		"",
+		"[Rapier Watercolor](https://rapier.website/watercolor) opens Draw with Water selected. You can also choose **Water** inside any drawing. Choose a brush and a pigment, set the brush size, and paint on the canvas. Change the water and paint load for a light wash or a stronger mark. Add another color while the first is wet to mix them on the paper.",
+		"",
+		"#### Water, pigment and paper",
+		"",
+		"Water continues moving after a stroke. Wet washes meet and spread; pigment settles into the paper's texture and gathers at drying edges. Control flow, bleed, edge darkening, granulation and drying to shape the result. Paper settings change how the wash behaves, while the canvas background stays separate from the paint.",
+		"",
+		"Use the water tool to wet the paper and the lift tool to take pigment back out. A light wash leaves room for the next color; a drier brush brings out the paper's grain. Undo lets you return to an earlier stroke while you explore a mixture or composition.",
+		"",
+		"#### Keep transparent, movable artwork",
+		"",
+		"The painting is a transparent layer inside an editable drawing. Set the paint, then move or resize it alongside shapes, lettering and other pictures. The paper background is independent, so the painting can sit over a different canvas color or become part of an illustrated document.",
+		"",
+		"Press Done to place the drawing in your document. Text and pictures travel together in one Markdown file, including the image bytes. Save that file, or keep the whole editor and document as an offline HTML page. Your work remains yours to reopen, revise and share.",
+		"",
+		"#### Paint beside your writing",
+		"",
+		"Add a watercolor sketch to a field journal, illustrate a garden plan, paint a study for a letter or make a picture for a note. [Rapier Draw](https://rapier.website/draw) adds editable shapes, connected arrows and text. [Rapier Notes](https://rapier.website/notes) keeps your writing and illustrations together as Markdown notes.",
+		"",
+		"#### Free and private",
+		"",
+		"Painting runs on your device. Ordinary local painting does not upload your work, and there is no account, advertising or tracking. An explicitly connected workspace or sync service can send work you choose to share. After the editor has loaded, you can keep working offline. See [privacy and terms](https://rapier.website/privacy) for connected features.",
+		"",
 		"## Tables",
 		"",
 		"| Task | Status |",
@@ -23862,6 +23892,7 @@ const _rapierPersistenceRuntime = Object.seal({
 	durable: null,
 	bootSettled: false,
 	recoveryBase: null,
+	recoveryHeld: false,
 });
 
 function openRapierDB() {
@@ -24321,6 +24352,7 @@ function _rapierRequeuePersistenceCapture(capture) {
 
 function rapierFlushDirty(opts) {
 	  if (globalThis.RAPIER_APPS_HOST === true) return Promise.resolve(false);
+	if (_rapierPersistenceRuntime.recoveryHeld) return Promise.resolve(false);
 
 	opts = opts || {};
 	if (_rapierPersistenceCaptureBlocked()) {
@@ -24456,6 +24488,7 @@ function rapierFlushDirty(opts) {
 		historyReason: String(rapier.undo.trimReason || (historyComplete ? '' : 'pending_edit')),
 	};
 	return _rapierEnqueuePersistence(async () => {
+		if (_rapierPersistenceRuntime.recoveryHeld) return false;
 		try {
 			const platform = window.RapierPlatform;
 			if (platform && platform.recovery.ownsStore === true) {
@@ -24483,6 +24516,7 @@ function rapierFlushDirty(opts) {
 						opts.durable ? 'strict' : 'relaxed');
 					const current = tx.objectStore('meta').get(RAPIER_DOC_ID);
 					current.onsuccess = () => {
+						if (_rapierPersistenceRuntime.recoveryHeld) { resolve(null); tx.abort(); return; }
 						if (base != null && _rapierRecoveryStamp(current.result) !== base) { resolve(true); tx.abort(); return; }
 						// A refused write throws here, inside the request's own event: caught, the transaction
 						// aborts and the keep is reported, never an uncaught error the page cannot answer.
@@ -24532,6 +24566,7 @@ function rapierFlushDirty(opts) {
 					tx.oncomplete = () => resolve(false);
 					tx.onerror = tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction failed'));
 				});
+				if (newer === null) return false;
 				if (newer) {
 					_rapierPersistenceRuntime.recoveryBase = false;
 					// The safety copy was written before this transaction was allowed to commit.
@@ -24585,7 +24620,7 @@ function _writeLocalSnapshot(
 ) {
 	  if (globalThis.RAPIER_APPS_HOST === true) return false;
 
-	if (rapier.access.leaseReadOnly || _rapierPersistenceRuntime.recoveryBase === false ||
+	if (_rapierPersistenceRuntime.recoveryHeld || rapier.access.leaseReadOnly || _rapierPersistenceRuntime.recoveryBase === false ||
 			(window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true)) return false;
 	try {
 		if (typeof markdown !== 'string' || String(documentAuthority || '').startsWith('notes:')) return false;
@@ -24694,14 +24729,15 @@ function _rapierSnapshotIsANote(snapshot) {
 
 function _readLocalSnapshot() {
 	if (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true) return null;
-	try {
-		const snapshot = _rapierParseLocalSnapshot(localStorage.getItem(RAPIER_SNAPSHOT_KEY));
-		if (snapshot && _rapierSnapshotIsANote(snapshot)) {
-			try { localStorage.removeItem(RAPIER_SNAPSHOT_KEY); } catch (_) {}
-			return null;
-		}
-		return snapshot;
-	} catch (_) { return null; }
+	const raw = localStorage.getItem(RAPIER_SNAPSHOT_KEY);
+	if (raw == null) return null;
+	const snapshot = _rapierParseLocalSnapshot(raw);
+	if (!snapshot) throw new Error('Saved safety copy could not be admitted');
+	if (_rapierSnapshotIsANote(snapshot)) {
+		try { localStorage.removeItem(RAPIER_SNAPSHOT_KEY); } catch (_) {}
+		return null;
+	}
+	return snapshot;
 }
 
 function _canonicalFromIdb(meta) {
@@ -24738,7 +24774,6 @@ async function _restoreCanonicalDocument(text, filename, generation, documentRev
 	if (!loaded) return false;
 	if (!_rapierLoadReceiptIsCurrent(loaded)) return false;
 	rapier.autosave.dirty.clear();
-	_notifyDirtyState();
 	return true;
 }
 
@@ -25007,7 +25042,7 @@ function _rapierHeldSetAsideSlot(integrity) {
 async function _rapierParkHeldRecovery(candidate, options = {}) {
 	const text = String(candidate.text || '');
 	const integrity = _rapierIntegrityOf(text);
-	const record = {slot: options.setAside === true ? _rapierHeldSetAsideSlot(integrity) : _rapierHeldSlot(),
+	const record = {slot: _rapierHeldSetAsideSlot(integrity),
 		docId: RAPIER_DOC_ID, filename: String(candidate.filename || 'untitled.md'),
 		canonicalText: text, integrity, updatedAt: Date.now(), ...(options.setAside === true ? {setAside: true} : {})};
 	try {
@@ -25072,7 +25107,7 @@ function _rapierOfferHeldRecovery(record, rest = []) {
 	for (const close of document.querySelectorAll('#toast-root .toast[data-rapier-held-offer] .toast__close')) close.click();
 	showToast(setAside
 		? 'The unsaved work in "' + name + '" is kept here, set aside when another document opened.'
-		: 'Rapier could not finish starting with "' + name + '" twice, so it opened without it. Your unsaved work is kept.',
+		: 'Rapier could not restore "' + name + '", so it opened without it. Your unsaved work is kept.',
 	setAside ? 'info' : 'error', {
 		label: canRestore ? 'restore' : 'save it',
 		fn: async () => {
@@ -25169,46 +25204,78 @@ function _rapierRecoveryIsUntouchedWelcome(record) {
 	return !!record && _rapierNormalizeVirtualDocumentKind(record.virtualDocumentKind) === 'welcome';
 }
 
-async function rapierTryRestore(context) {
-	const restoreEpoch = rapier.identity.userLoadEpoch;
-	const snapshot = _readLocalSnapshot();
-	let idbFailure = null;
-	let dbState = { meta: null, blocks: [], checkpoints: [], undo: null, seen: null };
-	try {
+// A failed restore is not an empty store. Its bytes must reach a held slot before another
+// document may replace the current record. If storage cannot prove that custody, this boot
+// keeps both primary and safety records untouched; Save As remains available for new work.
+async function _rapierHoldBootRecovery(candidate) {
+	const parked = candidate ? await _rapierParkHeldRecovery(candidate) : null;
+	if (parked && !_rapierPersistenceRuntime.recoveryHeld) return 'held';
+	if (!_rapierPersistenceRuntime.recoveryHeld) {
+		_rapierPersistenceRuntime.recoveryHeld = true;
+		showToast('The saved draft stays untouched. Browser draft saving is paused; use Save As for new work, then reload to retry recovery.', 'error');
+	}
+	if (candidate && !parked) _rapierOfferHeldRecovery({filename: candidate.filename, canonicalText: candidate.text});
+	return 'blocked';
+}
+
+// Intake and ordinary restoration share this admission. An unread or refused copy is
+// evidence of work, never absence; neither path may replace it with an incoming document.
+async function _rapierReadBootRecovery(context) {
+	if (!context._recovery) context._recovery = (async () => {
+		let snapshot = null;
+		let dbState = {meta: null, checkpoints: [], undo: null, seen: null};
+		if (window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true)
+			return {dbState, selection: {candidate: null}, outcome: 'absent'};
+		try { snapshot = _readLocalSnapshot(); }
+		catch (error) {
+			await _rapierHoldBootRecovery(null);
+			console.warn('[rapier] safety recovery storage unavailable', error);
+		}
 		try {
-			const db = await openRapierDB();
-			dbState = await _rapierReadDbState(db);
+			dbState = await _rapierReadDbState(await openRapierDB());
 			_rapierPersistenceRuntime.recoveryBase = _rapierRecoveryStamp(dbState.meta);
 		} catch (error) {
-
-			idbFailure = error;
+			await _rapierHoldBootRecovery(null);
 			console.warn('[rapier] primary recovery storage unavailable; trying safety copy', error);
 		}
-		if (restoreEpoch !== rapier.identity.userLoadEpoch) return true;
-		if (!dbState.meta && !snapshot && !(dbState.checkpoints || []).length) {
-			if (idbFailure) showToast('recovery storage is unavailable in this browser session', 'error');
-			else if (document.wasDiscarded === true) {
+		const selection = _rapierSelectRestoreCandidate(_rapierAdmitRecoveryRecords(dbState, snapshot));
+		// Held slots keep their own source and are offered separately; they do not own the current draft slot.
+		if (!selection.candidate && (dbState.meta || snapshot ||
+				dbState.checkpoints.some(record => !_rapierIsHeldSlot(record.slot))))
+			await _rapierHoldBootRecovery(null);
+		return {dbState, selection, outcome: _rapierPersistenceRuntime.recoveryHeld
+			? 'blocked' : selection.candidate ? 'candidate' : 'absent'};
+	})();
+	return context._recovery;
+}
+
+async function rapierTryRestore(context) {
+	const restoreEpoch = rapier.identity.userLoadEpoch;
+	let candidate = null, sourceRestored = false;
+	try {
+		const recovery = await _rapierReadBootRecovery(context);
+		const {dbState, selection} = recovery;
+		candidate = selection.candidate;
+		if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
+		if (!candidate) {
+			if (recovery.outcome === 'blocked') return 'blocked';
+			if (document.wasDiscarded === true) {
 				showToast('the browser discarded this editor and no recovery copy was available', 'error');
 			}
-			return false;
+			return 'absent';
 		}
-
-		const selection = _rapierSelectRestoreCandidate(
-			_rapierAdmitRecoveryRecords(dbState, snapshot));
-		const candidate = selection.candidate;
-		if (!candidate) return false;
 		// The built-in welcome the person never edited is Rapier's text, not theirs: it opens as the current
 		// welcome (the caller's fall-through), never as the copy an earlier version stored. Any edit clears
 		// the welcome kind (_bumpDocGeneration), so a record that still carries it is untouched; an edited
 		// welcome carries no kind and restores as the person's own document below.
-		if (_rapierRecoveryIsUntouchedWelcome(candidate)) return false;
+		if (_rapierRecoveryIsUntouchedWelcome(candidate)) return recovery.outcome === 'blocked' ? 'blocked' : 'absent';
 		if (!selection.integrityIssue &&
-				!await _rapierRetireForeignRecoveryBinding(candidate, restoreEpoch)) return true;
+				!await _rapierRetireForeignRecoveryBinding(candidate, restoreEpoch)) return 'superseded';
 		if (selection.integrityIssue && window.RapierPlatform && window.RapierPlatform.files.detach) {
 
 			try { await window.RapierPlatform.files.detach(); }
 			catch (error) { console.warn('[rapier] could not detach stale recovery binding', error); }
-			if (restoreEpoch !== rapier.identity.userLoadEpoch) return true;
+			if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
 		}
 		// Two boots that began this same restore and never settled hold the third back: the page opens on
 		// the welcome and the kept work is offered as a file, so a document that crashes a low-memory
@@ -25217,11 +25284,8 @@ async function rapierTryRestore(context) {
 		const attempts = window.RapierBootAttempts;
 		const attempt = attempts ? attempts.begin(_rapierRestoreAttemptStamp(candidate)) : null;
 		if (attempt && attempt.held) {
-			// The boot's own offer (_rapierOfferHeldAtBoot) reads the parked copy back; one that did not land is offered from here.
-			const parked = await _rapierParkHeldRecovery(candidate);
-			if (restoreEpoch !== rapier.identity.userLoadEpoch) return true;
-			if (!parked) _rapierOfferHeldRecovery({filename: candidate.filename, canonicalText: candidate.text});
-			return false;
+			const held = await _rapierHoldBootRecovery(candidate);
+			return restoreEpoch !== rapier.identity.userLoadEpoch ? 'superseded' : held;
 		}
 		const restored = await _restoreCanonicalDocument(
 			candidate.text,
@@ -25235,8 +25299,10 @@ async function rapierTryRestore(context) {
 			candidate.saveAsRequired,
 			candidate.segmentIdentity,
 		);
-		if (restoreEpoch !== rapier.identity.userLoadEpoch) return true;
-		if (!restored) return false;
+		if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
+		if (!restored) return await _rapierHoldBootRecovery(candidate);
+		sourceRestored = true;
+		_notifyDirtyState();
 		// The document restore just above succeeded -- stamp the agent kernel's own retained slice (if
 		// any) onto the same boot `context` every other boot step already threads through by parameter,
 		// for `_rapierPublishBootReady` to hand to its one consumer. agent/browser.js's own
@@ -25353,10 +25419,15 @@ async function rapierTryRestore(context) {
 			if (resumePosition) routineNotice.resumePosition = resumePosition;
 			_rapierUiRestore.show(routineNotice);
 		}
-		return true;
+		return 'opened';
 	} catch (error) {
 		console.warn('[rapier] restore failed', error);
-		return false;
+		if (restoreEpoch !== rapier.identity.userLoadEpoch) return 'superseded';
+		if (sourceRestored) {
+			await _rapierHoldBootRecovery(null);
+			return 'opened';
+		}
+		return await _rapierHoldBootRecovery(candidate);
 	}
 }
 
@@ -33733,14 +33804,6 @@ function _rapierStageFileLaunch(launchParams) {
 	if (_rapierBootstrapRuntime.complete) _rapierConsumeFileLaunch(null);
 }
 
-async function _rapierBootRecoveryCandidate(context) {
-	if (context._recoveryCandidate !== undefined) return context._recoveryCandidate;
-	let dbState = { meta: null, blocks: [], checkpoints: [], undo: null, seen: null };
-	try { dbState = await _rapierReadDbState(await openRapierDB()); } catch (_) {}
-	context._recoveryCandidate = _rapierSelectRestoreCandidate(
-		_rapierAdmitRecoveryRecords(dbState, _readLocalSnapshot())).candidate;
-	return context._recoveryCandidate;
-}
 function _rapierCandidateIsDirty(candidate) {
 	if (!candidate) return false;
 	if (candidate.saveAsRequired === true) return true;
@@ -33754,8 +33817,10 @@ function _rapierCandidateIsDirty(candidate) {
 // Whether an incoming document would land over unsaved work of the person's: the recovery candidate is
 // dirty, is not the untouched welcome, and is not the incoming text itself. Nothing else is at stake.
 async function _rapierBootOutgoingAtStake(context, incomingText) {
-	const candidate = await _rapierBootRecoveryCandidate(context);
+	const recovery = await _rapierReadBootRecovery(context);
 	if (context.documentConsumed || context.handledShortcut) return false;
+	if (recovery.outcome === 'blocked') return true;
+	const candidate = recovery.selection.candidate;
 	if (!candidate || !_rapierCandidateIsDirty(candidate)) return false;
 	const candidateText = String(candidate.text || '');
 	if (incomingText != null && candidateText === String(incomingText)) return false;
@@ -33763,8 +33828,10 @@ async function _rapierBootOutgoingAtStake(context, incomingText) {
 }
 
 async function _rapierBootSetAside(context, incomingText) {
-	const candidate = await _rapierBootRecoveryCandidate(context);
+	const recovery = await _rapierReadBootRecovery(context);
 	if (context.documentConsumed || context.handledShortcut) return true;
+	if (recovery.outcome === 'blocked') return true;
+	const candidate = recovery.selection.candidate;
 	if (!candidate || !_rapierCandidateIsDirty(candidate)) return false;
 
 	const candidateText = String(candidate.text || '');
@@ -33868,6 +33935,8 @@ async function _rapierConsumePlatformInitial(context) {
 				recovery.segmentIdentity ?? recovery.undo?.segmentIdentity ?? null,
 			);
 			if (!restored) return;
+			context.documentConsumed = true;
+			_notifyDirtyState();
 			if (recovery.sourceRootId) {
 				_rapierResetSource(_rapierSourceText(), recovery.sourceRootId);
 			}
@@ -33875,7 +33944,6 @@ async function _rapierConsumePlatformInitial(context) {
 				_rapierClearRestoredLedger('identity_unproven');
 			}
 			_notifyHistoryState();
-			context.documentConsumed = true;
 			if (initial.kind === 'recovery-conflict') {
 				showToast('recovered unsaved work; the original file changed — save a copy', 'warning');
 				srAnnounce('Recovered unsaved work as a separate document because the original file changed.');
@@ -34169,17 +34237,18 @@ async function _rapierRestoreBootDocument(context) {
 	}
 	catch (error) { showToast('Carried history refused: ' + error.message, 'error'); return false; }
 	const ownsStore = window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true;
-	const restored = context.documentConsumed || context.handledShortcut ||
-		(ownsStore ? false
-			: carried ? await _rapierBootSetAside(context, carried.text) && await rapierTryRestore(context)
-			: await rapierTryRestore(context));
-	if (_rapierBootSuperseded(context)) return false;
+	let restored = 'opened';
+	if (!context.documentConsumed && !context.handledShortcut) {
+		restored = ownsStore || (carried && !await _rapierBootSetAside(context, carried.text))
+			? 'absent' : await rapierTryRestore(context);
+	}
+	if (restored === 'superseded' || _rapierBootSuperseded(context)) return false;
 	// What is held (a boot's set-aside above, a held boot's parked document, an Open or New before) is offered
 	// now, whichever document this boot opens, before that document lands.
 	await _rapierOfferHeldAtBoot();
-	if (!restored) {
+	if (restored !== 'opened') {
 		// A page without a carried document opens on the Welcome.
-		if (carried) {
+		if (carried && restored !== 'blocked') {
 			// The carrier's block is always text/markdown; the document's kind follows its name, as Open's
 			// does, so a page carrying engine.mjs opens it as code.
 			const loaded = await rapierLoad(carried.text, carried.name, {documentKind: _classifyDocKind(carried.name), ..._rapierLedgerAdmission(carried.text, carried), returnReceipt: true, opensClean: true});
@@ -34198,7 +34267,7 @@ async function _rapierRestoreBootDocument(context) {
 		if (_rapierBootSuperseded(context)) return false;
 		await _rapierOpenCarriedDrawing();
 		if (_rapierBootSuperseded(context)) return false;
-		if (carried && proposal) {
+		if (carried && proposal && restored !== 'blocked') {
 			const staged = await _rapierOpenCarriedBase(proposal);
 			if (staged?.outcome !== 'pending') {
 				// A refused review must not discard the file's proposed source. No decision or write was made.
@@ -34452,9 +34521,9 @@ async function _rapierBoot() {
 	let promoted = false;
 	try { promoted = !!window.RapierWriterPromotion?.consume(); } catch (_) {}
 	const ownsWriterLease = await _rapierAcquireWriterLease(document.visibilityState === 'visible' || promoted);
-	if (!_rapierBootWatchdogDone()) return;
 	rapier.access.leaseReadOnly = !ownsWriterLease;
 	_rapierPersistenceRuntime.recoveryBase = await _rapierReadRecoveryStamp();
+	if (!_rapierBootWatchdogDone()) return;
 	const context = {
 		epoch: rapier.identity.userLoadEpoch,
 		params: new URLSearchParams(location.search),
@@ -45246,6 +45315,8 @@ function _rapierRenderDocumentHead() {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
 	const head = refs.documentHead || (refs.documentHead = (() => {
+		// The earlier platform stage owns the address; this closure owns the document's head.
+		window.addEventListener('rapier:door-path-changed', _rapierRenderDocumentHead);
 		const description = document.querySelector('meta[name="description"]');
 		const canonical = document.querySelector('link[rel="canonical"]');
 		// A door answered by the host (door-worker.js) arrives with its own head and keeps the home page's in this block.

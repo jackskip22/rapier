@@ -595,6 +595,7 @@ function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 		savedBefore: before.agent.savedBefore || null, savedAfter: before.agent.savedAfter || null };
 	const at = state.undoStack.lastIndexOf(before);
 	if (at >= 0) state.undoStack[at] = entry;
+	if (!entry.agent && (Object.keys(entry.delta.shapes).length || entry.delta.beforeOrder || entry.delta.strokes || entry.delta.beforeMeta || entry.delta.fonts)) _rapierDrawHumanChanged();
 	// The snapshot has become a delta; renderEdit still points at the snapshot, so a growth after the
 	// seal has nothing of this command's to write on and correctly leaves the stack alone.
 	return entry;
@@ -793,6 +794,11 @@ function _rapierDrawRenderHistory() {
 function _rapierDrawUndo(redo = false, target = null) {
 	const state = _rapierDrawState;
 	if (target && (!state.open || target.session !== state.session)) return false;
+	const water = _rapierPaintWaterPending();
+	if (water) {
+		if (!target) target = {session: state.session, entry: (redo ? state.redoStack : state.undoStack).at(-1)};
+		return water.then(() => _rapierDrawUndo(redo, target));
+	}
 	if (!_rapierDrawFinishText()) return false;
 	// An Undo asked mid-replay lands the agent's whole contribution first and then takes that one
 	// step back: the replay is how a committed change is shown, never a state to accept in pieces.
@@ -879,6 +885,7 @@ function _rapierDrawUndoStep(redo, target) {
 			return ok;
 		}).catch(() => false);
 	}
+	_rapierDrawHumanChanged();
 	_rapierDrawBackupTouch();
 	return journal;
 }
@@ -1088,7 +1095,7 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 	if (typeof W?.workerSource !== 'function') return holder.ready = Promise.resolve(null);
 	const local = async () => {
 		const client = holder.client = water ? W.createLocalWaterClient() : W.createLocalPaintClient();
-		if (water) await client.request('configure');
+		if (water) await client.request('configure', {preview: purpose === 'preview'});
 		return client;
 	};
 	if (typeof Worker !== 'function') {
@@ -1104,7 +1111,7 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 			worker.onmessage = ({data}) => client.receive(data);
 			worker.onerror = event => { event.preventDefault?.(); client.fail(new Error(event.message || 'The painter stopped')); if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); };
 			const isolated = globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
-			await client.request('configure', {helpers: !water && isolated ? 4 : 0, ...(!water && isolated ? {helperSource: rows.workerSource()} : {})});
+			await client.request('configure', {preview: water && purpose === 'preview', helpers: !water && isolated ? 4 : 0, ...(!water && isolated ? {helperSource: rows.workerSource()} : {})});
 			return client;
 		} catch (error) { worker?.terminate(); if (water && error.code === 'water_webgpu_unavailable') throw error; return local(); }
 		finally { URL.revokeObjectURL(url); }
@@ -1256,7 +1263,7 @@ function _rapierDrawReplayControls(replay) {
 // Ends the replay and lands everything the patch left: a tap, the person's own pointer, Undo, Done,
 // closing the surface and the last frame all come through here, so the finished drawing is exactly
 // the same whichever of them got there first.
-function _rapierDrawReplayEnd() {
+function _rapierDrawReplayEnd(disposition = 'interrupted') {
 	const state = _rapierDrawState, replay = state.replay;
 	if (!replay) return;
 	state.replay = null;
@@ -1272,7 +1279,9 @@ function _rapierDrawReplayEnd() {
 	state.replayPaintEl?.replaceChildren();
 	if (state.replayTagEl) state.replayTagEl.hidden = true;
 	_rapierDrawReplayControls(null);
+	if (replay.receiptOptions) _rapierDrawAgentReceipt(replay.receiptOptions, 'incorporated', undefined, disposition);
 	_rapierDrawBackupTouch();
+	_rapierDrawScheduleAgentPatches();
 }
 function _rapierDrawReplayFaster() {
 	const replay = _rapierDrawState.replay;
@@ -1296,7 +1305,7 @@ function _rapierDrawReplayFrame(now) {
 		replay.at++; replay.into = 0;
 		_rapierDrawReplayRender(replay);
 	}
-	if (replay.at >= replay.steps.length) { _rapierDrawReplayEnd(); return; }
+	if (replay.at >= replay.steps.length) { _rapierDrawReplayEnd('completed'); return; }
 	_rapierDrawReplayResolve(replay);
 	_rapierDrawReplayPaint(replay);
 	replay.frame = requestAnimationFrame(_rapierDrawReplayFrame);
@@ -1364,7 +1373,7 @@ function _rapierDrawReplayPatch(patch, options = {}) {
 		});
 	}
 	// One Undo step for the whole contribution, taken before the first shape lands.
-	const entry = _rapierDrawSnapshot();
+	const entry = options.presentationOnly ? null : _rapierDrawSnapshot();
 	// Stamp the document.draw this surface step is the picture of, so Undo can walk the journal.
 	// `after` is the reference the door will rename the picture to; before the rename lands it is
 	// the same as `before`. `savedBefore`/`savedAfter` are the exact recipes the SOURCE holds on
@@ -1372,20 +1381,20 @@ function _rapierDrawReplayPatch(patch, options = {}) {
 	// rather than calling the whole restored surface committed (DRA-01, repair item 5). Both are
 	// the same openSnapshot objects the surface already holds -- referenced, never copied.
 	// Copied through SealHistory onto the delta.
-	if (options.asset) entry.agent = { before: String(options.asset), after: String(options.reference || options.asset), transactionId: options.transactionId,
+	if (entry && options.asset) entry.agent = { before: String(options.asset), after: String(options.reference || options.asset), transactionId: options.transactionId,
 		savedBefore: options.savedBefore || null, savedAfter: options.savedAfter || null };
 	state.recipe = target;
 	// The drawing's own dials moved (a `set`): the window, the paper, the background and everything they colour are drawn from the
 	// recipe the canvas now holds, as Undo draws them after it puts a recipe back, at once and ahead of any replay of shapes.
 	_rapierDrawApplyView(); _rapierPaintSyncPaper();
 	if (patch.set) { _rapierDrawRenderAll(); if (typeof _rapierBgSyncPanel === 'function') _rapierBgSyncPanel(); }
-	if (!steps.length) { _rapierDrawRenderAll(); _rapierDrawSealHistory(entry); _rapierDrawBackupTouch(); return false; }
+	if (!steps.length || options.presentation?.replay === false) { _rapierDrawRenderAll(); _rapierDrawSealHistory(entry); _rapierDrawBackupTouch(); return false; }
 	const replay = {
 		// targetShapes is the finished drawing, held apart from state.recipe.shapes, which the
 		// replay rewrites every step: they must never be the same array.
 		steps, targetShapes: target.shapes.slice(), entry, recipe: target, session: state.session, at: 0, into: 0, fast: 1, frame: 0,
 		last: (typeof performance === 'object' ? performance.now() : Date.now()),
-		name: _rapierDrawReplayName(options.name),
+		name: _rapierDrawReplayName(options.name), receiptOptions: options,
 	};
 	state.replay = replay;
 	_rapierDrawReplayRender(replay);
@@ -1448,6 +1457,13 @@ function _rapierDrawBusy() {
 	busy.human = !!(busy.gesture || busy.label || busy.setting || busy.paint);
 	return busy;
 }
+// A settled human change is distinct from selection, presence and presentation updates.
+function _rapierDrawHumanChanged() {
+	const state = _rapierDrawState;
+	if (!state.open) return;
+	state.humanChangePending = true;
+	globalThis.RapierAgentBrowser?.contextChanged?.('drawing');
+}
 function _rapierDrawSettledRecipe() {
 	const state = _rapierDrawState;
 	if (!state.open || !state.recipe) return null;
@@ -1470,6 +1486,11 @@ function _rapierDrawContext() {
 	if (!state.agentContextSnapshot || !_rapierDrawSameRecipe(state.agentContextSnapshot, recipe)) {
 		state.agentSurfaceGeneration = (state.agentSurfaceGeneration || 0) + 1;
 		state.agentContextSnapshot = _rapierDrawHistoryRecipe(recipe);
+	}
+	if (state.humanChangePending && !_rapierDrawBusy().human) {
+		state.humanChangePending = false;
+		state.drawingEventSequence = (state.drawingEventSequence || 0) + 1;
+		state.drawingEvent = {sequence: state.drawingEventSequence, kind: 'human', session: state.agentSession, surfaceGeneration: state.agentSurfaceGeneration};
 	}
 	const editing = state.editing, record = editing && _rapierImageRecord(editing.blockId, editing.imageIndex);
 	const position = editing?.position;
@@ -1508,6 +1529,7 @@ function _rapierDrawContext() {
 			current: { ...(state.tool === 'water' ? {water:structuredClone(Object.fromEntries(['brush','tool','pigment','paper','size','water','load','strength','angle','follow'].map(key => [key,_rapierWaterState()[key]])))} : {}), paint: state.paintBrush || null, width: state.nib, size: state.paintSize, strength: state.paintStrength, angle: state.paintHead?.angle, follow: state.paintHead?.follow } },
 		limits: { shapes: 2048, strokes: 2048, patchOperations: 128, pointsPerStroke: 16384, points: 262144,
 			canvasEdge: 65536, rasterBytes: RAPIER_DRAW_RASTER_MAX, labelUnits: RAPIER_DRAW_LABEL_MAX },
+		event: state.drawingEvent?.session === state.agentSession ? {...state.drawingEvent} : null,
 		receipts: (state.agentReceipts || []).map(row => ({ ...row })) };
 }
 function _rapierDrawCanQueuePatch(envelope) {
@@ -1590,17 +1612,102 @@ function _rapierDrawFollow(splices) {
 	}
 	state.heldRoot = rapier.document.source?.rootId;
 }
-// What an agent is told of its change on the open canvas, one receipt per transaction in one of four states: `incorporated` (on the
-// glass), `presentation_deferred` (committed to the document, waiting for the person's hand to lift), `unavailable` (a drawing this canvas
-// is not, or no longer, open on, or a change the person's own work to the same object stands against) and `uncertain` (a presentation
-// that failed). The document holds the change in every state.
-function _rapierDrawAgentReceipt(options, status, reason) {
+// Source incorporation and playback are separate facts. Observers carry these facts to the
+// adapter's authenticated acknowledgement route; they never grant source or review authority.
+function _rapierDrawPresentationReceipts() {
+	const documentId = String(rapier.identity.authority);
+	return (_rapierDrawState.agentReceipts || []).filter(row => row.documentId === documentId).map(row => structuredClone(row));
+}
+function _rapierDrawAgentReceipt(options, status, reason, presentationStatus) {
 	const state = _rapierDrawState, transactionId = String(options.remoteTransactionId || options.transactionId || '');
-	const receipt = { transactionId, status, ...(reason ? {reason} : {}) };
+	const drawing = _rapierDrawContext();
+	const presentation = {status: presentationStatus || (status === 'incorporated' ? 'completed' : status === 'presentation_deferred' ? 'deferred' : 'unavailable'),
+		session: drawing?.session || null, surfaceGeneration: drawing?.surfaceGeneration || 0};
+	const target = options.targetOccurrence || options.occurrence;
+	if (target && Number.isSafeInteger(target.start) && Number.isSafeInteger(target.end)) {
+		const start = Number.isSafeInteger(options.committedPosition) ? options.committedPosition : target.start;
+		presentation.occurrence = {start, end: start + target.end - target.start, reference: String(options.reference || target.reference || '')};
+	} else if (drawing?.occurrence && (!options.reference || options.reference === drawing.occurrence.reference)) presentation.occurrence = {...drawing.occurrence};
+	const receipt = {transactionId, documentId: String(options.documentId || rapier.identity.authority), status, presentation, ...(reason ? {reason} : {})};
 	const receipts = state.agentReceipts || (state.agentReceipts = []), prior = receipts.findIndex(row => row.transactionId === transactionId);
+	if (prior >= 0 && ['completed', 'skipped', 'interrupted'].includes(receipts[prior].presentation?.status)) {
+		try { options.onReceipt?.(structuredClone(receipts[prior])); } catch (_) {}
+		return structuredClone(receipts[prior]);
+	}
 	if (prior >= 0) receipts[prior] = receipt; else receipts.push(receipt);
-	if (receipts.length > 128) receipts.splice(0, receipts.length - 128);
-	return { ...receipt };
+	const observers = state.agentReceiptObservers || (state.agentReceiptObservers = new Map());
+	if (typeof options.onReceipt === 'function') observers.set(transactionId, options.onReceipt);
+	try { observers.get(transactionId)?.(structuredClone(receipt)); } catch (_) {}
+	if (!['replaying', 'deferred'].includes(presentation.status)) observers.delete(transactionId);
+	globalThis.RapierAgentBrowser?.contextChanged?.('drawing_presentation');
+	return structuredClone(receipt);
+}
+// A committed drawing is opened from the exact source occurrence. The adapter supplies current()
+// bound to its document and human navigation epoch; presenting a turn never replaces another canvas.
+async function _rapierDrawPresentCommitted(intent, {current, onReceipt, signal} = {}) {
+	const state = _rapierDrawState, options = {...intent, onReceipt};
+	const refuse = reason => _rapierDrawAgentReceipt(options, 'unavailable', reason);
+	const stamp = String(intent?.remoteTransactionId || intent?.transactionId || '');
+	if (!stamp) return refuse('drawing_transaction_missing');
+	const prior = state.agentReceipts?.find(row => row.transactionId === stamp && row.documentId === String(intent.documentId || rapier.identity.authority));
+	if (prior && (prior.status !== 'unavailable' && prior.status !== 'presentation_deferred' ||
+		prior.status === 'unavailable' && prior.reason !== 'drawing_not_open' ||
+		state.agentQueue?.some(row => String(row.options.remoteTransactionId || row.options.transactionId || '') === stamp))) {
+		if (typeof onReceipt === 'function') {
+			if (['replaying', 'deferred'].includes(prior.presentation?.status)) (state.agentReceiptObservers ||= new Map()).set(stamp, onReceipt);
+			try { onReceipt(structuredClone(prior)); } catch (_) {}
+		}
+		return structuredClone(prior);
+	}
+	if (typeof current !== 'function' || !current() || signal?.aborted) return refuse('drawing_navigation_changed');
+	const position = intent.occurrence?.start, end = intent.occurrence?.end, assets = globalThis.RapierImageAssets;
+	if (!Number.isSafeInteger(position) || !Number.isSafeInteger(end) || end <= position || !intent.reference) return refuse('drawing_occurrence_changed');
+	const source = _rapierSourceText(), root = rapier.document.source?.rootId, spans = _rapierExcerptCanonicalBlockSpans();
+	const block = rapier.document.blocks.find(row => {const span = spans.get(row.id); return span && span.start <= position && position < span.end;});
+	const image = block && _rapierScanMarkdownImages(block.raw).find(row => spans.get(block.id).start + row.start === position &&
+		spans.get(block.id).start + (row.tokenEnd ?? row.end) === end);
+	if (!image || assets.normalizeLabel(image.reference || '') !== assets.normalizeLabel(intent.reference) ||
+		source.slice(position, end) !== block.raw.slice(image.start, image.tokenEnd ?? image.end)) return refuse('drawing_occurrence_changed');
+	const asset = assets.documentAssets(source).assets.get(assets.normalizeLabel(intent.reference));
+	if (!asset || intent.assetGeneration && intent.assetGeneration !== _rapierDrawAssetGeneration(asset.url)) return refuse('drawing_material_changed');
+	let recipe;
+	try { recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(assets.decodeDataImage(asset.url))); } catch (_) {}
+	if (!recipe) return refuse('drawing_recipe_invalid');
+	let prepared = null;
+	if (intent.drawingPatch) {
+		prepared = _rapierDrawAdmitAgentPatch(intent.drawingPatch.patch, intent.drawingPatch);
+		const same = value => ({...value, nib: value.nib ?? RAPIER_DRAW_NIB_DEFAULT, smooth: value.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT});
+		if (!prepared || !_rapierDrawHistoryEqual(same(prepared.sourceRecipeAfter), same(recipe))) return refuse('drawing_material_changed');
+	}
+	if (state.open) {
+		if (prepared) return _rapierDrawAgentPatch(intent.drawingPatch.patch, {...options, ...intent.drawingPatch,
+			transactionId: intent.transactionId, documentId: intent.documentId, committedReference: intent.reference,
+			committedPosition: position, onReceipt});
+		if (state.editing?.position !== position || assets.normalizeLabel(state.editing?.asset || '') !== assets.normalizeLabel(intent.reference)) return refuse('another_drawing_open');
+		if (_rapierDrawBusy().human || state.replay) return _rapierDrawAgentReceipt(options, 'presentation_deferred', 'drawing_busy');
+		return _rapierDrawAgentReceipt(options, 'incorporated');
+	}
+	if (intent.presentation?.open !== true) return refuse('drawing_not_open');
+	const opened = await new Promise(resolve => {
+		const abort = () => resolve(false);
+		signal?.addEventListener('abort', abort, {once: true});
+		const done = value => {signal?.removeEventListener('abort', abort); resolve(value);};
+		_rapierDrawOpenSurface({recipe, editing: {blockId: block.id, imageIndex: image.renderIndex,
+			title: _rapierImageAltText(_rapierImageAltSourceParts(image.altSource).alt), asset: intent.reference, sourceUrl: asset.url},
+			notes: _rapierDrawInANote(), onReady: done});
+	});
+	if (!opened || !current() || signal?.aborted || root !== rapier.document.source?.rootId || _rapierSourceText() !== source) return refuse('drawing_navigation_changed');
+	if (_rapierDrawBusy().human) return _rapierDrawAgentReceipt(options, 'presentation_deferred', 'drawing_busy');
+	if (intent.presentation?.replay !== true) return _rapierDrawAgentReceipt(options, 'incorporated');
+	const finalRecipe = state.recipe, empty = prepared?.recipeBefore || {...finalRecipe, strokes: [], shapes: []};
+	// This canvas had no earlier local history. Playback only changes its projection; the source
+	// transaction and committed opening baseline continue to own creation and its Undo.
+	state.recipe = empty;
+	let playing;
+	try { playing = _rapierDrawReplayPatch(intent.drawingPatch?.patch || {add: finalRecipe.shapes}, {...intent, presentationOnly: true, recipeBefore: empty, recipeAfter: finalRecipe}); }
+	catch (_) { state.recipe = finalRecipe; _rapierDrawRenderAll(); return refuse('drawing_presentation_failed'); }
+	if (!playing) { state.recipe = finalRecipe; _rapierDrawRenderAll(); }
+	return _rapierDrawAgentReceipt(options, 'incorporated', undefined, playing ? 'replaying' : 'completed');
 }
 function _rapierDrawAdmitAgentPatch(patch, options) {
 	try {
@@ -1643,7 +1750,7 @@ function _rapierDrawTargetsHeld(targets) {
 }
 function _rapierDrawScheduleAgentPatches() {
 	const state = _rapierDrawState;
-	if (state.agentPatchTimer || !state.agentQueue?.length || !state.open) return;
+	if (state.agentPatchTimer || !state.agentQueue?.length || !state.open || state.replay) return;
 	const session = state.session;
 	state.agentPatchTimer = setTimeout(() => {
 		state.agentPatchTimer = null;
@@ -1657,7 +1764,7 @@ function _rapierDrawScheduleAgentPatches() {
 // `final`: the hand has lifted, so what can land lands, and nothing that remains blocks the person's Done.
 function _rapierDrawDrainAgentPatches(final = false) {
 	const state = _rapierDrawState, queue = state.agentQueue || [];
-	if (!state.open || state.finishing && !final) return false;
+	if (!state.open || state.finishing && !final || state.replay && !final) return false;
 	while (queue.length) {
 		const ticket = queue[0], before = state.recipe;
 		if (ticket.session !== state.session) { queue.shift(); _rapierDrawAgentReceipt(ticket.options, 'unavailable', 'draw_session_changed'); continue; }
@@ -1669,7 +1776,8 @@ function _rapierDrawDrainAgentPatches(final = false) {
 		try { _rapierDrawReplayPatch(ticket.patch, ticket.options); }
 		catch (_) { queue.shift(); _rapierDrawAgentReceipt(ticket.options, 'uncertain', 'drawing_presentation_failed'); continue; }
 		queue.shift();
-		_rapierDrawAgentReceipt(ticket.options, state.recipe === before ? 'unavailable' : 'incorporated', state.recipe === before ? 'drawing_conflict' : undefined);
+		_rapierDrawAgentReceipt(ticket.options, state.recipe === before ? 'unavailable' : 'incorporated', state.recipe === before ? 'drawing_conflict' : undefined, state.replay ? 'replaying' : undefined);
+		if (state.replay && !final) return false;
 	}
 	return true;
 }
@@ -1681,7 +1789,13 @@ function _rapierDrawDrainAgentPatches(final = false) {
 function _rapierDrawAgentPatch(patch, options = {}) {
 	const state = _rapierDrawState, stamp = String(options.remoteTransactionId || options.transactionId || '');
 	const prior = stamp && state.agentReceipts?.find(row => row.transactionId === stamp);
-	if (prior) return { ...prior };
+	if (prior) {
+		if (typeof options.onReceipt === 'function') {
+			if (['replaying', 'deferred'].includes(prior.presentation?.status)) (state.agentReceiptObservers ||= new Map()).set(stamp, options.onReceipt);
+			try { options.onReceipt(structuredClone(prior)); } catch (_) {}
+		}
+		return structuredClone(prior);
+	}
 	const asset = String(options.asset || ''), open = _rapierDrawEditingAsset({allowBusy: true});
 	const unavailable = reason => _rapierDrawAgentReceipt(options, 'unavailable', reason);
 	if (options.session != null && options.session !== state.agentSession) return unavailable('draw_session_changed');
@@ -5563,7 +5677,7 @@ function _rapierDrawBuildSurface() {
 		const act = evt.target.closest('[data-draw-replay]')?.dataset.drawReplay;
 		if (!act) return;
 		evt.preventDefault(); evt.stopPropagation();
-		if (act === 'skip') _rapierDrawReplayEnd(); else _rapierDrawReplayFaster();
+		if (act === 'skip') _rapierDrawReplayEnd('skipped'); else _rapierDrawReplayFaster();
 	});
 	state.menu = surface.querySelector('.rapier-draw-menu'); state.handlesLayer = surface.querySelector('.rapier-draw-handles'); state.closeBtn = surface.querySelector('[data-draw-act="close"]'); state.guidesEl = surface.querySelector('.rapier-draw-guides'); state.fontInput = surface.querySelector('.rapier-draw-font-input'); state.paintBrushInput = surface.querySelector('.rapier-draw-brush-input'); state.imageInput = surface.querySelector('.rapier-draw-image-input'); state.hintEl = surface.querySelector('.rapier-draw-hint');
 	// The head's Clear says EXIT while the canvas is blank: one watcher on the facts the empty-canvas hint reads (_rapierDrawCanvasBlank).
@@ -5939,20 +6053,20 @@ function _rapierDrawToastHome(up) {
 	_rapierScheduleToastLift();
 }
 function _rapierDrawOpenSurface(options) {
-	if (!_rapierEmbedFeatureAllowed('draw') && !_rapierEmbedFeatureAllowed('paint')) return false;
+	if (!_rapierEmbedFeatureAllowed('draw') && !_rapierEmbedFeatureAllowed('paint')) { options?.onReady?.(false); return false; }
 	if (!_rapierDrawState.surface) _rapierDrawBuildSurface();
 	const state = _rapierDrawState, opts = options || {};
-	if (state.finishing) return;
-	if (state.open) { state.surface.focus({ preventScroll: true }); showToast('Finish or close this drawing before opening another. Your work is still here.', 'info'); return; }
+	if (state.finishing) { opts.onReady?.(false); return; }
+	if (state.open) { opts.onReady?.(false); state.surface.focus({ preventScroll: true }); showToast('Finish or close this drawing before opening another. Your work is still here.', 'info'); return; }
 	state.dropper?.close(false);
 	_rapierDrawReplayEnd();
 	_rapierDrawCancelGesture(); _rapierDrawCloseLabelInput(); _rapierDrawFontFacesClear();
 	const recipe = opts.recipe ? _rapierDrawAdmitRecipe(opts.recipe, opts.keepRasters === true) : _rapierDrawNewRecipe(1, 1);
-	if (!recipe) { showToast('This drawing could not be opened', 'error'); return; }
+	if (!recipe) { opts.onReady?.(false); showToast('This drawing could not be opened', 'error'); return; }
 	void _rapierDrawBackupRelease(); // The replaced session is no longer a live drawing.
 	state.recipe = recipe; state.undoStack = []; state.redoStack = []; state.session = (state.session || 0) + 1;
 	if (state.agentPatchTimer) clearTimeout(state.agentPatchTimer);
-	state.agentPatchTimer = null; state.agentQueue = []; state.agentReceipts = [];
+	state.agentPatchTimer = null; state.agentQueue = []; state.agentReceipts = _rapierDrawPresentationReceipts(); state.agentReceiptObservers ||= new Map(); state.humanChangePending = false;
 	state.agentContextSnapshot = null; state.agentSurfaceGeneration = 0; state.agentSession = crypto.randomUUID();
 	if (state.backupTimer) { clearTimeout(state.backupTimer); state.backupTimer = 0; }
 	state.backupDirty = false;
@@ -6024,7 +6138,7 @@ function _rapierDrawOpenSurface(options) {
 	state.fontReady.catch(() => {});
 	_rapierDrawLettersWake();
 	requestAnimationFrame(() => {
-		if (!state.open || state.session !== session) return;
+		if (!state.open || state.session !== session) { opts.onReady?.(false); return; }
 		const rect = state.svgRoot.getBoundingClientRect();
 		// A new canvas is the stage less the settings row's band, so it opens whole and clear of the row.
 		state.viewInset = _rapierDrawSettingsInset();
@@ -6056,6 +6170,7 @@ function _rapierDrawOpenSurface(options) {
 			for (const row of state.agentQueue) _rapierDrawAgentReceipt(row.options, 'presentation_deferred', 'drawing_recovered');
 			_rapierDrawScheduleAgentPatches();
 		}
+		opts.onReady?.(true);
 	});
 }
 // The fade a canvas a Notes door opened comes up and leaves on (rapier-draw.css, the house ease).
@@ -6153,6 +6268,7 @@ function _rapierDrawOverEditor() { return _rapierDrawState.open && !_rapierDrawS
 // `landed`: the drawing has just gone into its document; every other close keeps nothing new.
 async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	const state = _rapierDrawState, notes = state.notes;
+	if (state.open) globalThis.RapierAgentBrowser?.drawingNavigationChanged?.();
 	// The failure-path Close has not placed or downloaded anything. Close only after its own
 	// checkpoint closes; a quota/readback refusal keeps the drawing open, not merely a toast.
 	if (recover) {
@@ -6177,6 +6293,8 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	// mount a pad or move colours in whatever opens next.
 	state.dropper?.close(false);
 	_rapierDrawReplayEnd();
+	for (const ticket of state.agentQueue || []) _rapierDrawAgentReceipt(ticket.options, 'unavailable', 'draw_session_closed');
+	state.agentQueue = [];
 	state.renderEdit = null;
 	_rapierDrawCancelGesture(); _rapierDrawCloseLabelInput(); _rapierDrawFontFacesClear();
 	// Closing Draw outright never drops a live layer still holding pixels the working budget refused
@@ -6650,16 +6768,18 @@ if (typeof window !== 'undefined') {
 // A page handed over may carry the view itself (`rapier-html --view draw`: `data-view` on the carried document
 // block), for a published copy whose link cannot carry a fragment.
 const RAPIER_DRAW_DOOR_AT_BIRTH = (() => { try {
-	if (document.getElementById('rapier-document')?.dataset.view === 'draw') return true;
-	if (/^#v\/draw\/?$/.test(String(location.hash || ''))) { history.replaceState(history.state, '', location.pathname + location.search); return true; }
-	return /^\/draw\/?$/.test(String(location.pathname || ''));
-} catch (_) { return false; } })();
+	const view = document.getElementById('rapier-document')?.dataset.view;
+	if (view === 'draw' || view === 'watercolor') return view;
+	const fragment = /^#v\/(draw|watercolor)\/?$/.exec(String(location.hash || ''));
+	if (fragment) { history.replaceState(history.state, '', location.pathname + location.search); return fragment[1]; }
+	return /^\/(draw|watercolor)\/?$/.exec(String(location.pathname || ''))?.[1] || null;
+} catch (_) { return null; } })();
 function _rapierDrawStartClass(on) { try { document.documentElement.classList.toggle('rapier-draw-start', on === true); } catch (_) {} }
 if (typeof window !== 'undefined' && RAPIER_DRAW_DOOR_AT_BIRTH) {
 	_rapierDrawStartClass(true);
 	const door = () => {
 		const booted = typeof _rapierBootFactsPublished !== 'undefined' ? _rapierBootFactsPublished : Promise.resolve();
-		booted.then(() => { if (!_rapierDrawState.open && !_rapierDrawState.finishing) rapierOpenDraw(null); }, () => {}).finally(() => _rapierDrawStartClass(false));
+		booted.then(() => { if (!_rapierDrawState.open && !_rapierDrawState.finishing) rapierOpenDraw(null, RAPIER_DRAW_DOOR_AT_BIRTH === 'watercolor' ? 'water' : null); }, () => {}).finally(() => _rapierDrawStartClass(false));
 	};
 	if (document.readyState === 'complete') door(); else window.addEventListener('load', door, { once: true });
 }
@@ -6946,6 +7066,7 @@ async function _rapierDrawDownload(session) {
 function _rapierDrawHandleBack() {
 	const state = _rapierDrawState;
 	if (!state.open) return false;
+	globalThis.RapierAgentBrowser?.drawingNavigationChanged?.();
 	// Back first leaves the colour sampler, the same phone contract an existing selection already
 	// gets -- it never surprises by closing or committing the drawing underneath.
 	if (state.dropper) { state.dropper.close(false); return true; }
@@ -6996,13 +7117,14 @@ function _rapierDrawLineTarget() {
 // notes/notes.js _rapierNotesDrawFor says which note, and says nothing anywhere else.
 function _rapierDrawInANote() { return typeof _rapierNotesDrawFor === 'function' ? _rapierNotesDrawFor(false) : null; }
 // `notes` is what Notes knows about the canvas it opens (_rapierDrawState.notes); none for the editor.
-function rapierOpenDraw(notes = _rapierDrawInANote()) {
+function rapierOpenDraw(notes = _rapierDrawInANote(), tool = null) {
 	// The + bar's canvas opens before its note exists (notes/notes.js _rapierNotesNewDrawing), over whatever
 	// document stands under the cards; the place in the note is picked at DONE, once the note is open.
 	if (notes?.fresh && notes.ready) { _rapierDrawOpenSurface({ target: null, notes }); return; }
 	if (_rapierUserMutationBlocked()) return;
 	if (rapier.document.docKind !== 'markdown') { showToast('Draw works in Markdown documents', 'info'); return; }
-	_rapierDrawOpenSurface({ target: notes ? _rapierDrawLineTarget() : _rapierImageInsertionTarget(), notes });
+	_rapierDrawOpenSurface({ target: notes ? _rapierDrawLineTarget() : _rapierImageInsertionTarget(), notes,
+		...(tool ? {onReady: opened => { if (opened) void _rapierDrawSetTool(tool); }} : {}) });
 }
 
 function _rapierDrawImageDataUrl(imageEl) {

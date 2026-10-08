@@ -8555,7 +8555,7 @@ function _rapierNotesHostLocked() {
 	return _rapierNotes.captureToken ? {availability: 'locked', reason: 'notes_locked', hint: 'Unlock the app to use Notes.'} : null;
 }
 // A change an agent wrote over a note, with nothing of the person's lost. It is written only when the note is not open in the editor,
-// still holds the words the agent read whole (`base`, their SHA-256) and its History took the person's words first; the owner's save
+// still holds the words the agent read whole (`base`, their SHA-256), the shared Will admits the change and History took the person's words first; the owner's save
 // refuses the write if the note moved after that. Otherwise `{reason}` says why it was not written; null when the call was withdrawn.
 async function _rapierNotesAgentChange(file, next, base, signal, guard) {
 	const state = _rapierNotes, store = _rapierNotesStore, sha = globalThis.RapierNotesIntegrity.sha256;
@@ -8565,6 +8565,10 @@ async function _rapierNotesAgentChange(file, next, base, signal, guard) {
 	if (!state.index) _rapierNotesTake(await store.folder.read());
 	const entry = state.index.notes[file], was = await store.queue(file, () => store.read(file));
 	if (typeof was !== 'string' || await sha(was) !== base) return {reason: 'notes_changed'};
+	const kernel = globalThis.RapierKernel;
+	if (!kernel?.enforceWill || !kernel?.minimalSplice) return {reason: 'notes_law_unavailable'};
+	// The digest binds this exact before-text through the folder save. A governed change remains a proposal until the person keeps it.
+	if (kernel.enforceWill(was, next, [kernel.minimalSplice(was, next)])) return {reason: 'document_law'};
 	let past = null;
 	if (entry?.id) { try { past = await _rapierNotesRecordVersion({file, text: was, entry, reason: 'save', signal, guard}); } catch (error) { if (signal?.aborted || error?.code === 'notes_locked') throw error; console.warn('[rapier] notes history', error); } }
 	if (!past) return {reason: 'notes_history_unavailable'};

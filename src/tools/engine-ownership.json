@@ -4,7 +4,7 @@
     "mutableRoots": 109,
     "domSinks": 65,
     "storageKeys": 7,
-    "remainderBytes": 77883
+    "remainderBytes": 77902
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {

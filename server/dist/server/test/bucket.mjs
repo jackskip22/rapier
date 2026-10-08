@@ -25,6 +25,42 @@ function safe(value) {
   const text=typeof value==='string' ? value : JSON.stringify(value,Object.getOwnPropertyNames(value));
   for(const secret of [witnessKey,witnessSecret,witnessSession])assert(!text.includes(secret),'bucket credentials never reach a diagnostic or retained state');
 }
+async function transactionCell(server,peer) {
+  const entry=(await Promise.all(server.store.entries.values())).find(row=>row.storage.record.document==='harbour.md');
+  assert(entry,'the real document storage was opened');
+  const {storage}=entry,path='workspaces/'+storage.key+'.json';
+  const before=await server.store.readPrivate(path),alarm=before.alarm,marker='transaction-custody';
+  const puts=()=>peer.requests.filter(row=>row.method==='PUT' && row.key==='harbour.md').length;
+  const firstPuts=puts(),cut=new Error('transaction callback refused after alarm');
+  await assert.rejects(storage.transaction(async()=>{
+    storage.kv.put(marker,'must not publish');
+    await storage.setAlarm(alarm+60000);
+    await storage.sync();
+    throw cut;
+  }),error=>error===cut);
+  assert.deepEqual(await server.store.readPrivate(path),before,'a refused transaction never publishes values or its alarm');
+  assert.equal(storage.kv.get(marker),undefined,'rollback restores the in-memory values');
+  assert.equal(await storage.getAlarm(),alarm,'rollback restores the in-memory alarm');
+  assert.equal(puts(),firstPuts,'a refused transaction never reaches the document CAS');
+  await storage.transaction(async()=>{
+    storage.kv.put(marker,'accepted together');
+    await storage.setAlarm(alarm+60000);
+    await storage.sync();
+    assert.deepEqual(await server.store.readPrivate(path),before,'a transaction cannot publish before its callback completes');
+  });
+  assert.deepEqual(await server.store.readPrivate(path),before,'the existing outer sync remains the publication boundary');
+  await storage.sync();
+  const after=await server.store.readPrivate(path);
+  assert.equal(after.alarm,alarm+60000,'the accepted alarm is durable with its values');
+  assert.equal(new Map(after.values).get(marker),'accepted together');
+  if(server.store instanceof BucketStore)assert.equal(puts(),firstPuts+1,'one accepted transaction publishes one conditional document head');
+  await storage.transaction(async()=>{storage.kv.delete(marker);await storage.setAlarm(alarm);});
+  await storage.sync();
+  await storage.setAlarm(alarm+120000);
+  assert.equal((await server.store.readPrivate(path)).alarm,alarm+120000,'an alarm outside a transaction still persists immediately');
+  await storage.setAlarm(alarm);
+  assert.deepEqual(await server.store.readPrivate(path),before,'restoring the probe leaves the original durable workspace exact');
+}
 export async function bucketCells() {
   const vars={RAPIER_BUCKET_KEY_ID:witnessKey,RAPIER_BUCKET_SECRET:witnessSecret,RAPIER_BUCKET_REGION:'us-east-1',RAPIER_BUCKET_SESSION_TOKEN:witnessSession};
   const before=Object.fromEntries(Object.keys(vars).map(key=>[key,process.env[key]]));Object.assign(process.env,vars);
@@ -42,6 +78,7 @@ export async function bucketCells() {
     for(const server of [disk,cloud]) {
       const opened=await call(server,'rapier.open',{filename:'harbour.md',text:source});assert(opened.document,JSON.stringify(opened));
       const context=await call(server,'document.read_context',{...named(opened.document),start:0,end:source.length});assert.equal(context.text,source);
+      await transactionCell(server,peer);
       const operation_id=randomUUID(),args={document:opened.document,operation_id,edits:[{context_handle:context.handle,text:changed}]};
       const edit=await call(server,'document.apply_edits',args);applied(edit);identities.push({opened,context,args,edit});
     }
@@ -157,7 +194,7 @@ export async function bucketCells() {
     for(const {body} of peer.objects.values())safe(body.toString());
     safe(JSON.stringify(peer.requests));assert.deepEqual(peer.faults,[],'all requests were independently signature-verified');
     const puts=peer.requests.filter(row=>row.method==='PUT');assert(puts.every(row=>row.condition),'not one unconditional PUT');
-    const summary='bucket: folder-byte parity, real MCP edit/restart/retry/Undo/search, encoded paged listing, stale/state-only/create races, parts/head crash cuts, lost-response replay, limits, corruption and credential-safe CLI; '+puts.length+' conditional PUTs';
+    const summary='bucket: folder-byte parity, real MCP edit/restart/retry/Undo/search, transaction/alarm rollback, encoded paged listing, stale/state-only/create races, parts/head crash cuts, lost-response replay, limits, corruption and credential-safe CLI; '+puts.length+' conditional PUTs';
     console.log('PASS X8 '+summary);return summary;
   } finally {
     peer.before=null;peer.after=null;

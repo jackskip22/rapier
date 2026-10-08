@@ -8,7 +8,7 @@ export {PAINT_REPLAY_MAX_BYTES, paintReplayFits};
 import {canonicalJSON} from '../kit/ledger/data.mjs';
 import {WaterSurface, waterReady} from './water.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
-import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS} from './water-data.mjs';
+import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
 import {encodeSteps as encodeJXLSteps} from '../images/jxl/index.mjs';
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
 import {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, validatePaintRaster} from '../images/paint-raster.mjs';
@@ -55,7 +55,7 @@ export function forgetWaterSession(session) { waterPublications.delete(session);
 
 export function agentPaintBrushRegistry() {
 	// Each brush carries its own first-use size: the width the Paint tool opens it at and the width a stroke takes when it names none.
-	return {modes: ['paint', 'water'], controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id)})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), actions: WATER_AGENT_ACTIONS};
+	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id)})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), actions: WATER_AGENT_ACTIONS};
 }
 
 const WATER_AGENT_ACTIONS = Object.freeze({
@@ -607,11 +607,19 @@ export async function restoreWaterReplay(raw,options={}) {
 
 export async function sampleAgentPainting(shape,point,options={}) {
 	const map=layerMap(shape,16384);
-	if(shape?.paint?.mode!=='water' || !map || !Array.isArray(point) || point.length!==2 || !point.every(finite))return null;
-	await waterReady(); cancelled(options.signal);
+	if(!map || !Array.isArray(point) || point.length!==2 || !point.every(finite))return null;
+	cancelled(options.signal);
 	const pixels=await decodePaintRaster(shape.raster,options);
 	if (!pixels || pixels.width!==map.px[0] || pixels.height!==map.px[1]) return null;
-	const surface=await waterSurface(pixels.width,pixels.height,shape.paint.scale,shape.paint.paper);
+	if(shape.paint?.mode!=='water') {
+		const [x,y]=map.local(point).map(n=>Math.floor(n*map.scale));
+		if(x<0 || y<0 || x>=pixels.width || y>=pixels.height)return null;
+		const rgba=Array.from(pixels.data.subarray((y*pixels.width+x)*4,(y*pixels.width+x)*4+4));
+		cancelled(options.signal);
+		return {rgba,colour:'#'+rgba.slice(0,3).map(n=>n.toString(16).padStart(2,'0')).join('')};
+	}
+	await waterReady(); cancelled(options.signal);
+	const surface=await waterSurface(pixels.width,pixels.height,map.scale,shape.paint.paper);
 	try {
 		await surface.fromRGBA8(pixels.data,pixels.width,pixels.height);
 		const sample=await surface.samplePigment(...map.local(point));

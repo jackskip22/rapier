@@ -87,6 +87,7 @@ export function stateText(record) {
 }
 
 class WorkspaceStorage {
+  #transactionDepth=0;
   constructor(store, key, record) {
     this.store=store; this.key=key; this.record=record; this.values=new Map(record.values); this.alarm=record.alarm;
     this.failed=false;
@@ -98,18 +99,24 @@ class WorkspaceStorage {
   }
   transactionSync(fn) {
     if(this.failed) throw refusal('STATE_RELOAD_REQUIRED','The workspace must be reloaded after a storage failure.',503);
-    const before=structuredClone(this.values);
+    const before=structuredClone(this.values),alarm=this.alarm;
+    this.#transactionDepth++;
     try { const result=fn(); if(result?.then) throw new TypeError('A storage transaction must be synchronous'); return result; }
-    catch(error) {this.values=before;throw error;}
+    catch(error) {this.values=before;this.alarm=alarm;throw error;}
+    finally {this.#transactionDepth--;}
   }
   async transaction(fn) {
     if(this.failed) throw refusal('STATE_RELOAD_REQUIRED','The workspace must be reloaded after a storage failure.',503);
-    const before=structuredClone(this.values);
+    const before=structuredClone(this.values),alarm=this.alarm;
+    this.#transactionDepth++;
     try { return await fn(); }
-    catch(error) {this.values=before;throw error;}
+    catch(error) {this.values=before;this.alarm=alarm;throw error;}
+    finally {this.#transactionDepth--;}
   }
   async sync() {
     if(this.failed) throw refusal('STATE_RELOAD_REQUIRED','The workspace must be reloaded after a storage failure.',503);
+    // Values and alarms inside a transaction publish together at the caller's outer sync.
+    if(this.#transactionDepth)return;
     const next={...this.record,values:[...structuredClone(this.values)],alarm:this.alarm};
     try { await this.store.commit(this.key,next,this.record); this.record=next; }
     catch(error) {this.failed=true;throw error;}

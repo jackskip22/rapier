@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // WebGPU owns live water and pigment. A document owns its published straight RGBA bytes.
-import {WaterGPU,waterReady} from './water-gpu.mjs';
+import {WaterGPU,waterReady,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
 import {WaterContact} from './water-contact.mjs';
-import {getBrush,CUSTOM_PARAMS} from './water-materials.mjs';
+import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
 import {encodeRgb,toLinear} from './water-color.mjs';
 import {buildWaterFill} from './water-fill.mjs';
 import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState} from './water-data.mjs';
 export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState};
-export {waterReady};
+export {waterReady,waterHandSheetFits};
 const clone=value=>structuredClone(value);
 const clip=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
 const seconds=v=>clip(v,1/240,1/30);
@@ -31,7 +31,7 @@ export class WaterSurface {
   this.origin=(options.origin??[0,0]).slice();this.seed=options.seed??1;this.paperId=options.paper??'cold-press';
   if(!(this.scale>0)||this.scale>16/3||this.origin.length!==2||!this.origin.every(Number.isSafeInteger)||!integer(this.seed)||this.seed>0xffffffff||!waterPaperById(this.paperId))throw waterError('WATER_INPUT','The Water sheet is not valid.');
   this.cell=1;this.tick=0;this.revision=0;this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.paper=null;
-  this.maxBytes=options.maxBytes??384*1024*1024;this.wetPending=0;this._wetWork=null;this._dirty=null;this._bounds=null;this.growBox=null;
+  this.maxBytes=options.maxBytes??WATER_GPU_MAX_BYTES;this.wetPending=0;this._wetWork=null;this._dirty=null;this._bounds=null;this.growBox=null;
   this._actions=[];this._bytes=2;this._actionStart=0;this._tips=new Map();this._transaction=null;this._brush=null;this._pendingDt=0;this._disposed=false;
   this.gpu=new WaterGPU(width,height,{...options,paper:this.paperId,seed:options.paperSeed??randomStream(this.seed)(),paperScale:options.paperScale??1100/(options.paperHeight??height),paperOrigin:options.paperOrigin??[this.origin[0],-this.origin[1]]});
   this.ready=this.gpu.ready.then(async()=>{
@@ -226,7 +226,7 @@ export class WaterBrush {
   const ax=x*surface.scale+surface.origin[0],ay=y*surface.scale+surface.origin[1];if(Math.abs(ax/surface.pixelScale)>1e6||Math.abs(ay/surface.pixelScale)>1e6||this.action?.paths[0].length>=WATER_ACTION_MAX_POINTS)throw waterError('WATER_LIMIT','The Water gesture exceeds its complete-source limit.');
   if(!this.contact){
    surface._recordTip(this.water);surface.gpu.setPaper(this.water.paper);this.random=randomStream(this.seedValue);this.contact=this._contactFor(surface,inputKind);surface._brush=this;
-   this.action=surface._appendAction({kind:'stroke',seed:this.seedValue,tool:this.water.tool,brush:this.water.brush,pigment:clone(this.water.pigment),controls:{size:this.water.size,water:this.water.water,load:this.water.load,firm:this.water.firm,light:this.water.light,angle:this.held??this.water.angle,follow:this.held===null,radius:this.radius,erase:this.water.erase},paper:this.water.paper,source:'hand',inputKind,direction:this.lastDirection.slice(),frame:surface._contactFrame(),paths:[[]],frames:[]});
+   this.action=surface._appendAction({kind:'stroke',seed:this.seedValue,tool:this.water.tool,brush:this.water.brush,pigment:clone(this.water.pigment),controls:{size:this.water.size,water:this.water.water,load:this.water.load,firm:this.water.firm,light:this.water.light,angle:this.held??this.water.angle,follow:this.held===null,radius:this.radius,erase:this.water.erase,...Object.fromEntries(['flow','bleed','edge','granulation','dry'].filter(key=>this.water[key]!=null).map(key=>[key,this.water[key]]))},paper:this.water.paper,source:'hand',inputKind,direction:this.lastDirection.slice(),frame:surface._contactFrame(),paths:[[]],frames:[]});
   }
   if(inputTime!=null){this.absoluteInputTime=true;this.time=inputTime;}else this.time+=dtime*1000;
   const pressure=inputKind==='pen'?p**.8:p,point=[ax/surface.pixelScale,ay/surface.pixelScale,pressure,surface.tick,clip(xtilt,-1,1),clip(ytilt,-1,1),this.time],path=this.action.paths[0];
@@ -235,6 +235,35 @@ export class WaterBrush {
  }
  snapshot(){return {seedValue:this.seedValue,randomState:this.random.get(),water:clone(this.water),radius:this.radius,held:this.held,lastDirection:this.lastDirection.slice(),last:clone(this.last),time:this.time,absoluteInputTime:this.absoluteInputTime,loadFuel:this.loadFuel,contact:this.contact?.snapshot()??null,action:clone(this.action)};}
  fromSnapshot(state){this.seedValue=state.seedValue;this.random=randomStream(state.seedValue);this.random.set(state.randomState);for(const key of ['water','radius','held','lastDirection','last','time','absoluteInputTime','loadFuel','action'])this[key]=clone(state[key]);if(this.contact&&state.contact){this.contact.restore(state.contact);this.contact.rng=this.random;}else this.contact=null;}
+}
+
+const previewTips=new Map();
+// Brush choice shows the actual contact profile and tip without allocating or advancing wet material.
+export function paintWaterBrushPreview(canvas,definition){
+ const brush=new WaterBrush(definition),water=brush.water,profile=water.tip?{id:water.brush,tip:water.tip,params:CUSTOM_PARAMS}:getBrush(water.brush);
+ let tip=water.tip;
+ if(!tip){
+  if(!previewTips.has(profile.id)){const made=makeTip(profile);previewTips.set(profile.id,{width:made.width,height:made.height,mask:Uint8Array.from({length:made.width*made.height},(_,i)=>made.rgba[i*4])});}
+  tip=previewTips.get(profile.id);
+ }
+ const head=canvas.ownerDocument?canvas.ownerDocument.createElement('canvas'):new OffscreenCanvas(tip.width,tip.height);
+ head.width=tip.width;head.height=tip.height;
+ const color=waterPigmentRGB(coefficients(water.pigment)).map(v=>Math.round(v*255)),pixels=new Uint8ClampedArray(tip.width*tip.height*4);
+ for(let i=0;i<tip.mask.length;i++){pixels.set(color,i*4);pixels[i*4+3]=tip.mask[i];}
+ head.getContext('2d').putImageData(new ImageData(pixels,tip.width,tip.height),0,0);
+ const ctx=canvas.getContext('2d'),width=canvas.width,height=canvas.height;
+ ctx.clearRect(0,0,width,height);
+ const base=coefficients(water.pigment),mass=Math.hypot(...base)||1;
+ const contactSink={width,height,params:{flow:water.flow??.45},splatVelocity(){},stamp({x,y,r,angle=0,coefficients:ink}){
+  if(!ink)return;
+  ctx.save();ctx.translate(x*width,(1-y)*height);ctx.rotate(-angle);
+  ctx.globalAlpha=1-Math.exp(-Math.hypot(...ink)/mass);
+  const radius=r*height;ctx.drawImage(head,-radius,-radius*profile.params.aspect,radius*2,radius*2*profile.params.aspect);ctx.restore();
+ }};
+ brush.seed(7);brush.radius*=Math.exp(-1.1);
+ const contact=brush._contactFor({gpu:contactSink,width,height,pixelScale:1});
+ for(let i=0;i<=32;i++){const t=i/32;contact.sample((12+72*t)/96,1-(30+10*Math.sin(t*Math.PI*2))/60,.12+.7*Math.sin(t*Math.PI),i*12);}
+ contact.finish();contact.frame(1/60);
 }
 
 export async function replayWater({frame,pixels=null,state=null,actions=[]}){

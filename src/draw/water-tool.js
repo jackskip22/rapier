@@ -5,14 +5,7 @@ const RAPIER_WATER_DRY_ICON = RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="
 const RAPIER_WATER_FILL_ICON = RAPIER_DRAW_ICON_WRAP('<path d="M19 11l-8 -8l-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8 .8 2 .8 2.8 0l8.6 -8.6z"></path><path d="M5 2l5 5"></path><path d="M2 13h15"></path><path d="M22 20a2 2 0 0 1 -4 0c0 -1.1 2 -3 2 -3s2 1.9 2 3z"></path>');
 const RAPIER_WATER_KEY = 'rapier:draw.water';
 const _rapierWaterGlyphs = new Map(), _rapierWaterGlyphPending = new Set();
-let _rapierWaterPreviewRemote = null;
-function _rapierWaterPreviewPainter() {
-	if (!_rapierWaterPreviewRemote) _rapierWaterPreviewRemote = _rapierDrawPaintClient('preview','water').then(client => {
-		if (!client) throw new Error('The brush preview could not start');
-		return globalThis.RapierDrawPaintRemote.createPaintRemote(client,{frame:fn=>requestAnimationFrame(fn),onFailure:()=>{ _rapierWaterPreviewRemote=null; _rapierDrawPaintRelease(client); }});
-	}).catch(error => { _rapierWaterPreviewRemote=null; throw error; });
-	return _rapierWaterPreviewRemote;
-}
+let _rapierWaterGlyphWork = Promise.resolve();
 function _rapierWaterEngine() { return globalThis.RapierDrawWater; }
 function _rapierWaterSession() { return globalThis.RapierDrawAgentPaint.waterSession(_rapierDrawState.session); }
 function _rapierWaterPointerPressure(event, inputKind) {
@@ -153,24 +146,29 @@ function _rapierWaterUpdate() {
 	}
 	for (const button of surface.querySelectorAll('[data-water-strength]')) button.setAttribute('aria-pressed', String(button.dataset.waterStrength === settings.strength));
 }
-function _rapierWaterGlyphKey(id, custom, settings) {
-	return JSON.stringify([id,settings.pigment,settings.paper,settings.strength,settings.angle,settings.follow,custom ? id : null]);
+function _rapierWaterGlyphDefinition(id, custom, settings = _rapierWaterState()) {
+	const preset = _rapierWaterEngine().WATER_BRUSHES.find(row => row.id === id), own = custom && _rapierWaterOwn().find(row => row.id === id);
+	return _rapierWaterDefinition({...settings,...(own ? own.water : preset),pigment:settings.pigment,paper:settings.paper,brush:id,tool:'brush',tip:own ? own.water.tip : null});
 }
 function _rapierWaterGlyph(id, custom = false) {
-	const settings = {..._rapierWaterState(),pigment:structuredClone(_rapierWaterState().pigment)}, key = _rapierWaterGlyphKey(id,custom,settings);
-	if (_rapierWaterGlyphs.has(key)) return _rapierWaterGlyphs.get(key);
+	const definition = _rapierWaterGlyphDefinition(id,custom), key = JSON.stringify(definition.water);
+	const cached = _rapierWaterGlyphs.get(id);
+	if (cached?.key === key) return cached.url;
 	if (_rapierWaterGlyphPending.has(key)) return '';
 	_rapierWaterGlyphPending.add(key);
-	void (async () => {
+	_rapierWaterGlyphWork = _rapierWaterGlyphWork.then(async () => {
 		let url = '';
 		try {
-			const remote = await _rapierWaterPreviewPainter(), preset = _rapierWaterEngine().WATER_BRUSHES.find(row => row.id === id), own = custom && _rapierWaterOwn().find(row => row.id === id), definition = _rapierWaterDefinition({...settings,...(own ? own.water : preset),pigment:settings.pigment,paper:settings.paper,brush:id,tool:'brush',tip:own ? own.water.tip : null});
-			const points = Array.from({length:33},(_,i) => { const t = i / 32; return [12 + 72*t,30 + 10*Math.sin(t*Math.PI*2),.12 + .7*Math.sin(t*Math.PI),.012]; });
-			url = _rapierPaintPNG.encode(await remote.preview({width:96,height:60,definition,points,settle:true,options:{seed:7,radiusOffset:-1.1}}));
+			await new Promise(resolve => typeof requestIdleCallback === 'function' ? requestIdleCallback(resolve) : setTimeout(resolve,0));
+			if (!_rapierDrawState.open || _rapierDrawState.waterPanel !== 'waterBrushes' || key !== JSON.stringify(_rapierWaterGlyphDefinition(id,custom).water)) return;
+			const client = await _rapierDrawPaintClient('preview','water');
+			const {pixels} = await client.request('preview',{width:96,height:60,definition});
+			const canvas = document.createElement('canvas'); canvas.width = pixels.width; canvas.height = pixels.height;
+			canvas.getContext('2d').putImageData(new ImageData(pixels.data,pixels.width,pixels.height),0,0); url = canvas.toDataURL('image/png');
 		} catch (_) {}
-		if (url) { if (_rapierWaterGlyphs.size >= 96) _rapierWaterGlyphs.delete(_rapierWaterGlyphs.keys().next().value); _rapierWaterGlyphs.set(key,url); }
-		_rapierWaterGlyphPending.delete(key);
-		if (url && _rapierDrawState.waterPanel === 'waterBrushes' && key === _rapierWaterGlyphKey(id,custom,_rapierWaterState())) {
+		finally { _rapierWaterGlyphPending.delete(key); }
+		if (url) _rapierWaterGlyphs.set(id,{key,url});
+		if (url && _rapierDrawState.waterPanel === 'waterBrushes' && key === JSON.stringify(_rapierWaterGlyphDefinition(id,custom).water)) {
 			// A preview may finish between pointerdown and pointerup. Keep the chip in place.
 			for (const button of _rapierDrawState.surface.querySelectorAll('[data-water-brush]')) if (button.dataset.waterBrush === id) {
 				const prior = button.querySelector('.rapier-draw-glyph,svg'), art = document.createElement('img');
@@ -178,7 +176,7 @@ function _rapierWaterGlyph(id, custom = false) {
 				if (prior) prior.replaceWith(art); else button.prepend(art);
 			}
 		}
-	})();
+	}).catch(() => { _rapierWaterGlyphPending.delete(key); });
 	return '';
 }
 function _rapierWaterBind(surface) {
@@ -266,25 +264,28 @@ async function _rapierWaterActionAt(event, gesture) {
 function _rapierWaterRunAction(action, world = false, tip = null) {
 	const state = _rapierDrawState; if (state.waterAction || state.finishing || !state.open) return Promise.resolve(false);
 	const session = state.session, gesture = {kind:'paint',tool:'water',paint:{discarded:false}};
+	const preceding = state.waterStrokes?.at(-1)?.promise, admitted = structuredClone(action), admittedTip = tip ? structuredClone(tip) : null, brushId = _rapierWaterState().brush;
 	const task = (async () => {
-		const layer = await _rapierWaterLayer(action.kind !== 'stroke'); if (!state.open || state.session !== session) return false;
+		// Dry and captured paths take their own checkpoint after every earlier admitted hand.
+		// Capture this barrier before installing waterAction, which itself owns the next input.
+		await preceding; if (!state.open || state.session !== session) return false;
+		const layer = await _rapierWaterLayer(admitted.kind !== 'stroke'); if (!state.open || state.session !== session) return false;
 		if (await _rapierPaintStrokeCheckpoint(gesture,layer) !== undefined) return false;
 		delete layer.warmView; layer.setPending = true;
-		const admitted = structuredClone(action);
 		if (world && admitted.paths) {
 			const radius = _rapierWaterEngine().waterRadius(admitted.controls.size), bounds = [Infinity,Infinity,-Infinity,-Infinity];
 			for (const path of admitted.paths) for (const point of path) { bounds[0]=Math.min(bounds[0],point[0]); bounds[1]=Math.min(bounds[1],point[1]); bounds[2]=Math.max(bounds[2],point[0]); bounds[3]=Math.max(bounds[3],point[1]); }
 			for (const corner of [[bounds[0]-radius,bounds[1]-radius],[bounds[2]+radius,bounds[3]+radius]]) { const p = _rapierWaterToLayer(corner,layer); _rapierPaintGrowToHold(layer,null,{x:p[0],y:p[1]}); }
 		}
 		if (world) { if (admitted.at) admitted.at = _rapierWaterToLayer(admitted.at,layer); if (admitted.paths) admitted.paths = admitted.paths.map(path => path.map(point => _rapierWaterToLayer(point,layer))); }
-		_rapierPaintShowLive(true); if (tip) await layer.surface.applyWater({kind:'tip',brush:structuredClone(tip)}); await layer.surface.applyWater(admitted); await _rapierWaterPreflight(layer); _rapierPaintReleaseStroke(gesture);
-		layer.brushId = _rapierWaterState().brush; layer.paintVersion = (layer.paintVersion || 0) + 1;
-		const held = _rapierPaintLiftHold(layer); await layer.surface.sync(); _rapierPaintEndDecide(layer,held); _rapierDrawBackupTouch(); return true;
+		_rapierPaintShowLive(true); if (admittedTip) await layer.surface.applyWater({kind:'tip',brush:admittedTip}); await layer.surface.applyWater(admitted); await _rapierWaterPreflight(layer); _rapierPaintReleaseStroke(gesture);
+		layer.brushId = brushId; layer.paintVersion = (layer.paintVersion || 0) + 1;
+		const held = _rapierPaintLiftHold(layer); await layer.surface.sync(); _rapierPaintEndDecide(layer,held); await held.promise; _rapierDrawBackupTouch(); return true;
 	})().catch(error => { if (state.open && state.session === session) { _rapierPaintReleaseStroke(gesture,true); if (error.name !== 'AbortError') showToast(String(error.message || error),'error'); } return false; }).finally(() => { if (state.waterAction === task) state.waterAction = null; });
 	state.waterAction = task; return task;
 }
 async function _rapierWaterPreflight(layer) {
-	const result = await layer.surface.readBounds();
+	const result = await layer.surface.readBounds({metadataOnly:true});
 	if (!result.box) return;
 	const sheet = result.waterSheet, replay = _rapierPaintWaterReplay(layer,result.waterReplay,result.box,sheet);
 	// One coalesced drying advance and one explicit dry fit before the gesture releases its rollback.

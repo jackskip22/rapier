@@ -27,7 +27,7 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = 'd3b94d56cc180c91b59571ead5973856d1b006d158779f2dee567ee7c5106f19';
+const SHELL_RELEASE_SHA256 = 'b327fe001780eb42640a9d1cb7e74f351f5343c5642bb3e44d482391f6b1d8a2';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */
@@ -110,11 +110,34 @@ self.addEventListener('fetch', event => {
   const isNavigation = req.mode === 'navigate';
 
   if (isNavigation) {
+    const abort = new AbortController();
+    const signal = AbortSignal.any([req.signal, abort.signal]);
     const networkResponse = (async () => {
       let preload = null;
       try { preload = await event.preloadResponse; } catch (_) {}
-      return preload || fetch(req);
+      const response = preload || await fetch(req, { signal });
+      if (signal.aborted) {
+        try { await response.body?.cancel(); } catch (_) {}
+        throw signal.reason;
+      }
+      if (!response.ok || !response.body || !/^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) return response;
+      /* Headers alone do not make an editor: the transport can fail halfway through a packed
+         library. Finish the HTML body before choosing it over the verified shell. The signal
+         cancels the body too, including navigation preload, which was not started by our fetch. */
+      const stream = response.body.pipeThrough(new TransformStream(), { signal });
+      const body = await new Response(stream).arrayBuffer();
+      const headers = new Headers(response.headers);
+      // Fetch has decoded the transfer; these headers describe the wire bytes, not this body.
+      headers.delete('Content-Encoding');
+      headers.delete('Content-Length');
+      headers.delete('Transfer-Encoding');
+      return new Response(body, { status: response.status, statusText: response.statusText, headers });
     })();
+    const discardNetwork = () => {
+      abort.abort();
+      // A response that finished while CacheStorage was answering no longer has a consumer.
+      networkResponse.then(response => response.body?.cancel()).catch(() => {});
+    };
 
     /* The shell's HTML is written once, at verified install, and never again: a
        live navigation response is unverified, and a rolling deploy can serve this
@@ -123,23 +146,31 @@ self.addEventListener('fetch', event => {
        promises exactly what install hashed. */
     event.respondWith((async () => {
       const outcome = networkResponse.then(response => ({ response }), error => ({ error }));
-      /* A network that never answers (a captive portal, one bar of signal) must not hold the
-         installed app at a blank page: after the wait the verified copy is served when there is
-         one. With no copy the network is all there is, and the wait goes on. */
-      const first = await Promise.race([outcome, new Promise(resolve => setTimeout(() => resolve(null), NAVIGATION_WAIT_MS))]);
-      if (!first) {
-        const copy = await cachedNavigationResponse(req);
-        if (copy) return copy;
-      }
-      const settled = first || await outcome;
-      if (settled.response && settled.response.ok) return settled.response;
-      return (await cachedNavigationResponse(req)) || settled.response || new Response(
-        'Rapier is unavailable offline.',
-        {
-          status: 503,
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      let deadline;
+      try {
+        /* The deadline covers both headers and body. With no readable offline copy, keep waiting
+           for the network: a slow complete release is still useful to a first visit. */
+        const first = await Promise.race([outcome, new Promise(resolve => {
+          deadline = setTimeout(() => resolve(null), NAVIGATION_WAIT_MS);
+        })]);
+        if (!first) {
+          const copy = await cachedNavigationResponse(req).catch(() => null);
+          if (copy) { discardNetwork(); return copy; }
         }
-      );
+        const settled = first || await outcome;
+        if (settled.response && settled.response.ok) return settled.response;
+        const copy = await cachedNavigationResponse(req).catch(() => null);
+        if (copy) { discardNetwork(); return copy; }
+        return settled.response || new Response(
+          'Rapier is unavailable offline.',
+          {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          }
+        );
+      } finally {
+        clearTimeout(deadline);
+      }
     })());
     return;
   }
@@ -165,7 +196,7 @@ async function cachedNavigationResponse(request) {
      trailing slash the door mark allows (shell/platform.js _rapierDoorPathMark). The privacy and
      commercial sheets are doors of the same kind. */
   const door = requested.pathname.startsWith(root.pathname) &&
-    /^(?:notes|draw|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
+    /^(?:notes|draw|watercolor|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
   if (requested.origin !== root.origin ||
       (requested.pathname !== root.pathname && requested.pathname !== page.pathname && !door)) return null;
   const cache = await shellCache();

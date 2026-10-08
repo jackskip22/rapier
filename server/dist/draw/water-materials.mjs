@@ -137,7 +137,8 @@ function footprint(shape,noise) {
  };
 }
 
-export function makeTip(brush,size=192,seed=7) {
+export const WATER_TIP_SIZE=192;
+export function makeTip(brush,size=WATER_TIP_SIZE,seed=7) {
  const material=typeof brush==='string'?getBrush(brush):brush;
  if(!material||!Number.isSafeInteger(size)||size<1)throw new RangeError('Invalid watercolor footprint');
  const shape=material.shape||material.id?.slice(6);

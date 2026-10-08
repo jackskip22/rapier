@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// rapier.website's doors, /privacy, /commercial, /notes and /draw, answered with their own head and guide.
+// Rapier's dedicated pages, answered with their own head and guide.
 //
 // One HTML asset carries the application and its search guides. The build keeps the door guides in inert templates
 // inside the body's search region. A door replaces the home guide with its own and names its own address in the head.
@@ -22,7 +22,7 @@ export const DOORS = Object.freeze({
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.'}),
 	'/commercial': Object.freeze({name: 'Commercial licence', title: 'Rapier commercial licence',
 		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
-	// The two views of the editor a search engine may show as sitelinks under the home result: each opens that view
+	// The editor views a search engine may show as sitelinks under the home result: each opens that view
 	// (the engine reads the address), and each is a page of its own for a reader that runs nothing.
 	'/notes': Object.freeze({name: 'Notes', title: 'Rapier Notes: Markdown notes on your phone',
 		description: 'Plain Markdown notes as cards, with colours, pins, checklists, reminders and voice notes. Fast, offline, no account.',
@@ -30,6 +30,10 @@ export const DOORS = Object.freeze({
 	'/draw': Object.freeze({name: 'Draw', title: 'Rapier Draw: draw and paint in Markdown',
 		description: 'Shapes, arrows that stay attached, a pen and real brushes. Drawings stay sharp and editable inside your Markdown file.',
 		image: 'og-draw.png', imageAlt: 'Rapier Draw: draw and paint in Markdown'}),
+	'/watercolor': Object.freeze({name: 'Watercolor', title: 'Rapier Watercolor: free watercolor painting online',
+		description: 'Paint watercolor in your browser with flowing pigments, wet washes and textured paper. Keep transparent paintings in editable drawings. Free, no account.',
+		image: 'og-watercolor.png', imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
+		picture: 'watercolor-painting.png'}),
 });
 
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true});
@@ -79,10 +83,13 @@ export function doorHead(head, path) {
 	// The door is a page of the site, under the home page, not a second copy of the application's description.
 	const data = {'@context': 'https://schema.org', '@graph': [
 		{'@type': 'WebPage', '@id': url + '#webpage', url, name: door.title, description: door.description, inLanguage: 'en',
-			isPartOf: {'@id': ORIGIN + '/#website'}, breadcrumb: {'@id': url + '#breadcrumb'}},
+			isPartOf: {'@id': ORIGIN + '/#website'}, breadcrumb: {'@id': url + '#breadcrumb'},
+			...(door.image ? {primaryImageOfPage: {'@id': url + '#image'}} : {})},
 		{'@type': 'BreadcrumbList', '@id': url + '#breadcrumb', itemListElement: [
 			{'@type': 'ListItem', position: 1, name: 'Rapier', item: ORIGIN + '/'},
-			{'@type': 'ListItem', position: 2, name: door.name, item: url}]}]};
+			{'@type': 'ListItem', position: 2, name: door.name, item: url}]},
+		...(door.image ? [{'@type': 'ImageObject', '@id': url + '#image', url: ORIGIN + '/' + (door.picture || door.image),
+			caption: door.imageAlt}] : [])]};
 	out = out.replace(graph[0], () => '<script type="application/ld+json">' + jsonInScript(data) + '</script>');
 	// The page's own head, kept: the sheet's close puts these back (the engine reads this block when it is there).
 	const home = {title: text(title[1]), description: text(description[1]), canonical: text(canonical[1])};

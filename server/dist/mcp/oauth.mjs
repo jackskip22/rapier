@@ -62,6 +62,35 @@ async function authorizationServer(env) {
   return servers.get(issuer);
 }
 
+export function validGrantReference(value) {
+  return value !== null && typeof value === 'object' && OWNER_PATTERN.test(value.ownerId || '') &&
+    CONNECTION_PATTERN.test(value.connectionId || '') && /^[A-Za-z0-9_-]{1,128}$/.test(value.grantId || '') &&
+    typeof value.clientId === 'string' && value.clientId.length > 0 && typeof value.audience === 'string' &&
+    Array.isArray(value.scopes) && value.scopes.every(scope => OAUTH_SCOPES.includes(scope));
+}
+
+// Suspended work retains this verified reference, never the bearer. The provider remains
+// the permission owner; a missing grant or an unavailable lookup cannot authorize publication.
+export async function oauthGrantCurrent(reference, env) {
+  if (!validGrantReference(reference)) return false;
+  const origin = oauthOrigin(env);
+  if (![origin + '/mcp', origin + '/muse'].includes(reference.audience)) return false;
+  const api = (await authorizationServer(env)).getOAuthApi(env);
+  let cursor;
+  do {
+    const page = await api.listUserGrants(reference.ownerId, cursor ? {cursor} : {});
+    const grant = page.items.find(row => row.id === reference.grantId);
+    if (grant) return grant.userId === reference.ownerId && grant.clientId === reference.clientId &&
+      grant.metadata?.connectionId === reference.connectionId &&
+      (grant.expiresAt === undefined || Number.isSafeInteger(grant.expiresAt) && grant.expiresAt > Math.floor(Date.now() / 1000)) &&
+      [grant.resource].flat().includes(reference.audience) &&
+      Array.isArray(grant.scope) && reference.scopes.every(scope => grant.scope.includes(scope));
+    if (page.cursor && page.cursor === cursor) return false;
+    cursor = page.cursor;
+  } while (cursor);
+  return false;
+}
+
 function headers(extra) {
   const result = new Headers(extra);
   result.set('Cache-Control', 'no-store');
@@ -362,8 +391,13 @@ export async function handleOAuth(request, env, ctx, next) {
           verified.expiresAt <= Math.floor(Date.now() / 1000) || !OWNER_PATTERN.test(verified.userId) || verified.props?.ownerId !== verified.userId ||
           !CONNECTION_PATTERN.test(verified.props?.connectionId) || !Array.isArray(verified.scope) ||
           verified.scope.some(scope => !OAUTH_SCOPES.includes(scope))) return oauthChallenge(request, env);
+      const token = await server.getOAuthApi(env).unwrapToken(match[1]);
+      const grant = {ownerId: verified.userId, connectionId: verified.props.connectionId, grantId: token?.grantId,
+        clientId: verified.clientId, audience: verified.audience, scopes: [...verified.scope]};
+      if (!validGrantReference(grant) || token?.userId !== verified.userId || token.grant?.clientId !== verified.clientId ||
+          token.grant?.props?.connectionId !== verified.props.connectionId) return oauthChallenge(request, env);
       authority = Object.freeze({ownerId: verified.userId, connectionId: verified.props.connectionId,
-        scopes: Object.freeze([...verified.scope]), source: 'oauth'});
+        scopes: Object.freeze([...verified.scope]), source: 'oauth', grant: Object.freeze(grant)});
     } else if (humanRoute) {
       const ownerId = await browserOwner(request, env);
       if (ownerId) authority = browserAuthority(ownerId);

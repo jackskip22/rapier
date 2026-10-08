@@ -3,6 +3,8 @@
 /notes /rapier.html 200
 /draw/ /draw 308
 /draw /rapier.html 200
+/watercolor/ /watercolor 308
+/watercolor /rapier.html 200
 /agents/ /agents 308
 /agents https://github.com/jackskip22/rapier/blob/main/docs/agents.md 302
 /markdown-standard/ /markdown-standard 308

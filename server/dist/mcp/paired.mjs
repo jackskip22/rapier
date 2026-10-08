@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The paired editor at /d/<id>: the built app page in a browser tab, talking to its own workspace over HTTP.
 // A browser reaches one workspace: as the connected owner (the browser identity set at consent), or through a
-// pairing the agent confirms with the four-letter code the page shows. Neither credential appears in a tool result.
+// pairing whose code the agent confirms, whose owner independently approves for an OAuth workspace, and which
+// the target browser collects with Allow. Neither browser credential appears in a tool result.
 import {base64url, fromBase64url} from '../agent/door-identity.mjs';
 import {editorSecretKeyMaterial, editorSecretUsable} from './editor-keys.mjs';
 
