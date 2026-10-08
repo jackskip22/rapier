@@ -3,7 +3,7 @@
 import {COLOR_WGSL} from './water-color.mjs';
 import {PAPER_WGSL} from './water-materials.mjs';
 
-const common = `
+const head = `
 struct Parameters { v: array<vec4<f32>,16> };
 @group(0) @binding(0) var<uniform> u: Parameters;
 @group(0) @binding(1) var linearSampler: sampler;
@@ -22,12 +22,42 @@ struct Pair { @location(0) a: vec4<f32>, @location(1) b: vec4<f32> };
  return vec4<f32>(p[i],0,1);
 }
 fn uv(p:vec4<f32>) -> vec2<f32> { return vec2<f32>(p.x/u.v[0].x,1-p.y/u.v[0].y); }
+fn loadTexel(image:texture_2d<f32>, coord:vec2<i32>) -> vec4<f32> {
+ let last=vec2<i32>(textureDimensions(image))-vec2<i32>(1);
+ return textureLoad(image,clamp(coord,vec2<i32>(0),last),0);
+}
+`;
+
+const manualSample = `
+// Reconstruction without a float filter. A phone that cannot filter float textures
+// must not invent rows or a one-pixel lattice.
 fn sample(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
- return textureSampleLevel(image,linearSampler,vec2<f32>(p.x,1-p.y),0);
+ let size=vec2<f32>(textureDimensions(image));
+ let xy=vec2<f32>(p.x,1.0-p.y)*size-0.5;
+ let origin=vec2<i32>(floor(xy));
+ let weight=fract(xy);
+ let a=loadTexel(image,origin);
+ let b=loadTexel(image,origin+vec2<i32>(1,0));
+ let c=loadTexel(image,origin+vec2<i32>(0,1));
+ let d=loadTexel(image,origin+vec2<i32>(1,1));
+ return mix(mix(a,b,weight.x),mix(c,d,weight.x),weight.y);
 }
 fn nearest(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
- return textureSampleLevel(image,nearestSampler,vec2<f32>(p.x,1-p.y),0);
+ let size=vec2<f32>(textureDimensions(image));
+ return loadTexel(image,vec2<i32>(floor(vec2<f32>(p.x,1.0-p.y)*size)));
 }
+`;
+
+const filteredSample = `
+fn sample(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
+ return textureSampleLevel(image, linearSampler, vec2<f32>(p.x,1.0-p.y), 0.0);
+}
+fn nearest(image:texture_2d<f32>,p:vec2<f32>) -> vec4<f32> {
+ return textureSampleLevel(image, nearestSampler, vec2<f32>(p.x,1.0-p.y), 0.0);
+}
+`;
+
+const rest = `
 fn cardinal(i:u32, texel:vec2<f32>) -> vec2<f32> {
  let offsets = array<vec2<f32>,4>(vec2<f32>(-1,0),vec2<f32>(1,0),vec2<f32>(0,-1),vec2<f32>(0,1));
  return offsets[i]*texel;
@@ -89,20 +119,20 @@ const body = {
  }`,
  curl: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
  let q=uv(p);let h=1.0/u.v[0].zw;
- let dx=sample(t0,q+cardinal(1u,h)).y-sample(t0,q+cardinal(0u,h)).y;
- let dy=sample(t0,q+cardinal(3u,h)).x-sample(t0,q+cardinal(2u,h)).x;
+ let dx=nearest(t0,q+cardinal(1u,h)).y-nearest(t0,q+cardinal(0u,h)).y;
+ let dy=nearest(t0,q+cardinal(3u,h)).x-nearest(t0,q+cardinal(2u,h)).x;
  return vec4<f32>(0.5*(dx-dy),0,0,1);
  }`,
  vorticity: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
  let q=uv(p);let n=neighbors(t1,q);
  let direction=0.5*vec2<f32>(abs(n.w)-abs(n.z),abs(n.y)-abs(n.x));
  let force=direction/(length(direction)+0.0001)*(4+22*u.v[1].y)*nearest(t1,q).r*vec2<f32>(1,-1);
- return vec4<f32>(clamp(sample(t0,q).xy+u.v[1].x*force,vec2<f32>(-1000),vec2<f32>(1000)),0,1);
+ return vec4<f32>(clamp(nearest(t0,q).xy+u.v[1].x*force,vec2<f32>(-1000),vec2<f32>(1000)),0,1);
  }`,
  divergence: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
  let q=uv(p);let h=1.0/u.v[0].zw;
- let dx=sample(t0,q+cardinal(1u,h)).x-sample(t0,q+cardinal(0u,h)).x;
- let dy=sample(t0,q+cardinal(3u,h)).y-sample(t0,q+cardinal(2u,h)).y;
+ let dx=nearest(t0,q+cardinal(1u,h)).x-nearest(t0,q+cardinal(0u,h)).x;
+ let dy=nearest(t0,q+cardinal(3u,h)).y-nearest(t0,q+cardinal(2u,h)).y;
  return vec4<f32>(0.5*(dx+dy),0,0,1);
  }`,
  pressureDecay: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return nearest(t0,uv(p))*0.8; }`,
@@ -111,10 +141,11 @@ const body = {
  }`,
  project: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
  let q=uv(p);let n=neighbors(t1,q);
- return vec4<f32>(sample(t0,q).xy-0.5*vec2<f32>(n.y-n.x,n.w-n.z),0,1);
+ return vec4<f32>(nearest(t0,q).xy-0.5*vec2<f32>(n.y-n.x,n.w-n.z),0,1);
  }`,
  wet: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
- let q=uv(p)-0.6*u.v[1].x*sample(t0,uv(p)).xy/u.v[0].zw;
+ let origin=uv(p);
+ let q=origin-0.6*u.v[1].x*sample(t0,origin).xy/u.v[0].zw;
  let h=vec2<f32>(1.6)/u.v[0].xy;
  var sum=0.0;for(var i=0u;i<4u;i++){sum+=sample(t1,q+cardinal(i,h)).r;}
  return vec4<f32>(mix(sample(t1,q).r,0.25*sum,0.12)*u.v[2].x,0,0,1);
@@ -129,23 +160,39 @@ const body = {
  }`,
  pigment: `
  fn mobility(w:f32)->f32{return smoothstep(0.02,0.45,w);}
+ fn bounded(v:vec4<f32>)->vec4<f32>{return select(vec4<f32>(0),clamp(v,vec4<f32>(-48),vec4<f32>(48)),v==v);}
  @fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair {
-  let q=uv(p);let water=sample(t3,q).r;let m=mobility(water);
-  let a=sample(t1,q);let b=sample(t2,q);let keep=u.v[2].w;
+  let q=uv(p);let pix=vec2<i32>(p.xy);
+  let water=loadTexel(t3,pix).r;let m=mobility(water);
+  let a=loadTexel(t1,pix);let b=loadTexel(t2,pix);let keep=u.v[2].w;
   if(m<0.002){return Pair(a*keep,b*keep);}
   let back=q-u.v[1].x*sample(t0,q).xy/u.v[0].zw*m;
   var resultA=mix(a,sample(t1,back),m);var resultB=mix(b,sample(t2,back),m);
   var proximity=0.0;
   if(u.v[3].z>0){let d=(q-u.v[3].xy)*vec2<f32>(u.v[0].x/u.v[0].y,1)/u.v[3].z;proximity=exp(-dot(d,d));}
   let diffusion=clamp(u.v[1].z*(0.25+1.3*proximity)*0.3,0.0,0.15);
+  let orthoA=loadTexel(t1,pix+vec2<i32>(-1,0))+loadTexel(t1,pix+vec2<i32>(1,0))+loadTexel(t1,pix+vec2<i32>(0,-1))+loadTexel(t1,pix+vec2<i32>(0,1));
+  let orthoB=loadTexel(t2,pix+vec2<i32>(-1,0))+loadTexel(t2,pix+vec2<i32>(1,0))+loadTexel(t2,pix+vec2<i32>(0,-1))+loadTexel(t2,pix+vec2<i32>(0,1));
+  let diagA=loadTexel(t1,pix+vec2<i32>(-1,-1))+loadTexel(t1,pix+vec2<i32>(1,-1))+loadTexel(t1,pix+vec2<i32>(-1,1))+loadTexel(t1,pix+vec2<i32>(1,1));
+  let diagB=loadTexel(t2,pix+vec2<i32>(-1,-1))+loadTexel(t2,pix+vec2<i32>(1,-1))+loadTexel(t2,pix+vec2<i32>(-1,1))+loadTexel(t2,pix+vec2<i32>(1,1));
   for(var i=0u;i<4u;i++){
-   let neighbor=q+cardinal(i,1.0/u.v[0].xy);let w=sample(t3,neighbor).r;let gate=m*mobility(w);
-   let na=sample(t1,neighbor);let nb=sample(t2,neighbor);
-   let drift=clamp(u.v[1].w*(water-w),-0.08,0.08)*gate;
+   let step=vec2<i32>(i32(i==1u)-i32(i==0u),i32(i==3u)-i32(i==2u));
+   let nw=loadTexel(t3,pix+step).r;let gate=m*mobility(nw);
+   let na=loadTexel(t1,pix+step);let nb=loadTexel(t2,pix+step);
+   let drift=clamp(u.v[1].w*(water-nw),-0.08,0.08)*gate;
    resultA+=diffusion*gate*(na-a)-drift*select(na,a,drift>0);
    resultB+=diffusion*gate*(nb-b)-drift*select(nb,b,drift>0);
   }
-  return Pair(resultA*keep,vec4<f32>(resultB.rgb,max(0.0,resultB.a))*keep);
+  // A pure lattice agrees with its diagonals and fights its orthogonal neighbours.
+  // Ordinary edges differ in both, so the tide line is left alone.
+  let oddA=length(a-orthoA*0.25);let evenA=length(a-diagA*0.25);
+  let oddB=length(b-orthoB*0.25);let evenB=length(b-diagB*0.25);
+  let latticeA=clamp((oddA-evenA)/(oddA+evenA+0.02),0.0,1.0);
+  let latticeB=clamp((oddB-evenB)/(oddB+evenB+0.02),0.0,1.0);
+  resultA=mix(resultA,mix(a,orthoA*0.25,0.5),latticeA*m);
+  resultB=mix(resultB,mix(b,orthoB*0.25,0.5),latticeB*m);
+  resultA=bounded(resultA);resultB=bounded(resultB);resultB.a=max(resultB.a,0.0);
+  return Pair(resultA*keep,resultB*keep);
  }`,
  mask: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
  let block=1.0/u.v[0].xy;let origin=uv(p)-0.5*block;var peak=0.0;
@@ -170,14 +217,17 @@ const body = {
  return vec4<f32>(clamp(relief,0.0,1.0),field.rgb);
  }`,
  display: COLOR_WGSL+`
- fn density(q:vec2<f32>)->f32{return sample(t0,q).r+sample(t2,q).r;}
+ fn edgeSpan(pix:vec2<i32>, o:vec2<i32>)->f32{
+  let s=clamp(pix+o,vec2<i32>(0),vec2<i32>(textureDimensions(t0))-vec2<i32>(1));
+  return textureLoad(t0,s,0).r+textureLoad(t2,s,0).r;
+ }
  @fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
   let q=uv(p);let flat=u.v[9].w;let paper=mix(sample(t5,q),vec4<f32>(0.5),flat);
   let pixel=vec2<i32>(p.xy);let inkB=textureLoad(t1,pixel,0);let a=textureLoad(t0,pixel,0)+textureLoad(t2,pixel,0);let b=inkB+textureLoad(t3,pixel,0);
   if(u.v[9].z==2 && all(a==vec4<f32>(0)) && all(b.rgb==vec3<f32>(0)) && inkB.a==0){return textureLoad(t6,vec2<i32>(p.xy),0);}
-  let h=1.0/u.v[0].xy;
-  let gradient=vec2<f32>(density(q+cardinal(1u,h))-density(q+cardinal(0u,h)),density(q+cardinal(3u,h))-density(q+cardinal(2u,h)));
-  let edge=min(length(gradient)/(a.x+1),1.0);
+  // Two texels each way: a one-pixel lattice cancels, a real wash edge does not.
+  let gradient=vec2<f32>(edgeSpan(pixel,vec2<i32>(2,0))-edgeSpan(pixel,vec2<i32>(-2,0)),edgeSpan(pixel,vec2<i32>(0,2))-edgeSpan(pixel,vec2<i32>(0,-2)));
+  let edge=min(length(gradient)*0.5/(a.x+1.0),1.0);
   let strength=mix((1+u.v[9].x*(0.5-paper.g)*2.2)*(1+u.v[9].y*edge),1.0,flat);
   let transmission=waterColor(a*strength,b*strength);
   let cover=clamp((1-exp(-2.2*inkB.a))*(1+0.5*(paper.g-0.5)),0.0,1.0);
@@ -204,4 +254,7 @@ const body = {
  }`,
 };
 
-export const WATER_SHADER_SOURCES = Object.freeze(Object.fromEntries(Object.entries(body).map(([name,source])=>[name,common+source])));
+export function waterShaderSources(manualFilter){
+ const common = head + (manualFilter ? manualSample : filteredSample) + rest;
+ return Object.freeze(Object.fromEntries(Object.entries(body).map(([name,source])=>[name,common+source])));
+}

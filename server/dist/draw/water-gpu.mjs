@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // GPU material is transient. The retained document owns the last published straight RGBA pixels.
-import {WATER_SHADER_SOURCES} from './water-shaders.mjs';
+import {waterShaderSources} from './water-shaders.mjs';
 import {getPaper,makeTip,getBrush,WATER_TIP_SIZE} from './water-materials.mjs';
 import {waterTimeFits} from './water-data.mjs';
 
@@ -39,7 +39,10 @@ export async function waterReady(){
  if(!deviceTask)deviceTask=(async()=>{
   const adapter=await owner.requestAdapter({powerPreference:'high-performance'});
   if(!adapter)throw failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter. Enable GPU acceleration and reopen the document.');
-  const device=await adapter.requestDevice();
+  // Float filtering and blending are requested only when the adapter has them. Sampling in the
+  // shaders does not depend on filtering; stamps still blend when the device can.
+  const features=['float32-filterable','float32-blendable'].filter(name=>adapter.features.has(name));
+  const device=await adapter.requestDevice(features.length?{requiredFeatures:features}:{});
   device.lost.then(()=>{deviceTask=null;});return device;
  })().catch(error=>{deviceTask=null;throw error?.code?error:failure('water_webgpu_unavailable','Water could not start WebGPU: '+error.message);});
  return deviceTask;
@@ -68,7 +71,8 @@ async function programLibrary(device,firstPaper){
   const blend={add:{srcFactor:'one',dstFactor:'one',operation:'add'},max:{srcFactor:'one',dstFactor:'one',operation:'max'},
    lift:{srcFactor:'zero',dstFactor:'one-minus-src',operation:'add'},multiply:{srcFactor:'zero',dstFactor:'src',operation:'add'}};
   const modules=new Map(),pipelines={},loadOps={};let paperDescription;
-  for(const [name,source] of Object.entries(WATER_SHADER_SOURCES))modules.set(name,device.createShaderModule({label:'Water '+name,code:source}));
+  const sources=waterShaderSources(!device.features.has('float32-filterable'));
+  for(const [name,source] of Object.entries(sources))modules.set(name,device.createShaderModule({label:'Water '+name,code:source}));
   // Compile the first paper with the material pipelines; later papers compile on demand.
   const compile=await Promise.allSettled(Object.entries(descriptions).map(async([name,settings])=>{
    const kind=name==='paperField'?firstPaper:null;
@@ -98,7 +102,7 @@ export class WaterGPU {
   this.active=null;this.dirty=null;this.painted=null;this.wetPeak=0;this.fixTimer=0;this.elapsed=0;this.lastWet=0;this.awakeUntil=0;
   this.flowSpeed=0;this.growCarry=0;this.frame=0;this.brushNow=[0,0,0];this.bytes=0;this.transaction=null;this.lost=null;this.disposed=false;
   this.tips=new Map();this.targets=new Set();this.buffers=new Map();this.bindings=new Map();this.targetSequence=0;this.fill=null;
-  this.pendingErrors=new Set();this.gpuError=null;this.errorListener=null;
+  this.pendingErrors=new Set();this.gpuError=null;this.errorListener=null;this.simBox=null;this.painting=false;this._scratch=new Float32Array(64);
   this.pendingRetire=[];this.encoder=null;this.slots=0;this.uniformData=new Float32Array(UNIFORM_BYTES/4);
   this.ready=this._initialize(options.device);
  }
@@ -191,7 +195,7 @@ export class WaterGPU {
  _writeTexture(destination,data,layout,size){this._guard(()=>this.device.queue.writeTexture(destination,data,layout,size));}
  _retire(target){if(this.encoder)this.pendingRetire.push(target);else this._drop(target);}
  _parameters(w=this.width,h=this.height){
-  const data=new Float32Array(64);data.set([w,h,this.sw,this.sh],0);
+  const data=this._scratch;data.fill(0);data.set([w,h,this.sw,this.sh],0);
   data.set([0,this.params.flow,this.params.bleed,this.params.edge*1.4],4);data.set(this.brushNow,12);return data;
  }
  _draw(name,destinations,inputs=[],data=this._parameters(),rect=null){
@@ -228,7 +232,7 @@ export class WaterGPU {
  _meta(){return {active:this.active?.slice()??null,dirty:this.dirty?.slice()??null,painted:this.painted?.slice()??null,wetPeak:this.wetPeak,fixTimer:this.fixTimer,elapsed:this.elapsed,lastWet:this.lastWet,awakeUntil:this.awakeUntil,flowSpeed:this.flowSpeed,growCarry:this.growCarry,frame:this.frame,brushNow:this.brushNow.slice(),params:{...this.params},paperId:this.paperId,paperOrigin:this.paperOrigin.slice(),paperScale:this.paperScale,seed:this.seed};}
  beginTransaction(){
   this._check();if(this.transaction)throw failure('WATER_BUSY','A Water gesture is already open.');
-  this.endFill();const tx={tiles:new Map(),meta:this._meta(),width:this.width,height:this.height,sim:[],paper:this.paper,sheet:null};
+  this.endFill();const tx={tiles:new Map(),meta:this._meta(),width:this.width,height:this.height,sim:[],paper:this.paper,sheet:null,simBox:this.simBox?.slice()??null};
   const sim=[...this.velocity.read,...this.pressure.read];this._reserve(sim.reduce((n,t)=>n+t.bytes,0));
   try{for(const t of sim){const copy=this._texture(t.w,t.h,t.format);tx.sim.push(copy);this._copy(t,copy);}}
   catch(error){this.submit();tx.sim.forEach(t=>this._drop(t));throw error;}
@@ -269,6 +273,7 @@ export class WaterGPU {
    const targets=this._material();for(const {r,layers} of tx.tiles.values())layers.forEach((t,i)=>this._copy(t,targets[i],null,r));
    for(let i=0;i<2;i++){this._copy(tx.sim[i],i?this.pressure.read[0]:this.velocity.read[0]);}
    for(const [key,value] of Object.entries(tx.meta))this[key]=value;
+   this.simBox=tx.simBox?tx.simBox.slice():null;this.painting=false;
    for(const pair of [this.ink,this.wet,this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
   }else if(tx.sheet)retired.push(...this._sheetTextures(tx.sheet));
   if(tx.paper!==this.paper)retired.push(tx.paper);
@@ -323,6 +328,14 @@ export class WaterGPU {
   this._writeTexture({texture:t.texture},bytes,{bytesPerRow:mask.width},[mask.width,mask.height]);this.tips.set(id,t);return t;
  }
  _rect(x,y,r,extent=1.5,w=this.width,h=this.height){const size=Math.ceil(r*extent*h)+2,cx=Math.round(x*w),cy=Math.round((1-y)*h);return [Math.max(0,cx-size),Math.max(0,cy-size),Math.min(w,cx+size),Math.min(h,cy+size)];}
+ // Document pixels (y down) share normalized position with the simulation grid.
+ // Forty texels covers one step of clamped advection and twenty Jacobi steps of boundary error.
+ _simRect(rect){
+  const pad=40,sw=this.sw,sh=this.sh;
+  const x0=clamp(Math.floor(rect[0]*sw/this.width)-pad,0,sw),y0=clamp(Math.floor(rect[1]*sh/this.height)-pad,0,sh);
+  const x1=clamp(Math.ceil(rect[2]*sw/this.width)+pad,0,sw),y1=clamp(Math.ceil(rect[3]*sh/this.height)+pad,0,sh);
+  return [x0,y0,Math.max(x0,x1),Math.max(y0,y1)];
+ }
  _touch(rect,indices){if(rect[0]>=rect[2]||rect[1]>=rect[3])return;this._ensurePaper(rect);this._protect(rect,indices);this.active=union(this.active,rect);this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);this.awakeUntil=Math.max(this.awakeUntil,this.elapsed+.25);}
  stamp({x,y,r,angle=0,brush='water/round',coefficients=null,water=0,round=0,grain=0,threshold=.5,velocity=null,lift=0,erase=false,circular=false,hardness=2}){
   this._check();const profile=typeof brush==='string'?getBrush(brush):brush;
@@ -379,19 +392,21 @@ export class WaterGPU {
   const dt=clamp(age,1/240,1/30),fixing=this.fixTimer>0,fixedAge=Math.min(age,this.fixTimer);
   this.elapsed+=age;this.frame++;this.fixTimer=Math.max(0,this.fixTimer-age);
   this.flowSpeed*=Math.exp(-age*(3-2.4*this.params.flow));
+  // The box creeps with the wet front. A stroke does not trim it, so a mask read cannot freeze a ledge.
   this.growCarry+=.4+Math.min(3,.15*this.flowSpeed*dt*this.width/this.sw);const grow=Math.floor(this.growCarry);this.growCarry-=grow;
   this.active=[Math.max(0,this.active[0]-grow),Math.max(0,this.active[1]-grow),Math.min(this.width,this.active[2]+grow),Math.min(this.height,this.active[3]+grow)];
   const rect=this.active;this._ensurePaper(rect);this._protect(rect,fixing?[0,1,2,3,4]:[0,1,4]);
   const data=this._parameters();data[4]=dt;const settle=1-Math.exp(-5*fixedAge);
   const decay=Math.exp(-fixedAge/.25-(age-fixedAge)/(2+16*(1-this.params.dry)));
   const damping=Math.exp(-age*(3-2.4*this.params.flow)-7*fixedAge);data.set([decay,damping,settle,1-settle],8);
-  this._draw('velocity',this.velocity.write,[this.velocity.read[0],this.wet.read[0]],data);this._swap(this.velocity);
-  this._draw('curl',this.curl,this.velocity.read,data);
-  this._draw('vorticity',this.velocity.write,[this.velocity.read[0],this.curl],data);this._swap(this.velocity);
-  this._draw('divergence',this.divergence,this.velocity.read,data);
-  this._draw('pressureDecay',this.pressure.write,this.pressure.read,data);this._swap(this.pressure);
-  for(let i=0;i<20;i++){this._draw('pressure',this.pressure.write,[this.pressure.read[0],this.divergence],data);this._swap(this.pressure);}
-  this._draw('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data);this._swap(this.velocity);
+  const sim=this.simBox=union(this.simBox,this._simRect(rect));
+  this._draw('velocity',this.velocity.write,[this.velocity.read[0],this.wet.read[0]],data,sim);this._swap(this.velocity);
+  this._draw('curl',this.curl,this.velocity.read,data,sim);
+  this._draw('vorticity',this.velocity.write,[this.velocity.read[0],this.curl],data,sim);this._swap(this.velocity);
+  this._draw('divergence',this.divergence,this.velocity.read,data,sim);
+  this._draw('pressureDecay',this.pressure.write,this.pressure.read,data,sim);this._swap(this.pressure);
+  for(let i=0;i<20;i++){this._draw('pressure',this.pressure.write,[this.pressure.read[0],this.divergence],data,sim);this._swap(this.pressure);}
+  this._draw('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data,sim);this._swap(this.velocity);
   this._draw('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
   if(fixing){this._draw('bleach',this.fixed,[this.ink.read[1]],data,rect);this._draw('fix',this.fixed,this.ink.read,data,rect);}
   this._draw('pigment',this.ink.write,[this.velocity.read[0],...this.ink.read,this.wet.read[0]],data,rect);this._swap(this.ink);
@@ -400,7 +415,8 @@ export class WaterGPU {
   if(fixing&&!this.fixTimer){this.wetPeak=0;this.awakeUntil=0;this.painted=null;}
   const until=this.lastWet+(2+16*(1-this.params.dry))*Math.log(Math.max(.004,this.wetPeak)/.004);
   if(!this.fixTimer&&this.elapsed>=this.awakeUntil&&this.elapsed>=until)this.sleep();
-  else if(this.frame%10===0&&!fixing)await this._trim();
+  // A stroke must not wait on a mask read. The same skip applies to a replayed stroke.
+  else if(!this.painting&&this.frame%16===0&&!fixing)await this._trim();
   this.submit();return true;
  }
  async _trim(){
@@ -416,7 +432,7 @@ export class WaterGPU {
  sleep(){
   if(this.active)for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],this.active));
   for(const pair of [this.velocity,this.pressure])for(const t of [...pair.read,...pair.write])this._clear(t);
-  this.active=null;this.wetPeak=0;this.flowSpeed=0;
+  this.active=null;this.wetPeak=0;this.flowSpeed=0;this.simBox=null;
  }
  dry(){if(this.painted){this.active=union(this.active,this.painted);this.fixTimer=1.2;this.awakeUntil=this.elapsed+1.2;}}
  async upload(data,width=this.width,height=this.height,x=0,y=0){
@@ -522,7 +538,8 @@ export class WaterGPU {
   // Fixed pigment in a native checkpoint can lie outside its active bounds.
   try{this._paper(paper,meta.paperId,meta);paper.field.unknown=true;this.submit();await this._settleErrors();}catch(error){this._retire(paper);throw error;}
   for(const [name,target] of Object.entries(targets))this._writeTexture({texture:target.texture},state.layers[name],{bytesPerRow:target.w*bytesPerPixel[target.format]},[target.w,target.h]);
-  const old=this.paper;this.paper=paper;Object.assign(this,meta);
+  const old=this.paper;this.paper=paper;Object.assign(this,meta);this.painting=false;
+  this.simBox=this.active?[0,0,this.sw,this.sh]:null;
   if(old!==this.transaction?.paper && old!==this.transaction?.sheet?.paper)this._retire(old);
   for(const pair of [this.ink,this.wet,this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));this.submit();await this._settleErrors();
  }
@@ -553,7 +570,8 @@ export class WaterGPU {
   this._material().forEach((target,i)=>this._uploadPlane(target,state.layers[i],state.width,state.height));
   for(const [i,target]of [...this.velocity.read,...this.pressure.read].entries())this._uploadPlane(target,state.sim[i],target.w,target.h);
   this._uploadPlane(this.paper,state.paper.bytes,state.width,state.height);this.paper.field=structuredClone(state.paper.field);
-  Object.assign(this,state.meta);this.outputCanonical=false;
+  Object.assign(this,state.meta);this.outputCanonical=false;this.painting=false;
+  this.simBox=this.active?[0,0,this.sw,this.sh]:null;
   for(const pair of [this.ink,this.wet,this.velocity,this.pressure])pair.read.forEach((t,i)=>this._copy(t,pair.write[i]));
   this.submit();await this._settleErrors();
  }
@@ -612,12 +630,15 @@ export class WaterGPU {
     if(r[2]>r[0]&&r[3]>r[1]){kept=r;if(current)this._uploadPlane(this.paper,current.paper.bytes,old.width,old.height,[r[0]-x,r[1]-y,r[2]-x,r[3]-y],r);else this._copy(old.paper,this.paper,[r[0]-x,r[1]-y,r[2]-x,r[3]-y],r);}
    }
    this.dirty=[0,0,w,h];this._paper(this.paper,this.paperId,this,kept);this.paper.field.unknown=old.paper.field.unknown;
-   if(required)this._ensurePaper(required,this.paper,false);this.submit();await this._settleErrors();
+   if(required)this._ensurePaper(required,this.paper,false);
+   this.simBox=this.active?this._simRect(this.active):null;
+   this.submit();await this._settleErrors();
   }catch(error){
    this.encoder=null;this.slots=0;this.pendingRetire.forEach(t=>this._drop(t));this.pendingRetire=[];
    if(grown)this._sheetTextures(grown).forEach(t=>this._drop(t));
    if(current){try{await this._restoreCapture(current);}finally{this._retainCapture(tx,checkpoint);}}
    else Object.assign(this,old,meta);
+   this.simBox=null;
    throw error;
   }
   if(current)this._retainCapture(tx,checkpoint);

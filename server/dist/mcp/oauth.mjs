@@ -75,20 +75,15 @@ export async function oauthGrantCurrent(reference, env) {
   if (!validGrantReference(reference)) return false;
   const origin = oauthOrigin(env);
   if (![origin + '/mcp', origin + '/muse'].includes(reference.audience)) return false;
-  const api = (await authorizationServer(env)).getOAuthApi(env);
-  let cursor;
-  do {
-    const page = await api.listUserGrants(reference.ownerId, cursor ? {cursor} : {});
-    const grant = page.items.find(row => row.id === reference.grantId);
-    if (grant) return grant.userId === reference.ownerId && grant.clientId === reference.clientId &&
-      grant.metadata?.connectionId === reference.connectionId &&
-      (grant.expiresAt === undefined || Number.isSafeInteger(grant.expiresAt) && grant.expiresAt > Math.floor(Date.now() / 1000)) &&
-      [grant.resource].flat().includes(reference.audience) &&
-      Array.isArray(grant.scope) && reference.scopes.every(scope => grant.scope.includes(scope));
-    if (page.cursor && page.cursor === cursor) return false;
-    cursor = page.cursor;
-  } while (cursor);
-  return false;
+  // The grant's own record, read by its key: a key read sees a grant made seconds ago, where the owner's grant listing is
+  // eventually consistent and would refuse a new connection's first calls. Revocation deletes the record.
+  if (!env.OAUTH_KV) return false;
+  const grant = await env.OAUTH_KV.get('grant:' + reference.ownerId + ':' + reference.grantId, 'json');
+  return !!grant && grant.id === reference.grantId && grant.userId === reference.ownerId && grant.clientId === reference.clientId &&
+    grant.metadata?.connectionId === reference.connectionId &&
+    (grant.expiresAt === undefined || Number.isSafeInteger(grant.expiresAt) && grant.expiresAt > Math.floor(Date.now() / 1000)) &&
+    [grant.resource].flat().includes(reference.audience) &&
+    Array.isArray(grant.scope) && reference.scopes.every(scope => grant.scope.includes(scope));
 }
 
 function headers(extra) {

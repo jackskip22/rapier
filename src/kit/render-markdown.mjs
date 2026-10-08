@@ -120,7 +120,7 @@ function initMarkdownIt() {
 			(_rapierEmbedAssetSource?.(src) || asset && (reference || asset.codec === 'image/jxl' || asset.codec === 'image/svg+xml'))) return globalThis.RapierEmbeddedImages.imageHtml(
 			reference, alt, title, size, layout, rawAlt, token.meta?.mdImage?.source, src);
 		let loadable = false;
-		try { loadable = !!src.trim() && /^(?:https?|file|blob|data):$/.test(new URL(src, document?.baseURI || globalThis.location?.href || 'https://rapier.invalid/').protocol); } catch (_) {}
+		try { loadable = !!src.trim() && /^(?:https?|file|blob|data):$/.test(new URL(src, globalThis.document?.baseURI || globalThis.location?.href || 'https://rapier.invalid/').protocol); } catch (_) {}
 		if (!loadable) {
 			const escape = md.utils.escapeHtml;
 			return '<span data-rapier-markdown-image="" data-rapier-remote-src="' + escape(src) + '" data-rapier-remote-alt="' + escape(alt) + '"'

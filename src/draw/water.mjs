@@ -79,7 +79,7 @@ export class WaterSurface {
  async endStroke(checkpoint,cancel=false){
   await this.ready;if(checkpoint!==this._transaction)throw waterError('WATER_INPUT','The Water checkpoint is not current.');
   if(!cancel)await this._finishContact();
-  await this.gpu.endTransaction(checkpoint.gpu,cancel);this._transaction=null;
+  await this.gpu.endTransaction(checkpoint.gpu,cancel);this._transaction=null;this.gpu.painting=false;
   if(cancel){const f=checkpoint.frame;this.width=f.width;this.height=f.height;this.origin=f.origin.slice();this.scale=f.scale/3;this.paperId=f.paper;this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.tick=checkpoint.tick;this.revision=checkpoint.revision;this._bounds=checkpoint.bounds;this._actions=checkpoint.actions;this._bytes=checkpoint.bytes;this._actionStart=checkpoint.start;this._restoreTips(checkpoint.tips);this._brush=null;this._pendingDt=0;this._dirty={x0:0,y0:0,x1:this.width-1,y1:this.height-1};}
   this._sync();return true;
  }
@@ -91,8 +91,9 @@ export class WaterSurface {
   this.gpu._age(elapsed);
   // Reserve the complete frame record before submitting a material change.
   this._appendFrame(brush,elapsed,count,finish);
+  this.gpu.painting=true;
   if(finish)contact.finish();contact.frame(elapsed);await this.gpu.step(elapsed);this.tick++;this.revision++;this._pendingDt=0;brush.loadFuel=contact.loadFuel;this._sync();
-  if(finish){brush.lastDirection=contact.lastDirection.slice();brush.contact=null;brush.action=null;this._brush=null;}
+  if(finish){brush.lastDirection=contact.lastDirection.slice();brush.contact=null;brush.action=null;this._brush=null;this.gpu.painting=false;}
   return true;
  }
  async _finishContact(){if(this._brush?.contact)await this._flushContact(null,true);}
@@ -156,6 +157,8 @@ export class WaterSurface {
     if(action.paper)this.gpu.setPaper(action.paper);
     if(action.frame){if(action.frame.scale!==this.pixelScale)throw waterError('WATER_INPUT','The Water journal pixel scale does not match its sheet.');await this._replayFrame(action.frame,frameOffset);}
     const brush=this._brushFor(action);brush.seed(action.seed);if(action.direction)brush.lastDirection=action.direction.slice();let time=0;
+    this.gpu.painting=true;
+    try{
     for(let pathIndex=0;pathIndex<action.paths.length;pathIndex++){
      const path=action.paths[pathIndex],contact=brush._contactFor(this,action.inputKind??'script');let pointIndex=0;
      const sample=point=>{time=point[6]??point[3]*1000/60;contact.sample((point[0]*this.pixelScale-this.origin[0])/this.width,1-(point[1]*this.pixelScale-this.origin[1])/this.height,(action.inputKind??'script')==='script'?clip(point[2],.02,1):point[2],time,(point[4]??0)*90,(point[5]??0)*90);};
@@ -169,6 +172,7 @@ export class WaterSurface {
      }
      brush.lastDirection=contact.lastDirection.slice();
     }
+    }finally{this.gpu.painting=false;}
    }
    if(record)this._appendAction(action);this._sync();if(own)await this.endStroke(checkpoint);complete=true;return {tick:this.tick,wet:this.wet,bounds:this.bounds()};
   }finally{if(!complete&&this._transaction===checkpoint)await this.endStroke(checkpoint,true);}
