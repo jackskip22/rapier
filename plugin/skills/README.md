@@ -18,10 +18,10 @@ agent at it.
 
 | Skill | Use it when |
 |---|---|
-| [`rapier-html`](rapier-html/SKILL.md) | A document or drawing needs an independent editable copy, or a revision needs offline review: `npx rapier-html@1.1.86` writes the complete editor around the document. |
+| [`rapier-html`](rapier-html/SKILL.md) | A document or drawing needs an independent editable copy, or a revision needs offline review: `npx rapier-html@1.1.87` writes the complete editor around the document. |
 | [`rapier-agent-door`](rapier-agent-door/SKILL.md) | A plan, guide, sketch or draft needs shared editing, continued revision or review of exact changes. Work in the existing document when one is open. |
 | [`rapier-markdown`](rapier-markdown/SKILL.md) | A portable Markdown document needs embedded pictures, alignment, color or drawings in the same file. |
-| [`embed-rapier`](embed-rapier/SKILL.md) | A site or app wants the Rapier editor inside it, with its own storage and identity (`npm install rapier-embed@1.1.86`). |
+| [`embed-rapier`](embed-rapier/SKILL.md) | A site or app wants the Rapier editor inside it, with its own storage and identity (`npm install rapier-embed@1.1.87`). |
 
 Start with useful content and invite the person to explore it. They can annotate, rearrange, draw or paint.
 In supporting chat hosts, Ask about this sends an explicit question from the document; source edits alone

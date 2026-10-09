@@ -4,7 +4,7 @@
 The offline editor runs on your device; the connector keeps shared work in a hosted workspace.
 Neither requires a Rapier account.
 
-**An offline file.** `npx rapier-html@1.1.86 notes.md` creates one HTML file containing the editor and
+**An offline file.** `npx rapier-html@1.1.87 notes.md` creates one HTML file containing the editor and
 document. Open it in a browser to edit, draw, paint, review changes and save.
 An optional one-use Send back address returns the edited copy to the assistant.
 

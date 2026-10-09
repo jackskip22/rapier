@@ -6225,6 +6225,8 @@ function _rapierDrawOverEditor() { return _rapierDrawState.open && !_rapierDrawS
 async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	const state = _rapierDrawState, notes = state.notes;
 	if (state.open) globalThis.RapierAgentBrowser?.drawingNavigationChanged?.();
+	// Draw left by the person: the next unfinished drawing may reopen by itself again.
+	try { localStorage.removeItem('rapier:draw:reopened'); } catch (_) {}
 	// The failure-path Close has not placed or downloaded anything. Close only after its own
 	// checkpoint closes; a quota/readback refusal keeps the drawing open, not merely a toast.
 	if (recover) {
@@ -6667,7 +6669,7 @@ async function _rapierDrawBackupRead() {
 }
 // Reopening forks a fresh drawing session before any write. Two windows can recover the same
 // checkpoint without gaining deletion authority over either window's subsequent work.
-async function _rapierDrawOfferRecovery() {
+async function _rapierDrawOfferRecovery(chosen = false) {
 	const state = _rapierDrawState;
 	if (state.open || state.finishing || state.backupOffering) return;
 	state.backupOffering = true;
@@ -6675,6 +6677,10 @@ async function _rapierDrawOfferRecovery() {
 		const loadToken = rapier.identity.loadToken, stamp = Object.freeze(_rapierMutationStamp());
 		const record = await _rapierDrawBackupRead();
 		if (!record || state.open || state.finishing || loadToken !== rapier.identity.loadToken || !_rapierMutationStampIsCurrent(stamp)) return;
+		// A checkpoint reopens by itself once. A page left while Draw was still open offers it instead: a recovery never holds the page.
+		let reopened = null; try { reopened = localStorage.getItem('rapier:draw:reopened'); } catch (_) {}
+		if (!chosen && reopened) { showToast('Your unfinished drawing is kept.', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
+		try { localStorage.setItem('rapier:draw:reopened', '1'); } catch (_) {}
 		// A drawing from another document opens here as one of this document's own does, with nothing asked: the person's
 		// work is in front of them, its backup stays (written again under this document) until Done, and the notice names
 		// where it came from. It opens as a new drawing, since the picture it edited is in the other document.
