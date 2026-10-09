@@ -31,6 +31,8 @@ import {DOORS} from '../door-worker.js';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
 import {buildExportAssets} from './build-export-assets.mjs';
+import {satelliteSlots} from './engine-slots.mjs';
+import {editorOnlyMarkup} from './reader-profile.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
@@ -46,13 +48,15 @@ if (process.argv.includes('--ledger')) {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Build profiles: `full` is byte-identical with RAPIER_PROFILE unset; `document` drops Draw, Paint and the
-// JPEG XL encoder. The only read of the variable.
+// JPEG XL encoder; `reader` is the read-only viewer, built by tools/reader-build.mjs from the shared renderer instead of the
+// editor engine. The only read of the variable.
+const PROFILE_PAGES = {full: 'rapier.html', document: 'rapier-document.html', reader: 'rapier-reader.html'};
 const RAPIER_PROFILE_RAW = process.env.RAPIER_PROFILE;
-if (RAPIER_PROFILE_RAW !== undefined && RAPIER_PROFILE_RAW !== 'full' && RAPIER_PROFILE_RAW !== 'document') {
-  throw new Error('RAPIER_PROFILE must be "full" or "document"; got ' + JSON.stringify(RAPIER_PROFILE_RAW));
+if (RAPIER_PROFILE_RAW !== undefined && !Object.hasOwn(PROFILE_PAGES, RAPIER_PROFILE_RAW)) {
+  throw new Error('RAPIER_PROFILE must be "full", "document" or "reader"; got ' + JSON.stringify(RAPIER_PROFILE_RAW));
 }
-const PROFILE = RAPIER_PROFILE_RAW === 'document' ? 'document' : 'full';
-const OUTPUT_FILE = PROFILE === 'document' ? 'rapier-document.html' : 'rapier.html';
+const PROFILE = RAPIER_PROFILE_RAW || 'full';
+const OUTPUT_FILE = PROFILE_PAGES[PROFILE];
 // The Node floor comes from tools/toolchain.json; a patch mismatch builds but the receipt says so.
 const toolchain = JSON.parse(await readFile(resolve(root, 'tools/toolchain.json'), 'utf8'));
 // The build runs on one Node major: the receipt names it, and an older runtime is refused here
@@ -142,7 +146,7 @@ const MARK_CONVENTION_ALLOWED = new Set([MARK_CONVENTION_OWNER, 'tools/build.mjs
 const MARK_CONVENTION_SKIP_DIRS = new Set(['dist', '.git', '.wrangler', 'node_modules', 'tools/witnesses', 'skills']);
 // Gradle's output under the Android projects (build/, .gradle/) carries copies of the owner's own file as app assets.
 const MARK_CONVENTION_GRADLE_OUTPUT = (relPath, name) => /^android/.test(relPath) && (name === 'build' || name === '.gradle');
-const MARK_CONVENTION_SKIP_FILES = new Set(['rapier.html', 'rapier-document.html', 'sw.js', 'AGENT-TOOLS.json']);
+const MARK_CONVENTION_SKIP_FILES = new Set([...Object.values(PROFILE_PAGES), 'sw.js', 'AGENT-TOOLS.json']);
 const MARK_CONVENTION_EXTENSIONS = new Set(['.js', '.mjs', '.html', '.md']);
 
 async function markConventionViolations(dir = '') {
@@ -199,6 +203,12 @@ else {
   if (diff) throw new Error('MCP descriptor projection law: AGENT-TOOLS.json\'s mcp entry would differ ' +
     'from mcp/worker.mjs\'s live DESCRIPTORS at ' + diff + ' -- one function (agent/catalog.mjs ' +
     'mcpDescriptors) must produce both, fed the same deployment facts.');
+}
+
+// The reader does not assemble the editor: it links the shared renderer, a small interface and the editor's own helpers.
+if (PROFILE === 'reader') {
+  await (await import('./reader-build.mjs')).buildReader({root, unchecked});
+  process.exit(0);
 }
 
 function apply(source, changes) {
@@ -557,6 +567,8 @@ const notesMarkup = /<!-- RAPIER_NOTES_BEGIN -->([\s\S]*?)<!-- RAPIER_NOTES_END 
 if (!notesRegions.length || notesRegions.some(([, inner]) => inner.includes('<!-- RAPIER_NOTES_')) ||
   ui.split('<!-- RAPIER_NOTES_').length - 1 !== 2 * notesRegions.length) throw new Error('Notes markup markers are unbalanced');
 ui = PROFILE === 'full' ? ui.replace(/<!-- RAPIER_NOTES_(?:BEGIN|END) -->/g, '') : ui.replace(notesMarkup, '');
+// The markers for what the reader leaves out (RAPIER_EDITOR_ONLY, RAPIER_READER_SKIP) stay out of every other profile's page.
+ui = editorOnlyMarkup(ui);
 // The commercial sheet (rapier.website/commercial) is the full profile's only: its checkout slots are filled from
 // commercial-checkout.json before anything is packed, the document profile drops it, and the ChatGPT copy is packed
 // without it below (no link that starts a purchase rides there). Its markers stay until the interface is assembled.
@@ -745,31 +757,6 @@ const engineImports = new Map(lexicalBindings(acorn.parse(source, {ecmaVersion: 
   binding.init?.type === 'MemberExpression' && binding.init.object.name === 'globalThis' && !binding.init.computed &&
   globals[binding.init.property.name] && binding.path.length === 1).map(binding =>
     [binding.name, globals[binding.init.property.name] + ':' + binding.path[0]]));
-const satelliteSlots = [
-  ['COLOUR_MATH', 'editor/colour-math.mjs'],
-  ['CODE_TOKENS', 'editor/code-tokens.mjs'],
-  ['PLAIN_PASTE', 'editor/plain-paste.mjs'],
-  ['INK_LAYER', 'editor/ink-layer.mjs'],
-  ['INK_PEN', 'editor/ink-pen.mjs'],
-  ['BODY_SEGMENT_SPANS', 'editor/segment-matches.mjs', ['_rapierBodySegmentSpans']],
-  ['SEGMENT_MATCHES', 'editor/segment-matches.mjs', ['_rapierStableBlockIdentityKey', '_rapierProvenSegmentMatches', '_rapierSplicedSegmentMatches']],
-  ['INLINE_SOURCE', 'editor/inline-source.mjs'],
-  ['JOURNAL_LIMITS', 'kit/ledger/journal-records.mjs', ["_RAPIER_TRANSACTION_ACTOR_LIMIT","_RAPIER_TRANSACTION_OPERATION_LIMIT","_RAPIER_TRANSACTION_REQUEST_LIMIT"]],
-  ['JOURNAL_SPLICES', 'kit/ledger/journal-records.mjs', ["_rapierTransformSplices","_rapierRecordSplices"]],
-  ['JOURNAL_RECORDS', 'kit/ledger/journal-records.mjs', ["_rapierValidLedgerRecord","_rapierJournalRecord"]],
-  ['UNDO_CHAIN', 'editor/undo-chain.mjs'],
-  ['RECOVERY_POLICY', 'editor/recovery-policy.mjs'],
-  ['ENTER_INTENT', 'editor/enter-intent.mjs'],
-  ['TYPED_BLOCKS', 'editor/typed-blocks.mjs'],
-  ['RENDERED_EDITS', 'editor/rendered-edits.mjs'],
-  ['EXCERPT_SOURCE', 'editor/excerpt-source.mjs'],
-  ['VISIBLE_SOURCE', 'editor/visible-source.mjs'],
-  ['SOURCE_FACT_INDEX', 'editor/source-facts.mjs', ['_rapierBuildSemanticFactIndex']],
-  ['DOCUMENT_CHECKS', 'editor/document-checks.mjs'],
-  ['SOURCE_FACTS', 'editor/source-facts.mjs', ["_rapierLineStartOffsets","_rapierSourceLineSpan","_rapierHeadingSlugBase","_rapierNextHeadingSlug"]],
-  ['SOURCE_TOKEN_FACTS', 'editor/source-facts.mjs', ["_rapierCollectTokenFacts"]],
-  ['SOURCE_FINALIZE_BLOCKS', 'editor/source-facts.mjs', ["_rapierFinalizeParsedBlocks"]],
-];
 const satelliteModules = new Map(), projectedOwners = new Map(), satelliteProjections = [];
 const satelliteNames = node => node.type === 'FunctionDeclaration' ? [node.id.name]
   : node.type === 'VariableDeclaration' ? node.declarations.map(row => row.id.name) : [];

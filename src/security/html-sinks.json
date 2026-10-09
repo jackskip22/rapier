@@ -444,6 +444,27 @@
 				"reason": "el.innerHTML receives rapierRenderPreview()'s own output, which is sanitizeRapierHtml(md.render(...), 'export'); a hostile note's markup never reaches the card unsanitized, and card links have their href stripped before the element is attached."
 			}
 		},
+		"reader/loader.js": {
+			"readerBoot": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "document.body.insertAdjacentHTML receives the reader's own packed interface markup (editor/ui.html cut at build time), inflated at boot; no document or network text ever reaches it."
+			}
+		},
+		"reader/pdf.js": {
+			"markdownOfPdf": {
+				"count": 1,
+				"kind": "untrusted-parse",
+				"reason": "DOMParser.parseFromString reads the PDF reader's own output (interchange/pdf.mjs writes each page's text through its escape function into paragraphs, line breaks and rules) into an inert document that is never attached; only its text and the page-picture references are read, and the result is Markdown text, never markup."
+			}
+		},
+		"reader/app.js": {
+			"readerOpenLicenses": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "document.body.insertAdjacentHTML receives the licences sheet the build packed apart from the interface (editor/ui.html's licences markup and the notices of what the file carries), inflated on first open; no document or network text ever reaches it."
+			}
+		},
 		"tools/runtime-loader.js": {
 			"(top level)": {
 				"count": 1,

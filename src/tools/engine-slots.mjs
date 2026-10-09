@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// The engine's satellite slots: each `/* RAPIER_<SLOT>_MODULE */` marker in editor/engine.js takes the declarations of one module (all of them,
+// or the named few). tools/build.mjs projects them into the engine's scope; tools/reader-build.mjs reads the same table to find where a name lives.
+export const satelliteSlots = [
+  ['COLOUR_MATH', 'editor/colour-math.mjs'],
+  ['CODE_TOKENS', 'editor/code-tokens.mjs'],
+  ['PLAIN_PASTE', 'editor/plain-paste.mjs'],
+  ['INK_LAYER', 'editor/ink-layer.mjs'],
+  ['INK_PEN', 'editor/ink-pen.mjs'],
+  ['BODY_SEGMENT_SPANS', 'editor/segment-matches.mjs', ['_rapierBodySegmentSpans']],
+  ['SEGMENT_MATCHES', 'editor/segment-matches.mjs', ['_rapierStableBlockIdentityKey', '_rapierProvenSegmentMatches', '_rapierSplicedSegmentMatches']],
+  ['INLINE_SOURCE', 'editor/inline-source.mjs'],
+  ['JOURNAL_LIMITS', 'kit/ledger/journal-records.mjs', ["_RAPIER_TRANSACTION_ACTOR_LIMIT","_RAPIER_TRANSACTION_OPERATION_LIMIT","_RAPIER_TRANSACTION_REQUEST_LIMIT"]],
+  ['JOURNAL_SPLICES', 'kit/ledger/journal-records.mjs', ["_rapierTransformSplices","_rapierRecordSplices"]],
+  ['JOURNAL_RECORDS', 'kit/ledger/journal-records.mjs', ["_rapierValidLedgerRecord","_rapierJournalRecord"]],
+  ['UNDO_CHAIN', 'editor/undo-chain.mjs'],
+  ['RECOVERY_POLICY', 'editor/recovery-policy.mjs'],
+  ['ENTER_INTENT', 'editor/enter-intent.mjs'],
+  ['TYPED_BLOCKS', 'editor/typed-blocks.mjs'],
+  ['RENDERED_EDITS', 'editor/rendered-edits.mjs'],
+  ['EXCERPT_SOURCE', 'editor/excerpt-source.mjs'],
+  ['VISIBLE_SOURCE', 'editor/visible-source.mjs'],
+  ['SOURCE_FACT_INDEX', 'editor/source-facts.mjs', ['_rapierBuildSemanticFactIndex']],
+  ['DOCUMENT_CHECKS', 'editor/document-checks.mjs'],
+  ['SOURCE_FACTS', 'editor/source-facts.mjs', ["_rapierLineStartOffsets","_rapierSourceLineSpan","_rapierHeadingSlugBase","_rapierNextHeadingSlug"]],
+  ['SOURCE_TOKEN_FACTS', 'editor/source-facts.mjs', ["_rapierCollectTokenFacts"]],
+  ['SOURCE_FINALIZE_BLOCKS', 'editor/source-facts.mjs', ["_rapierFinalizeParsedBlocks"]],
+];

@@ -313,13 +313,19 @@ async function rapierShare(kind) {
 		const captured = await _rapierCaptureSettledExternalDocument({carried: _rapierShareLedgerChoice()});
 		if (!captured) return false;
 		if (kind !== 'web' && captured.ledger && captured.metadata.docKind !== 'markdown') throw new Error('Choose web page to carry authorship or history with a code or plain-text document.');
-		if (kind !== 'web') return await _rapierShareFile({
-			blob: new Blob([RapierLedgerCarried.writeDocument((captured.metadata.bom ? '\uFEFF' : '') + captured.canonical,
-				_rapierLedgerParts(captured.canonical, captured.ledger, captured.carried))], {type: captured.metadata.mime}),
-			filename: captured.metadata.saveName, mime: captured.metadata.mime,
-		});
-		const page = await _rapierBuildSharedPage(captured);
-		return await _rapierShareFile({...page, mime: 'text/html'});
+		// The file is made under the progress popup (at once for a large document, which holds the page while it is built:
+		// editor/pop.js _rapierProgressAhead); its Cancel drops the file before it is shared.
+		const controller = new AbortController();
+		const popup = await _rapierProgressAhead(captured.canonical.length, {label: kind === 'web' ? 'Sharing web page' : 'Sharing file', cancel: () => controller.abort()});
+		let file;
+		try {
+			file = kind !== 'web' ? {
+				blob: new Blob([RapierLedgerCarried.writeDocument((captured.metadata.bom ? '\uFEFF' : '') + captured.canonical,
+					_rapierLedgerParts(captured.canonical, captured.ledger, captured.carried))], {type: captured.metadata.mime}),
+				filename: captured.metadata.saveName, mime: captured.metadata.mime,
+			} : {...await _rapierBuildSharedPage(captured), mime: 'text/html'};
+		} finally { popup.end(); }
+		return !controller.signal.aborted && await _rapierShareFile(file);
 	} catch (error) {
 		showToast('Could not share: ' + error.message, 'error');
 		return false;

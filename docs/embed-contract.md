@@ -4,7 +4,7 @@ Enforced at the iframe message boundary in `editor/engine.js`; agent admission i
 
 ## 1. Two origins, one parent, one channel
 
-The parent frames a served page with `?embed=1`: no origin is declared in the URL or in the handshake. The published document profile is `https://rapier.website/embed/rapier-document.html`, with permanent copies at `https://rapier.website/embed/<version>/rapier-document.html`; a self-hosted copy speaks the same protocol. The frame binds to the origin of the first valid `rapier-connect` from its parent and holds it for the session; a later connect from any other origin is ignored.
+The parent frames a served page with `?embed=1`: no origin is declared in the URL or in the handshake. The published document profile is `https://rapier.website/embed/rapier-document.html`, with permanent copies at `https://rapier.website/embed/<version>/rapier-document.html`; the read-only reader is `https://rapier.website/embed/rapier-reader.html` and `https://rapier.website/embed/<version>/rapier-reader.html` (section 2.4). A self-hosted copy speaks the same protocol. The frame binds to the origin of the first valid `rapier-connect` from its parent and holds it for the session; a later connect from any other origin is ignored.
 
 That origin must be HTTPS, or HTTP only for `localhost`, `127.0.0.1` and `[::1]` development. A port is part of an origin. `null` and opaque origins are refused. This admits a window, not a person.
 
@@ -190,6 +190,29 @@ hands the bytes to the export store for a download receipt. A changed document i
 export, and a print dialog never stands in for the file. Word uses the same native OOXML writer as the
 document's Export control, so the bytes are the Export control's own. Conversion notices travel with the
 receipt, while the source stays in the editor.
+
+## 2.4 The reader build
+
+`rapier-reader.html` speaks this contract with four differences. It admits only the `open` and `changes`
+capabilities; a connect that offers any other is refused with `capabilities_invalid`. Every load is read-only:
+`load-ack` and `document-state` carry `readOnly: true` whatever the payload says. Its settings features are `find`, `readAloud` and `share`;
+`draw`, `paint` and `notes` are omitted from the echo. It also accepts `style`, a command
+that needs no grant and restyles the frame, never the document. The reader enforces the contract in `reader/embed.js`,
+with the editor's own envelope, request-ledger and validation functions.
+
+Every build reads one setting from its own address, before any connect: `?plugins=<directory>`. With it, every plug-in file is
+fetched from that directory (by its file name, which `rapier-plugins.json` lists) and from nowhere else; each file is still held to
+its pinned length and SHA-384. The `plugins` option of `rapier-embed` adds it. The directory must be on the page's own origin,
+which is all its Content Security Policy lets it read: `Rapier.mount` throws a `TypeError` for any other, and a page opened with one
+refuses it, in words, before it makes a request.
+
+`style` carries `{css?, fonts?}`. `css` is a string of at most 4 MiB, placed after the reader's own sheets and
+replaced by the next `style`. `fonts` is a list of at most 16 `{family, source, descriptors?}` records handed to
+`FontFace`: `source` is the face's bytes (an `ArrayBuffer` or typed array) or a CSS source string, and descriptor
+values are strings. A malformed payload gets `protocol-error` `invalid_payload`; a face the browser cannot load gets
+`protocol-error` `font_invalid`. The page policy admits `data:` fonts only, so a remote `url()` source does not load.
+The editor builds answer `style` with `protocol-error`, as for any unknown command. The reader's public custom
+properties are listed in the `rapier-embed` README.
 
 ## 3. The command envelope and refusal rules
 

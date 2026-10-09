@@ -54,7 +54,7 @@ const MUSE_WAIT_MS = 15000;
 const museDescriptor = tool => {
   if (tool.name === 'rapier.open') {
     const {file, ...properties} = tool.inputSchema.properties;
-    return {...tool, description: 'Creates an editable workspace from document text, or resumes one by its document value. Returns editor_url for the live workspace in a browser. Use document.draw for editable SVG drawings and document.apply_edits for Mermaid fences. Workspaces expire after 30 idle days.',
+    return {...tool, description: 'Creates an editable workspace from document text, or resumes one by its document value. Returns editor_url, the live editor for the person\'s browser; when that browser shows a four-letter code, pair it with document.pair_browser. Use document.draw for editable SVG drawings and document.apply_edits for Mermaid fences. Workspaces expire after 30 idle days.',
       inputSchema: {...tool.inputSchema, properties}};
   }
   return tool.name !== 'document.wait_for_user' ? tool : {...tool, inputSchema: {...tool.inputSchema, properties: {...tool.inputSchema.properties,

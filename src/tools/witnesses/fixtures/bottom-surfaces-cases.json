@@ -126,47 +126,6 @@
       }
     },
     {
-      "id": "import-progress",
-      "selector": ".rapier-import-progress",
-      "rule": {
-        "file": "editor/styles/rapier-app.css",
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "left",
-            "value": "50%",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)))",
-            "important": false
-          },
-          {
-            "property": "transform",
-            "value": "translateX(-50%)",
-            "important": false
-          }
-        ]
-      },
-      "basis": "production CSS; synthetic component content, not an app-opening receipt",
-      "component": {
-        "kind": "surface",
-        "classes": "rapier-import-progress",
-        "controlClass": "",
-        "attributes": {
-          "aria-hidden": "false"
-        }
-      }
-    },
-    {
       "id": "image-tools",
       "selector": ".rapier-image-tools",
       "rule": {

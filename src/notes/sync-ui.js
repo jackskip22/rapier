@@ -135,12 +135,16 @@ const _rapierNotesSyncUi = (() => {
 		}
 		field.value = initial; row.append(field); body.append(row); return field;
 	}
+	// The progress popup's words for a choice that waits: a vault's key takes seconds on a phone, storage takes the network.
+	const WAITS = {'sync now': 'Syncing notes', 'connect existing vault': 'Unlocking notes', 'use recovery code': 'Unlocking notes',
+		'use a recovery code instead': 'Unlocking notes', 'protect my notes': 'Protecting notes', 'check and connect': 'Connecting', 'sign out and revoke': 'Signing out'};
+	let progress = null;
 	// `key` names a control for what it does, not what it says: another service's choice carries its id.
 	function choice(label, description, action, {enabled = !status().busy && !acting, cloudflare = false, key = null} = {}) {
 		const button = node('button', 'export-choice' + (cloudflare ? ' rapier-cloudflare' : '')); button.type = 'button'; button.disabled = !enabled;
 		if (key) button.dataset.syncKey = key;
 		button.append(node('span', 'export-choice__label', label)); if (description) button.append(node('span', 'export-choice__description', description));
-		button.addEventListener('click', () => { button.disabled = true; void perform(action); }); body.append(button);
+		button.addEventListener('click', () => { button.disabled = true; void perform(action, true, WAITS[label]); }); body.append(button);
 	}
 	// The Notes settings panel's box (notes/notes.js _rapierNotesSyncBoxWear) says what the sync is now:
 	// connected or not, and the last finished run's time. It is worn again whenever that can change.
@@ -149,11 +153,13 @@ const _rapierNotesSyncUi = (() => {
 	// and replaces nothing): the sheet says what to do instead of the refusal's own sentence.
 	const NEWER = 'update Rapier to sync this folder.';
 	const said = (error, otherwise) => proRefusal(error) ? PRO_REQUIRED : error?.code === 'newer' ? NEWER : String(error?.message || otherwise);
-	async function perform(action, clear = true) {
+	// `words`, for a choice that waits, show the progress popup over the sheet while it runs.
+	async function perform(action, clear = true, words = '') {
 		if (clear) message = ''; acting = true;
+		const popup = words && overlay ? (progress ||= _rapierProgressOver(overlay)).open({label: words, after: 500}) : null;
 		try { const result = action(); paint(); await result; }
 		catch (error) { if (visible) message = said(error, 'that did not finish; your notes are unchanged.'); }
-		finally { acting = false; paint(); renderSettings(); wearBox(); }
+		finally { popup?.end(); acting = false; paint(); renderSettings(); wearBox(); }
 	}
 	async function owner() {
 		if (session) return session;
@@ -200,7 +206,7 @@ const _rapierNotesSyncUi = (() => {
 		// A service chosen but never connected is not kept: the sheet opens on Cloudflare again.
 		if (mode() === 'provider' && !status().hasConnection && !status().authorized) { route = null; providerId = null; session = null; }
 		others = false; providerDraft = {};
-		clearBody(); if (overlay) closeDialog(overlay); wearBox();
+		progress?.release(); clearBody(); if (overlay) closeDialog(overlay); wearBox();
 	}
 	function paint() {
 		if (!visible || !body) return;

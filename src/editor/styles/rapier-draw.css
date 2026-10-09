@@ -473,6 +473,8 @@ body.light .rapier-draw-menu{--color-text:#000;--color-text-secondary:#000;--col
 .rapier-draw-brushes .rapier-draw-chip--icon{flex:none}
 .rapier-draw-chip--own:not([aria-pressed="true"]){background:color-mix(in srgb,var(--color-accent) 22%,transparent)}
 .rapier-draw-paint-live{position:absolute;left:0;top:0;pointer-events:none;image-rendering:auto}
+/* A live Water sheet multiplies watercolour paper, as pigment on paper does (draw/core.mjs writes the same for kept paintings). */
+.rapier-draw-canvas[data-paper-ground] foreignObject[data-water]{mix-blend-mode:multiply}
 /* The brush head's outline (draw/paint-tool.js): a thin line on the live overlay, light with a dark halo so it reads on any paper. */
 .rapier-draw-outline{fill:none;stroke:#fff;stroke-width:1px;vector-effect:non-scaling-stroke;pointer-events:none;filter:drop-shadow(0 0 1px rgba(0,0,0,.85))}
 /* The angle chip: the head as a thin oval at its own angle with its degrees under it; the first cell of the brush strip. */

@@ -1030,7 +1030,7 @@ function _rapierArtifactFactoryModules(dependencies, group) {
 function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   if (!root || !metadata || !geometry || !pretext) return null;
   const doc = root.ownerDocument, view = doc.defaultView;
-  const styles = new Map(), originals = new Map(), spacers = [], floats = [], profiles = new WeakMap();
+  const styles = new Map(), originals = new Map(), spacers = [], floats = [], steps = [], profiles = new WeakMap();
   const css = node => view.getComputedStyle(node);
   const box = node => node.getBoundingClientRect();
   const pixels = value => (Number.isFinite(value) ? Math.round(value * 100) / 100 : 0) + 'px';
@@ -1053,6 +1053,8 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
     spacers.length = 0;
     for (const float of floats) float.remove();
     floats.length = 0;
+    for (const item of steps) item.removeAttribute('data-rapier-wrap-step');
+    steps.length = 0;
   }
 
   // Plain inline text uses Pretext. Complex blocks keep their original controls through floats.
@@ -1210,14 +1212,14 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
     }
   }
 
-  // Nothing is ever inserted between a picture and its words: a reader and the witnesses read nextElementSibling.
-  function clearTo(element, bottom, origin, before = element) {
-    const distance = bottom - (box(element).top - origin);
-    if (distance <= 0) return;
-    const spacer = doc.createElement('div');
-    spacer.setAttribute('aria-hidden', 'true');
-    spacer.style.cssText = 'height:' + pixels(distance) + ';clear:both;';
-    before.before(spacer); spacers.push(spacer);
+  // A block that cannot wrap stands with its box just below the outline, as in the editor. Its own margin moves it, so
+  // nothing is inserted between a picture and its words (a reader and the witnesses read nextElementSibling).
+  function clearTo(element, bottom, origin) {
+    for (let pass = 0; pass < 3; pass++) {
+      const distance = bottom - (box(element).top - origin);
+      if (Math.abs(distance) <= 0.5) return;
+      style(element, {'margin-top': pixels(Math.max(0, (parseFloat(css(element).marginTop) || 0) + distance))});
+    }
   }
 
   const imageOnly = geometry.imageOnly;
@@ -1234,7 +1236,27 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
   // Float fallback as the editor's floatAround.
   const FLOAT_BLOCK = /^(P|H[1-6]|UL|OL|BLOCKQUOTE|DETAILS|SUMMARY|DL)$/;
   function floatAround(element, width, height, top, obstacles) {
-    if (!FLOAT_BLOCK.test(element.tagName) || element.querySelector('table, pre, figure, img, .math-rendered')) return false;
+    // As the editor: a paragraph or heading floats whatever it holds; a list, quote or disclosure holding a rigid block does not.
+    if (!FLOAT_BLOCK.test(element.tagName) || !/^(P|H[1-6])$/.test(element.tagName) && element.querySelector('table, pre, figure, img, .math-rendered')) return false;
+    // As the editor: a disclosure's box ends where the outline begins (layout/model.mjs boxClearance).
+    if (element.tagName === 'DETAILS') {
+      const computed = css(element), outer = box(element), floor = metadata.wrapColumnFloor(parseFloat(computed.fontSize) || 16);
+      const offset = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.borderLeftWidth) || 0);
+      const own = obstacles.map(obstacle => ({...obstacle, x: obstacle.x + offset}));
+      const marginLeft = parseFloat(computed.marginLeft) || 0, marginRight = parseFloat(computed.marginRight) || 0;
+      let extent = height, clear = null;
+      for (let pass = 0; pass < 3; pass++) {
+        const next = geometry.boxClearance(own, outer.width, top, extent, floor);
+        if (!next) break;
+        if (!next.fits) return false;
+        clear = {left: Math.max(clear?.left || 0, next.left), right: Math.max(clear?.right || 0, next.right)};
+        style(element, {'margin-left': pixels(marginLeft + clear.left), 'margin-right': pixels(marginRight + clear.right)});
+        const grown = box(element).height;
+        if (Math.abs(grown - extent) < .5) break;
+        extent = grown;
+      }
+      if (clear) return true;
+    }
     if (element.tagName === 'DETAILS' && !element.open) {
       const summary = element.querySelector(':scope > summary');
       if (!summary) return false;
@@ -1246,21 +1268,26 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
         obstacles.map(obstacle => ({...obstacle, x: obstacle.x - bounds.left - inset + outer.left + parentInset})));
     }
     const computed = css(element);
-    top += (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.borderTopWidth) || 0);
+    const inset = (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.borderTopWidth) || 0);
+    top += inset;
     const bottom = top + height;
     const inside = obstacles.filter(obstacle => obstacle.y < bottom + 4096 && obstacle.y + obstacle.height > top &&
       obstacle.x < width && obstacle.x + obstacle.width > 0);
     if (!inside.length) return false;
-    // layout/model.mjs wrapShape; `geometry` is modules["layout/model.mjs"].
+    // layout/model.mjs wrapShape; `geometry` is modules["layout/model.mjs"]. As the editor, the start side reaches from
+    // the box's own start edge.
+    const start = computed.direction === 'rtl' ? 'right' : 'left';
+    const startInset = start === 'left' ? (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.borderLeftWidth) || 0)
+      : -((parseFloat(computed.paddingRight) || 0) + (parseFloat(computed.borderRightWidth) || 0));
     const shapeFor = side => {
-      const shape = geometry.wrapShape(side, inside, width, top);
+      const shape = geometry.wrapShape(side, side !== start ? inside : inside.map(obstacle => ({...obstacle, x: obstacle.x + startInset})), width, top);
       if (!shape) return null;
       return {...shape, shape: 'polygon(' + shape.points.map(point => pixels(point[0]) + ' ' + pixels(point[1])).join(',') + ') border-box'};
     };
     const shapes = {left: shapeFor('left'), right: shapeFor('right')};
     const spent = (shapes.left?.boxWidth || 0) + (shapes.right?.boxWidth || 0);
     if (!spent || spent > width - metadata.wrapColumnFloor(parseFloat(css(element).fontSize) || 16)) return false;
-    const placed = [];
+    const before = geometry.edgeLines(element), placed = [];
     for (const side of ['left', 'right']) {
       const shape = shapes[side];
       if (!shape) continue;
@@ -1269,24 +1296,38 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
       float.style.cssText = `float:${side};width:${pixels(shape.boxWidth)};height:${pixels(shape.boxHeight)};margin-top:${pixels(shape.startY)};shape-outside:${shape.shape};pointer-events:none`;
       element.prepend(float); floats.push(float); placed.push([float, shape]);
     }
-    // The block contains its floats and each float ends at the block's own content bottom, so
-    // successive blocks' floats never stack side by side (the same bound the editor applies).
-    style(element, {display: computed.display.includes('list-item') ? 'flow-root list-item' : 'flow-root'});
+    // As the editor: each float ends at the block's own content bottom and the block keeps its own display, so its
+    // margins collapse as they do with no picture. A float the content does not reach goes.
     const contentBottom = () => {
       let first = element.firstChild;
       while (first && placed.some(([float]) => float === first)) first = first.nextSibling;
-      if (!first || !element.lastChild) return box(element).height;
+      if (!first || !element.lastChild) return box(element).height - inset;
       const range = doc.createRange(); range.setStartBefore(first); range.setEndAfter(element.lastChild);
-      return range.getBoundingClientRect().bottom - box(element).top;
+      return range.getBoundingClientRect().bottom - box(element).top - inset;
     };
     for (let pass = 0; pass < 4; pass++) {
       const content = contentBottom();
       let changed = false;
-      for (const [float, shape] of placed) {
-        const bounded = Math.max(0, Math.min(shape.boxHeight, content - shape.startY));
-        if (Math.abs((parseFloat(float.style.height) || 0) - bounded) > 0.5) { float.style.height = pixels(bounded); changed = true; }
+      for (const [float, shape] of [...placed]) {
+        const bounded = Math.min(shape.boxHeight, content - shape.startY);
+        if (bounded <= 0) { float.remove(); placed.splice(placed.findIndex(([value]) => value === float), 1); changed = true; }
+        else if (Math.abs((parseFloat(float.style.height) || 0) - bounded) > 0.5) { float.style.height = pixels(bounded); changed = true; }
       }
       if (!changed) break;
+    }
+    // As the editor: a list item's marker and a quote's bar move with the words the floats moved.
+    const {markers, bars, steps: breaks} = geometry.edgeMarks(element, before);
+    for (const {item, shift} of markers) style(item, {'--md-marker': 'calc(' + (item.style.getPropertyValue('--md-marker') || '0px') + ' + ' + pixels(shift) + ')'});
+    for (const item of breaks) { item.setAttribute('data-rapier-wrap-step', ''); steps.push(item); }
+    for (const {quote, runs} of bars) {
+      const look = css(quote), edge = box(quote).top + (parseFloat(look.borderTopWidth) || 0), barWidth = parseFloat(look.borderInlineStartWidth), color = look.borderInlineStartColor;
+      style(quote, {'border-inline-start-color': 'transparent', ...(look.position === 'static' ? {position: 'relative'} : {})});
+      for (const run of runs) {
+        const bar = doc.createElement('span');
+        bar.setAttribute('aria-hidden', 'true');
+        bar.style.cssText = `position:absolute;inset-inline-start:${pixels(run.shift - barWidth)};top:${pixels(run.top - edge)};width:${pixels(barWidth)};height:${pixels(run.bottom - run.top)};background:${color};pointer-events:none`;
+        quote.prepend(bar); floats.push(bar);
+      }
     }
     return true;
   }
@@ -1322,13 +1363,11 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
       syncInlineRotatedPictures(positionedImages);
       for (const element of children) {
         if (wrapped.has(element)) continue;
-        // `let`: a pushed picture moves its owner and every later element.
-        let bounds = box(element);
+        const bounds = box(element);
         if (!bounds.width || !bounds.height) continue;
         const computed = css(element), inset = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.borderLeftWidth) || 0);
         const width = bounds.width - inset - (parseFloat(computed.paddingRight) || 0) - (parseFloat(computed.borderRightWidth) || 0);
 
-        let ownerLed = false;
         for (const {element: source, image, layout, width: imageWidth} of anchors.get(element) || []) {
           // A picture sized in lines (`lines`) reads its anchor's line and stands on the first line's cap height, as the live editor.
           const lines = layout.lines != null ? geometry.lineMetrics(element) : null;
@@ -1347,19 +1386,12 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
           // The standoff and the room between pictures, in the reference scale's pixels, as the live editor.
           const scale = geometry.frameScale(image), room = 10 * scale;
           if (!outOfFlow(layout)) {
+            // A picture an earlier one stands in moves down alone; its owner keeps its place, as in the editor.
             for (const obstacle of [...obstacles].sort((left, right) => left.y - right.y)) {
               if (obstacle.x < left + rectangle.width + room && obstacle.x + obstacle.width > left - room &&
                   obstacle.y + obstacle.height > y - room && obstacle.y < y + rectangle.height + room)
                 y = obstacle.y + obstacle.height + room;
             }
-            // A picture pushed down by an earlier one takes its owner with it. A deliberate `y` stays; only the collision push moves the paragraph.
-            const ownerTop = bounds.top - origin + topInset + geometry.linesTop(layout, lines) + Math.min(layout.y || 0, height / em) * em;
-            // Only the first picture of an owner takes it down.
-            if (!ownerLed && y > ownerTop + 0.5) {
-              clearTo(element, (bounds.top - origin) + (y - ownerTop), origin, source);
-              bounds = box(element);
-            }
-            ownerLed = true;
             obstacles.push(...geometry.linesSlices(geometry.pictureSlices(profile(image, layout), left, y, rectangle.width, rectangle.height, scale), layout, lines, y, rectangle.height));
           }
           placed.push({source, image, rectangle, left, y, wrap: layout.wrap,
@@ -1371,7 +1403,8 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
           const own = active.map(obstacle => ({...obstacle, x: obstacle.x - bounds.left - inset}));
           const prepared = prepare(element);
           if (!(prepared && width > 0 && project(prepared, width, top, own)) && !(width > 0 && floatAround(element, width, bounds.height, top, own))) {
-            const overlapping = active.filter(obstacle => obstacle.y < top + bounds.height);
+            // As the editor: only an outline that meets the block's box moves it.
+            const overlapping = active.filter(obstacle => obstacle.y < top + bounds.height && obstacle.x < bounds.right && obstacle.x + obstacle.width > bounds.left);
             if (overlapping.length) clearTo(element, Math.max(...overlapping.map(obstacle => obstacle.y + obstacle.height)), origin);
           }
         }

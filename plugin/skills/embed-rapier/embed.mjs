@@ -146,7 +146,9 @@ function createAssetBroker({current, send}) {
 return {FEATURES, LIMITS, ASSET_TYPES, refusal, normalizeSettings, snapshotSettings, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker};
 })();
 // ---- END contract.mjs ----
-const DEFAULT_SRC = 'https://rapier.website/embed/rapier-document.html';
+// The hosted builds a mount can name: the editor without Draw and Paint, and the read-only reader.
+const BUILDS = Object.freeze({document: 'https://rapier.website/embed/rapier-document.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
+const DEFAULT_SRC = BUILDS.document;
 const revision = value => Number.isSafeInteger(value) && value >= 0 || typeof value === 'string' && value.length > 0 && value.length <= 256;
 const identifier = value => typeof value === 'string' && value.length > 0 && value.length <= 256;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -166,14 +168,46 @@ function conflict(currentRevision) {
   return Object.assign(new Error('The stored document has changed'), {code: 'conflict', currentRevision});
 }
 
+// The reader's look, sent once connected and again on every reconnect: a stylesheet and faces (FontFace sources).
+function readerStyle(value) {
+  if (!record(value) || Object.keys(value).some(key => !['css', 'fonts'].includes(key))) throw new TypeError('style takes css and fonts');
+  if (value.css !== undefined && typeof value.css !== 'string') throw new TypeError('style.css must be a stylesheet');
+  const face = row => record(row) && typeof row.family === 'string' && row.family.length > 0 &&
+    (typeof row.source === 'string' || row.source instanceof ArrayBuffer || ArrayBuffer.isView(row.source)) &&
+    (row.descriptors === undefined || record(row.descriptors)) && Object.keys(row).every(key => ['family', 'source', 'descriptors'].includes(key));
+  if (value.fonts !== undefined && (!Array.isArray(value.fonts) || !value.fonts.every(face))) throw new TypeError('style.fonts takes {family, source, descriptors?} faces');
+  return {...(value.css !== undefined ? {css: value.css} : {}), ...(value.fonts !== undefined ? {fonts: value.fonts.map(row => ({...row}))} : {})};
+}
+
 function mount(target, options = {}) {
   const document = target?.ownerDocument;
   if (!document) throw new TypeError('Mount needs an iframe or a container element');
+  const build = options.build ?? 'document';
+  if (!Object.hasOwn(BUILDS, build)) throw new TypeError('build must be document or reader');
+  const reader = build === 'reader';
+  // The reader only shows a document: it saves, compares, closes, stores pictures and admits agents nowhere.
+  if (reader && ['save', 'compare', 'onClose', 'agent', 'agentName', 'assets'].some(key => options[key] !== undefined && options[key] !== false))
+    throw new TypeError('The reader takes load, onState, theme, settings, style and plugins');
+  if (!reader && options.style !== undefined) throw new TypeError('style restyles the reader build');
+  if (options.plugins !== undefined && (typeof options.plugins !== 'string' || !options.plugins || options.plugins.length > 2048 || /[\u0000-\u001f\u007f]/.test(options.plugins)))
+    throw new TypeError('plugins is the address of the directory that holds the plug-in files');
+  let currentStyle = options.style === undefined ? undefined : readerStyle(options.style);
   const host = document.defaultView, iframe = target.tagName === 'IFRAME' ? target : document.createElement('iframe');
-  const source = new URL(options.src || DEFAULT_SRC, host.location.href);
+  const source = new URL(options.src || BUILDS[build], host.location.href);
   if (source.username || source.password || !(source.protocol === 'https:' || source.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(source.hostname)))
     throw new TypeError('The editor needs HTTPS, or HTTP on localhost');
   source.searchParams.set('embed', '1');
+  // The page's plug-ins (maths, diagrams, the PDF reader and the rest) come from this directory alone: the page reads `plugins` from its own
+  // address. Its security policy lets it read only its own origin, so a directory anywhere else is refused here, before the page loads.
+  if (options.plugins !== undefined) {
+    let directory;
+    try { directory = new URL(options.plugins, host.location.href); } catch { throw new TypeError('plugins is not an address'); }
+    if (!(directory.protocol === 'https:' || directory.protocol === 'http:') || directory.username || directory.password || directory.search || directory.hash)
+      throw new TypeError('plugins is an http or https address of a directory, with no query or fragment');
+    if (directory.origin !== source.origin)
+      throw new TypeError('plugins must be on ' + source.origin + ', the origin of the page it configures: the page reads plug-ins only from its own origin. Serve the page and its plug-ins together (set src), or leave plugins out');
+    source.searchParams.set('plugins', directory.href);
+  }
   const origin = source.origin, sessionId = options.sessionId ?? mint('session'), documentId = options.documentId ?? mint('document');
   if (!identifier(sessionId) || !identifier(documentId)) throw new TypeError('Session and document IDs must be nonempty strings of at most 256 code units');
   const agentName = options.agentName;
@@ -333,6 +367,7 @@ function mount(target, options = {}) {
   }
   function prepareBoot() {
     boot = connectedWait.promise.then(async () => {
+      if (currentStyle) await send('style', currentStyle, undefined, true);
       if (options.load !== undefined) {
         const value = typeof options.load === 'function' ? await options.load() : options.load;
         if (!record(value) || typeof value.content !== 'string' || !revision(value.revision)) throw new TypeError('load needs content and its revision');
@@ -394,6 +429,10 @@ function mount(target, options = {}) {
       if (!themeValue(value)) throw new TypeError('Theme must be light, dark or system');
       currentTheme = value; await boot; return send('theme', {theme: value}, undefined, true);
     },
+    async style(value) {
+      if (!reader) throw new TypeError('style restyles the reader build');
+      currentStyle = readerStyle(value); await boot; return send('style', currentStyle, undefined, true);
+    },
     disconnect() {
       if (ended) return;
       if (connected) send('disconnect', undefined, undefined, true).catch(() => {});
@@ -411,7 +450,7 @@ function mount(target, options = {}) {
     },
   });
   prepareBoot();
-  iframe.setAttribute('title', options.title || 'Markdown editor');
+  iframe.setAttribute('title', options.title || (reader ? 'Markdown reader' : 'Markdown editor'));
   iframe.setAttribute('allow', options.agent ? 'clipboard-write; tools' : 'clipboard-write');
   iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads');
   // Install before navigation or insertion: the first ready or load can arrive immediately.

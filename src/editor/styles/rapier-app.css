@@ -279,31 +279,30 @@ select{
 	color:inherit;opacity:.9;flex-shrink:0;cursor:pointer;
 	font:var(--fw-medium) 1.5rem/1 var(--font-mono)}
 @media (hover:hover) and (pointer:fine){.toast__close:hover{opacity:1}}
-.toast__action{
+.toast__action,
+.rapier-progress__cancel{
 	margin:0;padding:0 16px;align-self:stretch;
 	display:inline-flex;align-items:center;
 	font:var(--fw-medium) var(--text-sm) var(--font-mono);
 	letter-spacing:var(--track-caps);text-transform:uppercase;
 	color:inherit;border:none;border-radius:0;background:transparent;cursor:pointer;
 	white-space:nowrap;flex-shrink:0}
-@media (hover:hover) and (pointer:fine){.toast__action:hover{opacity:.85}}
+@media (hover:hover) and (pointer:fine){.toast__action:hover,.rapier-progress__cancel:hover{opacity:.85}}
 
+/* A paste holds the page under a scrim; the notices, its progress popup among them, stand over it (.toast-container is 160). */
 html[data-pasting="on"] body::after{
-	content:"Pasting…  Esc to cancel";
-	position:fixed;inset:0;z-index:450;
-	display:grid;place-items:center;
+	content:"";
+	position:fixed;inset:0;z-index:159;
 	background:color-mix(in srgb,var(--color-bg) 72%,transparent);
-	color:var(--color-text);pointer-events:all;
-	font:var(--fw-medium) var(--text-sm) var(--font-mono);
-	letter-spacing:var(--track-caps);text-transform:uppercase}
+	pointer-events:all}
 
 
 /* A notice is read over the page, so its surface is nearly opaque: the words under it never show through. */
-.toast,.restore-notice,.rapier-notes-snack{
+.toast,.restore-notice,.rapier-notes-snack,.rapier-progress{
 	background:rgb(0 0 0 / .94);color:#fff;border:0;border-radius:0;box-shadow:none;
 	font:var(--fw-medium) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;
 }
-body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack{background:rgb(255 255 255 / .94);color:#000}
+body.light .toast,body.light .restore-notice,body.light .rapier-notes-snack,body.light .rapier-progress{background:rgb(255 255 255 / .94);color:#000}
 /* The placer reads a notice's visibility at once after it changes it (_rapierUpdateToastLift's hit test), so no transition may stand between the
    change and the read. The reduced-motion rule in rapier-source.css gives every element a 0.01 ms transition: a notice un-hidden at that moment was
    still hidden at the first instant of the change, was read as unreachable and was held hidden. A notice's exit sets its own transition inline. */
@@ -641,31 +640,28 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 /* The caret's cell: a quiet tint, nothing else. */
 .block-edit .rapier-cell--caret { background-image: linear-gradient(color-mix(in srgb, var(--color-text) 6%, transparent), color-mix(in srgb, var(--color-text) 6%, transparent)); }
 
-.rapier-import-progress {
-	position: fixed;
-	left: 50%;
-	bottom: calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)));
-	transform: translateX(-50%);
-	z-index: 9990;
-	display: flex;
-	align-items: center;
-	gap: 16px;
-	width: max-content;
-	max-width: calc(100% - 32px);
-	padding: 12px 16px;
-	background: var(--color-surface-2);
-	color: var(--color-text);
-	border: 0;
-	font: var(--fw-regular) var(--text-sm)/1.5 var(--font-sans);
+/* The progress popup is a notice: it stands in the notice root (#toast-root) and takes the notices' surface, Geist Mono, caps and width from the
+   shared rules above, so it is placed, lifted and stacked as a notice is. What it adds is a button where the work can be given up and one 2 px
+   line along its foot in the notice's own ink: filled to where the work has got to, its ink at 28% beyond. A work that cannot say how far it is
+   runs the ink along. */
+.rapier-progress{
+	display:flex;flex-direction:column;
+	box-sizing:border-box;width:100%;min-width:0;min-height:48px;align-self:stretch;
+	animation:rapier-popup-enter 180ms var(--ease-micro) both;
 }
-.rapier-import-progress button {
-	flex: none;
-	border: 0;
-	padding: 4px;min-width:44px;min-height:44px;
-	background: transparent;
-	color: var(--color-accent-text);
-	font: inherit;
-	cursor: pointer;
+.rapier-progress__row{flex:1 1 auto;display:flex;align-items:center;gap:var(--space-2);padding:0 0 0 16px;min-width:0}
+.rapier-progress__label{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;padding:12px 0;color:inherit}
+.rapier-progress__bar{
+	flex:none;height:2px;
+	background:linear-gradient(currentColor,currentColor) 0 0 / calc(var(--rapier-progress, 0) * 100%) 100% no-repeat, color-mix(in srgb,currentColor 28%,transparent);
+	transition:background-size 240ms linear;
+}
+.rapier-progress__bar[data-running]{background-size:30% 100%,auto;transition:none;animation:rapier-progress-run 1.6s ease-in-out infinite}
+@keyframes rapier-progress-run{from{background-position:-30% 0,0 0}to{background-position:130% 0,0 0}}
+@media(prefers-reduced-motion:reduce){
+	.rapier-progress{animation:none}
+	.rapier-progress__bar{transition:none}
+	.rapier-progress__bar[data-running]{background-size:100% 100%,auto;animation:none;opacity:.4}
 }
 
 /* Each light layer holds still while the shared theme owner changes its exposure. */

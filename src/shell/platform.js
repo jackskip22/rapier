@@ -3402,18 +3402,21 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	_rapierPlatformPortRuntime.port = _createPlatformPort(rawPlatform);
 })();
 
-// The Notes and drawing addresses serve the page itself. The path names the surface while it is up, / once the editor is; only at the
-// site root or a door (a page served as rapier.html keeps its path), never the hash or the query.
+// The Notes, drawing and sheet addresses serve the page itself. A reload of the address must bring back what it names, so the path
+// follows Notes and the privacy and commercial sheets while they are up, and / is back once the editor is. Draw and Water start a new
+// canvas from their address: it stays where the person arrived, is never written over the editor's, and / is back once the canvas closes.
+// Only at the site root or a door (a page served as rapier.html keeps its path), never the query.
 function _rapierDoorPathMark(door, on) {
 	try {
 		// Water is Draw with its watercolor brush selected; retain its dedicated address until the canvas closes.
 		if (door === 'draw' && /^\/watercolor\/?$/.test(location.pathname)) door = 'watercolor';
 		if (!/^https?:$/.test(location.protocol) || !new RegExp('^\\/(' + door + '\\/?)?$').test(location.pathname)) return;
-		const path = on ? '/' + door : '/';
+		const canvas = door === 'draw' || door === 'watercolor';
+		const path = on && (!canvas || location.pathname !== '/') ? '/' + door : '/';
 		// A document's address (#d/<id>) stays on the editor's entry, never the door's.
-		const hash = on && /^#d\//.test(location.hash) ? '' : location.hash;
+		const hash = path !== '/' && /^#d\//.test(location.hash) ? '' : location.hash;
 		if (location.pathname !== path || hash !== location.hash) history.replaceState(history.state, '', path + location.search + hash);
-		if (on && (door === 'draw' || door === 'watercolor') && _rapierBackEntries.held === 2) _rapierBackEntries.canvasAddress = location.href;
+		if (on && canvas && _rapierBackEntries.held === 2) _rapierBackEntries.canvasAddress = location.href;
 		// The Back guard briefly borrows / before restoring a canvas address. Render the final route's head
 		// after that synchronous navigation, including an empty Done that never changes the filename.
 		queueMicrotask(() => window.dispatchEvent(new Event('rapier:door-path-changed')));
@@ -3422,7 +3425,19 @@ function _rapierDoorPathMark(door, on) {
 
 // The page holds its own entries so Back lands in Rapier: the guard (depth 1), a canvas (depth 2). The engine's _rapierBackWant says how many; Notes
 // holds its own (notes/notes.js). The held depth is set before a pop made here, so that pop is never read as the person's Back.
-const _rapierBackEntries = {armed: false, held: 0, want: 0, popping: false, leaving: false, canvasAddress: null};
+// `floor` is the number of entries before the tab's first Rapier entry, where Back leaves for. A reload keeps the entries of the page before it and the
+// new page pushes its own over them, so every entry carries `floor` and its own place in the tab, `at` (_rapierBackState), and a page that loads
+// onto one reads both back. The first entry has no state and sits at `floor`.
+const _rapierBackEntries = {armed: false, held: 0, want: 0, popping: false, leaving: false, canvasAddress: null, floor: (() => {
+	try {
+		const own = history.state;
+		return Number.isSafeInteger(own?.floor) && own.floor >= 0 ? own.floor : Number.isSafeInteger(own?.at) && own.at >= 0 ? own.at : Math.max(0, history.length - 1);
+	} catch (_) { return 0; }
+})()};
+function _rapierBackState(state, push = true) {
+	const rt = _rapierBackEntries, here = Number.isSafeInteger(history.state?.at) ? history.state.at : rt.floor;
+	return {...state, floor: rt.floor, at: here + (push ? 1 : 0)};
+}
 function _rapierBackEntriesHold(want) {
 	const rt = _rapierBackEntries;
 	rt.want = Math.max(0, Math.min(2, Number(want) || 0));
@@ -3433,7 +3448,7 @@ function _rapierBackEntriesHold(want) {
 		// A reload or a restored session lands on one of Rapier's own entries: the page loaded there is a new
 		// document, and that entry is its own now, under the guard pushed next.
 		const state = history.state;
-		if (state && typeof state === 'object' && (state.rapierBack || state.rapierNotes)) { try { history.replaceState(null, ''); } catch (_) {} }
+		if (state && typeof state === 'object' && (state.rapierBack || state.rapierNotes)) { try { history.replaceState(_rapierBackState({}, false), ''); } catch (_) {} }
 	}
 	if (rt.popping || rt.leaving) return;
 	try {
@@ -3443,7 +3458,7 @@ function _rapierBackEntriesHold(want) {
 			// The guard keeps the editor's address; a canvas push or Back rearm retains that canvas's own route.
 			const address = rt.held === 1 ? (rt.canvasAddress ||= location.href) : location.href;
 			if (rt.held === 1) _rapierDoorPathMark('draw', false);
-			history.pushState({rapierBack: ++rt.held}, '', address);
+			history.pushState(_rapierBackState({rapierBack: ++rt.held}), '', address);
 		}
 		if (rt.held > rt.want) {
 			const delta = rt.want - rt.held;
@@ -3457,12 +3472,15 @@ function _rapierBackEntriesArmed() { return _rapierBackEntries.armed && !_rapier
 function _rapierBackEntriesLeave() {
 	const rt = _rapierBackEntries;
 	if (!rt.armed) return '';
-	// A push cuts forward entries, so the page's are the tab's last.
-	const on = Number(history.state?.rapierBack) || 0, before = on === rt.held ? history.length - 1 - rt.held : 1;
+	// Under the page's own entries sit those of earlier loads of Rapier in this tab (a reload leaves them): Back goes past them too, to the entry before
+	// the first. Where the person pressed Back, the page's own entry is `held` below the one the browser is on.
+	const on = Number(history.state?.rapierBack) || 0, known = on === rt.held;
+	const here = Number.isSafeInteger(history.state?.at) ? history.state.at : rt.floor;
+	const before = known ? rt.floor : 1, older = known ? Math.max(0, here - rt.held - rt.floor) : 0;
 	const again = () => { document.removeEventListener('pointerdown', again, true); document.removeEventListener('keydown', again, true); rt.leaving = false; _rapierBackEntriesHold(rt.want); };
 	rt.leaving = true; rt.popping = false;
 	document.addEventListener('pointerdown', again, true); document.addEventListener('keydown', again, true);
-	const delta = before > 0 ? -(rt.held + 1) : -rt.held;
+	const delta = before > 0 ? -(rt.held + 1 + older) : -(rt.held + older);
 	rt.held = 0;
 	try { if (delta) history.go(delta); } catch (_) {}
 	return before > 0 ? 'gone' : 'last';

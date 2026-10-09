@@ -7,6 +7,7 @@ export const WATER_TIME_MAX_SECONDS = Number.MAX_SAFE_INTEGER / 256;
 export const waterTimeFits = seconds => Number.isFinite(seconds) && seconds >= 0 && seconds <= WATER_TIME_MAX_SECONDS;
 import {encodeHex,WHITE} from './water-color.mjs';
 import {PAPER_KINDS,BRUSHES,CUSTOM_PARAMS} from './water-materials.mjs';
+import {WATER_PAPER_UNITS} from './paper-field.mjs';
 export const WATER_ACTION_MAX_POINTS = 131072;
 export const WATER_TIP_MAX_PIXELS = 1048576;
 import {PAINT_REPLAY_MAX_BYTES,paintReplayFits} from './paint-limits.mjs';
@@ -50,7 +51,8 @@ const ownKeys=(v,allowed)=>Object.keys(v).every(k=>allowed.includes(k));
 const frameGeometry=v=>object(v)&&integer(v.width)&&integer(v.height)&&v.width>0&&v.height>0&&v.width*v.height<=12000000&&Array.isArray(v.origin)&&v.origin.length===2&&v.origin.every(Number.isSafeInteger);
 const jsonFits=paintReplayFits;
 export function waterError(code,message){return Object.assign(new RangeError(message),{code,recoverable:true});}
-export function waterRadius(size=50){return 44*Math.pow(3,2*(size/100-.5));}
+// Drawing units: the reference round brush's full-pressure radius, 0.04 of its 1100-unit sheet, in paper units fixed to the drawing.
+export function waterRadius(size=50){return 1100*.04/WATER_PAPER_UNITS*Math.pow(3,2*(size/100-.5));}
 export function admitWaterPigment(raw){
  if(typeof raw==='string')return waterPigmentById(raw)?raw:null;
  if(!object(raw)||!ownKeys(raw,['coefficients','granulation','staining','source'])||!Array.isArray(raw.coefficients)||raw.coefficients.length!==WATER_BANDS||!raw.coefficients.every((n,i)=>finite(n)&&Math.abs(n)<=10000&&(i<7||n>=0)))return null;
@@ -123,6 +125,7 @@ export function admitWaterAction(raw){
     last=p[3];points.push(p.slice());
    }out.paths.push(points);
   }
+  if(raw.frames==null&&!waterTimeFits((last-out.paths[0][0][3]+1)/WATER_TICK_HZ))return null;
   if(raw.inputKind!=null){if(!['script','mouse','touch','pen'].includes(raw.inputKind))return null;out.inputKind=raw.inputKind;}
   if(raw.direction!=null){if(!Array.isArray(raw.direction)||raw.direction.length!==2||!raw.direction.every(v=>finite(v)&&Math.abs(v)<=1)||Math.hypot(...raw.direction)===0)return null;out.direction=raw.direction.slice();}
   if(raw.frame!=null){const f=raw.frame;if(!frameGeometry(f)||!ownKeys(f,['width','height','origin','scale','paperScale','paperOrigin','paperSeed'])||!finite(f.scale)||f.scale<=0||f.scale>16||!finite(f.paperScale)||f.paperScale<=0||!Array.isArray(f.paperOrigin)||f.paperOrigin.length!==2||!f.paperOrigin.every(Number.isSafeInteger)||!unit(f.paperSeed))return null;out.frame=structuredClone(f);}

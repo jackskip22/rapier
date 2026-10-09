@@ -51,9 +51,34 @@ function _rapierWaterSet(key, value) {
 		const own = _rapierWaterOwn().find(row => row.id === value); if (own) { Object.assign(settings, own.water); settings.tipName=own.name; settings.tipKey=own.id; settings.strength=own.water.firm ? 'firm' : 'light'; }
 		settings.tool = 'brush'; settings.sampling = false;
 	}
-	// A paper is how the paint behaves (tooth, absorbency, grain, drying). The paper a person sees is the canvas colour and the
-	// background tool's own (draw/background-tool.js), under the transparent layer: choosing a paper writes neither.
+	// A paper is how the paint behaves (tooth, absorbency, grain, drying) and, on a paper background, the sheet the person
+	// sees under the transparent layer: choosing one changes that background with it, never a background of another kind.
+	const background = _rapierDrawState.recipe?.background;
+	if (key === 'paper' && background?.kind === 'paper' && background.paper !== value && typeof _rapierBgCommit === 'function') _rapierBgCommit({...background, paper: value});
 	_rapierWaterSave(); _rapierWaterUpdate();
+}
+// Water paints on watercolour paper. A drawing with no background shows the chosen Water paper while Water is the tool,
+// and its first kept Water stroke keeps that paper as the drawing's background in the same step. Choosing a background,
+// None included, ends the offer for this drawing.
+function _rapierWaterPaperDefault(anyTool = false) {
+	const state = _rapierDrawState;
+	if (!state.recipe || state.recipe.background || state.waterPaperDeclined === state.session || !anyTool && _rapierDrawTool() !== 'water') return null;
+	return {kind: 'paper', paper: _rapierWaterState().paper, strength: 1};
+}
+// The paper field of a Water sheet whose top-left pixel is (x, y) in drawing units times `scale`: paper units fixed to the
+// drawing, the shader's second coordinate counted upward, and the one seed every sheet and paper background shares.
+function _rapierWaterPaperFrame(x, y, height, scale) {
+	const water = _rapierWaterEngine();
+	return {paperScale: water.WATER_PAPER_UNITS / scale, paperOrigin: [x, -height - y], paperSeed: water.WATER_PAPER_SEED};
+}
+function _rapierWaterAdoptPaper() {
+	const paper = _rapierWaterPaperDefault(true);
+	if (paper) _rapierDrawState.recipe.background = paper;
+}
+function _rapierWaterFollowPaper(paper) {
+	const settings = _rapierWaterState();
+	if (settings.paper === paper) return;
+	settings.paper = paper; _rapierWaterSave(); _rapierWaterUpdate();
 }
 function _rapierWaterDefinition(settings = _rapierWaterState()) {
 	return _rapierWaterEngine().waterBrushDefinition(settings.brush, {tool: ['water','lift','pen'].includes(settings.tool) ? settings.tool : 'brush',
@@ -109,6 +134,7 @@ function _rapierWaterPigmentColour() {
 }
 function _rapierWaterUpdate() {
 	const state = _rapierDrawState, surface = state.surface;
+	if (typeof _rapierDrawBackgroundSync === 'function') _rapierDrawBackgroundSync();
 	if (!surface || _rapierDrawTool() !== 'water') return;
 	_rapierPaintSyncSet();
 	const settings = _rapierWaterState(), engine = _rapierWaterEngine(), panel = state.waterPanel;
@@ -248,7 +274,7 @@ async function _rapierWaterActionAt(event, gesture) {
 		return;
 	}
 	try {
-		const controls = {size:settings.size,water:settings.water,load:settings.load,firm:settings.strength !== 'light',light:1,angle:settings.angle,follow:settings.follow};
+		const controls = {size:settings.size,water:settings.water,load:settings.load,firm:settings.strength !== 'light',light:1,angle:settings.angle,follow:settings.follow,flow:settings.flow,bleed:settings.bleed,edge:settings.edge,granulation:settings.granulation,dry:settings.dry};
 		const action = {seed:(Math.random()*0x3fffffff)|0,pigment:settings.pigment,paper:settings.paper,brush:settings.brush,controls};
 		if (settings.tool === 'fill') Object.assign(action,{kind:'fill',at:point,tolerance:.25});
 		else {

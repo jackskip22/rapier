@@ -4,12 +4,12 @@
     "name": "Jack Skipworth",
     "url": "https://rapier.website"
   },
-  "description": "Rapier, the fast offline Markdown editor, as a Claude plugin: four skills and the MCP door.",
+  "description": "Rapier for Claude: a fast, offline Markdown editor for notes, diagrams, drawing and watercolor, with four skills and the MCP door.",
   "plugins": [
     {
       "name": "rapier",
       "source": "./plugin",
-      "description": "Write, draw, paint and revise the same Markdown document with Claude. The assistant reads current passages or drawing objects before changing them. Your typing comes first; review changes and undo an assistant change while preserving later human edits. Choose FREE, CHECK or ASK to control how changes land. Text, pictures and editable drawings travel in one Markdown file. Export exact Markdown, an offline editor, plain text or a rendered web page; an open editor also supplies Word and PDF. No Rapier account, ads or tracking. Shared documents and working history stay in a private workspace that expires after 30 idle days."
+      "description": "Fast Markdown editor for notes, diagrams, drawing and watercolor painting, shared live with Claude. Claude works freely, beside you or while you are away. Rapier shows where it is and what it changed: tap a change to see what was there before, and undo anything. Pictures and editable drawings travel in one Markdown file; export Word, PDF or one offline HTML editor. No account. Shared documents stay in a private workspace that expires after 30 idle days."
     }
   ]
 }

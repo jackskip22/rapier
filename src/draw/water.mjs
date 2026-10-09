@@ -3,12 +3,13 @@
 import {WaterGPU,waterReady,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
 import {WaterContact} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
+import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
 import {encodeRgb,toLinear} from './water-color.mjs';
 import {buildWaterFill} from './water-fill.mjs';
 import {waterTimeFits} from './water-data.mjs';
 import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState} from './water-data.mjs';
 export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState};
-export {waterReady,waterHandSheetFits};
+export {waterReady,waterHandSheetFits,WATER_PAPER_UNITS,WATER_PAPER_SEED};
 const clone=value=>structuredClone(value);
 const clip=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
 const seconds=v=>clip(v,1/240,1/30);
@@ -23,6 +24,16 @@ function randomStream(seed){let state=seed>>>0;const random=()=>{state=(state+0x
 function coefficients(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment).coefficients;}
 function halfValue(bits){const sign=bits&0x8000?-1:1,exponent=(bits>>>10)&31,mantissa=bits&1023;return sign*(exponent===0?mantissa*2**-24:exponent===31?mantissa?NaN:Infinity:(1+mantissa/1024)*2**(exponent-15));}
 function reframeContact(contact,oldWidth,oldHeight,width,height,x,y){if(!contact)return;const s=contact.state;if(s){s.x=(s.x*oldWidth+x)/width;s.cx=(s.cx*oldWidth+x)/width;s.y=1-((1-s.y)*oldHeight+y)/height;s.cy=1-((1-s.cy)*oldHeight+y)/height;s.carry*=oldHeight/height;s.distance*=oldHeight/height;}contact.radiusScale*=oldHeight/height;}
+// One period of a paper's lit sheet from the Water field itself, `density` pixels per paper unit, as straight sRGB bytes:
+// the paper background's image where the host has WebGPU.
+export async function paperTileFromGPU(id,density=1){
+ const size=Math.round(WATER_PAPER_PERIOD*density),gpu=new WaterGPU(size,size,{paper:id,seed:WATER_PAPER_SEED,paperScale:1/density,paperOrigin:[0,-size],maxBytes:size*size*96});
+ try{
+  await gpu.ready;const rgba=await gpu.read({paper:true}),rgb=new Uint8ClampedArray(size*size*3);
+  for(let i=0;i<size*size;i++){rgb[i*3]=rgba[i*4];rgb[i*3+1]=rgba[i*4+1];rgb[i*3+2]=rgba[i*4+2];}
+  return {width:size,height:size,rgb};
+ }finally{gpu.dispose();}
+}
 export function waterPigmentRGB(value){const linear=toLinear(value),white=1-Math.exp(-2.2*Math.max(0,value[7]??0));return linear.map((v,i)=>rgbChannel(v*(1-white)+[.96,.955,.94][i]*white));}
 export function waterPigmentFromRGB(r,g,b){return {coefficients:Array.from(encodeRgb([r,g,b].map(v=>clip(v)))),granulation:.45,staining:0,source:'raster'};}
 
@@ -34,7 +45,8 @@ export class WaterSurface {
   this.cell=1;this.tick=0;this.revision=0;this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.paper=null;
   this.maxBytes=options.maxBytes??WATER_GPU_MAX_BYTES;this.wetPending=0;this._wetWork=null;this._dirty=null;this._bounds=null;this.growBox=null;
   this._actions=[];this._bytes=2;this._actionStart=0;this._tips=new Map();this._transaction=null;this._brush=null;this._pendingDt=0;this._disposed=false;
-  this.gpu=new WaterGPU(width,height,{...options,paper:this.paperId,seed:options.paperSeed??randomStream(this.seed)(),paperScale:options.paperScale??1100/(options.paperHeight??height),paperOrigin:options.paperOrigin??[this.origin[0],-this.origin[1]]});
+  // The paper is fixed to the drawing: paper units per drawing unit, counted from its origin, one seed for every sheet.
+  this.gpu=new WaterGPU(width,height,{...options,paper:this.paperId,seed:options.paperSeed??WATER_PAPER_SEED,paperScale:options.paperScale??WATER_PAPER_UNITS/this.pixelScale,paperOrigin:options.paperOrigin??[this.origin[0],-height-this.origin[1]]});
   this.ready=this.gpu.ready.then(async()=>{
    if(options.state)await this._restore(options.state);
    else if(options.pixels){await this.gpu.upload(options.pixels.data,options.pixels.width,options.pixels.height);this._rasterBounds(options.pixels.data,options.pixels.width,options.pixels.height,0,0);}
@@ -106,7 +118,7 @@ export class WaterSurface {
  async stepWet(ms=1000/60){
   await this.ready;if(!Number.isFinite(ms)||ms<0)throw waterError('WATER_INPUT','The Water frame time is not valid.');
   if(!ms)return !this.wet;const dt=ms/1000;
-  if(this._brush?.contact){if(!this._brush.absoluteInputTime)this._brush.time+=ms;await this._flushContact(seconds(dt));}
+  if(this._brush?.contact){this._brush.contact.framed=true;if(!this._brush.absoluteInputTime)this._brush.time+=ms;await this._flushContact(seconds(dt));}
   else if(this.wet){this.gpu._age(dt);this._appendAction({kind:'advance',ticks:1,dt});await this._advance(dt);}
   return !this.wet;
  }
@@ -114,7 +126,9 @@ export class WaterSurface {
  composeWet(){this._sync();return !!this._dirty;}
  async dryWet(_deadline,feed=1000/60){return this.stepWet(feed);}
  async settleWet(){await this.ready;await this._finishContact();if(this.wet)this._sourceRoom(sourceBytes({kind:'advance',ticks:Number.MAX_SAFE_INTEGER,dt:1/60})+1);let frames=0;while(this.wet){await this._advance(1/60);frames++;}if(frames)this._appendAction({kind:'advance',ticks:frames,dt:1/60});this.wetPending=0;return true;}
- async _finishWetWork(){await this.ready;await this._flushContact();this.gpu.submit();return true;}
+ // Once the page's frames drive a contact, those frames alone step it: one step per display frame, its samples
+ // included, as the reference does. A readout between frames must not add a step that counts the same time twice.
+ async _finishWetWork(){await this.ready;if(!this._brush?.contact?.framed)await this._flushContact();this.gpu.submit();return true;}
  async *settle(){while(this.wet){await this.stepWet(1000/60);yield {tick:this.tick,wet:this.wet};}return this;}
  tilt(gx,gy){if(![gx,gy].every(Number.isFinite))throw waterError('WATER_INPUT','The paper tilt is not valid.');}
  _rasterBounds(data,width,height,x,y){let x0=width,y0=height,x1=-1,y1=-1;for(let py=0;py<height;py++)for(let px=0;px<width;px++){const i=(py*width+px)*4;if(data[i]||data[i+1]||data[i+2]||data[i+3]){x0=Math.min(x0,px);y0=Math.min(y0,py);x1=Math.max(x1,px);y1=Math.max(y1,py);}}if(x1>=0)this._bounds=union(this._bounds,{x0:x+x0,y0:y+y0,x1:x+x1,y1:y+y1});}
@@ -136,7 +150,7 @@ export class WaterSurface {
  async _replayFrame(frame,offset,contact=null){
   const oldWidth=this.width,oldHeight=this.height,x=this.origin[0]-frame.origin[0]-offset[0],y=this.origin[1]-frame.origin[1]-offset[1];
   await this.reframe(frame.width,frame.height,x,y);reframeContact(contact,oldWidth,oldHeight,frame.width,frame.height,x,y);
-  if(frame.paperScale!=null)this.gpu.setPaperField({paperScale:frame.paperScale,paperOrigin:frame.paperOrigin,seed:frame.paperSeed});
+  if(frame.paperScale!=null)await this.gpu.setPaperField({paperScale:frame.paperScale,paperOrigin:frame.paperOrigin,seed:frame.paperSeed});
  }
  _brushFor(action){const tip=this._tips.get(action.brush);if(action.brush.startsWith('water/own-')&&!tip)throw waterError('WATER_INPUT','This layer does not hold that brush tip.');return new WaterBrush({water:{brush:action.brush,tool:action.tool,pigment:action.pigment,paper:action.paper??this.paperId,...action.controls,...(tip?{tip}:{})}});}
  async apply(raw){return this.applyWater(raw);}
@@ -145,20 +159,23 @@ export class WaterSurface {
   const action=admitWaterAction(raw);if(!action)throw waterError('WATER_INPUT','The Water action is not valid.');
   if(!replayFrames&&(action.frame||action.frames?.some(frame=>frame.length===4)))throw waterError('WATER_INPUT','Stored Water frame changes can only be used by the current session journal.');
   if(!Array.isArray(frameOffset)||frameOffset.length!==2||!frameOffset.every(Number.isSafeInteger))throw waterError('WATER_INPUT','The Water journal frame offset is not valid.');
-  await this.ready;await this._finishContact();const own=!this._transaction,checkpoint=own?await this.beginStroke():this._transaction;let complete=false,record=true;
+  await this.ready;
+  if(action.kind==='stroke'&&!action.frames){const ticks=action.paths.at(-1).at(-1)[3]-action.paths[0][0][3]+1;if(!integer(this.tick+ticks))throw waterError('WATER_INPUT','The Water time is not representable.');this.gpu._age(ticks/WATER_TICK_HZ);}
+  await this._finishContact();const own=!this._transaction,checkpoint=own?await this.beginStroke():this._transaction;let complete=false,record=true;
   try{
    this._sourceRoom(sourceBytes(action)+1);
    if(action.kind==='advance'){if(action.ticks)this.gpu._age((action.dt??1/60)*action.ticks);for(let i=0;i<action.ticks;i++){await this._advance(action.dt??1/60);yield {kind:'advance',tick:this.tick};}}
    else if(action.kind==='dry'){this.gpu.dry();while(this.gpu.fixTimer>0){await this._advance(1/60);yield {kind:'dry',tick:this.tick};}}
-   else if(action.kind==='paper'){this.gpu.setPaper(action.paper);this.revision++;this._sync();}
+   else if(action.kind==='paper'){await this.gpu.setPaper(action.paper);this.revision++;this._sync();}
    else if(action.kind==='tip')record=this._declareTip(action.brush);
    else if(action.kind==='fill'){yield* this._fillSteps(action);}
    else {
-    if(action.paper)this.gpu.setPaper(action.paper);
+    if(action.paper)await this.gpu.setPaper(action.paper);
     if(action.frame){if(action.frame.scale!==this.pixelScale)throw waterError('WATER_INPUT','The Water journal pixel scale does not match its sheet.');await this._replayFrame(action.frame,frameOffset);}
     const brush=this._brushFor(action);brush.seed(action.seed);if(action.direction)brush.lastDirection=action.direction.slice();let time=0;
     this.gpu.painting=true;
     try{
+    let previousTick=null,previousContact=null,pending=[];
     for(let pathIndex=0;pathIndex<action.paths.length;pathIndex++){
      const path=action.paths[pathIndex],contact=brush._contactFor(this,action.inputKind??'script');let pointIndex=0;
      const sample=point=>{time=point[6]??point[3]*1000/60;contact.sample((point[0]*this.pixelScale-this.origin[0])/this.width,1-(point[1]*this.pixelScale-this.origin[1])/this.height,(action.inputKind??'script')==='script'?clip(point[2],.02,1):point[2],time,(point[4]??0)*90,(point[5]??0)*90);};
@@ -166,25 +183,37 @@ export class WaterSurface {
       for(const [dt,count,finish,change] of action.frames){if(change){await this._replayFrame(change,frameOffset,contact);continue;}const first=pointIndex;for(let i=0;i<count;i++)sample(path[pointIndex++]);if(finish)contact.finish();contact.frame(dt);await this._advance(dt);for(let point=first;point<pointIndex;point++)yield {path:pathIndex,point,tick:this.tick};}
       if(contact.state){contact.finish();contact.frame(1/60);await this._advance(1/60);}
      }else {
-      let previous=path[0][3];
-      for(const point of path){const gap=point[3]-previous;for(let i=1;i<gap;i++){contact.frame(1/60);await this._advance(1/60);}sample(point);contact.frame(1/60);await this._advance(1/60);yield {path:pathIndex,point:pointIndex++,tick:this.tick};previous=point[3];}
-      contact.finish();contact.frame(1/60);await this._advance(1/60);
+      while(pointIndex<path.length){
+       const tick=path[pointIndex][3];
+       if(previousTick!==null&&tick!==previousTick){
+        await this._advance(1/60);for(const point of pending)yield {...point,tick:this.tick};pending=[];
+        for(let idle=previousTick+1;idle<tick;idle++){previousContact.frame(1/60);await this._advance(1/60);yield {kind:'advance',tick:this.tick};}
+       }
+       do{sample(path[pointIndex]);pending.push({path:pathIndex,point:pointIndex++});}while(pointIndex<path.length&&path[pointIndex][3]===tick);
+       // A path ends on its final authored tick. Samples sharing a tick land before one material step,
+       // including a pen lift and the next path beginning on that same tick.
+       if(pointIndex===path.length)contact.finish();
+       contact.frame(1/60);previousTick=tick;previousContact=contact;
+      }
      }
      brush.lastDirection=contact.lastDirection.slice();
     }
+    if(pending.length){await this._advance(1/60);for(const point of pending)yield {...point,tick:this.tick};}
     }finally{this.gpu.painting=false;}
    }
    if(record)this._appendAction(action);this._sync();if(own)await this.endStroke(checkpoint);complete=true;return {tick:this.tick,wet:this.wet,bounds:this.bounds()};
   }finally{if(!complete&&this._transaction===checkpoint)await this.endStroke(checkpoint,true);}
  }
  async *_fillSteps(action){
-  if(action.paper)this.gpu.setPaper(action.paper);const image={width:this.width,height:this.height,data:await this.gpu.read({paper:true,flat:true})},random=randomStream(action.seed),x=Math.floor(action.at[0]*this.pixelScale-this.origin[0]),y=Math.floor(action.at[1]*this.pixelScale-this.origin[1]);
+  for(const key of ['flow','bleed','edge','granulation','dry'])if(action.controls[key]!=null)this.gpu.params[key]=action.controls[key];
+  if(action.paper)await this.gpu.setPaper(action.paper);const image={width:this.width,height:this.height,data:await this.gpu.read({paper:true,flat:true})},random=randomStream(action.seed),x=Math.floor(action.at[0]*this.pixelScale-this.origin[0]),y=Math.floor(action.at[1]*this.pixelScale-this.origin[1]);
   if(x<0||y<0||x>=this.width||y>=this.height)throw waterError('WATER_INPUT','The fill starts outside the layer.');
-  const fill=buildWaterFill(image,x,y,Math.round(Math.max(0,Math.min(1,action.tolerance))*255),random),color=coefficients(action.pigment),amount=.15*Math.exp(2.8*action.controls.load)*.84*action.controls.light;
+  const fill=buildWaterFill(image,x,y,action.tolerance,random),color=coefficients(action.pigment),amount=.15*Math.exp(2.8*action.controls.load)*.84*action.controls.light;
   if(fill.count<4)return;
   const pigment=Array.from(color,(v,i)=>v*amount*(i===7?1.6:1)),water=(.25+.75*action.controls.water)*.9;
   this.gpu.beginFill(fill.field,fill.box);
-  try{let front=-.5;const end=fill.maxDistance+28;while(front<end){const next=Math.min(end,front+600/60);this.gpu.fillStep({from:front,to:next,coefficients:action.tool==='water'?null:pigment,water,soft:12});front=next;await this._advance(1/60);yield {kind:'fill',front,tick:this.tick};}}
+  const reach=this.gpu.reach;
+  try{let front=-.5;const end=fill.maxDistance+28*reach;while(front<end){const next=Math.min(end,front+600/60*reach);this.gpu.fillStep({from:front,to:next,coefficients:action.tool==='water'?null:pigment,water,soft:12*reach});front=next;await this._advance(1/60);yield {kind:'fill',front,tick:this.tick};}}
   finally{this.gpu.endFill();}
  }
  async toRGBA8(box=null,_straight=true,_quality='final'){
@@ -223,7 +252,7 @@ export class WaterBrush {
   for(const key of ['flow','bleed','edge','granulation','dry'])if(this.water[key]!=null)surface.gpu.params[key]=this.water[key];
   const brush=this.water.tip?{id:this.water.brush,tip:this.water.tip,params:CUSTOM_PARAMS}:getBrush(this.water.brush);
   return new WaterContact(surface.gpu,{brush,tool:this.water.erase?'erase':this.water.tool,coefficients:Float32Array.from(coefficients(this.water.pigment),v=>v*this.water.light),
-   params:{size:this.water.size/100,water:this.water.water,load:this.water.load,flow:surface.gpu.params.flow,firm:this.water.firm},radiusScale:1100*surface.pixelScale/surface.height*this.radius/waterRadius(this.water.size),
+   params:{size:this.water.size/100,water:this.water.water,load:this.water.load,flow:surface.gpu.params.flow,firm:this.water.firm},radiusScale:1100/(surface.gpu.paperScale*surface.height)*this.radius/waterRadius(this.water.size),
    angle:this.held,follow:this.held===null,script:inputKind==='script',inputKind,random:this.random,lastDirection:this.lastDirection});
  }
  async strokeTo(surface,x,y,p,xtilt=0,ytilt=0,dtime=.001,_viewZoom=1,_viewRotation=0,_barrel=0,inputKind='script',inputTime=null){
@@ -231,8 +260,10 @@ export class WaterBrush {
   if(p===0&&inputKind!=='script'){if(surface._brush===this)await surface._finishContact();return true;}
   if(surface._brush&&surface._brush!==this)await surface._finishContact();
   const ax=x*surface.scale+surface.origin[0],ay=y*surface.scale+surface.origin[1];if(Math.abs(ax/surface.pixelScale)>1e6||Math.abs(ay/surface.pixelScale)>1e6||this.action?.paths[0].length>=WATER_ACTION_MAX_POINTS)throw waterError('WATER_LIMIT','The Water gesture exceeds its complete-source limit.');
+  // A paper switch bakes before the stroke's first sample is taken.
+  if(!this.contact)await surface.gpu.setPaper(this.water.paper);
   if(!this.contact){
-   surface._recordTip(this.water);surface.gpu.setPaper(this.water.paper);this.random=randomStream(this.seedValue);this.contact=this._contactFor(surface,inputKind);surface._brush=this;
+   surface._recordTip(this.water);this.random=randomStream(this.seedValue);this.contact=this._contactFor(surface,inputKind);surface._brush=this;
    this.action=surface._appendAction({kind:'stroke',seed:this.seedValue,tool:this.water.tool,brush:this.water.brush,pigment:clone(this.water.pigment),controls:{size:this.water.size,water:this.water.water,load:this.water.load,firm:this.water.firm,light:this.water.light,angle:this.held??this.water.angle,follow:this.held===null,radius:this.radius,erase:this.water.erase,...Object.fromEntries(['flow','bleed','edge','granulation','dry'].filter(key=>this.water[key]!=null).map(key=>[key,this.water[key]]))},paper:this.water.paper,source:'hand',inputKind,direction:this.lastDirection.slice(),frame:surface._contactFrame(),paths:[[]],frames:[]});
   }
   if(inputTime!=null){this.absoluteInputTime=true;this.time=inputTime;}else this.time+=dtime*1000;
@@ -261,7 +292,7 @@ export function paintWaterBrushPreview(canvas,definition){
  const ctx=canvas.getContext('2d'),width=canvas.width,height=canvas.height;
  ctx.clearRect(0,0,width,height);
  const base=coefficients(water.pigment),mass=Math.hypot(...base)||1;
- const contactSink={width,height,params:{flow:water.flow??.45},splatVelocity(){},stamp({x,y,r,angle=0,coefficients:ink}){
+ const contactSink={width,height,paperScale:1,params:{flow:water.flow??.45},splatVelocity(){},stamp({x,y,r,angle=0,coefficients:ink}){
   if(!ink)return;
   ctx.save();ctx.translate(x*width,(1-y)*height);ctx.rotate(-angle);
   ctx.globalAlpha=1-Math.exp(-Math.hypot(...ink)/mass);

@@ -1,0 +1,1591 @@
+{
+  "schema": 1,
+  "release": "1.1.88",
+  "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader, the document editor and the full editor read the same directory; `builds` says which use a plug-in.",
+  "plugins": [
+    {
+      "name": "flowchart",
+      "adds": "Draws Mermaid flowcharts and graphs natively, in the editor's own style.",
+      "builds": [
+        "reader"
+      ],
+      "files": [
+        {
+          "file": "rapier-flowchart-1.1.88.js",
+          "bytes": 263562,
+          "sha384": "7ef95d181e5db83ad6efc832b3392e27b46e273413425e5d54c256a4d1ad89930209ee92abb89919582991f6552d7a16",
+          "sri": "fvldGB5duDrW78gyszkuJ7RuJzQTQl5dVMJWpNGtiZMCCe6Sq7iZGVgpkfZVLXoW",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/flowchart/rapier-flowchart-1.1.88.js"
+        }
+      ]
+    },
+    {
+      "name": "docx",
+      "adds": "Opens a Word document (.docx) as a Markdown document: headings, lists, tables, pictures and comments.",
+      "builds": [
+        "reader"
+      ],
+      "files": [
+        {
+          "file": "rapier-docx-1.1.88.js",
+          "bytes": 250839,
+          "sha384": "0e8a523f49d3ca4620c364b648c418b2d1118c953a351f134d7b4b39ab3aa8d32386e85c91c0346b2a3d33ab08de1448",
+          "sri": "DopSP0nTykYgw2S2SMQYstERjJU6NR8TTXtLOas6qNMjhuhckcA0ayo9M6sI3hRI",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/docx/rapier-docx-1.1.88.js"
+        }
+      ]
+    },
+    {
+      "name": "math",
+      "adds": "Typesets TeX maths ($...$ and $$...$$) as SVG.",
+      "builds": [
+        "reader",
+        "document",
+        "full"
+      ],
+      "files": [
+        {
+          "file": "mathjax-4.1.3.offline-svg.js",
+          "bytes": 11948066,
+          "sha384": "c031b1d5486a5878b0c356b60fcc46a467e8a390cd8367c6972b5530f61ec8bdb0f64cf91df3be8ba87a2313419eb07e",
+          "sri": "wDGx1UhqWHiww1a2D8xGpGfoo5DNg2fGlytVMPYeyL2w9kz5HfO+i6h6IxNBnrB+",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/math/mathjax-4.1.3.offline-svg.js"
+        }
+      ]
+    },
+    {
+      "name": "diagrams",
+      "adds": "Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more.",
+      "builds": [
+        "reader",
+        "document",
+        "full"
+      ],
+      "files": [
+        {
+          "file": "mermaid.min.js",
+          "bytes": 5493176,
+          "sha384": "11b0698ceeeb951e9ea9911c1bb19a3e9ca4f47f56accc8f597e1ddcabcf625b60b7c67c974cfa479e81d6a3f8d29478",
+          "sri": "EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4",
+          "url": "https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js"
+        },
+        {
+          "file": "rapier-zenuml-4.5.0-1.js",
+          "bytes": 1890966,
+          "sha384": "3159ff3abd672074c3bf2f38952489007d85c7563b006a1a31f77b856ee2dcb25eeccfdd6aef150c59c5f10f97d2a3a5",
+          "sri": "MVn/Or1nIHTDvy84lSSJAH2Fx1Y7AGoaMfd7hW7i3LJe7M/dau8VDFnF8Q+X0qOl",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@main/site/plugins/rapier-zenuml-4.5.0-1.js"
+        }
+      ]
+    },
+    {
+      "name": "pdf",
+      "adds": "Opens a PDF as a Markdown document: its text layer, or each page as a picture. Fetches the pdf.js files itself.",
+      "builds": [
+        "reader",
+        "document",
+        "full"
+      ],
+      "files": [
+        {
+          "file": "rapier-pdf-1.1.88.js",
+          "bytes": 22770,
+          "sha384": "c72a941815bb4ad56633ac45c29c2b87db3a431115606b9f0f673070a23ed812c326393db79297eb0118b1e5e10e87d3",
+          "sri": "xyqUGBW7StVmM6xFwpwrh9s6QxEVYGufD2cwcKI+2BLDJjk9t5KX6wEYseXhDofT",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/pdf/rapier-pdf-1.1.88.js",
+          "builds": [
+            "reader"
+          ]
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/LICENSE",
+          "bytes": 10174,
+          "sha384": "7487c9c79204455c16903c265084e3aba14598e3a2525bafdb8b53da8eafae31295f28d8184fc1223e6bc36e6b48daf4",
+          "sri": "dIfJx5IERVwWkDwmUITjq6FFmOOiUluv24tT2o6vrjEpXyjYGE/BIj5rw25rSNr0",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/LICENSE"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78-EUC-H.bcmap",
+          "bytes": 2404,
+          "sha384": "f01eaf0fc012064ac4d384c18a19333e849890670554d3290b8468675a9abc62342055d4f977166a42743755d640b5af",
+          "sri": "8B6vD8ASBkrE04TBihkzPoSYkGcFVNMpC4RoZ1qavGI0IFXU+XcWakJ0N1XWQLWv",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78-EUC-V.bcmap",
+          "bytes": 173,
+          "sha384": "af153b518086c3bfd1ee5a9bda9e7188a47452642584d951a8e73e567c46644b175c5ed9b79fb10780ea6e119c93921d",
+          "sri": "rxU7UYCGw7/R7lqb2p5xiKR0UmQlhNlRqOc+VnxGZEsXXF7Zt5+xB4DqbhGck5Id",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78-H.bcmap",
+          "bytes": 2379,
+          "sha384": "3376d053492b453e602239b0cb11c43369722343bfb7e193452a9c64c712fe567184f3daac71d8804a5ccdf20c481607",
+          "sri": "M3bQU0krRT5gIjmwyxHEM2lyI0O/t+GTRSqcZMcS/lZxhPParHHYgEpczfIMSBYH",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78-RKSJ-H.bcmap",
+          "bytes": 2398,
+          "sha384": "d9203fb84d2064ee0772e37d8edc9d669098809b4bc361ead8e9f23d4428df31a81dfa5aff5273e5e5df2cc6287038ae",
+          "sri": "2SA/uE0gZO4HcuN9jtydZpCYgJtLw2Hq2OnyPUQo3zGoHfpa/1Jz5eXfLMYocDiu",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78-RKSJ-V.bcmap",
+          "bytes": 173,
+          "sha384": "d4b702a7ca092b48852fff876b9833be95ac76cca414afb0f7a9962a92d6833d3cb989d01823ac203a50562d77f8e9d2",
+          "sri": "1LcCp8oJK0iFL/+Ha5gzvpWsdsykFK+w96mWKpLWgz08uYnQGCOsIDpQVi13+OnS",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78-V.bcmap",
+          "bytes": 169,
+          "sha384": "3f45723a063815fb288f5b727bcd15219a808fdf7a4958a02460f7ffd9bbe054df028945ba12b5860c4ae87fa52a428d",
+          "sri": "P0VyOgY4Ffsoj1tye80VIZqAj996SVigJGD3/9m74FTfAolFuhK1hgxK6H+lKkKN",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78ms-RKSJ-H.bcmap",
+          "bytes": 2651,
+          "sha384": "dc38d12128b246b1035b4eb4377377b2ba2e460a709826c39e25cab342fb796dc9da6f30d5d264abc0f5e53cd0113d10",
+          "sri": "3DjRISiyRrEDW060N3N3srouRgpwmCbDniXKs0L7eW3J2m8w1dJkq8D15TzQET0Q",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78ms-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/78ms-RKSJ-V.bcmap",
+          "bytes": 290,
+          "sha384": "68a21d4befff1e2b033b7193b4e66bc0cd8645c40aee792778dc9035a431f632ba36e0cede001bda303d36aefa384adb",
+          "sri": "aKIdS+//HisDO3GTtOZrwM2GRcQK7nkneNyQNaQx9jK6NuDO3gAb2jA9Nq76OErb",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/78ms-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/83pv-RKSJ-H.bcmap",
+          "bytes": 905,
+          "sha384": "0f718a3fe18453112a7965f0914832c11d03d50802a5537f87da509cad6f249357128a106d059e0648d8514aeca2b94b",
+          "sri": "D3GKP+GEUxEqeWXwkUgywR0D1QgCpVN/h9pQnK1vJJNXEooQbQWeBkjYUUrsorlL",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/83pv-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/90ms-RKSJ-H.bcmap",
+          "bytes": 721,
+          "sha384": "3e3b4e4cedd6510cbbe0547b48779f5fac6602099d2400ab641b3f8932655f607d7f2bf78054ca47a00f0907a5fa2d5d",
+          "sri": "PjtOTO3WUQy74FR7SHefX6xmAgmdJACrZBs/iTJlX2B9fyv3gFTKR6APCQel+i1d",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/90ms-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/90ms-RKSJ-V.bcmap",
+          "bytes": 290,
+          "sha384": "965329f4b7e3a20dc992e41731d414096d483bb09095b9e3a43a8e75f0bab1784c9c309b9d71b6dff1af0bf9c688f004",
+          "sri": "llMp9Lfjog3JkuQXMdQUCW1IO7CQlbnjpDqOdfC6sXhMnDCbnXG23/GvC/nGiPAE",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/90ms-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/90msp-RKSJ-H.bcmap",
+          "bytes": 715,
+          "sha384": "7386213303d35abe94e756b4d9e22eb415eb34dc9cc303294a7633b318f5a4450645164cbf349da56bde33c173e58c1e",
+          "sri": "c4YhMwPTWr6U51a02eIutBXrNNycwwMpSnYzsxj1pEUGRRZMvzSdpWveM8Fz5Ywe",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/90msp-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/90msp-RKSJ-V.bcmap",
+          "bytes": 291,
+          "sha384": "f00beb07fb17dcc615443075eb1f3957604d1893098260f42152cb8cbac787356c3131db773955d6dc41b7586037f2fc",
+          "sri": "8AvrB/sX3MYVRDB16x85V2BNGJMJgmD0IVLLjLrHhzVsMTHbdzlV1txBt1hgN/L8",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/90msp-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/90pv-RKSJ-H.bcmap",
+          "bytes": 982,
+          "sha384": "494fecb8fdefb031411b9fa97a69fa951c63e5fd16b31d4018fd2f09a7a1c0aedef7c334035382ea53c09eb98aee4046",
+          "sri": "SU/suP3vsDFBG5+pemn6lRxj5f0Wsx1AGP0vCaehwK7e98M0A1OC6lPAnrmK7kBG",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/90pv-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/90pv-RKSJ-V.bcmap",
+          "bytes": 260,
+          "sha384": "e93bd4e68e784ecb642304326b24dd5cb30c76d534f7c1594a0a0d24c09dd42da712ae292ec2e81e5436b6b4043aa33e",
+          "sri": "6TvU5o54TstkIwQyayTdXLMMdtU098FZSgoNJMCd1C2nEq4pLsLoHlQ2trQEOqM+",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/90pv-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Add-H.bcmap",
+          "bytes": 2419,
+          "sha384": "e9bc247cd5f5da095222989fca69d04855c60be833fd10ce52ccb966dfaaa1c260ca6d64089870079f515207cf603b53",
+          "sri": "6bwkfNX12glSIpifymnQSFXGC+gz/RDOUsy5Zt+qocJgym1kCJhwB59RUgfPYDtT",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Add-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Add-RKSJ-H.bcmap",
+          "bytes": 2413,
+          "sha384": "2b68d7a81fcf07f67104f717076828cf54c82c1976aa5ea81ea94486eb692355da263c6ba24ac590d12d2cc5df1414e6",
+          "sri": "K2jXqB/PB/ZxBPcXB2goz1TILBl2ql6oHqlEhutpI1XaJjxrokrFkNEtLMXfFBTm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Add-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Add-RKSJ-V.bcmap",
+          "bytes": 287,
+          "sha384": "cbeb514b472d0add18d0d1915f5cf48906365546cceefcbb5cabb98ade35de6448000e7aa36a9a5793ae39325954ae5c",
+          "sri": "y+tRS0ctCt0Y0NGRX1z0iQY2VUbM7vy7XKu5it413mRIAA56o2qaV5OuOTJZVK5c",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Add-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Add-V.bcmap",
+          "bytes": 282,
+          "sha384": "e90e3389bcd2e2c6b7f37106ec464dd49a4df6b4716a370e42d94d47312c827dcd883c0093d1c02f6bae04bb6b7e6987",
+          "sri": "6Q4zibzS4sa383EG7EZN1JpN9rRxajcOQtlNRzEsgn3NiDwAk9HAL2uuBLtrfmmH",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Add-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-0.bcmap",
+          "bytes": 317,
+          "sha384": "c717e913c02416bba29faaa98a1edcc1ea80d74e205bff5ee9deaf559a4d1cff772c4ccc00c847b021d2014080a80bbf",
+          "sri": "xxfpE8AkFruin6qpih7cweqA104gW/9e6d6vVZpNHP93LEzMAMhHsCHSAUCAqAu/",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-0.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-1.bcmap",
+          "bytes": 371,
+          "sha384": "b36965e4c0b4ee64cd475b7c2c19831b76d8569bb29d65b93502c3ab9ace7017265b42a3dd14c5c2beb66791f59bfa43",
+          "sri": "s2ll5MC07mTNR1t8LBmDG3bYVpuynWW5NQLDq5rOcBcmW0Kj3RTFwr62Z5H1m/pD",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-1.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-2.bcmap",
+          "bytes": 376,
+          "sha384": "fb887cb070abc8df91793afc3acf8bfae4cec7262465ba454516d77c0864c59236e4e98fb611175f2abc2b665a9ea9eb",
+          "sri": "+4h8sHCryN+ReTr8Os+L+uTOxyYkZbpFRRbXfAhkxZI25OmPthEXXyq8K2Zanqnr",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-3.bcmap",
+          "bytes": 401,
+          "sha384": "c90131d4e1677b950962103c21d300afeab2d9bd729f186c786e8af6b73a25acdfd8e247b76b96e128027b94630a000e",
+          "sri": "yQEx1OFne5UJYhA8IdMAr+qy2b1ynxhseG6K9rc6Jazf2OJHt2uW4SgCe5RjCgAO",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-3.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-4.bcmap",
+          "bytes": 405,
+          "sha384": "9b013061fa01e8da1af3c871db8c4045b7891acbf4f35e3b4f929f1a99324cfe8bf60a6d88393b0fd251953ebc76ea44",
+          "sri": "mwEwYfoB6Noa88hx24xARbeJGsv08147T5KfGpkyTP6L9gptiDk7D9JRlT68dupE",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-4.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-5.bcmap",
+          "bytes": 406,
+          "sha384": "1d9ea0531c71a2575507a8beefef215bb150729722f21a5a6dabd9ae1fee4c75a05a8a2cc52594b7c32080292fd6282d",
+          "sri": "HZ6gUxxxoldVB6i+7+8hW7FQcpci8hpabavZrh/uTHWgWoosxSWUt8MggCkv1igt",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-5.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-6.bcmap",
+          "bytes": 406,
+          "sha384": "24f30388989d08a29ff2d4d74ccb046b961eaf1800187cf686a4f920f6a85e6227823f7f8f4da16fc4e88063ebd1ae9f",
+          "sri": "JPMDiJidCKKf8tTXTMsEa5YerxgAGHz2hqT5IPaoXmIngj9/j02hb8TogGPr0a6f",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-6.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-CNS1-UCS2.bcmap",
+          "bytes": 41193,
+          "sha384": "de6fbfaf73087bd1ef254f15116da0d66df611725e6750a0258861dc651e2ad2fd3ae1da073145805fe22daab7a4a341",
+          "sri": "3m+/r3MIe9HvJU8VEW2g1m32EXJeZ1CgJYhh3GUeKtL9OuHaBzFFgF/iLaq3pKNB",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-CNS1-UCS2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-0.bcmap",
+          "bytes": 217,
+          "sha384": "f22fdfe6ad99644402a1ca6faeaf10aa05cfaac920a831bccd7d694b6a177c0d99e5e2b2aeff8bc3e2d798538d91ee71",
+          "sri": "8i/f5q2ZZEQCocpvrq8QqgXPqskgqDG8zX1pS2oXfA2Z5eKyrv+Lw+LXmFONke5x",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-0.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-1.bcmap",
+          "bytes": 250,
+          "sha384": "d4b78eb859294ff58e20f4a98176628069cfd52ea768921e32a10eeb758f65c747a3936d9b8c364b92927c9ee0d6c18f",
+          "sri": "1LeOuFkpT/WOIPSpgXZigGnP1S6naJIeMqEO63WPZcdHo5Ntm4w2S5KSfJ7g1sGP",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-1.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-2.bcmap",
+          "bytes": 465,
+          "sha384": "1ae176fe0d064b4366d1c00fa71f51aa215ab09a3761b15172d6694a0af8fc2f35e676bd910645eaeeccd0b3d25245ba",
+          "sri": "GuF2/g0GS0Nm0cAPpx9RqiFasJo3YbFRctZpSgr4/C815na9kQZF6u7M0LPSUkW6",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-3.bcmap",
+          "bytes": 470,
+          "sha384": "b5310d4087b65585951dcd1d00e0282b5012c33b01722842ac3115458e1ad92a79e6c01519168814cb40bdc2caa20b6b",
+          "sri": "tTENQIe2VYWVHc0dAOAoK1ASwzsBcihCrDEVRY4a2Sp55sAVGRaIFMtAvcLKogtr",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-3.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-4.bcmap",
+          "bytes": 601,
+          "sha384": "f809f129664756e2818b6bf8f786ce7394d93ad9ffbc43af36e669dff25621927b25af336ea03b15be2875c285f9064c",
+          "sri": "+AnxKWZHVuKBi2v494bOc5TZOtn/vEOvNuZp3/JWIZJ7Ja8zbqA7Fb4odcKF+QZM",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-4.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-5.bcmap",
+          "bytes": 625,
+          "sha384": "30efd688a08162510688f13659c96ad7e58a706e23ca653cf73d2a95abcfb8cc86496587ec5d20f254fd0c02aaef9c07",
+          "sri": "MO/WiKCBYlEGiPE2Wclq1+WKcG4jymU89z0qlavPuMyGSWWH7F0g8lT9DAKq75wH",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-5.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-GB1-UCS2.bcmap",
+          "bytes": 33974,
+          "sha384": "baf988751577774d82431d9d15177ef317e87bf60cf28b3533699180a1477ef3e34b5ef14487a6ddbda00529b08de5ed",
+          "sri": "uvmIdRV3d02CQx2dFRd+8xfoe/YM8os1M2mRgKFHfvPjS17xRIem3b2gBSmwjeXt",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-GB1-UCS2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-0.bcmap",
+          "bytes": 225,
+          "sha384": "536d4d9b407ef04edc207a6ad2b0ec933c41a5896e1a1cad0fd6dc4b89504f7cc94beb3ba0d074f2ad29e096b4d577a7",
+          "sri": "U21Nm0B+8E7cIHpq0rDskzxBpYluGhytD9bcS4lQT3zJS+s7oNB08q0p4Ja01Xen",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-0.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-1.bcmap",
+          "bytes": 226,
+          "sha384": "0f0b2727b4b3db07d7df4fb00b11751511b2e32c2ca16a594e2a327144626c8cf2297817dc2ad886187399d6f0db1c26",
+          "sri": "DwsnJ7Sz2wfX30+wCxF1FRGy4ywsoWpZTioycURibIzyKXgX3CrYhhhzmdbw2xwm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-1.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-2.bcmap",
+          "bytes": 233,
+          "sha384": "aedd0d0f5ad2ff908f61295733af1e1e204ea381d5f8774406df542eab06cec5f663c77118d0ca758dbb80846046d5e4",
+          "sri": "rt0ND1rS/5CPYSlXM68eHiBOo4HV+HdEBt9ULqsGzsX2Y8dxGNDKdY27gIRgRtXk",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-3.bcmap",
+          "bytes": 242,
+          "sha384": "37e611bb234d582eb8575b63fa4e144d9946e5c24af3d67abbd63508ed2972b58173088037a765e335dd3362fbe963b3",
+          "sri": "N+YRuyNNWC64V1tj+k4UTZlG5cJK89Z6u9Y1CO0pcrWBcwiAN6dl4zXdM2L76WOz",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-3.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-4.bcmap",
+          "bytes": 337,
+          "sha384": "1f63578f74983305542107aded76c13610687dc20d428c0a952f60d4119b787e7ef68711fe12411b7bd642b2a0d1f7b3",
+          "sri": "H2NXj3SYMwVUIQet7XbBNhBofcINQowKlS9g1BGbeH5+9ocR/hJBG3vWQrKg0fez",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-4.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-5.bcmap",
+          "bytes": 430,
+          "sha384": "5875cc8cfe54ffce4fd581cf13066a7074c06afa0d70d50ea6e0c952a246756e600c4331dda4e027fa1272618d1d2141",
+          "sri": "WHXMjP5U/85P1YHPEwZqcHTAavoNcNUOpuDJUqJGdW5gDEMx3aTgJ/oScmGNHSFB",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-5.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-6.bcmap",
+          "bytes": 485,
+          "sha384": "e1247dacb5f180a8d45845fa3e85a68295fc521b2b56e5baeefe2559d4a98a01649287509330ef12d56e94e9d11c34a6",
+          "sri": "4SR9rLXxgKjUWEX6PoWmgpX8UhsrVuW67v4lWdSpigFkkodQkzDvEtVulOnRHDSm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-6.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Japan1-UCS2.bcmap",
+          "bytes": 40951,
+          "sha384": "c12fa2ae4b1d29ead11491e68cd8d71d290b4656685b935f078be407c0e2b7943a8d5871374684da88910965dc3d3376",
+          "sri": "wS+irksdKerRFJHmjNjXHSkLRlZoW5NfB4vkB8Dit5Q6jVhxN0aE2oiRCWXcPTN2",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Japan1-UCS2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Korea1-0.bcmap",
+          "bytes": 241,
+          "sha384": "702d150fef30e8e15ddb4df3594e57190f236011f8a0db57e8366040c26f1e1bb677847dbd9f05fb869917590a302c84",
+          "sri": "cC0VD+8w6OFd203zWU5XGQ8jYBH4oNtX6DZgQMJvHhu2d4R9vZ8F+4aZF1kKMCyE",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Korea1-0.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Korea1-1.bcmap",
+          "bytes": 386,
+          "sha384": "603950fe2632797bc3a7155d5fce05b00e923e228c4b241f240522dda12cc0c703d40c74d00757e54ba10e907cc01527",
+          "sri": "YDlQ/iYyeXvDpxVdX84FsA6SPiKMSyQfJAUi3aEswMcD1Ax00AdX5UuhDpB8wBUn",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Korea1-1.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Korea1-2.bcmap",
+          "bytes": 391,
+          "sha384": "7d6188e9700810a0f61aeb74bc0b17c43a3365cc4afd33056c569c85d9f65a1e1188e915fb84bfb2338ff3d4f2478374",
+          "sri": "fWGI6XAIEKD2Gut0vAsXxDozZcxK/TMFbFachdn2Wh4RiOkV+4S/sjOP89TyR4N0",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Korea1-2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Adobe-Korea1-UCS2.bcmap",
+          "bytes": 23293,
+          "sha384": "afc9f7cc410efd09482de36af9621b30a26cadb6c70b1cb8d6b993b23c098e4bfc6ec66dd2ea46d6f334495e31d4c45d",
+          "sri": "r8n3zEEO/QlILeNq+WIbMKJsrbbHCxy41rmTsjwJjkv8bsZt0upG1vM0SV4x1MRd",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Adobe-Korea1-UCS2.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/B5-H.bcmap",
+          "bytes": 1086,
+          "sha384": "ba35b7887c2791f8ee16ab99cc210226f866b69fe41d2dc71fb90dbfd6faa4c7729a2e4015239cea079fc31c2c184838",
+          "sri": "ujW3iHwnkfjuFquZzCECJvhmtp/kHS3HH7kNv9b6pMdymi5AFSOc6gefwxwsGEg4",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/B5-V.bcmap",
+          "bytes": 142,
+          "sha384": "35899fbd54962d9654c13f4cec1defc9ca8dca57f1c0722a7fba9bd7cb794461db93a1b5d7f8e4d2f00187cd226f197f",
+          "sri": "NYmfvVSWLZZUwT9M7B3vycqNylfxwHIqf7qb18t5RGHbk6G11/jk0vABh80ibxl/",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/B5pc-H.bcmap",
+          "bytes": 1099,
+          "sha384": "67c4b373741327e19413538128120022e7fbec7b6374b332b5e5b0259ac38408faf68de51dd7343a0c3df1070d7224a1",
+          "sri": "Z8Szc3QTJ+GUE1OBKBIAIuf77HtjdLMyteWwJZrDhAj69o3lHdc0Ogw98QcNciSh",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/B5pc-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/B5pc-V.bcmap",
+          "bytes": 144,
+          "sha384": "473ed57a07db3869ece75bb387e9959b575bd89983fe8df0423cc6da942f2b5928287e5d24bb242a06ac3e23c2e17d09",
+          "sri": "Rz7VegfbOGns51uzh+mVm1db2JmD/o3wQjzG2pQvK1koKH5dJLskKgasPiPC4X0J",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/B5pc-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/CNS-EUC-H.bcmap",
+          "bytes": 1780,
+          "sha384": "c382a028bd7099ebf35d230b0726a65fe329d291a3262603a12b978683741d237e3f470feeecb74e614e0987fb187788",
+          "sri": "w4KgKL1wmevzXSMLByamX+Mp0pGjJiYDoSuXhoN0HSN+P0cP7uy3TmFOCYf7GHeI",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/CNS-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/CNS-EUC-V.bcmap",
+          "bytes": 1920,
+          "sha384": "08f85fb041a69986bed683d1758456d500a03345bb78dd0fa8f9cb01940f2fc9a28f13ff2d6f4ef9062652e7180ce02a",
+          "sri": "CPhfsEGmmYa+1oPRdYRW1QCgM0W7eN0PqPnLAZQPL8mijxP/LW9O+QYmUucYDOAq",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/CNS-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/CNS1-H.bcmap",
+          "bytes": 706,
+          "sha384": "9ecb47359ca2728eacfb310bd35207370befc177cf596b1262cdaf66a5f7bda5f3b17d981adf318e57a768ee50838d34",
+          "sri": "nstHNZyico6s+zEL01IHNwvvwXfPWWsSYs2vZqX3vaXzsX2YGt8xjlenaO5Qg400",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/CNS1-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/CNS1-V.bcmap",
+          "bytes": 143,
+          "sha384": "ed479acc84296b236cc8389c0f71815d9f76a6043ea219cb7e41467f5af352e49f30189816fb5443a2307330b54350b1",
+          "sri": "7UeazIQpayNsyDicD3GBXZ92pgQ+ohnLfkFGf1rzUuSfMBiYFvtUQ6IwczC1Q1Cx",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/CNS1-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/CNS2-H.bcmap",
+          "bytes": 504,
+          "sha384": "f3e13ade0a20f9b9308a4ae551da03141fe376bcc135e17a087de3b2977255a1ad6a26d9a223f956643131d8df8772d3",
+          "sri": "8+E63gog+bkwikrlUdoDFB/jdrzBNeF6CH3jspdyVaGtaibZoiP5VmQxMdjfh3LT",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/CNS2-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/CNS2-V.bcmap",
+          "bytes": 93,
+          "sha384": "4d55436b98540abf6926ee48bd30c0e79c2fbb4093f10aeed2df07c011bce047613e4c6bae16933f620bc537e4f26578",
+          "sri": "TVVDa5hUCr9pJu5IvTDA55wvu0CT8Qru0t8HwBG84EdhPkxrrhaTP2ILxTfk8mV4",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/CNS2-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/ETHK-B5-H.bcmap",
+          "bytes": 4426,
+          "sha384": "a2ae5109ada3f37867b6f3933f02883bf0b620bac5c231df3a47c9254af5c96a285fb11e5428fc75494fad2016443e6e",
+          "sri": "oq5RCa2j83hntvOTPwKIO/C2ILrFwjHfOkfJJUr1yWooX7EeVCj8dUlPrSAWRD5u",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/ETHK-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/ETHK-B5-V.bcmap",
+          "bytes": 158,
+          "sha384": "525fe33977b698a5e433dbe002555b4fb871f1fa91219810d77a5f7b5af26749356d4bf33ca75cf92473f9ba5f3c9906",
+          "sri": "Ul/jOXe2mKXkM9vgAlVbT7hx8fqRIZgQ13pfe1ryZ0k1bUvzPKdc+SRz+bpfPJkG",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/ETHK-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/ETen-B5-H.bcmap",
+          "bytes": 1125,
+          "sha384": "d08f28fc51a5e6bf25a8d6c5b805b94ca23cccaead5fda8320cd2e84439b8b6fa75b0bf5d4bada5883209e4b84a25fcf",
+          "sri": "0I8o/FGl5r8lqNbFuAW5TKI8zK6tX9qDIM0uhEObi2+nWwv11LraWIMgnkuEol/P",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/ETen-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/ETen-B5-V.bcmap",
+          "bytes": 158,
+          "sha384": "9c09a6bafdf027cdd299381612486529bbecaaaa1c08c23f3a812130b5e5c4936bbda42d3d59ef91c9c541be7d83c890",
+          "sri": "nAmmuv3wJ83SmTgWEkhlKbvsqqocCMI/OoEhMLXlxJNrvaQtPVnvkcnFQb59g8iQ",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/ETen-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/ETenms-B5-H.bcmap",
+          "bytes": 101,
+          "sha384": "f134280b05fa947a4014cff88feaa5000f1b6082821a4b9588a47fa4bcd11a378f840438e61ebdc3d60c4071ebe183e1",
+          "sri": "8TQoCwX6lHpAFM/4j+qlAA8bYIKCGkuViKR/pLzRGjePhAQ45h69w9YMQHHr4YPh",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/ETenms-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/ETenms-B5-V.bcmap",
+          "bytes": 172,
+          "sha384": "a0441f0262b3f4b19258842eea1825779e4c0186d1cb9114209401a01b6f032256a6ae1b8a6e9ed4c40e138410a847a9",
+          "sri": "oEQfAmKz9LGSWIQu6hgld55MAYbRy5EUIJQBoBtvAyJWpq4bim6e1MQOE4QQqEep",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/ETenms-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/EUC-H.bcmap",
+          "bytes": 578,
+          "sha384": "8e691ca84fb0c0a44bf431a0744c86425d6c12b1444b9c420f67729a8e26667b4e691ed7e5142f71bedd74087b30663c",
+          "sri": "jmkcqE+wwKRL9DGgdEyGQl1sErFES5xCD2dymo4mZntOaR7X5RQvcb7ddAh7MGY8",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/EUC-V.bcmap",
+          "bytes": 170,
+          "sha384": "ddfca80c9919e6ab8eb9ae728c7f695ff80c9cfb37324d35786e24b69b9e063ba933a4afeacae9541310c8db943b4fc0",
+          "sri": "3fyoDJkZ5quOua5yjH9pX/gMnPs3Mk01eG4ktpueBjupM6Sv6srpVBMQyNuUO0/A",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Ext-H.bcmap",
+          "bytes": 2536,
+          "sha384": "dbe1b9b9282bfa402805ba3815a74259320892ff4d25a3bd43267010e6d12fc622d9705b34206f609a5a4e83e296e143",
+          "sri": "2+G5uSgr+kAoBbo4FadCWTIIkv9NJaO9QyZwEObRL8Yi2XBbNCBvYJpaToPiluFD",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Ext-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Ext-RKSJ-H.bcmap",
+          "bytes": 2542,
+          "sha384": "43682323ea64adc4ac787ee6b2d8938f10429bb667c8947940986cc646d3813db7fe91ed26fd234637d210c04c7d6402",
+          "sri": "Q2gjI+pkrcSseH7mstiTjxBCm7ZnyJR5QJhsxkbTgT23/pHtJv0jRjfSEMBMfWQC",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Ext-RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Ext-RKSJ-V.bcmap",
+          "bytes": 218,
+          "sha384": "5e7b399b71cccdd7592dfedea90aadbd51a4946765adf47e9e4356e1a15a4f2b95beb897e8a23e60077912034fae161f",
+          "sri": "Xns5m3HMzddZLf7eqQqtvVGklGdlrfR+nkNW4aFaTyuVvriX6KI+YAd5EgNPrhYf",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Ext-RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Ext-V.bcmap",
+          "bytes": 215,
+          "sha384": "5476087e3927b1b55302425b79f5334e7a449559e0774840add94ce685f7050ecf930af1ee0b0b68f78cb6eba723b8ca",
+          "sri": "VHYIfjknsbVTAkJbefUzTnpElVngd0hArdlM5oX3BQ7Pkwrx7gsLaPeMtuunI7jK",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Ext-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GB-EUC-H.bcmap",
+          "bytes": 549,
+          "sha384": "a8c5ef6ce26c3140cfafe93f5aa20923bcb2af3c464e3de3a37f65a30f44c4c2c2422ffb35e71585771e58f07755fe42",
+          "sri": "qMXvbOJsMUDPr+k/WqIJI7yyrzxGTj3jo39low9ExMLCQi/7NecVhXceWPB3Vf5C",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GB-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GB-EUC-V.bcmap",
+          "bytes": 179,
+          "sha384": "d3a0073633c59813397f1cccc168ba72fd4baf1be95371fce662ecace5d7e7373b0ee013423912d071256846355938da",
+          "sri": "06AHNjPFmBM5fxzMwWi6cv1LrxvpU3H85mLsrOXX5zc7DuATQjkS0HElaEY1WTja",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GB-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GB-H.bcmap",
+          "bytes": 528,
+          "sha384": "9d396544b39b5d9cbcfa44d9bea44dd8ff107632282a70a592420c7e3a85cfcccc8e6aa99b975e7dcef2efcfdeda3a66",
+          "sri": "nTllRLObXZy8+kTZvqRN2P8QdjIoKnClkkIMfjqFz8zMjmqpm5defc7y78/e2jpm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GB-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GB-V.bcmap",
+          "bytes": 175,
+          "sha384": "6e4fd1e8304434d08f3df80d390e9a726e8a6682bfb605e0044ddb75dfa05f8f010429fd7bf9e9a38539be50aea3074b",
+          "sri": "bk/R6DBENNCPPfgNOQ6acm6KZoK/tgXgBE3bdd+gX48BBCn9e/npo4U5vlCuowdL",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GB-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBK-EUC-H.bcmap",
+          "bytes": 14692,
+          "sha384": "ee05f722cd749be22a6de71aa806a197a89d38a081022a144a7261bde690e55c93484f62a3b244b2b891ae28f99f0a5b",
+          "sri": "7gX3Is10m+IqbecaqAahl6idOKCBAioUSnJhveaQ5VyTSE9io7JEsriRrij5nwpb",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBK-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBK-EUC-V.bcmap",
+          "bytes": 180,
+          "sha384": "f751b8e744622e90406f6d547948f58f9435343a3596191604b75e3e4e5d346b14e2184360904733ce660bbcb2111e7d",
+          "sri": "91G450RiLpBAb21UeUj1j5Q1NDo1lhkWBLdePk5dNGsU4hhDYJBHM85mC7yyER59",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBK-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBK2K-H.bcmap",
+          "bytes": 19662,
+          "sha384": "f283cb79782fd0f241d3c8058fef5b290c64133f84c2a3215f16b627a9ffa6050beb4d70885dc2192f821dabe28e5a98",
+          "sri": "8oPLeXgv0PJB08gFj+9bKQxkEz+EwqMhXxa2J6n/pgUL601wiF3CGS+CHavijlqY",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBK2K-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBK2K-V.bcmap",
+          "bytes": 219,
+          "sha384": "e17081605bf38f52a73ad1758689a841866d555847aea37ed9c10ba2b8567fa87be6d59e2502432dfdc7d5e5cfbce309",
+          "sri": "4XCBYFvzj1KnOtF1homoQYZtVVhHrqN+2cELorhWf6h75tWeJQJDLf3H1eXPvOMJ",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBK2K-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBKp-EUC-H.bcmap",
+          "bytes": 14686,
+          "sha384": "596b879a9473a5df63ded9302c3640b0163bdb8a76aef1b4087d2ec7ca7908de6fae0434caa48aa83e0388054bb9dccf",
+          "sri": "WWuHmpRzpd9j3tkwLDZAsBY724p2rvG0CH0ux8p5CN5vrgQ0yqSKqD4DiAVLudzP",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBKp-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBKp-EUC-V.bcmap",
+          "bytes": 181,
+          "sha384": "5d6f1bbe8d2fe47770a5c2633980dc5ec073b92b2e8aec91bb7bec9efa768cbba0012ae7e2897543972cbd769f77be8b",
+          "sri": "XW8bvo0v5HdwpcJjOYDcXsBzuSsuiuyRu3vsnvp2jLugASrn4ol1Q5csvXafd76L",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBKp-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBT-EUC-H.bcmap",
+          "bytes": 7290,
+          "sha384": "8647c9318597e0868b0c20f26ea7f408dee3e97ee8809c850121782ba279601d49e5da3f5891586acf531116b81a3060",
+          "sri": "hkfJMYWX4IaLDCDybqf0CN7j6X7ogJyFASF4K6J5YB1J5do/WJFYas9TERa4GjBg",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBT-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBT-EUC-V.bcmap",
+          "bytes": 180,
+          "sha384": "3fcab035a57b585fde42ec1789fde79815e13cdbd580e0f98450e522b72b55bb578ce6836bfe3f32983cdfd7c1fb12cf",
+          "sri": "P8qwNaV7WF/eQuwXif3nmBXhPNvVgOD5hFDlIrcrVbtXjOaDa/4/Mpg839fB+xLP",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBT-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBT-H.bcmap",
+          "bytes": 7269,
+          "sha384": "ae57c736a619acccd67c6644d9acd829f185a04f0b40ddb6fdbaa78144fc35b3c8a0dd449887f0b508f4fc19bca5afab",
+          "sri": "rlfHNqYZrMzWfGZE2azYKfGFoE8LQN22/bqngUT8NbPIoN1EmIfwtQj0/Bm8pa+r",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBT-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBT-V.bcmap",
+          "bytes": 176,
+          "sha384": "443d29acd92a4fd08f5a830273ed0d81a5a4df1d257d12f3fb1c8c1366cf2d45c751f5623c7ecec51274f8c1dbf9936b",
+          "sri": "RD0prNkqT9CPWoMCc+0NgaWk3x0lfRLz+xyME2bPLUXHUfViPH7OxRJ0+MHb+ZNr",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBT-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBTpc-EUC-H.bcmap",
+          "bytes": 7298,
+          "sha384": "cc7130e90d0bb95453331d44225dddf8540316c3f3ce4d574b3c7b11e4323e1b4f467374b256613617e0197a46923874",
+          "sri": "zHEw6Q0LuVRTMx1EIl3d+FQDFsPzzk1XSzx7EeQyPhtPRnN0slZhNhfgGXpGkjh0",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBTpc-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBTpc-EUC-V.bcmap",
+          "bytes": 182,
+          "sha384": "0e2821621299dbc03723c9cbbc45b67c7ab18f061c681c1970778c6c3caa5321c046ab522bd6bb8dab7919a0ecc7954d",
+          "sri": "DighYhKZ28A3I8nLvEW2fHqxjwYcaBwZcHeMbDyqUyHARqtSK9a7jat5GaDsx5VN",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBTpc-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBpc-EUC-H.bcmap",
+          "bytes": 557,
+          "sha384": "041814c5ad41dc646095f5e9fe4cf75de082a9576a784f727cade139f99957dc454d9b7c6bdf3717b7e3b3bae0a3c39b",
+          "sri": "BBgUxa1B3GRglfXp/kz3XeCCqVdqeE9yfK3hOfmZV9xFTZt8a983F7fjs7rgo8Ob",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBpc-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/GBpc-EUC-V.bcmap",
+          "bytes": 181,
+          "sha384": "38eb59abf2040720a47944680bc60ef985e1428af32359ceba4e80677fa376621ae575aff4b5aa0d1890652d16b69c7f",
+          "sri": "OOtZq/IEByCkeURoC8YO+YXhQorzI1nOuk6AZ3+jdmIa5XWv9LWqDRiQZS0Wtpx/",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/GBpc-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/H.bcmap",
+          "bytes": 553,
+          "sha384": "db3dbd6578556ae1dc5a6bc21a23871b9c1f605c664567be16cf7675deb4af2820a88cf844d6070de46c19fa79128227",
+          "sri": "2z29ZXhVauHcWmvCGiOHG5wfYFxmRWe+Fs92dd60ryggqIz4RNYHDeRsGfp5EoIn",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKdla-B5-H.bcmap",
+          "bytes": 2654,
+          "sha384": "e031428da6f76971f6f2f17a312bf8bc5cca53529340b7a8c23c4beda4d9928b2c5867a67b416b5cc868f6d456827864",
+          "sri": "4DFCjab3aXH28vF6MSv4vFzKU1KTQLeowjxL7aTZkossWGeme0FrXMho9tRWgnhk",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKdla-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKdla-B5-V.bcmap",
+          "bytes": 148,
+          "sha384": "e84fe88bd4678be42314c73dbd40219db6cc96eb06a6a81664b7aee642c683b90f212568c22e793d49f7a74e97241366",
+          "sri": "6E/oi9Rni+QjFMc9vUAhnbbMlusGpqgWZLeu5kLGg7kPISVowi55PUn3p06XJBNm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKdla-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKdlb-B5-H.bcmap",
+          "bytes": 2414,
+          "sha384": "53bc45ee8966b3d4a46140f5315f255f01442267f7b5bcff6691604a2f79ebab4162c723f58bf4213bae12ff3639e5ec",
+          "sri": "U7xF7olms9SkYUD1MV8lXwFEImf3tbz/ZpFgSi9566tBYscj9Yv0ITuuEv82OeXs",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKdlb-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKdlb-B5-V.bcmap",
+          "bytes": 148,
+          "sha384": "dc53d88d07f331ad3e257823b34074c80aabaf970219b9e174305cd777597956a601e812ddc413dbb867c531e9ef06ad",
+          "sri": "3FPYjQfzMa0+JXgjs0B0yAqrr5cCGbnhdDBc13dZeVamAegS3cQT27hnxTHp7wat",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKdlb-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKgccs-B5-H.bcmap",
+          "bytes": 2292,
+          "sha384": "0064555e2302d13693d8f7e4d3b7598c39ecc99e3aae95e8c32fcd662243116efbd947eaa9d0933df428057b2dafc59e",
+          "sri": "AGRVXiMC0TaT2Pfk07dZjDnsyZ46rpXowy/NZiJDEW772UfqqdCTPfQoBXstr8We",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKgccs-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKgccs-B5-V.bcmap",
+          "bytes": 149,
+          "sha384": "b0a8fb1b0035d404767f33b00182821346f16c2794bd5ff004aafda694a8b71cad619d6a828bf42bae12563b7acaa877",
+          "sri": "sKj7GwA11AR2fzOwAYKCE0bxbCeUvV/wBKr9ppSotxytYZ1qgov0K64SVjt6yqh3",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKgccs-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKm314-B5-H.bcmap",
+          "bytes": 1772,
+          "sha384": "85b033b47d018d10e59a65b185ea197dd7a9a076225194e69ca11ba4dbb4b97c5a8967a7f686f94a7762dfab2a5d4b26",
+          "sri": "hbAztH0BjRDlmmWxheoZfdepoHYiUZTmnKEbpNu0uXxaiWen9ob5Sndi36sqXUsm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKm314-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKm314-B5-V.bcmap",
+          "bytes": 149,
+          "sha384": "bb09f2a566e3fff89b19bd3dc7682868bd6713d8110eed1a394b33d888db5d6dc663a4eb4eddb0d48520864d1747a3f7",
+          "sri": "uwnypWbj//ibGb09x2goaL1nE9gRDu0aOUsz2IjbXW3GY6TrTt2w1IUghk0XR6P3",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKm314-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKm471-B5-H.bcmap",
+          "bytes": 2171,
+          "sha384": "50eb7dbf94892f082ff9333bd23bc3189ff4122048b43ab3b7460f677ed04a4b80eb71131ed190020d791e2943512699",
+          "sri": "UOt9v5SJLwgv+TM70jvDGJ/0EiBItDqzt0YPZ37QSkuA63ETHtGQAg15HilDUSaZ",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKm471-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKm471-B5-V.bcmap",
+          "bytes": 149,
+          "sha384": "de7028484ff1d498b24500ff7d7782ea99d20cd1a1d3d7594514901255f3b55a72e1d0142c32ae90a10472625e3a5ad0",
+          "sri": "3nAoSE/x1JiyRQD/fXeC6pnSDNGh09dZRRSQElXztVpy4dAULDKukKEEcmJeOlrQ",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKm471-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKscs-B5-H.bcmap",
+          "bytes": 4437,
+          "sha384": "8ab657728926e382163d8634d60c8978493dcce9685243dc6f3a7cd4759a4618642e9cdb2665a1351466f6b76b5bc0b9",
+          "sri": "irZXcokm44IWPYY01gyJeEk9zOloUkPcbzp81HWaRhhkLpzbJmWhNRRm9rdrW8C5",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKscs-B5-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/HKscs-B5-V.bcmap",
+          "bytes": 159,
+          "sha384": "ae9e8284b1418e1362c8d08cce1120d53c53f585faa8c96e8d22eca2d62acc474dd921131155a3427da2e3d841325288",
+          "sri": "rp6ChLFBjhNiyNCMzhEg1TxT9YX6qMlujSLsotYqzEdN2SETEVWjQn2i49hBMlKI",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/HKscs-B5-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Hankaku.bcmap",
+          "bytes": 132,
+          "sha384": "8d6f9476df85dd3b4fad5b4a3511870420aad2c3eb65966c71808aea3a0e757044047509f334e307f6e9b6e729c4eb63",
+          "sri": "jW+Udt+F3TtPrVtKNRGHBCCq0sPrZZZscYCK6joOdXBEBHUJ8zTjB/bptucpxOtj",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Hankaku.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Hiragana.bcmap",
+          "bytes": 124,
+          "sha384": "ed4a6461b4d88b3ba93a900350d7f6ca45089595eac6403b98911258752eb3a9284e91e170561274b95fb90bf0bec515",
+          "sri": "7UpkYbTYizupOpADUNf2ykUIlZXqxkA7mJESWHUus6koTpHhcFYSdLlfuQvwvsUV",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Hiragana.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSC-EUC-H.bcmap",
+          "bytes": 1848,
+          "sha384": "da31631ca726dedfb6ceb5df75e0181466e7c1bb1cb5119f00609e7d3ee05dc9d0b088b8ff061d952edf1ccd298ee093",
+          "sri": "2jFjHKcm3t+2zrXfdeAYFGbnwbsctRGfAGCefT7gXcnQsIi4/wYdlS7fHM0pjuCT",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSC-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSC-EUC-V.bcmap",
+          "bytes": 164,
+          "sha384": "f823e7cbb2defdd67c563bb67987179f94d3f6f244ef0f8cf464bae3a0e89a0be3527d4ed9c0fa5cd888dcbf7cabe094",
+          "sri": "+CPny7Le/dZ8Vju2eYcXn5TT9vJE7w+M9GS646DomgvjUn1O2cD6XNiI3L98q+CU",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSC-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSC-H.bcmap",
+          "bytes": 1831,
+          "sha384": "312fc6fa3769f615745247685bca0c7229dfc31c74718f9abc2c00b4611f21a4a3d77b3c1dc2b95314800452a57a9515",
+          "sri": "MS/G+jdp9hV0UkdoW8oMcinfwxx0cY+avCwAtGEfIaSj13s8HcK5UxSABFKlepUV",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSC-Johab-H.bcmap",
+          "bytes": 16791,
+          "sha384": "f5df11d80badc12e2886ae4d131cc50b23366bb2509a0eb0df6bfb65011d6b87015bde4a17904320df2acfe52b7ba56d",
+          "sri": "9d8R2AutwS4ohq5NExzFCyM2a7JQmg6w32v7ZQEda4cBW95KF5BDIN8qz+Ure6Vt",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSC-Johab-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSC-Johab-V.bcmap",
+          "bytes": 166,
+          "sha384": "a38587127b5bd1cbdfa9f596a3d8d91043103320e62f5252ebcbe9fcbc0ffb733de31d5a32386692140850ae8bcca35d",
+          "sri": "o4WHEntb0cvfqfWWo9jZEEMQMyDmL1JS68vp/LwP+3M94x1aMjhmkhQIUK6LzKNd",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSC-Johab-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSC-V.bcmap",
+          "bytes": 160,
+          "sha384": "9778f96e8adab8af3341eef0f0f6324622aa9b6650cc8a6305842999515e79ac705ad6040038d170458463d6e21b22dc",
+          "sri": "l3j5borauK8zQe7w8PYyRiKqm2ZQzIpjBYQpmVFeeaxwWtYEADjRcEWEY9biGyLc",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSCms-UHC-H.bcmap",
+          "bytes": 2787,
+          "sha384": "f99039dc8dd8c84d64ea58e6eea153fccb6ae4b8e1ab53dc784f9c71b32ed0a1c4c7a4324c2aaa4d7a3718ed0a3534a5",
+          "sri": "+ZA53I3YyE1k6ljm7qFT/Mtq5Ljhq1PceE+ccbMu0KHEx6QyTCqqTXo3GO0KNTSl",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSCms-UHC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSCms-UHC-HW-H.bcmap",
+          "bytes": 2789,
+          "sha384": "779fedb05d5684d9c8a9584c20ef5af39c99a5f9cc563553e35bf1a0c945e0248894dfc0a9a00ef02878906de4403366",
+          "sri": "d5/tsF1WhNnIqVhMIO9a85yZpfnMVjVT41vxoMlF4CSIlN/AqaAO8Ch4kG3kQDNm",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSCms-UHC-HW-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSCms-UHC-HW-V.bcmap",
+          "bytes": 169,
+          "sha384": "3891f1e17b8062d00a7cf2cc56d7857f8a18cd40b4cce7a12e4e223ddb98cbb9867b7b4588f9a6d4fe7daf61a995bbc7",
+          "sri": "OJHx4XuAYtAKfPLMVteFf4oYzUC0zOehLk4iPduYy7mGe3tFiPmm1P59r2GplbvH",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSCms-UHC-HW-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSCms-UHC-V.bcmap",
+          "bytes": 166,
+          "sha384": "6caae40a0c9a9f95a5ab139630f07affce8a81e403de425cdfacab8624d85a3b2820185059d8a95645e05fee1e5e202c",
+          "sri": "bKrkCgyan5WlqxOWMPB6/86KgeQD3kJc36yrhiTYWjsoIBhQWdipVkXgX+4eXiAs",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSCms-UHC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSCpc-EUC-H.bcmap",
+          "bytes": 2024,
+          "sha384": "0a309e1a1080c70e8b0183767326fdccce776eaa640acf53781f6da02324d5a2006cfd6c3092944e4004c60a9f89695d",
+          "sri": "CjCeGhCAxw6LAYN2cyb9zM53bqpkCs9TeB9toCMk1aIAbP1sMJKUTkAExgqfiWld",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSCpc-EUC-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/KSCpc-EUC-V.bcmap",
+          "bytes": 166,
+          "sha384": "b57f4d161531dcf626cf0422644e8d6bdb4688c96b49c56bc111d31aedcb9122f7376e8b20c978af442fe8e96f5881d8",
+          "sri": "tX9NFhUx3PYmzwQiZE6Na9tGiMlrScVrwRHTGu3LkSL3N26LIMl4r0Qv6OlvWIHY",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/KSCpc-EUC-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Katakana.bcmap",
+          "bytes": 100,
+          "sha384": "c5b132c4b6000efcd1dc5d9f3703a902f9256fc8f0feff752f1b433295e006ada19249b36ab04bde82a566c75b2b4ffa",
+          "sri": "xbEyxLYADvzR3F2fNwOpAvklb8jw/v91LxtDMpXgBq2hkkmzarBL3oKlZsdbK0/6",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Katakana.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/LICENSE",
+          "bytes": 2080,
+          "sha384": "e57d24bea61e2540ff865dd83afbcb5a388986bd6b0273c2f043aad8ca4f6e71ae8ce6606530f75d982760416ef35cf7",
+          "sri": "5X0kvqYeJUD/hl3YOvvLWjiJhr1rAnPC8EOq2MpPbnGujOZgZTD3XZgnYEFu81z3",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/LICENSE"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/NWP-H.bcmap",
+          "bytes": 2765,
+          "sha384": "5710a2f996b9c355e2514e446d4e7f8ba043ecc5bb7e5288dc96ed6e42762419c66389b7b5282533f851591f921bf933",
+          "sri": "VxCi+Za5w1XiUU5EbU5/i6BD7MW7flKI3JbtbkJ2JBnGY4m3tSglM/hRWR+SG/kz",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/NWP-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/NWP-V.bcmap",
+          "bytes": 252,
+          "sha384": "6b0912be8147792c72f84a9dbf17de26dafde8d692b175958aae4a3c447622885295b51d1e8ac26a24d7eac447e0b065",
+          "sri": "awkSvoFHeSxy+EqdvxfeJtr96NaSsXWViq5KPER2IohSlbUdHorCaiTX6sRH4LBl",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/NWP-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/RKSJ-H.bcmap",
+          "bytes": 534,
+          "sha384": "2819e21a9dd16c7710b6e01b12645341b2ae4e052ab109eee07a9171eb67d4dfb3ae2a3526ae1f93a8d18d32e14d93b1",
+          "sri": "KBniGp3RbHcQtuAbEmRTQbKuTgUqsQnu4HqRcetn1N+zrio1Jq4fk6jRjTLhTZOx",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/RKSJ-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/RKSJ-V.bcmap",
+          "bytes": 170,
+          "sha384": "d1c4819453482fcd8fd0aec8787e19f2d06970a4e5f00950157c7c7f0a2ced8ecebaf28a3e22487049ded78807954297",
+          "sri": "0cSBlFNIL82P0K7IeH4Z8tBpcKTl8AlQFXx8fwos7Y7OuvKKPiJIcEne14gHlUKX",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/RKSJ-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/Roman.bcmap",
+          "bytes": 96,
+          "sha384": "2d8c9bed0642dd490c0607b52a8630b5ed931d24f3a647bc1868fc98b892398591eb41b781cffe654256ea929e63963d",
+          "sri": "LYyb7QZC3UkMBge1KoYwte2THSTzpke8GGj8mLiSOYWR60G3gc/+ZUJW6pKeY5Y9",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/Roman.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UCS2-H.bcmap",
+          "bytes": 48280,
+          "sha384": "790e2cb386b47f44a0288cb0abce75c7b963d06f58e5809fc631277869fe0866914c08e1d2f6d5c78e00f65603b0210c",
+          "sri": "eQ4ss4a0f0SgKIywq851x7lj0G9Y5YCfxjEneGn+CGaRTAjh0vbVx44A9lYDsCEM",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UCS2-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UCS2-V.bcmap",
+          "bytes": 156,
+          "sha384": "c3e31d94211f19b7d81b6369b888b33ee8f4f3bf7aca17760d2561544c8becc6e85a2ae94f5715b56287a29193beebd2",
+          "sri": "w+MdlCEfGbfYG2NpuIizPuj08796yhd2DSVhVEyL7MboWirpT1cVtWKHopGTvuvS",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UCS2-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UTF16-H.bcmap",
+          "bytes": 50419,
+          "sha384": "d0f56342bd4e1cdaf535875bb9e472c39bf673118ebb7458cd683bfb47c462ca60428907f926027575317f5399106bcc",
+          "sri": "0PVjQr1OHNr1NYdbueRyw5v2cxGOu3RYzWg7+0fEYspgQokH+SYCdXUxf1OZEGvM",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UTF16-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UTF16-V.bcmap",
+          "bytes": 156,
+          "sha384": "ca471951fbcb19d5b2d7a40be36bc1602def70c271b29b9e23010efe5aeec76de3cdac7225ae5e4f0c80a4901e0260fd",
+          "sri": "ykcZUfvLGdWy16QL42vBYC3vcMJxspueIwEO/lrux23jzaxyJa5eTwyApJAeAmD9",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UTF16-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UTF32-H.bcmap",
+          "bytes": 52679,
+          "sha384": "610490da772d91ff582a7e89a1d25562324e170dfeeb35d36fa8603c240b9e13e8f853e7ef38c246251ba127a9459fbc",
+          "sri": "YQSQ2nctkf9YKn6JodJVYjJOFw3+6zXTb6hgPCQLnhPo+FPn7zjCRiUboSepRZ+8",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UTF32-V.bcmap",
+          "bytes": 160,
+          "sha384": "73041ae67dbfac213b826c85f0c59d0f8404f694dcc72d867bf68f625206a59ee4d9d560bbe76ff1e94953392db10a0a",
+          "sri": "cwQa5n2/rCE7gmyF8MWdD4QE9pTcxy2Ge/aPYlIGpZ7k2dVgu+dv8elJUzktsQoK",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UTF8-H.bcmap",
+          "bytes": 53629,
+          "sha384": "cd75d8aff192f0f74ac1702afba78762ac54ad930bcd941334278c2ba4974d3effdeb9eb50ea4f54ede84c42dbea0d35",
+          "sri": "zXXYr/GS8PdKwXAq+6eHYqxUrZMLzZQTNCeMK6SXTT7/3rnrUOpPVO3oTELb6g01",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UTF8-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniCNS-UTF8-V.bcmap",
+          "bytes": 157,
+          "sha384": "cf4d31e67d200962b949714bdff197cf34bf5140befd4b07fdc9fc7d50d2c57f4fb2cd3e7edbc1bf5c80ed175f408fd2",
+          "sri": "z00x5n0gCWK5SXFL3/GXzzS/UUC+/UsH/cn8fVDSxX9Pss0+ftvBv1yA7RdfQI/S",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniCNS-UTF8-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UCS2-H.bcmap",
+          "bytes": 43366,
+          "sha384": "267731fa83cb0d3b0c8092ee314c2c54cc6f1fb7b2ef7a600b087a2955acd3827ec5e63f5d2b873c886e214551cb8444",
+          "sri": "Jncx+oPLDTsMgJLuMUwsVMxvH7ey73pgCwh6KVWs04J+xeY/XSuHPIhuIUVRy4RE",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UCS2-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UCS2-V.bcmap",
+          "bytes": 193,
+          "sha384": "bc2ef6b1afc77420d4278a9153308a958aa0b608a60df1a72f518c88449fb4fcfde9e12fe09fbc3b4f8441a2f02c8111",
+          "sri": "vC72sa/HdCDUJ4qRUzCKlYqgtgimDfGnL1GMiESftPz96eEv4J+8O0+EQaLwLIER",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UCS2-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UTF16-H.bcmap",
+          "bytes": 44086,
+          "sha384": "f0cd40322406b584b37a7a950aceaff8712e9803482449ff223c93d78000ee2878839aa1d63ed517a792ad43bb01bc07",
+          "sri": "8M1AMiQGtYSzenqVCs6v+HEumANIJEn/IjyT14AA7ih4g5qh1j7VF6eSrUO7AbwH",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UTF16-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UTF16-V.bcmap",
+          "bytes": 178,
+          "sha384": "2c96813a09386dab2f24b2afe11e816aba7dcf2fa4b8c03f9c5926e0d7a5ec4d8a1260ccd935fcb810cd71a2b229c611",
+          "sri": "LJaBOgk4basvJLKv4R6Barp9zy+kuMA/nFkm4Nel7E2KEmDM2TX8uBDNcaKyKcYR",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UTF16-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UTF32-H.bcmap",
+          "bytes": 45738,
+          "sha384": "39d66c1cbfd5141c3ae7cb3d38fc5d9968fdb6e011133cf8075766180f181e7bd76186b9d1b0be9b1925c6af87641715",
+          "sri": "OdZsHL/VFBw658s9OPxdmWj9tuAREzz4B1dmGA8YHnvXYYa50bC+mxklxq+HZBcV",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UTF32-V.bcmap",
+          "bytes": 182,
+          "sha384": "6462f4ff1973e79d7f3e643a32341e38e2ff1b46ffcd800b66b3042b7be911cb720921b1118cd2ccc3a69b719e094201",
+          "sri": "ZGL0/xlz551/PmQ6MjQeOOL/G0b/zYALZrMEK3vpEctyCSGxEYzSzMOmm3GeCUIB",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UTF8-H.bcmap",
+          "bytes": 46837,
+          "sha384": "4a0cafe7ba3e4b74e835ac33d40faa5087486eb974c86c22266bf385524671321607bd26cc3df8fb80ffa89dbd16b437",
+          "sri": "Sgyv57o+S3ToNawz1A+qUIdIbrl0yGwiJmvzhVJGcTIWB70mzD34+4D/qJ29FrQ3",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UTF8-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniGB-UTF8-V.bcmap",
+          "bytes": 181,
+          "sha384": "0bf94f638cd2f3e5063a555b9b84b986c4250a9fce20b04e0f97c9d2f690e44d0c99730c9a99c423a38db41d718abbb2",
+          "sri": "C/lPY4zS8+UGOlVbm4S5hsQlCp/OILBOD5fJ0vaQ5E0MmXMMmpnEI6ONtB1xiruy",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniGB-UTF8-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UCS2-H.bcmap",
+          "bytes": 25439,
+          "sha384": "170d731a03918f1e3255e41ab63596a50d14774c5e2e427402407222faf752a376f6bbafcb9adcc6311a2262c39b287f",
+          "sri": "Fw1zGgORjx4yVeQatjWWpQ0Ud0xeLkJ0AkByIvr3UqN29ruvy5rcxjEaImLDmyh/",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UCS2-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UCS2-HW-H.bcmap",
+          "bytes": 119,
+          "sha384": "c9e9e79890fb1758cbc293844e6eb5a8f3ca42b395e3ae0d7d68b052965da4db7fb6316373eaff126d4b0eee7964891e",
+          "sri": "yennmJD7F1jLwpOETm61qPPKQrOV464NfWiwUpZdpNt/tjFjc+r/Em1LDu55ZIke",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UCS2-HW-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UCS2-HW-V.bcmap",
+          "bytes": 680,
+          "sha384": "946952d4325668493fb34b2776e338d33bed1fd580e0be329f6fe47e083521d10aabe85e0330069d5fc99f48ad8eb3fc",
+          "sri": "lGlS1DJWaEk/s0snduM40zvtH9WA4L4yn2/kfgg1IdEKq+heAzAGnV/Jn0itjrP8",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UCS2-HW-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UCS2-V.bcmap",
+          "bytes": 664,
+          "sha384": "86807a4bede8d85b37ae96b5d43c066d4a45b68aca8119814d03bba6120de5473b2567a9e8dacff86f0656d2cc2c8c8f",
+          "sri": "hoB6S+3o2Fs3rpa11DwGbUpFtorKgRmBTQO7phIN5Uc7JWep6NrP+G8GVtLMLIyP",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UCS2-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UTF16-H.bcmap",
+          "bytes": 39443,
+          "sha384": "ced4ff65b4bc84a19ec5ce91c45d51f0a18f83d5a8206a522f050728d53e017970f2c90768863e720265fede367ba1c2",
+          "sri": "ztT/ZbS8hKGexc6RxF1R8KGPg9WoIGpSLwUHKNU+AXlw8skHaIY+cgJl/t42e6HC",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UTF16-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UTF16-V.bcmap",
+          "bytes": 643,
+          "sha384": "d657e9bf8ea78c6ceae6e8af8dbd7ccef8fc703218ccd8bf8fc28c551fc72c5de238fe19c977a0cc7bea20ac7990e7bc",
+          "sri": "1lfpv46njGzq5uivjb18zvj8cDIYzNi/j8KMVR/HLF3iOP4ZyXegzHvqIKx5kOe8",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UTF16-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UTF32-H.bcmap",
+          "bytes": 40539,
+          "sha384": "3f007e114b8bc0abf333813891ebf35ad3d4598c538f01f0a855f9ffea7b5d9d8e0e18fb6cdca56f7f39af0e31e023cc",
+          "sri": "PwB+EUuLwKvzM4E4kevzWtPUWYxTjwHwqFX5/+p7XZ2ODhj7bNylb385rw4x4CPM",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UTF32-V.bcmap",
+          "bytes": 677,
+          "sha384": "04610dfb49ffa383469fc217b2c91391458bcb07c373083af2f8cd36f657448e667b69a8f47b61fe54e66a4968f76e0e",
+          "sri": "BGEN+0n/o4NGn8IXsskTkUWLywfDcwg68vjNNvZXRI5me2mo9Hth/lTmaklo924O",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UTF8-H.bcmap",
+          "bytes": 41695,
+          "sha384": "da192e5edd9b41dbf2f47b8fd0db7f72362bd5c20638219f04b25cd07605493ceac0a23ee85bf59d7a6072f831ac58c4",
+          "sri": "2hkuXt2bQdvy9HuP0Nt/cjYr1cIGOCGfBLJc0HYFSTzqwKI+6Fv1nXpgcvgxrFjE",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UTF8-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS-UTF8-V.bcmap",
+          "bytes": 678,
+          "sha384": "2e9e4d8e0f04bdb15bdcdd9e03d9c8fa5b4cc6d65a1f3d901952bda5f4a4836492d6d26850d4d436f048191d632d61ee",
+          "sri": "Lp5Njg8EvbFb3N2eA9nI+ltMxtZaHz2QGVK9pfSkg2SS1tJoUNTUNvBIGR1jLWHu",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS-UTF8-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS2004-UTF16-H.bcmap",
+          "bytes": 39534,
+          "sha384": "a516d8b3b2ad57518e1a8c22b2c162f43d829bd066e8a874a2b6f80c3ddd19def97901eadd0c5b72519fd77437f73cdd",
+          "sri": "pRbYs7KtV1GOGowissFi9D2Cm9Bm6Kh0orb4DD3dGd75eQHq3QxbclGf13Q39zzd",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS2004-UTF16-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS2004-UTF16-V.bcmap",
+          "bytes": 647,
+          "sha384": "12f6dad3daba87798cca42ec49373d3f41d5b5167c60f24146c377c704df800f952daaafe47966a4da36bb0db80bbd02",
+          "sri": "Evba09q6h3mMykLsSTc9P0HVtRZ8YPJBRsN3xwTfgA+VLaqv5HlmpNo2uw24C70C",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS2004-UTF16-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS2004-UTF32-H.bcmap",
+          "bytes": 40630,
+          "sha384": "81c8effe75ec0347749772babda779a7fff745c21ea85887ab4cddc5afd301a0a4a831850e4920d85aa59b5a629b1246",
+          "sri": "gcjv/nXsA0d0l3K6vad5p//3RcIeqFiHq0zdxa/TAaCkqDGFDkkg2Fqlm1pimxJG",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS2004-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS2004-UTF32-V.bcmap",
+          "bytes": 681,
+          "sha384": "f0acd62d00cebf0f6dc093213485eb0dd99aea44efa0cd3f4071e743f1d41cd2962ccb3ab4eba929f3ff6ec55c9c71ff",
+          "sri": "8KzWLQDOvw9twJMhNIXrDdma6kTvoM0/QHHnQ/HUHNKWLMs6tOupKfP/bsVcnHH/",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS2004-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS2004-UTF8-H.bcmap",
+          "bytes": 41779,
+          "sha384": "c0260d860d3ac0c084647637893627e3960f44c1f40dde00ee34bdbb04fefadcbd0912fa8e04198a8b457af8efca3234",
+          "sri": "wCYNhg06wMCEZHY3iTYn45YPRMH0Dd4A7jS9uwT++ty9CRL6jgQZiotFevjvyjI0",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS2004-UTF8-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJIS2004-UTF8-V.bcmap",
+          "bytes": 682,
+          "sha384": "de8e59699c86d77f9d51c390249ac73479aeae4398455d53049a3d9bcb12380f0bfb32d833b0df02cdb8b5b25f3fc0b2",
+          "sri": "3o5ZaZyG13+dUcOQJJrHNHmurkOYRV1TBJo9m8sSOA8L+zLYM7DfAs24tbJfP8Cy",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJIS2004-UTF8-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISPro-UCS2-HW-V.bcmap",
+          "bytes": 705,
+          "sha384": "872d2dad35523ed87655ebf506ceafde177975476cb77cd475c126d437d85ff8dd2f5f9f05c39067a78b2c62d22b9d4a",
+          "sri": "hy0trTVSPth2Vev1Bs6v3hd5dUdst3zUdcEm1DfYX/jdL1+fBcOQZ6eLLGLSK51K",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISPro-UCS2-HW-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISPro-UCS2-V.bcmap",
+          "bytes": 689,
+          "sha384": "102b435e94133aee663085af69d93d83fdecaee453c1dd3bac263bbdb4027d4639dfa1047f55df231c3cf7c2ffb0520a",
+          "sri": "ECtDXpQTOu5mMIWvadk9g/3sruRTwd07rCY7vbQCfUY536EEf1XfIxw898L/sFIK",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISPro-UCS2-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISPro-UTF8-V.bcmap",
+          "bytes": 726,
+          "sha384": "d8d59662d24993f52d9106089094d2df55047f7fde79a1231e696e57a83b3435f443baf11e3700fb74176242dd9c4107",
+          "sri": "2NWWYtJJk/UtkQYIkJTS31UEf3/eeaEjHmluV6g7NDX0Q7rxHjcA+3QXYkLdnEEH",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISPro-UTF8-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISX0213-UTF32-H.bcmap",
+          "bytes": 40517,
+          "sha384": "07db095885c621855d377d347ea86a6817738691624278e42dc038ff7abda93a3489293d879122beeaaaa3ab1ab9a5ee",
+          "sri": "B9sJWIXGIYVdN300fqhqaBdzhpFiQnjkLcA4/3q9qTo0iSk9h5Eivuqqo6sauaXu",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISX0213-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISX0213-UTF32-V.bcmap",
+          "bytes": 684,
+          "sha384": "1ecc1e56e15049bf78d9f7deb13a7bc1af5fd1f790b33fa4a185df94ce92af298d042fc30c079dbe8b031a5d5c9d04b9",
+          "sri": "HsweVuFQSb942ffesTp7wa9f0feQsz+koYXflM6SrymNBC/DDAedvosDGl1cnQS5",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISX0213-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISX02132004-UTF32-H.bcmap",
+          "bytes": 40608,
+          "sha384": "3998b2848c52c0b2c227f41d70b153f9e9f818b2619dfc14f0a87788611a5728c940e4cf03b28e969bf2b11c355ac172",
+          "sri": "OZiyhIxSwLLCJ/QdcLFT+en4GLJhnfwU8Kh3iGEaVyjJQOTPA7KOlpvysRw1WsFy",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISX02132004-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniJISX02132004-UTF32-V.bcmap",
+          "bytes": 688,
+          "sha384": "0c46969134c1659bc38452978c7866e9454e257f204b8e3ee733c86c490d083936be525df7037e11cc8f7224ad9ae624",
+          "sri": "DEaWkTTBZZvDhFKXjHhm6UVOJX8gS44+5zPIbEkNCDk2vlJd9wN+EcyPciStmuYk",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniJISX02132004-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UCS2-H.bcmap",
+          "bytes": 25783,
+          "sha384": "ee20425c3fcbcb7f2fe28db59898e886e604e677f4f792bd11575a51806b627a96b5cee13e940da64ea19dae53ce8b28",
+          "sri": "7iBCXD/Ly38v4o21mJjohuYE5nf095K9EVdaUYBrYnqWtc7hPpQNpk6hna5Tzoso",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UCS2-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UCS2-V.bcmap",
+          "bytes": 178,
+          "sha384": "eee1f884fe50250bb7a24a396afe419b9855ec67e49c4abdd0a46acca52c01544e63bb21cdf12572926c0c9c1c4c5364",
+          "sri": "7uH4hP5QJQu3oko5av5Bm5hV7GfknEq90KRqzKUsAVROY7shzfElcpJsDJwcTFNk",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UCS2-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UTF16-H.bcmap",
+          "bytes": 26327,
+          "sha384": "f20b4290536cbb4ab268b462850e63b6c55e28bedbcfe1250da7f5d9822f8fd6297d7d58d680e5c783fede59b6de808f",
+          "sri": "8gtCkFNsu0qyaLRihQ5jtsVeKL7bz+ElDaf12YIvj9YpfX1Y1oDlx4P+3lm23oCP",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UTF16-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UTF16-V.bcmap",
+          "bytes": 164,
+          "sha384": "e0d02f0b4a2097aba69981181fd6ee6a3fabcbcc3c997316c29f68d44fed5dac7d7f7be186a0ae975a84909408ef396e",
+          "sri": "4NAvC0ogl6ummYEYH9buaj+ry8w8mXMWwp9o1E/tXax9f3vhhqCul1qEkJQI7zlu",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UTF16-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UTF32-H.bcmap",
+          "bytes": 26451,
+          "sha384": "72a9e7b77168f12c1e8634621b334db342801c1ba54ff6d038a8e3dc3be8daf6e80f58dbb49dab64e0a8e1d93bb5bbf9",
+          "sri": "cqnnt3Fo8SwehjRiGzNNs0KAHBulT/bQOKjj3Dvo2vboD1jbtJ2rZOCo4dk7tbv5",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UTF32-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UTF32-V.bcmap",
+          "bytes": 168,
+          "sha384": "353eacff41a86a1228b0b4d7a7920431d3de87ef84fa1f70859400f501d5cb1fd1974348bfd8524fde2a3653f47a955e",
+          "sri": "NT6s/0GoahIosLTXp5IEMdPeh++E+h9whZQA9QHVyx/Rl0NIv9hST94qNlP0epVe",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UTF32-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UTF8-H.bcmap",
+          "bytes": 27790,
+          "sha384": "1324a33c3ad19d7004b0987ef3b461fa2156972b1fd6a5cd5b09f865ccdb43ec6c1b15e4d7fc0137d28d8a32c1902fb4",
+          "sri": "EySjPDrRnXAEsJh+87Rh+iFWlysf1qXNWwn4ZczbQ+xsGxXk1/wBN9KNijLBkC+0",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UTF8-H.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/UniKS-UTF8-V.bcmap",
+          "bytes": 169,
+          "sha384": "7be4189a47dd62f818b9522c3ffbf1e04b8f0af1be876d870f87976d04cd4035d2c3e8b7220e39499d76f769b2bcbeb8",
+          "sri": "e+QYmkfdYvgYuVIsP/vx4EuPCvG+h22HD4eXbQTNQDXSw+i3Ig45SZ1292myvL64",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/UniKS-UTF8-V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/V.bcmap",
+          "bytes": 166,
+          "sha384": "16c6e060253295a790a87966bf3ddeb7a4642502b3128d50368c388541f3097af17090e7cacff5b3a5db7b7e61e9d970",
+          "sri": "FsbgYCUylaeQqHlmvz3et6RkJQKzEo1QNow4hUHzCXrxcJDnys/1s6Xbe35h6dlw",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/V.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/cmaps/WP-Symbol.bcmap",
+          "bytes": 179,
+          "sha384": "c716f700d0550ddc6a28124263838c4c6b9fff8fc6f85dc40b19ee00b86fdf641682a4e11646909a808e1f05d3c639e8",
+          "sri": "xxb3ANBVDdxqKBJCY4OMTGuf/4/G+F3ECxnuALhv32QWgqThFkaQmoCOHwXTxjno",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/cmaps/WP-Symbol.bcmap"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/legacy/build/pdf.mjs",
+          "bytes": 1047456,
+          "sha384": "fe4c8512ae8170799829b73a4ffca04af666746162f2a7ecee27d81fee0e45be883cc665d536baa4bce99ddd25b2f9fb",
+          "sri": "/kyFEq6BcHmYKbc6T/ygSvZmdGFi8qfs7ifYH+4ORb6IPMZl1Ta6pLzpnd0lsvn7",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/legacy/build/pdf.mjs"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/legacy/build/pdf.worker.mjs",
+          "bytes": 2395538,
+          "sha384": "96a47a47f54d2816af01739e5ac45266909ecd78225a4ce1a704e741bc2d6a870926cdac9b44b550895b5ffaaa531d81",
+          "sri": "lqR6R/VNKBavAXOeWsRSZpCezXgiWkzhpwTnQbwtaocJJs2sm0S1UIlbX/qqUx2B",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/legacy/build/pdf.worker.mjs"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitDingbats.pfb",
+          "bytes": 29513,
+          "sha384": "27a0f4b6e43b852e2bedcdfac382a7abd942bcae5f54d70c552e36c356a427a779d08450a48883507031f69e506aecbb",
+          "sri": "J6D0tuQ7hS4r7c36w4Knq9lCvK5fVNcMVS42w1akJ6d50IRQpIiDUHAx9p5Qauy7",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitDingbats.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitFixed.pfb",
+          "bytes": 17597,
+          "sha384": "1bea5b373bda12a5bd8f951651d2e3a3e0f8f0e4483957f51efb1d118b6878d434ab5ca4e05ad19548d8fd0e9198cfe9",
+          "sri": "G+pbNzvaEqW9j5UWUdLjo+D48ORIOVf1HvsdEYtoeNQ0q1yk4FrRlUjY/Q6RmM/p",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitFixed.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitFixedBold.pfb",
+          "bytes": 18055,
+          "sha384": "e3fb67b61f71500c44601c859504eeaefa31ee1a800f8ea8f0ee1e2392589d98e3cacb577a9a72de5c64d087681c8e3e",
+          "sri": "4/tnth9xUAxEYByFlQTurvox7hqAD46o8O4eI5JYnZjjystXeppy3lxk0IdoHI4+",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitFixedBold.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitFixedBoldItalic.pfb",
+          "bytes": 19151,
+          "sha384": "65c2639b6d2d18cd67bd16bc4d9a8c8455a9df8022a7aa2668b8ad138cb147e88045d68d4ecdfb40848a9cceeff67979",
+          "sri": "ZcJjm20tGM1nvRa8TZqMhFWp34Aip6omaLitE4yxR+iARdaNTs37QISKnM7v9nl5",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitFixedBoldItalic.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitFixedItalic.pfb",
+          "bytes": 18746,
+          "sha384": "75e4ba6f512963c5f5b5cac7d07b0426f6d5986a013db1d54e77b24f64b79410543a332dfba0f2bdbef9dbee85e59efc",
+          "sri": "deS6b1EpY8X1tcrH0HsEJvbVmGoBPbHVTneyT2S3lBBUOjMt+6Dyvb752+6F5Z78",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitFixedItalic.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitSerif.pfb",
+          "bytes": 19469,
+          "sha384": "6131174a34c2f6fb9f038de6791056691e8d41fe0c7de41ae91e1f9510ea982694757e81088b7e742a54e98b7c976f3d",
+          "sri": "YTEXSjTC9vufA43meRBWaR6NQf4MfeQa6R4flRDqmCaUdX6BCIt+dCpU6Yt8l289",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitSerif.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitSerifBold.pfb",
+          "bytes": 19395,
+          "sha384": "99e0074160c1dd6087ff250925874ecbb384121b6a89ecd5f612d6a9b868ca131ee079450248b72fa56df1db19e50a90",
+          "sri": "meAHQWDB3WCH/yUJJYdOy7OEEhtqiezV9hLWqbhoyhMe4HlFAki3L6Vt8dsZ5QqQ",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitSerifBold.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitSerifBoldItalic.pfb",
+          "bytes": 20733,
+          "sha384": "929f832e56ad3910cabc90af1bd2212e1c6b2652756d03bb081d6bcdbfd3bd9cfb41c99919ef90d476fcdf09ccb644c3",
+          "sri": "kp+DLlatORDKvJCvG9IhLhxrJlJ1bQO7CB1rzb/TvZz7QcmZGe+Q1Hb83wnMtkTD",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitSerifBoldItalic.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitSerifItalic.pfb",
+          "bytes": 21227,
+          "sha384": "2e4f3fa7f67f13dffe850ca0217234ce7032be05052e35207c29b9fcbf361a97b60ecf0e8764df4dcbd68c0738ed0534",
+          "sri": "Lk8/p/Z/E9/+hQygIXI0znAyvgUFLjUgfCm5/L82Gpe2Ds8Oh2TfTcvWjAc47QU0",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitSerifItalic.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/FoxitSymbol.pfb",
+          "bytes": 16729,
+          "sha384": "d71fae32ee6f9d8a0f6a39e37149d77f16c89c2d62d1738248b296cc6d82d44211f27851caafa9466e6c596b7da2858b",
+          "sri": "1x+uMu5vnYoPajnjcUnXfxbInC1i0XOCSLKWzG2C1EIR8nhRyq+pRm5sWWt9ooWL",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/FoxitSymbol.pfb"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/LICENSE_FOXIT",
+          "bytes": 1553,
+          "sha384": "d5f1e340c9096faaa0217387332027c214156a64ea6afa5e7b35a361e3505672aef7c21219c92109794b9fd344f13092",
+          "sri": "1fHjQMkJb6qgIXOHMyAnwhQVamTqavpeezWjYeNQVnKu98ISGckhCXlLn9NE8TCS",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/LICENSE_FOXIT"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/LICENSE_LIBERATION",
+          "bytes": 22154,
+          "sha384": "ffc172c16f6749df285449f5da9b1dbb78571552b65dce3a0dfa103e687da33020b1ee7e6abc6b2db2981a08f86ffae3",
+          "sri": "/8FywW9nSd8oVEn12psdu3hXFVK2Xc46DfoQPmh9ozAgse5+arxrLbKYGgj4b/rj",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/LICENSE_LIBERATION"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/LiberationSans-Bold.ttf",
+          "bytes": 137052,
+          "sha384": "c3cfd0333de5d57cf99c2c7934f641a9e134216aa6c1b86099c171459a2757fa6b5665beba4bd1f44626f54f556d620a",
+          "sri": "w8/QMz3l1Xz5nCx5NPZBqeE0IWqmwbhgmcFxRZonV/prVmW+ukvR9EYm9U9VbWIK",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/LiberationSans-Bold.ttf"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/LiberationSans-BoldItalic.ttf",
+          "bytes": 135124,
+          "sha384": "a921e1278b2a60f91bdbb80776ff38fce576306e0c2d5e58b86d3f53ff5485868038529c288e3e5be4aa0496102d00dc",
+          "sri": "qSHhJ4sqYPkb27gHdv84/OV2MG4MLV5YuG0/U/9UhYaAOFKcKI4+W+SqBJYQLQDc",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/LiberationSans-BoldItalic.ttf"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/LiberationSans-Italic.ttf",
+          "bytes": 162036,
+          "sha384": "3ab15237ea2bdcfeb6ded38e0a26127aa2677580a73eca67220acff32cd394aa1d7064a8f82c853aa7a9d5e8d9374424",
+          "sri": "OrFSN+or3P623tOOCiYSeqJndYCnPspnIgrP8yzTlKodcGSo+CyFOqep1ejZN0Qk",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/LiberationSans-Italic.ttf"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/standard_fonts/LiberationSans-Regular.ttf",
+          "bytes": 139512,
+          "sha384": "483d6f90d8588258a1d9fc913a1ca68911ea4a9c43cab57250966b774cac673633be0cbb4f01a5606cfce3bbd68ab483",
+          "sri": "SD1vkNhYglih2fyROhymiRHqSpxDyrVyUJZrd0ysZzYzvgy7TwGlYGz847vWirSD",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/standard_fonts/LiberationSans-Regular.ttf"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/LICENSE_JBIG2",
+          "bytes": 12862,
+          "sha384": "279b405cb994d61937ef1febb67d698c911f76a55887b1201be07a9482b96b0ea4fbd59819ef4cf209b58fe50b89c242",
+          "sri": "J5tAXLmU1hk37x/rtn1pjJEfdqVYh7EgG+B6lIK5aw6k+9WYGe9M8gm1j+ULicJC",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/LICENSE_JBIG2"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/LICENSE_OPENJPEG",
+          "bytes": 2112,
+          "sha384": "a318736f909608cd21234712eb1c0e77a95858bb7f8213c376afdbd1a2d963001c1594bbb2ccd7f8bf3b0900104c114a",
+          "sri": "oxhzb5CWCM0hI0cS6xwOd6lYWLt/ghPDdq/b0aLZYwAcFZS7sszX+L87CQAQTBFK",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/LICENSE_OPENJPEG"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/LICENSE_PDFJS_JBIG2",
+          "bytes": 555,
+          "sha384": "333d8f937a048819ae13ead74527f4f3cf784a884fce30bee8ad5ade92951ced4e16fb350a722c2e978d4e2495b2ee50",
+          "sri": "Mz2Pk3oEiBmuE+rXRSf08894SohPzjC+6K1a3pKVHO1OFvs1CnIsLpeNTiSVsu5Q",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/LICENSE_PDFJS_JBIG2"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/LICENSE_PDFJS_OPENJPEG",
+          "bytes": 1285,
+          "sha384": "eb84b0de40477bdf67ac16adbc4c396a9927a3a0932acf53fce11950037c7835112b4e0163afa42430aeb691bfb584a5",
+          "sri": "64Sw3kBHe99nrBatvEw5apkno6CTKs9T/OEZUAN8eDURK04BY6+kJDCutpG/tYSl",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/LICENSE_PDFJS_OPENJPEG"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/jbig2.wasm",
+          "bytes": 104852,
+          "sha384": "9d52746c96098600babe8ed8ea0a046ad3eb7570218283d477059480c3d7a013c5a4e3d2fc98043d4903c0e3ba628af9",
+          "sri": "nVJ0bJYJhgC6vo7Y6goEatPrdXAhgoPUdwWUgMPXoBPFpOPS/JgEPUkDwOO6Yor5",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/jbig2.wasm"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/jbig2_nowasm_fallback.js",
+          "bytes": 145703,
+          "sha384": "77d8192322968cb996ad4f2d6b9a414cd44ce2db7ee15712c93575beb555ec11420ad896ba8e487b14bdc1249a1e32f7",
+          "sri": "d9gZIyKWjLmWrU8ta5pBTNRM4tt+4VcSyTV1vrVV7BFCCtiWuo5IexS9wSSaHjL3",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/jbig2_nowasm_fallback.js"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/openjpeg.wasm",
+          "bytes": 252032,
+          "sha384": "5b4b33ee3e2e67ffcb04b6787b17d32d1500828d351fcc255d8167335fd19712c3ca581788e4bd640fbb3efd8223831d",
+          "sri": "W0sz7j4uZ//LBLZ4exfTLRUAgo01H8wlXYFnM1/RlxLDylgXiOS9ZA+7Pv2CI4Md",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/openjpeg.wasm"
+        },
+        {
+          "file": "pdfjs-dist-6.3.289/wasm/openjpeg_nowasm_fallback.js",
+          "bytes": 451590,
+          "sha384": "d15b737dc9862bad40cdfd1f46dfb5801e7dff77f70aefbd4945ea5a404e13b205463efcaa8ad206940e1427d7c29573",
+          "sri": "0VtzfcmGK61Azf0fRt+1gB59/3f3Cu+9SUXqWkBOE7IFRj78qorSBpQOFCfXwpVz",
+          "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/openjpeg_nowasm_fallback.js"
+        }
+      ]
+    },
+    {
+      "name": "ocr",
+      "adds": "Reads the words in pictures on the device (PP-OCRv6 tiny on ONNX Runtime Web), so search finds them. About 21 MB.",
+      "builds": [
+        "full"
+      ],
+      "files": [
+        {
+          "file": "ort.wasm.bundle.min.mjs",
+          "bytes": 73054,
+          "sha384": "3cb5b3fa71c4547a63c01b0ed1855dbd08fa9f9f35e08bfc1376fc146d11a7fb8802d8c530228ea4feba88fcde76b206",
+          "sri": "PLWz+nHEVHpjwBsO0YVdvQj6n5814Iv8E3b8FG0Rp/uIAtjFMCKOpP66iPzedrIG",
+          "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.bundle.min.mjs"
+        },
+        {
+          "file": "ort-wasm-simd-threaded.wasm",
+          "bytes": 14239897,
+          "sha384": "be3049d73eeaae1913c98b0da8a785e9cecdfa7389494f78733128fadbd972ef06ef92696ab1aaf6407e9139c450d54c",
+          "sri": "vjBJ1z7qrhkTyYsNqKeF6c7N+nOJSU94czEo+tvZcu8G75JparGq9kB+kTnEUNVM",
+          "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.wasm"
+        },
+        {
+          "file": "ppocrv6-tiny-det.onnx",
+          "bytes": 1780590,
+          "sha384": "cffbb126284a06d48e106f531ea53393946654b02c8f9e15dd41c45448ce1214e57b77c88c837ec384fc27fa12bdbf46",
+          "sri": "z/uxJihKBtSOEG9THqUzk5RmVLAsj54V3UHEVEjOEhTle3fIjIN+w4T8J/oSvb9G",
+          "url": "https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/bundle/det/inference.onnx"
+        },
+        {
+          "file": "ppocrv6-tiny-rec.onnx",
+          "bytes": 4462639,
+          "sha384": "4b7917495acf5c5d70fd6a0093a330b4cceb5dd95f93fa0a6e8db4d24f9e73a1667f68e977386330640e93eb1c561c27",
+          "sri": "S3kXSVrPXF1w/WoAk6MwtMzrXdlfk/oKbo200k+ec6Fmf2jpdzhjMGQOk+scVhwn",
+          "url": "https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/bundle/rec/inference.onnx"
+        },
+        {
+          "file": "ppocrv6-tiny-dictionary.json",
+          "bytes": 41009,
+          "sha384": "e8d7f904d55ed46abc1f9ddb22afc61b06783c9e4fd6d2d3fbd2aa633b62a3878fffcf70bf728f69eb2c444836e3079f",
+          "sri": "6Nf5BNVe1Gq8H53bIq/GGwZ4PJ5P1tLT+9KqYztio4eP/89wv3KPaessREg24wef",
+          "url": "https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/bundle/rec/dictionary.json"
+        },
+        {
+          "file": "ppocrv6-tiny-LICENSE",
+          "bytes": 11358,
+          "sha384": "208f5ed627940e5e40c72895ab7fc57e54ee6b54abd24309db97ba8a61bbad783b4a202c03655e9acbc4a95b0ba8ceff",
+          "sri": "II9e1ieUDl5AxyiVq3/FflTua1Sr0kMJ25e6imG7rXg7SiAsA2VemsvEqVsLqM7/",
+          "url": "https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/LICENSE"
+        },
+        {
+          "file": "ppocrv6-tiny-MODEL-NOTICE.md",
+          "bytes": 311,
+          "sha384": "ff15f9e40dd146dbcf2b0defa858581ff97b0664159400c9486bd903beec79961caab0afc2da8b489a8c26ac68e5779e",
+          "sri": "/xX55A3RRtvPKw3vqFhYH/l7BmQVlADJSGvZA77seZYcqrCvwtqLSJqMJqxo5Xee",
+          "url": "https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/bundle/LICENSES/MODEL-NOTICE.md"
+        },
+        {
+          "file": "jxl_dec.js",
+          "bytes": 36091,
+          "sha384": "39552d0eb7fd026e756e23fabd95890b505e4a528aa3a9d040f8e507e285f5e58db9acc03628a31be201578443454300",
+          "sri": "OVUtDrf9Am51biP6vZWJC1BeSlKKo6nQQPjlB+KF9eWNuazANiijG+IBV4RDRUMA",
+          "url": "https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/codec/dec/jxl_dec.js"
+        },
+        {
+          "file": "jxl_dec.wasm",
+          "bytes": 849240,
+          "sha384": "9c9ade7e1a19ec74e8abb540ea46cfdd31bf83cf9e0f85238600e4ca5d03e9ae89b643ffda48f7325ca02563fa93f131",
+          "sri": "nJrefhoZ7HToq7VA6kbP3TG/g8+eD4UjhgDkyl0D6a6JtkP/2kj3MlygJWP6k/Ex",
+          "url": "https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/codec/dec/jxl_dec.wasm"
+        },
+        {
+          "file": "jxl-LICENSE",
+          "bytes": 11343,
+          "sha384": "36c7686c7f54c5d2ea2337104fc961a5376ee8e2ace0b232f25326da62c882a366361294568fac472dab27da14290ca0",
+          "sri": "NsdobH9UxdLqIzcQT8lhpTdu6OKs4LIy8lMm2mLIgqNmNhKUVo+sRy2rJ9oUKQyg",
+          "url": "https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "letters",
+      "adds": "Draw's ornamental letter sets: Field, Relief, Leaf, Arabesque.",
+      "builds": [
+        "full"
+      ],
+      "files": [
+        {
+          "file": "letters-field.json",
+          "bytes": 96902,
+          "sha384": "545b0213fef34ba2a4abf116d7fecd7d81d51a85573549b4a561ddb499b35f085680958148a84d1ee534383b8609aaf4",
+          "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/letters/field.json"
+        },
+        {
+          "file": "letters-relief.json",
+          "bytes": 95172,
+          "sha384": "b5072d05a91eda0bbb07fbf9ff58c2e9716de6c995e6e560ed6ec67495ec259059eb665cedcad23f7cd19193e042a82a",
+          "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/letters/relief.json"
+        },
+        {
+          "file": "letters-leaf.json",
+          "bytes": 134918,
+          "sha384": "0ed48a5ad5a18a2b6534e7e3c7da3925fd0561ca562f0e27996023a3578003714ebecd8e8c1da175d1e54429ebb59ee0",
+          "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/letters/leaf.json"
+        },
+        {
+          "file": "letters-arabesque.json",
+          "bytes": 136035,
+          "sha384": "671db3d9b1290f854d90871c2de8dc518ebc7aa005ada3c437b86ab2a91c56a1ce286bec48ca9b2cb8975e496f648365",
+          "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/letters/arabesque.json"
+        }
+      ]
+    }
+  ]
+}

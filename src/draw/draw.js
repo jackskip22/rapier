@@ -2231,6 +2231,7 @@ async function _rapierDrawUploadFont(file, target = 'selection') {
 	const state = _rapierDrawState, session = state.session, id = state.menuShapeId, original = target === 'selection' ? _rapierDrawShapeById(id) : null;
 	if (!file || target === 'selection' && (!original || original.locked) || file.size > 2097152) { if (file?.size > 2097152) showToast('Font must be 2 MiB or smaller', 'error'); return; }
 	const baseline = original && JSON.stringify(original), fonts = globalThis.RapierDrawFonts, upload = state.fontUpload = (state.fontUpload || 0) + 1;
+	const popup = _rapierProgressOpen({ label: 'Adding font', after: 500 });
 	try {
 		const font = fonts.importFont(new Uint8Array(await file.arrayBuffer()));
 		const face = state.fontFaces.get(font.id)?.font.data === font.data ? state.fontFaces.get(font.id).face : await new FontFace(fonts.fontFaceFamily(font), 'url(' + fonts.fontDataURL(font) + ')').load();
@@ -2258,6 +2259,7 @@ async function _rapierDrawUploadFont(file, target = 'selection') {
 		if (!state.fontFaces.has(font.id)) { document.fonts.add(face); state.fontFaces.set(font.id, {font: admittedFont, face}); }
 		_rapierDrawRenderAll();
 	} catch (error) { if (state.open && state.session === session && state.fontUpload === upload) showToast(String(error.message || error), 'error'); }
+	finally { popup.end(); }
 }
 
 const RAPIER_DRAW_TOOLS = ['select', 'brush', 'pen', 'paint', 'water', 'shape', 'text', 'erase', 'effects'];
@@ -2461,7 +2463,7 @@ function _rapierDrawSyncCanvasMenu() {
 	swap.setAttribute('aria-label', 'Canvas: ' + (dark ? 'black; change to white' : 'white; change to black'));
 	adaptive.setAttribute('aria-checked', String(on)); adaptive.setAttribute('aria-pressed', String(on));
 	adaptive.firstElementChild.textContent = on ? 'Adaptive: on' : 'Adaptive: off';
-	const note = menu.querySelector('[data-draw-background-note]'), kind = state.recipe.background?.kind;
+	const note = menu.querySelector('[data-draw-background-note]'), kind = (typeof _rapierBgCurrent === 'function' ? _rapierBgCurrent() : state.recipe.background)?.kind;
 	if (note) note.textContent = kind ? kind[0].toUpperCase() + kind.slice(1) : 'None';
 }
 // What the saved picture is when nothing has been set: the paper the person sees, whole pixels outward.
@@ -3419,7 +3421,7 @@ function _rapierDrawLettersProvider(set) {
 			if (event.detail?.status === 'ready') void _rapierDrawLettersBring(set);
 		});
 		door.providers.set(set.id, RapierPluginLoader.files({ key: 'letters-' + set.id, noun: set.name + ' letter set', dash: ' — ', version: set.id + ' ' + set.sha384,
-			files: [{ name: set.id, url: RAPIER_DRAW_LETTERS_URL + set.id + '.json', bytes: set.bytes, sri: set.sha384 }], store: door.store }));
+			files: [{ name: set.id, flat: 'letters-' + set.id + '.json', url: RAPIER_DRAW_LETTERS_URL + set.id + '.json', bytes: set.bytes, sri: set.sha384 }], store: door.store }));
 	}
 	return door.providers.get(set.id) || null;
 }
@@ -3461,6 +3463,7 @@ function _rapierDrawLettersBring(set, asked = false) {
 	})());
 	return door.bringing.get(set.id);
 }
+// The sheet gives way to the progress popup; a failure brings it back with its words (_rapierDrawLettersBring).
 function _rapierDrawLettersInstall() {
 	const door = _rapierDrawLettersDoor, asking = door.asking;
 	if (!asking) return;
@@ -3468,7 +3471,8 @@ function _rapierDrawLettersInstall() {
 	const apply = asking.apply;
 	asking.apply = null;
 	apply?.();
-	void _rapierDrawLettersBring(asking.set, true);
+	closeDialog(document.getElementById('letters-plugin-overlay'));
+	void _rapierDrawLettersBring(asking.set, true).finally(_rapierPluginProgress('letters-' + asking.set.id, asking.set.name));
 }
 function _rapierDrawLettersDismiss() {
 	_rapierDrawLettersDoor.asking = null;
@@ -3681,7 +3685,7 @@ function _rapierDrawShapeScreenBox(shape) {
 // _rapierPaintSyncPaper projects the same ground: explicit white paper, otherwise the body's
 // live background token. The person's Canvas choice beats automatic paper while painting.
 // A chosen black canvas is black in either theme (the menu says black); otherwise the ground is the theme's.
-function _rapierDrawDarkPaper() { return !_rapierDrawState.paper && (_rapierDrawState.recipe?.paper === 'black' || !document.body.classList.contains('light')); }
+function _rapierDrawDarkPaper() { return !_rapierDrawState.paper && (typeof _rapierBgCurrent !== 'function' || _rapierBgCurrent()?.kind !== 'paper') && (_rapierDrawState.recipe?.paper === 'black' || !document.body.classList.contains('light')); }
 // The default ink is "the text colour": black on light paper, the theme's text white on dark
 // paper. Chosen colours are derived the way coloured text is.
 function _rapierDrawPaperInk() {
@@ -5374,7 +5378,8 @@ function _rapierDrawPasteRecipe(incoming) {
 function _rapierDrawRasterDataURL(bytes, mime) {
 	return 'data:' + mime + ';base64,' + RapierBundleIO.toBase64(bytes);
 }
-async function _rapierDrawReadImage(file, session) {
+// `work` is `{signal, progress}` for the codec: Cancel and how far the encode is.
+async function _rapierDrawReadImage(file, session, work = {}) {
 	const state = _rapierDrawState, core = globalThis.RapierDrawCore;
 	const input = await _rapierReadRasterFile(file);
 	if (!state.open || state.session !== session || state.finishing) return null;
@@ -5392,7 +5397,7 @@ async function _rapierDrawReadImage(file, session) {
 	// A JPEG is carried whole into JPEG XL, its coefficients as they are; one the carrier refuses is decoded below.
 	if (input.mime === 'image/jpeg' && wantsJxl && _rapierJxlEncoderPresent()) {
 		let carried = null;
-		try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', { bytes: input.bytes.slice() }); } catch (_) {}
+		try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', { bytes: input.bytes.slice() }, { signal: work.signal }); } catch (error) { if (error?.name === 'AbortError') throw error; }
 		if (!state.open || state.session !== session || state.finishing) return null;
 		if (carried?.bytes && globalThis.RapierImageAssets.validCarriedDimensions(carried.width, carried.height)) {
 			const url = _rapierDrawRasterDataURL(carried.bytes, 'image/jxl');
@@ -5409,7 +5414,7 @@ async function _rapierDrawReadImage(file, session) {
 		try { decoded = await _rapierDecodeRaster(new Blob([input.bytes], { type: input.mime })); }
 		catch (error) {
 			if (!input.isJxl) throw error;
-			const pixels = await globalThis.RapierEmbeddedImages.codec('decode', { bytes: input.bytes.slice() });
+			const pixels = await globalThis.RapierEmbeddedImages.codec('decode', { bytes: input.bytes.slice() }, { signal: work.signal });
 			decoded = await _rapierDecodeRaster(new Blob([pixels.bytes], { type: 'image/png' }));
 		}
 		if (!state.open || state.session !== session || state.finishing) return null;
@@ -5423,7 +5428,7 @@ async function _rapierDrawReadImage(file, session) {
 		if (wantsJxl && _rapierJxlEncoderPresent()) {
 			const rgba = context.getImageData(0, 0, width, height);
 			const lossless = input.mime === 'image/png';
-			const encoded = await globalThis.RapierEmbeddedImages.codec('encode', { width, height, data: rgba.data, options: lossless ? { lossless: true } : { quality: 90, photo: true } });
+			const encoded = await globalThis.RapierEmbeddedImages.codec('encode', { width, height, data: rgba.data, options: lossless ? { lossless: true } : { quality: 90, photo: true } }, work);
 			url = _rapierDrawRasterDataURL(encoded.bytes || encoded, 'image/jxl');
 		} else {
 			const blob = await _rapierCanvasBlob(canvas, 'image/png');
@@ -5442,13 +5447,19 @@ async function _rapierDrawImportImages(files) {
 	const state = _rapierDrawState, session = state.session;
 	if (!state.open || state.finishing || state.imageImporting || !files?.length) return;
 	state.imageImporting = true;
+	const source = Array.from(files).slice(0, 16), controller = new AbortController();
+	const popup = _rapierProgressOpen({ label: source.length > 1 ? 'Adding pictures' : 'Adding picture', after: 500, cancel: () => controller.abort() });
 	try {
-		const source = Array.from(files).slice(0, 16), rows = [];
-		for (const file of source) {
-			const row = await _rapierDrawReadImage(file, session);
+		const rows = [];
+		for (const [index, file] of source.entries()) {
+			popup.set(source.length > 1 ? index / source.length : null);
+			const row = await _rapierDrawReadImage(file, session, { signal: controller.signal, progress: fraction => popup.set((index + fraction) / source.length) });
+			// A picture kept as it is never meets the codec, so Cancel pressed during its read is heard here.
+			controller.signal.throwIfAborted();
 			if (!row) return;
 			rows.push(row);
 		}
+		popup.end();
 		if (!rows.length || !state.open || state.session !== session || state.finishing) return;
 		const vb = state.svgRoot.viewBox.baseVal, maxW = Math.max(44, vb.width * .62), maxH = Math.max(44, vb.height * .62);
 		const shapes = rows.map((row, index) => {
@@ -5466,8 +5477,8 @@ async function _rapierDrawImportImages(files) {
 		if (!state.open || state.session !== session || state.finishing || _rapierDrawTool() !== 'select') return;
 		_rapierDrawPasteRecipe(incoming);
 	} catch (error) {
-		if (state.open && state.session === session) showToast('Image could not be added: ' + String(error?.message || error), 'error');
-	} finally { if (state.session === session) state.imageImporting = false; }
+		if (error?.name !== 'AbortError' && state.open && state.session === session) showToast('Image could not be added: ' + String(error?.message || error), 'error');
+	} finally { popup.end(); if (state.session === session) state.imageImporting = false; }
 }
 async function _rapierDrawPasteEvent(evt) {
 	evt.stopPropagation();
@@ -6306,6 +6317,20 @@ function _rapierDrawLeave(surface, under) {
 // successor closes before its predecessors are removed. A live session holds its own lock so another
 // window cannot mistake its checkpoint for abandoned work. No count or age evicts a drawing.
 const RAPIER_DRAW_BACKUP_MS = 4000;
+// A routine checkpoint waits this long for the painter to hand over what a lifted stroke still owes. Past it, and while a stroke is down,
+// it carries the painting as last published -- the complete picture the last lifted stroke made, which is already in the recipe -- and
+// leaves the live pixels owing. A person who keeps painting gets a checkpoint every interval, not one only when they stop.
+const RAPIER_DRAW_BACKUP_WAIT_MS = 300;
+// True when the live painting has a picture of its own in the recipe to carry (its first stroke has been published).
+function _rapierDrawBackupCarryable() {
+	const state = _rapierDrawState, layer = typeof _rapierPaintLayer === 'function' ? _rapierPaintLayer() : null;
+	return !!layer && layer.id != null && state.recipe.shapes.some(shape => shape.id === layer.id && shape.recognized === 'paint' && typeof shape.raster === 'string' && shape.raster.length > 0);
+}
+// Resolves true when `pending` settles within `ms`, false when the wait runs out first; a refusal of `pending` is the caller's, as awaiting it would be.
+function _rapierDrawBackupSettled(pending, ms) {
+	let timer;
+	return Promise.race([Promise.resolve(pending).then(() => true), new Promise(done => { timer = setTimeout(() => done(false), ms); })]).finally(() => clearTimeout(timer));
+}
 // ---- Where the recoveries live
 // --------------------------------------------------------------------
 // The private file system where the page has one. A page the browser gives none -- a file:// page,
@@ -6421,13 +6446,13 @@ function _rapierDrawBackupRelease(owner = _rapierDrawState.backupRecovery) {
 	if (!owner) return Promise.resolve();
 	return Promise.resolve(_rapierDrawState.backupIO).then(() => { owner.release(); return owner.lock; });
 }
-function _rapierDrawBackupTouch() {
+function _rapierDrawBackupTouch(delay = RAPIER_DRAW_BACKUP_MS) {
 	const state = _rapierDrawState;
 	if (!state.open) return;
 	state.backupDirty = true;
 	if (!_rapierDrawBackupHere()) { _rapierDrawBackupProblem('This drawing can’t be backed up here. Add it or download it before you leave.'); return; }
 	_rapierDrawBackupOwner().change++;
-	if (!state.backupTimer) state.backupTimer = setTimeout(() => { state.backupTimer = 0; void _rapierDrawBackupWrite(); }, RAPIER_DRAW_BACKUP_MS);
+	if (!state.backupTimer) state.backupTimer = setTimeout(() => { state.backupTimer = 0; void _rapierDrawBackupWrite(); }, delay);
 }
 // `quiet`: a removal made while a failed write is being reported raises no second notice of its
 // own (one refused store, one notice).
@@ -6453,14 +6478,19 @@ async function _rapierDrawBackupWrite(closing = false) {
 		if ((dropped || pendingOwner?.writing) && pendingOwner?.session === state.session && pendingOwner.revision > pendingOwner.cleared) state.backupDirty = true;
 	}
 	if (!state.open || !state.backupDirty) return;
-	const session = state.session;
-	let record, editing, owner, encode;
+	const session = state.session, began = Date.now();
+	let record, editing, owner, encode, published = null;
+	let carried = false;
 	try {
 		// The revision is already off this thread. Wait for it; do not encode it here. A worker that
-		// never answers keeps the checkpoint dirty so the next write carries the stroke.
+		// never answers keeps the checkpoint dirty so the next write carries the stroke. A routine write
+		// does not wait without end: past a bound, a painting with a published picture is carried as published.
 		let pending = typeof _rapierPaintPendingStroke === 'function' ? _rapierPaintPendingStroke(closing) : null;
+		// A stroke that is down is not waited for: the painting is carried as published (below).
+		if (pending && !urgent && state.gesture?.kind === 'paint' && _rapierDrawBackupCarryable()) { carried = true; pending = null; }
 		while (pending) {
-			await pending;
+			if (urgent || !_rapierDrawBackupCarryable()) await pending;
+			else if (!await _rapierDrawBackupSettled(pending, RAPIER_DRAW_BACKUP_WAIT_MS)) { carried = true; break; }
 			if (!state.open || state.session !== session) return;
 			pending = _rapierPaintPendingStroke(closing);
 		}
@@ -6472,17 +6502,23 @@ async function _rapierDrawBackupWrite(closing = false) {
 		// change that has already landed, and a recovery written from one would keep half an agent's
 		// contribution. Every path that shuts the surface ends the replay first, so `closing` always
 		// sees the finished drawing.
-		if (!closing && (state.gesture || state.textEdit || state.settingEdit || state.replay)) { _rapierDrawBackupTouch(); return; }
-		state.backupDirty = false;
+		// A paint stroke that is down keeps its pixels in the live layer alone; the recipe holds every stroke already lifted. So a painting that
+		// has a published picture is carried as published, and the next write takes the stroke.
+		const stroking = !closing && state.gesture?.kind === 'paint' && !state.textEdit && !state.settingEdit && !state.replay && _rapierDrawBackupCarryable();
+		if (!closing && !stroking && (state.gesture || state.textEdit || state.settingEdit || state.replay)) { _rapierDrawBackupTouch(); return; }
+		if (stroking) carried = true;
+		state.backupDirty = carried;
 		const recipe = _rapierDrawHistoryCopy({ ...state.recipe, fonts: undefined });
 		recipe.tool = state.tool;
 		// The live layer's box and pixels are the painter's: asked for at this instant (it answers in order, so the snapshot is of this very
 		// moment), and a promise when the painter has to be waited for.
-		let live = typeof _rapierPaintLayerSnapshot === 'function' ? _rapierPaintLayerSnapshot(!urgent) : null;
+		let live = !carried && typeof _rapierPaintLayerSnapshot === 'function' ? _rapierPaintLayerSnapshot(!urgent) : null;
 		if (live?.then) live = await live;
 		if (live) {
 			const id = live.id || ('s' + (state.seq + 1)), at = recipe.shapes.findIndex(existing => existing.id === id);
 			const previous = at >= 0 ? recipe.shapes[at] : null;
+			// The shapes as published, kept to write instead if the live pixels cannot be read at one revision (below).
+			if (previous?.recognized === 'paint' && typeof previous.raster === 'string' && previous.raster) published = recipe.shapes.slice();
 			const shape = { id, stroke: null, recognized: 'paint', asDrawn: false, brush: 'ink', style: null, ...previous, geom: live.geom, raster: live.raster, paint: { ...previous?.paint, strokes: undefined, seed: undefined, ...live.paint } };
 			if (live.encode) encode = async () => { shape.raster = await live.encode(); return !!shape.raster; };
 			if (at >= 0) recipe.shapes[at] = shape; else recipe.shapes.push(shape);
@@ -6514,9 +6550,16 @@ async function _rapierDrawBackupWrite(closing = false) {
 			// The pending filename was registered before compression. A concurrent clear owns it,
 			// and the encoded bytes belong to this captured recipe, never a later live layer.
 			if (encode && !await encode()) {
-				owner.files.delete(name);
-				if (state.open && state.backupRecovery === owner && state.session === owner.session && record.revision === owner.revision && record.revision > owner.cleared) _rapierDrawBackupTouch();
-				return false;
+				// The painter's pixels could not be read at one revision (a stroke began, the painter moved on). A painting that has been published
+				// has its last complete picture in the recipe: keep that as this checkpoint, and leave the live pixels owing for the next one. A
+				// painting never published has nothing to carry, and nothing is written.
+				if (!published || urgent) {
+					owner.files.delete(name);
+					if (state.open && state.backupRecovery === owner && state.session === owner.session && record.revision === owner.revision && record.revision > owner.cleared) _rapierDrawBackupTouch();
+					return false;
+				}
+				record.recipe.shapes = published;
+				state.backupDirty = true;
 			}
 			// Working PNGs may exceed the file recipe's limits. Use the existing lossless encoder on
 			// this captured recipe, inside its registered IO ticket, before replacing any recovery.
@@ -6560,7 +6603,8 @@ async function _rapierDrawBackupWrite(closing = false) {
 	const ok = await io;
 	owner.writing--;
 	// A refusal stays dirty but does not spin a failing timer. The next change or hide retries it.
-	if (ok && state.session === owner.session && state.open && state.backupDirty) _rapierDrawBackupTouch();
+	// A write that took long is not followed by a full interval of waiting: the next one is an interval after this one began.
+	if (ok && state.session === owner.session && state.open && state.backupDirty) _rapierDrawBackupTouch(Math.max(0, RAPIER_DRAW_BACKUP_MS - (Date.now() - began)));
 	return ok;
 }
 // The page going away: start the write now, not on a timer that may never run. The browser's
@@ -6671,12 +6715,19 @@ async function _rapierDrawBackupRead() {
 // checkpoint without gaining deletion authority over either window's subsequent work.
 async function _rapierDrawOfferRecovery(chosen = false) {
 	const state = _rapierDrawState;
-	if (state.open || state.finishing || state.backupOffering) return;
+	// A blank new canvas (an arrival at /draw or /watercolor) does not hide a kept drawing: it is offered, and Open replaces the blank.
+	const blank = () => state.open && !state.editing && _rapierDrawCanvasBlank();
+	if ((state.open && !blank()) || state.finishing || state.backupOffering) return;
 	state.backupOffering = true;
 	try {
 		const loadToken = rapier.identity.loadToken, stamp = Object.freeze(_rapierMutationStamp());
 		const record = await _rapierDrawBackupRead();
-		if (!record || state.open || state.finishing || loadToken !== rapier.identity.loadToken || !_rapierMutationStampIsCurrent(stamp)) return;
+		if (!record || (state.open && !blank()) || state.finishing || loadToken !== rapier.identity.loadToken || !_rapierMutationStampIsCurrent(stamp)) return;
+		if (state.open) {
+			if (!chosen) { showToast('Your unfinished drawing is kept.', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
+			await _rapierDrawClose();
+			if (state.open || state.finishing) return;
+		}
 		// A checkpoint reopens by itself once. A page left while Draw was still open offers it instead: a recovery never holds the page.
 		let reopened = null; try { reopened = localStorage.getItem('rapier:draw:reopened'); } catch (_) {}
 		if (!chosen && reopened) { showToast('Your unfinished drawing is kept.', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
@@ -6724,7 +6775,8 @@ if (typeof window !== 'undefined') {
 // document is restored (shell/platform.js _rapierBootFactsPublished) -- a fresh canvas over the document the page
 // opened with, DONE landing the drawing where DRAW's would. The editor is not painted first: html.rapier-draw-start
 // (editor/styles/rapier-draw.css), set at this file's evaluation before the first paint and taken off once the canvas
-// is up, or declined. The path then names the surface (_rapierDoorPathMark).
+// is up, or declined. The address stays the one the person arrived by until the canvas closes (_rapierDoorPathMark); a canvas
+// opened from the editor leaves the editor's address alone, since a reload at /draw would start a new canvas.
 // The same door by fragment, `#v/draw` (docs/agents.md "The address of a document"), for a copy of the page with no
 // path of its own to say it: a file, a self-hosted rapier.html. Read once and taken off, so a reload is the editor.
 // A page handed over may carry the view itself (`rapier-html --view draw`: `data-view` on the carried document
@@ -6801,6 +6853,141 @@ function _rapierDrawAssetBudget() {
 }
 // A drawing is content when it has a shape or a background: a background alone is the person's work.
 function _rapierDrawHasContent(recipe) { return !!(recipe && (recipe.shapes.length || recipe.background)); }
+// Done does not wait for the full-effort JPEG XL. A painting still in its working form (a lossless PNG) is written to the drawing as it
+// is, so the drawing closes into the document at once; the encoder keeps a copy of the same pixels as JPEG XL behind it, and when it is
+// done the document's picture is replaced by the drawing written with that painting (RapierEmbeddedImages.finishLater): the bytes
+// Done wrote before the encoder moved behind it, to the byte. Null where the painting is kept now: nothing in its working form, no
+// encoder, or a document that is not this page's (a host keeps the pictures of the page it frames).
+async function _rapierDrawKeepBehind(recipe) {
+	if (typeof _rapierPaintKeepAsJXL !== 'function' || !globalThis.RapierEmbeddedImages?.canFinishLater?.()) return null;
+	if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return null;
+	if (!recipe.shapes.some(shape => shape.recognized === 'paint' && shape.raster && !shape.raster.startsWith('data:image/jxl'))) return null;
+	const copy = _rapierDrawHistoryCopy(recipe);
+	let freeze;
+	const frozen = new Promise(ok => { freeze = ok; });
+	// How far the encode is goes to whoever shows it (`sink`), once there is one.
+	const behind = { recipe: copy, outcome: null, fraction: null, sink: null, controller: new AbortController(), report(fraction) { this.fraction = fraction; this.sink?.(fraction); } };
+	behind.outcome = _rapierPaintKeepAsJXL(copy, false, freeze, { progress: fraction => behind.report(fraction), signal: behind.controller.signal }).then(split => ({ split }), error => ({ error }));
+	void behind.outcome.then(freeze);
+	// The encoder is handed the live painting's pixels first; the drawing may close once they are in hand.
+	await frozen;
+	// A painting still in the stored form (a cap flip's, about five characters a pixel) is written as the compressed PNG of the same pixels.
+	for (const shape of recipe.shapes) {
+		if (shape.recognized !== 'paint' || !shape.raster || !_rapierPaintPNG.isStored(shape.raster)) continue;
+		const pixels = await _rapierPaintPNG.decode(shape.raster);
+		if (pixels) shape.raster = await _rapierPaintPNG.compressed(pixels);
+	}
+	return behind;
+}
+// Whether the drawing fits the document with its painting as it is: a stored PNG (a cap flip's) is far larger than the picture it
+// becomes, so that one is kept now.
+function _rapierDrawFitsBehind(recipe, measure) {
+	if (!_rapierDrawAdmitRecipe(recipe)) return false;
+	if (recipe.shapes.some(shape => shape.recognized === 'paint' && shape.raster && _rapierPaintPNG.isStored(shape.raster))) return false;
+	const text = _rapierDrawBuildSVG(recipe, measure, true);
+	return !!text && new TextEncoder().encode(text).length <= _rapierDrawAssetBudget();
+}
+// Where the painting is kept before the drawing closes (it does not fit as it is), the wait shows the progress popup, and the
+// popup's cancel gives Done up: the drawing stays open as it was. `work` is handed `{progress, signal}` for the encoder.
+async function _rapierDrawWhileKeeping(work, controller = new AbortController()) {
+	const popup = typeof _rapierProgressOpen === 'function' ? _rapierProgressOpen({ label: 'Saving at full quality', after: 1500, cancel: () => controller.abort() }) : null;
+	try {
+		const kept = await Promise.race([work({ progress: fraction => popup?.set(fraction), signal: controller.signal }), new Promise((_, no) => controller.signal.addEventListener('abort', () => no(Object.assign(new Error('Saving cancelled'), { code: 'DRAW_KEEP_GIVEN_UP' })), { once: true }))]);
+		return kept;
+	} finally { popup?.end(); }
+}
+function _rapierDrawSaySplit(split) {
+	if (!split?.length) return;
+	const pieces = split.reduce((n, row) => n + row.pieces, 0);
+	showToast((split.length === 1 ? 'One painting was' : split.length + ' paintings were') + ' too large for one picture, so ' + (split.length === 1 ? 'it is' : 'they are') + ' kept at full quality in ' + pieces + ' JPEG XL pieces. Nothing was lost from the drawing.', 'info');
+}
+// The drawing written with its painting kept as JPEG XL, once the encoder has it; `view` is the measure Done took, so the drawing
+// is the one Done would have written. Null leaves the drawing as Done wrote it (lossless; it only stays larger).
+function _rapierDrawFinishBehind(behind, asset, title, view) {
+	return globalThis.RapierEmbeddedImages.finishLater({
+		asset, title,
+		busy: () => _rapierDrawState.open,
+		onProgress: report => { behind.sink = report; if (behind.fraction != null) report(behind.fraction); },
+		final: async () => {
+			const kept = await behind.outcome;
+			if (kept.error) { console.warn('[rapier] paint keep', kept.error); return null; }
+			_rapierDrawSaySplit(kept.split);
+			const text = _rapierDrawBuildSVG(behind.recipe, () => view, true);
+			return text && new TextEncoder().encode(text).length <= _rapierDrawAssetBudget() ? text : null;
+		},
+	});
+}
+// A drawing the document holds with its painting still the lossless PNG Done wrote (the tab closed, or the document changed, before the
+// encoder was done) is finished when the document is shown: the same encode behind the same notice, one drawing at a time
+// (RapierEmbeddedImages.finishLater, `resumed`). The document says which: a Rapier drawing (its own metadata) with a painting that is a PNG.
+// A painting is carried over only when this page's own writer made its PNG and the pixels read back exactly, and only into one JPEG XL
+// picture; anything else stays as it is.
+async function _rapierDrawResumeFinishes() {
+	const embedded = globalThis.RapierEmbeddedImages, assets = globalThis.RapierImageAssets, state = _rapierDrawState, running = _rapierDrawResumeFinishes;
+	if (running.busy || typeof _rapierPaintKeepAsJXL !== 'function' || !embedded) return;
+	if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return;
+	running.busy = true;
+	const scope = rapier.identity.authority, pause = ms => new Promise(done => setTimeout(done, ms));
+	// The encoder reads the painting Draw holds while Draw is open, and the document must take a replacement: both are waited for.
+	const ready = async () => {
+		for (let waited = 0; (state.open || !embedded.canFinishLater()) && waited <= 600000; waited += 2000) {
+			if (scope !== rapier.identity.authority) return false;
+			await pause(2000);
+		}
+		return scope === rapier.identity.authority && !state.open && embedded.canFinishLater();
+	};
+	try {
+		for (const label of [...assets.documentAssets(_rapierSourceText()).assets.keys()]) {
+			await pause(0);
+			if (scope !== rapier.identity.authority) return;
+			const record = assets.documentAssets(_rapierSourceText()).assets.get(label);
+			if (record?.codec !== 'image/svg+xml' || record.status !== 'unverified') continue;
+			let text, recipe, size;
+			try {
+				const bytes = assets.decodeDataImage(record.url);
+				text = new TextDecoder().decode(bytes);
+				if (!text.includes('data-rapier-paint=')) continue;
+				recipe = _rapierDrawReadRecipeFromSVGText(text);
+				size = assets.imageDimensions(bytes, 'image/svg+xml');
+			} catch (_) { continue; }
+			const waiting = recipe?.shapes.filter(shape => shape.recognized === 'paint' && shape.raster?.startsWith('data:image/png;')) || [];
+			if (!waiting.length) continue;
+			let exact = true;
+			for (const shape of waiting) if (!_rapierPaintPNG.isOwn(shape.raster) || !await _rapierPaintPNG.decode(shape.raster).catch(() => null)) exact = false;
+			if (!exact) continue;
+			const rasters = waiting.map(shape => [shape.id, shape.raster]);
+			// The label as the document spells it (the table's key is upper case): the definition and the reference are found by it.
+			const spelled = /^\[([^\]]+)\]/.exec(record.source)?.[1];
+			if (!spelled) continue;
+			if (!await ready()) return;
+			await embedded.finishLater({
+				asset: {...record, label: spelled, ...size}, title: record.title, resumed: true, busy: () => state.open,
+				final: async report => {
+					const split = await _rapierPaintKeepAsJXL(recipe, false, null, { progress: report });
+					// A painting cut into pieces is a different drawing, not the same one with another codec: it stays as it is.
+					if (split.length) return null;
+					const swaps = new Map();
+					for (const [id, old] of rasters) {
+						const fresh = recipe.shapes.find(shape => shape.id === id)?.raster;
+						if (!fresh?.startsWith('data:image/jxl;') || (swaps.has(old) && swaps.get(old) !== fresh)) return null;
+						swaps.set(old, fresh);
+					}
+					let next = text;
+					for (const [old, fresh] of swaps) {
+						if (!next.includes('href="' + old + '"')) return null;
+						next = next.split('href="' + old + '"').join('href="' + fresh + '"');
+					}
+					return new TextEncoder().encode(next).length <= _rapierDrawAssetBudget() ? next : null;
+				},
+			});
+		}
+	} catch (error) { console.warn('[rapier] resume finish', error); }
+	finally {
+		running.busy = false;
+		// A document shown while this scan awaited pixels still needs its first scan.
+		if (scope !== rapier.identity.authority) void _rapierDrawResumeFinishes();
+	}
+}
 async function _rapierDrawFinish() {
 	const state = _rapierDrawState;
 	if (state.finishing || !_rapierDrawFinishText()) return;
@@ -6838,6 +7025,7 @@ async function _rapierDrawFinish() {
 	state.finishing = true; state.surface.setAttribute('aria-busy', 'true');
 	for (const control of state.surface.querySelectorAll(':is(button:not(.rapier-dial),input,textarea,select):not(#toast-root *)')) control.disabled = true;
 	_rapierDrawRenderHistory();
+	let behind = null, landed = false;
 	try {
 		// A canvas the + bar raised before its note was ready waits for the note here, and takes its place in it now
 		// that it is open (the busy wait below then reads the note's own document); a note that could not be written
@@ -6870,24 +7058,34 @@ async function _rapierDrawFinish() {
 		}
 		await _rapierDrawLoadFonts(state.recipe, session);
 		if (!state.open || !sameSession()) return;
-		const recipe = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe()), stamp = Object.freeze(_rapierMutationStamp());
+		let recipe = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe());
+		const stamp = Object.freeze(_rapierMutationStamp());
 		recipe.tool = state.tool; // Edit reopens on the tool the drawing was finished with.
 		// Every painting is kept as JPEG XL at FULL QUALITY. PNG is only the cheap working form while
 		// paint is live. It happens HERE, on the recipe actually about to be written -- the file is
 		// built from the restored history recipe, not state.recipe. No quality is ever taken for ONE
 		// PICTURE, quietly or by asking: a painting too large for one picture is kept in lossless
 		// pieces. The drawing's own SVG ASSET is a separate limit; Download keeps it whole.
-		if (typeof _rapierPaintKeepAsJXL === 'function') {
+		// The encode takes seconds to minutes, so the drawing is written first with the painting as it is, and the encoder finishes
+		// it behind Done (_rapierDrawKeepBehind); a painting the drawing cannot hold as it is is kept in JPEG XL now, as before.
+		behind = await _rapierDrawKeepBehind(recipe);
+		let measured = null;
+		const measure = typeof _rapierDrawMeasuredView === 'function' ? (body, w, h) => (measured = _rapierDrawMeasuredView(body, w, h)) : undefined;
+		if (behind && !_rapierDrawFitsBehind(recipe, measure)) {
+			const kept = await _rapierDrawWhileKeeping(work => { behind.sink = work.progress; if (behind.fraction != null) work.progress(behind.fraction); return behind.outcome; }, behind.controller);
+			if (kept.error) console.warn('[rapier] paint keep', kept.error); else _rapierDrawSaySplit(kept.split);
+			recipe = behind.recipe; behind = null;
+		}
+		if (!behind && typeof _rapierPaintKeepAsJXL === 'function') {
 			try {
-				const split = await _rapierPaintKeepAsJXL(recipe);
 				// Never a quality step: a painting too large for one picture is kept whole, at full quality,
 				// as several lossless pieces, and the person hears it once. Losing the work is never one of
 				// the choices.
-				if (split?.length) {
-					const pieces = split.reduce((n, row) => n + row.pieces, 0);
-					showToast((split.length === 1 ? 'One painting was' : split.length + ' paintings were') + ' too large for one picture, so ' + (split.length === 1 ? 'it is' : 'they are') + ' kept at full quality in ' + pieces + ' JPEG XL pieces. Nothing was lost from the drawing.', 'info');
-				}
-			} catch (error) { console.warn('[rapier] paint keep', error); }
+				_rapierDrawSaySplit(await _rapierDrawWhileKeeping(work => _rapierPaintKeepAsJXL(recipe, false, null, work)));
+			} catch (error) {
+				if (error?.code === 'DRAW_KEEP_GIVEN_UP') throw error;
+				console.warn('[rapier] paint keep', error);
+			}
 		}
 		// Prepare the whole live drawing, then apply only the document's admission limits to Add.
 		// The file exit (_rapierDrawTooLarge) never reduces quality to fit: it carries all of it without these
@@ -6898,7 +7096,7 @@ async function _rapierDrawFinish() {
 			await _rapierDrawTooLarge(session);
 			return;
 		}
-		let svgText = _rapierDrawBuildSVG(recipe, _rapierDrawMeasuredView, true);
+		let svgText = _rapierDrawBuildSVG(recipe, measure, true);
 		if (!svgText) throw new Error('The complete drawing could not be prepared');
 		let svgBytes = new TextEncoder().encode(svgText);
 		// Only reached when JPEG XL is this document's own image profile; a document without the
@@ -6945,9 +7143,13 @@ async function _rapierDrawFinish() {
 		if (!await globalThis.RapierEmbeddedImages.insert(normalized, raw, target, stamp)) throw new Error('Document changed; try Draw again');
 		void _rapierDrawBackupClear(); if (sameSession()) { _rapierDrawClose({ landed: true }); _rapierDrawLand(asset.label); }
 		if (notes && !editing) _rapierDrawReadyForWords(asset.label);
+		if (behind) { landed = true; void _rapierDrawFinishBehind(behind, asset, assetTitle, measured); }
 	} catch (error) {
-		if (sameSession()) { _rapierDrawShowCloseOnFailure(); showToast('Drawing could not be placed: ' + String(error.message || error), 'error'); }
+		if (error?.code === 'DRAW_KEEP_GIVEN_UP') { if (sameSession()) showToast('Saving cancelled. The drawing is still open.', 'info'); }
+		else if (sameSession()) { _rapierDrawShowCloseOnFailure(); showToast('Drawing could not be placed: ' + String(error.message || error), 'error'); }
 	} finally {
+		// An encode no drawing is waiting for any more (Done did not land) stops.
+		if (behind && !landed) behind.controller.abort();
 		state.finishing = false; state.surface.removeAttribute('aria-busy');
 		for (const control of state.surface.querySelectorAll(':is(button:not(.rapier-dial),input,textarea,select):not(#toast-root *)')) control.disabled = false;
 		_rapierDrawRenderHistory();
@@ -7349,7 +7551,8 @@ function _rapierDrawShapeProfile(imageEl) {
 // Existing PNG/JPEG XL bytes are already the picture: keep them verbatim. Other codecs are decoded
 // once and kept losslessly; the 12MP live surface, not a document raster byte cap, bounds this
 // door. A refused encode never removes the original picture from its document.
-async function _rapierDrawPictureRaster(imageEl) {
+// `work` is `{signal, progress}` for the encode.
+async function _rapierDrawPictureRaster(imageEl, work = {}) {
 	const w = imageEl.naturalWidth, h = imageEl.naturalHeight;
 	if (!(w > 0 && h > 0)) throw new Error('This picture has not finished loading');
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('This picture is larger than the 12-megapixel painting surface. Use a smaller copy to draw on.');
@@ -7368,7 +7571,7 @@ async function _rapierDrawPictureRaster(imageEl) {
 		let raster;
 		try {
 			const out = await globalThis.RapierEmbeddedImages.codec('encode',
-				{width: w, height: h, data: new Uint8Array(px.data.buffer.slice(0)), options: {lossless: true}});
+				{width: w, height: h, data: new Uint8Array(px.data.buffer.slice(0)), options: {lossless: true}}, work);
 			raster = 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out);
 		} catch (error) {
 			// The codec has its own byte bound. PNG is also lossless, and live work need not fit
@@ -7387,8 +7590,11 @@ async function _rapierDrawOnPicture() {
 	const imageEl = _rapierImageRuntime.image;
 	if (!record || !imageEl) { showToast('That picture is no longer available', 'info'); return; }
 	let held;
-	try { held = await _rapierDrawPictureRaster(imageEl); }
-	catch (error) { showToast(String(error?.message || error), 'error'); return; }
+	const controller = new AbortController();
+	const popup = _rapierProgressOpen({label: 'Opening picture', after: 500, cancel: () => controller.abort()});
+	try { held = await _rapierDrawPictureRaster(imageEl, {signal: controller.signal, progress: fraction => popup.set(fraction)}); }
+	catch (error) { if (error?.name !== 'AbortError') showToast(String(error?.message || error), 'error'); return; }
+	finally { popup.end(); }
 	// The slot is re-checked after the await: the person may have changed the document while the
 	// encode ran, and what this is about to write into must still be what they pressed. The check is
 	// on the live picture ELEMENT and its own slot -- `_rapierImageRecord` builds a fresh record

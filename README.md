@@ -6,7 +6,9 @@ no account.
 - **On the web:** [rapier.website](https://rapier.website). Add it to your home screen; let the first load finish
   before going offline.
 - **As a file:** [download rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) and open it in any
-  browser.
+  browser. Two smaller builds sit beside it: [rapier-document.html](https://github.com/jackskip22/rapier/raw/main/rapier-document.html),
+  the editor without Draw, Paint, Notes and the JPEG XL encoder, and
+  [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html), a read-only reader.
 - **On Android:** the Rapier app on Google Play. It has no Internet permission.
 - **On Windows:** [download Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe), the same editor as a desktop app.
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
@@ -30,31 +32,31 @@ no account.
 
 ## For agents
 
-The agent and the person share one page. The agent reads only the passages it needs and changes exactly what it
-read; the person's typing comes first, and an agent's change undoes on its own. The Will marks what an agent may
-edit, only add to, or must leave alone ([Will/1](docs/will.md)). [llms.txt](site/llms.txt),
-[AGENT-TOOLS.json](site/AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the [skills](plugin/skills/README.md)
-describe the tools and workflows.
-
-Create a plan with an editable diagram, move its objects by hand, then ask the agent to revise the same
-document around those changes. Review the revision and keep exact Markdown or an offline editor through
-`document.export`. The downloaded file stays editable independently of the hosted workspace.
+The agent and the person edit one live document. The agent reads only the passages it needs and changes exactly
+what it read; the person's typing comes first, and they keep, drop or undo each change while their own later edits
+stay. The agent draws native SVG diagrams the person can rearrange by hand, and paints with the same brushes. The
+Will marks what an agent may edit, only add to, or must leave alone ([Will/1](docs/will.md)).
+[llms.txt](site/llms.txt), [AGENT-TOOLS.json](site/AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the
+[skills](plugin/skills/README.md) describe the tools and workflows.
 
 ```sh
 claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier
-npx rapier-html notes.md                         # one offline page: the editor with the document inside
-npx rapier-html proposal.md --base original.md   # opened on the diff of a proposed change
-npm install rapier-markdown-kit                  # read, write and style the Markdown without the editor (MIT)
+npx rapier-html notes.md                            # one offline page: the editor with the document inside
+npx rapier-html --propose original.md proposal.md   # opened on the diff of a proposed change
+npm install rapier-markdown-kit                     # read, write and render the Markdown without the editor (MIT)
 ```
 
-In ChatGPT, add the MCP address in developer mode
-([OpenAI's guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)). A hosted workspace expires after
-about thirty idle days. Data handling: [rapier.website/privacy](https://rapier.website/privacy).
+Any MCP client connects at `https://mcp.rapier.website/mcp` with no account; in ChatGPT, add it in developer mode
+([OpenAI's guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)). `document.export` keeps exact
+Markdown, the offline editor, text, a web page, Word or PDF, independent of the hosted workspace, which expires
+after 30 idle days. Data handling: [rapier.website/privacy](https://rapier.website/privacy).
 
 ## In your own app
 
-`npm install rapier-embed` mounts the document editor in your page. Your app owns the document, the storage and the
-revisions.
+`npm install rapier-embed` mounts the document editor, or with `build: 'reader'` the read-only reader, in your page.
+Your app owns the document, the storage and the revisions. Keep the page and its plug-ins in your own codebase
+(`npx rapier-embed plugins ./public/rapier` fetches and verifies the reader's plug-ins); restyle the reader with
+`--rapier-*` CSS properties and your own fonts.
 
 ```js
 import {Rapier} from 'rapier-embed';
@@ -66,8 +68,9 @@ const editor = Rapier.mount(document.querySelector('#editor'), {
 ```
 
 `save` returns `{revision}` once storage confirms the bytes, or throws `Rapier.conflict(currentRevision)`. Pin a
-version at `https://rapier.website/embed/<version>/rapier-document.html`. The
-[embed contract](docs/embed-contract.md) and the [embed skill](plugin/skills/embed-rapier/SKILL.md) document the API.
+version at `https://rapier.website/embed/<version>/rapier-document.html` or `.../rapier-reader.html`. The
+[embed skill](plugin/skills/embed-rapier/SKILL.md) documents the API, self-hosting and plug-ins; the
+[embed contract](docs/embed-contract.md) is the wire protocol.
 
 ## Markdown
 
@@ -79,7 +82,8 @@ Rapier writes CommonMark plus conventions other editors already read, with pictu
 
 `src/` is the complete source of `rapier.html`; `(cd src && node tools/build.mjs)` rebuilds it byte for byte
 ([build.json](docs/build.json)). `npx wrangler deploy` serves it with the included configuration.
-`(cd src && RAPIER_PROFILE=document node tools/build.mjs)` builds the smaller document editor without Notes, Draw and Paint.
+`(cd src && RAPIER_PROFILE=document node tools/build.mjs)` builds the smaller document editor without Notes, Draw and Paint;
+`RAPIER_PROFILE=reader` builds the read-only reader.
 
 Run `node --test src/tools/test-public.mjs` with Node 22 to check concurrent source edits and Undo, authored HTML
 control boundaries, and hostile SVG filtering with drawing-data preservation. The tests need no browser, account,

@@ -1,6 +1,6 @@
 ---
 name: rapier-html
-description: Give the person a document they can read, edit and keep, as one offline HTML file that is the whole Rapier editor. `npx rapier-html@1.1.87 document.md` makes it, it opens with one click in any browser with no install and no account, and an optional Send back address brings their edits back to you. Use when the person asks for a document, a page, notes, a plan, a draft, a diagram, a drawing, a painting or a revision they can keep or change, or when a long answer belongs in a document rather than in the chat, even when they do not name Rapier. Not for short answers that belong in the conversation.
+description: Give the person a document they can read, edit and keep, as one offline HTML file that is the whole Rapier editor. `npx rapier-html@1.1.88 document.md` makes it, it opens with one click in any browser with no install and no account, and an optional Send back address brings their edits back to you. Use when the person asks for a document, a page, notes, a plan, a draft, a diagram, a drawing, a painting or a revision they can keep or change, or when a long answer belongs in a document rather than in the chat, even when they do not name Rapier. Not for short answers that belong in the conversation.
 ---
 
 # rapier-html
@@ -44,12 +44,12 @@ retained, and the person has a clear way to keep it and, when requested, return 
 With a shell, Node 22 or newer and the declared package release available on npm, `rapier-html` supplies the editor. If the pinned release is unavailable, use the installed page helper with the matching editor HTML when available; do not silently run a different release or claim a file was created:
 
 ```sh
-npx -- rapier-html@1.1.87 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.1.87 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
-npx -- rapier-html@1.1.87 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.1.87 --propose original.md proposal.md --by "Review author" # per-change KEEP/DROP review
-npx -- rapier-html@1.1.87 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.1.87 notes.md out.html                 # a named output
+npx -- rapier-html@1.1.88 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.1.88 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
+npx -- rapier-html@1.1.88 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.1.88 --propose original.md proposal.md --by "Review author" # per-change KEEP/DROP review
+npx -- rapier-html@1.1.88 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.1.88 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an output that exists is refused, so name a new one. The first `--` keeps npm from taking
@@ -60,7 +60,7 @@ layout and colour travel inside the page.
 
 - A document the person will keep: notes, a plan, a letter, a report, a study guide, with pictures in it.
 - A change they should judge rather than read about: `--propose original.md proposal.md` opens the existing
-  per-change KEEP/DROP review. `proposal.md --base original.md` is the old spelling of the same wrapper.
+  per-change KEEP/DROP review.
   Use `--by <your name>` for attribution; the CLI uses the generic label `Agent` when omitted. The tool
   `document.propose` requires a nonblank name and a current read handle, or its read revision and SHA-256.
 - A diagram or sketch, in two separate kinds: `document.draw` makes a native SVG drawing, boxes and arrows you
@@ -108,13 +108,13 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Hand the file as well when the viewer
   blocks downloads started inside it; apply the host's actual sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.87` and hand the page as a file; it opens
+- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.88` and hand the page as a file; it opens
   in any browser.
 - **A host that shows MCP apps (ChatGPT among them):** `rapier.open` requests the editor in the chat
   (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, where their documents already are.
 
-A page opens on what it carries (`--view`, `--drawing`, `--propose` or `--base`), and a page opened by its own address opens on
+A page opens on what it carries (`--view`, `--drawing` or `--propose`), and a page opened by its own address opens on
 the view its address names, the fragment never leaving the browser:
 
 | View | Address | On a page you hand over |

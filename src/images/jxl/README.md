@@ -19,7 +19,7 @@ JPEG coefficient conversion, photographic encoding, source readers, Exif/XMP, an
 | `rct-search.mjs`, `screen*.mjs` | Reversible color transforms, screen palettes, residual matches, and repeated glyphs. |
 | `ans.mjs` | ANS histogram and token coding, including learned lossless groups at effort 6 and above. |
 | `pool.mjs` | Worker tile ownership, group dispatch, ordered results, and local recovery after worker failure. |
-| `jfif.mjs`, `jpeg-job.mjs`, `photo-job.mjs`, `photo-dct.mjs`, `photo-quant.mjs` | JPEG input, photographic DCT, quantization, and checked jobs. |
+| `jfif.mjs`, `jpeg-job.mjs`, `photo-job.mjs`, `photo-dct.mjs` | JPEG input, photographic DCT, quantization, and checked jobs. |
 | `vardct.mjs`, `entropy.mjs`, `coefficient-*.mjs` | Shared coefficient coding and JPEG/photo entropy search. |
 | `source.mjs` | PNG16/OpenEXR samples and supported color/alpha declarations. |
 | `metadata.mjs` | Exif/XMP container boxes without changing image coding. |
@@ -31,15 +31,16 @@ share ES modules; each minified entry point includes its dependencies in one fil
 
 ## Search
 
-Effort 1 writes the core's bytes. Efforts 2–3 add weighted prediction, error contexts, and screen coding. Efforts
-4–5 add shared and per-group learned trees, local palette models, color-transform search, and broader screen
-matching. Efforts 6–9 add joint predictor/context learning, per-group prefix/ANS selection, and increasing sample
-budgets. Higher levels retain the lower-level candidates. The explicit `treeLearning: 'sampled'` option selects a
-separate reduced search; its hurry result is effort 1.
+Effort 1 writes the core's bytes. Efforts 2–3 add weighted prediction, error contexts, and screen coding. Effort 4
+adds color-transform search and local palette models. Efforts 5–9 learn one predictor/context model per group with
+per-group prefix/ANS selection: effort 5 under YCoCg, 6 under the color transform that sampled residuals rank first,
+7 with eight predictors and more properties, 8 with all 14 predictors, and 9 also under the second-ranked
+transform. Each level's learned model replaces the level below's; the fixed candidates stay. The explicit
+`treeLearning: 'sampled'` option selects a separate reduced search; its hurry result is effort 1.
 
 Native integer effort 2 also compares untransformed RGB. Floating-point lossless encoding has no additional effort
-search. JPEG and photo entry points have their own coefficient search; their optional ANS entry points add ANS
-candidates from effort 2. See the API for exact options, budgets, and reconstruction bounds.
+search. JPEG and photo entry points have their own coefficient search. Photo effort 5 and above adds ANS;
+the optional ANS entry points add it from effort 2. See the API for exact options, budgets, and reconstruction bounds.
 
 ## Invariants
 

@@ -1,8 +1,9 @@
-async function _rapierPrepareInterchangeContext(options, captured) {
+// `progress`, when given, hears how many of the pictures are converted, from 0 to 1.
+async function _rapierPrepareInterchangeContext(options, captured, progress = null) {
   const context = _rapierBuildInterchangeContext(options, captured);
   context.imageSubstitutions = new Map();
   await globalThis.RapierEmbeddedImages.materialize(context.semanticRoot, context.canonical, context.imageSubstitutions,
-    {compat: context.imageCompat !== false});
+    {compat: context.imageCompat !== false, progress});
   const images = [...context.semanticRoot.querySelectorAll('img')];
   context.stats.embeddedImages = images.filter(image => /^data:image\//i.test(image.getAttribute('src') || '')).length;
   context.stats.unresolvedImages = images.filter(image => !/^data:image\//i.test(image.getAttribute('src') || '')).length;

@@ -1,5 +1,5 @@
 {
-  "release": "1.1.87",
+  "release": "1.1.88",
   "core": [
     {
       "name": "document.set_view",
@@ -769,7 +769,7 @@
               "letters-leaf",
               "letters-arabesque"
             ],
-            "description": "The built-in plug-in to install on this device; no URL or custom executable is accepted."
+            "description": "The built-in plug-in to install on this device: math (TeX maths), mermaid (every Mermaid diagram type), pdf (opens PDF files), ocr (finds text in pictures), or a Draw letter set (letters-field, letters-relief, letters-leaf, letters-arabesque). No URL or custom file is accepted."
           },
           "agent": {
             "type": "string",
@@ -8423,7 +8423,7 @@
               "letters-leaf",
               "letters-arabesque"
             ],
-            "description": "The built-in plug-in to install on this device; no URL or custom executable is accepted."
+            "description": "The built-in plug-in to install on this device: math (TeX maths), mermaid (every Mermaid diagram type), pdf (opens PDF files), ocr (finds text in pictures), or a Draw letter set (letters-field, letters-relief, letters-leaf, letters-arabesque). No URL or custom file is accepted."
           },
           "agent": {
             "type": "string",
@@ -15960,7 +15960,7 @@
     {
       "name": "rapier.guide",
       "title": "How to use Rapier",
-      "description": "Returns Rapier's usage guide and workflows when host instructions are unavailable. With topic paint, returns the complete painting registry.",
+      "description": "Returns Rapier's whole usage guide: the server instructions in full, for a host that shows them cut short or not at all. With topic paint, returns the complete painting registry.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -16025,7 +16025,7 @@
     {
       "name": "rapier.open",
       "title": "Open a shared editable document",
-      "description": "Creates a shared workspace from text or a host file, or resumes one by its document value. Use for documents the person and assistant will edit together: drafts, plans, guides, drawings and reviewed revisions. Returns editor_url. Native SVG drawings use document.draw; Mermaid stays in Markdown through document.apply_edits. document.export keeps an independent Markdown file or offline editor. Workspaces expire after 30 idle days.",
+      "description": "Creates a shared workspace from text or a host file, or resumes one by its document value. Use for documents the person and assistant will edit together: drafts, plans, guides, drawings and reviewed revisions. Returns editor_url, the live editor for the person's browser; when that browser shows a four-letter code, pair it with document.pair_browser. Native SVG drawings use document.draw; Mermaid stays in Markdown through document.apply_edits. document.export keeps an independent Markdown file or offline editor. Workspaces expire after 30 idle days.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -16179,13 +16179,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.87.html",
+          "resourceUri": "ui://rapier/editor-1.1.88.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.87.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.88.html",
         "openai/ui": {
           "entrypoints": [
             {

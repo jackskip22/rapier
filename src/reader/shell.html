@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+	RAPIER READER — one-file offline Markdown reader.
+
+	Copyright (C) 2026 Jack Skipworth.
+	Rapier application code: SPDX-License-Identifier: AGPL-3.0-only.
+
+	Additional terms under GNU AGPLv3 section 7:
+		• Interactive interfaces must preserve the author attribution
+			“Rapier V[upstream version] by Jack Skipworth” in their Appropriate
+			Legal Notices.
+		• Modified versions must be clearly marked as modified and must not be
+			represented as official Rapier releases.
+		• No rights in the Rapier name or marks are granted except as necessary
+			to describe the work's origin.
+
+	Vendored third-party code retains its original licences.
+	Full licence, no-warranty terms, and the source: Settings → About → Licenses.
+-->
+<html lang="en" data-highlights="standard" data-headings="expanded">
+<head>
+<meta charset="UTF-8">
+<script id="rapier-boot-theme">try{var t=JSON.parse(localStorage.getItem("rapier:preference:theme"));("light"===t||"dark"!==t&&matchMedia("(prefers-color-scheme: light)").matches)&&document.documentElement.classList.add("rapier-boot-light")}catch(e){}</script>
+<style id="rapier-boot-theme-style">html.rapier-boot-light{color-scheme:light;background:#fff}</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark light">
+<meta http-equiv="Content-Security-Policy" content="<!-- RAPIER_READER_CSP -->">
+<meta name="referrer" content="no-referrer">
+<meta name="rapier-version" content="<!-- RAPIER_READER_VERSION -->">
+<title>Rapier reader</title>
+<style id="rapier-boot-style">body{margin:0;min-height:100dvh;background:#000;color:#fff}html.rapier-boot-light body{background:#fff;color:#000}.rapier-boot-failure{display:none;max-width:34rem;margin:0 auto;padding:2rem;text-align:center;font:500 15px/1.55 system-ui,sans-serif}body.rapier-boot-failed>.rapier-boot-failure{display:block}.rapier-boot-failure h1{margin:0 0 .6rem;font-size:1.1rem;font-weight:650}.rapier-boot-failure p{margin:0;opacity:.7}</style>
+</head>
+<body>
+<main class="rapier-boot-failure" role="alert"><h1>Rapier could not start</h1><p>Reload this file. Your document has not been opened or changed.</p></main>
+<!-- RAPIER_READER_PACK -->
+<script><!-- RAPIER_READER_LOADER --></script>
+</body>
+</html>

@@ -6,25 +6,25 @@ editor, offline, with the document inside.
 Use it for a plan to rearrange, an illustrated guide to annotate, a draft to continue writing, or a revision
 to review. Text and drawings stay editable, and the file remains usable independently of a hosted workspace.
 
-- The page writes, draws and paints, saves Markdown, exports a web page and prints, with no account and nothing
-  fetched to open, edit or save.
+- The page writes, draws and paints, saves Markdown, exports Word, PDF and a web page, and prints, with no account
+  and nothing fetched to open, edit or save.
 - `--return` adds a one-use Send back address from the agent door: the person edits offline, presses Send back,
   and the agent reads the returned copy.
-- `--view draw` opens on Draw; `--base original.md` opens on the diff of a proposed change, and the person keeps
+- `--view draw` opens on Draw; `--propose original.md` opens on the diff of a proposed change, and the person keeps
   or drops each change; `--by <name>` says on that diff who proposed it and when.
 - `wrap` and `unwrap` carry a document into a page and out again, exactly, for programs.
 
 Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.1.87 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.1.87 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.1.87 notes.md --view notes             # opens the Notes library
-npx -- rapier-html@1.1.87 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.1.87 proposal.md --base original.md    # opens on the diff of a proposed change
-npx -- rapier-html@1.1.87 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.1.87 notes.md out.html                 # a named output
-npm install rapier-html@1.1.87                              # as a library: wrap, unwrap
+npx -- rapier-html@1.1.88 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.1.88 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.1.88 notes.md --view notes             # opens the Notes library
+npx -- rapier-html@1.1.88 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.1.88 --propose original.md proposal.md # opens on the diff of a proposed change
+npx -- rapier-html@1.1.88 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.1.88 notes.md out.html                 # a named output
+npm install rapier-html@1.1.88                              # as a library: wrap, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
@@ -86,18 +86,12 @@ fact of the file and written back on Save.
 ## Safety
 
 - It never overwrites: an existing output, the document itself included, is refused, as are unknown options, a
-  `--view` other than `draw` or `notes`, a `--drawing` or `--base` with no file, a return without its expiry, an
+  `--view` other than `draw` or `notes`, a `--drawing` or `--propose` with no file, a return without its expiry, an
   invalid expiry, an unsafe return URL and a third filename.
 - Nothing reports on the page's use. It reaches the network only when the document or the person asks: a linked
-  picture or video, the maths, diagram and PDF-import helpers on first use, or Send back. A return URL names only
-  the worker's exact origin and route; credentials, query strings and fragments are refused.
-
-## Licence
-
-AGPL-3.0-only (`LICENSE`): the page is the Rapier editor with the notices of the libraries it carries.
-The Markdown standard without the editor is `rapier-markdown-kit` (MIT). Rapier is https://rapier.website.
-`BUILD.json` records the page's size, SHA-256, build time and Node version.
-
+  picture or video, a plug-in on first use (maths, diagrams, PDF import, text in pictures, a letter set), or
+  Send back. A return URL names only the worker's exact origin and route; credentials, query strings and fragments
+  are refused.
 
 ## Optional edit history
 
@@ -110,3 +104,9 @@ of attaching false history. Saved Markdown written with the kit's
 `ledger/carried.writeDocument` is read automatically when wrapping. Rewrapping a
 page without parts drops its previous document's parts. Published npm files carry
 their own staged MIT validator closure; no source checkout is needed.
+
+## Licence
+
+AGPL-3.0-only (`LICENSE`): the page is the Rapier editor with the notices of the libraries it carries.
+The Markdown standard without the editor is `rapier-markdown-kit` (MIT). Rapier is https://rapier.website.
+`BUILD.json` records the page's size, SHA-256, build time and Node version.

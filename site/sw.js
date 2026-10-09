@@ -26,8 +26,8 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '20a02a518285ee3904dbfbdfa84d459935a5526ca6a0e77bc356c521336285f2';
-const SHELL_PAGE_SHA256 = 'de1f732bce1e8292ff1d967eca0e2c5d2251d52dd9cbf24cdb880120ededb4c4';
+const SHELL_RELEASE_SHA256 = 'ea6aaf459eb1d1748551bed85d44f8afe789e0407f5d86e5fcadd098181c814d';
+const SHELL_PAGE_SHA256 = 'e1fe37abd18601a1dc4b3b216c664abbe1d359304ba44553d73e7959a6251660';
 /* This worker's own generation — never a value looked up at runtime. Two
    different releases compile to two different names, so a predecessor and a
    successor can never resolve, overwrite, or retire each other's cache. */
@@ -158,7 +158,8 @@ self.addEventListener('fetch', event => {
           if (copy) { discardNetwork(); return copy; }
         }
         const settled = first || await outcome;
-        if (settled.response && settled.response.ok) return settled.response;
+        /* A redirect is the host's answer: /draw/ goes to /draw, and the browser follows it. */
+        if (settled.response && (settled.response.ok || settled.response.type === 'opaqueredirect')) return settled.response;
         const copy = await cachedNavigationResponse(req).catch(() => null);
         if (copy) { discardNetwork(); return copy; }
         return settled.response || new Response(
@@ -191,10 +192,9 @@ async function cachedNavigationResponse(request) {
   const requested = new URL(request.url);
   const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
-  /* And the doors the page names itself by (repo/_redirects): while Notes or Draw is up the address
-     reads notes or draw under the root, so a reload there offline is a reload of Rapier, with the
-     trailing slash the door mark allows (shell/platform.js _rapierDoorPathMark). The privacy and
-     commercial sheets are doors of the same kind. */
+  /* And the addresses the page is entered by (repo/_redirects): /notes, /draw, /watercolor, /privacy and
+     /commercial. Offline, each loads Rapier, which opens the surface the address names; the slash the host
+     redirects online is served as it stands (shell/platform.js _rapierDoorPathMark). */
   const door = requested.pathname.startsWith(root.pathname) &&
     /^(?:notes|draw|watercolor|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
   if (requested.origin !== root.origin ||

@@ -64,7 +64,10 @@ workspace capability, tool receipt, editor opening or applied change.
 2. Pass the returned `document` value on later calls. With a connected host, saved authorization identifies
    the workspace owner and the value alone grants no access. In no-account mode, the value is the workspace's
    whole authority: keep it private. To continue an existing workspace, reopen with `document` alone;
-   do not replace it with a new copy.
+   do not replace it with a new copy. A host that renders MCP Apps shows the editor in the conversation;
+   otherwise give the person `editor_url`. When their browser shows a four-letter code, pass it to
+   `document.pair_browser`; for a connected workspace they first approve at the returned `owner_approval_url`
+   in the browser where Rapier was connected, then press **Allow** on the page with the code.
 3. For a native drawing, `document.draw` takes `alt` and `figures`. Without a placement handle it appends
    before image definitions. Read a real passage only when placement beside that passage matters.
    Creation requests opening and replay by default; use `presentation: {open: false, replay: false}`

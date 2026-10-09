@@ -253,6 +253,10 @@ body.rapier-notes-open .rapier-frontmatter { display: none; }
    element, not inherited from the scroller. */
 .editor-area .md-render { --md-table-header-top: calc(0px - var(--space-8)); }
 
+/* The room kept for the format strip is read only by the scroller that holds it (.editor-area, .source-textarea, set
+   on the element itself): not inherited, a strip coming or going restyles that scroller, not every word inside it. */
+@property --rapier-keyboard-space { syntax: '<length>'; inherits: false; initial-value: 0px; }
+
 .editor-area {
 	flex: 1;
 	text-wrap: wrap; /* greedy prose, balanced headings (spec/markdown-style.css): layout/browser.js plans both */

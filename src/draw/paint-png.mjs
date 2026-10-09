@@ -31,8 +31,20 @@ export function createPaintPNGCodec() {
 		const colour = bytes[25], channels = {0: 1, 2: 3, 4: 2, 6: 4}[colour];
 		if (bytes[24] !== 8 || !channels || bytes[26] !== 0 || bytes[27] !== 0 || bytes[28] !== 0) return null;
 		if (!width || !height || width * height > pixelLimit) throw new Error('Painting PNG is too large');
-		const parts = []; let profiled = false;
-		for (let at = 8; at + 12 <= bytes.length;) { const n = v.getUint32(at); if (at + n + 12 > bytes.length || crc(bytes.subarray(at + 4, at + n + 8)) !== v.getUint32(at + n + 8)) throw new Error('Damaged painting PNG'); const tag = v.getUint32(at + 4); if ([0x69434350,0x67414d41,0x6348524d,0x65584966].includes(tag)) profiled = true; if (tag === 0x49444154) parts.push(bytes.subarray(at + 8, at + 8 + n)); at += n + 12; }
+		const parts = []; let profiled = false, transparent = null;
+		for (let at = 8; at + 12 <= bytes.length;) {
+			const n = v.getUint32(at);
+			if (at + n + 12 > bytes.length || crc(bytes.subarray(at + 4, at + n + 8)) !== v.getUint32(at + n + 8)) throw new Error('Damaged painting PNG');
+			const tag = v.getUint32(at + 4);
+			if ([0x69434350,0x67414d41,0x6348524d,0x65584966].includes(tag)) profiled = true;
+			if (tag === 0x74524e53) {
+				if ((colour !== 0 && colour !== 2) || n !== channels * 2 || transparent) throw new Error('Invalid painting PNG transparency');
+				// PNG stores transparent keys as 16-bit samples; this reader owns their low eight bits.
+				transparent = Array.from({length: channels}, (_, channel) => v.getUint16(at + 8 + channel * 2) & 255);
+			}
+			if (tag === 0x49444154) parts.push(bytes.subarray(at + 8, at + 8 + n));
+			at += n + 12;
+		}
 		// Imported profiles/orientation belong to the browser's colour-managed reader. Our working
 		// PNGs carry untagged straight sRGB and are the only pixels this raw path owns.
 		if (profiled) return null;
@@ -48,8 +60,22 @@ export function createPaintPNGCodec() {
 		const rgba = new Uint8ClampedArray(width * height * 4);
 		for (let p = 0, q = 0; p < data.length; p += channels, q += 4) {
 			rgba[q] = data[p]; rgba[q + 1] = colour === 2 ? data[p + 1] : data[p]; rgba[q + 2] = colour === 2 ? data[p + 2] : data[p]; rgba[q + 3] = colour === 4 ? data[p + 1] : 255;
+			if (transparent && data[p] === transparent[0] && (colour === 0 || data[p + 1] === transparent[1] && data[p + 2] === transparent[2])) rgba[q + 3] = 0;
 		}
 		return {width, height, data: rgba};
+	}
+	// A PNG this writer made: a header, one run of data and the end, 8-bit straight RGBA, nothing else. Only such a PNG is carried to
+	// another codec from its pixels by the page's own work; any other is a picture the browser reads (its keys, tints and profiles).
+	function isOwn(raster) {
+		if (typeof raster !== 'string' || !raster.startsWith('data:image/png;base64,')) return false;
+		let bytes;
+		try { const binary = atob(raster.slice(22)); bytes = new Uint8Array(binary.length); for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at); } catch (_) { return false; }
+		const v = new DataView(bytes.buffer);
+		if (bytes.length < 57 || v.getUint32(0) !== 0x89504e47 || v.getUint32(4) !== 0x0d0a1a0a || v.getUint32(8) !== 13 || v.getUint32(12) !== 0x49484452) return false;
+		if (bytes[24] !== 8 || bytes[25] !== 6 || bytes[26] !== 0 || bytes[27] !== 0 || bytes[28] !== 0) return false;
+		const order = [];
+		for (let at = 33; at + 12 <= bytes.length;) { const n = v.getUint32(at); order.push(v.getUint32(at + 4)); at += n + 12; if (at === bytes.length) return order.join() === [0x49444154, 0x49454e44].join(); }
+		return false;
 	}
 	// The synchronous PNG is stored, not compressed (about 5.3 characters a pixel): its zlib header 78 01 and a stored
 	// first block, read from the first 48 bytes. No budget weighs it: it is never the form a painting is kept in.
@@ -59,5 +85,5 @@ export function createPaintPNGCodec() {
 		try { head = atob(raster.slice(22, 86)); } catch (_) { return false; }
 		return head.length === 48 && head.slice(37, 41) === 'IDAT' && head.charCodeAt(41) === 0x78 && head.charCodeAt(42) === 0x01 && (head.charCodeAt(43) & 6) === 0;
 	}
-	return {encode, encodeBytes, compressed, decode, isStored, pixelLimit};
+	return {encode, encodeBytes, compressed, decode, isStored, isOwn, pixelLimit};
 }

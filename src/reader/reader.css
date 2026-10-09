@@ -1,0 +1,55 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The reader's own sheet, after the house sheets. The reader carries no faces: the families below fall back to the system's until a
+   host plugs its own in (packages/rapier-embed/README.md, "Style the reader"). Public properties a host may set on :root or body:
+   --rapier-font-sans, --rapier-font-mono, --rapier-bg, --rapier-surface, --rapier-text, --rapier-muted, --rapier-border,
+   --rapier-accent, --rapier-radius, --rapier-measure, --rapier-line-height and --rapier-gutter. Each one left unset keeps the
+   house value. */
+:root{
+	--font-sans:var(--rapier-font-sans,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif);
+	--font-mono:var(--rapier-font-mono,ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace);
+	--md-font-sans:var(--font-sans);
+	--md-font-mono:var(--font-mono);
+}
+/* A document that names its own face keeps it; otherwise the reader's family. */
+#editor-blocks.md-render{--md-font-sans:var(--rapier-doc-face,var(--font-sans))}
+/* The text-size setting is a step over the style pack's unit: every size, line and space in the document follows it. */
+#editor-blocks.md-render{--md-unit:calc(1rem * var(--rapier-step,1))}
+
+/* Corners: square by house rule; a host's radius rounds the surfaces a person meets. */
+.settings-panel,.find-bar,.find-input,.settings-action-btn,.theme-switcher,.toast,.rapier-pop,
+.md-render pre,.md-render code,.md-render img,.md-render table,.md-render blockquote{border-radius:var(--rapier-radius,0)}
+.theme-switcher>:first-child{border-start-start-radius:var(--rapier-radius,0);border-end-start-radius:var(--rapier-radius,0)}
+.theme-switcher>:last-child{border-start-end-radius:var(--rapier-radius,0);border-end-end-radius:var(--rapier-radius,0)}
+
+/* Open stands alone where New stood beside it. */
+#settings-open-pair{grid-template-columns:minmax(0,1fr)}
+
+/* A host's accent leaves no swatches to pick. */
+html.rapier-host-accent #accent-swatches,html.rapier-host-accent .settings-section__title:has(+ #accent-swatches){display:none}
+
+/* The file name is a label here. */
+#filename-btn,#filename-ext-btn{pointer-events:none}
+
+/* A heading's fold control sits at the heading's end, in the gutter, as it does beside a heading in the editor. */
+#editor-blocks>:is(h1,h2,h3,h4,h5,h6){position:relative}
+#editor-blocks>h1>.section-fold-btn{inset-block-start:0;height:calc(var(--md-line) * 2)}
+#editor-blocks>:is(h2,h3)>.section-fold-btn{inset-block-start:calc((var(--md-line) * 1.5 - 44px) / 2);height:44px}
+#editor-blocks>:is(h4,h5,h6)>.section-fold-btn{inset-block-start:calc((var(--md-line) - 44px) / 2);height:44px}
+#editor-blocks>[data-folded="true"]>.section-fold-btn{opacity:.64;color:var(--color-text)}
+#editor-blocks>[data-folded="true"]>.section-fold-btn svg{transform:rotate(90deg)}
+
+/* A caption stands close under its table or picture, as the editor sets it: the content sheet's own rule has no weight of its own. */
+#editor-blocks :is(.rapier-table-caption,.rapier-figure-caption){margin-top:calc(var(--md-space-1) - var(--md-line))}
+
+/* The reading measure (docs/markdown-standard.md): the column fills a narrow screen and stops at the measure on a wide one. */
+#editor-blocks>*{max-width:var(--md-measure,39.6rem);margin-inline:auto}
+
+/* Print and Save as PDF: the whole document on paper, in light ink, with none of the page's controls. */
+@media print{
+	html[data-rapier-printing="on"],html[data-rapier-printing="on"] body{display:block!important;height:auto!important;min-height:0!important;overflow:visible!important;background:#fff!important}
+	html[data-rapier-printing="on"] body>:not(#editor-blocks){display:none!important}
+	html[data-rapier-printing="on"] #editor-blocks{position:static!important;display:block!important;height:auto!important;max-height:none!important;overflow:visible!important;margin:0!important;padding:0!important;width:auto!important}
+	html[data-rapier-printing="on"] #editor-blocks>*{max-width:none}
+	html[data-rapier-printing="on"] #editor-blocks .rapier-hscroll,html[data-rapier-printing="on"] #editor-blocks .rapier-hscroll__surface{overflow:visible!important}
+	html[data-rapier-printing="on"] .fence-copy{display:none!important}
+}

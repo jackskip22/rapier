@@ -136,16 +136,20 @@ function _rapierOcrPaint() {
 }
 function _rapierOcrRequest(asked) {
 	const provider = _rapierOcrProvider();
-	if (!provider || provider.status === 'ready') return;
+	if (!provider || provider.status === 'ready' || provider.status === 'downloading' || provider.status === 'installing') return;
 	if (!asked && _rapierOcr.dismissed) return;
 	_rapierOcrPaint();
 	openDialog(document.getElementById('ocr-plugin-overlay'), {panel: '.settings-panel', onEscape: _rapierOcrDismiss});
 }
+// The sheet gives way to the progress popup; a failure brings it back with its words.
 async function _rapierOcrInstall() {
 	const provider = _rapierOcrProvider();
 	if (!provider) return;
+	closeDialog(document.getElementById('ocr-plugin-overlay'));
+	const end = _rapierPluginProgress('ocr', 'text reader');
 	try { await (provider.status === 'error' ? provider.reinstall() : provider.install()); }
-	catch (error) { console.warn('[rapier] text in pictures plug-in install failed', error); }
+	catch (error) { console.warn('[rapier] text in pictures plug-in install failed', error); _rapierOcrRequest(true); }
+	finally { end(); }
 	_rapierOcrPaint();
 }
 function _rapierOcrDismiss() {

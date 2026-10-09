@@ -8,7 +8,7 @@ import acorn from '../agent/vendor/acorn.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RENDER_OWNERS = ['kit/render.mjs', 'kit/render-markdown.mjs', 'kit/render-styles.mjs', 'kit/render-sanitize.mjs', 'kit/render-print.mjs'];
-const DIRECTORIES = ['agent', 'draw', 'editor', 'images', 'interchange', 'layout', 'notes', 'security', 'shell'];
+const DIRECTORIES = ['agent', 'draw', 'editor', 'images', 'interchange', 'layout', 'notes', 'security', 'shell', 'reader'];
 const ASSIGNMENTS = new Set(['innerHTML', 'outerHTML', 'srcdoc']);
 const METHODS = new Set(['insertAdjacentHTML', 'createContextualFragment']);
 const KINDS = new Set(['sanitized-document', 'static-template', 'probe', 'untrusted-parse', 'empty']);

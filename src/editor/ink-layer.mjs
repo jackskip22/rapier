@@ -23,6 +23,10 @@ function _rapierInkDraw(host) {
 	const state = _rapierInkState(host);
 	state.frame = 0;
 	if (!state.spec || !state.ink || !state.draw) return;
+	// A page with no mark and its layer already standing empty is drawn to the same nothing: every scroll frame that
+	// wakes a block came here, and drawing reads the layer's box (a layout) and walks every block of the page.
+	const layer = host.querySelector(':scope > .' + state.draw.LAYER_CLASS);
+	if (layer && !layer.firstElementChild && !host.querySelector(state.draw.SPAN_SELECTOR)) { state.pieces = []; return; }
 	state.pieces = state.draw.drawInk(host, { spec: state.spec, ink: state.ink, dark: state.dark, place: 'end' });
 }
 

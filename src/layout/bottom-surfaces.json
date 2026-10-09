@@ -100,42 +100,6 @@
       "reason": "The dialog scrim and its panel own input while the field dialog is open."
     },
     {
-      "id": "import-progress",
-      "file": "editor/styles/rapier-app.css",
-      "selector": ".rapier-import-progress",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "left",
-            "value": "50%",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "calc(16px + max(env(safe-area-inset-bottom, 0px), var(--native-inset-bottom, 0px)))",
-            "important": false
-          },
-          {
-            "property": "transform",
-            "value": "translateX(-50%)",
-            "important": false
-          }
-        ]
-      },
-      "role": "transient",
-      "interactive": true,
-      "edge": "bottom",
-      "reason": "The fixed import progress surface has a cancel action and must remain reachable."
-    },
-    {
       "id": "image-tools",
       "file": "editor/styles/rapier-editor.css",
       "selector": ".rapier-image-tools",

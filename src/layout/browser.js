@@ -4,7 +4,7 @@ const _rapierImageFlow = (() => {
   const metadata = globalThis.RapierMarkdownLayout;
   const rotateGlyph = '<path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/>';
   const host = document.getElementById('editor-blocks');
-  const projections = new Map(), ownedStyles = new Map(), endpoints = new WeakMap(), floats = new Map(), floatsRight = new Map();
+  const projections = new Map(), ownedStyles = new Map(), endpoints = new WeakMap(), floats = new Map(), floatsRight = new Map(), bars = new Map(), steps = new Set();
   let cache = new WeakMap(), sourceCache = new WeakMap(), shapeProfiles = new WeakMap();
   let frame = 0, dragFrame = 0, rotateFrame = 0, observer, selected = null, moving = null, tail, settle = null, settledAt = -1e9, settledImage = null, gripsOk = true;
   const resizeGrips = [];
@@ -96,6 +96,15 @@ const _rapierImageFlow = (() => {
     for (const map of [floats, floatsRight]) for (const [paragraph, box] of map) {
       if (wrapper && !wrapper.contains(paragraph) && !wrapper.contains(box)) continue;
       box.remove(); map.delete(paragraph);
+    }
+    for (const [paragraph, drawn] of bars) {
+      if (wrapper && !wrapper.contains(paragraph)) continue;
+      for (const bar of drawn) bar.remove();
+      bars.delete(paragraph);
+    }
+    for (const item of steps) {
+      if (wrapper && !wrapper.contains(item)) continue;
+      item.removeAttribute('data-rapier-wrap-step'); steps.delete(item);
     }
     for (const [element, saved] of ownedStyles) {
       if (wrapper && element !== wrapper && !wrapper.contains(element)) continue;
@@ -896,6 +905,23 @@ const _rapierImageFlow = (() => {
   }
 
   function floatAround(paragraph, natural, top, obstacles) {
+    // A disclosure's box cannot follow an outline: it ends where the outline begins (layout/model.mjs boxClearance).
+    if (paragraph.tagName === 'DETAILS') {
+      const computed = getComputedStyle(paragraph), floor = narrowestColumn(parseFloat(computed.fontSize));
+      const marginLeft = parseFloat(computed.marginLeft) || 0, marginRight = parseFloat(computed.marginRight) || 0;
+      let height = natural.height, clear = null;
+      for (let pass = 0; pass < 3; pass++) {
+        const next = geometry.boxClearance(obstacles, natural.width, top, height, floor);
+        if (!next) break;
+        if (!next.fits) return null;
+        clear = {left: Math.max(clear?.left || 0, next.left), right: Math.max(clear?.right || 0, next.right)};
+        style(paragraph, {'margin-left': px(marginLeft + clear.left), 'margin-right': px(marginRight + clear.right)});
+        const grown = rect(paragraph).height;
+        if (Math.abs(grown - height) < .5) break;
+        height = grown;
+      }
+      if (clear) return rect(paragraph).height;
+    }
     // A closed details only lays out its summary. Keep the live disclosure and its body intact.
     if (paragraph.tagName === 'DETAILS' && !paragraph.open) {
       const summary = paragraph.querySelector(':scope > summary');
@@ -908,21 +934,25 @@ const _rapierImageFlow = (() => {
     const computed = getComputedStyle(paragraph);
     const left = (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.borderLeftWidth) || 0);
     const right = (parseFloat(computed.paddingRight) || 0) + (parseFloat(computed.borderRightWidth) || 0);
-    top += (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.borderTopWidth) || 0);
+    const inset = (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.borderTopWidth) || 0);
+    top += inset;
     const width = natural.width - left - right, bottom = top + natural.height;
     obstacles = obstacles.map(obstacle => ({...obstacle, x: obstacle.x - left}));
     const inside = obstacles.filter(obstacle => obstacle.y < bottom + 4096 && obstacle.y + obstacle.height > top &&
       obstacle.x < width && obstacle.x + obstacle.width > 0);
     if (!inside.length) return null;
-    // Geometry is layout/model.mjs wrapShape; only the CSS spelling is local.
+    // Geometry is layout/model.mjs wrapShape; only the CSS spelling is local. The start side reaches from the box's own
+    // start edge, so what the block draws in its start padding (a marker, a bar) clears the outline with its words.
+    const start = computed.direction === 'rtl' ? 'right' : 'left';
     const shapeFor = side => {
-      const shape = geometry.wrapShape(side, inside, width, top);
+      const shape = geometry.wrapShape(side, side !== start ? inside : inside.map(obstacle => ({...obstacle, x: obstacle.x + (side === 'left' ? left : -right)})), width, top);
       if (!shape) return null;
       return {...shape, shapeCss: ';shape-outside:polygon(' + shape.points.map(point => px(point[0]) + ' ' + px(point[1])).join(',') + ') border-box'};
     };
     const shapes = {left: shapeFor('left'), right: shapeFor('right')};
     const spent = (shapes.left?.boxWidth || 0) + (shapes.right?.boxWidth || 0);
     if (!spent || spent > width - narrowestColumn(parseFloat(getComputedStyle(paragraph).fontSize))) return null;
+    const before = geometry.edgeLines(paragraph);
     for (const [side, map] of [['left', floats], ['right', floatsRight]]) {
       const shape = shapes[side];
       let box = map.get(paragraph);
@@ -935,15 +965,15 @@ const _rapierImageFlow = (() => {
       box.style.cssText = `float:${side};width:${px(shape.boxWidth)};height:${px(shape.boxHeight)};margin-top:${px(shape.startY)}${shape.shapeCss}`;
       if (paragraph.firstChild !== box) paragraph.prepend(box);
     }
-    // flow-root and float bottoms bound to content: floats never stack across blocks. Settles in a pass or two.
-    style(paragraph, {display: computed.display.includes('list-item') ? 'flow-root list-item' : 'flow-root'});
+    // Each float ends at the block's own content bottom, so it never reaches the next block, and the block keeps its
+    // own display: its margins collapse as they do with no picture. A float the content does not reach goes. Settles in a pass or two.
     const contentBottom = () => {
       const range = document.createRange();
       let first = paragraph.firstChild;
       while (first && first.classList?.contains('rapier-flow-float')) first = first.nextSibling;
-      if (!first || !paragraph.lastChild) return rect(paragraph).height;
+      if (!first || !paragraph.lastChild) return rect(paragraph).height - inset;
       range.setStartBefore(first); range.setEndAfter(paragraph.lastChild);
-      return range.getBoundingClientRect().bottom - rect(paragraph).top;
+      return range.getBoundingClientRect().bottom - rect(paragraph).top - inset;
     };
     for (let pass = 0; pass < 4; pass++) {
       const content = contentBottom();
@@ -951,10 +981,27 @@ const _rapierImageFlow = (() => {
       for (const [side, map] of [['left', floats], ['right', floatsRight]]) {
         const box = map.get(paragraph), shape = shapes[side];
         if (!box || !shape) continue;
-        const bounded = Math.max(0, Math.min(shape.boxHeight, content - shape.startY));
-        if (Math.abs((parseFloat(box.style.height) || 0) - bounded) > 0.5) { box.style.height = px(bounded); changed = true; }
+        const bounded = Math.min(shape.boxHeight, content - shape.startY);
+        if (bounded <= 0) { box.remove(); map.delete(paragraph); changed = true; }
+        else if (Math.abs((parseFloat(box.style.height) || 0) - bounded) > 0.5) { box.style.height = px(bounded); changed = true; }
       }
       if (!changed) break;
+    }
+    // A list item's marker and a quote's bar move with the words the floats moved (layout/model.mjs edgeMarks).
+    const {markers, bars: runs, steps: breaks} = geometry.edgeMarks(paragraph, before);
+    for (const {item, shift} of markers) style(item, {'--md-marker': `calc(${item.style.getPropertyValue('--md-marker') || '0px'} + ${px(shift)})`});
+    for (const item of breaks) { item.setAttribute('data-rapier-wrap-step', ''); steps.add(item); }
+    for (const {quote, runs: parts} of runs) {
+      const look = getComputedStyle(quote), box = rect(quote), width = parseFloat(look.borderInlineStartWidth);
+      const color = look.borderInlineStartColor, edge = box.top + (parseFloat(look.borderTopWidth) || 0), drawn = bars.get(paragraph) || [];
+      style(quote, {'border-inline-start-color': 'transparent', ...(look.position === 'static' ? {position: 'relative'} : {})});
+      for (const part of parts) {
+        const bar = document.createElement('span'); bar.className = 'rapier-flow-float';
+        bar.setAttribute('contenteditable', 'false'); bar.setAttribute('aria-hidden', 'true');
+        bar.style.cssText = `position:absolute;inset-inline-start:${px(part.shift - width)};top:${px(part.top - edge)};width:${px(width)};height:${px(part.bottom - part.top)};background:${color}`;
+        quote.prepend(bar); drawn.push(bar);
+      }
+      bars.set(paragraph, drawn);
     }
     return rect(paragraph).height;
   }
@@ -1191,7 +1238,7 @@ const _rapierImageFlow = (() => {
     const viewport = pending ? null : moving ? _rapierCaptureEditorViewport(gestureAnchor() || viewAnchor(), false, true)
       : anchorWrapper?.isConnected ? _rapierCaptureEditorViewport(anchorWrapper, false, true)
       : settledWrapper ? _rapierCaptureEditorViewport(settledWrapper, false, true)
-      : _rapierEditorReadingPoint(viewAnchor(), false);
+      : _rapierEditorReadingPoint(viewAnchor, false);
     try { projectDocument(anchorWrapper?.isConnected ? anchorWrapper : null); }
     catch (error) {
       restore();
@@ -1346,7 +1393,7 @@ const _rapierImageFlow = (() => {
     const obstacles = [], pictures = [];
     let shift = 0, preparedCount = 0, lastBottom = 0;
     for (const row of measured) {
-      let top = row.top + shift;
+      const top = row.top + shift;
       if (placed.has(row) && row.standalone) continue;
       const natural = row.paragraphBounds || row.flowingBounds;
       const owner = natural && prose(row.wrapper) && ownerBox(row.wrapper, row.paragraph || row.flowing, natural,
@@ -1358,7 +1405,6 @@ const _rapierImageFlow = (() => {
           entry.row.wrapper.compareDocumentPosition(row.wrapper) & Node.DOCUMENT_POSITION_FOLLOWING ? 0 : 2;
         own.sort((a, b) => order(a) - order(b));
       }
-      let ownerLed = false;
       for (const {row: source, layout, active} of own) {
         // While rotating, the box takes the live candidate's natural width, not a stale one.
         const defaultWidth = active && (moving?.kind === 'rotate' || moving?.kind === 'shape') ? source.naturalWidth : source.imageBounds.width;
@@ -1381,22 +1427,13 @@ const _rapierImageFlow = (() => {
         // The room two pictures keep, in the reference scale's pixels (layout/model.mjs
         // frameScale).
         const room = 10 * geometry.frameScale(source.image);
+        // A picture an earlier one stands in moves down alone; its owner keeps its place, as in export.
         if (!outOfFlow(layout)) {
           for (const obstacle of [...obstacles].sort((a, b) => a.y - b.y)) {
             if (obstacle.x < x + box.width + room && obstacle.x + obstacle.width > x - room &&
                 obstacle.y + obstacle.height > y - room && obstacle.y < y + box.height + room)
               y = obstacle.y + obstacle.height + room;
           }
-          // The first in-flow picture takes its owner down (margin-top on the collapsed wrapper, row top moved by the same lead), as clearTo does in export.
-          if (!ownerLed && y > ownerTop + 0.5) {
-            const lead = y - ownerTop;
-            style(source.wrapper, {'margin-top': px(lead)});
-            shift += lead;
-            top += lead;
-            owner.top += lead;
-            ownerBoxes.set(row.wrapper, owner);
-          }
-          ownerLed = true;
         }
         pictures.push({row: source, x, y, width: box.width, height: box.height, wrap: layout.wrap, ownerWrapper: row.wrapper, ownerTop: owner.top + geometry.linesTop(layout, lines),
           visualX: x + visualDeltaX, visualY: y + visualDeltaY, visualWidth: fit.fit.width, visualHeight: fit.fit.height,
@@ -1443,9 +1480,23 @@ const _rapierImageFlow = (() => {
           continue;
         }
       }
-      const overlap = relevant.filter(obstacle => obstacle.y < top + row.height);
-      const push = overlap.length ? Math.max(0, ...overlap.map(obstacle => obstacle.y + obstacle.height - top)) : 0;
-      if (push && row.padTarget) { style(row.padTarget, {'padding-top': px(row.paddingTop + push)}); shift += push; }
+      // A block that cannot wrap moves only when the outline meets what it draws; then what it draws stands just below
+      // the outline, as in export. An empty block stays. Later blocks follow by the height the block actually gained.
+      const drawn = () => [...row.padTarget?.children || []].map(rect).filter(bounds => bounds.width > 0 || bounds.height > 0);
+      const shown = drawn();
+      const overlap = relevant.filter(obstacle => shown.some(bounds => obstacle.x < bounds.right - area.left && obstacle.x + obstacle.width > bounds.left - area.left &&
+        obstacle.y < bounds.bottom - origin && obstacle.y + obstacle.height > bounds.top - origin));
+      if (overlap.length) {
+        const below = Math.max(...overlap.map(obstacle => obstacle.y + obstacle.height));
+        let padding = row.paddingTop;
+        for (let pass = 0; pass < 3; pass++) {
+          const distance = below - (Math.min(...drawn().map(bounds => bounds.top)) - origin);
+          if (Math.abs(distance) <= 0.5) break;
+          padding = Math.max(0, padding + distance);
+          style(row.padTarget, {'padding-top': px(padding)});
+        }
+        shift += rect(row.wrapper).height - row.height;
+      }
       lastBottom = row.top + shift + row.height;
     }
     if (preserveStart?.node && preserveEnd?.node) {

@@ -10,11 +10,11 @@ function sheetLayout(w,h){
  const aspect=w/h,sw=aspect>=1?Math.round(256*aspect):256,sh=aspect>=1?256:Math.round(256/aspect);
  return {sw,sh,bytes:w*h*64+sw*sh*16+Math.ceil(w/16)*Math.ceil(h/16)*4};
 }
-// Reserve a blank hand's full reachable sheet only when its first transaction and one
-// existing growth stride also fit. Later work still uses the live allocator's admission.
+// Reserve a blank hand's full reachable sheet only when its first transaction (and a growth
+// stride, when one is named) also fit. Later work still uses the live allocator's admission.
 export function waterHandSheetFits(w,h,growth,tip=null,maxBytes=WATER_GPU_MAX_BYTES){
  if(![w,h,growth].every(Number.isSafeInteger)||w<1||h<1||growth<0)return false;
- const W=w+growth,H=h+growth,old=sheetLayout(w,h),next=sheetLayout(W,H);
+ const W=w+growth,H=h+growth,old=sheetLayout(w,h),next=growth?sheetLayout(W,H):{bytes:0};
  const tipBytes=tip?tip.width*tip.height:WATER_TIP_SIZE*WATER_TIP_SIZE;
  const rollback=w*h*38+old.sw*old.sh*6;
  const scratch=Math.max(W*H*8,Math.ceil(W*8/256)*256*H);
@@ -26,6 +26,13 @@ const FULL=GPU=>GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.RENDER_ATTACHMEN
 const union=(a,b)=>a?[Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[2],b[2]),Math.max(a[3],b[3])]:b.slice();
 const failure=(code,message)=>Object.assign(new Error(message),{code,recoverable:true});
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+// A step longer than this is idle time, not an animation frame: the wash dries through it in full.
+const WATER_IDLE_SECONDS=1;
+// Paper pixels baked in one GPU submission at most.
+const PAPER_BAND_PIXELS=196608;
+// Paper units spanned by one reference-engine texel on the owner's target screenshots (1100 units over 900 texels).
+// Per-texel transport and edge terms act across this distance, so a sheet's resolution does not change its look.
+export const WATER_REFERENCE_TEXEL=1100/900;
 const linearHex=hex=>[1,3,5].map(i=>{const v=parseInt(hex.slice(i,i+2),16)/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});
 let deviceTask=null,deviceOwner=null;
 const libraries=new WeakMap();
@@ -97,13 +104,14 @@ export class WaterGPU {
  constructor(width,height,options={}){
   this.width=width;this.height=height;this.maxBytes=options.maxBytes??WATER_GPU_MAX_BYTES;
   this.paperId=options.paper??'cold-press';this.seed=options.seed??1;this.paperScale=options.paperScale??1100/height;
-  this.paperOrigin=options.paperOrigin?.slice()??[0,0];
+  this.paperOrigin=options.paperOrigin?.slice()??[0,0];this.texelScale=options.texelScale??null;
   this.params={flow:.45,bleed:.5,dry:.4,edge:.5,granulation:.45,...options.params};
   this.active=null;this.dirty=null;this.painted=null;this.wetPeak=0;this.fixTimer=0;this.elapsed=0;this.lastWet=0;this.awakeUntil=0;
   this.flowSpeed=0;this.growCarry=0;this.frame=0;this.brushNow=[0,0,0];this.bytes=0;this.transaction=null;this.lost=null;this.disposed=false;
   this.tips=new Map();this.targets=new Set();this.buffers=new Map();this.bindings=new Map();this.targetSequence=0;this.fill=null;
   this.pendingErrors=new Set();this.gpuError=null;this.errorListener=null;this.simBox=null;this.painting=false;this._scratch=new Float32Array(64);
   this.pendingRetire=[];this.encoder=null;this.slots=0;this.uniformData=new Float32Array(UNIFORM_BYTES/4);
+  this.queued=new Map();this.scratch=new Map();this.inFlight=[];this.maskRead=null;this.trimEpoch=0;
   this.ready=this._initialize(options.device);
  }
  async _initialize(given){
@@ -113,7 +121,7 @@ export class WaterGPU {
    this.library=await programLibrary(this.device,getPaper(this.paperId)?.params?.kind??0);this._check();
    this.uniforms=this._buffer(this.uniformData.byteLength,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
    this.dummy=this._texture(1,1,'rgba8unorm');
-   this._allocate(this.width,this.height);this._paper();this.submit();await this._settleErrors();return this;
+   this._allocate(this.width,this.height);this._paper();await this._bakePaper();await this._settleErrors();return this;
   }catch(error){this.encoder=null;this.slots=0;this.pendingRetire=[];this._release();this.disposed=true;throw error;}
  }
  _check(){if(this.disposed)throw failure('WATER_CLOSED','The Water surface is closed.');if(this.lost)throw failure('WATER_DEVICE_LOST','The GPU stopped. The last published painting is safe; reopen Water to continue.');if(this.gpuError)throw this.gpuError;}
@@ -185,6 +193,9 @@ export class WaterGPU {
  _sheetTextures(sheet){return [...sheet.velocity.read,...sheet.velocity.write,...sheet.pressure.read,...sheet.pressure.write,sheet.curl,sheet.divergence,...sheet.ink.read,...sheet.ink.write,...sheet.wet.read,...sheet.wet.write,...sheet.fixed,sheet.paper,sheet.base,sheet.output,sheet.mask];}
  _command(){this._check();return this.encoder??=this.device.createCommandEncoder({label:'Water material'});}
  submit(){
+  this._flushStamps();this._submitEncoder();
+ }
+ _submitEncoder(){
   if(!this.encoder)return;
   const encoder=this.encoder,slots=this.slots;this.encoder=null;this.slots=0;
   try{this._guard(()=>{
@@ -194,11 +205,14 @@ export class WaterGPU {
  }
  _writeTexture(destination,data,layout,size){this._guard(()=>this.device.queue.writeTexture(destination,data,layout,size));}
  _retire(target){if(this.encoder)this.pendingRetire.push(target);else this._drop(target);}
+ // Sheet pixels per reference texel.
+ get reach(){return this.texelScale??clamp(WATER_REFERENCE_TEXEL/this.paperScale,.5,4);}
  _parameters(w=this.width,h=this.height){
   const data=this._scratch;data.fill(0);data.set([w,h,this.sw,this.sh],0);
-  data.set([0,this.params.flow,this.params.bleed,this.params.edge*1.4],4);data.set(this.brushNow,12);return data;
+  data.set([0,this.params.flow,this.params.bleed,this.params.edge*1.4],4);data.set(this.brushNow,12);data[15]=this.reach;return data;
  }
  _draw(name,destinations,inputs=[],data=this._parameters(),rect=null){
+  this._flushStamps();
   if(this.slots===UNIFORM_SLOTS)this.submit();
   if(name==='paperField'&&!this.library.pipelines.paperField[data[50]]){
    const description=this.library.paperDescription;
@@ -207,6 +221,15 @@ export class WaterGPU {
   const encoder=this._command(),targets=Array.isArray(destinations)?destinations:[destinations],target=targets[0];
   data[0]=target.w;data[1]=target.h;
   const slot=this.slots++;this.uniformData.set(data,slot*64);
+  const group=this._group(name,inputs);
+  // Full-screen unblended shaders overwrite every channel; clipped or blended draws keep the prior material.
+  const loadOp=rect?'load':this.library.loadOps[name];
+  const pass=encoder.beginRenderPass({colorAttachments:targets.map(t=>({view:t.view,loadOp,storeOp:'store'}))});
+  pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this.library.pipelines[name]);pass.setBindGroup(0,group,[slot*256]);
+  if(rect){const x0=clamp(Math.floor(rect[0]),0,target.w),y0=clamp(Math.floor(rect[1]),0,target.h),x1=clamp(Math.ceil(rect[2]),x0,target.w),y1=clamp(Math.ceil(rect[3]),y0,target.h);if(x1===x0||y1===y0){pass.end();return;}pass.setScissorRect(x0,y0,x1-x0,y1-y0);}
+  pass.draw(3);pass.end();
+ }
+ _group(name,inputs){
   const resources=Array.from({length:8},(_,i)=>inputs[i]??this.dummy);
   const filling=name.startsWith('fill'),key=(filling?'f:':'s:')+resources.map(t=>t.id).join(',');
   let group=this.bindings.get(key);
@@ -215,19 +238,77 @@ export class WaterGPU {
     {binding:1,resource:this.library.linear},{binding:2,resource:this.library.nearest},...resources.map((t,i)=>({binding:i+3,resource:t.view}))]});
    if(this.bindings.size>=256)this.bindings.clear();this.bindings.set(key,group);
   }
-  // Full-screen unblended shaders overwrite every channel; clipped or blended draws keep the prior material.
-  const loadOp=rect?'load':this.library.loadOps[name];
-  const pass=encoder.beginRenderPass({colorAttachments:targets.map(t=>({view:t.view,loadOp,storeOp:'store'}))});
-  pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this.library.pipelines[name]);pass.setBindGroup(0,group,[slot*256]);
-  if(rect){const x0=clamp(Math.floor(rect[0]),0,target.w),y0=clamp(Math.floor(rect[1]),0,target.h),x1=clamp(Math.ceil(rect[2]),x0,target.w),y1=clamp(Math.ceil(rect[3]),y0,target.h);if(x1===x0||y1===y0){pass.end();return;}pass.setScissorRect(x0,y0,x1-x0,y1-y0);}
-  pass.draw(3);pass.end();
+  return group;
+ }
+ // A tile-based GPU loads and stores a render pass's whole attachment. Sheet-sized material passes
+ // therefore render their rectangle into scratch and copy it back, so a frame costs its active area.
+ // Dabs, the step and the display want different sizes: a few scratch sizes stay pooled per format.
+ _scratchFor(format,w,h,index){
+  const key=format+':'+index,W=Math.ceil(w/64)*64,H=Math.ceil(h/64)*64;let pool=this.scratch.get(key);
+  if(!pool)this.scratch.set(key,pool=[]);
+  for(let i=pool.length-1;i>=0;i--)if(pool[i].dead)pool.splice(i,1);
+  let best=null;for(const t of pool)if(t.w>=w&&t.h>=h&&t.w*t.h<=4*W*H&&(!best||t.w*t.h<best.w*best.h))best=t;
+  if(best){pool.splice(pool.indexOf(best),1);pool.push(best);return best;}
+  // A growing rectangle takes a size with room to spare, never past the sheet.
+  const t=this._texture(Math.min(Math.max(W,Math.ceil(W*1.25/64)*64),Math.max(W,this.width)),Math.min(Math.max(H,Math.ceil(H*1.25/64)*64),Math.max(H,this.height)),format);
+  pool.push(t);while(pool.length>3)this._retire(pool.shift());return t;
+ }
+ _regionPass(entries,destinations,rect){
+  const targets=Array.isArray(destinations)?destinations:[destinations],target=targets[0];
+  const R=[clamp(Math.floor(rect[0]),0,target.w),clamp(Math.floor(rect[1]),0,target.h),clamp(Math.ceil(rect[2]),0,target.w),clamp(Math.ceil(rect[3]),0,target.h)];
+  const rw=R[2]-R[0],rh=R[3]-R[1];if(rw<=0||rh<=0)return;
+  if(this.slots+entries.length>UNIFORM_SLOTS)this._submitEncoder();
+  let scratch;
+  try{scratch=targets.map((t,i)=>this._scratchFor(t.format,rw,rh,i));}
+  catch(error){
+   if(error?.code!=='WATER_BUDGET')throw error;
+   // Without room for scratch the rectangle is drawn in place: the whole attachment's cost, the same pixels.
+   this._dropScratch();
+   for(const e of entries){e.data[60]=0;e.data[61]=0;this._draw(e.name,targets,e.inputs,e.data,e.rect??R);}
+   return;
+  }
+  const blended=entries.some(e=>this.library.loadOps[e.name]==='load');
+  const encoder=this._command();
+  if(blended)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:t.texture,origin:[R[0],R[1]]},{texture:scratch[i].texture,origin:[0,0]},[rw,rh]));
+  const pass=encoder.beginRenderPass({colorAttachments:scratch.map(t=>({view:t.view,loadOp:blended?'load':'clear',clearValue:[0,0,0,0],storeOp:'store'}))});
+  for(const e of entries){
+   const r=e.rect?[Math.max(R[0],Math.floor(e.rect[0])),Math.max(R[1],Math.floor(e.rect[1])),Math.min(R[2],Math.ceil(e.rect[2])),Math.min(R[3],Math.ceil(e.rect[3]))]:R;
+   if(r[2]<=r[0]||r[3]<=r[1])continue;
+   const data=e.data;data[0]=target.w;data[1]=target.h;data[60]=R[0];data[61]=R[1];
+   const slot=this.slots++;this.uniformData.set(data,slot*64);
+   pass.setPipeline(this.library.pipelines[e.name]);pass.setBindGroup(0,this._group(e.name,e.inputs),[slot*256]);
+   pass.setScissorRect(r[0]-R[0],r[1]-R[1],r[2]-r[0],r[3]-r[1]);pass.draw(3);
+  }
+  pass.end();
+  targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:scratch[i].texture,origin:[0,0]},{texture:t.texture,origin:[R[0],R[1]]},[rw,rh]));
+ }
+ _dropScratch(){for(const pool of this.scratch.values())for(const t of pool)this._retire(t);this.scratch.clear();}
+ _region(name,destinations,inputs,data,rect){
+  this._flushStamps();
+  this._regionPass([{name,inputs,data:Float32Array.from(data),rect:null}],destinations,rect);
+ }
+ // A frame's dabs land in one region pass per material plane: each plane's blend commutes with
+ // itself, and a dab reads only its tip, the paper and the fill field, never another dab's plane.
+ _queue(name,destinations,inputs,data,rect){
+  const targets=Array.isArray(destinations)?destinations:[destinations],key=targets.map(t=>t.id).join(',');
+  let group=this.queued.get(key);if(!group)this.queued.set(key,group={targets,entries:[],rect:null});
+  group.entries.push({name,inputs,data:Float32Array.from(data),rect:rect.slice()});group.rect=union(group.rect,rect);
+  if(group.entries.length>=512)this._flushStamps();
+ }
+ _flushStamps(){
+  if(!this.queued.size)return;
+  const groups=[...this.queued.values()];this.queued.clear();
+  for(const {targets,entries,rect} of groups)this._regionPass(entries,targets,rect);
  }
  _copy(source,destination,rect=null,offset=null){
+  this._flushStamps();this._copyRaw(source,destination,rect,offset);
+ }
+ _copyRaw(source,destination,rect=null,offset=null){
   const r=rect??[0,0,source.w,source.h],to=offset??r;
   this._command().copyTextureToTexture({texture:source.texture,origin:[r[0],r[1]]},{texture:destination.texture,origin:[to[0],to[1]]},[r[2]-r[0],r[3]-r[1]]);
  }
  _swap(pair){[pair.read,pair.write]=[pair.write,pair.read];}
- _clear(target){const pass=this._command().beginRenderPass({colorAttachments:[{view:target.view,loadOp:'clear',clearValue:[0,0,0,0],storeOp:'store'}]});pass.end();}
+ _clear(target){this._flushStamps();const pass=this._command().beginRenderPass({colorAttachments:[{view:target.view,loadOp:'clear',clearValue:[0,0,0,0],storeOp:'store'}]});pass.end();}
  _material(){return [...this.ink.read,...this.fixed,...this.wet.read,this.base];}
  _meta(){return {active:this.active?.slice()??null,dirty:this.dirty?.slice()??null,painted:this.painted?.slice()??null,wetPeak:this.wetPeak,fixTimer:this.fixTimer,elapsed:this.elapsed,lastWet:this.lastWet,awakeUntil:this.awakeUntil,flowSpeed:this.flowSpeed,growCarry:this.growCarry,frame:this.frame,brushNow:this.brushNow.slice(),params:{...this.params},paperId:this.paperId,paperOrigin:this.paperOrigin.slice(),paperScale:this.paperScale,seed:this.seed};}
  beginTransaction(){
@@ -249,7 +330,7 @@ export class WaterGPU {
   }
   this._reserve(bytes);
   const made=[];
-  try{for(const {r,missing,copies} of pending)for(const i of missing){const t=material[i],copy=this._texture(r[2]-r[0],r[3]-r[1],t.format);made.push(copy);copies.set(i,copy);this._copy(t,copy,r,[0,0]);}}
+  try{for(const {r,missing,copies} of pending)for(const i of missing){const t=material[i],copy=this._texture(r[2]-r[0],r[3]-r[1],t.format);made.push(copy);copies.set(i,copy);this._copyRaw(t,copy,r,[0,0]);}}
   catch(error){this.submit();made.forEach(t=>this._drop(t));throw error;}
   // The first write of each material layer takes its own original bytes, including a later Dry or eraser.
   for(const {key,r,existing,copies} of pending){const layers=existing?.layers??new Map();for(const [i,copy]of copies)layers.set(i,copy);tx.tiles.set(key,{r,layers});}
@@ -296,26 +377,52 @@ export class WaterGPU {
   const regions=kept?[[needed[0],needed[1],needed[2],kept[1]],[needed[0],kept[3],needed[2],needed[3]],[needed[0],kept[1],kept[0],kept[3]],[kept[2],kept[1],needed[2],kept[3]]].filter(r=>r[2]>r[0]&&r[3]>r[1]):[needed];
   const profile=getPaper(settings.id),p=profile.params??profile,data=this._parameters();
   data.set([settings.paperScale,settings.seed,profile.kind??p.kind??0,1.4*(p.bump??1)/settings.paperScale],48);data.set(settings.paperOrigin,52);
+  // The field costs tens of operations a pixel. A large area bakes in bands, each its own submission, so no single
+  // GPU task runs long enough to trip a watchdog on a slow or software GPU.
+  const bands=[];
   for(const region of regions){
+   const rows=Math.max(1,Math.floor(PAPER_BAND_PIXELS/(region[2]-region[0])));
+   for(let top=region[1];top<region[3];top+=rows)bands.push([region[0],top,region[2],Math.min(region[3],top+rows)]);
+  }
+  for(const band of bands){
    // Relief lighting reads one neighbouring field texel on each side.
-   const x=Math.max(0,region[0]-1),y=Math.max(0,region[1]-1),right=Math.min(w,region[2]+1),bottom=Math.min(h,region[3]+1);
-   if(this.pendingRetire.length)this.submit();
+   const x=Math.max(0,band[0]-1),y=Math.max(0,band[1]-1),right=Math.min(w,band[2]+1),bottom=Math.min(h,band[3]+1);
+   if(this.pendingRetire.length||bands.length>1)this.submit();
    const field=this._texture(right-x,bottom-y,'rgba16float');
    data.set([x,y,w,h],56);
-   try{this._draw('paperField',field,[],data);this._draw('paperLight',target,[field],data,region);}finally{this._retire(field);}
+   try{this._draw('paperField',field,[],data);this._draw('paperLight',target,[field],data,band);}finally{this._retire(field);}
   }
+  if(bands.length>1)this.submit();
   settings.rect=needed;
   if(needed[0]===0&&needed[1]===0&&needed[2]===w&&needed[3]===h)settings.unknown=false;
  }
- setPaper(id,fields={}){
+ // A paper bakes band by band. Each band is flushed and finished before the next is encoded, so the GPU process never
+ // runs a whole sheet's bake as one task, which a watchdog on a slow or software GPU stops as a hang.
+ async _bakePaper(target=this.paper,rect=[0,0,target.w,target.h],expand=true){
+  const rows=Math.max(128,Math.floor(PAPER_BAND_PIXELS/Math.max(1,rect[2]-rect[0])/128)*128);
+  for(let top=rect[1];top<rect[3];top+=rows){
+   this._ensurePaper([rect[0],top,rect[2],Math.min(rect[3],top+rows)],target,expand);this.submit();
+   if(top+rows<rect[3]){await this.device.queue.onSubmittedWorkDone();this._check();}
+  }
+ }
+ // Switching paper bakes the new field in bands while the old one stays in use; the newest switch wins.
+ async setPaper(id,fields={}){
   this._check();
   if(!getPaper(id)||!fields||typeof fields!=='object'||Array.isArray(fields)||Object.keys(fields).some(key=>!['paperScale','paperOrigin','seed'].includes(key)))throw failure('WATER_INPUT','The Water paper is not available.');
   const {paperScale=this.paperScale,paperOrigin=this.paperOrigin,seed=this.seed}=fields;
   if(!Number.isFinite(paperScale)||paperScale<=0||!Array.isArray(paperOrigin)||paperOrigin.length!==2||!paperOrigin.every(Number.isFinite)||!Number.isFinite(seed)||seed<0||seed>1)throw failure('WATER_INPUT','The Water paper field is invalid.');
+  const ticket=this.paperTicket=(this.paperTicket??0)+1;
   if(id===this.paperId&&paperScale===this.paperScale&&seed===this.seed&&paperOrigin.every((value,i)=>value===this.paperOrigin[i]))return;
   if(this.pendingRetire.length)this.submit();
   this._reserve(this.width*this.height*12);const next=this._texture(this.width,this.height,'rgba8unorm');
-  try{this._paper(next,id,{paperScale,paperOrigin,seed});next.field.unknown=this.paper.field.unknown;if(this.paper.field.rect)this._ensurePaper(this.paper.field.rect,next,false);}catch(error){this._retire(next);throw error;}
+  try{
+   this._paper(next,id,{paperScale,paperOrigin:paperOrigin.slice(),seed});next.field.unknown=this.paper.field.unknown;
+   if(this.paper.field.rect)await this._bakePaper(next,this.paper.field.rect,false);
+   if(ticket!==this.paperTicket){this._retire(next);return;}
+   if(next.w!==this.paper.w||next.h!==this.paper.h){this._retire(next);return this.setPaper(id,fields);}
+   // The old field may have grown while the bands baked.
+   next.field.unknown=this.paper.field.unknown;if(this.paper.field.rect)this._ensurePaper(this.paper.field.rect,next,false);
+  }catch(error){this._retire(next);throw error;}
   const old=this.paper;this.paper=next;this.paperId=id;this.paperScale=paperScale;this.paperOrigin=paperOrigin.slice();this.seed=seed;this.dirty=[0,0,this.width,this.height];
   if(old!==this.transaction?.paper && old!==this.transaction?.sheet?.paper)this._retire(old);
  }
@@ -336,19 +443,19 @@ export class WaterGPU {
   const x1=clamp(Math.ceil(rect[2]*sw/this.width)+pad,0,sw),y1=clamp(Math.ceil(rect[3]*sh/this.height)+pad,0,sh);
   return [x0,y0,Math.max(x0,x1),Math.max(y0,y1)];
  }
- _touch(rect,indices){if(rect[0]>=rect[2]||rect[1]>=rect[3])return;this._ensurePaper(rect);this._protect(rect,indices);this.active=union(this.active,rect);this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);this.awakeUntil=Math.max(this.awakeUntil,this.elapsed+.25);}
+ _touch(rect,indices){if(rect[0]>=rect[2]||rect[1]>=rect[3])return;this.trimEpoch++;this._ensurePaper(rect);this._protect(rect,indices);this.active=union(this.active,rect);this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);this.awakeUntil=Math.max(this.awakeUntil,this.elapsed+.25);}
  stamp({x,y,r,angle=0,brush='water/round',coefficients=null,water=0,round=0,grain=0,threshold=.5,velocity=null,lift=0,erase=false,circular=false,hardness=2}){
   this._check();const profile=typeof brush==='string'?getBrush(brush):brush;
   const settings=profile.params??profile;
   const rect=this._rect(x,y,r,circular?3.2:1.5);this._touch(rect,lift?(erase?undefined:[0,1,4]):[...(coefficients?[0,1]:[]),...(water>0?[4]:[])]);
   const data=this._parameters();data.set([x,y,r,settings.aspect??1],16);data.set([Math.cos(angle),Math.sin(angle),round,grain],20);data.set([threshold,water,hardness,0],24);
-  if(lift){data[25]=lift;data[26]=2;this._draw('liftInk',this.ink.read,[],data,rect);data[25]=lift*.8;this._draw('liftWet',this.wet.read,[],data,rect);
-   if(erase){data[25]=lift;this._draw('eraseFixed',this.fixed,[],data,rect);this._draw('eraseBase',this.base,[],data,rect);}return;}
+  if(lift){data[25]=lift;data[26]=2;this._queue('liftInk',this.ink.read,[],data,rect);data[25]=lift*.8;this._queue('liftWet',this.wet.read,[],data,rect);
+   if(erase){data[25]=lift;this._queue('eraseFixed',this.fixed,[],data,rect);this._queue('eraseBase',this.base,[],data,rect);}return;}
   const tip=circular?null:this._tip(profile),inputs=tip?[tip,this.paper]:[];
-  if(coefficients){data.set(coefficients.slice(0,4),28);data.set(coefficients.slice(4,8),32);this._draw(circular?'splatInk':'stampInk',this.ink.read,inputs,data,rect);}
+  if(coefficients){data.set(coefficients.slice(0,4),28);data.set(coefficients.slice(4,8),32);this._queue(circular?'splatInk':'stampInk',this.ink.read,inputs,data,rect);}
   if(water>0){
-   if(circular){data.set([water,0,0,0],28);this._draw('wetSplat',this.wet.read,[],data,rect);}
-   else this._draw('stampWet',this.wet.read,inputs,data,rect);
+   if(circular){data.set([water,0,0,0],28);this._queue('wetSplat',this.wet.read,[],data,rect);}
+   else this._queue('stampWet',this.wet.read,inputs,data,rect);
    const tau=this.fixTimer>0?.25:2+16*(1-this.params.dry);
    this.wetPeak=Math.max(this.wetPeak*Math.exp(-(this.elapsed-this.lastWet)/tau),water);this.lastWet=this.elapsed;
   }
@@ -357,7 +464,7 @@ export class WaterGPU {
  splatVelocity(x,y,r,vx,vy,track=true){
   if(track)this.flowSpeed=Math.max(this.flowSpeed,Math.hypot(vx,vy));
   const data=this._parameters();data.set([x,y,r,1],16);data[26]=1;data.set([vx,vy,0,0],28);
-  this._draw('velocitySplat',this.velocity.read,[],data,this._rect(x,y,r,3,this.sw,this.sh));
+  this._queue('velocitySplat',this.velocity.read,[],data,this._rect(x,y,r,3,this.sw,this.sh));
  }
  beginFill(field,box){
   this._check();
@@ -375,9 +482,9 @@ export class WaterGPU {
    throw failure('WATER_INPUT','The Water fill step is invalid.');
   const {texture,box}=this.fill;this._touch(box,[...(coefficients?[0,1]:[]),...(water>0?[4]:[])]);
   const data=this._parameters();data.set([from,to,soft,water],56);
-  if(coefficients){data.set(coefficients.slice(0,4),28);data.set(coefficients.slice(4,8),32);this._draw('fillInk',this.ink.read,[texture,this.paper],data,box);}
+  if(coefficients){data.set(coefficients.slice(0,4),28);data.set(coefficients.slice(4,8),32);this._region('fillInk',this.ink.read,[texture,this.paper],data,box);}
   if(water>0){
-   this._draw('fillWet',this.wet.read,[texture,this.paper],data,box);
+   this._region('fillWet',this.wet.read,[texture,this.paper],data,box);
    const tau=this.fixTimer>0?.25:2+16*(1-this.params.dry);
    this.wetPeak=Math.max(this.wetPeak*Math.exp(-(this.elapsed-this.lastWet)/tau),water);this.lastWet=this.elapsed;
   }
@@ -386,43 +493,67 @@ export class WaterGPU {
  endFill(){if(this.fill){this._retire(this.fill.texture);this.fill=null;}}
  _age(seconds){const next=this.elapsed+seconds;if(!waterTimeFits(seconds)||seconds<=0||!waterTimeFits(next)||next<=this.elapsed)throw failure('WATER_INPUT','The Water frame time is not valid.');return seconds;}
  async step(seconds=1/60){
-  this._check();const age=this._age(seconds);
+  this._check();const age=this._age(seconds);await this._trimFinish();
   if(!this.active){this.brushNow=[0,0,0];return false;}
-  // Recorded time ages the wash; transport keeps its stable integration step.
-  const dt=clamp(age,1/240,1/30),fixing=this.fixTimer>0,fixedAge=Math.min(age,this.fixTimer);
-  this.elapsed+=age;this.frame++;this.fixTimer=Math.max(0,this.fixTimer-age);
-  this.flowSpeed*=Math.exp(-age*(3-2.4*this.params.flow));
+  // The reference steps its whole sheet by one clamped frame: on a slow device drying, damping and fixing slow down with
+  // transport, so a wash reaches its drying edge after the same flow at any frame rate. The material ages by that step;
+  // only an interval longer than WATER_IDLE_SECONDS (a hidden page, a long recorded pause) is idle time and dries in
+  // full. The clock (elapsed, sleep and wetness) keeps recorded time, as the reference's wall clock does.
+  const dt=clamp(age,1/240,1/30),aged=age>WATER_IDLE_SECONDS?age:dt,fixing=this.fixTimer>0,fixedAge=Math.min(aged,this.fixTimer);
+  this.elapsed+=age;this.frame++;this.fixTimer=Math.max(0,this.fixTimer-aged);
+  this.flowSpeed*=Math.exp(-aged*(3-2.4*this.params.flow));
   // The box creeps with the wet front. A stroke does not trim it, so a mask read cannot freeze a ledge.
-  this.growCarry+=.4+Math.min(3,.15*this.flowSpeed*dt*this.width/this.sw);const grow=Math.floor(this.growCarry);this.growCarry-=grow;
+  this.growCarry+=.4*this.reach+Math.min(3*this.reach,.15*this.flowSpeed*dt*this.width/this.sw);const grow=Math.floor(this.growCarry);this.growCarry-=grow;
   this.active=[Math.max(0,this.active[0]-grow),Math.max(0,this.active[1]-grow),Math.min(this.width,this.active[2]+grow),Math.min(this.height,this.active[3]+grow)];
+  this._flushStamps();
+  // A cancelled gesture restores every plane its frames changed, so a gesture's checkpoint holds the active area.
   const rect=this.active;this._ensurePaper(rect);this._protect(rect,fixing?[0,1,2,3,4]:[0,1,4]);
   const data=this._parameters();data[4]=dt;const settle=1-Math.exp(-5*fixedAge);
-  const decay=Math.exp(-fixedAge/.25-(age-fixedAge)/(2+16*(1-this.params.dry)));
-  const damping=Math.exp(-age*(3-2.4*this.params.flow)-7*fixedAge);data.set([decay,damping,settle,1-settle],8);
+  const decay=Math.exp(-fixedAge/.25-(aged-fixedAge)/(2+16*(1-this.params.dry)));
+  const damping=Math.exp(-aged*(3-2.4*this.params.flow)-7*fixedAge);data.set([decay,damping,settle,1-settle],8);
   const sim=this.simBox=union(this.simBox,this._simRect(rect));
   this._draw('velocity',this.velocity.write,[this.velocity.read[0],this.wet.read[0]],data,sim);this._swap(this.velocity);
-  this._draw('curl',this.curl,this.velocity.read,data,sim);
+  // Vorticity reads curl one texel beyond the box, so curl covers that ring: stale curl from a cancelled or slept
+  // stroke never reaches the flow.
+  this._draw('curl',this.curl,this.velocity.read,data,[Math.max(0,sim[0]-1),Math.max(0,sim[1]-1),Math.min(this.sw,sim[2]+1),Math.min(this.sh,sim[3]+1)]);
   this._draw('vorticity',this.velocity.write,[this.velocity.read[0],this.curl],data,sim);this._swap(this.velocity);
   this._draw('divergence',this.divergence,this.velocity.read,data,sim);
   this._draw('pressureDecay',this.pressure.write,this.pressure.read,data,sim);this._swap(this.pressure);
   for(let i=0;i<20;i++){this._draw('pressure',this.pressure.write,[this.pressure.read[0],this.divergence],data,sim);this._swap(this.pressure);}
   this._draw('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data,sim);this._swap(this.velocity);
-  this._draw('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
-  if(fixing){this._draw('bleach',this.fixed,[this.ink.read[1]],data,rect);this._draw('fix',this.fixed,this.ink.read,data,rect);}
-  this._draw('pigment',this.ink.write,[this.velocity.read[0],...this.ink.read,this.wet.read[0]],data,rect);this._swap(this.ink);
+  this._region('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
+  if(fixing){this._region('bleach',this.fixed,[this.ink.read[1]],data,rect);this._region('fix',this.fixed,this.ink.read,data,rect);}
+  this._region('pigment',this.ink.write,[this.velocity.read[0],...this.ink.read,this.wet.read[0]],data,rect);this._swap(this.ink);
   this.brushNow=[0,0,0];
   this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);
   if(fixing&&!this.fixTimer){this.wetPeak=0;this.awakeUntil=0;this.painted=null;}
   const until=this.lastWet+(2+16*(1-this.params.dry))*Math.log(Math.max(.004,this.wetPeak)/.004);
   if(!this.fixTimer&&this.elapsed>=this.awakeUntil&&this.elapsed>=until)this.sleep();
-  // A stroke must not wait on a mask read. The same skip applies to a replayed stroke.
-  else if(!this.painting&&this.frame%16===0&&!fixing)await this._trim();
-  this.submit();return true;
+  // No frame waits on a mask read: it is collected on a later frame. A stroke starts none.
+  else if(!this.painting&&this.frame%16===0&&!fixing&&!this.maskRead)this._trimStart();
+  this.submit();await this._pace();return true;
  }
- async _trim(){
-  const previous=this.active;if(!previous)return;
+ _trimStart(){
   this._draw('mask',this.mask,this.wet.read,this._parameters(this.mask.w,this.mask.h));
-  const pixels=await this._readTexture(this.mask);let x0=this.mask.w,y0=this.mask.h,x1=-1,y1=-1;
+  const w=this.mask.w,h=this.mask.h,stride=w*4,pitch=Math.ceil(stride/256)*256,buffer=this._buffer(pitch*h,GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ);
+  this._command().copyTextureToBuffer({texture:this.mask.texture},{buffer,bytesPerRow:pitch},[w,h]);this.submit();
+  const read=this.maskRead={buffer,w,h,stride,pitch,epoch:this.trimEpoch,state:'pending',due:this.frame+2};
+  read.mapped=buffer.mapAsync(GPUMapMode.READ).then(()=>{read.state='ready';},()=>{read.state='failed';});
+ }
+ // The mask lands exactly two frames after it was rendered, so replay trims where the live sheet did; by
+ // then the GPU has finished it. Material touched, slept, restored or reframed since makes it stale.
+ async _trimFinish(){
+  const read=this.maskRead;if(!read||this.frame<read.due)return;
+  if(read.state==='pending')await read.mapped;
+  if(this.maskRead!==read)return;this.maskRead=null;
+  let pixels=null;
+  try{if(read.state==='ready'&&read.epoch===this.trimEpoch&&!this.painting&&this.active){const source=new Uint8Array(read.buffer.getMappedRange());pixels=new Uint8Array(read.stride*read.h);for(let y=0;y<read.h;y++)pixels.set(source.subarray(y*read.pitch,y*read.pitch+read.stride),y*read.stride);}}
+  finally{if(read.buffer.mapState==='mapped')read.buffer.unmap();this._dropBuffer(read.buffer);}
+  if(pixels)this._trim(pixels);
+ }
+ _trim(pixels){
+  const previous=this.active;if(!previous)return;
+  let x0=this.mask.w,y0=this.mask.h,x1=-1,y1=-1;
   for(let y=0;y<this.mask.h;y++)for(let x=0;x<this.mask.w;x++)if(pixels[(y*this.mask.w+x)*4]){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
   const next=x1>=0?[Math.max(previous[0],x0*16-24),Math.max(previous[1],y0*16-24),Math.min(previous[2],(x1+1)*16+24),Math.min(previous[3],(y1+1)*16+24)]:null;
   if(next&&next.every((v,i)=>v===previous[i]))return;
@@ -430,11 +561,12 @@ export class WaterGPU {
   if(next&&next[2]>next[0]&&next[3]>next[1])this.active=next;else this.sleep();
  }
  sleep(){
+  this.trimEpoch++;
   if(this.active)for(const pair of [this.ink,this.wet])pair.read.forEach((t,i)=>this._copy(t,pair.write[i],this.active));
   for(const pair of [this.velocity,this.pressure])for(const t of [...pair.read,...pair.write])this._clear(t);
   this.active=null;this.wetPeak=0;this.flowSpeed=0;this.simBox=null;
  }
- dry(){if(this.painted){this.active=union(this.active,this.painted);this.fixTimer=1.2;this.awakeUntil=this.elapsed+1.2;}}
+ dry(){this.trimEpoch++;if(this.painted){this.active=union(this.active,this.painted);this.fixTimer=1.2;this.awakeUntil=this.elapsed+1.2;}}
  async upload(data,width=this.width,height=this.height,x=0,y=0){
   this._check();if(data.length!==width*height*4||x<0||y<0||x+width>this.width||y+height>this.height)throw failure('WATER_INPUT','The saved Water pixels do not fit the sheet.');
   this._protect([x,y,x+width,y+height],[5]);this.submit();
@@ -461,6 +593,20 @@ export class WaterGPU {
      const item=transfers[index];
      if(this.bytes+item.size>this.maxBytes&&this.pendingRetire.length)this.submit();
      if(batch.length&&this.bytes+item.size>this.maxBytes)break;
+     const available=Math.min(this.maxBytes-this.bytes,this.device.limits.maxBufferSize);
+     if(!batch.length&&item.size>available){
+      // A kept sheet can leave less staging room than one plane. Read exact row bands
+      // without charging another whole plane to its GPU budget.
+      const rows=Math.floor(available/item.pitch);
+      if(rows>0){
+       const out=new Uint8Array(item.stride*item.h);
+       for(let y=0;y<item.h;y+=rows){
+        const h=Math.min(rows,item.h-y),box=[item.r[0],item.r[1]+y,item.r[2],item.r[1]+y+h];
+        const part=(await this._readMany([{target:item.target,box,cacheOnly:true}]))[0];out.set(part,y*item.stride);
+       }
+       result.push(out);index++;continue;
+      }
+     }
      const buffer=this._buffer(item.size,GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ);batch.push({...item,buffer});index++;
      this._command().copyTextureToBuffer({texture:item.target.texture,origin:[item.r[0],item.r[1]]},{buffer,bytesPerRow:item.pitch},[item.w,item.h]);
     }
@@ -478,24 +624,32 @@ export class WaterGPU {
   }
   await this._settleErrors();return result;
  }
- render({paper=false,white=false,flat=false,box=null}={}){
-  this._check();const profile=getPaper(this.paperId),p=profile.params??profile,data=this._parameters();
+ render({paper=false,white=false,flat=false,box=null,live=false}={}){
+  this._check();const profile=getPaper(this.paperId),p=profile.params??profile;
   // Untouched transparent pixels return their saved raster unchanged.
   if(paper||white||this.paper.field.unknown)this._ensurePaper(box);
+  // Paper baking reuses the parameter scratch, so the display's parameters are written after it.
+  const data=this._parameters();data[48]=live?1:0;
   data.set([this.params.granulation*.55,.8,paper?1:white?3:2,flat?1:0],36);
   data.set([...linearHex(p.tint??'#ffffff'),1],40);data.set([...linearHex(p.fleck??'#665544'),p.mottle??.05],44);
-  this._draw('display',this.output,[...this.ink.read,...this.fixed,this.wet.read[0],this.paper,this.base],data,box);
+  const inputs=[...this.ink.read,...this.fixed,this.wet.read[0],this.paper,this.base];
+  if(box)this._region('display',this.output,inputs,data,box);else this._draw('display',this.output,inputs,data);
   // Flood-fill reads a paper-composited image. It cannot become the retained transparent display.
   if(paper||white||flat)this.outputCanonical=false;else if(!box)this.outputCanonical=true;
  }
  async present(texture,box=null){
-  this.render({box:this.outputCanonical?box:null});
+  this.render({box:this.outputCanonical?box:null,live:true});
   // A canvas texture is newly acquired each frame. Its complete image comes from the retained output.
   this._draw('present',{view:texture.createView(),w:this.width,h:this.height},[this.output]);
   this.submit();
-  // Keep one completed GPU frame in flight, and surface loss without a live pixel readback.
-  try{await this.device.queue.onSubmittedWorkDone();}catch(error){this._poison(error);}
-  await this._settleErrors();
+  await this._pace();
+ }
+ // At most two frames queue on the GPU: no frame waits for its own, and a run of frames (settling, Dry,
+ // replay) cannot outpace the GPU. Loss and errors surface on the next call.
+ async _pace(){
+  this.inFlight.push(this.device.queue.onSubmittedWorkDone().catch(error=>this._poison(error)));
+  while(this.inFlight.length>2)await this.inFlight.shift();
+  this._check();
  }
  async read(options={}){
   this.render(options);const box=options.box??null;
@@ -594,7 +748,7 @@ export class WaterGPU {
   this._check();this._dimensions(w,h);
   if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y))throw failure('WATER_INPUT','The Water sheet offset is not valid.');
   if(w===this.width&&h===this.height&&!x&&!y)return;
-  this.endFill();this.submit();
+  this.endFill();this.submit();this._dropScratch();
   const previous=this._material(),old=this._sheet(),meta=this._meta(),tx=this.transaction;
   const nextLayout=sheetLayout(w,h);this._dimensions(nextLayout.sw,nextLayout.sh);
   const need=nextLayout.bytes+w*h*8,pressure=this.bytes+need>this.maxBytes;

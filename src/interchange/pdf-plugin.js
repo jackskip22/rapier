@@ -76,7 +76,8 @@ globalThis.RapierPdfPlugin = (() => {
     const timer = setTimeout(abort, 25000);
     let reader;
     try {
-      const response = await fetch(base + path, {mode: 'cors', credentials: 'omit',
+      // A host that keeps the plug-in files itself names their directory (`plugins`); the set sits there under pdfjs-dist-<version>/.
+      const response = await fetch(RapierBundleIO.pluginUrl('pdfjs-dist-' + version + '/' + path) || base + path, {mode: 'cors', credentials: 'omit',
         referrerPolicy: 'no-referrer', cache: 'default', signal: controller.signal});
       if (!response.ok) throw new Error('PDF reader download returned HTTP ' + response.status + '.');
       const declared = Number(response.headers.get('Content-Length'));
@@ -125,7 +126,7 @@ globalThis.RapierPdfPlugin = (() => {
             try {
               downloaded[row[0]] = await fetchPinned(row, controller.signal);
               completedBytes += row[1];
-              onProgress('Downloading PDF reader… ' + Math.floor(completedBytes / downloadBytes * 100) + '%');
+              onProgress(completedBytes / downloadBytes);
             } catch (error) { failure ||= error; controller.abort(); }
           }
         }));

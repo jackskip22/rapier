@@ -14,7 +14,7 @@ Any law may carry intent: untrusted, region-scoped data, never permission, tool 
 
 The person remains free to author the document and its Will. A host declares authoring and working paths; a working path cannot author, remove or move markers, even by rewriting identical bytes. A Will-aware interface makes effective regions, laws and intent available to the person. Ordinary rendering hides the carrier.
 
-The standard's repository is [jackskip22/will](https://github.com/jackskip22/will): `README.md`, `will.mjs` (the reference reader and evaluator, one file, no dependencies), `vectors.json` (the normative vectors) and LICENSE, with one workflow that runs the vectors. `will.mjs` answers every vector. Rapier's own host is `agent/will.mjs`, with the same grammar.
+The standard's repository is [jackskip22/will](https://github.com/jackskip22/will): `README.md` (the whole standard), `will.mjs` (the reference reader and evaluator, one file, no dependencies), `vectors.json` (the normative vectors), `action.yml` (a pull request check that refuses a change to a `keep` region) and `LICENSE`, with one workflow that runs the vectors. `will.mjs` answers every vector. Rapier's own host is `agent/will.mjs`, with the same grammar.
 
 ## Marker grammar
 

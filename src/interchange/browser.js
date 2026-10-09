@@ -13,24 +13,11 @@ function _rapierImportFields(options) {
   return new Promise(resolve => _openFieldDialog({...options, onOk: resolve, onCancel: () => resolve(null)}));
 }
 
-function _rapierImportProgress(run, message) {
+// The import's one popup: its words, and how far it is (0 to 1) where the work knows.
+function _rapierImportProgress(run, words, fraction = null) {
   if (_rapierDocumentImport.active !== run || run.controller.signal.aborted) return;
-  if (!run.banner) {
-    const banner = document.createElement('div');
-    banner.className = 'rapier-import-progress';
-    banner.setAttribute('role', 'status');
-    const label = document.createElement('span');
-    const cancel = document.createElement('button');
-    cancel.type = 'button'; cancel.textContent = 'cancel';
-    cancel.addEventListener('click', () => {
-      run.controller.abort();
-      banner.remove();
-    });
-    banner.append(label, cancel);
-    document.body.append(banner);
-    run.banner = banner;
-  }
-  run.banner.firstChild.textContent = String(message || 'Importing document…');
+  if (!run.banner) run.banner = _rapierProgressOpen({label: words, cancel: () => run.controller.abort()});
+  run.banner.set(fraction, words);
 }
 
 function _rapierPdfSettingsRefresh() {
@@ -55,7 +42,7 @@ async function _rapierEnsurePdfImportPlugin(run) {
       if (typeof resources?.ensure !== 'function') throw new Error('Google Play cannot bring the PDF reader on this device.');
       const sized = resources.installMessage?.('pdf', 'prompt') || "Google Play downloads Rapier's plug-ins pack once; they then all work offline.";
       if (!await rapierConfirm({title: 'PDF import plugin', message: sized + ' Your document stays on this device.', confirmLabel: 'download'})) return false;
-      _rapierImportProgress(run, 'Google Play is downloading the plug-ins…');
+      _rapierImportProgress(run, 'Downloading PDF reader');
       await resources.ensure('rapier-pdf');
       if (!await plugin.checkInstalled()) throw new Error('Google Play brought the plug-ins, but the PDF reader in them is not complete. Tap retry.');
     } else {
@@ -63,8 +50,8 @@ async function _rapierEnsurePdfImportPlugin(run) {
       message: '• ' + (plugin.downloadBytes / 1e6).toFixed(1) + ' MB PDF reader, once.\n• Works offline.\n• Your file stays here.',
       confirmLabel: 'download'});
     if (!accepted) return false;
-    _rapierImportProgress(run, 'Downloading PDF import plugin…');
-    await plugin.install({signal: run.controller.signal, onProgress: message => _rapierImportProgress(run, message)});
+    _rapierImportProgress(run, 'Downloading PDF reader');
+    await plugin.install({signal: run.controller.signal, onProgress: fraction => _rapierImportProgress(run, 'Downloading PDF reader', fraction)});
     }
   }
   if (run.controller.signal.aborted) throw new DOMException('Import cancelled', 'AbortError');
@@ -83,7 +70,7 @@ async function _rapierInstallPdfImportPlugin() {
   } catch (error) {
     if (error.name !== 'AbortError') showToast('PDF import plugin: ' + String(error.message || error), 'error');
   } finally {
-    run.controller.abort(); run.banner?.remove();
+    run.controller.abort(); run.banner?.end();
     if (_rapierDocumentImport.active === run) _rapierDocumentImport.active = null;
     _rapierPdfSettingsRefresh();
   }
@@ -106,7 +93,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
   };
   try {
     if (kind === 'textpack') {
-      _rapierImportProgress(run, 'Reading TextPack…');
+      _rapierImportProgress(run, 'Importing TextPack');
       const text = await _rapierReadTextPackDocument(file, {checkCurrent, profile: RapierPreferences.read('imageStorage')});
       checkCurrent();
       const base = String(name).replace(/\.(textpack|zip)$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'imported';
@@ -138,7 +125,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
       const transform = _rapierCanonicalImportedTransform(image.transform);
       const key = RapierBundleIO.toBase64(new Uint8Array(digest)) + ':' + JSON.stringify(transform);
       if (!converted.has(key)) {
-        _rapierImportProgress(run, 'Embedding picture ' + (++imageCount) + '…');
+        ++imageCount;
         const normalized = await _rapierNormaliseRaster(new File([bytes], image.name || 'picture.png'), profile, transform);
         checkCurrent();
         converted.set(key, {reference: normalized.asset.label, url: normalized.asset.url, width: normalized.width, height: normalized.height});
@@ -155,11 +142,11 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
         imageWarnings.add('Stretched pictures use their natural proportions in Markdown.');
       return kind === 'docx' ? {reference: normalized.reference, url: normalized.url} : normalized.reference;
     };
-    _rapierImportProgress(run, 'Reading ' + kind.toUpperCase() + '…');
+    const words = kind === 'pdf' ? 'Importing PDF' : 'Importing Word';
+    _rapierImportProgress(run, words);
     const reader = kind === 'docx' ? globalThis.RapierDocxImport.readDocx : globalThis.RapierPdf.readPdf;
     const result = await reader(file, {mode, embedImage, checkCurrent, signal: run.controller.signal,
-      onProgress: progress => _rapierImportProgress(run, typeof progress === 'string' ? progress :
-        'Reading page ' + progress.page + (progress.pages ? ' of ' + progress.pages : '') + '…')});
+      onProgress: progress => _rapierImportProgress(run, words, progress?.pages > 0 ? (progress.page - 1) / progress.pages : null)});
     checkCurrent();
     let text = result.canonical;
     if (typeof text !== 'string') {
@@ -192,7 +179,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '') {
     error.rapierImport = true;
     throw error;
   } finally {
-    run.controller.abort(); run.banner?.remove();
+    run.controller.abort(); run.banner?.end();
     if (_rapierDocumentImport.active === run) _rapierDocumentImport.active = null;
     _rapierPdfSettingsRefresh();
   }

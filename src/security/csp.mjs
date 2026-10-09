@@ -24,6 +24,8 @@ const SURFACES = {
 	// The session gate keeps ordinary sign-in off until that live run is recorded; native stays offline.
 	web: { 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN] },
 	native: { 'frame-ancestors': ["'none'"] },
+	// The reader downloads only its optional plug-ins, from the one host that serves them; no sync, no door.
+	reader: { 'connect-src': ["'self'", 'https://cdn.jsdelivr.net'] },
 	// Embed rule: any HTTPS page may frame Rapier.
 	hosted: { 'connect-src': ["'self'", 'https://cdn.jsdelivr.net', 'https://*.r2.cloudflarestorage.com', RETURN_ORIGIN], 'frame-ancestors': ['https:', 'http://localhost:*', 'http://127.0.0.1:*'] },
 };
@@ -33,7 +35,7 @@ export function csp(surface, syncConfig = CLOUDFLARE_SYNC, others = {registratio
 	if (!Object.hasOwn(SURFACES, surface)) throw new Error('Unknown CSP surface: ' + surface);
 	const rows = BASE.map(([name, values]) => {
 		const selected = SURFACES[surface][name] || values;
-		if (name !== 'connect-src' || surface === 'native') return [name, selected];
+		if (name !== 'connect-src' || surface === 'native' || surface === 'reader') return [name, selected];
 		const more = providerConnectOrigins(others).filter(origin => !selected.includes(origin));
 		return [name, registrationReady(syncConfig) ? [...selected, 'https://dash.cloudflare.com', 'https://api.cloudflare.com', ...more] : [...selected, ...more]];
 	});

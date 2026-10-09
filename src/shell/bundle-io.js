@@ -91,6 +91,35 @@ const RapierBundleIO = (function () {
 		} catch (_) { return null; }
 	}
 
+	// Where the plug-in files are kept when the page's host keeps them itself: `?plugins=<address>` on the page's own address (the
+	// `plugins` option of Rapier.mount writes it). With a directory named, every plug-in is read from it and from nowhere else, each
+	// file by its path under the directory (rapier-plugins.json names the same paths). The page's security policy lets it read only
+	// its own origin, so a directory anywhere else is refused here, in words, before any request is made. Every file is still held
+	// to its pinned length and SHA-384, so a directory can make a plug-in fail to install but never change what runs.
+	var pluginDirectory = (function () {
+		var value = null;
+		try { value = new URLSearchParams(location.search).get('plugins'); } catch (_) {}
+		if (value === null) return null;
+		var named = null;
+		try { named = new URL(value.replace(/\/?$/, '/'), location.href); } catch (_) {}
+		var fail = function (why) { return { error: 'The plug-in directory ' + JSON.stringify(value) + ' ' + why }; };
+		var found = !value ? fail('is empty: name the directory that holds the plug-in files')
+			: !named || !/^https?:$/.test(named.protocol) || named.username || named.password || named.search || named.hash ? fail('is not an http or https directory address')
+			: named.origin !== location.origin ? fail('is on another origin (' + named.origin + '). This page reads plug-ins only from its own origin, ' + location.origin + ': serve the directory from there')
+			: { url: named.href };
+		if (found.error) { try { console.warn('[rapier] ' + found.error); } catch (_) {} }
+		return found;
+	})();
+
+	// The address of a plug-in file under the host's directory (`file` is its path there: the name, or `folder/name`), or null when the
+	// host names no directory. A directory that was refused throws its reason, which the plug-in loader shows as the plug-in's status.
+	function pluginUrl(file) {
+		if (!pluginDirectory) return null;
+		if (pluginDirectory.error) throw new Error(pluginDirectory.error);
+		if (!file) throw new Error('The plug-in directory is set, but this plug-in file has no name in it');
+		return new URL(String(file), pluginDirectory.url).href;
+	}
+
 	// `options` (a plug-in of pinned files): `length` bounds the download as it streams, a longer body refused before it is
 	// held and a shorter one after; `onBytes(n)` hears how far it has come; `cache: 'no-store'` keeps no second copy in the
 	// browser's cache, so a plug-in's delete leaves nothing of it behind.
@@ -196,6 +225,7 @@ const RapierBundleIO = (function () {
 		digestSha384: digestSha384,
 		fetchBytes: fetchBytes,
 		fromBase64: fromBase64,
+		pluginUrl: pluginUrl,
 		resourceBytes: resourceBytes,
 		sameOriginUrl: sameOriginUrl,
 		shortUrl: shortUrl,

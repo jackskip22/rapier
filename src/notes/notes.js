@@ -6054,7 +6054,11 @@ async function _rapierNotesImportPick(source) {
 		const files = [...(input.files || [])]; input.remove();
 		if (!files.length) return;
 		// Its turn in the same queue as captures: neither reads the folder half-written by the other.
-		state.capturing = (state.capturing || Promise.resolve()).then(() => _rapierNotesImportFiles(files, source)).catch(error => { console.warn('[rapier] notes import', error); showToast('The import did not finish. Keep the source export and check Notes before trying again.', 'error'); });
+		// The progress popup runs while the import reads and writes; a half-written import is never given up, so it has no Cancel.
+		state.capturing = (state.capturing || Promise.resolve()).then(async () => {
+			const popup = _rapierProgressOpen({label: source === 'restore' ? 'Restoring notes' : 'Importing notes', after: 500});
+			try { await _rapierNotesImportFiles(files, source); } finally { popup.end(); }
+		}).catch(error => { console.warn('[rapier] notes import', error); showToast('The import did not finish. Keep the source export and check Notes before trying again.', 'error'); });
 	});
 	input.click();
 }
@@ -6873,26 +6877,15 @@ async function _rapierNotesDiscardPreparedBackup() {
 	catch (error) { showToast('The backup copy could not be removed: ' + String(error?.message || error), 'error'); }
 	finally { await release?.(); state.backupBusy = false; }
 }
-// One action-bearing toast uses the existing reachability/lifecycle owner. Updating its words
-// never rerenders Notes, never recreates a dismissed notice, and never touches a later toast.
+// The backup's progress popup: Cancel stops the preparation; the line fills by bytes, else by files, where the work counts them.
 function _rapierNotesBackupProgress(controller) {
-	const root = document.getElementById('toast-root'), previous = root?.lastElementChild;
-	showToast('Preparing backup', 'info', {label: 'Cancel', fn: () => controller.abort(new Error('Backup preparation cancelled'))});
-	const toast = root?.lastElementChild !== previous ? root?.lastElementChild : null;
-	const message = toast?.querySelector('.toast__msg');
-	let lastAt = -Infinity, lastPhase = '';
+	const popup = _rapierProgressOpen({label: 'Backing up', cancel: () => controller.abort(new Error('Backup preparation cancelled'))});
 	return {
 		update({phase, files, totalFiles, bytes, totalBytes}) {
-			if (!toast?.isConnected || !message || toast._rapierLife?.state?.phase === 'closed') return;
-			const now = performance.now();
-			if (phase === lastPhase && now - lastAt < 250) return;
-			let text = phase;
-			if (files != null) text += ' · ' + files.toLocaleString('en') + (totalFiles == null ? ' files' : ' / ' + totalFiles.toLocaleString('en') + ' files');
-			if (bytes != null && totalBytes > 0) text += ' · ' + Math.min(100, Math.floor(bytes * 100 / totalBytes)) + '%';
-			message.textContent = text; lastAt = now; lastPhase = phase;
-			_rapierScheduleToastLift();
+			popup.set(bytes != null && totalBytes > 0 ? bytes / totalBytes : files != null && totalFiles > 0 ? files / totalFiles : null,
+				/verif|check/i.test(phase || '') ? 'Checking backup' : 'Backing up');
 		},
-		close() { if (toast?.isConnected) toast.querySelector('.toast__close')?.click(); }
+		close: popup.end,
 	};
 }
 // The zip's name is its own date and time, so a second backup never takes the first one's name: the
@@ -8202,6 +8195,8 @@ function _rapierNotesHandleBack(overEditorOnly = false) {
 // would swallow the person's Back: a browser does not answer every go() (two in quick succession are coalesced; one past the entries the
 // document has is nothing), and each unanswered one would eat a real Back.
 const RAPIER_NOTES_HISTORY = {editor: 0, cards: 1, note: 2};
+// Every entry carries where the tab's Rapier entries begin (shell/platform.js _rapierBackState), so Back after a reload still leaves in one press.
+function _rapierNotesEntryState(state) { return typeof _rapierBackState === 'function' ? _rapierBackState(state) : state; }
 function _rapierNotesHistory(where) {
 	const state = _rapierNotes;
 	// A note reached by a followed link is one entry deeper than the note it came from (_rapierNotesBackFromNote); the cards and the editor
@@ -8216,7 +8211,7 @@ function _rapierNotesHistory(where) {
 			// on /, whatever the page was served at. A mark written to the entry being left would go with it: the
 			// pop restores the address written when the entry under it was made.
 			if (depth === 0 && typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('notes', false);
-			for (let i = depth; i < want; i++) history.pushState({rapierNotes: i + 1}, '');
+			for (let i = depth; i < want; i++) history.pushState(_rapierNotesEntryState({rapierNotes: i + 1}), '');
 			if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('notes', true);
 		}
 		else history.go(want - depth);
@@ -8262,7 +8257,7 @@ function _rapierNotesHistoryAgain(from, depth) {
 	const state = _rapierNotes;
 	try {
 		for (let i = from + 1; i <= depth; i++) {
-			history.pushState({rapierNotes: i}, '');
+			history.pushState(_rapierNotesEntryState({rapierNotes: i}), '');
 			if (i === 1 && typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('notes', true);
 			if (i >= 2 && state.current) _rapierNotesPublishUrl(state.current);
 		}

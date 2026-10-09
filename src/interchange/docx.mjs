@@ -2123,11 +2123,11 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     '" xmlns:wp="' + NS.wp[0] + '" xmlns:pic="' + NS.pic[0] + '">\n<w:body>' +
     bodyXml + sectPr + '</w:body></w:document>';
 
-  // Headings on the reference scale, as spec/markdown-style.css sets them: h1 to h6 at 2.43, 1.9, 1.5, 1.25, 1.1 and 1 of the
+  // Headings on the reference scale, as spec/markdown-style.css sets them: h1 to h6 at 2.6, 1.9, 1.5, 1.25, 1.1 and 1 of the
   // body, on two, one and a half, one and a half, then one line.
   const type = settings ? referenceType(settings) : null;
   const headingStyles = [1, 2, 3, 4, 5, 6].map(level => {
-    const size = type ? Math.round(type.body * [2.43, 1.9, 1.5, 1.25, 1.1, 1][level - 1] * 2) : 0;
+    const size = type ? Math.round(type.body * [2.6, 1.9, 1.5, 1.25, 1.1, 1][level - 1] * 2) : 0;
     const line = type ? Math.round(type.line * [2, 1.5, 1.5, 1, 1, 1][level - 1] * 20) : 0;
     return '<w:style w:type="paragraph" w:styleId="Heading' + level + '"><w:name w:val="heading ' + level + '"/>' +
       '<w:basedOn w:val="Normal"/><w:pPr>' + (type ? '<w:spacing w:line="' + line + '" w:lineRule="atLeast"/>' : '') +

@@ -55,7 +55,7 @@ requiring inspection of each change. A pending review is not an applied revision
 ## Carry the page and bring it back
 
 Use `rapier-html` to deliver the actual editor with its source, or a proposal with the exact original as
-`--base`. For an optional return, `document.create_return` gives `return_url` and `return_expires_at`;
+`--propose`. For an optional return, `document.create_return` gives `return_url` and `return_expires_at`;
 pass both into the page helper. No authorization credential belongs in the delivered file.
 
 The person edits offline and presses Send back while connected. The return page opens in the browser where

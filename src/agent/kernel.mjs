@@ -1698,6 +1698,17 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
   function retain(entry, approvedReview) {
     state.journal.push(entry);
     let retained = state.journal.reduce((sum, row) => sum + journalBytes(row), 0);
+    // A drawing's semantic payloads (the open canvas's patch, its presentation intent and receipt) are optional; the source
+    // splices are the history. Under byte pressure the payloads go first, oldest first and never the newest row's, so a
+    // drawing's many moves no longer trim an earlier text change out of Undo while its exact source still fits.
+    for (let index = 0; retained > LIMITS.journalBytes && index < state.journal.length - 1; index++) {
+      const row = state.journal[index];
+      if (!row.drawingPatch && !row.drawingIntent && !row.drawingReceipt) continue;
+      const cost = journalBytes(row);
+      retireDrawingPresentation(row, 'drawing_history_unavailable');
+      delete row.drawingPatch; delete row.drawingIntent; delete row.drawingReceipt;
+      retained -= cost - journalBytes(row);
+    }
     // Before a trim, advance pending review anchors to this revision while the journal is whole (the one exception to "never on the commit path").
     // Skipped when this commit is that review's own decision: its change still reads pending and would stale itself.
     if (state.journal.length > 1 && (state.journal.length > LIMITS.journalEntries || retained > LIMITS.journalBytes) &&

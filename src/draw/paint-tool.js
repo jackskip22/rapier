@@ -20,6 +20,8 @@ const {RAPIER_PAINT_BRUSHES, paintBrushById} = globalThis.RapierDrawBrushes;
 // Raster pixels per canvas unit: at least two; a layer opened on a stage is painted at the stage's
 // own device pixels up to three (`_rapierPaintLayerScale`), within a pixel budget.
 const RAPIER_PAINT_SCALE = 2, RAPIER_PAINT_SCALE_MAX = 3, RAPIER_PAINT_AREA_MAX = 6000000;
+// A Water sheet's pixel budget: about 64 bytes of material per pixel, 2048 by 1536 at most.
+const RAPIER_WATER_SHEET_PIXELS = 2048 * 1536;
 // The brush's grain: how many of the brush's own canvas units make one drawing unit. A MyPaint
 // preset is tuned in canvas pixels at 100% zoom; Brien Dieterle's reference sheet was painted on a
 // canvas far denser than a 390-unit phone column, then shrunk, which is what turns each preset's
@@ -1054,7 +1056,7 @@ function _rapierPaintStrip() { return _rapierDrawState.surface?.querySelector('.
 // Read-only facts for witnesses (like surface.rapierDrawPerf in draw.js): which layer is live.
 function _rapierPaintFacts() {
 	const state = _rapierDrawState, layer = state.paintLayer;
-	return { layerId: layer ? layer.id : null, live: !!layer, valid: _rapierPaintLayerValid(), loading: state.paintRehydrate || null, failed: state.paintRehydrateFailed || null, setting: !!state.paintSetting, erasing: !!state.paintEraseFan, pendingOverflow: !!layer?.pendingOverflow,
+	return { layerId: layer ? layer.id : null, live: !!layer, valid: _rapierPaintLayerValid(), loading: state.paintRehydrate || null, failed: state.paintRehydrateFailed || null, setting: !!state.paintSetting, erasing: !!state.paintEraseFan, encoding: !!state.paintEncodes?.size, pendingOverflow: !!layer?.pendingOverflow,
 		// An ordinary lift's PNG finishes off the main thread (_rapierPaintEncodeRevision). A watcher
 		// that only read `setting`/`pendingOverflow` to know the layer is idle (the automatic Set is the
 		// same wait, just later) would see both false while this worker round trip is still outstanding
@@ -1114,7 +1116,7 @@ function _rapierPaintShowable(html) {
 	if (!html || !_rapierPaintShownAs.size || !html.includes('data:image/')) return html;
 	return html.replace(/(href=")(data:image\/(?:jxl|png);base64,[A-Za-z0-9+/=]+)"/g, (whole, lead, url) => { const shown = _rapierPaintShownAs.get(url); return shown ? lead + shown + '"' : whole; });
 }
-async function _rapierPaintEncodeJXL(source, box, options = {lossless: true}) {
+async function _rapierPaintEncodeJXL(source, box, options = {lossless: true}, work = null) {
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options}); // witness seam (paint-auto-set-lossless)
 	if (globalThis.__rapierPaintEncodeHold) await globalThis.__rapierPaintEncodeHold; // witness seam (paint-auto-set-lossless): the encoder held so a press can land while a Set settles
 	// The pixels are asked of the painter (a live layer) or already in hand (a captured picture): either way a box of straight RGBA.
@@ -1122,7 +1124,7 @@ async function _rapierPaintEncodeJXL(source, box, options = {lossless: true}) {
 	// A captured whole picture is also the source of lossless retries/pieces. Only that borrowed
 	// buffer needs copying; a fresh surface read or cut piece is handed to the codec once.
 	const data = px.shared ? new Uint8Array(px.data) : new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength);
-	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options});
+	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options}, work || undefined);
 	return {url: 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out), options};
 }
 // Done keeps the person's paint, always: nothing is ever discarded on a closing path. A live layer
@@ -1190,12 +1192,12 @@ async function _rapierPaintRasterCanvas(dataUrl) {
 	return canvas;
 }
 // One box of a decoded raster, encoded; `box` is inclusive pixel bounds, the whole canvas when absent.
-async function _rapierPaintEncodeCanvasBox(canvas, box, options = {lossless: true}) {
+async function _rapierPaintEncodeCanvasBox(canvas, box, options = {lossless: true}, work = null) {
 	const b = box || { x0: 0, y0: 0, x1: canvas.width - 1, y1: canvas.height - 1 };
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options}); // witness seam
 	const px = canvas.getContext('2d').getImageData(b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1);
 	const data = new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength);
-	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options});
+	const out = await globalThis.RapierEmbeddedImages.codec('encode', {width: px.width, height: px.height, data, options}, work || undefined);
 	return {url: 'data:image/jxl;base64,' + RapierBundleIO.toBase64(out.bytes || out), options};
 }
 // A committed painting whose lossless bytes pass the cap, cut into lossless pieces from its own
@@ -1222,7 +1224,7 @@ function _rapierPaintSplitShapeSync(shapes, shape, pieces) {
 	let seq = 0;
 	const nextId = () => {
 		let id;
-		do { id = shapes === state.recipe.shapes ? _rapierDrawNextId() : 's' + (++seq); } while (used.has(id));
+		do { id = shapes === state.recipe?.shapes ? _rapierDrawNextId() : 's' + (++seq); } while (used.has(id));
 		used.add(id); return id;
 	};
 	const at = (u, v) => frame
@@ -1259,10 +1261,14 @@ function _rapierPaintPixelsSurface(px) {
 		return {width, height, data};
 	}};
 }
-async function _rapierPaintKeepAsJXL(recipe, defer = false) {
+// `frozen` is called once, as soon as the pixels this write needs are in hand (or at once where there are none to read): after it,
+// the live surface may go. Done uses it to let the drawing close while the encoder works on those pixels (`_rapierDrawFinish`).
+// `work` is {progress, signal}: `progress` is called with how far the encode is, from 0 to 1, over every painting still to be
+// written; `signal` stops it.
+async function _rapierPaintKeepAsJXL(recipe, defer = false, frozen = null, work = null) {
 	// One owner for which codec a picture is written in: `_rapierDefaultImageProfile`. A painting is
 	// a picture and follows the same rule, so it never disagrees with the rest of the document.
-	if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return [];
+	if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') { frozen?.(); return []; }
 	const state = _rapierDrawState, budget = _rapierPaintRasterBudget(), split = [];
 	// Recovery can ask while a cap's captured channels are already in the final codec. Retain
 	// those immutable jobs before any await, even if their live history owner finishes meanwhile.
@@ -1284,8 +1290,14 @@ async function _rapierPaintKeepAsJXL(recipe, defer = false) {
 	// Routine recovery captures once, before the first codec await. Every lossless retry then
 	// cuts these immutable channels, never the live material a later stroke may have changed.
 	const captured = defer && layer && frozenPixels ? _rapierPaintPixelsSurface(frozenPixels) : null;
+	frozen?.();
+	// One painting's encode is a share of the whole; a cut into pieces starts its encode over, and the line does not go back.
+	const owed = Math.max(1, shapes.filter(shape => shape.recognized === 'paint' && shape.raster && !shape.raster.startsWith('data:image/jxl')).length);
+	let turn = 0;
 	for (const shape of shapes) {
 		if (shape.recognized !== 'paint' || !shape.raster || shape.raster.startsWith('data:image/jxl')) continue;
+		const share = turn++;
+		const each = work ? { signal: work.signal, progress: typeof work.progress === 'function' ? (() => { let top = 0; return fraction => { top = Math.max(top, fraction); work.progress(Math.min(1, (share + top) / owed)); }; })() : undefined } : null;
 		// The live surface holds the exact pixels and is preferred; a painting whose layer has been
 		// closed is re-encoded from its own committed bytes rather than left as an oversized PNG.
 		// One restored from a file already carries its author's JPEG XL and never reaches here.
@@ -1296,15 +1308,15 @@ async function _rapierPaintKeepAsJXL(recipe, defer = false) {
 		let pieces;
 		const lossless = (encode, box) => _rapierPaintLosslessPieces(encode, box, budget, 0, shape.paint?.mode === 'water');
 		if (encodes.has(shape.raster)) pieces = await encodes.get(shape.raster);
-		else if (live) pieces = await lossless(b => _rapierPaintEncodeJXL(captured || live.surface, b, { lossless: true }), captured ? {x0: 0, y0: 0, x1: frozenPixels.width - 1, y1: frozenPixels.height - 1} : box);
+		else if (live) pieces = await lossless(b => _rapierPaintEncodeJXL(captured || live.surface, b, { lossless: true }, each), captured ? {x0: 0, y0: 0, x1: frozenPixels.width - 1, y1: frozenPixels.height - 1} : box);
 		else {
 			const exact = shape === frozenShape && frozenPixels ? frozenPixels : await _rapierPaintPNG.decode(shape.raster);
 			if (exact) {
 				const surface = _rapierPaintPixelsSurface(exact);
-				pieces = await lossless(b => _rapierPaintEncodeJXL(surface, b, {lossless: true}), {x0: 0, y0: 0, x1: exact.width - 1, y1: exact.height - 1});
+				pieces = await lossless(b => _rapierPaintEncodeJXL(surface, b, {lossless: true}, each), {x0: 0, y0: 0, x1: exact.width - 1, y1: exact.height - 1});
 			} else {
 				const canvas = await _rapierPaintRasterCanvas(shape.raster);
-				pieces = await lossless(b => _rapierPaintEncodeCanvasBox(canvas, b, { lossless: true }), { x0: 0, y0: 0, x1: canvas.width - 1, y1: canvas.height - 1 });
+				pieces = await lossless(b => _rapierPaintEncodeCanvasBox(canvas, b, { lossless: true }, each), { x0: 0, y0: 0, x1: canvas.width - 1, y1: canvas.height - 1 });
 			}
 		}
 		if (!pieces) continue;
@@ -1389,7 +1401,10 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 		// Measure the PNG we will keep, not the emergency stored-block working encoding. The
 		// existing raw-RGBA codec compresses losslessly without a canvas alpha round-trip; measuring
 		// stored blocks exhausted the sixty-four-piece bound for paintings compressed PNG can hold.
-		const encode = (box, options) => asJXL ? _rapierPaintEncodeJXL(layer.surface, box, options).then(async out => ({ ...out, shown: await _rapierPaintShownFor(layer.surface, box) }))
+		// A manual Set in the JPEG XL profile keeps the painting now, as the lossless PNG of its pixels, and the sheet is clean at once; the
+		// encode takes seconds to minutes. Its JPEG XL is written behind (below), in place and with no step of its own.
+		const behind = !auto && asJXL;
+		const encode = (box, options) => asJXL && !behind ? _rapierPaintEncodeJXL(layer.surface, box, options).then(async out => ({ ...out, shown: await _rapierPaintShownFor(layer.surface, box) }))
 			: Promise.resolve(layer.surface.readRGBA8(box)).then(px => _rapierPaintPNG.compressed(px)).then(url => ({ url, options }));
 		let kept = null, pieces = null;
 		if (auto) {
@@ -1433,11 +1448,27 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			pieces = await _rapierPaintLosslessPieces(b => encode(b, { lossless: true }), box, budget, 0, layer.mode === 'water');
 			// Encoding is asynchronous; a later stroke, Undo or another drawing owns its own pixels.
 			// The initial keep already committed this picture, so refusing a stale encoding loses nothing.
-			if (!state.open || state.session !== session || state.paintLayer !== currentLayer ||
-				_rapierDrawShapeById(shape.id) !== shape || (layer.paintVersion || 0) !== version || state.gesture?.kind === 'paint' || layer.surface.wetState) {
-				if (state.open && state.session === session) showToast('The painting changed while Set was working. Your work is kept; press Set again to finish the current picture.', 'info');
-				return;
+			const same = state.open && state.session === session && state.paintLayer === currentLayer && _rapierDrawShapeById(shape.id) === shape;
+			if (!same || (layer.paintVersion || 0) !== version || state.gesture?.kind === 'paint' || layer.surface.wetState) {
+				// A stroke made while Set worked is kept in the picture: once the hand lifts the painting is kept again as it stands, and Set goes on
+				// with that (its JPEG XL is written behind as well). It is refused only where the drawing or the sheet is no longer this one.
+				if (behind && same) {
+					for (let waited = 0; state.gesture?.kind === 'paint' && state.open && state.session === session && waited < 20000; waited += 30) await new Promise(ok => setTimeout(ok, 30));
+					if (state.open && state.session === session && state.paintLayer === currentLayer && state.gesture?.kind !== 'paint') {
+						await _rapierPaintCommit(true);
+						const again = layer.id != null ? _rapierDrawShapeById(layer.id) : null;
+						if (again && state.paintLayer === currentLayer) {
+							shape = again; kept = { url: again.raster, options: { lossless: true } }; pieces = null;
+							void _rapierPaintEncodeShapeLater(again.id, again.raster, null, { entry: state.undoStack.at(-1) });
+						}
+					}
+				}
+				if (!kept) {
+					if (state.open && state.session === session) showToast('The painting changed while Set was working. Your work is kept; press Set again to finish the current picture.', 'info');
+					return;
+				}
 			}
+			if (kept) { /* folded above */ } else {
 			if (!pieces) { showToast('This painting is past what even sixty-four pictures can hold. Erase some of it and set it again.', 'info'); return; }
 			kept = { url: pieces[0].url, options: { lossless: true } };
 			_rapierPaintKeepShown(pieces);
@@ -1446,6 +1477,9 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			if (pieces.length > 1) { _rapierPaintSplitShapeSync(state.recipe.shapes, shape, pieces.map(piece => ({ url: piece.url, box: { x0: piece.box.x0 - box.x0, y0: piece.box.y0 - box.y0, x1: piece.box.x1 - box.x0, y1: piece.box.y1 - box.y0 } }))); _rapierDrawRenderAll(); }
 			else _rapierDrawRenderShapes([shape.id]);
 			_rapierDrawSealHistory();
+			// The encoder is handed the PNG's exact pixels once the sheet is clean; Done awaits this same task and finishes what is left.
+			if (behind && pieces.length === 1) void _rapierPaintEncodeShapeLater(shape.id, kept.url, null, { entry: state.undoStack.at(-1) });
+			}
 		}
 		// The picture is finished; the next stroke starts on a clean sheet over it.
 		await _rapierPaintCloseLayer();
@@ -1865,6 +1899,7 @@ function _rapierPaintPublishFrozen(layer, job, raster) {
 	const priorShift = joins ? state.undoStack.at(-1)?.shift : null;
 	const replay = layer.mode === 'water' ? _rapierPaintWaterReplay(layer, job.waterCapture, job.box, job.waterSheet) : _rapierPaintReplayAt(layer, job.replay, job.box);
 	_rapierDrawSnapshot(undefined, joins);
+	if (layer.mode === 'water' && typeof _rapierWaterAdoptPaper === 'function') _rapierWaterAdoptPaper();
 	const grown = !layer.frame && _rapierDrawGrowCanvas(geom.cx - geom.w / 2, geom.cy - geom.h / 2, geom.cx + geom.w / 2, geom.cy + geom.h / 2);
 	state.paintLastGrown = grown || null;
 	if (grown) { geom.cx += grown.dx; geom.cy += grown.dy; }
@@ -2205,6 +2240,8 @@ function _rapierPaintMountLive(canvas, atShapeId) {
 	const mount = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
 	mount.setAttribute('x', '0'); mount.setAttribute('y', '0');
 	mount.style.overflow = 'visible';
+	// A Water sheet multiplies a Paper background (rapier-draw.css), as its kept painting does.
+	if (canvas.getAttribute?.('data-water') != null) mount.setAttribute('data-water', '');
 	canvas.style.display = 'block';
 	mount.appendChild(canvas);
 	_rapierPaintPositionMount(mount, atShapeId);
@@ -2272,6 +2309,7 @@ function _rapierPaintBlankSheet(w, h, scale, prepared = null, mode = _rapierPain
 function _rapierPaintBlankCanvas(w, h, prepared = null, mode = 'paint') {
 	const canvas = prepared?.canvas || document.createElement('canvas');
 	canvas.className = 'rapier-draw-paint-live';
+	if (mode === 'water') canvas.setAttribute('data-water', '');
 	if (canvas.width !== w) canvas.width = w;
 	if (canvas.height !== h) canvas.height = h;
 	canvas.setAttribute('aria-hidden', 'true');
@@ -2303,6 +2341,8 @@ function _rapierPaintOpenLayer(scale = _rapierPaintLayerScale(), atShapeId = nul
 	}
 	if (!emptyUnion && w * h > RAPIER_PAINT_AREA_MAX * 2) { union = { x0: 0, y0: 0, w: recipe.canvas.w, h: recipe.canvas.h }; w = Math.max(1, Math.round(union.w * scale)); h = Math.max(1, Math.round(union.h * scale)); }
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Canvas is too large to paint on');
+	// Water's paper field is fixed to the drawing, like the paper background that shows it.
+	if (mode === 'water' && typeof _rapierWaterPaperFrame === 'function') material = {...material, ..._rapierWaterPaperFrame(union.x0 * scale, union.y0 * scale, h, scale)};
 	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, scale, prepared, mode, material);
 	// The overlay holds every pixel of the surface at all times. An EMPTY one is safe to leave
 	// showing -- there is nothing on it to double with the committed picture -- so a fresh layer's
@@ -2328,7 +2368,8 @@ function _rapierPaintOpenLocalLayer(frame, atShapeId = null, mode = _rapierPaint
 	const pad = _rapierPaintFramePad(frame.pw, frame.ph, frame.scale);
 	const w = Math.max(1, Math.round(frame.pw + pad * 2)), h = Math.max(1, Math.round(frame.ph + pad * 2));
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Painting is too large to reopen for painting');
-	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, frame.scale, null, mode);
+	// A turned or scaled painting cannot share the drawing's paper grid; its sheet keeps the paper's scale.
+	const {surface, canvas, ctx} = _rapierPaintBlankSheet(w, h, frame.scale, null, mode, mode === 'water' && typeof _rapierWaterPaperFrame === 'function' ? {..._rapierWaterPaperFrame(0, 0, h, frame.scale), paperOrigin: [0, 0]} : null);
 	canvas.style.visibility = 'hidden';
 	const mount = _rapierPaintMountLive(canvas, atShapeId);
 	if (!Object.getOwnPropertyDescriptor(state.surface, 'rapierPaintFacts')) Object.defineProperty(state.surface, 'rapierPaintFacts', { enumerable: false, get: _rapierPaintFacts });
@@ -2738,7 +2779,12 @@ function _rapierPaintHoldTick(gesture) {
 	if (layer.mode === 'water') {
 		// A held frame is admitted only after its predecessor completes. Pointer samples keep
 		// their own order; a busy painter never owes a queue of obsolete animation frames.
-		const surface = layer.surface, pending = surface.advanceWet(dt * 1000);
+		// Water steps once a frame by that frame's own interval, as the reference does: the time since
+		// the previous Water frame, not since the latest pointer event, which would leave a stroke
+		// (samples arriving between frames) with a fraction of its time and its flow undamped.
+		const frameDt = _rapierDrawClamp((now - (paint.waterFrameAt ?? now - dt * 1000)) / 1000, 0.001, 0.5);
+		paint.waterFrameAt = now;
+		const surface = layer.surface, pending = surface.advanceWet(frameDt * 1000);
 		paint.holdPending = pending;
 		const current = () => state.gesture === gesture && _rapierPaintLayer() === layer && layer.surface === surface && !paint.discarded;
 		void pending.then(() => {
@@ -2869,20 +2915,18 @@ function _rapierPaintReleaseStroke(gesture, cancel = false) {
 }
 function _rapierPaintOpenGestureLayer(evt, settings, geom) {
 	if (settings.mode !== 'water') return _rapierPaintOpenLayer(undefined, null, null, null, settings.mode || 'paint');
-	// The admitted hand can reserve its reachable window when the material allocator
-	// leaves room for rollback and growth. Oversized views start at the actual contact.
-	const scale = _rapierPaintLayerScale(), nominal = _rapierPaintStageUnion(_rapierDrawState.recipe);
+	// Water simulates the whole reachable sheet from the first contact, at a resolution its material fits.
+	// A sheet that grows under the hand reallocates every material plane and restarts the flow mid-stroke.
+	let scale = _rapierPaintLayerScale();
+	const nominal = _rapierPaintStageUnion(_rapierDrawState.recipe);
+	while (scale > 1 && nominal.w * nominal.h * scale * scale > RAPIER_WATER_SHEET_PIXELS) scale--;
 	const width = Math.max(1, Math.round(nominal.w * scale)), height = Math.max(1, Math.round(nominal.h * scale));
-	const growth = globalThis.RapierDrawPaint.paintGrowStep(1);
-	if (globalThis.RapierDrawWater.waterHandSheetFits(width, height, growth, settings.definition.water?.tip)) return _rapierPaintOpenLayer(scale, null, nominal, null, 'water');
+	if (globalThis.RapierDrawWater.waterHandSheetFits(width, height, 0, settings.definition.water?.tip)) return _rapierPaintOpenLayer(scale, null, nominal, null, 'water');
 	const point = _rapierDrawMapPoint(evt.clientX, evt.clientY, geom.rect, geom.vb);
 	const reach = Math.exp(settings.definition.settings[3].base + settings.radiusOffset) / RAPIER_PAINT_GRAIN * scale + RAPIER_PAINT_GROW_MARGIN;
 	const x0 = Math.floor(point[0] * scale - reach), y0 = Math.floor(point[1] * scale - reach);
 	const x1 = Math.ceil(point[0] * scale + reach + 1), y1 = Math.ceil(point[1] * scale + reach + 1);
-	// A smaller allocation samples the same nominal paper field; its size and corner
-	// must not change the grain. The shader's second origin coordinate starts at the bottom.
-	const paperOrigin = [x0 - nominal.x0 * scale, nominal.y0 * scale + height - y1];
-	return _rapierPaintOpenLayer(scale, null, {x0:x0/scale, y0:y0/scale, w:(x1-x0)/scale, h:(y1-y0)/scale}, null, 'water', {paperHeight:height, paperOrigin});
+	return _rapierPaintOpenLayer(scale, null, {x0:x0/scale, y0:y0/scale, w:(x1-x0)/scale, h:(y1-y0)/scale}, null, 'water');
 }
 async function _rapierPaintInitStroke(evt, gesture, settings, geom) {
 	const state = _rapierDrawState, session = state.session;
@@ -3393,7 +3437,8 @@ async function _rapierPaintStart(evt, gesture, queued, timing) {
 // affine basis keeps every retained pixel at the same world point; rotation is never resampling.
 const RAPIER_PAINT_GROW_MARGIN = 96;
 function _rapierPaintGrowthAt(layer, paint, p) {
-	const surface = layer.surface, k = layer.scale, reach = (paint?.reach || 0) * k + RAPIER_PAINT_GROW_MARGIN;
+	// A Water sheet already covers the reachable window; it grows only for a contact beyond it, never for the brush's halo.
+	const surface = layer.surface, k = layer.scale, reach = layer.mode === 'water' ? 0 : (paint?.reach || 0) * k + RAPIER_PAINT_GROW_MARGIN;
 	const x = p.x * k, y = p.y * k;
 	const left = Math.max(0, Math.ceil(reach - x)), top = Math.max(0, Math.ceil(reach - y));
 	const right = Math.max(0, Math.ceil(x + reach - (surface.width - 1))), bottom = Math.max(0, Math.ceil(y + reach - (surface.height - 1)));
@@ -3566,6 +3611,9 @@ function _rapierPaintFlipAtCap(layer, paint, p) {
 async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, stroke = null) {
 	const state = _rapierDrawState, session = state.session;
 	const encodes = state.paintEncodes || (state.paintEncodes = new Map());
+	// The wait is shown behind the progress popup once it passes a moment (editor/pop.js).
+	const notice = typeof _rapierProgressOpen === 'function' ? _rapierProgressOpen({label: 'Finishing at full quality', after: 1500}) : null;
+	const work = notice ? {progress: fraction => notice.set(fraction)} : null;
 	let task;
 	try {
 		if (typeof _rapierDefaultImageProfile === 'function' && _rapierDefaultImageProfile() !== 'jxl') return;
@@ -3577,13 +3625,14 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 			const canvas = surface ? null : await _rapierPaintRasterCanvas(was), source = surface || canvas;
 			const encode = async box => {
 				if (!surface) return _rapierPaintEncodeCanvasBox(canvas, box, {lossless: true});
-				const out = await _rapierPaintEncodeJXL(surface, box, {lossless: true});
+				const out = await _rapierPaintEncodeJXL(surface, box, {lossless: true}, work);
 				return {...out, shown: await _rapierPaintShownFor(surface, box)};
 			};
-			return _rapierPaintLosslessPieces(encode, {x0: 0, y0: 0, x1: source.width - 1, y1: source.height - 1}, _rapierPaintRasterBudget());
+			// A Water painting is never cut: where its JPEG XL does not fit one picture the PNG stays for Done to answer.
+			return _rapierPaintLosslessPieces(encode, {x0: 0, y0: 0, x1: source.width - 1, y1: source.height - 1}, _rapierPaintRasterBudget(), 0, _rapierDrawShapeById(shapeId)?.paint?.mode === 'water');
 		})();
 		encodes.set(was, task);
-		const pieces = await task;
+		const pieces = await task.finally(() => notice?.end());
 		if (!pieces || !state.open || state.session !== session) return;
 		const shape = _rapierDrawShapeById(shapeId);
 		if (!shape || shape.raster !== was) return;
@@ -3599,7 +3648,7 @@ async function _rapierPaintEncodeShapeLater(shapeId, was, captured = null, strok
 		if (captured) _rapierPaintShownAs.delete(was);
 		_rapierPaintReattachLive();
 	} catch (error) { console.warn('[rapier] paint flip encode', error); }
-	finally { if (encodes.get(was) === task) encodes.delete(was); }
+	finally { notice?.end(); if (encodes.get(was) === task) encodes.delete(was); }
 }
 // Resizing a <canvas> CLEARS it, and the live blit only paints the dirty box -- so after a grow
 // the next frame would show the new dab on a blank sheet with every earlier stroke gone until the
@@ -3990,6 +4039,8 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 	const priorShift = custody || joins ? state.undoStack.at(-1)?.shift : null;
 	const replay = layer.mode === 'water' ? _rapierPaintWaterReplay(layer, waterRead?.waterCapture || layer.waterCapture, box, waterRead?.waterSheet || layer.waterSheet) : _rapierPaintReplayAt(layer, record || surface.takeReplay?.() || null, box);
 	_rapierDrawSnapshot(undefined, custody || joins);
+	// A Water painting keeps the Paper background it was painted on (the default under Water), in the same step.
+	if (layer.mode === 'water' && typeof _rapierWaterAdoptPaper === 'function') _rapierWaterAdoptPaper();
 	// The paper grows under the hand: ink committed beyond the canvas widens it, shifting every shape
 	// when it grows leftward or upward; one history step with the stroke itself.
 	const grown = !layer.frame && _rapierDrawGrowCanvas(geom.cx - geom.w / 2, geom.cy - geom.h / 2, geom.cx + geom.w / 2, geom.cy + geom.h / 2);

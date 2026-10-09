@@ -411,6 +411,106 @@ export function wrapShape(side, obstacles, width, top) {
 	return {boxWidth, boxHeight, startY, points};
 }
 
+// ---- What a block draws at its edge moves with its words (live and export alike) ----
+// A bordered box (a disclosure) cannot follow an outline line by line: it stands clear of it. `obstacles` in the box's
+// border-box coordinates, its band [top, top + height]: the insets that end the box where the outline begins on each
+// side, `fits` false when they leave less than `floor`; null when the outline does not meet the box.
+export function boxClearance(obstacles, width, top, height, floor) {
+	let left = 0, right = 0;
+	for (const row of obstacles) {
+		if (row.y >= top + height || row.y + row.height <= top || row.x >= width || row.x + row.width <= 0) continue;
+		if (row.x > width - (row.x + row.width)) right = Math.max(right, width - row.x);
+		else left = Math.max(left, row.x + row.width);
+	}
+	return left || right ? {left, right, fits: width - left - right >= floor} : null;
+}
+
+// Where an element's content begins at the inline start (a right edge counts negative in a right-to-left block).
+function contentStart(element) {
+	const style = element.ownerDocument.defaultView.getComputedStyle(element), box = element.getBoundingClientRect();
+	return style.direction === 'rtl' ? -(box.right - (parseFloat(style.paddingRight) || 0) - (parseFloat(style.borderRightWidth) || 0))
+		: box.left + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.borderLeftWidth) || 0);
+}
+
+// The lines of words in `root` (text outside `skip`), each with its block, where it starts and where its block's content starts.
+export function edgeLines(root, skip = () => false) {
+	const doc = root.ownerDocument, view = doc.defaultView, lines = [], starts = new Map();
+	const walker = doc.createTreeWalker(root, 4);
+	for (let node; (node = walker.nextNode());) {
+		if (!node.data.trim() || skip(node)) continue;
+		let block = node.parentElement;
+		while (block !== root && view.getComputedStyle(block).display.startsWith('inline')) block = block.parentElement;
+		if (!starts.has(block)) starts.set(block, contentStart(block));
+		const rtl = view.getComputedStyle(block).direction === 'rtl', range = doc.createRange();
+		range.selectNodeContents(node);
+		for (const box of range.getClientRects()) {
+			if (!(box.width > 0)) continue;
+			const line = lines.find(row => row.block === block && Math.abs(row.top - box.top) < 2);
+			const start = rtl ? -box.right : box.left;
+			if (line) { line.start = Math.min(line.start, start); line.bottom = Math.max(line.bottom, box.bottom); }
+			else lines.push({block, top: box.top, bottom: box.bottom, start, content: starts.get(block)});
+		}
+	}
+	return lines;
+}
+
+// After a picture's floats settle: how far each line moved from where its block's lines began without them (`before`,
+// edgeLines read first). A list item's marker moves as far as its first line; a quote's bar moves to stand beside its
+// moved lines as it stood beside them before, in runs of one shift from the quote's top to its bottom.
+export function edgeMarks(root, before, skip = () => false) {
+	const view = root.ownerDocument.defaultView, home = new Map();
+	const byBlock = rows => {
+		const blocks = new Map();
+		for (const row of rows) { if (!blocks.has(row.block)) blocks.set(row.block, []); blocks.get(row.block).push(row); }
+		for (const list of blocks.values()) list.sort((a, b) => a.top - b.top);
+		return blocks;
+	};
+	for (const [block, rows] of byBlock(before)) {
+		const content = rows[0].content;
+		home.set(block, {content, first: rows[0].start, rest: rows.length > 1 ? Math.min(...rows.slice(1).map(row => row.start)) : content});
+	}
+	const lines = [];
+	for (const [block, rows] of byBlock(edgeLines(root, skip))) rows.forEach((row, index) => {
+		const natural = home.get(block);
+		if (natural) lines.push({...row, content: natural.content, moved: Math.max(0, row.start - (index ? natural.rest : natural.first))});
+	});
+	const within = selector => [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll(selector)];
+	const shiftOf = item => lines.filter(line => line.block.closest('li') === item).sort((a, b) => a.top - b.top)[0]?.moved || 0;
+	const markers = [];
+	for (const item of within('li')) {
+		if (item.classList.contains('task-list-item')) continue;
+		const shift = shiftOf(item);
+		if (shift > .5) markers.push({item, shift});
+	}
+	// A numbered item's dotted line runs to the next circle: where the two circles moved apart it is not drawn (`steps`).
+	const steps = [];
+	for (const list of within('ol')) {
+		const items = [...list.children].filter(child => child.tagName === 'LI');
+		items.forEach((item, index) => {
+			const next = items[index + 1];
+			if (next ? Math.abs(shiftOf(item) - shiftOf(next)) > .5 : list.hasAttribute('data-rapier-list-continues') && shiftOf(item) > .5) steps.push(item);
+		});
+	}
+	const bars = [];
+	for (const quote of within('blockquote')) {
+		if (!(parseFloat(view.getComputedStyle(quote).borderInlineStartWidth) > 0)) continue;
+		const start = contentStart(quote);
+		const own = lines.filter(line => quote.contains(line.block)).sort((a, b) => a.top - b.top)
+			.map(line => ({...line, shift: line.moved > .5 ? line.moved + line.content - start : 0}));
+		if (!own.some(line => line.shift > .5)) continue;
+		const box = quote.getBoundingClientRect(), runs = [];
+		for (const line of own) {
+			const run = runs.at(-1);
+			if (run && Math.abs(run.shift - line.shift) <= .5) { run.bottom = line.bottom; continue; }
+			if (run) run.end = (run.bottom + line.top) / 2;
+			runs.push({shift: line.shift, top: run ? run.end : box.top, bottom: line.bottom});
+		}
+		runs.at(-1).end = box.bottom;
+		bars.push({quote, runs: runs.map(run => ({shift: run.shift, top: run.top, bottom: run.end}))});
+	}
+	return {markers, bars, steps};
+}
+
 // ---- The one "paragraph holds only the picture": one meaningful child, the image or an <a> wrapping only it ----
 export function imageOnly(paragraph, image) {
 	const meaningful = node => [...node.childNodes].filter(child => child.nodeType !== 8 &&

@@ -58,7 +58,7 @@ function noiseGrid(width,height,cell,random) {
  };
 }
 
-/** Tolerance is an RGB byte difference, 0..254. The source raster is opaque. */
+/** Tolerance is the admitted 0..1 control; its square selects an RGB byte difference. The source raster is opaque. */
 export function buildWaterFill({width,height,data},x,y,tolerance=0,random=Math.random) {
  const count=width*height;
  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||count>0x3fffffff||data?.length!==count*4)
@@ -67,7 +67,7 @@ export function buildWaterFill({width,height,data},x,y,tolerance=0,random=Math.r
  if(!Number.isFinite(tolerance))throw new RangeError('The fill tolerance is invalid.');
  const draw=typeof random==='function'?random:random?.random?.bind(random);
  if(!draw)throw new TypeError('The fill random source is invalid.');
- x=Math.floor(x);y=Math.floor(y);tolerance=Math.max(0,Math.min(254,Math.round(tolerance)));
+ x=Math.floor(x);y=Math.floor(y);tolerance=Math.min(254,Math.round(Math.max(0,Math.min(1,tolerance))**2*255));
  const mask=new Uint8Array(count),links=new Int32Array(count*2),queue=links.subarray(0,count);
  const seed=y*width+x,red=data[seed*4],green=data[seed*4+1],blue=data[seed*4+2];
  let head=0,tail=0;const box=[width,height,0,0];

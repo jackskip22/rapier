@@ -30,4 +30,4 @@ Every new backup makes a dated, timed file without asking or replacing an earlie
 
 Open `rapier.website` in your phone’s browser. Use the browser menu’s **Add to Home screen** or install command. Let the first load finish, then check it opens without a connection. You can also open `rapier.html` directly; do not assume file-opened Notes has persistent storage.
 
-*Rapier is in active development. Its build receipt (`docs/build.json` in the repository, `BUILD.json` on rapier.website) names the file’s exact assembly.*
+*The build receipt, `docs/build.json` in the repository, names the file’s exact assembly.*

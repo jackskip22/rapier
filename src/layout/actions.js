@@ -1,5 +1,7 @@
+// `commit` is the ledger's own options for the step (images/browser.js finishes a drawing with `navigation: false` and the
+// step it finishes as `sourceTransactionId`); the step is an ordinary one without it.
 async function _rapierCommitSourceProjection(splices, operation, selection = null, navigationCurrent = null,
-    viewport = _rapierCaptureEditorViewport()) {
+    viewport = _rapierCaptureEditorViewport(), commit = null) {
   if (_rapierUserMutationBlocked()) return false;
   if (!splices.length) return true;
   // Pending letters commit here; if that moved the text the splices name nothing. Refuse rather than misplace.
@@ -55,7 +57,7 @@ async function _rapierCommitSourceProjection(splices, operation, selection = nul
         // Navigation does not cancel an admitted edit. Only source ownership can.
         if (prepared !== candidate || !_rapierMutationStampIsCurrent(stamp) ||
             rapier.access.readOnly || before !== _rapierSourceText()) return false;
-        committed = !!_rapierCommitSplices(splices, {operation, selectionBefore, selectionAfter: selection,
+        committed = !!_rapierCommitSplices(splices, {...commit, operation, selectionBefore, selectionAfter: selection,
           retiredImages: retired, retireProjection: false});
         if (committed) {
           try { _bumpDocGeneration(); }

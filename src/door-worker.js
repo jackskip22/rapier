@@ -24,15 +24,18 @@ export const DOORS = Object.freeze({
 		description: 'Commercial licences for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.'}),
 	// The editor views a search engine may show as sitelinks under the home result: each opens that view
 	// (the engine reads the address), and each is a page of its own for a reader that runs nothing.
+	// `image` is the card shown when the address is shared: a PNG at the site root, `imageSize` pixels wide and high.
 	'/notes': Object.freeze({name: 'Notes', title: 'Rapier Notes: Markdown notes on your phone',
 		description: 'Plain Markdown notes as cards, with colours, pins, checklists, reminders and voice notes. Fast, offline, no account.',
-		image: 'og-notes.png', imageAlt: 'Rapier Notes: Markdown notes on your phone'}),
+		image: 'og-notes.png', imageSize: [1200, 630], imageAlt: 'Rapier Notes: Markdown notes on your phone'}),
 	'/draw': Object.freeze({name: 'Draw', title: 'Rapier Draw: draw and paint in Markdown',
 		description: 'Shapes, arrows that stay attached, a pen and real brushes. Drawings stay sharp and editable inside your Markdown file.',
-		image: 'og-draw.png', imageAlt: 'Rapier Draw: draw and paint in Markdown'}),
+		image: 'og-draw.png', imageSize: [1200, 630], imageAlt: 'Rapier Draw: draw and paint in Markdown'}),
+	// The Watercolor card is drawn from `picture` (tools/og-card.mjs). To show a new painting instead, save it as a PNG, change `image` and `imageSize`
+	// here, and list the file in tools/stage-site.mjs and .assetsignore. A new file name makes social sites fetch the card again.
 	'/watercolor': Object.freeze({name: 'Watercolor', title: 'Rapier Watercolor: free watercolor painting online',
 		description: 'Paint watercolor in your browser with flowing pigments, wet washes and textured paper. Keep transparent paintings in editable drawings. Free, no account.',
-		image: 'og-watercolor.png', imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
+		image: 'og-watercolor.png', imageSize: [1200, 630], imageAlt: 'Blue, yellow and rose watercolor washes painted with Rapier Water',
 		picture: 'watercolor-painting.png'}),
 });
 
@@ -78,6 +81,8 @@ export function doorHead(head, path) {
 	if (door.image) {
 		out = set(out, /<meta property="og:image" content="[^"]*">/, '<meta property="og:image" content="' + ORIGIN + '/' + door.image + '">');
 		out = set(out, /<meta property="og:image:alt" content="[^"]*">/, '<meta property="og:image:alt" content="' + attribute(door.imageAlt) + '">');
+		out = set(out, /<meta property="og:image:width" content="[^"]*">/, '<meta property="og:image:width" content="' + door.imageSize[0] + '">');
+		out = set(out, /<meta property="og:image:height" content="[^"]*">/, '<meta property="og:image:height" content="' + door.imageSize[1] + '">');
 		out = set(out, /<meta name="twitter:image" content="[^"]*">/, '<meta name="twitter:image" content="' + ORIGIN + '/' + door.image + '">');
 	}
 	// The door is a page of the site, under the home page, not a second copy of the application's description.

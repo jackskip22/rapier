@@ -7,7 +7,12 @@
 // OKLab curve. Free-form is soft radial glows laid over the average colour: browsers do not render SVG 2's
 // meshgradient, and a glow per point is what the well-loved free-form makers draw.
 
-export const BACKGROUND_KINDS = ['solid', 'linear', 'radial', 'freeform', 'wave', 'rails', 'bloom', 'ribbon', 'echo', 'rays', 'glyphs', 'grid', 'flow', 'topo', 'aurora', 'texture'];
+import {PAPER_KINDS, WATER_PAPER_UNITS, WATER_PAPER_PERIOD, paperTileImage, paperTileRequest, paperTileListen} from './paper-field.mjs';
+
+export const BACKGROUND_KINDS = ['solid', 'linear', 'radial', 'freeform', 'wave', 'rails', 'bloom', 'ribbon', 'echo', 'rays', 'glyphs', 'grid', 'flow', 'topo', 'aurora', 'texture', 'paper'];
+export const PAPERS = PAPER_KINDS.map(p => p.id);
+export const PAPER_CHOICES = PAPER_KINDS.map(p => ({id: p.id, name: p.name}));
+export {paperTileListen, paperTileRequest};
 export const TEXTURES = ['weave', 'linen', 'dots', 'lines', 'grid', 'grain'];
 export const GLYPH_STYLES = ['marks', 'halftone', 'blocks', 'rain', 'circuit'];
 export const RAYS_FORMS = ['fan', 'hourglass', 'perspective'];
@@ -140,6 +145,11 @@ export function normalizeBackground(input) {
 		if (color) out.color = color;
 		return out;
 	}
+	if (input.kind === 'paper') {
+		// Watercolour paper: the Water paper's own sheet, its relief fixed to the drawing so paint sits in its tooth.
+		if (!PAPERS.includes(input.paper) || !unit(input.strength)) return null;
+		return {kind: 'paper', paper: input.paper, strength: round(input.strength)};
+	}
 	if (input.kind === 'aurora') {
 		const stops = admitStops(input.stops);
 		if (!stops || !Number.isInteger(input.seed) || input.seed < 0 || input.seed > 9999 || !Number.isInteger(input.curtains) || input.curtains < 1 || input.curtains > 6) return null;
@@ -208,6 +218,7 @@ export function backgroundSVG(input, rect, idPrefix = 'rapier-bg', dark = false)
 	const flip = stops => dark ? stops.map(s => ({...s, color: invertColour(s.color)})) : stops;
 	const {x, y, w, h} = rect, box = '<rect x="' + fmt(x) + '" y="' + fmt(y) + '" width="' + fmt(w) + '" height="' + fmt(h) + '"';
 	const id = String(idPrefix).replace(/[^A-Za-z0-9_-]/g, '');
+	if (bg.kind === 'paper') return paperSVG(bg, rect, id);
 	if (bg.kind === 'texture') {
 		// The ground is the paper; the tile is drawn in the opposite ink or the chosen colour (turned over on black). Pattern tiles
 		// meet with no seam at any size; grain is one stitched turbulence whose noise sets alpha only.
@@ -540,6 +551,25 @@ function shapesSVG(bg, rect, id, dark) {
 	return '<g data-rapier-background="' + bg.kind + '"><defs>' + clip + blur(glowSD) + '</defs><g clip-path="url(#' + id + '-c)">' + ground + body + '</g></g>';
 }
 
+// A watercolour sheet keeps its own colours on either paper: it is the surface, not ink drawn on one. One period of the
+// sheet is a grey image that a colour matrix turns back into the paper; its copies sit on a grid fixed to the drawing's
+// origin, the same grid the Water engine's paper field follows. Until a host has made the period (paperTileRequest),
+// the sheet is its flat tint.
+function paperSVG(bg, rect, id) {
+	const {x, y, w, h} = rect, box = '<rect x="' + fmt(x) + '" y="' + fmt(y) + '" width="' + fmt(w) + '" height="' + fmt(h) + '"';
+	const tint = PAPER_KINDS.find(p => p.id === bg.paper).params.tint, image = paperTileImage(bg.paper);
+	if (!image) return '<g data-rapier-background="paper">' + box + ' fill="' + tint + '"/></g>';
+	const s = bg.strength, base = [1, 3, 5].map(i => parseInt(tint.slice(i, i + 2), 16) / 255);
+	const row = c => fmt(s * image.gain[c]) + ' 0 0 0 ' + fmt(base[c] + s * (image.offset[c] - base[c]));
+	const T = WATER_PAPER_PERIOD / WATER_PAPER_UNITS, grey = Math.round(image.mean * 255).toString(16).padStart(2, '0');
+	let copies = '';
+	for (let ty = Math.floor(y / T); ty * T < y + h; ty++) for (let tx = Math.floor(x / T); tx * T < x + w; tx++) copies += '<use href="#' + id + '-i" x="' + fmt(tx * T) + '" y="' + fmt(ty * T) + '"/>';
+	return '<g data-rapier-background="paper"><defs><clipPath id="' + id + '-c">' + box + '/></clipPath>' +
+		'<filter id="' + id + '-f" filterUnits="userSpaceOnUse" x="' + fmt(x) + '" y="' + fmt(y) + '" width="' + fmt(w) + '" height="' + fmt(h) + '" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="' + row(0) + ' ' + row(1) + ' ' + row(2) + ' 0 0 0 1 0"/></filter>' +
+		'<image id="' + id + '-i" width="' + fmt(T) + '" height="' + fmt(T) + '" preserveAspectRatio="none" href="' + image.url + '"/></defs>' +
+		'<g clip-path="url(#' + id + '-c)" filter="url(#' + id + '-f)">' + box + ' fill="#' + grey + grey + grey + '"/>' + copies + '</g></g>';
+}
+
 // Sample the authored OKLab curve of a linear or radial background at t (0..1) as 8-bit sRGB: what the row checks
 // the emitted native stops against.
 export function sampleStops(stops, t) {
@@ -556,6 +586,7 @@ export function sampleStops(stops, t) {
 export const BACKGROUND_PRESETS = [
 	{kind: 'topo', seed: 8, lines: 96, scale: 0.4, swirl: 0.3, weight: 0.3, glow: 0, stops: [{at: 0, color: '#2a9d8f'}, {at: 0.5, color: '#e9c46a'}, {at: 1, color: '#e76f51'}]},
 	{kind: 'aurora', seed: 3, curtains: 3, height: 0.6, sway: 0.5, rays: 0.6, stars: 0.5, glow: 0.4, stops: [{at: 0, color: '#3dffb0'}, {at: 0.55, color: '#19c8ff'}, {at: 1, color: '#b45cff'}]},
+	{kind: 'paper', paper: 'cold-press', strength: 1},
 	{kind: 'texture', texture: 'weave', scale: 0.025, strength: 0.6, seed: 1},
 	{kind: 'texture', texture: 'grain', scale: 0.004, strength: 0.45, seed: 3},
 	{kind: 'texture', texture: 'linen', scale: 0.025, strength: 0.7, seed: 1, color: '#8a6d4b'},
@@ -605,6 +636,7 @@ export function backgroundStart(kind, from = null) {
 	if (kind === 'ribbon') return {kind, points: [{x: -0.05, y: 0.2}, {x: 0.4, y: 0.35}, {x: 0.5, y: 0.65}, {x: 1.05, y: 0.85}], width: 0.5, bands: 9, glow: 0.5, stops};
 	if (kind === 'flow') return {kind, seed: 4, lines: 220, scale: 0.35, swirl: 0.4, weight: 0.3, glow: 0, stops};
 	if (kind === 'texture') return {kind, texture: from?.texture || 'weave', scale: 0.025, strength: 0.6, seed: 1};
+	if (kind === 'paper') return {kind, paper: from?.kind === 'paper' ? from.paper : 'cold-press', strength: from?.kind === 'paper' ? from.strength : 1};
 	if (kind === 'aurora') return {kind, seed: 3, curtains: 3, height: 0.6, sway: 0.5, rays: 0.6, stars: 0.5, glow: 0.4, stops};
 	if (kind === 'topo') return {kind, seed: 8, lines: 96, scale: 0.4, swirl: 0.3, weight: 0.3, glow: 0, stops};
 	if (kind === 'grid') return {kind, lines: 20, horizon: 0.35, sun: 0.6, glow: 0.7, tilt: 0.3, stops};

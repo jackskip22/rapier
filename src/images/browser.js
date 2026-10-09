@@ -45,7 +45,8 @@ const _rapierEmbeddedImages = (() => {
   function assertCurrent(stamp, identity) {
     if (suspended || stamp !== epoch || identity !== rapier.identity.authority) throw cancelled();
   }
-  function codec(operation, input, {signal} = {}) {
+  // `progress`, for an encode, is called with how far the work is, from 0 to 1, while the worker runs.
+  function codec(operation, input, {signal, progress} = {}) {
     synchronizeScope();
     const stamp = epoch, identity = authority;
     const run = async () => {
@@ -95,12 +96,15 @@ const _rapierEmbeddedImages = (() => {
         instance = worker;
         const id = ++serial;
         active = {finish};
-        // The watchdog scales with the picture: 24 MP lossy with alpha takes about 64 s of V8 time.
+        // The watchdog scales with the picture: 24 MP lossy with alpha takes about 64 s of V8 time. An encode that reports how far it is
+        // starts it again at each report: the watchdog is for a worker that has stopped, and one that says where it has got to has not.
         const megapixels = Math.ceil((input.width * input.height || 0) / 1e6);
-        timer = setTimeout(() => finish(new Error('Image processing took too long')), 45000 + megapixels * 15000);
+        const watch = () => { clearTimeout(timer); timer = setTimeout(() => finish(new Error('Image processing took too long')), 45000 + megapixels * 15000); };
+        watch();
         instance.onmessage = event => {
           if (event.data?.id !== id) return;
           try { assertCurrent(stamp, identity); } catch (error) { finish(error); return; }
+          if (typeof event.data.progress === 'number') { if (!settled) watch(); try { progress?.(event.data.progress); } catch (_) {} return; }
           if (event.data.ok) finish(null, event.data);
           else finish(Object.assign(new Error(event.data.error?.message || 'JPEG XL processing failed'), {code: event.data.error?.code}));
         };
@@ -108,7 +112,7 @@ const _rapierEmbeddedImages = (() => {
         instance.onmessageerror = () => finish(new Error('Image worker returned an unreadable result'));
         const data = input.data ?? input.bytes;
         const transfer = data instanceof ArrayBuffer ? data : data?.buffer;
-        instance.postMessage({...input, id, operation}, transfer instanceof ArrayBuffer ? [transfer] : []);
+        instance.postMessage({...input, id, operation, ...(operation === 'encode' && typeof progress === 'function' ? {progress: true} : {})}, transfer instanceof ArrayBuffer ? [transfer] : []);
       } catch (error) { finish(error); }
       });
     };
@@ -341,12 +345,11 @@ const _rapierEmbeddedImages = (() => {
     showToast('A JPEG XL picture in this document is damaged and cannot be shown. Its bytes are kept unchanged.', 'info');
   }
 
-  async function prepare(normalized, {signal, status} = {}) {
+  async function prepare(normalized, {signal} = {}) {
     signal?.throwIfAborted();
     synchronizeScope();
     const asset = normalized.asset;
     if (!asset || normalized.presentation?.signature === asset.url) return normalized;
-    status?.('Preparing the picture…');
     const presentation = await rasterRecord(asset.block, asset.id, assets.documentAssets(asset.block), {signal});
     return {...normalized, presentation};
   }
@@ -461,6 +464,8 @@ const _rapierEmbeddedImages = (() => {
   const PAINT_INK_FILTER = globalThis.RapierDrawCore.RAPIER_DRAW_PAINT_INK_FILTER;
   function inkForPaper(text) {
     if (!darkPaper() || typeof _rapierDeriveDarkColor !== 'function' || !text.includes('<metadata id="rapier-draw">')) return text;
+    // A drawing on watercolour paper is a picture of that sheet, the same on either page.
+    if (text.includes('<g data-rapier-background="paper"')) return text;
     const paper = getComputedStyle(document.body).getPropertyValue('--color-text').trim(), paperInk = /^#[0-9a-f]{6}$/i.test(paper) ? paper.toLowerCase() : null;
     // Promote the drawing's own rules for the editor's explicit theme. A drawing with no rules of its own derives its unnamed paints.
     const own = /<style>@media \(prefers-color-scheme:dark\)\{([^<]*)\}<\/style>/.exec(text);
@@ -567,12 +572,25 @@ const _rapierEmbeddedImages = (() => {
     if (frame || suspended) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      const current = documentIndex(), area = host.getBoundingClientRect();
+      // The page's box is read only when a picture is placed: a frame with no picture to place forces no layout. It is
+      // read before this frame's first write to the page, so it is the box the page had where it was always read.
+      const current = documentIndex();
+      let area = null;
+      const areaNow = () => area || (area = host.getBoundingClientRect());
+      if (parked.size) { areaNow(); landParked(currentSource); }
+      // A document shown for the first time: a drawing a closed tab left as its PNG is finished (draw/draw.js).
+      if (scanned !== authority) {
+        scanned = authority;
+        const scope = authority;
+        setTimeout(() => { if (scope === authority && typeof _rapierDrawResumeFinishes === 'function') void _rapierDrawResumeFinishes(); }, 0);
+      }
       // A painting inside a drawing's SVG reaches no code of ours when the browser cannot show it: the document says so once.
       if (!warned && jxlProbeSettled && !jxlDisplayable() && currentSource.includes('image/jxl')) notifyStale();
       for (const image of watched) if (!host.contains(image)) { visibility.unobserve(image); watched.delete(image); }
       for (const [image, controller] of revealing) if (!host.contains(image)) controller.abort();
-      for (const image of host.querySelectorAll('img[src^="data:image/jxl;" i]:not([data-rapier-asset]):not([data-rapier-image-url])')) {
+      const placeholders = host.querySelectorAll('img[src^="data:image/jxl;" i]:not([data-rapier-asset]):not([data-rapier-image-url])');
+      if (placeholders.length) areaNow();
+      for (const image of placeholders) {
         const url = image.getAttribute('src'), size = imageGeometry(url);
         image.setAttribute('data-rapier-image-url', url);
         image.setAttribute('data-rapier-natural-width', size.width);
@@ -584,18 +602,19 @@ const _rapierEmbeddedImages = (() => {
       for (const image of host.querySelectorAll('img:is([data-rapier-asset],[data-rapier-image-url])')) {
         const id = imageKey(image), previous = presented.get(image), record = recordFor(id, current.index);
         if (previous && (previous.authority !== authority || previous.signature !== record?.url)) {
-          visibility?.unobserve(image); watched.delete(image); image.removeAttribute('data-rapier-asset-state');
+          areaNow(); visibility?.unobserve(image); watched.delete(image); image.removeAttribute('data-rapier-asset-state');
         }
         // A picture torn out of the page and put back keeps the nodes it had (a virtualized block sleeps by parking
         // its nodes and wakes by appending the same ones), and with them the state it wore: `waiting` after its
         // observer let it go at the tear-out, or `loading` after its reveal was cut there. Nobody is taking that step
         // any more; the state is stale, so it is dropped and the picture is placed again as a new one is.
         const state = image.dataset.rapierAssetState;
-        if (state === 'waiting' && !watched.has(image) || state === 'loading' && !revealing.has(image)) image.removeAttribute('data-rapier-asset-state');
+        if (state === 'waiting' && !watched.has(image) || state === 'loading' && !revealing.has(image)) { areaNow(); image.removeAttribute('data-rapier-asset-state'); }
         if (image.dataset.rapierAssetState) {
           if (!previous) presented.set(image, {signature: record?.url, authority, dark: darkPaper()});
           continue;
         }
+        areaNow();
         presented.set(image, {signature: record?.url, authority});
         image.dataset.rapierAssetState = 'waiting';
         image.loading = 'eager';
@@ -681,11 +700,13 @@ const _rapierEmbeddedImages = (() => {
     portableCache.set(key, entry);
     return result;
   }
-  // `compat` defaults to true; Share passes the person's choice.
+  // `compat` defaults to true; Share passes the person's choice. `progress` hears the share of pictures done.
   async function materialize(root, source, substitutions = null, options = null) {
     const compat = !options || options.compat !== false;
     const resolved = new Map(), index = indexForSource(source);
-    for (const image of root.querySelectorAll('img[data-rapier-asset],img[data-rapier-image-url],img[src^="data:image/jxl;" i]')) {
+    const images = [...root.querySelectorAll('img[data-rapier-asset],img[data-rapier-image-url],img[src^="data:image/jxl;" i]')];
+    for (const [done, image] of images.entries()) {
+      options?.progress?.(done / images.length);
       const id = imageKey(image) || image.getAttribute('src');
       if (!resolved.has(id)) {
         // A JXL-sourced picture always takes the portable conversion, whatever rasterRecord presented.
@@ -1181,6 +1202,234 @@ const _rapierEmbeddedImages = (() => {
     const row = await rasterRecord(source, id, indexForSource(source));
     return {url: presentUrl(row), width: row.width, height: row.height, type: row.type, signature: row.signature, undisplayable: !!row.undisplayable, damaged: !!row.damaged};
   }
-  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex()});
+  // A drawing whose painting is finished behind Done (draw/draw.js `_rapierDrawKeepBehind`). Done writes the painting as the lossless PNG
+  // it is while Draw is open, so the drawing is in the document at once; the encoder keeps the same pixels as lossless JPEG XL
+  // behind it. When that is done the drawing's picture is replaced by the drawing written with the JPEG XL painting: its reference
+  // and its definition, nothing else, so the bytes are exactly what Done wrote before the encoder moved behind it. The replacement
+  // is a record of the ledger that is no Undo step of its own: Undo and Redo of the drawing take it along (`historySplices`),
+  // so the person keeps one step for one Done. It waits for a quiet moment, and gives up (the PNG drawing stays, lossless)
+  // wherever the document no longer allows an exact replacement.
+  // A drawing the encoder finished while Undo had taken it back is held (`parked`) and replaced when Redo puts it back. One a closed tab
+  // left as its PNG has no Done in the ledger: draw/draw.js `_rapierDrawResumeFinishes` finds it in the document when it is shown and
+  // finishes it the same way (`resumed`).
+  const FINISH_OPERATION = 'document.finish-picture', FINISH_NOTICE_MS = 1500, FINISH_QUIET_MS = 1500, FINISH_PATIENCE_MS = 15 * 60 * 1000;
+  const finishing = new Set(), finishWaiters = new Set(), parked = new Map(), resumedOnce = new Set();
+  let finishCommit = Promise.resolve(), lastInput = 0, watchingInput = false, scanned = '';
+  function canFinishLater() {
+    return !_rapierEmbed.active && rapier.document.docKind === 'markdown' && !rapier.access.readOnly && typeof _rapierCommitSourceProjection === 'function';
+  }
+  function watchInput() {
+    if (watchingInput) return;
+    watchingInput = true;
+    for (const type of ['keydown', 'beforeinput', 'pointerdown', 'compositionstart'])
+      document.addEventListener(type, () => { lastInput = Date.now(); }, {capture: true, passive: true});
+  }
+  function finishQuiet(run) {
+    if (document.hidden || Date.now() - lastInput < FINISH_QUIET_MS || run.busy()) return false;
+    if (_rapierUserMutationBlocked(false) || rapier.undo.applying || rapier.sourceTransition.busy || _rapierMutationBarrierActive()) return false;
+    if (_rapierImageRuntime.image || globalThis.RapierImageFlow?.status?.().moving || globalThis.RapierImageFlow?.status?.().committing) return false;
+    return _rapierSettlePendingDocumentChange();
+  }
+  // The text's one occurrence of `needle`, or -1.
+  function only(text, needle) {
+    const at = text.indexOf(needle);
+    return at >= 0 && text.indexOf(needle, at + 1) < 0 ? at : -1;
+  }
+  // The ledger record of a drawing's own Done in this session, or undefined (a drawing a closed tab left has none).
+  function doneOf(label) {
+    return rapier.undo.ledger.find(row => row?.transaction?.operation === 'document.embed-image' &&
+      Array.isArray(row.splices) && row.splices.some(splice => String(splice.inserted).includes('[' + label + ']: ')));
+  }
+  // Where the drawing stands in the source (its definition and its reference, each once and nothing else), or a reason to wait
+  // ('wait'), to give up ('kept') or that the drawing is gone ('gone').
+  function finishTarget(run, source) {
+    const label = run.asset.label, before = assets.serializeAsset(run.asset);
+    let mentions = 0;
+    for (let at = source.indexOf(label); at >= 0; at = source.indexOf(label, at + 1)) mentions++;
+    if (!mentions) return 'gone';
+    const defAt = only(source, before), token = '][' + label + ']', refAt = only(source, token);
+    if (mentions !== 2 || defAt < 0 || refAt < 0) return 'kept';
+    const ledger = rapier.undo.ledger, done = doneOf(label), id = done?.transaction.id;
+    if (!done && !run.resumed) return 'kept';
+    // No record since the drawing's Done may name the old label: Undo of such a record would look for text that is gone. (A record cut
+    // at a place the definition's new length moves is taken care of when it is undone: historySplices.) The drawing's own Undo and Redo
+    // name it too, and take nothing else with them.
+    const named = record => id && (record.transaction?.reverts === id || record.transaction?.reapplies === id) ? false :
+      (_rapierRecordSplices(record, ledger) || [{removed: label}]).some(splice => splice.removed.includes(label) || splice.inserted?.includes(label));
+    if (ledger.slice(done ? ledger.indexOf(done) + 1 : 0).some(named)) return 'kept';
+    return {defAt, refAt, before, token, done};
+  }
+  // The splices that replace the interim drawing by the finished one, with the ledger record of the drawing's own Done (none for a
+  // resumed drawing), or a reason (finishTarget).
+  function finishPlan(run, finished, source) {
+    const target = finishTarget(run, source);
+    if (typeof target === 'string') return target;
+    if (source.includes('[' + finished.label + ']')) return 'kept';
+    // Each is found again by its own text (historySplices), which is unique to the drawing: the whole definition, and the reference's label.
+    const rows = [{pos: target.defAt, removed: target.before, inserted: assets.serializeAsset(finished)}, {pos: target.refAt, removed: target.token, inserted: '][' + finished.label + ']'}].sort((x, y) => y.pos - x.pos);
+    return {rows, done: target.done};
+  }
+  // The block the person is typing in, and where the caret stands, so the swap (which shows the document again) gives the editing back:
+  // the keyboard never closes under a swap.
+  function holdEdit() {
+    let caret = null;
+    try {
+      const context = _activeBlockEditContext(), selection = window.getSelection();
+      const range = context && selection?.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
+      if (range && context.editDiv.contains(range.startContainer))
+        caret = {blockId: context.block.id, offset: _rapierStructuralOffsetForRangePoint(context.editDiv, range.startContainer, range.startOffset)};
+    } catch (_) {}
+    return () => {
+      try {
+        if (!caret || _activeBlockEditContext()) return;
+        const block = rapier.document.blocks.find(row => row.id === caret.blockId);
+        const wrapper = block && document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + block.id + '"]');
+        const editDiv = wrapper && enterBlockEdit(block, wrapper, {charOffset: caret.offset, preserveScroll: true});
+        if (editDiv) requestAnimationFrame(() => { if (editDiv.isConnected && wrapper.classList.contains('block-wrapper--editing')) _rapierFocusEditingHost(editDiv); });
+      } catch (error) { console.warn('[rapier] finish picture caret', error); }
+    };
+  }
+  async function finishOnce(run, finished) {
+    if (!_rapierMutationStampSharesDocument(run.stamp)) return 'gone';
+    if (rapier.access.readOnly) return 'kept';
+    if (!finishQuiet(run)) return 'wait';
+    const stamp = Object.freeze(_rapierMutationStamp()), source = _rapierSourceText();
+    const plan = finishPlan(run, finished, source);
+    if (typeof plan === 'string') return plan;
+    // Never larger than the limits let the document be: the replacement is normally the smaller of the two.
+    const growth = plan.rows.reduce((n, row) => n + row.inserted.length - row.removed.length, 0);
+    if (growth > 0 && (source.length + growth > assets.IMAGE_LIMITS.sourceChars || new Blob([source]).size + growth > (_rapierEmbed.settings?.limits.documentBytes || RapierTextCodec.maxDocumentBytes))) return 'kept';
+    // The presentation is made before the swap, so the picture never shows its placeholder in between.
+    const row = (await prepare({asset: finished, reference: finished.label, dataUrl: finished.url, width: finished.width, height: finished.height})).presentation;
+    if (!_rapierMutationStampIsCurrent(stamp) || source !== _rapierSourceText() || !finishQuiet(run)) return 'wait';
+    primed = row || null;
+    const giveBack = holdEdit();
+    // The finish is Rapier's own upkeep, not the person's change: a document that was as saved stays as saved (the PNG drawing is safe in
+    // the file, and is finished again when the document is next shown).
+    const was = {clean: !_rapierIsDirty(), generation: rapier.revision.generation};
+    try {
+      return await _rapierCommitSourceProjection(plan.rows, FINISH_OPERATION, null, null, undefined, {navigation: false, sourceTransactionId: plan.done?.transaction.id}) ? 'replaced' : 'refused';
+    } finally {
+      primed = null;
+      giveBack();
+      // Only this commit moved the document (it bumps the generation once); a change the person made meanwhile keeps it unsaved.
+      if (was.clean && rapier.revision.generation === was.generation + 1 && typeof rapier.revision.savedGeneration === 'number') {
+        rapier.revision.savedGeneration = rapier.revision.generation;
+        try { _notifyDirtyState(); } catch (error) { console.warn('[rapier] finish picture dirty state', error); }
+      }
+      try { schedule(); } catch (error) { console.warn('[rapier] image presentation', error); }
+    }
+  }
+  async function finishDrawing(run, finished) {
+    // A swap the editor refused three times in a row is left: the drawing stays as Done wrote it.
+    for (let refused = 0; refused < 3;) {
+      if (Date.now() - run.since > FINISH_PATIENCE_MS) return 'kept';
+      const verdict = await finishOnce(run, finished).catch(error => { console.warn('[rapier] finish picture', error); return 'kept'; });
+      if (verdict === 'refused') refused++;
+      else if (verdict !== 'wait') return verdict;
+      await new Promise(resolve => setTimeout(resolve, 700));
+    }
+    return 'kept';
+  }
+  function wake() {
+    if (!finishing.size) for (const resolve of [...finishWaiters]) { finishWaiters.delete(resolve); resolve(); }
+  }
+  // The finished drawing, committed in its turn. One that is gone while its Done is an Undo away waits for Redo (`park`).
+  async function land(run, finished) {
+    finishing.add(run);
+    try {
+      const turn = finishCommit.then(() => finishDrawing(run, finished));
+      finishCommit = turn.catch(() => {});
+      const verdict = await turn;
+      if (verdict === 'gone') park(run, finished);
+      return verdict;
+    } finally { finishing.delete(run); wake(); }
+  }
+  // Held while the drawing's Done can still be redone in this document: Redo puts the PNG drawing back (`landParked`).
+  function park(run, finished) {
+    const done = doneOf(run.asset.label);
+    if (done && _rapierMutationStampSharesDocument(run.stamp) && rapier.undo.branch.indexOf(done) >= rapier.undo.cursor) parked.set(run.asset.label, {run, finished, done});
+  }
+  // A held drawing that is in the document again is replaced now; one whose Done can no longer be redone is let go.
+  function landParked(source) {
+    for (const [label, held] of parked) {
+      if (source.includes(label)) { parked.delete(label); held.run.since = Date.now(); void land(held.run, held.finished); }
+      else if (rapier.undo.branch.indexOf(held.done) < rapier.undo.cursor || !_rapierMutationStampSharesDocument(held.run.stamp)) parked.delete(label);
+    }
+  }
+  // `final(report)` resolves with the drawing's SVG text written with the JPEG XL painting, or null where it cannot be; `report` shows how
+  // far the encode is (0 to 1). `onProgress` is handed that function too, for work that starts before this is called.
+  // `resumed` is a drawing a closed tab left as its PNG: it is looked at before any work is done, and once for each document.
+  function finishLater({asset, title = '', final, busy = () => false, onProgress = null, resumed = false}) {
+    if (resumed) {
+      const key = rapier.identity.authority + ' ' + asset.label;
+      if (resumedOnce.has(key) || typeof finishTarget({asset, resumed}, _rapierSourceText()) === 'string') return Promise.resolve('kept');
+      resumedOnce.add(key);
+    }
+    const run = {asset, busy, resumed, stamp: Object.freeze(_rapierMutationStamp()), since: Date.now(), notice: _rapierProgressOpen({label: 'Finishing at full quality', after: FINISH_NOTICE_MS})};
+    finishing.add(run);
+    watchInput();
+    const report = fraction => run.notice.set(fraction);
+    onProgress?.(report);
+    const done = (async () => {
+      try {
+        const text = await final(report);
+        run.notice.end();
+        if (!text) return 'kept';
+        const finished = await assets.createAsset(new TextEncoder().encode(text), null, {codec: 'image/svg+xml', title});
+        if (finished.width !== asset.width || finished.height !== asset.height || finished.label === asset.label) return 'kept';
+        return await land(run, finished);
+      } catch (error) {
+        console.warn('[rapier] finish picture', error);
+        return 'kept';
+      } finally {
+        run.notice.end(); finishing.delete(run); wake();
+      }
+    })();
+    return done;
+  }
+  // Settles once no drawing is being finished.
+  function finishSettled() {
+    return finishing.size ? new Promise(resolve => finishWaiters.add(resolve)) : Promise.resolve();
+  }
+  // The splices that take a step back (Undo) or put it again (Redo) when a drawing was finished behind a step. A ledger step has its own
+  // splices, cut at the places the document had then, and a replacement that finished a drawing changed the length of its definition.
+  // So the replacement of the drawing the step made comes off before Undo takes it back, and goes on again after Redo puts it; and where
+  // another drawing's replacement moved the places a step was cut at, that one comes off for the step and goes on again. Each is found
+  // again by its own text, which is unique to it. Null leaves the step as it is: no replacement is in the way, or none can be taken off.
+  function historySplices(target, redo) {
+    const id = target?.transaction?.id, ledger = rapier.undo.ledger, at = ledger.indexOf(target);
+    if (!id || at < 0 || target.transaction.operation === FINISH_OPERATION || !Array.isArray(target.splices)) return null;
+    const later = ledger.slice(at + 1).filter(row => row?.transaction?.operation === FINISH_OPERATION && Array.isArray(row.splices) && row.splices.length);
+    if (!later.length) return null;
+    const own = new Set(later.filter(row => row.transaction.sourceTransactionId === id));
+    const step = redo ? target.splices : target.splices.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed}));
+    const plan = moveOthers => {
+      const fork = rapier.document.source.fork(), rows = [], moved = new Set();
+      const apply = row => { fork.splice(row.pos, row.removed, row.inserted); rows.push(row); };
+      // All of a replacement's splices, or none (it is not in the document); a part of one is a document that cannot be taken back.
+      const swap = (record, back) => {
+        const found = record.splices.map(splice => {
+          const from = back ? splice.inserted : splice.removed;
+          return from ? only(fork.read(), from) : -1;
+        });
+        if (found.every(position => position < 0)) return false;
+        if (found.some(position => position < 0)) throw new Error('partial replacement');
+        record.splices.forEach(splice => {
+          const from = back ? splice.inserted : splice.removed, to = back ? splice.removed : splice.inserted;
+          apply({pos: only(fork.read(), from), removed: from, inserted: to});
+        });
+        return true;
+      };
+      for (const record of later.slice().reverse()) if ((moveOthers || own.has(record)) && swap(record, true)) moved.add(record);
+      for (const splice of step) apply(splice);
+      for (const record of later) if (own.has(record) ? redo : moved.has(record)) swap(record, false);
+      return rows;
+    };
+    try { const rows = plan(false); return !own.size && rows.length === step.length ? null : rows; }
+    catch (_) {}
+    try { return plan(true); } catch (_) { return null; }
+  }
+  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices});
 })();
 globalThis.RapierEmbeddedImages = _rapierEmbeddedImages;

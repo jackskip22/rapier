@@ -4,15 +4,14 @@ import {basename, dirname, join} from 'node:path';
 import {wrap} from './wrap.mjs';
 import {returnAddress, returnExpiresAt} from './return-address.mjs';
 export {wrap, unwrap, encodeCarried, decodeCarried} from './wrap.mjs';
-// Unknown options, a bare --drawing or --base and a third name are refused, never dropped.
-const USAGE = 'usage: rapier-html <document.md> [out.html] [--view draw|notes] [--drawing sketch.svg] [--base original.md [--by <your name>]] [--return <url> --return-expires-at <timestamp>]\n' +
+// Unknown options, a bare --drawing or --propose and a third name are refused, never dropped.
+const USAGE = 'usage: rapier-html <document.md> [out.html] [--view draw|notes] [--drawing sketch.svg] [--propose original.md [--by <your name>]] [--return <url> --return-expires-at <timestamp>]\n' +
 	'  writes <document>.rapier.html beside the file: Rapier with the document inside it, one file, offline.\n' +
 	'  It never overwrites: an output that already exists, the document itself included, is refused.\n' +
 	'  --view      opens the page on Draw (sketch and paint, the document behind it) or on Notes\n' +
 	'  --drawing   carries an SVG drawing alongside the document, opened on Draw as the page boots\n' +
-	'  --propose   <base.md> <proposed.md>: carries the original base for per-change review\n' +
-	'  --base      the older spelling of --propose; carries the text the document was proposed against; the page opens on their diff\n' +
-	'  --by        with --base: who proposes it, shown on the diff with the time the page was made\n' +
+	'  --propose   carries the text the document was proposed against; the page opens on their diff for per-change review\n' +
+	'  --by        with --propose: who proposes it, shown on the diff with the time the page was made\n' +
 	'  --return    carries a one-use return URL from document.create_return; Share offers Send back\n' +
 	'  --return-expires-at  carries the same mint\'s expiry; Share offers Save once the return expires\n' +
 	'  --          everything after it is a filename, even one that starts with a dash\n' +
@@ -29,8 +28,8 @@ export async function main(argv, pagesDir, {log = console.log} = {}) {
 			if (view !== null || !['draw', 'notes'].includes(argv[i + 1])) throw new Error('--view takes draw or notes');
 			view = argv[++i];
 		}
-		else if (arg === '--base' || arg === '--propose') {
-			if (basePath !== null || !argv[i + 1] || argv[i + 1].startsWith('-')) throw new Error('--base takes one text file (write a name that starts with a dash as ./-original.md)');
+		else if (arg === '--propose') {
+			if (basePath !== null || !argv[i + 1] || argv[i + 1].startsWith('-')) throw new Error('--propose takes one text file (write a name that starts with a dash as ./-original.md)');
 			basePath = argv[++i];
 		}
 		else if (arg === '--by') {
@@ -57,7 +56,7 @@ export async function main(argv, pagesDir, {log = console.log} = {}) {
 	const out = named || join(dirname(input), name.replace(/\.(md|markdown|txt)$/i, '') + '.rapier.html');
 	const wrapOptions = {};
 	if (drawingPath) { wrapOptions.drawing = await readFile(drawingPath, 'utf8'); wrapOptions.drawingName = basename(drawingPath); }
-	if (by !== null && !basePath) throw new Error('--by names who proposes a change: give the --base it proposes over');
+	if (by !== null && !basePath) throw new Error('--by names who proposes a change: give the --propose file it proposes over');
 	if (basePath) { wrapOptions.base = await readFile(basePath, 'utf8'); wrapOptions.baseName = basename(basePath); wrapOptions.at = new Date().toISOString(); }
 	if (by !== null) { wrapOptions.by = by; wrapOptions.at = new Date().toISOString(); }
 	if (view) wrapOptions.view = view;

@@ -5,18 +5,9 @@ const immutable = value => {
  if (value && typeof value === 'object') { for (const item of Object.values(value)) immutable(item); Object.freeze(value); }
  return value;
 };
-export const PAPER_KINDS = immutable([
- {id:'cold-press',name:'Cold Press',params:{kind:0,tint:'#f6f3ec',fleck:'#8a8070',bump:1,mottle:.05}},
- {id:'hot-press',name:'Hot Press',params:{kind:1,tint:'#f8f7f3',fleck:'#8a8478',bump:.6,mottle:.04}},
- {id:'rough',name:'Rough',params:{kind:2,tint:'#f5f1e8',fleck:'#857a68',bump:.8,mottle:.06}},
- {id:'cotton',name:'Khadi',params:{kind:3,tint:'#efe7d6',fleck:'#6d5f4a',bump:1,mottle:.12}},
- {id:'washi',name:'Washi',params:{kind:4,tint:'#f1ece0',fleck:'#7a6a52',bump:.8,mottle:.14}},
- {id:'laid',name:'Laid',params:{kind:5,tint:'#f2ebdb',fleck:'#8a7c64',bump:1,mottle:.05}},
- {id:'canvas',name:'Canvas',params:{kind:6,tint:'#f3efe6',fleck:'#8a8070',bump:1,mottle:.04}},
- {id:'toned',name:'Toned Sand',params:{kind:7,tint:'#d9c8a6',fleck:'#6e5f45',bump:1,mottle:.06}},
- {id:'kraft',name:'Kraft',params:{kind:8,tint:'#b99872',fleck:'#4e3b28',bump:.8,mottle:.12}},
- {id:'student',name:'Student',params:{kind:9,tint:'#f7f7f4',fleck:'#8a8a84',bump:1,mottle:.03}}
-]);
+// The papers and their periodic field live with the paper background's CPU twin (paper-field.mjs).
+import {PAPER_KINDS, WATER_PAPER_PERIOD, WATER_PAPER_BAND} from './paper-field.mjs';
+export {PAPER_KINDS};
 
 const brushDefaults = {
  aspect:1,rotation:'fixed',angle:0,angleJitter:0,size:[.011,.05],pressureSize:1,speedThin:0,
@@ -324,5 +315,19 @@ fn waterPaperField(point:vec2<f32>,seedValue:f32,kind:u32)->vec3<f32> {
   }
  }
  return clamp(vec3<f32>(height,formation,inclusions),vec3<f32>(0.0),vec3<f32>(1.0));
+}
+// The sheet repeats every period. Across a period's last band the field fades into the one a period earlier, keeping
+// its variance, so the edges meet without a seam and the paper background (paper-field.mjs) can be one tile.
+fn waterPaperTile(point:vec2<f32>,seedValue:f32,kind:u32)->vec3<f32> {
+ let period=${WATER_PAPER_PERIOD.toFixed(1)};let q=point-period*floor(point/period);
+ let w=smoothstep(vec2<f32>(period-${WATER_PAPER_BAND.toFixed(1)}),vec2<f32>(period),q);
+ var sum=vec3<f32>(0.0);var norm=0.0;
+ for(var i=0u;i<4u;i++){
+  let shift=vec2<f32>(f32(i&1u),f32(i>>1u));
+  let weight=mix(1.0-w.x,w.x,shift.x)*mix(1.0-w.y,w.y,shift.y);
+  if(weight<=0.0){continue;}
+  sum+=weight*(waterPaperField(q-shift*period,seedValue,kind)-0.5);norm+=weight*weight;
+ }
+ return clamp(0.5+sum/sqrt(norm),vec3<f32>(0.0),vec3<f32>(1.0));
 }
 `;

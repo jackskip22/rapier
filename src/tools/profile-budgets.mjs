@@ -1,7 +1,8 @@
-// One owner of both profiles' size budgets, read by tools/build.mjs and tools/release-truth.mjs.
+// One owner of the profiles' size budgets, read by tools/build.mjs and tools/release-truth.mjs.
 export const SIZE_BUDGETS = Object.freeze({
 	full: Object.freeze({warn: 2_980_000, refuse: 3_000_000}),
 	document: Object.freeze({warn: 2_079_000, refuse: 2_100_000}),
+	reader: Object.freeze({warn: 1_200_000, refuse: 1_250_000}),
 });
 
 // Paint at grain:

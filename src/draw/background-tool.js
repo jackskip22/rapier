@@ -11,6 +11,7 @@ const RAPIER_BG_SLIDERS = {
 	bloom: [['petals', 'Petals', 3, 16, 1], ['layers', 'Layers', 2, 12, 1], ['size', 'Size', 0, 1, 0.01], ['twist', 'Twist', 0, 1, 0.01], ['glow', 'Glow', 0, 1, 0.01]],
 	ribbon: [['width', 'Width', 0, 1, 0.01], ['bands', 'Bands', 2, 24, 1], ['glow', 'Glow', 0, 1, 0.01]],
 	texture: [['scale', 'Size', 0.002, 0.2, 0.001], ['strength', 'Strength', 0, 1, 0.01], ['seed', 'Seed', 0, 999, 1]],
+	paper: [['strength', 'Texture', 0, 1, 0.01]],
 	aurora: [['curtains', 'Curtains', 1, 6, 1], ['height', 'Height', 0, 1, 0.01], ['sway', 'Sway', 0, 1, 0.01], ['rays', 'Rays', 0, 1, 0.01], ['stars', 'Stars', 0, 1, 0.01], ['glow', 'Glow', 0, 1, 0.01], ['seed', 'Seed', 0, 999, 1]],
 	flow: [['lines', 'Lines', 8, 400, 1], ['scale', 'Scale', 0, 1, 0.01], ['swirl', 'Swirl', 0, 1, 0.01], ['weight', 'Weight', 0, 1, 0.01], ['glow', 'Glow', 0, 1, 0.01], ['seed', 'Seed', 0, 999, 1]],
 	topo: [['lines', 'Levels', 8, 400, 1], ['scale', 'Scale', 0, 1, 0.01], ['swirl', 'Warp', 0, 1, 0.01], ['weight', 'Weight', 0, 1, 0.01], ['glow', 'Glow', 0, 1, 0.01], ['seed', 'Seed', 0, 999, 1]],
@@ -22,11 +23,28 @@ const RAPIER_BG_SLIDERS = {
 // Glow modes, one row for every kind that glows: the slider below still sets any value in between.
 const RAPIER_BG_GLOW_MODES = [['off', 'Off', 0], ['soft', 'Soft', 0.35], ['neon', 'Neon', 0.85]];
 const RAPIER_BG_GLOWS = new Set(['rails', 'bloom', 'ribbon', 'rays', 'glyphs', 'grid', 'flow', 'topo', 'aurora']);
-// The most striking first: topo, aurora, texture, flow, grid.
-const RAPIER_BG_KINDS = [['none', 'None'], ['topo', 'Topo'], ['aurora', 'Aurora'], ['texture', 'Texture'], ['flow', 'Flow'], ['grid', 'Grid'], ['solid', 'Solid'], ['linear', 'Linear'], ['radial', 'Radial'], ['freeform', 'Free'], ['wave', 'Wave'], ['rails', 'Rails'], ['bloom', 'Bloom'], ['ribbon', 'Ribbon'], ['echo', 'Echo'], ['rays', 'Rays'], ['glyphs', 'Glyphs']];
+// Watercolour paper first, then the most striking: topo, aurora, texture, flow, grid.
+const RAPIER_BG_KINDS = [['none', 'None'], ['paper', 'Paper'], ['topo', 'Topo'], ['aurora', 'Aurora'], ['texture', 'Texture'], ['flow', 'Flow'], ['grid', 'Grid'], ['solid', 'Solid'], ['linear', 'Linear'], ['radial', 'Radial'], ['freeform', 'Free'], ['wave', 'Wave'], ['rails', 'Rails'], ['bloom', 'Bloom'], ['ribbon', 'Ribbon'], ['echo', 'Echo'], ['rays', 'Rays'], ['glyphs', 'Glyphs']];
 
+// A paper's sheet is made once, a little after it is first shown; each finished one redraws what shows it.
+let _rapierBgPaperReady = 0;
+_rapierBg._rapierDrawPaperListen?.(() => {
+	_rapierBgPaperReady++;
+	_rapierDrawBackgroundSync();
+	const presets = _rapierBgPanel()?.querySelector('.rapier-draw-bgpanel-presets');
+	if (presets) { presets.dataset.sig = ''; _rapierBgSyncPanel(); }
+});
+
+// The page makes a paper's sheet in slices between frames, deflated by the browser.
+function _rapierBgPaperRequest(paper) {
+	const deflate = typeof CompressionStream === 'function' ? async bytes => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()) : null;
+	// Water's own GPU field draws the sheet in a moment; without WebGPU the CPU twin draws it in slices.
+	const render = globalThis.navigator?.gpu && globalThis.RapierDrawWater?.paperTileFromGPU ? id => globalThis.RapierDrawWater.paperTileFromGPU(id) : null;
+	_rapierBg._rapierDrawPaperRequest?.(paper, {now: () => performance.now(), pause: () => new Promise(resolve => setTimeout(resolve, 0)), deflate, render}).catch(() => {});
+}
 function _rapierBgOpen() { const panel = _rapierBgPanel(); return !!panel && !panel.hidden; }
-function _rapierBgCurrent() { const state = _rapierDrawState; return state.bgDraft !== undefined ? state.bgDraft : (state.recipe?.background || null); }
+// Painting with Water on a drawing without a background shows the Water paper (water-tool.js) until the person chooses one.
+function _rapierBgCurrent() { const state = _rapierDrawState; return state.bgDraft !== undefined ? state.bgDraft : (state.recipe?.background || (typeof _rapierWaterPaperDefault === 'function' ? _rapierWaterPaperDefault() : null)); }
 function _rapierBgDark() { return typeof _rapierDrawDarkPaper === 'function' && _rapierDrawDarkPaper(); }
 // The paper's own rectangle in canvas units: what the background fills, live and saved alike.
 function _rapierBgRect() {
@@ -44,7 +62,10 @@ function _rapierDrawBackgroundSync() {
 	if (!layer && paper) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.setAttribute('class', 'rapier-draw-background'); paper.after(layer); }
 	if (!layer) return;
 	const bg = _rapierBgCurrent(), rect = _rapierBgRect(), dark = _rapierBgDark();
-	const key = bg && rect ? JSON.stringify([bg, rect, dark]) : '';
+	if (bg?.kind === 'paper') _rapierBgPaperRequest(bg.paper);
+	// A Water sheet multiplies watercolour paper (rapier-draw.css).
+	if (bg?.kind === 'paper' && rect) svg.setAttribute('data-paper-ground', ''); else svg.removeAttribute?.('data-paper-ground');
+	const key = bg && rect ? JSON.stringify([bg, rect, dark, _rapierBgPaperReady]) : '';
 	if (layer.dataset.key !== key) {
 		layer.dataset.key = key;
 		// One image, not inline markup: the browser rasterizes the background once and reuses it while the canvas pans
@@ -91,6 +112,7 @@ function _rapierBgEnsurePanel() {
 		_rapierBgSeek('Glow', 'min="0" max="1" step="0.01" data-draw-bg-rails="glow"') +
 		_rapierBgSeek('Bend', 'min="0" max="1" step="0.01" data-draw-bg-rails="bend"') + '</div>' +
 		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-styles" role="radiogroup" aria-label="Glyph style">' + [['marks', 'Marks'], ['halftone', 'Halftone'], ['blocks', 'Blocks'], ['rain', 'Rain'], ['circuit', 'Circuit']].map(([v, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-style="' + v + '" aria-checked="false">' + word + '</button>').join('') + '</div>' +
+		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-papers" role="radiogroup" aria-label="Paper">' + _rapierBg.RAPIER_DRAW_PAPERS.map(({id, name}) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-paper="' + id + '" aria-checked="false">' + name + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-textures" role="radiogroup" aria-label="Texture">' + [['weave', 'Weave'], ['linen', 'Linen'], ['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['grain', 'Grain']].map(([v, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-texture="' + v + '" aria-checked="false">' + word + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-forms rapier-draw-bgpanel-glowmodes" role="radiogroup" aria-label="Glow">' + RAPIER_BG_GLOW_MODES.map(([v, word]) => '<button type="button" class="rapier-draw-chip" role="radio" data-draw-bg-glowmode="' + v + '" aria-checked="false">Glow ' + word + '</button>').join('') + '</div>' +
 		'<div class="rapier-draw-bgpanel-shape" data-draw-bg-shape></div>' +
@@ -125,10 +147,14 @@ function _rapierBgDraft(next) { _rapierDrawState.bgDraft = next; _rapierDrawBack
 function _rapierBgCommit(next) {
 	const state = _rapierDrawState;
 	delete state.bgDraft;
+	// A choice made here replaces the Water paper shown by default, None included.
+	if (!state.recipe.background && typeof _rapierWaterPaperDefault === 'function' && _rapierWaterPaperDefault()) state.waterPaperDeclined = state.session;
 	const admitted = next ? _rapierBg._rapierDrawNormalizeBackground(next) : null;
 	if (next && !admitted) { _rapierDrawBackgroundSync(); _rapierBgSyncPanel(); return false; }
 	if (JSON.stringify(state.recipe.background || null) === JSON.stringify(admitted)) { _rapierDrawBackgroundSync(); _rapierBgSyncPanel(); return false; }
 	const done = _rapierDrawCommand(() => { if (admitted) state.recipe.background = admitted; else delete state.recipe.background; });
+	// The sheet shown and the sheet Water paints on are one paper.
+	if (admitted?.kind === 'paper' && typeof _rapierWaterFollowPaper === 'function') _rapierWaterFollowPaper(admitted.paper);
 	const after = () => { if (typeof _rapierDrawRenderAll === 'function') _rapierDrawRenderAll(); _rapierDrawBackgroundSync(); _rapierBgSyncPanel(); };
 	if (done && typeof done.then === 'function') done.then(after); else after();
 	return true;
@@ -191,6 +217,9 @@ function _rapierBgSyncPanel() {
 	const styles = panel.querySelector('.rapier-draw-bgpanel-styles');
 	styles.hidden = bg?.kind !== 'glyphs';
 	if (bg?.kind === 'glyphs') for (const b of styles.querySelectorAll('[data-draw-bg-style]')) b.setAttribute('aria-checked', String(b.dataset.drawBgStyle === (bg.style || 'marks')));
+	const papers = panel.querySelector('.rapier-draw-bgpanel-papers');
+	papers.hidden = bg?.kind !== 'paper';
+	if (bg?.kind === 'paper') for (const b of papers.querySelectorAll('[data-draw-bg-paper]')) b.setAttribute('aria-checked', String(b.dataset.drawBgPaper === bg.paper));
 	const textures = panel.querySelector('.rapier-draw-bgpanel-textures');
 	textures.hidden = bg?.kind !== 'texture';
 	if (bg?.kind === 'texture') for (const b of textures.querySelectorAll('[data-draw-bg-texture]')) b.setAttribute('aria-checked', String(b.dataset.drawBgTexture === bg.texture));
@@ -243,6 +272,7 @@ function _rapierBgBindPanel(panel) {
 	}
 	panel.addEventListener('click', evt => { const gm = evt.target.closest('[data-draw-bg-glowmode]'); if (!gm) return; const bg = _rapierBgCopy(_rapierBgCurrent()); const mode = RAPIER_BG_GLOW_MODES.find(([v]) => v === gm.dataset.drawBgGlowmode); if (bg && mode && RAPIER_BG_GLOWS.has(bg.kind)) { bg.glow = mode[2]; _rapierBgCommit(bg); } });
 	panel.addEventListener('click', evt => { const st = evt.target.closest('[data-draw-bg-style]'); if (!st) return; const bg = _rapierBgCopy(_rapierBgCurrent()); if (bg?.kind === 'glyphs') { bg.style = st.dataset.drawBgStyle; _rapierBgCommit(bg); } });
+	panel.addEventListener('click', evt => { const pp = evt.target.closest('[data-draw-bg-paper]'); if (!pp) return; const bg = _rapierBgCopy(_rapierBgCurrent()); if (bg?.kind === 'paper') { bg.paper = pp.dataset.drawBgPaper; _rapierBgCommit(bg); } });
 	panel.addEventListener('click', evt => { const tx = evt.target.closest('[data-draw-bg-texture]'); if (!tx) return; const bg = _rapierBgCopy(_rapierBgCurrent()); if (bg?.kind === 'texture') { bg.texture = tx.dataset.drawBgTexture; bg.scale = bg.texture === 'grain' ? 0.004 : bg.texture === 'weave' || bg.texture === 'linen' ? 0.025 : 0.06; _rapierBgCommit(bg); } });
 	panel.addEventListener('click', evt => { const f = evt.target.closest('[data-draw-bg-form]'); if (!f) return; const bg = _rapierBgCopy(_rapierBgCurrent()); if (bg?.kind === 'rails') { bg.form = f.dataset.drawBgForm; _rapierBgCommit(bg); } });
 	for (const input of panel.querySelectorAll('[data-draw-bg-rails]')) {

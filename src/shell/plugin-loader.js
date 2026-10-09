@@ -38,6 +38,8 @@
 		var s = String(err && err.message || err || 'unknown error'), d = m.dash;
 		// The host's own words (Google Play's refusal, said by the app) are already the person's.
 		if (/^Google Play /.test(s)) return s;
+		// The page's own refusal of a `plugins` directory (shell/bundle-io.js) says what to change.
+		if (/^The plug-in directory /.test(s)) return s;
 		if (/AbortError|aborted|timeout/i.test(s))
 			return 'connection timed out' + d + 'check your internet and tap retry';
 		if (/Failed to fetch|NetworkError|ERR_INTERNET|Unable to resolve|UnknownHost|networkerror/i.test(s))
@@ -166,6 +168,9 @@
 		}
 
 		function _sourceUrls() {
+			// A host that keeps the plug-in files itself names their directory (`plugins`): they are read from there alone.
+			var hosted = RapierBundleIO.pluginUrl(String(m.file || '').split('/').pop());
+			if (hosted) return [hosted];
 			var urls = [];
 			var localUrl = RapierBundleIO.sameOriginUrl(m.file);
 			if (localUrl) urls.push(localUrl);
@@ -185,7 +190,8 @@
 					return _verifyBytes(bytes, 'platform resource');
 				});
 			}
-			var urls = _sourceUrls();
+			var urls;
+			try { urls = _sourceUrls(); } catch (err) { return Promise.reject(err); }
 			var lastErr = null;
 			var chain = Promise.resolve(null);
 			urls.forEach(function (url) {
@@ -855,8 +861,12 @@
 			function lane() {
 				if (next >= m.files.length || failure) return Promise.resolve();
 				var file = m.files[next++];
-				var localUrl = file.file && RapierBundleIO.sameOriginUrl(file.file);
-				var urls = localUrl ? [localUrl, file.url] : [file.url];
+				var localUrl = file.file && RapierBundleIO.sameOriginUrl(file.file), urls;
+				// `plugins`: the host's directory, by the file's path in it (`flat` where the page-relative `file` is another name).
+				try {
+					var hosted = RapierBundleIO.pluginUrl(file.flat || String(file.file || '').split('/').pop());
+					urls = hosted ? [hosted] : localUrl ? [localUrl, file.url] : [file.url];
+				} catch (error) { failure = failure || error; return Promise.resolve(); }
 				function attempt(index) {
 					return RapierBundleIO.fetchBytes(urls[index], m.timeoutMs || 180000, { length: file.bytes, cache: 'no-store', onBytes: function (n) { tick(file, n); } })
 						.then(function (value) { return verified(file, value); }).catch(function (error) {

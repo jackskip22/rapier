@@ -15,22 +15,24 @@ const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
 const TINY = 'https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/';
 const JXL = 'https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/';
 // Every file the plug-in downloads: where from, its exact length (the download's bound) and its SHA-384, base64, the pin
-// every plug-in is held to (shell/plugin-loader.js). The model files are byte for byte PaddlePaddle's own
+// every plug-in is held to (shell/plugin-loader.js). `flat` is the file's name in the directory a host keeps the plug-ins in
+// (`plugins`, shell/bundle-io.js): unique there, which the packages' own file names are not (inference.onnx, LICENSE). The
+// model files are byte for byte PaddlePaddle's own
 // PP-OCRv6_tiny_{det,rec}_onnx_infer archives (paddle-model-ecology, paddle3.0.0), carried on npm by an Apache-2.0 package so
 // that jsDelivr, the one host the page may reach, serves them.
 export const OCR_FILES = Object.freeze([
-	Object.freeze({name: 'runtime', url: ORT + 'ort.wasm.bundle.min.mjs', bytes: 73054, sri: 'PLWz+nHEVHpjwBsO0YVdvQj6n5814Iv8E3b8FG0Rp/uIAtjFMCKOpP66iPzedrIG', licence: 'MIT'}),
-	Object.freeze({name: 'wasm', url: ORT + 'ort-wasm-simd-threaded.wasm', bytes: 14239897, sri: 'vjBJ1z7qrhkTyYsNqKeF6c7N+nOJSU94czEo+tvZcu8G75JparGq9kB+kTnEUNVM', licence: 'MIT'}),
-	Object.freeze({name: 'detector', url: TINY + 'bundle/det/inference.onnx', bytes: 1780590, sri: 'z/uxJihKBtSOEG9THqUzk5RmVLAsj54V3UHEVEjOEhTle3fIjIN+w4T8J/oSvb9G', licence: 'Apache-2.0'}),
-	Object.freeze({name: 'recogniser', url: TINY + 'bundle/rec/inference.onnx', bytes: 4462639, sri: 'S3kXSVrPXF1w/WoAk6MwtMzrXdlfk/oKbo200k+ec6Fmf2jpdzhjMGQOk+scVhwn', licence: 'Apache-2.0'}),
-	Object.freeze({name: 'dictionary', url: TINY + 'bundle/rec/dictionary.json', bytes: 41009, sri: '6Nf5BNVe1Gq8H53bIq/GGwZ4PJ5P1tLT+9KqYztio4eP/89wv3KPaessREg24wef', licence: 'Apache-2.0'}),
-	Object.freeze({name: 'licence', url: TINY + 'LICENSE', bytes: 11358, sri: 'II9e1ieUDl5AxyiVq3/FflTua1Sr0kMJ25e6imG7rXg7SiAsA2VemsvEqVsLqM7/', licence: 'Apache-2.0'}),
-	Object.freeze({name: 'notice', url: TINY + 'bundle/LICENSES/MODEL-NOTICE.md', bytes: 311, sri: '/xX55A3RRtvPKw3vqFhYH/l7BmQVlADJSGvZA77seZYcqrCvwtqLSJqMJqxo5Xee', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'runtime', flat: 'ort.wasm.bundle.min.mjs', url: ORT + 'ort.wasm.bundle.min.mjs', bytes: 73054, sri: 'PLWz+nHEVHpjwBsO0YVdvQj6n5814Iv8E3b8FG0Rp/uIAtjFMCKOpP66iPzedrIG', licence: 'MIT'}),
+	Object.freeze({name: 'wasm', flat: 'ort-wasm-simd-threaded.wasm', url: ORT + 'ort-wasm-simd-threaded.wasm', bytes: 14239897, sri: 'vjBJ1z7qrhkTyYsNqKeF6c7N+nOJSU94czEo+tvZcu8G75JparGq9kB+kTnEUNVM', licence: 'MIT'}),
+	Object.freeze({name: 'detector', flat: 'ppocrv6-tiny-det.onnx', url: TINY + 'bundle/det/inference.onnx', bytes: 1780590, sri: 'z/uxJihKBtSOEG9THqUzk5RmVLAsj54V3UHEVEjOEhTle3fIjIN+w4T8J/oSvb9G', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'recogniser', flat: 'ppocrv6-tiny-rec.onnx', url: TINY + 'bundle/rec/inference.onnx', bytes: 4462639, sri: 'S3kXSVrPXF1w/WoAk6MwtMzrXdlfk/oKbo200k+ec6Fmf2jpdzhjMGQOk+scVhwn', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'dictionary', flat: 'ppocrv6-tiny-dictionary.json', url: TINY + 'bundle/rec/dictionary.json', bytes: 41009, sri: '6Nf5BNVe1Gq8H53bIq/GGwZ4PJ5P1tLT+9KqYztio4eP/89wv3KPaessREg24wef', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'licence', flat: 'ppocrv6-tiny-LICENSE', url: TINY + 'LICENSE', bytes: 11358, sri: 'II9e1ieUDl5AxyiVq3/FflTua1Sr0kMJ25e6imG7rXg7SiAsA2VemsvEqVsLqM7/', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'notice', flat: 'ppocrv6-tiny-MODEL-NOTICE.md', url: TINY + 'bundle/LICENSES/MODEL-NOTICE.md', bytes: 311, sri: '/xX55A3RRtvPKw3vqFhYH/l7BmQVlADJSGvZA77seZYcqrCvwtqLSJqMJqxo5Xee', licence: 'Apache-2.0'}),
 	// A note's pictures are JPEG XL (the full profile writes them so) and not every browser shows JPEG XL: the reader brings
 	// its own decoder (libjxl, BSD-3-Clause, as jSquash builds it, Apache-2.0), run in the reader's worker and nowhere else.
-	Object.freeze({name: 'jxl', url: JXL + 'codec/dec/jxl_dec.js', bytes: 36091, sri: 'OVUtDrf9Am51biP6vZWJC1BeSlKKo6nQQPjlB+KF9eWNuazANiijG+IBV4RDRUMA', licence: 'Apache-2.0'}),
-	Object.freeze({name: 'jxlWasm', url: JXL + 'codec/dec/jxl_dec.wasm', bytes: 849240, sri: 'nJrefhoZ7HToq7VA6kbP3TG/g8+eD4UjhgDkyl0D6a6JtkP/2kj3MlygJWP6k/Ex', licence: 'BSD-3-Clause'}),
-	Object.freeze({name: 'jxlLicence', url: JXL + 'LICENSE', bytes: 11343, sri: 'NsdobH9UxdLqIzcQT8lhpTdu6OKs4LIy8lMm2mLIgqNmNhKUVo+sRy2rJ9oUKQyg', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'jxl', flat: 'jxl_dec.js', url: JXL + 'codec/dec/jxl_dec.js', bytes: 36091, sri: 'OVUtDrf9Am51biP6vZWJC1BeSlKKo6nQQPjlB+KF9eWNuazANiijG+IBV4RDRUMA', licence: 'Apache-2.0'}),
+	Object.freeze({name: 'jxlWasm', flat: 'jxl_dec.wasm', url: JXL + 'codec/dec/jxl_dec.wasm', bytes: 849240, sri: 'nJrefhoZ7HToq7VA6kbP3TG/g8+eD4UjhgDkyl0D6a6JtkP/2kj3MlygJWP6k/Ex', licence: 'BSD-3-Clause'}),
+	Object.freeze({name: 'jxlLicence', flat: 'jxl-LICENSE', url: JXL + 'LICENSE', bytes: 11343, sri: 'NsdobH9UxdLqIzcQT8lhpTdu6OKs4LIy8lMm2mLIgqNmNhKUVo+sRy2rJ9oUKQyg', licence: 'Apache-2.0'}),
 ]);
 export const OCR_DOWNLOAD_BYTES = OCR_FILES.reduce((sum, file) => sum + file.bytes, 0);
 // What crosses the network: jsDelivr serves each file brotli-compressed (measured file by file); the runtime shrinks

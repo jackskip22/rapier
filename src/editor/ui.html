@@ -47,17 +47,21 @@
 								autocomplete="off" autocorrect="off" spellcheck="false"></span>
 			</span>
 		</div>
+		<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 		<span class="compare-top-title" id="compare-top-title" hidden>compare</span>
+		<!-- RAPIER_EDITOR_ONLY_END -->
 	</div>
 
 	<div class="top-bar__actions">
 		<div class="top-bar__actions-set" id="top-actions">
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 			<button type="button" class="icon-btn rapier-dial" id="btn-undo" aria-label="undo" data-tip="undo" data-action="undo">
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
 			</button>
 			<button type="button" class="icon-btn rapier-dial" id="btn-redo" aria-label="redo" data-tip="redo" data-action="redo">
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
 			</button>
+			<!-- RAPIER_EDITOR_ONLY_END -->
 			<button type="button" class="icon-btn" id="btn-find" aria-label="find in page" data-tip="find"
 							aria-controls="find-bar" aria-expanded="false" data-action="find">
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
@@ -71,6 +75,7 @@
 				<svg id="btn-read-aloud-play" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
 				<svg id="btn-read-aloud-pause" hidden xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
 			</button>
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 			<button type="button" class="icon-btn" id="btn-embed-save" hidden data-action="embed-save"
 							aria-label="save to host" data-tip="save">
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
@@ -79,6 +84,7 @@
 							aria-label="close embedded editor" data-tip="close">
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 			</button>
+			<!-- RAPIER_EDITOR_ONLY_END -->
 			<button type="button" class="icon-btn" id="btn-overflow" aria-label="settings" data-tip="settings"
 							data-action="settings">
 				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
@@ -100,6 +106,7 @@
 			<button type="button" class="icon-btn" id="btn-notes-kebab" data-action="notes-kebab" aria-label="note options" data-tip="options" aria-haspopup="true" aria-expanded="false" hidden></button>
 			<!-- RAPIER_NOTES_END -->
 		</div>
+		<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 		<div class="top-bar__actions-set" id="compare-actions" hidden>
 		<button type="button" class="icon-btn" id="compare-prev" data-action="compare-prev" aria-label="previous change" data-tip="previous change">
 				<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
@@ -112,6 +119,7 @@
 				<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 			</button>
 		</div>
+		<!-- RAPIER_EDITOR_ONLY_END -->
 	</div>
 </header>
 
@@ -127,16 +135,21 @@
 	<button type="button" class="icon-btn" data-action="find-next" aria-label="next match">
 		<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform:rotate(180deg)"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
 	</button>
+	<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 	<button type="button" class="icon-btn" id="btn-replace-toggle" data-action="replace-toggle" aria-expanded="false" aria-label="replace">
 		<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
 	</button>
+	<!-- RAPIER_EDITOR_ONLY_END -->
 </div>
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 <div class="replace-bar" id="replace-bar" role="group" aria-label="replace all" hidden>
 	<input type="text" class="replace-input" id="replace-input" aria-label="replacement text" title="Enter: replace all. Shift+Enter: replace current match."
 				 placeholder="replace with…" autocomplete="off" autocorrect="off" spellcheck="false">
 	<button type="button" class="replace-all-btn" data-action="replace-all">replace all</button>
 </div>
+<!-- RAPIER_EDITOR_ONLY_END -->
 
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 <!-- ── Editing toolbar ────────-->
 <div class="format-toolbar-stack" id="format-toolbar-stack" aria-live="off">
 <div class="format-toolbar" id="format-toolbar" role="toolbar" aria-label="text formatting" aria-hidden="true"
@@ -337,6 +350,7 @@
 	</button>
 </div>
 </div>
+<!-- RAPIER_EDITOR_ONLY_END -->
 
 <!-- The same acorn build, verbatim. Acorn is a visible code-intelligence instrument, not
 		 an invisible implementation detail — and it is visible only while it is the live fact. -->
@@ -369,6 +383,7 @@
 	</div>
 </section>
 
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 <!-- Read-only one-column comparison surface. -->
 <section class="compare-mode" id="compare-mode" aria-label="file comparison">
 	<div class="compare-summary" id="compare-summary">
@@ -382,6 +397,7 @@
 	<div class="compare-state" id="compare-state" data-visible="false"></div>
 	<div class="compare-content" id="compare-content"></div>
 </section>
+<!-- RAPIER_EDITOR_ONLY_END -->
 
 <!-- ── Fast-scroll indicator. -->
 <button type="button" class="scroll-fab" id="scroll-fab" aria-label="headings, declarations or line, and fast scroll"><span class="scroll-fab__acorn" id="scroll-fab-acorn" hidden aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-acorn"></use></svg></span></button>
@@ -445,7 +461,9 @@
 			<!-- Primary document controls. Deliberately untitled and centered. -->
 			<div class="settings-action-row settings-primary-actions">
 				<div class="settings-action-pair" id="settings-open-pair">
+					<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 					<button type="button" class="settings-action-btn" data-action="new-document">new</button>
+					<!-- RAPIER_EDITOR_ONLY_END -->
 
 					<div class="settings-action-cell">
 						<div class="open-group">
@@ -473,12 +491,14 @@
 					<ul class="recent-drawer__list" id="recent-drawer-list" hidden></ul>
 				</div>
 
+				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<div class="settings-action-pair" id="settings-save-pair">
 					<button type="button" class="settings-action-btn" id="settings-save-btn"
 									data-action="save-document">save</button>
 					<button type="button" class="settings-action-btn" id="settings-save-as-btn" hidden
 									data-action="save-as-document">save as</button>
 				</div>
+				<!-- RAPIER_EDITOR_ONLY_END -->
 
 				<div class="settings-action-pair">
 					<button type="button" class="settings-action-btn" id="settings-share-btn" hidden
@@ -486,13 +506,16 @@
 					<button type="button" class="settings-action-btn" data-action="open-copy-menu">copy</button>
 				</div>
 
+				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<button type="button" class="settings-action-btn" id="settings-compare-btn"
 								data-action="compare-document">compare</button>
+				<!-- RAPIER_EDITOR_ONLY_END -->
 			</div>
 
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 			<!-- DRAW in the settings panel as well as the floating bar: the bar's own brush, at the stroke of the view icons
 			     above, centred under compare with equal air above and below; it opens a fresh canvas exactly as /draw does,
-			     and on the site the address becomes /draw. -->
+			     and the address stays where it is. -->
 			<button type="button" class="settings-draw-btn" id="settings-draw-btn" data-action="open-draw" aria-label="draw a picture" data-tip="draw">
 				<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
 			</button>
@@ -503,23 +526,30 @@
 					<button type="button" class="settings-action-btn" data-action="upload-document">upload</button>
 				</div>
 			</div>
+			<!-- RAPIER_EDITOR_ONLY_END -->
 
 			<!-- Export -->
 			<div class="settings-section__title">export</div>
 			<div class="settings-action-row">
 				<button type="button" class="settings-action-btn" data-action="export-txt">.txt</button>
+				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<button type="button" class="settings-action-btn" data-action="export-html">.html</button>
+				<!-- RAPIER_EDITOR_ONLY_END -->
 				<button type="button" class="settings-action-btn" data-action="export-pdf">.pdf</button>
+				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<button type="button" class="settings-action-btn" id="settings-export-docx-btn"
 								data-action="export-docx">.docx</button>
+				<!-- RAPIER_EDITOR_ONLY_END -->
 			</div>
 
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 			<!-- Read only — a persisted preference; the engine owns enforcement. -->
 			<div class="settings-section__title">read only</div>
 			<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-read-only" data-switch="readOnly" role="group" aria-label="read only" style="width:100%;margin-bottom:var(--space-4)">
 				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="off" style="flex:1;width:auto">OFF</button>
 				<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="on" style="flex:1;width:auto">ON</button>
 			</div>
+			<!-- RAPIER_EDITOR_ONLY_END -->
 
 
 
@@ -540,6 +570,7 @@
 			</div>
 			<!-- RAPIER_NOTES_END -->
 
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 			<div id="settings-windows-section" hidden>
 				<div class="settings-section__title">windows</div>
 				<div class="settings-action-row" style="margin-bottom:var(--space-4)">
@@ -554,6 +585,7 @@
 									data-action="windows-uninstall">uninstall</button>
 				</div>
 			</div>
+			<!-- RAPIER_EDITOR_ONLY_END -->
 
 			<!-- Theme -->
 			<div class="settings-section__title">theme</div>
@@ -652,6 +684,7 @@
 					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="accent" style="flex:1;width:auto">ACCENT</button>
 				</div>
 
+				<!-- RAPIER_READER_SKIP_BEGIN -->
 				<!-- Checkerboard, with its contrast joined beneath while it is on. Dim is the default. -->
 				<div class="settings-switch-stack">
 					<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-checker" data-switch="checker" data-switch-label="Checkerboard" data-on="true" data-off="false" role="group" aria-label="checkerboard lines" style="width:100%">
@@ -694,6 +727,7 @@
 				<div class="theme-switcher theme-switcher--joined theme-switcher--onoff" id="switch-assets" data-switch="assets" data-switch-label="Image data" data-on="true" data-off="false" role="group" aria-label="image data in the source view" style="width:100%">
 					<button type="button" class="theme-switcher__btn onoff-btn" data-action="switch" data-value="true" role="switch" aria-checked="false" style="flex:1;width:auto">IMAGE DATA OFF</button>
 				</div>
+				<!-- RAPIER_READER_SKIP_END -->
 
 						</div>
 					</div>
@@ -804,9 +838,11 @@
 			<div id="settings-about-section">
 				<div class="settings-section__title" id="about-name">about</div>
 				<div class="pro-status">
+					<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 					<div class="settings-action-row" style="margin-top:0;margin-bottom:0">
 						<button type="button" class="settings-action-btn" data-action="welcome">OPEN USER GUIDE</button>
 					</div>
+					<!-- RAPIER_EDITOR_ONLY_END -->
 					<div class="settings-action-row" style="margin-top:var(--space-2);margin-bottom:0">
 						<button type="button" class="settings-action-btn" data-action="privacy">PRIVACY</button>
 					</div>
@@ -1852,6 +1888,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.</pre>
 				<details class="license-entry"><summary><span class="license-name">footnote 4.0.0 · mark 4.0.0 · ins 4.0.0 · abbr 2.0.0 · sub/sup 2.0.0</span><span class="license-id">MIT</span></summary>
 					<pre class="license-text" data-license="rapier-mit"></pre>
 				</details>
+				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<details class="license-entry"><summary><span class="license-name">gpu-lexer 0.0.1</span><span class="license-id">MIT</span></summary>
 					<pre class="license-text" data-license="rapier-mit"></pre>
 				</details>
@@ -1987,6 +2024,7 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.</pre>
 				</details>
+				<!-- RAPIER_EDITOR_ONLY_END -->
 				<details class="license-entry"><summary><span class="license-name">Feather icons</span><span class="license-id">MIT</span></summary>
 					<pre class="license-text">The MIT License (MIT)
 
@@ -2013,8 +2051,10 @@ SOFTWARE.</pre>
 				<div class="license-row"><span class="license-name">MathJax 4.1.3 (optional)</span><span class="license-id">Apache-2.0</span></div>
 				<div class="license-row"><span class="license-name">Mermaid 10.9.8 (optional)</span><span class="license-id">MIT</span></div>
 				<!-- RAPIER_NOTES_BEGIN -->
+				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<div class="license-row"><span class="license-name">ONNX Runtime Web 1.30.0 (optional)</span><span class="license-id">MIT</span></div>
 				<div class="license-row"><span class="license-name">PP-OCRv6 tiny (optional)</span><span class="license-id">Apache-2.0</span></div>
+				<!-- RAPIER_EDITOR_ONLY_END -->
 				<div class="license-row"><span class="license-name">libjxl decoder, jSquash 1.3.0 (optional)</span><span class="license-id">BSD-3-Clause · Apache-2.0</span></div>
 				<!-- RAPIER_NOTES_END -->
 				<div class="license-row" id="licenses-android-ui" hidden><span class="license-name">AndroidX Activity · Core · WebKit</span><span class="license-id">Apache-2.0</span></div>
@@ -2027,7 +2067,9 @@ SOFTWARE.</pre>
 
 <!-- Hidden file inputs for picker fallback and Android WebView chooser -->
 <input type="file" id="file-input" aria-label="open document" style="display:none">
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 <input type="file" id="compare-file-input" aria-label="compare document" style="display:none">
+<!-- RAPIER_EDITOR_ONLY_END -->
 
 <!-- Toast container — vanilla toast markup -->
 <div class="toast-container" id="toast-root">
@@ -2085,6 +2127,7 @@ SOFTWARE.</pre>
 </div>
 
 <!-- ════════ -->
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 <div class="settings-overlay pro-sheet-overlay" id="pro-sheet-overlay" inert aria-hidden="true">
 	<div class="pro-sheet" role="dialog" aria-modal="true" aria-labelledby="pro-sheet-title">
 		<div class="pro-sheet__body">
@@ -2098,8 +2141,10 @@ SOFTWARE.</pre>
 		</div>
 	</div>
 </div>
+<!-- RAPIER_EDITOR_ONLY_END -->
 
 <!-- ════════ -->
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 <div class="settings-overlay restore-modal-overlay" id="export-overlay" inert aria-hidden="true"
 		 role="dialog" aria-modal="true" aria-labelledby="export-modal-title">
 	<div class="settings-panel export-choice-panel">
@@ -2122,6 +2167,7 @@ SOFTWARE.</pre>
 		</div>
 	</div>
 </div>
+<!-- RAPIER_EDITOR_ONLY_END -->
 
 <!-- ════════ -->
 <div class="settings-overlay restore-modal-overlay" id="copy-overlay" inert aria-hidden="true"
@@ -2531,18 +2577,17 @@ SOFTWARE.</pre>
 	</div>
 </div>
 
-<!-- ════════ DOCX export progress / portability prompt. -->
+<!-- RAPIER_EDITOR_ONLY_BEGIN -->
+<!-- ════════ DOCX export portability prompt. -->
 <div class="settings-overlay restore-modal-overlay" id="docx-plugin-overlay" inert aria-hidden="true"
 		 role="alertdialog" aria-modal="true" aria-labelledby="docx-plugin-title"
 		 aria-describedby="docx-plugin-description">
 	<div class="settings-panel rapier-pop" style="max-width:440px; margin:auto;">
 		<div class="settings-panel__body">
 			<div id="docx-plugin-title" class="settings-section__title" style="font-size:16px; margin-bottom:var(--space-3)">
-				Creating Word document
+				DOCX export portability
 			</div>
 			<p id="docx-plugin-description" style="margin:0 0 var(--space-3); line-height:1.5; opacity:.9;"></p>
-			<p id="docx-plugin-progress" hidden aria-live="polite"
-				 style="margin:0 0 var(--space-4); line-height:1.5; opacity:.7; font-size:13px;"></p>
 			<p id="docx-plugin-error" hidden role="alert" aria-live="assertive"
 				 style="margin:0 0 var(--space-4); color:var(--color-error); font-size:13px; line-height:1.5;"></p>
 
@@ -2553,6 +2598,7 @@ SOFTWARE.</pre>
 		</div>
 	</div>
 </div>
+<!-- RAPIER_EDITOR_ONLY_END -->
 
 <!-- ════════ -->
 

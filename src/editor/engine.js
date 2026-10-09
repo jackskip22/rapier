@@ -2784,7 +2784,10 @@ function _rapierReadOnlyBlocked(announce = true) {
 function _rapierSyncDocumentEditHost() {
 	const host = document.getElementById('editor-blocks');
 	if (!host) return;
-	const editable = !rapier.access.readOnly && !_rapierMutationBarrierActive() &&
+	// An edit in flight (a paste, Undo, a compound change) keeps the host editable: the capture guards refuse keys and input
+	// meanwhile, and a host made non-editable for a frame has no editable root for its caret, so a phone hides its keyboard
+	// (every paste closed it). Only a document or view being replaced takes editing away.
+	const editable = !rapier.access.readOnly && !rapier.sourceTransition.busy && !rapier.bindingTransition.busy &&
 		rapier.document.docKind === 'markdown' && rapier.view.mode === 'edit';
 	// Written only on change: rewriting the same contenteditable value on the host makes the
 	// browser recompute style for every block beneath it -- 780 ms on a 2 MB document, spent
@@ -2799,6 +2802,8 @@ function _rapierSyncDocumentEditHost() {
 function _rapierApplyReadOnlyDom() {
 	const enabled = !!rapier.access.readOnly;
 	const sourceLocked = enabled || _rapierMutationBarrierActive();
+	// The text surfaces keep their editability through an edit in flight (_rapierSyncDocumentEditHost); the controls do not.
+	const textLocked = enabled || rapier.sourceTransition.busy || rapier.bindingTransition.busy;
 	// Written only on change: html[data-readonly] keys descendant rules, and a same-value write
 	// on the root is a document-wide style invalidation for nothing (large-document, interactive).
 	const readonlyWord = enabled ? 'on' : 'off';
@@ -2806,8 +2811,8 @@ function _rapierApplyReadOnlyDom() {
 	const source = document.getElementById('source-textarea');
 	_rapierSyncDocumentEditHost();
 	if (source) {
-		source.readOnly = sourceLocked;
-		source.setAttribute('aria-readonly', sourceLocked ? 'true' : 'false');
+		source.readOnly = textLocked;
+		source.setAttribute('aria-readonly', textLocked ? 'true' : 'false');
 	}
 	const editHosts = Array.from(document.querySelectorAll('.block-edit'));
 	if (rapier.view.sharedEditDiv && !editHosts.includes(rapier.view.sharedEditDiv)) {
@@ -2817,7 +2822,7 @@ function _rapierApplyReadOnlyDom() {
 		const wrapper = edit.closest('.block-wrapper');
 		_setBlockEditability(
 			edit,
-			!sourceLocked && !!wrapper && wrapper.classList.contains('block-wrapper--editing'),
+			!textLocked && !!wrapper && wrapper.classList.contains('block-wrapper--editing'),
 			!!wrapper && wrapper.classList.contains('block-wrapper--source-edit')
 		);
 	});
@@ -5335,11 +5340,8 @@ function _reconcileBlockDOM(newBlocks) {
 }
 
 function _blockWrapperChildren(container) {
-	return container
-		? Array.from(container.children).filter(function (child) {
-				return child.classList && child.classList.contains('block-wrapper');
-			})
-		: [];
+	// The browser's own child walk: a long document has thousands of children, read every frame of a scroll.
+	return container ? Array.from(container.querySelectorAll(':scope > .block-wrapper')) : [];
 }
 
 function _beginBlockDOMSplice(startIndex, oldCount) {
@@ -5979,6 +5981,9 @@ function _rapierBindWrapperBlock(nextBlock) {
 }
 
 function _rapierHandleEditCompositionStart(editDiv) {
+	// A new composition: a word folded in by a paste has had its chance of a late commit (_rapierGuardBeforeInput).
+	const host = _editorHostEl();
+	if (host) host._rapierHeldWord = null;
 	_rapierSnapEditCaret(editDiv);
 	_rapierKeepTypingMarks(editDiv, { inputType: 'insertCompositionText' });
 	editDiv._rapierComposeStart = _rapierComposeSnapshot(editDiv);
@@ -6096,6 +6101,11 @@ function _rapierFoldCompositionClones(editDiv, data = '') {
 
 function _rapierHandleEditCompositionEnd(editDiv, event) {
 	rapier.composition.block = false;
+	// The browser's own end of a composition ends it: a commit after it is new words, never a word a paste folded in. A word the
+	// browser wrote into the drawn page while an edit was in flight is still to be put right (_rapierFinishMutationBarrier).
+	const host = event && _editorHostEl(), held = host && host._rapierHeldWord;
+	if (held && held.outside && held.end == null && held.text) { held.ended = true; if (typeof event.data === 'string' && event.data) held.text = event.data; }
+	else if (host) host._rapierHeldWord = null;
 	try {
 		const enter = _rapierEnterDecision({ type: 'compositionend' }, editDiv);
 		editDiv._rapierCheckpointFresh = false;
@@ -7462,7 +7472,12 @@ function _rapierOpenEdgeParagraph(tail, selectedId = null) {
 
 function _rapierFocusEditingHost(editDiv) {
 	if (!editDiv) return;
-	editDiv.focus({ preventScroll: true });
+	// A block's surface edits inside the document's editing host (no contenteditable of its own): the host holds the focus.
+	// Focusing the surface handed the focus over and the caret's next move handed it back, and each change restarted a phone
+	// keyboard's input on every structural key (Backspace at a block's start, Enter that splits, Undo's reopen).
+	const host = !editDiv.hasAttribute('contenteditable') && editDiv.parentElement?.closest('[contenteditable]');
+	const target = host && host.isContentEditable ? host : editDiv;
+	if (document.activeElement !== target) target.focus({ preventScroll: true });
 }
 
 function rapierFocusEditingHost() {
@@ -8516,9 +8531,11 @@ async function _rapierTraverseHistory(redo, context = null) {
 	}
 	rapier.undo.applying = true;
 	_notifyHistoryState();
-	const splices = redo ? target.splices : target.splices.slice().reverse().map(row => ({
+	// A drawing finished behind its Done (images/browser.js) is taken back, or put again, with the replacement that finished it.
+	const finished = globalThis.RapierEmbeddedImages?.historySplices?.(target, redo) || null;
+	const splices = finished || (redo ? target.splices : target.splices.slice().reverse().map(row => ({
 		pos: row.pos, removed: row.inserted, inserted: row.removed,
-	}));
+	})));
 
 	const viewport = _rapierCaptureEditorViewport(), pictureTop = _rapierHistoryPictureTop(target.transaction, splices);
 	let historyLanded = false;
@@ -8530,6 +8547,8 @@ async function _rapierTraverseHistory(redo, context = null) {
 			context: context || undefined,
 			affectedBlockIds: target.transaction.affectedBlockIds,
 			navigation: false,
+			// Its own splices are the record: the step's alone would not replay them.
+			...(finished ? { compact: false } : {}),
 			...(redo ? { reapplies: target.transaction.id } : { reverts: target.transaction.id }),
 		});
 		if (!committed || String(rapier.identity.authority || '') !== documentAuthority) {
@@ -8643,7 +8662,7 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = f
 	if (!redo && spots && spots.end && _rapierReinstallSelection(spots, spots.end)) return true;
 
 	const row = splices[0];
-	let location = null;
+	let location = null, caretAt = null;
 	if (row) {
 		const removed = String(row.removed || ''), inserted = String(row.inserted || '');
 		let same = 0;
@@ -8651,14 +8670,36 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = f
 		let tail = 0;
 		while (tail < removed.length - same && tail < inserted.length - same &&
 			removed[removed.length - 1 - tail] === inserted[inserted.length - 1 - tail]) tail++;
-		location = _rapierBlockAtSourceOffset(_rapierBodyOffsetOfCanonical(Number(row.pos) + inserted.length - tail));
+		caretAt = Number(row.pos) + inserted.length - tail;
+		location = _rapierBlockAtSourceOffset(_rapierBodyOffsetOfCanonical(caretAt));
 	}
 	const ids = target.transaction.affectedBlockIds || [];
 	let block = location?.block && (!ids.length || ids.includes(location.block.id)) ? location.block
 		: ids.map(id => rapier.document.blocks.find(candidate => candidate.id === id)).find(Boolean) || location?.block || null;
+	// The point the step left, through the editor's own canonical-to-rendered resolver. Matching the rendered text against the
+	// raw in order lost its place at a callout's label or a list's line breaks, and the caret went to the callout's first word or
+	// into the item above, where the next letter was written.
+	const resolved = location && Number.isSafeInteger(caretAt) ? _rapierResolvePoint(caretAt) : null;
+	const point = resolved && resolved.block.id === location.block.id ? resolved : null;
+	// A table takes the caret back in the cell the step left it in, found in the table's own source: the caret's line is the row
+	// (the delimiter line is drawn as none), the unescaped pipes before it are the cell, and its place in that cell's words is the
+	// offset. A cell's words are often drawn otherwise than written (marks, a link, an escaped pipe, the same words as another
+	// cell) or not at all (an empty cell), and the table was never reopened: the next key went to the first block on screen.
+	let tableCell = null;
+	if (location && _isTableBlock(location.block.raw)) {
+		const raw = String(location.block.raw || ''), from = raw.lastIndexOf('\n', location.offset - 1) + 1;
+		const to = raw.indexOf('\n', from) < 0 ? raw.length : raw.indexOf('\n', from), line = raw.slice(from, to), at = location.offset - from;
+		const row = raw.slice(0, from).split('\n').length - 1, pipes = [];
+		for (let index = 0; index < line.length; index++) { if (line[index] === '\\') index++; else if (line[index] === '|') pipes.push(index); }
+		const before = pipes.filter(index => index < at), cellIndex = before.length - (/^\s*\|/.test(line) ? 1 : 0);
+		const start = before.length ? before[before.length - 1] + 1 : 0, end = pipes.find(index => index >= at) ?? line.length;
+		const tr = row === 1 ? null : document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + location.block.id + '"] > .block-read')?.querySelectorAll('tr')[row ? row - 1 : 0];
+		const cell = tr && cellIndex >= 0 ? Array.from(tr.children).filter(node => /^(?:TH|TD)$/.test(node.tagName))[cellIndex] : null;
+		if (cell) tableCell = {rowIndex: row ? row - 1 : 0, cellIndex, charOffset: _rapierRenderedOffsetForRawOffset(cell, line.slice(start, end), at - start)};
+	}
 	const reopenable = candidate => {
 		const wrapper = candidate && document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + candidate.id + '"]');
-		return !!wrapper && !wrapper.hidden && !_isTableBlock(candidate.raw) && !_rapierWholeBlock(candidate) &&
+		return !!wrapper && !wrapper.hidden && (!_isTableBlock(candidate.raw) || !!tableCell && candidate.id === location.block.id) && !_rapierWholeBlock(candidate) &&
 			!wrapper.classList.contains('block-wrapper--metadata') &&
 			(!_blockUsesRawEditor(candidate.raw) || candidate.id === caretBefore?.blockId) ? wrapper : null;
 	};
@@ -8682,6 +8723,7 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = f
 	const readDiv = wrapper.querySelector(':scope > .block-read');
 	let charOffset = wantedWrapper ? wanted.offset : location?.block !== block ? Infinity
 		: rawEditor ? location.offset
+		: point && readDiv && readDiv.contains(point.node) ? _charOffsetForRangePoint(readDiv, point.node, point.offset)
 		: _rapierRenderedOffsetForRawOffset(readDiv, String(block.raw || ''), location.offset);
 	// Undo of a line that made its own block (_maybeAutoConvert): the caret goes back after the
 	// characters as typed, where the next word goes, not before the escape the literal carries.
@@ -8691,13 +8733,11 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = f
 	// The step changed the block's decoration and not its words: the caret stays where the person had it.
 	else if (caretBefore && caretBefore.blockId === block.id && !rawEditor && readDiv &&
 			String(readDiv.textContent || '').replace(/\s+/g, ' ').trim() === caretBefore.words) charOffset = caretBefore.offset;
-	const editDiv = enterBlockEdit(block, wrapper, { charOffset, preserveScroll: true });
+	const editDiv = enterBlockEdit(block, wrapper, tableCell && block.id === location?.block?.id ? { tableCell, preserveScroll: true } : { charOffset, preserveScroll: true });
 
 	if (editDiv) {
 		requestAnimationFrame(() => {
-			if (editDiv.isConnected && document.activeElement !== editDiv && wrapper.classList.contains('block-wrapper--editing')) {
-				editDiv.focus({ preventScroll: true });
-			}
+			if (editDiv.isConnected && wrapper.classList.contains('block-wrapper--editing')) _rapierFocusEditingHost(editDiv);
 		});
 	}
 	return true;
@@ -9030,12 +9070,13 @@ document.addEventListener('keydown', _rapierRouteStrayEditingKey, true);
 // it back), the first block on screen, which a jump aligned to the destination: at its start, so the letter lands there instead of
 // vanishing. An empty document has no block to open: its first paragraph is made. The source view, a read-only document and one that
 // is not Markdown open nothing.
-function _rapierStrayKeyOpensBlock(target, host, begins) {
+function _rapierStrayKeyOpensBlock(target, host, begins, keepCaret = false) {
 	if (!host || !(target instanceof Element) || rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown' || _rapierReadOnlyBlocked(false)) return null;
 	if (!rapier.document.blocks.length) { rapierInsertBlock('paragraph', { immediateFocus: true }); return _activeBlockEditContext(); }
 	const shown = [...host.children].filter(node => node.classList?.contains('block-wrapper') &&
 		!node.hidden && !node.classList.contains('block-wrapper--metadata') && node.getBoundingClientRect().height > 0);
-	const inPage = host.contains(target), kept = inPage ? null : rapier.view.caret;
+	// `keepCaret`: the keys came with no key event to say where the focus stood (a phone keyboard), so the caret's own block, still on the page, takes them.
+	const inPage = host.contains(target), kept = inPage && !keepCaret ? null : rapier.view.caret;
 	let wrapper = kept && shown.find(node => Number(node.dataset.blockId) === kept.blockId) || null;
 	if (!wrapper && begins) {
 		// The first block that begins on screen (a jump aligns its heading to the top edge exactly); a block
@@ -9881,8 +9922,9 @@ function _rapierSelectionWrapperActionable(wrapper) {
 	if (!block) return false;
 	if (wrapper.classList.contains('block-wrapper--interactive') &&
 			!wrapper.classList.contains('block-wrapper--editing')) return false;
-	if (_blockUsesRawEditor(block.raw) &&
-			!wrapper.classList.contains('block-wrapper--editing')) return false;
+	// The class first: an open block is actionable whatever its source, and the source test parses the block.
+	if (!wrapper.classList.contains('block-wrapper--editing') &&
+			_blockUsesRawEditor(block.raw)) return false;
 	return true;
 }
 
@@ -10097,6 +10139,20 @@ function rapierSetFindOpen(open) {
 	rapier.find.open = !!open;
 	if (rapier.find.open) hideFormatToolbar();
 	_rapierScheduleRestoreCursor(300);
+	// The first letter typed in Find reads which words of the whole source are visible (one parse of the document).
+	// Opening the bar reads them in idle time instead, so that letter only searches; rapierFindRun takes the reading
+	// only for the same source and parser (_rapierVisibleSourceProjection), and reads again otherwise.
+	const input = document.getElementById('find-input');
+	if (!input) return;
+	if (!rapier.find.open) { input._rapierFindWarm = null; return; }
+	const warm = () => {
+		if (!rapier.find.open || !md || rapier.view.mode === 'source' || rapier.document.docKind !== 'markdown' ||
+				_rapierFindOwnsCurrentDocument()) return;
+		try { input._rapierFindWarm = _rapierVisibleSourceProjection(_rapierGetCanonicalText(), md, input._rapierFindWarm); }
+		catch (_) { input._rapierFindWarm = null; }
+	};
+	if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 1000 });
+	else setTimeout(warm, 200);
 }
 
 const _rapierKeyboardRuntime = Object.seal({ frame: 0, revealFrame: 0, space: 0, occlusion: 0 });
@@ -11709,7 +11765,7 @@ function _rapierCommitSplices(splices, options = null) {
 		beforeHash,
 		afterHash,
 	});
-	const compactNavigation = config.navigation === false &&
+	const compactNavigation = config.navigation === false && config.compact !== false &&
 		(transaction.reverts || transaction.reapplies) &&
 		rapier.undo.ledger.some(entry => entry.transaction.id ===
 			String(transaction.reverts || transaction.reapplies));
@@ -11800,6 +11856,8 @@ function _rapierJournalTrim() {
 			rapier.undo.trimReason = reason;
 			continue;
 		}
+		// A drawing's step keeps its place while only the replacement that finished it follows: Undo still takes it back.
+		if (ledger.slice(cut).every(entry => entry.transaction?.operation === 'document.finish-picture')) break;
 		const removed = ledger.splice(0, cut);
 		for (const record of removed) {
 			const removedBytes = _rapierJournalEntryBytes(record);
@@ -13874,8 +13932,12 @@ function _rapierTableCellSpans(line) {
 		if (index === value.length || value.charAt(index) === '|') { spans.push([from, index]); from = index + 1; }
 	}
 	const cells = spans.map(([a, b]) => {
+		const from = a, to = b;
 		while (a < b && /\s/.test(value.charAt(a))) a++;
 		while (b > a && /\s/.test(value.charAt(b - 1))) b--;
+		// An empty cell's place is inside its spaces, after the first: words typed there are written `| q |`. Its end, against
+		// the next pipe, wrote `|  q|`.
+		if (a === b && to > from) a = b = Math.min(from + 1, to);
 		return [a + lead, b + lead];
 	});
 	if (cells.length && cells[0][0] === cells[0][1]) cells.shift();
@@ -14897,7 +14959,7 @@ function _rapierRestoreWordCaret(word) {
 	const editDiv = _rapierActiveEditDiv(), selection = window.getSelection && window.getSelection();
 	const point = editDiv && _rapierPointForTextOffset(editDiv, word.caret);
 	if (!point || !selection) return;
-	try { editDiv.focus({ preventScroll: true }); selection.collapse(point.node, point.offset); } catch (_) {}
+	try { _rapierFocusEditingHost(editDiv); selection.collapse(point.node, point.offset); } catch (_) {}
 }
 
 function _rapierHtmlScriptProbe(raw, tag) {
@@ -17035,8 +17097,11 @@ function _openFieldDialog(opts) {
 		'</div>';
 
 	let preparation = null;
+	// Progress popups over this dialog (editor/pop.js); closed, the dialog hands the notice root back.
+	const progress = _rapierProgressOver(overlay);
 	const lifetime = new AbortController();
 	const state = _rapierBeginEngineDialog(overlay, () => {
+		progress.release();
 		preparation?.abort();
 		lifetime.abort();
 		if (typeof onCancel === 'function') onCancel();
@@ -17077,10 +17142,12 @@ function _openFieldDialog(opts) {
 			controls.forEach(control => { control.disabled = true; });
 			overlay.querySelector('[data-act="cancel"]').focus({preventScroll: true});
 			overlay.querySelector('[role="dialog"]').setAttribute('aria-busy', 'true');
-			ok.textContent = 'working…';
+			setStatus('');
+			// The dialog's own Cancel gives the work up, so the popup carries none.
+			const popup = progress.open({label: opts.progress || 'Working', after: 500});
 			try {
-				prepared = await opts.prepare(submitted, {signal: controller.signal, status: message => {
-					if (_rapierDialogRuntime.active === state && !controller.signal.aborted) setStatus(message);
+				prepared = await opts.prepare(submitted, {signal: controller.signal, progress: fraction => {
+					if (_rapierDialogRuntime.active === state && !controller.signal.aborted) popup.set(fraction);
 				}});
 				if (controller.signal.aborted || _rapierDialogRuntime.active !== state) return;
 			} catch (error) {
@@ -17090,14 +17157,15 @@ function _openFieldDialog(opts) {
 				}
 				return;
 			} finally {
+				popup.end();
 				preparation = null;
 				controls.forEach(control => { control.disabled = false; });
 				overlay.querySelector('[role="dialog"]').removeAttribute('aria-busy');
-				ok.textContent = okLabel || 'ok';
 			}
 			if (!_rapierEngineDialogSubmitAdmission(state)) return;
 		}
 		if (!state.close(opts.restoreFocus !== false)) return;
+		progress.release();
 		lifetime.abort();
 		if (typeof onOk === 'function') {
 			try { await onOk(submitted, prepared); }
@@ -17117,6 +17185,7 @@ function _openFieldDialog(opts) {
 			const action = secondaryActions[index];
 			const submitted = values();
 			if (!action || !_rapierEngineDialogSubmitAdmission(state) || !state.close(true)) return;
+			progress.release();
 			lifetime.abort();
 			if (typeof action.onSelect === 'function') action.onSelect(submitted);
 			return;
@@ -17125,7 +17194,7 @@ function _openFieldDialog(opts) {
 		if (act === 'ok') submit();
 		else if (act) state.cancel(true);
 	});
-	return {overlay, inputs, advanced, signal: lifetime.signal};
+	return {overlay, inputs, advanced, signal: lifetime.signal, progress: options => progress.open(options)};
 }
 function _escHtml(s) { return String(s == null ? "" : s).replace(/[&<>]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]; }); }
 function _escAttr(s) { return _escHtml(s).replace(/"/g, "&quot;"); }
@@ -17450,6 +17519,8 @@ function _rapierScheduleEditorViewport() {
 	});
 }
 
+// `preferredNode` may be a function that finds the node: it is asked only when a new reading is captured, and
+// not while the fast-scroll circle is dragged, when no reading is captured at all (_rapierCaptureEditorViewport).
 function _rapierEditorReadingPoint(preferredNode = null, withSource = false) {
 	const host = document.getElementById('editor-blocks'), record = rapier.view.editorViewport;
 
@@ -17458,7 +17529,8 @@ function _rapierEditorReadingPoint(preferredNode = null, withSource = false) {
 			record.authority === rapier.identity.authority && rapier.view.mode !== 'source' &&
 			rapier.document.docKind === 'markdown' && Math.abs(record.scrollTop - host.scrollTop) <= .5 &&
 			(!withSource || Number.isSafeInteger(record.offset))) return {...record};
-	return _rapierCaptureEditorViewport(preferredNode, withSource);
+	return _rapierCaptureEditorViewport(typeof preferredNode !== 'function' ? preferredNode
+		: _rapierWysiwygLedger.dragging ? null : preferredNode(), withSource);
 }
 
 function _rapierRestoreEditorViewport(record, splices = [], options = {}) {
@@ -19627,6 +19699,8 @@ function _rapierCompareRestoreView(snapshot) {
 const _rapierCompareRuntime = Object.seal({
 	worker: null,
 	timer: null,
+	// The progress popup while the worker compares; its Cancel closes the comparison.
+	progress: null,
 	resizeObserver: null,
 	previewCleanup: null,
 	jobId: 0,
@@ -19661,6 +19735,8 @@ function _rapierCompareCancelWorker() {
 	_rapierCompareRuntime.timer = null;
 	if (_rapierCompareRuntime.worker) _rapierCompareRuntime.worker.terminate();
 	_rapierCompareRuntime.worker = null;
+	_rapierCompareRuntime.progress?.end();
+	_rapierCompareRuntime.progress = null;
 	c.running = false;
 }
 
@@ -19680,7 +19756,7 @@ function _rapierCompareSetSummary(result) {
 	const counts = document.getElementById('compare-summary-counts');
 	if (names) names.textContent = rapier.compare.currentName + ' → ' + rapier.compare.incomingName;
 	if (!counts) return;
-	if (!result || rapier.compare.running) counts.textContent = 'comparing…';
+	if (!result || rapier.compare.running) counts.textContent = '';
 	else if (result.status === 'same') counts.textContent = 'no changes';
 	else if (result.additions != null && result.deletions != null) {
 		const sections = result.hunks ? result.hunks.length : 0;
@@ -20019,7 +20095,7 @@ function _rapierCompareStart(currentText, currentName, incomingText, incomingNam
 	rapierFindClear();
 	if (rapier.speech.active) rapierStopReading();
 	_rapierCompareSetSummary(null);
-	_rapierCompareShowState('comparing…', '', false);
+	_rapierCompareShowState('', '', false);
 	_rapierCompareNotify();
 
 	const admission = _rapierCompareAdmission(currentText, incomingText);
@@ -20042,6 +20118,7 @@ function _rapierCompareStart(currentText, currentName, incomingText, incomingNam
 		return;
 	}
 	_rapierCompareRuntime.worker = worker;
+	_rapierCompareRuntime.progress = _rapierProgressOpen({label: 'Comparing', after: 500, cancel: () => rapierCompareClose()});
 	const jobId = _rapierCompareRuntime.jobId;
 	worker.onmessage = event => {
 		const result = event.data || {};
@@ -20319,277 +20396,288 @@ async function _rapierOpenFileInputChanged(event) {
 	const file = event.target.files && event.target.files[0];
 	event.target.value = '';
 	if (!file) return;
+	let opening = null;
 	try {
 		if (_rapierIsVectorFile(file)) { await rapierOpenPlatformPayload({blob: file, name: file.name}); return; }
 		if (_rapierImportKind(file.name, file.type)) { await _rapierOpenImportedFile(file); return; }
+		// The popup stands from the read, the first long hold, to the end of the open.
+		opening = await _rapierProgressAhead(file.size, {label: 'Opening document'});
 		const record = await RapierTextCodec.readDocumentRecord(file);
-		await rapierOpenPlatformPayload({ text: record.text, name: file.name || 'opened.md', admittedBytes: record.bytes, bom: record.bom });
+		await rapierOpenPlatformPayload({ text: record.text, name: file.name || 'opened.md', admittedBytes: record.bytes, bom: record.bom }, {opening});
 	} catch (error) {
 		console.warn('[rapier] file read failed', error);
 		showToast(_rapierDocumentReadError(error), 'error');
-	}
+	} finally { opening?.end(); }
 }
 document.getElementById('file-input').addEventListener('change', _rapierOpenFileInputChanged);
 
 async function rapierOpenPlatformPayload(payload, opts = {}) {
-	const admittedByCaller = () => !opts.expectedMutationStamp || _rapierMutationStampIsCurrent(opts.expectedMutationStamp);
-	if (!admittedByCaller()) { showToast('The document changed; open the file again', 'info'); return false; }
-	if (payload?.blob instanceof Blob) {
-		const {blob, ...sourcePayload} = payload;
-		if (_rapierImportKind(payload.name, blob.type)) {
-			try { return await _rapierOpenImportedFile(blob, payload.name, opts); }
-			finally { try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {} }
-		}
-		if (_rapierIsVectorFile({name: payload.name, type: blob.type})) {
-			try { return await _rapierOpenSvgBlob(blob, payload.name, opts); }
-			finally { try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {} }
-		}
-		const rasterType = String(blob.type || '').toLowerCase().split(';')[0].trim();
-		if (RAPIER_RASTER_MIMES.has(rasterType)) {
-			try {
-				const opened = await rapierOpenPlatformPayload({text: '', name: 'untitled.md', transient: true}, opts);
-				if (!opened) return false;
-				const file = blob instanceof File ? blob : new File([blob], String(payload.name || 'picture'), {type: rasterType});
-				return await _rapierPasteRasterImage(file, {});
-			} finally {
+	// A Markdown or text file opens under the progress popup (editor/pop.js _rapierProgressAhead): at once for a large one,
+	// which holds the page while it is read and built, else behind half a second. A caller that already shows it passes `opening`.
+	const blob = payload?.blob instanceof Blob ? payload.blob : null, type = String(blob?.type || '').toLowerCase().split(';')[0].trim();
+	const textual = !blob || !_rapierImportKind(payload.name, blob.type) && !_rapierIsVectorFile({name: payload.name, type: blob.type}) && !RAPIER_RASTER_MIMES.has(type);
+	const opening = (opts.opening || !textual) ? null : await _rapierProgressAhead(blob ? blob.size : String(payload?.text ?? '').length, {label: 'Opening document'});
+	try { return await run(); } finally { opening?.end(); }
+	async function run() {
+		const admittedByCaller = () => !opts.expectedMutationStamp || _rapierMutationStampIsCurrent(opts.expectedMutationStamp);
+		if (!admittedByCaller()) { showToast('The document changed; open the file again', 'info'); return false; }
+		if (payload?.blob instanceof Blob) {
+			const {blob, ...sourcePayload} = payload;
+			if (_rapierImportKind(payload.name, blob.type)) {
+				try { return await _rapierOpenImportedFile(blob, payload.name, opts); }
+				finally { try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {} }
+			}
+			if (_rapierIsVectorFile({name: payload.name, type: blob.type})) {
+				try { return await _rapierOpenSvgBlob(blob, payload.name, opts); }
+				finally { try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {} }
+			}
+			const rasterType = String(blob.type || '').toLowerCase().split(';')[0].trim();
+			if (RAPIER_RASTER_MIMES.has(rasterType)) {
+				try {
+					const opened = await rapierOpenPlatformPayload({text: '', name: 'untitled.md', transient: true}, opts);
+					if (!opened) return false;
+					const file = blob instanceof File ? blob : new File([blob], String(payload.name || 'picture'), {type: rasterType});
+					return await _rapierPasteRasterImage(file, {});
+				} finally {
+					try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
+				}
+			}
+			try { const record = await RapierTextCodec.readDocumentRecord(blob); payload = {...sourcePayload, text: record.text, admittedBytes: record.bytes, bom: record.bom}; }
+			catch (error) {
 				try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
+				showToast(_rapierDocumentReadError(error), 'error');
+				return false;
 			}
 		}
-		try { const record = await RapierTextCodec.readDocumentRecord(blob); payload = {...sourcePayload, text: record.text, admittedBytes: record.bytes, bom: record.bom}; }
-		catch (error) {
-			try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
-			showToast(_rapierDocumentReadError(error), 'error');
-			return false;
+		if (payload && payload.text != null) {
+			try {
+				const source = await _rapierReadSharedDocument(payload.text, payload.name);
+				if (source) {
+					window.RapierPlatform?.files?.clearIntake?.(payload);
+					payload = {text: source.source, name: source.filename, bom: source.bom, transient: true};
+					opts = {...opts, documentKind: source.kind, ..._rapierLedgerAdmission(source.source, source)};
+				}
+			} catch (error) {
+				try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
+				showToast(String(error.message || 'Could not read the editable source in this web page'), 'error');
+				return false;
+			}
 		}
-	}
-	if (payload && payload.text != null) {
+		  if (globalThis.RAPIER_APPS_HOST === true) return payload && payload.text != null ? globalThis.RapierMcpApp?.openDocument({text: String(payload.text), filename: String(payload.name || 'opened.md'), ...(opts.documentKind ? {docKind: opts.documentKind} : {})}, {admission: admittedByCaller}) || false : false;
+
+		if (!payload || payload.text == null) return false;
 		try {
-			const source = await _rapierReadSharedDocument(payload.text, payload.name);
-			if (source) {
-				window.RapierPlatform?.files?.clearIntake?.(payload);
-				payload = {text: source.source, name: source.filename, bom: source.bom, transient: true};
-				opts = {...opts, documentKind: source.kind, ..._rapierLedgerAdmission(source.source, source)};
-			}
+			const saved = RapierLedgerCarried.readDocument(String(payload.text));
+			opts = {...opts, ..._rapierLedgerAdmission(saved.text, saved)};
+			payload = {...payload, text: saved.text};
 		} catch (error) {
 			try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
-			showToast(String(error.message || 'Could not read the editable source in this web page'), 'error');
+			showToast(String(error.message), 'error'); return false;
+		}
+		const name = String(payload.name || 'opened.md');
+		if (!_rapierDocumentNameIsAdmissible(name)) {
+			if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
+				try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
+			}
+			showToast('That file has an invalid or overlong name', 'error');
 			return false;
 		}
-	}
-	  if (globalThis.RAPIER_APPS_HOST === true) return payload && payload.text != null ? globalThis.RapierMcpApp?.openDocument({text: String(payload.text), filename: String(payload.name || 'opened.md'), ...(opts.documentKind ? {docKind: opts.documentKind} : {})}, {admission: admittedByCaller}) || false : false;
-
-	if (!payload || payload.text == null) return false;
-	try {
-		const saved = RapierLedgerCarried.readDocument(String(payload.text));
-		opts = {...opts, ..._rapierLedgerAdmission(saved.text, saved)};
-		payload = {...payload, text: saved.text};
-	} catch (error) {
-		try { window.RapierPlatform?.files?.clearIntake?.(payload); } catch (_) {}
-		showToast(String(error.message), 'error'); return false;
-	}
-	const name = String(payload.name || 'opened.md');
-	if (!_rapierDocumentNameIsAdmissible(name)) {
-		if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
-			try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
-		}
-		showToast('That file has an invalid or overlong name', 'error');
-		return false;
-	}
-	await _rapierAwaitPaste({ cancelPrecommit: true });
-	const admitted = await _rapierWithSettledExternalDocument(
-		() => ({
-			dirty: _rapierIsDirty(),
-			transitionGuard: Object.freeze(_rapierMutationStamp()),
-		}),
-		{ quiet: true },
-	);
-	if (!admitted.settled || !admittedByCaller()) {
-		showToast('Finish the current edit, then open that file again', 'info');
-		if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
-			try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
-		}
-		return false;
-	}
-	let transitionGuard = admitted.value.transitionGuard;
-	if (admitted.value.dirty) {
-		if (opts.requireClean) {
-			showToast('The current document changed; open the file again to review it first', 'info');
+		await _rapierAwaitPaste({ cancelPrecommit: true });
+		const admitted = await _rapierWithSettledExternalDocument(
+			() => ({
+				dirty: _rapierIsDirty(),
+				transitionGuard: Object.freeze(_rapierMutationStamp()),
+			}),
+			{ quiet: true },
+		);
+		if (!admitted.settled || !admittedByCaller()) {
+			showToast('Finish the current edit, then open that file again', 'info');
 			if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
 				try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
 			}
 			return false;
 		}
-		// outgoingSettled: the caller already kept the outgoing document (a boot's set-aside) or requires it clean.
-		if (!opts.outgoingSettled) {
-			transitionGuard = await _rapierSetAsideOutgoing(transitionGuard);
-			if (!transitionGuard) {
+		let transitionGuard = admitted.value.transitionGuard;
+		if (admitted.value.dirty) {
+			if (opts.requireClean) {
+				showToast('The current document changed; open the file again to review it first', 'info');
 				if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
 					try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
 				}
 				return false;
 			}
-		}
-	}
-
-	const commitAdmission = await _rapierWithSettledExternalDocument(() => {
-		if (!_rapierMutationStampIsCurrent(transitionGuard)) return null;
-		return {
-			stamp: transitionGuard,
-			viewContinuity: opts.preserveView
-				? (opts.viewContinuity || _rapierCaptureViewContinuity())
-				: null,
-		};
-	}, { quiet: true });
-	if (!commitAdmission.settled || !commitAdmission.value) {
-		showToast('The current document changed; open the file again', 'info');
-		if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
-			try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
-		}
-		return false;
-	}
-	const viewContinuity = commitAdmission.value.viewContinuity;
-	const previousAuthority = String(commitAdmission.value.stamp.documentAuthority || '');
-	const openEpoch = ++rapier.identity.userLoadEpoch;
-	let bindingTransitionToken = null;
-	const releaseBindingTransition = () => {
-		if (bindingTransitionToken == null) return;
-		const token = bindingTransitionToken;
-		bindingTransitionToken = null;
-		_rapierEndBindingTransitionBusy(token);
-	};
-	try {
-
-		const text = RapierTextCodec.normalizeDocument(payload.text, payload.admittedBytes);
-		const loadReceipt = await rapierLoad(text, name, {
-			documentAuthority: opts.documentAuthority || String(payload.documentAuthority || ''),
-			carriedLedger: opts.carriedLedger,
-			virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(opts.virtualDocumentKind),
-			  documentKind: opts.documentKind,
-			saveAsRequired: payload.transient === true,
-			// The file as read is the saved text: clean from the first paint; a binding
-			// that fails below sets saveAsRequired and the mark follows.
-			opensClean: payload.transient !== true,
-			// This opener resumes the file's reading point below; until it has, nothing writes it.
-			readingPointOwed: !viewContinuity && payload.transient !== true,
-			expectedMutationStamp: commitAdmission.value.stamp,
-
-			...(opts.requireWritable === true ? { requireWritable: true } : {}),
-			returnReceipt: true,
-		});
-		if (openEpoch !== rapier.identity.userLoadEpoch || !loadReceipt) return false;
-		const openedState = loadReceipt;
-		const openedFilename = String(rapier.document.filename || '');
-		const stillOpened = () => openEpoch === rapier.identity.userLoadEpoch &&
-			openedState.epoch === Number(rapier.identity.epoch || 0) &&
-			openedState.authority === String(rapier.identity.authority || '') &&
-			openedState.generation === Number(rapier.revision.generation || 0) &&
-			openedState.documentRevision === Number(rapier.revision.settled || 0) &&
-			openedFilename === String(rapier.document.filename || '');
-
-		// An ordinary Open ends in reading mode. Choose it while this exact load is
-		// still current, before binding toggles the new document's editing host twice.
-		// A preserved view or a human edit that superseded the load keeps its mode.
-		if (!viewContinuity && stillOpened()) rapierSetMode('read');
-		bindingTransitionToken = _rapierBeginBindingTransitionBusy();
-		if (payload.transient === true) {
-			rapier.revision.savedGeneration = -1;
-			if (window.RapierPlatform && window.RapierPlatform.files.detach) {
-				await window.RapierPlatform.files.detach(previousAuthority || openedState.authority);
+			// outgoingSettled: the caller already kept the outgoing document (a boot's set-aside) or requires it clean.
+			if (!opts.outgoingSettled) {
+				transitionGuard = await _rapierSetAsideOutgoing(transitionGuard);
+				if (!transitionGuard) {
+					if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
+						try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
+					}
+					return false;
+				}
 			}
-			if (!stillOpened()) return false;
-			releaseBindingTransition();
-			_notifyDirtyState();
+		}
 
-			try { await rapierFlushDirty({ snapshot: true, durable: true }); } catch (_) {}
-			if (!stillOpened()) return false;
-		} else {
+		const commitAdmission = await _rapierWithSettledExternalDocument(() => {
+			if (!_rapierMutationStampIsCurrent(transitionGuard)) return null;
+			return {
+				stamp: transitionGuard,
+				viewContinuity: opts.preserveView
+					? (opts.viewContinuity || _rapierCaptureViewContinuity())
+					: null,
+			};
+		}, { quiet: true });
+		if (!commitAdmission.settled || !commitAdmission.value) {
+			showToast('The current document changed; open the file again', 'info');
+			if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
+				try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
+			}
+			return false;
+		}
+		const viewContinuity = commitAdmission.value.viewContinuity;
+		const previousAuthority = String(commitAdmission.value.stamp.documentAuthority || '');
+		const openEpoch = ++rapier.identity.userLoadEpoch;
+		let bindingTransitionToken = null;
+		const releaseBindingTransition = () => {
+			if (bindingTransitionToken == null) return;
+			const token = bindingTransitionToken;
+			bindingTransitionToken = null;
+			_rapierEndBindingTransitionBusy(token);
+		};
+		try {
 
-			let bound = true;
-			if (window.RapierPlatform && window.RapierPlatform.files.acceptOpened) {
-				try {
-					const ack = await window.RapierPlatform.files.acceptOpened({
-						...payload,
-						documentAuthority: openedState.authority,
-					});
-					bound = !!(ack && ack.bound === true);
-				} catch (bindingError) {
-					if (!stillOpened()) return false;
-					bound = false;
-					try { console.warn('[rapier-platform] opened snapshot could not retain overwrite authority', bindingError); } catch (_) {}
+			const text = RapierTextCodec.normalizeDocument(payload.text, payload.admittedBytes);
+			const loadReceipt = await rapierLoad(text, name, {
+				documentAuthority: opts.documentAuthority || String(payload.documentAuthority || ''),
+				carriedLedger: opts.carriedLedger,
+				virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(opts.virtualDocumentKind),
+				  documentKind: opts.documentKind,
+				saveAsRequired: payload.transient === true,
+				// The file as read is the saved text: clean from the first paint; a binding
+				// that fails below sets saveAsRequired and the mark follows.
+				opensClean: payload.transient !== true,
+				// This opener resumes the file's reading point below; until it has, nothing writes it.
+				readingPointOwed: !viewContinuity && payload.transient !== true,
+				expectedMutationStamp: commitAdmission.value.stamp,
+
+				...(opts.requireWritable === true ? { requireWritable: true } : {}),
+				returnReceipt: true,
+			});
+			if (openEpoch !== rapier.identity.userLoadEpoch || !loadReceipt) return false;
+			const openedState = loadReceipt;
+			const openedFilename = String(rapier.document.filename || '');
+			const stillOpened = () => openEpoch === rapier.identity.userLoadEpoch &&
+				openedState.epoch === Number(rapier.identity.epoch || 0) &&
+				openedState.authority === String(rapier.identity.authority || '') &&
+				openedState.generation === Number(rapier.revision.generation || 0) &&
+				openedState.documentRevision === Number(rapier.revision.settled || 0) &&
+				openedFilename === String(rapier.document.filename || '');
+
+			// An ordinary Open ends in reading mode. Choose it while this exact load is
+			// still current, before binding toggles the new document's editing host twice.
+			// A preserved view or a human edit that superseded the load keeps its mode.
+			if (!viewContinuity && stillOpened()) rapierSetMode('read');
+			bindingTransitionToken = _rapierBeginBindingTransitionBusy();
+			if (payload.transient === true) {
+				rapier.revision.savedGeneration = -1;
+				if (window.RapierPlatform && window.RapierPlatform.files.detach) {
+					await window.RapierPlatform.files.detach(previousAuthority || openedState.authority);
 				}
 				if (!stillOpened()) return false;
-				if (!bound) {
+				releaseBindingTransition();
+				_notifyDirtyState();
 
-					if (window.RapierPlatform.files.detach) {
-						try { await window.RapierPlatform.files.detach(openedState.authority); } catch (_) {}
+				try { await rapierFlushDirty({ snapshot: true, durable: true }); } catch (_) {}
+				if (!stillOpened()) return false;
+			} else {
+
+				let bound = true;
+				if (window.RapierPlatform && window.RapierPlatform.files.acceptOpened) {
+					try {
+						const ack = await window.RapierPlatform.files.acceptOpened({
+							...payload,
+							documentAuthority: openedState.authority,
+						});
+						bound = !!(ack && ack.bound === true);
+					} catch (bindingError) {
+						if (!stillOpened()) return false;
+						bound = false;
+						try { console.warn('[rapier-platform] opened snapshot could not retain overwrite authority', bindingError); } catch (_) {}
 					}
 					if (!stillOpened()) return false;
-					rapier.identity.saveAsRequired = true;
-					_rapierWebMcpSync();
+					if (!bound) {
 
-					if (payload.webFileHandle || payload.handle || payload.grant) showToast('file changed while opening; use Save As for this snapshot', 'error');
+						if (window.RapierPlatform.files.detach) {
+							try { await window.RapierPlatform.files.detach(openedState.authority); } catch (_) {}
+						}
+						if (!stillOpened()) return false;
+						rapier.identity.saveAsRequired = true;
+						_rapierWebMcpSync();
+
+						if (payload.webFileHandle || payload.handle || payload.grant) showToast('file changed while opening; use Save As for this snapshot', 'error');
+					}
+				}
+				if (!stillOpened()) return false;
+				if (previousAuthority && previousAuthority !== openedState.authority &&
+						window.RapierPlatform && window.RapierPlatform.files.detach) {
+					try { await window.RapierPlatform.files.detach(previousAuthority); } catch (_) {}
+				}
+				if (!stillOpened()) return false;
+
+				releaseBindingTransition();
+				if (bound) {
+					const acknowledged = await _markSavedGeneration(
+						openedState.generation,
+						true,
+						text,
+						openedState.documentRevision,
+						name,
+						{
+							expectedEpoch: openedState.epoch,
+							expectedAuthority: openedState.authority,
+						},
+					);
+					if (!acknowledged) return false;
+				} else {
+					try { await rapierFlushDirty({ snapshot: true, durable: true }); } catch (_) {}
+				}
+				if (!stillOpened()) return false;
+			}
+			const openedBytesStillCurrent = openedState.generation === Number(rapier.revision.generation || 0) &&
+				openedState.documentRevision === Number(rapier.revision.settled || 0);
+			if (openedBytesStillCurrent) {
+				rapier.document.bom = payload.bom === true;
+				dismissTransientSurfaces(true);
+				if (viewContinuity) {
+					_rapierRestoreViewContinuity(viewContinuity);
+				} else {
+					rapierSetMode('read');
+					// The same file (name and bytes) read here before opens where it was left.
+					if (payload.transient !== true) _rapierResumeReadingPoint(name, text);
 				}
 			}
-			if (!stillOpened()) return false;
-			if (previousAuthority && previousAuthority !== openedState.authority &&
-					window.RapierPlatform && window.RapierPlatform.files.detach) {
-				try { await window.RapierPlatform.files.detach(previousAuthority); } catch (_) {}
+			if (payload.transient !== true && window.RapierPlatform && window.RapierPlatform.files.noteRecent) {
+				try {
+					window.RapierPlatform.files.noteRecent(
+						name,
+						payload.path || name,
+						openedState.authority
+					);
+				} catch (_) {}
 			}
-			if (!stillOpened()) return false;
-
+			return true;
+		} catch (err) {
+			showToast(_rapierDocumentReadError(err, 'failed to open ' + name), 'error');
+			console.error(err);
+			return false;
+		} finally {
 			releaseBindingTransition();
-			if (bound) {
-				const acknowledged = await _markSavedGeneration(
-					openedState.generation,
-					true,
-					text,
-					openedState.documentRevision,
-					name,
-					{
-						expectedEpoch: openedState.epoch,
-						expectedAuthority: openedState.authority,
-					},
-				);
-				if (!acknowledged) return false;
-			} else {
-				try { await rapierFlushDirty({ snapshot: true, durable: true }); } catch (_) {}
+			// The latest opener lets the reading point go when it ends, resumed or not; a newer open's commit
+			// has replaced the debt with its own.
+			if (openEpoch === rapier.identity.userLoadEpoch) _rapierReleaseReadingPoint();
+			if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
+				try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
 			}
-			if (!stillOpened()) return false;
-		}
-		const openedBytesStillCurrent = openedState.generation === Number(rapier.revision.generation || 0) &&
-			openedState.documentRevision === Number(rapier.revision.settled || 0);
-		if (openedBytesStillCurrent) {
-			rapier.document.bom = payload.bom === true;
-			dismissTransientSurfaces(true);
-			if (viewContinuity) {
-				_rapierRestoreViewContinuity(viewContinuity);
-			} else {
-				rapierSetMode('read');
-				// The same file (name and bytes) read here before opens where it was left.
-				if (payload.transient !== true) _rapierResumeReadingPoint(name, text);
-			}
-		}
-		if (payload.transient !== true && window.RapierPlatform && window.RapierPlatform.files.noteRecent) {
-			try {
-				window.RapierPlatform.files.noteRecent(
-					name,
-					payload.path || name,
-					openedState.authority
-				);
-			} catch (_) {}
-		}
-		return true;
-	} catch (err) {
-		showToast(_rapierDocumentReadError(err, 'failed to open ' + name), 'error');
-		console.error(err);
-		return false;
-	} finally {
-		releaseBindingTransition();
-		// The latest opener lets the reading point go when it ends, resumed or not; a newer open's commit
-		// has replaced the debt with its own.
-		if (openEpoch === rapier.identity.userLoadEpoch) _rapierReleaseReadingPoint();
-		if (window.RapierPlatform && window.RapierPlatform.files.clearIntake) {
-			try { window.RapierPlatform.files.clearIntake(payload); } catch (_) {}
 		}
 	}
 }
@@ -21519,11 +21607,18 @@ function _rapierSettleListContinuations(host) {
 		element.removeAttribute('data-rapier-list-continues');
 		element.removeAttribute('data-rapier-list-through');
 	});
-	const blocks = Array.from(host.children, wrapper => {
-		if (!wrapper.classList.contains('block-wrapper') || wrapper.classList.contains('block-wrapper--editing')) return null;
-		const read = Array.from(wrapper.children).find(child => child.classList.contains('block-read'));
-		return read && read.childElementCount === 1 ? read.firstElementChild : null;
-	});
+	// Only a wrapper with a read surface can hold a list or a heading (a sleeping one holds no nodes), so the browser
+	// finds those and every other child stands as one empty place: a run of empty places reads as one, since a list
+	// continues only across headings that stand right after it.
+	const blocks = [];
+	let previous = null;
+	for (const read of host.querySelectorAll(':scope > .block-wrapper:not(.block-wrapper--editing) > .block-read')) {
+		const wrapper = read.parentElement;
+		if (wrapper === previous) continue;
+		if (previous && previous.nextElementSibling !== wrapper) blocks.push(null);
+		blocks.push(read.childElementCount === 1 ? read.firstElementChild : null);
+		previous = wrapper;
+	}
 	_rapierMarkListContinuations(blocks);
 }
 function _rapierWatchListContinuations() {
@@ -21959,7 +22054,7 @@ function _rapierPandocDialectExportText(source) {
 // A browser that cannot decode JPEG XL cannot convert it, and the copy then carries the picture's
 // own bytes and SAYS so once -- never the cannot-show notice in the picture's place, and never
 // silently.
-async function _rapierPortableMarkdownForCopy(canonical) {
+async function _rapierPortableMarkdownForCopy(canonical, progress = null) {
 	const assets = globalThis.RapierImageAssets;
 	if (!assets || !/data:image\/jxl/i.test(canonical)) return canonical;
 	try {
@@ -21973,7 +22068,7 @@ async function _rapierPortableMarkdownForCopy(canonical) {
 			root.appendChild(image);
 		}
 		if (!root.childElementCount) return canonical;
-		await globalThis.RapierEmbeddedImages.materialize(root, canonical, substitutions);
+		await globalThis.RapierEmbeddedImages.materialize(root, canonical, substitutions, {progress});
 		if (!substitutions.size) return canonical;
 		let out = canonical;
 		for (const row of destinations) {
@@ -21990,84 +22085,96 @@ async function _rapierPortableMarkdownForCopy(canonical) {
 async function rapierCopy(kind, suppliedCapture = null) {
 	const captured = suppliedCapture || await _rapierCaptureSettledExternalDocument();
 	if (!captured) return false;
-	const requested = kind === 'formatted' || kind === 'plain' ? kind : 'markdown';
-	const canonical = captured.canonical;
-	const metadata = captured.metadata;
+	// The copy is made under the progress popup (JPEG XL pictures are converted on the way); its Cancel drops the copy. A formatted
+	// copy renders the whole document and holds the page, so a large one shows it at once (measured at CPU 4: a 10 MB Markdown
+	// copy takes 0.1 s, where the popup only flashed).
+	const controller = new AbortController();
+	const popup = await _rapierProgressAhead(kind === 'formatted' ? captured.canonical.length : 0, {label: 'Copying', cancel: () => controller.abort()});
+	const progress = fraction => popup.set(fraction), ready = () => { popup.end(); return !controller.signal.aborted; };
+	try {
+		const requested = kind === 'formatted' || kind === 'plain' ? kind : 'markdown';
+		const canonical = captured.canonical;
+		const metadata = captured.metadata;
 
-	if (requested === 'markdown') {
+		if (requested === 'markdown') {
 
-		const portable = metadata.docKind === 'markdown' ? await _rapierPortableMarkdownForCopy(canonical) : canonical;
-		const text = metadata.docKind === 'markdown' && _rapierPandocDialectEnabled()
-			? _rapierPandocDialectExportText(portable) : portable;
-		const copied = await _rapierWriteTextClipboard(text);
-		if (copied === null) return false;
-		showToast(copied
-			? (metadata.docKind === 'markdown' ? 'copied Markdown' : 'copied source')
-			: 'copy failed — try selecting all and copying manually', copied ? 'success' : 'error');
-		return copied;
-	}
+			const portable = metadata.docKind === 'markdown' ? await _rapierPortableMarkdownForCopy(canonical, progress) : canonical;
+			if (!ready()) return false;
+			const text = metadata.docKind === 'markdown' && _rapierPandocDialectEnabled()
+				? _rapierPandocDialectExportText(portable) : portable;
+			const copied = await _rapierWriteTextClipboard(text);
+			if (copied === null) return false;
+			showToast(copied
+				? (metadata.docKind === 'markdown' ? 'copied Markdown' : 'copied source')
+				: 'copy failed — try selecting all and copying manually', copied ? 'success' : 'error');
+			return copied;
+		}
 
-	if (requested === 'plain' && metadata.docKind !== 'markdown') {
-		const copied = await _rapierWriteTextClipboard(canonical);
-		if (copied === null) return false;
-		showToast(copied ? 'copied plain text' : 'copy failed — try selecting all and copying manually', copied ? 'success' : 'error');
-		return copied;
-	}
+		if (requested === 'plain' && metadata.docKind !== 'markdown') {
+			const copied = await _rapierWriteTextClipboard(canonical);
+			if (copied === null) return false;
+			showToast(copied ? 'copied plain text' : 'copy failed — try selecting all and copying manually', copied ? 'success' : 'error');
+			return copied;
+		}
 
-	const context = {
-		canonical,
-		metadata,
-		baseName: metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document',
-		semanticRoot: _rapierRenderSemanticRoot(canonical, metadata),
-	};
-	if (requested === 'formatted') {
-		try { await globalThis.RapierEmbeddedImages.materialize(context.semanticRoot, canonical); }
-		catch (error) { showToast('Image copy failed: ' + error.message, 'error'); return false; }
-	}
-	const portableRoot = _rapierProjectPortableRoot(context.semanticRoot, { baseName: context.baseName });
-	// The words are the text file's (Export .txt): a remote picture held back until the person allows it is said as the picture, not as its placeholder.
-	const plain = metadata.docKind === 'markdown'
-		? _rapierPortablePlainText(_rapierProjectPortableRoot(_rapierRenderModule('render-markdown')._rapierHeldPicturesAsWords(context.semanticRoot), { baseName: context.baseName }))
-		: canonical;
+		const context = {
+			canonical,
+			metadata,
+			baseName: metadata.filename.replace(/\.[a-z0-9]+$/i, '') || 'document',
+			semanticRoot: _rapierRenderSemanticRoot(canonical, metadata),
+		};
+		if (requested === 'formatted') {
+			try { await globalThis.RapierEmbeddedImages.materialize(context.semanticRoot, canonical, null, {progress}); }
+			catch (error) { showToast('Image copy failed: ' + error.message, 'error'); return false; }
+		}
+		const portableRoot = _rapierProjectPortableRoot(context.semanticRoot, { baseName: context.baseName });
+		// The words are the text file's (Export .txt): a remote picture held back until the person allows it is said as the picture, not as its placeholder.
+		const plain = metadata.docKind === 'markdown'
+			? _rapierPortablePlainText(_rapierProjectPortableRoot(_rapierRenderModule('render-markdown')._rapierHeldPicturesAsWords(context.semanticRoot), { baseName: context.baseName }))
+			: canonical;
 
-	if (requested === 'plain') {
-		const copied = await _rapierWriteTextClipboard(plain);
-		if (copied === null) return false;
-		showToast(copied ? 'copied plain text' : 'copy failed — try selecting all and copying manually', copied ? 'success' : 'error');
-		return copied;
-	}
+		if (requested === 'plain') {
+			const copied = await _rapierWriteTextClipboard(plain);
+			if (copied === null) return false;
+			showToast(copied ? 'copied plain text' : 'copy failed — try selecting all and copying manually', copied ? 'success' : 'error');
+			return copied;
+		}
 
-	const html = _rapierPortableHtml(portableRoot);
-	const formatted = await _rapierWriteFormattedClipboard(html, plain, metadata.docKind === 'markdown' ? await _rapierPortableMarkdownForCopy(canonical) : canonical);
-	if (formatted === null) return false;
-	if (formatted) {
-		showToast('copied formatted document', 'success');
-		return true;
-	}
-
-	const lightRoot = portableRoot.cloneNode(true);
-	let strippedImages = 0;
-	lightRoot.querySelectorAll('img[src^="data:"]').forEach(image => {
-		const label = String(image.getAttribute('alt') || 'image').trim() || 'image';
-		const placeholder = document.createElement('span');
-		placeholder.textContent = '[image: ' + label + ']';
-		image.replaceWith(placeholder);
-		strippedImages++;
-	});
-	if (strippedImages) {
-		const lightHtml = _rapierPortableHtml(lightRoot);
-		const lightFormatted = await _rapierWriteFormattedClipboard(lightHtml, plain, canonical);
-		if (lightFormatted === null) return false;
-		if (lightFormatted) {
-			showToast('copied formatted, without pictures', 'info');
+		const html = _rapierPortableHtml(portableRoot);
+		popup?.set(null);
+		const markdown = metadata.docKind === 'markdown' ? await _rapierPortableMarkdownForCopy(canonical) : canonical;
+		if (!ready()) return false;
+		const formatted = await _rapierWriteFormattedClipboard(html, plain, markdown);
+		if (formatted === null) return false;
+		if (formatted) {
+			showToast('copied formatted document', 'success');
 			return true;
 		}
-	}
 
-	const plainFallback = await _rapierWriteTextClipboard(plain);
-	if (plainFallback === null) return false;
-	showToast(plainFallback ? 'copied as plain text' : 'formatted copy failed', plainFallback ? 'info' : 'error');
-	return plainFallback;
+		const lightRoot = portableRoot.cloneNode(true);
+		let strippedImages = 0;
+		lightRoot.querySelectorAll('img[src^="data:"]').forEach(image => {
+			const label = String(image.getAttribute('alt') || 'image').trim() || 'image';
+			const placeholder = document.createElement('span');
+			placeholder.textContent = '[image: ' + label + ']';
+			image.replaceWith(placeholder);
+			strippedImages++;
+		});
+		if (strippedImages) {
+			const lightHtml = _rapierPortableHtml(lightRoot);
+			const lightFormatted = await _rapierWriteFormattedClipboard(lightHtml, plain, canonical);
+			if (lightFormatted === null) return false;
+			if (lightFormatted) {
+				showToast('copied formatted, without pictures', 'info');
+				return true;
+			}
+		}
+
+		const plainFallback = await _rapierWriteTextClipboard(plain);
+		if (plainFallback === null) return false;
+		showToast(plainFallback ? 'copied as plain text' : 'formatted copy failed', plainFallback ? 'info' : 'error');
+		return plainFallback;
+	} finally { popup.end(); }
 }
 
 const RAPIER_DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -22339,8 +22446,9 @@ async function _rapierConvertPortableHtmlToDocx(prepared) {
 	return new Blob([packed], {type: RAPIER_DOCX_MIME});
 }
 
-async function _rapierBuildDocxArtifact(captured, confirmWarnings = false) {
-	const context = await _rapierPrepareInterchangeContext({ format: 'docx' }, captured);
+async function _rapierBuildDocxArtifact(captured, confirmWarnings = false, progress = null) {
+	const context = await _rapierPrepareInterchangeContext({ format: 'docx' }, captured, progress);
+	progress?.(null);
 	const prepared = await _rapierBuildDocxHtml(context);
 	const issues = _rapierAnalyzePortability(context, 'docx');
 	if (confirmWarnings && !await _rapierConfirmDocxWarnings(issues)) return null;
@@ -22401,8 +22509,9 @@ async function _rapierCreateDocxArtifact() {
 		const captured = await _rapierCaptureSettledExternalDocument();
 		if (!captured) return null;
 		busyStarted = true;
-		_rapierUiDocx.applyGenerationState({ busy: true });
-		return _rapierBuildDocxArtifact(captured, true);
+		_rapierUiDocx.applyGenerationState({ busy: true, size: captured.canonical.length });
+		await _rapierUiDocx.shown();
+		return _rapierBuildDocxArtifact(captured, true, fraction => _rapierUiDocx.report(fraction));
 	})().catch(error => {
 		console.warn('[rapier] DOCX generation failed', error);
 		const message = String(error && error.message || error || 'unknown error');
@@ -22419,7 +22528,7 @@ async function _rapierCreateDocxArtifact() {
 
 async function _rapierPerformDocxAction() {
 	const artifact = await _rapierCreateDocxArtifact();
-	if (!artifact) return false;
+	if (!artifact || _rapierUiDocx.cancelled) return false;
 
 	const saved = await _download(artifact.blob, artifact.filename);
 	if (saved !== true) {
@@ -22511,13 +22620,14 @@ function _rapierArtifactNonce(...args) { return _rapierRenderModule('render')._r
 // source goes into the page as a line of text of its own, between the blocks it stood between, and the person's word travels with the
 // file. The plan is the DOCX writer's own: one sentinel paragraph for every marker-shaped line, found again in the rendered page and
 // put back as the exact bytes. A marker that cannot be put back exactly stops the export with WILL LOST, never a silent loss.
-async function _rapierBuildPrintArtifact(capturedDocument = null) {
+async function _rapierBuildPrintArtifact(capturedDocument = null, progress = null) {
 	const canonical = capturedDocument ? String(capturedDocument.canonical || '') : _rapierGetCanonicalText();
 	const metadata = capturedDocument?.metadata || _rapierGetDocumentMetadata();
 	const plan = _rapierWillSentinelPlan(canonical, metadata.docKind);
 	if (plan) _rapierPrintWillAdmit(canonical, plan);
 	const captured = plan ? { ...(capturedDocument || { metadata, plain: _rapierPlainLayout() }), canonical: plan.canonical } : capturedDocument;
-	const context = await _rapierPrepareInterchangeContext({ print: true }, captured);
+	const context = await _rapierPrepareInterchangeContext({ print: true }, captured, progress);
+	progress?.(null);
 	const willFont = plan ? _rapierPrintWillFont(plan.markers) : null;
 	const artifact = await _rapierBuildArtifact({ print: true, willFont, extraCss: plan ? _rapierPrintWillPageCss() : '', afterRoot: plan ? root => _rapierPrintWillPlace(root, plan) : null }, context);
 	return { ...artifact, filename: context.baseName + '.pdf', willFont };
@@ -22902,40 +23012,50 @@ async function _rapierPrintArtifactInPlace(artifact) {
 }
 
 async function rapierExport(fmt) {
+	// The build shows the progress popup until the file is ready (at once for a large document, which holds the page while it is
+	// built: editor/pop.js _rapierProgressAhead); its Cancel drops the file before anything is saved.
+	let popup = null;
 	try {
 	if (fmt === 'docx') return _rapierExportDocx();
+	const controller = new AbortController();
+	const ready = () => { popup?.end(); return !controller.signal.aborted; };
+	popup = await _rapierProgressAhead(rapier.document.source.length, {cancel: () => controller.abort(),
+		label: fmt === 'pdf' ? 'Exporting PDF' : fmt === 'txt' ? 'Exporting text' : /publishing|fragment/.test(fmt) ? 'Exporting HTML' : 'Exporting web page'});
 	const captured = await _rapierCaptureSettledExternalDocument();
 	if (!captured) return false;
+	const progress = fraction => popup?.set(fraction);
 
 	if (fmt === 'pdf') {
-
-		return _rapierPrintArtifactInPlace(await _rapierBuildPrintArtifact(captured));
+		const artifact = await _rapierBuildPrintArtifact(captured, progress);
+		return ready() && _rapierPrintArtifactInPlace(artifact);
 	}
 
-	const context = fmt === 'txt' ? _rapierBuildInterchangeContext({format:fmt}, captured) : await _rapierPrepareInterchangeContext({ format: fmt }, captured);
+	const context = fmt === 'txt' ? _rapierBuildInterchangeContext({format:fmt}, captured) : await _rapierPrepareInterchangeContext({ format: fmt }, captured, progress);
 
 	if (fmt === 'txt') {
 		const text = _rapierRenderModule('render-markdown')._rapierPlainTextFile(context);
-		return await _download(new Blob([text], { type: 'text/plain' }), context.baseName + '.txt') === true;
+		return ready() && await _download(new Blob([text], { type: 'text/plain' }), context.baseName + '.txt') === true;
 	}
 
 	if (fmt === 'html-publishing' || fmt === 'html-fragment') {
+		popup.set(null);
 		const artifact = await _rapierBuildArtifact({ kind: 'publishing' }, context);
-		return await _download(new Blob([artifact.html], { type: 'text/html' }), artifact.filename) === true;
+		return ready() && await _download(new Blob([artifact.html], { type: 'text/html' }), artifact.filename) === true;
 	}
 
 	if (fmt === 'html' || fmt === 'html-standalone') {
+		popup.set(null);
 		const artifact = await _rapierBuildArtifact({ kind: 'standalone' }, context);
 		const blob = new Blob([artifact.html], { type: 'text/html' });
 		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This web page exceeds 25 MiB. Use Share or reduce the pictures');
-		return await _download(blob, artifact.filename) === true;
+		return ready() && await _download(blob, artifact.filename) === true;
 	}
 
 	return false;
 	} catch (error) {
 		showToast('Could not export: ' + String(error?.message || error), 'error');
 		return false;
-	}
+	} finally { popup?.end(); }
 }
 
 function _rapierExportOutcome(result) {
@@ -23179,8 +23299,32 @@ function _findCurrentRange() {
 	const range = match && match.range;
 	if (!(range instanceof Range)) return null;
 	const editor = document.getElementById('editor-blocks');
+	if (!editor) return null;
+	// An open review is drawn into a block again whenever any block wakes (_rapierWysiwygWake, _rapierReviewDecorateBlock),
+	// which replaces the text nodes the block's matches were made in: they collapse, still inside the editor. Each
+	// collapsed match is found again in its block's text as it is now, at the same occurrence of the same words, and its
+	// own Range takes the new ends, so the highlights that hold it paint the words again.
+	if (range.collapsed && match.blockId != null && typeof match.shown === 'string') {
+		const memo = _rapierFindRuntime.documentGuard?.projection;
+		const projections = new Map();
+		for (const record of rapier.find.ranges) {
+			if (record.blockId == null || typeof record.shown !== 'string' || !(record.range instanceof Range) || !record.range.collapsed) continue;
+			if (!projections.has(record.blockId)) {
+				const projection = _rapierFindBlockProjection(record.blockId, memo?.blocks?.get(record.blockId));
+				if (projection && memo?.blocks) memo.blocks.set(record.blockId, projection);
+				projections.set(record.blockId, projection);
+			}
+			const projection = projections.get(record.blockId);
+			const hit = projection && _rapierFindLiteralHits(projection.text, record.shown, _RAPIER_FIND_MATCH_LIMIT).hits[record.ordinal];
+			const found = hit && _rapierFindProjectionRange(projection, hit.start, hit.end);
+			if (!found) continue;
+			record.range.setStart(found.startContainer, found.startOffset);
+			record.range.setEnd(found.endContainer, found.endOffset);
+		}
+		if (range.collapsed) return null;
+	}
 	const start = range.startContainer;
-	return editor && (start === editor || editor.contains(start)) ? range : null;
+	return start === editor || editor.contains(start) ? range : null;
 }
 
 function _findOverlayRoot() {
@@ -23413,10 +23557,24 @@ function _rapierFindFlexibleSeparatorHits(textValue, queryValue, limit = _RAPIER
 }
 
 function _rapierFindBlockProjection(blockId, prior = null) {
-
-	const wrapper = _rapierWysiwygWake(
-		_rapierWysiwygLedger.entries.get(String(blockId))?.wrapper);
-	const el = wrapper && (wrapper.querySelector('.block-edit') || wrapper.querySelector('.block-read'));
+	// A block the render window has put to sleep is read from the nodes it parked, which it keeps until it wakes them:
+	// a hit's range in them paints once the block is on the page again. Waking every block with a hit made a long
+	// document's whole DOM live for the first letter typed. The match a step goes to is woken (rapierFindStep), as is
+	// the first one (rapierFindRun). A block never rendered is woken as before.
+	let wrapper = _rapierWysiwygLedger.entries.get(String(blockId))?.wrapper;
+	const parked = wrapper && !wrapper._rapierUnrendered && Array.isArray(wrapper._rapierDormant) ? wrapper._rapierDormant : null;
+	if (!parked) wrapper = _rapierWysiwygWake(wrapper);
+	const inParked = selector => {
+		for (const node of parked) {
+			if (node.nodeType !== Node.ELEMENT_NODE) continue;
+			if (node.matches(selector)) return node;
+			const inner = node.querySelector(selector);
+			if (inner) return inner;
+		}
+		return null;
+	};
+	const el = wrapper && (parked ? inParked('.block-edit') || inParked('.block-read')
+		: wrapper.querySelector('.block-edit') || wrapper.querySelector('.block-read'));
 	if (!el) return null;
 	const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
 		acceptNode(node) {
@@ -23539,14 +23697,22 @@ function _rapierFindIndexHits(source, query, surface = 'rendered', memo = null) 
 		const shown = shownHits.get(key);
 		const target = shown[ordinal];
 		if (target) record.range = _rapierFindProjectionRange(projection, target.start, target.end);
+		// The words shown and which of them in the block: what finds this match again (_findCurrentRange).
+		record.shown = literal;
+		record.ordinal = ordinal;
 		return record;
 	});
 	return { records, overflow: result.overflow, flexible: !!result.flexible };
 }
 
 function rapierFindRun() {
-	const query = document.getElementById('find-input').value;
-	const projection = _rapierFindOwnsCurrentDocument() ? _rapierFindRuntime.documentGuard.projection : {};
+	const input = document.getElementById('find-input');
+	const query = input.value;
+	// The reading the open bar made in idle time (rapierSetFindOpen), as _rapierFindIndexHits would have stored it.
+	const warm = input._rapierFindWarm;
+	const projection = _rapierFindOwnsCurrentDocument() ? _rapierFindRuntime.documentGuard.projection
+		: warm && rapier.view.mode !== 'source' && rapier.document.docKind === 'markdown'
+			? { visible: warm, spans: null, blocks: new Map() } : {};
 	rapierFindClear();
 	_setFindCount(0, 0);
 	if (!query) return;
@@ -23577,6 +23743,8 @@ function rapierFindRun() {
 	rapier.find.ranges = indexed.records;
 	rapier.find.current = 0;
 	if (indexed.records.length) {
+		const first = indexed.records[0];
+		if (first.blockId != null) _rapierWysiwygWake(_rapierWysiwygLedger.entries.get(String(first.blockId))?.wrapper);
 		const painted = indexed.records.map(record => record.range).filter(Boolean);
 		if (CSS.highlights && painted.length) {
 			CSS.highlights.set('rapier-find-all', new Highlight(...painted));
@@ -23604,6 +23772,8 @@ function rapierFindStep(dir) {
 		_rapierScheduleRestoreCursor(260);
 		return;
 	}
+	// Its block may be asleep with the match's range in its parked nodes (_rapierFindBlockProjection).
+	if (match && match.blockId != null) _rapierWysiwygWake(_rapierWysiwygLedger.entries.get(String(match.blockId))?.wrapper);
 	if (_findCurrentRange()) _findHighlightCurrent(false);
 	else _findRevealCurrent(_rapierFindRuntime.revealEpoch);
 	_setFindCount(rapier.find.current + 1, _rapierFindTotalLabel());
@@ -24095,6 +24265,77 @@ function _rapierFinishMutationBarrier() {
 	if (_rapierMutationBarrierActive()) return false;
 	_rapierReleaseMutationBarrierWaiters();
 	_rapierReleaseDeferredAutosave();
+	// What was typed while the edit was in flight (_rapierSuppressMutationEvent) is done where the caret stands now (after a paste,
+	// after its words), once the edit has placed its caret, in the order it was typed, on the surface it was typed into; nowhere
+	// to do it is said, never silent.
+	const host = _editorHostEl(), source = document.getElementById('source-textarea');
+	const surfaces = [host, source].filter(surface => surface && surface._rapierHeld && surface._rapierHeld.length);
+	const word = host && host._rapierHeldWord && host._rapierHeldWord.commit != null ? host._rapierHeldWord : null;
+	const stray = host && host._rapierHeldWord && host._rapierHeldWord.text && host._rapierHeldWord.end == null && host._rapierHeldWord.outside ? host._rapierHeldWord : null;
+	if (surfaces.length || word || stray) setTimeout(() => {
+		if (_rapierMutationBarrierActive()) return;
+		if (stray && host._rapierHeldWord === stray && stray.end == null) {
+			// A word composed while the page was being redrawn, where no block was open: the browser wrote it into the drawn page.
+			// That block is drawn again from its source, and the word is typed at the caret; the keyboard's late commit of it, in
+			// the same composition, is then that word (below).
+			const block = _rapierBoundBlock(stray.outside), read = stray.outside.querySelector(':scope > .block-read');
+			if (block && stray.outside.isConnected && !stray.outside.classList.contains('block-wrapper--editing')) {
+				if (read) read._rapierProjectionHtml = null;
+				_writeBlockDOM(stray.outside, block);
+			}
+			const open = _activeBlockEditContext() || _rapierStrayKeyOpensBlock(host, host, true, true);
+			if (!open) showToast('What was typed while the change finished could not be placed: ' + stray.text, 'error');
+			else {
+				_rapierCaretHome(open);
+				_rapierInsertStrayKey(open.editDiv, stray.text);
+				_rapierCheckpointEdit(open.editDiv);
+				const last = rapier.undo.branch[rapier.undo.cursor - 1], row = last && last.splices && last.splices[0];
+				const typed = row && _rapierPrefixSuffixDiff(String(row.removed || ''), String(row.inserted || ''));
+				if (typed) { stray.folded = stray.text; stray.end = Number(row.pos) + typed.pos + typed.inserted.length; }
+			}
+			if (stray.ended || !open) host._rapierHeldWord = null;
+		}
+		if (word && host._rapierHeldWord === word) {
+			host._rapierHeldWord = null;
+			// The keyboard's late commit of the word a paste folded into the source while it was still being composed (the same
+			// composition: no end of it had come) is that word, not new words: the same word is written once, a word the keyboard
+			// corrected replaces it where it stands by the difference only, and words of its own are typed at the caret.
+			const was = word.folded, now = word.commit, diff = _rapierPrefixSuffixDiff(was, now);
+			const corrected = now !== was && /^\S+$/.test(now) && diff.removed.length < was.length;
+			let at = corrected ? _rapierBlockAtSourceOffset(_rapierBodyOffsetOfCanonical(word.end)) : null;
+			const open = at && _activeBlockEditContext(), mine = !!open && open.block.id === at.block.id;
+			if (mine) { _rapierCheckpointEdit(open.editDiv); at = _rapierBlockAtSourceOffset(_rapierBodyOffsetOfCanonical(word.end)); }
+			const raw = at ? String(at.block.raw || '') : '', from = at ? at.offset - was.length : -1;
+			if (now === was) { /* written once already */ }
+			else if (corrected && from >= 0 && raw.slice(from, at.offset) === was) {
+				const selection = window.getSelection(), range = mine && selection.rangeCount ? selection.getRangeAt(0) : null;
+				const caret = range && open.editDiv.contains(range.startContainer)
+					? _charOffsetForRangePoint(open.editDiv, range.startContainer, range.startOffset) + diff.inserted.length - diff.removed.length : Infinity;
+				const next = raw.slice(0, from + diff.pos) + diff.inserted + raw.slice(from + diff.pos + diff.removed.length);
+				_replaceOneBlockWithRawSet(at.block, [next], 0, caret, mine ? { preserveRaw: true, activeContext: open } : { preserveRaw: true, edit: false });
+			} else (host._rapierHeld || (host._rapierHeld = [])).unshift({ text: now });
+		}
+		for (const surface of [host, source]) {
+			const steps = surface && surface._rapierHeld;
+			if (!steps || !steps.length) continue;
+			surface._rapierHeld = [];
+			const words = steps.map(step => step.text || '').join('');
+			if (surface === source) {
+				if (!source.isConnected || source.offsetParent === null) { showToast('What was typed while the change finished could not be placed: ' + words, 'error'); continue; }
+				source.focus({ preventScroll: true });
+				for (const step of steps) document.execCommand(step.text != null || step.key === 'Enter' ? 'insertText' : step.key === 'Backspace' ? 'delete' : 'forwardDelete', false, step.text != null ? step.text : '\n');
+				continue;
+			}
+			if (!_activeBlockEditContext() && !_rapierStrayKeyOpensBlock(host, host, true, true)) { showToast('What was typed while the change finished could not be placed: ' + words, 'error'); continue; }
+			for (const [index, step] of steps.entries()) {
+				const open = _activeBlockEditContext();
+				if (!open) { showToast('What was typed while the change finished could not be placed: ' + steps.slice(index).map(rest => rest.text || '').join(''), 'error'); break; }
+				_rapierCaretHome(open);
+				if (step.text != null) _rapierInsertStrayKey(open.editDiv, step.text);
+				else _rapierStrayStep(step.key, step.shift === true);
+			}
+		}
+	}, 0);
 	return true;
 }
 
@@ -24122,15 +24363,37 @@ function _rapierTrustedMutationKey(event) {
 
 function _rapierSuppressMutationEvent(event) {
 	if (!event.isTrusted || !_rapierMutationBarrierActive()) return;
+	// What is typed into the document while an edit is in flight (a paste spans frames, and the keyboard stays up) is held, in order
+	// and with the surface it was typed into, and done when the edit finishes (_rapierFinishMutationBarrier), never dropped: letters,
+	// Backspace, Delete and Enter, from a phone's input or a keyboard's keys, in the page or in the source.
+	const host = _editorHostEl(), source = document.getElementById('source-textarea'), type = String(event.inputType || '');
+	const surface = host && host.contains(event.target) ? host : source && event.target === source ? source : null;
+	const key = event.type === 'keydown' && !event.ctrlKey && !event.metaKey && !event.altKey ? String(event.key || '') : '';
+	const steps = key.length === 1 ? [{ text: key }]
+		: type === 'insertText' && typeof event.data === 'string' ? event.data.split(/\r\n?|\n/).flatMap((text, line) => [...(line ? [{ key: 'Enter' }] : []), ...(text ? [{ text }] : [])])
+		: key === 'Backspace' || type === 'deleteContentBackward' ? [{ key: 'Backspace' }]
+		: key === 'Delete' || type === 'deleteContentForward' ? [{ key: 'Delete' }]
+		: key === 'Enter' || type === 'insertParagraph' || type === 'insertLineBreak' ? [{ key: 'Enter', shift: event.shiftKey === true || type === 'insertLineBreak' }] : [];
+	// A word the keyboard begins composing meanwhile cannot be refused. What it holds is kept in sight, so that a paste folding it
+	// into the source (_rapierRunLargePaste) can tell the keyboard's late commit of that word, in the same composition, from new words.
+	const word = surface === host && host._rapierHeldWord;
+	if (surface === host && event.type === 'compositionstart') host._rapierHeldWord = { text: '' };
+	else if (word && type === 'insertCompositionText') {
+		word.text = String(event.data || '');
+		// Where no block is open (a paste redrawing the page has not yet put the caret back) the browser writes the word into the
+		// drawn page, which the source never sees: the block it went into is kept, for the word to be put right when the edit ends.
+		const range = typeof event.getTargetRanges === 'function' ? event.getTargetRanges()[0] : null, node = range && range.startContainer;
+		if (node && word.outside === undefined) word.outside = _nodeInsideActiveEdit(node) ? null : (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-wrapper') || null;
+	}
+	else if (word && (word.end != null || word.outside && word.text) && word.commit == null && type === 'insertText' && typeof event.data === 'string') word.commit = event.data;
+	else if (surface && steps.length) (surface._rapierHeld || (surface._rapierHeld = [])).push(...steps);
 	event.preventDefault();
 	event.stopImmediatePropagation();
 }
 
 window.addEventListener('beforeinput', _rapierSuppressMutationEvent, true);
 window.addEventListener('keydown', function _rapierGuardPendingMutation(event) {
-	if (!event.isTrusted || !_rapierMutationBarrierActive() || !_rapierTrustedMutationKey(event)) return;
-	event.preventDefault();
-	event.stopImmediatePropagation();
+	if (_rapierTrustedMutationKey(event)) _rapierSuppressMutationEvent(event);
 }, true);
 window.addEventListener('cut', _rapierSuppressMutationEvent, true);
 window.addEventListener('drop', _rapierSuppressMutationEvent, true);
@@ -24662,7 +24925,7 @@ function _writeLocalSnapshot(
 			stateIntegrity: _rapierRecoveryStateIntegrity(recoveryState),
 			authorityIntegrity: documentAuthority ? _rapierTextIntegrity(String(documentAuthority)) : null,
 			charCount: markdown.length,
-			integrity: _rapierTextIntegrity(markdown),
+			integrity: _rapierIntegrityOf(markdown),
 			ts: Date.now(),
 		});
 		try {
@@ -24768,8 +25031,14 @@ function _fmtRelativeTs(ms) {
 }
 
 async function _restoreCanonicalDocument(text, filename, generation, documentRevision, nextBlockId, savedGeneration, documentAuthority, virtualDocumentKind, saveAsRequired, segmentIdentity) {
-	const loaded = await rapierLoad(text, filename, {
+	// The kept document opens under the progress popup, at once for a large one (editor/pop.js _rapierProgressAhead). The
+	// document as it stands before that wait is the one the restore may replace: one loaded meanwhile is newer and stays.
+	const expectedMutationStamp = _rapierMutationStamp();
+	const opening = await _rapierProgressAhead(String(text ?? '').length, {label: 'Opening document'});
+	let loaded;
+	try { loaded = await rapierLoad(text, filename, {
 		restore: true,
+		expectedMutationStamp,
 		documentAuthority: String(documentAuthority || ''),
 		virtualDocumentKind: _rapierNormalizeVirtualDocumentKind(virtualDocumentKind),
 		saveAsRequired: saveAsRequired === true,
@@ -24781,7 +25050,7 @@ async function _restoreCanonicalDocument(text, filename, generation, documentRev
 			segmentIdentity,
 		},
 		returnReceipt: true,
-	});
+	}); } finally { opening.end(); }
 	if (!loaded) return false;
 	if (!_rapierLoadReceiptIsCurrent(loaded)) return false;
 	rapier.autosave.dirty.clear();
@@ -25547,7 +25816,10 @@ function _writeRestoreCursor() {
 const RAPIER_READING_POINTS_MAX = 16;
 function _rapierReadingPointKey(filename, text) {
 	if (rapier.document.docKind !== 'markdown' || !filename) return '';
-	return String(filename) + '\n' + _rapierSpliceHash(String(text == null ? '' : text));
+	// The source store keeps the current text's integrity, so a scroll's or a pause's write does not hash the whole
+	// document again; any other text is hashed as before. Both give _rapierSpliceHash's value.
+	const fact = _rapierIntegrityOf(String(text == null ? '' : text));
+	return String(filename) + '\n' + fact.chars + ':' + fact.fnv + ':' + fact.adler;
 }
 function _rapierReadReadingPoints() {
 	try {
@@ -26598,9 +26870,12 @@ async function _rapierConvertImageFormat(blockId, imageIndex, format, alt) {
         return _rapierMutationStampIsCurrent(stamp) && loadToken === rapier.identity.loadToken && !!now && now.image.source === occurrence;
     };
     let file;
+    // One popup for the whole change; Cancel gives it up before anything is written.
+    const controller = new AbortController();
+    const popup = _rapierProgressOpen({label: 'Saving picture', after: 500, cancel: () => controller.abort()});
     try {
-        showToast(format === 'jxl' ? 'Making the compact picture…' : 'Converting the picture…', 'info');
         const row = await embedded.portable(_rapierSourceText(), id, {png: format === 'png'});
+        controller.signal.throwIfAborted();
         let bytes = assets.decodeDataImage(row.url), type = row.type;
         if (format === 'jpeg' && type !== 'image/jpeg') {
             const decoded = await _rapierDecodeRaster(new Blob([bytes], {type}));
@@ -26621,13 +26896,15 @@ async function _rapierConvertImageFormat(blockId, imageIndex, format, alt) {
         }
         const ext = type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : type === 'image/jxl' ? 'jxl' : 'png';
         file = new File([bytes], 'picture.' + ext, {type});
+        controller.signal.throwIfAborted();
     } catch (error) {
-        showToast('Picture format could not be changed: ' + String(error.message || error), 'error');
+        popup.end();
+        if (error?.name !== 'AbortError') showToast('Picture format could not be changed: ' + String(error.message || error), 'error');
         return false;
     }
-    if (!fresh()) { showToast('The picture changed; open it again', 'info'); return false; }
+    if (!fresh()) { popup.end(); showToast('The picture changed; open it again', 'info'); return false; }
     return _rapierPasteRasterImage(file, {replaceImage: {blockId, imageIndex}, defaultAlt: alt,
-        direct: {profile: format === 'jxl' ? 'jxl' : 'original', fresh}});
+        direct: {profile: format === 'jxl' ? 'jxl' : 'original', fresh, signal: controller.signal, progress: fraction => popup.set(fraction)}}).finally(popup.end);
 }
 function _rapierEditSelectedImage() {
     if (_rapierUserMutationBlocked()) return;
@@ -26746,7 +27023,6 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
     const assets = globalThis.RapierImageAssets;
     const check = () => options.signal?.throwIfAborted();
     check();
-    options.status?.('Opening image…');
     const {bytes, isJxl, mime, info} = options.input || await _rapierReadRasterFile(file);
     check();
     const finish = async (data, width, height) => {
@@ -26760,13 +27036,11 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
     if (mime === 'image/jpeg' && profile === 'jxl' && !transform && _rapierJxlEncoderPresent()) {
         const longest = Math.max(info?.width || 0, info?.height || 0);
         if (!(options.maxDimension > 0 && longest > options.maxDimension)) {
-            options.status?.('Carrying the JPEG into the compact image…');
             let carried = null;
             try { carried = await globalThis.RapierEmbeddedImages.codec('transcode', {bytes: bytes.slice()}, {signal: options.signal}); }
             catch (error) { if (error?.name === 'AbortError') throw error; }
             check();
             if (carried?.bytes && assets.validCarriedDimensions(carried.width, carried.height)) {
-                options.status?.('Preparing the embedded image…');
                 return await finish(carried.bytes, carried.width, carried.height);
             }
         }
@@ -26812,14 +27086,12 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
         }
         const wantsJxl = profile === 'jxl' || isJxl && resized;
         if (wantsJxl && _rapierJxlEncoderPresent()) {
-            options.status?.('Making the compact image on this device…');
             const rgba = context.getImageData(0, 0, width, height);
             canvas.width = 0; canvas.height = 0; canvas = null;
             const encoded = await globalThis.RapierEmbeddedImages.codec('encode', {
                 width, height, data: rgba.data, options: {quality: 90, lossless: mime === 'image/png', photo: true},
-            }, {signal: options.signal});
+            }, {signal: options.signal, progress: options.progress});
             check();
-            options.status?.('Preparing the embedded image…');
             return await finish(encoded.bytes, width, height);
         }
         // The document profile ships no JPEG XL encoder: the same portable choice Share already
@@ -26827,7 +27099,6 @@ async function _rapierNormaliseRaster(file, profile = 'jxl', transform = null, o
         // here too -- PNG, or JPEG at quality 0.92 for an opaque photograph when smaller --
         // wherever this build would otherwise have made a JPEG XL.
         if (profile === 'portable' || wantsJxl && !_rapierJxlEncoderPresent()) {
-            options.status?.('Preparing the embedded image…');
             const rgba = context.getImageData(0, 0, width, height);
             let opaque = true;
             for (let at = 3; at < rgba.data.length; at += 4) if (rgba.data[at] !== 255) { opaque = false; break; }
@@ -26888,15 +27159,16 @@ async function _rapierPasteRasterImage(file, target = {}) {
         // full size, the chosen codec, committed through the same replace splice as a chosen file.
         const profile = target.direct.profile === 'original' ? 'original' : _rapierDefaultImageProfile();
         try {
-            const result = await _rapierNormaliseRaster(file, profile, null, {input: read.value, title: current?.image.title || '', maxDimension: 0});
-            const normalized = await globalThis.RapierEmbeddedImages.prepare(result);
+            const {signal, progress} = target.direct;
+            const result = await _rapierNormaliseRaster(file, profile, null, {input: read.value, title: current?.image.title || '', maxDimension: 0, signal, progress});
+            const normalized = await globalThis.RapierEmbeddedImages.prepare(result, {signal});
             if (!_rapierMutationStampIsCurrent(stamp) || _rapierUserMutationBlocked() || target.direct.fresh && !target.direct.fresh()) { showToast('The picture changed; open it again', 'info'); return false; }
             const raw = '![' + _rapierEscapeImageAlt(alt.trim()) + '][' + normalized.reference + ']';
             const done = await globalThis.RapierEmbeddedImages.insert(normalized, raw, captured, stamp);
             if (!done) showToast('Document changed; choose the image again', 'info');
             return done;
         } catch (error) {
-            showToast('Picture format could not be changed: ' + String(error.message || error), 'error');
+            if (error?.name !== 'AbortError') showToast('Picture format could not be changed: ' + String(error.message || error), 'error');
             return false;
         }
     }
@@ -26904,20 +27176,21 @@ async function _rapierPasteRasterImage(file, target = {}) {
     let active = null, previewVersion = 0;
     const choiceKey = (profile, size) => (read.value.isJxl ? 'jxl' : profile) + ':' +
         (size === 'fit' && Math.max(read.value.info.width, read.value.info.height) > fitLimit ? 'fit' : 'full');
-    async function prepareChoice(profile, size, status) {
+    // `progress`, from a submit, follows the encode; a submit that finds its choice already under way takes it over.
+    async function prepareChoice(profile, size, progress) {
         dialog.signal.throwIfAborted();
         const key = choiceKey(profile, size);
         if (prepared.has(key)) return prepared.get(key);
-        if (active?.key === key) { if (status) active.status = status; return active.promise; }
+        if (active?.key === key) { if (progress) { active.progress = progress; progress(active.fraction); } return active.promise; }
         const previous = active;
         previous?.controller.abort();
-        const job = {key, controller: new AbortController(), status};
+        const job = {key, controller: new AbortController(), progress, fraction: null};
         job.promise = (previous ? previous.promise.catch(() => {}) : Promise.resolve()).then(async () => {
             job.controller.signal.throwIfAborted();
             if (!_rapierMutationStampIsCurrent(stamp)) throw new Error('Document changed; choose the image again.');
             const result = await _rapierNormaliseRaster(file, profile, null, {
                 input: read.value, title: current?.image.title || '', maxDimension: size === 'fit' ? fitLimit : 0,
-                signal: job.controller.signal, status: message => job.status?.(message),
+                signal: job.controller.signal, progress: fraction => { job.fraction = fraction; job.progress?.(fraction); },
             });
             job.controller.signal.throwIfAborted();
             if (!_rapierMutationStampIsCurrent(stamp)) throw new Error('Document changed; choose the image again.');
@@ -26944,11 +27217,11 @@ async function _rapierPasteRasterImage(file, target = {}) {
                 {value: 'fit', label: 'Fit to document', detail: 'Up to 1600 pixels'},
             ]},
         ],
-        okLabel: captured.replaceImage ? 'replace' : 'embed',
+        okLabel: captured.replaceImage ? 'replace' : 'embed', progress: 'Saving picture',
         initialFocus: 'submit', restoreFocus: false,
         async prepare(values, processing) {
             previewVersion++;
-            const normalized = await prepareChoice(values[1] ? 'original' : _rapierDefaultImageProfile(), values[2], processing.status);
+            const normalized = await prepareChoice(values[1] ? 'original' : _rapierDefaultImageProfile(), values[2], processing.progress);
             return globalThis.RapierEmbeddedImages.prepare(normalized, processing);
         },
         async onOk(values, normalized) {
@@ -26966,15 +27239,17 @@ async function _rapierPasteRasterImage(file, target = {}) {
         },
     });
     const choices = Array.from(dialog.inputs[2].querySelectorAll('input'));
+    // A size not yet known keeps the option's own words; the popup says it is being checked (previewChoices).
     const detail = (choice, result, error = '') => {
         const note = choice.closest('label').querySelector('[data-choice-detail]');
+        note.dataset.said ??= note.textContent;
         if (result) {
             const asset = result.asset;
 
             const bytes = asset.block.length + _rapierSourceEncoder.encode(asset.title).length - asset.title.length;
             const size = bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KiB' : (bytes / 1048576).toFixed(1) + ' MiB';
             note.textContent = result.width + ' × ' + result.height + ' · ' + size + ' embedded';
-        } else note.textContent = error || 'Calculating size…';
+        } else note.textContent = error || note.dataset.said;
         note.toggleAttribute('data-error', !!error);
     };
     async function previewChoices() {
@@ -26983,14 +27258,16 @@ async function _rapierPasteRasterImage(file, target = {}) {
         const ordered = choices.slice().sort((a, b) => Number(b.checked) - Number(a.checked));
         for (const choice of choices) detail(choice, prepared.get(choiceKey(profile, choice.value)));
         for (const choice of ordered) {
+            // A size not yet known is measured by encoding it: the popup says so over the dialog.
+            const popup = prepared.has(choiceKey(profile, choice.value)) ? null : dialog.progress({label: 'Checking sizes', after: 500});
             try {
-                const result = await prepareChoice(profile, choice.value);
+                const result = await prepareChoice(profile, choice.value, popup?.set);
                 if (version !== previewVersion || dialog.signal.aborted) return;
                 detail(choice, result);
             } catch (error) {
                 if (version !== previewVersion || dialog.signal.aborted) return;
                 detail(choice, null, String(error.message || error));
-            }
+            } finally { popup?.end(); }
         }
     }
     dialog.advanced.addEventListener('click', () => { void previewChoices(); });
@@ -27010,7 +27287,6 @@ async function _rapierNormaliseVector(file, options = {}) {
     const assets = globalThis.RapierImageAssets;
     const check = () => options.signal?.throwIfAborted();
     check();
-    options.status?.('Opening image…');
     const {bytes, info} = options.input || await _rapierReadVectorFile(file);
     check();
     const asset = await assets.createAsset(bytes, {width: info.width, height: info.height},
@@ -27038,13 +27314,13 @@ async function _rapierPasteVectorImage(file, target = {}) {
     _openFieldDialog({
         ariaLabel: captured.replaceImage ? 'Replace image' : 'Embed image',
         fields: [{label: 'image description', placeholder: 'what the picture shows', value: alt}],
-        okLabel: captured.replaceImage ? 'replace' : 'embed',
+        okLabel: captured.replaceImage ? 'replace' : 'embed', progress: 'Saving picture',
         initialFocus: 'submit', restoreFocus: false,
         async prepare(values, processing) {
             if (!_rapierMutationStampIsCurrent(stamp)) throw new Error('Document changed; choose the image again.');
             if (!prepared) {
                 const normalized = await _rapierNormaliseVector(file, {
-                    input: read.value, title: current?.image.title || '', status: processing.status, signal: processing.signal,
+                    input: read.value, title: current?.image.title || '', signal: processing.signal,
                 });
                 if (!_rapierMutationStampIsCurrent(stamp)) throw new Error('Document changed; choose the image again.');
                 prepared = await globalThis.RapierEmbeddedImages.prepare(normalized, processing);
@@ -29069,7 +29345,10 @@ async function _rapierCommitPastePlanAsync(plan, job) {
 	if (job && job.cancelled) return false;
 	const commit = _rapierCommitPasteModel(plan);
 	if (!commit) return false;
-	if (job) job.committed = true;
+	if (job) {
+		job.committed = true;
+		if (job.popup) { const shown = _rapierProgressOpen({label: 'Pasting'}); job.popup.end(); job.popup = shown; }
+	}
 	const isCurrent = () => _rapierPasteGuardIsCurrent(commit.guard);
 
 	let mounted = false;
@@ -29878,6 +30157,10 @@ function _rapierWysiwygRenderWindow(centerIndex) {
 	const host = document.getElementById('editor-blocks');
 	const count = _rapierWysiwygLedger.order.length;
 	if (!host || !count || !host.classList.contains('editor-area--virtualized')) return;
+	// While the fast-scroll circle is dragged its seek owns the window, frame by frame, as the scroll handlers already
+	// leave it (they return while dragging); a pass from the page's position would only move it again. The drag's end
+	// schedules this pass (cancelInteraction).
+	if (!Number.isSafeInteger(centerIndex) && _rapierWysiwygLedger.dragging) return;
 
 	const revealing = !!rapier.view.editorViewport?.reveal;
 	const viewport = Number.isSafeInteger(centerIndex) || revealing ? null : _rapierEditorReadingPoint(null, false);
@@ -35030,8 +35313,6 @@ function _rapierCrossBlockReplace(type, text) {
 	const range = _rapierCrossBlockRange();
 	if (!range) return false;
 
-	if (type === 'historyUndo') { rapierUndo(); return true; }
-	if (type === 'historyRedo') { rapierRedo(); return true; }
 	const destructive = type.startsWith('delete') || type === 'insertText' ||
 		type === 'insertCompositionText' || type === 'insertReplacementText' ||
 		type === 'insertParagraph' || type === 'insertLineBreak';
@@ -35096,8 +35377,17 @@ function _rapierOpenSameBlockSelection(range) {
 }
 
 function _rapierCrossBlockBeforeInput(e) {
-	if (e.defaultPrevented || rapier.access.readOnly || rapier.document.docKind !== 'markdown' ||
-			_rapierHostNativeField(e.target)) return;
+	if (e.defaultPrevented || rapier.access.readOnly) return;
+	// Undo and Redo that the browser raises itself (its Edit menu, the context menu, a keyboard's own key) are the document's history,
+	// as the chord is (_rapierChordRouter), with a caret or a selection, in the page or in the source. Left to the browser, its own
+	// undo rewrote the shared edit surface's words and put the caret on the open block's first word, where the next letter was
+	// written; in the source it was recorded as a new edit, and the document's next Undo wrote the words back.
+	if (/^history(?:Undo|Redo)$/.test(e.inputType || '') && !_rapierFieldOwnsHistory(e.target)) {
+		e.preventDefault();
+		if (!rapier.compare.active) { if (e.inputType === 'historyRedo') rapierRedo(); else rapierUndo(); }
+		return;
+	}
+	if (rapier.document.docKind !== 'markdown' || _rapierHostNativeField(e.target)) return;
 	if (!_rapierCrossBlockRange()) {
 		// A soft keyboard's Backspace or Delete over a whole line and its break, or over only the break, is what the keys are (_rapierGuardEditingKey).
 		// A delete nothing may cancel (an execCommand's) cannot be taken over here, and is left to the clamp below.
@@ -35117,7 +35407,6 @@ function _rapierCrossBlockBeforeInput(e) {
 	// so Select all then Backspace would delete nothing and the words typed next would open a block above the whole
 	// document. The open block's typing is checkpointed by the cross-block splice before it reads the blocks.
 	const type = e.inputType || '';
-	if (type === 'historyUndo' || type === 'historyRedo') { e.preventDefault(); _rapierCrossBlockReplace(type, ''); return; }
 	const destructive = type.startsWith('delete') || type === 'insertText' ||
 		type === 'insertCompositionText' || type === 'insertReplacementText' ||
 		type === 'insertParagraph' || type === 'insertLineBreak';
@@ -35143,6 +35432,20 @@ function _rapierGuardBeforeInput(e) {
 	if (_rapierHostNativeField(e.target)) return;
 	const host = _editorHostEl();
 	if (!host) return;
+	// An input an earlier listener already did (a letter over a selection across blocks, _rapierCrossBlockBeforeInput) is not typed again.
+	const done = e.defaultPrevented;
+	// A paste folded into the source a word the keyboard was still composing, and the page redrawn under it ends the browser's
+	// composition: the keyboard's late commit of it, in that same composition (no end of it has come), arrives as plain text at the
+	// caret. It is the paste's to settle (_rapierFinishMutationBarrier), never typed a second time.
+	const word = host._rapierHeldWord;
+	if (word && (word.end != null || word.outside && word.text) && word.commit == null && e.isTrusted && e.inputType === 'insertText' &&
+			typeof e.data === 'string' && host.contains(e.target)) {
+		e.preventDefault();
+		e.stopImmediatePropagation();
+		word.commit = e.data;
+		_rapierFinishMutationBarrier();
+		return;
+	}
 
 	const nodeToEl = n => n && (n.nodeType === Node.TEXT_NODE ? n.parentElement : n);
 	const nodeInHost = n => {
@@ -35179,6 +35482,19 @@ function _rapierGuardBeforeInput(e) {
 	}
 	if (!touchesEditor || insideEdit) return;
 	e.preventDefault();
+	// A phone keyboard's letters come as insertText with no key event (keyCode 229), so the stray-key owner never saw them:
+	// with the selection outside the open block (on a to-do row's handle) or no block open, they were refused here and every
+	// word was dropped. They land as a typed key does (_rapierGuardEditingKey, _rapierRouteStrayEditingKey): in the open block
+	// at its caret, or in the block the caret was last in, at that place.
+	const words = e.inputType === 'insertText' && typeof e.data === 'string' ? e.data : '';
+	const held = window.getSelection && window.getSelection();
+	if (done || !words || /[\r\n]/.test(words) || !_rapierPageOwnsTheKeys(e.target) ||
+			(held && held.rangeCount && !held.isCollapsed) || _rapierImageRuntime.blockId != null) return;
+	const open = _activeBlockEditContext() || _rapierStrayKeyOpensBlock(e.target instanceof Element ? e.target : host, host, true, true);
+	if (!open) return;
+	host.focus({ preventScroll: true });
+	_rapierCaretHome(open);
+	_rapierInsertStrayKey(open.editDiv, words);
 }
 document.addEventListener('beforeinput', _rapierGuardBeforeInput, true);
 
@@ -37186,6 +37502,8 @@ function _rapierProjectPasteBusy(job) {
 	document.documentElement.dataset.pasting = 'on';
 	document.getElementById('editor-blocks')?.setAttribute('aria-busy', 'true');
 	document.getElementById('source-textarea')?.setAttribute('aria-busy', 'true');
+	// Cancel stands until the paste is in the document (_rapierCommitPastePlanAsync); then the words alone while it is shown.
+	job.popup = _rapierProgressOpen({label: 'Pasting', cancel: job.committed ? null : () => { if (!job.committed) job.cancelled = true; }});
 	srAnnounce('Pasting. Press Escape to cancel.');
 }
 
@@ -37208,6 +37526,8 @@ function _rapierClearPasteBusy(job) {
 	if (job.busyTimer) clearTimeout(job.busyTimer);
 	job.busyTimer = 0;
 	_rapierEditingRuntime.pasteJob = null;
+	job.popup?.end();
+	job.popup = null;
 	try {
 		delete document.documentElement.dataset.pasting;
 		document.getElementById('editor-blocks')?.removeAttribute('aria-busy');
@@ -37268,17 +37588,44 @@ async function _rapierRunLargePaste(record, payload) {
 		const pasted = await splitPastedMarkdownBlocksAsync(
 			content.markdown, { plainText: content.plainText });
 		if (job.cancelled) return false;
-		const target = _rapierRestorePasteTarget(record);
-		if (!target) throw new Error('paste target changed');
-		const context = _rapierCapturePasteContext(target.range);
-		const plan = _rapierBuildPastePlan(context, pasted);
-		if (!plan) throw new Error('paste could not be prepared');
+		// Words a phone keyboard composed while the paste was on its way are on the page (a composition cannot be refused), and a
+		// paste never loses text: the typing is settled into the source as its own step, and the paste lands at the caret it
+		// moved to (after those words, where the person saw them), as often as typing moves it before the paste can land.
+		for (let attempt = 0; ; attempt++) {
+			if (attempt > 5) throw new Error('paste target changed');
+			const typing = _activeBlockEditContext();
+			if (typing && !rapier.composition.block) _rapierCheckpointEdit(typing.editDiv);
+			// A word the keyboard is still composing (its start was held by the barrier, its end has not come) is in the source now,
+			// and the paste's redraw ends the browser's composition under it: where it ends is kept, so that the keyboard's late
+			// commit of it is settled as that word and not typed again (_rapierGuardBeforeInput, _rapierFinishMutationBarrier).
+			const word = _editorHostEl()?._rapierHeldWord, last = rapier.undo.branch[rapier.undo.cursor - 1];
+			const row = word && word.text && typing && last && (last.transaction?.affectedBlockIds || [])[0] === typing.block.id ? last.splices?.[0] : null;
+			const folded = row && _rapierPrefixSuffixDiff(String(row.removed || ''), String(row.inserted || ''));
+			const ends = folded ? folded.pos + folded.inserted.length : -1;
+			if (folded && String(row.inserted).slice(ends - word.text.length, ends) === word.text) { word.folded = word.text; word.end = Number(row.pos) + ends; }
+			let target = _rapierRestorePasteTarget(record);
+			// The paste's barrier holds every other writer off, so a place that moved in the block being typed in was moved by the
+			// person's own words: the paste is put where their caret now stands in that block.
+			const moved = !target && typing && typing.block.id === record.target.startBlockId
+				? _rapierCaptureStableTargetRecord(_rapierCurrentSelectionTarget()) : null;
+			if (moved && moved.target.kind === 'block-range' && moved.target.startBlockId === typing.block.id) {
+				record = moved;
+				target = _rapierRestorePasteTarget(record);
+			}
+			if (!target) throw new Error('paste target changed');
+			const context = _rapierCapturePasteContext(target.range);
+			const plan = _rapierBuildPastePlan(context, pasted);
+			if (!plan) throw new Error('paste could not be prepared');
 
-		await _rapierYieldUserVisibleWork();
-		const prepared = await _rapierPreparePastePlan(plan, job);
-		if (!prepared || job.cancelled) return false;
-		if (!await _rapierCommitPastePlanAsync(prepared, job)) {
-			throw new Error('paste target changed');
+			await _rapierYieldUserVisibleWork();
+			const prepared = await _rapierPreparePastePlan(plan, job);
+			if (job.cancelled) return false;
+			// Words typed while the paste was prepared changed its place (the preparation gave up: the paste was dropped without a
+			// word), or are on the page and not yet in the source, where the paste's redraw would take them away: round again.
+			const typed = _activeBlockEditContext();
+			if (prepared && !(typed && typed.editDiv._rapierCheckpointFresh === false) &&
+					await _rapierCommitPastePlanAsync(prepared, job)) break;
+			if (job.committed) throw new Error('paste target changed');
 		}
 		srAnnounce('Paste complete.');
 		return true;
@@ -37681,6 +38028,12 @@ function _rapierHandlePaste(event) {
 	if (rapier.composition.block && !rapier.composition.source && !_rapierMutationBarrierActive()) {
 		const composing = _activeBlockEditContext()?.editDiv;
 		if (composing) {
+			// The browser's composition goes on although the word is ended here: what it holds is kept, so that the keyboard's late
+			// commit of it, after the paste has redrawn the block, is settled as that word (_rapierRunLargePaste, _rapierGuardBeforeInput).
+			const began = composing._rapierComposeStart, selection = window.getSelection(), host = _editorHostEl();
+			const end = began && selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+			const caret = end && composing.contains(end.endContainer) ? _charOffsetForRangePoint(composing, end.endContainer, end.endOffset) : -1;
+			if (host) host._rapierHeldWord = { text: began && caret > began.start ? String(composing.textContent || '').slice(began.start, caret) : '' };
 			_rapierHandleEditCompositionEnd(composing);
 			// Ending the word here emits no compositionend. Promote a new Notes title before the paste
 			// captures its heading boundary, as the Notes body tap does after ending the same word.
@@ -40947,7 +41300,7 @@ function _rapierRestoreDeicticFocus(capture) {
 	if (!_rapierInstallDomSelection(point, point)) return false;
 	if (capture.activeWasEdit) {
 		const edit = wrapper.querySelector(':scope > .block-edit');
-		if (edit) edit.focus({ preventScroll: true });
+		if (edit) _rapierFocusEditingHost(edit);
 	}
 	return true;
 }
@@ -41023,7 +41376,7 @@ function _rapierRestoreForegroundSelection(capture, splices, resolvedEdits = nul
 			}
 			if (capture.activeWasEdit && activeBlockId) {
 				const edit = document.querySelector('[data-block-id="' + activeBlockId + '"] > .block-edit');
-				if (edit) edit.focus({ preventScroll: true });
+				if (edit) _rapierFocusEditingHost(edit);
 			}
 			return true;
 		} catch (_) { return false; }
@@ -47273,7 +47626,7 @@ function _rapierCfToggle() {
 	if (_rapierUiSyncIsCompanion()) _rapierUiSyncOpen();
 }
 
-function _rapierUiPlugin(key, label, renderPrompt) {
+function _rapierUiPlugin(key, label, renderPrompt, noun) {
 	return {
 		status: 'checking',
 		error: null,
@@ -47288,13 +47641,21 @@ function _rapierUiPlugin(key, label, renderPrompt) {
 			renderSettings();
 		},
 		request() {
-			if (this.installed() || this.dismissed) return;
+			if (this.installed() || this.dismissed || this.busy()) return;
 			renderPrompt();
 			openDialog(_rapierUi.refs[key + 'Overlay'], { panel: '.settings-panel' });
 		},
-		install() {
-			if (!_rapierProviders[key]) return;
-			_rapierProviders[key][this.status === 'error' ? 'reinstall' : 'install']().catch(() => {});
+		// The sheet the install was asked from gives way to the progress popup; a failure brings the prompt back with its words.
+		install(control) {
+			const provider = _rapierProviders[key];
+			if (!provider) return;
+			const sheet = control?.closest?.('.settings-overlay');
+			// Notes' settings panel lends these rows (notes/notes.js) and takes them back as it closes.
+			if (sheet?.id === 'rapier-notes-settings-overlay' && typeof _rapierNotesSettingsOpen === 'function') _rapierNotesSettingsOpen(false);
+			else if (sheet) closeDialog(sheet);
+			this.dismissed = false;
+			const end = _rapierPluginProgress(key, noun);
+			provider[this.status === 'error' ? 'reinstall' : 'install']().catch(() => this.request()).finally(end);
 		},
 		dismiss() {
 			this.dismissed = true;
@@ -47310,7 +47671,7 @@ function _rapierUiPlugin(key, label, renderPrompt) {
 	};
 }
 
-const _rapierUiMath = _rapierUiPlugin('math', 'MATH', renderMathPrompt);
+const _rapierUiMath = _rapierUiPlugin('math', 'MATH', renderMathPrompt, 'math');
 
 function renderMathPrompt() {
 	const refs = _rapierUi.refs;
@@ -47337,7 +47698,7 @@ function renderMathPrompt() {
 		: status === 'installing' ? 'installing…' : 'install now';
 }
 
-const _rapierUiDiagram = _rapierUiPlugin('mermaid', 'MERMAID', renderDiagramPrompt);
+const _rapierUiDiagram = _rapierUiPlugin('mermaid', 'MERMAID', renderDiagramPrompt, 'diagrams');
 
 function renderDiagramPrompt() {
 	const refs = _rapierUi.refs;
@@ -47370,12 +47731,22 @@ const _rapierUiDocx = {
 	busy() {
 		return this.generationBusy;
 	},
+	// The build shows the progress popup, whose Cancel drops the file before it is saved; the sheet is for its warnings alone.
+	progress: null,
+	cancelled: false,
+	ahead: false,
 	applyGenerationState(detail) {
 		this.generationBusy = !!(detail && detail.busy);
-		if (this.generationBusy) { this.warning = null; this.show(); }
-		else if (!this.warning) this.hide();
+		if (!this.generationBusy) { this.progress?.end(); this.progress = null; }
+		else if (!this.progress) {
+			// At once for a large document, which holds the page while it is built (editor/pop.js _rapierProgressAhead).
+			this.cancelled = false; this.ahead = detail.size > RAPIER_PROGRESS_AHEAD;
+			this.progress = _rapierProgressOpen({label: 'Exporting Word', after: this.ahead ? 0 : 500, cancel: () => { this.cancelled = true; }});
+		}
 		renderSettings();
 	},
+	shown() { return this.ahead ? _rapierProgressPainted() : undefined; },
+	report(fraction) { this.progress?.set(fraction); },
 	openWarning(detail) {
 		if (!detail || !detail.token) return;
 		this.warning = {
@@ -47410,13 +47781,8 @@ function renderDocxPrompt() {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
 	const state = _rapierUiDocx;
-	refs.docxTitle.textContent =
-		state.warning ? 'DOCX export portability' : 'Creating Word document';
-	refs.docxDescription.textContent =
-		state.warning ? state.warning.message
-		: 'Made on this device. Big tables or pictures take longer on a phone.';
-	refs.docxProgress.hidden = !(state.generationBusy && !state.warning);
-	refs.docxProgress.textContent = state.generationBusy ? 'Creating Word document…' : '';
+	refs.docxTitle.textContent = 'DOCX export portability';
+	refs.docxDescription.textContent = state.warning ? state.warning.message : '';
 	refs.docxError.hidden = true;
 	refs.docxError.textContent = '';
 	refs.docxWarningRow.hidden = !state.warning;
@@ -48414,8 +48780,10 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	},
 	'open-copy-menu': () => _rapierUiOpenInterchange(_rapierUi.refs.copyOverlay),
 	'copy-choice': control => {
-		Promise.resolve(rapierCopy(control.dataset.value))
-			.then(ok => { if (ok) closeDialog(_rapierUi.refs.copyOverlay); });
+		// The sheet gives way at once: the conversion's progress popup and any refusal stand where the person sees them.
+		const copied = rapierCopy(control.dataset.value);
+		closeDialog(_rapierUi.refs.copyOverlay);
+		return copied;
 	},
 
 	'toggle-pandoc-dialect': () => {
@@ -48427,11 +48795,10 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	'share-choice': control => {
 		if (control.disabled) return;
 		if (control.dataset.value === 'return') return _rapierSendBack();
-		const choices = _rapierUi.refs.shareOverlay.querySelectorAll('[data-action="share-choice"]:not([data-value="return"])');
-		choices.forEach(choice => { choice.disabled = true; });
-		Promise.resolve(rapierShare(control.dataset.value))
-			.then(ok => { if (ok) closeDialog(_rapierUi.refs.shareOverlay); })
-			.finally(() => choices.forEach(choice => { choice.disabled = false; }));
+		// The sheet gives way once the choice is read: the page's progress popup and any refusal stand where the person sees them.
+		const shared = rapierShare(control.dataset.value);
+		closeDialog(_rapierUi.refs.shareOverlay);
+		return shared;
 	},
 	'close-export': () => closeDialog(_rapierUi.refs.exportOverlay),
 	'close-copy': () => closeDialog(_rapierUi.refs.copyOverlay),
@@ -48456,9 +48823,9 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	'licenses-source': () => rapierDownloadSource(),
 	welcome: () => _rapierUiOpenWelcome(),
 
-	'math-install': () => _rapierUiMath.install(),
+	'math-install': control => _rapierUiMath.install(control),
 	'math-dismiss': () => _rapierUiMath.dismiss(),
-	'mermaid-install': () => _rapierUiDiagram.install(),
+	'mermaid-install': control => _rapierUiDiagram.install(control),
 	'mermaid-dismiss': () => _rapierUiDiagram.dismiss(),
 	'docx-warning-continue': () => _rapierUiDocx.resolveWarning(true),
 	'docx-warning-cancel': () => _rapierUiDocx.resolveWarning(false),
@@ -48595,7 +48962,7 @@ const _RAPIER_UI_REFS = Object.freeze({
 	mermaidProgress: 'mermaid-plugin-progress', mermaidError: 'mermaid-plugin-error', mermaidInstall: 'mermaid-plugin-install',
 
 	docxOverlay: 'docx-plugin-overlay', docxTitle: 'docx-plugin-title',
-	docxDescription: 'docx-plugin-description', docxProgress: 'docx-plugin-progress',
+	docxDescription: 'docx-plugin-description',
 	docxError: 'docx-plugin-error', docxWarningRow: 'docx-warning-row',
 });
 

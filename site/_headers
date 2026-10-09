@@ -21,3 +21,11 @@
 /embed/:version/rapier-document.html
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
+
+/embed/rapier-reader.html
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/embed/:version/rapier-reader.html
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
