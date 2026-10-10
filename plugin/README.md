@@ -10,7 +10,7 @@ apply at once or wait for your review, under FREE, CHECK or ASK; undoing the ass
 edits. Diagrams are drawn from a recipe: the assistant names the boxes and arrows, Rapier places and routes them,
 and you move them by hand. The assistant also paints with brushes and watercolour.
 
-**An offline file.** `npx rapier-html@1.1.88 notes.md` writes one HTML file containing the editor and the
+**An offline file.** `npx rapier-html@1.1.89 notes.md` writes one HTML file containing the editor and the
 document. Open it in any browser to edit, draw, paint, review changes and save. An optional one-use Send back
 address returns your edited copy to the assistant.
 

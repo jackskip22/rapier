@@ -563,10 +563,37 @@ function _rapierTodoCaretIntoLine(line) {
 // none). leaveBlockEdit rebuilds a typed-in block, so the grabbed row is found again in the new surface.
 function _rapierTodoHandleDown(evt) {
 	if (evt.button != null && evt.button !== 0) return;
-	let handle = evt.target && evt.target.closest ? evt.target.closest('.rapier-todo-handle') : null; if (!handle) return;
+	const handle = evt.target && evt.target.closest ? evt.target.closest('.rapier-todo-handle') : null; if (!handle) return;
+	const wrapper = handle.closest('.block-wrapper'); if (!wrapper) return;
+	// A press on the handle of a row being typed in leaves the row open, the caret and the keyboard where they were, until it moves
+	// as a grab does: only then is the block left and the drag begun. The press left the block at once, so a tap closed the row
+	// (and a phone's keyboard with it).
+	if (wrapper.classList.contains('block-wrapper--editing') && handle.closest('.block-edit')) {
+		evt.preventDefault();
+		evt.stopPropagation();
+		const press = {target: evt.target, button: evt.button, clientX: evt.clientX, clientY: evt.clientY, pointerId: evt.pointerId, preventDefault() {}, stopPropagation() {}};
+		const stop = () => {
+			window.removeEventListener('pointermove', move, true);
+			window.removeEventListener('pointerup', stop, true);
+			window.removeEventListener('pointercancel', stop, true);
+		};
+		const move = moved => {
+			if (moved.pointerId !== press.pointerId || Math.max(Math.abs(moved.clientX - press.clientX), Math.abs(moved.clientY - press.clientY)) <= 12) return;
+			stop();
+			_rapierTodoGrab(press, wrapper);
+			if (_rapierTodo.drag) _rapierTodoDragMove(moved);
+		};
+		window.addEventListener('pointermove', move, true);
+		window.addEventListener('pointerup', stop, true);
+		window.addEventListener('pointercancel', stop, true);
+		return;
+	}
+	_rapierTodoGrab(evt, wrapper);
+}
+function _rapierTodoGrab(evt, wrapper) {
+	let handle = evt.target.closest('.rapier-todo-handle'); if (!handle) return;
 	let li = handle.closest('li.rapier-todo-item'); if (!li) return;
 	let container = li.parentElement; if (!container) return;
-	const wrapper = handle.closest('.block-wrapper'); if (!wrapper) return;
 	const surface = li.closest('.block-read, .block-edit');
 	if (!surface || surface.parentElement !== wrapper) return;
 	// A grab while typing leaves the block first (rewrites use committed text), refusing if it will not leave; the row is refound by position and

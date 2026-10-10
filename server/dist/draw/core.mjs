@@ -171,8 +171,16 @@ const _RAPIER_DRAW_RASTER = /^data:image\/(?:png;base64,iVBORw0KGgo|jxl;base64,(
 function _rapierDrawAgentStrokes(raw) {
 	return admitPaintStrokeRecords(raw);
 }
+// The last few rasters admitted, kept by their own text. Admitting a drawing re-checks every painting in it, and a painting of a few
+// megabytes takes a phone's main thread about a second to decode, encode back and read: once for every checkpoint, and again for every
+// change told to the agent door while a person paints. The check reads nothing but the text and whether the ceiling is lifted, so a
+// raster seen again is not read again. Four, oldest out: the paintings of a drawing, not its history.
+const RAPIER_DRAW_RASTERS_KEPT = 4, _rapierDrawRastersAdmitted = [];
 function _rapierDrawRasterInfo(value, max = RAPIER_DRAW_RASTER_MAX) {
-	if (typeof value !== 'string' || value.length < 60 || value.length > max || !_RAPIER_DRAW_RASTER.test(value)) return null;
+	if (typeof value !== 'string' || value.length < 60 || value.length > max) return null;
+	const lifted = max === Infinity;
+	for (const row of _rapierDrawRastersAdmitted) if (row.lifted === lifted && row.value === value) return row.info;
+	if (!_RAPIER_DRAW_RASTER.test(value)) return null;
 	const encoded = value.slice(value.indexOf(',') + 1);
 	if (encoded.length % 4) return null;
 	try {
@@ -180,7 +188,9 @@ function _rapierDrawRasterInfo(value, max = RAPIER_DRAW_RASTER_MAX) {
 		if (btoa(binary) !== encoded) return null;
 		const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
 		// A live uncompressed painting keeps its existing byte policy; its dimensions still admit.
-		return value.startsWith('data:image/png;') ? inspectRaster(bytes, {maximumBytes: max === Infinity ? Infinity : undefined}) : inspectJPEGXL(bytes);
+		const info = value.startsWith('data:image/png;') ? inspectRaster(bytes, {maximumBytes: lifted ? Infinity : undefined}) : inspectJPEGXL(bytes);
+		if (info) { _rapierDrawRastersAdmitted.push({lifted, value, info}); if (_rapierDrawRastersAdmitted.length > RAPIER_DRAW_RASTERS_KEPT) _rapierDrawRastersAdmitted.shift(); }
+		return info;
 	} catch { return null; }
 }
 function _rapierDrawValidRaster(value, max = RAPIER_DRAW_RASTER_MAX) {

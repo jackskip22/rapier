@@ -713,7 +713,7 @@ const _rapierImageFlow = (() => {
 
   function project(record, width, top, obstacles) {
     const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
-      narrowestColumn(record.fontSize), record.direction, record.balance);
+      narrowestColumn(record.fontSize), record.direction, record.balance, record.align);
     if (!plan) return null;
     const output = projectedLines(record, plan);
     if (!output) return null;
@@ -841,7 +841,7 @@ const _rapierImageFlow = (() => {
     }
     const {width, top, obstacles, height} = record.geometry;
     const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
-      narrowestColumn(record.fontSize), record.direction, record.balance);
+      narrowestColumn(record.fontSize), record.direction, record.balance, record.align);
     if (!plan || plan.height !== height) return false;
     let replacement = null;
     if (record.runs.every(run => !run.parents.length)) {
@@ -1335,6 +1335,11 @@ const _rapierImageFlow = (() => {
       preserveStart = mappedPoint(editSelection.anchorNode, editSelection.anchorOffset);
       preserveEnd = mappedPoint(editSelection.focusNode, editSelection.focusOffset);
     }
+    // A wrapper the last pass left uncontained (content-visibility visible) gets content-visibility: auto back from the
+    // restore, and until a frame finds it on the page again the browser gives it the height it remembers, the laid-out one.
+    // Every block after it was measured that much lower, and each picture owned further down stood that far below its words
+    // (a paragraph's margin for each wrapped paragraph above, on every pass after the first). It is measured uncontained.
+    const uncontained = [...ownedStyles].filter(([, saved]) => saved.get('content-visibility')?.applied === 'visible').map(([element]) => element);
     restore(); observer?.disconnect();
     if (preserveStart && !preserveStart.node?.isConnected && editSelection?.rangeCount && host.contains(editSelection.anchorNode)) {
       preserveStart = {node: editSelection.anchorNode, offset: editSelection.anchorOffset};
@@ -1357,6 +1362,8 @@ const _rapierImageFlow = (() => {
     }
     for (const wrapper of wrappers) if (wrapper.querySelector('img[data-rapier-image-layout]') || wrapper === moving?.image.closest('.block-wrapper'))
       style(wrapper, {'content-visibility': 'visible', contain: 'none'});
+    const mounted = new Set(wrappers);
+    for (const wrapper of uncontained) if (mounted.has(wrapper)) style(wrapper, {'content-visibility': 'visible', contain: 'none'});
     const measured = rows(wrappers);
     const byWrapper = new Map(measured.map(row => [row.wrapper, row])), anchors = new Map(), placed = new Set();
     let free = null;

@@ -373,8 +373,25 @@ export function slotsForBand(width, obstacles, top, height, minWidth = 40) {
   return slots;
 }
 
-export function flowLines(flow, width, top, obstacles, lineHeight, minWidth, direction = 'ltr', balance = 0) {
-  return linePlan(flow, width, top, obstacles, lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange);
+// A picture moves a block's words only where its outline (with its standoff) meets them. The block is laid as it lies with no
+// picture beside it, balanced and aligned in the whole column; when no line of words there meets an obstacle, that is its
+// layout. Otherwise its lines flow around the outline. A block set from the side its lines start on, and not balanced, lies
+// the same both ways whenever the outline misses its words, so it is laid once.
+export function flowLines(flow, width, top, obstacles, lineHeight, minWidth, direction = 'ltr', balance = 0, align = 'start') {
+  const plan = linePlan(flow, width, top, obstacles, lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange);
+  const side = align === 'center' ? 'center' : align === 'left' || align === 'right' ? align
+    : (align === 'end') === (direction === 'rtl') ? 'left' : 'right';
+  if (!plan || !obstacles?.length || !balance && side === (direction === 'rtl' ? 'right' : 'left')) return plan;
+  const free = linePlan(flow, width, top, [], lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange);
+  if (!free) return plan;
+  const meets = free.lines.some(line => {
+    const words = line.fragments.reduce((sum, fragment) => sum + (fragment.gapBefore || 0) + (fragment.occupiedWidth || 0), 0);
+    const left = side === 'left' ? 0 : side === 'right' ? width - words : (width - words) / 2;
+    const lineTop = top + line.y;
+    return obstacles.some(obstacle => obstacle.width > 0 && obstacle.height > 0 &&
+      obstacle.x < left + words && obstacle.x + obstacle.width > left && obstacle.y < lineTop + lineHeight && obstacle.y + obstacle.height > lineTop);
+  });
+  return meets ? plan : free;
 }
 
 // ---- The one wrap shape (live: globalThis.RapierImageLayout; export: modules["layout/model.mjs"]) ----

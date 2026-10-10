@@ -30,7 +30,7 @@ or `https://rapier.website/embed/<version>/<file>` (permanent).
   carry no document source.
 
 ```sh
-npm install rapier-embed@1.1.88
+npm install rapier-embed@1.1.89
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -73,7 +73,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://rapier.website/embed/<version>/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.1.88 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.1.89 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -107,7 +107,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.1.88 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.1.89 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader`, `--build document` or `--build full` keeps the files that build uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
@@ -366,5 +366,5 @@ The host receives `{id, kind, status, cause, revision, law, region, changes, dec
 law, change IDs and statuses, and a decision receipt. It never receives excerpts, positions, proposed source or a
 vault key in that event. Receiving a review event grants no power to approve it.
 
-For documents outside an app, `npx rapier-html@1.1.88 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.1.89 notes.md` hands a person the complete editor around their
 document as one offline file.

@@ -5981,9 +5981,13 @@ function _rapierBindWrapperBlock(nextBlock) {
 }
 
 function _rapierHandleEditCompositionStart(editDiv) {
-	// A new composition: a word folded in by a paste has had its chance of a late commit (_rapierGuardBeforeInput).
-	const host = _editorHostEl();
-	if (host) host._rapierHeldWord = null;
+	// A new composition: a word folded in by a paste has had its chance of a late commit (_rapierGuardBeforeInput) -- unless the
+	// paste's redraw ended the browser's composition under that word (it could not be kept, _rapierMountPastePlan): a keyboard
+	// that composes again at the caret then restarts that word's composition there, and its end settles the word
+	// (_rapierHandleEditCompositionEnd).
+	const host = _editorHostEl(), held = host && host._rapierHeldWord;
+	if (held && held.end != null && held.commit == null && held.live === false && !held.restart) held.restart = true;
+	else if (host) host._rapierHeldWord = null;
 	_rapierSnapEditCaret(editDiv);
 	_rapierKeepTypingMarks(editDiv, { inputType: 'insertCompositionText' });
 	editDiv._rapierComposeStart = _rapierComposeSnapshot(editDiv);
@@ -6104,8 +6108,22 @@ function _rapierHandleEditCompositionEnd(editDiv, event) {
 	// The browser's own end of a composition ends it: a commit after it is new words, never a word a paste folded in. A word the
 	// browser wrote into the drawn page while an edit was in flight is still to be put right (_rapierFinishMutationBarrier).
 	const host = event && _editorHostEl(), held = host && host._rapierHeldWord;
-	if (held && held.outside && held.end == null && held.text) { held.ended = true; if (typeof event.data === 'string' && event.data) held.text = event.data; }
+	if (held && held.restart && typeof event.data === 'string' && event.data) {
+		// A restarted composition's words are the folded word as the keyboard has it now: taken off the caret, they are settled as that
+		// word's commit (_rapierFinishMutationBarrier): the same word changes nothing, a corrected one replaces it where it stands by
+		// the difference, and other words are typed at the caret again. Left there, the word was written twice.
+		const selection = window.getSelection(), caret = selection && selection.rangeCount ? selection.getRangeAt(0) : null, data = event.data;
+		const at = caret && caret.collapsed && editDiv.contains(caret.startContainer) ? _charOffsetForRangePoint(editDiv, caret.startContainer, caret.startOffset) : -1;
+		held.restart = false;
+		if (at >= data.length && String(editDiv.textContent || '').slice(at - data.length, at) === data && _rapierSetSelectionCharOffsets(editDiv, at - data.length, at)) {
+			window.getSelection().getRangeAt(0).deleteContents();
+			held.commit = data;
+			_rapierFinishMutationBarrier();
+		} else host._rapierHeldWord = null;
+	} else if (held && held.outside && held.end == null && held.text) { held.ended = true; if (typeof event.data === 'string' && event.data) held.text = event.data; }
 	else if (host) host._rapierHeldWord = null;
+	// Ended while a paste's blocks are still being drawn: the word stays on the page, to be settled when the paste is done.
+	if (_rapierEditingRuntime.pasteJob?.committed) { editDiv._rapierCheckpointFresh = false; editDiv._rapierPasteHeldInput = true; return; }
 	try {
 		const enter = _rapierEnterDecision({ type: 'compositionend' }, editDiv);
 		editDiv._rapierCheckpointFresh = false;
@@ -6143,6 +6161,10 @@ function _rapierHandleEditInput(editDiv, event) {
 	if (_rapierTransactionRuntime.formatting) return;
 	const context = _activeBlockEditContext();
 	if (!context || context.editDiv !== editDiv) return;
+	// While a paste's blocks are still being drawn, what reaches the block open at its caret is a keyboard's composition (the barrier
+	// holds every other input): its words stay on the page, unsettled, until the paste is done (_rapierFinishMutationBarrier). Marked
+	// as an edit at once, they made the paste's drawing stale, and the page was drawn again without them.
+	if (_rapierEditingRuntime.pasteJob?.committed) { editDiv._rapierCheckpointFresh = false; editDiv._rapierPasteHeldInput = true; return; }
 	const { block, wrapper } = context;
 	// The third door: words with line breaks that arrived as an insertText nothing could cancel (the
 	// beforeinput kept the edit div whole; the fold restores it and pastes), or by a command that fired no
@@ -7818,12 +7840,33 @@ function _rapierNudgeCaretOffSealed(editDiv) {
 	const element = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
 	if (!element || !editDiv.contains(element)) return;
 	let sealed = element.closest('[contenteditable="false"]');
+	const inside = !!sealed;
 
 	if (!sealed && node === element && element.nodeType === Node.ELEMENT_NODE) {
 		const next = element.childNodes[selection.anchorOffset];
 		if (next && next.nodeType === Node.ELEMENT_NODE && next.matches('[contenteditable="false"]')) sealed = next;
 	}
 	if (!sealed || sealed === editDiv || !editDiv.contains(sealed)) return;
+	// A callout's label stands before the callout's words, so a caret before it goes after it. Anything else sealed (a footnote
+	// reference, math, a source token) is a character of the words: a caret before it, or at its start, stands before it, where
+	// the next letter is written. Taken past it, a letter typed before a reference (after Enter or a paste there) went after it.
+	const word = !sealed.matches('.callout__label');
+	if (word && !inside) return;
+	if (word) {
+		const lead = document.createRange(), before = sealed.previousSibling;
+		try {
+			lead.setStart(sealed, 0); lead.setEnd(node, selection.anchorOffset);
+			if (!lead.toString()) {
+				const range = document.createRange();
+				if (before && before.nodeType === Node.TEXT_NODE && before.length) range.setStart(before, before.length);
+				else range.setStartBefore(sealed);
+				range.collapse(true);
+				selection.removeAllRanges();
+				selection.addRange(range);
+				return;
+			}
+		} catch (_) { return; }
+	}
 	const walker = document.createTreeWalker(editDiv, NodeFilter.SHOW_TEXT, {
 		acceptNode: text => (sealed.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING) &&
 			!text.parentElement?.closest('[contenteditable="false"]') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
@@ -8212,6 +8255,15 @@ async function _rapierAwaitExternalDocumentBytes(options = null) {
 				return false;
 			}
 			continue;
+		}
+		// What was typed while an edit was in flight is done on the next turn (_rapierFinishMutationBarrier): the document is not
+		// settled until it has been, so a read straight after a paste has the letters typed meanwhile.
+		const host = _editorHostEl(), source = document.getElementById('source-textarea'), word = host && host._rapierHeldWord;
+		if ([host, source].some(surface => surface && surface._rapierHeld && surface._rapierHeld.length) ||
+				word && (word.commit != null || word.outside && word.text && word.end == null)) {
+			_rapierFinishMutationBarrier();
+			await new Promise(resume => setTimeout(resume, 16));
+			if (_rapierNow() < deadline) continue;
 		}
 		if (!_rapierMutationBarrierActive()) return true;
 		if (_rapierNow() >= deadline) {
@@ -20921,8 +20973,34 @@ function _rapierFromLfProjection(previousValue, editedValue, preferredNewline) {
 function _rapierReconcileMarkdownEditRaw(previousRaw, editedRaw, tildeSource = previousRaw) {
 	let edited = String(editedRaw == null ? '' : editedRaw);
 	if (rapier?.document?.docKind !== 'markdown') return edited;
-	const kept = _rapierKeepSourceTildes(_rapierNormalizeSourceNewlines(String(tildeSource ?? '')), edited);
+	const source = _rapierNormalizeSourceNewlines(String(tildeSource ?? ''));
+	const kept = _rapierKeepSourceTildes(source, edited);
 	if (kept !== edited && md && md.render(kept, _rapierMarkdownEnvironment()) === md.render(edited, _rapierMarkdownEnvironment())) edited = kept;
+	// Every other spelling the writer gives words it reads back from the page keeps the source's own, as a tilde does (above), where
+	// the words around it did not change: `R&D` stays `R&D` (written `R&amp;D`), `5 *3` stays (written `5 \*3`), a path's backslash
+	// stays single. Typing anywhere in such a block wrote the whole block in the writer's spelling. Kept only when it reads exactly as
+	// the writer's: the words the person changed are always the writer's own.
+	if (md && source && edited && source !== edited && source.length + edited.length <= 131072) {
+		const plain = raw => {
+			const text = [], at = [];
+			for (let index = 0; index < raw.length;) {
+				const entity = raw[index] === '&' ? /^&(amp|lt|gt|quot|#39);/.exec(raw.slice(index, index + 6)) : null;
+				at.push(index);
+				if (raw[index] === '\\' && /[!-/:-@[-`{-~]/.test(raw[index + 1] || '')) { text.push(raw[index + 1]); index += 2; }
+				else if (entity) { text.push({amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'"}[entity[1]]); index += entity[0].length; }
+				else { text.push(raw[index]); index += 1; }
+			}
+			at.push(raw.length);
+			return { text, at };
+		};
+		const was = plain(source), now = plain(edited), limit = Math.min(was.text.length, now.text.length);
+		let head = 0;
+		while (head < limit && was.text[head] === now.text[head]) head++;
+		let tail = 0;
+		while (tail < limit - head && was.text[was.text.length - 1 - tail] === now.text[now.text.length - 1 - tail]) tail++;
+		const spelled = source.slice(0, was.at[head]) + edited.slice(now.at[head], now.at[now.text.length - tail]) + source.slice(was.at[was.text.length - tail]);
+		if (spelled !== edited && md.render(spelled, _rapierMarkdownEnvironment()) === md.render(edited, _rapierMarkdownEnvironment())) edited = spelled;
+	}
 	return _rapierFromLfProjection(previousRaw, edited, rapier.document.sourceNewline);
 }
 
@@ -24272,8 +24350,25 @@ function _rapierFinishMutationBarrier() {
 	const surfaces = [host, source].filter(surface => surface && surface._rapierHeld && surface._rapierHeld.length);
 	const word = host && host._rapierHeldWord && host._rapierHeldWord.commit != null ? host._rapierHeldWord : null;
 	const stray = host && host._rapierHeldWord && host._rapierHeldWord.text && host._rapierHeldWord.end == null && host._rapierHeldWord.outside ? host._rapierHeldWord : null;
-	if (surfaces.length || word || stray) setTimeout(() => {
+	const live = host && host._rapierHeldWord && host._rapierHeldWord.live === true && !word ? host._rapierHeldWord : null;
+	const unsettled = _activeBlockEditContext()?.editDiv._rapierPasteHeldInput === true;
+	if (surfaces.length || word || stray || live || unsettled) setTimeout(() => {
 		if (_rapierMutationBarrierActive()) return;
+		// A word the keyboard is still composing in the open block, begun while the edit was in flight (its start held), is a
+		// composition again from here, as if begun now: its end settles it, and its commit is the keyboard's own. One the paste
+		// folded into the source and kept in place through its redraw is settled already: the keyboard's commit of it is its own
+		// (the browser's composition is still there under it), and a read of the document need not wait for it. Words composed and
+		// ended meanwhile, on the page and not yet in the source, are settled now.
+		const open = _activeBlockEditContext();
+		const settled = !!(live && host._rapierHeldWord === live && live.end != null);
+		if (settled) host._rapierHeldWord = null;
+		if (!settled && live && host._rapierHeldWord === live && live.text && !live.ended && open && !rapier.composition.block) {
+			const selection = window.getSelection(), caret = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+			const at = caret && caret.collapsed && open.editDiv.contains(caret.startContainer) ? _charOffsetForRangePoint(open.editDiv, caret.startContainer, caret.startOffset) : -1;
+			if (at >= 0 && String(open.editDiv.textContent || '').slice(0, at).endsWith(live.text)) _rapierHandleEditCompositionStart(open.editDiv);
+			else host._rapierHeldWord = null;
+		} else if (open && open.editDiv._rapierPasteHeldInput && !rapier.composition.block) _rapierCheckpointEdit(open.editDiv);
+		if (open) open.editDiv._rapierPasteHeldInput = false;
 		if (stray && host._rapierHeldWord === stray && stray.end == null) {
 			// A word composed while the page was being redrawn, where no block was open: the browser wrote it into the drawn page.
 			// That block is drawn again from its source, and the word is typed at the caret; the keyboard's late commit of it, in
@@ -24380,12 +24475,17 @@ function _rapierSuppressMutationEvent(event) {
 	if (surface === host && event.type === 'compositionstart') host._rapierHeldWord = { text: '' };
 	else if (word && type === 'insertCompositionText') {
 		word.text = String(event.data || '');
+		word.at = _rapierNow();
 		// Where no block is open (a paste redrawing the page has not yet put the caret back) the browser writes the word into the
 		// drawn page, which the source never sees: the block it went into is kept, for the word to be put right when the edit ends.
 		const range = typeof event.getTargetRanges === 'function' ? event.getTargetRanges()[0] : null, node = range && range.startContainer;
-		if (node && word.outside === undefined) word.outside = _nodeInsideActiveEdit(node) ? null : (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-wrapper') || null;
+		if (node && word.outside === undefined) {
+			// `live`: the word is written in the open block, where the keyboard goes on composing it (_rapierFinishMutationBarrier).
+			word.live = _nodeInsideActiveEdit(node);
+			word.outside = word.live ? null : (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-wrapper') || null;
+		}
 	}
-	else if (word && (word.end != null || word.outside && word.text) && word.commit == null && type === 'insertText' && typeof event.data === 'string') word.commit = event.data;
+	else if (word && (word.end != null || word.outside && word.text) && word.commit == null && word.live !== true && type === 'insertText' && typeof event.data === 'string') word.commit = event.data;
 	else if (surface && steps.length) (surface._rapierHeld || (surface._rapierHeld = [])).push(...steps);
 	event.preventDefault();
 	event.stopImmediatePropagation();
@@ -29041,15 +29141,30 @@ function _rapierCapturePasteContext(range) {
 		? _rapierTableBoundaryRaw(startBlock, startPoint.node, startPoint.offset, 'prefix') : null;
 	const tableSuffixRaw = endBlock.type === 'table'
 		? _rapierTableBoundaryRaw(endBlock, endPoint.node, endPoint.offset, 'suffix') : null;
+	// The words the paste leaves standing are the block's own source, cut where the paste begins and ends, wherever that place maps
+	// to the source exactly (outside marks, which each half closes as it is read from the page). Read back from the page, they
+	// were written anew: a literal `*` escaped, a backslash doubled, `&amp;` written `&amp;amp;`.
+	const spans = _rapierExcerptCanonicalBlockSpans(new Set([startBlock.id, endBlock.id]));
+	const cut = (wrapper, block, point) => {
+		// A block typed in maps once its typing is settled (the paste settles it first): its surface is then its source.
+		const settled = !block.dirty || (wrapper.classList.contains('block-wrapper--editing') && _liveBlockEl(wrapper)?._rapierCheckpointFresh === true);
+		const span = spans.get(Number(block.id));
+		if (!span || !settled) return null;
+		const at = _rapierRenderedBoundaryToCanonical(wrapper, {...block, dirty: false}, point.node, point.offset, span, false);
+		return Number.isSafeInteger(at) && at >= span.start && at <= span.end ? at - span.start : null;
+	};
+	// A half with no words of its own is read from the page as before (an item's whole words replaced leave no marker behind).
+	const prefixAt = tablePrefixRaw == null && String(prefix.textContent || '').trim() ? cut(startWrapper, startBlock, startPoint) : null;
+	const suffixAt = tableSuffixRaw == null && String(suffix.textContent || '').trim() ? cut(endWrapper, endBlock, endPoint) : null;
 	return {
 		startIndex,
 		replaceCount: endIndex - startIndex + 1,
 		startBlock,
 		endBlock,
-		prefixRaw: tablePrefixRaw != null ? tablePrefixRaw : _markdownWithVisibleEdgeWhitespace(
-			_markdownFromEditHTML(prefix.innerHTML), prefix, true),
-		suffixRaw: tableSuffixRaw != null ? tableSuffixRaw : _markdownWithVisibleEdgeWhitespace(
-			_markdownFromEditHTML(suffix.innerHTML), suffix, false),
+		prefixRaw: tablePrefixRaw != null ? tablePrefixRaw : prefixAt != null ? String(startBlock.raw || '').slice(0, prefixAt)
+			: _markdownWithVisibleEdgeWhitespace(_markdownFromEditHTML(prefix.innerHTML), prefix, true),
+		suffixRaw: tableSuffixRaw != null ? tableSuffixRaw : suffixAt != null ? String(endBlock.raw || '').slice(suffixAt)
+			: _markdownWithVisibleEdgeWhitespace(_markdownFromEditHTML(suffix.innerHTML), suffix, false),
 		blocksBefore,
 		// The selection the step was made from, across blocks: what Undo gives back (_rapierSelectionSpots).
 		selection: _rapierSelectionSpots(range),
@@ -29215,9 +29330,21 @@ function _rapierBuildPastePlan(context, pastedBlocks) {
 function _rapierRenderPastePlan(plan) {
 	if (!plan) return null;
 	plan.blocks.forEach(block => { block.rendered = renderBlock(block.raw, plan.referenceIndex); });
+	// The caret stands where the pasted words end in the caret block's source: a mark written there in the source is found in its
+	// rendered words (a mark that changes how the block reads is not used; with none, the caret goes to the block's end). Counted
+	// on the words before it rendered alone, the paragraph's closing line break was taken for a character: the caret stood one
+	// character on, inside a footnote reference standing there, and the next letter went after the reference.
+	const caretBlock = plan.blocks[plan.caretIndex], raw = String(caretBlock.raw || ''), at = raw.startsWith(plan.caretRaw) ? plan.caretRaw.length : raw.length;
 	const scratch = document.createElement('div');
-	scratch.innerHTML = renderBlock(plan.caretRaw, plan.referenceIndex);
-	plan.caretCharOffset = String(scratch.textContent || '').length;
+	let whole = '';
+	// A block edited as its source (an entity, raw HTML) shows its source: the caret's place is its source offset.
+	plan.caretCharOffset = _blockUsesRawEditor(raw, plan.referenceIndex) ? at : Infinity;
+	for (const mark of _blockUsesRawEditor(raw, plan.referenceIndex) ? [] : ['', '\uE0A1', '\u2E3A']) {
+		scratch.innerHTML = mark ? renderBlock(raw.slice(0, at) + mark + raw.slice(at), plan.referenceIndex) : caretBlock.rendered;
+		const words = String(scratch.textContent || ''), found = mark ? words.indexOf(mark) : -1;
+		if (!mark) whole = words;
+		else if (found >= 0 && words.slice(0, found) + words.slice(found + mark.length) === whole) { plan.caretCharOffset = found; break; }
+	}
 	plan.blocksAfter = plan.blocks.map(_rapierHistoryBlock);
 	return plan;
 }
@@ -29238,9 +29365,18 @@ async function _rapierPreparePastePlan(plan, job) {
 			sliceStarted = _rapierNow();
 		}
 	}
+	// The caret's place is read from the source, as _rapierRenderPastePlan reads it.
+	const caretBlock = plan.blocks[plan.caretIndex], raw = String(caretBlock.raw || ''), at = raw.startsWith(plan.caretRaw) ? plan.caretRaw.length : raw.length;
 	const scratch = document.createElement('div');
-	scratch.innerHTML = renderBlock(plan.caretRaw, plan.referenceIndex);
-	plan.caretCharOffset = String(scratch.textContent || '').length;
+	let whole = '';
+	// A block edited as its source (an entity, raw HTML) shows its source: the caret's place is its source offset.
+	plan.caretCharOffset = _blockUsesRawEditor(raw, plan.referenceIndex) ? at : Infinity;
+	for (const mark of _blockUsesRawEditor(raw, plan.referenceIndex) ? [] : ['', '\uE0A1', '\u2E3A']) {
+		scratch.innerHTML = mark ? renderBlock(raw.slice(0, at) + mark + raw.slice(at), plan.referenceIndex) : caretBlock.rendered;
+		const words = String(scratch.textContent || ''), found = mark ? words.indexOf(mark) : -1;
+		if (!mark) whole = words;
+		else if (found >= 0 && words.slice(0, found) + words.slice(found + mark.length) === whole) { plan.caretCharOffset = found; break; }
+	}
 	plan.blocksAfter = plan.blocks.map(_rapierHistoryBlock);
 	plan.fragment = fragment;
 	return plan;
@@ -29252,7 +29388,12 @@ function _rapierCommitPasteModel(plan) {
 	const oldReferenceRevision = rapier.semantic.referenceRevision;
 	const nextIds = new Set(plan.blocks.map(block => block.id));
 
-	_clearActiveBlock();
+	// The block being typed in stays open where a word the keyboard is still composing in it was folded into the source and that
+	// block stays the paste's first (the same block): _rapierMountPastePlan draws the first block into it around the word. Closed
+	// here, the open edit was taken off the page with the word in it, and the browser's composition with it.
+	const held = _editorHostEl()?._rapierHeldWord, open = _activeBlockEditContext();
+	if (!(held && held.live === true && held.text && held.end != null && held.commit == null && !held.ended && open &&
+			context.replaceCount === 1 && open.block.id === context.startBlock.id && plan.blocks[0]?.id === context.startBlock.id)) _clearActiveBlock();
 	rapier.document.blocks.splice(context.startIndex, context.replaceCount, ...plan.blocks);
 	rapier.identity.nextBlockId = Math.max(rapier.identity.nextBlockId, plan.nextBlockId);
 	_reassignOrderForRange(context.startIndex, plan.blocks.length);
@@ -29300,12 +29441,86 @@ function _rapierCommitPastePlan(plan) {
 async function _rapierMountPastePlan(plan, isCurrent) {
 	if (isCurrent && !isCurrent()) return false;
 	const { context } = plan;
-	const splice = _beginBlockDOMSplice(context.startIndex, context.replaceCount);
-	if (!splice) throw new Error('editor projection unavailable');
-
 	const fragment = plan.fragment;
 	if (!fragment) throw new Error('paste projection unavailable');
-	let blockIndex = 0;
+	// A word the keyboard is still composing in the block being typed in, folded into the source before the paste (_rapierRunLargePaste),
+	// keeps its place on the page: that block's wrapper and open edit stay, the paste's first block is drawn into it around the word
+	// (the words after the caret go to the paste's last block; the first block's words after the caret come in), and the caret stays
+	// at the word, where the keyboard goes on composing it. Drawn again, the block lost the browser's composition under the word, and
+	// the keyboard's commit of it came as new words: the word written twice, or a suggestion tap taken for it.
+	const host = _editorHostEl(), held = host && host._rapierHeldWord, typing = _activeBlockEditContext(), first = fragment.firstElementChild;
+	let kept = null;
+	if (held && held.live === true && held.text && held.end != null && held.commit == null && !held.ended && typing && first &&
+			context.replaceCount === 1 && typing.block.id === context.startBlock.id && plan.blocks[0]?.id === context.startBlock.id &&
+			!/block-wrapper--(?:table|source-edit|math-source)/.test(typing.wrapper.className) && !globalThis.RapierImageFlow?.editSource?.(typing.wrapper)) {
+		const edit = typing.editDiv, selection = window.getSelection(), caret = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+		const read = first.querySelector(':scope > .block-read');
+		const at = caret && caret.collapsed && edit.contains(caret.startContainer) ? _charOffsetForRangePoint(edit, caret.startContainer, caret.startOffset) : -1;
+		const before = at >= 0 ? String(edit.textContent || '').slice(0, at) : null;
+		if (read && before != null && before.endsWith(held.text) && String(read.textContent || '').startsWith(before)) {
+			const point = _rapierPointForTextOffset(read, at), line = point && (point.node.nodeType === Node.TEXT_NODE ? point.node.parentElement : point.node);
+			const lineEl = line && line.closest('p, h1, h2, h3, h4, h5, h6'), words = document.createRange();
+			const pathOf = node => { const path = []; for (let step = node; step && step !== edit; step = step.parentNode) path.unshift(Array.prototype.indexOf.call(step.parentNode.childNodes, step)); return path; };
+			const draw = (root, node, offset) => {
+				const rest = document.createRange();
+				rest.setStart(node, offset); rest.setEnd(root, root.childNodes.length); rest.deleteContents();
+				const into = document.createRange();
+				into.setStart(node, offset); into.insertNode(words.cloneContents());
+			};
+			try {
+				if (lineEl && lineEl.parentElement === read && !String(lineEl.nextSibling?.textContent || '').trim()) {
+					words.setStart(point.node, point.offset); words.setEnd(lineEl, lineEl.childNodes.length);
+					// Rehearsed on a copy first: the edit as it will stand must read as the first block's source, byte for byte.
+					const copy = edit.cloneNode(true), path = pathOf(caret.startContainer);
+					const node = path.reduce((step, index) => step && step.childNodes[index], copy);
+					if (node) {
+						draw(copy, node, caret.startOffset);
+						if (_rapierLiveEditRaw(copy, typing.wrapper) === String(plan.blocks[0].raw || '')) {
+							draw(edit, caret.startContainer, caret.startOffset);
+							kept = typing;
+						}
+					}
+				}
+			} catch (_) { kept = null; }
+		}
+	}
+	if (held && !kept) held.live = false;
+	if (!kept) _clearActiveBlock();
+	const splice = kept
+		? { container: document.getElementById('editor-blocks'), ref: _blockWrapperChildren(document.getElementById('editor-blocks'))[context.startIndex + 1] || null }
+		: _beginBlockDOMSplice(context.startIndex, context.replaceCount);
+	if (!splice || !splice.container) throw new Error('editor projection unavailable');
+	let tail = [];
+	if (kept) {
+		const { wrapper, editDiv } = kept, block = plan.blocks[0];
+		first.remove();
+		if (typeof wrapper._rapierBindBlock === 'function') wrapper._rapierBindBlock(block); else wrapper._rapierBlock = block;
+		_writeBlockDOM(wrapper, block);
+		_rapierWysiwygLedgerPrepare(wrapper, block);
+		editDiv._rapierHistoryBaselineRaw = block.raw;
+		editDiv._rapierCheckpointFresh = true;
+		plan.caretOpen = { editDiv, blockId: block.id };
+	} else {
+		// The block the caret goes to (and what follows it) is drawn first, and opened at the caret, before the page is let go: a word a
+		// phone's keyboard composes while the rest is drawn (a composition cannot be refused) is written there, where the person's caret
+		// stands, and stays the keyboard's composition. Drawn last, no block was open while the page was drawn: the browser wrote the
+		// word into whatever block stood under the caret's old place, the redraw of that block ended the composition, and the
+		// keyboard's commit of the word came as new words. The blocks before it are then drawn in front of it.
+		tail = Array.from(fragment.children).slice(plan.caretIndex);
+		if (tail.length) {
+			const batch = document.createDocumentFragment();
+			tail.forEach(wrapper => batch.appendChild(wrapper));
+			splice.container.insertBefore(batch, splice.ref);
+			tail.forEach((wrapper, offset) => {
+				const block = plan.blocks[plan.caretIndex + offset];
+				if (block) _rapierWysiwygLedgerPrepare(wrapper, block);
+			});
+			const editDiv = _enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+			plan.caretOpen = editDiv ? { editDiv, blockId: plan.blocks[plan.caretIndex].id } : null;
+			splice.ref = tail[0];
+		}
+	}
+	let blockIndex = kept ? 1 : 0;
 	let batchCount = 0;
 	let unpaintedChars = 0;
 	const insertedWrappers = [];
@@ -29337,7 +29552,7 @@ async function _rapierMountPastePlan(plan, isCurrent) {
 		}
 	}
 
-	_finishBlockDOMSplice(splice.container, insertedWrappers);
+	_finishBlockDOMSplice(splice.container, insertedWrappers.concat(tail));
 	return true;
 }
 
@@ -29376,7 +29591,11 @@ async function _rapierCommitPastePlanAsync(plan, job) {
 	_notifyHistoryState();
 	updateStats();
 	if (!isCurrent()) return true;
-	_enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+	// Opened while the page was drawn (_rapierMountPastePlan), the caret block keeps its caret and whatever was composed at it.
+	const open = _activeBlockEditContext();
+	if (!(plan.caretOpen && open && open.editDiv === plan.caretOpen.editDiv && open.block.id === plan.caretOpen.blockId)) {
+		_enterBlockEditAtOffset(plan.blocks[plan.caretIndex].id, plan.caretCharOffset);
+	}
 	return true;
 }
 
@@ -35438,7 +35657,7 @@ function _rapierGuardBeforeInput(e) {
 	// composition: the keyboard's late commit of it, in that same composition (no end of it has come), arrives as plain text at the
 	// caret. It is the paste's to settle (_rapierFinishMutationBarrier), never typed a second time.
 	const word = host._rapierHeldWord;
-	if (word && (word.end != null || word.outside && word.text) && word.commit == null && e.isTrusted && e.inputType === 'insertText' &&
+	if (word && (word.end != null || word.outside && word.text) && word.commit == null && word.live !== true && !word.restart && e.isTrusted && e.inputType === 'insertText' &&
 			typeof e.data === 'string' && host.contains(e.target)) {
 		e.preventDefault();
 		e.stopImmediatePropagation();
@@ -36224,11 +36443,20 @@ function _rapierMergeBoundaryPair(leftBlock, leftWrapper, leftEditDiv,
 
 	const mergedRoot = document.createElement(leftSurface.tag);
 	mergedRoot.innerHTML = leftSurface.innerHTML;
+	// The spaces the upper block's source ends with (where Enter split two words, _splitBlockAtCaret) are not on its drawn surface:
+	// they are written between the words again, and the caret stands after them.
+	const gap = /[ \t]*$/.exec(String(leftBlock.raw || ''))[0].length && !/\s$/.test(String(mergedRoot.textContent || ''))
+		? /[ \t]*$/.exec(String(leftBlock.raw || ''))[0].length : 0;
+	if (gap) mergedRoot.appendChild(document.createTextNode('\u00a0'.repeat(gap)));
 	const suffix = document.createElement('div');
 	suffix.innerHTML = rightSurface.innerHTML;
 	while (suffix.firstChild) mergedRoot.appendChild(suffix.firstChild);
 
-	const mergedRaw = _markdownFromEditHTML(mergedRoot.outerHTML);
+	// Read as a block's own words are (_rapierLiveEditRaw): a run of spaces in either half stays as it was written. Read as plain
+	// HTML it was one space, and Enter then Backspace did not give the source back.
+	const merged = document.createElement('div');
+	merged.appendChild(mergedRoot);
+	const mergedRaw = _markdownFromEditHTML(_rapierEditHtmlKeepingSpaceRuns(merged)).split(_RAPIER_SPACE_RUN_MARK).join(' ');
 	if (!mergedRaw) return false;
 	if (Array.isArray(restRaw)) {
 		// List paragraphs already have their exact source and parser separators. Keep the first
@@ -36242,7 +36470,7 @@ function _rapierMergeBoundaryPair(leftBlock, leftWrapper, leftEditDiv,
 			caretBefore: activeContext?.block?.id === leftBlock.id ? {blockId: leftBlock.id, offset: leftSurface.textLength} : null,
 		});
 	}
-	return _rapierCommitMergedPair(leftBlock, rightBlock, mergedRaw, leftSurface.textLength, activeContext, restRaw);
+	return _rapierCommitMergedPair(leftBlock, rightBlock, mergedRaw, leftSurface.textLength + gap, activeContext, restRaw);
 }
 
 // Two neighbouring blocks become the one block `mergedRaw` (the upper one's id and kind), as one Undo step, and the caret stands
@@ -36821,10 +37049,19 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 
 	// opts.prefixRaw: the words before the caret already read as a block (a typed divider,
 	// _maybeAutoConvert), whose characters as typed are already their own history step.
-	const prefixRaw = opts.prefixRaw != null ? opts.prefixRaw : _markdownFromEditHTML(prefixDiv.innerHTML);
+	// Each half is read as the block's own words are (_rapierLiveEditRaw): a run of spaces in them stays as it was written. Read as
+	// plain HTML it was one space, and Enter then Backspace did not give the source back.
+	const halfRaw = half => _markdownFromEditHTML(_rapierEditHtmlKeepingSpaceRuns(half)).split(_RAPIER_SPACE_RUN_MARK).join(' ');
+	let prefixRaw = opts.prefixRaw != null ? opts.prefixRaw : halfRaw(prefixDiv);
 	// The half after the caret of an empty heading is the plain line below it, as it is at the end of a heading: the empty
 	// heading marker (`##`) does not carry over into it, or the words typed next would be a heading.
-	const suffixWords = _markdownFromEditHTML(suffixDiv.innerHTML), suffixRaw = /^#{1,6}[ \t]*$/.test(suffixWords) ? '' : suffixWords;
+	const suffixWords = halfRaw(suffixDiv), suffixRaw = /^#{1,6}[ \t]*$/.test(suffixWords) ? '' : suffixWords;
+	// The spaces where the block is split stay at the end of the words before the caret, where the first line ends on the page
+	// (the words after it begin the next line, as they are shown). Trimmed off both halves, Enter between two words then
+	// Backspace gave the words back joined, with no space between them.
+	const gap = !leaves && opts.prefixRaw == null && String(prefixRaw).trim() && !/[ \t]$/.test(prefixRaw) && !_blockUsesRawEditor(block.raw)
+		? (/ *$/.exec(String(prefixDiv.textContent || '').replace(/\u00a0/g, ' '))[0] + /^ */.exec(String(suffixDiv.textContent || '').replace(/\u00a0/g, ' '))[0]) : '';
+	if (gap) prefixRaw += gap;
 	if (!leaves && _rapierTableFromTypedRow(block, wrapper, editDiv, prefixRaw, suffixRaw)) return;
 	// The split rule (layout/browser.js splitPlan): a wrapped picture placed in this paragraph stays
 	// where it is on the page, with whichever half its top sits in. Read from the live layout before
@@ -36849,8 +37086,9 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 	const makeBlock = (raw, preferredId) => {
 		const id      = preferredId != null ? preferredId : _nextBlockId();
 		const keepsIdentity = preferredId === block.id;
-		// The halves come off the editing surface in LF: laid back onto the file's own endings.
-		const trimmed = _rapierReconcileMarkdownEditRaw(keepsIdentity ? block.raw : '', (raw || '').trim(), block.raw)
+		// The halves come off the editing surface in LF: laid back onto the file's own endings. The first keeps the spaces of the split (above).
+		const words = keepsIdentity && gap ? String(raw || '').replace(/^\s+/, '') : (raw || '').trim();
+		const trimmed = _rapierReconcileMarkdownEditRaw(keepsIdentity ? block.raw : '', words, block.raw)
 			|| _rapierEmptyParagraphRaw(blocksAfterCount);
 		const order   = keepsIdentity ? block.order : undefined;
 		const leading = keepsIdentity ? block.leading : undefined;
@@ -37541,7 +37779,9 @@ function _rapierClearPasteBusy(job) {
 }
 
 function _rapierPasteJobKey(event) {
-	if (!_rapierEditingRuntime.pasteJob || _rapierHistoryChord(event)) return;
+	// A phone keyboard's key (keyCode 229) is let through: its edit comes as its own input, which the barrier holds and does when the
+	// paste has landed (_rapierSuppressMutationEvent). Refused here, its Backspace was lost: `q`, Backspace, `r` wrote `qr`.
+	if (!_rapierEditingRuntime.pasteJob || _rapierHistoryChord(event) || event.keyCode === 229) return;
 	event.preventDefault();
 	event.stopImmediatePropagation();
 	if (event.key === 'Escape') {
@@ -37593,6 +37833,13 @@ async function _rapierRunLargePaste(record, payload) {
 		// moved to (after those words, where the person saw them), as often as typing moves it before the paste can land.
 		for (let attempt = 0; ; attempt++) {
 			if (attempt > 5) throw new Error('paste target changed');
+			// A word the keyboard is composing is settled whole: its letters arrive one update at a time, and settled between them it
+			// took an Undo step per piece. The paste waits for the word to rest a moment (the next letter comes sooner) first.
+			const composing = _editorHostEl()?._rapierHeldWord;
+			for (let waited = 0; composing && composing.text && composing.end == null && _rapierNow() - (composing.at || 0) < 300 && waited < 40; waited++) {
+				await new Promise(resume => setTimeout(resume, 50));
+				if (job.cancelled) return false;
+			}
 			const typing = _activeBlockEditContext();
 			if (typing && !rapier.composition.block) _rapierCheckpointEdit(typing.editDiv);
 			// A word the keyboard is still composing (its start was held by the barrier, its end has not come) is in the source now,
@@ -38033,7 +38280,7 @@ function _rapierHandlePaste(event) {
 			const began = composing._rapierComposeStart, selection = window.getSelection(), host = _editorHostEl();
 			const end = began && selection && selection.rangeCount ? selection.getRangeAt(0) : null;
 			const caret = end && composing.contains(end.endContainer) ? _charOffsetForRangePoint(composing, end.endContainer, end.endOffset) : -1;
-			if (host) host._rapierHeldWord = { text: began && caret > began.start ? String(composing.textContent || '').slice(began.start, caret) : '' };
+			if (host) host._rapierHeldWord = { text: began && caret > began.start ? String(composing.textContent || '').slice(began.start, caret) : '', live: true };
 			_rapierHandleEditCompositionEnd(composing);
 			// Ending the word here emits no compositionend. Promote a new Notes title before the paste
 			// captures its heading boundary, as the Notes body tap does after ending the same word.

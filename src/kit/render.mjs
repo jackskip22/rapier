@@ -1118,7 +1118,7 @@ function _rapierProjectArtifactLayout(root, metadata, geometry, pretext) {
 
   function project(record, width, top, obstacles) {
     const plan = geometry.flowLines(record.flow, width, top, obstacles, record.lineHeight,
-      metadata.wrapColumnFloor(record.fontSize), record.direction, record.balance);
+      metadata.wrapColumnFloor(record.fontSize), record.direction, record.balance, record.align);
     if (!plan) return false;
     const output = doc.createDocumentFragment();
     let previous = null;

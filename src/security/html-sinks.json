@@ -304,12 +304,12 @@
 			"_rapierRenderPastePlan": {
 				"count": 1,
 				"kind": "probe",
-				"reason": "scratch.innerHTML = renderBlock(plan.caretRaw, ...) (sanitized) in a detached div used only to measure caret text length; never attached."
+				"reason": "scratch.innerHTML = the caret block's renderBlock output (sanitized), with and without a caret mark written into its source, in a detached div used only to find the caret's text offset; never attached."
 			},
 			"_rapierPreparePastePlan": {
 				"count": 1,
 				"kind": "probe",
-				"reason": "scratch.innerHTML = renderBlock(plan.caretRaw, ...) (sanitized) in a detached div used only to measure caret text length; never attached."
+				"reason": "scratch.innerHTML = the caret block's renderBlock output (sanitized), with and without a caret mark written into its source, in a detached div used only to find the caret's text offset; never attached."
 			},
 			"_rapierCommandGlyph": {
 				"count": 1,

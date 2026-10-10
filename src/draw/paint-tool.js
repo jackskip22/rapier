@@ -1493,8 +1493,10 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 		showToast('This painting could not be set: ' + String(error?.message || error), 'error');
 	} finally {
 		// Only this attempt's own token releases the latch: a later drawing's SET, or this same layer's
-		// own close, may already have moved it on.
-		if (state.paintSetting === setting) { state.paintSetting = false; _rapierPaintUpdateStrip(); }
+		// own close, may already have moved it on. That close left no sheet open, so the strip is brought
+		// up to date here, once the clean sheet is.
+		if (state.paintSetting === setting) state.paintSetting = false;
+		_rapierPaintUpdateStrip();
 	}
 	// SET's moment plays once the painting is kept, its clean sheet open and the latch down: nothing it does can
 	// touch the keep. An automatic Set, which comes mid-painting, lays nothing.
@@ -2208,11 +2210,15 @@ function _rapierPaintFinishClose(layer) {
 	if (layer?.raf) cancelAnimationFrame(layer.raf);
 	if (layer?.holdRaf) cancelAnimationFrame(layer.holdRaf);
 	if (layer?.dryRaf) cancelAnimationFrame(layer.dryRaf);
-	if (layer?.mount) layer.mount.remove();
-	if (layer?.id != null && state.svg) state.svg.querySelector('[data-shape-id="' + layer.id + '"]')?.removeAttribute('data-paint-live');
-	// The painter forgets this sheet, unless a stroke still holds it for its rollback (the stroke lets it go).
-	if (layer && state.gesture?.paintRollback?.layer !== layer) _rapierPaintReleaseSurface(layer);
-	_rapierPaintSweepBrushes();
+	// The overlay and its sheet go once the committed picture can show the layer's pixels (`_rapierPaintHandBack`).
+	const leave = () => {
+		if (layer?.mount) layer.mount.remove();
+		if (layer?.id != null && state.svg) state.svg.querySelector('[data-shape-id="' + layer.id + '"]')?.removeAttribute('data-paint-live');
+		// The painter forgets this sheet, unless a stroke still holds it for its rollback (the stroke lets it go).
+		if (layer && state.gesture?.paintRollback?.layer !== layer) _rapierPaintReleaseSurface(layer);
+		_rapierPaintSweepBrushes();
+	};
+	if (layer?.decoding) layer.decoding.promise.then(leave); else leave();
 }
 // A surface or a brush the page is done with is let go in the painter (after everything queued for it); a layer's surface handle stays
 // on the layer, closed, so that a late owner finds nothing to do rather than nothing.
@@ -2574,7 +2580,11 @@ function _rapierPaintScheduleBlit() {
 function _rapierPaintShowLive(on, layer = _rapierDrawState.paintLayer) {
 	const state = _rapierDrawState;
 	if (!layer?.canvas || !_rapierPaintRevisionLayers().includes(layer)) return;
+	layer.liveRequest = on;
 	if (layer.gpuDisplay) { layer.liveWanted = on; on = on && layer.displayReady && !_rapierPaintOverlayLost(layer); }
+	// A committed picture whose new pixels are still decoding is blank: the overlay keeps the layer on screen until they
+	// can paint (`_rapierPaintHandBack`), so a lift never shows the paper for the frames a decode takes.
+	if (!on && layer.decoding && (!layer.gpuDisplay || layer.displayReady) && !_rapierPaintOverlayLost(layer)) on = true;
 	const visibility = on ? '' : 'hidden';
 	if (layer.canvas.style.visibility !== visibility) layer.canvas.style.visibility = visibility;
 	// An overlay whose pixels the browser took away shows nothing: the kept picture stays up under it.
@@ -3196,16 +3206,19 @@ function _rapierPaintRehydrateFor(target, pendingGesture = null) {
 }
 // A lifted finger is completed work even while its target image is still decoding. Keep the
 // existing decode as the barrier for Done, recovery and tool changes, not a second sample queue.
-function _rapierPaintPendingStroke(finishWet = false) {
+// `asked`: the painter has already been asked to finish its material for this wait (a caller that looks again after each answer says so).
+// Asking is a command in the painter's queue, so a caller that looked again and asked again would always find the sheet unsettled and never
+// be done: an urgent checkpoint of a live painting went round without end. Looking again asks only for material the painter still holds.
+function _rapierPaintPendingStroke(finishWet = false, asked = false) {
 	// An erase still reaching the other paintings under its path is owed first: Done, a tool change and a backup wait on it.
-	return _rapierDrawState.waterAction || _rapierDrawState.paintEraseFan?.promise || _rapierPaintPendingStrokeOwed(finishWet);
+	return _rapierDrawState.waterAction || _rapierDrawState.paintEraseFan?.promise || _rapierPaintPendingStrokeOwed(finishWet, asked);
 }
-function _rapierPaintPendingStrokeOwed(finishWet = false) {
+function _rapierPaintPendingStrokeOwed(finishWet = false, asked = false) {
 	const state = _rapierDrawState;
 	const water = _rapierPaintWaterPending();
 	if (water) {
 		if (finishWet || (typeof document !== 'undefined' && document.hidden)) for (const layer of _rapierPaintRevisionLayers()) {
-			_rapierPaintDropSnapshots(layer); layer.surface?.finishWetWork?.();
+			_rapierPaintDropSnapshots(layer); if (!asked || layer.surface?._wetWork) layer.surface?.finishWetWork?.();
 			if (layer.pendingLift) _rapierPaintWakeLift(layer, layer.pendingLift);
 		}
 		return water;
@@ -3214,7 +3227,7 @@ function _rapierPaintPendingStrokeOwed(finishWet = false) {
 		const surface = layer.surface;
 		// Pagehide and native pause can stop animation frames. Their urgent checkpoint finishes
 		// only an already accepted operation; a visible routine backup awaits its bounded driver.
-		if (finishWet || (typeof document !== 'undefined' && document.hidden)) { _rapierPaintDropSnapshots(layer); surface?.finishWetWork?.(); }
+		if (finishWet || (typeof document !== 'undefined' && document.hidden)) { _rapierPaintDropSnapshots(layer); if (!asked || surface?._wetWork) surface?.finishWetWork?.(); }
 		// Everything asked of the painter for this sheet has run, and the held operation (if any) is at its boundary.
 		if (surface && !surface.settled && !surface.failure) return surface.sync().then(() => {}, () => {});
 		if (surface?._wetWork) return new Promise(ok => (layer.wetWaiters = layer.wetWaiters || []).push(ok));
@@ -4078,10 +4091,29 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 	}
 	if (grown || made || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
 	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
-	// The committed <image> now shows the same pixels the overlay does; hand the picture back to the SVG.
+	// The committed <image> now holds the same pixels the overlay does; hand the picture back to the SVG once it can show them.
+	_rapierPaintHandBack(layer, made ? made.map(row => row.id) : [shape.id]);
 	_rapierPaintShowLive(false);
 	_rapierPaintSyncPaper();
 	return null;
+}
+// A new `href` on an SVG <image> decodes after it is set, and the image is blank until then: on a phone a painting's PNG
+// takes several frames. The overlay stays up (and the image aside) until every committed piece has decoded, then the
+// layer takes whatever was asked of it meanwhile, so the swap is one frame with the pixels on both sides. A decode that
+// fails or never settles hands back after a bounded wait, as before.
+const RAPIER_PAINT_DECODE_WAIT_MS = 4000;
+function _rapierPaintHandBack(layer, ids) {
+	const svg = _rapierDrawState.svg;
+	const images = svg ? ids.map(id => svg.querySelector('[data-shape-id="' + id + '"] image[data-rapier-paint]')).filter(image => typeof image?.decode === 'function') : [];
+	if (!images.length) return null;
+	const token = {};
+	token.promise = Promise.race([Promise.allSettled(images.map(image => image.decode())), new Promise(done => setTimeout(done, RAPIER_PAINT_DECODE_WAIT_MS))]).then(() => {
+		if (layer.decoding !== token) return;
+		layer.decoding = null;
+		_rapierPaintShowLive(layer.liveRequest ?? false, layer);
+	});
+	layer.decoding = token;
+	return token.promise;
 }
 
 // ---- Paper ------------------------------------------------------------------------------------------

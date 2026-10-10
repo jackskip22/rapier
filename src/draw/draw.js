@@ -6321,6 +6321,9 @@ const RAPIER_DRAW_BACKUP_MS = 4000;
 // it carries the painting as last published -- the complete picture the last lifted stroke made, which is already in the recipe -- and
 // leaves the live pixels owing. A person who keeps painting gets a checkpoint every interval, not one only when they stop.
 const RAPIER_DRAW_BACKUP_WAIT_MS = 300;
+// A live readout of a painting that has a published picture is waited for this long (the painter's answer and the compressor, which strokes
+// slow); past it the published picture is the checkpoint and the readout is dropped.
+const RAPIER_DRAW_BACKUP_CAPTURE_MS = 1500;
 // True when the live painting has a picture of its own in the recipe to carry (its first stroke has been published).
 function _rapierDrawBackupCarryable() {
 	const state = _rapierDrawState, layer = typeof _rapierPaintLayer === 'function' ? _rapierPaintLayer() : null;
@@ -6364,6 +6367,77 @@ function _rapierDrawBackupStore() {
 	asked.catch(() => { if (state.backupStore === asked) state.backupStore = null; });
 	return asked;
 }
+// The files of a routine checkpoint are written in a worker of their own. A person's strokes keep the page's main thread busy, and a write
+// there is a dozen steps, each of which waits its turn behind the strokes' events (seven seconds a write at 4x CPU with a multi-MB painting
+// and strokes without a pause): the main thread only posts the record and hears the answer, and the worker serialises it (JSON.stringify
+// there too) and does the storage steps. Writes made on a closing page stay on the main thread, as they were.
+const RAPIER_DRAW_BACKUP_WORKER = `
+const dir = create => navigator.storage.getDirectory().then(root => root.getDirectoryHandle('draw', { create }));
+const absent = error => error && error.name === 'NotFoundError';
+onmessage = async ({ data }) => {
+	const { id, op, name } = data;
+	try {
+		if (op === 'write') {
+			const text = typeof data.record === 'string' ? data.record : JSON.stringify(data.record);
+			const d = await dir(true);
+			let writer;
+			try { writer = await (await d.getFileHandle(name, { create: true })).createWritable(); await writer.write(text); await writer.close(); }
+			catch (error) { try { if (writer) await writer.abort(); } catch (_) {} throw error; }
+			// The older checkpoints go in the same step, only after the new one is whole: one answer for the page to wait for.
+			const removed = [];
+			let failed = 0;
+			for (const older of data.remove || []) {
+				try { await d.removeEntry(older); removed.push(older); }
+				catch (error) { if (absent(error)) removed.push(older); else failed++; }
+			}
+			postMessage({ id, removed, failed });
+			return;
+		} else if (op === 'remove') {
+			let d = null;
+			try { d = await dir(false); } catch (error) { if (!absent(error)) throw error; }
+			if (d) { try { await d.removeEntry(name); } catch (error) { if (!absent(error)) throw error; } }
+		}
+		postMessage({ id });
+	} catch (error) { postMessage({ id, error: { name: String(error && error.name || 'Error'), message: String(error && error.message || error) } }); }
+};`;
+// One request to that worker. Rejects when there is no worker, it is lost, it does not answer in time or it reports a refusal; the caller then
+// does the same step on the main thread, which decides what a refusal means.
+function _rapierDrawBackupWorkerCall(message) {
+	const state = _rapierDrawState;
+	if (state.backupWorker === undefined) {
+		state.backupWorker = null;
+		try {
+			if (typeof Worker === 'function' && typeof Blob === 'function' && typeof URL?.createObjectURL === 'function') {
+				const url = URL.createObjectURL(new Blob([RAPIER_DRAW_BACKUP_WORKER], { type: 'text/javascript' }));
+				const client = { worker: new Worker(url), url, pending: new Map(), serial: 0 };
+				const lose = () => {
+					if (state.backupWorker === client) state.backupWorker = null;
+					for (const row of client.pending.values()) { clearTimeout(row.timer); row.reject(new Error('The recovery writer stopped.')); }
+					client.pending.clear();
+					try { client.worker.terminate(); } catch (_) {}
+					try { URL.revokeObjectURL(url); } catch (_) {}
+				};
+				client.lose = lose;
+				client.worker.onmessage = ({ data }) => {
+					const row = client.pending.get(data.id);
+					if (!row) return;
+					client.pending.delete(data.id); clearTimeout(row.timer);
+					if (data.error) row.reject(Object.assign(new Error(data.error.message), { name: data.error.name })); else row.resolve(data);
+				};
+				client.worker.onerror = lose; client.worker.onmessageerror = lose;
+				state.backupWorker = client;
+			}
+		} catch (_) { state.backupWorker = null; }
+	}
+	const client = state.backupWorker;
+	if (!client) return Promise.reject(new Error('No recovery writer.'));
+	return new Promise((resolve, reject) => {
+		const id = ++client.serial, timer = setTimeout(() => client.lose(), 30000);
+		client.pending.set(id, { resolve, reject, timer });
+		try { client.worker.postMessage({ ...message, id }); }
+		catch (error) { client.pending.delete(id); clearTimeout(timer); reject(error); }
+	});
+}
 function _rapierDrawBackupOPFS() {
 	const dir = create => navigator.storage.getDirectory().then(root => root.getDirectoryHandle('draw', { create }));
 	const absent = error => error?.name === 'NotFoundError';
@@ -6379,13 +6453,19 @@ function _rapierDrawBackupOPFS() {
 			}
 			return rows;
 		},
-		async write(name, text) {
+		// `record` is the record itself (or its text); `background` writes it in the worker above and falls back to this thread if that fails.
+		// A background write also removes `remove` (the older checkpoints) in the worker and answers { removed, failed }; otherwise it answers nothing and
+		// the caller removes them.
+		async write(name, record, { background = false, remove = [] } = {}) {
+			if (background) { try { const answer = await _rapierDrawBackupWorkerCall({ op: 'write', name, record, remove }); return { removed: answer.removed || [], failed: answer.failed || 0 }; } catch (_) {} }
+			const text = typeof record === 'string' ? record : JSON.stringify(record);
 			const d = await dir(true);
 			let writer;
 			try { writer = await (await d.getFileHandle(name, { create: true })).createWritable(); await writer.write(text); await writer.close(); }
 			catch (error) { try { await writer?.abort(); } catch (_) {} throw error; }
 		},
-		async remove(name) {
+		async remove(name, { background = false } = {}) {
+			if (background) { try { await _rapierDrawBackupWorkerCall({ op: 'remove', name }); return; } catch (_) {} }
 			let d;
 			try { d = await dir(false); } catch (error) { if (absent(error)) return; throw error; }
 			try { await d.removeEntry(name); } catch (error) { if (!absent(error)) throw error; }
@@ -6417,7 +6497,7 @@ function _rapierDrawBackupIDB() {
 			const names = await run('readonly', store => store.getAllKeys());
 			return names.map(name => ({ name: String(name), text: () => run('readonly', store => store.get(name)).then(value => typeof value === 'string' ? value : '') }));
 		},
-		write(name, text) { return run('readwrite', store => store.put(text, name)); },
+		write(name, record) { return run('readwrite', store => store.put(typeof record === 'string' ? record : JSON.stringify(record), name)); },
 		remove(name) { return run('readwrite', store => store.delete(name)); },
 	};
 }
@@ -6456,10 +6536,10 @@ function _rapierDrawBackupTouch(delay = RAPIER_DRAW_BACKUP_MS) {
 }
 // `quiet`: a removal made while a failed write is being reported raises no second notice of its
 // own (one refused store, one notice).
-async function _rapierDrawBackupRemove(store, files, owner, { quiet = false } = {}) {
+async function _rapierDrawBackupRemove(store, files, owner, { quiet = false, background = false } = {}) {
 	let ok = true;
 	for (const name of files) {
-		try { await store.remove(name); owner?.files.delete(name); }
+		try { await store.remove(name, { background }); owner?.files.delete(name); }
 		catch (_) { ok = false; }
 	}
 	if (!ok && !quiet) _rapierDrawBackupProblem('An older drawing backup could not be removed.');
@@ -6492,7 +6572,7 @@ async function _rapierDrawBackupWrite(closing = false) {
 			if (urgent || !_rapierDrawBackupCarryable()) await pending;
 			else if (!await _rapierDrawBackupSettled(pending, RAPIER_DRAW_BACKUP_WAIT_MS)) { carried = true; break; }
 			if (!state.open || state.session !== session) return;
-			pending = _rapierPaintPendingStroke(closing);
+			pending = _rapierPaintPendingStroke(closing, true);
 		}
 		if (!_rapierDrawBackupHere()) { _rapierDrawBackupTouch(); return; }
 		owner = _rapierDrawBackupOwner();
@@ -6544,12 +6624,21 @@ async function _rapierDrawBackupWrite(closing = false) {
 	owner.files.add(name); owner.writing++;
 	// Register before the await: a clear requested during this write captures this exact file too.
 	const io = state.backupIO = (state.backupIO || Promise.resolve()).then(async () => {
-		let store, failure = 'This drawing could not be backed up. Download it before you leave.';
+		let store, swept = null, failure = 'This drawing could not be backed up. Download it before you leave.';
 		try {
 			await owner.ready;
 			// The pending filename was registered before compression. A concurrent clear owns it,
 			// and the encoded bytes belong to this captured recipe, never a later live layer.
-			if (encode && !await encode()) {
+			let captured = true;
+			if (encode) {
+				if (published && !urgent) {
+					let timer;
+					captured = await Promise.race([encode(), new Promise(done => { timer = setTimeout(() => done(false), RAPIER_DRAW_BACKUP_CAPTURE_MS); })]);
+					clearTimeout(timer);
+					if (!captured && typeof _rapierPaintDropSnapshots === 'function' && typeof _rapierPaintRevisionLayers === 'function') for (const layer of _rapierPaintRevisionLayers()) _rapierPaintDropSnapshots(layer);
+				} else captured = await encode();
+			}
+			if (!captured) {
 				// The painter's pixels could not be read at one revision (a stroke began, the painter moved on). A painting that has been published
 				// has its last complete picture in the recipe: keep that as this checkpoint, and leave the live pixels owing for the next one. A
 				// painting never published has nothing to carry, and nothing is written.
@@ -6579,7 +6668,7 @@ async function _rapierDrawBackupWrite(closing = false) {
 			}
 			failure = 'This drawing could not be backed up: storage is full or unavailable. Add it or download it before you leave.';
 			store = await _rapierDrawBackupStore();
-			await store.write(name, JSON.stringify(record));
+			swept = await store.write(name, record, { background: !urgent, remove: previous });
 		} catch (error) {
 			if (error?.code === 'PAINT_CAPTURE_CHANGED') {
 				owner.files.delete(name);
@@ -6594,7 +6683,13 @@ async function _rapierDrawBackupWrite(closing = false) {
 			return false;
 		}
 		if (state.session === owner.session) state.backupAt = record.at;
-		const cleaned = await _rapierDrawBackupRemove(store, previous, owner);
+		let cleaned;
+		if (swept) {
+			// The worker removed the older checkpoints in the step that wrote this one.
+			for (const older of swept.removed) owner.files.delete(older);
+			cleaned = swept.failed === 0;
+			if (!cleaned) _rapierDrawBackupProblem('An older drawing backup could not be removed.');
+		} else cleaned = await _rapierDrawBackupRemove(store, previous, owner, { background: !urgent });
 		if (cleaned && state.session === owner.session && state.backupError) {
 			state.backupError = null; showToast('Drawings are backed up again', 'info');
 		}
@@ -6851,8 +6946,8 @@ function _rapierDrawAssetBudget() {
 	const test = typeof window !== 'undefined' ? window.__rapierDrawAssetMaxTest : undefined;
 	return Number.isFinite(test) ? test : globalThis.RapierImageAssets.IMAGE_LIMITS.bytes;
 }
-// A drawing is content when it has a shape or a background: a background alone is the person's work.
-function _rapierDrawHasContent(recipe) { return !!(recipe && (recipe.shapes.length || recipe.background)); }
+// Content is a shape or a chosen background. Paper alone is not: Water keeps it with its first stroke, so a cleared drawing still holds it.
+function _rapierDrawHasContent(recipe) { return !!(recipe && (recipe.shapes.length || recipe.background && recipe.background.kind !== 'paper')); }
 // Done does not wait for the full-effort JPEG XL. A painting still in its working form (a lossless PNG) is written to the drawing as it
 // is, so the drawing closes into the document at once; the encoder keeps a copy of the same pixels as JPEG XL behind it, and when it is
 // done the document's picture is replaced by the drawing written with that painting (RapierEmbeddedImages.finishLater): the bytes
