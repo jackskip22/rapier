@@ -1,6 +1,6 @@
 {
   "name": "rapier-server",
-  "version": "1.1.91",
+  "version": "1.1.92",
   "description": "Serve, search, edit and export Markdown from your own folder or S3-compatible bucket, with the Rapier agent door for AI agents over MCP. No account, and nothing downloaded at run time.",
   "keywords": [
     "markdown",

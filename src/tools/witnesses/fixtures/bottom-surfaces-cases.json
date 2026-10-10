@@ -1247,121 +1247,6 @@
       }
     },
     {
-      "id": "change-line",
-      "selector": ".change-line",
-      "rule": {
-        "file": "editor/styles/rapier-source.css",
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "right",
-            "value": "calc(51px + var(--space-4))",
-            "important": false
-          }
-        ]
-      },
-      "basis": "production CSS; synthetic component content, not an app-opening receipt",
-      "component": {
-        "kind": "surface",
-        "classes": "change-line visible",
-        "controlClass": "change-line__verb",
-        "attributes": {
-          "aria-hidden": "false"
-        },
-        "dynamicBox": {
-          "left": 24,
-          "topFromBottom": 180,
-          "width": 240,
-          "height": 56
-        }
-      }
-    },
-    {
-      "id": "review-track",
-      "selector": ".review-track",
-      "rule": {
-        "file": "editor/styles/rapier-source.css",
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "right",
-            "value": "calc(51px + var(--space-4))",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + 51px)",
-            "important": false
-          }
-        ]
-      },
-      "basis": "production CSS; synthetic component content, not an app-opening receipt",
-      "component": {
-        "kind": "surface",
-        "classes": "review-track",
-        "controlClass": "review-track__verb",
-        "attributes": {
-          "aria-hidden": "false"
-        }
-      }
-    },
-    {
-      "id": "compare-law-review",
-      "selector": ".compare-law-review",
-      "rule": {
-        "file": "editor/styles/rapier-source.css",
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "left",
-            "value": "var(--editor-h-pad)",
-            "important": false
-          },
-          {
-            "property": "right",
-            "value": "var(--editor-h-pad)",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
-            "important": false
-          }
-        ]
-      },
-      "basis": "production CSS; synthetic component content, not an app-opening receipt",
-      "component": {
-        "kind": "surface",
-        "classes": "compare-law-review",
-        "controlClass": "compare-law-review__action",
-        "attributes": {
-          "aria-hidden": "false",
-          "data-visible": "true"
-        }
-      }
-    },
-    {
       "id": "settings-overlay",
       "selector": ".settings-overlay",
       "rule": {
@@ -1688,6 +1573,166 @@
           "aria-hidden": "false"
         },
         "support": "image-tools"
+      }
+    },
+    {
+      "id": "changes-layer",
+      "selector": ".rapier-changes-layer",
+      "rule": {
+        "file": "editor/styles/rapier-changes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-changes-layer",
+        "noControl": true,
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "changes-away",
+      "selector": ".rapier-changes-away",
+      "rule": {
+        "file": "editor/styles/rapier-changes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-changes-away",
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 44
+        },
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "changes-mark",
+      "selector": ".rapier-changes-mark",
+      "rule": {
+        "file": "editor/styles/rapier-changes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-changes-mark",
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 20,
+          "height": 24
+        },
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "changes-drawing-controls",
+      "selector": ".rapier-changes-controls--drawing",
+      "rule": {
+        "file": "editor/styles/rapier-changes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "surface",
+        "classes": "rapier-changes-controls rapier-changes-controls--drawing",
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 240,
+          "height": 52
+        },
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
+      }
+    },
+    {
+      "id": "changes-presence",
+      "selector": ".rapier-changes-presence",
+      "rule": {
+        "file": "editor/styles/rapier-changes.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "basis": "production CSS; synthetic component content, not an app-opening receipt",
+      "component": {
+        "kind": "control",
+        "classes": "rapier-changes-presence",
+        "dynamicBox": {
+          "left": 24,
+          "topFromBottom": 180,
+          "width": 20,
+          "height": 24
+        },
+        "controlClass": "icon-btn",
+        "attributes": {
+          "aria-hidden": "false"
+        }
       }
     }
   ],

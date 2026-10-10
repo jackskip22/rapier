@@ -1,8 +1,17 @@
 // A page tool must return a whole JSON value below the browser's transport boundary.
 // SPDX-License-Identifier: AGPL-3.0-only
+export const TOOL_RESULT_BYTES = 12 * 1024;
 export const PAGE_RESULT_BYTES = 15 * 1024;
 const encoder = new TextEncoder();
 export const resultBytes = value => encoder.encode(JSON.stringify(value)).byteLength;
+
+// Admission feedback is text-only, outside the tool's successful output schema.
+// The validator measures this exact escaped envelope before retaining diagnostics.
+export function inputErrorResult({message, path, omitted}) {
+  const feedback = {outcome: 'refused', isError: true, code: 'invalid_arguments', message, path,
+    ...(omitted ? {omitted} : {})};
+  return {isError: true, content: [{type: 'text', text: JSON.stringify(feedback)}]};
+}
 
 // Applied work is never retried to obtain a smaller receipt. Keep its outcome and identifiers,
 // then fit complete fields; an omitted source read carries no editing handles.

@@ -97,7 +97,7 @@ class WorkspaceStorage {
   #transactionDepth=0;
   constructor(store, key, record) {
     this.store=store; this.key=key; this.record=record; this.values=new Map(record.values); this.alarm=record.alarm;
-    this.failed=false;
+    this.failed=false;this.failure=null;
     this.kv={
       get:key=>structuredClone(this.values.get(key)),
       put:(key,value)=>{if(typeof key !== 'string' || value === undefined) throw new TypeError('A state key/value is required'); this.values.set(key,structuredClone(value));},
@@ -126,7 +126,7 @@ class WorkspaceStorage {
     if(this.#transactionDepth)return;
     const next={...this.record,values:[...structuredClone(this.values)],alarm:this.alarm};
     try { await this.store.commit(this.key,next,this.record); this.record=next; }
-    catch(error) {this.failed=true;throw error;}
+    catch(error) {this.failed=true;this.failure=error;throw error;}
   }
   async setAlarm(at) {if(!Number.isSafeInteger(at) || at<0)throw new TypeError('Invalid alarm');this.alarm=at;await this.sync();}
   async getAlarm() {return this.alarm;}
@@ -154,7 +154,19 @@ export class WorkspaceStore {
     }
     if(this.entries.size>=128)throw refusal('WORKSPACE_BUSY','The live workspace limit has been reached. Retry after an outstanding call finishes.',503);
   }
+  // Another server on the same store may spend from a shared allowance first. The take then reloads the
+  // current allowance and runs again; nothing was spent by the attempt that lost.
   binding(kind,environment,scope=null) {
+    const bound=this.#binding(kind,environment,scope);
+    if(kind!=='budget')return bound;
+    return {idFromName:bound.idFromName,get:id=>({fetch:async request=>{
+      for(let attempt=1;;attempt++) {
+        try {return await bound.get(id).fetch(request.clone());}
+        catch(error) {if(error.code!=='FILE_CONFLICT' || attempt===4)throw error;}
+      }
+    }})};
+  }
+  #binding(kind,environment,scope=null) {
     return {idFromName:name=>String(name),get:id=>({fetch:async request=>{
       this.healthy();const key=sha256(kind+':'+String(id));
       this.activeKeys.set(key,(this.activeKeys.get(key) || 0)+1);
@@ -186,7 +198,13 @@ export class WorkspaceStore {
       }
       const entry=await entryPromise;
       if(scope && entry.storage.record.document!==scope)throw refusal('WORKSPACE_SCOPE_REFUSED','This capability belongs to another document path.',403);
-      try {await this.checkRecord(key,entry.storage.record);return await entry.owner.fetch(request);}
+      try {
+        await this.checkRecord(key,entry.storage.record);
+        const answer=await entry.owner.fetch(request);
+        // The allowance owner answers a lost conditional write as unavailable; the store surfaces the conflict itself.
+        if(kind==='budget' && entry.storage.failure?.code==='FILE_CONFLICT')throw entry.storage.failure;
+        return answer;
+      }
       catch(error) {if(error.code==='FILE_CONFLICT' && this.entries.get(key)===entryPromise)this.entries.delete(key);throw error;}
       finally {if((entry.storage.failed || kind==='document' && !entry.storage.record.document) && this.entries.get(key)===entryPromise)this.entries.delete(key);}
       } finally {const active=this.activeKeys.get(key)-1;if(active)this.activeKeys.set(key,active);else this.activeKeys.delete(key);}

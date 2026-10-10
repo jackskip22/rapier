@@ -1,6 +1,6 @@
 {
-  "release": "1.1.91",
-  "builtAt": "2026-10-10T14:19:49.692Z",
+  "release": "1.1.92",
+  "builtAt": "2026-10-10T15:34:26.332Z",
   "node": "v22.23.3",
   "mode": "release",
   "packing": "zopfli",
@@ -58,8 +58,8 @@
   "profiles": {
     "document": {
       "path": "rapier-document.html",
-      "bytes": 1618135,
-      "sha256": "b0812ac27ae228438983afc039b530a93a727c31e390b701e59d3529218c8867",
+      "bytes": 1621825,
+      "sha256": "698075bd87987799471415a3f05b3521edfcdeb00cca72ab88b35900a784f7f5",
       "budget": {
         "warn": 2079000,
         "refuse": 2100000
@@ -194,26 +194,26 @@
         {
           "element": "rapier-style-rest-runtime",
           "name": "rapier-styles-rest.json",
-          "bytes": 60596,
-          "sha256": "65d64dee2840a28b0da69573513610970d20b07e1395c0bc1c5ae81d7ab8ceff"
+          "bytes": 58732,
+          "sha256": "78c0a2ce35f81423a843e512ed38fc4b57d9cde3e9ca812499ea6e62b9e0f780"
         },
         {
           "element": "rapier-ui-runtime",
           "name": "rapier-ui.html",
-          "bytes": 115601,
-          "sha256": "61c3b7a64fecd2b6c3879eb3a6ac488ce9dc0e14dfc116bec61ffe342fee9593"
+          "bytes": 113356,
+          "sha256": "295eb887837e9232730f82beb766ec749525d32148dcb094039d4abcaa9243cb"
         },
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 1740259,
-          "sha256": "986abf76edf9b304190ddbe22c878dc114bc5c7bd8f1c294b457df7737da55db"
+          "bytes": 1746018,
+          "sha256": "a74dd54134495cfe1781d29a2bc6fdcdcf957a59ad065bfd46017ae25eaf9e4a"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 1819660,
-          "sha256": "c70c85ffd27803375b3d30f5afadc82a270110a117a565787ea60c08bee6f010"
+          "bytes": 1823955,
+          "sha256": "b3bac71093c4c6f938beeb121e60f08271e668aba2592d342a485f3a0c70fd5a"
         }
       ],
       "shakenExports": {
@@ -400,7 +400,7 @@
         ]
       },
       "jxl": null,
-      "builtAt": "2026-10-10T14:11:13.100Z",
+      "builtAt": "2026-10-10T15:26:15.368Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -408,8 +408,8 @@
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2322219,
-      "sha256": "0e23e56342dacd9f409f70c965ff76e043524e0c92c05a171c2f2ff432096413",
+      "bytes": 2326527,
+      "sha256": "dd3032257b55d9fd0bd752490e45fc5c759849ddfd928be38f9c27c90aa7a51b",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -544,26 +544,26 @@
         {
           "element": "rapier-style-rest-runtime",
           "name": "rapier-styles-rest.json",
-          "bytes": 171925,
-          "sha256": "f18c1cae8b9a1b0ef80e67ada40dc52113c1205d5247aad5a406facf50c84c8f"
+          "bytes": 170061,
+          "sha256": "5d34cdb6673302411b3052b80acc317f9596e9fe06b38722485751ec1c66c877"
         },
         {
           "element": "rapier-ui-runtime",
           "name": "rapier-ui.html",
-          "bytes": 131956,
-          "sha256": "6e0e7b576302a75df94f2ec8ea7e13e6d225911ef84636114e48529a8f0c57a5"
+          "bytes": 129799,
+          "sha256": "08f88201cc452145f21e64876a5d28ffc2a3057444ef1ecbc1db1b3f5086b6a1"
         },
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2694772,
-          "sha256": "03edc0f0d5d81ef576a2b4b989f3d90283e5181018d00e069d282552c6a7d9c6"
+          "bytes": 2700681,
+          "sha256": "f1826d16e82c0a4654c06e5e1dd3b249b790eb36755375b46a20cdcfc1b2a683"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2713185,
-          "sha256": "b8f4b45364642a763af0f71b811f254a143c5c853b7e5a5e66a8d31d53386134"
+          "bytes": 2717186,
+          "sha256": "6c2d5ba238e0e4aa38acff9a9f4aaa456087fc17137f2f4d0bc038bc4014b250"
         }
       ],
       "shakenExports": {
@@ -815,7 +815,7 @@
           "sha256": "beed8f9ee5c0d5f1e106594dd7aa2b5dfe147f26539bdf8eb2fd41e7188116fb"
         }
       },
-      "builtAt": "2026-10-10T14:19:49.692Z",
+      "builtAt": "2026-10-10T15:34:26.332Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -823,23 +823,23 @@
     },
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 251794,
-      "sha256": "8ecac0a6fc38c7345714e32107c6dead60e6dee72ffb3faa087be1e9f26fa089",
-      "gzip": 217773,
+      "bytes": 252158,
+      "sha256": "0c082f6a8a52ae516d048fb5a1279148f8cdadacd498fae4db571c34b75deeab",
+      "gzip": 218103,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-10T14:11:48.606Z",
+      "builtAt": "2026-10-10T15:26:47.556Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
       "canonical": false,
       "parts": {
         "core": {
-          "raw": 652637,
-          "gzip": 196999,
-          "base124": 227186
+          "raw": 653184,
+          "gzip": 197300,
+          "base124": 227550
         },
         "licenses": {
           "raw": 55784,
@@ -851,13 +851,13 @@
   },
   "editor": {
     "path": "rapier.html",
-    "bytes": 2322219,
-    "sha256": "0e23e56342dacd9f409f70c965ff76e043524e0c92c05a171c2f2ff432096413"
+    "bytes": 2326527,
+    "sha256": "dd3032257b55d9fd0bd752490e45fc5c759849ddfd928be38f9c27c90aa7a51b"
   },
   "apps": {
     "path": "dist/chatgpt/rapier-app.html",
-    "bytes": 9064383,
-    "sha256": "b1792bef285d63643be58095d134794c19bd7c075f838bb1558d34c54deda8ed",
+    "bytes": 9068028,
+    "sha256": "bf852961c2ed142591aac53c8b70960b2bcf3ea1eeb498d08c3f7684bd2d695d",
     "spans": [
       {
         "element": "lib-dompurify",
@@ -964,26 +964,26 @@
       {
         "element": "rapier-style-rest-runtime",
         "name": "rapier-styles-rest.json",
-        "bytes": 171925,
-        "sha256": "f18c1cae8b9a1b0ef80e67ada40dc52113c1205d5247aad5a406facf50c84c8f"
+        "bytes": 170061,
+        "sha256": "5d34cdb6673302411b3052b80acc317f9596e9fe06b38722485751ec1c66c877"
       },
       {
         "element": "rapier-shared-runtime",
         "name": "rapier-shared.js",
-        "bytes": 2694772,
-        "sha256": "03edc0f0d5d81ef576a2b4b989f3d90283e5181018d00e069d282552c6a7d9c6"
+        "bytes": 2700681,
+        "sha256": "f1826d16e82c0a4654c06e5e1dd3b249b790eb36755375b46a20cdcfc1b2a683"
       },
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-editor.js",
-        "bytes": 2713185,
-        "sha256": "b8f4b45364642a763af0f71b811f254a143c5c853b7e5a5e66a8d31d53386134"
+        "bytes": 2717186,
+        "sha256": "6c2d5ba238e0e4aa38acff9a9f4aaa456087fc17137f2f4d0bc038bc4014b250"
       },
       {
         "element": "rapier-ui-runtime",
         "name": "rapier-ui.html",
-        "bytes": 130405,
-        "sha256": "d9ab1753f7d38d9072ccbc38613c322bed20d59571ab209b15f58d80c4fc1001"
+        "bytes": 128248,
+        "sha256": "afda6bfdb575e1c4aff5b84c91a5434aaa337f52b29d935aa5522135a48e67e0"
       },
       {
         "element": "rapier-plugin-math",
@@ -1170,11 +1170,11 @@
     ]
   },
   "shell": {
-    "sha256": "74a70d0afea8a129e097ab956f18d2edddc1bc9c3bbcdbc60bc9bf28525aaf9d"
+    "sha256": "3278960c3bffa6b901e0035fa0bafe934bf0fa308847c437dacb3a0b702e07e5"
   },
   "htmlSinks": {
-    "named": 130,
-    "files": 20,
+    "named": 131,
+    "files": 21,
     "inventory": "security/html-sinks.json"
   },
   "tools": [

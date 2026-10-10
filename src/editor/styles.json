@@ -28,6 +28,10 @@
     "path": "editor/styles/rapier-info.css"
   },
   {
+    "id": "rapier-changes-style",
+    "path": "editor/styles/rapier-changes.css"
+  },
+  {
     "id": "rapier-draw-style",
     "path": "editor/styles/rapier-draw.css"
   },

@@ -177,6 +177,57 @@ export function historyProjection(input, {from = 0, to = input?.source?.length, 
 		earliestRevision: prepared.earliestRevision, complete: prepared.complete, acts, groups: groupHistoryActs(acts), ...(before ? {before} : {})};
 }
 
+// Project all reading places in one replay. Typing only invalidates this transient view.
+export function historyPlaces(input, blocks) {
+	const prepared = prepareHistory(input);
+	if (!prepared.ok) return prepared;
+	if (!Array.isArray(blocks) || blocks.some(block => !block ||
+		!historyBoundary(prepared.source, block.from) || !historyBoundary(prepared.source, block.to) || block.to < block.from))
+		return historyFailure('range_invalid');
+	const projected = blocks.map(block => ({id: block.id, from: block.from, to: block.to,
+		source: prepared.source.slice(block.from, block.to), range: {from: block.from, to: block.to}, acts: []}));
+	let text = prepared.source;
+	for (let index = prepared.rows.length - 1; index >= 0; index--) {
+		const {record, splices} = prepared.rows[index], before = historyPreviousSource(text, splices);
+		if (before === null) return historyFailure('history_invalid');
+		for (const block of projected) {
+			const after = {...block.range, source: text.slice(block.range.from, block.range.to)};
+			let touched = false;
+			for (let at = splices.length - 1; at >= 0; at--) {
+				const mapped = historyRangeBefore(block.range, splices[at]);
+				block.range = {from: mapped.from, to: mapped.to}; touched ||= mapped.touched;
+			}
+			const previous = {...block.range, source: before.slice(block.range.from, block.range.to)};
+			if (touched && previous.source !== after.source) block.acts.push({...historyAct(record), before: previous, after});
+		}
+		text = before;
+	}
+	const acts = prepared.rows.map(({record}) => historyAct(record));
+	const present = new Map(), effects = new Map();
+	for (const act of acts) {
+		const changes = [];
+		const set = (id, value) => {
+			const prior = present.get(id) === true;
+			present.set(id, value); changes.push({id, before: prior, after: value});
+		};
+		if (act.reapplies) {
+			for (const change of effects.get(act.reapplies) || [{id: act.reapplies, after: true}]) set(change.id, change.after);
+		} else {
+			const ids = act.sourceTransactionIds || (act.sourceTransactionId ? [act.sourceTransactionId] : act.reverts ? [act.reverts] : []);
+			for (const id of ids) {
+				for (const change of (effects.get(id) || [{id, before: false, after: true}]).slice().reverse()) {
+					if (present.get(change.id) === change.after) set(change.id, change.before);
+				}
+			}
+		}
+		set(act.id, true); effects.set(act.id, changes);
+	}
+	for (const block of projected) { block.acts.reverse(); delete block.range; }
+	return {ok: true, source: prepared.source, initialSource: prepared.initialSource, revision: prepared.revision,
+		earliestRevision: prepared.earliestRevision, complete: prepared.complete, acts, blocks: projected,
+		reversed: acts.filter(act => present.get(act.id) !== true).map(act => act.id)};
+}
+
 function minimalHistorySplice(before, after, pos = 0) {
 	let first = 0, a = before.length, b = after.length;
 	while (first < a && first < b && before[first] === after[first]) first++;

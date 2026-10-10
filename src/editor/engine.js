@@ -2715,7 +2715,6 @@ const rapier = {
 		saved: null, seen: null, agent: [],
 		moved: new Map(), shown: new Map(), decided: null,
 
-		posture: null,
 	},
 
 	stats: { words: 0, chars: 0, lines: 0, cache: new Map() },
@@ -2787,27 +2786,6 @@ function _rapierIdentityIsCurrent(record) {
 	return _rapierMutationStampSharesDocument(record) &&
 		record.filename === String(rapier.document.filename || '');
 }
-
-// Two small facts for the review surface, owned here (not re-derived by the review surface itself
-// each time it needs them):
-//
-// _rapierReviewContinuationRuntime.navGeneration is the "did the person's own attention move
-// elsewhere" stamp a type-over continuation checks once its await resolves -- bumped at the real
-// places attention actually moves (entering a block's own edit, opening Find, opening an engine
-// dialog), never by this file's own programmatic re-entry alone (that call always happens *after*
-// the check reads it, so it can never make its own continuation look stale). Document identity
-// itself is already owned by _rapierMutationStamp/_rapierMutationStampSharesDocument above; this
-// is the one additional fact those do not carry.
-const _rapierReviewContinuationRuntime = Object.seal({ navGeneration: 0 });
-
-// The projection/hydration generation a review decoration's own freshness must invalidate on:
-// bumped whenever a wrapper's own `.block-read` is rebuilt in place from underneath an existing
-// decoration -- a dormant tail block waking (_rapierHydrateBlockEl) or a live block's read surface
-// rewritten by a Plain/Rapier layout refresh or a reference-consumer refresh (both through
-// _writeBlockDOM) -- none of which change the review's own id/status/pos signature, so without
-// this a redraw the surface owes never happens.
-let _rapierReviewProjectionGeneration = 0;
-function _rapierBumpReviewProjectionGeneration() { _rapierReviewProjectionGeneration++; }
 
 // Load-path marks: the phases of opening a document on the performance timeline, so a witness
 // (large-document) can report where the time before first paint goes instead of guessing.
@@ -4125,6 +4103,7 @@ function _rapierCommitDocumentIdentity(options) {
 	}
 	rapier.identity.epoch = (rapier.identity.epoch || 0) + 1;
 	rapier.identity.authority = nextAuthority;
+	globalThis.RapierChanges?.reset();
 	_rapierHoldReadingPoint(options?.readingPointOwed === true ? nextAuthority : '');
 	_rapierPublishDocumentUrl();
 	rapier.undo.ledger = [];
@@ -7357,7 +7336,6 @@ function _rapierHydrateBlockEl(wrapper, awake) {
 	if (!wrapper || !wrapper._rapierUnrendered) return wrapper;
 	const block = _rapierBoundBlock(wrapper);
 	if (!block) return wrapper;
-	_rapierBumpReviewProjectionGeneration();
 	wrapper._rapierUnrendered = false;
 	wrapper._rapierDormant = null;
 	wrapper.classList.remove('block-wrapper--dormant');
@@ -7370,13 +7348,6 @@ function _rapierHydrateBlockEl(wrapper, awake) {
 		wrapper.replaceChildren();
 	} else {
 		_rapierShellRelease(wrapper);
-		// This wrapper's read surface just went from unrendered to live for the first time (the render
-		// window wants it now, `awake` true) -- a change already pending against this block, staged
-		// while it was still a shell, has never had a decoration attempt of its own. Parked-dormant
-		// (`awake` false, the background tail fill) stays invisible either way, so its own turn to
-		// decorate is deferred to whenever `_rapierWysiwygWake` later wakes it from `_rapierDormant`,
-		// not here.
-		_rapierReviewSpansRefresh();
 	}
 	return wrapper;
 }
@@ -7655,28 +7626,9 @@ function rapierFocusEditingHost() {
 	return true;
 }
 
-// A block's own edit surface may still carry a pending change's decoration (change peeking's
-// inline surface) while the person edits something else in the same paragraph, or leaves without
-// deciding the change at all: this is the one place that decoration is kept out of the committed
-// document -- a clone, never the live DOM, so no caret or Range in the real editing session is
-// ever touched. The removed text (what the document still holds) survives in the clone; the
-// synthetic inserted preview does not. Type-over's own accept applies the change through the
-// kernel first and always lands its keystroke after that commit, so it never reaches here with a
-// decoration still standing.
-function _rapierReviewCleanClone(node) {
-	const clone = node.cloneNode(true);
-	clone.querySelectorAll('.rapier-review-stale').forEach(marker => marker.remove());
-	clone.querySelectorAll('.rapier-review-change').forEach(container => {
-		const removed = container.querySelector('.rapier-review-change__removed');
-		container.replaceWith(document.createTextNode(removed ? removed.textContent || '' : ''));
-	});
-	return clone;
-}
-
 function _rapierLiveEditRaw(editDiv, wrapper) {
 	if (!editDiv || !wrapper) return '';
 	const blankEntered = !!editDiv._rapierBlankLine;
-	if (editDiv.querySelector('.rapier-review-change, .rapier-review-stale')) editDiv = _rapierReviewCleanClone(editDiv);
 	const block = _rapierBoundBlock(wrapper);
 	const before = block ? String(block.raw || '') : '';
 	const rawSource = wrapper.classList.contains('block-wrapper--math-source') ||
@@ -8042,11 +7994,6 @@ function enterBlockEdit(block, wrapper, activation = null) {
 	const liveBlock = rapier.document.blocks.find(candidate => candidate.id === block.id);
 	if (!liveBlock || !wrapper.isConnected) return null;
 	block = liveBlock;
-	// The navigation stamp: every real entry into a block's own edit -- including this call's own
-	// eventual re-entry after a type-over's accept resolves -- counts as the person's attention
-	// landing somewhere, checked by whoever captured the stamp *before* this call (never by this call
-	// itself, since the check it matters for always runs first).
-	_rapierReviewContinuationRuntime.navGeneration++;
 
 	const hostArea = document.getElementById('editor-blocks')?.getBoundingClientRect();
 	const wrapperArea = wrapper.getBoundingClientRect();
@@ -9538,7 +9485,6 @@ function _rapierScheduleDeferredProjectionRefresh() {
 
 function _writeBlockDOM(wrapper, block, opts) {
 	if (!wrapper || !block) return false;
-	_rapierBumpReviewProjectionGeneration();
 	if (wrapper._rapierDormant) _rapierWysiwygWake(wrapper);
 	const readDiv = wrapper.querySelector('.block-read');
 	const editDiv = wrapper.querySelector('.block-edit');
@@ -9570,13 +9516,6 @@ function _writeBlockDOM(wrapper, block, opts) {
 	if (readDiv) scheduleIdleHighlight(readDiv);
 	if (opts && opts.writeEdit && editDiv) scheduleIdleHighlight(editDiv);
 	_rapierProjectionRefreshRuntime.pending.delete(Number(block.id));
-	// The read surface just rebuilt above is exactly what a pending change's span was last drawn into
-	// (or never was, if this block only just came alive) -- a reference-consumer refresh or a
-	// Plain/Rapier layout refresh reaches here without ever going through a kernel commit, so nothing
-	// else downstream of this call would otherwise try the decoration again. Cheap when no review is
-	// active or pending (bar render, then the signature/decidable checks return early); the
-	// projection-generation bump above is what keeps this from being skipped.
-	_rapierReviewSpansRefresh();
 	return renderedAnchorsChanged;
 }
 
@@ -10559,31 +10498,10 @@ function _rapierScheduleKeyboardAccommodation() {
 	_rapierKeyboardRuntime.frame = requestAnimationFrame(_rapierUpdateKeyboardAccommodation);
 }
 
-const _rapierCompareActionBarRuntime = Object.seal({ frame: 0 });
-function _rapierPositionCompareActionBar() {
-	_rapierCompareActionBarRuntime.frame = 0;
-	const bar = document.querySelector('.compare-law-review[data-visible="true"]');
-	if (!bar) {
-		document.documentElement.style.removeProperty('--rapier-compare-action-space');
-		return;
-	}
-	const height = Math.max(1, bar.getBoundingClientRect().height || bar.offsetHeight || 0);
-	const safeBottom = Math.max(0, _rapierLayoutClientBottom() - _rapierNativeBottomInset());
-	const bottomEdge = Math.max(0, Math.min(safeBottom, _rapierInteractiveViewportClientBottom()));
-	bar.style.bottom = 'auto';
-	bar.style.top = Math.max(0, Math.round(bottomEdge - height)) + 'px';
-	document.documentElement.style.setProperty('--rapier-compare-action-space', Math.ceil(height + 24) + 'px');
-}
-function _rapierScheduleCompareActionBarPosition() {
-	if (_rapierCompareActionBarRuntime.frame) return;
-	_rapierCompareActionBarRuntime.frame = requestAnimationFrame(_rapierPositionCompareActionBar);
-}
-
 function _rapierScheduleVisualViewportLayout() {
 	_rapierHoldTopBarOnVisualViewport();
 	_rapierScheduleKeyboardAccommodation();
 	_rapierScheduleFormatToolbarPosition();
-	_rapierScheduleCompareActionBarPosition();
 	_rapierScheduleToastLift();
 }
 
@@ -17183,7 +17101,6 @@ function _rapierRestoreEngineDialogTarget(capture) {
 }
 
 function _rapierBeginEngineDialog(overlay, onCancel) {
-	_rapierReviewContinuationRuntime.navGeneration++;
 	const inheritedCapture = _rapierDialogRuntime.active?.capture || null;
 	if (_rapierDialogRuntime.active) _rapierDialogRuntime.active.cancel(false);
 	const capture = inheritedCapture || _rapierCaptureEngineDialogTarget();
@@ -20150,7 +20067,6 @@ function _rapierCompareRenderHunk(hunk, index) {
 	const fragment = document.createDocumentFragment();
 	for (const row of hunk.rows) fragment.appendChild(_rapierCompareRow(row));
 	section.appendChild(fragment);
-	_rapierWillReviewPeekControls(section, index);
 	return section;
 }
 
@@ -20235,8 +20151,6 @@ function _rapierCompareRenderResult(result) {
 	_rapierCompareRuntime.previewing = false;
 	_rapierCompareSetSummary(result);
 
-	if (_rapierCompareRuntime.lawReview && !_rapierWillReviewDiffResult(result)) return;
-
 	if (result.status === 'same') {
 		_rapierCompareShowState('no changes', _rapierCompareRuntime.exact ? 'The two files contain the same text.' : 'Same text; only the line endings differ.');
 		srAnnounce('No changes');
@@ -20268,7 +20182,6 @@ function _rapierCompareRenderResult(result) {
 
 	const previewOnly = !_rapierCompareRuntime.lawReview &&
 		result.hunks.length > 1 && !_rapierFeatureAllowed('compare.full');
-	if (_rapierCompareRuntime.lawReview && _rapierWillReviewSlot.pending) _rapierWillReviewMapChanges(_rapierWillReviewSlot.pending, result.hunks);
 	const fragment = document.createDocumentFragment();
 	let oldCursor = 1;
 	let newCursor = 1;
@@ -20297,7 +20210,7 @@ function _rapierCompareRenderResult(result) {
 			if (position === index) node.setAttribute('aria-current', 'true'); else node.removeAttribute('aria-current');
 		});
 	}
-	// A horizontal swipe on the changes moves to the next or previous one (change peeking).
+	// A horizontal swipe on the comparison moves to the next or previous change.
 	_rapierBindHorizontalSwipe(content, direction => rapierCompareStep(direction));
 	if (!_rapierCompareRuntime.resizeObserver && typeof ResizeObserver === 'function') {
 		_rapierCompareRuntime.resizeObserver = new ResizeObserver(_rapierCompareRefreshOverflowFades);
@@ -20308,7 +20221,6 @@ function _rapierCompareRenderResult(result) {
 	if (previewOnly) requestAnimationFrame(_rapierCompareInstallPreviewBoundary);
 	rapier.compare.currentHunk = 0;
 	_rapierCompareNotify();
-	globalThis.RapierAgentBrowser?.presentationChanged();
 	srAnnounce('Comparison ready. ' + _rapierCountNoun(result.additions, 'addition') + ', ' + _rapierCountNoun(result.deletions, 'deletion') + ', ' + _rapierCountNoun(result.hunks.length, 'change') + '.');
 }
 
@@ -20446,7 +20358,6 @@ function _rapierCompareOpenLens(lens, changeId = null, scope = null) {
 
 	_rapierCompareRuntime.agentOpened = lens !== 'seen';
 	_rapierCompareRuntime.agentScope = lens !== 'seen' ? scope : null;
-	if (lens === 'seen') _rapierSeenFlickActions();
 	return {
 		opened: true, lens, reason: '', changeId: resolvedChangeId,
 		baseRevision: Number(baseline.revision || 0), currentRevision,
@@ -20595,15 +20506,10 @@ function rapierCompareClose(options = {}) {
 	const content = document.getElementById('compare-content');
 	const names = document.getElementById('compare-summary-names');
 	const counts = document.getElementById('compare-summary-counts');
-	const lawActions = document.getElementById('compare-law-review');
-	const seenActions = document.getElementById('compare-seen-action');
-	if (seenActions) { seenActions.dataset.visible = 'false'; seenActions.replaceChildren(); }
 	if (state) { state.dataset.visible = 'false'; state.replaceChildren(); }
 	if (content) content.replaceChildren();
 	if (names) names.textContent = '';
 	if (counts) counts.textContent = '';
-	if (lawActions) { lawActions.dataset.visible = 'false'; lawActions.replaceChildren(); }
-	_rapierScheduleCompareActionBarPosition();
 	_rapierCompareNotify();
 	const restored = options.skipRestore
 		? Promise.resolve(false)
@@ -23460,10 +23366,9 @@ function _findCurrentRange() {
 	if (!(range instanceof Range)) return null;
 	const editor = document.getElementById('editor-blocks');
 	if (!editor) return null;
-	// An open review is drawn into a block again whenever any block wakes (_rapierWysiwygWake, _rapierReviewDecorateBlock),
-	// which replaces the text nodes the block's matches were made in: they collapse, still inside the editor. Each
-	// collapsed match is found again in its block's text as it is now, at the same occurrence of the same words, and its
-	// own Range takes the new ends, so the highlights that hold it paint the words again.
+	// Rebuilding a block can replace the text nodes its matches were made in. A collapsed
+	// match is found again at the same occurrence in the current block projection, then its
+	// own Range receives the new ends so the highlight still follows those words.
 	if (range.collapsed && match.blockId != null && typeof match.shown === 'string') {
 		const memo = _rapierFindRuntime.documentGuard?.projection;
 		const projections = new Map();
@@ -24211,75 +24116,6 @@ async function rapierReplaceAll(currentOnly = false) {
 }
 
 function rapierReplaceOne() { return rapierReplaceAll(true); }
-
-function rapierOpenSeenDelta(options = null) {
-	if ((options || {}).trusted !== true) {
-		return { opened: false, lens: 'seen', reason: 'untrusted_gesture', changeId: null,
-			baseRevision: null, currentRevision: Number(rapier.revision.settled || 0) };
-	}
-	return _rapierCompareOpenLens('seen');
-}
-
-function _rapierSeenFlickActions() {
-	const holder = document.getElementById('compare-seen-action');
-	if (!holder) return;
-	holder.replaceChildren();
-	holder.dataset.visible = 'true';
-	const flick = document.createElement('button');
-	flick.type = 'button';
-	flick.className = 'compare-law-review__action';
-	flick.textContent = 'put it back the way I left it';
-	flick.addEventListener('click', event => {
-		if (event.isTrusted === true) rapierRestoreSeenBaseline();
-	});
-	holder.append(flick);
-	_rapierScheduleCompareActionBarPosition();
-}
-
-async function rapierRestoreSeenBaseline() {
-	if (_rapierUserMutationBlocked()) return false;
-	const baseline = rapier.review.seen;
-	if (!baseline) return false;
-	const wanted = String(baseline.text);
-	if (rapier.compare && (rapier.compare.active || rapier.compare.running)) {
-		try { await rapierCompareClose(); } catch (_) {}
-	}
-	if (!_rapierCommitPendingHistory()) return false;
-
-	const before = _rapierSourceText();
-	const target = wanted;
-	if (target === before) {
-		showToast('already the way you left it', 'success');
-		return false;
-	}
-
-	const guard = Object.freeze({
-		..._rapierMutationStamp(),
-		mode: String(rapier.view.mode || ''),
-	});
-
-	if (rapier.document.docKind === 'markdown') {
-		let replacement;
-		try {
-			replacement = await _rapierWithCompoundTransaction(
-				{ operation: 'document.restore-seen' },
-				async () => _rapierReplaceCanonicalText(before, target, guard),
-			);
-		} catch (error) {
-			try { console.warn('[rapier] restoring the last look failed', error); } catch (_) {}
-			showToast('that could not be put back safely', 'error');
-			return false;
-		}
-		if (!replacement.result) {
-			showToast('Document changed; nothing was put back', 'error');
-			return false;
-		}
-	} else {
-		_rapierHeavyWindowReplaceAll(target);
-	}
-	showToast('put back the way you left it', 'success');
-	return true;
-}
 
 const RAPIER_DB_NAME    = RapierStorage.recoveryDb;
 const RAPIER_DB_VERSION = 1;
@@ -30705,16 +30541,6 @@ function _rapierWysiwygWake(wrapper) {
 	_rapierShellRelease(wrapper);
 	wrapper.classList.add('block-wrapper--woke');
 	wrapper.append(...nodes);
-	// The nodes reattached here are exactly the ones _rapierWysiwygSleep tore out -- whatever
-	// review decoration (or lack of it) they carried at sleep time. A change can be staged,
-	// dropped, or newly decided while this wrapper was asleep and detached, so its own read
-	// surface must be tried again now that it is back in the live document (a dormant
-	// block waking is redecorated only because this tells the refresh something moved).
-	// This is the ordinary scroll-driven wake (_rapierWysiwygRenderWindow), which never itself
-	// goes through a kernel commit or an agent invocation -- nothing else would call the refresh
-	// on this wrapper's behalf, so it is called directly rather than merely primed for later.
-	_rapierBumpReviewProjectionGeneration();
-	_rapierReviewSpansRefresh();
 	scheduleIdleHighlight(wrapper);
 	return wrapper;
 }
@@ -31671,7 +31497,7 @@ function _rapierOpenDocumentNavigator(kind, inheritedTravelTicket = null) {
 	_rapierNavigatorRuntime.travelTicket = _rapierTravelTicketCurrent(inheritedTravelTicket)
 		? inheritedTravelTicket : _rapierTravelBegin(kind === 'outline' ? 'document outline' : 'go to line');
 	const navigatorGuard = Object.freeze(_rapierMutationStamp());
-	_rapierPostureRender();
+	_rapierAgentConnectionsRender();
 	_rapierRenderNavigatorChecks();
 	if (kind === 'outline' && (rapier.document.docKind === 'markdown' || structural)) {
 		const host = document.getElementById('editor-blocks');
@@ -38481,7 +38307,7 @@ function _rapierHtmlTableSource(table) {
 	const copy = inert.importNode(table, true);
 	let index = null;
 	const appendix = label => (index ||= assets.documentAssets(_rapierSourceText())).assets.get(assets.normalizeLabel(label))?.url || '';
-	copy.querySelectorAll('.table-edit-controls, .table-tools, .table-toolbar, .block-edit-button, .block-plus, .block-move-controls, .rapier-review-stale, [data-table-action]').forEach(node => node.remove());
+	copy.querySelectorAll('.table-edit-controls, .table-tools, .table-toolbar, .block-edit-button, .block-plus, .block-move-controls, [data-table-action]').forEach(node => node.remove());
 	copy.querySelectorAll('img, span[data-rapier-remote-src]').forEach(node => _rapierHtmlTablePicture(node, inert, appendix));
 	for (const node of [copy, ...copy.querySelectorAll('*')]) {
 		for (const attribute of Array.from(node.attributes)) {
@@ -43821,92 +43647,9 @@ function _rapierWillLawOfTarget(target, will) {
 		value.endBlockId == null ? null : value.endBlockId, will);
 }
 
-const _RAPIER_WILL_REVIEW_MS = 120000;
 const _RAPIER_WILL_RESTORE_MS = 2000;
 
 const _rapierWillReviewSlot = Object.seal({ pending: null, settling: null });
-
-const _RAPIER_WILL_TRUSTED_DECISION = Symbol('will trusted decision');
-
-function _rapierWillReviewCurrentText(resolved) {
-	if (!resolved || !resolved.record) return null;
-	if (resolved.kind === 'document-range') {
-		return String(resolved.source || '').slice(resolved.start, resolved.end);
-	}
-	if (resolved.kind === 'markdown-range') {
-		return String(resolved.body || '').slice(resolved.start, resolved.end);
-	}
-	if (resolved.startBlock.id === resolved.endBlock.id) {
-		return String(resolved.startText || '').slice(resolved.start, resolved.end);
-	}
-	const first = rapier.document.blocks.findIndex(block => block.id === resolved.startBlock.id);
-	const last = rapier.document.blocks.findIndex(block => block.id === resolved.endBlock.id);
-	if (first < 0 || last < first) return null;
-	const parts = [];
-	for (let index = first; index <= last; index++) {
-		const block = rapier.document.blocks[index];
-		const text = _rapierBlockLiveText(block.id);
-		if (text == null) return null;
-		parts.push(index === first ? text.slice(resolved.start)
-			: index === last ? text.slice(0, resolved.end) : text);
-	}
-	const selected = parts.join('\n\n');
-	return _rapierIntegrityMatches(resolved.record.anchor.selectedIntegrity,
-		_rapierTextIntegrity(selected)) ? selected : null;
-}
-
-const _rapierWillReviewIntervalKey = resolved => JSON.stringify(_rapierTargetInterval(resolved));
-
-function _rapierWillReviewActions(ready, places = 0) {
-	const pending = _rapierWillReviewSlot.pending;
-	const holder = document.getElementById('compare-law-review');
-	if (!holder || !pending || pending.done) return;
-	holder.replaceChildren();
-	holder.dataset.visible = 'true';
-	const check = pending.presentation?.kind === 'check';
-	const status = document.createElement('p');
-	status.className = 'compare-law-review__status';
-	status.textContent = check
-		? 'CHANGES SINCE REVISION ' + pending.presentation.baseRevision +
-			(pending.presentation.includesHumanChanges ? ' · INCLUDES HUMAN EDITS' : '')
-		: pending.byPosture ? 'PROPOSED · NOT APPLIED' : 'HELD BY THIS DOCUMENT · NOT APPLIED';
-	const keep = document.createElement('button');
-	keep.type = 'button';
-	keep.className = 'compare-law-review__action compare-law-review__action--primary';
-	keep.textContent = check ? 'NOT YET' : 'KEEP HELD';
-	keep.addEventListener('click', event => {
-		if (event.isTrusted === true) {
-			_rapierSeenWitnessDecision(pending, false);
-			_rapierWillReviewDecide(pending, false, _RAPIER_WILL_TRUSTED_DECISION);
-		}
-	});
-	const allow = document.createElement('button');
-	allow.type = 'button';
-	allow.className = 'compare-law-review__action compare-law-review__action--allow';
-	allow.textContent = check ? 'REVIEWED' : 'ALLOW THIS ONCE';
-	allow.disabled = ready !== true;
-	allow.setAttribute('aria-disabled', ready === true ? 'false' : 'true');
-	if (Number(places) > 1) {
-
-		allow.dataset.places = String(places);
-		allow.setAttribute('aria-label', check ? 'reviewed, ' + places + ' changes'
-			: 'allow this once, in ' + places + ' places');
-	}
-	allow.addEventListener('click', event => {
-		if (event.isTrusted !== true) return;
-		const kept = _rapierWillReviewKeptIds(pending);
-		if (kept && !kept.length) {
-			_rapierSeenWitnessDecision(pending, false);
-			_rapierWillReviewDecide(pending, false, _RAPIER_WILL_TRUSTED_DECISION);
-			return;
-		}
-		_rapierSeenWitnessDecision(pending, true);
-		_rapierWillReviewDecide(pending, true, _RAPIER_WILL_TRUSTED_DECISION, kept && pending.dropped?.size ? kept : null);
-	});
-	holder.append(status, keep, allow);
-	_rapierWillReviewPeekRefresh(pending);
-	_rapierScheduleCompareActionBarPosition();
-}
 
 function _rapierWillReviewSettle(pending, allowed, reason, closeSurface = true, restoreOverride = null, changeIds = null) {
 	if (!pending || pending.done || _rapierWillReviewSlot.pending !== pending) return false;
@@ -43919,9 +43662,6 @@ function _rapierWillReviewSettle(pending, allowed, reason, closeSurface = true, 
 	if (pending.left) {
 		try { document.removeEventListener('visibilitychange', pending.left); } catch (_) {}
 	}
-	const holder = document.getElementById('compare-law-review');
-	if (holder) { holder.dataset.visible = 'false'; holder.replaceChildren(); }
-	_rapierScheduleCompareActionBarPosition();
 	pending.restore = restoreOverride || Promise.resolve(false);
 	if (!restoreOverride && closeSurface && rapier.compare &&
 			(rapier.compare.active || rapier.compare.running)) {
@@ -43976,178 +43716,10 @@ function _rapierWillReviewRelease(pending, afterDelivery) {
 	}, 0);
 }
 
-const _rapierWillReviewDecide = (pending, allowed, proof, changeIds = null) => {
-	if (proof !== _RAPIER_WILL_TRUSTED_DECISION) return false;
-	return _rapierWillReviewSettle(pending, allowed === true,
-		allowed === true ? 'allowed' : 'kept', true, null, changeIds);
-};
-
-// Change peeking: a proposal's changes are decided one by one in the lens. Each hunk carries
-// keep/drop; ALLOW applies every change not dropped; dropping them all is KEEP HELD. The unit
-// shown is the unit decided: a hunk that holds two of the proposal's splices decides both. The
-// mapping is by baseline line: each change's position line falls in, or nearest to, one hunk's
-// old-line range.
-function _rapierWillReviewMapChanges(pending, hunks) {
-	const changes = Array.isArray(pending?.changes) ? pending.changes : null;
-	if (!changes || !changes.length || !Array.isArray(hunks) || !hunks.length) { if (pending) pending.hunkChanges = null; return; }
-	const text = String(pending.currentText || '');
-	const lineOf = pos => { let line = 1; const stop = Math.min(pos, text.length); for (let i = 0; i < stop; i++) if (text.charCodeAt(i) === 10) line++; return line; };
-	const ranges = hunks.map(h => [Number(h.oldStart) || 1, (Number(h.oldStart) || 1) + Math.max(0, (Number(h.oldLines) || 0) - 1)]);
-	const perHunk = hunks.map(() => []);
-	for (const change of changes) {
-		const line = lineOf(Number(change.pos) || 0);
-		let best = 0, bestDistance = Infinity;
-		ranges.forEach(([lo, hi], index) => {
-			const distance = line < lo ? lo - line : line > hi ? line - hi : 0;
-			if (distance < bestDistance) { bestDistance = distance; best = index; }
-		});
-		perHunk[best].push(change.id);
-	}
-	pending.hunkChanges = perHunk;
-	pending.dropped = new Set();
-}
-
-function _rapierWillReviewKeptIds(pending) {
-	if (!pending?.hunkChanges) return null;
-	const kept = [];
-	pending.hunkChanges.forEach((ids, index) => { if (!pending.dropped?.has(index)) kept.push(...ids); });
-	return kept;
-}
-
-// Only a hunk that carries one of the proposal's own changes is decidable; a hunk the kernel
-// derived from a change (a picture's retired bytes) follows the change it belongs to.
-function _rapierWillReviewDecidableHunks(pending) {
-	return pending?.hunkChanges ? pending.hunkChanges.reduce((n, ids) => n + (ids.length ? 1 : 0), 0) : 0;
-}
-function _rapierWillReviewPeekRefresh(pending) {
-	const total = _rapierWillReviewDecidableHunks(pending);
-	const droppedCount = pending?.dropped ? pending.dropped.size : 0;
-	for (const section of document.querySelectorAll('#compare-content .compare-hunk')) {
-		const index = Number(section.dataset.hunkIndex);
-		const dropped = !!pending?.dropped?.has(index);
-		section.classList.toggle('compare-hunk--dropped', dropped);
-		for (const button of section.querySelectorAll('.compare-hunk__peek button')) {
-			const active = (button.dataset.peek === 'drop') === dropped;
-			button.setAttribute('aria-pressed', active ? 'true' : 'false');
-		}
-	}
-	const allow = document.querySelector('#compare-law-review .compare-law-review__action--allow');
-	if (allow && total > 1 && !pending?.presentation) {
-		const keptCount = total - droppedCount;
-		allow.textContent = droppedCount ? (keptCount ? 'ALLOW ' + keptCount + ' OF ' + total : 'KEEP HELD') : 'ALLOW THIS ONCE';
-		allow.setAttribute('aria-label', droppedCount ? (keptCount ? 'allow ' + keptCount + ' of ' + total + ' changes' : 'keep all held') : 'allow this once, in ' + total + ' places');
-	}
-}
-
-function _rapierWillReviewPeekControls(section, index) {
-	const pending = _rapierWillReviewSlot.pending;
-	if (!_rapierCompareRuntime.lawReview || !pending || pending.presentation || !pending.hunkChanges || _rapierWillReviewDecidableHunks(pending) < 2 || !pending.hunkChanges[index]?.length) return;
-	const row = document.createElement('div');
-	row.className = 'compare-hunk__peek';
-	for (const [peek, label, icon] of [['keep', 'keep this change', 'check'], ['drop', 'drop this change', 'cross']]) {
-		const button = document.createElement('button');
-		button.type = 'button';
-		button.className = 'icon-btn compare-hunk__peek-btn';
-		button.dataset.peek = peek;
-		button.setAttribute('aria-label', label);
-		button.setAttribute('data-tip', label);
-		button.innerHTML = _rapierCommandIconMarkup(icon);
-		button.addEventListener('click', event => {
-			if (event.isTrusted !== true || pending.done) return;
-			event.preventDefault(); event.stopPropagation();
-			if (peek === 'drop') pending.dropped.add(index); else pending.dropped.delete(index);
-			_rapierWillReviewPeekRefresh(pending);
-		});
-		row.appendChild(button);
-	}
-	section.appendChild(row);
-}
-
-function _rapierWillReviewDiffResult(result) {
-	const pending = _rapierWillReviewSlot.pending;
-	if (!pending) return false;
-	if (!result || result.status !== 'ok' || !Array.isArray(result.hunks) || !result.hunks.length) {
-		_rapierWillReviewSettle(pending, false, 'diff_failed', true);
-		return false;
-	}
-	_rapierWillReviewMapChanges(pending, result.hunks);
-	_rapierWillReviewActions(true, result.hunks.length);
-	return true;
-}
-
-function _rapierWillReviewOpen(resolved, replacement, ctx, byPosture = false, presentation = null, changes = null) {
-
-	if (document.visibilityState === 'hidden') {
-		return Promise.resolve({ allowed: false, reason: 'unattended' });
-	}
-	if (_rapierWillReviewSlot.settling || rapier.compare.active || rapier.compare.running) {
-		return Promise.resolve({ allowed: false, reason: 'review_unavailable' });
-	}
-	const currentText = _rapierWillReviewCurrentText(resolved);
-	if (currentText == null) return Promise.resolve({ allowed: false, reason: 'target_changed' });
-	const proposedText = String(replacement == null ? '' : replacement);
-	const check = presentation?.kind === 'check';
-	if (check && (typeof presentation.baseline !== 'string' || proposedText !== currentText ||
-			!Number.isSafeInteger(presentation.baseRevision) || presentation.baseRevision < 0)) {
-		return Promise.resolve({ allowed: false, reason: 'review_evidence_unavailable' });
-	}
-	const baseline = check ? presentation.baseline : currentText;
-	let resolve;
-	const decision = new Promise(done => { resolve = done; });
-	const signal = ctx && ctx.signal;
-	const pending = {
-		done: false, resolve, timer: 0, signal, abort: null, left: null, restore: Promise.resolve(false),
-		resolved,
-		record: resolved.record,
-		authority: String(rapier.identity.authority || ''),
-		epoch: Number(rapier.identity.epoch || 0),
-		revision: Number(rapier.revision.settled || 0),
-		generation: Number(rapier.revision.generation || 0),
-		filename: String(rapier.document.filename || ''),
-		interval: _rapierWillReviewIntervalKey(resolved),
-
-		byPosture: byPosture === true,
-		presentation: check ? {kind: 'check', baseline, baseRevision: presentation.baseRevision,
-			includesHumanChanges: presentation.includesHumanChanges === true} : presentation?.contribution
-			? {kind: 'proposal', contribution: String(presentation.contribution)} : null,
-		scope: byPosture === true ? _rapierCallerScopeLenient(ctx) : null,
-		currentText,
-		replacement: proposedText,
-		changes: Array.isArray(changes) && changes.length ? changes.map(row => ({ id: String(row.id), pos: Number(row.pos) || 0 })) : null,
-		hunkChanges: null, dropped: new Set(),
-	};
-	_rapierWillReviewSlot.pending = pending;
-	_rapierWillReviewSlot.settling = pending;
-	const c = rapier.compare;
-	c.snapshot = _rapierCompareCaptureView();
-	c.lens = 'law';
-	c.changeId = null;
-	try {
-		_rapierCompareStart(baseline, check ? 'EARLIER' : 'CURRENT · HELD', pending.replacement,
-			check ? 'CURRENT' : presentation?.contribution ? String(presentation.contribution)
-			: presentation?.base ? String(rapier.document.filename || 'document.md') + ' · proposed by ' + presentation.base.by + ', ' + new Date(presentation.base.at).toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : 'PROPOSED · AGENT', { lawReview: true });
-	} catch (_) {
-
-		_rapierWillReviewSettle(pending, false, 'diff_failed', true);
-	}
-	if (_rapierWillReviewSlot.pending === pending) {
-		_rapierWillReviewActions(false);
-		pending.timer = setTimeout(() => _rapierWillReviewSettle(pending, false, 'timeout', true),
-			_RAPIER_WILL_REVIEW_MS);
-
-		pending.left = () => {
-			if (document.visibilityState === 'hidden') {
-				_rapierWillReviewSettle(pending, false, 'abandoned', true);
-			}
-		};
-		document.addEventListener('visibilitychange', pending.left);
-		if (signal && typeof signal.addEventListener === 'function') {
-			pending.abort = () => _rapierWillReviewSettle(pending, false, 'aborted', true);
-			signal.addEventListener('abort', pending.abort, { once: true });
-			if (signal.aborted === true) pending.abort();
-		}
-	}
-	return decision;
+// A display cannot authorize a held edit. The door retains its refusal until a person
+// changes the document's own instruction through the existing Will controls.
+function _rapierWillReviewOpen() {
+	return Promise.resolve({ allowed: false, reason: 'review_unavailable' });
 }
 
 const _rapierSourcePassagesOf = globalThis.RapierAgentMarkdown._rapierSourcePassagesOf;
@@ -44422,8 +43994,8 @@ _rapierBootFactsPublished.then(_rapierRegisterPlatformOperations).catch(error =>
 
 const _RAPIER_SINCE_OPEN_REFRESH_MS = 250;
 const _rapierSinceOpen = Object.seal({
-	active: false, worker: null, timer: null, refreshTimer: 0, jobId: 0,
-	text: '', revision: -1, waiters: [], units: null,
+	worker: null, timer: null, refreshTimer: 0, jobId: 0,
+	text: '', revision: -1, units: null,
 });
 
 function _rapierSinceOpenAvailable() {
@@ -44432,26 +44004,12 @@ function _rapierSinceOpenAvailable() {
 }
 
 function _rapierSinceOpenWanted() {
-	return _rapierSinceOpen.active || rapier.review.moved.size > 0;
+	return rapier.review.moved.size > 0;
 }
 
 function _rapierSinceOpenClear() {
-	document.querySelectorAll('#editor-blocks > .since-open-hunk')
-		.forEach(node => node.remove());
 	document.querySelectorAll('#editor-blocks > .block-wrapper[data-seen-unit]')
-		.forEach(node => { delete node.dataset.sinceOpenChanged; delete node.dataset.seenUnit; });
-}
-
-function _rapierSinceOpenAnchored(render) {
-	const viewport = _rapierCaptureEditorViewport();
-	try { render(); }
-	finally { _rapierRestoreEditorViewport(viewport); }
-}
-
-function _rapierSinceOpenSettle(result) {
-	const waiters = _rapierSinceOpen.waiters.splice(0);
-	const value = result || { status: 'closed' };
-	waiters.forEach(resolve => { try { resolve(value); } catch (_) {} });
+		.forEach(node => { delete node.dataset.seenUnit; });
 }
 
 function _rapierSinceOpenClose() {
@@ -44465,12 +44023,8 @@ function _rapierSinceOpenClose() {
 	_rapierSinceOpen.text = '';
 	_rapierSinceOpen.revision = -1;
 	_rapierSinceOpen.units = null;
-	const wasActive = _rapierSinceOpen.active;
-	_rapierSinceOpen.active = false;
-	_rapierSinceOpenSettle(null);
 	_rapierSeenRelease();
-	_rapierSinceOpenAnchored(_rapierSinceOpenClear);
-	if (wasActive) _rapierAgentBarRender();
+	_rapierSinceOpenClear();
 }
 
 function _rapierSinceOpenAnchorLine(hunk) {
@@ -44490,100 +44044,55 @@ function _rapierSinceOpenLineOffsets(text) {
 	return offsets;
 }
 
-function _rapierSinceOpenDone() {
-	if (!_rapierSinceOpen.active || !(_rapierSinceOpen.units instanceof Map)) return false;
-	const units = _rapierSinceOpen.units;
-	for (const unit of [...units.keys()]) _rapierSeenDeliver(unit);
-	_rapierSinceOpenClose();
-	return true;
-}
-
-function _rapierSinceOpenUndoAvailable() {
-	const top = rapier.undo.branch[rapier.undo.cursor - 1];
-	return !!(top && top.changeSet && top.changeSet.kind === 'change') &&
-		!rapier.access.readOnly && !rapier.undo.applying;
-}
-
 function _rapierSinceOpenRender(result) {
-	_rapierSinceOpenAnchored(() => {
-		_rapierSinceOpenClear();
-		_rapierSinceOpen.units = result.status === 'same' ? new Map() : null;
-		if (result.status !== 'ok') return;
-
-		if (Number(rapier.revision.settled || 0) !== _rapierSinceOpen.revision) return;
-		const host = document.getElementById('editor-blocks');
-		if (!host) return;
-		const draw = _rapierSinceOpen.active;
-		const wrappers = _blockWrapperChildren(host);
-		const text = _rapierSinceOpen.text;
-		const offsets = _rapierSinceOpenLineOffsets(text);
-
-		const blockIndexOfLine = line => {
-			const at = _rapierBodyOffsetOfCanonical(
-				offsets[Math.max(0, Math.min(offsets.length - 1, line - 1))]);
-			if (at < 0) return 0;
-			const region = _rapierMarkdownRangeBlockIndices(at, at);
-			return region ? region.first : -1;
-		};
-		const raw = new Map();
-		for (const hunk of result.hunks) {
-			const rows = hunk.rows.filter(row => row.type === 'add' || row.type === 'remove');
-			if (!rows.length) continue;
-			const index = blockIndexOfLine(_rapierSinceOpenAnchorLine(hunk));
-			let firstAdd = 0;
-			let lastAdd = 0;
-			for (const row of rows) {
-				if (row.type !== 'add' || row.newLine == null) continue;
-				if (!firstAdd) firstAdd = row.newLine;
-				lastAdd = row.newLine;
-			}
-
-			const from = firstAdd ? blockIndexOfLine(firstAdd) : index;
-			const to = firstAdd ? blockIndexOfLine(lastAdd) : index;
-			const change = rows.map(row => row.type + '\u0000' + String(row.text == null ? '' : row.text))
-				.join('\n');
-			let unit = '';
-			for (let at = from; at >= 0 && at <= to && at < wrappers.length; at++) {
-				const id = wrappers[at].dataset.blockId;
-				if (!id) continue;
-				raw.set(id, raw.has(id) ? raw.get(id) + '\n' + change : change);
-				if (!unit) unit = id;
-				if (!firstAdd) continue;
-
-				wrappers[at].dataset.seenUnit = id;
-				if (draw) wrappers[at].dataset.sinceOpenChanged = '';
-			}
-			if (!draw) continue;
-			const strip = document.createElement('section');
-			strip.className = 'since-open-hunk';
-			strip.setAttribute('contenteditable', 'false');
-			strip.setAttribute('aria-label', 'changed since your last look');
-
-			if (unit && !firstAdd) strip.dataset.seenUnit = unit;
-			for (const row of rows) strip.appendChild(_rapierCompareRow(row));
-			host.insertBefore(strip, index < 0 ? null : wrappers[index] || null);
+	_rapierSinceOpenClear();
+	_rapierSinceOpen.units = result.status === 'same' ? new Map() : null;
+	if (result.status !== 'ok') { _rapierSeenObserve(); return; }
+	if (Number(rapier.revision.settled || 0) !== _rapierSinceOpen.revision) return;
+	const host = document.getElementById('editor-blocks');
+	if (!host) return;
+	const wrappers = _blockWrapperChildren(host);
+	const offsets = _rapierSinceOpenLineOffsets(_rapierSinceOpen.text);
+	const blockIndexOfLine = line => {
+		const at = _rapierBodyOffsetOfCanonical(
+			offsets[Math.max(0, Math.min(offsets.length - 1, line - 1))]);
+		if (at < 0) return 0;
+		const region = _rapierMarkdownRangeBlockIndices(at, at);
+		return region ? region.first : -1;
+	};
+	const raw = new Map();
+	for (const hunk of result.hunks) {
+		const rows = hunk.rows.filter(row => row.type === 'add' || row.type === 'remove');
+		if (!rows.length) continue;
+		const index = blockIndexOfLine(_rapierSinceOpenAnchorLine(hunk));
+		let firstAdd = 0, lastAdd = 0;
+		for (const row of rows) {
+			if (row.type !== 'add' || row.newLine == null) continue;
+			if (!firstAdd) firstAdd = row.newLine;
+			lastAdd = row.newLine;
 		}
-		const units = new Map();
-		for (const [id, change] of raw) units.set(id, _rapierSeenDigest(change));
-		_rapierSinceOpen.units = units;
-	});
+		const from = firstAdd ? blockIndexOfLine(firstAdd) : index;
+		const to = firstAdd ? blockIndexOfLine(lastAdd) : index;
+		const change = rows.map(row => row.type + '\u0000' + String(row.text == null ? '' : row.text)).join('\n');
+		for (let at = from; at >= 0 && at <= to && at < wrappers.length; at++) {
+			const id = wrappers[at].dataset.blockId;
+			if (!id) continue;
+			raw.set(id, raw.has(id) ? raw.get(id) + '\n' + change : change);
+			if (firstAdd) wrappers[at].dataset.seenUnit = id;
+		}
+	}
+	const units = new Map();
+	for (const [id, change] of raw) units.set(id, _rapierSeenDigest(change));
+	_rapierSinceOpen.units = units;
 	_rapierSeenObserve();
-
-	_rapierAgentBarRender();
 }
 
 function _rapierSinceOpenProject() {
 	const baseline = rapier.review.seen;
 	const baselineText = _rapierReviewText(baseline);
-	if (baselineText == null) {
-		_rapierSinceOpenSettle({ status: 'baseline-unavailable' });
-		_rapierSinceOpenClose();
-		return;
-	}
+	if (baselineText == null) { _rapierSinceOpenClose(); return; }
 	const current = _rapierGetCanonicalText();
-
 	_rapierSinceOpen.units = null;
-	if (_rapierSinceOpen.active) _rapierAgentBarRender();
 	const jobId = ++_rapierSinceOpen.jobId;
 	_rapierSinceOpen.text = current;
 	_rapierSinceOpen.revision = Number(rapier.revision.settled || 0);
@@ -44597,31 +44106,21 @@ function _rapierSinceOpenProject() {
 			? { status: 'same', oldCount: admission.oldCount, newCount: admission.newCount, additions: 0, deletions: 0, hunks: [] }
 			: { status: 'too-complex', ...admission };
 		_rapierSinceOpenRender(result);
-		_rapierSinceOpenSettle(result);
 		if (!admission.same) _rapierSinceOpenClose();
 		return;
 	}
 	if (!_rapierSinceOpen.worker) {
 		try { _rapierSinceOpen.worker = _rapierCompareMakeWorker(); }
-		catch (_) {
-			_rapierSinceOpenSettle({ status: 'error' });
-			_rapierSinceOpenClose();
-			return;
-		}
+		catch (_) { _rapierSinceOpenClose(); return; }
 		_rapierSinceOpen.worker.onmessage = event => {
 			const result = event.data || {};
 			if (result.jobId !== _rapierSinceOpen.jobId) return;
 			if (_rapierSinceOpen.timer) clearTimeout(_rapierSinceOpen.timer);
 			_rapierSinceOpen.timer = null;
 			_rapierSinceOpenRender(result);
-			_rapierSinceOpenSettle(result);
-
 			if (result.status !== 'ok' && result.status !== 'same') _rapierSinceOpenClose();
 		};
-		_rapierSinceOpen.worker.onerror = () => {
-			_rapierSinceOpenSettle({ status: 'error' });
-			_rapierSinceOpenClose();
-		};
+		_rapierSinceOpen.worker.onerror = () => { _rapierSinceOpenClose(); };
 	}
 	_rapierSinceOpen.worker.postMessage({
 		type: 'compare', jobId,
@@ -44634,17 +44133,8 @@ function _rapierSinceOpenProject() {
 	if (_rapierSinceOpen.timer) clearTimeout(_rapierSinceOpen.timer);
 	_rapierSinceOpen.timer = setTimeout(() => {
 		if (jobId !== _rapierSinceOpen.jobId) return;
-		_rapierSinceOpenSettle({ status: 'too-complex' });
 		_rapierSinceOpenClose();
 	}, _RAPIER_COMPARE_TIMEOUT_MS);
-}
-
-function _rapierSinceOpenOpen() {
-	const settled = new Promise(resolve => _rapierSinceOpen.waiters.push(resolve));
-	_rapierSinceOpen.active = true;
-	_rapierSinceOpenProject();
-	_rapierAgentBarRender();
-	return settled;
 }
 
 function _rapierSinceOpenRefresh() {
@@ -44655,14 +44145,8 @@ function _rapierSinceOpenRefresh() {
 		_rapierSinceOpen.refreshTimer = 0;
 		if (!_rapierSinceOpenWanted()) return;
 		if (!_rapierSinceOpenAvailable()) { _rapierSinceOpenClose(); return; }
-
-		const drawing = _rapierSinceOpen.active;
-		const ready = drawing ? _rapierSettlePendingDocumentChange() : _rapierHistoryIsComplete();
 		if (_rapierMutationBarrierActive() || rapier.composition.block || rapier.composition.source ||
-				!ready) {
-			if (drawing) _rapierSinceOpenRefresh();
-			return;
-		}
+				!_rapierHistoryIsComplete()) return;
 		_rapierSinceOpenProject();
 	}, _RAPIER_SINCE_OPEN_REFRESH_MS);
 }
@@ -44671,20 +44155,6 @@ const _RAPIER_SEEN_DWELL_MS = 1000;
 const _RAPIER_SEEN_LEDGER_LIMIT = 4096;
 
 const _RAPIER_SEEN_UNNAMED = '';
-
-const _RAPIER_POSTURES = Object.freeze(['free', 'check', 'ask']);
-
-function _rapierPosture() {
-	const held = rapier.review.posture;
-	return held && _rapierIdentityIsCurrent(held.identity) ? held.word : 'free';
-}
-
-function _rapierPostureSet(word) {
-	if (!_RAPIER_POSTURES.includes(word)) return;
-	rapier.review.posture = word === 'free'
-		? null : Object.freeze({ word, identity: _rapierDocumentIdentity() });
-	_rapierPostureRender();
-}
 
 function _rapierSeenDigest(text) {
 	const integrity = _rapierTextIntegrity(String(text == null ? '' : text));
@@ -44724,6 +44194,7 @@ function _rapierSeenHandSaw(ids) {
 }
 
 function _rapierSeenRecordTransaction(transaction) {
+	globalThis.RapierChanges?.schedule();
 	const ids = (transaction.affectedBlockIds || []).map(String);
 	const decided = rapier.review.decided;
 	rapier.review.decided = null;
@@ -44990,9 +44461,9 @@ function _rapierAgentBarMarkAcorn(invocation) {
 }
 
 // The DISCONNECT AGENTS press: the app retires the agents' capability (agent/apps.js disconnectAgents); a Disconnect that
-// went through clears the row's connected mark, and the posture row is drawn again either way.
-function _rapierPostureDisconnectPressed(event) {
-	Promise.resolve(window.RapierMcpApp?.disconnectAgents?.(event)).then(done => { if (done === true) _rapierAgentBarDisconnected(); }).finally(_rapierPostureRender);
+// went through clears the row's connected mark, and the connection controls are drawn again either way.
+function _rapierAgentDisconnectPressed(event) {
+	Promise.resolve(window.RapierMcpApp?.disconnectAgents?.(event)).then(done => { if (done === true) _rapierAgentBarDisconnected(); }).finally(_rapierAgentConnectionsRender);
 }
 // Retire invocation ownership so completed calls cannot restore connection indicators.
 function _rapierAgentBarDisconnected() {
@@ -45233,55 +44704,13 @@ async function _rapierAgentBarJump() {
 }
 
 function _rapierAgentPresence(word, acorn, location, active) {
+	globalThis.RapierChanges?.presence({active, target: _rapierAgentBarTarget()});
 	const state = word === 'WORKING' ? 'working' : (word ? 'settled' : '');
 	const witnessed = word ? String(word) + (location ? ' ' + location : '') : '';
 
 	if (renderScrollFabPresence(state, witnessed, acorn, active)) _rapierRefreshScrollFabs();
 	_rapierAgentPresenceLine(word);
 }
-
-function _rapierChangeLineRender() {
-	const line = document.getElementById('change-line');
-	if (!line) return;
-	const drawn = _rapierSinceOpen.active && _rapierSinceOpen.units instanceof Map &&
-		_rapierSinceOpen.units.size > 0 && !rapier.compare.active;
-	const first = drawn ? document.querySelector(
-		'#editor-blocks > .since-open-hunk, #editor-blocks > .block-wrapper[data-since-open-changed]') : null;
-	const host = document.getElementById('editor-blocks');
-	if (!first || !host) {
-		line.hidden = true;
-		line.classList.remove('visible');
-		return;
-	}
-	const hostBox = host.getBoundingClientRect();
-	const box = first.getBoundingClientRect();
-	const top = Math.max(hostBox.top + 4, Math.min(box.top - 44, hostBox.bottom - 44));
-	line.style.top = top + 'px';
-	const canUndo = _rapierSinceOpenUndoAvailable();
-	const keep = document.getElementById('change-line-keep');
-	const undo = document.getElementById('change-line-undo');
-	keep.disabled = !(_rapierSinceOpen.units instanceof Map);
-	undo.disabled = !canUndo;
-	undo.setAttribute('aria-label', canUndo ? 'undo the agent\u2019s change'
-		: 'your own later work stands after this change');
-	line.hidden = false;
-	line.classList.add('visible');
-}
-document.getElementById('change-line-keep')?.addEventListener('click', event => {
-	if (event.isTrusted === true) _rapierSinceOpenDone();
-});
-document.getElementById('change-line-undo')?.addEventListener('click', event => {
-	if (event.isTrusted !== true || !_rapierSinceOpenUndoAvailable()) return;
-	rapierUndo();
-});
-document.getElementById('editor-blocks')?.addEventListener('scroll', () => {
-	const line = document.getElementById('change-line');
-	if (line && !line.hidden) requestAnimationFrame(_rapierChangeLineRender);
-}, { passive: true });
-window.addEventListener('resize', () => {
-	const line = document.getElementById('change-line');
-	if (line && !line.hidden) _rapierChangeLineRender();
-}, { passive: true });
 
 function _rapierAgentPresenceLine(word) {
 	const line = document.getElementById('agent-note');
@@ -45347,37 +44776,6 @@ function _rapierAgentBarRender(presence = null) {
 	const holding = !!note && !note.disabled && (note.value !== '' || document.activeElement === note);
 	row.hidden = !(active || parked !== null || target !== null || symbol !== '' || connected || holding);
 
-	const delta = document.getElementById('agent-row-delta');
-	if (delta) {
-		const lens = _rapierSinceOpen.active;
-
-		const owed = _rapierSeenUndelivered();
-
-		delta.hidden = !_rapierSinceOpenAvailable() || !(lens || owed > 0);
-		delta.dataset.on = lens ? 'true' : 'false';
-		delta.textContent = lens ? 'HIDE CHANGES'
-			: owed === 1 ? 'SHOW 1 CHANGE' : 'SHOW ' + owed + ' CHANGES';
-		delta.setAttribute('aria-label',
-			owed > 0 ? 'changes not yet shown to you: ' + owed : 'hide the changes since you last looked');
-	}
-
-	const lens = document.getElementById('agent-row-lens');
-	if (lens) {
-		lens.hidden = !_rapierSinceOpen.active;
-		document.getElementById('agent-row-lens-status').textContent =
-			_rapierSinceOpen.active ? 'APPLIED · CHECK THIS CHANGE' : '';
-		const done = document.getElementById('agent-row-done');
-		const doneReady = _rapierSinceOpen.units instanceof Map;
-		done.disabled = !doneReady;
-		done.setAttribute('aria-label', doneReady
-			? 'close the comparison; the change stays' : 'comparison is still loading');
-		const undo = document.getElementById('agent-row-undo');
-		const canUndo = _rapierSinceOpenUndoAvailable();
-		undo.disabled = !canUndo;
-		undo.setAttribute('aria-label', canUndo ? 'undo the agent\u2019s change'
-			: 'your own later work stands after this change');
-	}
-
 	const parkedNow = !!(parked && parked.event === 'message' && parked.reply);
 	const spoken = row.hidden ? [] : _rapierMessageQueueHere();
 	// The hosted page offers no message box: what is typed there queues for a page-local wait
@@ -45406,10 +44804,8 @@ function _rapierAgentBarRender(presence = null) {
 		if (under) under.textContent = '';
 		const gone = document.getElementById('agent-row-said');
 		if (gone) { gone.textContent = ''; gone.hidden = true; }
-		if (lens) { lens.hidden = true; document.getElementById('agent-row-lens-status').textContent = ''; }
 		document.getElementById('agent-row-jump').hidden = true;
 		_rapierAgentPresence('', false);
-		_rapierChangeLineRender();
 		return;
 	}
 	const parkedMessage = parkedNow;
@@ -45479,50 +44875,27 @@ function _rapierAgentBarRender(presence = null) {
 	jump.setAttribute('aria-label', toWait ? 'go to where your agent is waiting'
 		: (settledHeading ? 'go to the change under ' + settledHeading : 'go to the change'));
 	_rapierAgentPresence(word, acorn, where, active);
-	_rapierChangeLineRender();
 }
 
-function _rapierPostureRender() {
-	const row = document.getElementById('posture-row');
+function _rapierAgentConnectionsRender() {
+	const row = document.getElementById('agent-access');
 	if (!row) return;
-	// The catalog has no posture to choose: agents edit directly, and each change stays reviewable.
-	row.hidden = true;
-	const current = _rapierPosture();
-	for (const word of row.querySelectorAll('[data-posture]')) {
-		const marked = word.dataset.posture === current;
-		if (marked) word.dataset.active = 'true'; else delete word.dataset.active;
-		word.setAttribute('aria-pressed', marked ? 'true' : 'false');
-	}
-	// Hosted only: the person can disconnect every agent (agent/apps.js disconnectAgents) and,
-	// afterwards, share the document with one again.
-	const agents = document.getElementById('posture-agents');
-	if (agents) {
-		const app = globalThis.RAPIER_APPS_HOST === true ? window.RapierMcpApp : null;
-		agents.hidden = row.hidden || !app;
-		// Once the agents are disconnected the only door is Share; Disconnect has nothing left to do.
-		const disconnected = !!app?.status?.agentsDisconnected;
-		const share = document.getElementById('posture-share'), disconnect = document.getElementById('posture-disconnect');
-		if (share) share.hidden = !disconnected;
-		if (disconnect) disconnect.hidden = disconnected;
-	}
+	const app = globalThis.RAPIER_APPS_HOST === true ? window.RapierMcpApp : null;
+	row.hidden = !app?.status?.documentId;
+	const disconnected = !!app?.status?.agentsDisconnected;
+	const share = document.getElementById('agent-access-share'), disconnect = document.getElementById('agent-access-disconnect');
+	if (share) share.hidden = !disconnected;
+	if (disconnect) disconnect.hidden = disconnected;
 }
 
-document.getElementById('posture-row')?.addEventListener('click', event => {
-	const word = event.target.closest('[data-posture]');
-	if (word) {
-		if (globalThis.RAPIER_APPS_HOST === true) globalThis.RapierAgentBrowser?.setPolicy({posture: word.dataset.posture}, event);
-		else _rapierPostureSet(word.dataset.posture);
+document.getElementById('agent-access')?.addEventListener('click', event => {
+	if (event.target.closest('#agent-access-disconnect')) {
+		_rapierAgentDisconnectPressed(event);
 		return;
 	}
-	if (event.target.closest('#posture-disconnect')) {
-		_rapierPostureDisconnectPressed(event);
-		return;
+	if (event.target.closest('#agent-access-share')) {
+		Promise.resolve(window.RapierMcpApp?.shareDocument?.(event)).finally(_rapierAgentConnectionsRender);
 	}
-	if (event.target.closest('#posture-share')) {
-		Promise.resolve(window.RapierMcpApp?.shareDocument?.(event)).finally(_rapierPostureRender);
-		return;
-	}
-
 });
 
 document.getElementById('agent-note')?.addEventListener('click', () => {
@@ -45553,29 +44926,7 @@ document.getElementById('agent-row-jump')?.addEventListener('click', () => {
 	_rapierAfterNavigatorClose(() => { _rapierAgentBarJump(); });
 });
 
-document.getElementById('agent-row-delta')?.addEventListener('click', () => {
-
-	if (_rapierSinceOpen.active) { _rapierSinceOpenClose(); _rapierSinceOpenRefresh(); return; }
-	if (!_rapierSinceOpenAvailable()) return;
-	_rapierSinceOpenOpen().then(result => {
-		if (result.status === 'same') showToast('no changes since open');
-		else if (result.status === 'baseline-unavailable') {
-			showToast('too much has changed since open to show it here', 'error');
-		} else if (result.status !== 'ok' && result.status !== 'closed') {
-			showToast('the comparison is too complex to show in place', 'error');
-		}
-	});
-});
-
-document.getElementById('agent-row-done')?.addEventListener('click', event => {
-	if (event.isTrusted === true) _rapierSinceOpenDone();
-});
-document.getElementById('agent-row-undo')?.addEventListener('click', event => {
-	if (event.isTrusted !== true || !_rapierSinceOpenUndoAvailable()) return;
-	rapierUndo();
-});
-
-// Ask sheet composition guard: the person's Enter confirming an IME candidate must not also
+// Message composition guard: the person's Enter confirming an IME candidate must not also
 // submit their reply to the agent. compositionstart/compositionend track the authoritative
 // composing state; event.isComposing covers the Enter keydown itself; keyCode 229 is kept only as
 // a WebView compatibility fallback (no general compatibility layer beyond that, per intent).
@@ -45636,34 +44987,6 @@ async function _rapierAgentInvocationTracked(operation, input, run, invocationId
 
 function _rapierWebMcpSync(recovery) { globalThis.RapierAgentBrowser?.refresh(recovery); }
 
-// ── Change peeking, the inline surface
-// ───────────────────────────────────────────────────────────
-//
-// While a proposal review is pending, its still-pending changes are drawn directly in the read
-// surface: a span per change, at the position the review snapshot gives (agent/browser.js
-// pendingReviewSnapshot, the same collaboration().review the law lens and document.observe
-// read), in the block it touches -- a projection over the rendered block, never a change to the
-// document's bytes. Applied and dropped changes need no decoration (the document already carries
-// or never carried them); a stale change draws a small dim marker whose reason shows on tap, since
-// its recorded pos is no longer trustworthy once its target has moved (a review is decided over
-// time -- a stale change is not decidable).
-//
-// Scope, stated rather than silently assumed: a change's removed text must sit inside one rendered
-// text node of its block's read projection for a span to draw at all (the common case for plain
-// prose with no markdown-syntax marks between the block's start and the change). A change whose
-// removed text crosses an inline-mark boundary, or that the block's rendered text does not contain
-// verbatim, is still counted in the review bar's total -- ALLOW ALL and the lens still decide it
-// -- but draws no inline span. Spans render only for a currently-hydrated block; a block still a
-// dormant shell (virtualization) picks up its spans the next refresh after it wakes.
-// Every decision -- KEEP, DROP, ALLOW ALL, and the accept half of type-over -- calls
-// RapierAgentBrowser.decideReviewChange, which is agent/browser.js's own decideKernelReview: the
-// one place a decision reaches the kernel, shared with the law lens's own ALLOW/KEEP HELD, so the
-// review token pinning and the hosted parity stay one owner.
-
-const _rapierReviewSpans = { active: [], staleMarkers: [], stripFor: null, stripEl: null, lastSignature: undefined };
-
-// Shared owner of "a horizontal swipe steps to the next thing": the law lens's own changes swipe
-// and the inline keep/drop strip both bind through here.
 function _rapierBindHorizontalSwipe(el, onSwipe) {
 	if (!el || el._rapierSwipe) return;
 	el._rapierSwipe = true;
@@ -45676,693 +44999,6 @@ function _rapierBindHorizontalSwipe(el, onSwipe) {
 	}, { passive: true });
 	el.addEventListener('pointercancel', () => { start = null; }, { passive: true });
 }
-
-function _rapierReviewSurfaceActive() {
-	return rapier.document.docKind === 'markdown' && rapier.view.mode !== 'source' &&
-		!(rapier.compare && (rapier.compare.active || rapier.compare.running));
-}
-
-// Undoes every span/marker this refresh drew, restoring each block-read div to plain rendered text
-// -- a full undo-then-redraw each refresh is simpler and safer than diffing a prior decoration
-// against a rebased one, and reviews are rare and small. Reverses the exact text-node split
-// `_rapierReviewDecorateBlock` performed, so no innerHTML rewrite (and so no new HTML sink) is
-// ever needed here (security/html-sinks.json).
-// Undoes every drawn span back to plain text -- the removed (still-current) text for one still
-// pending or dropped, but the inserted text for one a decision just applied: the commit that
-// applied it already moved the document's own bytes there, and undoing to the old removed text
-// would draw this exact block out of step with what it now holds (a person mid-edit on the same
-// paragraph, or type-over's own next line of work, would see the wrong content). `statusOf` is an
-// id -> latest change lookup covering a review that may have just closed --
-// pendingReviewSnapshot's own pending-only filter goes stale the instant a decision lands, so the
-// caller passes the broader kernel-side snapshot instead.
-function _rapierReviewSpansUndo(statusOf = null) {
-	for (const entry of _rapierReviewSpans.active) {
-		const { container, removedText, insertedText, changeId } = entry;
-		const parent = container.parentNode;
-		if (!parent) continue;
-		const applied = statusOf?.get(changeId) === 'applied';
-		const text = applied ? insertedText : removedText;
-		if (text) parent.replaceChild(document.createTextNode(text), container);
-		else parent.removeChild(container);
-		parent.normalize();
-	}
-	_rapierReviewSpans.active = [];
-	for (const marker of _rapierReviewSpans.staleMarkers) marker.remove();
-	_rapierReviewSpans.staleMarkers = [];
-}
-
-// Locates `removed` inside `readDiv`'s rendered text at the exact occurrence the change actually
-// names -- `relPos`, a block-relative *source* offset, mapped through the editor's own proved
-// source->rendered mapping (_rapierRenderedOffsetForRawOffset, shared with the history caret's own
-// restore -- one owner, not a second implementation) rather than assumed to already be a rendered
-// offset (that assumption would let `**lead** target gap target`'s second "target" decorate the
-// first). Verifies the mapped point actually holds `removed`, never widens the search to a nearby
-// or bare substring match: a range this cannot map to a unique, exact occurrence is left undrawn
-// by the caller, the documented omission (still decidable through the law lens) rather than a
-// guessed target.
-function _rapierReviewLocateRemoved(readDiv, raw, relPos, removed) {
-	if (!Number.isFinite(relPos) || relPos < 0 || relPos > raw.length) return null;
-	const at = _rapierRenderedOffsetForRawOffset(readDiv, raw, relPos);
-	const point = _rapierPointForTextOffset(readDiv, at);
-	if (!point || point.node.nodeType !== Node.TEXT_NODE) return null;
-	if (point.offset + removed.length > point.node.length) return null;
-	if (point.node.data.slice(point.offset, point.offset + removed.length) !== removed) return null;
-	return point;
-}
-
-function _rapierReviewStaleReason(reason) {
-	return ({
-		target_changed: 'The paragraph around this change was edited, so it can no longer be placed.',
-		human_changed_target: 'This text was edited since the change was proposed.',
-		context_expired: 'This change is too old to place any more.',
-		context_replayed: 'This change was already decided.',
-	})[String(reason || '')] || 'This change is no longer available.';
-}
-
-// Draws one change into `wrapper`'s .block-read, at `relPos` (the block-relative *source* offset
-// the review snapshot's canonical pos gives, relative to `span`, the block's own canonical span).
-// Returns true on a drawn span or marker, false when the scope above (a single rendered text node,
-// or a raw<->rendered mapping this block does not currently support) does not cover this change --
-// the caller leaves it undrawn, still counted in the review bar.
-function _rapierReviewDecorateBlock(wrapper, relPos, change, span) {
-	// A table's own edit commit (_tableRawFromEdit) reads its live cells directly by block id, not
-	// through _rapierLiveEditRaw's own editDiv -- _rapierReviewCleanClone's guard against a
-	// synthetic preview leaking into the committed document does not cover it, so a table cell is
-	// never decorated in the first place rather than risking that leak (a stated scope limit).
-	if (wrapper.classList.contains('block-wrapper--table')) return false;
-	// A block already in its own edit -- the type-over doorway, or simply an unrelated edit in the
-	// same paragraph -- shows the change on .block-edit instead: _rapierAdoptReadProjection already
-	// moved .block-read's own children there, so this is the surface actually on screen.
-	const readDiv = wrapper.classList.contains('block-wrapper--editing')
-		? wrapper.querySelector(':scope > .block-edit') : wrapper.querySelector(':scope > .block-read');
-	if (!readDiv) return false;
-	if (change.status === 'stale') {
-		const marker = document.createElement('span');
-		marker.className = 'rapier-review-stale';
-		marker.textContent = '●';
-		marker.tabIndex = 0;
-		marker.setAttribute('role', 'button');
-		marker.setAttribute('aria-label', 'a proposed change here is no longer available; tap to hear why');
-		marker.dataset.reviewChange = String(change.id);
-		marker.dataset.reviewReason = _rapierReviewStaleReason(change.reason);
-		readDiv.appendChild(marker);
-		_rapierReviewSpans.staleMarkers.push(marker);
-		return true;
-	}
-	if (change.status !== 'pending') return false;
-	const removed = String(change.removed || '');
-	const inserted = String(change.inserted || '');
-	if (!removed && !inserted) return false;
-	const block = _rapierBoundBlock(wrapper);
-	const raw = block ? String(block.raw || '') : '';
-	// The mapping below is proved only while the block's own canonical span agrees, byte for byte,
-	// with its own raw text -- the same safety gate _rapierRenderedBoundaryToCanonical already uses
-	// for the reverse direction (a dirty block, or one whose canonical length has drifted from its
-	// raw for any other reason, has no trustworthy mapping to draw against). The documented omission
-	// here is preferable to a guessed target.
-	if (!block || block.dirty || !span || span.end - span.start !== raw.length) return false;
-	let point;
-	if (removed) {
-		point = _rapierReviewLocateRemoved(readDiv, raw, relPos, removed);
-		if (!point) return false;
-	} else {
-		const at = _rapierRenderedOffsetForRawOffset(readDiv, raw, relPos);
-		point = _rapierPointForTextOffset(readDiv, at, true);
-		if (!point || point.node.nodeType !== Node.TEXT_NODE) return false;
-	}
-	const node = point.node;
-	const before = node.data.slice(0, point.offset);
-	const after = node.data.slice(point.offset + removed.length);
-	const container = document.createElement('span');
-	container.className = 'rapier-review-change';
-	container.dataset.reviewChange = String(change.id);
-	container.tabIndex = 0;
-	container.setAttribute('role', 'button');
-	container.setAttribute('aria-label', 'proposed change, tap to keep or drop');
-	if (removed) {
-		const removedSpan = document.createElement('span');
-		removedSpan.className = 'rapier-review-change__removed';
-		removedSpan.textContent = removed;
-		container.appendChild(removedSpan);
-	}
-	if (inserted) {
-		const insertedSpan = document.createElement('span');
-		insertedSpan.className = 'rapier-review-change__inserted';
-		insertedSpan.textContent = inserted;
-		container.appendChild(insertedSpan);
-	}
-	const parent = node.parentNode;
-	if (!parent) return false;
-	const beforeNode = before ? document.createTextNode(before) : null;
-	const afterNode = after ? document.createTextNode(after) : null;
-	if (beforeNode) parent.insertBefore(beforeNode, node);
-	parent.insertBefore(container, node);
-	if (afterNode) parent.insertBefore(afterNode, node);
-	parent.removeChild(node);
-	_rapierReviewSpans.active.push({ container, removedText: removed, insertedText: inserted, changeId: change.id });
-	return true;
-}
-
-function _rapierReviewBarRender(review) {
-	const bar = document.getElementById('review-track');
-	if (!bar) return;
-	const active = !!review && _rapierReviewSurfaceActive();
-	bar.hidden = !active;
-	if (!active) return;
-	const changes = Array.isArray(review.changes) ? review.changes : [];
-	const pending = changes.filter(row => row.status === 'pending').length;
-	const status = document.getElementById('review-track-status');
-	if (status) status.textContent = pending === 1 ? '1 CHANGE PENDING' : pending + ' CHANGES PENDING';
-	const allow = document.getElementById('review-track-allow');
-	if (allow) allow.disabled = pending === 0;
-}
-
-// The one entry point: called whenever the pending review might have moved (agent/browser.js
-// refresh(), after every commit, decide and reconcile) and on the review-surface's own decisions.
-// Idempotent -- undoes and redraws whenever the decidable set actually moved, so a caller never
-// needs to know what changed.
-//
-// `refresh()` calls this unconditionally on every pass, and plenty of those passes carry nothing
-// new to draw -- a client-side-only strip interaction (the KEEP/DROP strip's own drop toggle in the
-// law lens, `_rapierWillReviewRelease`) syncs through the same `_rapierWebMcpSync` -> refresh()
-// door well before any kernel commit lands. Two guards keep those passes from mutating the read
-// surface for nothing: a change actually being decided right now
-// (`RapierAgentBrowser.reviewDecidingChange`, set for the whole span of `decideKernelReview`, from
-// the moment KEEP/DROP/ALLOW/type-over is tapped until the kernel's own commit resolves) is
-// excluded from what gets drawn until that commit lands and a fresh, authoritative pass draws the
-// real outcome -- closing the exact window where the law lens has already closed (so the surface
-// reads active again) but the kernel has not committed yet, which would otherwise draw a transient
-// span for a change that is moments from being applied or dropped. And a signature over what would
-// be drawn (id, status, pos, the surface's own active/inactive state) skips the whole undo+redraw
-// cycle outright when nothing has actually moved. Both matter: undoing and redrawing is a real DOM
-// mutation on the read surface, harmless on its own, but it also retriggers any observer watching
-// `#editor-blocks` (the picture asset lifecycle's own MutationObserver, images/browser.js) -- and a
-// picture-deleting change decorated (or merely undone-and-redrawn) on a tick that has nothing to do
-// with it can race a picture mid-retirement into a spurious "could not be displayed"
-// (review-peek-picture).
-function _rapierReviewSpansRefresh() {
-	const closing = globalThis.RapierAgentBrowser?.reviewSnapshot?.();
-	const statusOf = closing?.changes ? new Map(closing.changes.map(row => [row.id, row.status])) : null;
-	const review = globalThis.RapierAgentBrowser?.pendingReviewSnapshot?.();
-	_rapierReviewBarRender(review);
-	if (_rapierReviewSpans.stripFor && (!review ||
-			!(review.changes || []).some(row => row.id === _rapierReviewSpans.stripFor && row.status === 'pending'))) {
-		_rapierReviewChangeStripClose();
-	}
-	const changes = review && Array.isArray(review.changes) ? review.changes : [];
-	const decidable = changes.filter(row => (row.status === 'pending' || row.status === 'stale') &&
-		!globalThis.RapierAgentBrowser?.reviewDecidingChange?.(row.id));
-	const active = !!review && _rapierReviewSurfaceActive();
-	// The projection generation is part of the signature, not merely a side check: a dormant block
-	// waking, or a Plain/Rapier or reference-consumer rebuild, changes nothing about the review's own
-	// id/status/pos but still needs another decoration attempt (the wrapper's own .block-read was
-	// just rebuilt out from under whatever this pass last drew there), so it must be able to move
-	// this signature even when the decidable set itself did not.
-	const signature = (review ? review.id : '') + '#' + (active ? '1' : '0') + '@' + _rapierReviewProjectionGeneration + '|' +
-		decidable.map(row => row.id + ':' + row.status + ':' + row.pos).join(',');
-	if (signature === _rapierReviewSpans.lastSignature) return;
-	_rapierReviewSpans.lastSignature = signature;
-	_rapierReviewSpansUndo(statusOf);
-	if (!active || !decidable.length) return;
-	const spans = _rapierExcerptCanonicalBlockSpans();
-	const hits = [];
-	for (const change of decidable) {
-		const pos = Number(change.pos) || 0;
-		let hit = null;
-		for (const [blockId, span] of spans) if (pos >= span.start && pos < span.end) { hit = { blockId, span }; break; }
-		if (!hit) for (const [blockId, span] of spans) if (pos >= span.start && pos <= span.end) { hit = { blockId, span }; break; }
-		if (hit) hits.push({ change, pos, blockId: hit.blockId, span: hit.span });
-	}
-	// Decorate each block's own changes from its last position back to its first: an earlier
-	// decoration's own synthetic spans must never shift the rendered offset a later, lower-positioned
-	// change in the same block is mapped against. Different blocks never interact, so their own
-	// relative order here does not matter.
-	hits.sort((a, b) => a.blockId - b.blockId || b.pos - a.pos);
-	for (const hit of hits) {
-		const wrapper = document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + hit.blockId + '"]');
-		if (!wrapper) continue;
-		_rapierReviewDecorateBlock(wrapper, hit.pos - hit.span.start, hit.change, hit.span);
-	}
-}
-
-// ── The keep/drop strip ──────────────────────────────────────────────────────────────────────
-
-function _rapierReviewChangeStripClose() {
-	_rapierReviewSpans.stripEl?.remove();
-	_rapierReviewSpans.stripEl = null;
-	_rapierReviewSpans.stripFor = null;
-}
-
-function _rapierReviewChangeStripStep(direction) {
-	const review = globalThis.RapierAgentBrowser?.pendingReviewSnapshot?.();
-	const pending = review ? (review.changes || []).filter(row => row.status === 'pending') : [];
-	if (!pending.length) return;
-	const at = pending.findIndex(row => row.id === _rapierReviewSpans.stripFor);
-	const next = pending[(at < 0 ? 0 : at + direction + pending.length) % pending.length];
-	const span = document.querySelector('#editor-blocks .rapier-review-change[data-review-change="' + CSS.escape(next.id) + '"]');
-	if (!span) return;
-	span.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-	_rapierReviewChangeStripOpen(span, review.id);
-}
-
-function _rapierReviewChangeStripOpen(span, reviewId) {
-	const changeId = span.dataset.reviewChange;
-	if (_rapierReviewSpans.stripFor === changeId) { _rapierReviewChangeStripClose(); return; }
-	_rapierReviewChangeStripClose();
-	const strip = document.createElement('div');
-	strip.className = 'review-strip';
-	strip.setAttribute('role', 'group');
-	strip.setAttribute('aria-label', 'keep or drop this change');
-	for (const [verb, action] of [['KEEP', 'apply'], ['DROP', 'drop']]) {
-		const button = document.createElement('button');
-		button.type = 'button';
-		button.className = 'review-strip__verb';
-		button.textContent = verb;
-		button.addEventListener('click', async event => {
-			if (event.isTrusted !== true) return;
-			event.preventDefault(); event.stopPropagation();
-			strip.querySelectorAll('button').forEach(b => { b.disabled = true; });
-			await globalThis.RapierAgentBrowser?.decideReviewChange(reviewId, action, [changeId]);
-			_rapierReviewChangeStripClose();
-		});
-		strip.appendChild(button);
-	}
-	_rapierBindHorizontalSwipe(strip, direction => _rapierReviewChangeStripStep(direction));
-	// A sibling of .block-read/.block-edit, never a child of the paragraph the span sits in: nested
-	// inside the paragraph, a tap on KEEP/DROP would also read as a tap into that block's own text
-	// under the app's ordinary tap-to-edit gesture (host's own 'click' on .block-read), stealing the
-	// block into edit before the strip's own handler ever runs. One block, one strip -- for a block
-	// with more than one pending change the strip sits under the block as a whole rather than the
-	// exact tapped line, a stated scope decision.
-	const wrapper = span.closest('.block-wrapper');
-	if (wrapper) wrapper.appendChild(strip); else span.insertAdjacentElement('afterend', strip);
-	_rapierReviewSpans.stripEl = strip;
-	_rapierReviewSpans.stripFor = changeId;
-}
-
-document.getElementById('editor-blocks')?.addEventListener('click', event => {
-	if (event.isTrusted !== true) return;
-	if (event.target.closest?.('.review-strip')) return;
-	const stale = event.target.closest?.('.rapier-review-stale');
-	if (stale) {
-		event.preventDefault(); event.stopPropagation();
-		showToast(stale.dataset.reviewReason || 'That change is no longer available.', 'error');
-		return;
-	}
-	const span = event.target.closest?.('.rapier-review-change');
-	// A tap inside the change while its block is already being edited is an ordinary caret
-	// placement (type-over's own doorway below), not a decision; only a tap while the block is
-	// still the read surface opens the strip.
-	if (span && !span.closest('.block-wrapper--editing')) {
-		event.preventDefault(); event.stopPropagation();
-		const review = globalThis.RapierAgentBrowser?.pendingReviewSnapshot?.();
-		if (review) _rapierReviewChangeStripOpen(span, review.id);
-		return;
-	}
-	if (!span) _rapierReviewChangeStripClose();
-}, true);
-
-document.getElementById('review-track-allow')?.addEventListener('click', event => {
-	if (event.isTrusted !== true) return;
-	const review = globalThis.RapierAgentBrowser?.pendingReviewSnapshot?.();
-	if (review) globalThis.RapierAgentBrowser?.decideReviewChange(review.id, 'approve', null);
-});
-document.getElementById('review-track-lens')?.addEventListener('click', event => {
-	if (event.isTrusted !== true) return;
-	globalThis.RapierAgentBrowser?.representPendingReview?.();
-});
-
-// ── Type-over: the caret inside (or at the edge of) an inserted span, typed over ───────────────
-//
-// An accept of that span followed by the person's own edit to it -- never the reverse: the edit is
-// always dropped first (when the browser lets it be dropped at all -- see composition, below) and
-// only lands once the kernel has confirmed the apply, so the document never diverges from the
-// kernel's own view (a review is decided over time). One contract covers every input kind a real
-// keyboard, autocorrect and IME actually send. The caret is restored to where inside the inserted
-// text the person actually was, and only if the person is still there by the time the kernel
-// answers.
-
-function _rapierReviewInsertedSpanTouching(node, atStart) {
-	const sibling = atStart ? node.previousSibling : node.nextSibling;
-	if (!sibling || sibling.nodeType !== Node.ELEMENT_NODE) return null;
-	return sibling.classList?.contains('rapier-review-change')
-		? sibling.querySelector('.rapier-review-change__inserted') : null;
-}
-
-// The one place a beforeinput or composition event's own target range is read against the review's
-// inserted spans: a collapsed caret inside or at either edge of one inserted span, or a selection
-// contained entirely inside one -- never a range that only partly overlaps a span, or one
-// straddling two. Returns the span, whether the range was collapsed, and the range's own start/end
-// measured as rendered-character offsets *from the start of the inserted span itself* -- a purely
-// local quantity that needs no source mapping at all, since the inserted text is exactly what the
-// person is looking at and pointing into.
-function _rapierReviewInputTarget() {
-	const selection = window.getSelection && window.getSelection();
-	if (!selection || !selection.rangeCount) return null;
-	const range = selection.getRangeAt(0);
-	const startEl = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
-	if (selection.isCollapsed) {
-		let span = startEl && startEl.closest ? startEl.closest('.rapier-review-change__inserted') : null;
-		let at;
-		if (span) {
-			const pre = document.createRange();
-			pre.selectNodeContents(span);
-			try { pre.setEnd(range.startContainer, range.startOffset); } catch (_) { return null; }
-			at = pre.toString().length;
-		} else if (range.startContainer.nodeType === Node.TEXT_NODE && range.startOffset === 0) {
-			span = _rapierReviewInsertedSpanTouching(range.startContainer, true);
-			at = 0;
-		} else if (range.startContainer.nodeType === Node.TEXT_NODE && range.startOffset === range.startContainer.length) {
-			span = _rapierReviewInsertedSpanTouching(range.startContainer, false);
-			at = span ? String(span.textContent || '').length : undefined;
-		}
-		if (!span) return null;
-		return { span, collapsed: true, selStart: at, selEnd: at };
-	}
-	const endEl = range.endContainer.nodeType === Node.TEXT_NODE ? range.endContainer.parentElement : range.endContainer;
-	const span = startEl && startEl.closest ? startEl.closest('.rapier-review-change__inserted') : null;
-	if (!span || span !== (endEl && endEl.closest && endEl.closest('.rapier-review-change__inserted'))) return null;
-	const preStart = document.createRange(); preStart.selectNodeContents(span);
-	const preEnd = document.createRange(); preEnd.selectNodeContents(span);
-	try { preStart.setEnd(range.startContainer, range.startOffset); preEnd.setEnd(range.endContainer, range.endOffset); }
-	catch (_) { return null; }
-	return { span, collapsed: false, selStart: preStart.toString().length, selEnd: preEnd.toString().length };
-}
-
-// Every cancelable beforeinput kind this contract admits, beyond a single-character insert:
-// autocorrect's own replacement, and Backspace/Delete at or inside the span's own edges
-// (deleteContentBackward/Forward only -- a whole-word or whole-line delete is not specified and is
-// left to fall through untouched). `insertFromPaste` is deliberately absent here: this app's own
-// paste owner (_rapierHandlePaste) already prevents default on every paste into the editor before
-// a native insertFromPaste beforeinput could ever fire, so paste is answered at that same boundary
-// instead (the 'paste' listener below), not a second, dead one. `insertCompositionText` is
-// likewise absent: the UI Events draft marks it not cancelable, and composition is owned by the
-// compositionstart/compositionend pair further below.
-const _RAPIER_REVIEW_INSERT_TYPES = new Set(['insertText', 'insertReplacementText']);
-const _RAPIER_REVIEW_DELETE_BACK = 'deleteContentBackward', _RAPIER_REVIEW_DELETE_FWD = 'deleteContentForward';
-
-// The inserted span's own new text, given one input event against `target` -- string surgery over
-// the span's own local offsets only, mirroring exactly what the browser's default action would have
-// done to that text had it been let through. Returns null when the event does not actually touch
-// the inserted text at this position (Backspace at its very first character, Delete at its very
-// last -- those reach past the span, into text this contract does not own), so the caller leaves
-// the event alone rather than guessing.
-function _rapierReviewFinalTextFor(target, inputType, data) {
-	const original = String(target.span.textContent || '');
-	const selStart = target.selStart, selEnd = target.selEnd;
-	if (!Number.isFinite(selStart) || !Number.isFinite(selEnd)) return null;
-	if (_RAPIER_REVIEW_INSERT_TYPES.has(inputType)) {
-		if (typeof data !== 'string') return null;
-		return original.slice(0, selStart) + data + original.slice(selEnd);
-	}
-	if (!target.collapsed) return original.slice(0, selStart) + original.slice(selEnd);
-	if (inputType === _RAPIER_REVIEW_DELETE_BACK) return selStart > 0 ? original.slice(0, selStart - 1) + original.slice(selEnd) : null;
-	if (inputType === _RAPIER_REVIEW_DELETE_FWD) return selEnd < original.length ? original.slice(0, selStart) + original.slice(selEnd + 1) : null;
-	return null;
-}
-
-// The caret's own place *inside* `_rapierReviewFinalTextFor`'s result -- not always its end: a
-// caret mid-span that types, deletes or pastes must come back to the place that edit actually put
-// it, not to the end of the whole span every time. `null` (composition; an interior delete/replace
-// this contract does not otherwise reach) means the caller's own default -- the end of the final
-// text -- which is exactly where composition's own caret already sits once a session finishes.
-function _rapierReviewCaretInFinal(target, inputType, data) {
-	if (_RAPIER_REVIEW_INSERT_TYPES.has(inputType) && typeof data === 'string') return target.selStart + data.length;
-	if (!target.collapsed) return target.selStart;
-	if (inputType === _RAPIER_REVIEW_DELETE_BACK) return target.selStart - 1;
-	if (inputType === _RAPIER_REVIEW_DELETE_FWD) return target.selStart;
-	return null;
-}
-
-// `place()` (below) must call `target.focus()` and set a Selection Range into freshly-inserted
-// content, and doing that in the ordinary order -- focus, then set the range -- desyncs Blink's own
-// focus resolution the instant the range lands inside a text node the same synchronous pass just
-// created via `Range.insertNode` (a `beforeinput`-driven accept, or the end-of-review re-projection
-// replaying the person's own edit into a freshly re-entered block): `target` regains focus for under
-// a millisecond, every attempt, before losing it again to the nearest focusable ancestor
-// (`#editor-blocks`). Setting the Range *before* focusing avoids it entirely -- a selection can be
-// set on an unfocused node with no focus event to desync, and focusing afterward simply adopts the
-// range already sitting where it belongs. `place()` must keep to that order (review-inline-spans
-// covers the caret-boundary cases). The retries themselves stay, belt and suspenders, for the
-// separate case this same helper also answers: a delayed decision resolving after the person's own
-// attention already moved on for a tick.
-function _rapierReviewHoldFocus(target, stillFresh, place, delaysMs = [0, 60, 300, 600]) {
-	const attempt = at => {
-		if (!target.isConnected || !stillFresh()) return;
-		if (document.activeElement !== target) place();
-		const next = delaysMs[at + 1];
-		if (next != null) setTimeout(() => attempt(at + 1), next - delaysMs[at]);
-	};
-	attempt(0);
-}
-
-// Accepts `target.span`'s own change, then reconciles the committed text so the change's inserted
-// segment reads `finalText` instead of the span's original text -- one continuation, shared by
-// every input kind above and by a finished composition alike. `deltaData` is the incremental text
-// an ordinary keystroke, paste or composition actually supplied, handed to the eventual `input`
-// dispatch so the history burst heuristics that already read `event.data` see the same thing they
-// would have from an unintercepted event; it may differ from `finalText` (which is the span's whole
-// new content) or be omitted (a delete has none). `originalText` is the span's own text as the
-// still-pending change itself holds it -- the caller's job to supply when the DOM has already moved
-// past it (a finished composition already shows its own final text live; every other caller here
-// still holds `event.data` back, so the live DOM and the change's own text are still the same
-// string and reading it fresh is exact).
-function _rapierReviewAcceptThenSetSpanText(target, finalText, deltaData, originalText, caretInFinal) {
-	const caretAt = Number.isFinite(caretInFinal) ? Math.max(0, Math.min(caretInFinal, finalText.length)) : finalText.length;
-	const container = target.span.closest('.rapier-review-change');
-	const changeId = container?.dataset.reviewChange;
-	const review = globalThis.RapierAgentBrowser?.pendingReviewSnapshot?.();
-	if (!changeId || !review) return;
-	const context = _activeBlockEditContext();
-	if (!context || !context.editDiv.contains(container)) return;
-	const { block, wrapper, editDiv } = context;
-	const blockId = block.id;
-	const spans = _rapierExcerptCanonicalBlockSpans().get(blockId);
-	const originalInsertedText = typeof originalText === 'string' ? originalText : String(target.span.textContent || '');
-	let beforeLen = null;
-	try {
-		const beforeRange = document.createRange();
-		beforeRange.selectNodeContents(editDiv);
-		beforeRange.setEndBefore(container);
-		beforeLen = beforeRange.toString().length;
-	} catch (_) { beforeLen = null; }
-	// Authority for the restore below, captured now and checked again once the kernel has answered,
-	// never assumed to still hold just because the promise resolved: the document itself (not
-	// reloaded or switched away from under this decision) and the person's own attention (not moved
-	// to another block, Find or a dialog while the decision was outstanding).
-	const identity = _rapierMutationStamp();
-	const navAt = _rapierReviewContinuationRuntime.navGeneration;
-	// The caret sitting on the span IS what makes this an accept -- but left in the DOM it also
-	// reads as the "foreground hand" the kernel's commitGate protects (agent/kernel.mjs) from an
-	// agent-attributed commit landing under it: this apply is attributed to the review's original
-	// proposer, not the person here, and a still-live selection over the same text yields the
-	// commit (`foreground_hand_wins`) instead of applying it. Cleared here, the one place every
-	// input kind above reaches before the decision, not each caller's own responsibility to
-	// remember. Clearing the selection of a still-focused editable, mid-beforeinput and with that
-	// input's own default already prevented, leaves Blink's own focus resolution unsettled -- editDiv
-	// observed regaining then losing focus again to #editor-blocks entirely on its own, over several
-	// rounds spanning tens of milliseconds when this change turns out to be the review's own last
-	// pending member (a genuine engine quirk of intercepting a trusted keystroke this way, not a race
-	// with anything this file controls) -- so held across a few spaced retries, `_rapierReviewHoldFocus`,
-	// rather than tried once. Never applied unconditionally past the point the person has genuinely moved on
-	// for real (another block, Find, another document) -- exactly what `fresh` two lines above
-	// already exists to tell apart, read fresh on every held frame here, not just once.
-	try { window.getSelection()?.removeAllRanges(); } catch (_) {}
-	_rapierReviewHoldFocus(editDiv,
-		() => _rapierMutationStampSharesDocument(identity) && _rapierReviewContinuationRuntime.navGeneration === navAt,
-		() => {
-			try { editDiv.focus({preventScroll: true}); } catch (_) {}
-			// Focusing an empty contenteditable can itself plant a fresh caret -- cleared again so the
-			// foreground-hand check below still sees exactly what it needs: focus on editDiv, no range.
-			try { window.getSelection()?.removeAllRanges(); } catch (_) {}
-		});
-	globalThis.RapierAgentBrowser?.decideReviewChange(review.id, 'apply', [changeId]).then(result => {
-		const applied = ['ok', 'applied', 'rebased', 'unchanged'].includes(result?.outcome);
-		const fresh = _rapierMutationStampSharesDocument(identity) && _rapierReviewContinuationRuntime.navGeneration === navAt;
-		if (applied) _rapierReviewSpansRefresh();
-		if (!fresh) {
-			// The person moved on while the decision was outstanding. The accept itself already
-			// landed (or was refused) on its own terms regardless of where they are now; stealing
-			// their current focus, selection or scroll position to land an edit they are no longer
-			// looking at would be exactly the race "preserveScroll does not preserve newer focus"
-			// names. The held edit is recovered visibly rather than silently vanishing or landing
-			// somewhere the person never asked for.
-			if (finalText !== originalInsertedText) {
-				showToast('An edit into a proposed change could not be placed automatically after you moved on.', 'error');
-			}
-			return;
-		}
-		if (!applied) {
-			// Refused (stale, invalid, or a conflict) -- nothing committed, so the decorated DOM this
-			// attempt captured its points against is still exactly as it was. The held edit is put
-			// back through the ordinary input pipeline instead of simply vanishing, and named here --
-			// the one place every input kind above reaches on a refusal, not each caller's own
-			// responsibility to remember.
-			if (finalText !== originalInsertedText) {
-				showToast('This proposed change could not be accepted right now' +
-					(typeof result?.reason === 'string' && result.reason ? ' (' + result.reason + ')' : '') + '.', 'error');
-			}
-			if (container.isConnected && editDiv.contains(container)) {
-				const insertedSpan = container.querySelector('.rapier-review-change__inserted');
-				if (insertedSpan) {
-					insertedSpan.textContent = finalText;
-					try {
-						const point = _rapierPointForTextOffset(insertedSpan, caretAt, true);
-						const caret = document.createRange();
-						if (point) caret.setStart(point.node, point.offset); else caret.selectNodeContents(insertedSpan);
-						caret.collapse(true);
-						const sel = window.getSelection();
-						sel.removeAllRanges();
-						sel.addRange(caret);
-					} catch (_) {}
-					editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: deltaData ?? finalText }));
-				}
-			}
-			return;
-		}
-		let targetBlock = rapier.document.blocks.find(row => row.id === blockId);
-		let targetWrapper = targetBlock && document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + blockId + '"]');
-		if (!targetBlock || !targetWrapper) {
-			// The apply's own commit is attributed to the review's original proposer, not the person
-			// editing (a review is decided over time) -- an agent-attributed commit reparses the whole
-			// document, so every block (this one included) gets a fresh id and the old blockId names
-			// nothing anymore. The block's own canonical start offset survives the reparse (only this one
-			// paragraph's own tail text changed), so the block that now covers it is the same paragraph
-			// under its new id.
-			const freshSpans = _rapierExcerptCanonicalBlockSpans();
-			let freshId = null;
-			if (spans) for (const [id, freshSpan] of freshSpans) if (spans.start >= freshSpan.start && spans.start < freshSpan.end) { freshId = id; break; }
-			if (freshId != null) {
-				targetBlock = rapier.document.blocks.find(row => row.id === freshId);
-				targetWrapper = targetBlock && document.querySelector('#editor-blocks > .block-wrapper[data-block-id="' + freshId + '"]');
-			}
-		}
-		if (!targetBlock || !targetWrapper || beforeLen == null) return;
-		const openEditDiv = enterBlockEdit(targetBlock, targetWrapper, { charOffset: beforeLen, preserveScroll: true });
-		if (!openEditDiv || finalText === originalInsertedText) return;
-		// The committed text now holds `originalInsertedText` verbatim at this exact point -- the
-		// same one the person was editing a moment ago. Replaying their own edit is one ordinary
-		// Range replace against the block's own live text (the same rendered-offset resolver's
-		// own shared owner, `_rapierPointForTextOffset`), landed through the normal input pipeline by
-		// dispatching an ordinary `input` event -- never a second, bespoke commit path.
-		const startPoint = _rapierPointForTextOffset(openEditDiv, beforeLen, true);
-		const endPoint = _rapierPointForTextOffset(openEditDiv, beforeLen + originalInsertedText.length);
-		if (!startPoint || !endPoint) return;
-		const replaceRange = document.createRange();
-		try { replaceRange.setStart(startPoint.node, startPoint.offset); replaceRange.setEnd(endPoint.node, endPoint.offset); }
-		catch (_) { return; }
-		if (replaceRange.toString() !== originalInsertedText) return; // the block moved under us; leave it rather than delete the wrong text
-		replaceRange.deleteContents();
-		const textNode = document.createTextNode(finalText);
-		replaceRange.insertNode(textNode);
-		// The single-change (`inline`-kind) continuation: the same Blink-drops-focus-on-its-own quirk
-		// the accept-vs-refuse restore above answers also reaches here, on the *committed* replay --
-		// worse when this was the review's own last pending change, since deciding it above closes the
-		// review and the block this replay just re-entered is a genuinely fresh re-projection, not
-		// merely re-touched; the churn spans several rounds of focusout/focusin over tens of
-		// milliseconds, so this is held across frames (`_rapierReviewHoldFocus`) rather than retried
-		// once. `enterBlockEdit` two lines up already bumped its own navGeneration for entering here, so
-		// `navAt`/`identity` captured before the decision no longer name this moment -- a fresh pair,
-		// taken *after* that entry, is what each held frame checks instead.
-		const replayIdentity = _rapierMutationStamp();
-		const replayNavAt = _rapierReviewContinuationRuntime.navGeneration;
-		// _rapierReviewHoldFocus places the caret synchronously (its own first, unconditional call to
-		// `place()`) before this call returns -- only the frames after that are async -- so the
-		// `input` dispatch right after still sees the caret already where it belongs, exactly as it
-		// did when this was one synchronous placement.
-		_rapierReviewHoldFocus(openEditDiv,
-			() => textNode.isConnected && _rapierMutationStampSharesDocument(replayIdentity) &&
-				_rapierReviewContinuationRuntime.navGeneration === replayNavAt,
-			() => {
-				try {
-					const caret = document.createRange();
-					caret.setStart(textNode, Math.max(0, Math.min(caretAt, textNode.length)));
-					caret.collapse(true);
-					const sel = window.getSelection();
-					sel.removeAllRanges();
-					sel.addRange(caret);
-				} catch (_) {}
-				try { openEditDiv.focus({preventScroll: true}); } catch (_) {}
-			});
-		openEditDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: deltaData ?? finalText }));
-	});
-}
-
-// A composition session the caret began inside an inserted span -- recorded at compositionstart,
-// read back at compositionend. Interior updates (`insertCompositionText`, and `compositionupdate`)
-// are never intercepted: the UI Events draft marks `insertCompositionText` not cancelable, and a
-// native composition candidate must run untouched rather than be replayed as an independent string.
-// Simulated composition events cannot prove what a device's own IME does when its own DOM node is
-// replaced mid-session, only that this contract answers the sequence correctly once it ends.
-// Not gated on event.isTrusted, unlike the input-mutating listeners around it: composition state
-// tracking alone inserts nothing (only a compositionend whose span text actually changed does, and
-// that change can only have happened through whatever DOM mutation already occurred -- trusted or a
-// witness's own simulated sequence, the same non-gated door _rapierHandlePaste's own 'paste'
-// listener already is for exactly this reason), and gating it would make a simulated composition
-// sequence impossible to witness at all.
-const _rapierReviewComposition = { target: null, originalText: '' };
-
-document.addEventListener('compositionstart', function _rapierCaptureReviewComposition() {
-	const target = _rapierReviewInputTarget();
-	if (!target) return;
-	_rapierReviewComposition.target = target;
-	_rapierReviewComposition.originalText = String(target.span.textContent || '');
-}, true);
-
-document.addEventListener('compositionend', function _rapierCommitReviewComposition(event) {
-	const watch = _rapierReviewComposition.target;
-	_rapierReviewComposition.target = null;
-	if (!watch || !watch.span.isConnected) return;
-	const finalText = String(watch.span.textContent || '');
-	if (finalText === _rapierReviewComposition.originalText) return; // cancelled, or a no-op session: nothing to accept
-	_rapierReviewAcceptThenSetSpanText(watch, finalText, typeof event.data === 'string' ? event.data : undefined, _rapierReviewComposition.originalText);
-}, true);
-
-// Paste never reaches a native insertFromPaste beforeinput in this app: _rapierHandlePaste, this
-// file's own one paste owner, already calls preventDefault on every paste that lands in the editor
-// before the browser would ever raise one (bound in the bubble phase; this listener runs ahead of
-// it in the capture phase, the actual boundary a caret in an inserted span needs to answer to, not
-// a second one). Scoped to a single-line plain-text payload landing entirely inside one span --
-// not a rewrite of paste itself: a multi-line or rich payload falls through to the ordinary paste
-// pipeline, the same documented boundary this file already draws elsewhere for a paste it does not
-// specially own.
-document.addEventListener('paste', function _rapierPasteIntoReview(event) {
-	const target = _rapierReviewInputTarget();
-	if (!target) return;
-	const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
-	if (!text || /[\r\n]/.test(text)) return;
-	const finalText = _rapierReviewFinalTextFor(target, 'insertText', text);
-	if (finalText === null) return;
-	event.preventDefault();
-	event.stopImmediatePropagation();
-	_rapierReviewAcceptThenSetSpanText(target, finalText, text, undefined, _rapierReviewCaretInFinal(target, 'insertText', text));
-}, true);
-
-document.addEventListener('beforeinput', function _rapierEditReviewInput(event) {
-	if (event.isTrusted !== true) return;
-	const inputType = String(event.inputType || '');
-	// insertCompositionText is never intercepted here (not cancelable, and owned by the
-	// compositionstart/compositionend pair above); every other input kind this contract does not
-	// specify is left alone, unchanged from before this pass.
-	if (inputType === 'insertCompositionText') return;
-	if (!_RAPIER_REVIEW_INSERT_TYPES.has(inputType) && inputType !== _RAPIER_REVIEW_DELETE_BACK && inputType !== _RAPIER_REVIEW_DELETE_FWD) return;
-	if (!event.cancelable) return;
-	const target = _rapierReviewInputTarget();
-	if (!target) return;
-	const data = event.data;
-	const finalText = _rapierReviewFinalTextFor(target, inputType, data);
-	if (finalText === null) return; // out of scope for this input at this position (e.g. Backspace at the very start): let the ordinary path handle it
-	event.preventDefault();
-	// Capture phase, ahead of every other beforeinput listener including the editDiv's own
-	// (_rapierPrepareEditInput) -- stopped here immediately, not just prevented, so nothing else
-	// touches this edit or the selection it carries before the accept-then-edit sequence takes over
-	// (the edit must never land first: a review is decided over time). The selection itself is
-	// cleared inside _rapierReviewAcceptThenSetSpanText, the one place every input kind here shares
-	// -- not duplicated here, so it is also the one place that restores the focus its own clearing
-	// can cost (below).
-	event.stopImmediatePropagation();
-	_rapierReviewAcceptThenSetSpanText(target, finalText, typeof data === 'string' ? data : undefined, undefined, _rapierReviewCaretInFinal(target, inputType, data));
-}, true);
 
 const _rapierUi = Object.seal({
 	refs: null,
@@ -47091,8 +45727,7 @@ function _rapierUiSetPreference(field, raw, schedule) {
 }
 
 function _rapierUiApplyReadOnly() {
-	if (rapierSetReadOnly(globalThis.RAPIER_APPS_HOST === true
-		? rapier.access.readOnly : !!RapierPreferences.read('readOnly'))) {
+	if (rapierSetReadOnly(!!RapierPreferences.read('readOnly'))) {
 		_rapierUi.replaceOpen = false;
 		_rapierUiClosePicker(_rapierUi.picker, false);
 		_rapierUiCollapseToolbar(false);
@@ -47825,7 +46460,6 @@ function _rapierUiSetFindOpen(open) {
 	const refs = _rapierUi.refs;
 	const next = !!open;
 	if (next === _rapierUi.findOpen) return;
-	if (next) _rapierReviewContinuationRuntime.navGeneration++;
 	_rapierUi.findOpen = next;
 	rapierSetFindOpen(next);
 	if (next) {
@@ -48618,7 +47252,8 @@ const _rapierUiRestore = {
 
 	openDelta(event) {
 		if (!this.canSeeDelta()) return;
-		rapierOpenSeenDelta({ trusted: !!(event && event.isTrusted) });
+		if (event?.isTrusted !== true) return;
+		void globalThis.RapierChanges?.next();
 		this.dismiss();
 		if (event && event.currentTarget && event.currentTarget.blur) event.currentTarget.blur();
 	},
@@ -49462,20 +48097,16 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 
 	settings: () => _rapierUiSetSettingsOpen(true),
 	'settings-close': () => _rapierUiSetSettingsOpen(false, 'dismiss'),
-	switch: (control, event) => {
+	switch: control => {
 		const field = control.closest('[data-switch]').dataset.switch, value = _rapierSwitchValue(control);
-		if (globalThis.RAPIER_APPS_HOST === true && field === 'readOnly') {
-			globalThis.RapierAgentBrowser?.setPolicy({readOnly: value === 'on'}, event);
-		} else {
-			const change = schedule => _rapierUiSetPreference(field, value, schedule);
-			// The person's own theme, chosen in an embedded frame, takes over from the host's (item 8).
-			if (field === 'theme') {
-				_rapierEmbed.theme = '';
-				// Keep the choice before the visual provider waits; its existing transition
-				// still owns when subscribers repaint the page and settings.
-				change(notify => _rapierThemeLight(value, notify));
-			} else change();
-		}
+		const change = schedule => _rapierUiSetPreference(field, value, schedule);
+		// The person's own theme, chosen in an embedded frame, takes over from the host's (item 8).
+		if (field === 'theme') {
+			_rapierEmbed.theme = '';
+			// Keep the choice before the visual provider waits; its existing transition
+			// still owns when subscribers repaint the page and settings.
+			change(notify => _rapierThemeLight(value, notify));
+		} else change();
 	},
 	'code-toggle': () => { _rapierUi.codeOpen = !_rapierUi.codeOpen; renderSettings(); },
 	'pro-toggle': () => { _rapierUi.proOpen = !_rapierUi.proOpen; renderSettings(); },

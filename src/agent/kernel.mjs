@@ -23,7 +23,7 @@ import {paintUndoPlan, paintUndoChanges} from './paint-undo.mjs';
 export {paintUndoChanges};
 import {historyProjection, sourceBefore, selectiveUndo} from '../kit/ledger/history.mjs';
 import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
-import {PAGE_RESULT_BYTES, resultBytes, boundedResult} from './page-result.mjs';
+import {TOOL_RESULT_BYTES, PAGE_RESULT_BYTES, resultBytes, boundedResult} from './page-result.mjs';
 export {PAGE_RESULT_BYTES, resultBytes, boundedResult};
 import {materialRequest, materialDescription, materialMatches, admitMaterialResult} from './material.mjs';
 
@@ -82,7 +82,7 @@ export function admitExportArtifact(request, fact) {
 
 export const LIMITS = Object.freeze({
   documentBytes: 25 * 1024 * 1024, editChars: 262144, drawingWorkChars: 786432, edits: 16,
-  readChars: 4096, resultBytes: 12288, handles: 64, refs: 128, cursors: 64,
+  readChars: 4096, resultBytes: TOOL_RESULT_BYTES, handles: 64, refs: 128, cursors: 64,
   authorityBytes: 1024 * 1024, lifetimeMs: 300000, retryMs: 24 * 60 * 60 * 1000,
   compareBytes: 8 * 1024 * 1024, compareLines: 100000, compareChanges: 1200,
   humanContexts: 8, presenceMs: 15000, principals: 16, invocationKeys: 256,
@@ -95,8 +95,23 @@ const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 // A refusal names its next step: one sentence a caller can act on. The reason stays the contract; the hint is
 // advice, present only for the reasons below.
 const HINTS = {
+  query_invalid: 'Use at most 512 Unicode characters. Source word/code searches need words; empty comparison or Markdown-kind queries list items.',
+  case_sensitive_not_applicable: 'case_sensitive applies only to source word searches; omit it with kind or comparison scope.',
+  within_not_applicable: 'within narrows source searches only; omit it for comparison scope.',
+  draw_create_patch_conflict: 'Create with figures or recipe; shapes patches require an edit target with recipe_handle.',
+  context_has_no_block: 'This handle touches no source block. Omit target.context_handle to append before image definitions, or read an existing paragraph and use its handle to create after that block.',
+  draw_recipe_figures_conflict: 'Send recipe or figures, not both.',
+  draw_edit_recipe_conflict: 'Edit with recipe, shapes or operations; omit figures and do not combine recipe with shapes.',
+  draw_direction_conflict: 'Use the same direction in the call and recipe, or omit the call direction.',
+  draw_edit_empty: 'Supply alt, recipe, a nonempty shapes patch or operations for the inspected drawing.',
+  compare_byte_limit: 'The two sources exceed the ' + (LIMITS.compareBytes / 1024 / 1024) + ' MiB comparison limit; compare smaller documents.',
+  compare_line_limit: 'Keep the two comparison sources within ' + LIMITS.compareLines + ' combined lines.',
+  compare_too_complex: 'Compare fewer unrelated line changes, or show a smaller retained act.',
+  compare_change_limit: 'A comparison holds at most ' + LIMITS.compareChanges + ' change regions; compare fewer differences or a smaller retained act.',
+  return_unavailable: 'This host has no return channel; use document.export to deliver an independent file.',
+  save_unavailable: 'This host has no bound save destination; use document.export for an independent file.',
   context_missing: 'This handle is unknown here or was consumed; call find or document.read again for a fresh handle.',
-  context_expired: 'This handle has expired; call find or document.read again for a fresh handle.',
+  context_expired: 'This reference has expired. For document.observe, omit since. Otherwise, repeat the original discovery call for a fresh ref or handle.',
   context_has_no_block: 'Read a nonempty source block and use its handle to place the drawing after that block, or omit context_handle to append.',
   cursor_missing: 'This page cursor is unknown here or was consumed; repeat the original read, search or listing without a cursor.',
   reference_missing: 'This ref is unknown here; call document.outline or find again for a fresh ref.',
@@ -110,9 +125,6 @@ const HINTS = {
   context_handle_wrong_kind: 'This handle is not for this call: edit with a handle from find or document.read, read a comparison with a change handle, edit a drawing with its recipe_handle.',
   authority_mismatch: 'This handle or ref belongs to another caller; obtain your own with find, document.read or document.outline.',
   change_missing: 'No such change; document.observe lists changes since your last successful observation or supplied cursor.',
-  change_not_owned_or_unavailable: 'That change is not yours to reverse, or is no longer reversible; document.observe lists the changes.',
-  no_agent_change: 'No change under this agent name to undo; name change_id, or the agent name that made it.',
-  other_agent_latest: 'The latest change is another agent\'s; name its change_id to undo it.',
   compare_not_open: 'No comparison is open; use comparison.present with action open or show.',
   edits_overlap: 'Two edits cover the same text; merge them into one edit.',
   batch_too_large: 'Send fewer edits in one call.',
@@ -2562,7 +2574,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const snapshot = readSnapshot();
     // A Markdown kind with no words lists every element of that kind; text and code names need a query.
     if (!['source', 'comparison'].includes(input.scope)) return failure('search_scope_required', 'invalid');
-    if (typeof input.query !== 'string' || (!input.query && input.scope !== 'comparison' && !FIND_KINDS.markdown.includes(input.kind)) || input.query.length > 512 ||
+    if (typeof input.query !== 'string' || (!input.query && input.scope !== 'comparison' && !FIND_KINDS.markdown.includes(input.kind)) || (input.query.length > 512 && [...input.query].length > 512) ||
         /[\uD800-\uDFFF]/u.test(input.query)) return failure('query_invalid', 'invalid');
     if (input.scope === 'comparison' && !state.compare) return failure('compare_not_open');
     if (input.scope === 'comparison') {

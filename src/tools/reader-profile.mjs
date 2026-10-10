@@ -113,7 +113,7 @@ const CUT = [
 	'share-image-compat-toggle', 'share-ledger-authors', 'share-send-back',
 	// A reader has one document: no recent files, no view switch, no purchase, no agent rows, no line form.
 	'settings-open-chevron', 'recent-drawer', 'view-mode-toggle', 'settings-pro-section', 'about-review-row',
-	'posture-row', 'agent-row', 'goto-line-form', 'goto-line-range', 'restore-notice',
+	'agent-access', 'agent-row', 'goto-line-form', 'goto-line-range', 'restore-notice',
 ];
 
 // `ui` is editor/ui.html as it stands. The licences sheet is not here: it is its own packed part (see `licensesSheet`).

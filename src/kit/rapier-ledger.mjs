@@ -7,8 +7,8 @@ import {merge, transportInterval, transportTouchedInterval} from './ledger/merge
 export {merge, transportInterval, transportTouchedInterval};
 import {_rapierTransformSplices, _rapierRecordSplices, _rapierValidLedgerRecord, _rapierRecordMetadata, _rapierValidMetadata, _rapierValidMetadataEffect, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState, _rapierReplayMetadata, _rapierHasHistoryEffect} from './ledger/journal-records.mjs';
 export {_rapierTransformSplices, _rapierRecordSplices, _rapierValidLedgerRecord, _rapierRecordMetadata, _rapierValidMetadata, _rapierValidMetadataEffect, _rapierTransformMetadata, _rapierMetadataDelta, _rapierHistoryEffects, _rapierMetadataState, _rapierReplayMetadata, _rapierHasHistoryEffect};
-import {replayHistory, sourceBefore, historyProjection, selectiveUndo, groupHistoryActs} from './ledger/history.mjs';
-export {replayHistory, sourceBefore, historyProjection, selectiveUndo, groupHistoryActs};
+import {replayHistory, sourceBefore, historyProjection, historyPlaces, selectiveUndo, groupHistoryActs} from './ledger/history.mjs';
+export {replayHistory, sourceBefore, historyProjection, historyPlaces, selectiveUndo, groupHistoryActs};
 
 import {transposeSource} from './ledger/transport.mjs';
 export {transposeSource};

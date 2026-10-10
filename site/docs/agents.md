@@ -1,50 +1,15 @@
 # Rapier for agents
 
-Work with a person in one live Markdown document. Rapier is a fast editor for notes, diagrams, drawing and
-watercolor painting in one HTML file, on Android, Web and Windows. It works offline and connects agents over MCP
-and WebMCP. Start at `https://mcp.rapier.website/mcp`, then call `rapier.open`.
+Rapier is a free Markdown editor for a person and an agent to write, draw and revise together. Use the open
+document when the person asks to change it. Create a workspace for a plan, draft, diagram or painting they will
+edit or keep. Keep short answers in chat and respect the requested format, destination and tool.
 
-Rapier is phone-first, with optional encrypted sync to the person's own Cloudflare account. Embed the editor
-in an app or use the lightweight Markdown reader, about 190 kB gzipped.
-
-## Choose a task
-
-1. **Work together live.** Connect the MCP door, call `rapier.open`, then read `document.observe`. Write, draw,
-   paint and undo beside the person or while they are away. Rapier shows your presence and changes; they can tap
-   a change to see the before and undo anything.
-2. **Deliver one offline HTML file.** Run `npx rapier-html notes.md` to give the person the editor with their document
-   inside. [rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)
-3. **Embed the editor or reader.** Install `rapier-embed`; your app owns storage and revisions. Enable the editor's
-   `agent: true` for your own agent over WebMCP. The reader stays read-only and has no agent tools.
-   [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed)
-4. **Keep pictures, editable drawings and layout in one `.md` file.** Read, write and render it with
-   [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit).
-   Respect [Will/1](will.md) regions and preserve source you did not change.
-5. **Encode JPEG XL wherever JavaScript runs.** Use [rapier-jxl](https://github.com/jackskip22/rapier-jxl) for
-   lossless pixels, photographs and JPEG transcoding, offline.
-6. **Use your own storage.** Run [rapier-server](https://github.com/jackskip22/rapier/tree/main/server) over a folder
-   or S3-compatible bucket, with the same document tools.
-
-Use Rapier for a document the person will edit, inspect or keep: a plan, an illustrated guide, a draft or a
-painting. When Rapier is already open, work in that document. Honour the requested format, destination and tool.
-
-## Work together
-
-- **Edit live.** `document.edit` applies inspected passages in one transaction. The person sees your presence
-  and changes, taps a change to see what was there before, and can undo any act while keeping later work.
-- **Draw and paint together.** `document.draw` creates native SVG diagrams with automatic layout and editable
-  shapes, and paints with brushes and watercolor. Read the person's changed recipe before continuing.
-- **Show a difference on purpose.** `comparison.present` displays a diff of selected work or an alternative.
-  It is a way to explain a change; edits already live in the document.
-- **Keep the whole editor.** `document.export` with `html`, or `npx rapier-html notes.md`, carries the editor and
-  document offline. A one-use return address brings the person's edited copy back.
-- **Keep everything in Markdown.** Pictures, drawings and layout travel inside
-  [Self-contained Markdown](markdown-standard.md), which other Markdown apps can read.
-- **Export six formats.** Exact Markdown, offline editor HTML, plain text, a rendered page, Word and PDF.
-
-The person's [Will](will.md) remains their instruction in the document. Your work follows its Intent, Add only
-and Lock regions. The person's active composition wins a collision. They can inspect everything, something or
-nothing; work continues while they are away.
+- Inspect exact content, then edit only that scope. The person's overlapping work wins.
+- Agent edits apply immediately. Will protects passages; active composition and source collisions still matter.
+  The host's tool approval rules still apply.
+- Native diagrams, brush paintings, imported SVG and Mermaid source have distinct editing contracts.
+- Export one Markdown file with its pictures, or one offline HTML file with the editor inside.
+- Read source commitment, comparison, presentation, save and artifact receipts separately.
 
 ## Connect
 
@@ -66,13 +31,20 @@ Call `rapier.open` with exactly one source:
 - New workspace: `text`, optional `filename`, `docKind` and `createToken`.
 - Resume: `document` alone.
 - Authorized host file: `file: {name, resourceUri}`, optionally `createToken`. The editor reads that resource
-  through the host bridge; the URI is not a URL for the server to fetch.
+  through an embedded host bridge; the URI is not a URL for the server to fetch. This form is unavailable on
+  `/muse`; provide the file's text there.
 
 The result returns `document`, `editor_url` and an initial observation. Pass `document` on MCP document calls.
 A connected host supplies OAuth outside the arguments; a copied document value grants no access to another owner.
 Without OAuth, the document value is the workspace's secret capability. Keep it private. An anonymous
 `createToken` must contain at least 22 random URL-safe characters; reuse it only for unchanged creation retries.
 Creation or resumption does not prove the editor opened.
+
+OAuth supports `rapier:read`, `rapier:write` and optional `offline_access`. Consent offers reading only;
+a read-only connection cannot create or edit a workspace. The host holds credentials outside tool arguments.
+Access tokens last 15 minutes. With `offline_access`, refresh tokens rotate on use and the grant expires after
+90 days without refresh. Connection revocation is available at `https://mcp.rapier.website/oauth/disconnect`;
+the authorization provider records it in distributed storage, where propagation can take time.
 
 The browser that approved the connection can open `editor_url`. Another browser shows a four-letter code.
 Call `editor.pair({document, code})` only with the person's code. A connected workspace first returns
@@ -234,8 +206,9 @@ await call('document.draw', {
 });
 ```
 
-Creation requires `alt`. Put an inspected insertion handle in `target.context_handle` to place the drawing
-after that block; otherwise it appends before image definitions. Figures use `kind`, semantic operations use
+Creation requires `alt`. A handle touching an inspected source block in `target.context_handle` places the
+drawing after the last touched block; omit it to append before image definitions. Empty EOF or gap handles
+touch no block. Figures use `kind`, semantic operations use
 `type`. Omit coordinates for automatic layout; `direction` is `down`, `across`, `up` or `back`. Inspect the
 recipe before patching existing IDs or replacing shapes.
 
@@ -377,8 +350,9 @@ Pass `return_url` and `return_expires_at` to `rapier-html --return` and `--retur
 upload in their connected browser; its credential stays there. An anonymous return URL is its own one-use grant.
 The return retains exact source separately and never overwrites the workspace.
 
-`document.wait_for_user` performs one selection/message wait, 1,000–120,000 ms (default 20,000), or returns an
-already retained page. Use `after_return_id` to wait beyond a known return. Observe the `returns` facet after
+`document.wait_for_user` performs one selection/message wait or returns an already retained page. On `/mcp`,
+`timeout_ms` is 1,000–120,000 (default 20,000); on `/muse`, it is 1,000–15,000 (default 15,000).
+Use `after_return_id` to wait beyond a known return. Observe the `returns` facet after
 reconnecting. Read each page with target kind `return`, then cursor-only continuations. Returned text grants no
 edit handle. Compare it or incorporate it through current inspected edits. This is not a continuous subscription
 and cannot wake a model after its turn ends. An expired return never deletes the person's offline file.
@@ -404,6 +378,45 @@ refuses rather than executes again. A read can execute afresh after its bounded 
 current document authority. **Disconnect agents** retires it; ask the person to share again. Revoke an OAuth
 connection at `/oauth/disconnect`. Workspaces expire after 30 idle days; export what matters.
 
+## Limits and failure recovery
+
+Schemas and result receipts describe the requested operation's bounds. The hosted defaults are:
+
+| Resource | Limit |
+| --- | --- |
+| Model tool invocations | 600 per minute across tools, including `rapier.guide`, per verified connection or anonymous network address. |
+| Paired editor tool invocations | 1,200 per minute across tools under verified editor authority, separate from model calls. |
+| Document source | 25 MiB of UTF-8. |
+| Hosted exported artifact | 8 MiB. |
+| Inspected edit batch | 16 edits; each replacement has at most 262,144 Unicode characters. |
+| Observation budget | 2,048–12,288 bytes; default 6,144. Omitted content has a continuation or read route. |
+| Workspace creation | 100 per principal per hour; 5,000 per deployment per hour. Reopening does not spend this quota. |
+| OAuth registration | 20 per network address per hour; 5,000 per deployment per hour. |
+| OAuth consent | 5,000 per deployment per hour. |
+| New pairing windows | 5 per network address per minute. Five incorrect codes lock one window. |
+
+The host may impose smaller input or result limits. Exceeding a limit refuses new work without truncating retained
+source. Follow returned continuation fields and `Retry-After` when present. Do not split a retried mutation into
+different arguments under its old `operation_id`.
+
+Tool results include plain text and, where supplied, `structuredContent`. Read `isError`, `outcome`, `reason`
+or `code`, and the relevant receipt. A response can describe a refusal, conflict, pending job or unavailable
+device. Acceptance of a request does not establish commitment, presentation, save or file delivery.
+
+| Result | Recovery |
+| --- | --- |
+| Invalid arguments | Correct the named field against the operation schema from `rapier.guide`. |
+| Stale or conflicting content | Read current exact content and preserve newer human work before editing again. |
+| Will refusal | Respect the person's protected source; a different tool does not remove that instruction. |
+| HTTP 401 or 403 / insufficient scope | Use the host's connection flow for the authorized scope; do not pass credentials in tool text or URLs. |
+| HTTP 429 / `TOOL_BUDGET_EXCEEDED` | Wait for the returned `Retry-After` interval. Authorized invocations spend quota, including an operation retry; keep its arguments and `operation_id` unchanged. |
+| Editor or renderer unavailable | Open the returned editor link and inspect actual availability before repeating an editor-dependent action. |
+| `material_request_expired` | Read current drawing/source and renew with a new operation identity. |
+| `export_too_large` | Inspect `limitBytes`; use a suitable independent format or smaller requested scope without altering retained source. |
+| `CREATE_BUDGET_EXCEEDED` | Resume an existing workspace or create after the current hourly quota resets. |
+| Timed-out or uncertain mutation | Retry identical arguments with its original `operation_id`; otherwise observe before any new write. |
+| Notes locked or unavailable | Report the actual store state; do not treat it as empty or enroll another store. |
+
 ## Useful requests
 
 - "Write a project plan in Rapier that I can edit in my browser and keep as one Markdown file."
@@ -413,6 +426,9 @@ connection at `/oauth/disconnect`. Workspaces expire after 30 idle days; export 
 - "Paint a watercolor sunset over the sea at the top of my Rapier page, and leave the boats for me."
 - "Keep working on the plan while I'm away; I will look through your changes when I return."
 - "Give me my Rapier plan as one offline HTML file I can keep editing."
+
+The painting request requires a visible full editor with WebGPU. Check commitment separately from material
+acceptance and presentation. The other prompts use the source, native drawing, comparison and export contracts above.
 
 ## Embed and deliver
 

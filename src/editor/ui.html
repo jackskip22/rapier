@@ -390,10 +390,6 @@
 		<div class="compare-summary__names" id="compare-summary-names"></div>
 		<div class="compare-summary__counts" id="compare-summary-counts"></div>
 	</div>
-	<div class="compare-law-review" id="compare-law-review" data-visible="false"
-			 role="group" aria-label="held edit review"></div>
-	<div class="compare-law-review" id="compare-seen-action" data-visible="false"
-			 role="group" aria-label="restore the last look"></div>
 	<div class="compare-state" id="compare-state" data-visible="false"></div>
 	<div class="compare-content" id="compare-content"></div>
 </section>
@@ -406,16 +402,6 @@
 		 stands in the DOM from boot so what it says can be announced where it already was, and it is
 		 `hidden` with nothing to say — no tab stop and no name over an empty gutter. -->
 <button type="button" class="agent-note" id="agent-note" hidden aria-live="polite" aria-atomic="true"><span class="agent-note__who"></span><span class="agent-note__said"></span></button>
-<div class="change-line" id="change-line" hidden role="group" aria-label="the agent's change"><span class="change-line__status">APPLIED</span><button type="button" class="change-line__verb" id="change-line-keep" aria-label="close the comparison; the change stays" onmousedown="event.preventDefault()">DONE</button><button type="button" class="change-line__verb" id="change-line-undo" aria-label="undo the agent's change" onmousedown="event.preventDefault()">UNDO</button></div>
-<!-- The inline review bar (change peeking's inline surface): how many of a pending proposal's
-     changes remain, ALLOW ALL (approve every remaining pending change) and the lens for the whole
-     review, beside the spans drawn directly in the read surface. -->
-<div class="review-track" id="review-track" hidden role="group" aria-label="pending changes">
-	<span class="review-track__status" id="review-track-status"></span>
-	<button type="button" class="review-track__verb" id="review-track-lens" aria-label="open the review lens for every change" onmousedown="event.preventDefault()">REVIEW</button>
-	<button type="button" class="review-track__verb" id="review-track-allow" aria-label="allow every remaining change" onmousedown="event.preventDefault()">ALLOW ALL</button>
-</div>
-
 <!-- ════════ -->
 <div class="settings-overlay" id="settings-overlay" inert aria-hidden="true">
 
@@ -885,26 +871,32 @@
 				</button>
 			</div>
 			<div class="licenses-app privacy-words">
-				<p>Rapier has no accounts, analytics or advertising. Your files stay on your device until you save, share,
+				<p>Rapier needs no account signup and uses no analytics or advertising. Your files stay on your device until you save, share,
 					back up or sync them. Sync uses your bucket, encrypted with a key that never leaves your devices. You keep
 					or delete local files; Delete forever removes notes and their history.</p>
 				<p>The Android editor has no Internet permission. It records audio only when you press Record, into your
 					notes. Google Play handles purchases and optional plugin downloads under its policy.</p>
-				<p>Using an assistant sends your document to the agent door (mcp.rapier.website) for shared reading and
-					editing. Its workspace keeps the document, edit history, inspected passages, proposals, decisions, presence,
-					selections and tool records; secret keys control workspace access. Active use renews workspace expiry to
-					about 30 days; unchanged sync does not. Expired workspaces are cleared on their next request or deletion
-					alarm. In the editor, delete the workspace or end assistant access. The door keeps creation records
-					for one hour to limit new workspaces. Your assistant's host handles the conversation
-					under its policy.</p>
-				<p>Hosted exports keep an unchanged file copy. Its download link expires after 24 hours and is revoked when
-					you delete the workspace or end assistant access. Expired copies are cleared on the next workspace update
-					or deletion.</p>
-				<p>Cloudflare serves the page and door and sees what web requests show. No cookies.</p>
+				<p>Sharing a document through the hosted agent door (mcp.rapier.website) sends the content you choose there
+					for shared reading and editing. Its private workspace keeps the document, retained edit history, inspected
+					passages, presence, selections and tool records. Authorized connections and secret document references
+					control workspace access. Active use renews workspace expiry to 30 days; unchanged sync does not. Expired
+					workspaces are cleared on their next request or deletion alarm. In the editor, you can delete the workspace
+					or disconnect agents from that document. The door keeps creation and registration budget records for one
+					hour and tool invocation budget records for one minute. Your assistant's host handles the conversation under
+					its policy.</p>
+				<p>Essential cookies remember the browser that approved connected apps for up to 90 days, guard consent,
+					and authorize paired editors for up to 24 hours. OAuth access tokens expire after 15 minutes. Refresh grants
+					and client registrations expire after 90 days without renewal. You can revoke a connected app at
+					<a href="https://mcp.rapier.website/oauth/disconnect" target="_blank" rel="noopener noreferrer">Connected apps</a>.
+					Revoking a connection preserves your hosted documents; delete their workspaces to remove them.</p>
+				<p>Hosted exports keep an unchanged file copy. A download link lasts up to 24 hours within the workspace's
+					lifetime, and is revoked when you delete the workspace or disconnect agents. Expired copies are cleared on
+					the next workspace update or deletion.</p>
+				<p>Cloudflare serves the page and door and sees what web requests show.</p>
 				<h3 class="licenses-given">terms</h3>
 				<p>Rapier is free software: AGPL-3.0-only for the editor; MIT for the Markdown standard and embed helper.
 					Provided as is, without warranty where law allows. Keep your own copies. The door may change or close.</p>
-				<p><strong>Jack Skipworth · hello@rapier.website · effective 2 October 2026</strong></p>
+				<p><strong>Jack Skipworth · hello@rapier.website · effective 10 October 2026</strong></p>
 			</div>
 		</div>
 	</div>
@@ -2387,24 +2379,9 @@ SOFTWARE.</pre>
 		 role="dialog" aria-modal="true" aria-labelledby="navigator-title">
 	<div class="settings-panel navigator-panel">
 		<div class="settings-panel__body">
-			<!-- ── Posture row: the person's chain. The three words are the label, so the row has none. -->
-			<div class="posture-row" id="posture-row" hidden>
-				<div class="posture-row__line">
-					<div class="theme-switcher theme-switcher--joined posture-row__words" role="group"
-							 aria-label="how your agent works in this document">
-						<button type="button" class="theme-switcher__btn posture-row__word" data-posture="free"
-										aria-pressed="true" data-active="true">FREE</button>
-						<button type="button" class="theme-switcher__btn posture-row__word" data-posture="check"
-										aria-pressed="false">CHECK</button>
-						<button type="button" class="theme-switcher__btn posture-row__word" data-posture="ask"
-										aria-pressed="false">ASK</button>
-					</div>
-					<button type="button" class="settings-info-btn" id="posture-info" data-action="information" data-value="agent" aria-label="what these words mean" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
-				</div>
-				<div class="posture-row__line posture-row__agents" id="posture-agents" hidden>
-					<button type="button" class="settings-action-btn posture-row__agent-btn" id="posture-disconnect">DISCONNECT AGENTS</button>
-					<button type="button" class="settings-action-btn posture-row__agent-btn" id="posture-share" hidden>SHARE WITH AN AGENT</button>
-				</div>
+			<div class="agent-access" id="agent-access" hidden>
+				<button type="button" class="settings-action-btn" id="agent-access-disconnect">DISCONNECT AGENTS</button>
+				<button type="button" class="settings-action-btn" id="agent-access-share" hidden>SHARE WITH AN AGENT</button>
 			</div>
 			<!-- ── Agent row. -->
 			<div class="agent-row" id="agent-row" hidden>
@@ -2412,19 +2389,8 @@ SOFTWARE.</pre>
 					<span class="agent-row__state" id="agent-row-state"></span>
 					<span class="agent-row__under" id="agent-row-under"></span>
 					<span class="agent-row__queued" id="agent-row-queued" hidden></span>
-					<button type="button" class="agent-row__verb" id="agent-row-delta" hidden data-on="false"
-									aria-label="changes since open" onmousedown="event.preventDefault()">SHOW CHANGES</button>
 					<button type="button" class="agent-row__verb" id="agent-row-jump" hidden
 									aria-label="go to the change" onmousedown="event.preventDefault()">GO TO CHANGE</button>
-				</div>
-				<div class="agent-row__lens" id="agent-row-lens" hidden>
-					<span class="agent-row__lens-status" id="agent-row-lens-status"></span>
-					<span class="agent-row__lens-actions">
-						<button type="button" class="agent-row__verb" id="agent-row-done" disabled
-									aria-label="close the comparison; the change stays">DONE</button>
-						<button type="button" class="agent-row__verb" id="agent-row-undo"
-										aria-label="undo the agent's change">UNDO</button>
-					</span>
 				</div>
 				<p class="agent-row__said" id="agent-row-said" hidden></p>
 				<form class="agent-row__note" id="agent-row-note">

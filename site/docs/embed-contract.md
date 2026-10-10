@@ -332,6 +332,11 @@ Rapier waits for the save answer as long as the connection lives. After fifteen 
 
 **Store each `requestId` once.** On Retry or reconnect, recognise a repeated id, skip the write and repeat the first answer: the same `save-ack` revision or `save-nack`.
 
+The helper binds each saved ID to a SHA-256 of its exact source plus its filename, document kind, code language
+and base revision. A different capture under the same ID is refused as `save_request_conflict`; it cannot reuse
+the original acknowledgement. The session's UTF-8 document byte limit, well-formed Unicode and save metadata
+schema are checked before the storage callback, with `document_too_large` and `save_payload_invalid` refusals.
+
 ### The host's theme
 
 The host sets `theme` in `rapier-connect` and changes it with a `theme` port message. The frame paints it and stores nothing; a theme the person picks in the frame's own settings takes over from it until the host sends another.

@@ -19,6 +19,7 @@ export {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, va
 // The paint tool's own numbers (draw/paint-tool.js: RAPIER_PAINT_GRAIN, RAPIER_PAINT_WET, the Dip's range,
 // _rapierPaintRadiusOffset); the draw-agent-paint cell holds them equal.
 export const AGENT_PAINT_GRAIN = 3;
+const PAINT_SHEET_LIMITS = Object.freeze({pixels: 12000000, side: 16384});
 export const AGENT_PAINT_WET = Object.freeze({dryingTime: 1600, cell: 3, maxBytes: 64000000, film: true, filmGain: 0.55,
 	flow: 0.55, pin: 1.2, bleed: 0.6, grain: 1, granulation: 0.2, tooth: 0.85, edgeDarkening: 1});
 // A hand's pace in drawing units a second: the time between two points, so speed-driven settings see a hand.
@@ -56,7 +57,7 @@ export function forgetWaterSession(session) { waterPublications.delete(session);
 
 export function agentPaintBrushRegistry() {
 	// Each brush carries its own first-use size: the width the Paint tool opens it at and the width a stroke takes when it names none.
-	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id)})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), actions: WATER_AGENT_ACTIONS};
+	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS, sheetPixels: PAINT_SHEET_LIMITS.pixels, sheetSidePixels: PAINT_SHEET_LIMITS.side, newLayerPixelsPerUnit: AGENT_PAINT_GRAIN}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id)})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), actions: WATER_AGENT_ACTIONS, figure: {kind: 'paint', mode: 'water', seed: 1, paper: 'cold-press', actions: [WATER_AGENT_ACTIONS.stroke]}};
 }
 
 const WATER_AGENT_ACTIONS = Object.freeze({
@@ -372,7 +373,7 @@ export function agentPaintSheetHolds(paint) {
 }
 
 const yieldPainting = () => new Promise(resolve => setTimeout(resolve, 0));
-const boundedSheet = (width, height) => Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0 && width <= 16384 && height <= 16384 && width * height <= 12000000;
+const boundedSheet = (width, height) => Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0 && width <= PAINT_SHEET_LIMITS.side && height <= PAINT_SHEET_LIMITS.side && width * height <= PAINT_SHEET_LIMITS.pixels;
 const samePixels = (a, b) => !!a && !!b && a.width === b.width && a.height === b.height && a.data.length === b.data.length && a.data.every((value, i) => value === b.data[i]);
 function cropPaintPixels(pixels, [x0, y0, x1, y1]) {
 	if (x1 >= pixels.width || y1 >= pixels.height) throw new Error('The paint replay crop leaves its material');
@@ -667,7 +668,7 @@ async function paintAgentWater(raw,seed,target,options) {
 		replay={mode:'water',paper,session,baseRaster:null,px:[frame.w,frame.h],scale,entries:[]};
 		geom={cx:frame.x+frame.w/scale/2,cy:frame.y+frame.h/scale/2,w:frame.w/scale,h:frame.h/scale};
 	}
-	if(!boundedSheet(frame.w,frame.h))return null;
+	if(!boundedSheet(frame.w,frame.h))throw Object.assign(new Error('This Water sheet is too large. Reduce the coordinate span or brush size, or split work across layers.'),{code:'WATER_BUDGET'});
 	const id=typeof options.contribution==='string'?options.contribution:'paint-'+seed+'-'+(replay.entries.length+1);
 	if(replay.entries.some(row=>row.id===id))throw new Error('Paint contribution is already present');
 	const entry={id,actor:'agent',mode:'water',actions,seed,paper,px:[frame.w,frame.h],scale,grow};

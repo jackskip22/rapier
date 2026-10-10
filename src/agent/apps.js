@@ -1893,7 +1893,7 @@
   }
 
   // "Disconnect agents": rotate the capability; the successor returns sealed to the editor key, is unsealed here and withheld from the model
-  // until shared. Needs a trusted event, as setPolicy.
+  // until shared. Needs a trusted event.
   async function disconnectAgents(event) {
     if (event?.isTrusted !== true || !base || switching || closed) return false;
     const target = {document: token, documentId: base.documentId};

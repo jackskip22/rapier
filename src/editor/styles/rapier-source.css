@@ -252,139 +252,6 @@ body.light .scroll-fab-label {
 	transition: opacity var(--dur-enter) var(--ease-out);
 }
 .agent-note[hidden] { display: none; }
-/* THE DECISION STANDS BESIDE THE CHANGE. A flat line just above the first changed block: the fact,
-   then the two acts a person has — the same acts the agent row offers one tap away, so nobody has
-   to know which button opens what. No hairline, no shadow: a surface with the accent bar the
-   agent's own line wears, riding the scroller, gone with the lens. */
-.change-line {
-	position: fixed;
-	right: calc(51px + var(--space-4));
-	z-index: 151;
-	display: flex;
-	align-items: center;
-	gap: 0;
-	padding: 0 2px 0 10px;
-	background: var(--color-surface-2);
-	color: var(--color-text);
-	opacity: 0;
-	pointer-events: none;
-	transition: opacity var(--dur-enter) var(--ease-out);
-}
-.change-line[hidden] { display: none; }
-.change-line.visible { opacity: 1; pointer-events: auto; }
-.change-line__status {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding-right: 6px;
-	opacity: .72;
-	font: var(--fw-semibold) 10px/1 var(--font-mono);
-	letter-spacing:var(--track-caps);
-}
-.change-line__status::before { content: ""; width: 2px; height: 14px; background: var(--color-accent); }
-.change-line__verb {
-	min-width: 44px;
-	height: 40px;
-	padding: 0 10px;
-	border: 0;
-	background: transparent;
-	color: var(--color-text);
-	font: var(--fw-semibold) 11px/1 var(--font-mono);
-	letter-spacing:var(--track-caps);
-	white-space: nowrap;
-	cursor: pointer;
-	touch-action: manipulation;
-}
-.change-line__verb:disabled { opacity: .4; cursor: default; }
-@media (hover:hover) and (pointer:fine) { .change-line__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
-
-/* The inline review bar (change peeking's inline surface): the same fixed bottom-corner surface
-   the agent's own change-line wears, so "how many pending changes remain" reads in the same place
-   as every other agent fact. */
-.review-track {
-	position: fixed;
-	right: calc(51px + var(--space-4));
-	bottom: calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + 51px);
-	z-index: 151;
-	display: flex;
-	align-items: center;
-	gap: 0;
-	padding: 0 2px 0 10px;
-	background: var(--color-surface-2);
-	color: var(--color-text);
-}
-.review-track[hidden] { display: none; }
-.review-track__status {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding-right: 6px;
-	opacity: .72;
-	font: var(--fw-semibold) 10px/1 var(--font-mono);
-	letter-spacing: var(--track-caps);
-	text-transform: uppercase;
-}
-.review-track__status::before { content: ""; width: 2px; height: 14px; background: var(--color-accent); }
-.review-track__verb {
-	min-width: 44px;
-	height: 40px;
-	padding: 0 10px;
-	border: 0;
-	background: transparent;
-	color: var(--color-text);
-	font: var(--fw-semibold) 11px/1 var(--font-mono);
-	letter-spacing: var(--track-caps);
-	text-transform: uppercase;
-	white-space: nowrap;
-	cursor: pointer;
-	touch-action: manipulation;
-}
-.review-track__verb:disabled { opacity: .4; cursor: default; }
-@media (hover:hover) and (pointer:fine) { .review-track__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
-
-/* A pending change drawn inline in the read surface: removed text struck and dimmed, inserted text
-	 marked, both live text -- never an image of the change, so it can carry a real caret for
-	 type-over. */
-.rapier-review-change { cursor: pointer; }
-.rapier-review-change__removed {
-	color: var(--color-text-muted);
-	text-decoration: line-through;
-	background: color-mix(in srgb, var(--color-error) 14%, transparent);
-}
-.rapier-review-change__inserted {
-	background: color-mix(in srgb, var(--color-success) 28%, transparent);
-}
-.rapier-review-stale {
-	display: inline-block;
-	margin-left: .3em;
-	color: var(--color-text-subtle);
-	font-size: .7em;
-	vertical-align: super;
-	cursor: pointer;
-}
-/* The two-word keep/drop strip under a tapped span: all-caps Geist Mono on --track-caps, the
-   design language's own notice/plate tracking. */
-.review-strip {
-	display: inline-flex;
-	gap: var(--space-3);
-	margin: 2px 0;
-	padding: 2px 0;
-}
-.review-strip__verb {
-	min-height: 32px;
-	padding: 0 var(--space-2);
-	border: 1px solid var(--color-border);
-	background: var(--color-surface-2);
-	color: var(--color-text);
-	font: var(--fw-semibold) 11px/1 var(--font-mono);
-	letter-spacing: var(--track-caps);
-	text-transform: uppercase;
-	cursor: pointer;
-	touch-action: manipulation;
-}
-.review-strip__verb:disabled { opacity: .4; cursor: default; }
-@media (hover:hover) and (pointer:fine) { .review-strip__verb:not(:disabled):hover { background: var(--color-surface-hover); } }
-
 .agent-note.visible {
 	opacity: 1;
 	pointer-events: auto;
@@ -466,7 +333,7 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	overscroll-behavior-y: contain;
 	scrollbar-width: none;
 	padding: var(--space-6) 0
-		calc(var(--space-8) + var(--rapier-compare-action-space, 0px) + var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
+		calc(var(--space-8) + var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)));
 	background: var(--color-bg);
 	color: var(--color-text);
 }
@@ -488,58 +355,6 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	font: var(--fw-regular) var(--text-xs) var(--font-mono);
 	letter-spacing: .03em;
 }
-.compare-law-review {
-	display: none;
-	position: fixed;
-	left: var(--editor-h-pad);
-	right: var(--editor-h-pad);
-	bottom: var(--native-inset-bottom, env(safe-area-inset-bottom, 0px));
-	z-index: 61;
-	grid-template-columns: 1fr;
-	/* The bar is opaque over the whole of itself, gap included: a hole in a floating surface is a
-		 window the document scrolls through. It floats on the same bottom edge as the format
-		 toolbar and stacks directly above it, both through _rapierPositionCompareActionBar. */
-	background: var(--color-bg);
-}
-.compare-law-review[data-visible="true"] { display: grid; }
-/* Continuing the agent's write is the answer letting it run out would not give, so it stands
-	 the exclusion radius clear of the answer that keeps the hold. */
-.compare-law-review__action--allow { margin-top: var(--thumb-exclusion); }
-.compare-law-review__action {
-	min-height: 48px;
-	padding: 0 var(--space-3);
-	border: 0;
-	background: var(--color-surface-2);
-	color: var(--color-text);
-	font: var(--fw-semibold) var(--text-xs) var(--font-mono);
-	letter-spacing:var(--track-caps);
-	text-transform: uppercase;
-	cursor: pointer;
-}
-
-.compare-law-review__status {
-	margin: 0;
-	padding: var(--space-2) var(--space-3);
-	text-align: center;
-	color: var(--color-text);
-	font: var(--fw-semibold) var(--text-xs) var(--font-mono);
-	letter-spacing:var(--track-caps);
-	text-transform: uppercase;
-}
-.compare-law-review__action--primary {
-	background: var(--color-accent);
-	color: var(--color-bg);
-}
-/* How many places the one write lands in, worn by the verb that admits it. */
-.compare-law-review__action--allow[data-places]::after {
-	content: attr(data-places);
-	margin-left: var(--space-2);
-	padding: 0 var(--space-2);
-	background: var(--color-text);
-	color: var(--color-bg);
-}
-.compare-law-review__action:disabled { cursor: wait; opacity: .45; }
-.compare-law-review__action:focus-visible { background: var(--color-surface-hover); }
 .compare-state {
 	display: none;
 	padding: var(--space-8) var(--editor-h-pad);
@@ -578,18 +393,13 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	text-transform: uppercase;
 	cursor: pointer;
 }
-.compare-content { min-width: 0; touch-action: pan-y; } /* a horizontal swipe steps between changes (change peeking) */
+.compare-content { min-width: 0; touch-action: pan-y; } /* a horizontal swipe steps between changes */
 .compare-hunk {
 	border-left: 3px solid transparent;
 	content-visibility: auto;
 	contain-intrinsic-size: auto 360px;
 }
 .compare-hunk[data-current="true"] { border-left-color: var(--color-accent); }
-.compare-hunk__peek { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
-.compare-hunk__peek-btn { width: 36px; height: 36px; }
-.compare-hunk__peek-btn[aria-pressed="true"] { background: var(--color-surface-hover); }
-.compare-hunk--dropped .compare-row { opacity: .38; }
-.compare-hunk--dropped .compare-row--add .compare-row__text { text-decoration: line-through; }
 .compare-hunk__label {
 	padding: var(--space-4) var(--editor-h-pad) var(--space-2);
 	color: var(--color-text-muted);
@@ -654,18 +464,6 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 .compare-word--add { background: color-mix(in srgb, var(--color-success) 32%, transparent); }
 .compare-word--remove { background: color-mix(in srgb, var(--color-error) 32%, transparent); }
 
-.since-open-hunk {
-	margin: 10px 0;
-	border-left: 2px solid var(--color-accent);
-	user-select: none;
-	-webkit-user-select: none;
-}
-.since-open-hunk .compare-row { grid-template-columns: 24px minmax(0, 1fr); min-height: 22px; }
-.since-open-hunk .compare-row__line { display: none; }
-.since-open-hunk .compare-row__text { user-select: none; -webkit-user-select: none; }
-#editor-blocks > .block-wrapper[data-since-open-changed] {
-	background: color-mix(in srgb, var(--color-success) 7%, transparent);
-}
 .compare-omitted {
 	width: 100%;
 	min-height: 48px;
@@ -1046,34 +844,15 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	flex-direction: column;
 	min-height: 0;
 }
-/* The person's chain, drawn as one row of equal columns: none of the three is a recommendation,
-	 so none of them is wider. The target is `--thumb-exclusion` in both axes at every width, and
-	 it is that token rather than a number because the number is the same fact: one 48px target
-	 plus the row unit, the width of the miss it exists to survive. A control a thumb misses is a
-	 protection a person stops reaching for, and this one has to be reachable before the first
-	 write rather than after it. Every 48px control in this panel keeps its own floor. */
-.posture-row {
+.agent-access {
 	flex: 0 0 auto;
 	display: flex;
 	flex-direction: column;
-	gap: var(--space-3);
+	gap: var(--space-2);
 	margin: 0 0 var(--space-4);
 	padding: 0 0 var(--space-3);
 }
-/* The three words span the row; the i stands beneath them, at the right. */
-.posture-row__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.posture-row__words { flex: 1 1 100%; min-width: 0; }
-.theme-switcher__btn.posture-row__word {
-	flex: 1 1 0;
-	min-width: var(--thumb-exclusion);
-	width: auto;
-	height: var(--thumb-exclusion);
-	font: var(--fw-medium) var(--text-sm)/1 var(--font-mono);
-	letter-spacing:var(--track-caps);
-}
-.posture-row__agents { gap: var(--space-2); }
-/* Disconnect and Share are the house's own action boxes, each a full line. */
-.posture-row__agents .posture-row__agent-btn { flex: 1 1 100%; }
+.agent-access[hidden] { display: none; }
 .agent-row {
 	flex: 0 0 auto;
 	display: flex;
@@ -1144,22 +923,6 @@ html[data-compare="on"] #source-mode ,html:not([data-compare="on"]) .compare-mod
 	opacity: .75;
 }
 .agent-row__verb[hidden] { display: none; }
-.agent-row__verb[data-on="true"] { color: var(--color-accent); opacity: 1; }
-.agent-row__lens {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 10px;
-}
-.agent-row__lens[hidden] { display: none; }
-.agent-row__lens-status {
-	flex: 1 1 auto;
-	min-width: 0;
-	color: var(--color-text);
-	font: var(--fw-semibold) 10px/1.4 var(--font-mono);
-	letter-spacing:var(--track-caps);
-}
-.agent-row__lens-actions { flex: 0 0 auto; display: flex; align-items: center; }
 .agent-row__verb:disabled { opacity: .35; cursor: default; }
 .agent-row__note { display: flex; gap: var(--space-2); }
 .agent-row__note-input:disabled { opacity: .55; cursor: not-allowed; }

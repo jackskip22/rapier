@@ -380,11 +380,6 @@
 				"count": 1,
 				"kind": "static-template",
 				"reason": "chevron.innerHTML is _rapierCommandIconMarkup('chevron-down'), a constant icon from the editor's own icon table; no document text."
-			},
-			"_rapierWillReviewPeekControls": {
-				"count": 1,
-				"kind": "static-template",
-				"reason": "button.innerHTML = _rapierCommandIconMarkup(icon) with icon one of the two literal names 'check'/'cross' from the editor's own icon table; no document text."
 			}
 		},
 		"images/interchange.js": {
@@ -539,6 +534,13 @@
 				"count": 1,
 				"kind": "sanitized-document",
 				"reason": "Complete sibling subtrees of an already-rendered projection pass through the caller supplied sanitizeRapierHtml in the export profile before part.innerHTML. Both the synchronous and cooperative portable/styled writers consume this one sanitizer owner."
+			}
+		},
+		"editor/changes.js": {
+			"renderBefore": {
+				"count": 2,
+				"kind": "sanitized-document",
+				"reason": "Both detached before and current fragments pass the existing block renderer and sanitizeRapierHtml; author labels and diff runs use textContent."
 			}
 		}
 	}

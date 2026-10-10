@@ -603,6 +603,7 @@ function _rapierDrawSealHistory(before = _rapierDrawState.undoStack.at(-1)) {
 	if (!entry.agent && (Object.keys(entry.delta.shapes).length || entry.delta.beforeOrder || entry.delta.strokes || entry.delta.beforeMeta || entry.delta.fonts)) _rapierDrawHumanChanged();
 	// The snapshot has become a delta; renderEdit still points at the snapshot, so a growth after the
 	// seal has nothing of this command's to write on and correctly leaves the stack alone.
+	if (entry.agent) globalThis.RapierChanges?.schedule();
 	return entry;
 }
 
@@ -776,6 +777,7 @@ function _rapierDrawRenderShapes(onlyIds) {
 			state.renderEdit = null;
 			_rapierDrawLiquidSync(); _rapierDrawCopierSync();
 			if (refused) showToast(refused.code === 'drawing_route_blocked' ? 'That move blocks a connector. Your diagram was kept.' : refused.message, 'error');
+			globalThis.RapierChanges?.locate();
 			return;
 		} catch (error) {
 			if (!['drawing_work_limit', 'drawing_geometry_limit', 'drawing_route_blocked'].includes(error.code)) throw error;
@@ -4382,6 +4384,7 @@ function _rapierDrawApplyView() {
 	_rapierDrawResizeDraw();
 	// A GPU Copy machine picture follows the camera; a settled zoom draws it again at the new scale.
 	if (_rapierCopier.live.size) { clearTimeout(_rapierCopier.timer); _rapierCopier.timer = setTimeout(() => _rapierDrawCopierSync(), 220); }
+	globalThis.RapierChanges?.locate();
 }
 function _rapierDrawViewTransform(rect, vb) {
 	if (!vb.width || !vb.height || !rect.width || !rect.height) return { scale: 1, offX: 0, offY: 0 };
@@ -6263,6 +6266,7 @@ function _rapierDrawOpenSurface(options) {
 			for (const row of state.agentQueue) _rapierDrawAgentReceipt(row.options, 'presentation_deferred', 'drawing_recovered');
 			_rapierDrawScheduleAgentPatches();
 		}
+		globalThis.RapierChanges?.close(); globalThis.RapierChanges?.schedule();
 		opts.onReady?.(true);
 	});
 }
@@ -6422,6 +6426,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	_rapierDrawLiquidStop(); _rapierDrawCopierStop();
 	// A liquid drawing shown without its still (an agent's) gets one once Draw has closed.
 	setTimeout(() => void _rapierDrawLiquidResume(), 0);
+	globalThis.RapierChanges?.close(); globalThis.RapierChanges?.schedule();
 	_rapierDrawToastHome(false);
 	if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('draw', false);
 	if (typeof _rapierBackHold === 'function') _rapierBackHold(); // the canvas's own history entry goes with it

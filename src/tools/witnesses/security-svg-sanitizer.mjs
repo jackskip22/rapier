@@ -4,6 +4,7 @@ import {sanitizeSvgText} from '../../images/assets.mjs';
 import * as assets from '../../images/assets.mjs';
 import assert from 'node:assert/strict';
 import * as core from '../../draw/core.mjs';
+import {svgDownloadSecurity} from './_svg-download-security.mjs';
 
 const IMPORTED = `<?xml version="1.0"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="160" viewBox="0 0 240 160">
@@ -118,16 +119,49 @@ const HOSTILE = [
 	['video src', '<svg xmlns="http://www.w3.org/2000/svg"><video src="https://example.invalid/a.mp4"/></svg>', /video|example\.invalid/i],
 	['srcdoc on image', '<svg xmlns="http://www.w3.org/2000/svg"><image srcdoc="<script>alert(1)</script>" href="#x"/></svg>', /srcdoc|alert/i],
 ];
+const MUTATED = [
+	['iframe splice', '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><s<iframe/>cript>globalThis.svgAttack=1</script></svg>'],
+	['foreignObject splice', '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><scr<foreignObject></foreignObject>ipt>globalThis.svgAttack=1</script></svg>'],
+	['nested splice', '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><s<iframe/><object/>cr<foreignObject/>ipt>globalThis.svgAttack=1</script></svg>'],
+];
+
 const HONEST = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><metadata id="rapier-draw">{}</metadata><g data-shape-id="s1"><image data-rapier-paint="s1" x="0" y="0" width="4" height="4" preserveAspectRatio="none" transform="matrix(1 0 0 1 2 2)" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="/></g><use href="#s1"/></svg>';
 
 export default async function (page, t) {
 	const failures = [];
 	let imported = '';
+	try { await svgDownloadSecurity(); } catch (error) { failures.push(error.stack); }
 	try { imported = await importedNodeCells(); } catch (error) { failures.push(error.stack); }
 	for (const [name, text, forbidden] of HOSTILE) {
 		const out = sanitizeSvgText(text);
 		if (forbidden.test(out)) failures.push(name + ' -> ' + out);
 	}
+	for (const [name, text] of MUTATED) {
+		if (sanitizeSvgText(text)) failures.push(name + ': malformed XML became an accepted SVG');
+		try {
+			await assets.createAsset(new TextEncoder().encode(text), null, {codec: 'image/svg+xml'});
+			failures.push(name + ': the asset writer accepted executable rewritten XML');
+		} catch (_) {}
+	}
+	for (const css of ['@im@import "x";port "https://example.invalid/attack.css";',
+		'rect{fill:u@import "x";rl(https://example.invalid/attack.svg#x)}']) {
+		const payload = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><style>' + css + '</style></svg>';
+		const stored = await assets.createAsset(new TextEncoder().encode(payload), null, {codec: 'image/svg+xml'});
+		const output = new TextDecoder().decode(stored.bytes);
+		if (/@import\b|url\(https:/i.test(output)) failures.push('stylesheet deletion assembled an active remote reference: ' + output);
+	}
+	for (const css of ['@im<!--x-->port "https://example.invalid/attack.css";',
+		'rect{fill:u<!--x-->rl(https://example.invalid/attack.svg#x)}']) {
+		const output = sanitizeSvgText('<svg xmlns="http://www.w3.org/2000/svg"><style>' + css + '</style></svg>');
+		if (output.includes('https://example.invalid')) failures.push('XML comment splicing retained an active CSS resource: ' + output);
+	}
+	for (const css of ['rect<!--literal-->{fill:red}',
+		'<![CDATA[rect{fill:red}/* <?keep literal?> <!DOCTYPE svg> */]]>']) {
+		const original = '<svg xmlns="http://www.w3.org/2000/svg"><style>' + css + '</style></svg>';
+		if (sanitizeSvgText(original) !== original) failures.push('safe stylesheet XML character data changed');
+	}
+	const literal = '<svg xmlns="http://www.w3.org/2000/svg"><metadata><![CDATA[<s<iframe/>cript>example</script>]]></metadata></svg>';
+	if (sanitizeSvgText(literal) !== literal) failures.push('XML character data was treated as executable markup');
 	const honest = sanitizeSvgText(HONEST);
 	if (honest !== HONEST) failures.push('a Draw SVG with a paint layer changed: ' + honest);
 	// The pressed letter (draw/text.mjs `pressed`): whatever a recipe carries, the filter an exported drawing hands a viewer is
@@ -178,5 +212,5 @@ export default async function (page, t) {
 			JSON.stringify(back?.effect) !== JSON.stringify(effect) || JSON.stringify(back?.shapes) !== JSON.stringify(core._rapierDrawAdmitRecipe(stirred)?.shapes)) failures.push('liquid source, still or inertness lost: ' + preset.id);
 	}
 	if (failures.length) return t.fail(failures.join('\n'));
-	return t.pass(imported + '; ' + HOSTILE.length + ' hostile SVG payloads stripped; copier, refraction and liquid presets at both scopes retain inert source through the sanitizer; a liquid still is a JPEG XL picture; local reflection references resolve; a Draw PNG and fragment href pass unchanged; pressed text writes ' + primitives.length + ' inert primitives under its own id, no href, and escapes its label');
+	return t.pass(imported + '; ' + HOSTILE.length + ' hostile SVG payloads stripped; ' + MUTATED.length + ' malformed XML splice payloads refused before asset creation; CSS splices cannot assemble remote loads; XML character data is preserved; standalone picture downloads stay inert and keep safe bytes; copier, refraction and liquid presets at both scopes retain inert source through the sanitizer; a liquid still is a JPEG XL picture; local reflection references resolve; a Draw PNG and fragment href pass unchanged; pressed text writes ' + primitives.length + ' inert primitives under its own id, no href, and escapes its label');
 }

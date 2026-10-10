@@ -41,7 +41,7 @@ export function reflectedNames(trees) {
 }
 function reflectedFunctions(tree, names) {
   const out = new Map();
-  const add = (name, node) => { let key = name; while (out.has(key)) key += '#'; out.set(key, node); };
+  const add = (name, node) => { let key = name; while (out.has(key)) key += '#'; out.set(key, {start: node.start, end: node.end}); };
   walk(tree, node => {
     if (node.type === 'FunctionDeclaration' && names.has(node.id.name)) add(node.id.name, node);
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && names.has(node.id.name) && /^(?:Arrow)?FunctionExpression$/.test(node.init?.type)) add(node.id.name, node.init);
@@ -88,8 +88,10 @@ export function scriptMinifier(sources, keepsComment) {
   const format = {comments: (_, row) => keepsComment(row.value)};
   const lean = async function lean(source, filename) {
     source = dropTemplateCssComments(source, keepsComment, filename);
-    const tree = parse(source), localNames = new Set([...names, ...reflectedNames([tree])]);
+    let tree = parse(source);
+    const localNames = new Set([...names, ...reflectedNames([tree])]);
     const before = reflectedFunctions(tree, localNames), reserved = new Set([...localNames, ...factoryOwners, 'modules']), free = new Map();
+    tree = null;
     for (const [name, fn] of before) {
       const refs = await freeNames(source.slice(fn.start, fn.end));
       free.set(name, new Set(refs));

@@ -1219,7 +1219,8 @@ const _rapierEmbeddedImages = (() => {
       dimensions: dimensions.size, pending: pending.size,
     };
   }
-  // The asset's own bytes from the registry, never the <img> src (a display stand-in for JPEG XL). SVG decoded, never renormalised.
+  // The registry keeps original bytes. A standalone SVG is executable, so its download
+  // crosses the SVG sanitizer while safe source and raster bytes stay exact.
   async function downloadOriginal(record) {
     const image = _rapierImageRuntime.image;
     const id = image?.getAttribute('data-rapier-asset') || image?.getAttribute('data-rapier-image-url') ||
@@ -1227,9 +1228,15 @@ const _rapierEmbeddedImages = (() => {
     const row = recordFor(id, documentIndex().index);
     if (!row) { showToast('This picture is not stored in the document, so it cannot be downloaded', 'info'); return; }
     let bytes;
-    try { bytes = assets.decodeDataImage(row.url); }
-    catch (error) { showToast('Picture could not be read: ' + String(error.message || error), 'error'); return; }
     const codec = row.codec || assets.dataImage(row.url)?.codec || '';
+    try {
+      bytes = assets.decodeDataImage(row.url);
+      if (codec === 'image/svg+xml') {
+        const text = assets.sanitizeSvgText(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
+        if (!text) throw new Error('Choose a valid SVG image.');
+        bytes = new TextEncoder().encode(text);
+      }
+    } catch (error) { showToast('Picture could not be read: ' + String(error.message || error), 'error'); return; }
     const ext = codec === 'image/jxl' ? 'jxl' : codec === 'image/svg+xml' ? 'svg' : codec === 'image/jpeg' ? 'jpg' :
       codec === 'image/webp' ? 'webp' : codec === 'image/gif' ? 'gif' : 'png';
     // Untitled downloads: document name plus the picture's place, so two differ.

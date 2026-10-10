@@ -34,5 +34,7 @@
   "notes/ocr.js",
   "notes/recorder.js",
   "notes/sync-ui.js",
-  "notes/attachments.js"
+  "notes/attachments.js",
+  "editor/changes-draw.js",
+  "editor/changes.js"
 ]

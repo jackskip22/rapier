@@ -89,7 +89,8 @@ function svgCss(css, ids, fonts = false) {
     const name = cssValue(token[0]).toLowerCase();
     if (rule && name === 'import') {
       const end = boundary(at, true);
-      out += css.slice(copied, start); copied = at = end;
+      // Keep a token boundary: removing an import must not assemble a new url() or @import.
+      out += css.slice(copied, start) + ' '; copied = at = end;
     } else if (!rule && css[at] === '(' && /^(?:url|image|image-set|-webkit-image-set|src)$/.test(name)) {
       const end = boundary(at + 1, false), body = css.slice(at + 1, css[end - 1] === ')' ? end - 1 : end).trim();
       const quoted = (body[0] === '"' || body[0] === "'") && body.at(-1) === body[0];
@@ -102,49 +103,63 @@ function svgCss(css, ids, fonts = false) {
   }
   return out + css.slice(copied);
 }
-function _svgRemoveElement(text, tag) {
-  const name = '(?:[^\\s<>"\'/=:]+:)?' + tag;
-  const whole = new RegExp('<(' + name + ')\\b' + ATTR_SPAN + '>[\\s\\S]*?<\\/\\1\\s*>', 'gi');
-  const empty = new RegExp('<' + name + '\\b' + ATTR_SPAN + '\\/\\s*>', 'gi');
-  let out = text, previous;
-  do { previous = out; out = out.replace(whole, ''); } while (out !== previous);
-  return out.replace(empty, '');
-}
+const SVG_FORBIDDEN_ELEMENTS = new Set(['script', 'foreignobject', 'iframe', 'embed', 'object', 'video', 'audio',
+  'handler', 'listener', 'html', 'body', 'frame', 'frameset', 'applet']);
 export function sanitizeSvgText(text) {
   if (typeof text !== 'string') return '';
-  let out = text.replace(SVG_DOCTYPE, '').replace(/<\?(?!xml(?:\s|\?>))[\s\S]*?\?>/gi, '');
-  out = _svgRemoveElement(out, 'script');
-  out = _svgRemoveElement(out, 'foreignObject');
-  // SVG subdocuments (<iframe>/<embed>/<object>) and SVG Tiny <handler>/<listener> are stripped: script by another name.
-  for (const tag of ['iframe', 'embed', 'object', 'video', 'audio', 'handler', 'listener', 'html', 'body', 'frame', 'frameset', 'applet']) out = _svgRemoveElement(out, tag);
-  const ids = new Set();
-  const idAttr = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
-  for (let m; (m = idAttr.exec(out));) ids.add(xmlValue(m[1] ?? m[2] ?? m[3]));
-  out = out.replace(new RegExp('<([^\\s<>"\'/=]+)((?:\\s+' + ATTR_SPAN + ')?)(\\/?)>', 'g'), (whole, name, attrs, close) => {
-    if (!attrs) return whole;
-    const element = name.split(':').pop().toLowerCase();
-    const cleaned = attrs.replace(SVG_ATTRIBUTE, (raw, attribute, dq, sq) => {
-      // Resolve XML entities and namespace prefixes before resource policy checks.
-      const key = attribute.split(':').pop().toLowerCase(), original = dq ?? sq, value = xmlValue(original);
-      if (key.startsWith('on') || attribute.toLowerCase() === 'xml:base') return '';
-      // href only to a fragment or, on <image>, a raster data URL: never a nested SVG, never src/data/srcdoc.
-      if (/^(?:src|data|srcdoc|poster|codebase|archive|classid|formaction|action|ping|manifest|background)$/.test(key)) return '';
+  const source = text;
+  let ids;
+  // Admit XML before removing anything. Textual element deletion can turn a malformed
+  // <s<iframe/>cript> into an executable <script>. Parsed spans cannot join token fragments.
+  try { ({ids} = svgElements(source, {inspect: false, allowDoctype: true})); } catch (_) { return ''; }
+  const patches = [];
+  const remove = (start, end) => patches.push({start, end, value: ''});
+  svgElements(source, {inspect: false, allowDoctype: true, visitMarkup(kind, start, end) {
+    if (kind === 'doctype' || kind === 'instruction' && !/^<\?xml(?:\s|\?>)/.test(source.slice(start, end))) remove(start, end);
+  }, visit(node) {
+    const element = node.local.toLowerCase();
+    if (SVG_FORBIDDEN_ELEMENTS.has(element)) { remove(node.start, node.end); return; }
+    for (const attr of node.attributes.values()) {
+      const attribute = attr.name, key = attribute.split(':').pop().toLowerCase(), value = attr.value;
+      if (key.startsWith('on') || attribute.toLowerCase() === 'xml:base' ||
+          /^(?:src|data|srcdoc|poster|codebase|archive|classid|formaction|action|ping|manifest|background)$/.test(key)) {
+        remove(attr.start, attr.end); continue;
+      }
+      // A fragment or an embedded raster is the only admitted image destination.
       if (key === 'href' && !/^\s*#/.test(value) &&
-          !(/^(?:image|feimage)$/.test(element) && /^\s*data:image\/(?:png|jpeg|gif|webp|avif|jxl)[;,]/i.test(value))) return '';
+          !(/^(?:image|feimage)$/.test(element) && /^\s*data:image\/(?:png|jpeg|gif|webp|avif|jxl)[;,]/i.test(value))) {
+        remove(attr.start, attr.end); continue;
+      }
       if (/^(?:animate|set)$/.test(element) && key === 'attributename' &&
-          /^(?:href|base|on[\w.-]*|style)$/i.test(value.trim().split(':').pop())) return ' ' + attribute + '=""';
+          /^(?:href|base|on[\w.-]*|style)$/i.test(value.trim().split(':').pop())) {
+        patches.push({start: attr.valueStart, end: attr.valueEnd, value: ''}); continue;
+      }
       const localized = svgCss(value, ids);
-      return localized === value ? raw : ' ' + attribute + '="' + xmlAttribute(localized) + '"';
-    });
-    return '<' + name + cleaned + close + '>';
-  });
-  out = out.replace(new RegExp('(<((?:[^\\s<>"\'/=:]+:)?style)\\b' + ATTR_SPAN + '>)([\\s\\S]*?)(<\\/\\2\\s*>)', 'gi'),
-    (m, open, name, css, close) => {
-      const decoded = xmlValue(css.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (raw, body) => xmlAttribute(body)));
+      if (localized !== value) patches.push({start: attr.start, end: attr.end,
+        value: ' ' + attribute + '="' + xmlAttribute(localized) + '"'});
+    }
+    if (element === 'style' && node.slashAt < 0) {
+      // A stylesheet consists of XML character data, never nested elements whose removal
+      // could assemble CSS tokens. Other SVG elements retain their exact child markup.
+      if (node.children) { remove(node.start, node.end); return; }
+      const css = source.slice(node.contentStart, node.contentEnd);
+      // Style consumes XML textContent: comments and instructions contribute no characters;
+      // CDATA contributes literal text, including anything that looks like XML inside it.
+      const decoded = xmlValue(css.replace(/<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>/g,
+        (raw, body) => body === undefined ? '' : xmlAttribute(body)));
       const clean = svgCss(decoded, ids, true);
-      return clean === decoded ? m : open + xmlAttribute(clean) + close;
-    });
-  return out;
+      if (clean !== decoded) patches.push({start: node.contentStart, end: node.contentEnd, value: xmlAttribute(clean)});
+    }
+  }});
+  // A removed parent owns all nested patches. Untouched bytes never pass a serializer.
+  patches.sort((a, b) => a.start - b.start || b.end - a.end);
+  const parts = []; let at = 0;
+  for (const patch of patches) {
+    if (patch.start < at) continue;
+    parts.push(source.slice(at, patch.start), patch.value); at = patch.end;
+  }
+  parts.push(source.slice(at));
+  return parts.join('');
 }
 const SVG_ROOT = new RegExp('<svg(?=\\s|/?>)(' + ATTR_SPAN + ')>');
 const SVG_PROLOG = new RegExp('^(?:\\s|<!--[\\s\\S]*?-->|<\\?[\\s\\S]*?\\?>|' + SVG_DOCTYPE.source + ')*', 'i');
@@ -236,11 +251,11 @@ export function svgXmlValue(raw, field = 'node_edits') {
     return String.fromCodePoint(n);
   }), field);
 }
-export function svgElements(text, {visit, inspect = true} = {}) {
+export function svgElements(text, {visit, inspect = true, allowDoctype = false, visitMarkup} = {}) {
   if (inspect && text.length > IMAGE_LIMITS.bytes) svgNodeFail('node_edits', 'The SVG exceeds the image limit.');
   const nodes = [], stack = [], ids = new Set(), idCounts = new Map(), links = [];
   const references = {has: id => { links.push(id); return true; }};
-  let at = 0, totalNodes = 0, roots = 0;
+  let at = 0, totalNodes = 0, roots = 0, doctype = false;
   const invalid = () => svgNodeFail('node_edits', 'The SVG must be well-formed XML.');
   while (at < text.length) {
     if (text[at] !== '<') {
@@ -250,11 +265,20 @@ export function svgElements(text, {visit, inspect = true} = {}) {
       if (inspect && stack.at(-1)?.local === 'style') svgCss(value,references);
       at = until; continue;
     }
+    if (allowDoctype && text.startsWith('<!DOCTYPE', at)) {
+      SVG_DOCTYPE.lastIndex = at;
+      const declaration = SVG_DOCTYPE.exec(text);
+      if (roots || doctype || !declaration || declaration.index !== at) invalid();
+      doctype = true;
+      visitMarkup?.('doctype', at, at + declaration[0].length);
+      at += declaration[0].length; continue;
+    }
     if (text.startsWith('<!--', at) || text.startsWith('<![CDATA[', at) || text.startsWith('<?', at)) {
       const comment = text.startsWith('<!--', at), cdata = text.startsWith('<![CDATA[', at), close = comment ? '-->' : cdata ? ']]>' : '?>';
       const start = at + (comment ? 4 : cdata ? 9 : 2), end = text.indexOf(close, start);
       if (end < 0 || comment && text.slice(start, end).includes('--') || cdata && !stack.length || inspect && !comment && !cdata && (stack.length || !/^xml\s/.test(text.slice(start, end)))) invalid();
       if (stack.length) stack.at(-1).markup = true;
+      visitMarkup?.(comment ? 'comment' : cdata ? 'cdata' : 'instruction', at, end + close.length);
       if (inspect && cdata && stack.at(-1)?.local === 'style') svgCss(text.slice(start,end),references);
       at = end + close.length; continue;
     }

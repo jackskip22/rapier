@@ -1,10 +1,10 @@
 {
   "version": 1,
   "limits": {
-    "mutableRoots": 107,
-    "domSinks": 64,
+    "mutableRoots": 102,
+    "domSinks": 63,
     "storageKeys": 7,
-    "remainderBytes": 77717
+    "remainderBytes": 73928
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {
@@ -54,10 +54,6 @@
     "_rapierCommandRuntime@module/iife1": {
       "name": "_rapierCommandRuntime",
       "reason": "The command palette owner retains the active palette element."
-    },
-    "_rapierCompareActionBarRuntime@module/iife1": {
-      "name": "_rapierCompareActionBarRuntime",
-      "reason": "The comparison view owns its action-bar positioning frame."
     },
     "_rapierCompareRestore@module/iife1": {
       "name": "_rapierCompareRestore",
@@ -218,22 +214,6 @@
     "_rapierRevealRuntime@module/iife1": {
       "name": "_rapierRevealRuntime",
       "reason": "The viewport owner retains cleanup for the currently revealed agent target."
-    },
-    "_rapierReviewComposition@module/iife1": {
-      "name": "_rapierReviewComposition",
-      "reason": "The review input contract owns the in-flight IME composition over a pending span, so a cancelled composition is never a decision."
-    },
-    "_rapierReviewContinuationRuntime@module/iife1": {
-      "name": "_rapierReviewContinuationRuntime",
-      "reason": "The type-over continuation owns its \"attention moved elsewhere\" stamp (navGeneration), bumped where attention really moves: entering a block edit, opening Find, opening an engine dialog."
-    },
-    "_rapierReviewProjectionGeneration@module/iife1": {
-      "name": "_rapierReviewProjectionGeneration",
-      "reason": "The review decorations own the projection/hydration generation their freshness invalidates on, bumped at the three DOM-rebuild sites so a dormant block waking is redecorated."
-    },
-    "_rapierReviewSpans@module/iife1": {
-      "name": "_rapierReviewSpans",
-      "reason": "The review presentation owner owns its active inline markers and stale cleanup."
     },
     "_rapierSanitizeRuntime@module/iife1": {
       "name": "_rapierSanitizeRuntime",

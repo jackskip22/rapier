@@ -359,6 +359,21 @@ function mount(target, options = {}) {
   async function answerSave(message, channel) {
     const {requestId, baseRevision, payload} = message;
     if (!options.save || !identifier(requestId) || !revision(baseRevision) || typeof payload?.content !== 'string') return;
+    const reject = code => {
+      if (!ended && channel === port) channel.postMessage({type: 'save-nack', ...ids, requestId, baseRevision, payload: {code, reason: code}});
+    };
+    if (!payload.content.isWellFormed() || Object.keys(payload).some(key => !['content', 'filename', 'docKind', 'codeLang'].includes(key)) ||
+        typeof payload.filename !== 'string' || payload.filename.length > 255 ||
+        !['markdown', 'text', 'code'].includes(payload.docKind) || typeof payload.codeLang !== 'string' || payload.codeLang.length > 64)
+      return reject('save_payload_invalid');
+    if (payload.content.length > policy.limits.documentBytes) return reject('document_too_large');
+    const bytes = new TextEncoder().encode(payload.content);
+    if (bytes.byteLength > policy.limits.documentBytes) return reject('document_too_large');
+    // One capture identity names its exact bytes and metadata, including the revision it was captured against.
+    const signature = JSON.stringify([baseRevision, await bytesHash(bytes), payload.filename, payload.docKind, payload.codeLang]);
+    if (ended || channel !== port) return;
+    const prior = answers.get(requestId);
+    if (prior && prior.signature !== signature) return reject('save_request_conflict');
     if (!answers.has(requestId)) {
       // Cache the promise before entering storage: an in-flight Retry is the same write.
       const job = Promise.resolve().then(async () => {
@@ -373,9 +388,9 @@ function mount(target, options = {}) {
             : {code: 'failed', reason: String(error?.message || error).slice(0, 500)}};
         }
       });
-      answers.set(requestId, job);
+      answers.set(requestId, {signature, job});
     }
-    const reply = await answers.get(requestId);
+    const reply = await answers.get(requestId).job;
     if (ended || channel !== port) return;
     channel.postMessage(reply);
     if (reply.type === 'save-ack') {

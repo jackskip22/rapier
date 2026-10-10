@@ -1,3 +1,4 @@
+import {TOOL_RESULT_BYTES, resultBytes, inputErrorResult} from './page-result.mjs';
 const cosmeticLimits = {label: 120, note: 240, agent: 64, alt: 240};
 // Typed input objects stay closed; cosmetic limits describe the stored result, not admission.
 // Opaque records (drawing recipes, for example) keep their own deeper owner's contract.
@@ -19,12 +20,45 @@ export function agentInputSchema(schema, depth = 0) {
   return projected;
 }
 
-// Collect every failure before throwing one error;
-// malformed containers stop that branch, never their siblings. Paths are depth-first in schema order.
+// Malformed containers stop their branch, never their siblings. Diagnostics retain
+// schema order within the tool result boundary; admission still checks every remaining field.
 export function validateInput(schema, value, path = 'arguments', agent = false) {
   const faults = [];
+  let firstPath, omittedErrors = 0, omittedDetails = false;
+  // Reserve only the encoded omission metadata, not a limit on fields or failures.
+  const omissionReserve = {errors: Number.MAX_SAFE_INTEGER, details: true};
+  const excerpt = (value, limit) => {
+    if (value.length <= limit) return value;
+    let end = limit;
+    if (end && (value.charCodeAt(end - 1) & 0xfc00) === 0xd800 && (value.charCodeAt(end) & 0xfc00) === 0xdc00) end--;
+    return value.slice(0, end) + '…';
+  };
+  const report = (reason, field) => {
+    if (omittedErrors) { omittedErrors++; return; }
+    const at = limit => {
+      const name = excerpt(field, limit), detail = excerpt(reason, limit);
+      const message = name + ': ' + detail;
+      return {path: firstPath ?? name, message, abbreviated: name !== field || detail !== reason};
+    };
+    const fits = fault => resultBytes(inputErrorResult({path: fault.path,
+      message: [...faults, fault.message].join('; '), omitted: omissionReserve})) <= TOOL_RESULT_BYTES;
+    // Even before JSON escaping, a string longer than the byte boundary cannot fit.
+    let high = Math.min(TOOL_RESULT_BYTES, Math.max(field.length, reason.length)), fault = at(high);
+    if (!fits(fault)) {
+      let low = 0;
+      if (!fits(at(low))) { omittedErrors++; return; }
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (fits(at(middle))) low = middle; else high = middle - 1;
+      }
+      fault = at(low);
+    }
+    firstPath ??= fault.path;
+    faults.push(fault.message);
+    omittedDetails ||= fault.abbreviated;
+  };
   const visit = (schema, value, path, depth = 0, key = '') => {
-    const invalid = (reason, field = path) => faults.push({path: field, message: field + ': ' + reason});
+    const invalid = (reason, field = path) => report(reason, field);
     // Branches are admission, not descriptive hints. Test without projection so a discriminator cannot discard payload fields.
     const matches = branch => {
       try { validateInput(branch, value, path, false); return true; } catch (error) {
@@ -56,7 +90,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
       if (!value || typeof value !== 'object' || Array.isArray(value)) { invalid('expected an object'); return; }
       const properties = schema.properties || {}, required = schema.required || [], keys = Object.keys(value);
       const admitted = agent && schema.properties ? {} : value;
-      if (keys.length < (schema.minProperties || 0) || keys.length > (schema.maxProperties ?? Infinity)) invalid('object property count outside bounds');
+      if (keys.length < (schema.minProperties || 0) || keys.length > (schema.maxProperties ?? Infinity)) { invalid('object property count outside bounds'); return; }
       const name = key => schema.propertyNames && visit({type: 'string', ...schema.propertyNames}, key, path + '.' + key, depth + 1, key);
       for (const key of Object.keys(properties)) {
         if (Object.hasOwn(value, key)) {
@@ -79,7 +113,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
       value = admitted;
     } else if (type === 'array') {
       if (!Array.isArray(value)) { invalid('expected an array'); return; }
-      if (value.length < (schema.minItems || 0) || value.length > (schema.maxItems ?? Infinity)) invalid('array length outside bounds (' + (schema.minItems || 0) + ' to ' + (schema.maxItems ?? 'any') + ')');
+      if (value.length < (schema.minItems || 0) || value.length > (schema.maxItems ?? Infinity)) { invalid('array length outside bounds (' + (schema.minItems || 0) + ' to ' + (schema.maxItems ?? 'any') + ')'); return; }
       if (schema.uniqueItems && new Set(value).size !== value.length) invalid('duplicate item');
       const admitted = value.map((item, index) => visit(schema.items, item, path + '[' + index + ']', depth + 1));
       if (agent) value = admitted;
@@ -112,6 +146,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
     return value;
   };
   const admitted = visit(schema, value, path);
-  if (faults.length) throw Object.assign(new Error(faults.map(fault => fault.message).join('; ')), {code: 'invalid_arguments', path: faults[0].path});
+  if (faults.length) throw Object.assign(new Error(faults.join('; ')), {code: 'invalid_arguments', path: firstPath,
+    ...(omittedErrors || omittedDetails ? {omitted: {errors: omittedErrors, ...(omittedDetails ? {details: true} : {})}} : {})});
   return admitted;
 }

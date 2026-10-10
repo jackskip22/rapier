@@ -997,99 +997,6 @@
       "reason": "The agent note is a fixed clickable line, not a decorative heading."
     },
     {
-      "id": "change-line",
-      "file": "editor/styles/rapier-source.css",
-      "selector": ".change-line",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "right",
-            "value": "calc(51px + var(--space-4))",
-            "important": false
-          }
-        ]
-      },
-      "role": "overlay",
-      "interactive": true,
-      "edge": "floating",
-      "reason": "The fixed change line owns review verbs and cannot be covered by a notice."
-    },
-    {
-      "id": "review-track",
-      "file": "editor/styles/rapier-source.css",
-      "selector": ".review-track",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "right",
-            "value": "calc(51px + var(--space-4))",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "calc(var(--native-inset-bottom, env(safe-area-inset-bottom, 0px)) + 51px)",
-            "important": false
-          }
-        ]
-      },
-      "role": "bar",
-      "interactive": true,
-      "edge": "bottom",
-      "reason": "The fixed review track is anchored above the native inset and owns pending-change actions."
-    },
-    {
-      "id": "compare-law-review",
-      "file": "editor/styles/rapier-source.css",
-      "selector": ".compare-law-review",
-      "rule": {
-        "origin": "stylesheet",
-        "at": [],
-        "occurrence": 1,
-        "declarations": [
-          {
-            "property": "position",
-            "value": "fixed",
-            "important": false
-          },
-          {
-            "property": "left",
-            "value": "var(--editor-h-pad)",
-            "important": false
-          },
-          {
-            "property": "right",
-            "value": "var(--editor-h-pad)",
-            "important": false
-          },
-          {
-            "property": "bottom",
-            "value": "var(--native-inset-bottom, env(safe-area-inset-bottom, 0px))",
-            "important": false
-          }
-        ]
-      },
-      "role": "bar",
-      "interactive": true,
-      "edge": "bottom",
-      "reason": "The comparison decision row is a bottom-anchored control surface."
-    },
-    {
       "id": "settings-overlay",
       "file": "editor/styles/rapier-source.css",
       "selector": ".settings-overlay",
@@ -1353,6 +1260,116 @@
       "edge": "support",
       "reason": "The absolute wrap row stands on image-tools; it outranks only that support chain.",
       "on": "image-tools"
+    },
+    {
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-layer",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "id": "changes-layer",
+      "role": "overlay",
+      "interactive": false,
+      "edge": "all",
+      "reason": "The viewport container passes pointer events through. Its change controls are separate interactive declarations."
+    },
+    {
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-away",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "id": "changes-away",
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The history return line owns Next; the change owner positions it at the visible document edge."
+    },
+    {
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-mark",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "id": "changes-mark",
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "Each numbered change mark is a button beside its live document or drawing place; its rectangle is a tap target."
+    },
+    {
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-controls--drawing",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "id": "changes-drawing-controls",
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "Undo and Done follow the inspected drawing place and remain inside its visible stage bounds."
+    },
+    {
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-presence",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          }
+        ]
+      },
+      "id": "changes-presence",
+      "role": "overlay",
+      "interactive": true,
+      "edge": "floating",
+      "reason": "The offscreen agent marker is an explicit navigation button at the document edge; it owns its tap rectangle."
     }
   ],
   "localRules": [
@@ -2512,6 +2529,30 @@
       },
       "owner": ".rapier-draw-stage",
       "reason": "The resize layer fills the Draw stage and passes touches through; it dims outside the frame and carries the caps, and positions no viewport surface."
+    },
+    {
+      "file": "editor/styles/rapier-changes.css",
+      "selector": ".rapier-changes-source",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "id": "changes-source-before",
+      "owner": "#source-mode",
+      "reason": "The before fragment fills the source document container and scrolls within it; it creates no viewport overlay."
     }
   ]
 }

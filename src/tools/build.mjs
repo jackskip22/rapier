@@ -601,7 +601,7 @@ ui = ui.replace('<div class="licenses-list">', () => '<div class="licenses-list"
   '<details class="license-entry"><summary><span class="license-name">rough.js generator</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(roughNotice) + '</pre></details>\n' +
   // Nor Paint's engine and presets.
   (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">libmypaint brush engine (port)</span><span class="license-id">ISC</span></summary><pre class="license-text">' + escapeHtml(mypaintNotice) + '</pre></details>\n' : '') +
-  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Dieterle brush pack</span><span class="license-id">CC0 1.0</span></summary><pre class="license-text">' + escapeHtml(dieterleNotice) + '</pre></details>\n' : '') +
+  (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Factory brushes · Brien Dieterle</span><span class="license-id">CC0 1.0</span></summary><pre class="license-text">' + escapeHtml(dieterleNotice) + '</pre></details>\n' : '') +
   (PROFILE === 'full' ? '<details class="license-entry"><summary><span class="license-name">Spectral.js color data</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(spectralNotice) + '</pre></details>\n' : ''));
 {
   // Every SHEET_NOTICES entry is in the sheet in full, compared as text.

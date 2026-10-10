@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "release": "1.1.91",
+  "release": "1.1.92",
   "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader, the document editor and the full editor read the same directory; `builds` says which use a plug-in.",
   "plugins": [
     {
@@ -11,11 +11,11 @@
       ],
       "files": [
         {
-          "file": "rapier-flowchart-1.1.91.js",
-          "bytes": 277842,
-          "sha384": "8b3ad9ee711d69a5ffea7311271f80a25c1358af051099e228381c6f77e32bba140529cef2f0124a10380ab324330b00",
-          "sri": "izrZ7nEdaaX/6nMRJx+AolwTWK8FEJniKDgcb3fjK7oUBSnO8vASShA4CrMkMwsA",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/flowchart/rapier-flowchart-1.1.91.js"
+          "file": "rapier-flowchart-1.1.92.js",
+          "bytes": 278152,
+          "sha384": "931fd155b38c90ebcc921010d9b581d259a3a70710a328b1c4fab7c9105905c45a902e342dafa48d72ea1f137b99259a",
+          "sri": "kx/RVbOMkOvMkhAQ2bWB0lmjpwcQoyixxPq3yRBZBcRakC40La+kjXLqHxN7mSWa",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/flowchart/rapier-flowchart-1.1.92.js"
         }
       ]
     },
@@ -27,11 +27,11 @@
       ],
       "files": [
         {
-          "file": "rapier-docx-1.1.91.js",
-          "bytes": 256555,
-          "sha384": "4527bf93c88995caa5321d36be6c6779ea43a297b4b45b7f3a35888761c2f1b31d058bae39fcc1fa46f2279c09561b35",
-          "sri": "RSe/k8iJlcqlMh02vmxneepDope0tFt/OjWIh2HC8bMdBYuuOfzB+kbyJ5wJVhs1",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/docx/rapier-docx-1.1.91.js"
+          "file": "rapier-docx-1.1.92.js",
+          "bytes": 256810,
+          "sha384": "88c4b5d224ed126e90085ce4941ecbc8a87584d422c4fdb87eb30697ac9eddf700bcf7208bf32eadbc8e443546b948cf",
+          "sri": "iMS10iTtEm6QCFzklB7LyKh1hNQixP24frMGl6ye3fcAvPcgi/MurbyORDVGuUjP",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/docx/rapier-docx-1.1.92.js"
         }
       ]
     },
@@ -88,11 +88,11 @@
       ],
       "files": [
         {
-          "file": "rapier-pdf-1.1.91.js",
+          "file": "rapier-pdf-1.1.92.js",
           "bytes": 22770,
           "sha384": "c72a941815bb4ad56633ac45c29c2b87db3a431115606b9f0f673070a23ed812c326393db79297eb0118b1e5e10e87d3",
           "sri": "xyqUGBW7StVmM6xFwpwrh9s6QxEVYGufD2cwcKI+2BLDJjk9t5KX6wEYseXhDofT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/pdf/rapier-pdf-1.1.91.js",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/pdf/rapier-pdf-1.1.92.js",
           "builds": [
             "reader"
           ]

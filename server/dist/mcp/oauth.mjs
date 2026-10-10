@@ -12,7 +12,6 @@ const OWNER_PATTERN = /^owner_[A-Za-z0-9_-]{43}$/;
 const CONNECTION_PATTERN = /^connection_[A-Za-z0-9_-]{43}$/;
 const servers = new Map();
 const encoder = new TextEncoder();
-const REFRESH_DIGEST = Symbol('rapier-refresh-digest');
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character]);
@@ -45,15 +44,7 @@ async function authorizationServer(env) {
       accessTokenTTL: OAUTH_ACCESS_SECONDS, refreshTokenTTL: OAUTH_OWNER_SECONDS,
       refreshTokenIdleTTL: OAUTH_OWNER_SECONDS, clientRegistrationTTL: OAUTH_OWNER_SECONDS,
       clientIdMetadataDocumentEnabled: true,
-      tokenExchangeCallback({grantType, scope, props, env: requestEnv}) {
-        if (grantType === 'refresh_token') {
-          const digest = requestEnv[REFRESH_DIGEST], {usedRefreshDigest, ...accessTokenProps} = props;
-          // The provider retains the previous refresh token for retries. A spent token must instead
-          // revoke this public client's grant. Keep the consumed digest in its encrypted grant props,
-          // never the access token. The provider owns storage and revokes on invalid_grant.
-          if (!digest || digest === usedRefreshDigest) throw new OAuthError('invalid_grant', {description: 'The refresh token was already used.'});
-          return {newProps: {...accessTokenProps, usedRefreshDigest: digest}, accessTokenProps};
-        }
+      tokenExchangeCallback({scope}) {
         return scope.includes('offline_access') ? undefined : {refreshTokenTTL: 0};
       },
       // Provider errors become protocol responses; credentials and request bodies are never logged.
@@ -98,8 +89,8 @@ function json(status, value, extra) {
   out.set('Content-Type', 'application/json; charset=utf-8');
   return new Response(JSON.stringify(value), {status, headers: out});
 }
-// The house dialog, phone first, the theme following the browser: the title, the words, full-width buttons and the
-// negative one red at the bottom. The faces come from the door's own stylesheet; nothing else loads.
+// The house dialog, phone first, the theme following the browser: the title, the words, full-width buttons, the
+// affirmative first in the theme's highlight and the negative last, red, a modest gap below. The faces come from the door's own stylesheet; nothing else loads.
 export const HOUSE_STYLE = ':root{color-scheme:light dark;--bg:#fff;--surface:#f7f6f3;--surface-2:#f1f0ee;--hover:#e6e4e0;--text:#121212;--muted:#606060;--negative:color-mix(in srgb,#c00 80%,#000)}'
   + '@media (prefers-color-scheme:dark){:root{--bg:#000;--surface:#0d0d0d;--surface-2:#121212;--hover:#1a1a1a;--text:#fafafa;--muted:#878787;--negative:color-mix(in srgb,#ec5156 80%,#000)}}'
   + '*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}'
@@ -113,7 +104,8 @@ export const HOUSE_STYLE = ':root{color-scheme:light dark;--bg:#fff;--surface:#f
   + 'button{display:flex;align-items:center;justify-content:flex-start;width:100%;height:48px;padding:0 16px;border:0;border-radius:0;background:var(--surface-2);color:var(--text);font:500 .875rem "Geist Mono",monospace;letter-spacing:.055em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}'
   + 'button:enabled:hover,button:focus-visible{outline:none;background:var(--hover)}button:disabled{cursor:default;opacity:.5}'
   + 'button.negative{background:var(--negative);color:#fff}button.negative:enabled:hover,button.negative:focus-visible{background:color-mix(in srgb,var(--negative) 88%,#000)}'
-  + 'main>form>button.negative{margin-top:auto}';
+  + 'button.affirmative{background:var(--text);color:var(--bg)}button.affirmative:enabled:hover,button.affirmative:focus-visible{background:color-mix(in srgb,var(--text) 82%,var(--bg))}'
+  + 'main>form>button.negative{margin-top:16px}';
 function html(status, title, body, extra, formAction = "'self'") {
   const out = headers(extra);
   const nonce = crypto.randomUUID();
@@ -128,7 +120,7 @@ function html(status, title, body, extra, formAction = "'self'") {
 const requiredScopes = scopes => [...new Set(scopes || [])].filter(scope => OAUTH_SCOPES.includes(scope));
 // A client that names no scope asks for what the door's tools use.
 const askedScopes = scope => scope.length ? scope : ['rapier:read', 'rapier:write'];
-export function oauthChallenge(request, env, scopes = ['rapier:read']) {
+export function oauthChallenge(request, env, scopes = OAUTH_SCOPES) {
   const metadata = oauthOrigin(env) + metadataPath(new URL(request.url).pathname);
   const scope = requiredScopes(scopes).join(' ');
   const invalidToken = /^Bearer /i.test(request.headers.get('Authorization') || '');
@@ -191,21 +183,40 @@ async function registrationAllowed(request, env) {
 }
 
 async function boundedRequest(request, limit = 64 * 1024) {
-  if (!request.body) return request;
-  if (Number(request.headers.get('Content-Length')) > limit) return null;
+  const signal = request.signal;
+  if (!request.body) { signal.throwIfAborted(); return request; }
   const reader = request.body.getReader(), parts = [];
-  let length = 0;
-  for (;;) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    length += value.byteLength;
-    if (length > limit) { await reader.cancel(); return null; }
-    parts.push(value);
+  let length = 0, cancelled = false;
+  // A broken upload cannot retain its reader or delay the refusal with cancel().
+  const cancel = reason => {
+    if (cancelled) return;
+    cancelled = true;
+    reader.cancel(reason).catch(() => {});
+  };
+  const abort = () => cancel(signal.reason);
+  try {
+    signal.throwIfAborted();
+    if (Number(request.headers.get('Content-Length')) > limit) { cancel(); return null; }
+    signal.addEventListener('abort', abort, {once: true});
+    for (;;) {
+      const {done, value} = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      length += value.byteLength;
+      if (length > limit) { cancel(); return null; }
+      parts.push(value);
+    }
+    const body = new Uint8Array(length);
+    let offset = 0;
+    for (const part of parts) { body.set(part, offset); offset += part.byteLength; }
+    return new Request(request, {body});
+  } catch (error) {
+    cancel(error);
+    throw error;
+  } finally {
+    signal.removeEventListener('abort', abort);
+    reader.releaseLock();
   }
-  const body = new Uint8Array(length);
-  let offset = 0;
-  for (const part of parts) { body.set(part, offset); offset += part.byteLength; }
-  return new Request(request, {body});
 }
 function sameOriginForm(request, env) {
   return request.headers.get('Origin') === oauthOrigin(env) &&
@@ -265,7 +276,7 @@ async function consent(request, env, api) {
       `<p class="where">Returns to <bdi>${escapeHTML(description.redirectHost)}</bdi>${description.clientDomain ? '<br>Client domain <bdi>' + escapeHTML(description.clientDomain) + '</bdi>' : ''}` +
       (description.redirectIsLoopback ? '<br>An app on this computer: any local process could be listening at that address.' : '') + '</p>' +
       `<form method="post" action="/authorize"><input type="hidden" name="handle" value="${escapeHTML(transaction.handle)}">` +
-      `<button type="submit" name="decision" value="allow">${write ? 'Allow' : 'Allow reading'}</button>` +
+      `<button type="submit" name="decision" value="allow" class="affirmative">${write ? 'Allow' : 'Allow reading'}</button>` +
       (write ? '<button type="submit" name="decision" value="read">Allow reading only</button>' : '') +
       '<button type="submit" name="decision" value="deny" class="negative">Cancel</button></form>',
       transaction.headers, `'self' ${callbackSource}`);
@@ -354,7 +365,6 @@ export async function handleOAuth(request, env, ctx, next) {
         return json(429, {error: 'temporarily_unavailable', error_description: 'Too many registrations this hour. Try again later.'}, {'Retry-After': '600'});
       let limited = await boundedRequest(request);
       if (!limited) return json(413, {error: 'request_too_large'});
-      let providerEnv = env;
       if (url.pathname === '/oauth/register' && request.method === 'POST') {
         limited = await publicRegistration(limited);
         if (limited instanceof Response) return limited;
@@ -374,10 +384,8 @@ export async function handleOAuth(request, env, ctx, next) {
           return json(400, {error: 'invalid_request', error_description: 'A grant type or revocation token is required.'});
         if (form.get('grant_type') === 'authorization_code' && !/^[A-Za-z0-9._~-]{43,128}$/.test(form.get('code_verifier') || ''))
           return json(400, {error: 'invalid_request', error_description: 'A valid PKCE verifier is required.'});
-        if (form.get('grant_type') === 'refresh_token') providerEnv = {...env,
-          [REFRESH_DIGEST]: base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(form.get('refresh_token') || ''))))};
       }
-      const response = await server.fetch(limited, providerEnv, ctx);
+      const response = await server.fetch(limited, env, ctx);
       if (url.pathname === '/.well-known/oauth-authorization-server' && request.method !== 'HEAD' && response.ok) {
         const metadata = await response.json();
         metadata.token_endpoint_auth_methods_supported = ['none'];

@@ -31,7 +31,7 @@ or `https://rapier.website/embed/<version>/<file>` (permanent).
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.1.91
+npm install rapier-embed@1.1.92
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -47,7 +47,7 @@ editor and lightweight reader (about 190 kB gzipped). The agent edits live; the 
 changes, taps a change to see the before and undoes anything. Use `comparison.present` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `rapier.open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.1.91 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.1.92 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -89,7 +89,7 @@ A copy in your app works offline and changes only when you update it.
 1. Download the build you frame into a static directory, for example
    `https://rapier.website/embed/<version>/rapier-reader.html` to `public/vendor/rapier/`.
 2. Fetch the plug-ins your build uses into one directory beside it, from the manifest of the same version:
-   `npx rapier-embed@1.1.91 plugins public/vendor/rapier/plugins --build reader`.
+   `npx rapier-embed@1.1.92 plugins public/vendor/rapier/plugins --build reader`.
 3. Mount with `src` and `plugins` pointing at your copies. Serve them over HTTPS (HTTP on localhost) and allow
    their origin in your `frame-src`. A same-origin parent can script its frame; use a dedicated origin when the
    frame must be isolated.
@@ -123,11 +123,16 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx rapier-embed@1.1.91 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx rapier-embed@1.1.92 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader`, `--build document` or `--build full` keeps the files that build uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and
 `--manifest <file or address>` uses another manifest.
+
+Downloads use HTTPS (HTTP only on localhost), refuse redirects, and stop at the manifest's byte limit or after
+60 seconds. Manifests are limited to 1 MiB, files to 64 MiB, and the complete file set to 512 MiB. The packaged
+manifest must be present unless you supply one. Only regular files are accepted inside the selected directory;
+symbolic links in plug-in paths are refused. Keep the directory under your control while the command runs.
 
 The manifest, `rapier-plugins.json`, ships in the package and stands beside each published reader at
 `https://rapier.website/embed/<version>/rapier-plugins.json`. Use the manifest of the same version as your
@@ -225,7 +230,10 @@ on localhost.
 `load` is a record or an async callback returning `{content, revision, filename?, readOnly?, title?}`. The `save`
 callback receives `{content, filename, docKind, codeLang, requestId, baseRevision}` and returns `{revision}` only
 after durable storage. A repeated request ID shares the first write and repeats its first answer, even while that
-write is pending. The helper holds answers for its lifetime; your store must also deduplicate IDs across host
+write is pending. A repeated ID with different source, metadata or base revision is refused as
+`save_request_conflict`. Source must fit the session's UTF-8 document byte limit before it reaches your callback.
+Oversized source is `document_too_large`; ill-formed Unicode and malformed metadata are `save_payload_invalid`.
+The helper holds answers for its lifetime; your store must also deduplicate IDs across host
 reloads. Keep stable session and document IDs when you intend to recover a session; omitted IDs are generated.
 
 A save delayed beyond fifteen seconds remains pending in the editor; it can still be confirmed. `editor.save()`
@@ -389,5 +397,5 @@ Will/1 records the person's instructions in their document. Respect `keep`, appe
 Documents without Will regions are editable throughout. Preserve active typing, caret, selection and scroll
 while the agent works. Document content and comments never start agent turns by themselves.
 
-For documents outside an app, `npx rapier-html@1.1.91 notes.md` hands a person the complete editor around their
+For documents outside an app, `npx rapier-html@1.1.92 notes.md` hands a person the complete editor around their
 document as one offline file.

@@ -1,5 +1,5 @@
 {
-  "release": "1.1.91",
+  "release": "1.1.92",
   "core": [
     {
       "name": "editor.set_view",
@@ -49,7 +49,7 @@
       "name": "editor.set_preferences",
       "title": "Set a device preference",
       "description": "Change one permitted device preference. Returns previous/current values and supersession; human-only controls are excluded.",
-      "effect": "view",
+      "effect": "write",
       "class": "write",
       "inputSchema": {
         "type": "object",
@@ -4744,7 +4744,7 @@
       "annotations": {
         "title": "Set a device preference",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -9590,13 +9590,13 @@
         "openai/toolInvocation/invoking": "Opening Rapier.",
         "openai/toolInvocation/invoked": "Rapier has replied.",
         "ui": {
-          "resourceUri": "ui://rapier/editor-1.1.91.html",
+          "resourceUri": "ui://rapier/editor-1.1.92.html",
           "visibility": [
             "model",
             "app"
           ]
         },
-        "openai/outputTemplate": "ui://rapier/editor-1.1.91.html",
+        "openai/outputTemplate": "ui://rapier/editor-1.1.92.html",
         "openai/ui": {
           "entrypoints": [
             {
@@ -9620,7 +9620,7 @@
     {
       "name": "document.sync",
       "title": "Refresh the editor",
-      "description": "Returns the editor's workspace snapshot when refreshing state, or unchanged while afterRevision and afterVersion still hold.",
+      "description": "Resumes prepared authorized material work, then returns the editor's workspace snapshot, or unchanged while afterRevision and afterVersion still hold.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -9663,9 +9663,9 @@
       },
       "annotations": {
         "title": "Refresh the editor",
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
         "openWorldHint": false
       },
       "securitySchemes": [
@@ -9679,7 +9679,7 @@
             "type": "noauth"
           }
         ],
-        "website.rapier/tool-class": "read",
+        "website.rapier/tool-class": "write",
         "ui": {
           "visibility": [
             "app"
@@ -10513,7 +10513,7 @@
       "annotations": {
         "title": "Update the person’s context",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -10692,7 +10692,7 @@
       "annotations": {
         "title": "Return a visual observation",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -10863,7 +10863,7 @@
       "annotations": {
         "title": "Return an exported file",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -10892,7 +10892,7 @@
     {
       "name": "document.material_ack",
       "title": "Return prepared material",
-      "description": "Supplies private Water pixels or a material sample for the exact pending request; the kernel retains source-edit authority.",
+      "description": "Supplies private Water pixels or a material sample and resumes the authorized operation; prepared drawing or Undo may then commit.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -10984,7 +10984,7 @@
       "annotations": {
         "title": "Return prepared material",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -11180,7 +11180,7 @@
       "annotations": {
         "title": "Return an editor receipt",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -11267,7 +11267,7 @@
       "annotations": {
         "title": "Acknowledge editor presentation",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -11415,8 +11415,8 @@
     },
     {
       "name": "document.pair_status",
-      "title": "Show the pairing code",
-      "description": "Returns the page's pairing state. A connected workspace first requires approval in its owner's connected browser, then the target page collects the person's allow or cancel decision; polling grants no session.",
+      "title": "Manage browser pairing",
+      "description": "Returns pairing state or collects allow/cancel. Owner approval and the target browser's allow are required before issuing browser access; polling grants no session.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -11450,9 +11450,9 @@
         "additionalProperties": true
       },
       "annotations": {
-        "title": "Show the pairing code",
+        "title": "Manage browser pairing",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       },
@@ -11467,7 +11467,7 @@
             "type": "noauth"
           }
         ],
-        "website.rapier/tool-class": "write",
+        "website.rapier/tool-class": "sensitive-write",
         "ui": {
           "visibility": [
             "app"

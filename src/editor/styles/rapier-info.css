@@ -3,7 +3,6 @@
 .settings-info-btn{display:grid;place-items:center;background:transparent;color:var(--color-text);cursor:pointer;width:var(--control-target);height:var(--control-target);margin:0;}
 .settings-info-btn .icon,.info-action-overlay .icon{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
 .settings-info-btn .icon{width:18px;height:18px;}
-.posture-row .settings-info-btn{margin-left:auto;}
 /* The circle hangs off the top right of the title's last letter, connected to it -- a 3.5rem title's x-height ends about .52em down, and the circle's 18px glyph sits above that line, touching the letter's edge. The 48px target is kept by the control's own box; only the glyph is small. */
 .settings-info-btn--hang{width:40px;height:40px;align-self:flex-start;margin:-.22em 0 0 -6px;flex:none;}
 .settings-info-btn--hang .icon{width:18px;height:18px;}

@@ -165,16 +165,22 @@ async function _rapierRevealFirstScreen() {
     if (typeof ready === 'function') await ready();
     pending = window.RapierPlatform?.files?.hasPendingBoot?.() === true;
   } catch (_) {}
-  // The words are laid in their own faces: shown in a fallback and then re-set when the faces arrive, every line
-  // after the first moves. The faces are inline, so the wait is the decode, and bounded.
-  try {
-    if (document.fonts?.load) await Promise.race([
-      Promise.all(['400 16px Geist', '700 16px Geist', '400 16px "Geist Mono"'].map(face => document.fonts.load(face))),
-      new Promise(resolve => setTimeout(resolve, 1500))]);
-  } catch (_) {}
+  // A hosted or paired page already has a document coming. The guide is not that file,
+  // and its font wait must not hold the real document back.
+  const documentComing = pending || globalThis.RAPIER_APPS_HOST === true ||
+    typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string' || !!(carried && carried.textContent);
+  if (!documentComing) {
+    // The words are laid in their own faces: shown in a fallback and then re-set when the faces arrive, every line
+    // after the first moves. The faces are inline, so the wait is the decode, and bounded.
+    try {
+      if (document.fonts?.load) await Promise.race([
+        Promise.all(['400 16px Geist', '700 16px Geist', '400 16px "Geist Mono"'].map(face => document.fonts.load(face))),
+        new Promise(resolve => setTimeout(resolve, 1500))]);
+    } catch (_) {}
+  }
   const blocks = document.getElementById('editor-blocks');
   const welcome = document.getElementById('rapier-welcome-paint');
-  if (blocks && welcome && !(carried && carried.textContent) && !pending) {
+  if (blocks && welcome && !documentComing) {
     const fragment = welcome.content.cloneNode(true);
     // Off-screen welcome blocks skip layout until scrolled. The first screen's own
     // blocks keep the editor's geometry: content-visibility on them would reserve a
