@@ -1,7 +1,7 @@
 {
   "name": "rapier",
   "displayName": "Rapier",
-  "version": "1.1.89+skills.079177aae3300db2fc516cd801bf68d31fec4fbc181a4a2a6d2edc0fa87014c2",
+  "version": "1.1.90+skills.656316e98f8580971455fc825dd6dff8eddfa27380356de1282cdbf660e70fb9",
   "description": "Fast Markdown editor for notes, diagrams, drawing and watercolor painting, shared live with your AI agent. The agent works freely, beside you or while you are away. Rapier shows where it is and what it changed: tap a change to see what was there before, and undo anything. Pictures and editable drawings travel in one Markdown file; export Word, PDF or one offline HTML editor. No account. Shared documents stay in a private workspace that expires after 30 idle days.",
   "author": {
     "name": "Jack Skipworth",

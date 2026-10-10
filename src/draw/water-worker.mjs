@@ -33,8 +33,11 @@ export function createWaterWorker({postMessage}={}){
   // Every changed material cell influences the surrounding cubic readout, including live patches.
   if(box){const pad=(s.cell || 1)*2+2;box={x0:Math.max(0,box.x0-pad),y0:Math.max(0,box.y0-pad),x1:Math.min(s.width-1,box.x1+pad),y1:Math.min(s.height-1,box.y1+pad)};}
   if(bound){
+   const first=!bound.submitted;
    if(!bound.submitted){bound.canvas.width=s.width;bound.canvas.height=s.height;bound.width=s.width;bound.height=s.height;bound.toothOX=s.toothOX;bound.toothOY=s.toothOY;bound.context.configure({device:s.gpu.device,format:'rgba8unorm',alphaMode:'premultiplied',colorSpace:'srgb'});bound.material=s;full=true;}
    if(box||full){await s.gpu.present(bound.context.getCurrentTexture(),full?null:[box.x0,box.y0,box.x1+1,box.y1+1]);displayed.set(id,performance.now());}
+   // A canvas is up for the page to show only when its first frame is drawn: the page puts the picture it holds aside for it.
+   if(first&&full)await s.gpu.device.queue.onSubmittedWorkDone();
    bound.submitted=true;
    return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,canvasGeneration:bound.canvasGeneration,revision:s.revision,width:s.width,height:s.height,submitted:!!box||full}};
   }

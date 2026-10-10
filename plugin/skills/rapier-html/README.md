@@ -17,14 +17,14 @@ to review. Text and drawings stay editable, and the file remains usable independ
 Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.1.89 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.1.89 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.1.89 notes.md --view notes             # opens the Notes library
-npx -- rapier-html@1.1.89 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.1.89 --propose original.md proposal.md # opens on the diff of a proposed change
-npx -- rapier-html@1.1.89 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.1.89 notes.md out.html                 # a named output
-npm install rapier-html@1.1.89                              # as a library: wrap, unwrap
+npx -- rapier-html@1.1.90 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.1.90 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.1.90 notes.md --view notes             # opens the Notes library
+npx -- rapier-html@1.1.90 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.1.90 --propose original.md proposal.md # opens on the diff of a proposed change
+npx -- rapier-html@1.1.90 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.1.90 notes.md out.html                 # a named output
+npm install rapier-html@1.1.90                              # as a library: wrap, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.

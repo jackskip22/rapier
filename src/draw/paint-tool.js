@@ -2466,7 +2466,20 @@ function _rapierPaintDisplay(layer, reply) {
 		if (!display.submitted) return;
 		const pending = layer.pendingDisplay;
 		if (pending?.generation === display.canvasGeneration) {
-			canvas.replaceWith(pending.canvas); layer.canvas = pending.canvas; layer.pendingDisplay = null;
+			// The replacement shows nothing until the GPU has drawn its first frame and the compositor has taken it. It is put up beside
+			// the canvas that shows the layer, barely visible, and takes over two animation frames later: swapped in the moment its
+			// first frame was submitted, it is blank, and the committed picture has already stepped aside for it.
+			if (!pending.ready) {
+				if (!pending.up) {
+					pending.up = true;
+					pending.canvas.style.opacity = '0.01'; pending.canvas.style.visibility = '';
+					canvas.after(pending.canvas);
+					_rapierPaintAfterFrame(() => { if (layer.pendingDisplay === pending) { pending.ready = true; _rapierPaintDisplay(layer, reply); } });
+				}
+				return;
+			}
+			pending.canvas.style.opacity = ''; pending.canvas.style.visibility = 'hidden';
+			canvas.remove(); layer.canvas = pending.canvas; layer.pendingDisplay = null;
 			_rapierPaintWatchOverlay(layer);
 		} else if (layer.canvasGeneration && layer.canvasGeneration !== display.canvasGeneration) return;
 		layer.canvasGeneration = display.canvasGeneration;
@@ -2873,6 +2886,9 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer) {
 		if(!target || target.raster!==layer.raster || !globalThis.RapierDrawAgentPaint.waterPaintingIsLive(target,material.session))throw Object.assign(new Error('This Water layer changed before the stroke was ready.'),{code:'paint_target_changed'});
 		await surface.fromWaterMaterial(material.replay,material.session);
 		delete layer.waterMaterial;
+		// The overlay's canvas shows the blank sheet this layer opened with; the restored wash comes with its replacement. Until that is up
+		// the committed picture stays, and the canvas is not shown over it.
+		if (layer.gpuDisplay) { layer.displayReady = false; _rapierPaintShowLive(layer.liveWanted, layer); }
 		if (!state.open || state.session !== session || gesture.paint?.discarded) return 'gone';
 		if (_rapierPaintLayer() !== layer) return false;
 	}
@@ -4100,16 +4116,20 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 // A new `href` on an SVG <image> decodes after it is set, and the image is blank until then: on a phone a painting's PNG
 // takes several frames. The overlay stays up (and the image aside) until every committed piece has decoded, then the
 // layer takes whatever was asked of it meanwhile, so the swap is one frame with the pixels on both sides. A decode that
-// fails or never settles hands back after a bounded wait, as before.
-const RAPIER_PAINT_DECODE_WAIT_MS = 4000;
+// fails settles it too. A slow decode only keeps the painting showing; the long bound is for one that never settles.
+const RAPIER_PAINT_DECODE_WAIT_MS = 30000;
 function _rapierPaintHandBack(layer, ids) {
 	const svg = _rapierDrawState.svg;
 	const images = svg ? ids.map(id => svg.querySelector('[data-shape-id="' + id + '"] image[data-rapier-paint]')).filter(image => typeof image?.decode === 'function') : [];
 	if (!images.length) return null;
 	const token = {};
-	token.promise = Promise.race([Promise.allSettled(images.map(image => image.decode())), new Promise(done => setTimeout(done, RAPIER_PAINT_DECODE_WAIT_MS))]).then(() => {
+	let settled = false;
+	const decoded = Promise.allSettled(images.map(image => image.decode())).then(() => { settled = true; });
+	token.promise = Promise.race([decoded, new Promise(done => setTimeout(done, RAPIER_PAINT_DECODE_WAIT_MS))]).then(() => {
 		if (layer.decoding !== token) return;
 		layer.decoding = null;
+		// A decode still pending at the bound leaves the overlay up: the layer steps aside to its picture only once that has decoded.
+		if (!settled) { decoded.then(() => { if (!layer.decoding) _rapierPaintShowLive(layer.liveRequest ?? false, layer); }); return; }
 		_rapierPaintShowLive(layer.liveRequest ?? false, layer);
 	});
 	layer.decoding = token;

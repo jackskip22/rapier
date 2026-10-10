@@ -13,7 +13,7 @@ reference definition, so every other Markdown reader shows the same words and qu
 know. Nothing is lost when the file travels: no image folder, no zip, no account, no particular app.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.89`. Rapier renders it exactly and
+https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.90`. Rapier renders it exactly and
 writes it back byte for byte; any editor may.
 
 Rapier has two separate kinds of diagram: native SVG drawings, made with `document.draw` as movable, editable

@@ -12,9 +12,9 @@ agent at it. The MCP door (`https://mcp.rapier.website/mcp`) serves the same sna
 | Skill | Use it when |
 |---|---|
 | [`rapier-agent-door`](rapier-agent-door/SKILL.md) | A plan, guide, diagram, sketch or draft needs shared editing, continued revision or review of exact changes. Work in the existing document when one is open. |
-| [`rapier-html`](rapier-html/SKILL.md) | A document or drawing needs an independent editable copy, or a revision needs offline review: `npx rapier-html@1.1.89` writes the complete editor around the document. |
+| [`rapier-html`](rapier-html/SKILL.md) | A document or drawing needs an independent editable copy, or a revision needs offline review: `npx rapier-html@1.1.90` writes the complete editor around the document. |
 | [`rapier-markdown`](rapier-markdown/SKILL.md) | A portable Markdown document needs embedded pictures, layout, colour or drawings in the same file. |
-| [`embed-rapier`](embed-rapier/SKILL.md) | A site or app wants the read-only reader or the editor inside it, kept in its own codebase with its own storage (`npm install rapier-embed@1.1.89`). |
+| [`embed-rapier`](embed-rapier/SKILL.md) | A site or app wants the read-only reader or the editor inside it, kept in its own codebase with its own storage (`npm install rapier-embed@1.1.90`). |
 
 Start with useful content and invite the person to explore it: they can annotate, rearrange, draw or paint. A
 page made with `rapier-html` can carry a one-use return address from `document.create_return`: the person edits
