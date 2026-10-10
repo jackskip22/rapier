@@ -153,6 +153,30 @@ export default async function (page, t) {
 		const references = tags.match(/url\([^)]*\)/g) || [];
 		if (!drawing || clean !== drawing || references.some(url => !/^url\(#rapier-(?:copy|pressed)-[\w-]+\)$/.test(url)) || /href|<script|<img|example\.invalid|<!ENTITY/.test(tags) || !core._rapierDrawReadRecipeFromSVGText(clean)?.effect) failures.push('copier source or inertness lost: ' + preset.id);
 	}
+	// Refraction uses local source references for reflected and tiled sampling. Hostile
+	// authored ids must never become reference syntax, and sanitation must keep the source.
+	for (const preset of core.REFRACTION_PRESETS) for (const edge of ['reflect', 'tile', 'transparent']) {
+		const effect = {...core.refractionPreset(preset.id), edge};
+		const drawing = core._rapierDrawBuildSVG({...recipe, effect, shapes: recipe.shapes.map(shape => ({...shape, effect}))});
+		const clean = sanitizeSvgText(drawing), tags = drawing.replace(/>[^<]*</g, '><');
+		const references = tags.match(/url\([^)]*\)/g) || [], hrefs = [...tags.matchAll(/\bhref="([^"]*)"/g)].map(match => match[1]);
+		const ids = new Set([...tags.matchAll(/\bid="([^"]*)"/g)].map(match => match[1]));
+		const back = core._rapierDrawReadRecipeFromSVGText(clean), original = core._rapierDrawAdmitRecipe({...recipe, effect, shapes: recipe.shapes.map(shape => ({...shape, effect}))});
+		if (!drawing || clean !== drawing || references.some(url => !/^url\(#rapier-(?:refract|pressed)-[\w-]+\)$/.test(url)) ||
+			hrefs.some(href => !/^#rapier-refract-[\w-]+$/.test(href) || !ids.has(href.slice(1))) || /<script|<img|example\.invalid|<!ENTITY/.test(tags) ||
+			JSON.stringify(back?.effect) !== JSON.stringify(effect) || JSON.stringify(back?.shapes) !== JSON.stringify(original?.shapes)) failures.push('refraction source or inertness lost: ' + preset.id + '/' + edge);
+	}
+	// Liquid light hides the source and shows a still: only a JPEG XL data picture may be that still,
+	// hostile ids and words stay inert, and the sanitizer keeps both the source and the still.
+	for (const preset of core.LIQUID_PRESETS) {
+		const effect = core.liquidPreset(preset.id, 5), stirred = {...recipe, effect, shapes: recipe.shapes.map(shape => ({...shape, effect}))};
+		core.liquidStillsWanted(); core._rapierDrawBuildSVG(stirred);
+		for (const job of core.liquidStillsWanted()) core.liquidStillPut(job.key, 'data:image/jxl;base64,' + Buffer.from('still ' + job.key).toString('base64'));
+		const drawing = core._rapierDrawBuildSVG(stirred), clean = sanitizeSvgText(drawing), tags = drawing.replace(/>[^<]*</g, '><');
+		const hrefs = [...tags.matchAll(/\bhref="([^"]*)"/g)].map(match => match[1]), back = core._rapierDrawReadRecipeFromSVGText(clean);
+		if (!drawing || clean !== drawing || !hrefs.length || hrefs.some(href => !/^data:image\/jxl;base64,/.test(href)) || /url\(|<script|<img|example\.invalid|<!ENTITY/.test(tags.replace(/url\(#rapier-pressed-[\w-]+\)/g, '')) ||
+			JSON.stringify(back?.effect) !== JSON.stringify(effect) || JSON.stringify(back?.shapes) !== JSON.stringify(core._rapierDrawAdmitRecipe(stirred)?.shapes)) failures.push('liquid source, still or inertness lost: ' + preset.id);
+	}
 	if (failures.length) return t.fail(failures.join('\n'));
-	return t.pass(imported + '; ' + HOSTILE.length + ' hostile SVG payloads stripped; ' + core.COPIER_PRESETS.length + ' copier presets at both scopes retain inert source through the sanitizer; a Draw PNG and fragment href pass unchanged; pressed text writes ' + primitives.length + ' inert primitives under its own id, no href, and escapes its label');
+	return t.pass(imported + '; ' + HOSTILE.length + ' hostile SVG payloads stripped; copier, refraction and liquid presets at both scopes retain inert source through the sanitizer; a liquid still is a JPEG XL picture; local reflection references resolve; a Draw PNG and fragment href pass unchanged; pressed text writes ' + primitives.length + ' inert primitives under its own id, no href, and escapes its label');
 }

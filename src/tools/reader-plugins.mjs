@@ -7,6 +7,7 @@ import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {fontSubsetResourceFiles} from './font-subset-resources.mjs';
 
 // Where the pinned files are published (the address each pin names). A release publishes the files this build writes under these names.
 export const PLUGIN_ORIGIN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/';
@@ -85,7 +86,7 @@ export function builtFromManifest(manifest) {
 // plug-in (a file's own `builds` narrows its plug-in's): the reader, the document editor and the full editor.
 export async function pluginManifest({root, version, loader, built}) {
 	const mermaid = JSON.parse(await readFile(resolve(root, 'shell/mermaid-resources.json'), 'utf8')), pdfjs = JSON.parse(await readFile(resolve(root, 'interchange/pdf-pins.json'), 'utf8'));
-	const {OCR_FILES, OCR_MODEL} = await import(pathToFileURL(resolve(root, 'notes/ocr.mjs')).href), {LETTER_SETS} = await import(pathToFileURL(resolve(root, 'draw/letters.mjs')).href);
+	const {OCR_FILES, OCR_MODEL} = await import(pathToFileURL(resolve(root, 'images/ocr.mjs')).href), {LETTER_SETS} = await import(pathToFileURL(resolve(root, 'draw/letters.mjs')).href);
 	const lettersAt = /const RAPIER_DRAW_LETTERS_URL = '([^']+)'/.exec(await readFile(resolve(root, 'draw/draw.js'), 'utf8'))?.[1];
 	if (lettersAt !== PLUGIN_ORIGIN + 'letters/') throw new Error('Reader plug-ins: draw/draw.js fetches the letter sets from ' + lettersAt + ', not ' + PLUGIN_ORIGIN + 'letters/');
 	const own = (key, builds) => ({name: key, adds: PLUGINS[key].adds, builds, files: [entry(built.find(plugin => plugin.key === key))]});
@@ -98,8 +99,10 @@ export async function pluginManifest({root, version, loader, built}) {
 		// `pdfjs-dist-<version>` directory (each file in its folder).
 		{name: 'pdf', adds: PLUGINS.pdf.adds, builds: BUILDS, files: [entry(built.find(plugin => plugin.key === 'pdf'), ['reader']),
 			...pdfjs.files.map(([path, bytes, sri]) => ({file: 'pdfjs-dist-' + pdfjs.version + '/' + path, bytes, sha384: Buffer.from(sri, 'base64').toString('hex'), sri, url: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + pdfjs.version + '/' + path}))]},
-		// Text in pictures (Notes): the model and its runtime, run in a worker with no network of its own.
-		{name: 'ocr', adds: 'Reads the words in pictures on the device (' + OCR_MODEL + ' on ONNX Runtime Web), so search finds them. About 21 MB.', builds: ['full'], files: OCR_FILES.map(file => entry({file: file.flat, bytes: file.bytes, sri: file.sri, url: file.url}))},
+		// Text in pictures: the model and its runtime, run in a worker with no network of its own.
+		{name: 'ocr', adds: 'Reads the words in pictures on the device (' + OCR_MODEL + ' on ONNX Runtime Web), so search finds them. About 21 MB.', builds: BUILDS, files: OCR_FILES.map(file => entry({file: file.flat, bytes: file.bytes, sri: file.sri, url: file.url}))},
+		{name: 'font-subset', adds: 'Keeps the used characters in fonts embedded in exported pages.', builds: ['document', 'full'],
+			files: fontSubsetResourceFiles(root).map(file => entry(file))},
 		// Draw's letter sets: ornamental capitals, a file a set.
 		{name: 'letters', adds: 'Draw\'s ornamental letter sets: ' + LETTER_SETS.map(set => set.name).join(', ') + '.', builds: ['full'],
 			files: LETTER_SETS.map(set => entry({file: 'letters-' + set.id + '.json', bytes: set.bytes, sri: set.sha384, url: PLUGIN_ORIGIN + 'letters/' + set.id + '.json'}))},

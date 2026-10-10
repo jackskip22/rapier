@@ -9,10 +9,10 @@ export function encodeCarried(text) {
 export function decodeCarried(text) {
   return String(text).replace(/\\([\\/!r0])/g, (_, c) => c === '\\' ? '\\' : c === 'r' ? '\r' : c === '0' ? '\0' : c === '/' ? '</' : '<!');
 }
-export function validateParts(text, {ledger = null, authorship = null} = {}) {
+export function validateParts(text, {ledger = null, authorship = null, metadata} = {}) {
   // A file's leading BOM is metadata, as in the editor's source intake.
   const canonical = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  const history = ledger === null ? null : readLedger(ledger, canonical).ledger;
+  const history = ledger === null ? null : readLedger(ledger, canonical, metadata).ledger;
   const runs = authorship === null ? null : readAuthorship(authorship, canonical);
   if (history && runs && canonicalJSON(projectAuthorship(history)) !== canonicalJSON(runs)) throw fault('authorship differs from ledger replay');
   return {ledger: history, authorship: runs};
@@ -69,19 +69,19 @@ export function readDocument(source) {
   return {text, ...validateParts(text, parts)};
 }
 
-// One portable baseline. A digest is integrity evidence, not authentication of the named proposer.
+// One portable baseline. A digest is integrity evidence, not authentication of the named author.
 export function readBase(value) {
   if (!value || typeof value !== 'object' || typeof value.text !== 'string' ||
       typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256) || sha256(value.text) !== value.sha256)
-    throw fault('proposal base SHA-256 differs from its text');
+    throw fault('comparison base SHA-256 differs from its text');
   if (typeof value.revision !== 'string' || !value.revision || value.revision.length > 256 || /[\u0000-\u001f\u007f]/.test(value.revision))
-    throw fault('invalid proposal base revision');
+    throw fault('invalid comparison base revision');
   if (typeof value.name !== 'string' || !value.name || [...value.name].length > 256 || /[\\/\u0000-\u001f\u007f]/.test(value.name))
-    throw fault('invalid proposal base name');
+    throw fault('invalid comparison base name');
   if (typeof value.by !== 'string' || !value.by.trim() || value.by.length > 96 || /[\u0000-\u001f\u007f]/.test(value.by))
-    throw fault('a proposal needs its proposer name');
+    throw fault('a comparison needs its author name');
   if (typeof value.at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value.at) || !Number.isFinite(Date.parse(value.at)))
-    throw fault('the time of a proposal is an ISO 8601 UTC timestamp');
+    throw fault('the time of a comparison is an ISO 8601 UTC timestamp');
   return {text: value.text, sha256: value.sha256, revision: value.revision, name: value.name, by: value.by, at: value.at};
 }
 const escapeAttribute = value => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -98,7 +98,7 @@ export function readBaseElements(elements) {
   if (!rows.length) return null;
   const row = rows[0];
   if (rows.length !== 1 || row.type !== 'text/markdown' || (row.tagName && row.tagName.toLowerCase() !== 'script'))
-    throw fault('duplicate or executable proposal base');
+    throw fault('duplicate or executable comparison base');
   const get = name => row.getAttribute ? row.getAttribute('data-' + name) : row[name];
   return readBase({text: decodeCarried(row.textContent), ...Object.fromEntries(['name', 'sha256', 'revision', 'by', 'at'].map(key => [key, get(key)]))});
 }
@@ -109,7 +109,7 @@ export function takeBase(html) {
     if (!pairs.some(([key, value]) => key === 'id' && value === 'rapier-base')) return whole;
     const seen = new Set(), values = {};
     for (const [key, value] of pairs) {
-      if (seen.has(key)) throw fault('ambiguous proposal base');
+      if (seen.has(key)) throw fault('ambiguous comparison base');
       seen.add(key); values[key] = value;
     }
     elements.push({id: values.id, type: values.type, textContent: content,

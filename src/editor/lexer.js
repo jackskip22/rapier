@@ -1,8 +1,8 @@
 // The GPU lexer's readiness and its asks: the lexer is the highlighter. The CPU reading
 // (editor/code-tokens.mjs) paints every block first, on every browser, and stays where WebGPU is
 // not; the lexer (shell/vendor/gpu-lexer-0.0.1.js, the `lib-gpu-lexer` slot) repaints wherever a
-// device answers: rendered fences, the source view's slabs, and an exported page opened in a
-// browser with WebGPU. Nothing here retires the lexer for a page:
+// device answers: rendered fences, the source view's slabs, and code prepared for export.
+// Nothing here retires the lexer for a page:
 //   - a device refusal ("WebGPU unavailable", a lost device, a shader that would not build) is
 // remembered with a backoff -- 5 s, 30 s, 2 min, then 5 min -- and asked again after it on a fresh
 // instance, because the vendor keeps its first device promise, rejected or not, so a retry re-runs
@@ -23,7 +23,7 @@ function create(now = () => Date.now()) {
 	const state = Object.seal({ spans: null, failed: false, stale: false, executed: null, refusedAt: 0, refusals: 0, episode: 0, asks: 0, answers: 0 });
 
 	// The stored vendor: the `lib-gpu-lexer` spans (a name and a source each), inflated once by the
-	// loader and kept for the life of the page, so a retry and an exported page can run them again.
+	// loader and kept for the life of the editor, so a retry can run them again.
 	function store(spans) {
 		if (!Array.isArray(spans) || !spans.length || !spans.every(span => span && typeof span.name === 'string' && typeof span.source === 'string')) throw new Error('gpu-lexer');
 		if (!state.spans) state.spans = Object.freeze(spans.map(({ name, source }) => Object.freeze({ name, source })));
@@ -97,25 +97,13 @@ function create(now = () => Date.now()) {
 	// without waiting the backoff out. The streak's count stays, so the next backoff is the longer one.
 	function retry() { state.refusedAt = 0; }
 
-	// The exported page's script: the stored vendor and a runner, for the writer to place under its
-	// nonce. Only for a page carrying a block the lexer would colour; `tokensHtmlSource` is the
-	// editor's own token writer (_rapierTokensHtml) as source text, so the page paints the same
-	// fixed markup the editor does. Nothing of this file travels: the runner is its own source.
-	function artifactScript(hasLexedCode, tokensHtmlSource) {
-		if (!hasLexedCode || !state.spans || typeof tokensHtmlSource !== 'string') return '';
-		return '/* Rapier export highlighting: the CPU reading is the first paint; where this browser has WebGPU the lexer repaints each code block once. SPDX-License-Identifier: AGPL-3.0-only */\n' +
-			'(() => {\n' + state.spans.map(span => '(function () {\n' + span.source + '\n})();').join('\n') +
-			'\n(' + Function.prototype.toString.call(artifactRunner) + ')(' + tokensHtmlSource + ', globalThis.RapierGpuLexer, ' + Function.prototype.toString.call(codeHoldsSelection) + ');\n})();';
-	}
-
-	return Object.freeze({ store, stored, failed, refusal, counts, available, retry, ensure, ask, artifactScript });
+	return Object.freeze({ store, stored, failed, refusal, counts, available, retry, ensure, ask });
 }
 
 // A repaint never moves a person: a code element holding the caret or the selection keeps the
 // colouring it already has. Either endpoint inside the element, or any range crossing it (a
 // selection that starts outside and ends inside, or spans the whole block): each is a person using
-// this element (the anchor alone would miss the other three). One rule, one function: the editor's
-// guard delegates here and the exported page's runner carries this function as a parameter.
+// this element (the anchor alone would miss the other three). The editor's guard delegates here.
 function codeHoldsSelection(code, documentLike) {
 	const selection = documentLike && documentLike.getSelection ? documentLike.getSelection() : null;
 	if (!selection || !selection.rangeCount) return false;
@@ -124,28 +112,6 @@ function codeHoldsSelection(code, documentLike) {
 	return false;
 }
 
-// Runs in an exported page with nothing of this file around it: every name it uses is a parameter
-// or the page's own. The CPU spans are the page's first paint; a block is repainted only while it
-// still holds the text it was asked about and never while it holds the selection (the repaint
-// waits for the selection to leave it), and any refusal leaves it as it was.
-function artifactRunner(tokensHtml, lexer, holdsSelection) {
-	if (!globalThis.navigator || !globalThis.navigator.gpu || !lexer || typeof lexer.highlight !== 'function') return;
-	for (const code of document.querySelectorAll('code[data-rapier-lexer]')) {
-		const source = code.textContent || '';
-		lexer.highlight(source).then(spans => {
-			let html;
-			try { html = tokensHtml(source, spans); } catch (_) { return; }
-			const paint = () => { if ((code.textContent || '') === source) code.innerHTML = html; };
-			if (!holdsSelection(code, document)) { paint(); return; }
-			const freed = () => {
-				if (holdsSelection(code, document)) return;
-				document.removeEventListener('selectionchange', freed);
-				paint();
-			};
-			document.addEventListener('selectionchange', freed);
-		}, () => {});
-	}
-}
 
 return Object.freeze({ ...create(), create, BACKOFF_MS, codeHoldsSelection });
 })();

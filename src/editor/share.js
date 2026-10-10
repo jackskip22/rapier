@@ -309,27 +309,31 @@ async function _rapierSendBackDirect() {
 
 async function rapierShare(kind) {
 	if (!_rapierEmbedFeatureAllowed('share')) return false;
+	let captured;
+	const task = _rapierProgressTask({label: kind === 'web' ? 'Sharing web page' : 'Sharing file', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
+	const work = task;
 	try {
-		const captured = await _rapierCaptureSettledExternalDocument({carried: _rapierShareLedgerChoice()});
+		await task.yield(0);
+		captured = await _rapierCaptureSettledExternalDocument({carried: _rapierShareLedgerChoice()});
 		if (!captured) return false;
+		captured = {...captured, work};
+		task.check();
 		if (kind !== 'web' && captured.ledger && captured.metadata.docKind !== 'markdown') throw new Error('Choose web page to carry authorship or history with a code or plain-text document.');
-		// The file is made under the progress popup (at once for a large document, which holds the page while it is built:
-		// editor/pop.js _rapierProgressAhead); its Cancel drops the file before it is shared.
-		const controller = new AbortController();
-		const popup = await _rapierProgressAhead(captured.canonical.length, {label: kind === 'web' ? 'Sharing web page' : 'Sharing file', cancel: () => controller.abort()});
-		let file;
-		try {
-			file = kind !== 'web' ? {
-				blob: new Blob([RapierLedgerCarried.writeDocument((captured.metadata.bom ? '\uFEFF' : '') + captured.canonical,
-					_rapierLedgerParts(captured.canonical, captured.ledger, captured.carried))], {type: captured.metadata.mime}),
-				filename: captured.metadata.saveName, mime: captured.metadata.mime,
-			} : {...await _rapierBuildSharedPage(captured), mime: 'text/html'};
-		} finally { popup.end(); }
-		return !controller.signal.aborted && await _rapierShareFile(file);
+		if (kind !== 'web') {
+			task.check(); task.end();
+			return await _rapierShareFile({
+			blob: new Blob([RapierLedgerCarried.writeDocument((captured.metadata.bom ? '\uFEFF' : '') + captured.canonical,
+				_rapierLedgerParts(captured.canonical, captured.ledger, captured.carried))], {type: captured.metadata.mime}),
+			filename: captured.metadata.saveName, mime: captured.metadata.mime,
+			});
+		}
+		const page = await _rapierBuildSharedPage(captured);
+		task.check(); task.end();
+		return await _rapierShareFile({...page, mime: 'text/html'});
 	} catch (error) {
-		showToast('Could not share: ' + error.message, 'error');
+		if (error?.name !== 'AbortError' && error?.code !== 'cancelled') showToast('Could not share: ' + error.message, 'error');
 		return false;
-	} finally { _rapierShareLedgerReset(); }
+	} finally { task.end(); _rapierShareLedgerReset(); }
 }
 
 // Image compatibility mode's one writer. A shared page carries JPEG XL -- every current browser
@@ -360,7 +364,7 @@ function _rapierShareLedgerReset() {
 	}
 }
 function _rapierLedgerCapture() {
-	return RapierLedger.exportLedger({text: _rapierGetCanonicalText(),
+	return RapierLedger.exportLedger({text: _rapierGetCanonicalText(), metadata: _rapierDocumentMetadata(),
 		records: rapier.undo.ledger.map(_rapierJournalRecord), documentAuthority: String(rapier.identity.authority),
 		revision: Number(rapier.revision.settled), root: rapier.document.source.rootId,
 		complete: _rapierHistoryIsComplete() && !rapier.undo.trimReason});
@@ -372,51 +376,61 @@ function _rapierLedgerParts(text, ledger, choice) {
 	const carried = RapierLedger.replaceLedgerText(ledger, canonical, {operation: 'export.convert', actor: {kind: 'system', id: 'rapier'}});
 	return choice === 'history' ? {ledger: carried, authorship: null} : {ledger: null, authorship: RapierLedger.authorship(carried)};
 }
-function _rapierLedgerAdmission(text, parts) {
+function _rapierLedgerAdmission(text, parts, metadata) {
 	const checked = RapierLedgerCarried.validateParts(text, parts);
 	const canonical = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
 	const ledger = checked.ledger || (checked.authorship
-		? RapierLedger.ledgerFromAuthorship(checked.authorship, canonical, _rapierCreateDocumentAuthority()) : null);
+		? RapierLedger.ledgerFromAuthorship(checked.authorship, canonical, _rapierCreateDocumentAuthority(), metadata || {filename: parts.name || parts.filename || rapier.document.filename, docKind: parts.kind || rapier.document.docKind}) : null);
 	if (!ledger) return {};
 	RapierLedger.historyEnvelope(ledger); // navigation as well as content is proved before any load.
-	return {documentAuthority: ledger.documentAuthority, carriedLedger: ledger};
+	return {documentAuthority: ledger.documentAuthority, documentKind: ledger.head.metadata.docKind, carriedLedger: ledger};
 }
 function _rapierLedgerInstall(ledger) {
-	const proven = RapierLedger.readLedger(ledger, _rapierSourceText());
+	const proven = RapierLedger.readLedger(ledger, _rapierSourceText(), _rapierDocumentMetadata());
 	if (proven.ledger.documentAuthority !== String(rapier.identity.authority)) throw new Error('The carried history belongs to another document.');
 	const identity = rapier.document.docKind === 'markdown' ? _rapierCurrentSegmentIdentity() : [];
 	const envelope = RapierLedger.historyEnvelope(proven.ledger, identity);
-	rapier.revision.settled = proven.revision;
-	_rapierResetSource(proven.text, proven.root);
-	if (!_rapierInstallRestoredHistory(envelope)) throw new Error('The carried history could not be installed.');
+	const previous = {revision: rapier.revision.settled, source: rapier.document.source, checkpoint: rapier.document.source.capture(),
+		history: {...rapier.undo, ledger: rapier.undo.ledger.slice(), branch: rapier.undo.branch.slice()}, durable: _rapierPersistenceRuntime.durable};
+	try {
+		rapier.revision.settled = proven.revision;
+		_rapierResetSource(proven.text, proven.root);
+		if (!_rapierInstallRestoredHistory(envelope)) throw new Error('The carried history could not be installed.');
+	} catch (error) {
+		rapier.revision.settled = previous.revision;
+		rapier.document.source = previous.source; previous.checkpoint.restore();
+		Object.assign(rapier.undo, previous.history); _rapierPersistenceRuntime.durable = previous.durable;
+		throw error;
+	}
 	_notifyHistoryState();
 }
-// Compare a carried copy as an explicit merge proposal through the existing KEEP/DROP review.
-// No source changes until that review is accepted; stale/abandoned review commits nothing.
-async function _rapierLedgerReviewCopy(incoming, name) {
+// An explicitly imported copy commits through the same source and metadata owner.
+async function _rapierLedgerMergeCopy(incoming, name) {
 	const captured = await _rapierCaptureSettledExternalDocument({carried: 'history'});
 	if (!captured || _rapierUserMutationBlocked()) return false;
 	const merged = RapierLedger.merge(captured.ledger, incoming);
-	if (merged.text === captured.canonical) { showToast('This copy adds no changes.', 'info'); return true; }
-	if (rapier.compare.active || rapier.compare.running) await rapierCompareClose();
+	if (!merged.clean) {
+		if (merged.conflicts.some(row => row.kind === 'metadata')) throw Object.assign(
+			new Error('The copies contain conflicting document metadata. The current document is unchanged.'), {code: 'metadata_assignment_conflict'});
+		await _rapierCompareStart(captured.canonical, captured.metadata.filename, RapierLedger.readLedger(incoming).text, name);
+		return false;
+	}
+	if (merged.ledger.sha256 === captured.ledger.sha256) return true;
 	if (!_rapierMutationStampIsCurrent(captured.stamp)) return false;
-	const controller = new AbortController(), ctx = {actor: {kind: 'human', id: 'local'},
-		transport: 'platform', operation: 'document.merge', requestId: null, signal: controller.signal};
-	const resolved = {kind: 'document-range', source: captured.canonical, start: 0, end: captured.canonical.length, record: {}};
-	const decision = await _rapierWillReviewOpen(resolved, merged.text, ctx);
-	try {
-		await _rapierAwaitWillRestore(decision.review, controller.signal);
-		if (!decision.allowed || !_rapierMutationStampIsCurrent(captured.stamp) || _rapierUserMutationBlocked()) return false;
-		// The merge itself preserves conflicting variants in the existing conflict envelope; the
-		// person can edit those variants after accepting, and Undo still reaches either original.
-		_rapierWillReviewRelease(decision.review, false);
-		const rows = [{pos: 0, removed: captured.canonical, inserted: merged.text}];
-		await _rapierWithCompoundTransaction(ctx, async () => {
-			if (!_rapierMutationStampIsCurrent(captured.stamp)) throw new Error('The document changed before merging.');
-			if (!await _rapierApplyCanonicalSplices(rows, {keepSourceMode: rapier.view.mode === 'source', retiredImages: []})) throw new Error('The merge could not be applied.');
-		}, {carriedLedger: merged.ledger});
-		await rapierFlushDirty({snapshot: true, durable: true});
-		if (!merged.clean) _rapierCompareStart(captured.canonical, captured.metadata.filename, merged.text, name);
-		return true;
-	} finally { _rapierWillReviewRelease(decision.review, false); }
+	const ctx = {actor: {kind: 'human', id: 'local'}, transport: 'platform', operation: 'document.merge', requestId: null};
+	const splice = _rapierPrefixSuffixDiff(captured.canonical, merged.text), rows = splice.removed || splice.inserted ? [splice] : [];
+	const metadata = RapierLedger._rapierMetadataDelta(_rapierDocumentMetadata(), merged.metadata);
+	if (metadata?.docKind && typeof _rapierDrawState !== 'undefined' && _rapierDrawState.open) return false;
+	await _rapierWithCompoundTransaction(ctx, async compound => {
+		if (!_rapierMutationStampIsCurrent(captured.stamp)) throw new Error('The document changed before merging.');
+		if (rows.length && !await _rapierApplyCanonicalSplices(rows, {keepSourceMode: rapier.view.mode === 'source', retiredImages: []}))
+			throw new Error('The merge could not be applied.');
+		if (metadata) {
+			if (!_rapierCommitSplices([], {metadata})) throw new Error('The document metadata changed before merging.');
+			if (metadata.docKind && metadata.docKind.before !== metadata.docKind.after) await _rapierProjectDocumentMetadata(compound);
+			else {updateFilenameDisplay(); renderDocumentKind();}
+		}
+	}, {carriedLedger: merged.ledger});
+	await rapierFlushDirty({snapshot: true, durable: true});
+	return true;
 }

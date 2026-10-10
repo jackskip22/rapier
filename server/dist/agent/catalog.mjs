@@ -2,8 +2,10 @@ import { validateInput, agentInputSchema } from './validate-input.mjs';
 import { VERSION } from '../version.mjs';
 import { VISUAL_LIMITS } from './visual.mjs';
 import { FIND_KINDS } from './structure-request.mjs';
-import {EDITOR_LIMITS, EDITOR_ACTIONS, EDITOR_TOOL_ACTIONS, EDITOR_PLUGINS, EDITOR_COPY_FORMATS, PREFERENCE_SCHEMAS, PREFERENCE_WORDS} from './editor.mjs';
+import {PREFERENCE_DEFINITIONS} from '../shell/preferences.mjs';
+import {EDITOR_LIMITS, EDITOR_ACTIONS, EDITOR_PLUGINS, EDITOR_COPY_FORMATS, PREFERENCE_SCHEMAS} from './editor.mjs';
 
+export const GUIDE_TOPICS = Object.freeze(['overview', 'contracts', 'source', 'comparison', 'drawing', 'paint', 'svg', 'notes', 'device', 'delivery']);
 export const MAX_TEXT_BYTES = 25 * 1024 * 1024;
 // Exported files remain bounded while the door builds and retains their exact bytes.
 export const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
@@ -15,11 +17,14 @@ const described = (schema, description) => ({...schema, description});
 const text = string(MAX_TEXT_BYTES);
 const editText = string(262144);
 const ref = string(128);
-const operationId = {...string(128, 'Optional retry identity scoped to this principal, connection and document. An unchanged mutation replays its original result for 24 hours, even after later edits; its expired identity never executes again. A read replays while its receipt is retained; after 256 later reads it executes afresh. Reusing an identity with changed arguments refuses. Visual observations are fresh. Inspect before starting another operation. Calls without it never replay.'), minLength: 1};
-const contribution = {...string(120, 'The purpose of these changes. Words and pictures with this name form one contribution, kept or dropped together.'), minLength: 1, pattern: '\\S'};
+const act_id = string(256);
+const operationId = {...string(128, 'Stable retry identity; see guide topic contracts.'), minLength: 1};
+const turn_id = {...string(160, 'Stable turn identity shared by related acts; separate from label.'), minLength: 1, pattern: '\\S'};
 const integer = (minimum, maximum, description) => ({type: 'integer', minimum, maximum, ...(description ? {description} : {})});
 const pageSize = (minimum, maximum, description) => integer(minimum, Number.MAX_SAFE_INTEGER, description + ' Clamped to ' + maximum + '.');
 const object = (properties = {}, required = []) => ({type: 'object', properties, required, additionalProperties: false});
+// A nested presence check declares its own field for strict JSON Schema readers.
+const present = key => ({properties: {[key]: {}}, required: [key]});
 const authoredObject = (properties, required = []) => ({...object(properties, required), 'x-rapier-strict': true});
 // The editor bridge: a device preference and a device action, each answered by an open editor with a receipt. The value domains
 // come from the one preference table (shell/preferences.mjs); the call that sets one states them once, in the words an agent reads.
@@ -27,49 +32,37 @@ const preferenceValue = {type: ['string', 'boolean'], maxLength: EDITOR_LIMITS.p
 const preferenceNames = Object.keys(PREFERENCE_SCHEMAS);
 const preferenceSnapshot = object(PREFERENCE_SCHEMAS, preferenceNames);
 const editorView = {type: 'string', enum: ['formatted', 'source', 'notes']};
-export const SET_VIEW_SCHEMA = object({view: {...editorView, description: 'Choose a document mode using view alone; to change a device preference instead, pass preference and value together.'}, preference: {type: 'string', enum: preferenceNames},
-  value: {...preferenceValue, description: 'Text, except true and false, which are booleans. ' + PREFERENCE_WORDS}});
+export const SET_VIEW_SCHEMA = object({view: editorView}, ['view']);
+export const SET_PREFERENCES_SCHEMA = {...object({preference: {type: 'string', enum: preferenceNames.filter(name => PREFERENCE_DEFINITIONS[name].agent !== false)}, value: preferenceValue}, ['preference', 'value']),
+  oneOf: preferenceNames.filter(name => PREFERENCE_DEFINITIONS[name].agent !== false).map(name => ({properties: {preference: {type: 'string', const: name}, value: PREFERENCE_SCHEMAS[name]}}))};
 const editorPassage = {
-  text: {...string(EDITOR_LIMITS.textChars, 'The passage. Supply exactly one of text or context_handle.'), minLength: 1},
-  context_handle: {...string(128, 'An inspected passage of at most 4,096 characters. Supply exactly one of context_handle or text.'), minLength: 1}};
-export const READ_ALOUD_SCHEMA = authoredObject(editorPassage);
-export const COPY_SCHEMA = authoredObject({...editorPassage,
-  format: {type: 'string', enum: EDITOR_COPY_FORMATS, description: 'markdown by default; plain strips formatting, formatted writes rich text, complete carries embedded images and requires context_handle.'}});
+  text: {...string(EDITOR_LIMITS.textChars, 'Exactly one of text or context_handle.'), minLength: 1},
+  context_handle: {...string(128, 'Inspected passage, at most 4,096 characters.'), minLength: 1}};
+const passageChoice = {oneOf: [{...present('text'), not: present('context_handle')}, {...present('context_handle'), not: present('text')}]};
+export const READ_ALOUD_SCHEMA = {...authoredObject(editorPassage), ...passageChoice};
+export const COPY_SCHEMA = {...authoredObject({...editorPassage,
+  format: {type: 'string', enum: EDITOR_COPY_FORMATS, description: 'complete requires context_handle and carries embedded resources.'}}), ...passageChoice, allOf: [{if: {properties: {format: {type: 'string', const: 'complete'}}, required: ['format']}, then: present('context_handle')}]};
 export const OPEN_FILE_SCHEMA = authoredObject();
 export const INSTALL_PLUGIN_SCHEMA = authoredObject({plugin: {type: 'string', enum: EDITOR_PLUGINS,
-  description: 'The built-in plug-in to install on this device: math (TeX maths), mermaid (every Mermaid diagram type), pdf (opens PDF files), ocr (finds text in pictures), or a Draw letter set (letters-field, letters-relief, letters-leaf, letters-arabesque). No URL or custom file is accepted.'}}, ['plugin']);
+  description: 'Named built-in only; see guide topic device.'}}, ['plugin']);
 // The editor's own report of one request: closed tightly, because the editor's page wrote it.
 const receiptStatus = {type: 'string', enum: ['applied', 'waiting', 'done', 'declined', 'unavailable']};
 const editorReceipt = object({id: ref, status: receiptStatus,
   preference: {type: 'string', enum: preferenceNames}, action: {type: 'string', enum: EDITOR_ACTIONS}, value: preferenceValue,
   previous: preferenceValue, superseded: {type: 'boolean'}, current: preferenceValue, reason: string(96)}, ['status']);
-// The same receipt as a result or an observation returns it: the kernel wrote that, so only its shape is stated.
-const scalar = {type: ['string', 'boolean']};
-const receiptResult = object({id: ref, status: receiptStatus, preference: {type: 'string'}, action: {type: 'string'}, value: scalar, previous: scalar,
-  superseded: {type: 'boolean'}, current: scalar, reason: {type: 'string'}}, ['status']);
-const editorContext = object({preferences: {type: ['object', 'null'], additionalProperties: true,
-  description: 'Each control by name, as the editor shows it now; document.set_view lists what each takes.'},
-  receipts: {type: 'array', items: receiptResult, maxItems: EDITOR_LIMITS.receipts}}, ['preferences', 'receipts']);
-const kinds = {type: 'string', enum: ['markdown', 'text', 'code'], description: 'markdown, text or code; the filename decides when absent.'};
+const kinds = {type: 'string', enum: ['markdown', 'text', 'code']};
 const ids = {type: 'array', items: ref, minItems: 1, maxItems: 128, uniqueItems: true};
-// Every argument says what it takes: a shape guessed from a name is a wasted call.
-const cursor = string(128, 'Continues the previous page.');
-const within = string(128, 'An outline ref to stay inside.');
-const editBatch = object({edits: {type: 'array', minItems: 1, maxItems: 16, description: 'Up to 16 edits, settled together.', items: object({
-  context_handle: string(128, 'The handle for exactly the text this edit touches, from read_context or find.'),
-  text: string(262144, 'Replacement or insertion source. Markdown is literal, without an outer display fence; Mermaid ends at its closing fence.'),
-  placement: {type: 'string', enum: ['replace', 'before', 'after'], description: 'replace (default) swaps the disclosed text; before or after inserts beside it.'}}, ['context_handle', 'text'])},
-  label: string(120, 'A short name the person sees for this change.'), note: string(240, 'A sentence for the person about this change.')}, ['edits']);
-const reviewCause = {enum: ['will', 'ask', 'check', 'proposal']};
-// The six files document.export writes: the worker makes the first four alone, the open editor builds Word and PDF.
+const cursor = string(128);
+const within = string(128, 'Current outline ref.');
+const editBatch = object({edits: {type: 'array', minItems: 1, maxItems: 16, items: object({
+  context_handle: ref, text: editText, placement: {type: 'string', enum: ['replace', 'before', 'after']}}, ['context_handle', 'text'])},
+  label: string(120), note: string(240), turn_id}, ['edits']);
 const EXPORT_FORMATS = ['markdown', 'html', 'txt', 'page', 'docx', 'pdf'];
-const document = string(64, "The document value rapier.open returned. With a connected host it names the workspace and the connection is the authority; without one it is the workspace's whole authority, so keep it private.");
-export const RESULT_SCHEMA = {type: 'object', properties: {outcome: {type: 'string'}, reason: {type: 'string'}, cause: reviewCause, reviewId: ref, document, documentId: {type: 'string'}, documentRevision: {type: 'integer'}, representation: {const: 'source'}}, required: ['outcome'], additionalProperties: true};
+const document = string(64, 'Workspace value from rapier.open; keep private.');
+// Results keep their real fields. This envelope does not confuse acceptance, commitment, presentation or delivery.
+export const RESULT_SCHEMA = {type: 'object', properties: {outcome: {type: 'string'}, reason: {type: 'string'}}, additionalProperties: true};
 const count = {type: 'integer', minimum: 0};
 const flag = {type: 'boolean'};
-const viewState = object({current: {...editorView, type: ['string', 'null'], enum: [...editorView.enum, null]},
-  requested: editorView, id: ref, status: string(32), reason: string(160), kind: string(32), revision: count});
-const nullableRef = {type: ['string', 'null'], maxLength: 128};
 const rows = item => ({type: 'array', items: item});
 const drawingId = {...string(64), minLength: 1, pattern: '^[A-Za-z0-9_-]+$'};
 const shapeIds = described({...ids, items: drawingId}, 'The ids of the shapes it acts on.');
@@ -89,7 +82,7 @@ const drawingLook = {
   lineHeight: drawingNumber(1, 2.5), letterSpacing: drawingNumber(-.2, .6), wordSpacing: drawingNumber(-.2, 1),
   textCase: drawingChoice(['upper', 'lower', 'small']), textKern: drawingFlag,
   textFigures: drawingChoice(['oldstyle', 'lining', 'tabular']), textWrap: drawingChoice(['balance'], 'Balanced label wrapping, or null.'),
-  labelWidth: drawingNumber(6, 65536), labelIn: drawingFlag, labelPos: drawingNumber(0, 1), labelBeside: drawingFlag,
+  labelWidth: drawingNumber(6, 65536), labelIn: drawingFlag, labelPos: drawingNumber(0, 1),
   labelAlign: drawingChoice(['start', 'middle', 'end']), labelVAlign: drawingChoice(['top', 'middle', 'bottom']),
   step: {type: ['integer', 'null'], minimum: 1, maximum: 99, description: 'The step number above the label inside a box; null removes it.'},
   opacity: drawingNumber(.05, 1), textEffect: drawingChoice(['pressed', 'garden']),
@@ -128,7 +121,7 @@ const drawingOperations = {type: 'array', maxItems: 64, description: 'Edits on i
 }, ['type'])};
 // Deep figure/shape checks live in draw/core.mjs (_rapierDrawLowerFigures, _rapierDrawApplyShapesPatch, _rapierDrawAdmitRecipe): a bounded container here.
 const record = {type: 'object', additionalProperties: true};
-const drawFigures = {type: 'array', maxItems: 128, items: record, description: 'Figures use kind, not type. Example: [{"kind":"rect","id":"start","label":"Start"},{"kind":"rect","id":"end","label":"Finish"},{"kind":"arrow","from":"start","to":"end"}]. Omit x, y, w and h for automatic layout. Figures create a new drawing; on an existing or open drawing, send the same figures in shapes.add or shapes.replace. Paint with real brushes: {"kind":"paint","seed":1,"strokes":[{"brush":"rapier/oil","colour":"#2255cc","size":50,"points":[[x,y,pressure],...]}]}. Water uses {"kind":"paint","mode":"water","seed":1,"paper":"cold-press","actions":[{"kind":"stroke","brush":"water/round","pigment":"ultramarine","paths":[[[10,10,0.7,0],[20,15,0.5,6]]]}]}; get_context.paint lists every brush; rapier.guide with topic paint lists the complete pigment palette, paper settings, controls and actions. Water path points are [x,y,pressure,tick], with integer ticks at 60 per second. Text uses an action {"kind":"text","text":"Hi","at":[10,10],"textSize":16}; Trace uses {"kind":"trace","shapeId":"outline"} from the inspected drawing. Both take brush, pigment and controls. Paint size is 0-100; load and water 0-1; angle 0-179 degrees; follow and erase are booleans. Point samples use x and y in drawing units, with optional pressure 0-1. In shapes.replace, a paint figure names the inspected layer id and edits its existing material and transform.'};
+const drawFigures = {type: 'array', maxItems: 128, items: record, description: 'Native kind-tagged figures; automatic layout when coordinates are absent. Paint/Water retain pressure and ticks. See guide topics drawing and paint.'};
 const dial = (type, description, extra = {}) => ({type, description, ...extra});
 const drawDials = described(object({background: dial(['object', 'null'], 'The canvas background as a recipe carries it, {kind, ...}; send the kind alone to take the person\'s starting values for every number you leave out. null removes it.', {additionalProperties: true}),
   paper: dial(['string', 'null'], 'The canvas colour; null returns it to automatic.', {enum: ['white', 'black', null]}),
@@ -137,12 +130,12 @@ const drawDials = described(object({background: dial(['object', 'null'], 'The ca
   frame: {...object({x: {type: 'number', minimum: -65536, maximum: 65536}, y: {type: 'number', minimum: -65536, maximum: 65536}, w: {type: 'number', minimum: 1, maximum: 65536}, h: {type: 'number', minimum: 1, maximum: 65536}}, ['x', 'y', 'w', 'h']), type: ['object', 'null'], description: 'The rectangle the picture is saved as; null follows the ink.'},
   light: {type: 'number', description: 'The light direction in radians.'}, smooth: integer(0, 100, 'The pen smoothing.'), nib: integer(2, 24, 'The pen width.')}),
   'The drawing\'s own settings, each replacing the one it names and landing on an open drawing as one Undo step: background, paper, effect, canvas, frame, light, smooth and nib.');
-const drawShapesPatch = described(object({set: drawDials, add: {type: 'array', maxItems: 128, items: record, description: 'Figures or shapes to add.'}, replace: {type: 'array', maxItems: 128, items: record, description: 'Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape. A kind:paint figure with id and strokes paints into that existing Paint layer. Water uses id, mode:water and actions. Both preserve the inspected material and transform.'}, remove: described({...ids, items: drawingId}, 'The ids to remove.')}), 'A patch to an existing drawing. On a drawing the person has open it lands at once, or the moment their hand leaves the canvas; their own work is kept.');
+const drawShapesPatch = described(object({set: drawDials, add: {type: 'array', maxItems: 128, items: record, description: 'Figures or shapes to add.'}, replace: {type: 'array', maxItems: 128, items: record, description: 'Complete replacement shapes, each by its id. Copy the inspected shape and change only the intended fields; id and label alone are not a shape. A kind:paint figure with id and strokes paints into that existing Paint layer. Water uses id, mode:water and actions. Both preserve the inspected material and transform.'}, remove: described({...ids, items: drawingId}, 'The ids to remove.')}), 'Edit the inspected drawing; live human work is preserved.');
 
 const svgValueMap = (names, numeric = false) => ({type: 'object', minProperties: 1, maxProperties: 64,
-  propertyNames: names ? {enum: names} : {pattern: '^[A-Za-z_][A-Za-z0-9_.:-]*$'},
+  propertyNames: names ? {type: 'string', enum: names} : {type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_.:-]*$'},
   additionalProperties: {type: numeric ? ['string', 'number', 'null'] : ['string', 'null'], maxLength: 16384}});
-const node_edits = {type: 'array', minItems: 1, maxItems: 128, description: 'Value edits on the imported SVG nodes disclosed by read_context. Definitions, gradients, clips, transforms, references and untouched source bytes are retained. Unsafe content is refused by field. null removes an optional attribute or style property.', items: authoredObject({
+const node_edits = {type: 'array', minItems: 1, maxItems: 128, description: 'Value edits on the imported SVG nodes disclosed by document.read. Definitions, gradients, clips, transforms, references and untouched source bytes are retained. Unsafe content is refused by field. null removes an optional attribute or style property.', items: authoredObject({
   id: {type: 'string', maxLength: 1024, pattern: '^svg:0(?:\\.[0-9]+)*$', description: 'The inspected structural node id.'},
   text: string(16384, 'Character data of a leaf text, tspan, textPath, title or desc. Markup remains text.'),
   attributes: described(svgValueMap(null), 'SVG attributes by exact name. Use style for CSS; namespaces, event handlers, scripts and external references are refused.'),
@@ -150,29 +143,6 @@ const node_edits = {type: 'array', minItems: 1, maxItems: 128, description: 'Val
   geometry: described(svgValueMap(['x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'fx', 'fy', 'fr', 'width', 'height', 'dx', 'dy', 'd', 'points', 'pathLength', 'transform', 'viewBox', 'preserveAspectRatio', 'rotate', 'textLength', 'lengthAdjust', 'startOffset', 'offset', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'gradientTransform', 'patternTransform'], true), 'Geometry supported by the inspected element. Numbers or SVG value strings; paths, point lists and transforms retain SVG syntax.'),
 }, ['id'])};
 const drawAlt = {...string(240, 'The caption, as the person reads it (required on create). With recipe_handle it can be edited alone.'), minLength: 1};
-const page = {next_cursor: nullableRef, complete: flag, remaining: count, omitted: count};
-const change = {collaboration: record, changeId: nullableRef, contribution, editCount: count, transaction: record, structure: record, drawingPatch: record, drawingReceipt: record, receipt: record};
-// open is the comparison's remaining-undecided count, distinct from the typed `pending` envelope field: an integer and an object never share a name.
-const comparison = {compareId: ref, name: string(512), contribution, changes: count, open: count, accepted: count, rejected: count, items: rows(record), remaining: count, enumerate: record};
-const comparisonVisible = {...flag, description: 'Present only when a local editor confirmed the comparison. Omitted for asynchronous hosted rendering; this is not editor presence. get_context reports presence.'};
-// pending: {kind:'surface-fact', requestId, requirements} or {kind:'human-review', proposalId, requirements}.
-const pending = {type: ['object', 'null'], properties: {kind: {enum: ['surface-fact', 'human-review']}, requestId: ref, proposalId: ref, requirements: record}, additionalProperties: true};
-const posture = {enum: ['free', 'check', 'ask']};
-const laws = {enum: ['edit', 'append', 'keep']};
-const review = {type: ['object', 'null'], properties: {id: ref, kind: {enum: ['proposal', 'inline', 'check']},
-  status: {enum: ['pending', 'approved', 'declined', 'invalidated']}, cause: reviewCause, law: laws, region: count,
-  revision: count, expiresAt: count, label: string(120), contribution, editCount: count, changeIds: rows(ref),
-  changes: rows(object({id: ref, status: string(32), reason: string(128), excerpt: string(80)}, ['id', 'status'])),
-  reason: string(128), complete: flag}, additionalProperties: true};
-const sourceChanges = object({sinceRevision: {type: ['integer', 'null'], minimum: 0}, throughRevision: count, complete: flag,
-  retainedChanges: count, omitted: count, reason: {enum: ['first_observation', 'retained_history_limited']},
-  changes: rows(object({changeId: ref, revision: count, actor: {enum: ['agent', 'human']}, agent: string(64), yours: flag,
-    operation: string(64), label: string(96), contribution, insertedChars: count, removedChars: count,
-    targets: rows(object({ref, chars: count}, ['ref', 'chars']))}, ['changeId', 'revision', 'actor', 'yours', 'targets']))},
-  ['sinceRevision', 'throughRevision', 'complete', 'changes']);
-const returnedPage = object({return_id: ref, name: string(256), receivedAt: string(64), bytes: count, chars: count},
-  ['return_id', 'receivedAt', 'bytes', 'chars']);
-const exportedFile = {filename: string(MAX_FILENAME_CHARS), mimeType: string(64), bytes: count, limitBytes: count, exportId: ref, exportExpiresAt: string(64)};
 const noteReminder = {...object({at: integer(1, 8640000000000000, 'The first occurrence, in Unix milliseconds.'),
   repeat: {type: 'string', enum: ['daily', 'weekly', 'monthly', 'yearly', 'weekdays', 'custom']},
   every: integer(1, 2147483647, 'custom: the interval.'), unit: {type: 'string', enum: ['days', 'weeks', 'months', 'years']},
@@ -182,184 +152,96 @@ const noteFields = {pinned: flag, colour: {type: 'string', enum: ['', 'red', 'or
   section: string(48, 'A custom section name, created if needed; empty clears the assignment. Skills stays the person\'s choice.'),
   tags: {type: 'array', items: string(128), maxItems: 64, description: 'Replaces the note\'s front-matter tags; an empty list clears them.'},
   archived: flag, trashed: flag, reminder: noteReminder};
-const reviewDecision = object({reviewId: ref, changeId: ref, decision: {enum: ['kept', 'dropped']},
-  kind: {enum: ['proposal', 'inline', 'check']}, revision: count, at: count, operation: string(64),
-  removed: string(160), inserted: string(160), removedChars: count, insertedChars: count},
-  ['reviewId', 'changeId', 'decision', 'kind', 'revision', 'at', 'operation', 'removed', 'inserted', 'removedChars', 'insertedChars']);
-const continuation = object({
-  person: object({kept: rows(reviewDecision), dropped: rows(reviewDecision), decisionsComplete: flag, omittedDecisions: count,
-    intents: rows(object({region: count, law: laws, start: count, end: count, text: string(512)}, ['region', 'law', 'start', 'end', 'text'])),
-    intentsComplete: flag, omittedIntents: count}, ['kept', 'dropped', 'decisionsComplete', 'omittedDecisions', 'intents', 'intentsComplete', 'omittedIntents']),
-  agent: object({reviewId: nullableRef, kind: {enum: ['proposal', 'inline', 'check']}, cause: reviewCause,
-    pendingChangeIds: rows(ref), inDocument: flag, complete: flag, omitted: count}, ['reviewId', 'pendingChangeIds', 'inDocument', 'complete', 'omitted']),
-}, ['person', 'agent']);
-const resultProperties = {
-  'rapier.guide': {instructions: {type: 'string'}, paint: record},
-  'rapier.open': {created: flag, replayed: flag, message: string(256), editor_url: string(256)},
-  'document.pair_browser': {paired: flag, owner_approval_url: string(2048)},
-  'document.pair_status': {pairingCode: string(8), paired: flag, codeExpiresAt: string(64), owner_approval_url: string(2048)},
-  'document.get_context': {surface: object({kind: {enum: ['editor', 'headless']}, next: {enum: ['continue', 'deliver_page']}}, ['kind', 'next']),
-    view: viewState,
-    editing: object({mode: {enum: ['read_only', 'review_pending', 'review_required', 'blocked', 'inspect']},
-      reason: {enum: ['document_read_only', 'will', 'ask', 'check', 'proposal', 'document_law', 'review_history_unavailable', 'inspect_target']}}, ['mode', 'reason']),
-    returns: rows(returnedPage), returnWaiting: flag, filename: string(MAX_FILENAME_CHARS), docKind: kinds, chars: count, readOnly: flag, posture, notes: record, history: record,
-    law: object({default: laws, regions: count, laws: rows(laws), faults: rows(object({mode: string(64), line: count, start: count, end: count})), faultCount: count}, ['default', 'regions', 'laws']),
-    compare: {type: 'object', properties: comparison, additionalProperties: true},
-    collaboration: object({posture, readOnly: flag, presence: {type: ['object', 'null'], additionalProperties: true}, agentPresence: record, review, drawingIntent: {type: ['object', 'null'], additionalProperties: true}}, ['posture', 'readOnly', 'presence', 'agentPresence', 'review']),
-    sourceChanges, continuation, brief: object({source: {const: 'document'}, authority: {const: false}, text: string(2048), start: count, end: count, sectionEnd: count, complete: flag,
-      remaining: count, reason: string(64), omissions: rows(record)}, ['source', 'authority', 'text', 'start', 'end', 'sectionEnd', 'complete', 'remaining']),
-    layout: record, images: record, paint: record, drawing: record, editor: editorContext, comments: object({total: count, open: count, stale: count, reason: string(64)}, ['total', 'open', 'stale'])},
-  'document.get_outline': {...page, engine: {type: ['string', 'null']}, total: count, items: rows({type: 'object', properties: {ref: nullableRef, kind: string(64), depth: count, label: string(192), chars: count, layout: record}, additionalProperties: true}), pending},
-  'document.read_context': {...page, pending, objectId: drawingId, paintSample: record, sha256: string(64), return_id: ref, name: string(256), receivedAt: string(64), text: string(12288), start: count, end: count, handle: nullableRef, recipe_handle: nullableRef, drawing: record, complete_handle: ref, comment_handle: ref, coverage: record, expires_in_ms: count, omissions: rows(record), layout: record, images: record, change_id: ref, status: string(32), removed: string(4096), inserted: string(4096), removed_chars: count, inserted_chars: count, compareId: ref, removed_start: count, removed_end: count, inserted_start: count, inserted_end: count},
-  'document.find': {...page, matches: rows({type: 'object', properties: {matched: string(12288), handle: nullableRef, snippet: string(192), section_ref: ref, section: string(192), start: count, end: count, handle_scope: {type: 'string', enum: ['matched', 'change']}}, additionalProperties: true}), pending},
-  'document.inspect_visual': {representation: {type: 'string', enum: ['source', 'visual']}, observation: record, drawing: record, pending},
-  'document.visual_ack': {representation: {type: 'string', enum: ['source', 'visual']}},
-  'document.set_view': {receipt: receiptResult, pending, view: viewState},
-  ...Object.fromEntries(Object.keys(EDITOR_TOOL_ACTIONS).map(name => [name, {receipt: receiptResult, pending}])),
-  'document.editor_ack': {receipt: receiptResult, editorId: ref},
-  'document.material_ack': {materialId: ref},
-  'document.list_comments': {...page, threads: rows(record), thread: record, messages: rows(record), total: count},
-  'document.comment': {...change, threadId: ref, messageId: ref, pending},
-  'document.apply_edits': {...change, handle: described(ref, 'A handle for one inserted span of the successful batch, when that span admits an edit handle.'), pending},
-  'document.propose': {page: string(8192), sha256: string(64), baseRevision: string(256), reviewId: ref, ...exportedFile},
-  'document.propose_edits': {...change, review: record, pending},
-  'document.undo_agent_change': {...change, pending, replaced: ref, asset: record},
-  'document.open_text': {...change, filename: string(MAX_FILENAME_CHARS), docKind: kinds},
-  'document.show_changes': {...comparison, changeId: ref, visible: comparisonVisible, review_only: flag},
-  'document.compare': {...comparison, visible: comparisonVisible, ...change, decided: count, closed: flag},
-  'document.reveal': {revealed: flag},
-  'document.point': {status: {enum: ['shown', 'deferred', 'expired']}, pointerId: ref, createdAt: count, expires_at: count, lifetime: count},
-  'document.wait_for_user': {text: string(1500), selection: record, truncated: flag, returned: record},
-  'document.create_return': {return_url: string(512), return_id: ref, return_expires_at: string(64), max_bytes: count},
-  'document.export': {format: {enum: EXPORT_FORMATS}, ...exportedFile, mimeType: string(128), downloadUrl: string(8192), fidelity: record, pages: count, issues: rows(record),
-    availableFormats: rows({enum: EXPORT_FORMATS.slice(0, 4)}), pending},
-  'document.save': {saved: flag, verified: flag, filename: string(MAX_FILENAME_CHARS)},
-  'document.draw': {...change, asset: record, width: count, height: count, removed: flag, recipe_handle: nullableRef, svg_handle: nullableRef},
-  'document.rotate_capability': {rotated: flag, rotations: count, rotatedAt: string(64), sealed: string(512)},
-  'notes.list': {...page, availability: {enum: ['available', 'locked', 'unavailable']}, notes: rows({type: 'object', properties: {file: string(256), title: string(192), section: string(64), modified: count}, additionalProperties: true})},
-  'notes.propose': {availability: {enum: ['available', 'locked', 'unavailable']},
-    file: {...string(256, 'The created or updated note, or the separate proposal file when applied is false.'), type: ['string', 'null']},
-    applied: {...flag, description: 'true for an immediate creation or replacement; false when the requested update waits for review.'}},
-  'notes.read': {...page, availability: {enum: ['available', 'locked', 'unavailable']}, found: flag, file: string(256), version: count, text: {...string(12288), type: ['string', 'null']}, start: count, end: count},
-  'notes.set': {availability: {enum: ['available', 'locked', 'unavailable']}, file: string(256), changed: record, previous: record, reminder: object({device: {const: 'app'}, saved: flag, delivery: {const: 'device_managed'}})},
-  'notes.history': {...page, availability: {enum: ['available', 'locked', 'unavailable']}, file: string(256), found: flag,
-    versions: rows(object({version: count, time: count, reason: string(64), size: count, current: flag})), tidied: count, tidiedAt: {type: ['integer', 'null'], minimum: 0}},
-  'notes.sync': {availability: {enum: ['available', 'locked', 'unavailable']}, action: {const: 'now'}, synced: flag, complete: flag, unchanged: flag, skipped: count, missing: count, backedUpAt: {type: ['integer', 'null'], minimum: 0}},
-};
-// Shared admission and durable acknowledgement paths precede each tool's own result paths.
-const hostFailures = ['refused', 'uncertain'];
-const kernelFailures = ['invalid', ...hostFailures];
-const invocationFailures = [...kernelFailures, 'replayed'];
-const outcomes = {
-  'rapier.guide': ['ok'],
-  'rapier.open': ['created', 'current', ...hostFailures],
-  'document.inspect_visual': ['ok', 'pending', ...kernelFailures],
-  'document.set_view': ['ok', 'pending', 'conflict', 'yielded', ...invocationFailures],
-  ...Object.fromEntries(Object.keys(EDITOR_TOOL_ACTIONS).map(name => [name, ['ok', 'pending', 'target_gone', 'conflict', ...invocationFailures]])),
-  'document.list_comments': ['ok', 'target_gone', 'conflict', ...kernelFailures],
-  'document.comment': ['applied', 'unchanged', 'target_gone', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'document.get_context': ['ok', 'conflict', ...kernelFailures],
-  'document.get_outline': ['ok', 'pending', 'target_gone', 'conflict', 'yielded', ...kernelFailures],
-  'document.read_context': ['ok', 'pending', 'target_gone', 'conflict', 'yielded', ...kernelFailures],
-  'document.find': ['ok', 'pending', 'target_gone', 'conflict', 'yielded', ...kernelFailures],
-  'document.apply_edits': ['applied', 'rebased', 'unchanged', 'target_gone', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'document.propose': ['ok', 'target_gone', 'conflict', 'pending', ...invocationFailures],
-  'document.propose_edits': ['unchanged', 'target_gone', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'document.undo_agent_change': ['applied', 'pending', 'unchanged', 'target_gone', 'conflict', 'yielded', ...invocationFailures],
-  'document.show_changes': ['ok', 'target_gone', 'conflict', ...invocationFailures],
-  'document.compare': ['ok', 'applied', 'unchanged', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'document.open_text': ['applied', 'unchanged', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'document.reveal': ['ok', 'target_gone', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'document.point': ['shown', 'deferred', 'expired', 'target_gone', 'conflict', 'yielded', ...invocationFailures],
-  'document.create_return': ['ok', ...invocationFailures],
-  'document.wait_for_user': ['ok', 'message', 'selection', 'timeout', 'document_replaced', ...invocationFailures],
-  'document.save': ['ok', 'saved', 'unchanged', 'conflict', 'cancelled', 'unacknowledged', 'failed', ...invocationFailures],
-  'document.export': ['ok', 'pending', ...invocationFailures],
-  'document.draw': ['applied', 'rebased', 'unchanged', 'target_gone', 'conflict', 'yielded', 'pending', ...invocationFailures],
-  'notes.list': ['ok', 'target_gone', 'conflict', ...kernelFailures],
-  'notes.read': ['ok', 'target_gone', 'conflict', ...kernelFailures],
-  'notes.propose': ['ok', ...invocationFailures],
-  'notes.set': ['ok', 'conflict', ...invocationFailures],
-  'notes.history': ['ok', 'target_gone', 'conflict', ...kernelFailures],
-  'notes.sync': ['ok', ...invocationFailures],
-  'document.sync': ['current', ...hostFailures],
-  'document.commit': ['committed', ...hostFailures],
-  'document.compare_decide': ['ok', 'applied', 'unchanged', 'conflict', 'yielded', ...invocationFailures],
-  'document.human_context': ['ok', 'invalid', 'conflict', ...hostFailures],
-  'document.set_policy': ['ok', 'invalid', ...hostFailures],
-  'document.review_decide': ['ok', 'applied', 'rebased', 'unchanged', 'target_gone', 'conflict', 'pending', ...invocationFailures],
-  'document.visual_ack': ['ok', ...hostFailures],
-  'document.export_ack': ['ok', ...hostFailures],
-  'document.editor_ack': ['ok', ...hostFailures],
-  'document.material_ack': ['ok', ...hostFailures],
-  'document.view_ack': ['ok', ...hostFailures],
-  'document.rotate_capability': ['rotated', ...hostFailures],
-  'document.pair_browser': ['confirmation_required', ...hostFailures],
-  'document.pair_status': ['waiting', 'owner_confirmation_required', 'confirmation_required', 'paired', 'cancelled', ...hostFailures],
-  'document.delete': ['deleted', ...hostFailures],
-};
-// Classes describe maximum effects; they do not grant authority or replace protocol permission hints.
+// Effects describe maximum consequences; authority remains enforced at the owner.
 const EFFECT_CLASSES = Object.freeze({read: 'read', view: 'write', write: 'write', create: 'write', durable: 'sensitive-write', destructive: 'sensitive-write'});
+const inputGuides = new Map();
+// Prose is available by operation in the focused guide; executable constraints stay on every direct tool.
+function conciseInput(schema) {
+  if (!schema || typeof schema !== 'object') return schema;
+  const value = {...schema};
+  delete value.description;
+  if (value.required?.length === 0) delete value.required;
+  // Property names are data: a field literally named description must never disappear.
+  for (const key of ['properties', '$defs']) if (schema[key]) value[key] = Object.fromEntries(Object.entries(schema[key]).map(([name, child]) => [name, conciseInput(child)]));
+  for (const key of ['oneOf', 'anyOf', 'allOf']) if (schema[key]) value[key] = schema[key].map(conciseInput);
+  for (const key of ['items', 'additionalProperties', 'propertyNames', 'not', 'if', 'then', 'else']) if (schema[key] && typeof schema[key] === 'object') value[key] = conciseInput(schema[key]);
+  return value;
+}
 const tool = (name, title, description, effect, inputSchema = object()) => {
   if (!Object.hasOwn(EFFECT_CLASSES, effect)) throw new Error('Undeclared tool effect');
-  const outcome = {type: 'string', enum: outcomes[name]};
-  return Object.freeze({name, title, description, effect, class: EFFECT_CLASSES[effect], inputSchema, outputSchema: name === 'rapier.guide'
-    ? object({outcome, ...resultProperties[name]}, ['outcome', 'instructions'])
-    : {...RESULT_SCHEMA, properties: {...RESULT_SCHEMA.properties, outcome, ...resultProperties[name]}}});
+  inputGuides.set(name, inputSchema);
+  return Object.freeze({name, title, description, effect, class: EFFECT_CLASSES[effect], inputSchema: conciseInput(inputSchema), outputSchema: RESULT_SCHEMA});
 };
-// A display name the assistant gives itself. Not a principal: undo without a change id uses it to find that name's latest change.
-const agentName = string(64, 'This assistant\'s display name.');
+const agentName = string(64, 'Attribution only, never authority.');
 const documentTool = (name, title, description, effect, inputSchema = object()) =>
-  tool(name, title, description, effect, agentInputSchema({...inputSchema, ...object({...inputSchema.properties, agent: agentName, operation_id: operationId}, inputSchema.required)}));
+  tool(name, title, description, effect, agentInputSchema({...inputSchema, properties: {...inputSchema.properties, agent: agentName, operation_id: operationId}}));
+const tag = value => ({type: 'string', const: value});
+const target = (kind, properties = {}, required = []) => object({kind: tag(kind), ...properties}, ['kind', ...required]);
+const actTarget = {oneOf: [target('act', {act_id}, ['act_id']), target('turn', {turn_id}, ['turn_id'])]};
+const range = {start: integer(0, MAX_TEXT_BYTES), end: integer(0, MAX_TEXT_BYTES)};
+const locator = {ref, context_handle: ref, ...range};
+const readTarget = {oneOf: [target('source', locator), target('drawing', {...locator, objectId: drawingId}), target('svg', locator),
+  {...target('comparison', {context_handle: ref, change_id: ref}), oneOf: [{...present('context_handle'), not: present('change_id')}, {...present('change_id'), not: present('context_handle')}]}, target('return', {return_id: ref, start: range.start}, ['return_id'])]};
+const noteRef = {...string(160, 'Owner-issued NoteRef from notes.find; not a document capability.'), minLength: 1};
+const foreground = object({binding: string(256), generation: integer(0, Number.MAX_SAFE_INTEGER)}, ['binding', 'generation']);
 
 export const TOOLS = Object.freeze([
-  documentTool('document.set_view', 'Set the editor view', "Pass view alone to show the formatted document, its exact source or the Notes cards; navigation waits until the person finishes typing, and get_context.view reports it. Pass preference and value together to change a device preference (theme, accent, text size, headings, layout, code view, the pen, the Notes view); its receipt carries the previous value for Undo. The person's later choice wins. Read-only mode, Notes skills and assets stay the person's alone.", 'view', SET_VIEW_SCHEMA),
-  documentTool('document.read_aloud', 'Read a passage aloud', "Asks the open editor to speak one passage on the person's device. Supply text or an inspected context_handle. The person taps a confirmation card before speech starts; the receipt says waiting, done, declined or unavailable.", 'view', READ_ALOUD_SCHEMA),
-  documentTool('document.copy', 'Copy a passage to the clipboard', "Asks the open editor to replace the device clipboard with one passage. Supply text or an inspected context_handle; complete excerpts require context_handle and include their embedded images. The person taps a confirmation card before copying; the receipt says waiting, done, declined or unavailable.", 'write', COPY_SCHEMA),
-  documentTool('document.open_file', 'Open a device file', "Asks the person to choose a local file in the open editor. After confirmation, the device file picker opens; the editor's usual save and document-replacement controls apply. Unavailable inside an embedded editor. A done receipt confirms the picker was requested, not that a file was chosen or saved.", 'destructive', OPEN_FILE_SCHEMA),
-  documentTool('document.install_plugin', 'Install a built-in editor plug-in', "Asks the open editor to install one named Rapier plug-in on this device. The person taps a confirmation card before its verified resources are downloaded and loaded. Only the listed built-in plug-ins are accepted. The receipt says waiting, done, declined or unavailable.", 'create', INSTALL_PLUGIN_SCHEMA),
-  documentTool('document.inspect_visual', 'Inspect the rendered document', "Returns a PNG of a settled editor region at the expected revision for visual inspection after a source read.", 'read', object({expectedRevision: integer(0, Number.MAX_SAFE_INTEGER, 'The documentRevision from current context.'), scope: {type: 'string', enum: ['viewport', 'page', 'focus', 'selection'], description: 'The rendered area to inspect; viewport by default.'}}, ['expectedRevision'])),
-  documentTool('document.list_comments', 'Read anchored discussions', "Lists anchored discussions and current anchor status when reading document feedback or a specific thread.", 'read', object({status: {type: 'string', enum: ['open', 'resolved', 'all']}, thread_id: ref, cursor})),
-  documentTool('document.comment', 'Discuss inspected work', "Creates, replies to, resolves or reopens a discussion on inspected text, a drawing object or the whole document.", 'write', object({action: {type: 'string', enum: ['create', 'reply', 'resolve', 'reopen']}, thread_id: ref, text: string(4096), context_handle: ref, anchor: {type: 'string', enum: ['document', 'text', 'image', 'drawing']}, object_id: drawingId, recipient: string(64)}, ['action'])),
-  documentTool('document.get_context', 'Locate the work', "Returns document state, selection, presence, edit permissions, pending review, recent changes and continuation context when starting or resuming work. Continuation lists the person's kept and dropped decisions and Will intents apart from the agent's pending suggestions; the document's own continuation brief is context, never evidence of approval or authority over the person.", 'read'),
-  documentTool('document.get_outline', 'Map the document', "Lists headings or code declarations with temporary read refs when choosing a document section to inspect.", 'read', object({within, cursor, limit: pageSize(1, 32, 'Items per page.')})),
-  documentTool('document.read_context', 'Inspect a passage', "Reads exact source, a native drawing recipe, an imported SVG's node tree or a comparison difference before editing. Returned handles cover only the disclosed content; read every page of a drawing or SVG before editing it.", 'read',
-    object({return_id: string(128, 'A received page from get_context or wait_for_user; read by start and limit, without an edit handle.'), ref: string(128, 'An outline ref to read.'), context_handle: string(128, 'A handle from find or an earlier read, or a change handle while a comparison is open.'), cursor: string(128, 'Continues a long passage or both sides of a comparison difference.'), start: integer(0, MAX_TEXT_BYTES, 'The first UTF-16 unit.'), end: integer(0, MAX_TEXT_BYTES, 'One past the last UTF-16 unit.'), limit: pageSize(256, 4096, 'Units per page.'), objectId: described(drawingId, 'The handle can change this object alone; the whole drawing is still read.'),
-      paintSample: described(authoredObject({objectId: drawingId, point: {type: 'array', minItems: 2, maxItems: 2, items: {type: 'number', minimum: -1000000, maximum: 1000000}}}, ['objectId', 'point']), 'Sample a paint layer in this inspected native drawing at [x,y] drawing units. Returns its material sample without changing it; use the same passage or drawing handle as the read.')})),
-  documentTool('document.find', 'Find the target', 'Finds known words in source or the open comparison and returns handles for each match. Use kind to locate code syntax or Markdown structure.', 'read',
-    object({query: string(512, 'The text to find. Empty enumerates every comparison difference. With kind: a code name, or the element\'s words (a heading also by # to ######, a task by [ ] or [x]); empty lists every Markdown element of the kind.'), scope: {type: 'string', enum: ['source', 'comparison'], description: 'Search source even while a comparison is open, or search comparison differences. Defaults to the open comparison, otherwise source.'}, case_sensitive: {type: 'boolean', description: 'Text search only: match case exactly (default: no). Omit when kind is given; code names are exact, Markdown words ignore case.'}, within, cursor, limit: pageSize(1, 16, 'Matches per page.'), kind: {type: 'string', enum: [...FIND_KINDS.code, ...FIND_KINDS.markdown], description: 'Code syntax or Markdown structure to match instead of text; fence matches a language, link a href, image an alt or label.'}}, ['query'])),
-  documentTool('document.apply_edits', 'Edit inspected text', "Applies a batch of changes to inspected passages when revising text. An applied or rebased result can return a handle for one inserted span. A pending outcome leaves the batch unapplied. A Mermaid flowchart is a mermaid fence written into the Markdown source here; Rapier renders it and keeps it as text.", 'write', editBatch),
-  documentTool('document.propose', 'Propose a document', "Stages a complete document alternative against an inspected base and creates an offline page for reviewing it. Workspace source changes only after approval.", 'create',
-    object({context_handle: ref, revision: integer(0, Number.MAX_SAFE_INTEGER), sha256: {...string(64), pattern: '^[a-f0-9]{64}$'}, text,
-      by: {...string(96, 'The proposal author\'s display name.'), minLength: 1}}, ['text', 'by'])),
-  documentTool('document.propose_edits', 'Propose inspected edits', "Stages changes to inspected passages for the person to approve or decline before application. Use the same contribution name on text and drawing changes to review them together; read a corrected target again to refresh its part.", 'view', object({...editBatch.properties, contribution}, editBatch.required)),
-  documentTool('document.undo_agent_change', 'Undo your change', "Reverses a selected agent change, a whole named contribution, or the latest change under the supplied agent name, while preserving later human work.", 'write', object({change_id: string(128, 'The changeId to reverse; absent selects the latest change under this call\'s agent name.'), contribution})),
-  documentTool('document.show_changes', 'Inspect your changes', "Replaces the open comparison with the diff of an applied agent revision or a whole named contribution, without changing document text or review decisions.", 'view', object({change_id: string(128, 'The changeId to show (default: your latest).'), contribution})),
-  documentTool('document.compare', 'Compare a complete alternative', "Opens a full-document comparison, accepts or rejects inspected differences, or closes the comparison when reviewing an alternative. Accepted differences change source.", 'view',
-    object({action: {type: 'string', enum: ['open', 'accept', 'reject', 'close'], description: 'open (default), accept, reject or close.'}, text: string(MAX_TEXT_BYTES, 'open: the whole alternative document.'), name: string(256, 'open: a name for the comparison.'), change_ids: described(ids, 'accept or reject: the differences; none means every remaining one.')})),
-  documentTool('document.open_text', 'Replace the working document', "Replaces the working document with supplied text when starting a different document here. Existing handles and comparisons are retired.", 'destructive', object({text: string(MAX_TEXT_BYTES, 'The whole new document.'), filename: string(MAX_FILENAME_CHARS, 'Its name; the extension sets the kind.'), docKind: kinds}, ['text'])),
-  documentTool('document.reveal', 'Show an inspected passage', "Requests presentation of an inspected passage or difference in the connected editor when the person needs to see it.", 'view', object({context_handle: string(128, 'The handle of the passage or difference to show.')}, ['context_handle'])),
-  documentTool('document.point', 'Point to inspected work', "Points at an inspected passage, drawing object, applied change or pending review change with a few words, without editing the document. Supply exactly one of context_handle or change_id. The pointer lasts 1 to 30 seconds and clears at your next change or the person's tap; the receipt says shown, deferred or expired.", 'view', object({context_handle: ref, change_id: ref, words: {...string(160, 'A few words beside the pointer.'), minLength: 1, pattern: '\\S'}, lifetime: integer(1, 30, 'Seconds the pointer lives; 6 by default.')}, ['words'])),
-  documentTool('document.create_return', 'Create a page return', "Creates a return receipt and address for an edited offline page. With a connected host the person confirms the upload in their connected browser; without one the address is its own one-use grant. It accepts one submission within 24 hours and before workspace expiry.", 'create'),
-  documentTool('document.wait_for_user', 'Receive the person’s reply', "Waits for the person's next selection, message or returned page when their response is needed, up to timeout_ms.", 'view', object({mode: {type: 'string', enum: ['selection', 'message'], description: 'What to wait for: a selection or a message.'}, after_return_id: string(128, 'Message mode: wait after this received return; absent, the latest retained return answers immediately.'), timeout_ms: {...integer(1000, 120000, 'How long to wait: 1,000 to 120,000 milliseconds; 20,000 by default.'), default: 20000}})),
-  documentTool('document.save', 'Save the document', "Saves to the person's chosen local destination, or confirms durable hosted storage, when keeping work. The receipt reports verification.", 'durable'),
-  documentTool('document.export', 'Export the document', "Creates a file link, up to 8 MiB: markdown is the exact source; html is the offline editor with its source inside; txt is the document's words as plain text; page is a standalone rendered web page; docx is Word; pdf carries raster pages, searchable text and the attached source. An open editor builds Word and PDF without a tap. The receipt states what each format keeps. With a connected host the link needs its connection; without one the link is its own grant. The stored file lasts up to 24 hours within the workspace lifetime.", 'create',
-    object({format: {type: 'string', enum: EXPORT_FORMATS, description: 'markdown, html, txt, page, docx or pdf.'}, review_id: string(128, 'A pending review to show in an html review page beside the original source; it is not applied or approved.')}, ['format'])),
-  // The short contract an agent reads each call (one registry). The exhaustive recipe/shape contract is the admitting code (draw/core.mjs
-  // _rapierDrawAdmitRecipe, _rapierDrawLowerFigures); never copy it into prose here. A refused figure names its field.
-  documentTool('document.draw', 'Draw a picture', "Creates or edits a native SVG drawing in the active document: movable, editable figures, a spatial sketch or a brush painting. Separate from Mermaid: a Mermaid flowchart is a fence in the Markdown source, inserted with document.apply_edits and rendered in the document. Read the drawing for recipe_handle. Change a drawing dial with shapes.set; a background kind or effect preset alone takes its starting values. Change an object with an operation. A complete recipe replaces the inspected recipe, including strokes and fonts, and uses the same open-canvas hand-off as a patch. An imported SVG without a Rapier recipe is edited node by node: read it for its node tree, then send svg_handle with node_edits. With contribution, the picture is staged with your words under that name for the person to keep or drop together; a patch to the drawing the person has open takes no contribution (it is refused draw_session_open), so it goes without one and lands at once.",
-    'write', object({presentation: object({open: described(flag, 'Open the committed drawing in the attached editor; true by default. Human navigation takes priority.'), replay: described(flag, 'Show the accepted turn through Draw replay; true by default. This never changes material simulation time.')}), recipe: described(record, 'A complete inspected drawing recipe. With recipe_handle it replaces canvas, paper, strokes and fonts. Redacted paint raster markers retain their original ids. Exclusive with shapes and figures.'), figures: drawFigures, direction: {type: 'string', enum: ['down', 'across', 'up', 'back'], description: 'The direction of automatic figure layout on create or shapes.add; down by default.'}, shapes: drawShapesPatch, operations: drawingOperations, recipe_handle: string(128, 'Edit: the handle from reading the drawing.'), svg_handle: string(128, 'Edit an imported SVG: the handle from its completed node-tree read. Use with node_edits, without recipe, figures, shapes or operations.'), node_edits, context_handle: string(128, 'Create: the block preceding the new drawing.'), alt: drawAlt, label: string(120, 'A short name the person sees for this change.'), contribution})),
-  documentTool('notes.list', 'List notes', 'Lists or searches Notes with Skills first. query uses the library search: words, quoted phrases, tag:, in:, is:, has:, colour:, before: and after:. Trash appears only when requested by the query. A changed catalogue refuses a continuation with notes_changed. An absent store returns notes_not_configured; a locked encrypted store returns notes_locked.', 'read', object({query: string(2048, 'The library search. A continuation keeps its original query; omit it or send the same value.'), cursor, limit: pageSize(1, 64, 'Notes per page.')})),
-  documentTool('notes.read', 'Read a note', 'Reads one note\'s exact text by file, including a note in Trash. version selects a retained event from notes.history; omit it for the current text. A changed note refuses a continuation with notes_changed. Reading a past version does not authorize replacing the current note.', 'read', object({file: string(256, 'The note\'s file from notes.list.'), version: integer(1, Number.MAX_SAFE_INTEGER, 'A version from notes.history.'), cursor, start: integer(0, MAX_TEXT_BYTES, 'The first UTF-16 unit.'), limit: pageSize(256, 12288, 'Units per page.')}, ['file'])),
-  documentTool('notes.set', 'Set note controls', 'Changes only the supplied note controls. Returns changed values and their exact previous values. Archive and Trash are reversible through the same tool; no permanent deletion. Tags stay in the Markdown front matter; a tag change is refused with notes_open while the person has the note open. Reminders are app-only and named in the receipt. Skills stays the person\'s choice.', 'write', object({file: string(256, 'The note\'s file from notes.list.'), ...noteFields}, ['file'])),
-  documentTool('notes.history', 'Read note history', 'Lists the note\'s retained versions, newest first, without changing the note. Read a version with notes.read. A changed history refuses the continuation with notes_changed.', 'read', object({file: string(256, 'The note\'s current file.'), cursor, limit: pageSize(1, 64, 'Versions per page.')}, ['file'])),
-  documentTool('notes.sync', 'Sync notes now', 'Runs the Notes sync the person has already configured and returns its outcome. A locked vault, missing connection or required sign-in is reported without opening setup or asking for credentials.', 'write', object({action: {type: 'string', enum: ['now']}}, ['action'])),
-  documentTool('notes.propose', 'Create or update a note', "Creates a new note immediately when of is omitted. With of, replaces an unchanged note only after this caller has read its complete current text, retaining the previous text in History. Unread, changed or open notes receive a separate proposal for review. The applied receipt states whether the requested change was written immediately.", 'write', object({text: string(MAX_TEXT_BYTES, 'The complete Markdown for the new note or replacement.'), title: string(200, 'A title for a new note or review proposal; direct replacements use text unchanged.'), of: string(256, 'The listed note to update. Omit to create a new note.')}, ['text'])),
+  documentTool('editor.set_view', 'Set the editor view', 'Request formatted, source or Notes view. Later human navigation wins; inspect the presentation receipt.', 'view', SET_VIEW_SCHEMA),
+  documentTool('editor.set_preferences', 'Set a device preference', 'Change one permitted device preference. Returns previous/current values and supersession; human-only controls are excluded.', 'view', SET_PREFERENCES_SCHEMA),
+  documentTool('editor.read_aloud', 'Read a passage aloud', 'Start supported device speech; inspect its actual completion or activation requirement.', 'view', READ_ALOUD_SCHEMA),
+  documentTool('editor.copy', 'Copy a passage', 'Replace the device clipboard when supported; complete excerpts require an inspected handle.', 'write', COPY_SCHEMA),
+  documentTool('editor.open_file', 'Choose a device file', 'Ask the person to select a local file. A done receipt confirms the picker request, not import or save.', 'destructive', OPEN_FILE_SCHEMA),
+  documentTool('editor.install_plugin', 'Install a built-in plugin', 'Install one supported built-in plugin from verified resources.', 'create', INSTALL_PLUGIN_SCHEMA),
+  documentTool('document.inspect_visual', 'Inspect rendered pixels', 'Read a revision-bound PNG from an actual settled editor, or an unavailable/stale result. Grants no edit authority.', 'read', object({expectedRevision: integer(0, Number.MAX_SAFE_INTEGER), scope: {type: 'string', enum: ['viewport', 'page', 'focus', 'selection']}}, ['expectedRevision'])),
+  documentTool('comments.read', 'Read anchored discussions', 'Read threads, exact messages, status and anchor currentness.', 'read', object({status: {type: 'string', enum: ['open', 'resolved', 'all']}, thread_id: ref, cursor})),
+  documentTool('comments.write', 'Discuss inspected work', 'Create, reply to, resolve or reopen an anchored discussion. Changes document data; sends no external message.', 'write', {...object({action: {type: 'string', enum: ['create', 'reply', 'resolve', 'reopen']}, thread_id: ref, text: string(4096), context_handle: ref, anchor: {type: 'string', enum: ['document', 'text', 'image', 'drawing']}, object_id: drawingId, recipient: string(64), turn_id, label: string(120)}, ['action']),
+    oneOf: [{properties: {action: {type: 'string', const: 'create'}, text: {}}, required: ['text'], not: present('thread_id')}, {properties: {action: {type: 'string', const: 'reply'}, thread_id: {}, text: {}}, required: ['thread_id', 'text'], not: {anyOf: ['context_handle', 'anchor', 'object_id'].map(present)}}, {properties: {action: {type: 'string', enum: ['resolve', 'reopen']}, thread_id: {}}, required: ['thread_id'], not: {anyOf: ['text', 'recipient', 'context_handle', 'anchor', 'object_id'].map(present)}}]}),
+  documentTool('document.observe', 'Observe current work', 'Immediate human-first state: identity, foreground work, changes and pending receipts. Optional facets have bounded coverage; omitted data has a read route.', 'read', object({since: cursor, facets: {type: 'array', items: {type: 'string', enum: ['changes', 'receipts', 'capabilities', 'structure', 'drawing', 'comments', 'comparison', 'history', 'returns', 'brief', 'images', 'layout', 'paint']}, uniqueItems: true}, budget_bytes: {...integer(2048, 12288), default: 6144}})),
+  documentTool('document.outline', 'Map document structure', 'Bounded headings or code declarations with temporary read refs. Refs locate content; they do not authorize edits.', 'read', object({within, cursor, limit: pageSize(1, 32, 'Items per page.')})),
+  documentTool('document.read', 'Read exact content', 'Inspect source, native drawing, imported SVG, comparison or returned text. Only fully disclosed content grants its typed authority; follow continuations.', 'read', {...object({target: readTarget, cursor, limit: pageSize(256, 4096, 'UTF-16 units per page.'),
+    paintSample: authoredObject({objectId: drawingId, point: {type: 'array', minItems: 2, maxItems: 2, items: {type: 'number', minimum: -1000000, maximum: 1000000}}}, ['objectId', 'point'])}),
+    oneOf: [{...present('target'), not: present('cursor')}, {...present('cursor'), not: present('target')}]}),
+  documentTool('document.find', 'Find source or differences', 'Search an explicit source or comparison scope. Exact disclosed source matches may already carry edit handles; previews do not.', 'read', object({query: string(512), scope: {type: 'string', enum: ['source', 'comparison']}, case_sensitive: flag, within, cursor, limit: pageSize(1, 16, 'Matches per page.'), kind: {type: 'string', enum: [...FIND_KINDS.code, ...FIND_KINDS.markdown]}}, ['query', 'scope'])),
+  documentTool('document.edit', 'Edit inspected text', 'Apply inspected edits immediately and atomically as one act. Returned insertion handles exclude unchanged edges.', 'write', editBatch),
+  documentTool('document.undo', 'Undo an act', 'Reverse a specific act or turn through retained history while preserving later work.', 'write', object({target: actTarget}, ['target'])),
+  documentTool('comparison.present', 'Present a comparison', 'Show an alternative or retained act/turn, or close the comparison. Presentation leaves source unchanged.', 'write', {...object({action: {type: 'string', enum: ['open', 'show', 'close']}, text, name: string(256), target: actTarget, compare_id: ref}, ['action']),
+    oneOf: [{properties: {action: {type: 'string', const: 'open'}, text: {}}, required: ['text'], not: {anyOf: ['target', 'compare_id'].map(present)}}, {properties: {action: {type: 'string', const: 'show'}, target: {}}, required: ['target'], not: {anyOf: ['text', 'name', 'compare_id'].map(present)}}, {properties: {action: {type: 'string', const: 'close'}}, not: {anyOf: ['text', 'name', 'target'].map(present)}}]}),
+  documentTool('document.replace', 'Replace the working document', 'Broad replacement guarded by current identity and revision. Keeps document identity and history; returns its act. Use edit for passage changes.', 'destructive', object({text, filename: string(MAX_FILENAME_CHARS), docKind: kinds, expected_document_id: string(256), expected_revision: integer(0, Number.MAX_SAFE_INTEGER), turn_id, label: string(120)}, ['text', 'expected_document_id', 'expected_revision'])),
+  documentTool('editor.reveal', 'Reveal inspected work', 'Request a quiet reveal of an inspected passage, drawing or comparison difference. Inspect actual or pending presentation.', 'view', object({context_handle: ref}, ['context_handle'])),
+  documentTool('editor.point', 'Point to inspected work', 'Temporary shared pointer, possibly requesting reveal. Later human navigation wins; receipt says shown/deferred/expired.', 'view', object({target: {oneOf: [target('source', {context_handle: ref}, ['context_handle']), target('act', {act_id}, ['act_id']), target('comparison', {change_id: ref}, ['change_id'])]}, words: {...string(160), minLength: 1, pattern: '\\S'}, lifetime: {...integer(1, 30), default: 6}}, ['target', 'words'])),
+  documentTool('document.create_return', 'Create a return channel', 'Create one expiring one-use channel for an independently edited page. Does not export, overwrite source or grant ongoing access.', 'create'),
+  documentTool('document.wait_for_user', 'Wait for the person', 'One bounded wait for message, selection or retained return. Not an ongoing subscription or a wake after this turn.', 'view', object({mode: {type: 'string', enum: ['selection', 'message']}, after_return_id: ref, timeout_ms: {...integer(1000, 120000), default: 20000}})),
+  documentTool('document.save', 'Save to the bound destination', 'Save the current document and report the actual destination and verified revision. Hosted storage is not a device or attachment save.', 'durable', object({expected_revision: integer(0, Number.MAX_SAFE_INTEGER)})),
+  documentTool('document.export', 'Export an independent file', 'Create Markdown, offline editor HTML, text, rendered page, Word or PDF. Word/PDF need an editor. MCP returns resource_link.uri for download or optional resources/read retrieval.', 'create', {...object({format: {type: 'string', enum: EXPORT_FORMATS}, compare_id: {...ref, minLength: 1, description: 'HTML only: retain this current comparison as a display baseline.'}}, ['format']),
+    oneOf: [{properties: {format: {type: 'string', const: 'html'}}}, {properties: {format: {type: 'string', enum: EXPORT_FORMATS.filter(value => value !== 'html')}}, not: present('compare_id')}]}),
+  documentTool('document.draw', 'Create or edit native drawing', 'One native vector/paint act. Create needs alt: omit context_handle to append, or inspect a nonempty block to insert after it. shapes patches require an existing drawing read. Water uses paint figures with mode water and path-point geometry, not figure x/y/w/h. See drawing/paint guides. Accepted material work is not committed or presented.', 'write', object({target: {oneOf: [target('create', {context_handle: ref}), target('edit', {recipe_handle: ref}, ['recipe_handle'])]},
+    presentation: object({open: flag, replay: flag}), recipe: described(record, 'Complete inspected recipe; exclusive with figures/shapes. Retain paint raster ids.'), figures: drawFigures,
+    direction: {type: 'string', enum: ['down', 'across', 'up', 'back']}, shapes: drawShapesPatch, operations: drawingOperations, alt: drawAlt, label: string(120), turn_id}, ['target'])),
+  documentTool('svg.edit', 'Edit imported SVG', 'Change inspected foreign-tree nodes while preserving untouched bytes, definitions and safe references. Requires the complete SVG read handle.', 'write', object({svg_handle: ref, node_edits, alt: drawAlt, label: string(120), turn_id}, ['svg_handle', 'node_edits'])),
+  documentTool('notes.find', 'Find notes', 'Search the configured Notes store and return owner-issued NoteRefs, custody and completeness. Locked/unavailable is not an empty library.', 'read', object({query: string(2048, 'Words, phrases, tag:, in:, is:, has:, colour:, before:, after:.'), cursor, limit: pageSize(1, 64, 'Notes per page.')})),
+  documentTool('notes.read', 'Read a note version', 'Read exact version-consistent note text. Only a complete current read establishes an update base; historical reads do not.', 'read', object({note_ref: noteRef, version: integer(1, Number.MAX_SAFE_INTEGER), cursor, start: range.start, limit: pageSize(256, 12288, 'UTF-16 units per page.')}, ['note_ref'])),
+  documentTool('notes.open', 'Open the original note', 'Open an original note in its local editor with foreground guards. Preserves identity/history/custody; never grants document access or enrolls a store.', 'view', object({note_ref: noteRef, expected_foreground: foreground}, ['note_ref', 'expected_foreground'])),
+  documentTool('notes.write', 'Create or update a note', 'Create or directly update a note. Existing targets require a complete current read; conflicts leave the note unchanged.', 'write', object({target: {oneOf: [target('create'), target('note', {note_ref: noteRef}, ['note_ref'])]}, text, title: string(200), turn_id, label: string(120)}, ['target', 'text'])),
+  documentTool('notes.set', 'Set note controls', 'Change allowed note metadata with exact previous values. Archive/Trash are reversible; Skills and permanent deletion remain human-only. Reminders are device-owned.', 'write', object({note_ref: noteRef, ...noteFields, turn_id, label: string(120)}, ['note_ref'])),
+  documentTool('notes.history', 'List retained note versions', 'List retained version metadata with completeness. Use notes.read to inspect bytes; listing does not restore them.', 'read', object({note_ref: noteRef, cursor, limit: pageSize(1, 64, 'Versions per page.')}, ['note_ref'])),
+  documentTool('notes.sync', 'Sync configured Notes', 'Run the existing Notes connection. Report partial/skipped/conflict facts; never sign in or enroll implicitly.', 'write', object({action: {type: 'string', const: 'now'}}, ['action'])),
 ]);
 
 // The editor key: supplied through the private tool-result metadata, never the public result or resource HTML; the host keeps it out of model context. Editor-only operations require it.
 const editorKey = string(512, 'The editor key from private tool-result _meta.rapier, held by the host and editor alone.');
 const revision = integer(0, Number.MAX_SAFE_INTEGER);
+const canonicalSplice = object({pos: integer(0, MAX_TEXT_BYTES), removed: text, inserted: text}, ['pos', 'removed', 'inserted']);
+const metadataPair = value => object({before: value, after: value}, ['before', 'after']);
+const authoredPlacement = object({basis: {...rows(string(256)), uniqueItems: true}, source: {type: 'string', pattern: '^[a-f0-9]{64}$'},
+  splices: {...rows(canonicalSplice), maxItems: 64}}, ['basis', 'source', 'splices']);
+const canonicalAct = object({authored: authoredPlacement, id: string(256), baseRevision: revision, revision,
+  author: object({kind: {type: 'string', enum: ['human', 'agent', 'system']}, id: string(160), name: string(120)}, ['kind', 'id']),
+  operation: string(96), createdAt: {...revision, type: ['integer', 'null']}, label: {type: ['string', 'null'], maxLength: 120},
+  affectedBlockIds: rows(revision), turnId: string(160),
+  sourceTransactionId: {type: ['string', 'null'], maxLength: 256}, sourceTransactionIds: {...rows(string(256)), maxItems: 1024, uniqueItems: true},
+  reverts: string(256), reapplies: string(256), splices: {...rows(canonicalSplice), maxItems: 64},
+  metadata: {...object({filename: metadataPair(string(512)), docKind: metadataPair(kinds)}), minProperties: 1}},
+  ['id', 'baseRevision', 'revision', 'author', 'operation', 'createdAt', 'splices']);
 const sourceRange = {...object({start: integer(0, MAX_TEXT_BYTES), end: integer(0, MAX_TEXT_BYTES), objectId: drawingId}, ['start', 'end']), type: ['object', 'null']};
 const hostFile = object({name: {...string(256, 'The opened filename, without a path.'), minLength: 1}, resourceUri: {...string(8192, 'Opaque host resource URI. Only the editor reads it through the host bridge.'), minLength: 1}}, ['name', 'resourceUri']);
 const visualFact = object({documentId: string(256), revision, scope: {type: 'string', enum: ['viewport', 'page', 'focus', 'selection']}, drawing: record, outcome: {type: 'string', enum: ['ok', 'refused']}, reason: string(128), sourceRange,
@@ -370,19 +252,22 @@ const exportFact = object({documentId: string(256), revision, format: {type: 'st
     pages: integer(1, Number.MAX_SAFE_INTEGER), issues: {...rows(object({code: string(128), severity: string(32), count, message: string(512)}, ['code'])), maxItems: 32}},
   ['mimeType', 'data', 'filename'])}, ['documentId', 'revision', 'format', 'outcome']);
 const editorFact = object({kind: {type: 'string', const: 'editor'}, documentId: ref, revision: integer(0, Number.MAX_SAFE_INTEGER),
-  operation: {type: 'string', enum: ['document.set_view', 'document.ask_editor']}, receipt: editorReceipt},
+  operation: {type: 'string', enum: ['editor.set_preferences', 'document.device_action']}, receipt: editorReceipt},
   ['kind', 'documentId', 'revision', 'operation', 'receipt']);
 export const HOST_TOOLS = Object.freeze([
-  tool('rapier.guide', 'How to use Rapier', "Returns Rapier's whole usage guide: the server instructions in full, for a host that shows them cut short or not at all. With topic paint, returns the complete painting registry.", 'read', agentInputSchema(object({topic: {type: 'string', enum: ['paint'], description: 'Read the complete Paint and Water brush, control, paper, pigment and action registry.'}}))),
-  tool('rapier.open', 'Open a shared editable document', "Creates a shared workspace from text or a host file, or resumes one by its document value. Use for documents the person and assistant will edit together: drafts, plans, guides, drawings and reviewed revisions. Returns editor_url, the live editor for the person's browser; when that browser shows a four-letter code, pair it with document.pair_browser. Native SVG drawings use document.draw; Mermaid stays in Markdown through document.apply_edits. document.export keeps an independent Markdown file or offline editor. Workspaces expire after 30 idle days.", 'create', agentInputSchema(object({document, file: hostFile, text: string(MAX_TEXT_BYTES, 'Create: the document\'s text.'), filename: string(MAX_FILENAME_CHARS, 'Its name; the extension sets the kind.'), docKind: kinds, createToken: {...string(128, 'An optional retry name for this creation: an unchanged retry reopens the same workspace. With a connected host it is scoped to the connection; without one it is a secret of 22 or more random URL-safe characters.'), minLength: 1, pattern: '^[A-Za-z0-9_-]+$'}}))),
+  tool('rapier.guide', 'Read a focused guide', 'Read focused contracts and registries; operation returns field help for the bound operation. Use the published tool schema for the host document argument. Never activates hidden tools.', 'read', agentInputSchema(object({topic: {type: 'string', enum: GUIDE_TOPICS}, operation: string(64)}))),
+  tool('rapier.open', 'Open a shared document', 'Create from text or an authorized host file, or resume by document value. Returns initial observation and editor_url; opening is not proof of editor presentation.', 'create', agentInputSchema({...object({document, file: hostFile, text, filename: string(MAX_FILENAME_CHARS), docKind: kinds,
+    createToken: {...string(128, 'Creation retry identity; anonymous calls require a secret of at least 22 characters.'), minLength: 1, pattern: '^[A-Za-z0-9_-]+$'}}),
+    oneOf: [{...present('document'), not: {anyOf: ['file', 'text', 'filename', 'docKind', 'createToken'].map(present)}},
+      {...present('file'), not: {anyOf: ['document', 'text', 'filename', 'docKind'].map(present)}},
+      {not: {anyOf: ['document', 'file'].map(present)}}]})),
   {...tool('document.sync', 'Refresh the editor', "Returns the editor's workspace snapshot when refreshing state, or unchanged while afterRevision and afterVersion still hold.", 'read', object({document, editorKey, afterRevision: integer(0, Number.MAX_SAFE_INTEGER), afterVersion: integer(0, Number.MAX_SAFE_INTEGER)}, ['document', 'editorKey'])), visibility: ['app']},
   {...tool('document.commit', 'Save the person’s edits', "Commits the editor's source edits from its acknowledged revision, rebasing over concurrent changes while preserving both authors' insertions.", 'write', object({document, editorKey, expectedRevision: integer(0, Number.MAX_SAFE_INTEGER), text,
-    splices: described({...rows(object({pos: integer(0, MAX_TEXT_BYTES), removed: text, inserted: text}, ['pos', 'removed', 'inserted'])), maxItems: 32000}, 'Exact sequential local journal from the acknowledged source to text; at most the retained 500 records of 64 splices.'),
-    filename: string(MAX_FILENAME_CHARS), docKind: kinds, commitId: string(128)}, ['document', 'editorKey', 'expectedRevision', 'text', 'commitId'])), visibility: ['app']},
-  {...tool('document.compare_decide', 'Decide a comparison', "Applies the person's comparison decision when its comparison, document revision and workspace version still match.", 'destructive', object({document, editorKey, expectedRevision: integer(0, Number.MAX_SAFE_INTEGER), expectedVersion: integer(0, Number.MAX_SAFE_INTEGER), compareId: ref, action: {type: 'string', enum: ['accept', 'reject', 'close']}, changeIds: ids, decisionId: string(128)}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'compareId', 'action', 'decisionId'])), visibility: ['app']},
+    splices: described({...rows(canonicalSplice), maxItems: 65536}, 'Exact sequential edits from the acknowledged source to text.'),
+    acts: described({...rows(canonicalAct), minItems: 1, maxItems: 1024}, 'Canonical local acts after the acknowledged checkpoint, preserving original identity and attribution. The per-request bound does not trim retained history.'),
+    filename: string(512), docKind: kinds, turn_id, label: string(120), commitId: string(128), hydration_id: string(128)}, ['document', 'editorKey', 'expectedRevision', 'text', 'commitId'])), visibility: ['app']},
+  {...tool('document.connect_agents', 'Reconnect agents', 'Shares a disconnected connected workspace again through its authenticated editor.', 'destructive', object({document, editorKey, expectedRevision: revision, expectedVersion: revision, operation_id: operationId}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'operation_id'])), visibility: ['app']},
   {...tool('document.human_context', 'Update the person’s context', "Updates the editor's selection, focus, settled drawing, view, device preferences and editing lease for one document revision.", 'view', object({document, editorKey, expectedRevision: revision, contextId: ref, sequence: revision, visible: flag, editing: flag, view: editorView, selection: sourceRange, focus: sourceRange, navigationSequence: revision, drawingReceipts: {type: 'array', items: record}, drawing: {type: ['object', 'null'], additionalProperties: true}, editor: object({preferences: preferenceSnapshot}, ['preferences'])}, ['document', 'editorKey', 'expectedRevision', 'contextId', 'sequence', 'visible', 'editing'])), visibility: ['app']},
-  {...tool('document.set_policy', 'Set collaboration controls', "Changes the workspace's collaboration permissions to the person's selected posture (FREE, CHECK or ASK) or read-only setting, or shares a connected workspace with agents again after Disconnect agents.", 'destructive', object({document, editorKey, expectedRevision: revision, expectedVersion: revision, posture: {type: 'string', enum: ['free', 'check', 'ask']}, readOnly: flag, agentAccess: {type: 'boolean', description: 'true shares a disconnected connected workspace with agents again.'}, decisionId: ref}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'decisionId'])), visibility: ['app']},
-  {...tool('document.review_decide', 'Decide the exact review', "Records the person's decision on an exact pending review. Approve applies remaining selected edits or acknowledges the work CHECK showed; apply and drop decide selected changes while keeping the review open.", 'destructive', object({document, editorKey, expectedRevision: revision, expectedVersion: revision, reviewId: ref, action: {type: 'string', enum: ['approve', 'decline', 'apply', 'drop']}, changeIds: {...ids, description: 'Pending change ids: apply and drop act on them; approve keeps them and drops the rest; decline takes none.'}, decisionId: ref}, ['document', 'editorKey', 'expectedRevision', 'expectedVersion', 'reviewId', 'action', 'decisionId'])), visibility: ['app']},
   {...tool('document.visual_ack', 'Return a visual observation', "Supplies the editor's rendered observation for an exact pending visual request.", 'view', object({document, editorKey, expectedRevision: revision, visualId: ref, fact: visualFact}, ['document', 'editorKey', 'expectedRevision', 'visualId', 'fact'])), visibility: ['app']},
   {...tool('document.export_ack', 'Return an exported file', "Supplies the open editor's Word or PDF file for an exact pending export request.", 'view', object({document, editorKey, expectedRevision: revision, exportId: ref, fact: exportFact}, ['document', 'editorKey', 'expectedRevision', 'exportId', 'fact'])), visibility: ['app']},
   {...tool('document.material_ack', 'Return prepared material', "Supplies private Water pixels or a material sample for the exact pending request; the kernel retains source-edit authority.", 'view', object({document, editorKey, expectedRevision: revision, materialId: ref,
@@ -390,19 +275,28 @@ export const HOST_TOOLS = Object.freeze([
   {...tool('document.editor_ack', 'Return an editor receipt', "Records the editor's receipt for one exact preference or device request, including the person's later choice of a preference.", 'view', object({document, editorKey, expectedRevision: revision, editorId: ref, fact: editorFact}, ['document', 'editorKey', 'expectedRevision', 'editorId', 'fact'])), visibility: ['app']},
   {...tool('document.view_ack', 'Acknowledge editor presentation', "Records whether the editor presented or refused a requested passage or difference, and when a shown pointer ends.", 'view', object({document, editorKey, expectedRevision: revision, viewId: ref, status: {type: 'string', enum: ['presented', 'refused', 'expired']}, reason: string(160)}, ['document', 'editorKey', 'expectedRevision', 'viewId', 'status'])), visibility: ['app']},
   {...tool('document.rotate_capability', 'Disconnect agents', "Revokes existing agent access to the workspace when the person disconnects agents, preserving its content, history and collaboration controls. The replacement document value returns sealed to the editor, which shares it again when the person chooses; every paired browser but the one asking is unpaired.", 'destructive', object({document, editorKey}, ['document', 'editorKey'])), visibility: ['app']},
-  tool('document.pair_browser', 'Pair a browser', "Names the four-letter code the person gives you from editor_url. A connected workspace returns owner_approval_url for approval in the browser where Rapier was connected; then the target browser chooses ALLOW. One use; code lasts one minute; five misses lock pairing for the window.", 'destructive', object({document, code: {...string(4, 'The four letters the page shows.'), pattern: '^[A-Za-z]{4}$'}}, ['document', 'code'])),
+  tool('editor.pair', 'Pair a browser', 'Submit the person-provided browser code. Owner approval and target-browser ALLOW remain human decisions; see the device guide.', 'destructive', object({document, code: {...string(4, 'The four letters the page shows.'), pattern: '^[A-Za-z]{4}$'}}, ['document', 'code'])),
   {...tool('document.pair_status', 'Show the pairing code', "Returns the page's pairing state. A connected workspace first requires approval in its owner's connected browser, then the target page collects the person's allow or cancel decision; polling grants no session.", 'view', object({document, decision: {type: 'string', enum: ['allow', 'cancel']}}, ['document'])), visibility: ['app']},
   {...tool('document.delete', 'Delete this workspace', "Permanently deletes the workspace and its history when the person chooses Delete in the editor.", 'destructive', object({document, editorKey}, ['document', 'editorKey'])), visibility: ['app']},
 ]);
 
 export const getTool = name => TOOLS.find(entry => entry.name === name) || HOST_TOOLS.find(entry => entry.name === name);
+// MCP calls carry the document authority explicitly; page-bound calls already have it.
+function mcpInputSchema(name, schema) {
+  return TOOLS.some(entry => entry.name === name) ? {...schema,
+    properties: {document, ...schema.properties}, required: ['document', ...(schema.required || [])]} : schema;
+}
+export function inputGuide(name, {mcp = false} = {}) {
+  const descriptor = getTool(name), schema = inputGuides.get(name);
+  return descriptor && !descriptor.visibility ? structuredClone(mcp ? mcpInputSchema(name, schema) : schema) : null;
+}
 // Page and embed adapters expose the public guide beside the document kernel's tools.
 export const PAGE_TOOLS = Object.freeze([...TOOLS, getTool('rapier.guide')]);
 
 export function annotations(effect, host = 'mcp', name = '') {
   if (!Object.hasOwn(EFFECT_CLASSES, effect)) throw new Error('Undeclared tool effect');
   if (host === 'webmcp') return {readOnlyHint: effect === 'read', untrustedContentHint: true, consequentialHint: ['durable', 'destructive'].includes(effect)};
-  return {readOnlyHint: effect === 'read', destructiveHint: ['write', 'durable', 'destructive'].includes(effect) || ['document.compare', 'document.show_changes'].includes(name), idempotentHint: effect === 'read', openWorldHint: false};
+  return {readOnlyHint: effect === 'read', destructiveHint: ['write', 'durable', 'destructive'].includes(effect), idempotentHint: effect === 'read', openWorldHint: false};
 }
 
 // The mark a host shows beside Rapier (the ChatGPT extensions' icon guidelines: an SVG, monochrome in currentColor, 20 px, 1.33 px strokes):
@@ -417,8 +311,7 @@ export const ICONS = Object.freeze([{src: 'data:image/svg+xml;base64,' + btoa(MA
 export function mcpDescriptors({ uiResource, auth = 'anonymous' } = {}) {
   if (!['anonymous', 'oauth', 'server-bearer'].includes(auth)) throw new TypeError('Unknown MCP authentication profile');
   // Document schemas are already projected. Projecting twice would reopen their explicitly closed fields.
-  return [...TOOLS.map(entry => ({...entry, inputSchema: {...entry.inputSchema,
-    properties: {document, ...entry.inputSchema.properties}, required: ['document', ...entry.inputSchema.required]}})), ...HOST_TOOLS].map(entry => {
+  return [...TOOLS.map(entry => ({...entry, inputSchema: conciseInput(mcpInputSchema(entry.name, entry.inputSchema))})), ...HOST_TOOLS].map(entry => {
     const {effect, class: toolClass, visibility, ...descriptor} = entry;
     // The local server verifies its transport bearer before dispatch; it has no connector OAuth flow. /mcp is called
     // without one by the hosts that list it; /muse requires the connection.
@@ -429,8 +322,8 @@ export function mcpDescriptors({ uiResource, auth = 'anonymous' } = {}) {
       ...security,
       'website.rapier/tool-class': toolClass,
       ...(visibility ? {ui: {visibility}} : {}), 'openai/widgetAccessible': (visibility || ['model', 'app']).includes('app'),
-      'openai/toolInvocation/invoking': entry.name === 'rapier.open' ? 'Opening Rapier.' : 'Working in Rapier.',
-      'openai/toolInvocation/invoked': 'Rapier has replied.',
+      ...(entry.name === 'rapier.open' || visibility ? {'openai/toolInvocation/invoking': entry.name === 'rapier.open' ? 'Opening Rapier.' : 'Working in Rapier.',
+        'openai/toolInvocation/invoked': 'Rapier has replied.'} : {}),
     }};
     if (entry.name !== 'rapier.open' || !uiResource) return base;
     return {...base, _meta: {...base._meta, ui: {...base._meta?.ui, resourceUri: uiResource, visibility: ['model', 'app']}, 'openai/outputTemplate': uiResource,

@@ -22,10 +22,10 @@ export function fillBuiltinSlot(source, marker, value) {
 
 export async function builtinPlugins(root, pack) {
 	const selected = (await pluginPackFiles()).filter(file =>
-		file.id === 'rapier-math' || file.id.startsWith('rapier-mermaid-') || file.id.startsWith('rapier-letters-'));
+        file.id === 'rapier-math' || file.id === 'rapier-font-subset' || file.id.startsWith('rapier-mermaid-') || file.id.startsWith('rapier-letters-'));
 	const groups = [], elements = [];
-	for (const id of ['math', 'mermaid', 'letters']) {
-		const files = selected.filter(file => id === 'math' ? file.id === 'rapier-math' : file.id.startsWith('rapier-' + id + '-'));
+    for (const id of ['math', 'mermaid', 'letters', 'font-subset']) {
+        const files = selected.filter(file => id === 'math' || id === 'font-subset' ? file.id === 'rapier-' + id : file.id.startsWith('rapier-' + id + '-'));
 		if (!files.length) throw new Error('The editor resource has no ' + id + ' plug-in payload');
 		const spans = [], records = [];
 		for (const file of files) {

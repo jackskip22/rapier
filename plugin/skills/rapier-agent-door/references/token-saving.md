@@ -1,5 +1,9 @@
 # The token saving, measured
 
+These measurements describe the catalog used in the workload below, not the current typed catalog.
+Recorded calls and byte counts retain their original form. See the [current agent guide](https://rapier.website/agents)
+for supported calls; these measurements do not establish current startup or result sizes.
+
 How much context an agent spends editing a long document through Rapier's agent door, and the number. The
 bench drives Rapier's real agent kernel in Node, exactly as its own tests do, and checks that every way ends with
 the same text.
@@ -30,7 +34,7 @@ the size of the document.
 
 ## The fact, in one sentence
 
-**Through Rapier's agent door, an edit to a long document costs an agent about 1.5 KB of context (some 370
+**In this measured workload, an edit through Rapier's agent door cost about 1.5 KB of context (some 370
 tokens) whatever the document's length; against reading the document into context first, that is 45% less at
 30 pages and 83% less at 100 pages over thirty edits, and 96% less over five; against rewriting the whole
 document it is two orders of magnitude.** The door also checks the Will and the person's own typing at every
@@ -41,5 +45,4 @@ edit and returns a receipt with the revision, which the other two ways cannot do
 The estimate is bytes over four; a tokenizer counts differently by language and by markup. The document is
 generated prose with a regular shape; a document full of pictures (bytes inside the Markdown) makes the whole
 and patch ways worse still, not the door. No claim is made about model quality or about how many edits an
-agent needs to reach a goal. The bench is rerun and this table refreshed whenever the door's result shapes
-change.
+agent needs to reach a goal. Current catalog and result-shape measurements require a separate run; none is implied here.

@@ -64,6 +64,7 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
   const entries = [], ids = new Set(); let waterSeen = false;
   for (const entry of raw.entries) {
     if (!object(entry) || !identity(entry.id) || ids.has(entry.id)) return null;
+    if (entry.removed != null && typeof entry.removed !== 'boolean') return null;
     ids.add(entry.id);
     if (entry.mode === 'water') {
       if(raw.mode !== 'water')return null;
@@ -79,7 +80,8 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
       const sheet = entry.sheet, crop = entry.crop;
       if (!object(sheet) || !(identity(sheet.id) || Number.isSafeInteger(sheet.id) && sheet.id > 0) || !dimensions([sheet.width, sheet.height]) || !Array.isArray(sheet.offset) || sheet.offset.length !== 2 || !sheet.offset.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 16384) || !scale(sheet.scale) || !object(sheet.options) || sheet.options.mode !== 'water' || !waterPaperById(sheet.options.paper) || !dataOnly(sheet)) return null;
       if (!Array.isArray(crop) || crop.length !== 4 || !crop.every(integer) || crop[2] < crop[0] || crop[3] < crop[1] || !dimensions([crop[2]-crop[0]+1,crop[3]-crop[1]+1])) return null;
-      entries.push({id:entry.id,actor:'human',mode:'water',sheet:copy(sheet),actions,crop:crop.slice()}); continue;
+      entries.push({id:entry.id,actor:'human',mode:'water',sheet:copy(sheet),actions,crop:crop.slice(),
+        ...(entry.removed == null ? {} : {removed:entry.removed})}); continue;
     }
     if (entry.mode != null || waterSeen) return null;
     if (entry.actor === 'agent') {

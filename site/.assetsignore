@@ -1,4 +1,4 @@
-# Deploy the finished page, document embeds, optional installation companions and crawler files.
+# Deploy the page, embeds, public guides, installation companions and discovery files.
 /*
 !/rapier.html
 !/sw.js
@@ -9,6 +9,10 @@
 !/sitemap.xml
 !/llms.txt
 !/llms-full.txt
+!/docs/
+!/docs/**
+!/.well-known/
+!/.well-known/ai-catalog.json
 !/AGENT-TOOLS.json
 !/og.png
 !/og-notes.png

@@ -1,10 +1,10 @@
 {
   "version": 1,
   "limits": {
-    "mutableRoots": 109,
-    "domSinks": 65,
+    "mutableRoots": 107,
+    "domSinks": 64,
     "storageKeys": 7,
-    "remainderBytes": 77535
+    "remainderBytes": 77717
   },
   "engineRoots": {
     "_pendingLeaves@module/iife1": {
@@ -106,10 +106,6 @@
     "_rapierEmbed@module/iife1": {
       "name": "_rapierEmbed",
       "reason": "The embed door owns its document binding, frame handshake and message lifecycle."
-    },
-    "_rapierEmbedDraftRefusedFor@module/iife1": {
-      "name": "_rapierEmbedDraftRefusedFor",
-      "reason": "The embed lifecycle owner remembers which draft refusal it has already presented."
     },
     "_rapierFileLaunchRuntime@module/iife1": {
       "name": "_rapierFileLaunchRuntime",
@@ -426,10 +422,6 @@
     "md@module/iife1": {
       "name": "md",
       "reason": "The editor's configured Markdown renderer, installed after its deferred vendor becomes ready."
-    },
-    "RAPIER_PANDOC_MARK_RE@module/iife1": {
-      "name": "RAPIER_PANDOC_MARK_RE",
-      "reason": "The export dialect projection owns this reusable scanner and its lastIndex."
     },
     "rapier@module/iife1": {
       "name": "rapier",

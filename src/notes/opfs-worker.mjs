@@ -52,7 +52,7 @@ async function write(directory, name, bytes, token, refusal = 'The notes folder 
     // The staged File is independently read after closing the handle, before it takes the name.
     if (!same(new Uint8Array(await (await handle.getFile()).arrayBuffer()), bytes)) throw fail('verify', refusal);
     if (fresh && await fileAt(at.dir, at.name) !== null) throw fail('collision', 'This unfinished recording already exists.');
-    await handle.move(at.name); owned = false;
+    await handle.move(at.dir, at.name); owned = false;
   } finally {
     try { if (access) synchronous(access.close()); }
     finally { if (owned) try { await discard(at.dir, tmp, handle); } catch (_) {} }
@@ -70,10 +70,10 @@ async function prepare(directory, token) {
     if (!same(new Uint8Array(await (await target.getFile()).arrayBuffer()), old)) throw fail('atomic', 'The browser exposed an unfinished file write. These notes are read-only here.');
     synchronous(access.close()); access = null;
     if (!same(new Uint8Array(await (await target.getFile()).arrayBuffer()), old)) throw fail('atomic', 'The browser did not keep the file after an abandoned write. These notes are read-only here.');
-    await first.move(b); owned.delete(a); owned.set(b, first);
+    await first.move(directory, b); owned.delete(a); owned.set(b, first);
     if (!same(new Uint8Array(await (await fileAt(directory, b)).arrayBuffer()), next) || await fileAt(directory, a) !== null) throw fail('atomic', 'The browser did not replace the whole file. These notes are read-only here.');
     const empty = await create(a); access = await accessFor(empty); seal(access, 0); access = null;
-    await empty.move(b); owned.delete(a); owned.set(b, empty);
+    await empty.move(directory, b); owned.delete(a); owned.set(b, empty);
     if ((await fileAt(directory, b)).size !== 0) throw fail('atomic', 'The browser did not keep an empty file. These notes are read-only here.');
     try { await create(u); }
     catch (error) { if (['TypeMismatchError', 'InvalidCharacterError', 'TypeError'].includes(error?.name)) ascii = true; else throw error; }
@@ -107,7 +107,7 @@ async function writeBlob(request, signal, progress) {
     if (actual.finish() !== digest) throw fail('verify', 'The file copy did not match the original. No link was added. Keep the original file.');
     checkByteAbort(signal);
     if (await fileAt(at.dir, at.name) !== null) throw fail('collision', 'Another file arrived under ' + name + '. It was kept; retry adding the original.');
-    checkByteAbort(signal); await handle.move(at.name); staged = false;
+    checkByteAbort(signal); await handle.move(at.dir, at.name); staged = false;
     return {size: blob.size, digest};
   } catch (error) { throw byteCopyError(error); }
   finally {
@@ -142,7 +142,7 @@ async function recording(request) {
     if (back.size !== offset + bytes.length) throw fail('verify', 'The last recording chunk could not be verified. Keep the audio captured so far.');
     for await (const chunk of blobByteChunks(back)) actual.update(chunk);
     if (actual.finish() !== expected.finish()) throw fail('verify', 'The last recording chunk could not be verified. Keep the audio captured so far.');
-    await handle.move(at.name); owned = false; return back.size;
+    await handle.move(at.dir, at.name); owned = false; return back.size;
   } finally {
     try { if (access) synchronous(access.close()); }
     finally { if (owned) try { await discard(at.dir, tmp, handle); } catch (_) {} }

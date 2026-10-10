@@ -33,7 +33,7 @@ export function readAuthorship(input, text) {
   let cursor = 0;
   for (const run of value.runs) {
     if (!Array.isArray(run) || run.length !== 5 || run[0] !== cursor || !nonnegative(run[1]) || run[1] <= cursor || run[1] > text.length ||
-        !['human','agent','system'].includes(run[2]) || typeof run[3] !== 'string' || !run[3] || run[3].length > 160 || !nonnegative(run[4]) ||
+        !['human','agent','system'].includes(run[2]) || typeof run[3] !== 'string' || !run[3] || run[3].length > 160 || !(run[4] === null || nonnegative(run[4])) ||
         /[\uD800-\uDFFF]/u.test(text.slice(cursor, run[1]))) throw fault('invalid authorship run');
     cursor = run[1];
   }
@@ -41,7 +41,7 @@ export function readAuthorship(input, text) {
   return value;
 }
 // Authorship-only imports become an incomplete insertion ledger. There is no mutable blame database.
-export function ledgerFromAuthorship(input, text, documentAuthority) {
+export function ledgerFromAuthorship(input, text, documentAuthority, metadata) {
   const value = readAuthorship(input, text), records = [];
   let current = '', root = textRoot('');
   for (const [start, end, kind, id, createdAt] of value.runs) {
@@ -55,5 +55,5 @@ export function ledgerFromAuthorship(input, text, documentAuthority) {
       reverts: null, reapplies: null, createdAt,
     }});
   }
-  return exportLedger({text: current, records, documentAuthority, revision: records.length, root, complete: false});
+  return exportLedger({text: current, metadata, records, documentAuthority, revision: records.length, root, complete: false});
 }

@@ -13,7 +13,7 @@ const SINK_CALLS = new Set(['insertAdjacentHTML', 'write', 'writeln', 'createCon
 // Every authored directory that ships inside rapier.html or the apps page; vendor trees are the
 // libraries' own (their sinks are DOMPurify's, markdown-it's, and are not Rapier's to name).
 const SCAN_DIRS = ['editor', 'draw', 'layout', 'images', 'interchange', 'agent', 'shell', 'security', 'notes', 'reader'];
-const SCAN_FILES = ["tools/runtime-loader.js", "kit/render.mjs", "kit/render-markdown.mjs", "kit/render-sanitize.mjs", "kit/render-print.mjs", "kit/render-styles.mjs"];
+const SCAN_FILES = ["tools/runtime-loader.js", "kit/render-work.mjs", "kit/render.mjs", "kit/render-markdown.mjs", "kit/render-sanitize.mjs", "kit/render-print.mjs", "kit/render-styles.mjs"];
 
 function* sourceFiles() {
 	for (const dir of SCAN_DIRS) {

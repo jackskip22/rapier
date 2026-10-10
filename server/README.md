@@ -1,8 +1,26 @@
 # rapier-server
 
-Display, search, edit and export Markdown from a folder or an S3-compatible bucket you control. Rapier's renderer and agent tools preserve the document across these operations. The server requires no Rapier account and downloads no runtime packages. Bucket mode connects only to your configured storage endpoint.
+Run Rapier's renderer and MCP agent door over a folder or S3-compatible bucket you control. People and agents
+display, search, edit and export the same Markdown. Runs on Node 22 and local Chromium, with no Rapier account
+or runtime downloads. Bucket mode connects only to your configured storage endpoint.
+
+Agents edit live, beside the person or while they are away. Rapier shows their presence and changes; the person
+taps a change to see what was there before and undoes anything while keeping later edits. Agents can deliberately
+show a diff with `comparison.present`.
 
 This package is **AGPL-3.0-only**, with a commercial licence available. The rendering functions in `rapier-markdown-kit/render` are **MIT**; that licence does not cover this service, the editor or the agent kernel.
+
+## Choose a Rapier workflow
+
+Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
+as one HTML file on Android, Web and Windows.
+
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `rapier.open` to share one document with the person.
+2. **Deliver an offline editor.** Run `npx rapier-html notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
+4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
+5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
+6. **Host the door.** Run [rapier-server](https://github.com/jackskip22/rapier/tree/main/server) over your own folder or S3-compatible bucket.
 
 ## Run
 
@@ -68,9 +86,9 @@ Document rendering under `/d/` and search routes also accept HEAD. They are **no
 
 MCP requests, retained file downloads under `/export/`, and return uploads require `Authorization: Bearer <token>`. The token is generated on first start and retained in `.rapier-server/credentials.json` inside the folder or bucket. On disk it is readable only by the service owner; bucket access is controlled by the provider policy. The service derives a stable private workspace owner from this token, preserving access across restarts. Public workspace handles and file or return addresses grant no access alone. The token stays outside tool arguments and results.
 
-The actual MCP App resource mints the existing editor authority; an ordinary agent cannot approve a review or rotate a workspace handle using invented authority. Do not supply the editor key in agent-visible text. Return uploads use authenticated HTTP clients and the local route accepts POST. The local tool listing omits connector OAuth declarations because the transport owns bearer authentication.
+The actual MCP App resource mints the existing editor authority; an ordinary agent cannot commit private editor state or rotate a workspace handle using invented authority. Do not supply the editor key in agent-visible text. Return uploads use authenticated HTTP clients and the local route accepts POST. The local tool listing omits connector OAuth declarations because the transport owns bearer authentication.
 
-An unscoped `rapier.open` with a new admissible filename creates that file. It cannot overwrite an existing name. A scoped `rapier.open` takes its source from the selected store, not a caller-supplied file URL, filename or replacement text. File URLs that would require an outbound fetch are unavailable. Remote inspection, edits, agent Undo, Will, ASK approval and capability rotation run through `mcp/worker.mjs` and its existing kernel; the service does not implement parallel edit rules.
+An unscoped `rapier.open` with a new admissible filename creates that file. It cannot overwrite an existing name. A scoped `rapier.open` takes its source from the selected store, not a caller-supplied file URL, filename or replacement text. File URLs that would require an outbound fetch are unavailable. Remote inspection, live edits, before previews, selective Undo, Will and capability rotation run through the same document kernel and history as the other connections; the service does not implement parallel edit rules.
 
 The transport bearer is deployment-wide. Someone who holds it can open any admissible file using a scoped URL. Scoped URLs prevent accidental cross-document use, not per-user access control. Give separate roots or buckets and listeners to mutually untrusted tenants.
 
@@ -84,13 +102,13 @@ The root holds plain UTF-8 `.md` files, including their embedded pictures. Rende
 - `workspaces/` retains actual kernel chunks, journals, epochs and alarms.
 - `search.json` retains bodyless Notes projections, tagged with source hashes and the search/parser implementation fingerprint.
 - `pending.json`, when present, is a prepared commit containing exact source, matching kernel state and a publication identity. `lock.json` protects the root against a second service writer process.
-- `preserved/` holds, while a publication is in flight or after it met a late external edit, a receipt (`<identity>.json`) with the proposed exact text and original name, and the displaced source inode (`<identity>.before`). A journal-named `<identity>.next` is unpublished staging or the temporary second link of a newly published file.
+- `preserved/` holds, while a publication is in flight or after it met a late external edit, a receipt (`<identity>.json`) with the exact replacement text and original name, and the displaced source inode (`<identity>.before`). A journal-named `<identity>.next` is unpublished staging or the temporary second link of a newly published file.
 
 Private directories are 0700 and generated state files 0600. A retained `.before` inode keeps its original document mode inside the private directory. Existing private entries must be ordinary, service-owned files with safe permissions. Document paths cannot traverse hidden directories, symlinks or multiply linked files. Limits are 16 MiB per document, 10,000 files and 256 MiB per search scan, 64 simultaneous HTTP requests, two render realms by default, and 32 queued exports. `--concurrency` accepts 1–8; `--timeout` accepts 1,000–300,000 milliseconds. Private state files and protocol frames have their own byte caps. Workspace history consumes disk: monitor the service volume and retain normal backups.
 
-A changed document and its kernel snapshot are committed using a write-ahead record: synchronize the prepared record, publish the document, synchronize the state, then remove the record. A failure after preparation poisons the running store rather than acknowledging uncertain durability. Restart rolls forward when the current file matches the old or new source hash, or when displacement left the name absent with the incumbent safely retained. It retires only the journal-named staging link before validating and synchronizing the source and state. An unrelated file at the destination causes recovery refusal; that file, the displaced inode, the proposal receipt and the pending kernel record remain for an administrator. Do not delete `pending.json` to silence a recovery error.
+A changed document and its kernel snapshot are committed using a write-ahead record: synchronize the prepared record, publish the document, synchronize the state, then remove the record. A failure after preparation poisons the running store rather than acknowledging uncertain durability. Restart rolls forward when the current file matches the old or new source hash, or when displacement left the name absent with the incumbent safely retained. It retires only the journal-named staging link before validating and synchronizing the source and state. An unrelated file at the destination causes recovery refusal; that file, the displaced inode, the replacement receipt and the pending kernel record remain for an administrator. Do not delete `pending.json` to silence a recovery error.
 
-Ordinary external edits are detected by source hash before workspace use and before displacement. These checks are early conflict detection, not a filesystem compare-and-swap. Publication moves the actual incumbent inode into `preserved/`, synchronizes it and both directories, then creates the destination with a no-clobber hard link to the synchronized candidate. An edit racing the last check stays in the displaced inode; an editor holding that inode open can still write it there. A competing entry created in the gap wins: the service refuses rather than replacing it. The proposal also remains in the receipt. A late edit may therefore produce a successful service publication with the external revision retained, rather than a conflict response.
+Ordinary external edits are detected by source hash before workspace use and before displacement. These checks are early conflict detection, not a filesystem compare-and-swap. Publication moves the actual incumbent inode into `preserved/`, synchronizes it and both directories, then creates the destination with a no-clobber hard link to the synchronized candidate. An edit racing the last check stays in the displaced inode; an editor holding that inode open can still write it there. A competing entry created in the gap wins: the service refuses rather than replacing it. The replacement text also remains in the receipt. A late edit may therefore produce a successful service publication with the external revision retained, rather than a conflict response.
 
 This is preservation, not a single atomic replacement: readers can briefly observe a missing destination while the incumbent is displaced. The supported filesystem contract is a trusted, local POSIX filesystem with atomic same-filesystem rename, exclusive hard-link creation, and working file and directory fsync. The source directory and private recovery directory must share a filesystem; a separately mounted source is refused before displacement. Windows is refused. Network filesystems and filesystems without these semantics are not supported; successful startup alone does not qualify a provider.
 

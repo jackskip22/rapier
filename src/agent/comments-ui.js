@@ -87,9 +87,11 @@
         range = {start: range.start + leading, end: range.start + leading + trimmed.length};
         selectedKind = 'image';
       }
-      let read = await call('document.read_context', {start: range.start, end: range.end}, event), recipe = read.text || '';
+      let read = await call('document.read', {target: {kind: selectedKind === 'image' ? 'drawing' : 'source', start: range.start, end: range.end}}, event);
+      if (read.reason === 'read_kind_mismatch') read = await call('document.read', {target: {kind: 'source', start: range.start, end: range.end}}, event);
+      let recipe = read.text || '';
       while (read.outcome === 'ok' && !read.complete && read.next_cursor) {
-        read = await call('document.read_context', {cursor: read.next_cursor}, event); recipe += read.text || '';
+        read = await call('document.read', {cursor: read.next_cursor}, event); recipe += read.text || '';
       }
       if (read.outcome === 'ok' && (read.complete_handle || read.handle || read.comment_handle)) {
         if (selectedKind === 'image') {
@@ -180,7 +182,7 @@
       keepDraft();
       busy = true; submit.disabled = true;
       try {
-        const result = await call('document.comment', args, e);
+        const result = await call('comments.write', args, e);
         if (['applied', 'rebased', 'unchanged'].includes(result?.outcome)) {
           if ((args.action === 'create' || args.action === 'reply') && JSON.stringify(draft()) === JSON.stringify(submitted)) {
             drafts.remove(draftId, submitted);

@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: MIT
-import {_rapierValidLedgerRecord, _rapierRecordSplices, _rapierTransformSplices} from './journal-records.mjs';
+import {_rapierValidLedgerRecord, _rapierRecordSplices, _rapierTransformSplices, _rapierRecordMetadata, _rapierValidMetadata, _rapierTransformMetadata, _rapierReplayMetadata} from './journal-records.mjs';
+import {authoredHistory} from './transport.mjs';
 import {textRoot, rootAfter, sha256} from './hash.mjs';
 import {canonicalJSON, plainData, documentText, exactKeys, nonnegative, fault} from './data.mjs';
 export {textRoot, rootAfter};
 const digest = value => sha256(canonicalJSON(value));
 const rootShape = value => typeof value === 'string' && /^\d+:[a-z0-9]+:[a-z0-9]+$/.test(value);
-export function readLedger(input, expectedText) {
+export function readLedger(input, expectedText, expectedMetadata) {
   const ledger = plainData(input);
-  if (!exactKeys(ledger, ['format','documentAuthority','start','records','head','complete','sha256']) || ledger.format !== 'rapier-ledger/1' ||
+  if (!exactKeys(ledger, ['format','documentAuthority','start','records','head','complete','sha256']) || ledger.format !== 'rapier-ledger/2' ||
       typeof ledger.documentAuthority !== 'string' || !ledger.documentAuthority || ledger.documentAuthority.length > 256 ||
       typeof ledger.complete !== 'boolean' || !Array.isArray(ledger.records) ||
-      !exactKeys(ledger.start, ['text','revision','root','sha256']) || !exactKeys(ledger.head, ['revision','root','sha256'])) throw fault('invalid envelope');
+      !exactKeys(ledger.start, ['text','revision','root','sha256','metadata']) || !exactKeys(ledger.head, ['revision','root','sha256','metadata'])) throw fault('unsupported or invalid envelope');
   const {sha256: claimed, ...payload} = ledger;
   if (claimed !== digest(payload)) throw fault('envelope checksum differs');
   let text = documentText(ledger.start.text), root = ledger.start.root, revision = ledger.start.revision;
+  if (!_rapierValidMetadata(ledger.start.metadata) || !_rapierValidMetadata(ledger.head.metadata)) throw fault('invalid document metadata');
   if (!nonnegative(revision) || !rootShape(root) || (revision === 0 && root !== textRoot(text)) || ledger.start.sha256 !== sha256(text) ||
       (ledger.complete && revision !== 0)) throw fault('invalid start');
   const earlier = [];
   for (const record of ledger.records) {
-    if (!Array.isArray(record.splices) || !record.splices.length || !_rapierValidLedgerRecord(record, earlier.at(-1) || null, earlier,
+    if (!Array.isArray(record.splices) || !_rapierValidLedgerRecord(record, earlier.at(-1) || null, earlier,
         ledger.documentAuthority, 25 * 1024 * 1024, text => new TextEncoder().encode(text).length, !ledger.complete) ||
         record.transaction.baseRevision < revision || (record.transaction.baseRevision !== revision && ledger.complete) ||
         (record.transaction.baseRevision === revision && record.beforeHash !== root)) throw fault('record chain differs');
@@ -31,39 +33,50 @@ export function readLedger(input, expectedText) {
     if (root !== record.afterHash) throw fault('record root differs');
     revision = record.transaction.revision; earlier.push(record);
   }
+  if (ledger.records.some(row => Object.hasOwn(row, 'authored'))) {
+    try { authoredHistory(ledger.start.text, ledger.records); } catch (_) { throw fault('authored origin differs'); }
+  }
+  const metadata = _rapierReplayMetadata(ledger.start.metadata, ledger.records);
+  if (!metadata || canonicalJSON(metadata) !== canonicalJSON(ledger.head.metadata) ||
+      (expectedMetadata !== undefined && (!_rapierValidMetadata(expectedMetadata) || canonicalJSON(metadata) !== canonicalJSON(expectedMetadata))))
+    throw fault('metadata does not describe this document');
   if (ledger.head.revision !== revision || ledger.head.root !== root || ledger.head.sha256 !== sha256(text) ||
       (expectedText !== undefined && text !== expectedText)) throw fault('history does not describe this document');
-  return {ledger, text, root, revision, complete: ledger.complete};
+  return {ledger, text, metadata, root, revision, complete: ledger.complete};
 }
-export function exportLedger({text, records, documentAuthority, revision, root, complete = false, earlier = records} = {}) {
+export function exportLedger({text, metadata, records, documentAuthority, revision, root, complete = false, earlier = records} = {}) {
   documentText(text);
+  if (!_rapierValidMetadata(metadata)) throw fault('document metadata required');
   if (!Array.isArray(records) || !Array.isArray(earlier)) throw fault('records required');
   // Inspect before touching properties: exporting must not call accessors on an alleged record.
   records = plainData(records); earlier = plainData(earlier);
   const expanded = records.map(record => {
-    const rows = _rapierRecordSplices(record, earlier);
-    if (!rows) throw fault('navigation target was not retained');
+    const rows = _rapierRecordSplices(record, earlier), effect = _rapierRecordMetadata(record, earlier);
+    if (!rows || effect === undefined) throw fault('navigation target was not retained');
     return {transaction: record.transaction, splices: rows.map(row => ({pos: row.pos, removed: row.removed, inserted: row.inserted})),
-      beforeHash: record.beforeHash, afterHash: record.afterHash};
+      beforeHash: record.beforeHash, afterHash: record.afterHash, ...(Object.hasOwn(record, 'authored') ? {authored: record.authored} : {}), ...(effect ? {metadata: effect} : {}),
+      ...(record.changeSet && Object.hasOwn(record.changeSet, 'label') ? {changeSet: {label: record.changeSet.label}} : {}),
+      ...(record.derivedCommentIndex == null ? {} : {derivedCommentIndex: record.derivedCommentIndex})};
   });
-  let startText = text;
+  let startText = text, startMetadata = {...metadata};
   for (let i = expanded.length - 1; i >= 0; i--) {
     startText = _rapierTransformSplices(startText, expanded[i].splices, true);
-    if (startText === null) throw fault('history does not reverse from this document');
+    startMetadata = _rapierTransformMetadata(startMetadata, expanded[i].metadata, true);
+    if (startText === null || !startMetadata) throw fault('history does not reverse from this document');
   }
   revision ??= expanded.at(-1)?.transaction.revision ?? 0;
   root ??= expanded.at(-1)?.afterHash ?? textRoot(text);
   documentAuthority ??= expanded[0]?.transaction.documentAuthority;
   const startRevision = expanded[0]?.transaction.baseRevision ?? revision;
-  const payload = {format: 'rapier-ledger/1', documentAuthority,
-    start: {text: startText, revision: startRevision, root: expanded[0]?.beforeHash ?? root, sha256: sha256(startText)},
-    records: expanded, head: {revision, root, sha256: sha256(text)}, complete: complete === true && startRevision === 0 && expanded.every((row, i) => !i || row.transaction.baseRevision === expanded[i - 1].transaction.revision)};
+  const payload = {format: 'rapier-ledger/2', documentAuthority,
+    start: {text: startText, revision: startRevision, root: expanded[0]?.beforeHash ?? root, sha256: sha256(startText), metadata: startMetadata},
+    records: expanded, head: {revision, root, sha256: sha256(text), metadata: {...metadata}}, complete: complete === true && startRevision === 0 && expanded.every((row, i) => !i || row.transaction.baseRevision === expanded[i - 1].transaction.revision)};
   const ledger = {...payload, sha256: digest(payload)};
-  readLedger(ledger, text); return ledger;
+  readLedger(ledger, text, metadata); return ledger;
 }
 // Derived navigation, never a second history. A target older than start is intentionally unavailable.
 export function historyEnvelope(input, segmentIdentity = []) {
-  const {ledger, text} = readLedger(input), ids = new Set(ledger.records.map(row => row.transaction.id));
+  const {ledger, text, metadata} = readLedger(input), ids = new Set(ledger.records.map(row => row.transaction.id));
   let branch = [], cursor = 0;
   for (const {transaction: tx} of ledger.records) {
     const target = tx.reverts || tx.reapplies;
@@ -75,28 +88,31 @@ export function historyEnvelope(input, segmentIdentity = []) {
     } else { branch = branch.slice(0, cursor); branch.push(tx.id); cursor = branch.length; }
   }
   const byId = new Map(ledger.records.map(row => [row.transaction.id, row]));
-  let traversed = text;
+  let traversed = text, traversedMetadata = {...metadata};
   for (let i = cursor - 1; i >= 0; i--) {
     traversed = _rapierTransformSplices(traversed, byId.get(branch[i]).splices, true);
-    if (traversed === null) throw fault('undo branch does not reverse');
+    traversedMetadata = _rapierTransformMetadata(traversedMetadata, byId.get(branch[i]).metadata, true);
+    if (traversed === null || !traversedMetadata) throw fault('undo branch does not reverse');
   }
-  traversed = text;
+  traversed = text; traversedMetadata = {...metadata};
   for (let i = cursor; i < branch.length; i++) {
     traversed = _rapierTransformSplices(traversed, byId.get(branch[i]).splices);
-    if (traversed === null) throw fault('redo branch does not replay');
+    traversedMetadata = _rapierTransformMetadata(traversedMetadata, byId.get(branch[i]).metadata);
+    if (traversed === null || !traversedMetadata) throw fault('redo branch does not replay');
   }
   if (ledger.complete) {
     if (ledger.records.length && !branch.length) throw fault('complete history lost its branch');
-    let active = ledger.start.text;
-    if (!cursor && active !== text) throw fault('complete history start differs');
+    let active = ledger.start.text, activeMetadata = {...ledger.start.metadata};
+    if (!cursor && (active !== text || canonicalJSON(activeMetadata) !== canonicalJSON(metadata))) throw fault('complete history start differs');
     for (let i = 0; i < branch.length; i++) {
       active = _rapierTransformSplices(active, byId.get(branch[i]).splices);
-      if (active === null || (i + 1 === cursor && active !== text)) throw fault('complete branch differs');
+      activeMetadata = _rapierTransformMetadata(activeMetadata, byId.get(branch[i]).metadata);
+      if (active === null || !activeMetadata || (i + 1 === cursor && (active !== text || canonicalJSON(activeMetadata) !== canonicalJSON(metadata)))) throw fault('complete branch differs');
     }
   }
-  return {schemaVersion: 4, documentAuthority: ledger.documentAuthority, documentRevision: ledger.head.revision,
+  return {schemaVersion: 5, documentAuthority: ledger.documentAuthority, documentRevision: ledger.head.revision,
     ledger: ledger.records, branch, cursor, earliestRevision: ledger.start.revision, earliestHash: ledger.start.root,
-    sourceRootId: ledger.head.root, segmentIdentity, historyComplete: ledger.complete,
+    sourceRootId: ledger.head.root, earliestMetadata: {...ledger.start.metadata}, documentMetadata: {...metadata}, segmentIdentity, historyComplete: ledger.complete,
     trimReason: ledger.complete ? '' : 'carried_start', trimmedBytes: 0};
 }
 export function agentActorId(door, agent) {
@@ -124,8 +140,8 @@ export function replaceLedgerText(input, text, {actor = {kind: 'system', id: 'ra
     documentAuthority: current.ledger.documentAuthority, baseRevision: current.revision, revision,
     actor, transport: 'platform', operation, requestId: null, sourceTransactionId: null,
     affectedBlockIds: [], parent: current.ledger.records.at(-1)?.transaction.id ?? null,
-    reverts: null, reapplies: null, createdAt: at ?? current.ledger.records.at(-1)?.transaction.createdAt ?? 0,
+    reverts: null, reapplies: null, createdAt: at ?? null,
   }};
-  return exportLedger({text, records: [...current.ledger.records, record], documentAuthority: current.ledger.documentAuthority,
+  return exportLedger({text, metadata: current.metadata, records: [...current.ledger.records, record], documentAuthority: current.ledger.documentAuthority,
     revision, root, complete: current.complete});
 }

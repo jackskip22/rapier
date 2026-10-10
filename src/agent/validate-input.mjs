@@ -1,12 +1,11 @@
 const cosmeticLimits = {label: 120, note: 240, agent: 64, alt: 240};
-// Agent tools ignore undeclared fields; cosmetic limits describe the stored result, not admission.
+// Typed input objects stay closed; cosmetic limits describe the stored result, not admission.
 // Opaque records (drawing recipes, for example) keep their own deeper owner's contract.
 export function agentInputSchema(schema, depth = 0) {
   const projected = {...schema};
   // The strictness marker is the catalogue's own: the published schema says it as additionalProperties.
   delete projected['x-rapier-strict'];
   if (schema.properties) {
-    projected.additionalProperties = schema['x-rapier-strict'] ? false : true;
     projected.properties = Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => {
       const property = agentInputSchema(value, depth + 1);
       if (!depth && Object.hasOwn(cosmeticLimits, key)) delete property.maxLength;
@@ -14,6 +13,9 @@ export function agentInputSchema(schema, depth = 0) {
     }));
   }
   if (schema.items) projected.items = agentInputSchema(schema.items, depth + 1);
+  for (const key of ['oneOf', 'anyOf', 'allOf']) if (schema[key]) projected[key] = schema[key].map(branch => agentInputSchema(branch, depth));
+  for (const key of ['not', 'if', 'then', 'else']) if (schema[key]) projected[key] = agentInputSchema(schema[key], depth);
+  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') projected.additionalProperties = agentInputSchema(schema.additionalProperties, depth + 1);
   return projected;
 }
 
@@ -23,6 +25,26 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
   const faults = [];
   const visit = (schema, value, path, depth = 0, key = '') => {
     const invalid = (reason, field = path) => faults.push({path: field, message: field + ': ' + reason});
+    // Branches are admission, not descriptive hints. Test without projection so a discriminator cannot discard payload fields.
+    const matches = branch => {
+      try { validateInput(branch, value, path, false); return true; } catch (error) {
+        if (error.code !== 'invalid_arguments') throw error;
+        return false;
+      }
+    };
+    if (schema.oneOf && schema.oneOf.filter(matches).length !== 1) invalid('expected exactly one supported variant');
+    if (schema.anyOf && !schema.anyOf.some(matches)) invalid('expected a supported variant');
+    if (schema.not && matches(schema.not)) invalid('forbidden field combination');
+    if (schema.allOf) for (const branch of schema.allOf) if (!matches(branch)) invalid('invalid field combination');
+    if (schema.if) {
+      const branch = matches(schema.if) ? schema.then : schema.else;
+      if (branch && !matches(branch)) invalid('invalid field combination');
+    }
+    // Required-only and discriminator branches are ordinary JSON Schema object constraints.
+    if (!schema.type && value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const required of schema.required || []) if (!Object.hasOwn(value, required)) invalid('missing ' + required);
+      for (const [name, child] of Object.entries(schema.properties || {})) if (Object.hasOwn(value, name)) visit(child, value[name], path + '.' + name, depth + 1, name);
+    }
     let type = schema.type;
     if (Array.isArray(type)) {
       if (value === null && type.includes('null')) return value;
@@ -33,7 +55,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
     if (type === 'object') {
       if (!value || typeof value !== 'object' || Array.isArray(value)) { invalid('expected an object'); return; }
       const properties = schema.properties || {}, required = schema.required || [], keys = Object.keys(value);
-      const admitted = agent && schema.properties && schema.additionalProperties !== false ? {} : value;
+      const admitted = agent && schema.properties ? {} : value;
       if (keys.length < (schema.minProperties || 0) || keys.length > (schema.maxProperties ?? Infinity)) invalid('object property count outside bounds');
       const name = key => schema.propertyNames && visit({type: 'string', ...schema.propertyNames}, key, path + '.' + key, depth + 1, key);
       for (const key of Object.keys(properties)) {
@@ -47,8 +69,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
       for (const key of required) if (!Object.hasOwn(properties, key) && !Object.hasOwn(value, key)) invalid('missing ' + key);
       for (const key of keys) if (!Object.hasOwn(properties, key)) {
         name(key);
-        // In the agent's projected schema only an authored object closes its fields, so the field is named; the door's
-        // raw schema names it for authored objects alone.
+        // Unknown fields cannot become aliases or silently change which tagged request is executed.
         if (schema.additionalProperties === false) invalid('unknown field ' + key, schema['x-rapier-strict'] || agent ? path + '.' + key : path);
         else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
           const field = visit(schema.additionalProperties, value[key], path + '.' + key, depth + 1, key);

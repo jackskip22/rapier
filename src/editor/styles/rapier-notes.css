@@ -288,8 +288,7 @@ body.rapier-notes-mode #editor-blocks>.block-wrapper--editing>.block-edit{border
 .rapier-ocr-mark{position:absolute;top:0;left:0;width:100%;height:100%;background:color-mix(in srgb,var(--color-accent) 35%,transparent)}
 /* the reminder chip: a small bell and the model's own words, "(missed)" included */
 .rapier-notes-remind{display:flex;align-items:center;gap:4px;margin-top:var(--space-1);font:var(--text-sm) var(--font-sans)}
-.rapier-notes-proposal{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-1);margin-top:var(--space-1);font:var(--text-sm) var(--font-sans)}
-.rapier-notes-proposal-btn{min-height:32px;padding:0 var(--space-2);border:1px solid currentColor;background:none;color:inherit;font:var(--fw-medium) 11px/1 var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;cursor:pointer}
+.rapier-notes-agent{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-1);margin-top:var(--space-1);font:var(--text-sm) var(--font-sans)}
 .rapier-notes-remind svg{flex:none;width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* A recording on a card: one row for each recording the note carries, under the body -- its ▶ and the duration in the note's player's own words. The card is a preview, not the note's player: no bar, no waveform; the ▶ plays and pauses the recording where it is, and a tap anywhere else is the card's and opens
    the note. */
@@ -923,15 +922,12 @@ body{--rapier-app-surface:var(--color-surface);--rapier-app-surface-2:var(--colo
 .rapier-notes-pin-flight svg{display:block;width:100%;height:100%;stroke:currentColor;fill:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
 .rapier-notes-pin-puff{position:absolute;top:0;left:0;z-index:4;width:22px;height:22px;border-radius:50%;background:var(--color-icon);pointer-events:none}
 
-/* SEARCH TEXT IN IMAGES: one row, a word and a flat square switch, on the search bar's own ink and ground (notes/ocr.js builds it
-   in Notes' filters; editor/ui.html carries it under the editor's find bar, hidden until the reader is installed). */
+/* Text in pictures: Notes' filter uses the search bar's ink and ground. */
 .rapier-search-toggle{appearance:none;flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);min-height:40px;padding:0 var(--space-1);border:0;border-radius:0;background:transparent;color:var(--color-bg);font:var(--fw-regular) var(--text-xs) var(--font-mono);letter-spacing:var(--track-caps);text-transform:uppercase;cursor:pointer;touch-action:manipulation}
 .rapier-search-toggle__switch{flex:none;display:flex;align-items:center;width:34px;height:18px;padding:0 3px;background:color-mix(in srgb,var(--color-bg) 22%,transparent)}
 .rapier-search-toggle__switch::before{content:'';flex:none;width:12px;height:12px;background:var(--color-bg);margin-left:0;transition:margin-left var(--dur-micro,120ms) var(--ease-micro,ease)}
 .rapier-search-toggle[aria-checked="true"] .rapier-search-toggle__switch{background:var(--color-bg)}
 .rapier-search-toggle[aria-checked="true"] .rapier-search-toggle__switch::before{background:var(--color-icon);margin-left:16px}
-.find-pictures{height:40px;min-height:0}
-.find-pictures .find-pictures__count{font-size:var(--text-xs);color:color-mix(in srgb,var(--color-bg) 60%,transparent)}
 @media (prefers-reduced-motion:reduce){.rapier-search-toggle__switch::before{transition:none}}
 
 /* The filters, quiet: the same filters, no boxes until one is worn; the kinds, the sections and the colours each one even row, the

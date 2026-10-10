@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "release": "1.1.90",
+  "release": "1.1.91",
   "directory": "Put every file in one directory, keeping each file's folder, and give the page its address with `plugins`. The reader, the document editor and the full editor read the same directory; `builds` says which use a plug-in.",
   "plugins": [
     {
@@ -11,11 +11,11 @@
       ],
       "files": [
         {
-          "file": "rapier-flowchart-1.1.90.js",
-          "bytes": 263978,
-          "sha384": "d0b985efcb3816ffede115bb951d82f7073f86b9b22d3e70480b0759a08fb2f795bd7c0561ef4810a1a3ca85c5bf1b17",
-          "sri": "0LmF78s4Fv/t4RW7lR2C9wc/hrmyLT5wSAsHWaCPsveVvXwFYe9IEKGjyoXFvxsX",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/flowchart/rapier-flowchart-1.1.90.js"
+          "file": "rapier-flowchart-1.1.91.js",
+          "bytes": 277842,
+          "sha384": "8b3ad9ee711d69a5ffea7311271f80a25c1358af051099e228381c6f77e32bba140529cef2f0124a10380ab324330b00",
+          "sri": "izrZ7nEdaaX/6nMRJx+AolwTWK8FEJniKDgcb3fjK7oUBSnO8vASShA4CrMkMwsA",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/flowchart/rapier-flowchart-1.1.91.js"
         }
       ]
     },
@@ -27,11 +27,11 @@
       ],
       "files": [
         {
-          "file": "rapier-docx-1.1.90.js",
-          "bytes": 251009,
-          "sha384": "b3a425bd43304c8ceac293b3bf21a94daff2a6554525cb16fabcbf8f016d2442c2af765fc0382099ec1e77a8f6f1b690",
-          "sri": "s6QlvUMwTIzqwpOzvyGpTa/yplVFJcsW+ry/jwFtJELCr3ZfwDggmewed6j28baQ",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/docx/rapier-docx-1.1.90.js"
+          "file": "rapier-docx-1.1.91.js",
+          "bytes": 256555,
+          "sha384": "4527bf93c88995caa5321d36be6c6779ea43a297b4b45b7f3a35888761c2f1b31d058bae39fcc1fa46f2279c09561b35",
+          "sri": "RSe/k8iJlcqlMh02vmxneepDope0tFt/OjWIh2HC8bMdBYuuOfzB+kbyJ5wJVhs1",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/docx/rapier-docx-1.1.91.js"
         }
       ]
     },
@@ -88,11 +88,11 @@
       ],
       "files": [
         {
-          "file": "rapier-pdf-1.1.90.js",
+          "file": "rapier-pdf-1.1.91.js",
           "bytes": 22770,
           "sha384": "c72a941815bb4ad56633ac45c29c2b87db3a431115606b9f0f673070a23ed812c326393db79297eb0118b1e5e10e87d3",
           "sri": "xyqUGBW7StVmM6xFwpwrh9s6QxEVYGufD2cwcKI+2BLDJjk9t5KX6wEYseXhDofT",
-          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/pdf/rapier-pdf-1.1.90.js",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/pdf/rapier-pdf-1.1.91.js",
           "builds": [
             "reader"
           ]
@@ -1475,6 +1475,8 @@
       "name": "ocr",
       "adds": "Reads the words in pictures on the device (PP-OCRv6 tiny on ONNX Runtime Web), so search finds them. About 21 MB.",
       "builds": [
+        "reader",
+        "document",
         "full"
       ],
       "files": [
@@ -1547,6 +1549,23 @@
           "sha384": "36c7686c7f54c5d2ea2337104fc961a5376ee8e2ace0b232f25326da62c882a366361294568fac472dab27da14290ca0",
           "sri": "NsdobH9UxdLqIzcQT8lhpTdu6OKs4LIy8lMm2mLIgqNmNhKUVo+sRy2rJ9oUKQyg",
           "url": "https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "font-subset",
+      "adds": "Keeps the used characters in fonts embedded in exported pages.",
+      "builds": [
+        "document",
+        "full"
+      ],
+      "files": [
+        {
+          "file": "rapier-font-subset-1.js",
+          "bytes": 1215411,
+          "sha384": "682b9aa9186c6e09232b5127764de403ee6bb37c1052fefd27f2d6c2496a8a96ce7f553d2747860540d95fce4ac3b23c",
+          "sri": "aCuaqRhsbgkjK1Endk3kA+5rs3wQUv79J/LWwklqipbOf1U9J0eGBUDZX85Kw7I8",
+          "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier@main/site/plugins/rapier-font-subset-1.js"
         }
       ]
     },

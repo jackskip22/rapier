@@ -50,7 +50,7 @@ async function _rapierTodoPersist(file, next) {
 	if (_rapierTodoText() !== before) { if (typeof showToast === 'function') showToast('The list changed. Try again.', 'info'); return false; }
 	// The editor owns the open note's text (_rapierNotesApplyText); the file follows through autosave.
 	if (typeof _rapierNotesApplyText === 'function' && typeof _rapierNotes !== 'undefined' && _rapierNotes.current === file) {
-		return await _rapierNotesApplyText(next, 'notes.list', 'List', {settle: true});
+		return await _rapierNotesApplyText(next, 'notes.checklist', 'List', {settle: true});
 	}
 	if (typeof showToast === 'function') showToast('The list could not be saved: this note is not the open one', 'error');
 	return false;
@@ -121,11 +121,24 @@ function _rapierTodoLabelTextAfterBox(li, box) {
 	return null;
 }
 function _rapierTodoUnwrapLabel(li) {
+	const selection = window.getSelection && window.getSelection();
 	for (const span of li.querySelectorAll(':scope > .rapier-todo-label')) {
-		// Never a removal: whatever is in there is the person's own words the moment they start
-		// typing. The span goes, its contents stay exactly where they were.
+		let held = null;
+		if (selection && selection.rangeCount && (span.contains(selection.anchorNode) || span.contains(selection.focusNode))) {
+			const parent = span.parentNode, start = Array.prototype.indexOf.call(parent.childNodes, span), count = span.childNodes.length;
+			// Live ranges collapse when their text node moves. Keep both ends, including a boundary on the span itself.
+			const point = (node, offset) => node === span ? {node: parent, offset: start + offset}
+				: {node, offset: node === parent && offset > start ? offset + count - 1 : offset};
+			held = {anchor: point(selection.anchorNode, selection.anchorOffset), focus: point(selection.focusNode, selection.focusOffset)};
+		}
+		// The span goes; its words and the person's selection stay in place.
 		while (span.firstChild) span.parentNode.insertBefore(span.firstChild, span);
 		span.remove();
+		if (held && held.anchor.node.isConnected && held.focus.node.isConnected &&
+				(selection.anchorNode !== held.anchor.node || selection.anchorOffset !== held.anchor.offset ||
+				 selection.focusNode !== held.focus.node || selection.focusOffset !== held.focus.offset)) {
+			selection.setBaseAndExtent(held.anchor.node, held.anchor.offset, held.focus.node, held.focus.offset);
+		}
 	}
 }
 function _rapierTodoEnsureLabel(li) {
@@ -192,6 +205,8 @@ function _rapierTodoScanBody() {
 // Chrome only: one handle per boxed row, so a row Enter makes has its handle at once. No model-driven parts: the committed text lags the DOM.
 // A row with words has its label span unwrapped (a cloned empty span grows and pushes the words right); an empty row keeps exactly one.
 function _rapierTodoDecorateEditing(wrapper) {
+	// The keyboard owns its composing nodes until the word is committed or cancelled.
+	if (rapier.composition.block) return;
 	_rapierTodoFootAddRow(wrapper);
 	const edit = wrapper.querySelector(':scope > .block-edit');
 	if (!edit) return;
@@ -728,6 +743,7 @@ function _rapierTodoInit() {
 		// One listener for a deletion across a row's edge, before the browser deletes the next row's chrome.
 		host.addEventListener('beforeinput', _rapierTodoDeleteAcrossRows, true);
 		host.addEventListener('keydown', _rapierTodoIndentKey, true);
+		host.addEventListener('compositionend', _rapierTodoScheduleScan);
 	}
 	_rapierTodoScheduleScan();
 }

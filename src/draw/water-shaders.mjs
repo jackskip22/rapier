@@ -169,7 +169,12 @@ const body = {
   let a=loadTexel(t1,pix);let b=loadTexel(t2,pix);let keep=u.v[2].w;
   if(m<0.002){return Pair(a*keep,b*keep);}
   let back=q-u.v[1].x*sample(t0,q).xy/u.v[0].zw*m;
-  var resultA=mix(a,sample(t1,back),m);var resultB=mix(b,sample(t2,back),m);
+  let advectedA=sample(t1,back);let advectedB=sample(t2,back);
+  var resultA=mix(a,advectedA,m);var resultB=mix(b,advectedB,m);
+  // The step may not create an extreme: what it writes stays within the pigment it drew from (this texel, the one it was carried
+  // from, the faces it exchanged with). Advection and exchange together can overshoot, and where the flow is fast the overshoot
+  // alternates in sign and grows each frame.
+  var lowA=min(a,advectedA);var highA=max(a,advectedA);var lowB=min(b,advectedB);var highB=max(b,advectedB);
   var proximity=0.0;
   if(u.v[3].z>0){let d=(q-u.v[3].xy)*vec2<f32>(u.v[0].x/u.v[0].y,1)/u.v[3].z;proximity=exp(-dot(d,d));}
   // The reference applies bleeding and the drying-edge flow once per 60 Hz display frame. A shorter step applies its
@@ -190,9 +195,10 @@ const body = {
     let drift=carry[j]*clamp(u.v[1].w*(water-nw)*reach/distance,-0.08,0.08)*gate*pace;
     resultA+=spread[j]*diffusion*gate*(na-a)-drift*select(na,a,drift>0);
     resultB+=spread[j]*diffusion*gate*(nb-b)-drift*select(nb,b,drift>0);
+    lowA=min(lowA,na);highA=max(highA,na);lowB=min(lowB,nb);highB=max(highB,nb);
    }
   }
-  resultA=bounded(resultA);resultB=bounded(resultB);resultB.a=max(resultB.a,0.0);
+  resultA=bounded(clamp(resultA,lowA,highA));resultB=bounded(clamp(resultB,lowB,highB));resultB.a=max(resultB.a,0.0);
   return Pair(resultA*keep,resultB*keep);
  }`,
  mask: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {

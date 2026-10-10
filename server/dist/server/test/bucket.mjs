@@ -77,17 +77,17 @@ export async function bucketCells() {
     const identities=[];
     for(const server of [disk,cloud]) {
       const opened=await call(server,'rapier.open',{filename:'harbour.md',text:source});assert(opened.document,JSON.stringify(opened));
-      const context=await call(server,'document.read_context',{...named(opened.document),start:0,end:source.length});assert.equal(context.text,source);
+      const context=await call(server,"document.read",{target: {kind: 'source', start:0, end:source.length}, ...named(opened.document)});assert.equal(context.text,source);
       await transactionCell(server,peer);
       const operation_id=randomUUID(),args={document:opened.document,operation_id,edits:[{context_handle:context.handle,text:changed}]};
-      const edit=await call(server,'document.apply_edits',args);applied(edit);identities.push({opened,context,args,edit});
+      const edit=await call(server,"document.edit",args);applied(edit);identities.push({opened,context,args,edit});
     }
     assert.deepEqual(Buffer.from((await cloud.store.read('harbour.md')).text),await readFile(join(folder,'harbour.md')),'edit bytes match the actual folder');
     const token=cloud.token;await stop(cloud);await stop(disk);disk=await start({root:folder});cloud=await start(bucket);assert.equal(cloud.token,token);
     for(const [index,server] of [disk,cloud].entries()) {
-      const {opened,args,edit}=identities[index];applied(await call(server,'document.apply_edits',args));
+      const {opened,args,edit}=identities[index];applied(await call(server,"document.edit",args));
       assert.equal((await server.store.read('harbour.md')).text,changed,'restart retry is exactly once');
-      applied(await call(server,'document.undo_agent_change',{...named(opened.document),change_id:edit.changeId}));
+      applied(await call(server,"document.undo",{target: {kind: 'act', act_id:edit.act.id}, ...named(opened.document)}));
       assert.equal((await server.store.read('harbour.md')).text,source,'durable kernel Undo restores BOM, CRLF and Unicode');
     }
     assert.deepEqual(Buffer.from((await cloud.store.read('harbour.md')).text),await readFile(join(folder,'harbour.md')));
@@ -106,29 +106,29 @@ export async function bucketCells() {
       assert.equal(comparable(results[1]),comparable(results[0]),'the complete Notes answer is identical apart from store timestamps');
     }
     const scoped=await call(cloud,'rapier.open',{},'?document='+encodeURIComponent(strange));assert(scoped.document,JSON.stringify(scoped));
-    assert.equal((await call(cloud,'document.read_context',{...named(scoped.document),start:0,end:'# Nested\nA unique nestedneedle.\n'.length})).text,'# Nested\nA unique nestedneedle.\n');
+    assert.equal((await call(cloud,"document.read",{target: {kind: 'source', start:0, end:'# Nested\nA unique nestedneedle.\n'.length}, ...named(scoped.document)})).text,'# Nested\nA unique nestedneedle.\n');
     assert.equal((await fetch(cloud.origin+'/d/.rapier-server/credentials.json')).status,403);
     assert(!peer.requests.some(row=>row.list && row.prefix?.startsWith('.rapier-server/parts/')),'search never walks the private part tree');
 
     // Two independent server/kernel caches race after both have read the same ETag.
     const other=await start(bucket),original='One original.\r\n';
     const opened=await call(cloud,'rapier.open',{filename:'parallel.md',text:original});assert(opened.document,JSON.stringify(opened));
-    const context=await call(cloud,'document.read_context',{...named(opened.document),start:0,end:original.length});
+    const context=await call(cloud,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(opened.document)});
     const release=peer.barrier('parallel.md');
-    const edits=await Promise.all([cloud,other].map((server,index)=>call(server,'document.apply_edits',{...named(opened.document),edits:[{context_handle:context.handle,text:'Writer '+index+' won.\r\n'}]})));
+    const edits=await Promise.all([cloud,other].map((server,index)=>call(server,"document.edit",{...named(opened.document),edits:[{context_handle:context.handle,text:'Writer '+index+' won.\r\n'}]})));
     release();assert.equal(edits.filter(row=>row.outcome==='applied').length,1,JSON.stringify(edits));
     assert.match(JSON.stringify(edits.find(row=>row.outcome!=='applied')),/FILE_CONFLICT|WORKSPACE_UNAVAILABLE/);
     assert(peer.requests.some(row=>row.key==='parallel.md' && row.status===412),'the loser was refused at S3, not just a local queue');
     const winner=edits.findIndex(row=>row.outcome==='applied');assert.equal((await cloud.store.read('parallel.md')).text,'Writer '+winner+' won.\r\n');
-    applied(await call([cloud,other][winner],'document.undo_agent_change',{...named(opened.document),change_id:edits[winner].changeId}));
+    applied(await call([cloud,other][winner],"document.undo",{target: {kind: 'act', act_id:edits[winner].act.id}, ...named(opened.document)}));
     assert.equal((await cloud.store.read('parallel.md')).text,original);
     // Same content but a newer kernel snapshot also invalidates a cached writer.
-    const firstContext=await call(cloud,'document.read_context',{...named(opened.document),start:0,end:original.length});
-    if(!firstContext.handle)assert((await call(cloud,'document.read_context',{...named(opened.document),start:0,end:original.length})).handle);
-    const newer=await call(other,'document.read_context',{...named(opened.document),start:0,end:original.length});
+    const firstContext=await call(cloud,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(opened.document)});
+    if(!firstContext.handle)assert((await call(cloud,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(opened.document)})).handle);
+    const newer=await call(other,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(opened.document)});
     // A cache evicted by the losing race may require one explicit reopen/retry.
-    if(!newer.handle)assert((await call(other,'document.read_context',{...named(opened.document),start:0,end:original.length})).handle);
-    const stale=await call(cloud,'document.read_context',{...named(opened.document),start:0,end:original.length});
+    if(!newer.handle)assert((await call(other,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(opened.document)})).handle);
+    const stale=await call(cloud,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(opened.document)});
     assert.match(JSON.stringify(stale),/FILE_CONFLICT|WORKSPACE_UNAVAILABLE/,'state-only publication cannot be overwritten by a cached owner');
 
     // Create-only CAS has the same refusal code as a stale folder publication.
@@ -141,24 +141,24 @@ export async function bucketCells() {
     // Durable parts and locator are written, but no head is published at the crash cut.
     await stop(cloud);cloud=await start({...bucket,onCommitStep:step=>{if(crash && step==='prepared'){crash=false;throw new Error('simulated process cut before head');}}});
     const crashOpen=await call(cloud,'rapier.open',{filename:'crash.md',text:original});assert(crashOpen.document,JSON.stringify(crashOpen));
-    const crashContext=await call(cloud,'document.read_context',{...named(crashOpen.document),start:0,end:original.length});
+    const crashContext=await call(cloud,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(crashOpen.document)});
     const headBefore=Buffer.from(peer.objects.get('crash.md').body),partCount=[...peer.objects.keys()].filter(key=>key.startsWith('.rapier-server/parts/')).length;
     const crashArgs={...named(crashOpen.document),edits:[{context_handle:crashContext.handle,text:'After crash.\r\n'}]};
-    crash=true;assert.notEqual((await call(cloud,'document.apply_edits',crashArgs)).outcome,'applied');
+    crash=true;assert.notEqual((await call(cloud,"document.edit",crashArgs)).outcome,'applied');
     assert.deepEqual(peer.objects.get('crash.md').body,headBefore,'crash cannot move the head before parts are complete');
     assert([...peer.objects.keys()].filter(key=>key.startsWith('.rapier-server/parts/')).length>partCount,'the cut really occurred after new parts were stored');
     assert.equal((await cloud.store.read('crash.md')).text,original);
     await stop(cloud);cloud=await start(bucket);assert.equal((await cloud.store.read('crash.md')).text,original);
-    const retried=await call(cloud,'document.apply_edits',crashArgs);applied(retried);
-    applied(await call(cloud,'document.undo_agent_change',{...named(crashOpen.document),change_id:retried.changeId}));assert.equal((await cloud.store.read('crash.md')).text,original);
+    const retried=await call(cloud,"document.edit",crashArgs);applied(retried);
+    applied(await call(cloud,"document.undo",{target: {kind: 'act', act_id:retried.act.id}, ...named(crashOpen.document)}));assert.equal((await cloud.store.read('crash.md')).text,original);
     // A lost response after the head is durable replays the accepted operation on restart.
-    const lostContext=await call(cloud,'document.read_context',{...named(crashOpen.document),start:0,end:original.length});
+    const lostContext=await call(cloud,"document.read",{target: {kind: 'source', start:0, end:original.length}, ...named(crashOpen.document)});
     const lostArgs={...named(crashOpen.document),edits:[{context_handle:lostContext.handle,text:'Committed without a response.\r\n'}]};
     peer.after=(row,response)=>{if(row.method==='PUT' && row.key==='crash.md'){peer.after=null;response.destroy();}};
-    assert.notEqual((await call(cloud,'document.apply_edits',lostArgs)).outcome,'applied');
+    assert.notEqual((await call(cloud,"document.edit",lostArgs)).outcome,'applied');
     await stop(cloud);cloud=await start(bucket);assert.equal((await cloud.store.read('crash.md')).text,'Committed without a response.\r\n');
-    const lostRetry=await call(cloud,'document.apply_edits',lostArgs);applied(lostRetry);
-    applied(await call(cloud,'document.undo_agent_change',{...named(crashOpen.document),change_id:lostRetry.changeId}));assert.equal((await cloud.store.read('crash.md')).text,original);
+    const lostRetry=await call(cloud,"document.edit",lostArgs);applied(lostRetry);
+    applied(await call(cloud,"document.undo",{target: {kind: 'act', act_id:lostRetry.act.id}, ...named(crashOpen.document)}));assert.equal((await cloud.store.read('crash.md')).text,original);
 
     // Identical configured refusal limits, including a bounded streamed object read.
     await stop(disk);

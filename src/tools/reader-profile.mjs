@@ -103,7 +103,7 @@ export function dropElements(markup, test) {
 
 // The reader's blocks, in page order: the blocks of the editor's markup it keeps, and inside them the elements it drops.
 const BLOCKS = ['sr-live', 'embed-refused', 'top-bar', 'find-bar', 'editor-blocks', 'scroll-fab', 'scroll-fab-label', 'settings-overlay', 'navigator-overlay',
-	'math-plugin-overlay', 'mermaid-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'privacy-overlay', 'licenses-overlay', 'toast-root', 'file-input'];
+	'math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'privacy-overlay', 'licenses-overlay', 'toast-root', 'file-input'];
 const CUT = [
 	// The information sheets are the editor's.
 	'layout-info', 'code-info', 'copy-info', 'scroll-fab-acorn',
@@ -192,7 +192,7 @@ export function checkReaderPackage({script, markup, css, html}) {
 		['Paint or the Draw editor', /\bRapierDrawPaint|\bRapierDrawBrushes\b|\bRapierDrawWater|\b_rapierDrawFit\b|\brapierOpenDraw\b/],
 		['Notes', /\bRapierNotes[A-Z]|\bnotes-open\b/],
 		['the JPEG XL encoder', /\brapier-jxl-worker\b|\bjxl-encoder\b/],
-		['the agent door', /\bRapierKernel\b|\bRapierAgentCatalog\b|\bdocument\.apply_edits\b/],
+		['the agent door', /\bRapierKernel\b|\bRapierAgentCatalog\b|\bdocument\.edit\b/],
 		['the comparison worker', /\bRapierDiff\b|\b_rapierCompareWorkerMain\b/],
 		['the GPU lexer', /\bgpu-lexer\b|\bRapierGpuLexer\b/],
 		['the code-structure reader', /\blib-acorn\b/],

@@ -20,7 +20,7 @@ const RAPIER_PLUGIN_DELETE = Object.freeze({
 		async forget() { await globalThis.RapierPdfPlugin.forget(); if (typeof _rapierPdfSettingsRefresh === 'function') _rapierPdfSettingsRefresh(); }},
 	ocr: {name: 'text in pictures', what: 'the text reader and every word it read in your pictures', after: 'Search stops finding the words in pictures.',
 		held: () => _rapierProviders.ocr?.status === 'ready' && _rapierProviders.ocr.deletable,
-		async forget() { await _rapierProviders.ocr.forget(); }},
+		async forget() { await _rapierOcrForgetPlugin(); }},
 });
 
 function _rapierPluginDeleteAsk(key) {
@@ -54,9 +54,9 @@ async function _rapierPluginDeleteNow() {
 	if (!plugin || state.busy) return;
 	state.busy = true; _rapierPluginDeletePaint();
 	try {
-		await plugin.forget();
-		// This device's delete stays here: the wish other devices synced is left as it was (editor/personal.js).
+		// Decline locally before forget publishes absent; the synced wish stays unchanged.
 		if (typeof _rapierPersonal !== 'undefined') _rapierPersonal.declinePlugin(key);
+		await plugin.forget();
 		state.asking = null;
 		closeDialog(document.getElementById('plugin-delete-overlay'));
 	} catch (error) {

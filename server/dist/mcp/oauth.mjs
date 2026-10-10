@@ -131,8 +131,9 @@ const askedScopes = scope => scope.length ? scope : ['rapier:read', 'rapier:writ
 export function oauthChallenge(request, env, scopes = ['rapier:read']) {
   const metadata = oauthOrigin(env) + metadataPath(new URL(request.url).pathname);
   const scope = requiredScopes(scopes).join(' ');
-  return json(401, {error: 'authentication_required', message: 'Connect Rapier to use this private workspace.'}, {
-    'WWW-Authenticate': `Bearer resource_metadata="${metadata}"${scope ? `, scope="${scope}"` : ''}`,
+  const invalidToken = /^Bearer /i.test(request.headers.get('Authorization') || '');
+  return json(401, {error: invalidToken ? 'invalid_token' : 'authentication_required', message: 'Connect Rapier to use this private workspace.'}, {
+    'WWW-Authenticate': `Bearer resource_metadata="${metadata}"${scope ? `, scope="${scope}"` : ''}${invalidToken ? ', error="invalid_token"' : ''}`,
   });
 }
 export function oauthForbidden(request, env, scopes = ['rapier:write']) {
@@ -246,10 +247,13 @@ async function consent(request, env, api) {
     if (!await metered(env, 'consents')) return json(429, {error: 'temporarily_unavailable'}, {'Retry-After': '600'});
     if (repeatedParameter(new URL(request.url).searchParams)) return json(400, {error: 'invalid_request', message: 'Authorization parameters must not be repeated.'});
     const parsed = await api.parseAuthRequest(request);
-    if (!validChallenge(parsed.codeChallenge) || parsed.codeChallengeMethod !== 'S256') return json(400, {error: 'invalid_request', message: 'A valid S256 PKCE challenge is required.'});
-    if (parsed.scope.some(scope => !OAUTH_SCOPES.includes(scope))) return json(400, {error: 'invalid_scope'});
     const redirect = new URL(parsed.redirectUri);
     if (redirect.hostname.includes('*')) return json(400, {error: 'invalid_request'});
+    // The provider validated this client and callback; return its state and issuer on refusal too.
+    const refuse = (error, description) => new Response(null, {status: 303,
+      headers: headers({Location: env.OAUTH_AUTHORIZATION_ERROR_REDIRECT(parsed, error, description)})});
+    if (!validChallenge(parsed.codeChallenge) || parsed.codeChallengeMethod !== 'S256') return refuse('invalid_request', 'A valid S256 PKCE challenge is required.');
+    if (parsed.scope.some(scope => !OAUTH_SCOPES.includes(scope))) return refuse('invalid_scope');
     const description = await api.describeConsent(parsed);
     const transaction = await api.beginConsent(parsed);
     const write = askedScopes(parsed.scope).includes('rapier:write'), offline = parsed.scope.includes('offline_access');
@@ -359,8 +363,15 @@ export async function handleOAuth(request, env, ctx, next) {
           limited.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() === 'application/x-www-form-urlencoded') {
         const form = new URLSearchParams(await limited.clone().text());
         if (repeatedParameter(new URLSearchParams([...url.searchParams, ...form]))) return json(400, {error: 'invalid_request', error_description: 'Token parameters must not be repeated.'});
-        if (request.headers.has('Authorization') || form.has('client_secret') || form.has('client_assertion') || form.has('client_assertion_type'))
+        if (bearer !== null) {
+          const scheme = /^([!#$%&'*+.^_`|~\da-z-]+)(?:[ \t]|$)/i.exec(bearer)?.[1];
+          return json(scheme ? 401 : 400, {error: scheme ? 'invalid_client' : 'invalid_request', error_description: 'Rapier uses public clients with no client secret.'},
+            scheme ? {'WWW-Authenticate': `${scheme} realm="OAuth"`} : undefined);
+        }
+        if (form.get('client_secret') || form.get('client_assertion') || form.get('client_assertion_type'))
           return json(400, {error: 'invalid_client', error_description: 'Rapier uses public clients with no client secret.'});
+        if (!form.get('grant_type') && !form.get('token'))
+          return json(400, {error: 'invalid_request', error_description: 'A grant type or revocation token is required.'});
         if (form.get('grant_type') === 'authorization_code' && !/^[A-Za-z0-9._~-]{43,128}$/.test(form.get('code_verifier') || ''))
           return json(400, {error: 'invalid_request', error_description: 'A valid PKCE verifier is required.'});
         if (form.get('grant_type') === 'refresh_token') providerEnv = {...env,
@@ -376,7 +387,7 @@ export async function handleOAuth(request, env, ctx, next) {
       return new Response(response.body, {status: response.status, statusText: response.statusText, headers: headers(response.headers)});
     }
     if (bearer !== null) {
-      const match = /^Bearer ([^\s,]{1,4096})$/i.exec(bearer);
+      const match = /^Bearer +([^\s,]{1,4096})$/i.exec(bearer);
       if (!match) return oauthChallenge(request, env);
       // Each door accepts its own resource's tokens; the file and page routes serve both doors' connections.
       const server = await authorizationServer(env), resources = humanRoute ? [origin + '/mcp', origin + '/muse'] : [oauthResource(env, url.pathname)];

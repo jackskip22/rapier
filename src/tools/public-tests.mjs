@@ -11,6 +11,7 @@ export const PUBLIC_TEST_FILES = Object.freeze([
   'tools/test-public.mjs',
   'tools/public-tests.mjs',
   ...PUBLIC_TEST_ROWS.map(name => 'tools/witnesses/' + name + '.mjs'),
+  'tools/witnesses/_live-queue-cells.mjs',
   'tools/witnesses/_exactness-browser-parser.mjs',
   'tools/check-satellite-support.mjs',
 ]);

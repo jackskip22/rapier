@@ -1,6 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A copier consumes SourceGraphic, whether its ink came from paths, type or retained paint.
 // The file keeps the source and the filter, never a flattened substitute or a screen-size cache.
+import { REFRACTION_PRESETS, refractionPreset, fillRefraction, admitRefraction, refractionBounds, refractionMarkup } from './refraction.mjs';
+import { LIQUID_PRESETS, LIQUID_PALETTES, liquidPreset, fillLiquid, admitLiquid, liquidBounds, liquidMarkup } from './liquid.mjs';
+export { REFRACTION_PRESETS, refractionPreset, admitRefraction, LIQUID_PRESETS, LIQUID_PALETTES, liquidPreset, admitLiquid };
+
+export function effectPreset(type = 'copier', preset, seed) {
+	return type === 'refraction' ? refractionPreset(preset) : type === 'liquid' ? liquidPreset(preset, seed) : type === 'copier' ? copierPreset(preset, seed) : null;
+}
+export function fillEffect(raw) {
+	return raw?.type === 'refraction' ? fillRefraction(raw) : raw?.type === 'liquid' ? fillLiquid(raw) : fillCopier(raw);
+}
+export function admitEffect(raw) {
+	return raw?.type === 'refraction' ? admitRefraction(raw) : raw?.type === 'liquid' ? admitLiquid(raw) : admitCopier(raw);
+}
+export function effectBounds(effect, box) {
+	return effect?.type === 'refraction' ? refractionBounds(effect, box) : effect?.type === 'liquid' ? liquidBounds(effect, box) : copierBounds(effect, box);
+}
+export function effectMarkup(effect, body, box, key, scene = false) {
+	return effect?.type === 'refraction' ? refractionMarkup(effect, body, box, key, scene) : effect?.type === 'liquid' ? liquidMarkup(effect, body, box, key, scene) : copierMarkup(effect, body, box, key, scene);
+}
+
 export const COPIER_PRESETS = Object.freeze([
 	['photocopy', 'Photocopy', {}],
 	['show-through', 'Show-through', { copies: 2, drift: 5, angle: 175, fade: .72, toner: .78, paper: .9 }],
@@ -67,6 +87,8 @@ function noise(seed, index) {
 	let n = Math.imul(seed ^ index, 0x45d9f3b); n = Math.imul(n ^ n >>> 16, 0x45d9f3b);
 	return ((n ^ n >>> 16) >>> 0) / 4294967295 - .5;
 }
+// Each copy's offset in user units, copy 1 first: the GPU display reads the same numbers.
+export function copierOffsets(effect) { return Array.from({ length: Math.max(0, effect.copies - 1) }, (_, i) => offset(effect, i + 1)); }
 function offset(e, i) {
 	const angle = e.angle * Math.PI / 180;
 	return [i * e.drift * Math.cos(angle) + noise(e.seed, i * 2) * e.jitter * 16,
@@ -161,5 +183,5 @@ export function copierMarkup(effect, body, box, key, scene = false) {
 		'<feMerge result="print"><feMergeNode in="paper"/><feMergeNode in="shade"/>' + stack.map(s => '<feMergeNode in="' + s + '"/>').join('') + '<feMergeNode in="original"/></feMerge>';
 	if (e.strength < 1) filter += alpha('print', e.strength, 0, 'mixed') + alpha('SourceGraphic', 1 - e.strength, 0, 'under') + '<feComposite in="mixed" in2="under" operator="arithmetic" k2="1" k3="1"/>';
 	return '<defs><filter id="' + id + '" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse"' + region + ' color-interpolation-filters="sRGB">' + filter + '</filter></defs>' +
-		'<g data-rapier-copy=""' + (scene ? ' data-rapier-copy-scene=""' : '') + ' data-copy-filter="' + id + '" filter="url(#' + id + ')">' + body + '</g>';
+		'<g data-rapier-effect="copier"' + (scene ? ' data-rapier-effect-scene=""' : '') + ' data-effect-filter="' + id + '" filter="url(#' + id + ')">' + body + '</g>';
 }

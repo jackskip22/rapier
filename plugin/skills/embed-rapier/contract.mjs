@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The host's optional policy and picture exchange. No storage, network or editor authority.
+// The host's optional policy, file picker and picture exchange. No storage, network or editor authority.
 export const FEATURES = Object.freeze(['draw', 'paint', 'notes', 'readAloud', 'share', 'find']);
 export const LIMITS = Object.freeze({documentBytes: 25 * 1024 * 1024, pictureBytes: 16 * 1024 * 1024});
 export const ASSET_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/jxl', 'image/svg+xml']);
@@ -50,6 +50,110 @@ export function snapshotSettings(value) {
   if (value === undefined) return undefined;
   const accepted = normalizeSettings(value);
   return Object.freeze(Object.fromEntries(Object.keys(value).map(key => [key, accepted[key]])));
+}
+
+// Each picker owns its input. Cancelling it cannot give a later request its file.
+export function pickDeviceFile(document, signal) {
+  if (signal?.aborted) return Promise.resolve(null);
+  const input = document.createElement('input');
+  input.type = 'file'; input.hidden = true;
+  let resolve, settled = false;
+  const result = new Promise(yes => { resolve = yes; });
+  const finish = file => {
+    if (settled) return;
+    settled = true;
+    input.removeEventListener('change', changed); input.removeEventListener('cancel', cancelled);
+    signal?.removeEventListener('abort', cancelled);
+    input.remove(); resolve(file);
+  };
+  const changed = () => finish(input.files?.[0] || null), cancelled = () => finish(null);
+  input.addEventListener('change', changed); input.addEventListener('cancel', cancelled);
+  signal?.addEventListener('abort', cancelled, {once: true});
+  try {
+    (document.body || document.documentElement).append(input);
+    if (signal?.aborted) finish(null);
+    else if (typeof input.showPicker === 'function') input.showPicker();
+    else {
+      if (document.defaultView?.navigator?.userActivation?.isActive === false)
+        throw refusal('open_unavailable', 'Tap Open to choose a file.');
+      input.click();
+    }
+  } catch (error) { finish(null); throw error; }
+  return result;
+}
+
+// One picker ticket binds selected bytes to the frame and document that requested them.
+export function createFilePicker({document, refusal: reason, snapshot, current: unchanged, settle, post, open, notify, error}) {
+  return {
+    pending: null,
+    refusal: reason,
+    current(row) {
+      return !!row && this.pending === row && !row.controller.signal.aborted && !reason() && unchanged(row);
+    },
+    check() {
+      const row = this.pending;
+      if (row && !row.committing && !this.current(row)) this.cancel('open_stale');
+    },
+    cancel(code = 'open_cancelled', tellHost = true) {
+      const row = this.pending;
+      if (!row) return;
+      this.pending = null;
+      clearTimeout(row.timer);
+      row.started(false);
+      row.controller.abort();
+      const state = snapshot();
+      if (tellHost && row.host && row.port === state.port && row.portGeneration === state.portGeneration)
+        post('open-cancel', {}, row.requestId, row.baseRevision);
+      if (code !== 'open_cancelled' && code !== 'open_finished') notify(code);
+    },
+    begin(event) {
+      this.check();
+      const code = reason();
+      if (!event?.isTrusted || code || this.pending || !settle()) {
+        if (code) notify(code);
+        return false;
+      }
+      let started;
+      const ready = new Promise(resolve => { started = resolve; });
+      const row = {...snapshot(), requestId: crypto.randomUUID(), controller: new AbortController(), started, host: false};
+      this.pending = row;
+      try {
+        const selected = pickDeviceFile(document, row.controller.signal);
+        selected.then(file => this.selected(file, row)).catch(() => { if (this.pending === row) this.cancel('open_failed'); });
+        started(true);
+      } catch (_) {
+        row.host = true;
+        row.timer = setTimeout(() => { if (this.pending === row) this.cancel('open_timeout'); }, 15000);
+        if (!post('open-request', {}, row.requestId, row.baseRevision)) this.cancel('open_disconnected');
+      }
+      return ready;
+    },
+    answer(data) {
+      const row = this.pending, payload = data.payload || {};
+      if (!row || !row.host || data.requestId !== row.requestId || data.baseRevision !== row.baseRevision) return 'open_unmatched';
+      if (!this.current(row)) { this.cancel('open_stale'); return 'open_stale'; }
+      const fields = data.type === 'open-result' ? ['file'] : data.type === 'open-nack' ? ['code', 'reason'] : [];
+      const valid = Object.keys(payload).every(key => fields.includes(key)) &&
+        (data.type !== 'open-result' || payload.file === null || payload.file instanceof document.defaultView.File) &&
+        (data.type !== 'open-nack' || typeof payload.code === 'string' && payload.code.length > 0 && payload.code.length <= 64 &&
+          typeof payload.reason === 'string' && payload.reason.length <= 500);
+      if (!valid) { this.cancel('open_reply_invalid'); return 'open_reply_invalid'; }
+      clearTimeout(row.timer);
+      if (data.type === 'open-nack') { this.cancel(payload.code, false); return ''; }
+      row.started(true);
+      if (data.type === 'open-result') void this.selected(payload.file, row);
+      return '';
+    },
+    async selected(file, row) {
+      if (this.pending !== row || row.reading) return;
+      if (!file) { this.cancel(); return; }
+      if (!this.current(row)) { this.cancel('open_stale'); return; }
+      row.reading = true;
+      try { await open(file, row); }
+      catch (failure) { error(failure); }
+      finally { if (this.pending === row) this.cancel('open_finished', false); }
+    },
+  };
 }
 
 export function assetURL(value) {

@@ -10,8 +10,9 @@ import {VERSION} from '../version.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'packages/rapier-embed/package.json', 'skills/rapier-html/package.json', 'kit/package.json', 'server/package.json',
-	'skills/README.md', 'skills/embed-rapier/SKILL.md',
-	'skills/rapier-html/SKILL.md', 'skills/rapier-html/README.md', 'skills/rapier-markdown/SKILL.md'];
+	'skills/README.md', 'skills/embed-rapier/SKILL.md', 'skills/rapier-agent-door/SKILL.md',
+	'skills/rapier-html/SKILL.md', 'skills/rapier-html/README.md', 'skills/rapier-markdown/SKILL.md',
+	'images/jxl/public/skills/rapier-jxl-photography/SKILL.md', 'images/jxl/public/skills/rapier-jxl-single-file-app/SKILL.md'];
 
 // `absent: 'skip'` (the build) leaves a file the tree does not carry unwritten and names it: the public source cut
 // (tools/stage-public.mjs) omits package and skill files, and its rebuild must still be the root page's bytes.

@@ -575,11 +575,19 @@ const _rapierNotesSyncUi = (() => {
 	async function keptChoices() { if (typeof _rapierPersonal === 'undefined') return; try { replaced = await _rapierPersonal.ledger(); } catch (_) { replaced = []; } }
 	async function syncOnce(guard = () => {}) {
 		syncing = true;
-		try { await flush(); guard(); const result = await session.syncNow(); await _rapierNotesFolderChanged(); await keptChoices(); return result; }
+		try {
+			await flush();
+			// A completed flush followed by failed admission proves this sync never started.
+			// A failed flush or any failure after session dispatch cannot make that promise.
+			try { guard(); } catch (error) { throw Object.assign(new Error(error?.message || 'Sync was not admitted.'),
+				{name: error?.name || 'Error', code: error?.code, cause: error, notesSyncStarted: false}); }
+			const result = await session.syncNow(); await _rapierNotesFolderChanged(); await keptChoices(); return result;
+		}
 		finally { syncing = false; wearBox(); }
 	}
 	// A tool can run the saved connection. It cannot enter any setup or sign-in path.
 	async function syncNow({signal, guard} = {}) {
+		let submitted = false;
 		const stopped = () => { if (signal?.aborted) throw new DOMException('The sync request was cancelled.', 'AbortError'); guard?.(); };
 		const refused = reason => ({action: 'now', synced: false, reason});
 		try {
@@ -596,12 +604,14 @@ const _rapierNotesSyncUi = (() => {
 			if (!current.unlocked) return refused('notes_sync_locked');
 			if (!current.authorized) return refused('notes_sync_sign_in_required');
 			if (acting || syncing || current.busy) return refused('notes_sync_busy');
-			const result = await syncOnce(stopped); stopped();
+			submitted = true;
+			const result = await syncOnce(stopped);
 			const skipped = Array.isArray(result.skipped) ? result.skipped.length : 0, missing = Array.isArray(result.missing) ? result.missing.length : 0;
 			return {action: 'now', synced: true, complete: result.caughtUp !== false && !skipped && !missing,
 				unchanged: result.unchanged === true, skipped, missing, backedUpAt: status().backedUpAt ?? null};
 		} catch (error) {
-			if (error?.code === 'notes_locked') throw error;
+			if (submitted && error?.notesSyncStarted !== false) return {outcome: 'uncertain', reason: 'notes_sync_unconfirmed'};
+			if (error?.code === 'notes_locked') throw Object.assign(new Error(error.message), {code: error.code, cause: error, notesSyncStarted: false});
 			if (error?.name === 'AbortError') return {refused: 'cancelled'};
 			return refused(error?.code === 'locked' ? 'notes_sync_locked' : error?.code === 'auth' ? 'notes_sync_sign_in_required' : 'notes_sync_failed');
 		}

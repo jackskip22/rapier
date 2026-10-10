@@ -813,8 +813,7 @@
 				</button>
 			</div>
 
-			<!-- RAPIER_NOTES_BEGIN -->
-			<!-- Text in pictures (notes/ocr.js): reads the words in a note's pictures on this device, so Notes' search finds them. -->
+			<!-- Text in pictures: the shared optional reader for Find and Notes search. -->
 			<div class="settings-action-row" style="margin-top:var(--space-2);">
 				<button type="button" class="settings-text-action" id="ocr-plugin-action" data-action="ocr-install">INSTALL TEXT IN PICTURES</button>
 				<button type="button" class="settings-text-action settings-text-action--status" id="ocr-plugin-installed" data-action="plugin-delete" data-plugin="ocr" aria-haspopup="dialog" hidden>
@@ -826,7 +825,6 @@
 					</svg>
 				</button>
 			</div>
-			<!-- RAPIER_NOTES_END -->
 
 			<!-- About: exactly three rows, in this order -- the guide, the privacy policy, the licenses.
 			     The panel's own header reads "rapier V<version>", stamped from the page's canonical <meta
@@ -2515,7 +2513,6 @@ SOFTWARE.</pre>
 	</div>
 </div>
 
-<!-- RAPIER_NOTES_BEGIN -->
 <!-- ════════ Text in pictures plug-in install prompt (the math prompt's shape). -->
 <div class="settings-overlay restore-modal-overlay" id="ocr-plugin-overlay" inert aria-hidden="true"
 		 role="alertdialog" aria-modal="true" aria-labelledby="ocr-plugin-title">
@@ -2538,6 +2535,7 @@ SOFTWARE.</pre>
 	</div>
 </div>
 
+<!-- RAPIER_NOTES_BEGIN -->
 <!-- ════════ A letter set's download (draw/draw.js, the plug-in door): the math prompt's shape, over Draw. -->
 <div class="settings-overlay restore-modal-overlay" id="letters-plugin-overlay" inert aria-hidden="true"
 		 role="alertdialog" aria-modal="true" aria-labelledby="letters-plugin-title">

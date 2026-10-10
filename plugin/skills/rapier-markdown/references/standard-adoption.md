@@ -44,7 +44,7 @@ The package carries thirteen conformance documents with their runner, and a chec
 - **Drawings with a recipe in `<metadata>`.** Plain SVG for readers; only an editor that wants to edit the drawing as shapes needs the recipe.
 - **The occupancy descriptor and the reflow script in the styled export.** `data-rapier-occupancy` and the inline planner live only in the exported page, never in the Markdown.
 - **The document-as-a-web-page carrier.** A Rapier-defined form with two public reference readers and one escaping grammar (`markdown-standard.md`, "The document as a web page"), provable by a 60-line script.
-- **Will markers, agent notes, review state.** Comments; invisible everywhere else.
+- **Will markers and anchored comments.** Their metadata travels in HTML comments. Which changes a person has seen stays on their device.
 - **Highlight colours as Bear's circle emoji, `++underline++`, `~sub~`/`^sup^`.** Adopted from other editors (`markdown-profile.md`). No command writes a single tilde, since `~x~` is Bear's underline and subscript elsewhere.
 - **The wrap placements.** Four values, each with a rung-2 rendering in plain CSS.
 - **Pretext-exact both-sides wrapping and interior wrapping.** Only rung 3 reproduces this; the module supplies it. Exact lines are an implementation quality, not the placement standard.

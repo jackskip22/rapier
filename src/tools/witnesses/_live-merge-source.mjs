@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Concurrent exact splices converge to the same bytes in any arrival
-// order, a delete never removes a concurrent insert, an agent proposal over a range a person is editing is held,
+// Concurrent pairs converge in either arrival order. A delete never removes a
+// concurrent insert, an agent edit over an active composition is held,
 // a seeded schedule of 1,000 concurrent edits from three clients replays to one text, presence rebases, undo is exact, and a log trimmed to what clients can reach decides every edit the same.
 import assert from 'node:assert/strict';
 import {createDoc, applyEdit, applySplices, sourceEdits, sourceSplices, mergeSource, mergeSplices, replay, rebasePresence, undoEdit, trim} from '../../kernel/live-merge.mjs';
 import {_rapierTransformSplices as transformSplices} from '../../kit/ledger/journal-records.mjs';
 import {transportInterval, transportTouchedInterval} from '../../kit/ledger/merge.mjs';
+import {liveQueueCells} from './_live-queue-cells.mjs';
 
 const rng = seed => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 const ed = (client, seq, gen, ...splices) => ({client, seq, gen, splices});
@@ -15,13 +16,16 @@ const run = (doc, ...edits) => edits.reduce((d, e) => applyEdit(d, e).state, doc
 // A random ascending splice list against a text, over a small alphabet so ties and overlaps are frequent.
 function randomSplices(text, random) {
 	const out = [];
-	let at = 0;
+	const boundaries = [0];
+	for (const scalar of text) boundaries.push(boundaries.at(-1) + scalar.length);
+	let index = 0;
 	for (let n = 1 + Math.floor(random() * 2); n > 0; n--) {
-		at += Math.floor(random() * (text.length - at + 1) / (n > 1 ? 2 : 1));
-		const remove = random() < 0.5 ? 0 : Math.floor(random() * Math.min(4, text.length - at + 1));
-		const insert = random() < 0.2 ? '' : 'ab\u{1F600}\n'.slice(0, 1 + Math.floor(random() * 3)).replace(/\uD83D$/, 'c');
+		index += Math.floor(random() * (boundaries.length - index) / (n > 1 ? 2 : 1));
+		const at = boundaries[index], count = random() < 0.5 ? 0 : Math.floor(random() * Math.min(4, boundaries.length - index));
+		const remove = boundaries[index + count] - at;
+		const insert = random() < 0.2 ? '' : ['a', 'ab', '😀', '\n'][Math.floor(random() * 4)];
 		if (remove || insert) out.push(sp(at, remove, insert));
-		at += remove;
+		index += count;
 	}
 	return out;
 }
@@ -98,14 +102,25 @@ export function liveMergeSourceCells() {
 	assert.equal(d1.text, d2.text);
 	assert.ok(d1.text.includes('RED '), 'insert lost: ' + d1.text);
 	assert.equal(d1.text, 'The RED jumps.');
-	// An agent proposal over an active human range is held; elsewhere or after the window it applies.
-	let doc = run(createDoc(base, {holdWindow: 3}), ed('ann', 1, 0, sp(4, 5, 'slow')));
-	const over = applyEdit(doc, {...ed('agent', 1, 1, sp(5, 2, 'XX')), proposal: true});
+	// Only an active composition holds an agent. Past human edits do not create a permission gate.
+	const doc = run(createDoc(base), ed('ann', 1, 0, sp(4, 5, 'slow')));
+	const composing = [{client: 'ann', gen: doc.gen, anchor: 4, head: 8}];
+	const heldEdit = {...ed('agent', 1, 1, sp(5, 2, 'XX')), agent: true};
+	const over = applyEdit(doc, heldEdit, {composing});
 	assert.equal(over.status, 'held'); assert.equal(over.state, doc); assert.equal(over.state.gen, 1);
-	assert.equal(applyEdit(doc, {...ed('agent', 1, 1, sp(0, 3, 'A')), proposal: true}).status, 'applied');
-	for (let i = 0; i < 3; i++) doc = run(doc, ed('ann', 2 + i, doc.gen, sp(doc.text.length, 0, '.')));
-	assert.equal(applyEdit(doc, {...ed('agent', 1, doc.gen, sp(5, 2, 'XX')), proposal: true}).status, 'applied');
-	assert.equal(applyEdit(doc, ed('agent', 1, doc.gen, sp(5, 2, 'XX'))).status, 'applied');
+	assert.equal(applyEdit(doc, {...ed('agent', 1, 1, sp(0, 3, 'A')), agent: true}, {composing}).status, 'applied');
+	const released = applyEdit(over.state, heldEdit, {composing: []});
+	assert.equal(released.status, 'applied', 'the same held request applies when composition ends');
+	assert.equal(released.state.text, 'The sXXw fox jumps.');
+	assert.equal(applyEdit(released.state, heldEdit, {composing}).status, 'duplicate', 'composition cannot replay an acknowledged edit');
+	assert.equal(applyEdit(doc, ed('agent', 1, doc.gen, sp(5, 2, 'XX')), {composing}).status, 'applied');
+	const shifted = run(doc, ed('bob', 1, doc.gen, sp(0, 0, '>> ')));
+	assert.equal(applyEdit(shifted, {...ed('agent', 1, shifted.gen, sp(8, 2, 'XX')), agent: true}, {composing}).status, 'held',
+		'an active range rebases from its exact generation before collision admission');
+	const caret = [{client: 'ann', gen: 0, anchor: 9, head: 9}];
+	assert.equal(applyEdit(doc, {...ed('agent', 1, doc.gen, sp(8, 0, '!')), agent: true}, {composing: caret}).status, 'held',
+		'a rebased composition caret retains its insertion gap');
+	assert.equal(applyEdit(doc, {...ed('agent', 1, doc.gen, sp(9, 0, '!')), agent: true}, {composing: caret}).status, 'applied');
 	// Pairs: any two concurrent edits converge in either order (random multi-splice, replace, delete, insert).
 	const random = rng(7);
 	for (let n = 0; n < 4000; n++) {
@@ -129,16 +144,17 @@ export function liveMergeSourceCells() {
 		const from = Math.max(c.last, c.gen), to = from + Math.floor(r() * (server.gen - from + 1));
 		c.text = replay(c.text, server.log.slice(c.gen, to)); c.gen = to;
 		const splices = randomSplices(c.text, r);
-		const proposal = r() < 0.1;
-		const edit = {client: c.id, seq: ++c.seq, gen: c.gen, splices, proposal};
+		const agent = r() < 0.1;
+		const edit = {client: c.id, seq: ++c.seq, gen: c.gen, splices, agent};
+		const composing = n % 7 === 0 ? [{client: 'person', anchor: 0, head: server.text.length, gen: server.gen}] : [];
 		const receipt = mergeSplices(c.id, splices, server.log.slice(c.gen));
-		const res = applyEdit(server, edit), tres = applyEdit(trimmed, edit);
+		const res = applyEdit(server, edit, {composing}), tres = applyEdit(trimmed, edit, {composing});
 		if (res.status === 'applied') assert.equal(replay(applySplices(c.text, splices), receipt.remote), res.state.text,
 			'continued source replays the exact reciprocal delta over several remote commits');
 		server = res.state;
-		// The trimmed twin keeps only what a client or the hold window can still reach, and decides every edit the same.
+		// The trimmed twin keeps every offline client's base, and decides every edit the same.
 		assert.deepEqual([tres.status, tres.gen, tres.splices], [res.status, res.gen, res.splices]);
-		trimmed = trim(tres.state, Math.min(...clients.map(x => x.gen), tres.state.gen - server.holdWindow));
+		trimmed = trim(tres.state, Math.min(...clients.map(x => x.gen)));
 		longest = Math.max(longest, trimmed.log.length);
 		if (res.status === 'held') held++; else c.last = res.gen;
 	}
@@ -167,7 +183,7 @@ export function liveMergeSourceCells() {
 	// Undo of an edit a neighbour typed inside keeps the neighbour's text.
 	const w = run(createDoc('x'), ed('ann', 1, 0, sp(1, 0, 'abcdef')), ed('bob', 1, 1, sp(4, 0, 'ZZ')));
 	assert.equal(applyEdit(w, undoEdit(w, 'ann', 2)).state.text, 'xZZ');
-	return 'pairs 4000, schedule 1000 edits (' + held + ' held), final ' + server.text.length + ' chars, trimmed log at most ' + longest + ' of ' + server.log.length;
+	return 'pairs 4000, schedule 1000 edits (' + held + ' held), final ' + server.text.length + ' chars, trimmed log at most ' + longest + ' of ' + server.log.length + '; ' + liveQueueCells();
 }
 
 export default function(_page, t) { return t.pass(liveMergeSourceCells()); }

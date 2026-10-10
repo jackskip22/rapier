@@ -1,9 +1,36 @@
-// `progress`, when given, hears how many of the pictures are converted, from 0 to 1.
+// `progress`, when given, reports the fraction of pictures converted.
 async function _rapierPrepareInterchangeContext(options, captured, progress = null) {
-  const context = _rapierBuildInterchangeContext(options, captured);
+  const work = options?.work || captured?.work || null;
+  let parsed;
+  const snapshot = captured || {canonical: _rapierGetCanonicalText(), metadata: _rapierGetDocumentMetadata(), plain: _rapierPlainLayout()};
+  const offlinePage = ['share', 'standalone', 'page'].includes(options?.kind) || ['html', 'html-standalone'].includes(options?.format);
+  // Install before the detached Markdown projection is made. An unavailable renderer must
+  // stop the writer, never leave its install prompt or source placeholder in the file.
+  if (offlinePage && options?.kind !== 'page' && snapshot.metadata.docKind === 'markdown') {
+    const needed = new Set();
+    const visit = tokens => { for (const token of tokens) {
+      if (token.type === 'math_inline' || token.type === 'math_block') needed.add('math');
+      if (token.type === 'fence' && token.meta?.rapierFenceClosed !== false &&
+          String(token.info || '').trim().split(/\s+/)[0].toLowerCase() === 'mermaid' &&
+          globalThis.RapierFlowchart?.parseFlowchart(token.content).ok !== true) needed.add('mermaid');
+      if (token.children) visit(token.children);
+    }};
+    const body = _rapierSplitOpeningFrontmatter(snapshot.canonical).body;
+    parsed = work ? await _rapierExportParse(body, {work}) : {tokens: md.parse(body, _rapierMarkdownEnvironment())};
+    visit(parsed.tokens);
+    await Promise.all([...needed].map(async key => {
+      const provider = _rapierProviders[key];
+      if (!provider) throw new Error('The ' + key + ' renderer is unavailable.');
+      if (provider.status !== 'ready') await provider.install();
+      if (provider.status !== 'ready') throw new Error('The ' + key + ' renderer could not start.');
+    }));
+  }
+  const preparedRoot = work ? await _rapierRenderModule('render-markdown')._rapierRenderSemanticRootAsync(
+    snapshot.canonical, snapshot.metadata, {page: options?.kind === 'page', work, parsed}) : null;
+  const context = _rapierBuildInterchangeContext(options, snapshot, preparedRoot);
   context.imageSubstitutions = new Map();
   await globalThis.RapierEmbeddedImages.materialize(context.semanticRoot, context.canonical, context.imageSubstitutions,
-    {compat: context.imageCompat !== false, progress});
+    {compat: context.imageCompat !== false, progress: progress || (work ? fraction => work.onProgress?.(.6 + .1 * fraction) : null), signal: work?.signal, work});
   const images = [...context.semanticRoot.querySelectorAll('img')];
   context.stats.embeddedImages = images.filter(image => /^data:image\//i.test(image.getAttribute('src') || '')).length;
   context.stats.unresolvedImages = images.filter(image => !/^data:image\//i.test(image.getAttribute('src') || '')).length;

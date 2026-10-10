@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "harfbuzzjs": "1.6.3",
+    "wawoff2": "2.0.1"
+  },
+  "npmLockSha256": "eef83a0b0f152f759753aaa28dcbe6f37766168e6e5708e74566955be33cfa36",
+  "sourceSha256": "a9f29c8460ae573ee7710eeaefcc677c7314a0d452add055921ed64efb90dc39",
+  "wasm": {
+    "bytes": 667183,
+    "sha256": "f8989b6c78493626b483d8e82dbfcdff38ac277f75f47a6ba440264dacdcedf1"
+  },
+  "noticesSha256": "5ef98f3c629342b504be7dc81a9b8642961c5f2653ec143d0227176a2b3deea7",
+  "bytes": 1215411,
+  "gzipBytes": 499276,
+  "sha256": "424e86bd3528877c01a691eee3062862621b945749a957232cdbb5e96290f6bb",
+  "sha384": "aCuaqRhsbgkjK1Endk3kA+5rs3wQUv79J/LWwklqipbOf1U9J0eGBUDZX85Kw7I8"
+}

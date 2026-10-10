@@ -27,12 +27,14 @@ import {inlineFonts, keepsComment, stripStyleComments, styleText} from './style-
 import {shakeModule} from './tree-shake.mjs';
 import {commercialPage} from './commercial-page.mjs';
 import {seoSection, seoDoorSections, welcomePaintHtml} from './seo-page.mjs';
-import {DOORS} from '../door-worker.js';
+import {DOORS, doorPage} from '../door-worker.js';
 import {fillMermaidResources} from './mermaid-resources.mjs';
+import {fillFontSubsetResources} from './font-subset-resources.mjs';
 import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
 import {buildExportAssets} from './build-export-assets.mjs';
 import {satelliteSlots} from './engine-slots.mjs';
 import {editorOnlyMarkup} from './reader-profile.mjs';
+import {APP_DESCRIPTION, DISCOVERY_LINKS} from './discovery.mjs';
 
 // One version: the plugin manifest and the packages carry version.mjs's number, written here before anything reads them.
 // A file the tree does not carry (the public source cut) is named in `unchecked` below, never a refusal.
@@ -293,9 +295,7 @@ function withoutResultSchemas(source) {
   const found = [];
   walk(parse(source, 'module'), node => { if (node.type === 'Property' && !node.computed && node.key.name === 'outputSchema') found.push(node); });
   if (found.length !== 1) throw new Error('agent/catalog.mjs must build every outputSchema in one place, its tool factory');
-  const {source: shaken, removed} = shakeModule(source.slice(0, source.lastIndexOf(',', found[0].start)) + source.slice(found[0].end), ['resultProperties']);
-  if (!removed.includes('resultProperties')) throw new Error('agent/catalog.mjs: the result properties did not leave the page\'s copy');
-  return shaken;
+  return source.slice(0, source.lastIndexOf(',', found[0].start)) + source.slice(found[0].end);
 }
 
 async function bundle(path) {
@@ -386,6 +386,8 @@ await bundle('layout/transient-lifecycle.mjs');
 await bundle('layout/bottom-surfaces.mjs');
 await bundle('layout/markdown.mjs');
 await bundle('images/assets.mjs');
+await bundle('images/ocr.mjs');
+await bundle('images/picture-marks.mjs');
 await bundle('images/archive.mjs');
 await bundle('interchange/docx.mjs');
 await bundle('interchange/pdf.mjs');
@@ -432,7 +434,6 @@ if (PROFILE === 'full') {
   await bundle('notes/todo.mjs');
   await bundle('notes/links.mjs');
   await bundle('notes/search.mjs');
-  await bundle('notes/ocr.mjs');
   await bundle('notes/restore.mjs'); // also published as a global
   await bundle('notes/trash.mjs');
   await bundle('notes/history.mjs');
@@ -449,11 +450,17 @@ await bundle('kit/render-styles.mjs');
 await bundle('kit/render-markdown.mjs');
 await bundle('kit/render-sanitize.mjs');
 await bundle('kit/render-print.mjs');
-const globals = {'RapierPortablePage': 'skills/rapier-html/wrap.mjs', 'RapierCursorMotion': 'agent/cursor-motion.mjs', 'RapierLedger': 'kit/rapier-ledger.mjs', 'RapierLedgerCarried': 'kit/ledger/carried.mjs', 'RapierRender': 'kit/render.mjs', 'RapierRenderStyles': 'kit/render-styles.mjs', 'RapierRenderMarkdown': 'kit/render-markdown.mjs', 'RapierRenderSanitizer': 'kit/render-sanitize.mjs', 'RapierRenderPrint': 'kit/render-print.mjs', 'RapierEmbedContract': 'packages/rapier-embed/contract.mjs', 'RapierAgentGuide': 'agent/guide.mjs', 'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierInk': 'spec/ink.mjs', 'RapierInkDraw': 'layout/ink-draw.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'kit/ledger/journal-records.mjs', 'RapierVisibleSource': 'editor/visible-source.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierPretext': 'agent/vendor/pretext/rich-inline.js', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', ...(PROFILE === 'full' ? {'RapierDrawFit': 'draw/fit.mjs', 'RapierPersonal': 'notes/personal.mjs', 'RapierDrawPaint': 'draw/paint.mjs', 'RapierDrawBrushes': 'draw/brushes.mjs', 'RapierDrawAgentPaint': 'draw/agent-paint.mjs', 'RapierDrawPaintWorker': 'draw/paint-worker.mjs', 'RapierDrawPaintRows': 'draw/paint-parallel.mjs', 'RapierDrawPaintRemote': 'draw/paint-remote.mjs', 'RapierNotesModel': 'notes/model.mjs', 'RapierNotesLibraryWindow': 'notes/library-window.mjs', 'RapierNotesLibraryReads': 'notes/library-reads.mjs', 'RapierNotesTakeout': 'notes/takeout.mjs', 'RapierNotesImportNotion': 'notes/import-notion.mjs', 'RapierNotesImportSimplenote': 'notes/import-simplenote.mjs', 'RapierNotesImportStandardNotes': 'notes/import-standardnotes.mjs', 'RapierNotesImportJoplin': 'notes/import-joplin.mjs', 'RapierNotesImportTextBundle': 'notes/import-textbundle.mjs', 'RapierNotesImportDayOne': 'notes/import-dayone.mjs', 'RapierNotesImportRoam': 'notes/import-roam.mjs', 'RapierNotesImportLogseq': 'notes/import-logseq.mjs', 'RapierNotesImport': 'notes/import.mjs', 'RapierNotesImportPictures': 'notes/import-pictures.mjs', 'RapierNotesImportReceipt': 'notes/import-receipt.mjs', 'RapierNotesImportUndoFace': 'notes/import-undo-face.mjs', 'RapierNotesImportPlan': 'notes/import-plan.mjs', 'RapierNotesFrontMatter': 'notes/frontmatter.mjs', 'RapierNotesLinks': 'notes/links.mjs', 'RapierNotesSearch': 'notes/search.mjs', 'RapierNotesOcr': 'notes/ocr.mjs', 'RapierNotesSearchCache': 'notes/search-cache.mjs', 'RapierNotesImportMarkdown': 'notes/import-markdown.mjs', 'RapierNotesImportEnex': 'notes/import-enex.mjs', 'RapierNotesImportHtml': 'notes/import-html.mjs', 'RapierNotesRestore': 'notes/restore.mjs', 'RapierNotesTrash': 'notes/trash.mjs', 'RapierNotesHistory': 'notes/history.mjs', 'RapierNotesIntegrity': 'notes/integrity.mjs', 'RapierNotesZip': 'notes/zip.mjs', 'RapierNotesBackup': 'notes/backup.mjs', 'RapierNotesBackupWorker': 'notes/backup-worker.mjs', 'RapierNotesOPFSWorker': 'notes/opfs-worker.mjs', 'RapierNotesOwner': 'notes/owner.mjs', 'RapierNotesOPFS': 'notes/opfs.mjs', 'RapierNotesIdbStore': 'notes/idb-store.mjs', 'RapierNotesFolder': 'notes/folder.mjs', 'RapierNotesTodo': 'notes/todo.mjs', 'RapierNotesAudio': 'notes/audio.mjs', 'RapierNotesAttachments': 'notes/attachments.mjs', 'RapierNotesSync': 'notes/sync.mjs', 'RapierNotesVault': 'notes/vault.mjs', 'RapierNotesMerge': 'notes/merge.mjs', 'RapierNotesSyncSession': 'notes/sync-session.mjs', 'RapierCloudProviders': 'notes/cloud-providers.mjs', 'RapierWebDAVTransport': 'notes/transport-webdav.mjs'} : {}), 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs', 'RapierDrawWater': 'draw/water.mjs', 'RapierDrawWaterWorker': 'draw/water-worker.mjs', 'RapierDrawWaterPaths': 'draw/water-paths.mjs'};
+await bundle('kit/export-fonts.mjs');
+const globals = {'RapierPortablePage': 'skills/rapier-html/wrap.mjs', 'RapierCursorMotion': 'agent/cursor-motion.mjs', 'RapierLedger': 'kit/rapier-ledger.mjs', 'RapierLedgerCarried': 'kit/ledger/carried.mjs', 'RapierRender': 'kit/render.mjs', 'RapierExportFonts': 'kit/export-fonts.mjs', 'RapierRenderStyles': 'kit/render-styles.mjs', 'RapierRenderMarkdown': 'kit/render-markdown.mjs', 'RapierRenderSanitizer': 'kit/render-sanitize.mjs', 'RapierRenderPrint': 'kit/render-print.mjs', 'RapierEmbedContract': 'packages/rapier-embed/contract.mjs', 'RapierAgentGuide': 'agent/guide.mjs', 'RapierComments': 'agent/comments.mjs', 'RapierVisualCapture': 'agent/visual-browser.mjs', 'RapierAgentVisual': 'agent/visual.mjs', 'RapierPageReturnAddress': 'skills/rapier-html/return-address.mjs', 'RapierMarkdownSpec': 'agent/markdown-spec.mjs', 'RapierInk': 'spec/ink.mjs', 'RapierInkDraw': 'layout/ink-draw.mjs', 'RapierMarkdownLayout': 'layout/markdown.mjs', 'RapierImageAssets': 'images/assets.mjs', 'RapierImageArchive': 'images/archive.mjs', 'RapierDocxImport': 'interchange/docx.mjs', 'RapierPdf': 'interchange/pdf.mjs', 'RapierAgentCatalog': 'agent/catalog.mjs', 'RapierKernel': 'agent/kernel.mjs', 'RapierJournalRecords': 'kit/ledger/journal-records.mjs', 'RapierVisibleSource': 'editor/visible-source.mjs', 'RapierColourMath': 'editor/colour-math.mjs', 'RapierAgentWill': 'agent/will.mjs', 'RapierAgentMarkdown': 'agent/markdown.mjs', 'RapierStructureRequest': 'agent/structure-request.mjs', 'RapierImageLayout': 'layout/model.mjs', 'RapierOcclusion': 'layout/occlusion.mjs', 'RapierOcclusionViewport': 'layout/occlusion-viewport.mjs', 'RapierTransientLifecycle': 'layout/transient-lifecycle.mjs', 'RapierBottomSurfaces': 'layout/bottom-surfaces.mjs', 'RapierPretext': 'agent/vendor/pretext/rich-inline.js', 'RapierDrawCore': 'draw/core.mjs', 'RapierFlowchart': 'draw/flowchart.mjs', 'RapierDrawEdit': 'draw/edit.mjs', 'RapierDrawFonts': 'draw/font.mjs', 'RapierDrawLetters': 'draw/letters.mjs', ...(PROFILE === 'full' ? {'RapierDrawFit': 'draw/fit.mjs', 'RapierPersonal': 'notes/personal.mjs', 'RapierDrawPaint': 'draw/paint.mjs', 'RapierDrawBrushes': 'draw/brushes.mjs', 'RapierDrawAgentPaint': 'draw/agent-paint.mjs', 'RapierDrawPaintWorker': 'draw/paint-worker.mjs', 'RapierDrawPaintRows': 'draw/paint-parallel.mjs', 'RapierDrawPaintRemote': 'draw/paint-remote.mjs', 'RapierDrawLiquid': 'draw/liquid-gpu.mjs', 'RapierDrawLiquidWorker': 'draw/liquid-worker.mjs', 'RapierDrawCopier': 'draw/copier-gpu.mjs', 'RapierNotesModel': 'notes/model.mjs', 'RapierNotesLibraryWindow': 'notes/library-window.mjs', 'RapierNotesLibraryReads': 'notes/library-reads.mjs', 'RapierNotesTakeout': 'notes/takeout.mjs', 'RapierNotesImportNotion': 'notes/import-notion.mjs', 'RapierNotesImportSimplenote': 'notes/import-simplenote.mjs', 'RapierNotesImportStandardNotes': 'notes/import-standardnotes.mjs', 'RapierNotesImportJoplin': 'notes/import-joplin.mjs', 'RapierNotesImportTextBundle': 'notes/import-textbundle.mjs', 'RapierNotesImportDayOne': 'notes/import-dayone.mjs', 'RapierNotesImportRoam': 'notes/import-roam.mjs', 'RapierNotesImportLogseq': 'notes/import-logseq.mjs', 'RapierNotesImport': 'notes/import.mjs', 'RapierNotesImportPictures': 'notes/import-pictures.mjs', 'RapierNotesImportReceipt': 'notes/import-receipt.mjs', 'RapierNotesImportUndoFace': 'notes/import-undo-face.mjs', 'RapierNotesImportPlan': 'notes/import-plan.mjs', 'RapierNotesFrontMatter': 'notes/frontmatter.mjs', 'RapierNotesLinks': 'notes/links.mjs', 'RapierNotesSearch': 'notes/search.mjs', 'RapierNotesSearchCache': 'notes/search-cache.mjs', 'RapierNotesImportMarkdown': 'notes/import-markdown.mjs', 'RapierNotesImportEnex': 'notes/import-enex.mjs', 'RapierNotesImportHtml': 'notes/import-html.mjs', 'RapierNotesRestore': 'notes/restore.mjs', 'RapierNotesTrash': 'notes/trash.mjs', 'RapierNotesHistory': 'notes/history.mjs', 'RapierNotesIntegrity': 'notes/integrity.mjs', 'RapierNotesZip': 'notes/zip.mjs', 'RapierNotesBackup': 'notes/backup.mjs', 'RapierNotesBackupWorker': 'notes/backup-worker.mjs', 'RapierNotesOPFSWorker': 'notes/opfs-worker.mjs', 'RapierNotesOwner': 'notes/owner.mjs', 'RapierNotesOPFS': 'notes/opfs.mjs', 'RapierNotesIdbStore': 'notes/idb-store.mjs', 'RapierNotesFolder': 'notes/folder.mjs', 'RapierNotesTodo': 'notes/todo.mjs', 'RapierNotesAudio': 'notes/audio.mjs', 'RapierNotesAttachments': 'notes/attachments.mjs', 'RapierNotesSync': 'notes/sync.mjs', 'RapierNotesVault': 'notes/vault.mjs', 'RapierNotesMerge': 'notes/merge.mjs', 'RapierNotesSyncSession': 'notes/sync-session.mjs', 'RapierCloudProviders': 'notes/cloud-providers.mjs', 'RapierWebDAVTransport': 'notes/transport-webdav.mjs'} : {}), 'RapierNativeTransport': 'shell/native-transport.mjs', 'RapierDoorIdentity': 'agent/door-identity.mjs', 'RapierDiff': 'agent/diff.mjs', 'RapierDrawWater': 'draw/water.mjs', 'RapierDrawWaterWorker': 'draw/water-worker.mjs', 'RapierDrawWaterPaths': 'draw/water-paths.mjs'};
+globals.RapierExportWorker = 'editor/export-worker.mjs';
+globals.RapierExportDialect = 'editor/export-dialect.mjs';
+globals.RapierSourceWorker = 'editor/source-worker.mjs';
+globals.RapierOcr = 'images/ocr.mjs';
+globals.RapierPictureMarks = 'images/picture-marks.mjs';
 globals.RapierLiveMerge = 'kernel/live-merge.mjs';
 globals.RapierAgentEditor = 'agent/editor.mjs';
-// Notes carries source facts in the full profile; editor slots read those same published helpers.
-if (PROFILE === 'full') globals.RapierSourceFacts = 'editor/source-facts.mjs';
+// Editor slots and workers read the same published source-fact helpers in every profile.
+globals.RapierSourceFacts = 'editor/source-facts.mjs';
 if (PROFILE === 'full') {
   globals.RapierOwnedNotesAdapter = 'notes/owned-adapter.mjs';
   globals.RapierOwnedNotesCheckpoint = 'notes/owned-checkpoint.mjs';
@@ -527,7 +534,7 @@ if (PROFILE === 'full') {
 // factory in artifactFactories; the worker declares the registry too, read by nothing there, so the module loads
 // (without it the Notes backup worker dies at load: check-shipped-capabilities).
 const workerClosure = entry => { const seen = new Set(); const visit = path => { if (seen.has(path)) return; seen.add(path); for (const dep of DEPS.get(path) || []) visit(dep); }; visit(entry); return [...MODULES.keys()].filter(path => seen.has(path)); };
-const workerEntries = [['notes/backup-worker.mjs', 'installBackupWorker'], ['notes/opfs-worker.mjs', 'installOPFSWorker'], ['notes/search.mjs', 'installSearchWorker'], ['draw/paint-worker.mjs', 'installPaintWorker'], ['draw/water-worker.mjs', 'installWaterWorker'], ['draw/paint-parallel.mjs', 'installPaintRowWorker']].filter(([entry]) => MODULES.has(entry));
+const workerEntries = [['editor/export-worker.mjs', 'installExportWorker'], ['editor/source-worker.mjs', 'installSourceWorker'], ['notes/backup-worker.mjs', 'installBackupWorker'], ['notes/opfs-worker.mjs', 'installOPFSWorker'], ['notes/search.mjs', 'installSearchWorker'], ['draw/paint-worker.mjs', 'installPaintWorker'], ['draw/water-worker.mjs', 'installWaterWorker'], ['draw/paint-parallel.mjs', 'installPaintRowWorker'], ['draw/liquid-worker.mjs', 'installLiquidWorker']].filter(([entry]) => MODULES.has(entry));
 const workerPaths = new Set(workerEntries.flatMap(([entry]) => workerClosure(entry)));
 for (const path of workerPaths) {
   const head = `modules[${JSON.stringify(path)}] = (`;
@@ -662,21 +669,33 @@ if (seoRegions.length !== 2 || bodyAt < 0 || seoRegions[0].index > bodyAt || seo
     html.split('<!-- RAPIER_SEO_').length !== 5) throw new Error('The shell must carry its two RAPIER_SEO regions: metadata in the head, the guide in the body');
 if (PROFILE === 'document') html = html.replace(seoRegion, '');
 else {
-  // One version: the structured data says version.mjs's number, as the rapier-version meta does. Its sameAs is every place Rapier is
-  // published: the four public repositories and the four npm packages.
-  const sameAs = ['rapier', 'rapier-plugins', 'rapier-jxl', 'will'].map(name => 'https://github.com/jackskip22/' + name)
-    .concat(['rapier-html', 'rapier-markdown-kit', 'rapier-embed', 'rapier-jxl'].map(name => 'https://www.npmjs.com/package/' + name));
+  // The app's version and identity match the published source; related packages have their own identities.
+  const sameAs = ['https://github.com/jackskip22/rapier'];
+  html = html.replace(/<link rel="(?:describedby|ai-catalog)"[^>]*>\n?/g, '');
+  html = html.replace('<!-- RAPIER_SEO_BEGIN -->', '<!-- RAPIER_SEO_BEGIN -->\n' + DISCOVERY_LINKS);
   // The template is the previous page: the identity block the last build wrote is dropped before this one writes its own.
   html = html.replace(/\n<script type="application\/ld\+json">\{"@context":"https:\/\/schema\.org","@graph":[\s\S]*?<\/script>/, '');
   html = html.replace(/(<script type="application\/ld\+json">)([\s\S]*?)(<\/script>)/, (_, open, json, close) => {
     const data = JSON.parse(json);
     if (data['@type'] !== 'SoftwareApplication') throw new Error('The structured data must describe the SoftwareApplication');
+    data.description = APP_DESCRIPTION;
+    data.operatingSystem = ['Android', 'Web', 'Windows'];
+    data.softwareHelp = {'@type': 'CreativeWork', url: 'https://rapier.website/agents'};
+    data.featureList = ['Markdown notes, diagrams, drawing and watercolor painting', 'One offline HTML file',
+      'Live collaboration with agents over MCP and WebMCP', 'See agent presence and changes live',
+      'Tap a change to see what was there before and undo anything', 'Agents can show a diff with comparison.present',
+      'Offline editable documents with rapier-html',
+      'Embeddable editor and lightweight reader with rapier-embed', 'Self-contained Markdown pictures, editable drawings and layout',
+      'Will/1 document regions', 'JPEG XL encoding in JavaScript', 'Self-hosted folder and bucket access with rapier-server',
+      'Optional encrypted sync to your own Cloudflare account'];
     // The site and its publisher, named once with stable identifiers: the application and every door's page point at them
     // (door-worker.js). Search engines read the site's name and its logo from here. Same words as the application's own.
     const origin = 'https://rapier.website', site = origin + '/#website', publisher = origin + '/#organization';
     const identity = {'@context': 'https://schema.org', '@graph': [
       {'@type': 'WebSite', '@id': site, url: origin + '/', name: data.name, alternateName: data.alternateName, description: data.description, inLanguage: 'en', publisher: {'@id': publisher},
-        hasPart: Object.entries(DOORS).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name}))},
+        hasPart: [...Object.entries(DOORS).map(([path, door]) => ({'@type': 'WebPage', '@id': origin + path + '#webpage', url: origin + path, name: door.name})),
+          ...[['/agents', 'Rapier for agents'], ['/markdown-standard', 'Self-contained Markdown'], ['/will', 'Will/1']]
+            .map(([path, name]) => ({'@type': 'TechArticle', '@id': origin + path + '#webpage', url: origin + path, name}))]},
       {'@type': 'Organization', '@id': publisher, name: data.name, url: origin + '/', logo: {'@type': 'ImageObject', url: origin + '/icon-512.png', width: 512, height: 512}, sameAs}]};
     return open + JSON.stringify({...data, '@id': origin + '/#application', softwareVersion: VERSION, sameAs, publisher: {'@id': publisher}}) + close + '\n' + open + JSON.stringify(identity) + close;
   });
@@ -778,7 +797,7 @@ for (const [slot, path, selected] of satelliteSlots) {
       (names.length !== selected.length || names.some(name => !selected.includes(name))))
     throw new Error('Engine satellite slot is incomplete: ' + slot);
   const span = tree.body.filter(node => node.start >= declarations[0].start && node.end <= declarations.at(-1).end);
-  if (span.length !== declarations.length) throw new Error('Engine satellite slot is not contiguous: ' + slot);
+  if (!MODULES.has(path) && span.length !== declarations.length) throw new Error('Engine satellite slot is not contiguous: ' + slot);
   for (const name of names) {
     if (projectedOwners.has(name)) throw new Error('Engine satellite declaration is projected twice: ' + name);
     projectedOwners.set(name, path);
@@ -791,6 +810,8 @@ for (const [slot, path, selected] of satelliteSlots) {
     : text.slice(declarations[0].start, declarations.at(-1).end)});
 }
 for (const [path, {tree}] of satelliteModules) {
+  // Shared modules retain their private closure in the bundle. Only the exported slot bindings enter the engine.
+  if (MODULES.has(path)) continue;
   for (const name of tree.body.flatMap(satelliteNames)) {
     if (projectedOwners.get(name) !== path) throw new Error('Engine satellite declaration is not projected: ' + name);
   }
@@ -811,7 +832,7 @@ if (!Array.isArray(editorScriptsAll) || new Set(editorScriptsAll).size !== edito
   typeof path !== 'string' || !/^(?:agent|draw|editor|images|interchange|layout|notes)\/[a-z-]+\.js$/.test(path)))
   throw new Error('Editor script sources are invalid');
 // The document profile drops Draw, Paint and Notes scripts whole; editor/info.js drops only its marked Notes part (below).
-const DOCUMENT_PROFILE_DROPPED_SCRIPTS = new Set(['editor/personal.js', 'draw/draw.js', 'draw/effects-tool.js', 'draw/background-tool.js', 'draw/paint-tool.js', 'draw/water-tool.js', 'notes/notes.js', 'notes/todo.js', 'notes/library.js', 'notes/ocr.js', 'notes/recorder.js', 'notes/sync-ui.js',  'notes/attachments.js']);
+const DOCUMENT_PROFILE_DROPPED_SCRIPTS = new Set(['editor/personal.js', 'draw/draw.js', 'draw/effects-tool.js', 'draw/liquid-live.js', 'draw/copier-live.js', 'draw/background-tool.js', 'draw/paint-tool.js', 'draw/water-tool.js', 'notes/notes.js', 'notes/todo.js', 'notes/library.js', 'notes/ocr.js', 'notes/recorder.js', 'notes/sync-ui.js',  'notes/attachments.js']);
 const editorScripts = PROFILE === 'full' ? editorScriptsAll : editorScriptsAll.filter(path => !DOCUMENT_PROFILE_DROPPED_SCRIPTS.has(path));
 // editor/info.js's Notes entries (#339) are marked and dropped
 // as ui.html's RAPIER_NOTES markup is.
@@ -901,10 +922,9 @@ const platformSpans = [];
   platformSpans.push({name: 'rapier-preferences.js', source: await lean(
     'globalThis.RapierPreferenceDefinitions = (() => {\n' + preferenceScript +
     '\nreturn Object.freeze({PREFERENCE_ACCENTS, PREFERENCE_DEFINITIONS});\n})();', 'rapier-preferences.js')});
-  for (const [name, path] of [['rapier-platform.js', 'shell/platform.js'], ['rapier-bundle-io.js', 'shell/bundle-io.js'], ['rapier-plugin-loader.js', 'shell/plugin-loader.js']]) {
+  for (const [name, path] of [['rapier-platform.js', 'shell/platform.js'], ['rapier-bundle-io.js', 'shell/bundle-io.js'], ['rapier-plugin-loader.js', 'shell/plugin-loader.js'], ['rapier-font-subset-plugin.js', 'shell/font-subset-plugin.js']]) {
     const input = await read(path);
-    const source = await lean(path === 'shell/plugin-loader.js' ? fillMermaidResources(input) : input, name);
-    platformSpans.push({name, source});
+    const source = await lean(path === 'shell/plugin-loader.js' ? fillMermaidResources(input) : path === 'shell/font-subset-plugin.js' ? fillFontSubsetResources(input) : input, name);    platformSpans.push({name, source});
   }
   const slot = /<!-- RAPIER_PLATFORM_BEGIN -->\n<!-- RAPIER_PLATFORM_END -->\n/;
   if (!slot.test(html)) throw new Error('The shell carries no RAPIER_PLATFORM slot');
@@ -937,7 +957,10 @@ const dropFunction = (text, name) => {
 };
 const base124Source = dropFunction((await read('tools/base124.mjs')).replace(/^export /gm, ''), 'encodeBase124');
 if (/encodeBase124/.test(base124Source)) throw new Error('The base124 encoder is still in the shell');
-const runtimeLoaderSource = 'const _rapierBase124 = (() => {\n' + base124Source +
+const startupRelease = (await read('tools/startup-release.js')).replace('__RAPIER_PWA_ENABLED__', String(PROFILE === 'full'));
+const startupRescue = await read('tools/startup-rescue.js');
+const runtimeLoaderSource = startupRelease + '\n' + startupRescue + '\n' +
+  'const _rapierBase124 = (() => {\n' + base124Source +
   '\nreturn Object.freeze({decodeBase124});\n})();\n' +
   (await read('tools/text-pack.mjs')).replace(/^export /gm, '') + '\n' + await read('tools/runtime-loader.js');
 const runtimeLoader = await lean(runtimeLoaderSource, 'rapier-loader.js');
@@ -993,6 +1016,14 @@ let inlineRuntimeLoader = null;
   let at = 0;
   html = html.replace(inline, () => leaned[at++]);
 }
+// Hash the assembled page and PWA worker source with the identity slot still
+// empty. A worker change gets its own generation too; final hashes cover the bytes.
+const bootSlot = '__RAPIER_BOOT_ID__';
+if (html.split(bootSlot).length !== 2) throw new Error('The page must carry one startup identity');
+const serviceWorkerSource = PROFILE === 'full' ? await read('shell/service-worker.js') : '';
+const bootId = checksum(html + serviceWorkerSource);
+html = html.replace(bootSlot, bootId);
+if (inlineRuntimeLoader) inlineRuntimeLoader = inlineRuntimeLoader.replace(bootSlot, bootId);
 // The size rule: never refuses on size; measures and reports every byte.
 const BUDGET = SIZE_BUDGETS[PROFILE];
 {
@@ -1014,7 +1045,10 @@ if (PROFILE === 'full') {
     shellRows.push(`./${path}\t${body.length}\t${digest}`);
   }
   shellDigest = checksum(shellRows.join('\n'));
-  const worker = (await read('sw.js'))
+  const doorHashes = Object.fromEntries(Object.keys(DOORS).map(path => [path, checksum(doorPage(Buffer.from(html), path))]));
+  const worker = serviceWorkerSource
+    .replace('__RAPIER_BOOT_ID__', bootId)
+    .replace('__RAPIER_DOOR_SHA256__', JSON.stringify(doorHashes))
     .replace(/const SHELL_RELEASE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_RELEASE_SHA256 = '${shellDigest}';`)
     .replace(/const SHELL_PAGE_SHA256 = '[0-9a-f]{64}';/, `const SHELL_PAGE_SHA256 = '${shellPageDigest}';`);
   new vm.Script(worker, {filename: 'sw.js'});
@@ -1037,14 +1071,15 @@ if (PROFILE === 'full') {
     '/* RAPIER_BUILTIN_PLUGIN_EXECUTE */', builtinExecution),
     '/* RAPIER_BUILTIN_FILES_REUSE */', builtinFilesReuse), 'rapier-app-plugin-loader.js');
   const appsPlatform = await packedSpans('rapier-platform-runtime', 'application/rapier-runtime', [
-    ...platformSpans.slice(0, -1),
+    ...platformSpans.filter(span => !['rapier-plugin-loader.js', 'rapier-font-subset-plugin.js'].includes(span.name)),
     {name: 'rapier-bundled-plugins.js', source: await lean(await read('shell/bundled-plugins.js'), 'rapier-bundled-plugins.js')},
     {name: 'rapier-app-plugin-loader.js', source: appsPluginLoader},
+    platformSpans.find(span => span.name === 'rapier-font-subset-plugin.js'),
   ]);
   const appRows = packedRecord.splice(recorded);
   const replacementElements = new Set(['rapier-ui-runtime', 'rapier-platform-runtime']);
   appsSpans = packedRecord.filter(row => !replacementElements.has(row.element)).concat(appRows);
-  const appRuntimeLoader = await lean(fillBuiltinSlot(runtimeLoaderSource,
+  const appRuntimeLoader = await lean(fillBuiltinSlot(runtimeLoaderSource.replace(bootSlot, bootId),
     '/* RAPIER_BUILTIN_PLUGINS_READY */', 'await RapierBundledPlugins.ready();'), 'rapier-app-loader.js');
   new vm.Script(appRuntimeLoader, {filename: 'rapier-app-loader.js'});
   const platformElement = /<script type="application\/rapier-runtime" id="rapier-platform-runtime">[^<]*<\/script>\n/;

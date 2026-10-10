@@ -2,7 +2,7 @@
 // Shared native resources for Android's Play pack and Windows' executable: the plug-ins the page otherwise downloads from
 // jsDelivr (Mermaid and the text in pictures reader's ten files, fetched here at build time from their pins; MathJax and
 // Draw's letter sets, read from this tree), refused on any byte that is not the pinned one. The pins are the page's
-// own (shell/plugin-loader.js, notes/ocr.mjs and draw/letters.mjs), so the page holds the pack's bytes to the same SHA-384 it
+// own (shell/plugin-loader.js, images/ocr.mjs and draw/letters.mjs), so the page holds the pack's bytes to the same SHA-384 it
 // holds a download's. Each file is written under its resource id (the
 // id the page asks RapierPlatform.resources for); nothing fetched is committed (repo/.gitignore). The app never fetches:
 // Google Play delivers Android's pack; Windows bundles it at build time. node tools/stage-plugin-pack.mjs <out-dir>
@@ -11,7 +11,8 @@ import {mkdir, readFile, readdir, rename, rm, writeFile} from 'node:fs/promises'
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {mermaidResourceFiles} from './mermaid-resources.mjs';
-import {OCR_FILES} from '../notes/ocr.mjs';
+import {fontSubsetResourceFiles} from './font-subset-resources.mjs';
+import {OCR_FILES} from '../images/ocr.mjs';
 import {LETTER_SETS} from '../draw/letters.mjs';
 import {PDF_JS_VERSION} from '../interchange/pdf-resources.mjs';
 
@@ -38,7 +39,7 @@ export async function pluginPackFiles() {
 	const loader = await readFile(join(root, 'shell/plugin-loader.js'), 'utf8');
 	const math = bundlePin(loader, 'math', 'MATHJAX_VERSION');
 	math.path = join(root, 'shell/vendor', new URL(math.url).pathname.split('/').at(-1));
-	return [math, ...mermaidResourceFiles(root),
+	return [math, ...mermaidResourceFiles(root), ...fontSubsetResourceFiles(root),
 		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, url: file.url, sri: file.sri, bytes: file.bytes})),
 		...LETTER_SETS.map(set => ({id: 'rapier-letters-' + set.id, path: join(root, 'draw/letters', set.id + '.json'), sri: set.sha384, bytes: set.bytes})),
 		...pdfFiles(JSON.parse(await readFile(join(root, 'interchange/pdf-pins.json'), 'utf8')))];

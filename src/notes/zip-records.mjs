@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Rapier's one ZIP writer. Nothing else writes a ZIP header.
 import {crc32} from '../images/crc32.mjs';
+import {finish, finishAsync} from '../kit/render-work.mjs';
 
 // DOS time is clamped to 1980-2107, local time.
 export function dosDateTime(ms) {
@@ -68,16 +69,21 @@ function normalisedName(name) {
 }
 function bytesOf(bytes, enc) { return typeof bytes === 'string' ? enc.encode(bytes) : bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); }
 // Deterministic: same entries and times give the same bytes.
-export function zipStored(entries, options = {}) {
+export function zipStored(entries, options = {}) { return finish(zipStoredSteps(entries, options)); }
+export async function zipStoredAsync(entries, options = {}) { return finishAsync(zipStoredSteps(entries, options), options.work); }
+function* zipStoredSteps(entries, options = {}) {
 	if (entries.length >= 0xFFFF) throw new Error('zipStored: 65535 entries is the Zip64 sentinel, which this module does not implement');
 	const enc = new TextEncoder();
-	const files = entries.map(e => {
+	const files = [];
+	for (const e of entries) {
 		const nameBytes = enc.encode(normalisedName(e.name));
 		if (nameBytes.length > 0xFFFF) throw new Error(`zipStored: "${e.name.slice(0, 40)}…" is longer than a zip name can be`);
 		const data = bytesOf(e.bytes, enc);
 		if (data.length > 0xFFFFFFFF) throw new Error(`zipStored: "${e.name}" is over 4 GiB, which would need Zip64`);
-		return {nameBytes, data, size: data.length, crc: crc32(data), utf8Flag: options.utf8Flag, ...dosDateTime(e.modified ?? Date.now())};
-	});
+		let crc = 0;
+		for (let at = 0; at < data.length; at += 65536) { crc = crc32(data.subarray(at, at + 65536), crc); yield; }
+		files.push({nameBytes, data, size: data.length, crc, utf8Flag: options.utf8Flag, ...dosDateTime(e.modified ?? Date.now())});
+	}
 	const parts = [], central = [];
 	let offset = 0;
 	const put = bytes => {
@@ -96,6 +102,10 @@ export function zipStored(entries, options = {}) {
 	put(comment);
 	const whole = new Uint8Array(offset);
 	let pos = 0;
-	for (const part of parts) { whole.set(part, pos); pos += part.length; }
+	for (const part of parts) {
+		for (let at = 0; at < part.length; at += 65536) {
+			const chunk = part.subarray(at, at + 65536); whole.set(chunk, pos); pos += chunk.length; yield;
+		}
+	}
 	return whole;
 }

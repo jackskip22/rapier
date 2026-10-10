@@ -9,15 +9,38 @@ import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {FileStore,sha256,stateText} from '../store.mjs';
+import {Renderer} from '../chromium.mjs';
 const first='\ufeff# Original\r\nKeep λ.\r\n',mine='# Proposed\r\nMy exact revision.\r\n',external='# External\r\nTheir exact revision.\r\n';
-const record=(text=mine,before=sha256(first))=>({version:1,kind:'document',document:'Note.md',fileHash:before,alarm:null,values:[['head',{parts:1}],['state:0',JSON.stringify({text,docKind:'markdown',filename:'Note.md'})]]});
+const metadata={filename:'Note.md',docKind:'markdown'};
+const record=(text=mine,before=sha256(first))=>({version:1,kind:'document',document:'Note.md',fileHash:before,alarm:null,values:[
+ ['head',{parts:1,stateFormat:'rapier-workspace/2'}],['state:0',JSON.stringify({format:'rapier-workspace/2',metadata:{start:metadata,head:metadata},
+  state:{text,...metadata,revision:0,journal:[]}})]]});
 const key='a'.repeat(64),self=fileURLToPath(import.meta.url);
 async function allBytes(root) {
  let found=[];for(const row of await readdir(root,{withFileTypes:true})){const path=join(root,row.name);if(row.isDirectory())found.push(...await allBytes(path));else if(row.isFile()){const text=await readFile(path,'utf8');found.push(text);try{const value=JSON.parse(text);if(typeof value.text==='string')found.push(value.text);}catch{}}}return found;
 }
 async function keepCase(name,run) {const root=await mkdtemp(join(tmpdir(),'rapier-preserve-'));try{await writeFile(join(root,'Note.md'),first);await run(root);console.log('PASS store: '+name);}finally{await rm(root,{recursive:true,force:true});}}
+export async function rendererFailureCell() {
+ // Node rejects Chromium's arguments and exits with unread DevTools pipes. This uses a real
+ // child failure, without a browser; failed exports must reject rather than kill the server.
+ const renderer=new Renderer({chromium:process.execPath,chromiumVersion:'0.0.0.0'});
+ try {await assert.rejects(renderer.render(first,'Note.md'),error=>['BROWSER_EXITED','ECONNRESET','EPIPE'].includes(error.code));}
+ finally {await renderer.close();}
+}
 export async function preservationCells() {
  const failures=[];const cell=async(name,fn)=>{try{await keepCase(name,fn);}catch(e){failures.push(name+': '+e.stack);console.log('FAIL store: '+name);}};
+ await cell('failed export rejects without terminating the server',rendererFailureCell);
+ await cell('unsupported workspace keeps source and private recovery bytes',async root=>{
+  const store=await new FileStore({root}).open();
+  const old={...record(),values:[['head',{parts:1}],['state:0',JSON.stringify({text:mine,...metadata})]]};
+  const raw=JSON.stringify(old);await store.writePrivate('workspaces/'+key+'.json',old);
+  try {
+   assert.throws(()=>stateText(old),error=>error.code==='UNSUPPORTED_WORKSPACE_FORMAT');
+   await assert.rejects(store.commit(key,old),error=>error.code==='UNSUPPORTED_WORKSPACE_FORMAT');
+   assert.equal(await readFile(join(root,'Note.md'),'utf8'),first);
+   assert.equal(JSON.stringify(await store.readPrivate('workspaces/'+key+'.json')),raw);
+  } finally {await store.close();}
+ });
  for(const edit of ['before-final','late-in-place','late-rename','recreated','held-descriptor']) await cell(edit,async root=>{
   const path=join(root,'Note.md'),originalRename=fs.promises.rename,originalLink=fs.promises.link;let injected=false,handle=null;
   const store=await new FileStore({root,onCommitStep:async step=>{

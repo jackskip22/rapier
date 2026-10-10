@@ -202,6 +202,10 @@ body {
 	background: color-mix(in srgb, var(--color-accent) 46%, transparent);
 	box-shadow: inset 0 -2px 0 var(--color-accent);
 }
+.rapier-find-picture-mark {
+	background: rgba(255,255,0,0.25);
+	box-shadow: none;
+}
 .block-wrapper.rapier-find-current-fallback {
 	background: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }

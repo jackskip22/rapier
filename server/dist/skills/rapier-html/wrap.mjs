@@ -5,7 +5,7 @@ import {PAGE_SEED, returnAddress, returnExpiresAt} from './return-address.mjs';
 
 const START = '<script type="text/markdown" id="rapier-document"';
 const DRAWING_START = '<script type="text/plain" id="rapier-drawing"';
-// The text the document was proposed against: the page opens on its diff.
+// The original text is a display reference: the page opens on its diff from the current document.
 const END = '</script>';
 // The page's search words (rapier.html's RAPIER_SEO regions: description, canonical address, previews, structured data and the plain guide
 // a crawler reads) are rapier.website's own. A page that carries someone's document never claims that address or that description.
@@ -40,8 +40,8 @@ export function wrap(pageHtml, text, name, options) {
 		const drawingName = safeName(opts.drawingName, 'drawing.svg');
 		carriedBlocks += '\n' + DRAWING_START + ' data-name="' + drawingName + '">' + encodeCarried(opts.drawing) + END;
 	}
-	if ((opts.by != null || opts.at != null) && opts.base == null && previous.base == null) throw new Error('a proposer needs the base it proposes over');
-	let baseline = previous.proposalBase;
+	if ((opts.by != null || opts.at != null) && opts.base == null && previous.base == null) throw new Error('comparison attribution needs its original text');
+	let baseline = previous.comparisonBase;
 	if (!baseline && opts.base != null) {
 		if (typeof opts.base === 'object') baseline = readBase(opts.base);
 		else {
@@ -51,12 +51,12 @@ export function wrap(pageHtml, text, name, options) {
 			const carriedBase = /^\s*<!doctype html/i.test(opts.base) ? takeBase(opts.base).base : null;
 			const pageBase = !carriedBase && /^\s*<!doctype html/i.test(opts.base) ? unwrap(opts.base) : null;
 			const source = carriedBase ? {text: carriedBase.text} : pageBase?.text != null ? readDocument(pageBase.text) : readDocument(opts.base);
-			baseline = carriedBase || pageBase?.proposalBase || readBase({text: source.text, sha256: sha256(source.text),
+			baseline = carriedBase || pageBase?.comparisonBase || readBase({text: source.text, sha256: sha256(source.text),
 				revision: source.ledger?.head.root || pageBase?.ledger?.head.root || sha256(source.text), name: safeName(opts.baseName || pageBase?.name, docName),
 				by: opts.by == null ? 'Agent' : String(opts.by).trim(), at: opts.at == null ? new Date().toISOString() : String(opts.at)});
 		}
 	}
-	// Re-proposing retains the original text/hash/revision; the current proposer identifies this proposal.
+	// Rewrapping retains the original text, hash and revision; attribution names this comparison.
 	if (baseline) baseline = readBase({...baseline, ...(opts.by != null ? {by: String(opts.by).trim()} : {}), ...(opts.at != null ? {at: String(opts.at)} : {})});
 	carriedBlocks += '\n' + writeBase(text, baseline);
 	// The agent seed goes after the charset (or <head>), once: a page that already carries it, wrapped again, loses its old one.
@@ -102,7 +102,7 @@ export function unwrap(pageHtml) {
 		if (d > 0 && html[d - 1] === '\n') html = html.slice(0, d - 1) + html.slice(d);
 	}
 	const carriedBase = takeBase(html); html = carriedBase.html;
-	const proposalBase = carriedBase.base;
+	const comparisonBase = carriedBase.base;
 	const parts = takeParts(html, text);
-	return {...parts, text, name, view, drawing, drawingName, proposalBase, base: proposalBase?.text ?? null, baseName: proposalBase?.name ?? null, baseSha256: proposalBase?.sha256 ?? null, baseRevision: proposalBase?.revision ?? null, by: proposalBase?.by ?? null, at: proposalBase?.at ?? null, return: address, return_expires_at: expiry};
+	return {...parts, text, name, view, drawing, drawingName, comparisonBase, base: comparisonBase?.text ?? null, baseName: comparisonBase?.name ?? null, baseSha256: comparisonBase?.sha256 ?? null, baseRevision: comparisonBase?.revision ?? null, by: comparisonBase?.by ?? null, at: comparisonBase?.at ?? null, return: address, return_expires_at: expiry};
 }

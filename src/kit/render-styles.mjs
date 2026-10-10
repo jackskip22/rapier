@@ -4,7 +4,7 @@ function createRenderStyles(runtime) {
   const {_rapierArtifactAccent, _rapierStyleText} = runtime;
 function _rapierArtifactThemeCss(houseDefaults = false) {
 	// Geometry and the selected accent belong to this page; palette and type belong to the
-	// MIT reference sheet. Only the optional code lexer still reads the app token names.
+	// MIT reference sheet. Static code highlighting reads the app token names.
 	const accent = houseDefaults ? '' : ':root,.md-render{--md-color-accent:' + _rapierArtifactAccent() + '}';
 	return `
 ${accent}
@@ -71,9 +71,10 @@ function _rapierDocumentPrintCss(hostSelector) {
 }`;
 }
 
-function _rapierArtifactStyles(theme, includeFonts, printMode, houseDefaults = false) {
+function _rapierArtifactStyles(theme, includeFonts, printMode, houseDefaults = false, fontCss = null) {
 	const parts = [];
-	if (includeFonts) parts.push(_rapierStyleText('rapier-font-style'));
+	if (fontCss !== null) parts.push(fontCss);
+	else if (includeFonts) parts.push(_rapierStyleText('rapier-font-style'));
 	parts.push(_rapierStyleText('rapier-content-style'));
 	parts.push(_rapierArtifactThemeCss(houseDefaults));
 	// Where the faces do not ride (the written page's policy carries no font-src), the reader's own sans is
@@ -86,7 +87,7 @@ function _rapierArtifactStyles(theme, includeFonts, printMode, houseDefaults = f
 	// The family list walks the platforms: Roboto (Android), Helvetica Neue (Apple), Segoe UI (Windows),
 	// Arial, then Linux's Noto Sans, Ubuntu, Liberation Sans, DejaVu Sans; a face that is not installed fails
 	// to load and the browser moves to the next family. font-size-adjust was tried and rescaled Geist itself.
-	if (!includeFonts) parts.push(`@font-face{font-family:'Geist/Roboto';src:local('Roboto');font-weight:400 500;size-adjust:105%;ascent-override:95.7%;descent-override:28.1%;line-gap-override:0%}
+	if (!includeFonts && fontCss === null) parts.push(`@font-face{font-family:'Geist/Roboto';src:local('Roboto');font-weight:400 500;size-adjust:105%;ascent-override:95.7%;descent-override:28.1%;line-gap-override:0%}
 @font-face{font-family:'Geist/Roboto';src:local('Roboto Bold');font-weight:600 700;size-adjust:105%;ascent-override:95.7%;descent-override:28.1%;line-gap-override:0%}
 @font-face{font-family:'Geist/Helvetica Neue';src:local('Helvetica Neue');font-weight:400 500;size-adjust:103.8%;ascent-override:96.8%;descent-override:28.4%;line-gap-override:0%}
 @font-face{font-family:'Geist/Helvetica Neue';src:local('Helvetica Neue Bold');font-weight:600 700;size-adjust:103.8%;ascent-override:96.8%;descent-override:28.4%;line-gap-override:0%}

@@ -1,6 +1,6 @@
 ---
 name: rapier-markdown
-description: Write or check Self-contained Markdown, one .md file that carries its pictures, layout, colour, editable SVG drawings with their canvas skies and Mermaid flowcharts as text, over CommonMark and GFM, and that every Markdown app can read. Use when writing a Rapier document, when asked for a self-contained or portable Markdown file, or before making an editable page with rapier-html. An ordinary chat answer in Markdown does not need this skill.
+description: Use when writing or checking a portable Markdown document with embedded pictures, editable SVG drawings, layout or Will/1 regions, including source for rapier-html. Self-contained Markdown keeps everything in one .md file over CommonMark and GFM. Use rapier-markdown-kit to read, render and write it in JavaScript.
 ---
 
 # Self-contained Markdown
@@ -13,7 +13,7 @@ reference definition, so every other Markdown reader shows the same words and qu
 know. Nothing is lost when the file travels: no image folder, no zip, no account, no particular app.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.90`. Rapier renders it exactly and
+https://rapier.website/markdown-standard; the MIT reader and writer is `npm install rapier-markdown-kit@1.1.91`. Rapier renders it exactly and
 writes it back byte for byte; any editor may.
 
 Rapier has two separate kinds of diagram: native SVG drawings, made with `document.draw` as movable, editable
@@ -23,6 +23,21 @@ with `document.draw`.
 Pass Markdown directly to tools, without an outer display fence. Close every Mermaid fence before the
 next paragraph. If source is requested in chat, never wrap Markdown containing Mermaid in another
 triple-backtick fence; use an outer fence longer than every backtick run in the source, or attach the file.
+
+## Choose a Rapier workflow
+
+Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
+as one HTML file on Android, Web and Windows.
+Collaborate over MCP and WebMCP, use optional encrypted sync to your own Cloudflare account, or embed the
+editor and lightweight reader (about 190 kB gzipped). The agent edits live; the person sees its presence and
+changes, taps a change to see the before and undoes anything. Use `comparison.present` to show a diff deliberately.
+
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `rapier.open` to share one document with the person.
+2. **Deliver an offline editor.** Run `npx rapier-html@1.1.91 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
+4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
+5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
+6. **Host the door.** Run [rapier-server](https://github.com/jackskip22/rapier/tree/main/server) over your own folder or S3-compatible bucket.
 
 ## Pictures, in the file
 
@@ -56,7 +71,7 @@ Text takes `align` (`left`, `center`, `right`, `justify`). A picture takes `widt
 `lines=N` instead of `width` to stand N lines of text tall (`lines=3 wrap=around` is a drop cap that follows the text size);
 `wrap=around` or `wrap=box` with `x` and `y` for text flowing beside it; `wrap=behind` or `wrap=front` for a
 picture under or over the words; `rotate=15deg` for a turned photo; `opacity=40%` for a faded one. A comment that does not parse is ignored
-whole (Rapier's `document.get_context` counts it under `layout.malformed`).
+whole. Request the structure facet of `document.observe` for source diagnostics and follow its omitted-data routes.
 
 ## Colour, page breaks, captions
 
@@ -89,16 +104,16 @@ Rapier's Compare shows every byte that moved.
 
 ## Check it before I send it
 
-Use the agent door's `document.get_context` for Will faults, malformed layout, image counts and whether
+Use the agent door's `document.observe` with the structure facet for source diagnostics and whether
 those indexes are complete. Read the flagged passages and image descriptions through inspected handles;
-check only the scope actually disclosed. Keep pending review distinct from applied source. Compare changed
+check only the scope actually disclosed. Keep comparison presentation distinct from committed source. Compare changed
 names, dates, amounts and units against the supplied original; label a claim without supporting material
 **unsupported**, even when its wording appears in both prose and a diagram. These checks do not verify truth,
 remote link availability, visual fit or export fidelity in an application that has not been opened.
 
 Report three short groups: **checked**, **flagged**, **not checked**. Describe an incomplete index as not fully
 checked; do not silently fix the person's words to make a check pass. Export with `rapier-html`, retaining the
-exact Markdown (and exact base for a proposal). Where code is available, read it back with `unwrap` and compare
+exact Markdown and the original text when showing a comparison. Where code is available, read it back with `unwrap` and compare
 the source byte for byte. A PDF alone does not retain editable source; deliver the source or editable page too.
 
 **Done:** the checks and their scope are named, unsupported claims and unresolved flags stay visible, and the

@@ -19,9 +19,12 @@ import {imageStyle, linesHeightCss} from '../spec/md-layout.mjs';
 import {installMarkdownImages, dataImage} from '../spec/md-assets.mjs';
 import {decodeDataImage, imageDimensions} from '../images/assets.mjs';
 import {DOORS} from '../door-worker.js';
+import {APP_DESCRIPTION} from './discovery.mjs';
 
 // The README's "Everything it does", one line each. Plain, and only what the README already says.
-const SUMMARY = `The fast, free Markdown editor for your phone. Write, draw, paint and keep notes, offline, with no account; it works on any device. Rapier is open source (AGPL-3.0-only), with no telemetry.
+const SUMMARY = `${APP_DESCRIPTION}
+
+Free and open source (AGPL-3.0-only), with no account or telemetry.
 
 ## Write
 
@@ -53,7 +56,7 @@ No account, no analytics, no advertising. What you write stays on your device un
 
 ## Agents
 
-Work on the same page as an AI agent. It reads only the passages it needs, changes exactly what it read, never overwrites what you are typing, and you keep or drop each change where it lands. It draws native SVG diagrams as editable shapes, and separately renders Mermaid flowcharts from fences. The Will marks what it may edit. Connect Claude, ChatGPT or any MCP client to https://mcp.rapier.website/mcp with no account, or use WebMCP in the browser.
+An AI agent edits notes, text, diagrams and paintings live, beside you or while you are away. See its presence and changes, tap a change to see what was there before, and undo anything. It reads the passages it needs, changes exactly what it read and preserves what you are typing. It can show a diff of any part with \`comparison.present\`. Native SVG diagrams stay editable shapes; Mermaid diagrams stay in Markdown fences. Will regions carry your instructions. Connect Claude, ChatGPT or any MCP client to https://mcp.rapier.website/mcp with no account, or use WebMCP in the browser.
 
 ## Where it runs
 

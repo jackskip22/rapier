@@ -124,22 +124,17 @@ export function cleanRemind(raw) {
 	return {at: raw.at, ...(repeat === 'custom' ? {every: raw.every} : {}), ...(repeat ? {repeat} : {}),
 		...(raw.snoozeMinutes !== undefined ? {snoozeMinutes: raw.snoozeMinutes} : {}), ...(repeat === 'custom' ? {unit: raw.unit} : {})};
 }
-// Who an agent was and when, on a note it made (notes.propose): index data, never a word of the note.
+// Who an agent was and when, on a note it made (notes.write): index data, never a word of the note.
 export function cleanAgent(raw) {
 	if (!raw || typeof raw !== 'object' || typeof raw.by !== 'string' || !raw.by.trim() || raw.by.length > 64 || !Number.isSafeInteger(raw.at) || raw.at < 0) return null;
 	return {by: raw.by.trim(), at: raw.at};
-}
-// A change an agent left for the person to keep or drop (notes.propose): who proposed it, when, and the note it would change.
-export function cleanProposed(raw) {
-	const mark = cleanAgent(raw);
-	return mark && isNoteFile(raw.of) ? {...mark, of: raw.of} : null;
 }
 export function validNoteId(id) { return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id.slice(id.lastIndexOf(':') + 1))); }
 function cleanEntry(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	// Written in this function's field order, then unknown fields in their order: a round trip is byte-identical and keeps other owners' data.
 	const entry = {};
-	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created', 'proposed', 'agent']);
+	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created', 'agent']);
 	if (raw.id !== undefined && !validNoteId(raw.id)) throw Object.assign(new Error('invalid note identity'), {code: 'corrupt'});
 	if (raw.revision !== undefined && (typeof raw.revision !== 'string' || !raw.revision)) throw Object.assign(new Error('invalid note revision'), {code: 'corrupt'});
 	if (raw.id !== undefined) entry.id = raw.id;
@@ -163,8 +158,6 @@ function cleanEntry(raw) {
 	if (Number.isFinite(raw.modified)) entry.modified = raw.modified;
 	// `created` sorts Date created.
 	if (Number.isFinite(raw.created)) entry.created = raw.created;
-	const proposed = cleanProposed(raw.proposed);
-	if (proposed) entry.proposed = proposed;
 	const agent = cleanAgent(raw.agent);
 	if (agent) entry.agent = agent;
 	for (const key of Object.keys(raw)) if (!known.has(key)) Object.defineProperty(entry, key, {value: raw[key], enumerable: true, configurable: true, writable: true});
@@ -279,15 +272,36 @@ export function sortedSection(index, section) {
 		.sort((a, b) => (a[1].order < b[1].order ? -1 : a[1].order > b[1].order ? 1 : a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
 		.map(([file]) => file);
 }
-// Writes exactly one new order key; null when nothing changes.
+// Writes the moved rank, spacing tied neighbours only when they leave no gap; null when nothing changes.
 export function moveTo(index, file, at) {
 	const entry = index.notes[file];
 	if (!entry) return null;
-	const files = sortedSection(index, sectionOf(entry, index.sections)).filter(f => f !== file);
+	const files = sortedSection(index, sectionOf(entry, index.sections)), from = files.indexOf(file);
+	files.splice(from, 1);
 	const clamp = Math.max(0, Math.min(at, files.length));
+	if (from === clamp) return null;
 	const before = clamp > 0 ? index.notes[files[clamp - 1]].order : '';
 	const after = clamp < files.length ? index.notes[files[clamp]].order : '';
-	if ((!before || entry.order > before) && (!after || entry.order < after)) return null; // already there, the front included
+	if (before && before === after) {
+		// Pinning or changing sections can bring equal ranks together. Keep the larger side of
+		// their run and make room on the smaller side without changing any other section.
+		let first = clamp - 1, last = clamp + 1;
+		while (first > 0 && index.notes[files[first - 1]].order === before) first--;
+		while (last < files.length && index.notes[files[last]].order === after) last++;
+		if (clamp - first < last - clamp) last = clamp; else first = clamp;
+		const changed = files.slice(first, last), keys = [];
+		changed.splice(clamp - first, 0, file);
+		// Stage balanced keys before touching the index, keeping long runs' keys short.
+		const space = (start, end, low, high) => {
+			if (start >= end) return;
+			const mid = Math.floor((start + end) / 2), key = orderMidpoint(low, high);
+			keys[mid] = key;
+			space(start, mid, low, key); space(mid + 1, end, key, high);
+		};
+		space(0, changed.length, first > 0 ? index.notes[files[first - 1]].order : '', last < files.length ? index.notes[files[last]].order : '');
+		changed.forEach((name, i) => { index.notes[name].order = keys[i]; });
+		return entry.order;
+	}
 	const key = !before ? (after ? orderBefore(after) : orderFirst()) : !after ? orderAfter(before) : orderMidpoint(before, after);
 	entry.order = key;
 	return key;

@@ -444,7 +444,8 @@ async function replayPaintEntries(replay, options = {}) {
 					live.id=sheet.id;brushes=new Map();
 				}
 				const origin=sheet.waterFrame?.origin??[0,0],frameOffset=live.surface.origin.map((value,index)=>value-origin[index]);
-				await applyWaterActions(live.surface,waterActionsInFrame(entry.actions,live.surface,origin),{...options,replayFrames:true,frameOffset});
+				const actions=entry.removed?entry.actions.filter(action=>action.kind==='tip'):entry.actions;
+				await applyWaterActions(live.surface,waterActionsInFrame(actions,live.surface,origin),{...options,replayFrames:true,frameOffset});
 				waterPaper=live.surface.paperId;
 				const [x0,y0,x1,y1]=entry.crop, box={x0,y0,x1,y1};
 				pixels=await live.surface.toRGBA8(box);live.crop=entry.crop.slice();
@@ -481,6 +482,10 @@ async function replayPaintEntries(replay, options = {}) {
 		for (const command of entry.commands) {
 			cancelled(options.signal);
 			const args = command.args;
+			// Brush setup and sheet framing remain dependencies of later recorded strokes.
+			// The selected act's pigment and drying commands do not run a second time.
+			if (entry.removed && (command.target === 'stroke' || command.target === 'surface' &&
+				!['set', 'grow'].includes(command.method))) continue;
 			if (command.target === 'brush') {
 				const brush = brushes.get(command.id); if (!brush) throw new Error('A replay brush is missing');
 				brush[command.method](...args);
@@ -519,7 +524,7 @@ async function replayPaintEntries(replay, options = {}) {
 export async function replayAgentPainting(shape, omitIds, options = {}) {
 	cancelled(options.signal);
 	const replay = admitPaintReplay(shape?.paint?.replay), ids = new Set(omitIds);
-	if (!replay || !replayPaintSheet(replay) || !ids.size || [...ids].some(id => !replay.entries.some(entry => entry.actor === 'agent' && !entry.removed && entry.id === id))) return null;
+	if (!replay || !replayPaintSheet(replay) || !ids.size || [...ids].some(id => !replay.entries.some(entry => !entry.removed && entry.id === id))) return null;
 	const water=shape.paint.mode==='water', session=options.waterSession || waterSession();
 	if (water && (replay.session !== session || !options.waterAuthorized && !waterPaintingIsLive(shape, session))) return null;
 	const actual=await decodePaintRaster(shape.raster, options);

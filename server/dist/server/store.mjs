@@ -12,7 +12,7 @@ import * as fs from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {join, dirname, basename, resolve, relative, sep} from 'node:path';
 import {createHash, randomBytes} from 'node:crypto';
-import {RapierDocument, RapierBudget} from '../mcp/worker.mjs';
+import {RapierDocument, RapierBudget, readWorkspaceState} from '../mcp/worker.mjs';
 
 const utf8 = new TextDecoder('utf-8', {fatal:true, ignoreBOM:true});
 const NOFOLLOW = constants.O_NOFOLLOW || 0;
@@ -73,14 +73,21 @@ async function atomicFile(path, bytes, {mode=0o600, create=false, beforePublish}
 }
 export function stateText(record) {
   const values=new Map(record.values), head=values.get('head');
-  if (!head || !Number.isSafeInteger(head.parts) || head.parts < 1) return null;
+  if (!head) return null;
+  if (!Number.isSafeInteger(head.parts) || head.parts < 1) throw refusal('STATE_DAMAGED','A workspace state is incomplete.',503);
   let packed='';
   for(let index=0;index<head.parts;index++) {
     const part=values.get('state:'+index);
     if(typeof part !== 'string') throw refusal('STATE_DAMAGED','A workspace state is incomplete.',503);
     packed+=part;
   }
-  const state=JSON.parse(packed);
+  let state;
+  try {state=readWorkspaceState(head,JSON.parse(packed));}
+  catch(error) {
+    if(error.code==='UNSUPPORTED_WORKSPACE_FORMAT')
+      throw refusal(error.code,'The workspace history format is unsupported. Its current file and stored state were kept.',503);
+    throw refusal('STATE_DAMAGED','The workspace source and metadata history do not replay.',503);
+  }
   if(typeof state.text !== 'string' || state.docKind !== 'markdown' || state.filename !== basename(record.document))
     throw refusal('DOCUMENT_IDENTITY_REFUSED','A filesystem workspace cannot change its bound filename or document kind.',409);
   return state.text;

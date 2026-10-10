@@ -256,7 +256,8 @@ function _rapierKeepPortableTemplate() {
   const loader = document.currentScript, screen = document.getElementById('rapier-first-screen');
   if (!loader || !screen || !loader.previousElementSibling) return;
   const head = document.head.innerHTML;
-  const first = screen.outerHTML + '\n' + loader.previousElementSibling.outerHTML + '\n' + loader.outerHTML;
+  const failure = document.querySelector('body > .rapier-boot-failure');
+  const first = (failure ? failure.outerHTML + '\n' : '') + screen.outerHTML + '\n' + loader.previousElementSibling.outerHTML + '\n' + loader.outerHTML;
   const payloadTypes = new Set(['application/rapier-runtime', 'application/rapier-jxl-worker', 'text/rapier-vendor']);
   // The stream may still be parsing here. The immutable payloads are read only when the fully
   // booted agent asks for a page; decoded styles and editor nodes are never read back.
@@ -283,17 +284,6 @@ function _rapierKeepPortableTemplate() {
     // Nothing is shown before the shell can say whether a carried file is waiting, and nothing
     // visible is unbound: the first screen's controls are bound by the script that precedes this one.
     for (const {name, source} of await _rapierInflateVendor('rapier-platform-runtime')) _rapierExecuteVendorSource(name, source);
-    // A failed editor must still discover a repaired application release.
-    if (_rapierPwaFrameAdmission(window.self === window.top) &&
-        window.RapierPlatform?.environment.allowsServiceWorker === true && 'serviceWorker' in navigator &&
-        (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-      const registerWorker = () => {
-        try { navigator.serviceWorker.register('./sw.js', {scope: './', updateViaCache: 'none'}).catch(() => {}); }
-        catch (_) {}
-      };
-      if (document.readyState === 'complete') queueMicrotask(registerWorker);
-      else addEventListener('load', registerWorker, {once: true});
-    }
     await _rapierWhenRuntime('rapier-styles-runtime');
     const styles = await _rapierInflateVendor('rapier-styles-runtime');
     if (styles.length !== 1) throw new Error('Editor interface records are invalid');
@@ -341,7 +331,7 @@ function _rapierKeepPortableTemplate() {
     publishRuntime(true);
   } catch (error) {
     publishRuntime(false);
-    if (typeof _rapierBootstrapRuntime !== 'undefined') _rapierBootstrapRuntime.failed = true;
+    try { if (typeof _rapierBootstrapRuntime !== 'undefined') _rapierBootstrapRuntime.failed = true; } catch (_) {}
     try { window.RapierPlatform?.files?.clearIntake?.(); } catch (_) {}
     document.body.classList.add('rapier-boot-failed');
     const detail = document.getElementById('rapier-boot-failure-detail');
@@ -351,6 +341,8 @@ function _rapierKeepPortableTemplate() {
       if (!reasons.includes(message)) reasons.push(message);
     }
     if (detail) detail.textContent = 'The editor could not finish starting. Reload this file. Your document has not been opened or changed. Startup resource: ' + (reasons.join(': ') || 'unknown').slice(0, 240) + '.';
+    void _rapierRescueStartup();
+    globalThis.RapierStartupRelease?.failed();
     console.error('[rapier] runtime could not load', error);
   }
 })();

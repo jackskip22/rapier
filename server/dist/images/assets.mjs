@@ -556,7 +556,7 @@ export function imageDimensions(bytes, codec) {
   const info = codec === 'image/jxl' ? inspectJPEGXL(bytes) : codec === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes);
   if (codec !== 'image/jxl' && info.type !== codec) return fail('image_codec_invalid');
   const width = info.orientation >= 5 ? info.height : info.width, height = info.orientation >= 5 ? info.width : info.height;
-  if (!(codec === 'image/jxl' ? validCarriedDimensions(width, height) : validAssetDimensions(width, height))) return fail('image_dimensions_invalid');
+  if (!(codec === 'image/jxl' || codec === 'image/jpeg' ? validCarriedDimensions(width, height) : validAssetDimensions(width, height))) return fail('image_dimensions_invalid');
   return {width, height};
 }
 // Bytes without the size assertion: a damaged JPEG XL container must still reach the grey notice.
@@ -592,6 +592,7 @@ function base64(bytes) {
   for (let at = 0; at < bytes.length; at += 32768) parts.push(String.fromCharCode(...bytes.subarray(at, at + 32768)));
   return btoa(parts.join(''));
 }
+export {base64 as encodeBase64};
 export async function createAsset(value, dimensions, options = {}) {
   let bytes = bytesOf(value);
   if (!bytes.length || bytes.length > IMAGE_LIMITS.bytes) return fail('image_byte_limit');

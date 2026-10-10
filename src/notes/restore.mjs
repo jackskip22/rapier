@@ -5,7 +5,7 @@ import {OWNER_JOURNAL_FILE} from './owner.mjs';
 import {ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
 import {recordingStem} from './recording-files.mjs';
 import {scanLinks, resolveAssetPath} from './links.mjs';
-import {manifestName, parseManifest, rekeyManifest, rewriteHistoryReferences, serializeManifest} from './history.mjs';
+import {manifestName, parseManifest, rekeyManifest, rewriteHistoryReferences, serializeManifest, readCanonical} from './history.mjs';
 import {attachmentSizeWords} from './size-words.mjs';
 import {SYNC_STATE_FILE} from './sync-state.mjs';
 import {importReceiptMembers, readImportReceiptFile} from './import-storage.mjs';
@@ -239,6 +239,16 @@ export async function verifyBackupStream(archive, {subtle, signal, notes = false
 		if (await sha256(bytes, {subtle}) !== digests.get(name)) throw new Error('the backup source changed: ' + name);
 		return bytes;
 	}));
+	// A carried canonical head is admitted only beside its exact note and stable identity.
+	// An incomplete backup cannot claim a complete history after omitting its manifest.
+	for (const [file, entry] of Object.entries(first.index.notes)) if (entry.canonicalHistory !== undefined && files.has(file)) {
+		const bodyFile = files.get(file), historyFile = files.get('history/' + manifestName(entry.id));
+		if (!historyFile) throw new Error('The backup is missing canonical history for ' + file);
+		const body = await read(bodyFile), historyBytes = await read(historyFile);
+		if (await sha256(body, {subtle}) !== digests.get(file) || await sha256(historyBytes, {subtle}) !== digests.get(historyFile.name)) throw new Error('The backup source changed during canonical history verification');
+		const past = parseManifest(historyBytes, {noteId: entry.id, now: 0}), proved = readCanonical(past, decode(body));
+		if (proved.ledger.sha256 !== entry.canonicalHistory) throw new Error('The backup note identity does not prove its canonical history: ' + file);
+	}
 	const verification = verificationOf(manifest);
 	if (set || manifest?.omitted?.length) Object.assign(verification, {parts: parts.length, partCount: set?.count || 1, missingParts: missing,
 		omitted: manifest.omitted || [], complete: !missing.length && !manifest.omitted?.length,
@@ -436,6 +446,11 @@ export async function addBackup(entries, options = {}) {
 					const moved = from === to ? original : rekeyManifest(file.bytes, {from, to, now: 0}).manifest;
 					const next = await rewriteHistoryReferences(moved, rewrite, name => incoming.get('history/' + name));
 					if (next.changed || from !== to) materialized.get(file.name).bytes = exactBytes(serializeManifest(next.manifest));
+					const note = rootNotes.find(row => row.entry.id === to);
+					if (note && next.manifest.canonical) {
+						const proved = readCanonical(next.manifest, note.source);
+						note.entry.canonicalHistory = proved.ledger.sha256; index.notes[note.file].canonicalHistory = proved.ledger.sha256;
+					}
 					for (const write of next.writes) if (write.immutable) {
 						const name = 'history/' + write.name, held = materialized.get(name);
 						if (held) {

@@ -1,7 +1,8 @@
 # Rapier
 
-A fast Markdown editor for writing, drawing, painting and notes. One HTML file that runs offline on any device, with
-no account.
+Fast Markdown editor for notes, diagrams, drawing and watercolor painting in one HTML file. Runs on Android, Web
+and Windows. Phone-first, offline, with no account. Collaborate with AI agents over MCP and WebMCP. Add encrypted
+sync through your own Cloudflare account, embed the editor, or use the lightweight reader, about 190 kB gzipped.
 
 - **On the web:** [rapier.website](https://rapier.website). Add it to your home screen; let the first load finish
   before going offline.
@@ -10,7 +11,6 @@ no account.
   the editor without Draw, Paint, Notes and the JPEG XL encoder, and
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html), a read-only reader.
 - **On Android:** the Rapier app on Google Play. It has no Internet permission.
-- **On Windows:** [download Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe), the same editor as a desktop app.
 - **With an agent:** the Claude plugin, ChatGPT or another MCP client at `https://mcp.rapier.website/mcp`; Muse at `https://mcp.rapier.website/muse`.
 
 ## What it does
@@ -32,17 +32,32 @@ no account.
 
 ## For agents
 
-The agent and the person edit one live document. The agent reads only the passages it needs and changes exactly
-what it read; the person's typing comes first, and they keep, drop or undo each change while their own later edits
-stay. The agent draws native SVG diagrams the person can rearrange by hand, and paints with the same brushes. The
-Will marks what an agent may edit, only add to, or must leave alone ([Will/1](docs/will.md)).
+1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `rapier.open` to share one document with the person.
+2. **Deliver an offline editor.** Run `npx rapier-html notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
+4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
+5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
+6. **Host the door.** Run [rapier-server](https://github.com/jackskip22/rapier/tree/main/server) over your own folder or S3-compatible bucket.
+
+The agent edits live, beside the person or while they are away. Rapier shows the agent's presence and its changes.
+Tap a change to see what was there before; undo anything while keeping later edits. The agent can deliberately
+show a diff with `comparison.present`.
+
+The agent reads the passages it needs and changes exactly what it read. The person's typing comes first. Agents
+draw editable SVG diagrams and paint with the same brushes the person uses. The Will marks what an agent may edit,
+only add to, or must leave alone ([Will/1](docs/will.md)).
 [llms.txt](site/llms.txt), [AGENT-TOOLS.json](site/AGENT-TOOLS.json), the [agent guide](docs/agents.md) and the
 [skills](plugin/skills/README.md) describe the tools and workflows.
+
+Start with `rapier.open`, then `document.observe`. Read exact source, native drawings or imported SVG with an
+explicit `document.read` target. Use inspected edits, native drawing transactions or `svg.edit` for the relevant
+content. Comparison presentation leaves source unchanged; device controls use `editor.*`. Notes use opaque
+references from `notes.find`, with explicit opening and direct writes. Save and export receipts name what was kept.
 
 ```sh
 claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier
 npx rapier-html notes.md                            # one offline page: the editor with the document inside
-npx rapier-html --propose original.md proposal.md   # opened on the diff of a proposed change
+npx rapier-html revised.md --compare original.md   # the edited document, opened with its before for comparison
 npm install rapier-markdown-kit                     # read, write and render the Markdown without the editor (MIT)
 ```
 

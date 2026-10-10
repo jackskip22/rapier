@@ -2,40 +2,60 @@
 // bytes, edits, selection offsets and history remain owned by the source store.
 // The records show only when the person turns ASSETS on under CODE in the settings panel (off by default).
 globalThis.RapierSourceAssets = (() => {
-  let authority = '', expanded = false, root = '', boundary = -1, cached = null;
+  let authority = '', expanded = false, cachedSource = null, boundary = -1, cached = null, prepared = null;
   const active = () => _rapierHeavyRuntime.window?.assetFold === true;
   const wanted = () => !!RapierPreferences.read('assets');
   function identity() {
     if (authority === rapier.identity.authority) return;
     authority = rapier.identity.authority;
-    expanded = wanted(); root = ''; boundary = -1; cached = null;
+    expanded = wanted(); cachedSource = null; boundary = -1; cached = null;
   }
   function info(source) {
     identity();
     if (rapier.document.docKind !== 'markdown' || source !== _rapierSourceText()) return null;
-    const floor = active() ? _rapierHeavyRuntime.window.endChar : 0;
-    if (root === rapier.document.source.rootId && boundary === floor) return cached;
-    root = rapier.document.source.rootId; boundary = floor; cached = null;
+    const floor = active() ? _rapierHeavyRuntime.window.assetEnd ?? _rapierHeavyRuntime.window.endChar : 0;
+    if (cachedSource === source && boundary === floor) return cached;
+    cachedSource = source; boundary = floor; cached = null;
+    if (prepared?.includeAssets && prepared.source === source && (prepared.floor === floor || prepared.summary?.start === floor)) {
+      cached = prepared.summary;
+      return cached;
+    }
     try {
-      const parsed = globalThis.RapierImageAssets.documentAssets(source);
-      const opening = _rapierSplitOpeningFrontmatter(source), rows = [];
-      let end = source.length;
-      for (let index = parsed.blocks.length - 1; index >= 0; index--) {
-        const row = parsed.blocks[index];
-        if (!row.active || !row.topLevel || row.start < Math.max(floor, opening.bodyOffset) || row.status !== 'unverified' ||
-            parsed.assets.get(row.id)?.status !== 'unverified' || !/^[ \t\r\n]*$/.test(source.slice(row.end, end))) break;
-        rows.push(row); end = row.start;
-      }
-      if (!rows.length) return null;
-      const recordStart = end;
-      // Keep the separator with the hidden records: deleting at prose-end
-      // must not join an image definition onto the preceding paragraph.
-      while (end > Math.max(floor, opening.bodyOffset) && /[ \t\r\n]/.test(source[end - 1])) end--;
-      if (end <= opening.bodyOffset && !active()) return null;
-      cached = {start: end, recordStart, count: new Set(rows.map(row => row.id)).size, records: rows.length,
-        bytes: rapier.document.source.utf8Bytes - _rapierSourceEncoder.encode(source.slice(0, end)).length};
+      cached = globalThis.RapierSourceWorker.sourceAssetSummary(source, floor, md);
     } catch (_) { /* Unrecognized or malformed source stays visible. */ }
     return cached;
+  }
+  async function prepare(source, {signal, onProgress, yield: pause, floor = 0, includeAssets = true} = {}) {
+    const value = String(source ?? '');
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (prepared?.source === value && prepared.floor === floor && prepared.includeAssets === includeAssets &&
+        _rapierSourceRuntime.documentLineStartCache.source === value) return prepared;
+    const result = await globalThis.RapierSourceWorker.requestSourceWork(value, {kind: 'prepare', floor, includeAssets},
+      {createWorker: _rapierFindRuntime.createWorker, signal, onProgress: fraction => onProgress?.(.8 * fraction), yield: pause});
+    let text = value;
+    if (value.includes('\r')) {
+      const parts = [];
+      let started = _rapierNow();
+      for (let at = 0; at < value.length;) {
+        let end = Math.min(value.length, at + 65536);
+        if (value[end - 1] === '\r' && value[end] === '\n') end++;
+        parts.push(_rapierNormalizeSourceNewlines(value.slice(at, end))); at = end;
+        if (_rapierNow() - started >= 8) {
+          onProgress?.(.8 + .19 * at / Math.max(1, value.length));
+          await (pause ? pause() : _rapierYieldUserVisibleWork());
+          if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+          started = _rapierNow();
+        }
+      }
+      text = parts.join('');
+    }
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const starts = new Uint32Array(result.starts);
+    _rapierSourceRuntime.documentLineStartCache = {source: value, text, starts};
+    // This pure reading survives identity installation; only identical source can use it.
+    prepared = {source: value, floor, includeAssets, summary: result.summary, starts};
+    onProgress?.(1);
+    return prepared;
   }
   function refresh() {
     identity();
@@ -72,6 +92,10 @@ globalThis.RapierSourceAssets = (() => {
     }
     rapier.selection.scope = 'window';
     _rapierHeavyWindowReset();
+    if (summary.start >= 262144) {
+      _rapierHeavyWindowMountFromString(source, start, end, {...options, assetFold: true, assetEnd: summary.start});
+      return true;
+    }
     const text = _rapierNormalizeSourceNewlines(source.slice(0, summary.start));
     _rapierHeavyRuntime.window = {startLine: 0, endLine: _rapierLineCount(text), suffixLines: 0,
       startChar: 0, endChar: summary.start, guardLoChars: -1, guardHiFromEnd: -1, assetFold: true};
@@ -111,5 +135,5 @@ globalThis.RapierSourceAssets = (() => {
     return toggle();
   }
   RapierPreferences.subscribe('assets', () => { void sync(); });
-  return Object.freeze({active, mount, refresh, toggle, sync});
+  return Object.freeze({active, mount, refresh, toggle, sync, prepare});
 })();

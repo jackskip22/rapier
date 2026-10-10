@@ -32,7 +32,7 @@ function declarationIndex(source, sourceType = 'script') {
 // The renderer's owners live in kit/ (the editor binds them through editor/render-host.js): an engine declaration
 // that only delegates to an owner, or one the engine no longer holds, is read from that owner, so a harness keeps
 // exercising the code that runs rather than a forwarding stub.
-const RENDER_OWNERS = ['render-markdown', 'render', 'render-styles', 'render-sanitize', 'render-print'];
+const RENDER_OWNERS = ['render-markdown', 'render', 'render-styles', 'render-sanitize', 'render-print', 'render-work'];
 const RENDER_ALIASES = {Markdown: 'render-markdown', Print: 'render-print', Sanitizer: 'render-sanitize', Styles: 'render-styles'};
 function ownerDeclaration(owner, name) {
   const found = declarationIndex(readFileSync(new URL('../kit/' + owner + '.mjs', import.meta.url), 'utf8'), 'module');
@@ -54,7 +54,14 @@ export function declarations(source, names) {
   const resolved = new Map(names.map(name => [name, renderOwnerDeclaration(found.get(name), name, engine)]));
   for (const name of names) if (resolved.get(name) === undefined) throw new Error('Missing declaration: ' + name);
   for (const name of names) if (resolved.get(name) === null) throw new Error('Ambiguous declaration: ' + name);
-  return names.map(name => resolved.get(name)).join('\n');
+  const helpers = /(?<![\w.$])((?:_rapier[A-Za-z0-9_]*Steps)|finish|finishAsync|cloneTree|htmlParts|cleanTree|serializeTree|encodeUtf8Steps|pause|check)\s*\(/g;
+  for (const declaration of resolved.values()) for (const match of declaration.matchAll(helpers)) {
+    const name = match[1];
+    if (resolved.has(name)) continue;
+    const own = name.startsWith('_rapier') ? renderOwnerDeclaration(found.get(name), name, true) : ownerDeclaration('render-work', name);
+    if (own) resolved.set(name, own);
+  }
+  return [...resolved.values()].join('\n');
 }
 export async function loadSatellite(path, names, engine = false, bindings = {}) {
   if (!engine) return import(new URL('../editor/' + path, import.meta.url));

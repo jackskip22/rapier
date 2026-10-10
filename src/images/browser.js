@@ -45,7 +45,7 @@ const _rapierEmbeddedImages = (() => {
   function assertCurrent(stamp, identity) {
     if (suspended || stamp !== epoch || identity !== rapier.identity.authority) throw cancelled();
   }
-  // `progress`, for an encode, is called with how far the work is, from 0 to 1, while the worker runs.
+  // `progress` reports pixel encoding or JPEG carrying, from 0 to 1, while the worker runs.
   function codec(operation, input, {signal, progress} = {}) {
     synchronizeScope();
     const stamp = epoch, identity = authority;
@@ -112,7 +112,7 @@ const _rapierEmbeddedImages = (() => {
         instance.onmessageerror = () => finish(new Error('Image worker returned an unreadable result'));
         const data = input.data ?? input.bytes;
         const transfer = data instanceof ArrayBuffer ? data : data?.buffer;
-        instance.postMessage({...input, id, operation, ...(operation === 'encode' && typeof progress === 'function' ? {progress: true} : {})}, transfer instanceof ArrayBuffer ? [transfer] : []);
+        instance.postMessage({...input, id, operation, ...(typeof progress === 'function' ? {progress: true} : {})}, transfer instanceof ArrayBuffer ? [transfer] : []);
       } catch (error) { finish(error); }
       });
     };
@@ -702,15 +702,19 @@ const _rapierEmbeddedImages = (() => {
   }
   // `compat` defaults to true; Share passes the person's choice. `progress` hears the share of pictures done.
   async function materialize(root, source, substitutions = null, options = null) {
-    const compat = !options || options.compat !== false;
-    const resolved = new Map(), index = indexForSource(source);
+    const compat = !options || options.compat !== false, signal = options?.signal;
+    const check = () => { if (signal?.aborted) throw cancelled(); };
+    check();
     const images = [...root.querySelectorAll('img[data-rapier-asset],img[data-rapier-image-url],img[src^="data:image/jxl;" i]')];
+    if (!images.length) return root;
+    const resolved = new Map(), index = indexForSource(source);
     for (const [done, image] of images.entries()) {
+      check();
       options?.progress?.(done / images.length);
       const id = imageKey(image) || image.getAttribute('src');
       if (!resolved.has(id)) {
         // A JXL-sourced picture always takes the portable conversion, whatever rasterRecord presented.
-        const row = await rasterRecord(source, id, index);
+        const row = await rasterRecord(source, id, index, {signal});
         const jxl = compat && (assets.dataImage(row.signature)?.codec === 'image/jxl' || !!nestedJxl(row));
         // A row presenting the notice is never handed on. Without compat the page carries the JPEG XL bytes; compat refuses as Copy does.
         let shown;
@@ -721,11 +725,14 @@ const _rapierEmbeddedImages = (() => {
         resolved.set(id, shown);
         if (substitutions && jxl) substitutions.set(row.signature, shown.url);
       }
+      check();
       const row = resolved.get(id);
       image.src = row.url;
       image.setAttribute('data-rapier-natural-width', row.width);
       image.setAttribute('data-rapier-natural-height', row.height);
       for (const name of ['data-rapier-asset', 'data-rapier-image-url', 'data-rapier-asset-state', 'data-rapier-image-source']) image.removeAttribute(name);
+      if (options?.work?.yield) await options.work.yield();
+      check();
     }
     return root;
   }
@@ -1040,7 +1047,7 @@ const _rapierEmbeddedImages = (() => {
     return asset?.codec === 'image/svg+xml' && !!asset.bytes &&
       new TextDecoder().decode(asset.bytes).includes('<metadata id="rapier-draw">');
   }
-  async function insert(normalized, raw, target, stamp) {
+  async function insert(normalized, raw, target, stamp, options = {}) {
     if (!_rapierMutationStampIsCurrent(stamp) || _rapierUserMutationBlocked()) return false;
     const source = _rapierSourceText(), spans = _rapierExcerptCanonicalBlockSpans();
     if (normalized.asset) {
@@ -1065,12 +1072,14 @@ const _rapierEmbeddedImages = (() => {
       }
     }
     const record = target.replaceImage && _rapierImageRecord(target.replaceImage.blockId, target.replaceImage.imageIndex);
-    let start, end, text = raw;
+    let start, end, text = raw, imageText = raw, imageOffset = 0;
     const eol = rapier.document.sourceNewline || '\n';
     // Blank lines on the sides of a picture landing between blocks, never doubled.
     const betweenBlocks = () => {
       const before = source.slice(0, start), after = source.slice(end);
-      text = (before && !/\n\r?\n$/.test(before) ? (before.endsWith('\n') ? eol : eol + eol) : '') + text +
+      const lead = before && !/\n\r?\n$/.test(before) ? (before.endsWith('\n') ? eol : eol + eol) : '';
+      imageOffset = lead.length;
+      text = lead + text +
         (after && !/^\r?\n\r?\n/.test(after) ? (after.startsWith('\n') || after.startsWith('\r\n') ? eol : eol + eol) : '');
     };
     if (target.sourceSplit && !target.replaceImage) {
@@ -1084,6 +1093,7 @@ const _rapierEmbeddedImages = (() => {
       } else {
         const plan = caretSplit(split.source, split.point);
         if (!plan || plan.before !== split.before || plan.after !== split.after) return false;
+        imageOffset = plan.before ? plan.before.length + eol.length * 2 : 0;
         text = [plan.before, raw, plan.after].filter(part => part !== '').join(eol + eol);
       }
     } else if (target.replaceImage) {
@@ -1110,7 +1120,8 @@ const _rapierEmbeddedImages = (() => {
           let close = raw.indexOf(']');
           while (close >= 0 && _rapierSourceCharEscaped(raw, close)) close = raw.indexOf(']', close + 1);
           if (close < 0) return false;
-          text = raw.slice(0, close) + '|' + imported.width + raw.slice(close) + (record.image.placementSource || '');
+          imageText = raw.slice(0, close) + '|' + imported.width + raw.slice(close);
+          text = imageText + (record.image.placementSource || '');
         }
       }
     } else {
@@ -1128,7 +1139,8 @@ const _rapierEmbeddedImages = (() => {
     const appended = normalized.asset ? await assets.appendAsset(prospective, normalized.asset) : {source: prospective};
     if (!_rapierMutationStampIsCurrent(stamp) || source !== _rapierSourceText()) return false;
     const suffix = appended.source.slice(prospective.length);
-    const splices = [{pos:start, removed:source.slice(start,end), inserted:text}];
+    const occurrenceSplice = {pos:start, removed:source.slice(start,end), inserted:text};
+    const splices = [occurrenceSplice];
     // A redrawn picture whose old definition only it used rewrites that line in place; appending left a blank line on each re-edit.
     const inPlace = target.replaceImage && suffix ? definitionInPlace(source, splices[0], prospective, suffix) : null;
     if (inPlace) splices.splice(0, 1, ...inPlace);
@@ -1145,7 +1157,41 @@ const _rapierEmbeddedImages = (() => {
     // Reveal what lands; a gesture's target.viewport, when given, owns where the page lands.
     const revealAt = text.indexOf(raw);
     const viewport = target.viewport || _rapierCaptureEditorViewport(null, true, false, start + (revealAt >= 0 ? revealAt + 1 : 1), start - 1);
-    try { return await _rapierCommitSourceProjection(splices, 'document.embed-image', null, null, viewport); }
+    // An optional receipt binds the actual occurrence, never the first use of a shared asset.
+    // The source owner can retire definitions before the picture, so its real retirement splices
+    // move this point too. The preview is only proof; the existing commit still owns the edit.
+    let proof = null;
+    if (options.receipt) {
+      const preview = rapier.document.source.fork();
+      let position = start + imageOffset;
+      for (const row of splices) {
+        if (row !== occurrenceSplice && row.pos < start) position += row.inserted.length - row.removed.length;
+        preview.splice(row.pos, row.removed, row.inserted);
+      }
+      const retired = rapier.document.docKind === 'markdown'
+        ? globalThis.RapierKernel.imageDeletionSplices(source, preview.read(), splices) : [];
+      for (const row of retired) {
+        if (position >= row.pos + row.removed.length) position += row.inserted.length - row.removed.length;
+        else if (position >= row.pos) position = -1;
+        preview.splice(row.pos, row.removed, row.inserted);
+      }
+      proof = {position, source:preview.read()};
+    }
+    try {
+      const committed = await _rapierCommitSourceProjection(splices, 'document.embed-image', null, null, viewport);
+      if (!committed || !options.receipt) return committed;
+      let occurrence = null;
+      if (_rapierMutationStampSharesDocument(stamp) && proof.position >= 0 &&
+          _rapierSourceText() === proof.source && proof.source.slice(proof.position, proof.position + imageText.length) === imageText) {
+        const spans = _rapierExcerptCanonicalBlockSpans();
+        const block = rapier.document.blocks.find(row => {const span = spans.get(row.id); return span && span.start <= proof.position && proof.position < span.end;});
+        const image = block && _rapierScanMarkdownImages(block.raw).find(row => spans.get(block.id).start + row.start === proof.position);
+        if (image) occurrence = {position:proof.position, blockId:block.id, imageIndex:image.renderIndex,
+          reference:image.reference || '', sourceUrl:indexForSource(proof.source).assets.get(assets.normalizeLabel(image.reference || ''))?.url || image.destination || null};
+      }
+      return Object.freeze({committed:true, documentStamp:stamp,
+        stamp:occurrence ? Object.freeze(_rapierMutationStamp()) : null, occurrence:occurrence && Object.freeze(occurrence)});
+    }
     finally {
       primed = null;
       try { schedule(); } catch (error) { console.warn('[rapier] image presentation', error); }
@@ -1397,6 +1443,14 @@ const _rapierEmbeddedImages = (() => {
   // So the replacement of the drawing the step made comes off before Undo takes it back, and goes on again after Redo puts it; and where
   // another drawing's replacement moved the places a step was cut at, that one comes off for the step and goes on again. Each is found
   // again by its own text, which is unique to it. Null leaves the step as it is: no replacement is in the way, or none can be taken off.
+  // The act that folded Undo or Redo names. The replacement that finished a drawing stands for the step that made it, so the history marks that
+  // replacement as taken back (or put again), and the step beside it is left to its own account.
+  function historySubject(target) {
+    const id = target?.transaction?.id, ledger = rapier.undo.ledger, at = ledger.indexOf(target);
+    if (!id || at < 0 || target.transaction.operation === FINISH_OPERATION) return id;
+    const own = ledger.slice(at + 1).filter(row => row?.transaction?.operation === FINISH_OPERATION && row.transaction.sourceTransactionId === id && Array.isArray(row.splices) && row.splices.length);
+    return own.length ? own.at(-1).transaction.id : id;
+  }
   function historySplices(target, redo) {
     const id = target?.transaction?.id, ledger = rapier.undo.ledger, at = ledger.indexOf(target);
     if (!id || at < 0 || target.transaction.operation === FINISH_OPERATION || !Array.isArray(target.splices)) return null;
@@ -1430,6 +1484,6 @@ const _rapierEmbeddedImages = (() => {
     catch (_) {}
     try { return plan(true); } catch (_) { return null; }
   }
-  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices});
+  return Object.freeze({codec, imageHtml, materialize, present, prepare, insert, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices, historySubject});
 })();
 globalThis.RapierEmbeddedImages = _rapierEmbeddedImages;

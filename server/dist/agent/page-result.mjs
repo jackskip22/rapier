@@ -18,14 +18,13 @@ export function boundedResult(value, {limit = PAGE_RESULT_BYTES, readOnly = fals
     output[key] = item;
     if (resultBytes(output) >= limit) delete output[key];
   };
-  const fields = ['documentId', 'documentRevision', 'representation', 'reason', 'changeId', 'reviewId',
+  const fields = ['documentId', 'documentRevision', 'representation', 'reason', 'act',
     'threadId', 'messageId', 'file', 'applied', 'saved', 'verified', 'replayed', 'editCount', 'decided', 'closed',
-    'filename', 'docKind', 'contribution', 'removed', 'replaced', 'availability', 'status', 'pointerId'];
+    'filename', 'docKind', 'turn_id', 'removed', 'replaced', 'availability', 'status', 'pointerId'];
   for (const key of fields) if (!(key === 'reason' && output.reason)) put(key, value[key]);
   for (const [key, names] of Object.entries({
-    transaction: ['transactionId', 'baseRevision', 'revision', 'actor', 'principal', 'operation', 'sourceTransactionId', 'contribution', 'contributionBaseRevision'],
     receipt: ['id', 'status', 'state', 'kind', 'action', 'preference', 'presentation', 'landed', 'reason', 'value', 'previous'],
-    pending: ['kind', 'requestId', 'proposalId', 'requirements'],
+    pending: ['kind', 'requestId', 'requirements'],
   })) {
     if (!value[key] || typeof value[key] !== 'object') continue;
     const record = {};

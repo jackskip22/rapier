@@ -6,7 +6,7 @@
 
 let md;
 // The optional plug-ins (shell/plugin-loader.js) publish here when verified and installed.
-const _rapierProviders = Object.seal({math: null, mermaid: null, flowchart: null, pdf: null, docx: null});
+const _rapierProviders = Object.seal({math: null, mermaid: null, flowchart: null, pdf: null, docx: null, ocr: null});
 // No host stores pictures for the reader: a picture shows from the bytes the document carries.
 const _rapierEmbedAssetSource = () => false;
 // The reader shows no editing surface, so no block waits dormant and none is hidden from a heading search.

@@ -51,7 +51,7 @@ const RapierBundledPlugins = (() => {
 		has: id => known.has(id),
 		async ready() {
 			await loading;
-			await Promise.all(groups.filter(group => group.id !== 'letters').map(group => installed(group.id)));
+			await Promise.all(groups.filter(group => !['letters', 'font-subset'].includes(group.id)).map(group => installed(group.id)));
 			const letters = groups.find(group => group.id === 'letters');
 			const store = RapierBundleIO.store(RapierStorage.optional.lettersDb, 'bundle');
 			const admitted = await Promise.all(letters.files.map(async file => {

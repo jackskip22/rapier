@@ -1,0 +1,40 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "Rapier",
+    "documentationUrl": "https://rapier.website/agents"
+  },
+  "entries": [
+    {
+      "identifier": "urn:air:rapier.website:mcp:rapier",
+      "type": "application/mcp-server-card+json",
+      "data": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+        "name": "io.github.jackskip22/rapier",
+        "title": "Rapier",
+        "description": "Fast Markdown editor you share live with your AI agent: notes, diagrams, drawing and watercolor.",
+        "version": "1.1.91",
+        "websiteUrl": "https://rapier.website/agents",
+        "repository": {
+          "url": "https://github.com/jackskip22/rapier-plugins",
+          "source": "github"
+        },
+        "icons": [
+          {
+            "src": "https://rapier.website/icon-512.png",
+            "mimeType": "image/png",
+            "sizes": [
+              "512x512"
+            ]
+          }
+        ],
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.rapier.website/mcp"
+          }
+        ]
+      }
+    }
+  ]
+}

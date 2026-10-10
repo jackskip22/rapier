@@ -341,9 +341,44 @@ function create(value, restoredRootId = '', snapshot = null) {
 		return { pos: at, removed: oldText, inserted: newText };
 	};
 	const warm = () => { rootNow(); bytesNow(); };
+	const warmAsync = async ({yield: yieldWork, signal, onProgress} = {}) => {
+		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+		if (cachedIntegrityOf === read() && utf8Bytes != null && rootId != null) return true;
+		const text = read();
+		let fnv = 0x811c9dc5, a = 1, b = 0, bytes = 0;
+		for (let start = 0; start < text.length;) {
+			if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+			let end = Math.min(text.length, start + PIECE_CHARS);
+			// TextEncoder must see a surrogate pair together at a chunk boundary.
+			if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 &&
+					text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 &&
+					text.charCodeAt(end) <= 0xdfff) end++;
+			bytes += sourceEncoder.encode(text.slice(start, end)).length;
+			for (let at = start; at < end;) {
+				const stop = Math.min(end, at + 4096);
+				for (; at < stop; at++) {
+					const code = text.charCodeAt(at);
+					fnv = Math.imul(fnv ^ code, 16777619);
+					a += code; b += a;
+				}
+				a %= 65521; b %= 65521;
+			}
+			start = end;
+			if (onProgress) onProgress(start / text.length);
+			if (yieldWork) await yieldWork();
+			if (read() !== text) return false;
+		}
+		if (signal?.aborted) throw Object.assign(new Error('Cancelled'), {name: 'AbortError'});
+		if (read() !== text) return false;
+		cachedIntegrityOf = text;
+		cachedIntegrityValue = {chars: text.length, fnv: (fnv >>> 0).toString(36), adler: (((b << 16) | a) >>> 0).toString(36)};
+		utf8Bytes = bytes;
+		rootNow();
+		return true;
+	};
 	return Object.freeze({
 		read, integrity, readSlice, splice, capture, fork, sourceOffsetFromProjection,
-		projectionOffsetFromSource, warm,
+		projectionOffsetFromSource, warm, warmAsync,
 		get length() { return length; },
 		get utf8Bytes() { return bytesNow(); },
 		get rootId() { return rootNow(); },

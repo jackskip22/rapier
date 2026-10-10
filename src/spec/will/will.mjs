@@ -387,27 +387,28 @@ function applySplices(buf, splices) {
   return Buffer.concat(parts);
 }
 
-function markerBytesList(buf, regions) {
-  const list = [];
-  for (const r of regions) {
-    list.push(buf.slice(r.opener.byteSpan[0], r.opener.byteSpan[1]));
-    list.push(buf.slice(r.closer.byteSpan[0], r.closer.byteSpan[1]));
+function markersSurvive(beforeBytes, afterBytes, before, after, splices) {
+  if (before.length !== after.length) return false;
+  const sorted = [...splices].sort((a, b) => a.start - b.start);
+  let next = 0, shift = 0;
+  for (let index = 0; index < before.length; index++) {
+    for (const kind of ['opener', 'closer']) {
+      const from = before[index][kind].byteSpan, to = after[index][kind].byteSpan;
+      while (next < sorted.length && sorted[next].end <= from[0]) {
+        const splice = sorted[next++];
+        shift += splice.insert.length - (splice.end - splice.start);
+      }
+      // Copies cannot replace original markers hidden by endpoint insertions.
+      if (to[0] !== from[0] + shift || to[1] !== from[1] + shift ||
+          !beforeBytes.subarray(from[0], from[1]).equals(afterBytes.subarray(to[0], to[1]))) return false;
+    }
   }
-  return list;
-}
-function sameBytesLists(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (Buffer.compare(a[i], b[i]) !== 0) return false;
   return true;
 }
 
-// The single terminator immediately before a closer is structurally
-// mandatory — a closer cannot parse as a marker without a fresh line to
-// start on — so it is excluded from the *comparison basis* for `append`'s
-// growth check only. `keep` still compares full governed bytes, terminator
-// included: a CRLF/LF change inside a kept region is still a byte change.
-// This is the byte-law reading of "old interval is an exact prefix of the
-// new" that makes growing a region's own final line possible at all.
+// The final terminator before a closer belongs to the carrier. Remove it
+// from both append values so a surviving content terminator cannot also
+// stand for the carrier. Keep still compares the complete governed bytes.
 function stripOneTrailingTerminator(buf) {
   const n = buf.length;
   if (n === 0) return buf;
@@ -483,9 +484,7 @@ export function evaluate(beforeBytesInput, spliceInputs, path = 'working') {
   // marker to appear out of ordinary content, vanish by merging into a
   // neighbouring line, or reorder — even when no splice directly touched
   // any *existing* marker's own span (the whole point of create).
-  const bMarkers = markerBytesList(beforeBytes, b.regions);
-  const aMarkers = markerBytesList(afterBytes, a.regions);
-  if (!sameBytesLists(bMarkers, aMarkers)) {
+  if (!markersSurvive(beforeBytes, afterBytes, b.regions, a.regions, splices)) {
     return { outcome: 'refused', reason: 'document_law', rule: 'marker_sequence_mismatch' };
   }
 
@@ -501,7 +500,8 @@ export function evaluate(beforeBytesInput, spliceInputs, path = 'working') {
       }
     } else if (rb.law === 'append') {
       const core = stripOneTrailingTerminator(govB);
-      const isPrefix = govA.length >= core.length && Buffer.compare(core, govA.slice(0, core.length)) === 0;
+      const candidate = stripOneTrailingTerminator(govA);
+      const isPrefix = candidate.length >= core.length && Buffer.compare(core, candidate.slice(0, core.length)) === 0;
       if (!isPrefix) {
         return { outcome: 'refused', reason: 'document_law', rule: 'law_violated', region: k, law: 'append' };
       }

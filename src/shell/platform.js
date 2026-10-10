@@ -5,17 +5,8 @@ const _RAPIER_SHARE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function _rapierTextHasDocumentScalars(value) {
 	const text = String(value == null ? '' : value);
-	for (let i = 0; i < text.length; i += 1) {
-		const code = text.charCodeAt(i);
-		if (code === 0) return false;
-		if (code >= 0xD800 && code <= 0xDFFF) {
-			if (code >= 0xDC00) return false;
-			const low = text.charCodeAt(i + 1);
-			if (!(low >= 0xDC00 && low <= 0xDFFF)) return false;
-			i += 1;
-		}
-	}
-	return true;
+	// Unicode matching sees a surrogate pair as one scalar, outside this range.
+	return !/[\0\ud800-\udfff]/u.test(text);
 }
 
 const RAPIER_DOCUMENT_NAME_MAX_CHARS = 512;
@@ -65,6 +56,30 @@ const RapierTextCodec = Object.freeze({
 			value, admittedBytes, RapierTextCodec.isDocumentFragment
 		);
 	},
+	normalizeDocumentAsync: async function (value, admittedBytes, options = {}) {
+		let text = String(value == null ? '' : value), bytes = 0;
+		const encoder = new TextEncoder();
+		for (let start = 0; start < text.length;) {
+			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+			let end = Math.min(text.length, start + 65536);
+			if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 &&
+					text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 &&
+					text.charCodeAt(end) <= 0xdfff) end++;
+			const part = text.slice(start, end);
+			if (!RapierTextCodec.isDocumentFragment(part)) throw new Error('document is not plain UTF-8 text');
+			bytes += encoder.encode(part).length;
+			if (bytes > RapierTextCodec.maxDocumentBytes) throw new Error('document is too large for Rapier (max 25 MiB)');
+			start = end;
+			options.onProgress?.(start / text.length);
+			if (start < text.length) await (options.yield ? options.yield() : new Promise(resolve => setTimeout(resolve, 0)));
+		}
+		if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+		if (admittedBytes != null && (!Number.isSafeInteger(Number(admittedBytes)) || Number(admittedBytes) !== bytes)) {
+			throw new Error('document byte length is invalid');
+		}
+		if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+		return text;
+	},
 	normalizeProtocol: function (value, admittedBytes) {
 		return _rapierNormalizeAdmittedText(
 			value, admittedBytes, RapierTextCodec.isProtocolFragment
@@ -84,15 +99,35 @@ const RapierTextCodec = Object.freeze({
 		return (await RapierTextCodec.readDocumentRecord(blob)).text;
 	},
 	// The BOM is a fact of the file, written back on save; byteLength is the text's own, compared after the BOM is stripped.
-	readDocumentRecord: async function (blob) {
-		if (!blob || typeof blob.arrayBuffer !== 'function') throw new Error('document bytes are unavailable');
-		if (Number(blob.size) > RapierTextCodec.maxDocumentBytes) {
+	readDocumentRecord: async function (blob, options = {}) {
+		const size = Number(blob?.size);
+		if (!blob || typeof blob.arrayBuffer !== 'function' || typeof blob.slice !== 'function' ||
+				!Number.isSafeInteger(size) || size < 0) throw new Error('document bytes are unavailable');
+		if (size > RapierTextCodec.maxDocumentBytes) {
 			throw new Error('document is too large for Rapier (max 25 MiB)');
 		}
-		const bytes = new Uint8Array(await blob.arrayBuffer());
-		const bom = bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
-		const text = RapierTextCodec.decodeDocumentUtf8(bytes);
-		return { text, bom, bytes: bytes.byteLength - (bom ? 3 : 0) };
+		const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}), parts = [];
+		let bom = false, bytes = 0;
+		for (let start = 0; start < size; start += 65536) {
+			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+			const chunk = new Uint8Array(await blob.slice(start, start + 65536).arrayBuffer());
+			if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+			if (chunk.length !== Math.min(65536, size - start)) throw new Error('document byte length is invalid');
+			if (!start) bom = chunk.length >= 3 && chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf;
+			bytes += chunk.length;
+			let part;
+			try { part = decoder.decode(chunk, {stream: true}); }
+			catch (_) { throw new Error('document is not plain UTF-8 text'); }
+			if (!RapierTextCodec.isDocumentFragment(part)) throw new Error('document is not plain UTF-8 text');
+			parts.push(part);
+			options.onProgress?.(bytes / size);
+			if (options.yield) await options.yield();
+		}
+		if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+		try { parts.push(decoder.decode()); }
+		catch (_) { throw new Error('document is not plain UTF-8 text'); }
+		const joined = parts.join(''), text = bom ? joined.slice(1) : joined;
+		return {text, bom, bytes: bytes - (bom ? 3 : 0)};
 	},
 });
 
@@ -102,7 +137,8 @@ const _rapierProviders = Object.seal({
 	speechUtterance: null,
 	math: null,
 	mermaid: null,
-	// Text in pictures (notes/ocr.js): the full profile's reader of the words in a note's pictures.
+	'font-subset': null,
+	// Text in pictures (images/ocr.js): one optional reader for every profile.
 	ocr: null,
 	// Draw's letter sets (draw/draw.js), one plug-in of one file a set: draw/letters.mjs's catalogue.
 	'letters-field': null,
@@ -181,6 +217,7 @@ const RapierStorage = Object.freeze({
 		mathDb: 'rapier:cache:math',
 		mathLocalPrefix: 'rapier:cache:math:',
 		mermaidDb: 'rapier:cache:mermaid',
+		'font-subsetDb': 'rapier:cache:font-subset',
 		mermaidLocalPrefix: 'rapier:cache:mermaid:',
 		// The text reader's verified files, and what it read in each picture (words and where they sit, never the picture).
 		ocrDb: 'rapier:cache:ocr',
@@ -241,6 +278,7 @@ window.RapierWriterPromotion = RapierWriterPromotion;
 
 const RapierPreferences = (function () {
 var _preferenceListeners = Object.create(null);
+var _preferenceRevisions = Object.create(null);
 function _preferenceAdmits(spec, value) {
 	return value != null && typeof value === typeof spec.fallback &&
 		Array.isArray(value) === Array.isArray(spec.fallback) &&
@@ -274,10 +312,11 @@ return Object.freeze({
 		try { console.warn('[rapier] discarded invalid preference', spec.key); } catch (_) {}
 		return spec.fallback;
 	},
-	write: function rapierWritePreference(field, value) {
+	write: function rapierWritePreference(field, value, schedule) {
 		var spec = RapierStorage.preferences[field];
 		if (!spec) throw new Error('unknown Rapier preference: ' + field);
 		var admitted = _preferenceAdmits(spec, value) ? value : spec.fallback;
+		var revision = _preferenceRevisions[field] = (_preferenceRevisions[field] || 0) + 1;
 		var platform = window.RapierPlatform;
 		if (platform && platform.preferences.ownsStore === true && typeof platform.preferences.write === 'function') {
 			try { Promise.resolve(platform.preferences.write(spec.key, admitted)).catch(function () {}); }
@@ -285,11 +324,23 @@ return Object.freeze({
 		} else {
 			try { localStorage.setItem(spec.key, JSON.stringify(admitted)); } catch (_) {}
 		}
-		var listeners = _preferenceListeners[field];
-		for (var at = 0; listeners && at < listeners.length; at++) {
-			try { listeners[at](admitted, field); }
-			catch (error) { try { console.warn('[rapier] preference listener failed', spec.key, error); } catch (_) {} }
-		}
+		// Request persistence before the visual callback. A refused store still permits
+		// the temporary choice, as ordinary writes do; its unchanged readback is the receipt.
+		var deferred = typeof schedule === 'function', stored = deferred ? RapierPreferences.read(field) : null, notified = false;
+		var notify = function () {
+			if (notified) return;
+			notified = true;
+			// A later owner write, another page or a host preference update wins over an
+			// old visual callback. Read through the same owner, including host-owned stores.
+			if (deferred && (_preferenceRevisions[field] !== revision || RapierPreferences.read(field) !== stored)) return;
+			var listeners = _preferenceListeners[field];
+			for (var at = 0; listeners && at < listeners.length; at++) {
+				try { listeners[at](admitted, field); }
+				catch (error) { try { console.warn('[rapier] preference listener failed', spec.key, error); } catch (_) {} }
+			}
+		};
+		if (deferred) { try { schedule(notify); } catch (_) { notify(); } }
+		else notify();
 		return admitted;
 	},
 	subscribe: function (field, apply) {
@@ -1782,9 +1833,6 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		currentGeneration: null,
 		recovery: null,
 		recoveryVersion: null,
-		undo: null,
-		undoVersion: null,
-		undoChain: Promise.resolve(),
 		recents: [],
 		recentsVersion: null,
 		writeChain: Promise.resolve(),
@@ -1892,7 +1940,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		}
 		return value;
 	}
-	const _SR_RECOVERY_MAGIC = new Uint8Array([82, 80, 82, 49]);  
+	const _SR_RECOVERY_MAGIC = new Uint8Array([82, 80, 82, 50]);
 	const _SR_RECOVERY_HEADER_MAX_BYTES = 64 * 1024;
 	function _srRecoveryStateManifest(value) {
 		var state = value && typeof value === 'object' ? value : {};
@@ -1939,6 +1987,11 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			},
 		});
 		var canonical = RapierTextCodec.normalizeDocument(String(snapshot.canonicalText || ''));
+		var undo = metadata.undo; delete metadata.undo;
+		if (!_srUndoIntegrityMatches(undo) || undo.schemaVersion !== 5) throw new Error('Canonical recovery history is required.');
+		var sourceBytes = new TextEncoder().encode(canonical), undoBytes = new TextEncoder().encode(JSON.stringify(undo));
+		metadata.schemaVersion = 5;
+		metadata.canonicalBytes = sourceBytes.byteLength; metadata.undoBytes = undoBytes.byteLength;
 		metadata.integritySchema = 1;
 		metadata.stateIntegrity = _srRecoveryStateIntegrity(metadata);
 		metadata.contentIntegrity = _rapierTextIntegrity(canonical);
@@ -1949,7 +2002,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		var prefix = new Uint8Array(8);
 		prefix.set(_SR_RECOVERY_MAGIC, 0);
 		new DataView(prefix.buffer).setUint32(4, header.byteLength, true);
-		return new Blob([prefix, header, canonical], { type: 'application/vnd.rapier.recovery' });
+		return new Blob([prefix, header, sourceBytes, undoBytes], { type: 'application/vnd.rapier.recovery' });
 	}
 	async function _srRecoveryPayload(value) {
 		if (value == null) return null;
@@ -1958,16 +2011,12 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		if (!(content instanceof Blob || content instanceof ArrayBuffer || ArrayBuffer.isView(content))) {
 			throw new Error('Invalid Rapier recovery payload.');
 		}
-		var maxEnvelopeBytes = 8 + _SR_RECOVERY_HEADER_MAX_BYTES + RapierTextCodec.maxDocumentBytes;
-		if (content instanceof Blob && content.size > maxEnvelopeBytes) {
-			throw new Error('Rapier recovery payload is too large.');
-		}
 		var bytes = content instanceof Blob
 			? new Uint8Array(await content.arrayBuffer())
 			: (content instanceof ArrayBuffer
 				? new Uint8Array(content)
 				: new Uint8Array(content.buffer, content.byteOffset, content.byteLength));
-		if (bytes.byteLength < 8 || bytes.byteLength > maxEnvelopeBytes ||
+		if (bytes.byteLength < 8 ||
 				!_SR_RECOVERY_MAGIC.every(function (byte, index) { return bytes[index] === byte; })) {
 			throw new Error('Invalid Rapier recovery envelope.');
 		}
@@ -1980,13 +2029,26 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		if (!metadata || typeof metadata !== 'object' || !metadata.snapshot || typeof metadata.snapshot !== 'object') {
 			throw new Error('Invalid Rapier recovery metadata.');
 		}
-		if (metadata.schemaVersion !== 4 || metadata.integritySchema !== 1) {
+		if (metadata.schemaVersion !== 5 || metadata.integritySchema !== 1) {
 			throw new Error('Unsupported Rapier recovery schema.');
 		}
 		if (!_srRecoveryStateIntegrityMatches(metadata)) {
 			throw new Error('Rapier recovery metadata failed integrity verification.');
 		}
-		var canonicalText = RapierTextCodec.decodeDocumentUtf8(bytes.subarray(8 + headerLength));
+		if (!Number.isSafeInteger(metadata.canonicalBytes) || metadata.canonicalBytes < 0 ||
+				metadata.canonicalBytes > RapierTextCodec.maxDocumentBytes || !Number.isSafeInteger(metadata.undoBytes) || metadata.undoBytes < 1 ||
+				8 + headerLength + metadata.canonicalBytes + metadata.undoBytes !== bytes.byteLength) throw new Error('Invalid Rapier recovery lengths.');
+		var sourceEnd = 8 + headerLength + metadata.canonicalBytes;
+		var canonicalText = RapierTextCodec.decodeDocumentUtf8(bytes.subarray(8 + headerLength, sourceEnd));
+		var undo = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes.subarray(sourceEnd)));
+		if (!_srUndoIntegrityMatches(undo) || undo.schemaVersion !== 5 ||
+				undo.checkpointId !== metadata.checkpointId || undo.sourceRootId !== metadata.sourceRootId ||
+				undo.generation !== metadata.generation || undo.documentRevision !== metadata.documentRevision ||
+				undo.historyComplete !== metadata.historyComplete || undo.documentAuthority !== metadata.snapshot.documentAuthority ||
+				undo.virtualDocumentKind !== metadata.snapshot.virtualDocumentKind || undo.saveAsRequired !== metadata.snapshot.saveAsRequired ||
+				undo.docKind !== metadata.snapshot.docKind || undo.filename !== metadata.snapshot.filename)
+			throw new Error('Rapier recovery history does not describe its document.');
+		metadata.undo = undo;
 		if (!_rapierIntegrityMatches(
 				metadata.contentIntegrity,
 				_rapierTextIntegrity(canonicalText)
@@ -2021,6 +2083,12 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	}
 	function _srRecoveryKind(recovery, filePayload) {
 		if (!recovery || !recovery.snapshot) return filePayload ? 'file' : null;
+		// A resumed binding keeps its canonical history even when its saved bytes are clean.
+		var authority = String(recovery.snapshot.documentAuthority || '');
+		if (authority && authority === String(filePayload && filePayload.documentAuthority || '')) {
+			return _srSameDocument(recovery, filePayload) && recovery.snapshot.filename === filePayload.name
+				? 'recovery-bound' : 'recovery-conflict';
+		}
 		if (recovery.dirty !== true) return filePayload ? 'file' : 'recovery-transient';
 		if (_srSameDocument(recovery, filePayload)) return filePayload ? 'file' : 'recovery-transient';
 		var base = recovery.baseFileGeneration == null ? null : String(recovery.baseFileGeneration);
@@ -2277,7 +2345,6 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			state.get('rapier/document'),
 			state.get('rapier/recents'),
 			appData.get('recovery/current').catch(_srMissingOnly),
-			appData.get('undo/current').catch(_srMissingOnly),
 		]);
 		var preferences = _srValue(records[0]);
 		_srState.preferences = preferences && typeof preferences === 'object' ? preferences : Object.create(null);
@@ -2289,26 +2356,6 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 		_srState.recentsVersion = _srVersion(records[2]);
 		_srState.recovery = await _srRecoveryPayload(_srValue(records[3]));
 		_srState.recoveryVersion = _srVersion(records[3]);
-		_srState.undo = await _srJson(_srValue(records[4]));
-		_srState.undoVersion = _srVersion(records[4]);
-		if (_srState.recovery && _srState.recovery.integrityVerified === true && _srState.undo
-				&& _srUndoIntegrityMatches(_srState.undo)
-				&& _srState.undo.schemaVersion === 4
-				&& _srState.undo.checkpointId === _srState.recovery.checkpointId
-				&& _srState.undo.sourceRootId === _srState.recovery.sourceRootId
-				&& _srState.undo.generation === _srState.recovery.generation
-				&& _srState.undo.documentRevision === _srState.recovery.documentRevision
-				&& _srState.recovery.historyComplete === true
-				&& _srState.undo.historyComplete === true
-				&& _srState.undo.documentAuthority === _srState.recovery.snapshot.documentAuthority
-				&& _srState.undo.virtualDocumentKind === _srState.recovery.snapshot.virtualDocumentKind
-				&& _srState.undo.saveAsRequired === _srState.recovery.snapshot.saveAsRequired
-				&& _srState.undo.docKind === _srState.recovery.snapshot.docKind
-				&& _srState.undo.filename === _srState.recovery.snapshot.filename) {
-			_srState.recovery = Object.assign({}, _srState.recovery, {
-				undo: _srState.undo,
-			});
-		}
 
 		var filePayload = null;
 		if (_srState.current && _srState.current.grant) {
@@ -2536,34 +2583,30 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 				return !(created && created.cancelled === true);
 			},
 			persistRecovery: function (payload) {
-				_srState.recovery = payload;
 				_srState.recoveryChain = _srState.recoveryChain.catch(function () { return null; }).then(async function () {
 					await _srReady;
 					var appData = _srRequiredNamespace('appData', 'app-data/v1');
 					var options = { contentType: 'application/vnd.rapier.recovery' };
 					if (Number.isFinite(_srState.recoveryVersion)) options.expectedVersion = _srState.recoveryVersion;
+					if (_srState.recoveryWriteUncertain) throw new Error('Recovery publication is uncertain; reopen before writing again.');
 					var blob = _srRecoveryBlob(payload);
-					var result = await appData.put('recovery/current', blob, options);
-					var version = _srVersion(result);
-					if (version != null) _srState.recoveryVersion = version;
+					var verified = await _srRecoveryPayload(blob);
+					var result, version;
+					try {
+						result = await appData.put('recovery/current', blob, options);
+						version = _srVersion(result);
+						if (version == null) throw new Error('Recovery publication was not acknowledged.');
+					} catch (error) {
+						// The provider may have committed before losing its reply. Keep the previous in-memory
+						// checkpoint and forbid a blind retry or delete until a fresh durable read establishes state.
+						_srState.recoveryWriteUncertain = true;
+						throw error;
+					}
+					_srState.recoveryVersion = version;
+					_srState.recovery = verified;
 					return result;
 				});
 				return _srState.recoveryChain;
-			},
-			persistUndo: function (payload) {
-				_srState.undo = payload;
-				_srState.undoChain = _srState.undoChain.catch(function () { return null; }).then(async function () {
-					await _srReady;
-					var appData = _srRequiredNamespace('appData', 'app-data/v1');
-					var options = { contentType: 'application/json' };
-					if (Number.isFinite(_srState.undoVersion)) options.expectedVersion = _srState.undoVersion;
-					var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-					var result = await appData.put('undo/current', blob, options);
-					var version = _srVersion(result);
-					if (version != null) _srState.undoVersion = version;
-					return result;
-				});
-				return _srState.undoChain;
 			},
 			clearRecovery: function () {
 				_srState.recoveryChain = _srState.recoveryChain.catch(function () { return null; }).then(async function () {
@@ -2571,23 +2614,14 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 					var appData = _srRequiredNamespace('appData', 'app-data/v1');
 					var options = {};
 					if (Number.isFinite(_srState.recoveryVersion)) options.expectedVersion = _srState.recoveryVersion;
+					if (_srState.recoveryWriteUncertain) throw new Error('Recovery publication is uncertain; reopen before clearing it.');
 					var result = await appData.delete('recovery/current', options).catch(_srMissingOnly);
 					_srState.recoveryVersion = null;
 					return result;
 				});
-				_srState.undoChain = _srState.undoChain.catch(function () { return null; }).then(async function () {
-					await _srReady;
-					var appData = _srRequiredNamespace('appData', 'app-data/v1');
-					var options = {};
-					if (Number.isFinite(_srState.undoVersion)) options.expectedVersion = _srState.undoVersion;
-					var result = await appData.delete('undo/current', options).catch(_srMissingOnly);
-					_srState.undoVersion = null;
-					return result;
-				});
-				return Promise.all([_srState.recoveryChain, _srState.undoChain]).then(function (results) {
+				return _srState.recoveryChain.then(function (result) {
 					_srState.recovery = null;
-					_srState.undo = null;
-					return results;
+					return result;
 				});
 			},
 			resourceStatus: async function (id) {
@@ -2878,7 +2912,6 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get ownsStore() { return raw.ownsRecoveryStore === true; },
 			get ownsWriterBoundary() { return raw.ownsRecoveryWriterBoundary === true; },
 			get persist() { return method('persistRecovery'); },
-			get persistUndo() { return method('persistUndo'); },
 			get clear() { return method('clearRecovery'); },
 		});
 		var resources = Object.freeze({

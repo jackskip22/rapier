@@ -4,20 +4,20 @@ import {PREFERENCE_DEFINITIONS} from '../shell/preferences.mjs';
 export const EDITOR_LIMITS = Object.freeze({textChars: 4096, preferenceChars: 256, receipts: 32, contextBytes: 4096, cardMs: 300000,
   previewHead: 360, previewTail: 120});
 // Public tools select one fixed device action. The editor queue is internal and accepts no export work.
-export const EDITOR_TOOL_ACTIONS = Object.freeze({'document.read_aloud': 'read_aloud', 'document.copy': 'copy',
-  'document.open_file': 'open_file', 'document.install_plugin': 'install_plugin'});
+export const EDITOR_TOOL_ACTIONS = Object.freeze({'editor.read_aloud': 'read_aloud', 'editor.copy': 'copy',
+  'editor.open_file': 'open_file', 'editor.install_plugin': 'install_plugin'});
 export const EDITOR_ACTIONS = Object.freeze(Object.values(EDITOR_TOOL_ACTIONS));
 export const EDITOR_PLUGINS = Object.freeze(['math', 'mermaid', 'pdf', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque']);
 export const EDITOR_COPY_FORMATS = Object.freeze(['markdown', 'plain', 'formatted', 'complete']);
-export const PREFERENCE_SCHEMAS = Object.freeze(Object.fromEntries(Object.entries(PREFERENCE_DEFINITIONS).map(([name, definition]) => [name,
+export const PREFERENCE_SCHEMAS = Object.freeze(Object.fromEntries(Object.entries(PREFERENCE_DEFINITIONS).filter(([name]) => name !== 'readOnly').map(([name, definition]) => [name,
   Object.freeze({...definition.values ? {type: typeof definition.fallback, enum: [...definition.values]}
     : typeof definition.fallback === 'boolean' ? {type: 'boolean'} : {type: 'string', maxLength: EDITOR_LIMITS.preferenceChars},
     ...(definition.pattern ? {pattern: definition.pattern} : {})})])));
 // What an agent reads for the controls it may set, from the table the gate checks; the person's own controls are named after them.
-const settable = Object.entries(PREFERENCE_DEFINITIONS).filter(([, definition]) => definition.agent !== false);
+const settable = Object.entries(PREFERENCE_DEFINITIONS).filter(([name, definition]) => name !== 'readOnly' && definition.agent !== false);
 export const PREFERENCE_WORDS = settable.map(([name, definition]) => name + ' ' + (definition.values ? definition.values.join('|')
   : definition.pattern ? 'matching ' + definition.pattern : typeof definition.fallback === 'boolean' ? 'true|false' : 'text')).join('; ') + '. ' +
-  Object.keys(PREFERENCE_DEFINITIONS).filter(name => !settable.some(([other]) => other === name)).join(' and ') + ' stay the person\'s alone.';
+  Object.keys(PREFERENCE_SCHEMAS).filter(name => !settable.some(([other]) => other === name)).join(' and ') + ' stay the person\'s alone.';
 
 const encoder = new TextEncoder();
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -31,12 +31,12 @@ export function editorPreview(text) {
   if (points.length <= head + tail + 60) return {head: points.join(''), omitted: 0, tail: ''};
   return {head: points.slice(0, head).join(''), omitted: points.length - head - tail, tail: points.slice(-tail).join('')};
 }
-export const editorNeedsTap = request => request?.operation === 'document.ask_editor' && EDITOR_ACTIONS.includes(request.action);
+export const editorNeedsTap = request => request?.operation === 'document.device_action' && request.action === 'open_file';
 export const editorFailure = reason => ({outcome: 'refused', reason, receipt: {status: 'unavailable', reason},
   ...(reason === 'editor_unavailable' ? {hint: 'Open this document in Rapier, then ask the editor again.'} : {})});
 
 export function validPreference(name, value) {
-  if (!own(PREFERENCE_DEFINITIONS, name)) return false;
+  if (!own(PREFERENCE_SCHEMAS, name)) return false;
   const definition = PREFERENCE_DEFINITIONS[name];
   return !!definition && typeof value === typeof definition.fallback && (definition.values ? definition.values.includes(value)
     : typeof value !== 'string' || [...value].length <= EDITOR_LIMITS.preferenceChars) &&
@@ -44,19 +44,18 @@ export function validPreference(name, value) {
 }
 
 export function editorPreferences(value) {
-  if (!object(value) || Object.keys(value).length !== Object.keys(PREFERENCE_DEFINITIONS).length ||
-      !Object.keys(PREFERENCE_DEFINITIONS).every(name => own(value, name) && validPreference(name, value[name]))) return null;
-  return Object.fromEntries(Object.keys(PREFERENCE_DEFINITIONS).map(name => [name, value[name]]));
+  if (!object(value) || !Object.keys(PREFERENCE_SCHEMAS).every(name => own(value, name) && validPreference(name, value[name]))) return null;
+  return Object.fromEntries(Object.keys(PREFERENCE_SCHEMAS).map(name => [name, value[name]]));
 }
 
 export function editorRequest(state, operation, args = {}) {
   if (!object(state) || typeof state.documentId !== 'string' || !state.documentId || !integer(state.revision)) return editorFailure('document_changed');
   const request = {kind: 'editor', documentId: state.documentId, revision: state.revision, operation};
-  if (operation === 'document.set_view') {
+  if (operation === 'editor.set_preferences') {
     if (!validPreference(args.preference, args.value)) return editorFailure('preference_invalid');
     if (PREFERENCE_DEFINITIONS[args.preference].agent === false) return editorFailure('human_authority_required');
     Object.assign(request, {preference: args.preference, value: args.value});
-  } else if (operation === 'document.ask_editor') {
+  } else if (operation === 'document.device_action') {
     if (!EDITOR_ACTIONS.includes(args.action)) return editorFailure('editor_action_invalid');
     request.action = args.action;
     if (['read_aloud', 'copy'].includes(args.action)) {
@@ -88,7 +87,7 @@ export function editorResult(request, fact) {
   const observed = {...(request.id ? {id: request.id} : {}), status: receipt.status,
     ...(request.preference ? {preference: request.preference} : {action: request.action})};
   if (receipt.status === 'applied') {
-    if (request.operation !== 'document.set_view' || receipt.value !== request.value || !validPreference(request.preference, receipt.previous))
+    if (request.operation !== 'editor.set_preferences' || receipt.value !== request.value || !validPreference(request.preference, receipt.previous))
       return editorFailure('editor_receipt_invalid');
     Object.assign(observed, {value: request.value, previous: receipt.previous});
     if (receipt.superseded === true) {
@@ -98,7 +97,7 @@ export function editorResult(request, fact) {
   } else if (receipt.status === 'waiting' || receipt.status === 'declined') {
     if (!editorNeedsTap(request)) return editorFailure('editor_receipt_invalid');
   } else if (receipt.status === 'done') {
-    if (!editorNeedsTap(request)) return editorFailure('editor_receipt_invalid');
+    if (request.operation !== 'document.device_action' || !EDITOR_ACTIONS.includes(request.action)) return editorFailure('editor_receipt_invalid');
   }
   if (fact.file !== undefined || receipt.issues !== undefined) return editorFailure('editor_receipt_invalid');
   if (receipt.reason !== undefined) {

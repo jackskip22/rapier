@@ -103,8 +103,7 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	});
 	// Rendered chrome only: source tokens and their offsets stay untouched.
 	const render = instance.renderer.render;
-	instance.renderer.render = function (tokens, options, env) {
-		return render.call(this, tokens, options, env).replace(
+	instance.renderer.rapierTransformHtml = html => html.replace(
 			/<blockquote>\s*(<p(?:\s[^>]*)?>)\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|DANGER|INFO)\]\s*(?:<br\s*\/?>)?\s*/gi,
 			(_match, paragraph, value) => {
 				const type = value.toLowerCase(), icons = spec.callouts;
@@ -114,6 +113,8 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 					icon + '</svg>' + type[0].toUpperCase() + type.slice(1) + '</span>';
 			}
 		);
+	instance.renderer.render = function (tokens, options, env) {
+		return this.rapierTransformHtml(render.call(this, tokens, options, env));
 	};
 
 	{

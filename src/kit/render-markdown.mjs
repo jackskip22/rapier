@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import {finish, finishAsync, cloneTree, cleanTree, serializeTree, htmlBoundary, pause, check} from './render-work.mjs';
 const RAPIER_TABLE_CAPTION_PREFIX_RE = /^(?:Table:|:) /;
 const RAPIER_PORTABLE_HIGHLIGHT_HEX = Object.freeze({
 	green: '#35c57a', red: '#f05a62', blue: '#4f91f7', yellow: '#e6b91e', purple: '#9b6dea',
@@ -383,6 +384,56 @@ function _rapierRenderSemanticRoot(canonical, metadata, options = {}) {
 	return root;
 }
 
+async function _rapierRenderSemanticRootAsync(canonical, metadata, options = {}) {
+	const work = options.work || options;
+	check(work);
+	if (metadata.docKind !== 'markdown' || !md) {
+		const root = _rapierRenderSemanticRoot(canonical, metadata, options);
+		await pause(work, .5);
+		return root;
+	}
+	const markdown = _rapierSplitOpeningFrontmatter(canonical).body;
+	const fallbackEnv = options.page ? {rapierPage: true} : {};
+	const parsed = options.parsed || (runtime.parseAsync ? await runtime.parseAsync(markdown, options) : {tokens: md.parse(markdown, fallbackEnv), env: fallbackEnv});
+	const {tokens, env} = parsed, labels = env.footnotes?.list?.map((item, index) => String(item?.label || ('inline-' + (index + 1))));
+	const root = document.createElement('div'), part = document.createElement('div'), boundary = htmlBoundary();
+	root.setAttribute('data-rapier-semantic-root', 'true');
+	let html = '', began = performance.now();
+	const append = () => {
+		if (md.renderer.rapierTransformHtml) html = md.renderer.rapierTransformHtml(html);
+		if (labels?.length) html = _relabelFootnoteHtml(html, labels);
+		part.innerHTML = sanitizeRapierHtml(html, options.page ? 'source' : 'export');
+		while (part.firstChild) root.appendChild(part.firstChild);
+		html = '';
+	};
+		for (let index = 0; index < tokens.length; index++) {
+			const token = tokens[index], rule = md.renderer.rules[token.type];
+			let rendered = token.type === 'inline' ? md.renderer.renderInline(token.children, md.options, env)
+				: rule ? rule(tokens, index, md.options, env, md.renderer) : md.renderer.renderToken(tokens, index, md.options);
+			html += rendered;
+			if (boundary(rendered) && html.length >= 16384) append();
+			if (performance.now() - began >= 8) {
+				await pause(work, .3 + .2 * (index + 1) / tokens.length);
+				began = performance.now();
+			}
+		}
+		if (html) append();
+		await finishAsync(_rapierSemanticDecorations(root), work);
+		await pause(work, .6);
+		return root;
+}
+
+function* _rapierSemanticDecorations(root) {
+	yield* _rapierApplyBlockDirectionSteps(root); yield;
+	yield* _rapierAssignHeadingSlugsSteps(root, RAPIER_RENDERED_HEADING_SELECTOR, false); yield;
+	yield* _rapierDisambiguateRenderedAnchorsSteps(root); yield;
+	for (const code of root.querySelectorAll('pre > code')) { _rapierNormalizeCodeElement(code); yield; }
+	yield* _rapierMarkTableCaptionsSteps(root); yield;
+	yield* _rapierMarkFigureCaptionsSteps(root); yield;
+	yield* _rapierMarkListContinuationsSteps(Array.from(root.children)); yield;
+	yield* _rapierDecorateJumpListsSteps(root); yield;
+}
+
 function _rapierInstallSemanticProbe(instance) {
 	if (!instance || instance.__rapierSemanticProbeInstalled) return;
 	instance.__rapierSemanticProbeInstalled = true;
@@ -584,11 +635,21 @@ function _rapierRawHtmlFragment(source, rewrite, parser) {
 	return out;
 }
 
-function _rapierApplyBlockDirection(root) {
+function _rapierApplyBlockDirection(root) { return finish(_rapierApplyBlockDirectionSteps(root)); }
+
+function* _rapierApplyBlockDirectionSteps(root) {
 	if (!root || typeof root.querySelectorAll !== 'function') return;
 	for (const el of root.querySelectorAll(_RAPIER_DIR_BLOCKS)) {
+		yield;
 		if (el.closest('pre, code')) continue;
-		const dir = _rapierFirstStrongDir(el.textContent);
+		let dir = 'ltr', found = false;
+		const walker = el.ownerDocument.createTreeWalker(el, 4);
+		for (let text = walker.nextNode(); text && !found; text = walker.nextNode()) {
+			for (const character of text.nodeValue || '') {
+				const strong = _rapierBidiStrong(character.codePointAt(0));
+				if (strong) { dir = strong === 'R' ? 'rtl' : 'ltr'; found = true; break; }
+			}
+		}
 		if (el.getAttribute('dir') !== dir) el.setAttribute('dir', dir);
 	}
 }
@@ -607,35 +668,39 @@ function _rapierFirstStrongDir(text) {
 
 const _RAPIER_DIR_BLOCKS = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,ul,ol,dt,dd,td,th';
 
-function _rapierAssignHeadingSlugs(root, selector = RAPIER_RENDERED_HEADING_SELECTOR, reserveExisting = true) {
+function _rapierAssignHeadingSlugs(root, selector, reserveExisting) { return finish(_rapierAssignHeadingSlugsSteps(root, selector, reserveExisting)); }
+
+function* _rapierAssignHeadingSlugsSteps(root, selector = RAPIER_RENDERED_HEADING_SELECTOR, reserveExisting = true) {
 	if (!root || !root.querySelectorAll) return;
 	const used = Object.create(null);
 	const headings = Array.from(root.querySelectorAll(selector)).concat(_rapierDormantHeadings(root, selector));
 	const headingSet = new Set(headings);
-	if (reserveExisting) (root.isConnected ? document : root).querySelectorAll('[id]').forEach(element => {
+	if (reserveExisting) for (const element of (root.isConnected ? document : root).querySelectorAll('[id]')) { yield;
 		if (!headingSet.has(element) && element.id) used[element.id] = 0;
-	});
-	headings.forEach(heading => {
+	}
+	for (const heading of headings) { yield;
 		heading.id = _rapierNextHeadingSlug(_rapierHeadingSlugBase(heading.textContent), used);
-	});
+	}
 }
 
-function _rapierDisambiguateRenderedAnchors(root) {
+function _rapierDisambiguateRenderedAnchors(root) { return finish(_rapierDisambiguateRenderedAnchorsSteps(root)); }
+
+function* _rapierDisambiguateRenderedAnchorsSteps(root) {
 	if (!root || !root.querySelectorAll) return;
 	const headings = new Set(root.querySelectorAll(RAPIER_RENDERED_HEADING_SELECTOR));
 	const candidates = Array.from(root.querySelectorAll('[id]'))
 		.filter(element => !headings.has(element));
-	candidates.forEach(element => {
+	for (const element of candidates) { yield;
 		const original = _rapierRenderedAnchorOriginalIds.get(element);
 		if (original) element.id = original;
-	});
+	}
 
 	const groups = new Map();
-	candidates.forEach(element => {
-		if (!element.id) return;
+	for (const element of candidates) { yield;
+		if (!element.id) continue;
 		if (!groups.has(element.id)) groups.set(element.id, []);
 		groups.get(element.id).push(element);
-	});
+	}
 	const used = new Set(Array.from(headings).map(heading => heading.id).filter(Boolean));
 	const allocate = original => {
 		const compact = String(original || '').replace(/[^a-z0-9_-]+/gi, '-')
@@ -649,7 +714,27 @@ function _rapierDisambiguateRenderedAnchors(root) {
 		return next;
 	};
 
-	groups.forEach((elements, original) => {
+	const indexes = new Map();
+	const add = (map, key, link) => { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(link); };
+	for (const selector of ['.footnote-ref a[href^="#"]', '.footnote-backref[href^="#"]']) {
+		const index = {hash: new Map(), label: new Map(), order: new Map()};
+		for (const link of root.querySelectorAll(selector)) {
+			index.order.set(link, index.order.size);
+			add(index.hash, _rapierDecodeHash(link.getAttribute('href')), link);
+			add(index.label, link.getAttribute('data-footnote-label'), link);
+			yield;
+		}
+		indexes.set(selector, index);
+	}
+	const moveLink = (link, id) => {
+		const before = _rapierDecodeHash(link.getAttribute('href'));
+		link.setAttribute('href', '#' + id);
+		const after = _rapierDecodeHash(link.getAttribute('href'));
+		for (const index of indexes.values()) if (index.order.has(link)) {
+			index.hash.get(before)?.delete(link); add(index.hash, after, link);
+		}
+	};
+	for (const [original, elements] of groups.entries()) { yield;
 		const explicitFootnotes = elements.filter(element =>
 			element.classList.contains('footnote-item') && element.hasAttribute('data-footnote-label'));
 		const footnoteRefs = elements.filter(element =>
@@ -662,26 +747,26 @@ function _rapierDisambiguateRenderedAnchors(root) {
 		winner.id = winnerId;
 		if (winnerId !== original) _rapierRenderedAnchorOriginalIds.set(winner, original);
 
-		elements.forEach(element => {
-			if (element === winner) return;
+		for (const element of elements) { yield;
+			if (element === winner) continue;
 			const alias = allocate(original);
 			element.id = alias;
 			_rapierRenderedAnchorOriginalIds.set(element, original);
-		});
+		}
 
 		const labels = new Set(elements.map(element => element.getAttribute('data-footnote-label'))
 			.filter(label => label != null));
-		const matchingHashLinks = selector => Array.from(root.querySelectorAll(selector))
-			.filter(link => _rapierDecodeHash(link.getAttribute('href')) === original ||
-				(labels.size && labels.has(link.getAttribute('data-footnote-label'))));
+		const matchingHashLinks = selector => {
+			const index = indexes.get(selector), links = new Set(index.hash.get(original));
+			for (const label of labels) for (const link of index.label.get(label) || []) links.add(link);
+			return [...links].sort((a, b) => index.order.get(a) - index.order.get(b));
+		};
 		if (elements.some(element => element.classList.contains('footnote-item'))) {
-			matchingHashLinks('.footnote-ref a[href^="#"]')
-				.forEach(link => link.setAttribute('href', '#' + winnerId));
+			for (const link of matchingHashLinks('.footnote-ref a[href^="#"]')) { yield;moveLink(link, winnerId);}
 		} else if (elements.some(element => element.closest && element.closest('.footnote-ref'))) {
-			matchingHashLinks('.footnote-backref[href^="#"]')
-				.forEach(link => link.setAttribute('href', '#' + winnerId));
+			for (const link of matchingHashLinks('.footnote-backref[href^="#"]')) { yield;moveLink(link, winnerId);}
 		}
-	});
+	}
 }
 
 function _rapierDecodeHash(hash) {
@@ -695,11 +780,13 @@ function _rapierDecodeHash(hash) {
 	catch (_) { return raw; }
 }
 
-function _rapierDecorateJumpLists(root) {
-	root.querySelectorAll('ul').forEach(list => {
-		if (list.closest('li')) return;
+function _rapierDecorateJumpLists(root) { return finish(_rapierDecorateJumpListsSteps(root)); }
+
+function* _rapierDecorateJumpListsSteps(root) {
+	for (const list of root.querySelectorAll('ul')) { yield;
+		if (list.closest('li')) continue;
 		const items = Array.from(list.children).filter(item => item.tagName === 'LI');
-		if (items.length < 2 || items.length !== list.children.length) return;
+		if (items.length < 2 || items.length !== list.children.length) continue;
 		const isWayfinder = items.every(item => {
 			if (item.querySelector('ul,ol')) return false;
 			const links = Array.from(item.querySelectorAll(':scope > a[href^="#"]'));
@@ -716,7 +803,7 @@ function _rapierDecorateJumpLists(root) {
 				label.classList.add('rapier-jump-label');
 			}
 		}
-	});
+	}
 
 	const only = root.children && root.children.length === 1 ? root.firstElementChild : null;
 	if (only && only.tagName === 'P' && /^jump\s+to:?$/i.test(String(only.textContent || '').trim())) {
@@ -724,37 +811,43 @@ function _rapierDecorateJumpLists(root) {
 	}
 }
 
-function _rapierMarkFigureCaptions(root) {
+function _rapierMarkFigureCaptions(root) { return finish(_rapierMarkFigureCaptionsSteps(root)); }
+
+function* _rapierMarkFigureCaptionsSteps(root) {
 	// Same path as a table caption: an ordinary paragraph after the picture, still the source line.
 	const figureCaption = /^Figure: /;
-	root.querySelectorAll('p').forEach(paragraph => {
-		if (!figureCaption.test(paragraph.textContent || '')) return;
+	for (const paragraph of root.querySelectorAll('p')) { yield;
+		if (!figureCaption.test(paragraph.textContent || '')) continue;
 		const previous = paragraph.previousElementSibling;
-		if (!previous || previous.tagName !== 'P') return;
+		if (!previous || previous.tagName !== 'P') continue;
 		const images = previous.querySelectorAll('img');
-		if (images.length !== 1 || previous.textContent.trim()) return;
+		if (images.length !== 1 || previous.textContent.trim()) continue;
 		paragraph.classList.add('rapier-figure-caption');
-	});
+	}
 }
 
-function _rapierMarkListContinuations(blocks) {
+function _rapierMarkListContinuations(blocks) { return finish(_rapierMarkListContinuationsSteps(blocks)); }
+
+function* _rapierMarkListContinuationsSteps(blocks) {
 	const isHeading = element => !!element && /^H[1-6]$/.test(element.tagName);
-	blocks.forEach((element, index) => {
-		if (!element || element.tagName !== 'OL') return;
+	for (const [index, element] of blocks.entries()) { yield;
+		if (!element || element.tagName !== 'OL') continue;
 		const start = parseInt(element.getAttribute('start'), 10);
 		const last = (Number.isFinite(start) ? start : 1) + element.querySelectorAll(':scope > li').length - 1;
 		const headings = [];
 		let next = index + 1;
 		while (isHeading(blocks[next])) headings.push(blocks[next++]);
 		const following = blocks[next];
-		if (!headings.length || !following || following.tagName !== 'OL') return;
-		if (parseInt(following.getAttribute('start'), 10) !== last + 1) return;
+		if (!headings.length || !following || following.tagName !== 'OL') continue;
+		if (parseInt(following.getAttribute('start'), 10) !== last + 1) continue;
 		element.setAttribute('data-rapier-list-continues', '');
-		headings.forEach(heading => heading.setAttribute('data-rapier-list-through', ''));
-	});
+		for (const heading of headings) { yield;heading.setAttribute('data-rapier-list-through', '');}
+	}
 }
 
-function _rapierMarkTableCaptions(root) {
+function _rapierMarkTableCaptions(root) { return finish(_rapierMarkTableCaptionsSteps(root)); }
+
+function* _rapierMarkTableCaptionsSteps(root) {
 	// The source convention is untouched: the caption stays an ordinary trailing paragraph
 	// (docs/markdown-standard.md). Only this rendered projection associates it with its table —
 	// via a generated id plus aria-describedby, not a real <caption>, which would have to move the
@@ -762,10 +855,10 @@ function _rapierMarkTableCaptions(root) {
 	// passes (heading slugs, portable export) rely on for this same root.
 	const used = new Set(Array.from(root.querySelectorAll('[id]'), element => element.id));
 	let ordinal = 0;
-	root.querySelectorAll('table').forEach(table => {
+	for (const table of root.querySelectorAll('table')) { yield;
 		const sibling = table.nextElementSibling;
-		if (!sibling || sibling.tagName !== 'P') return;
-		if (!RAPIER_TABLE_CAPTION_PREFIX_RE.test(sibling.textContent || '')) return;
+		if (!sibling || sibling.tagName !== 'P') continue;
+		if (!RAPIER_TABLE_CAPTION_PREFIX_RE.test(sibling.textContent || '')) continue;
 		sibling.classList.add('rapier-table-caption');
 		let id;
 		do { id = 'rapier-table-caption-' + (++ordinal); } while (used.has(id));
@@ -773,7 +866,7 @@ function _rapierMarkTableCaptions(root) {
 		sibling.id = id;
 		const existing = (table.getAttribute('aria-describedby') || '').trim();
 		table.setAttribute('aria-describedby', existing ? existing + ' ' + id : id);
-	});
+	}
 }
 
 
@@ -870,13 +963,15 @@ function _rapierMathSource(node) {
 	return String((placeholder || node).textContent || '').trim();
 }
 
-function _rapierFlattenPortableDetails(root) {
+function _rapierFlattenPortableDetails(root) { return finish(_rapierFlattenPortableDetailsSteps(root)); }
+
+function* _rapierFlattenPortableDetailsSteps(root) {
 	const blockTags = new Set([
 		'ADDRESS','ARTICLE','ASIDE','BLOCKQUOTE','DIV','DL','FIELDSET','FIGURE',
 		'FOOTER','FORM','H1','H2','H3','H4','H5','H6','HEADER','HR','MAIN',
 		'NAV','OL','P','PRE','SECTION','TABLE','UL',
 	]);
-	Array.from(root.querySelectorAll('details')).reverse().forEach(details => {
+	for (const details of Array.from(root.querySelectorAll('details')).reverse()) { yield;
 		const summary = Array.from(details.children).find(child => child.tagName === 'SUMMARY');
 		const section = document.createElement('section');
 		if (details.id) section.id = details.id;
@@ -891,10 +986,10 @@ function _rapierFlattenPortableDetails(root) {
 		}
 
 		let paragraph = null;
-		Array.from(details.childNodes).forEach(child => {
-			if (child === summary) return;
+		for (const child of Array.from(details.childNodes)) { yield;
+			if (child === summary) continue;
 			const isText = child.nodeType === Node.TEXT_NODE;
-			if (isText && !String(child.nodeValue || '').trim()) return;
+			if (isText && !String(child.nodeValue || '').trim()) continue;
 			const isBlock = child.nodeType === Node.ELEMENT_NODE && blockTags.has(child.tagName);
 			if (!isBlock) {
 				if (!paragraph) {
@@ -902,16 +997,19 @@ function _rapierFlattenPortableDetails(root) {
 					section.appendChild(paragraph);
 				}
 				paragraph.appendChild(child);
-				return;
+				continue;
 			}
 			paragraph = null;
 			section.appendChild(child);
-		});
+		}
 		details.replaceWith(section);
-	});
+	}
 }
 
-function _rapierProjectPortableRoot(semanticRoot, options) {
+function _rapierProjectPortableRoot(semanticRoot, options) { return finish(_rapierProjectPortableRootSteps(semanticRoot, options)); }
+async function _rapierProjectPortableRootAsync(semanticRoot, options = {}) { return finishAsync(_rapierProjectPortableRootSteps(semanticRoot, options), options.work); }
+
+function* _rapierProjectPortableRootSteps(semanticRoot, options) {
 	const opts = options || {};
 	// This projection is HTML-shaped (width baked into a CSS `style`, `data-*` stripped) for the
 	// consumers that read HTML -- publishing/fragment export, TXT. DOCX is not an HTML consumer: its
@@ -921,9 +1019,9 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 	// the semantic root carries them. Ordinary paragraph/list CSS measurements also reach their
 	// native reader; no derived private CSS is needed.
 	const keepLayoutData = !!opts.keepLayoutData;
-	const root = semanticRoot.cloneNode(true), nativeElements = new Set();
+	const root = yield* cloneTree(semanticRoot), nativeElements = new Set();
 	// A source soft break is a reading space, never the editor's invisible token.
-	_rapierResolveSoftBreakTokens(root);
+	yield* _rapierResolveSoftBreakTokensSteps(root);
 	if (opts.keepDiagrams) for (const figure of root.querySelectorAll('.diagram-block[data-diagram-native]')) {
 		const svg = figure.querySelector('.diagram-cache > svg.rapier-native-flowchart');
 		if (figure.getAttribute('data-diagram-state') === 'ready' && svg) {
@@ -933,69 +1031,70 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 		}
 	}
 
-	root.querySelectorAll('blockquote').forEach(blockquote => {
+	for (const blockquote of root.querySelectorAll('blockquote')) { yield;
 		const info = _rapierCalloutInfo(blockquote);
-		if (!info) return;
+		if (!info) continue;
 		if (info.existing) info.existing.remove();
 		else _rapierRemoveCalloutMarker(info.first);
 		const label = document.createElement('strong');
 		label.textContent = info.type.charAt(0) + info.type.slice(1).toLowerCase() + ': ';
 		info.first.insertBefore(label, info.first.firstChild);
-	});
+	}
 
-	root.querySelectorAll('input[type="checkbox"]').forEach(input => {
+	for (const input of root.querySelectorAll('input[type="checkbox"]')) { yield;
 		const nextStartsWithSpace = input.nextSibling
 			&& input.nextSibling.nodeType === Node.TEXT_NODE
 			&& /^\s/.test(input.nextSibling.nodeValue || '');
 		input.replaceWith(document.createTextNode((input.checked ? '☒' : '☐') + (nextStartsWithSpace ? '' : ' ')));
-	});
+	}
 
-	root.querySelectorAll('.math-display-wrap').forEach(wrapper => {
+	for (const wrapper of root.querySelectorAll('.math-display-wrap')) { yield;
 		const source = _rapierMathSource(wrapper);
 		const p = document.createElement('p');
 		const code = document.createElement('code');
 		code.textContent = source || '[equation]';
 		p.appendChild(code);
 		wrapper.replaceWith(p);
-	});
-	root.querySelectorAll('.math-rendered,.math-placeholder').forEach(math => {
+	}
+	for (const math of root.querySelectorAll('.math-rendered,.math-placeholder')) { yield;
 		const code = document.createElement('code');
 		code.textContent = _rapierMathSource(math) || '[equation]';
 		math.replaceWith(code);
-	});
-	root.querySelectorAll('math').forEach(math => {
+	}
+	for (const math of root.querySelectorAll('math')) { yield;
 		const code = document.createElement('code');
 		code.textContent = String(math.textContent || '').trim() || '[equation]';
 		math.replaceWith(code);
-	});
+	}
 
-	_rapierFlattenPortableDetails(root);
+	yield* _rapierFlattenPortableDetailsSteps(root);
 
-	root.querySelectorAll('section.footnotes').forEach(section => {
-		section.querySelectorAll('.footnotes-sep').forEach(node => node.remove());
+	for (const section of root.querySelectorAll('section.footnotes')) { yield;
+		for (const node of section.querySelectorAll('.footnotes-sep')) { yield;node.remove();}
 		if (!section.querySelector(':scope > h1,:scope > h2,:scope > h3')) {
 			const heading = document.createElement('h2');
 			heading.textContent = 'Footnotes';
 			section.insertBefore(heading, section.firstChild);
 		}
-	});
+	}
 
-	root.querySelectorAll('.table-scroll-wrap,.math-display-wrap').forEach(_rapierUnwrapElement);
+	for (const item of root.querySelectorAll('.table-scroll-wrap,.math-display-wrap')) { yield; _rapierUnwrapElement(item); }
 
-	root.querySelectorAll('pre > code').forEach(_rapierNormalizeCodeElement);
+	for (const item of root.querySelectorAll('pre > code')) { yield; _rapierNormalizeCodeElement(item); }
 
-	root.querySelectorAll('svg').forEach(svg => {
-		if (nativeElements.has(svg)) return;
+	for (const svg of root.querySelectorAll('svg')) { yield;
+		if (nativeElements.has(svg)) continue;
 		const title = svg.getAttribute('aria-label')
 			|| (svg.querySelector('title') && svg.querySelector('title').textContent)
 			|| '';
 		svg.replaceWith(document.createTextNode(title ? '[Image: ' + title.trim() + ']' : '[Image]'));
-	});
+	}
 
-	_rapierPrefixPortableAnchors(root, opts.baseName);
+	if (runtime.prefixAnchorsSteps) yield* runtime.prefixAnchorsSteps(root, opts.baseName);
+	else _rapierPrefixPortableAnchors(root, opts.baseName);
 
-	root.querySelectorAll('*').forEach(element => {
-		if (nativeElements.has(element)) return;
+	for (const element of root.querySelectorAll('*')) { yield;
+		if (nativeElements.has(element)) continue;
 		const lang = element.tagName === 'CODE' ? _rapierLanguageClass(element) : '';
 		// The native note reader needs these transient roles to omit the renderer's
 		// separator and return-link spacing before it compares source-owned review notes.
@@ -1017,15 +1116,15 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 		const isTableCaption = element.tagName === 'P' && element.classList.contains('rapier-table-caption');
 
 		const isPageBreak = element.hasAttribute('data-md-break');
-		Array.from(element.attributes).forEach(attribute => {
+		for (const attribute of Array.from(element.attributes)) { yield;
 			const name = attribute.name.toLowerCase();
-			if (keepLayoutData && (name === 'data-rapier-image-layout' || name === 'data-md-layout' || name === 'data-md-align' || name === 'data-rapier-ink')) return;
+			if (keepLayoutData && (name === 'data-rapier-image-layout' || name === 'data-md-layout' || name === 'data-md-align' || name === 'data-rapier-ink')) continue;
 			if (name === 'class' || name === 'style' || name.startsWith('data-')
 					|| name === 'contenteditable' || name === 'spellcheck'
 					|| name === 'tabindex' || name === 'disabled' || name === 'aria-disabled') {
 				element.removeAttribute(attribute.name);
 			}
-		});
+		}
 		if (footnoteRole) element.className = footnoteRole;
 		if (lang) element.className = 'language-' + lang;
 		for (const [property, value] of measurements) if (value) element.style.setProperty(property, value);
@@ -1044,16 +1143,15 @@ function _rapierProjectPortableRoot(semanticRoot, options) {
 			p.setAttribute('style', 'page-break-before: always');
 			element.replaceWith(p);
 		}
-	});
+	}
 
-	const clean = document.createElement('div');
-	clean.innerHTML = sanitizeRapierHtml(root.innerHTML, 'export');
-	return clean;
+	return yield* cleanTree(root, sanitizeRapierHtml);
 }
 
 function _rapierPortableHtml(root) {
 	return sanitizeRapierHtml(root ? root.innerHTML : '', 'export').trim();
 }
+async function _rapierPortableHtmlAsync(root, work) { return finishAsync(serializeTree(root, sanitizeRapierHtml, true), work); }
 
 function _rapierNormalizeInlineText(value) {
 	return String(value || '')
@@ -1072,10 +1170,13 @@ function _rapierPictureWords(alt, src) {
 
 // Held Markdown and HTML pictures keep their addresses as inert data. Text export reads them before
 // the portable projection removes editor attributes, without restoring a fetching image source.
-function _rapierHeldPicturesAsWords(root) {
-	const copy = root.cloneNode(true);
-	copy.querySelectorAll('span[data-rapier-remote-src],img[data-rapier-remote-src]').forEach(held => held.replaceWith(document.createTextNode(
-		_rapierPictureWords(String(held.getAttribute('data-rapier-remote-alt') || '').trim(), String(held.getAttribute('data-rapier-remote-src') || '').trim()))));
+function _rapierHeldPicturesAsWords(root) { return finish(_rapierHeldPicturesAsWordsSteps(root)); }
+async function _rapierHeldPicturesAsWordsAsync(root, work) { return finishAsync(_rapierHeldPicturesAsWordsSteps(root), work); }
+
+function* _rapierHeldPicturesAsWordsSteps(root) {
+	const copy = yield* cloneTree(root);
+	for (const held of copy.querySelectorAll('span[data-rapier-remote-src],img[data-rapier-remote-src]')) { yield;held.replaceWith(document.createTextNode(
+		_rapierPictureWords(String(held.getAttribute('data-rapier-remote-alt') || '').trim(), String(held.getAttribute('data-rapier-remote-src') || '').trim())));}
 	return copy;
 }
 
@@ -1148,7 +1249,10 @@ function _rapierPortableTableText(table, options) {
 	}).filter(Boolean).join('\n');
 }
 
-function _rapierPortablePlainText(root, options) {
+function _rapierPortablePlainText(root, options) { return finish(_rapierPortablePlainTextSteps(root, options)); }
+async function _rapierPortablePlainTextAsync(root, options = {}) { return finishAsync(_rapierPortablePlainTextSteps(root, options), options.work); }
+
+function* _rapierPortablePlainTextSteps(root, options) {
 	const opts = options || {};
 	const blocks = [];
 	const blockTags = new Set([
@@ -1163,7 +1267,7 @@ function _rapierPortablePlainText(root, options) {
 		if (value) blocks.push({ text: value, preserve: !!preserve });
 	};
 
-	const collectChildren = parent => {
+	const collectChildren = function* (parent) {
 		let inline = [];
 		const flush = () => {
 			if (!inline.length) return;
@@ -1174,10 +1278,11 @@ function _rapierPortablePlainText(root, options) {
 		const blankText = node => node.nodeType === Node.TEXT_NODE && !String(node.nodeValue || '').trim();
 		const children = Array.from(parent.childNodes);
 		const inTableRun = index => { for (let at = index - 1; at >= 0; at--) { if (!blankText(children[at])) return tablePart(children[at]); } return false; };
-		children.forEach((child, index) => {
+		for (const [index, child] of children.entries()) {
+			yield;
 			if (tablePart(child)) {
 				// The parts of a table a selection clipped out of it: one block of rows, whichever parts arrived.
-				if (inTableRun(index)) return;
+				if (inTableRun(index)) continue;
 				flush();
 				const parts = [];
 				for (let at = index; at < children.length && (tablePart(children[at]) || blankText(children[at])); at++) {
@@ -1185,10 +1290,10 @@ function _rapierPortablePlainText(root, options) {
 				}
 				pushBlock(parts.filter(Boolean).join('\n'), false);
 			} else if (blankText(child) && inTableRun(index)) {
-				return;
+				continue;
 			} else if (child.nodeType === Node.ELEMENT_NODE && blockTags.has(child.tagName)) {
 				flush();
-				collectBlock(child);
+				yield* collectBlock(child);
 			} else if (opts.visible && child.nodeType === Node.ELEMENT_NODE && child.tagName === 'CODE' && String(child.textContent || '').includes('\n')) {
 				// Lines of a code block taken without their block: the code as shown, every space kept.
 				flush();
@@ -1196,11 +1301,11 @@ function _rapierPortablePlainText(root, options) {
 			} else {
 				inline.push(child);
 			}
-		});
+		}
 		flush();
 	};
 
-	const collectBlock = node => {
+	const collectBlock = function* (node) {
 		if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
 		const tag = node.tagName;
 		if (/^H[1-6]$/.test(tag) || tag === 'P') {
@@ -1230,7 +1335,7 @@ function _rapierPortablePlainText(root, options) {
 		}
 		if (tag === 'BLOCKQUOTE') {
 			const before = blocks.length;
-			collectChildren(node);
+			yield* collectChildren(node);
 			const quoted = blocks.splice(before).filter(block => !block.blank).map(block => block.text).join('\n\n');
 			if (quoted) pushBlock(opts.visible ? quoted : quoted.split('\n').map(line => line ? '> ' + line : '>').join('\n'), true);
 			return;
@@ -1251,16 +1356,17 @@ function _rapierPortablePlainText(root, options) {
 		if (tag === 'DETAILS') {
 			const summary = node.querySelector(':scope > summary');
 			if (summary) pushBlock(_rapierNormalizeInlineText(_rapierPortableInlineText(summary, opts)), false);
-			Array.from(node.children).filter(child => child !== summary).forEach(collectBlock);
+			for (const child of node.children) if (child !== summary) { yield; yield* collectBlock(child); }
 			return;
 		}
-		collectChildren(node);
+		yield* collectChildren(node);
 	};
 
-	collectChildren(root);
+	yield* collectChildren(root);
 	// Each block stands a blank line from the next, and each empty paragraph between them adds one newline more.
 	let joined = '', blanks = 0;
 	for (const block of blocks) {
+		yield;
 		if (block.blank) { blanks++; continue; }
 		joined += (joined ? '\n\n' + '\n'.repeat(blanks) : '') + block.text;
 		blanks = 0;
@@ -1277,6 +1383,16 @@ function _rapierPlainTextFile(context) {
 		: context.canonical;
 }
 
+async function _rapierPlainTextFileAsync(context) {
+	if (context.metadata.docKind !== 'markdown') return context.canonical;
+	const work = context.work;
+	const root = await _rapierHeldPicturesAsWordsAsync(context.semanticRoot, work);
+	const portable = await _rapierProjectPortableRootAsync(root, {baseName: context.baseName, work});
+	return _rapierPortablePlainTextAsync(portable, {finalNewline: true, work});
+}
+
+async function _rapierCloneRootAsync(root, work) { return finishAsync(cloneTree(root), work); }
+
 function _rapierSourceTokenValue(node) {
 	if (!node?.hasAttribute('data-rapier-source') || !node.hasAttribute('data-rapier-visible') ||
 			Array.from(node.childNodes).some(child => child.nodeType !== Node.TEXT_NODE)) return null;
@@ -1286,11 +1402,13 @@ function _rapierSourceTokenValue(node) {
 	} catch (_) { return null; }
 }
 
-function _rapierResolveSoftBreakTokens(root) {
-	root.querySelectorAll('.rapier-source-token--softbreak').forEach(token => {
+function _rapierResolveSoftBreakTokens(root) { return finish(_rapierResolveSoftBreakTokensSteps(root)); }
+
+function* _rapierResolveSoftBreakTokensSteps(root) {
+	for (const token of root.querySelectorAll('.rapier-source-token--softbreak')) { yield;
 		if (_rapierSourceTokenValue(token) === '\n') token.replaceWith(document.createTextNode(' '));
 		else token.replaceWith(...token.childNodes);
-	});
+	}
 	return root;
 }
 
@@ -1307,6 +1425,6 @@ function _rapierBidiStrong(cp) {
 	return null;
 }
 
-  return {_rapierCalloutInfo, _rapierRemoveCalloutMarker, _rapierMathSource, _rapierFlattenPortableDetails, _rapierProjectPortableRoot, _rapierPortableHtml, _rapierNormalizeInlineText, _rapierPortableInlineText, _rapierPortableListText, _rapierPortableTableText, _rapierPortablePlainText, _rapierPlainTextFile, _rapierHeldPicturesAsWords, _rapierSourceTokenValue, _rapierResolveSoftBreakTokens, _rapierUnwrapElement, _rapierBidiStrong, render: (source, metadata = {}) => { if (!md) initMarkdownIt(); return _rapierRenderSemanticRoot(source, metadata).innerHTML; }, initMarkdownIt, _rapierRenderSemanticRoot, _rapierInstallSemanticProbe, _rapierImageAltSize, _rapierImageAltSourceParts, _rapierImageAltText, _rapierImageSizeAttributes, _rapierRawHtmlFragment, _rapierApplyBlockDirection, _rapierFirstStrongDir, _rapierAssignHeadingSlugs, _rapierDisambiguateRenderedAnchors, _rapierDecodeHash, _rapierDecorateJumpLists, _rapierMarkFigureCaptions, _rapierMarkListContinuations, _rapierMarkTableCaptions, _rapierNormalizeCodeElement, _rapierLanguageClass, _relabelFootnoteHtml, _footnoteIdFromLabel, wrapDisplayMath, parser: () => md};
+  return {_rapierPlainTextFileAsync, _rapierCloneRootAsync, _rapierPortablePlainTextAsync, _rapierHeldPicturesAsWordsAsync, _rapierRenderSemanticRootAsync, _rapierProjectPortableRootAsync, _rapierPortableHtmlAsync, _rapierCalloutInfo, _rapierRemoveCalloutMarker, _rapierMathSource, _rapierFlattenPortableDetails, _rapierProjectPortableRoot, _rapierPortableHtml, _rapierNormalizeInlineText, _rapierPortableInlineText, _rapierPortableListText, _rapierPortableTableText, _rapierPortablePlainText, _rapierPlainTextFile, _rapierHeldPicturesAsWords, _rapierSourceTokenValue, _rapierResolveSoftBreakTokens, _rapierUnwrapElement, _rapierBidiStrong, render: (source, metadata = {}) => { if (!md) initMarkdownIt(); return _rapierRenderSemanticRoot(source, metadata).innerHTML; }, initMarkdownIt, _rapierRenderSemanticRoot, _rapierInstallSemanticProbe, _rapierImageAltSize, _rapierImageAltSourceParts, _rapierImageAltText, _rapierImageSizeAttributes, _rapierRawHtmlFragment, _rapierApplyBlockDirection, _rapierFirstStrongDir, _rapierAssignHeadingSlugs, _rapierDisambiguateRenderedAnchors, _rapierDecodeHash, _rapierDecorateJumpLists, _rapierMarkFigureCaptions, _rapierMarkListContinuations, _rapierMarkTableCaptions, _rapierNormalizeCodeElement, _rapierLanguageClass, _relabelFootnoteHtml, _footnoteIdFromLabel, wrapDisplayMath, parser: () => md};
 }
 export {RAPIER_TABLE_CAPTION_PREFIX_RE as tableCaptionPrefix, RAPIER_PORTABLE_HIGHLIGHT_HEX as portableHighlightHex, _RAPIER_RTL_SCRIPT as rtlScripts, createMarkdownRenderer};

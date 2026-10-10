@@ -119,6 +119,9 @@ body.light .rapier-draw-btn--done{color:#fff}
 .rapier-draw-settings [data-draw-act="ink"] .rapier-draw-ink-dot{margin:0 auto;box-shadow:inset 0 0 0 1.5px var(--color-bg)}
 /* The chosen control wears no box; its icon and word take the accent. */
 .rapier-draw-settings .rapier-draw-btn--icon[aria-expanded="true"]{color:var(--color-accent)}
+/* Worded controls (the three Effects) share the row evenly and wrap at a space rather than overlap. */
+.rapier-draw-settings .rapier-draw-btn--quiet{min-width:0;padding:0 var(--space-1);white-space:normal;text-align:center;line-height:1.2}
+.rapier-draw-settings .rapier-draw-btn--quiet[aria-expanded="true"]{color:var(--color-accent)}
 .rapier-draw-settings-collapse{appearance:none;position:absolute;z-index:5;top:var(--space-1);left:calc(100% - var(--draw-cell) - var(--space-1));display:flex;align-items:center;justify-content:center;width:var(--draw-cell);height:var(--draw-cell);padding:0;border:0;border-radius:0;background:transparent;color:var(--color-bg);cursor:pointer;touch-action:manipulation;opacity:1;transform:rotate(0deg);transform-origin:center;transition:opacity 180ms var(--ease-micro),background var(--dur-micro) var(--ease-micro)}
 .rapier-draw-settings-collapse svg{width:22px;height:22px;display:block}
 .rapier-draw-settings-collapse:active,.rapier-draw-settings-collapse:focus-visible{background:var(--color-surface-hover)}
@@ -571,7 +574,7 @@ body.rapier-draw-open .settings-overlay.restore-modal-overlay{z-index:950}
 .rapier-draw-resize[data-mode="resizing"] .rapier-draw-resize-frame{box-shadow:0 0 0 100vmax var(--color-scrim),inset 0 0 0 1px currentColor}
 .rapier-draw-resize-target{display:none;position:absolute;box-sizing:border-box;width:44px;height:44px;pointer-events:auto;touch-action:none}
 .rapier-draw-resize[data-mode="resizing"] .rapier-draw-resize-target{display:block}
-.rapier-draw-resize-mark{position:absolute;left:50%;top:50%;box-sizing:border-box;color:inherit;border:0 solid currentColor}
+.rapier-draw-resize-mark{position:absolute;left:50%;top:50%;box-sizing:border-box;color:inherit;border:0 solid currentColor;translate:var(--dx,0) var(--dy,0)}
 .rapier-draw-resize-target[data-draw-resize="n"] .rapier-draw-resize-mark,.rapier-draw-resize-target[data-draw-resize="s"] .rapier-draw-resize-mark{width:28px;height:5px;margin:-2.5px 0 0 -14px;background:currentColor}
 .rapier-draw-resize-target[data-draw-resize="e"] .rapier-draw-resize-mark,.rapier-draw-resize-target[data-draw-resize="w"] .rapier-draw-resize-mark{width:5px;height:28px;margin:-14px 0 0 -2.5px;background:currentColor}
 .rapier-draw-resize-target[data-draw-resize="nw"] .rapier-draw-resize-mark{width:22px;height:22px;margin:-2.5px 0 0 -2.5px;border-width:5px 0 0 5px}

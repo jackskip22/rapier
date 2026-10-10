@@ -136,6 +136,7 @@ async function readerRenderDocument() {
 			[...host.querySelectorAll('img[data-rapier-image-layout]')].some(image => globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'))?.rotate);
 		if (wraps) reader.layout = renderer._rapierProjectArtifactLayout(host, modules['spec/md-layout.mjs'], modules['layout/model.mjs'], modules['agent/vendor/pretext/rich-inline.js']);
 	}
+	readerPictureFind.documentShown();
 	readerFindRun(true);
 	return true;
 }
@@ -524,11 +525,12 @@ function readerFindOpen(open) {
 function readerFindClear() {
 	reader.find = {ranges: [], current: 0, overflow: false};
 	if (CSS.highlights) { CSS.highlights.delete('rapier-find-all'); CSS.highlights.delete('rapier-find-current'); }
+	readerPictureFind.clear();
 }
 
 // A search for the words as typed, then, when nothing matches, with any run of spaces, dots, dashes and slashes between them.
 function readerFindRun(keep) {
-	const input = $('find-input'), query = input.value, previous = reader.find.current;
+	const input = $('find-input'), query = input.value, previous = reader.find.current, selected = reader.find.ranges[previous];
 	readerFindClear();
 	readerSetFindCount(0, 0);
 	if (!query || $('find-bar').hidden) return;
@@ -559,25 +561,34 @@ function readerFindRun(keep) {
 		range.setEnd(to.node, end - to.start);
 		return range;
 	});
-	reader.find.current = keep ? Math.min(previous, Math.max(0, reader.find.ranges.length - 1)) : 0;
+	const merged = readerPictureFind.merge(reader.find.ranges, query, reader.find.overflow);
+	reader.find.ranges = merged.ranges; reader.find.overflow = merged.overflow;
+	const kept = keep && selected ? merged.ranges.findIndex(range => readerPictureFind.same(range, selected)) : -1;
+	reader.find.current = kept >= 0 ? kept : keep ? Math.min(previous, Math.max(0, merged.ranges.length - 1)) : 0;
 	readerFindPaint(!keep);
+	readerPictureFind.schedule();
 }
 
 function readerFindPaint(reveal) {
 	const {ranges, current} = reader.find;
 	readerSetFindCount(ranges.length ? current + 1 : 0, ranges.length + (reader.find.overflow ? '+' : ''));
-	if (!ranges.length || !CSS.highlights) return;
-	CSS.highlights.set('rapier-find-all', new Highlight(...ranges));
-	CSS.highlights.set('rapier-find-current', new Highlight(ranges[current]));
-	if (reveal) readerFindReveal(ranges[current]);
+	if (CSS.highlights) {
+		const text = ranges.filter(range => !range.picture);
+		if (text.length) CSS.highlights.set('rapier-find-all', new Highlight(...text));
+		else CSS.highlights.delete('rapier-find-all');
+		if (ranges[current] && !ranges[current].picture) CSS.highlights.set('rapier-find-current', new Highlight(ranges[current]));
+		else CSS.highlights.delete('rapier-find-current');
+	}
+	readerPictureFind.paint();
+	if (reveal && ranges.length) readerFindReveal(ranges[current]);
 }
 
 function readerFindReveal(range) {
-	const node = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+	const node = range.picture?.entry.image || (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement);
 	readerReveal(node);
 	for (let details = node?.closest('details:not([open])'); details; details = details.parentElement?.closest('details:not([open])')) details.open = true;
-	const host = $('editor-blocks'), box = range.getBoundingClientRect(), view = host.getBoundingClientRect();
-	if (box.width || box.height) host.scrollTop = Math.max(0, host.scrollTop + box.top - view.top - Math.max(0, (host.clientHeight - Math.min(box.height, host.clientHeight)) / 2));
+	const host = $('editor-blocks'), box = range.picture ? readerPictureFind.reveal(range) : range.getBoundingClientRect(), view = host.getBoundingClientRect();
+	if (box && (box.width || box.height)) host.scrollTop = Math.max(0, host.scrollTop + box.top - view.top - Math.max(0, (host.clientHeight - Math.min(box.height, host.clientHeight)) / 2));
 }
 
 function readerFindStep(direction) {
@@ -590,6 +601,8 @@ function readerFindStep(direction) {
 // ── Settings and sheets.
 
 const readerDialogs = [];
+function openDialog(overlay, options) { readerOpenDialog(overlay, options?.panel); }
+function closeDialog(overlay) { readerCloseDialog(overlay); }
 function readerDialogIsOpen(overlay) { return overlay.classList.contains('open'); }
 // The page behind an open sheet takes no focus or touch.
 function readerIsolate(overlay) {
@@ -633,6 +646,7 @@ function readerCloseTop() {
 	else if (top.overlay === $('mermaid-plugin-overlay')) _rapierUiDiagram.dismiss();
 	else if (top.overlay === $('licenses-overlay')) readerCloseLicenses();
 	else if (top.overlay === $('pdf-plugin-overlay')) readerPdfDecide(false);
+	else if (top.overlay === $('ocr-plugin-overlay')) _rapierOcrDismiss();
 	else readerCloseDialog(top.overlay);
 	return true;
 }
@@ -641,11 +655,12 @@ function readerCloseTop() {
 // one on top, when it is a question Escape may answer (licences, privacy, deleting a plug-in). A plug-in prompt is answered with its own buttons.
 function readerEscape() {
 	const open = id => readerDialogs.some(row => row.overlay.id === id);
-	const top = ['math-plugin-overlay', 'mermaid-plugin-overlay', 'pdf-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'licenses-overlay', 'privacy-overlay', 'navigator-overlay', 'settings-overlay'].find(open);
+	const top = ['math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'pdf-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'licenses-overlay', 'privacy-overlay', 'navigator-overlay', 'settings-overlay'].find(open);
 	if (!top) return false;
 	let closed = false;
 	for (const id of ['copy-overlay', 'share-overlay', 'navigator-overlay', 'settings-overlay']) if (open(id)) { readerCloseDialog($(id)); closed = true; }
-	if (top === 'licenses-overlay') { readerCloseLicenses(); closed = true; }
+	if (top === 'ocr-plugin-overlay') { _rapierOcrDismiss(); closed = true; }
+	else if (top === 'licenses-overlay') { readerCloseLicenses(); closed = true; }
 	else if (top === 'privacy-overlay' || top === 'plugin-delete-overlay') { readerCloseDialog($(top)); closed = true; }
 	return closed;
 }
@@ -674,6 +689,8 @@ function readerStats() {
 }
 
 function readerRenderSettings() {
+	const actions = document.querySelector('.settings-primary-actions');
+	if (actions) actions.hidden = _rapierEmbed.active && !_rapierEmbed.capabilities?.includes('open');
 	$('settings-panel-title').textContent = 'rapier V' + READER_VERSION;
 	const stats = readerStats();
 	$('stat-words').textContent = String(stats.words);
@@ -687,6 +704,7 @@ function readerRenderSettings() {
 	code.inert = !open;
 	for (const button of $('settings-code-title').querySelectorAll('[data-action="code-toggle"]')) button.setAttribute('aria-expanded', String(open));
 	readerRenderPdfRow();
+	_rapierOcrPaint();
 	for (const [key, provider] of [['math', _rapierUiMath], ['mermaid', _rapierUiDiagram]]) {
 		$(key + '-plugin-action').hidden = provider.installed();
 		$(key + '-plugin-installed').hidden = !provider.installed();
@@ -773,6 +791,7 @@ const READER_PLUGIN_WORDS = {
 	math: ['the MathJax renderer', 'Math shows as its TeX source until you install it again.'],
 	mermaid: ['the Mermaid renderer', 'Diagrams that need this plug-in show their source until you install it again.'],
 	pdf: ['the PDF reader', 'PDF files cannot be opened until you install it again.'],
+	ocr: ['the text reader and its cached words', 'Search stops reading pictures until you install it again.'],
 };
 // What the row holds: the loader's provider, or for the PDF reader the plug-in it carries.
 function readerHeld(key) {
@@ -795,10 +814,10 @@ async function readerDeleteNow() {
 	now.disabled = true;
 	now.textContent = 'deleting…';
 	try {
-		await held.forget();
+		if (key === 'ocr') await _rapierOcrForgetPlugin(); else await held.forget();
 		if (key === 'math') _rapierUiMath.dismissed = true; else if (key === 'mermaid') _rapierUiDiagram.dismissed = true;
 		readerCloseDialog($('plugin-delete-overlay'));
-		if (reader.loaded && key !== 'pdf') void readerRenderDocument();
+		if (reader.loaded && key !== 'pdf' && key !== 'ocr') void readerRenderDocument();
 	} catch (error) {
 		$('plugin-delete-error').textContent = 'Not deleted: ' + String(error?.message || error);
 		$('plugin-delete-error').hidden = false;
@@ -879,13 +898,16 @@ async function readerEnsurePdf(signal, progress) {
 	return true;
 }
 
-async function readerWithImport(work, what) {
+async function readerWithImport(work, what, signal) {
 	if (readerPdf.run) { readerToast('Another PDF is still being read', 'info'); return false; }
 	const run = readerPdf.run = {controller: new AbortController()};
+	const cancel = () => run.controller.abort(signal.reason);
+	if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, {once: true});
 	readerRenderPdfRow();
 	try { return await work(run); }
 	catch (error) { if (error?.name !== 'AbortError') readerToast(what + ': ' + String(error?.message || error), 'error'); return false; }
 	finally {
+		signal?.removeEventListener('abort', cancel);
 		run.controller.abort();
 		readerPdf.banner?.remove();
 		readerPdf.banner = null;
@@ -903,7 +925,7 @@ function readerInstallPdf() {
 }
 
 // ── The Word reader. A .docx opens as a Markdown document. The plug-in is one file, fetched by the first Word document opened.
-function readerOpenWord(file) {
+function readerOpenWord(file, opening) {
 	return readerWithImport(async run => {
 		const part = _rapierProviders.docx;
 		if (!part) throw new Error('the Word reader is unavailable');
@@ -912,13 +934,13 @@ function readerOpenWord(file) {
 		readerPdfProgress('Reading Word document…');
 		const result = await globalThis.RapierDocxReader.read(file, {signal: run.controller.signal});
 		const name = file.name.replace(/\.docx$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'document';
-		await readerLoad(readerDocumentText(result.markdown), name + '.md');
+		if (!await readerCommitOpen(readerDocumentText(result.markdown), name + '.md', opening)) return false;
 		readerToast('Word document opened' + (result.warnings[0] ? ' · ' + (typeof result.warnings[0] === 'string' ? result.warnings[0] : result.warnings[0].message) : ''), 'info');
 		return true;
-	}, 'Word reader');
+	}, 'Word reader', opening?.ticket?.controller.signal);
 }
 
-function readerOpenPdf(file) {
+function readerOpenPdf(file, opening) {
 	return readerWithImport(async run => {
 		if (!await readerEnsurePdf(run.controller.signal, readerPdfProgress)) return false;
 		const options = {signal: run.controller.signal, onProgress: progress => readerPdfProgress(typeof progress === 'string' ? progress : 'Reading page ' + progress.page + (progress.pages ? ' of ' + progress.pages : '') + '…')};
@@ -927,10 +949,10 @@ function readerOpenPdf(file) {
 		try { result = await globalThis.RapierPdfReader.read(file, {...options, mode}); }
 		catch (error) { if (error?.code !== 'PDF_NO_TEXT') throw error; mode = 'pages'; result = await globalThis.RapierPdfReader.read(file, {...options, mode}); }
 		const name = file.name.replace(/\.pdf$/i, '').replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 180) || 'document';
-		await readerLoad(readerDocumentText(result.markdown), name + '.md');
+		if (!await readerCommitOpen(readerDocumentText(result.markdown), name + '.md', opening)) return false;
 		readerToast('PDF opened as ' + (mode === 'pages' ? 'page pictures' : 'text') + (result.warnings[0] ? ' · ' + result.warnings[0] : ''), 'info');
 		return true;
-	}, 'PDF reader');
+	}, 'PDF reader', opening?.ticket?.controller.signal);
 }
 
 // ── Read aloud. The editor's control and its behaviour: the blocks of the page spoken in turn, the word being said marked, the page
@@ -1186,14 +1208,37 @@ function readerToast(message, type = 'info') {
 	close.addEventListener('click', () => { clearTimeout(timer); toast.remove(); });
 }
 
-async function readerOpenFile(file) {
-	if (!file) return;
-	if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') { await readerOpenPdf(file); return; }
-	if (/\.docx$/i.test(file.name) || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') { await readerOpenWord(file); return; }
+async function readerCommitOpen(text, filename, opening) {
+	const {ticket, generation} = opening;
+	if (generation !== reader.generation || _rapierEmbed.active && !_rapierEmbed.fileOpen.current(ticket)) return false;
+	if (!_rapierDocumentNameIsAdmissible(filename)) throw new Error('That file has an invalid or overlong name');
+	const limit = _rapierEmbed.settings?.limits.documentBytes || RapierTextCodec.maxDocumentBytes;
+	if (new Blob([text]).size > limit) throw new Error('That file exceeds this reader’s document limit');
+	if (ticket) ticket.committing = true;
+	try { return await readerLoad(text, filename); }
+	finally { if (ticket) ticket.committing = false; }
+}
+
+async function readerOpenFile(file, opening = {generation: reader.generation}) {
+	if (!file || _rapierEmbed.active && !_rapierEmbed.fileOpen.current(opening.ticket)) return false;
+	if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') return readerOpenPdf(file, opening);
+	if (/\.docx$/i.test(file.name) || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return readerOpenWord(file, opening);
 	try {
+		if (/^image\//i.test(file.type) || /\.(?:png|jpe?g|webp|gif|jxl|svg)$/i.test(file.name)) {
+			const limit = _rapierEmbed.settings?.limits.pictureBytes || 16 * 1024 * 1024;
+			if (file.size > limit) throw new Error('That picture exceeds this reader’s picture limit');
+			const bytes = new Uint8Array(await file.arrayBuffer());
+			const assets = globalThis.RapierImageAssets;
+			const vector = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+			const asset = await assets.createAsset(bytes, null, vector ? {codec: 'image/svg+xml'} : {});
+			if (asset.byteLength > limit) throw new Error('That picture exceeds this reader’s picture limit');
+			const alt = _rapierEscapeImageAlt(file.name.replace(/\.[^.]*$/, ''));
+			const text = assets.appendAssetText('![' + alt + '][' + asset.label + ']', asset).source;
+			return readerCommitOpen(text, 'untitled.md', opening);
+		}
 		const text = await RapierTextCodec.readDocumentBlob(file);
-		await readerLoad(text, _rapierDocumentNameIsAdmissible(file.name) ? file.name : 'document.md');
-	} catch (error) { readerToast(String(error?.message || error), 'error'); }
+		return await readerCommitOpen(text, file.name, opening);
+	} catch (error) { readerToast(String(error?.message || error), 'error'); return false; }
 }
 
 // The notices are a second packed group, unpacked the first time they are asked for.
@@ -1218,7 +1263,11 @@ const READER_ACTIONS = {
 	'find': () => readerFindOpen($('find-bar').hidden),
 	'find-next': () => readerFindStep(1),
 	'find-prev': () => readerFindStep(-1),
-	'open-document': () => { readerCloseDialog($('settings-overlay')); $('file-input').click(); },
+	'open-document': (control, event) => {
+		readerCloseDialog($('settings-overlay'));
+		if (_rapierEmbed.active) return _rapierEmbed.fileOpen.begin(event);
+		$('file-input').click();
+	},
 	'switch': control => {
 		const group = control.closest('[data-switch]');
 		if (group) readerSetPreference(group.dataset.switch, _rapierSwitchValue(control));

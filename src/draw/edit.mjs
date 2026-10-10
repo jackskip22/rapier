@@ -443,7 +443,8 @@ function distribute(recipe, units, axis, ids) {
 		break;
 	}
 }
-const TEXT_PROPERTIES = new Set(['textFont', 'textSize', 'textBold', 'textItalic', 'textUnderline', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textCase', 'textKern', 'textFigures', 'textWrap', 'labelWidth', 'labelIn', 'labelAlign', 'labelVAlign', 'labelPos', 'labelBeside', 'step', 'textEffect', 'textEffectSeed', 'effectFlower', 'effectStem']);
+// labelBeside is router-owned recipe state, never an authored property.
+const TEXT_PROPERTIES = new Set(['textFont', 'textSize', 'textBold', 'textItalic', 'textUnderline', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textCase', 'textKern', 'textFigures', 'textWrap', 'labelWidth', 'labelIn', 'labelAlign', 'labelVAlign', 'labelPos', 'step', 'textEffect', 'textEffectSeed', 'effectFlower', 'effectStem']);
 const LOOK_PROPERTIES = new Set(['brush', 'style', 'ink', 'border', 'dash', 'nib', 'smooth', 'opacity', ...TEXT_PROPERTIES]);
 const SHAPE_PROPERTIES = new Set([...LOOK_PROPERTIES, 'label', 'headStart', 'headEnd', 'route', 'bend', 'curveT', 'elbow', 'angle', 'len', 'inner', 'corner', 'flat', 'geom']);
 const OPERATION_FIELDS = {
@@ -489,6 +490,8 @@ function setProperties(shape, recipe, properties) {
 	}
 	const next = {...shape};
 	for (const [key, value] of Object.entries(properties)) if (!['geom', 'inner'].includes(key)) { if (value === null) delete next[key]; else next[key] = value; }
+	// A manual route no longer uses the automatic router's derived caption position.
+	if ('route' in properties && next.route !== 'auto') delete next.labelBeside;
 	if ('label' in properties) { setLabel(next, recipe, properties.label ?? ''); }
 	if ('labelIn' in properties && properties.labelIn != null && (typeof properties.labelIn !== 'boolean' || properties.labelIn && ['text', 'line', 'arrow', 'arc', 'parabola', 'ink', 'paint'].includes(shape.recognized))) fail('drawing_label_invalid', 'labelIn');
 	for (const key of TEXT_PROPERTIES) if (key in properties) {

@@ -96,7 +96,7 @@ export function projectSearchBytes(input, {file = '', parser, decode = bytes => 
 }
 
 const WEIGHT = {title: 8, headings: 4, tags: 3, body: 1, pictures: 1}, FIELDS = ['title', 'headings', 'tags', 'body'];
-// The words the text-in-pictures plug-in read in a note's pictures (notes/ocr.mjs): a fifth field, sparse. A note with none
+// The words the text-in-pictures plug-in read in a note's pictures (images/ocr.mjs): a fifth field, sparse. A note with none
 // keeps its projection, its packed row and its postings exactly as they were; `pictures:off` in a question leaves it out.
 const PICTURE_FIELDS = [...FIELDS, 'pictures'];
 const fieldsOf = (bag, pictures = true) => pictures && bag.pictures ? PICTURE_FIELDS : FIELDS;
@@ -1253,8 +1253,10 @@ export function search(sidx, query, {limit = 50, now, candidateOrder = false} = 
 	if (last !== undefined) candidates = intersect(candidates, consider(last, true));
 	const rows = [], pending = [], ordered = candidateOrder ? [] : null;
 	for (const file of (candidates || sidx.notes).keys()) {
-		const proj = sidx.notes.get(file);
-		if (!proj) continue;
+		const note = sidx.notes.get(file);
+		if (!note) continue;
+		// Word projections outlive card bodies; every query reads the current authored metadata.
+		const entry = sidx.sidecar?.notes?.[file], proj = entry ? {...note, ...searchEntry(entry)} : note;
 		const ranked = rankNote(proj, file, sidx, q, false, wordList);
 		if (!ranked) continue;
 		if (ranked.pending) {

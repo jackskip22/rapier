@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {unpackFiles, ARCHIVE_LIMITS, crc32} from '../images/archive.mjs';
-import {zipStored} from '../notes/zip-records.mjs';
+import {zipStored, zipStoredAsync} from '../notes/zip-records.mjs';
+import {finish, finishAsync, cloneTree, encodeUtf8Steps, pause, check} from '../kit/render-work.mjs';
 import {formatLayout, parseLayout, decodeLayoutAttribute, indentLevel, textStyle as indentStyle, textLayout} from '../spec/md-layout.mjs';
 import {parseInkBody} from '../spec/md-marks.mjs';
 import {readDocumentSettings} from '../spec/document-settings.mjs';
@@ -35,14 +36,15 @@ const DOCX_SOURCE = Object.freeze({path: 'rapier/source.json',
 const sha256 = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
   byte => byte.toString(16).padStart(2, '0')).join('');
 
-async function docxSourceRecord(entries, source) {
-  const bytes = utf8.encode(source);
+async function docxSourceRecord(entries, source, work = null) {
+  const bytes = work ? await finishAsync(encodeUtf8Steps(source), work) : utf8.encode(source);
   if (bytes.length > ARCHIVE_LIMITS.bytes || source.includes('\u0000') || new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes) !== source)
     return fail('DOCX source is not an admitted UTF-8 document.', 'docx_source_invalid');
   const parts = [];
   for (const entry of [...entries].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     parts.push({name: entry.name, bytes: entry.bytes.length, sha256: await sha256(entry.bytes)});
-  return utf8.encode(JSON.stringify({format: 'md-source:v1', source, sha256: await sha256(bytes), parts}));
+  const record = JSON.stringify({format: 'md-source:v1', source, sha256: await sha256(bytes), parts});
+  return work ? finishAsync(encodeUtf8Steps(record), work) : utf8.encode(record);
 }
 
 // The source is used only while every native part still has the exported bytes.
@@ -1266,10 +1268,12 @@ function footnoteTail(value) { const m = /fn(?:ref)?[-:]?([A-Za-z0-9_.]+)$/.exec
 // Register only destinations actually carried by the writer. Word bookmark names are short,
 // ASCII identifiers; a document-local ordinal distinguishes Unicode, punctuation and truncation
 // collisions. Duplicate HTML ids resolve to the first target, as they do in the document.
-function docxNavigation(blocks, firstId = 0, parent) {
+function docxNavigation(blocks, firstId = 0, parent) { return finish(docxNavigationSteps(blocks, firstId, parent)); }
+function* docxNavigationSteps(blocks, firstId = 0, parent) {
   const bookmarks = new Map(), targets = new Map(), links = new Set();
-  const visit = value => {
-    if (Array.isArray(value)) { value.forEach(visit); return; }
+  const visit = function* (value) {
+    yield;
+    if (Array.isArray(value)) { for (const item of value) yield* visit(item); return; }
     if (!value || typeof value !== 'object') return;
     if (value.type === 'bookmarkStart') {
       const id = firstId + bookmarks.size, anchor = value.bookmark.anchor;
@@ -1279,9 +1283,9 @@ function docxNavigation(blocks, firstId = 0, parent) {
       if (!targets.has(anchor)) targets.set(anchor, mark);
     }
     if (typeof value.href === 'string' && value.href.startsWith('#')) links.add(value.href);
-    for (const key of ['runs', 'items', 'header', 'rows', 'blocks']) if (value[key]) visit(value[key]);
+    for (const key of ['runs', 'items', 'header', 'rows', 'blocks']) if (value[key]) yield* visit(value[key]);
   };
-  visit(blocks);
+  yield* visit(blocks);
   const resolve = href => {
     let anchor = href.slice(1);
     try { anchor = decodeURIComponent(anchor); } catch (_) {}
@@ -1425,7 +1429,9 @@ function projectDocxComments(root, model, canonical) {
 
 // The DOM may be the semantic render (data attributes) or the portable projection the exports
 // share (inline styles, prefixed ids): both are read.
-export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(typeof canonical === 'string' ? readDocumentSettings(canonical) : null).body, indentOffset = 0} = {}) {
+export function docxBlocksFromDom(root, options = {}) { return finish(docxBlocksFromDomSteps(root, options)); }
+export async function docxBlocksFromDomAsync(root, options = {}) { return finishAsync(docxBlocksFromDomSteps(root, options), options.work); }
+function* docxBlocksFromDomSteps(root, {canonical, pointSize = referenceType(typeof canonical === 'string' ? readDocumentSettings(canonical) : null).body, indentOffset = 0} = {}) {
   const blocks = [], refs = new Map(), notes = new Map();
   // Layout via spec/md-layout.mjs, never an ad hoc parse.
   const layoutOf = element => {
@@ -1445,11 +1451,12 @@ export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(ty
     if (align) layout.align = align;
     return Object.keys(layout).length ? layout : null;
   };
-  const runsOf = (node, style = {}, out = []) => {
+  const runsOf = function* (node, style = {}, out = []) {
     const anchor = node.getAttribute?.('id') || (node.tagName === 'A' && node.getAttribute('name'));
     const bookmark = anchor ? {anchor} : null;
     if (bookmark) out.push({type: 'bookmarkStart', bookmark});
     for (const child of Array.from(node.childNodes)) {
+      yield;
       if (child.nodeType === 3) {
         // The semantic renderer puts one formatting newline after <br>. Unicode spaces and
         // authored tab characters are data, unlike HTML's collapsible CR/LF/ordinary space.
@@ -1496,19 +1503,20 @@ export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(ty
         const href = child.getAttribute('href') || '';
         if (/^(?:https?:\/\/|mailto:|tel:|#)/i.test(href)) next.href = href;
       }
-      if (INLINE_TAGS.has(tag)) runsOf(child, next, out);
-      else runsOf(child, style, out);
+      if (INLINE_TAGS.has(tag)) yield* runsOf(child, next, out);
+      else yield* runsOf(child, style, out);
     }
     if (bookmark) out.push({type: 'bookmarkEnd', bookmark});
     return out;
   };
-  const listItems = (list, level, items, inheritedOffset = indentOffset) => {
+  const listItems = function* (list, level, items, inheritedOffset = indentOffset) {
     const ordered = list.tagName === 'OL';
     const listOffset = textLayout(list.style, {pointSize, offset: inheritedOffset}).indent || 0;
     let start = ordered ? parseInt(list.getAttribute('start') || '1', 10) : null;
     for (const li of Array.from(list.children)) {
+      yield;
       if (li.tagName !== 'LI') continue;
-      const own = li.cloneNode(true);
+      const own = (yield* cloneTree(li));
       const itemOffset = textLayout(own.style, {listMarker: true, pointSize, offset: listOffset}).marker || 0;
       const isList = child => /^(UL|OL)$/.test(child.tagName);
       const text = Array.from(own.childNodes).filter(child => !isList(child)).map(child => child.textContent || '').join('');
@@ -1539,7 +1547,7 @@ export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(ty
           quote: paragraph?.type === 'quote', code: paragraph?.type === 'code'});
         first = false;
       };
-      const flush = () => {
+      const flush = function* () {
         // Rendered block boundaries add ASCII whitespace nodes. Keep authored inline
         // separators, tabs and Unicode spaces, but not those boundary-only nodes.
         for (const fromStart of [true, false]) {
@@ -1547,7 +1555,7 @@ export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(ty
           while ((edge = group.childNodes[fromStart ? 0 : group.childNodes.length - 1])?.nodeType === 3 && /^[ \r\n]*$/.test(edge.nodeValue)) edge.remove();
         }
         if (!group.childNodes.length) return;
-        const content = nestedBlocks(group, itemOffset);
+        const content = yield* nestedBlocks(group, itemOffset);
         if (first) {
           if (content[0]?.type === 'image') {
             const image = content.shift();
@@ -1564,61 +1572,70 @@ export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(ty
       };
       for (const child of Array.from(own.childNodes)) {
         if (isList(child)) {
-          flush();
+          yield* flush();
           if (first) begin(null);
-          listItems(child, Math.min(8, level + 1), items, itemOffset);
+          yield* listItems(child, Math.min(8, level + 1), items, itemOffset);
         } else if (child.nodeType === 1 && !INLINE_TAGS.has(child.tagName)) {
-          flush(); group.appendChild(child); flush();
+          yield* flush(); group.appendChild(child); yield* flush();
         } else group.appendChild(child);
       }
-      flush();
+      yield* flush();
       if (first) begin(null);
       if (ordered) start++;
     }
   };
-  const nestedBlocks = (node, offset = indentOffset) => {
-    if (Array.from(node.children).some(child => !INLINE_TAGS.has(child.tagName))) return docxBlocksFromDom(node, {pointSize, indentOffset: offset}).blocks;
-    return [{type: 'paragraph', runs: runsOf(node), layout: offset ? {indent: offset} : null}];
+  const nestedBlocks = function* (node, offset = indentOffset) {
+    if (Array.from(node.children).some(child => !INLINE_TAGS.has(child.tagName))) return (yield* docxBlocksFromDomSteps(node, {pointSize, indentOffset: offset})).blocks;
+    return [{type: 'paragraph', runs: yield* runsOf(node), layout: offset ? {indent: offset} : null}];
   };
-  const cellText = cell => ({blocks: nestedBlocks(cell),
+  const cellText = function* (cell) { return {blocks: yield* nestedBlocks(cell),
     colspan: integer(cell.getAttribute('colspan'), 1, 1, DOCX_LIMITS.tableColumns),
-    rowspan: integer(cell.getAttribute('rowspan'), 1, 1), header: cell.tagName === 'TH'});
+    rowspan: integer(cell.getAttribute('rowspan'), 1, 1), header: cell.tagName === 'TH'}; };
   for (const element of Array.from(root.children)) {
+      yield;
     const tag = element.tagName;
     if (tag === 'SECTION' && (element.classList.contains('footnotes') || Array.from(element.querySelectorAll('li[id]')).some(li => footnoteTail(li.id)))) {
       for (const li of element.querySelectorAll('li[id]')) {
-        const clone = li.cloneNode(true);
+      yield;
+        const clone = (yield* cloneTree(li));
         clone.querySelectorAll('a.footnote-backref, a[href*="fnref"]').forEach(a => {
           // The Markdown footnote renderer adds one separator before its return link.
           if (a.classList.contains('footnote-backref') && a.previousSibling?.nodeType === 3)
             a.previousSibling.nodeValue = a.previousSibling.nodeValue.replace(/ $/, '');
           a.remove();
         });
-        notes.set(footnoteTail(li.id) || li.id, {blocks: nestedBlocks(clone)});
+        notes.set(footnoteTail(li.id) || li.id, {blocks: yield* nestedBlocks(clone)});
       }
       continue;
     }
     if (tag === 'HR' && element.classList.contains('footnotes-sep')) continue;
     if ((tag === 'DIV' || tag === 'P') && (element.getAttribute('data-md-break') === 'page' || /page-break-before\s*:\s*always/i.test(element.getAttribute('style') || '')) && !element.textContent.trim()) { blocks.push({type: 'break'}); continue; }
-    if (/^H[1-6]$/.test(tag)) { blocks.push({type: 'heading', level: Number(tag[1]), runs: runsOf(element), layout: layoutOf(element)}); continue; }
+    if (/^H[1-6]$/.test(tag)) { blocks.push({type: 'heading', level: Number(tag[1]), runs: yield* runsOf(element), layout: layoutOf(element)}); continue; }
     if (tag === 'HR') { blocks.push({type: 'paragraph', runs: [], layout: null, rule: true}); continue; }
     if (tag === 'PRE') { blocks.push({type: 'code', text: element.textContent.replace(/\n$/, '')}); continue; }
     if (tag === 'BLOCKQUOTE') {
       const label = element.querySelector('p > strong:first-child');
       const kind = label && /^(Note|Tip|Important|Warning|Caution|Danger|Info): $/.test(label.textContent) ? label.textContent.slice(0, -2).toUpperCase() : null;
-      const clone = element.cloneNode(true);
+      const clone = (yield* cloneTree(element));
       if (kind) clone.querySelector('p > strong:first-child').remove();
       const runs = [];
-      Array.from(clone.children).forEach((child, index) => { if (index) runs.push({type: 'text', text: '\n'}); runsOf(child, {}, runs); });
+      for (const [index, child] of Array.from(clone.children).entries()) { if (index) runs.push({type: 'text', text: '\n'}); yield* runsOf(child, {}, runs); }
       blocks.push(kind ? {type: 'callout', kind, runs} : {type: 'quote', runs});
       continue;
     }
-    if (tag === 'UL' || tag === 'OL') { const items = []; listItems(element, 0, items); if (items.length) blocks.push({type: 'list', items}); continue; }
+    if (tag === 'UL' || tag === 'OL') { const items = []; yield* listItems(element, 0, items); if (items.length) blocks.push({type: 'list', items}); continue; }
     if (tag === 'TABLE' || (tag === 'DIV' && element.querySelector(':scope > table'))) {
       const table = tag === 'TABLE' ? element : element.querySelector(':scope > table');
       const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table);
-      const header = rows.length && Array.from(rows[0].children).some(cell => cell.tagName === 'TH') ? Array.from(rows[0].children).map(cellText) : [];
-      const body = rows.slice(header.length ? 1 : 0).map(row => Array.from(row.children).map(cellText));
+      const header = [];
+      if (rows.length && Array.from(rows[0].children).some(cell => cell.tagName === 'TH'))
+        for (const cell of rows[0].children) header.push(yield* cellText(cell));
+      const body = [];
+      for (const row of rows.slice(header.length ? 1 : 0)) {
+        const cells = [];
+        for (const cell of row.children) cells.push(yield* cellText(cell));
+        body.push(cells); yield;
+      }
       blocks.push({type: 'table', header, rows: body, caption: null});
       continue;
     }
@@ -1639,14 +1656,14 @@ export function docxBlocksFromDom(root, {canonical, pointSize = referenceType(ty
       }
       // A blank line is a paragraph with no run. The Markdown renderer gives it a
       // no-break space; readDocx gives it a lone BR. Neither becomes a run on the next save.
-      const runs = runsOf(element);
+      const runs = yield* runsOf(element);
       const blank = runs.length === 1 && runs[0].type === 'text' && /^(?:\u00a0+|\n)$/.test(runs[0].text);
       blocks.push({type: 'paragraph', runs: blank ? [] : runs, layout: layoutOf(element)});
       continue;
     }
-    blocks.push({type: 'paragraph', runs: runsOf(element), layout: null});
+    blocks.push({type: 'paragraph', runs: yield* runsOf(element), layout: null});
   }
-  const model = {blocks, refs, notes, unresolvedLinks: docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]).unresolvedLinks};
+  const model = {blocks, refs, notes, unresolvedLinks: (yield* docxNavigationSteps([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])])).unresolvedLinks};
   docxRoots.set(model, {root, canonical});
   return typeof canonical === 'string' ? projectDocxComments(root, model, canonical) : model;
 }
@@ -1760,7 +1777,15 @@ function corePropertiesXml(settings) {
     '</cp:coreProperties>';
 }
 
-export async function writeDocx(input, {convertImage, rewriteDocument, canonical, bom = false} = {}) {
+export async function writeDocx(input, {convertImage, rewriteDocument, canonical, bom = false, work} = {}) {
+  check(work);
+  const encodeXml = text => work ? finishAsync(encodeUtf8Steps(text), work) : xmlBytes(text);
+  let yieldedAt = performance.now(), emitted = 0;
+  const tick = async () => {
+    check(work);
+    if (performance.now() - yieldedAt < 8) return;
+    await pause(work); yieldedAt = performance.now();
+  };
   const model = input && typeof input === 'object' && Array.isArray(input.blocks) ? input : docxBlocksFromDom(input);
   const projection = docxRoots.get(model);
   if (typeof canonical === 'string' && projection && projection.canonical !== canonical) {
@@ -1773,7 +1798,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   const settings = typeof canonical === 'string' ? readDocumentSettings(canonical) : null;
   const carrySource = typeof canonical === 'string';
   const bodyPointSize = referenceType(settings).body;
-  const navigation = docxNavigation([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]);
+  const navigation = await finishAsync(docxNavigationSteps([...blocks, ...Array.from(notes.values()).flatMap(note => note.blocks || [])]), work);
   const rels = [], media = [];
   let rid = 1, docPr = 1;
   const nextRid = () => 'rId' + (rid++);
@@ -1888,6 +1913,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   const emitRuns = async (runList, targets = navigation) => {
     let xml = '';
     for (const run of runList) {
+      await tick();
       if (run.type === 'bookmarkStart' || run.type === 'bookmarkEnd') {
         const mark = targets.bookmarks.get(run.bookmark);
         xml += run.type === 'bookmarkStart'
@@ -1933,6 +1959,8 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
    const paragraphInd = layout => indOf(layout, {base: inset, pointSize: bodyPointSize});
    const tableInd = inset ? '<w:tblInd w:w="' + Math.round(inset) + '" w:type="dxa"/>' : '';
    for (const block of blocks) {
+      if (blocks === model.blocks) work?.onProgress?.(.72 + .13 * (++emitted / Math.max(1, blocks.length)));
+      await tick();
     if (block.type === 'break') {
       bodyParts.push(pXml('<w:r><w:br w:type="page"/></w:r>'));
       continue;
@@ -1980,6 +2008,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       const idAt = [], leftAt = [];
       let lastNumberedLevel = -1;
       for (const item of block.items) {
+      await tick();
         if (item.continuation) {
           while (idAt.length && idAt[idAt.length - 1].level > item.level) idAt.pop();
           bodyParts.push(await emitBlocks(item.blocks, leftAt[item.level] ?? inset, targets));
@@ -2024,6 +2053,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         ...block.rows.map(cells => ({cells, header:cells.length > 0 && cells.every(cell => cell.header)}))];
       const grid = [], spanning = new Map(); let cols = 1;
       for (const [rowIndex, row] of authored.entries()) {
+      await tick();
         const cells = []; let column = 0;
         const continuation = () => {
           const active = spanning.get(column);
@@ -2072,6 +2102,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     if (block.type === 'code') {
       const text = String(block.text || ''); let at = 0;
       for (const line of text.split('\n')) {
+      await tick();
         bodyParts.push(pXml(commentedTextXml(text, {...block, code: true}, at, at + line.length), {shading: codeShading, ind: paragraphInd(null)}));
         at += line.length + 1;
       }
@@ -2198,38 +2229,40 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') +
       (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' : '') + '</Relationships>');
   const entries = [
-    {name: '[Content_Types].xml', bytes: xmlBytes(contentTypesXml)},
-    {name: '_rels/.rels', bytes: xmlBytes(packageRels)},
-    {name: 'word/document.xml', bytes: xmlBytes(documentXml)},
-    {name: 'word/_rels/document.xml.rels', bytes: xmlBytes(relXml(mainRels))},
-    {name: 'word/styles.xml', bytes: xmlBytes(stylesXml)},
-    {name: 'word/numbering.xml', bytes: xmlBytes(numberingXml)}
+    {name: '[Content_Types].xml', bytes: await encodeXml(contentTypesXml)},
+    {name: '_rels/.rels', bytes: await encodeXml(packageRels)},
+    {name: 'word/document.xml', bytes: await encodeXml(documentXml)},
+    {name: 'word/_rels/document.xml.rels', bytes: await encodeXml(relXml(mainRels))},
+    {name: 'word/styles.xml', bytes: await encodeXml(stylesXml)},
+    {name: 'word/numbering.xml', bytes: await encodeXml(numberingXml)}
   ];
   if (footnoteXml) {
-    entries.push({name: 'word/footnotes.xml', bytes: xmlBytes(footnoteXml)});
+    entries.push({name: 'word/footnotes.xml', bytes: await encodeXml(footnoteXml)});
     const used = new Set([...footnoteXml.matchAll(/\br:(?:id|embed)="([^"]+)"/g)].map(match => match[1]));
     const noteRels = rels.filter(row => used.has(row.id));
-    if (noteRels.length) entries.push({name: 'word/_rels/footnotes.xml.rels', bytes: xmlBytes(relXml(noteRels))});
+    if (noteRels.length) entries.push({name: 'word/_rels/footnotes.xml.rels', bytes: await encodeXml(relXml(noteRels))});
   }
-  if (footerId) entries.push({name: 'word/footer1.xml', bytes: xmlBytes(pageNumberFooterXml())});
+  if (footerId) entries.push({name: 'word/footer1.xml', bytes: await encodeXml(pageNumberFooterXml())});
   if (commentsXml) {
-    entries.push({name: 'word/comments.xml', bytes: xmlBytes(commentsXml)}, {name: 'word/commentsExtended.xml', bytes: xmlBytes(commentsExtendedXml)});
+    entries.push({name: 'word/comments.xml', bytes: await encodeXml(commentsXml)}, {name: 'word/commentsExtended.xml', bytes: await encodeXml(commentsExtendedXml)});
     const used = new Set([...commentsXml.matchAll(/\br:(?:id|embed)="([^"]+)"/g)].map(match => match[1]));
     const commentRels = rels.filter(row => used.has(row.id));
-    if (commentRels.length) entries.push({name: 'word/_rels/comments.xml.rels', bytes: xmlBytes(relXml(commentRels))});
+    if (commentRels.length) entries.push({name: 'word/_rels/comments.xml.rels', bytes: await encodeXml(relXml(commentRels))});
   }
-  if (coreXml) entries.push({name: 'docProps/core.xml', bytes: xmlBytes(coreXml)});
+  if (coreXml) entries.push({name: 'docProps/core.xml', bytes: await encodeXml(coreXml)});
   for (const row of media) entries.push({name: 'word/media/' + row.name, bytes: row.bytes});
-  const packed = packDocx(entries);
+  await pause(work, .87);
+  const packed = work ? await zipStoredAsync(entries.map(entry => ({...entry, modified: 0})), {utf8Flag: false, work}) : packDocx(entries);
   if (packed.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
   if (typeof rewriteDocument !== 'function' && !carrySource) return packed;
   // The limit is the plain package's, decided before the markers are asked for.
   if (typeof rewriteDocument === 'function') {
     const at = entries.findIndex(entry => entry.name === 'word/document.xml');
-    entries[at] = {name: entries[at].name, bytes: xmlBytes(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};
+    entries[at] = {name: entries[at].name, bytes: await encodeXml(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};
   }
-  if (carrySource) entries.push({name: DOCX_SOURCE.path, bytes: await docxSourceRecord(entries, (bom === true ? '\uFEFF' : '') + canonical)});
-  const complete = packDocx(entries);
+  if (carrySource) entries.push({name: DOCX_SOURCE.path, bytes: await docxSourceRecord(entries, (bom === true ? '\uFEFF' : '') + canonical, work)});
+  await pause(work, .94);
+  const complete = work ? await zipStoredAsync(entries.map(entry => ({...entry, modified: 0})), {utf8Flag: false, work}) : packDocx(entries);
   if (complete.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
   return complete;
 }

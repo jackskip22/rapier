@@ -21,16 +21,26 @@ import {NOTES_INDEX_FILE, isNoteFile, isMarkdownNote, isCodeFile, codeFileName, 
 import {recoverTrash, runTrash, markTrashed, reviveTrashed} from './trash.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {inspectTextConflicts, mapTextConflictVariants} from './merge.mjs';
-import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections} from './import-receipt.mjs';
+import {appendImportReceipt, finishImportReceipt, importUndoReadiness, planImportUndo, recordImportUndo, importUndoSections, prepareImportWrite, prepareImportHistory, recordImportSections} from './import-receipt.mjs';
 import {validRecordingName, recordingName, audioMime, rewriteRecordingNames, recordingsOf} from './audio.mjs';
-import {manifestName, parseManifest, materialize, recordVersion} from './history.mjs';
+import {manifestName, parseManifest, parseCanonical, materialize, recordVersion, serializeManifest, readCanonical, freshCanonical, appendCanonical, carryCanonical, adoptCanonical, canonicalSources} from './history.mjs';
 import {applyReminderActions, changeReminders} from './model.mjs';
 import {restoreSnapshot as planSnapshot, restoreSnapshotStream as planSnapshotStream} from './restore.mjs';
+import {backupNames} from './backup-folder.mjs';
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const fail = (code, message) => Object.assign(new Error(message), {code});
+// Only pure planner failures prove that this request never reached its journal.
+// Errors from transaction admission, writes, acknowledgement or lease release stay ambiguous.
+const prepareMutation = async prepare => {
+	try { return await prepare(); }
+	catch (error) { throw Object.assign(new Error(error?.message || 'The note mutation was not admitted.'),
+		{name: error?.name || 'Error', code: error?.code, cause: error, notesMutationStarted: false}); }
+};
 const decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
+// The JSON sidecar follows the owner's BOM-consuming reader; note source keeps its BOM.
+const decodeIndex = bytes => new TextDecoder('utf-8', {fatal: true}).decode(bytes);
 const digest = value => value == null ? null : sha256(value);
 const reserved = new Set(['folderGeneration', 'folderDeviceId', 'ownerNotice', 'transaction', 'noteCounters', 'deletions', 'tombstones', 'assetTombstones', 'assetRevivals', 'missingFiles', 'imports']);
 
@@ -67,7 +77,7 @@ export function applyMetadata(base, wanted, fresh) {
 }
 
 // Both local Rename and Sync use this owner plan: destination first, guarded links, source last.
-export async function planFolderRename({index, files, bodies}, {file, id, expectedDigest, wanted, linking, ascii = false, now = Date.now()} = {}) {
+export async function planFolderRename({index, files, bodies}, {file, id, expectedDigest, wanted, linking, ascii = false, now = Date.now(), readHistory, author = {kind: 'human', id: 'notes-local'}} = {}) {
 	let dropped = 0, patched = 0;
 	if (linking === undefined && files.some(name => !bodies.has(name))) throw fail('changed', 'The folder gained a note while its links were being checked. Try renaming again.');
 	if (!bodies.has(file) || index.notes[file]?.id !== id || await digest(bodies.get(file)) !== expectedDigest) throw fail('changed', 'The note changed before it could be renamed. Its words and name were kept.');
@@ -122,7 +132,26 @@ export async function planFolderRename({index, files, bodies}, {file, id, expect
 	}
 	patched = writes.length - 1;
 	index.notes[destination] = {...index.notes[file], revision: 'sha256:' + await sha256(body)}; delete index.notes[file];
-	return {kind: 'rename', index, file: destination, patched, dropped, writes, removes: [{file, expectedDigest, requires: destination}]};
+	const canonical = [];
+	for (const row of writes.slice()) {
+		const originalFile = row.file === destination ? file : row.file, entry = index.notes[row.file];
+		if (!entry?.canonicalHistory) continue;
+		if (typeof readHistory !== 'function') throw fail('notes_history_unavailable', 'Renaming this note requires its complete canonical history.');
+		const path = 'history/' + manifestName(entry.id), prior = await readHistory(path), manifest = parseManifest(prior, {noteId: entry.id, now});
+		const before = readCanonical(manifest, decode(bodies.get(originalFile)));
+		if (before.ledger.sha256 !== entry.canonicalHistory) throw fail('notes_history_unavailable', 'The renamed note does not prove its history.');
+		const appended = appendCanonical(manifest, {text: decode(row.bytes), author, now, operation: 'notes.rename.links'});
+		entry.canonicalHistory = appended.ledger.sha256;
+		const history = await recordVersion(appended.manifest, {file: row.file, text: decode(row.bytes), entry, reason: 'rename', now});
+		for (const write of history.writes) {
+			const name = 'history/' + write.name, held = name === path ? prior : await readHistory(name), existing = writes.find(row => row.file === name);
+			if (existing) { if (await digest(existing.bytes) !== await digest(write.bytes)) throw fail('notes_history_unavailable', 'The rename produced conflicting history bytes.'); continue; }
+			if (write.immutable && held != null) { if (await digest(held) !== await digest(write.bytes)) throw fail('notes_history_unavailable', 'A retained history object changed.'); continue; }
+			writes.push({file: name, bytes: write.bytes, expectedDigest: await digest(held)});
+		}
+		canonical.push({file: row.file, id: entry.id, history: path, ledger: appended.ledger.sha256});
+	}
+	return {kind: 'rename', index, file: destination, patched, dropped, writes, removes: [{file, expectedDigest, requires: destination}], ...(canonical.length ? {canonical} : {})};
 }
 
 // Operation planners for the existing owner, not another lock or journal.
@@ -242,17 +271,35 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const metadata = (base, wanted) => tracked(() => owner.transact(scope, ({index}) => ({kind: 'metadata', index: applyMetadata(base, wanted, index)})));
 	// One journal owns the card fields, any tag bytes, and the exact past on both sides of the change.
 	// Admission runs after the folder lease and each asynchronous preparation, before any new write.
-	const controls = ({file, id, fields}, {signal, app = false, guard = () => {}} = {}) => underLease(async lease => {
+	const controls = ({file, id, fields}, {signal, app = false, guard = () => {}, canonical, sourceGuard} = {}) => underLease(async lease => {
 		const active = () => { checkByteAbort(signal); guard(); };
-		active();
-		let beforeValues, nextText;
-		const snapshot = await lease.transact(async ({index, bodies}) => {
+		await prepareMutation(active);
+		let beforeValues, nextText, act = null;
+		const snapshot = await lease.transact(({index, bodies}) => prepareMutation(async () => {
 			active();
 			if (!isNoteFile(file) || !Object.hasOwn(index.notes, file) || index.notes[file].id !== id || !bodies.has(file)) throw fail('notes_target_missing', 'This note is no longer in the folder.');
 			const previousEntry = index.notes[file], priorText = decode(bodies.get(file)), now = clock();
 			beforeValues = noteControlValues(index, file, priorText);
+			const context = await canonicalOptions({canonical: {...canonical, operation: 'notes.set'}}), requestDigest = await sha256(JSON.stringify(fields)); active();
+			let priorManifest, past;
+			const loadPast = async () => {
+				if (past) return past;
+				priorManifest = await store.read('history/' + manifestName(id)); active();
+				try { past = parseManifest(priorManifest, {noteId: id, now}); }
+				catch (_) { throw fail('notes_history_unavailable', 'This note has unreadable history. Its source and choices were kept.'); }
+				const source = readCanonical(past, priorText);
+				if (previousEntry.canonicalHistory !== source.ledger.sha256) throw fail('notes_history_unavailable', 'The note identity does not prove this history.');
+				return past;
+			};
+			// A lost acknowledgement names the original source act, even after later work.
+			// Never reapply its old tag/sidecar choices over that later work.
+			if (context.requestScope && (await loadPast()).canonical.records.some(row => row.transaction.requestScope === context.requestScope)) {
+				const replay = appendCanonical(past, {text: priorText, ...context, requestDigest});
+				act = replay.act; nextText = priorText; return {index};
+			}
 			const planned = setNoteControls(index, file, fields, {text: priorText, app});
 			index = planned.index; nextText = planned.text;
+			if (nextText !== priorText) await sourceGuard?.(priorText, nextText); active();
 			const values = noteControlValues(index, file, nextText), changed = {}, previous = {};
 			for (const name of Object.keys(values)) if (!eq(beforeValues[name], values[name])) { changed[name] = values[name]; previous[name] = beforeValues[name]; }
 			if (!Object.keys(changed).length) return {index};
@@ -260,11 +307,10 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const content = await sha256(nextText); active();
 			if (index.notes[file].trashed && (!previousEntry.trashed || nextText !== priorText)) index = markTrashed(index, file, {digest: content, now});
 			if (nextText !== priorText) index.notes[file] = {...index.notes[file], revision: 'sha256:' + content, modified: now};
-			const path = manifestName(id), priorManifest = await store.read('history/' + path); active();
-			let past;
-			try { past = parseManifest(priorManifest, {noteId: id, now}); }
-			catch (_) { throw fail('notes_history_unavailable', 'This note has unreadable history. Its source and choices were kept.'); }
-			const before = await recordVersion(past, {file, text: priorText, entry: previousEntry, reason: 'save', now}); active();
+			const path = manifestName(id); await loadPast();
+			const appended = appendCanonical(past, {text: nextText, ...context, requestDigest}); act = appended.act;
+			index.notes[file].canonicalHistory = appended.ledger.sha256;
+			const before = await recordVersion(appended.manifest, {file, text: priorText, entry: previousEntry, reason: 'save', now}); active();
 			const reason = !previousEntry.trashed && index.notes[file].trashed ? 'trash' : previousEntry.trashed && !index.notes[file].trashed ? 'untrash' : 'edit-card';
 			const after = await recordVersion(before.manifest, {file, text: nextText, entry: index.notes[file], reason, now}); active();
 			const byName = new Map([...before.writes, ...after.writes].map(write => [write.name, write]));
@@ -286,30 +332,84 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			}
 			if (nextText !== priorText) writes.push({file, bytes: exactBytes(nextText), expectedDigest: await sha256(priorText), requires: 'history/' + path});
 			active();
-			return {kind: 'note-controls', index, writes};
-		}, {bodies: [file]});
+			return {kind: 'note-controls', index, writes, canonical: [canonicalProof(file, id, appended.ledger)]};
+		}), {bodies: [file], admissionGuard: () => prepareMutation(active)});
 		if (snapshot.dropped?.length || snapshot.kept?.length || snapshot.index.notes[file]?.id !== id) throw fail('notes_changed', 'This note changed while its controls were written.');
 		const values = noteControlValues(snapshot.index, file, nextText), changed = {}, previous = {};
 		for (const name of Object.keys(values)) if (!eq(beforeValues[name], values[name])) { changed[name] = values[name]; previous[name] = beforeValues[name]; }
-		return {...snapshot, file, text: nextText, changed, previous};
+		return {...snapshot, file, text: nextText, changed, previous, act};
 	});
 	const reminderChange = (targets, change, now = clock()) => tracked(() => owner.transact(scope, ({index}) => ({kind: 'reminder', index: changeReminders(index, targets, change, now)})));
 	const reminderActions = actions => tracked(() => owner.transact(scope, ({index}) => ({kind: 'reminder-actions', index: applyReminderActions(index, actions)})));
-	const createOwned = async (lease, text, wanted, extra = {}, request, media = null, {signal, guard} = {}) => {
-		let file;
-		const snapshot = await lease.transact(({index, files}) => {
-			// The folder lock may have been held by another writer when this call
-			// arrived. Admission is here, after that wait and before any new write.
-			checkByteAbort(signal); guard?.();
-			if (request) { const kept = Object.keys(index.notes).find(name => index.notes[name].createdByRequest === request); if (kept) { file = kept; return {index}; } }
+	const canonicalAuthor = () => ({kind: 'human', id: deviceId || 'notes-local'});
+	const canonicalOptions = async options => {
+		const value = options?.canonical || {};
+		// The ledger records the owning surface; the caller's transport still scopes replay below.
+		return {...value, transport: value.transport === 'webmcp' ? 'webmcp' : 'platform', author: value.author || canonicalAuthor(), now: value.now ?? clock(),
+			...(value.requestId ? {requestScope: await sha256(JSON.stringify([value.principal || '', value.transport || 'platform', value.requestId]))} : {})};
+	};
+	const canonicalWrites = async (manifest, {file, text, entry, prior, now, reason = 'save', restoredFrom}) => {
+		const recorded = await recordVersion(manifest, {file, text, entry, reason, now, ...(restoredFrom === undefined ? {} : {restoredFrom})});
+		const path = manifestName(entry.id), rows = new Map(recorded.writes.map(row => [row.name, row]));
+		rows.set(path, {name: path, bytes: exactBytes(serializeManifest(recorded.manifest))});
+		const writes = [];
+		for (const [name, row] of rows) {
+			const held = name === path ? prior : await store.read('history/' + name);
+			if (row.immutable && held != null) {
+				if (await digest(held) !== await digest(row.bytes)) throw fail('notes_history_unavailable', 'A retained history object changed.');
+				continue;
+			}
+			writes.push({file: 'history/' + name, bytes: row.bytes, expectedDigest: await digest(held)});
+		}
+		return writes;
+	};
+	const canonicalProof = (file, id, ledger) => ({file, id, history: 'history/' + manifestName(id), ledger: ledger.sha256});
+	const readCanonicalOwned = async (lease, {file, id}) => {
+		const snapshot = await lease.read({bodies: [file]});
+		if (!snapshot.index.notes[file] || id && snapshot.index.notes[file].id !== id || !snapshot.bodies.has(file)) throw fail('notes_changed', 'This note moved or changed.');
+		id = snapshot.index.notes[file].id;
+		const indexBytes = await store.read(NOTES_INDEX_FILE), liveIndex = parseIndex(indexBytes == null ? null : decodeIndex(indexBytes));
+		if (liveIndex.notes[file]?.id !== id || liveIndex.notes[file]?.canonicalHistory !== snapshot.index.notes[file].canonicalHistory) throw fail('notes_changed', 'The note identity changed while it was read.');
+		const body = snapshot.bodies.get(file), path = 'history/' + manifestName(id);
+		let bytes;
+		try { bytes = await store.read(path); }
+		catch (cause) { throw Object.assign(fail('notes_history_unavailable', 'The canonical history could not be read. Its original bytes were kept.'), {cause}); }
+		if (bytes == null) throw fail('notes_history_unavailable', 'This note has no canonical history. Its original bytes were kept.');
+		const text = decode(body), proved = parseCanonical(bytes, {noteId: id, now: clock(), text});
+		if (snapshot.index.notes[file].canonicalHistory !== proved.ledger.sha256 || await digest(await store.read(file)) !== await digest(body) || await digest(await store.read(path)) !== await digest(bytes) || await digest(await store.read(NOTES_INDEX_FILE)) !== await digest(indexBytes) || await store.read(OWNER_JOURNAL_FILE) != null) throw fail('notes_changed', 'The note changed while its history was read.');
+		return {...snapshot, file, id, text, digest: await digest(body), ledger: proved.ledger, metadata: proved.metadata, documentAuthority: proved.ledger.documentAuthority};
+	};
+	const readCanonicalNote = async target => {
+		try { return await underLease(lease => readCanonicalOwned(lease, target)); }
+		catch (error) { if (error?.code !== 'read-only') throw error; return readCanonicalOwned({read: options => owner.read(scope, options)}, target); }
+	};
+	const createOwned = async (lease, text, wanted, extra = {}, request, media = null, options = {}) => {
+		const active = async () => { checkByteAbort(options.signal); await options.guard?.(); checkByteAbort(options.signal); };
+		let file, result;
+		const snapshot = await lease.transact(({index, files}) => prepareMutation(async () => {
+			await active();
+			const context = await canonicalOptions(options), requestDigest = await sha256(JSON.stringify({text, wanted}));
+			const kept = request && Object.keys(index.notes).find(name => index.notes[name].createdByRequest === request);
+			if (kept) {
+				file = kept;
+				const bytes = await store.read('history/' + manifestName(index.notes[file].id));
+				const manifest = parseManifest(bytes, {noteId: index.notes[file].id, now: clock()});
+				result = appendCanonical(manifest, {text, ...context, requestDigest});
+				if (!result.replayed && !result.unchanged) throw fail('notes_request_conflict', 'The creation request names different words.');
+				return {index};
+			}
 			file = available(wanted, text, files);
 			const now = clock(), next = createEntry(media ? reviveMedia(index, media.path, media.digest) : index, file, {created: now, modified: now, ...extra, ...(request ? {createdByRequest: request} : {})});
-			return {kind: 'create', index: next, writes: [{file, bytes: exactBytes(text), createOnly: true}]};
-		});
-		// Recovery may have put these new words beside a late competing file. A successful
-		// create must open that kept note, never the stranger under the originally chosen name.
-		file = snapshot.kept?.find(row => row.file === file)?.name || file;
-		return {...snapshot, file};
+			const id = next.notes[file].id, manifest = freshCanonical(parseManifest(null, {noteId: id, now}), {filename: file, docKind: isCodeFile(file) ? 'code' : 'markdown'});
+			result = appendCanonical(manifest, {text, ...context, requestDigest});
+			next.notes[file].canonicalHistory = result.ledger.sha256;
+			next.notes[file].revision = 'sha256:' + await sha256(text);
+			const writes = await canonicalWrites(result.manifest, {file, text, entry: next.notes[file], prior: null, now});
+			await active();
+			return {kind: 'canonical-create', index: next, writes: [{file, bytes: exactBytes(text), createOnly: true}, ...writes], canonical: [canonicalProof(file, id, result.ledger)]};
+		}), {admissionGuard: () => prepareMutation(active)});
+		const proved = await readCanonicalOwned(lease, {file, id: snapshot.index.notes[file]?.id});
+		return {...snapshot, file, id: proved.id, text: proved.text, digest: proved.digest, ledger: proved.ledger, act: result.act, replayed: !!result.replayed};
 	};
 	const create = (text, wanted, extra = {}, request, options) => owned(lease => createOwned(lease, text, wanted, extra, request, null, options));
 	// The native inbox keeps the original until this method returns. A renderer can stop after
@@ -354,43 +454,79 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	});
 	// A save reads the sidecar once, inside its own transaction: the note is located by id in the
 	// transaction's fresh index and its body read there, not in a whole read before the transaction.
-	const save = ({file, id, expectedDigest, text, preserveConflict = true}, {signal, guard} = {}) => underLease(async lease => {
-		const active = () => { checkByteAbort(signal); guard?.(); }; active();
-		const bytes = exactBytes(text), nextDigest = await sha256(bytes);
-		const locate = index => {
-			const matches = id ? Object.keys(index.notes).filter(n => index.notes[n].id === id) : [];
-			return matches.length === 1 ? matches[0] : !id && index.notes[file] ? file : null;
-		};
-		let destination = null, copied = false;
+	const save = ({file, id, expectedDigest, expectedLedger, text, ledger, metadata, undo}, options = {}) => underLease(async lease => {
+		let destination, result, targetIndex, copied = false;
+		const active = async () => { checkByteAbort(options.signal); await options.guard?.(); if (targetIndex) await options.guardTarget?.(targetIndex, destination, id); checkByteAbort(options.signal); };
+		await prepareMutation(active);
 		const admitted = Array.isArray(expectedDigest) ? expectedDigest : [expectedDigest];
-		const snapshot = await lease.transact(async ({index, files, readBodies}) => {
-			active();
-			destination = locate(index);
-			const bodies = destination ? await readBodies([destination]) : new Map();
-			const before = destination ? bodies.get(destination) : null, actual = await digest(before);
-			active();
-			const stale = !destination || !admitted.includes(actual);
-			// An already saved live note keeps its timestamp, generation and bytes. A stale
-			// caller whose exact words landed still succeeds; restoring Trash is a real edit.
-			if (destination && actual === nextDigest && !index.notes[destination].trashed) return {index};
-			if (stale && !(destination && actual === nextDigest)) {
-				if (!preserveConflict) throw fail('changed', 'The note changed since this edit was prepared. Its newer words were kept.');
-				// A stale code file is kept beside the newer one as code: "script kept.py".
-				const ext = isCodeFile(file) ? file.slice(file.lastIndexOf('.')) : '', stem = (ext ? file.slice(0, -ext.length) : file.replace(/\.md$/i, '')) + ' kept';
-				destination = (ext && codeFileName(stem + ext, files, {ascii: store.ascii})) || noteFileName(stem, files, {ascii: store.ascii}); copied = true;
-				index = createEntry(index, destination, {created: clock(), modified: clock(), keptFrom: {file, ...(id ? {id} : {}), digest: admitted[0]}});
-			} else if (index.notes[destination].trashed) index = reviveTrashed(index, destination, nextDigest);
-			index.notes[destination].revision = 'sha256:' + nextDigest; index.notes[destination].modified = clock();
-			return {kind: copied ? 'keep-both' : 'save', index, writes: [{file: destination, bytes, ...(copied ? {createOnly: true} : {expectedDigest: actual})}]};
-		}, {bodies: []});
-		if (snapshot.dropped?.includes(destination)) throw fail('changed', 'The note changed while it was being saved. The other change was kept; this save did not finish.');
-		return {...snapshot, file: destination, copied, digest: nextDigest, id: snapshot.index.notes[destination].id};
+		const expectedLedgers = expectedLedger == null ? [] : Array.isArray(expectedLedger) ? expectedLedger : [expectedLedger];
+		const snapshot = await lease.transact(({index, files, readBodies}) => prepareMutation(async () => {
+			await active();
+			const matches = id ? Object.keys(index.notes).filter(name => index.notes[name].id === id) : [];
+			const found = matches.length === 1 ? matches[0] : !id && index.notes[file] ? file : null;
+			if (!found) throw fail('notes_changed', 'The note identity changed.');
+			destination = found; id = index.notes[destination].id;
+			targetIndex = index; await active();
+			const bodies = await readBodies([destination]), body = bodies.get(destination), actual = await digest(body);
+			const prior = await store.read('history/' + manifestName(id));
+			if (prior == null) throw fail('notes_history_unavailable', 'This note has no canonical history. Its bytes were kept.');
+			// A body its own history cannot prove was written by someone else; this window's words still find a home below.
+			let proved = null;
+			try { proved = parseCanonical(prior, {noteId: id, now: clock(), text: decode(body)}); }
+			catch (error) { if (error?.code !== 'notes_history_unavailable' || !/do not agree/.test(error.message) || undo) throw error; }
+			const manifest = proved?.manifest;
+			if (proved && index.notes[destination].canonicalHistory !== proved.ledger.sha256) throw fail('notes_history_unavailable', 'The note identity does not prove this history.');
+			const context = await canonicalOptions(options), requestDigest = await sha256(JSON.stringify({text: text ?? null, base: admitted, metadata: metadata || null, undo: undo || null}));
+			let carried = null, carryFault = null;
+			if (ledger && proved) {
+				try { carried = carryCanonical(manifest, ledger, text); }
+				catch (error) { if (error?.code !== 'notes_history_unavailable') throw error; carryFault = error; }
+			}
+			const appended = ledger || !proved ? null : appendCanonical(manifest, {text, metadata, undo, ...context, requestDigest, input: options.input === true});
+			if (appended?.replayed) { result = appended; return {index}; }
+			// An uncertain autosave retries its exact already-landed ledger, never mints a replacement act.
+			const landed = !!carried?.unchanged;
+			const stale = !proved || !landed && (!!carryFault || !admitted.includes(actual) || expectedLedgers.length > 0 && !expectedLedgers.includes(proved.ledger.sha256));
+			if (stale) {
+				// Only a window's own words are kept. An agent's or an Undo's write, and a caller that names the exact history it read and carries no ledger, asked for an exact write: it is refused.
+				if (undo || options.canonical || !ledger && expectedLedgers.length) throw fail('notes_changed', 'The note changed since its exact source and history were read.');
+				// The folder already holds these words: there is nothing to keep, and a ledger that does not extend the folder's is refused.
+				if (proved && text === proved.text) throw fail('notes_changed', 'The note changed since its exact source and history were read.');
+				// Another writer's words are never written over. This window's words become a note of their own and continue the history this window holds.
+				const stem = destination.replace(/\.[^./\\]*$/, ''), ext = destination.slice(stem.length);
+				const names = [...new Set([...files, ...Object.keys(index.notes)])];
+				const keptName = isCodeFile(destination) ? codeFileName(stem + ' kept' + ext, names, {ascii: store.ascii}) : noteFileName(stem + ' kept', names, {ascii: store.ascii});
+				const now = clock(), made = createEntry(index, keptName, {created: now, modified: now, keptFrom: {file: destination, digest: actual}});
+				const keptId = made.notes[keptName].id, start = parseManifest(null, {noteId: keptId, now});
+				const first = ledger ? adoptCanonical(start, ledger, text)
+					: appendCanonical(freshCanonical(start, {filename: keptName, docKind: isCodeFile(keptName) ? 'code' : 'markdown'}), {text, ...context, requestDigest});
+				made.notes[keptName].canonicalHistory = first.ledger.sha256;
+				made.notes[keptName].revision = 'sha256:' + await sha256(text);
+				const writes = await canonicalWrites(first.manifest, {file: keptName, text, entry: made.notes[keptName], prior: null, now});
+				await active();
+				destination = keptName; id = keptId; result = first; copied = true;
+				return {kind: 'canonical-create', index: made, writes: [{file: keptName, bytes: exactBytes(text), createOnly: true}, ...writes], canonical: [canonicalProof(keptName, keptId, first.ledger)]};
+			}
+			result = carried ?? appended;
+			if (result.unchanged && !index.notes[destination].trashed) return {index};
+			text = result.text ?? text;
+			await options.sourceGuard?.(proved.text, text, proved.metadata); await active();
+			const nextDigest = await sha256(text), now = clock();
+			if (index.notes[destination].trashed) index = reviveTrashed(index, destination, nextDigest);
+			index.notes[destination] = {...index.notes[destination], revision: 'sha256:' + nextDigest, modified: now, canonicalHistory: result.ledger.sha256};
+			const writes = await canonicalWrites(result.manifest, {file: destination, text, entry: index.notes[destination], prior, now, reason: options.reason || 'save', restoredFrom: options.restoredFrom});
+			await active();
+			return {kind: 'canonical-save', index, writes: [{file: destination, bytes: exactBytes(text), expectedDigest: actual}, ...writes], canonical: [canonicalProof(destination, id, result.ledger)]};
+		}), {bodies: [], ordinarySave: {file, id, expectedDigest: admitted}, admit: () => { checkByteAbort(options.signal); options.guard?.(); }, admissionGuard: () => prepareMutation(active)});
+		const proved = await readCanonicalOwned(lease, {file: destination, id});
+		if (!result.replayed && proved.ledger.sha256 !== result.ledger.sha256) throw fail('notes_changed', 'The saved history could not be verified.');
+		return {...snapshot, file: destination, copied, id, digest: proved.digest, text: proved.text, ledger: proved.ledger, act: result.act, unchanged: !!result.unchanged, replayed: !!result.replayed};
 	});
 	const rename = ({file, id, expectedDigest, wanted, linking}) => owned(async (lease, before) => {
 		if (linking !== undefined && !Array.isArray(linking)) throw fail('plan', 'A rename needs a list of linking notes.');
 		let destination, dropped = 0, patched = 0;
 		const snapshot = await lease.transact(async ({index, files, bodies}) => {
-			const plan = await planFolderRename({index, files, bodies}, {file, id, expectedDigest, wanted, linking, ascii: store.ascii, now: clock()});
+			const plan = await planFolderRename({index, files, bodies}, {file, id, expectedDigest, wanted, linking, ascii: store.ascii, now: clock(), readHistory: path => store.read(path), author: canonicalAuthor()});
 			destination = plan.file; dropped = plan.dropped; patched = plan.patched;
 			return plan;
 		}, {bodies: linking === undefined ? before.files : [file, ...linking]});
@@ -515,6 +651,13 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				const raw = await store.read('history/manifests/' + leaf); if (raw === null) throw new Error('missing manifest');
 				manifest = parseManifest(raw, {noteId: id, now: clock()});
 			} catch (error) { throw fail('unreadable', 'Retained history ' + leaf + ' could not be checked. No file was deleted.'); }
+			// A code file's words are not Markdown: nothing in its past names a picture or a recording.
+			const owner = Object.keys(before.index.notes).find(name => before.index.notes[name].id === id) ?? manifest.file;
+			for (const historical of owner && isCodeFile(owner) ? [] : canonicalSources(manifest)) {
+				const names = namesIn(historical.text);
+				for (const which of ['attachments', 'recordings']) for (const [name, n] of names[which]) add(which, name, 'history', {file: manifest.file, noteId: id, act: historical.act, time: historical.time, count: n});
+				measure(names);
+			}
 			for (const version of manifest.versions) {
 				if (isCodeFile(version.file)) continue;
 				checkByteAbort(signal);
@@ -635,6 +778,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			let manifest;
 			try { manifest = parseManifest(await store.read('history/' + path), {noteId: id, now: clock()}); }
 			catch (error) { throw fail('unreadable', 'The retained past of ' + file + ' could not be read, so this recording was kept in case one of its old versions plays it.'); }
+			for (const historical of isCodeFile(file) ? [] : canonicalSources(manifest)) if (recordingsOf(historical.text).some(row => row.name === name)) throw fail('referenced', 'Canonical history still uses this recording. It was kept.');
 			for (const version of manifest.versions) {
 				if (checked.has(version.hash)) continue;
 				checked.add(version.hash);
@@ -725,7 +869,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (row.name.startsWith('attachments/')) await keepAttachment(lease, row.name.slice(12), row.bytes, {exact: true});
 			else writes.set(row.name, {file: row.name, bytes: row.bytes, createOnly: true});
 		}
-		let receiptCommit;
+		let receiptCommit; const canonical = [], historyTargets = new Map(), createdHistory = new Map();
 		const snapshot = await lease.transact(async ({index,readImportReceipt}) => {
 			if (result.index) { const generation = index.folderGeneration; index = copy(result.index); if (result.attachments?.length || result.backupFiles?.some(row => row.name.startsWith('attachments/'))) index.folderGeneration = generation; }
 			for (const section of result.sections || []) index = addSection(index, section);
@@ -735,12 +879,49 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				if (!note.exactBackup || !writes.has(note.file)) writes.set(note.file, {file: note.file, bytes: (note.exactBackup || isCodeFile(note.file)) && note.bytes ? note.bytes : exactBytes(note.text), createOnly: true});
 			}
 			if (result.notes.length) index = createEntries(index, result.notes.map(note => ({name: note.file, extra: note.entry || {}})));
+			for (const note of result.notes) {
+				const entry = index.notes[note.file], id = entry.id, path = 'history/' + manifestName(id);
+				const prior = writes.get(path)?.bytes || await store.read(path), now = clock();
+				let text; try { text = decode(writes.get(note.file).bytes); } catch (_) { continue; }
+				let manifest, ledger;
+				if (prior != null) {
+					manifest = parseManifest(prior, {noteId: id, now}); ledger = readCanonical(manifest, text).ledger;
+				} else {
+					if (entry.canonicalHistory) throw fail('notes_history_unavailable', 'The imported note is missing its canonical history.');
+					manifest = freshCanonical(parseManifest(null, {noteId: id, now}), {filename: note.file, docKind: isCodeFile(note.file) ? 'code' : 'markdown'});
+					const created = appendCanonical(manifest, {text, author: canonicalAuthor(), operation: 'notes.import', now});
+					manifest = created.manifest; ledger = created.ledger;
+				}
+				entry.canonicalHistory = ledger.sha256; entry.revision = 'sha256:' + await sha256(text);
+				const history = await canonicalWrites(manifest, {file: note.file, text, entry, prior, now, reason: 'import'});
+				for (const row of history) {
+					// A backup may have admitted its exact manifest before this body batch.
+					// Replace only that read digest; import's default remains create-only.
+					writes.set(row.file, {...row, ...(row.expectedDigest === null ? {} : {replace: true})});
+					historyTargets.set(row.file, row);
+					if (row.expectedDigest === null) createdHistory.set(row.file, row);
+				}
+				canonical.push(canonicalProof(note.file, id, ledger));
+			}
+
 			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));
-			if (result.importReceipt) { receiptCommit = await receiptPlan(index, result.importReceipt, result.receiptCheckpoint, readImportReceipt); index = receiptCommit.index; }
-			return {kind: 'import', index, writes: [...writes.values(), ...(receiptCommit?.writes || [])], removes: receiptCommit?.removes || []};
+			if (result.importReceipt) {
+				let receipt = result.importReceipt;
+				// These are journal targets, never pre-write acknowledgements. Canonical proof
+				// rows prevent a changed body/history from being dropped while its receipt lands.
+				for (const proof of canonical) {
+					const note = result.notes.find(row => row.file === proof.file);
+					receipt = await prepareImportWrite(receipt, {...note, bytes: writes.get(note.file).bytes}, {entry: index.notes[note.file]});
+				}
+				receipt = await prepareImportHistory(receipt, [...historyTargets.values()]);
+				receipt = recordImportSections(receipt, index.sections.filter(section => !before.index.sections.some(old => old.name === section.name)));
+				receiptCommit = await receiptPlan(index, receipt, result.receiptCheckpoint, readImportReceipt); index = receiptCommit.index;
+			}
+			return {kind: 'import', index, writes: [...writes.values(), ...(receiptCommit?.writes || [])], removes: receiptCommit?.removes || [], ...(canonical.length ? {canonical} : {})};
 		});
 		for (const row of writes.values()) if (/^audio\//.test(row.file) && !(snapshot.dropped || []).includes(row.file)) result.createdFiles.push({file: row.file, bytes: row.bytes});
+		result.createdHistory = await Promise.all([...createdHistory.values()].map(async row => ({file: row.file, bytes: row.bytes, actual: await store.read(row.file)})));
 		result.createdSections = snapshot.index.sections.filter(section => !before.index.sections.some(old => old.name === section.name));
 		return {...snapshot, result, ...(receiptCommit ? {receiptCheckpoint:receiptCommit.receiptCheckpoint} : {})};
 	});
@@ -766,7 +947,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					const raw = JSON.parse(decode(indexBytes).replace(/^﻿/, ''));
 					raw.folderDeviceId = crypto.randomUUID().replace(/-/g, '');
 					indexBytes = exactBytes(JSON.stringify(raw));
-					plan.index = parseIndex(decode(indexBytes));
+					plan.index = parseIndex(decodeIndex(indexBytes));
 					bytes = encodeSyncState({rejoin: true, ...(state.vault ? {vault: {...state.vault, credential: null}} : {})});
 				}
 				// The renewed checkpoint and writer share the exact journal. Ordinary read()
@@ -892,10 +1073,13 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	};
 	const captureFiles = async () => {
 		const rows = [];
-		for (const prefix of ['', 'audio', 'attachments', 'imports']) for (const name of await store.list(prefix)) {
-			if (name === OWNER_JOURNAL_FILE && !prefix) throw fail('pending', 'The notes folder has a pending save. Let it finish before making a backup.');
-			if (/^\..*\.tmp$/.test(name)) continue;
-			const path = prefix ? prefix + '/' + name : name, bytes = await store.read(path);
+		// Byte captures and streamed backups must carry the same complete history inventory.
+		const names = await backupNames({list: () => store.list(), attachmentNames: () => store.list('attachments'),
+			audioNames: () => store.list('audio'), historyNames: sub => store.list('history/' + sub),
+			importReceiptNames: () => store.list('imports'), thumbNames: () => store.list('thumbs')});
+		if (names.includes(OWNER_JOURNAL_FILE)) throw fail('pending', 'The notes folder has a pending save. Let it finish before making a backup.');
+		for (const path of names) {
+			const bytes = await store.read(path);
 			if (bytes == null) throw fail('changed', 'The notes changed while the backup was collected. Try Backup again.');
 			rows.push({name: path, bytes, modified: clock()});
 		}
@@ -944,5 +1128,5 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const recordingCustody = createRecordings({store, owned, underLease, locks, scope, shared: isShared, clock, audioName, discardAudio,
 		canOwn: () => store.writable !== false && (!isShared() || !!(locks?.request && channel?.postMessage)), readSnapshot: () => owner.read(scope)});
 	return {beginRecording: recordingCustody.begin, recoverRecordings: recordingCustody.recover, openRecording: recordingCustody.open, readRecording: recordingCustody.preview, acknowledgeRecording: recordingCustody.acknowledge,
-		owner, store, scope, read, rebuildIndex, metadata, controls, reminderActions, reminderChange, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
+		owner, store, scope, read, readCanonical: readCanonicalNote, rebuildIndex, metadata, controls, reminderActions, reminderChange, leaveVault, create, createShared, save, rename, trash, discardEmpty, mark, createAudio, createAttachment, attachmentReferences, fileReferences, reviewAttachmentDeletion, deleteAttachment, reviewRecordingDeletion, deleteRecording, asset, discardAudio, importBatch, checkpointImportReceipt, readImportReceipt, restoreSnapshot, previewImportUndo, undoImport, backupSnapshot, capture, readFile, get deviceId() { return deviceId; }, get pending() { return pending; }, close: () => { recordingCustody.close(); owner.close(); channel?.close?.(); }};
 }

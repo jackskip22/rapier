@@ -10,9 +10,9 @@
    Each build's shell lives in its own cache generation, named for the bytes it
    holds. The release digest below deliberately changes this worker whenever any
    shell member changes; qualification derives and verifies it from those bytes.
-   Navigations remain network-first; the shell mainly protects users who next
-   launch fully offline. Install is the only writer. Navigation fallback verifies
-   the stored page before using it.
+   Navigations remain network-first until two starts fail. A failed release uses
+   its verified predecessor; only a completed start retires that predecessor.
+   Install alone writes shell bytes. Startup receipts live beside them.
 */
 
 /* CacheStorage is shared by every service-worker scope on an origin. Include
@@ -26,14 +26,16 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '53cbf2343e5d95e4ecb79847f5b603087182c540833cec3dbd96995803b33674';
-const SHELL_PAGE_SHA256 = 'aef86ccddf501676244da231df305486ade4f3a6b4072441dc42b21d8a6b244b';
-/* This worker's own generation — never a value looked up at runtime. Two
-   different releases compile to two different names, so a predecessor and a
-   successor can never resolve, overwrite, or retire each other's cache. */
+const SHELL_RELEASE_SHA256 = '74a70d0afea8a129e097ab956f18d2edddc1bc9c3bbcdbc60bc9bf28525aaf9d';
+const SHELL_PAGE_SHA256 = '0e23e56342dacd9f409f70c965ff76e043524e0c92c05a171c2f2ff432096413';
+const SHELL_BOOT_ID = '8e8f924a9e28277cb96126ca0245d08b46e4a8cfcc35fbae2b77287ce8cafd77';
+const SHELL_DOOR_SHA256 = {"/privacy":"88f8b020ed30f443a1c66bb454bc626409340dcfd122614ce7de20ccf5dbc9c3","/commercial":"8e4537545470959e026c27b9b1a486bdac5b6f69a105cf238c6544240a0cfd0b","/notes":"8253ccb5d9b6c6dec6bb28200566771aeb7968c235aa8ca627b82974f06892a7","/draw":"f40ee1c5a38e040ede26bcf7ec900f17a317ed69fae65a38b3d32dc867d9325a","/watercolor":"3b1b46c5ea07325cc0eaf72433a90b26a2a346597117b3a2ded8eb7944a71683"};
+/* Only this generation receives writes. Retirement names are captured during
+   install, so a delayed success cannot erase a newer worker's cache. */
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);
 const SHELL_PAGE_URL = new URL('./rapier.html', self.location).href;
 const SHELL_ROOT_URL = new URL('./', self.location).href;
+const STARTUP_STATE_URL = new URL('./.rapier-startup', self.location).href;
 
 /* Share payloads are one-shot, scope-qualified, bounded, and short-lived. */
 const SHARE_CACHE = `rapier-share:${CACHE_SCOPE}:v1`;
@@ -69,8 +71,16 @@ self.addEventListener('install', event => {
        its puts finish, so existence alone never proves that a failed install left
        every member behind. Each install fills the generation with the same verified
        bytes before it can activate; retrying cannot bless an incomplete shell. */
+    const predecessors = (await caches.keys()).filter(name =>
+      name.startsWith(SHELL_CACHE_PREFIX) && name !== SHELL_GENERATION);
     const cache = await caches.open(SHELL_GENERATION);
     await Promise.all(members.map(member => cache.put(member.request, member.response)));
+    if (!await startupState(cache)) {
+      const previous = await previousShell(predecessors);
+      await writeStartupState(cache, {release: SHELL_RELEASE_SHA256, page: SHELL_PAGE_SHA256,
+        boot: SHELL_BOOT_ID, ready: false, rollback: false, failures: [], clients: {},
+        previous, retire: predecessors});
+    }
     await self.skipWaiting();
   })());
 });
@@ -81,16 +91,15 @@ self.addEventListener('activate', event => {
     if (self.registration.navigationPreload) {
       try { await self.registration.navigationPreload.enable(); } catch (_) {}
     }
-    /* Predecessors are dropped here rather than at install, so a generation an
-       outgoing worker may still be serving from outlives the install that
-       replaces it. Retired by name, never by a shared pointer: this worker
-       keeps only the one generation compiled into its own release. */
-    const keys = await caches.keys();
-    const superseded = keys.filter(key => key.startsWith(SHELL_CACHE_PREFIX) && key !== SHELL_GENERATION);
-    await Promise.all(superseded.map(key => caches.delete(key)));
     await pruneShareCache(await caches.open(SHARE_CACHE));
     await self.clients.claim();
   })());
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'rapier:startup') {
+    event.waitUntil(receiveStartup(event).catch(() => {}));
+  }
 });
 
 self.addEventListener('fetch', event => {
@@ -148,6 +157,11 @@ self.addEventListener('fetch', event => {
       const outcome = networkResponse.then(response => ({ response }), error => ({ error }));
       let deadline;
       try {
+        const state = await inspectStartup(event).catch(() => null);
+        if (state?.rollback && state.previous) {
+          const copy = await cachedNavigationResponse(req, state.previous).catch(() => null);
+          if (copy) { discardNetwork(); return copy; }
+        }
         /* The deadline covers both headers and body. With no readable offline copy, keep waiting
            for the network: a slow complete release is still useful to a first visit. */
         const first = await Promise.race([outcome, new Promise(resolve => {
@@ -155,13 +169,15 @@ self.addEventListener('fetch', event => {
         })]);
         if (!first) {
           const copy = await cachedNavigationResponse(req).catch(() => null);
-          if (copy) { discardNetwork(); return copy; }
+          if (copy) { discardNetwork(); return rememberNavigation(event, copy); }
         }
         const settled = first || await outcome;
         /* A redirect is the host's answer: /draw/ goes to /draw, and the browser follows it. */
-        if (settled.response && (settled.response.ok || settled.response.type === 'opaqueredirect')) return settled.response;
+        if (settled.response && (settled.response.ok || settled.response.type === 'opaqueredirect')) {
+          return rememberNavigation(event, settled.response);
+        }
         const copy = await cachedNavigationResponse(req).catch(() => null);
-        if (copy) { discardNetwork(); return copy; }
+        if (copy) { discardNetwork(); return rememberNavigation(event, copy); }
         return settled.response || new Response(
           'Rapier is unavailable offline.',
           {
@@ -176,20 +192,25 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Shell cache first; all other GETs pass through uncached.
+  // Receipt records are internal. Only the four shell members are served here.
+  if (!SHELL_URLS.some(relative => new URL(relative, self.location).href === req.url)) return;
   event.respondWith(
     shellCache()
-      .then(cache => cache.match(req))
+      .then(async cache => {
+        const state = await startupState(cache).catch(() => null);
+        const selected = state?.rollback && state.previous ? await caches.open(state.previous.cache) : cache;
+        return selected.match(req);
+      })
       .then(cached => cached || fetch(req))
   );
 });
 
-async function cachedNavigationResponse(request) {
+function isShellDoor(value) {
   /* Offline shell fallback belongs only to Rapier's two doors. Returning the editor for an
      unknown navigation would turn a missing `/agents`, misspelled document, or private path
      into a convincing 200 HTML response after the service worker takes control — an SPA
      fallback the origin deliberately refuses. Query parameters do not change either door. */
-  const requested = new URL(request.url);
+  const requested = new URL(value);
   const root = new URL(SHELL_ROOT_URL);
   const page = new URL(SHELL_PAGE_URL);
   /* And the addresses the page is entered by (repo/_redirects): /notes, /draw, /watercolor, /privacy and
@@ -197,14 +218,187 @@ async function cachedNavigationResponse(request) {
      redirects online is served as it stands (shell/platform.js _rapierDoorPathMark). */
   const door = requested.pathname.startsWith(root.pathname) &&
     /^(?:notes|draw|watercolor|privacy|commercial)\/?$/.test(requested.pathname.slice(root.pathname.length));
-  if (requested.origin !== root.origin ||
-      (requested.pathname !== root.pathname && requested.pathname !== page.pathname && !door)) return null;
-  const cache = await shellCache();
+  return requested.origin === root.origin &&
+    (requested.pathname === root.pathname || requested.pathname === page.pathname || door);
+}
+
+function matchesPage(url, digest) {
+  if (!isShellDoor(url)) return false;
+  const path = '/' + new URL(url).pathname.slice(new URL(SHELL_ROOT_URL).pathname.length);
+  return digest === SHELL_PAGE_SHA256 || digest === SHELL_DOOR_SHA256[path];
+}
+
+async function cachedNavigationResponse(request, release = null) {
+  if (!isShellDoor(request.url)) return null;
+  const cache = release ? await caches.open(release.cache) : await shellCache();
   const copy = (await cache.match(request)) || await cache.match(SHELL_PAGE_URL);
   if (!copy?.ok || !/^text\/html(?:;|$)/i.test((copy.headers.get('Content-Type') || '').trim())) return null;
   // Stored bytes can be damaged after install. Refuse them without cancelling a healthy network body.
   const digest = toHex(await crypto.subtle.digest('SHA-256', await copy.clone().arrayBuffer()));
-  return digest === SHELL_PAGE_SHA256 ? copy : null;
+  if (digest !== (release?.page || SHELL_PAGE_SHA256)) return null;
+  const canonical = new URL(request.url);
+  if (canonical.pathname !== new URL(SHELL_ROOT_URL).pathname && canonical.pathname.endsWith('/')) {
+    // The page derives its storage and worker scope from its address. Match
+    // the host redirect before opening a slash door, including when offline.
+    canonical.pathname = canonical.pathname.slice(0, -1);
+    return Response.redirect(canonical.href, 308);
+  }
+  return copy;
+}
+
+/* The same four-member digest proves every cached predecessor, including a
+   cache with no completed-start receipt. A known failure is never promoted. */
+async function previousShell(names) {
+  let unconfirmed = null;
+  for (const name of [...names].reverse()) {
+    try {
+      const cache = await caches.open(name);
+      const members = await Promise.all(SHELL_URLS.map(async relative => {
+        const response = await cache.match(new URL(relative, self.location).href);
+        if (!response?.ok) throw new Error('incomplete cached release');
+        return {body: await response.arrayBuffer()};
+      }));
+      const release = await shellGeneration(members);
+      if (name !== SHELL_CACHE_PREFIX + release.slice(0, 32)) continue;
+      const page = toHex(await crypto.subtle.digest('SHA-256', members[0].body));
+      const receipt = await cache.match(STARTUP_STATE_URL);
+      const state = receipt ? await receipt.json() : null;
+      if (state?.failures?.length || state?.rollback) continue;
+      const descriptor = {cache: name, release, page};
+      if (state?.release === release && state.page === page && state.ready === true) return descriptor;
+      unconfirmed ||= descriptor;
+    } catch (_) {}
+  }
+  return unconfirmed;
+}
+
+async function startupState(cache) {
+  const response = await cache.match(STARTUP_STATE_URL);
+  if (!response) return null;
+  const state = await response.json().catch(() => null);
+  return state?.release === SHELL_RELEASE_SHA256 && state.page === SHELL_PAGE_SHA256 &&
+    state.boot === SHELL_BOOT_ID && Array.isArray(state.failures) && state.clients &&
+    Array.isArray(state.retire) ? state : null;
+}
+
+async function retireShells(names) {
+  // A successor may still need the predecessor we both inherited. Its own
+  // completed start will retire this inventory, including incomplete installs.
+  if (self.registration.installing || self.registration.waiting) return;
+  const known = new Set([SHELL_GENERATION, ...names]);
+  if ((await caches.keys()).some(name => name.startsWith(SHELL_CACHE_PREFIX) && !known.has(name))) return;
+  await Promise.all(names.map(name => caches.delete(name)));
+}
+
+function writeStartupState(cache, state) {
+  return cache.put(STARTUP_STATE_URL, new Response(JSON.stringify(state), {
+    headers: {'Content-Type': 'application/json'},
+  }));
+}
+
+let startupMutation = Promise.resolve();
+
+function updateStartup(change) {
+  const operation = startupMutation.then(async () => {
+    const cache = await shellCache(), state = await startupState(cache);
+    if (!state) return null;
+    const result = await change(state);
+    if (result?.changed) await writeStartupState(cache, state);
+    return result;
+  });
+  startupMutation = operation.catch(() => {});
+  return operation;
+}
+
+function failStartup(state, client, attempt) {
+  if (state.failures.length < 2 && !state.failures.some(failure => failure.client === client)) {
+    state.failures.push({client, attempt});
+  }
+  if (state.failures.length >= 2 && state.previous) state.rollback = true;
+}
+
+async function inspectStartup(event) {
+  const result = await updateStartup(async state => {
+    let changed = false;
+    const entries = Object.entries(state.clients);
+    if (!state.ready && entries.length) {
+      // get() can wait for a reserved navigation to execute. matchAll() lists
+      // execution-ready clients without blocking delivery of their pages.
+      const ready = new Set((await self.clients.matchAll({type: 'window', includeUncontrolled: true})).map(client => client.id));
+      for (const [id, client] of entries) {
+        const replaced = id === event.replacesClientId;
+        if (!client.attempt && !replaced && !ready.has(id)) continue;
+        if (replaced || !ready.has(id)) {
+          // A live slow tab is not a failure. Replacing a pending document, or
+          // losing a client that began boot, proves an abandoned start.
+          if (!client.result && matchesPage(client.url, client.page) && (replaced || client.attempt)) {
+            failStartup(state, id, client.attempt);
+          }
+          delete state.clients[id];
+          changed = true;
+        }
+      }
+    }
+    return {changed, state};
+  });
+  return result?.state;
+}
+
+async function rememberNavigation(event, response) {
+  if (!event.resultingClientId || !isShellDoor(event.request.url) || !response.ok ||
+      !/^text\/html(?:;|$)/i.test((response.headers.get('Content-Type') || '').trim())) return response;
+  await updateStartup(async state => {
+    if (state.ready || state.rollback) return null;
+    const page = toHex(await crypto.subtle.digest('SHA-256', await response.clone().arrayBuffer()));
+    state.clients[event.resultingClientId] = {url: event.request.url, page, attempt: '', result: ''};
+    return {changed: true};
+  }).catch(() => {});
+  return response;
+}
+
+async function receiveStartup(event) {
+  const message = event.data, source = event.source;
+  if (message.release !== SHELL_BOOT_ID || typeof message.attempt !== 'string' ||
+      !/^[0-9a-f-]{36}$/.test(message.attempt) || !['begin', 'ready', 'failed'].includes(message.state) ||
+      source?.type !== 'window' || !['top-level', 'auxiliary'].includes(source.frameType) ||
+      !isShellDoor(source.url)) return;
+  const result = await updateStartup(async state => {
+    if (!(await self.clients.get(source.id))) return null;
+    if (state.ready) return null;
+    const failed = state.failures.find(failure => failure.client === source.id);
+    if (failed) return {fallback: state.rollback && message.state === 'failed' && failed.attempt === message.attempt};
+    let client = state.clients[source.id];
+    if (client && (!matchesPage(client.url, client.page) || client.attempt && client.attempt !== message.attempt)) return null;
+    if (message.state === 'begin') {
+      // An uncontrolled first page has no FetchEvent. Its compiled release ID
+      // admits that one client; a recorded navigation mismatch always refuses.
+      if (!client) client = state.clients[source.id] = {url: source.url, page: SHELL_PAGE_SHA256, result: ''};
+      client.attempt = message.attempt;
+      return {changed: true};
+    }
+    if (!client || client.attempt !== message.attempt) return null;
+    if (client.result) return {fallback: state.rollback && client.result === 'failed'};
+    client.result = message.state;
+    if (message.state === 'ready') {
+      if (state.rollback) return null;
+      const retire = state.retire;
+      state.ready = true;
+      state.previous = null;
+      state.retire = [];
+      state.clients = {};
+      state.failures = [];
+      return {changed: true, retire};
+    }
+    failStartup(state, source.id, message.attempt);
+    return {changed: true, fallback: state.rollback};
+  });
+  if (result?.retire) await retireShells(result.retire);
+  if (result?.fallback) {
+    const state = await startupState(await shellCache());
+    if (state?.previous && await cachedNavigationResponse(new Request(source.url), state.previous)) {
+      source.postMessage({type: 'rapier:startup-fallback', release: SHELL_BOOT_ID, attempt: message.attempt});
+    }
+  }
 }
 
 let shellCachePromise = null;

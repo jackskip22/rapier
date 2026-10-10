@@ -1,6 +1,6 @@
 {
   "suite": "will-conformance",
-  "suiteVersion": "2.0.1",
+  "suiteVersion": "2.0.3",
   "spec": "will/1",
   "about": "The normative conformance vectors of the Will/1 Markdown text binding (a marker line that happens to be an HTML comment; no HTML binding is claimed). kind=\"parse\" checks parse(bytes) against the full normalized result, exactly: faulted, the ordered faults with mode, line and byteSpan, and the regions with law, intent, opener, closer and governedSpan. kind=\"evaluate\" checks evaluate(beforeBytes, splices, path) against {outcome, reason?, rule?, region?, law?, faults?} exactly, key for key in both directions; outcome \"invalid\" (reason \"precondition\") is the shape for splices or a path that could not be read, checked before any document law and identically on every path. A foreign implementation driven through the adapter protocol (will.mjs --adapter) is reasonably compared as a subset, since it may carry harmless extra fields. Byte-sensitive inputs (invalid UTF-8, CR/CRLF, non-ASCII, exact offsets) travel as *Base64 fields; plain string fields hold pure ASCII and LF only. Byte spans are zero-based, half-open [start, end); line and region indexes are zero-based; faults are listed in document order by span start, never deduplicated; invalid UTF-8 is one fault at the first malformed sequence and parsing stops there; one malformed marker-shaped line is one fault.",
   "vectors": [
@@ -2626,6 +2626,402 @@
           }
         ],
         "regions": []
+      }
+    },
+    {
+      "id": "BINDING-MARKER-COPY-KEEP-REFUSED",
+      "kind": "evaluate",
+      "note": "A new copy cannot replace original markers hidden by insertions at their starts, even when the copied keep body is unchanged.",
+      "path": "working",
+      "before": "<!-- will/1 keep -->\nSAFE\n<!-- /will -->\n",
+      "splices": [
+        {
+          "start": 0,
+          "end": 0,
+          "insert": "<!-- will/1 keep -->\nSAFE\n<!-- /will -->\nx"
+        },
+        {
+          "start": 21,
+          "end": 26,
+          "insert": "EVIL\n"
+        },
+        {
+          "start": 26,
+          "end": 26,
+          "insert": "x"
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "marker_sequence_mismatch"
+      }
+    },
+    {
+      "id": "BINDING-MARKER-COPY-EDIT-REFUSED",
+      "kind": "evaluate",
+      "note": "An edit law does not authorize new marker bytes in place of hidden originals.",
+      "path": "working",
+      "before": "<!-- will/1 edit -->\nONE\n<!-- /will -->\n",
+      "splices": [
+        {
+          "start": 0,
+          "end": 0,
+          "insert": "<!-- will/1 edit -->\nx"
+        },
+        {
+          "start": 25,
+          "end": 25,
+          "insert": "<!-- /will -->\nx"
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "marker_sequence_mismatch"
+      }
+    },
+    {
+      "id": "BINDING-MARKER-ENDPOINT-SHIFTS-APPLIED",
+      "kind": "evaluate",
+      "note": "Legal edits at all marker endpoints shift the original markers; a preceding replacement may end exactly at an opener.",
+      "path": "working",
+      "before": "HEAD\n<!-- will/1 edit -->\nbody\n<!-- /will -->\nTAIL\n",
+      "splices": [
+        {
+          "start": 46,
+          "end": 46,
+          "insert": "after\n"
+        },
+        {
+          "start": 31,
+          "end": 31,
+          "insert": "inside end\n"
+        },
+        {
+          "start": 26,
+          "end": 26,
+          "insert": "inside start\n"
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "insert": "prior\n"
+        },
+        {
+          "start": 0,
+          "end": 5,
+          "insert": "new head\n"
+        }
+      ],
+      "expect": {
+        "outcome": "applied"
+      }
+    },
+    {
+      "id": "BINDING-MARKER-ADJACENT-SHIFT-APPLIED",
+      "kind": "evaluate",
+      "note": "A multibyte insertion at a shared closer-end/opener-start boundary shifts only the following marker; CRLF and both laws stay exact.",
+      "path": "working",
+      "beforeBase64": "PCEtLSB3aWxsLzEga2VlcCAtLT4NCk9ORQ0KPCEtLSAvd2lsbCAtLT4NCjwhLS0gd2lsbC8xIGFwcGVuZCAtLT4NClRXTw0KPCEtLSAvd2lsbCAtLT4NCg==",
+      "splices": [
+        {
+          "start": 0,
+          "end": 0,
+          "insertBase64": "dG9wDQo="
+        },
+        {
+          "start": 43,
+          "end": 43,
+          "insertBase64": "4piDDQo="
+        },
+        {
+          "start": 72,
+          "end": 72,
+          "insertBase64": "VEhSRUUNCg=="
+        },
+        {
+          "start": 88,
+          "end": 88,
+          "insertBase64": "Ym90dG9tDQo="
+        }
+      ],
+      "expect": {
+        "outcome": "applied"
+      }
+    },
+    {
+      "id": "PARSE-LAW-TOKEN-AND-PRIORITY",
+      "kind": "parse",
+      "note": "Unknown law tokens may contain digits, punctuation or non-Latin scalars; valid separator grammar precedes law lookup, and unknown law precedes intent checks.",
+      "docBase64": "PCEtLSB3aWxsLzEgYm9ndXMxIC0tPgo8IS0tIHdpbGwvMSBib2d1c193b3JkIC0tPgo8IS0tIHdpbGwvMSBub3QtZWRpdCAtLT4KPCEtLSB3aWxsLzEg5ryi5a2XIC0tPgo8IS0tIHdpbGwvMSAxMjMgLS0+CjwhLS0gd2lsbC8xIGJvZ3VzOiAgLS0+CjwhLS0gd2lsbC8xIGJvZ3VzOiB4LS15IC0tPgo8IS0tIHdpbGwvMSBib2d1cyA6IHggLS0+Cg==",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "unknown_law",
+            "line": 0,
+            "byteSpan": [
+              0,
+              23
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 1,
+            "byteSpan": [
+              23,
+              50
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 2,
+            "byteSpan": [
+              50,
+              75
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 3,
+            "byteSpan": [
+              75,
+              98
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 4,
+            "byteSpan": [
+              98,
+              118
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 5,
+            "byteSpan": [
+              118,
+              142
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 6,
+            "byteSpan": [
+              142,
+              170
+            ]
+          },
+          {
+            "mode": "malformed_marker",
+            "line": 7,
+            "byteSpan": [
+              170,
+              196
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "PARSE-LAW-WHITESPACE-EXACT",
+      "kind": "parse",
+      "note": "The law-token whitespace set is explicit; host-language whitespace classes must not change fault classification or split extra lines.",
+      "docBase64": "PCEtLSB3aWxsLzEga2VlcBwgLS0+CjwhLS0gd2lsbC8xIGtlZXAdIC0tPgo8IS0tIHdpbGwvMSBrZWVwHiAtLT4KPCEtLSB3aWxsLzEga2VlcB8gLS0+CjwhLS0gd2lsbC8xIGtlZXDChSAtLT4KPCEtLSB3aWxsLzEga2VlcOGgjiAtLT4KPCEtLSB3aWxsLzEga2VlcOKAiyAtLT4KPCEtLSB3aWxsLzEga2VlcMKgIC0tPgo8IS0tIHdpbGwvMSBrZWVw4oCoIC0tPgo8IS0tIHdpbGwvMSBrZWVw4oCpIC0tPgo8IS0tIHdpbGwvMSBrZWVw77u/IC0tPgo=",
+      "expect": {
+        "faulted": true,
+        "faults": [
+          {
+            "mode": "unknown_law",
+            "line": 0,
+            "byteSpan": [
+              0,
+              22
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 1,
+            "byteSpan": [
+              22,
+              44
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 2,
+            "byteSpan": [
+              44,
+              66
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 3,
+            "byteSpan": [
+              66,
+              88
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 4,
+            "byteSpan": [
+              88,
+              111
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 5,
+            "byteSpan": [
+              111,
+              135
+            ]
+          },
+          {
+            "mode": "unknown_law",
+            "line": 6,
+            "byteSpan": [
+              135,
+              159
+            ]
+          },
+          {
+            "mode": "malformed_marker",
+            "line": 7,
+            "byteSpan": [
+              159,
+              182
+            ]
+          },
+          {
+            "mode": "malformed_marker",
+            "line": 8,
+            "byteSpan": [
+              182,
+              206
+            ]
+          },
+          {
+            "mode": "malformed_marker",
+            "line": 9,
+            "byteSpan": [
+              206,
+              230
+            ]
+          },
+          {
+            "mode": "malformed_marker",
+            "line": 10,
+            "byteSpan": [
+              230,
+              254
+            ]
+          }
+        ],
+        "regions": []
+      }
+    },
+    {
+      "id": "PARSE-INTENT-SEPARATORS-ARE-DATA",
+      "kind": "parse",
+      "note": "Only LF, CRLF and CR end marker lines; NEL, line separator and paragraph separator remain exact intent scalars.",
+      "docBase64": "PCEtLSB3aWxsLzEga2VlcDogQcKFQuKAqEPigKlEIC0tPg0KU0FGRQ0KPCEtLSAvd2lsbCAtLT4NCg==",
+      "expect": {
+        "faulted": false,
+        "faults": [],
+        "regions": [
+          {
+            "index": 0,
+            "law": "keep",
+            "intent": "AB C D",
+            "opener": {
+              "line": 0,
+              "byteSpan": [
+                0,
+                36
+              ]
+            },
+            "closer": {
+              "line": 2,
+              "byteSpan": [
+                42,
+                58
+              ]
+            },
+            "governedSpan": [
+              36,
+              42
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BINDING-APPEND-CARRIER-LF-REFUSED",
+      "kind": "evaluate",
+      "note": "A surviving content terminator cannot also serve as the carrier and erase previously governed append content.",
+      "path": "working",
+      "before": "<!-- will/1 append -->\nA\n\n<!-- /will -->\n",
+      "splices": [
+        {
+          "start": 25,
+          "end": 26,
+          "insert": ""
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "law_violated",
+        "region": 0,
+        "law": "append"
+      }
+    },
+    {
+      "id": "BINDING-APPEND-CARRIER-CRLF-REFUSED",
+      "kind": "evaluate",
+      "note": "A surviving content terminator cannot also serve as the carrier and erase previously governed append content.",
+      "path": "working",
+      "beforeBase64": "PCEtLSB3aWxsLzEgYXBwZW5kIC0tPg0KQQ0KDQo8IS0tIC93aWxsIC0tPg0K",
+      "splices": [
+        {
+          "start": 27,
+          "end": 29,
+          "insert": ""
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "law_violated",
+        "region": 0,
+        "law": "append"
+      }
+    },
+    {
+      "id": "BINDING-APPEND-CARRIER-CR-REFUSED",
+      "kind": "evaluate",
+      "note": "A surviving content terminator cannot also serve as the carrier and erase previously governed append content.",
+      "path": "working",
+      "beforeBase64": "PCEtLSB3aWxsLzEgYXBwZW5kIC0tPg1BDQ08IS0tIC93aWxsIC0tPg0=",
+      "splices": [
+        {
+          "start": 25,
+          "end": 26,
+          "insert": ""
+        }
+      ],
+      "expect": {
+        "outcome": "refused",
+        "reason": "document_law",
+        "rule": "law_violated",
+        "region": 0,
+        "law": "append"
       }
     }
   ]

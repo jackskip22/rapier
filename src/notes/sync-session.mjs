@@ -445,12 +445,9 @@ export function createSyncSession({folder, fetch: fetchFn, pendingStorage, pendi
 			for (const row of next.assetUploads) add('upload', mediaKind(row.file), row.file, row.content, assetSize(row.bytes));
 			for (const row of next.downloads) await incoming(noteKind(row.file), row.id, {...row, object: row.hash});
 			for (const row of next.assetDownloads) await incoming(mediaKind(row.file), row.file, row);
-			for (const row of next.merges) {
-				if (row.sidecarOnly) continue;
-				const content = row.oursText === null ? null : await contentHash(row.oursText);
-				if (content && !heads.some(head => head.notes[row.id]?.content === content)) add('upload', noteKind(row.file), row.id, content, te.encode(row.oursText).length);
-				for (const tip of row.tips) if (tip.content !== content) await incoming(noteKind(row.file), row.id, tip);
-			}
+			// Canonical joins upload their derived source through uploads and authenticate
+			// original incoming sources through sourceReads. Conflict metadata has no body.
+			for (const row of next.sourceReads) await incoming(noteKind(row.file), row.id, row);
 			active(ticket);
 			if (remote || snapshot.head || !connection) pendingHeads = heads;
 			pending = Object.freeze({upload: Object.freeze(upload), download: Object.freeze(download)});

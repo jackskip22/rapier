@@ -236,11 +236,6 @@
 				"kind": "static-template",
 				"reason": "Dialog markup is a fixed template with only _escHtml(title) interpolated."
 			},
-			"_rapierClipboardFallbackPayload": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "host.innerHTML = sanitizeRapierHtml(data.html || escaped-plain-text-<pre>, 'export')."
-			},
 			"_rapierWriteFormattedClipboard": {
 				"count": 1,
 				"kind": "sanitized-document",
@@ -392,13 +387,6 @@
 				"reason": "button.innerHTML = _rapierCommandIconMarkup(icon) with icon one of the two literal names 'check'/'cross' from the editor's own icon table; no document text."
 			}
 		},
-		"editor/lexer.js": {
-			"paint": {
-				"count": 1,
-				"kind": "static-template",
-				"reason": "artifactRunner's paint: code.innerHTML = html, where html is tokensHtml(source, spans), runs only inside an EXPORTED page (the runner travels there as its own source): the block's own text escaped for &, < and > inside the same fixed `<span class=\"tok-<type>\">` markup _rapierPaintCode writes, produced by the page's carried copy of _rapierTokensHtml (which refuses spans out of order or not covering the source), only while the block still holds the text it was asked about, and never while it holds the selection (the runner waits on selectionchange and paints through this same function once the selection has left the block)."
-			}
-		},
 		"images/interchange.js": {
 			"_rapierAssertTextPackResources": {
 				"count": 1,
@@ -473,11 +461,6 @@
 			}
 		},
 		"kit/render.mjs": {
-			"_rapierProjectStyledRoot": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "clean.innerHTML = sanitizeRapierHtml(root.innerHTML,'export'): the styled root, its code already painted through _rapierPaintCode, is re-sanitized before use."
-			},
 			"_rapierPaintCode": {
 				"count": 1,
 				"kind": "static-template",
@@ -495,15 +478,15 @@
 				"kind": "sanitized-document",
 				"reason": "first.innerHTML is a regex-stripped copy of its own already-sanitized innerHTML (removes a leading [!NOTE]-style marker); introduces no new markup."
 			},
-			"_rapierProjectPortableRoot": {
-				"count": 1,
-				"kind": "sanitized-document",
-				"reason": "clean.innerHTML = sanitizeRapierHtml(root.innerHTML, 'export'), re-sanitizing the exported root before return."
-			},
 			"_rapierRenderSemanticRoot": {
 				"count": 1,
 				"kind": "sanitized-document",
 				"reason": "The markdown-it render output passes through the shared render policy before assignment: DOMPurify in the editor or the inert HTML5 parser and sanitizer in the worker. The page's source context preserves authored resource URLs."
+			},
+			"append": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "Complete balanced fragments from the one whole-document Markdown parse receive the existing callout and footnote transforms, then sanitizeRapierHtml in the same source or export profile before innerHTML. Uncertain or unclosed HTML stays together; this operation never parses a partial container."
 			}
 		},
 		"kit/render-sanitize.mjs": {
@@ -549,6 +532,13 @@
 				"count": 1,
 				"kind": "probe",
 				"reason": "The pinned native ZenUML renderer supplies escaped SVG markup in its owned render realm after public-parser validation and the resource preflight. The completed SVG passes Rapier's diagram sanitizer before reaching the document or export."
+			}
+		},
+		"kit/render-work.mjs": {
+			"cleanTree": {
+				"count": 1,
+				"kind": "sanitized-document",
+				"reason": "Complete sibling subtrees of an already-rendered projection pass through the caller supplied sanitizeRapierHtml in the export profile before part.innerHTML. Both the synchronous and cooperative portable/styled writers consume this one sanitizer owner."
 			}
 		}
 	}

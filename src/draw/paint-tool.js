@@ -2180,21 +2180,28 @@ function _rapierPaintLayerValid(forMaterialTool = false, geom = null, mode = _ra
 // may be able to destroy the work by discarding a view. `_rapierPaintOpenLayer` begins by closing,
 // so without this guard every restage would vaporise anything the raster budget had refused to
 // commit.
-function _rapierPaintCloseLayer() {
-	return _rapierPaintAfter(_rapierPaintFlushRevision(), () => _rapierPaintCloseNow());
+function _rapierPaintCloseLayer(current = null) {
+	const layer = _rapierPaintLayer(), owns = current ? () => current() && _rapierPaintLayer() === layer : null;
+	return _rapierPaintAfter(_rapierPaintFlushRevision(layer), () => _rapierPaintCloseNow(false, owns));
 }
-function _rapierPaintCloseNow(synced = false) {
+function _rapierPaintCloseNow(synced = false, current = null) {
+	if (current && !current()) return null;
 	const state = _rapierDrawState, layer = state.paintLayer;
 	// Whatever the painter has not yet answered is answered first: the water, the wet flag and the painted box are read off its mirror.
-	if (!synced && layer?.surface && !layer.surface.settled && !layer.surface.failure) return layer.surface.sync().then(() => _rapierPaintCloseNow(true), () => _rapierPaintCloseNow(true));
+	if (!synced && layer?.surface && !layer.surface.settled && !layer.surface.failure) return layer.surface.sync().then(() => _rapierPaintCloseNow(true, current), () => _rapierPaintCloseNow(true, current));
 	_rapierPaintDropSnapshots(layer);
 	_rapierPaintDropNextSheet(layer);
 	if ((layer?.pendingOverflow || layer?.surface?.wetState || layer?.dryFinishing) && !state.paintClosing) {
+		if (current) {
+			// A lift can publish during the surface wait. Recheck ownership after that revision.
+			const pending = _rapierPaintFlushRevision(layer);
+			if (pending) return pending.then(() => _rapierPaintCloseNow(false, current));
+		}
 		state.paintClosing = true;
 		let kept;
 		try { kept = _rapierPaintCommit(true); }
 		catch (error) { state.paintClosing = false; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); throw error; }
-		return Promise.resolve(kept).then(() => { state.paintClosing = false; if (state.paintLayer !== layer) return; _rapierPaintFinishClose(layer); },
+		return Promise.resolve(kept).then(() => { state.paintClosing = false; if (state.paintLayer !== layer || current && !current()) return; _rapierPaintFinishClose(layer); },
 			error => { state.paintClosing = false; showToast('The painting could not be kept. It is still open: ' + String(error?.message || error), 'error'); throw error; });
 	}
 	_rapierPaintFinishClose(layer);
@@ -2255,12 +2262,12 @@ function _rapierPaintMountLive(canvas, atShapeId) {
 }
 function _rapierPaintPositionMount(mount, id) {
 	const host = _rapierDrawState.svg, at = id != null ? host?.querySelector('[data-shape-id="' + id + '"]') : null;
-	// A copier can wrap the drawing or a split painting. Keep the overlay in its source
+	// An effect can wrap the drawing or a split painting. Keep the overlay in its source
 	// group and z-slot, including after a new composite filter replaces the scene nodes.
-	if (at) at.after(mount); else (host?.querySelector('[data-rapier-copy-scene]') || host)?.appendChild(mount);
+	if (at) at.after(mount); else (host?.querySelector('[data-rapier-effect-scene]') || host)?.appendChild(mount);
 	// A shared layer wrapper already carries the fade; never apply it twice on remount.
 	const shape = id != null ? _rapierDrawShapeById(id) : null;
-	if (shape?.opacity != null && !mount.closest('[data-rapier-copy-layer]')) mount.setAttribute('opacity', String(shape.opacity));
+	if (shape?.opacity != null && !mount.closest('[data-rapier-effect-layer]')) mount.setAttribute('opacity', String(shape.opacity));
 	else mount.removeAttribute('opacity');
 }
 function _rapierPaintReattachLive() {

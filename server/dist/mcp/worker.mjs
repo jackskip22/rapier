@@ -1,29 +1,33 @@
+import {transposeAuthored, authoredPlacement, authoredHistory, authoredBasis} from '../kit/ledger/transport.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
+import {_rapierValidAuthored, _rapierValidMetadata, _rapierValidMetadataEffect, _rapierMetadataDelta, _rapierTransformMetadata,
+  _rapierReplayMetadata, _rapierHasHistoryEffect} from '../kit/ledger/journal-records.mjs';
 import { createKernel, createState, canonicalJson, serializeJson, admissibleText, minimalSplice, transformSplices, waitTimeout, exportFilename, exportFidelity, admitExportArtifact, LIMITS } from '../agent/kernel.mjs';
 import {prepareDoorLetters} from './letters.mjs';
-import {normalizeLabel} from '../images/assets.mjs';
+import {normalizeLabel, encodeBase64} from '../images/assets.mjs';
 import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
 import { INSTRUCTIONS, guideResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap } from '../skills/rapier-html/wrap.mjs';
-import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
+import { HOST_TOOLS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, inputGuide, mcpDescriptors, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor, fromBase64url } from '../agent/door-identity.mjs';
 import { mintEditorKey, verifyEditorKey, editorSecretUsable, classifyEditorSecret, editorSecretKeyMaterial } from './editor-keys.mjs';
 import { visualResult, sameVisualDrawing } from '../agent/visual.mjs';
 import {editorResult, editorFailure, editorPreferences, EDITOR_LIMITS, EDITOR_TOOL_ACTIONS} from '../agent/editor.mjs';
-import { createRequestWait } from './request-lifetime.mjs';
+import { createRequestWait, createRequestLifetime, responsiveJson, REQUEST_CANCELLED } from './request-lifetime.mjs';
+import {TaskLifetime, TASK_EXTENSION, TASK_TTL_MS} from './task-lifetime.mjs';
 import { exportRenderer } from './export-port.mjs';
 import {handleOAuth, oauthChallenge, oauthForbidden, oauthOrigin, HOUSE_STYLE, validGrantReference, oauthGrantCurrent} from './oauth.mjs';
 import { PAIRED_PATH, PAIR_CODE, PAIR_CODE_MS, MAX_PAIRINGS, PAIR_SESSION_MS, PAGE_CSP, sessionCookie, pendingCookie, readCookie, setCookie, newCode, newSecret, mintSession, verifySession, pageFlags } from './paired.mjs';
 import {DOOR_LIMITS} from './limits.mjs';
 import {MATERIAL_LIMITS, materialDescription, materialMatches, admitMaterialResult} from '../agent/material.mjs';
 
-// Two eras on one endpoint (MCP 2026-07-28 dual-era): legacy `initialize` plus header, modern per-request `_meta`. Stateless in both;
+// Two eras on one endpoint (MCP 2026-07-28 dual-era): legacy `initialize` plus header, modern per-request `_meta`;
 // PROTOCOL_VERSION names the legacy era.
 export const PROTOCOL_VERSION = '2025-11-25';
 export const MODERN_PROTOCOL_VERSION = '2026-07-28';
@@ -46,7 +50,7 @@ const TOOL_BY_NAME = new Map(DESCRIPTORS.map(tool => [tool.name, tool]));
 // Editor authority is a verified workspace-bound capability delivered through widget-only metadata,
 // or the paired page's own admission. Tool names and client declarations grant no authority.
 const EDITOR_ONLY_TOOLS = new Set(HOST_TOOLS.filter(tool => tool.visibility?.includes('app')).map(tool => tool.name));
-const EDITOR_REQUEST_TOOLS = new Set(['document.set_view', ...Object.keys(EDITOR_TOOL_ACTIONS)]);
+const EDITOR_REQUEST_TOOLS = new Set(['editor.set_view', 'editor.set_preferences', ...Object.keys(EDITOR_TOOL_ACTIONS)]);
 // /muse lists what an agent calls and carries no embedded editor: the person edits at editor_url, the paired page,
 // which calls the editor's own operations over its own route.
 // This endpoint bounds interactive waits to MUSE_WAIT_MS; /mcp keeps the catalogue's range.
@@ -54,14 +58,14 @@ const MUSE_WAIT_MS = 15000;
 const museDescriptor = tool => {
   if (tool.name === 'rapier.open') {
     const {file, ...properties} = tool.inputSchema.properties;
-    return {...tool, description: 'Creates an editable workspace from document text, or resumes one by its document value. Returns editor_url, the live editor for the person\'s browser; when that browser shows a four-letter code, pair it with document.pair_browser. Use document.draw for editable SVG drawings and document.apply_edits for Mermaid fences. Workspaces expire after 30 idle days.',
-      inputSchema: {...tool.inputSchema, properties}};
+    return {...tool, description: 'Create or resume a workspace. Return editor_url; editor.pair confirms its browser code. Workspaces expire after 30 idle days.',
+      inputSchema: {...tool.inputSchema, properties, oneOf: tool.inputSchema.oneOf?.filter(branch => !branch.required?.includes('file'))}};
   }
   return tool.name !== 'document.wait_for_user' ? tool : {...tool, inputSchema: {...tool.inputSchema, properties: {...tool.inputSchema.properties,
-    timeout_ms: {...tool.inputSchema.properties.timeout_ms, maximum: MUSE_WAIT_MS, description: 'How long to wait: 1,000 to 15,000 milliseconds on this door; 15,000 by default.'}}}};
+    timeout_ms: {...tool.inputSchema.properties.timeout_ms, maximum: MUSE_WAIT_MS, default: MUSE_WAIT_MS, description: 'How long to wait: 1,000 to 15,000 milliseconds on this door; 15,000 by default.'}}}};
 };
 const MUSE_DESCRIPTORS = Object.freeze(mcpDescriptors({auth: 'oauth'}).filter(tool => !EDITOR_ONLY_TOOLS.has(tool.name)).map(museDescriptor));
-const PAIR_BROWSER = 'document.pair_browser', PAIR_STATUS = 'document.pair_status';
+const PAIR_BROWSER = 'editor.pair', PAIR_STATUS = 'document.pair_status';
 const MUSE_EXPORT_TEXT_CHARS = 60000;
 // Without a connection, on /mcp, the document value is the whole authority.
 const ANONYMOUS = Object.freeze({source: 'anonymous', scopes: Object.freeze(['rapier:read', 'rapier:write'])});
@@ -105,6 +109,7 @@ const returnRefused = (reason, status) => returnReply({ accepted: false, reason 
 const receivedReturns = head => (head.returns || []).filter(row => row.receivedAt).sort((a, b) => a.sequence - b.sequence);
 const returnMetadata = row => ({ return_id: row.id, name: row.name, receivedAt: row.receivedAt, bytes: row.bytes, chars: row.chars });
 const CHUNK_CHARS = 32768;
+const WORKSPACE_STATE_FORMAT = 'rapier-workspace/2';
 const MAX_RECEIPTS = 64;
 const MAX_UI_BYTES = 16 * 1024 * 1024;
 // The body bound is three times MAX_TEXT_BYTES plus envelope room (JSON escaping), never the text law itself.
@@ -113,6 +118,15 @@ const VIEW_LEASE_MS = 15000;
 // The open editor builds a Word or PDF file in its own time; the request waits this long for it.
 const EXPORT_LEASE_MS = 90000;
 const DAY = 86400000;
+const REQUEST_LEASE_MS = 300000;
+const REQUEST_SESSION = /^rps_[A-Za-z0-9_-]{43}$/;
+const TASK_HANDLE = /^rptask_[A-Za-z0-9_-]{43}$/;
+const TASK_METHODS = new Set(['tasks/get', 'tasks/update', 'tasks/cancel']);
+const taskTool = (name, args) => ['document.wait_for_user', 'document.inspect_visual'].includes(name) ||
+  name === 'document.export' && ['pdf', 'docx'].includes(args?.format);
+// The folder/bucket adapter binds every object to one source path; it has no task owner.
+const taskHosting = (env, authority) => ['anonymous', 'oauth'].includes(authority.source) &&
+  !!editorSecret(env) && typeof env.DOCUMENTS?.get === 'function' && typeof env.DOCUMENTS?.idFromName === 'function';
 const encoder = new TextEncoder();
 
 const instructions = INSTRUCTIONS;
@@ -121,8 +135,12 @@ const instructions = INSTRUCTIONS;
 const PUBLIC_FAILURE = Symbol('public failure');
 const failure = (code, message, details = {}) => Object.assign(new Error(message), { code, details, [PUBLIC_FAILURE]: true });
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
+const assertRequestActive = authority => {
+  if (Array.isArray(authority)) { for (const item of authority) assertRequestActive(item); }
+  else authority?.signal?.throwIfAborted();
+};
 const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
-const rpcError = (id, code, message, status = 200, data) => json({ jsonrpc: '2.0', id, error: { code, message, ...(data ? { data } : {}) } }, status);
+const rpcError = (id, code, message, status = 200, data) => json({ jsonrpc: '2.0', ...(id == null ? {} : { id }), error: { code, message, ...(data ? { data } : {}) } }, status);
 const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.floor(Number(value)))) : fallback;
 
 function contentBytes(text) {
@@ -144,15 +162,16 @@ async function digest(value) {
 // The finished file for document.export, each format from its one owner: the source as it stands, the offline page (the built editor page
 // with the source carried inside), the text and the standalone page (the inert renderer the platform installed). Word and PDF arrive from the
 // open editor already checked, in request.file.
-async function exportFile(env, { format, filename, docKind, text, base, file: supplied }) {
+async function exportFile(env, { format, filename, docKind, text, base, file: supplied, signal }) {
+  signal?.throwIfAborted();
   let file;
   if (supplied) file = supplied;
   else if (format === 'markdown') file = { name: filename, mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
   else if (format === 'html') {
     try {
-      const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html'));
+      const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html', {signal}));
       if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) return { reason: 'export_page_unavailable' };
-      const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE');
+      const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE', false, signal);
       file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes: encoder.encode(wrap(page, text, filename, base ? {base} : undefined)) };
     } catch (error) {
       return error?.code === 'EXPORT_PAGE_TOO_LARGE' ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES } : { reason: 'export_page_unavailable' };
@@ -166,6 +185,7 @@ async function exportFile(env, { format, filename, docKind, text, base, file: su
         bytes: encoder.encode(format === 'txt' ? rendered.text : rendered.html), ...(rendered.fidelity ? { fidelity: rendered.fidelity } : {}) };
     } catch (error) { return { reason: error?.code === 'export_render_limit' ? 'export_render_limit' : 'export_render_unavailable' }; }
   } else return { reason: 'export_format_invalid' };
+  signal?.throwIfAborted();
   file.fidelity ||= exportFidelity(format, docKind);
   return file.bytes.byteLength > MAX_EXPORT_BYTES
     ? { reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES, byteLength: file.bytes.byteLength } : file;
@@ -238,14 +258,59 @@ async function takeIdOf(capability) {
 const mintId = prefix => prefix + crypto.randomUUID().replaceAll('-', '');
 
 function snapshot(state, collaboration, viewIntent, visualIntent, exportIntent, editorIntent) {
-  const compare = state.compare ? { id: state.compare.id, revision: state.compare.revision, baseline: state.compare.baseline, incoming: state.compare.incoming, name: state.compare.name, ...(state.compare.contribution ? {contribution: state.compare.contribution} : {}), reviewOnly: state.compare.reviewOnly === true, changes: state.compare.changes.map(({ id, start, end, incomingStart, incomingEnd, removed, inserted, status }) => ({ id, start, end, incomingStart, incomingEnd, removed, inserted, status })) } : null;
+  const compare = state.compare ? { id: state.compare.id, revision: state.compare.revision, baseline: state.compare.baseline, incoming: state.compare.incoming, name: state.compare.name, ...(state.compare.turnId ? {turnId: state.compare.turnId} : {}), changes: state.compare.changes.map(({ id, start, end, incomingStart, incomingEnd, removed, inserted }) => ({ id, start, end, incomingStart, incomingEnd, removed, inserted })) } : null;
   if (collaboration?.drawingIntent?.drawingPatch) {
     // The source transaction carries presentation material once. The admitted editor expands
     // its exact journal entry only when handing that turn to Draw.
     const {drawingPatch, ...drawingIntent} = collaboration.drawingIntent;
     collaboration = {...collaboration, drawingIntent};
   }
-  return { documentId: state.documentId, revision: state.revision, text: state.text, filename: state.filename, docKind: state.docKind, journal: state.journal, proposalBase: state.proposalBase, compare, collaboration, viewIntent: viewIntent || null, ...(visualIntent ? {visualIntent} : {}), ...(exportIntent ? {exportIntent} : {}), ...(editorIntent ? {editorIntent} : {}) };
+  return { documentId: state.documentId, revision: state.revision, text: state.text, filename: state.filename, docKind: state.docKind, journal: state.journal, historyComplete: state.history.complete === true, compare, collaboration, viewIntent: viewIntent || null, ...(visualIntent ? {visualIntent} : {}), ...(exportIntent ? {exportIntent} : {}), ...(editorIntent ? {editorIntent} : {}) };
+}
+
+function workspaceMetadata(state, start = null) {
+  const head = {filename: state?.filename, docKind: state?.docKind};
+  if (!_rapierValidMetadata(head) || !Array.isArray(state?.journal) || typeof state.text !== 'string' ||
+      !Number.isSafeInteger(state.revision) || state.revision < 0) throw failure('CORRUPT_WORKSPACE', 'The stored document history is invalid.');
+  let source = state.text, revision = state.revision;
+  for (let index = state.journal.length - 1; index >= 0; index--) {
+    const row = state.journal[index];
+    if (!row || row.revision !== revision || row.revision < 1 || row.baseRevision !== revision - 1 ||
+        !row.author || row.author.kind !== row.actor || typeof row.author.id !== 'string' || !row.author.id ||
+        !(row.createdAt === null || Number.isSafeInteger(row.createdAt) && row.createdAt >= 0))
+      throw failure('CORRUPT_WORKSPACE', 'The stored canonical act is incomplete.');
+    source = transformSplices(source, row.splices, true);
+    if (source === null) throw failure('CORRUPT_WORKSPACE', 'The stored document source does not replay.');
+    revision = row.baseRevision;
+  }
+  if (start === null) {
+    start = {...head};
+    for (let index = state.journal.length - 1; start && index >= 0; index--)
+      start = _rapierTransformMetadata(start, state.journal[index].metadata, true);
+  }
+  const records = state.journal.map(row => ({splices: row.splices, ...(Object.hasOwn(row, 'authored') ? {authored: row.authored} : {}), ...(row.metadata ? {metadata: row.metadata} : {}), transaction: row}));
+  try { if (records.some(row => Object.hasOwn(row, 'authored'))) authoredHistory(source, records); }
+  catch (_) { throw failure('CORRUPT_WORKSPACE', 'The stored authored placement does not replay.'); }
+  const replayed = start && _rapierReplayMetadata(start, records);
+  if (!replayed || canonicalJson(replayed) !== canonicalJson(head)) throw failure('CORRUPT_WORKSPACE', 'The stored document metadata does not replay.');
+  return {start, head};
+}
+
+function requireWorkspaceFormat(head) {
+  if (head?.stateFormat !== WORKSPACE_STATE_FORMAT)
+    throw failure('UNSUPPORTED_WORKSPACE_FORMAT', 'This workspace uses an unsupported history format. Open a new workspace from an exported copy.');
+}
+
+export function readWorkspaceState(head, envelope) {
+  requireWorkspaceFormat(head);
+  if (!plain(envelope) || envelope.format !== WORKSPACE_STATE_FORMAT)
+    throw failure('UNSUPPORTED_WORKSPACE_FORMAT', 'The stored workspace uses an unsupported history format.');
+  if (!plain(envelope.state) || !_rapierValidMetadata(envelope.metadata?.start) || !_rapierValidMetadata(envelope.metadata?.head))
+    throw failure('CORRUPT_WORKSPACE', 'The stored workspace metadata is incomplete.');
+  const metadata = workspaceMetadata(envelope.state, envelope.metadata.start);
+  if (canonicalJson(metadata.head) !== canonicalJson(envelope.metadata.head))
+    throw failure('CORRUPT_WORKSPACE', 'The stored workspace metadata does not match its head.');
+  return envelope.state;
 }
 
 function retainEditorReceipt(head, request, receipt) {
@@ -273,43 +338,33 @@ function drawingTurn(value) {
 }
 
 function collaborationSummary(value) {
-  const presence = value.presence, review = value.review;
-  return { posture: value.posture, readOnly: value.readOnly, ...(value.drawingIntent ? {drawingIntent: drawingTurn(value.drawingIntent)} : {}), agentPresence: value.agentPresence, presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes } : {}), ...(review.splices ? { splices: review.splices } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
+  const presence = value.presence;
+  return {...(value.drawingIntent ? {drawingIntent: drawingTurn(value.drawingIntent)} : {}), agentPresence: value.agentPresence,
+    presence: presence ? {active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt} : null};
 }
 
-// Model-facing: ids, statuses, counts; never splices. Built from the same collaboration() as collaborationSummary, without the editor's
-// aggregate of every agent's pointer (their words and owners): a caller's own presence is get_context's, never a shared fact.
+// Caller-scoped presence comes from document.observe, never a shared fact.
 function collaborationContext(value) {
-  const presence = value.presence, review = value.review;
-  return { posture: value.posture, readOnly: value.readOnly, ...(value.drawingIntent ? {drawingIntent: drawingTurn(value.drawingIntent)} : {}), presence: presence ? { active: presence.active, editing: presence.editing, revision: presence.revision, expiresAt: presence.expiresAt } : null, review: review ? { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), revision: review.revision, expiresAt: review.expiresAt, label: review.label, ...(review.contribution ? {contribution: review.contribution, complete: review.complete !== false} : {}), editCount: review.editCount ?? review.splices?.length ?? 0, ...(Array.isArray(review.changeIds) ? { changeIds: review.changeIds } : {}), ...(Array.isArray(review.changes) ? { changes: review.changes.map(({ id, status, reason }) => ({ id, status, ...(reason ? { reason } : {}) })) } : {}), ...(review.baseRevision !== undefined ? { baseRevision: review.baseRevision, scope: review.scope, includesHumanChanges: review.includesHumanChanges } : {}), ...(review.reason ? { reason: review.reason } : {}), ...(review.decision ? { decision: review.decision } : {}) } : null };
-}
-
-// Sorted defensively; storage order is not promised.
-function reviewChangesFingerprint(review) {
-  if (!Array.isArray(review?.changes) || !review.changes.length) return '';
-  return review.changes.map(row => `${row.id}:${row.status}:${row.reason || ''}`).sort().join('|');
+  const {agentPresence, ...context} = collaborationSummary(value);
+  return context;
 }
 
 function viewChanged(before, after) {
   if (JSON.stringify(before.pointers) !== JSON.stringify(after.pointers)) return true;
-  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision || before.posture !== after.posture || before.readOnly !== after.readOnly || before.review?.id !== after.review?.id || before.review?.status !== after.review?.status || before.reviewedRevision !== after.reviewedRevision) return true;
-  // Per-change status moves without review.id/status changing: fingerprint the changes too, or a partial drop reads unchanged.
-  if (reviewChangesFingerprint(before.review) !== reviewChangesFingerprint(after.review)) return true;
+  if (before.revision !== after.revision || before.text !== after.text || before.filename !== after.filename || before.docKind !== after.docKind || before.compare?.id !== after.compare?.id || before.compare?.revision !== after.compare?.revision) return true;
   const left = before.compare?.changes || [], right = after.compare?.changes || [];
   return left.length !== right.length || left.some((row, index) => row.id !== right[index].id || row.status !== right[index].status);
 }
 
 // `modelFacing`: the one call site a model reads. If the assembled envelope is over budget, collaboration degrades to counts; nothing else is cut.
 function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollaboration = true } = {}) {
-  if (head) meta = {...meta, editorIssuedAt: head.editorIssuedAt ?? head.createdAt};
+  if (head) meta = {...meta, editorIssuedAt: head.editorIssuedAt ?? head.createdAt,
+    ...(head.fileHydration ? {fileHydration: {id: head.fileHydration.id, baseRevision: head.fileHydration.baseRevision,
+      status: head.fileHydration.status === 'pending' && head.revision !== head.fileHydration.baseRevision ? 'superseded' : head.fileHydration.status}} : {})};
   const isError = value.isError || ['refused', 'invalid', 'conflict', 'yielded', 'target_gone'].includes(value.outcome);
   let collaboration = value.collaboration ?? (fallbackCollaboration ? modelFacing ? head?.collaborationContext : head?.collaboration : undefined);
   if (modelFacing && collaboration?.drawingIntent) collaboration = {...collaboration, drawingIntent: drawingTurn(collaboration.drawingIntent)};
   const result = { ...value, outcome: value.outcome || 'ok', ...(head ? { documentId: head.documentId, revision: head.revision, documentRevision: value.documentRevision ?? head.revision, ...(value.replayed && value.documentRevision !== undefined ? {currentRevision: head.revision} : {}), version: head.version, filename: head.filename, docKind: head.docKind, chars: head.chars, ...(collaboration !== undefined ? {collaboration} : {}), ...(head.viewIntent ? { view: { ...value.view, id: head.viewIntent.id, kind: head.viewIntent.kind, revision: head.viewIntent.revision, status: head.viewIntent.status, ...(head.viewIntent.view ? {requested: head.viewIntent.view} : {}), ...(head.viewIntent.reason ? { reason: head.viewIntent.reason } : {}) } } : {}), expiresAt: new Date(head.expiresAt).toISOString() } : {}) };
-  if (modelFacing && collaboration?.review && encoder.encode(JSON.stringify(result)).byteLength > LIMITS.resultBytes) {
-    const review = collaboration.review;
-    result.collaboration = { ...collaboration, review: { id: review.id, kind: review.kind, status: review.status, cause: review.cause, ...(review.law ? { law: review.law, region: review.region } : {}), editCount: review.editCount, ...(review.contribution ? {contribution: review.contribution} : {}), complete: false } };
-  }
   const message = typeof result.message === 'string' ? result.message : typeof result.reason === 'string' ? result.reason : `${result.outcome}${head ? `; document revision ${head.revision}` : ''}`;
   return { content: [{ type: 'text', text: message }], structuredContent: result, ...(isError ? { isError: true } : {}), ...(Object.keys(meta).length ? { _meta: { rapier: meta } } : {}) };
 }
@@ -318,7 +373,7 @@ function operationEnvelope(operation, recorded, head) {
   const {hostedDownload, drawingPatch, ...value} = recorded;
   if (operation === 'document.save' && value.saved) Object.assign(value, {verified: true, destination: 'workspace', durable: true});
   // A context refusal has no caller-scoped presence. The shared projection cannot substitute for it, in a first result or its replay.
-  const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, drawingPatch ? {drawingPatch} : {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.get_context'});
+  const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, drawingPatch ? {drawingPatch} : {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.observe'});
   if (hostedDownload) result.content.push(hostedDownload);
   return result;
 }
@@ -329,9 +384,9 @@ function toolError(error, head, meta) {
   return envelope({ outcome: uncertain ? 'uncertain' : 'refused', isError: true, code: typeof error.code === 'string' ? error.code : 'WORKSPACE_ERROR', message: error.message || 'The workspace operation failed.', ...(error.details || {}) }, head, meta);
 }
 
-async function readTextBody(request, limit = MAX_RPC_BODY_BYTES, label = 'JSON request', code = 'REQUEST_TOO_LARGE', preserveBOM = false) {
+async function readTextBody(request, limit = MAX_RPC_BODY_BYTES, label = 'JSON request', code = 'REQUEST_TOO_LARGE', preserveBOM = false, activeSignal) {
   const length = request.headers.get('Content-Length');
-  const reader = request.body?.getReader(), signal = request.signal;
+  const reader = request.body?.getReader(), signal = activeSignal || request.signal;
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: preserveBOM });
   const parts = [];
   let bytes = 0, cancelled = false;
@@ -494,11 +549,17 @@ async function takeCreateBudget(env, { takeId, principalKey }) {
 
 // authority: a verified connection (oauth or the local server), the anonymous kind on /mcp, or the paired page, whose
 // admission (the owner's browser, or a browser paired by code) the workspace itself decides.
-async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false) {
+async function initialObservation(kernel, input) {
+  return kernel.invoke('document.observe', {facets: [], budget_bytes: 2048},
+    {...resolveCaller({actor: 'agent', principal: remotePrincipal(input), requestId: mintId('observation_')}, {transport: 'mcp'}),
+      world: {presence: WORKER_PRESENCE}});
+}
+
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null) {
   const descriptor = TOOL_BY_NAME.get(name);
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
   const rawArgs = args;
-  const humanNamed = ['document.comment', 'document.read_context'].includes(name) && (Object.hasOwn(args, 'editorKey') || typeof editorProof === 'string');
+  const humanNamed = (['comments.write', 'document.read'].includes(name) || name === 'comparison.present' && args.action === 'close') && (Object.hasOwn(args, 'editorKey') || typeof editorProof === 'string');
   if (humanNamed && (door === '/muse' || authority.source !== 'page' && typeof editorProof !== 'string')) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This operation needs the editor's own authority."));
   const keyArgument = humanNamed ? args.editorKey ?? editorProof : undefined;
   if (humanNamed) { args = {...args}; delete args.editorKey; }
@@ -510,7 +571,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return {isError: true, content: [{type: 'text', text: JSON.stringify(result.structuredContent)}]};
   }
   if (humanNamed) args.editorKey = keyArgument;
-  if (name === 'rapier.guide') return envelope(guideResult(args, args.topic === 'paint' ? agentPaintBrushRegistry() : null));
+  if (name === 'rapier.guide') return envelope(guideResult(args, args.topic === 'paint' ? agentPaintBrushRegistry() : null, operation => {
+    const inputSchema = inputGuide(operation, {mcp: true});
+    return inputSchema && door === '/muse' ? museDescriptor({name: operation, inputSchema}).inputSchema : inputSchema;
+  }));
   if (name === PAIR_STATUS) return toolError(failure('PAIRING_PAGE_ONLY', 'Only the paired editor page asks for its own pairing code, on its own route.'));
   if (door === '/muse' && name === 'rapier.open' && args.file) return toolError(failure('HOST_FILE_UNAVAILABLE', 'Host file references require an embedded editor. Read the file and pass its text to rapier.open.'));
   for (const field of ['text', 'query']) if (typeof args[field] === 'string' && contentBytes(args[field]) > MAX_TEXT_BYTES) return toolError(failure('TEXT_TOO_LARGE', `${field} exceeds the UTF-8 text limit.`, { limitBytes: MAX_TEXT_BYTES }));
@@ -537,7 +601,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const createBudget = create ? { takeId: await takeIdOf(minted), retryable: createToken !== null,
     principalKey: await digest(anonymous ? 'address:' + (request.headers.get('CF-Connecting-IP') || 'unknown')
       : authority.source + ':' + authority.ownerId + ':' + (authority.connectionId || '')) } : null;
-  if (!create && name === 'rapier.open' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with document.open_text.'));
+  if (!create && name === 'rapier.open' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with document.replace.'));
   const humanTool = humanNamed;
   const document = create ? minted : page ? null : args.document;
   const ownerKey = page ? null : anonymous ? await anonymousOwner(document) : connectedOwner;
@@ -546,7 +610,6 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   // This private field is never taken from tool arguments; workspace ownership stays owner-scoped.
   const connectionKey = authority.source === 'oauth' ? await digest(authority.connectionId) : null;
   const documentAddress = page ? page.address : await workspaceAddress(document, ownerKey);
-  if (door === '/muse' && name === 'document.wait_for_user') args = {...args, timeout_ms: waitTimeout(args.timeout_ms, MUSE_WAIT_MS)};
   const editorBinding = {workspace: documentAddress, connection: page ? page.authority.ownerKey || '' : authority.connectionId || authority.ownerId || ''};
   let editorSource = authority.source;
   if (EDITOR_ONLY_TOOLS.has(name) || humanTool) {
@@ -581,8 +644,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       if (response.ok) status = await response.json();
     } catch {}
     if (status?.reason === 'notes_not_configured') return envelope({outcome: 'ok', availability: 'unavailable', reason: 'notes_not_configured', message: 'Notes is not set up on this host.',
-      complete: true, remaining: 0, next_cursor: null, ...(name === 'notes.list' ? {notes: []} : {}),
-      ...(name === 'notes.read' ? {file: args.file, found: false, text: null} : {})});
+      complete: true, remaining: 0, next_cursor: null, ...(name === 'notes.find' ? {notes: []} : {}),
+      ...(name === 'notes.read' ? {note_ref: args.note_ref, found: false, text: null} : {})});
     const hint = typeof status?.hint === 'string' && status.hint.length <= 512 ? status.hint
       : 'Unlock Notes at the enrolled endpoint and use its private connection. The hosted relay cannot read encrypted Notes.';
     return envelope({outcome: 'refused', availability: 'locked', reason: 'notes_locked',
@@ -590,7 +653,29 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   }
   // Pending observations and private paint work follow client disconnects. The
   // operation still owns its durable receipt after cancellation or publication.
-  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress)).fetch(new Request('https://rapier.internal/operation', { method: 'POST', ...(['document.wait_for_user', 'document.inspect_visual', 'document.draw', 'document.undo_agent_change'].includes(name) || name === 'document.read_context' && input.paintSample || EDITOR_REQUEST_TOOLS.has(name) || name === 'document.export' && ['docx', 'pdf'].includes(input.format) ? {signal: request.signal} : {}), headers: { 'Content-Type': 'application/json' }, body: serializeJson({ operation: name, args: input, create, ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(['document.export', 'document.propose'].includes(name) ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}) }) }));
+  const requestKey = mintId('request_'), requestExpiresAt = Date.now() + REQUEST_LEASE_MS;
+  const payload = { operation: name, args: input, create, ...(name === 'document.wait_for_user' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'document.create_return' ? { returnAddress: documentAddress } : {}), ...(name === 'document.export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}) };
+  const workspace = env.DOCUMENTS.get(env.DOCUMENTS.idFromName(documentAddress));
+  let cancellation;
+  const cancel = () => cancellation ||= workspace.fetch(new Request('https://rapier.internal/operation/cancel', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({requestKey, requestExpiresAt, ownerKey, capabilityHash, connectionKey}),
+  })).then(response => { if (!response.ok) throw failure('CANCELLATION_UNACKNOWLEDGED', 'Cancellation was not acknowledged.'); });
+  const aborted = () => { cancel().catch(() => {}); };
+  request.signal.addEventListener('abort', aborted, {once: true});
+  // The control request waits for the document owner to settle. Aborting fetch itself
+  // would release its caller before the owner's transaction and receipt have settled.
+  let response;
+  try {
+    const running = workspace.fetch(new Request('https://rapier.internal/operation', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: serializeJson(payload)}));
+    if (request.signal.aborted) aborted();
+    response = await running;
+    if (request.signal.aborted || response.status === 499) {
+      await cancel();
+      throw new DOMException('Request cancelled', 'AbortError');
+    }
+  } finally { request.signal.removeEventListener('abort', aborted); }
   if (!response.ok) {
     const identity = ['operation_id', 'commitId', 'decisionId', 'createToken'].find(key => args[key] !== undefined);
     const retryable = Boolean(identity) || !create && (EDITOR_ONLY_TOOLS.has(name) || descriptor.annotations.readOnlyHint);
@@ -612,6 +697,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return result;
   }
   // The paired page names its workspace by id and never receives a reference.
+  if (name === 'rapier.open' && result.structuredContent) result.structuredContent = {...result.structuredContent,
+    custody: 'hosted_workspace', destination: 'workspace',
+    hydration: file ? {status: result._meta?.rapier?.fileHydration?.status || 'unavailable', destination: 'host_file'} : {status: 'complete'},
+    presentation: {status: door === '/muse' ? 'link_available' : 'requested', acknowledged: false}};
   if (page) return result;
   result.structuredContent = { ...result.structuredContent, document, ...(name === 'rapier.open' ? { editor_url: new URL('/d/' + pageId(documentAddress), request.url).href } : {}) };
   if (name === PAIR_BROWSER && /^[a-f0-9]{64}$/.test(result.structuredContent.ownerApprovalId || '')) {
@@ -622,6 +711,104 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   return result;
 }
 
+function publicToolResult(name, result, door) {
+  if (door === '/muse' && result._meta) { const {_meta, ...value} = result; result = value; }
+  if (!EDITOR_ONLY_TOOLS.has(name) && plain(result.structuredContent)) {
+    result = {...result, content: [{type: 'text', text: JSON.stringify(result.structuredContent)},
+      ...(result.content || []).filter(item => ['image', 'resource', 'resource_link'].includes(item.type))]};
+  }
+  return result;
+}
+
+async function taskDocument(input, authority, env, recover = false) {
+  const original = input.authority;
+  if (!plain(authority) || original.source !== authority.source || input.door !== (authority.door || input.door) ||
+      original.ownerId !== authority.ownerId || original.connectionId !== authority.connectionId ||
+      !input.scopes.every(scope => authority.scopes?.includes(scope)) ||
+      original.grant && !await oauthGrantCurrent(original.grant, env)) return false;
+  const document = input.args.document;
+  if (!WORKSPACE_HANDLE.test(document || '')) return false;
+  const ownerKey = authority.source === 'anonymous' ? await anonymousOwner(document) : await digest(authority.ownerId);
+  const capabilityHash = await digest(document), address = await workspaceAddress(document, ownerKey);
+  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(address)).fetch(new Request('https://rapier.internal/task/' + (recover ? 'recover' : 'authority'), {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ownerKey, capabilityHash,
+      ...(original.grant ? {oauthGrant: original.grant, connectionKey: await digest(original.connectionId)} : {}),
+      ...(recover ? {taskKey: input.task.key, deadline: input.deadline} : {})}),
+  }));
+  return response.ok ? response.json() : null;
+}
+
+async function taskRoute(method, taskId, input, authority, env) {
+  if (!TASK_HANDLE.test(taskId || '')) throw Object.assign(new Error('Task unavailable.'), {code: -32602});
+  const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName('task:' + sha256(taskId))).fetch(new Request('https://rapier.internal/task/' + method, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: serializeJson({taskId, input, authority}),
+  }));
+  if (!response.ok) throw Object.assign(new Error('Task unavailable.'), {code: -32603});
+  const value = await response.json();
+  if (value.error) throw Object.assign(new Error(value.error.message), {code: value.error.code, data: value.error.data});
+  return value.result;
+}
+
+async function createTask(name, args, request, authority, env, hostAgent, door) {
+  request.signal.throwIfAborted();
+  const descriptor = TOOL_BY_NAME.get(name);
+  // Invalid arguments receive the same ordinary tool feedback as a direct call.
+  try { validateInput(descriptor.inputSchema, args, 'arguments', true); }
+  catch { return callTool(name, args, env, request, authority, hostAgent, door); }
+  const operationId = args.operation_id || crypto.randomUUID();
+  args = {...args, operation_id: operationId};
+  const identity = sha256(canonicalJson({name, args}));
+  const tokenKey = await crypto.subtle.importKey('raw', editorSecretKeyMaterial(editorSecret(env), 'rapier-task-v1:'),
+    {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+  const token = await crypto.subtle.sign('HMAC', tokenKey, encoder.encode(canonicalJson({document: args.document,
+    owner: authority.ownerId || '', connection: authority.connectionId || '', door, operationId})));
+  const taskId = 'rptask_' + base64url(new Uint8Array(token));
+  const duration = name === 'document.wait_for_user' ? waitTimeout(args.timeout_ms, door === '/muse' ? MUSE_WAIT_MS : 120000)
+    : name === 'document.export' ? EXPORT_LEASE_MS : VIEW_LEASE_MS;
+  const now = Date.now();
+  const task = {key: sha256(taskId), expiresAt: now + TASK_TTL_MS, deadline: now + duration};
+  const input = {identity, name, args, authority, hostAgent, door, url: request.url, task,
+    scopes: descriptor.annotations.readOnlyHint ? ['rapier:read'] : ['rapier:read', 'rapier:write'],
+    deadline: task.deadline + 1000};
+  request.signal.throwIfAborted();
+  return taskRoute('create', taskId, input, authority, env);
+}
+
+// A notification carries no document authority. Its namespace is the verified
+// connection or a legacy transport's unguessable session, never a bare request ID.
+function requestScope(request, authority, door, modern) {
+  const session = !modern && REQUEST_SESSION.test(request.headers.get('Mcp-Session-Id') || '')
+    ? request.headers.get('Mcp-Session-Id') : '';
+  if (['page', 'server'].includes(authority.source) || authority.source === 'anonymous' && !session) return null;
+  return sha256(JSON.stringify([door, authority.source, authority.ownerId || '', authority.connectionId || '', session]));
+}
+
+async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id) {
+  if (!scope || name === 'rapier.guide') return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity);
+  const owner = env.DOCUMENTS.get(env.DOCUMENTS.idFromName('request:' + scope));
+  const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', '');
+  let cancellation;
+  const cancel = () => cancellation ||= owner.fetch(new Request('https://rapier.internal/request/cancel', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key, occurrence}),
+  })).then(response => { if (!response.ok) throw failure('CANCELLATION_UNACKNOWLEDGED', 'Cancellation was not acknowledged.'); });
+  const abort = () => { cancel().catch(() => {}); };
+  request.signal.addEventListener('abort', abort, {once: true});
+  try {
+    const pending = owner.fetch(new Request('https://rapier.internal/request/call', {method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Rapier-Request': key, 'X-Rapier-Occurrence': occurrence}, body: serializeJson({key, call: {name, args, authority, hostAgent,
+        door, editorProof, editorActivity, url: request.url,
+        headers: {'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') || 'unknown'}}})}));
+    if (request.signal.aborted) abort();
+    const response = await pending;
+    if (!response.ok) throw failure('WORKSPACE_UNAVAILABLE', 'The request owner did not answer.');
+    const value = await response.json();
+    if (request.signal.aborted) await cancel();
+    if (value.cancelled || request.signal.aborted) throw new DOMException('Request cancelled', 'AbortError');
+    if (value.error) throw failure(value.error.code, value.error.message, value.error.details);
+    return value.result;
+  } finally { request.signal.removeEventListener('abort', abort); }
+}
+
 // Mcp-Name and Mcp-Param-* header values may arrive in the base64 sentinel form
 // (`=?base64?...?=`, MCP 2026-07-28 Streamable HTTP "Value Encoding"); decode before comparing.
 // RFC 9110 section 5.5 excludes raw field SP/HTAB. Decoded metadata whitespace is data.
@@ -629,9 +816,10 @@ const headerField = value => value === null ? null : value.replace(/^[ \t]+|[ \t
 function headerValue(value) {
   value = headerField(value);
   if (value === null) return null;
-  const sentinel = /^=\?base64\?([A-Za-z0-9+/=]*)\?=$/.exec(value);
-  if (!sentinel) return value;
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(sentinel[1]), char => char.charCodeAt(0))); } catch { return null; }
+  const sentinel = /^=\?base64\?(.*)\?=$/.exec(value);
+  if (!sentinel) return /^[\x20-\x7e\t]*$/.test(value) ? value : null;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(sentinel[1])) return null;
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Uint8Array.from(atob(sentinel[1]), char => char.charCodeAt(0))); } catch { return null; }
 }
 // Runtime deployment identity is independent of the installed skills snapshot. No binding means no deployment claim.
 const serverInfo = env => ({ name: 'rapier', title: 'Rapier', version: VERSION + (env.RAPIER_DEPLOYMENT?.id ? '+worker.' + env.RAPIER_DEPLOYMENT.id : ''), websiteUrl: 'https://rapier.website', icons: ICONS });
@@ -661,12 +849,12 @@ async function withOrigin(request, env, dispatch) {
   const response = request.method === 'OPTIONS'
     ? new Response(null, {status: 204, headers: {'Cache-Control': 'no-store',
       'Access-Control-Allow-Methods': DOORS.has(path) ? 'POST' : 'GET, POST',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-Rapier-Apps-Client, X-Rapier-Name'}})
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id, X-Rapier-Apps-Client, X-Rapier-Name'}})
     : await dispatch();
   if (!origin) return response;
   const headers = new Headers(response.headers);
   headers.set('Access-Control-Allow-Origin', origin);
-  headers.set('Access-Control-Expose-Headers', 'X-Rapier-Apps-Client, WWW-Authenticate');
+  headers.set('Access-Control-Expose-Headers', 'X-Rapier-Apps-Client, Mcp-Session-Id, WWW-Authenticate');
   headers.set('Vary', 'Origin');
   return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
 }
@@ -727,24 +915,49 @@ button.addEventListener('click',async event=>{
     'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; font-src data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`}});
 }
 
+// HTTP downloads and MCP resource reads enter the same artifact admission and byte owner.
+async function exportResponse(request, env, authority) {
+  const url = new URL(request.url);
+  const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'};
+  if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405, headers: {...headers, Allow: 'GET, HEAD'}});
+  const token = url.pathname.slice('/export/'.length), granted = EXPORT_CAPABILITY.exec(token);
+  // An anonymous workspace's link is its own grant; a connected workspace's names a file its owner reads.
+  const refusal = granted ? null : requireScope(request, env, authority, ['rapier:read']);
+  if (refusal) return refusal;
+  const match = granted || EXPORT_HANDLE.exec(token);
+  if (!match || url.search || url.hash) return new Response(null, {status: 404, headers});
+  if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return new Response(null, {status: 503, headers});
+  try {
+    return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(new Request('https://rapier.internal/export', {
+      method: request.method, headers: granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId), ...(authority.grant ? {'X-Rapier-Grant': JSON.stringify(authority.grant)} : {})},
+    }));
+  } catch { return new Response(null, {status: 503, headers}); }
+}
+
+const exportResourceToken = (request, uri) => {
+  const prefix = new URL(request.url).origin + '/export/';
+  if (typeof uri !== 'string' || !uri.startsWith(prefix)) return null;
+  const token = uri.slice(prefix.length);
+  return EXPORT_CAPABILITY.test(token) || EXPORT_HANDLE.test(token) ? token : null;
+};
+
+async function exportResource(response, uri) {
+  if (!response.ok) throw failure(response.status === 404 || response.status === 410 ? 'RESOURCE_NOT_FOUND' : 'WORKSPACE_UNAVAILABLE',
+    'The exported resource is unavailable.');
+  const size = Number(response.headers.get('Content-Length'));
+  if (!Number.isSafeInteger(size) || size < 0 || size > MAX_EXPORT_BYTES) throw failure('WORKSPACE_UNAVAILABLE', 'The exported resource is unavailable.');
+  // The download owner appends an HTTP charset; the resource carries the artifact media type.
+  const mimeType = response.headers.get('Content-Type')?.replace(/; charset=utf-8$/, '');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength !== size || !mimeType) throw failure('WORKSPACE_UNAVAILABLE', 'The exported resource is unavailable.');
+  // Exported files stay bytes, including textual formats and a leading BOM. Base64
+  // bounds response expansion to four thirds instead of content-dependent JSON escapes.
+  return {contents: [{uri, mimeType, blob: encodeBase64(bytes)}]};
+}
+
 async function handleRequest(request, env, authority) {
   const url = new URL(request.url);
-  if (url.pathname.startsWith('/export/')) {
-    const headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'};
-    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405, headers: {...headers, Allow: 'GET, HEAD'}});
-    const token = url.pathname.slice('/export/'.length), granted = EXPORT_CAPABILITY.exec(token);
-    // An anonymous workspace's link is its own grant; a connected workspace's names a file its owner reads.
-    const refusal = granted ? null : requireScope(request, env, authority, ['rapier:read']);
-    if (refusal) return refusal;
-    const match = granted || EXPORT_HANDLE.exec(token);
-    if (!match || url.search || url.hash) return new Response(null, {status: 404, headers});
-    if (!env.DOCUMENTS?.get || !env.DOCUMENTS?.idFromName) return new Response(null, {status: 503, headers});
-    try {
-      return await env.DOCUMENTS.get(env.DOCUMENTS.idFromName(match[1])).fetch(new Request('https://rapier.internal/export', {
-        method: request.method, headers: granted ? {'X-Rapier-Export-Hash': await digest(token)} : {'X-Rapier-Export-ID': match[2], 'X-Rapier-Owner': await digest(authority.ownerId), ...(authority.grant ? {'X-Rapier-Grant': JSON.stringify(authority.grant)} : {})},
-      }));
-    } catch { return new Response(null, {status: 503, headers}); }
-  }
+  if (url.pathname.startsWith('/export/')) return exportResponse(request, env, authority);
   if (url.pathname.startsWith('/return/')) {
     // An anonymous workspace's return address is its own one-use grant, posted directly by any page.
     const token = url.pathname.slice('/return/'.length), granted = RETURN_CAPABILITY.exec(token);
@@ -834,15 +1047,15 @@ async function handleRequest(request, env, authority) {
     const oversized = error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TOO_LARGE';
     return rpcError(null, oversized ? -32600 : -32700, oversized ? error.message : 'Invalid UTF-8 JSON request.', oversized ? 413 : 400, oversized ? error.details : undefined);
   }
-  if (!plain(message) || Object.keys(message).some(key => !['jsonrpc', 'id', 'method', 'params'].includes(key)) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || (message.params !== undefined && !plain(message.params)) || (Object.hasOwn(message, 'id') && !(typeof message.id === 'string' || Number.isSafeInteger(message.id)))) return rpcError(null, -32600, 'Expected one JSON-RPC 2.0 request or notification.', 400);
-  const id = message.id;
+  const id = plain(message) && (typeof message.id === 'string' || Number.isSafeInteger(message.id)) ? message.id : undefined;
+  if (!plain(message) || Object.keys(message).some(key => !['jsonrpc', 'id', 'method', 'params'].includes(key)) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || (message.params !== undefined && !plain(message.params)) || (Object.hasOwn(message, 'id') && id === undefined)) return rpcError(id, -32600, 'Expected one JSON-RPC 2.0 request or notification.', 400);
   const params = message.params || {};
   const header = headerField(request.headers.get('MCP-Protocol-Version'));
   if (params._meta !== undefined && !plain(params._meta)) return rpcError(id ?? null, -32602, 'params._meta: expected an object.', header === MODERN_PROTOCOL_VERSION ? 400 : 200);
   const meta = params._meta || {};
   // Either modern version declaration selects per-request admission, including malformed metadata.
   const modern = header === MODERN_PROTOCOL_VERSION || Object.hasOwn(meta, META_VERSION);
-  let appsClient;
+  let appsClient, hostAgent = null;
   if (modern) {
     const requested = meta[META_VERSION];
     if (typeof requested !== 'string') return rpcError(id ?? null, -32602, `${META_VERSION} must be a string in every request's _meta.`, 400);
@@ -851,43 +1064,57 @@ async function handleRequest(request, env, authority) {
     if (requested !== MODERN_PROTOCOL_VERSION) return rpcError(id ?? null, UNSUPPORTED_VERSION, 'Unsupported protocol version', 400, { supported: PROTOCOL_VERSIONS, requested });
     const method = headerField(request.headers.get('Mcp-Method'));
     if (method !== message.method) return rpcError(id ?? null, HEADER_MISMATCH, method === null ? 'Header mismatch: Mcp-Method header is missing.' : `Header mismatch: Mcp-Method header value '${method}' does not match body value '${message.method}'.`, 400);
-    const named = message.method === 'tools/call' ? params.name : message.method === 'resources/read' ? params.uri : message.method === 'prompts/get' ? params.name : undefined;
+    const named = TASK_METHODS.has(message.method) ? params.taskId : message.method === 'tools/call' ? params.name : message.method === 'resources/read' ? params.uri : message.method === 'prompts/get' ? params.name : undefined;
     if (named !== undefined) {
       const name = headerValue(request.headers.get('Mcp-Name'));
       if (name !== named) return rpcError(id ?? null, HEADER_MISMATCH, name === null ? 'Header mismatch: Mcp-Name header is missing or malformed.' : `Header mismatch: Mcp-Name header value '${name}' does not match body value '${named}'.`, 400);
     }
-    if (!Object.hasOwn(message, 'id')) return new Response(null, { status: 202, headers: { 'Cache-Control': 'no-store' } });
     const client = meta['io.modelcontextprotocol/clientInfo'];
     if (client !== undefined && (!plain(client) || typeof client.name !== 'string' || typeof client.version !== 'string'))
       return rpcError(id, -32602, 'io.modelcontextprotocol/clientInfo: expected name and version strings.');
     if (client) {
-      try { agentActorId('mcp', {name: client.name}); }
-      catch (_) { return rpcError(id, -32602, 'clientInfo.name must be a nonempty host name of at most 96 characters, without control characters.'); }
+      // Client metadata is optional. Only representable labels enter the document's history.
+      try { agentActorId('mcp', {name: client.name}); hostAgent = client.name; } catch {}
     }
     appsClient = declaresAppsUi({ capabilities: meta[META_CLIENT] });
   } else {
     if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return rpcError(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
-    if (!Object.hasOwn(message, 'id')) return new Response(null, { status: 202, headers: { 'Cache-Control': 'no-store' } });
     appsClient = request.headers.get('X-Rapier-Apps-Client') === '1';
   }
-  // The server does not implement multi-round-trip/task parameters. Refuse unsupported fields
-  // instead of appearing to honor them (especially write retries carrying requestState).
+  const scope = requestScope(request, authority, door, modern);
+  if (!Object.hasOwn(message, 'id')) {
+    if (message.method === 'notifications/cancelled' && scope &&
+        (typeof params.requestId === 'string' || Number.isSafeInteger(params.requestId))) {
+      const response = await env.DOCUMENTS.get(env.DOCUMENTS.idFromName('request:' + scope)).fetch(new Request('https://rapier.internal/request/cancel', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key: sha256(JSON.stringify(params.requestId))}),
+      }));
+      if (!response.ok) return new Response(null, {status: 503});
+    }
+    return new Response(null, {status: 202, headers: {'Cache-Control': 'no-store'}});
+  }
+  // Task augmentation is server-directed. Unimplemented MRTR fields never retry a write.
   const fields = {initialize: ['protocolVersion', 'capabilities', 'clientInfo'], 'server/discover': [],
     ping: [], 'tools/list': ['cursor'], 'tools/call': ['name', 'arguments'],
-    'resources/list': ['cursor'], 'resources/templates/list': ['cursor'], 'resources/read': ['uri'], 'skills/list': ['cursor'], 'skills/get': ['uri']};
+    'resources/list': ['cursor'], 'resources/templates/list': ['cursor'], 'resources/read': ['uri'], 'skills/list': ['cursor'], 'skills/get': ['uri'],
+    'tasks/get': ['taskId'], 'tasks/update': ['taskId', 'inputResponses'], 'tasks/cancel': ['taskId']};
   const methodFields = Object.hasOwn(fields, message.method) ? fields[message.method] : null;
   if (methodFields) for (const key of Object.keys(params)) {
+    // SEP-2663 ignores the legacy request hint; task creation remains server-directed.
+    if (modern && message.method === 'tools/call' && key === 'task') continue;
     if (key !== '_meta' && !methodFields.includes(key)) return rpcError(id, -32602, 'params: unsupported field ' + key, 200, {path: 'params.' + key});
   }
+  const dispatch = async request => {
   let result, headers = {};
   const cacheable = (value, ttlMs, cacheScope) => modern ? { ...value, ttlMs, cacheScope } : value;
+  const complete = value => modern ? {...value, resultType: value.resultType === 'task' ? 'task' : 'complete',
+    _meta: {...(plain(value._meta) ? value._meta : {}), [META_SERVER]: serverInfo(env)}} : value;
   if (door === 'page' && message.method !== 'tools/call') return rpcError(id, -32601, 'Method not found.');
   // A tool refused for want of a connection or a scope still answers as a tool, naming the challenge for hosts that
   // link an account from it.
   const challenged = refusal => {
     const challenge = refusal.headers.get('WWW-Authenticate');
-    return json({jsonrpc: '2.0', id, result: {isError: true, content: [{type: 'text', text: 'Connect Rapier with the permission this tool needs.'}],
-      _meta: {'mcp/www_authenticate': [challenge]}}}, refusal.status, {'WWW-Authenticate': challenge});
+    return json({jsonrpc: '2.0', id, result: complete({isError: true, content: [{type: 'text', text: 'Connect Rapier with the permission this tool needs.'}],
+      _meta: {'mcp/www_authenticate': [challenge]}})}, refusal.status, {'WWW-Authenticate': challenge});
   };
   try {
     switch (message.method) {
@@ -895,13 +1122,26 @@ async function handleRequest(request, env, authority) {
         if (modern) return rpcError(id, -32601, 'Method not found.', 404);
         if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return rpcError(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
         result = { protocolVersion: LEGACY_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION, capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {} } }, serverInfo: serverInfo(env), instructions };
-        // Stateless: the client carries the declaration back as a header.
-        if (declaresAppsUi(params)) headers = { 'X-Rapier-Apps-Client': '1' };
+        // The client carries its UI declaration and cancellation namespace back as headers.
+        headers['Mcp-Session-Id'] = 'rps_' + base64url(crypto.getRandomValues(new Uint8Array(32)));
+        if (declaresAppsUi(params)) headers['X-Rapier-Apps-Client'] = '1';
         break;
       case 'server/discover':
         if (!modern) return rpcError(id, -32601, 'Method not found.');
-        result = { supportedVersions: PROTOCOL_VERSIONS, capabilities: { tools: {}, resources: {}, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {} } }, instructions, ttlMs: 3600000, cacheScope: 'public' };
+        result = { supportedVersions: PROTOCOL_VERSIONS, capabilities: { tools: {}, resources: {}, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {}, ...(taskHosting(env, authority) ? {[TASK_EXTENSION]: {}} : {}) } }, instructions, ttlMs: 3600000, cacheScope: 'public' };
         break;
+      case 'tasks/get':
+      case 'tasks/update':
+      case 'tasks/cancel': {
+        if (!modern || door === 'page' || !taskHosting(env, authority)) return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
+        if (!plain(meta[META_CLIENT]?.extensions?.[TASK_EXTENSION])) return rpcError(id, -32021,
+          'Missing required client capability.', 400, {requiredCapabilities: {extensions: {[TASK_EXTENSION]: {}}}});
+        if (typeof params.taskId !== 'string' || message.method === 'tasks/update' && !plain(params.inputResponses))
+          return rpcError(id, -32602, 'Task requests require taskId and updates require inputResponses.');
+        result = await taskRoute(message.method.slice('tasks/'.length), params.taskId, params.inputResponses,
+          {...authority, door}, env);
+        break;
+      }
       case 'ping':
         if (modern) return rpcError(id, -32601, 'Method not found.', 404);
         result = {}; break;
@@ -919,7 +1159,9 @@ async function handleRequest(request, env, authority) {
           if (refusal) return challenged(refusal);
         }
         if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
-        result = await callTool(params.name, params.arguments || {}, env, request, authority, modern ? meta['io.modelcontextprotocol/clientInfo']?.name : null, door, meta['rapier/editorKey'], meta['rapier/editorActivity']);
+        result = modern && door !== 'page' && taskTool(params.name, params.arguments) && plain(meta[META_CLIENT]?.extensions?.[TASK_EXTENSION]) && taskHosting(env, authority)
+          ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door)
+          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id);
         if (authority?.grant && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(request, env));
         // The page that disconnects agents keeps its own pairing; every other paired browser loses it.
         if (door === 'page' && params.name === ROTATE && result.structuredContent?.rotated === true)
@@ -947,6 +1189,12 @@ async function handleRequest(request, env, authority) {
         if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'The empty resource template catalog has no continuation.');
         result = cacheable({resourceTemplates: []}, 3600000, 'public'); break;
       case 'resources/read': {
+        if (exportResourceToken(request, params.uri)) {
+          // No network fetch: only this deployment's exact export URI grammar reaches its owner.
+          const response = await exportResponse(new Request(params.uri, {signal: request.signal}), env, authority);
+          if (response.status === 401 || response.status === 403) return response;
+          result = cacheable(await exportResource(response, params.uri), 0, 'private'); break;
+        }
         if (params.uri === UI_RESOURCE) {
           // The editor key reaches /muse only through the paired page.
           if (door === '/muse') throw failure('RESOURCE_NOT_FOUND', 'Unknown resource.');
@@ -958,6 +1206,9 @@ async function handleRequest(request, env, authority) {
       default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
   } catch (error) {
+    if (request.signal.aborted || error?.name === 'AbortError') return rpcError(id, REQUEST_CANCELLED, 'Request cancelled.');
+    if ((TASK_METHODS.has(message.method) || message.method === 'tools/call') && Number.isSafeInteger(error?.code)) return rpcError(id, error.code, error.message, 200, error.data);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_ID_IN_USE') return rpcError(id, -32600, error.message);
     if (error?.[PUBLIC_FAILURE] && error.code === 'UNKNOWN_TOOL') return rpcError(id, -32602, error.message);
     if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return rpcError(id, modern ? -32602 : -32002, error.message, 200,
       typeof params.uri === 'string' ? {uri: params.uri} : undefined);
@@ -965,28 +1216,29 @@ async function handleRequest(request, env, authority) {
     if (message.method === 'tools/call') result = toolError(failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry an editor commit only with the same commitId.'));
     else return rpcError(id, -32603, 'The server could not complete this request.');
   }
-  // This door has no widget channel. Editor credentials and private snapshots never enter its results.
-  if (door === '/muse' && result._meta) {
-    const {_meta, ...publicResult} = result;
-    result = publicResult;
-  }
-  // Some clients expose only content to the model. Mirror the final public result, after the
-  // document capability is attached. Never serialize _meta (editor snapshots) or app-only results.
-  if (message.method === 'tools/call' && !EDITOR_ONLY_TOOLS.has(params.name) && plain(result.structuredContent)) {
-    result = { ...result, content: [{ type: 'text', text: JSON.stringify(result.structuredContent) }, ...(result.content || []).filter(item => item.type === 'image' || item.type === 'resource' || item.type === 'resource_link')] };
-  }
+  if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door);
   // A host that renders no link still receives the Markdown itself, within one bounded result.
   if (door === '/muse' && message.method === 'tools/call' && params.name === 'document.export' && params.arguments?.format === 'markdown' && result.structuredContent?.outcome === 'ok') {
     const link = result.content.find(item => item.type === 'resource_link');
     const file = link ? await handleRequest(new Request(link.uri), env, authority) : null;
     const text = file?.ok ? await file.text() : null;
     if (text !== null) result.content.push({type: 'text', text: text.length <= MUSE_EXPORT_TEXT_CHARS ? text
-      : `The Markdown is ${text.length} characters, more than one result carries; read it in pages with document.read_context.`});
+      : `The Markdown is ${text.length} characters, more than one result carries; read it in pages with document.read.`});
   }
-  if (modern) result = { ...result, resultType: 'complete', _meta: { ...(plain(result._meta) ? result._meta : {}), [META_SERVER]: serverInfo(env) } };
+  if (request.signal.aborted) return rpcError(id, REQUEST_CANCELLED, 'Request cancelled.');
+  result = complete(result);
   const reply = json({ jsonrpc: '2.0', id, result }, 200, headers);
   for (const cookie of cookies) reply.headers.append('Set-Cookie', cookie);
   return reply;
+  };
+  if (message.method !== 'tools/call' || door === 'page') return dispatch(request);
+  const lifetime = createRequestLifetime(request.signal);
+  const pending = dispatch(new Request(request.url, {method: 'POST', headers: request.headers, signal: lifetime.signal}))
+    .finally(() => lifetime.release());
+  return responsiveJson(pending, {signal: request.signal, onDisconnect: () => {
+    lifetime.cancel();
+    return pending.then(() => undefined);
+  }});
 }
 
 // An OAuth client cannot grant itself editor authority. The existing owner cookie authorizes exactly one
@@ -1206,6 +1458,10 @@ export class RapierDocument {
     this.visualWaiter = null;
     this.exportWaiter = null;
     this.editorWaiter = null;
+    this.activeRequests = new Map();
+    this.taskCalls = new Map();
+    this.requestCalls = new Map();
+    this.stoppingRequests = new Set();
     this.retention = bounded(env.RETENTION_DAYS, 30, 1, 365) * DAY;
     this.maxStateBytes = bounded(env.MAX_STATE_MIB, 48, 8, 64) * 1024 * 1024;
   }
@@ -1214,6 +1470,142 @@ export class RapierDocument {
     const task = this.pending.then(operation);
     this.pending = task.catch(() => {});
     return task;
+  }
+
+  tasks() {
+    const complete = (input, result) => {
+      const projected = publicToolResult(input.name, result, input.door);
+      return {result: {...projected, resultType: 'complete', _meta: {...projected._meta, [META_SERVER]: serverInfo(this.env)}}};
+    };
+    return this.taskLifetime ||= new TaskLifetime(this.ctx, {
+      authorize: async (input, authority) => (await taskDocument(input, authority, this.env))?.admitted === true,
+      recover: async input => {
+        const held = await taskDocument(input, input.authority, this.env, true);
+        if (held?.admitted !== true || Object.hasOwn(held, 'result') && !plain(held.result))
+          throw Object.assign(new Error('Task recovery was not acknowledged.'), {code: -32603});
+        if (!Object.hasOwn(held, 'result')) return null;
+        const result = held.result;
+        if (!result.isError && plain(result.structuredContent))
+          result.structuredContent = {...result.structuredContent, document: input.args.document};
+        return complete(input, result);
+      },
+      execute: async (input, signal) => {
+        try {
+          const result = await callTool(input.name, input.args, this.env, new Request(input.url, {method: 'POST', signal}),
+            input.authority, input.hostAgent, input.door, null, false, input.task);
+          return complete(input, result);
+        } catch (error) {
+          if (error?.code === 'CANCELLATION_UNACKNOWLEDGED') throw error;
+          return {error: {code: signal.aborted ? REQUEST_CANCELLED : -32603,
+            message: signal.aborted ? 'Request cancelled.' : 'Task execution failed.'}};
+        }
+      },
+    });
+  }
+
+  requestStopped(input) {
+    return !!input?.requestKey && (this.stoppingRequests.has(input.requestKey) ||
+      (this.ctx.storage.kv.get('requestStops') || []).some(row => row.key === input.requestKey && row.expiresAt > Date.now()));
+  }
+
+  async stopRequest(key, expiresAt, active) {
+    this.stoppingRequests.add(key);
+    active?.lifetime.cancel();
+    await this.exclusive(async () => {
+      const rows = (this.ctx.storage.kv.get('requestStops') || []).filter(row => row.expiresAt > Date.now() && row.key !== key);
+      rows.push({key, expiresAt});
+      this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('requestStops', rows));
+      const alarm = await this.ctx.storage.getAlarm();
+      await this.ctx.storage.setAlarm(Math.min(alarm || Infinity, ...rows.map(row => row.expiresAt)));
+      await this.ctx.storage.sync();
+    });
+    if (active?.done) {
+      try { await active.done; }
+      catch {
+        // Failed cleanup cannot become a successful cancellation acknowledgement.
+        if (!active.cleanupFailed || !active.input) return new Response(null, {status: 503});
+        try {
+          await this.exclusive(() => this.cancelOperation(active.input));
+          active.cleanupFailed = false;
+          if (this.activeRequests.get(key) === active) this.activeRequests.delete(key);
+        } catch { return new Response(null, {status: 503}); }
+      }
+    }
+    return new Response(null, {status: 204});
+  }
+
+  async cancelRequestOperation(request) {
+    const input = await request.json();
+    if (!/^request_[a-f0-9]{32}$/.test(input.requestKey || '') || !Number.isSafeInteger(input.requestExpiresAt) ||
+        input.requestExpiresAt > Date.now() + REQUEST_LEASE_MS) return new Response(null, {status: 400});
+    const active = this.activeRequests.get(input.requestKey);
+    return this.stopRequest(input.requestKey, input.requestExpiresAt, active);
+  }
+
+  async cancelRequestCall(request) {
+    const input = await request.json();
+    if (!/^[a-f0-9]{64}$/.test(input.key || '')) return new Response(null, {status: 400});
+    const active = this.requestCalls.get(input.key);
+    if (input.occurrence !== undefined) {
+      if (!/^request_[a-f0-9]{32}$/.test(input.occurrence)) return new Response(null, {status: 400});
+      return this.stopRequest(input.occurrence, Date.now() + REQUEST_LEASE_MS,
+        active?.occurrence === input.occurrence ? active : null);
+    }
+    // An unknown or completed JSON-RPC ID confers no authority over a future call.
+    if (!active) return new Response(null, {status: 204});
+    return this.stopRequest(active.occurrence, Date.now() + REQUEST_LEASE_MS, active);
+  }
+
+  async runRequestCall(request) {
+    const key = request.headers.get('X-Rapier-Request'), occurrence = request.headers.get('X-Rapier-Occurrence');
+    if (!/^[a-f0-9]{64}$/.test(key || '') || !/^request_[a-f0-9]{32}$/.test(occurrence || '')) return new Response(null, {status: 400});
+    // A reused live JSON-RPC ID never changes which call a notification cancels.
+    if (this.requestCalls.has(key)) return json({error: {code: 'REQUEST_ID_IN_USE', message: 'This request ID is already in use.'}});
+    const lifetime = createRequestLifetime(request.signal), row = {lifetime, occurrence, done: null};
+    this.requestCalls.set(key, row);
+    if (this.stoppingRequests.has(occurrence) || (this.ctx.storage.kv.get('requestStops') || []).some(stop => stop.key === occurrence && stop.expiresAt > Date.now())) lifetime.cancel();
+    row.done = (async () => {
+      const input = await request.json();
+      if (input.key !== key || !plain(input.call)) return new Response(null, {status: 400});
+      const call = input.call;
+      try {
+        const result = await callTool(call.name, call.args, this.env, new Request(call.url, {
+          method: 'POST', headers: call.headers, signal: lifetime.signal,
+        }), call.authority, call.hostAgent, call.door, call.editorProof, call.editorActivity);
+        return lifetime.signal.aborted ? json({cancelled: true}) : json({result});
+      } catch (error) {
+        if (error?.code === 'CANCELLATION_UNACKNOWLEDGED') throw error;
+        if (lifetime.signal.aborted || error?.name === 'AbortError') return json({cancelled: true});
+        return json({error: error?.[PUBLIC_FAILURE] ? {code: error.code, message: error.message, details: error.details}
+          : {code: 'WORKSPACE_UNAVAILABLE', message: 'The workspace operation was not acknowledged.'}});
+      }
+    })().finally(() => {
+      lifetime.release(); this.stoppingRequests.delete(occurrence);
+      if (this.requestCalls.get(key) === row) this.requestCalls.delete(key);
+    });
+    return row.done;
+  }
+
+  async cancelOperation(input) {
+    this.cachedState = null; this.cachedJournal = null;
+    let head = this.ctx.storage.kv.get('head');
+    if (!head || head.ownerKey !== input.ownerKey || head.capabilityHash !== input.capabilityHash || head.expiresAt <= Date.now()) return;
+    for (const kind of ['visual', 'export']) {
+      const held = head[kind + 'TaskInput'], intent = head[kind + 'Intent'];
+      if (input.task && held?.task?.key === input.task.key && held.operationId === input.operationId &&
+          held.capabilityHash === input.capabilityHash && intent?.task === input.task.key)
+        head = await this.retireSurfaceIntent(kind, intent.id, head);
+    }
+    const caller = this.materialCaller(input), held = this.readMaterial(head);
+    if (held?.key === caller.invocationKey) await this.retireMaterial(held, 'cancelled');
+    if (!getTool(input.operation)) return;
+    const current = this.ctx.storage.kv.get('head'), journal = this.readJournal();
+    // Completed work keeps its receipt. Only this invocation's pending receipt is replaced.
+    const kernel = createKernel({state: this.readState(current), clock: Date.now, mintId,
+      invocationJournal: journal.filter(row => row.key !== caller.invocationKey || row.output?.outcome !== 'pending')});
+    const output = await kernel.invoke(input.operation, input.args, {...caller, signal: AbortSignal.abort()});
+    if (output.replayed) return;
+    await this.persist(current, kernel.snapshot(), kernel.invocationJournal(), true);
   }
 
   readParts(prefix, count) {
@@ -1229,13 +1621,16 @@ export class RapierDocument {
   }
 
   readState(head) {
+    requireWorkspaceFormat(head);
     if (this.cachedState) return this.cachedState;
-    this.cachedState = { ...JSON.parse(this.readParts('state:', head.parts)), ...JSON.parse(this.readParts('human:', head.contextParts)) };
+    const state = readWorkspaceState(head, JSON.parse(this.readParts('state:', head.parts)));
+    this.cachedState = { ...state, ...JSON.parse(this.readParts('human:', head.contextParts)) };
     return this.cachedState;
   }
 
   // The invocation journal is a kernel closure Map: retained in chunks and reseeded on every operate().
   readJournal() {
+    requireWorkspaceFormat(this.ctx.storage.kv.get('head'));
     if (this.cachedJournal) return this.cachedJournal;
     this.cachedJournal = JSON.parse(this.readParts('journal:', this.ctx.storage.kv.get('head')?.journalParts));
     return this.cachedJournal;
@@ -1243,6 +1638,15 @@ export class RapierDocument {
 
   readMaterial(head = this.ctx.storage.kv.get('head')) {
     return head?.materialParts ? JSON.parse(this.readParts('material:', head.materialParts)) : null;
+  }
+
+  readTaskResult(input, head) {
+    const row = input.task && head.taskResults?.find(row => row.key === input.task.key &&
+      row.owner === input.capabilityHash && row.expiresAt > Date.now());
+    if (!row) return null;
+    const text = this.readParts('task-result:' + row.key + ':', row.parts);
+    if (contentBytes(text) !== row.bytes) throw failure('CORRUPT_WORKSPACE', 'The stored task result is incomplete.');
+    return JSON.parse(text);
   }
 
   requestAuthority(request) {
@@ -1255,16 +1659,22 @@ export class RapierDocument {
   }
 
   async assertAuthority(input) {
-    if (Array.isArray(input)) { for (const authority of input) if (authority) await this.assertAuthority(authority); return; }
+    assertRequestActive(input);
+    if (Array.isArray(input)) {
+      for (const authority of input) if (authority) await this.assertAuthority(authority);
+      assertRequestActive(input);
+      return;
+    }
     if (!input.oauthGrant && !input.connectionKey) return;
     const reference = input.oauthGrant;
     if (!validGrantReference(reference) || input.ownerKey !== await digest(reference.ownerId) ||
         input.connectionKey && input.connectionKey !== await digest(reference.connectionId) ||
         !await oauthGrantCurrent(reference, this.env))
       throw failure('OAUTH_AUTHORITY_REVOKED', 'This connection no longer authorizes the pending operation.');
+    input.signal?.throwIfAborted();
   }
 
-  async persist(head, state, journal, contextOnly = false, exported = null, material = undefined, authority = null) {
+  async persist(head, state, journal, contextOnly = false, exported = null, material = undefined, authority = null, taskResult = null) {
     const admittedUntil = head.expiresAt;
     const assertUnexpired = () => {
       if (admittedUntil !== undefined && admittedUntil <= Date.now()) throw failure('DOCUMENT_UNAVAILABLE', 'This workspace expired before the operation could commit.');
@@ -1278,13 +1688,29 @@ export class RapierDocument {
     const expired = (head.exports || []).filter(row => row.expiresAt <= Date.now() || row.owner !== head.capabilityHash);
     if (expired.length) head.exports = head.exports.filter(row => !expired.includes(row));
     head.exportBytes = (head.exports || []).reduce((sum, row) => sum + row.bytes, 0);
+    const expiredTasks = (head.taskResults || []).filter(row => row.expiresAt <= Date.now() ||
+      row.owner !== head.capabilityHash || row.key === taskResult?.task.key);
+    let retainedTask;
+    if (head.taskResults || taskResult) {
+      head.taskResults = (head.taskResults || []).filter(row => !expiredTasks.includes(row));
+      if (taskResult) {
+        const text = serializeJson(taskResult.result);
+        const row = {key: taskResult.task.key, owner: head.capabilityHash, expiresAt: taskResult.task.expiresAt,
+          completedAt: Date.now(), bytes: contentBytes(text), parts: Math.ceil(text.length / CHUNK_CHARS)};
+        if (row.bytes > 16 * 1024 * 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The task result exceeds its storage limit.');
+        head.taskResults.push(row);
+        retainedTask = {row, text};
+      }
+      head.taskBytes = head.taskResults.reduce((sum, row) => sum + row.bytes, 0);
+    }
     if (state) {
+      requireWorkspaceFormat(head);
       if (state.commitResults) state.commitResults = state.commitResults.filter(row => head.receipts.some(receipt => receipt.id === row.id));
       const { humanContexts, contextSequences, clock, ...canonical } = state;
       human = JSON.stringify({ humanContexts, contextSequences, clock });
       head.contextBytes = contentBytes(human);
       if (!contextOnly) {
-        text = JSON.stringify(canonical);
+        text = JSON.stringify({format: WORKSPACE_STATE_FORMAT, metadata: workspaceMetadata(canonical), state: canonical});
         head.stateBytes = contentBytes(text);
       }
       // Not gated by contextOnly: invocation receipts include retained reads and spent mutation identities.
@@ -1296,7 +1722,7 @@ export class RapierDocument {
     }
     const expiresAt = Date.now() + this.retention;
     const renew = !(head.expiresAt > expiresAt - 60000);
-    if (!state && !renew && !expired.length && !exported && material === undefined) return;
+    if (!state && !renew && !expired.length && !expiredTasks.length && !exported && !taskResult && material === undefined) return;
     // Source and its expiry alarm commit together; a lost acknowledgement must not retain an unscheduled workspace.
     if (renew) head.expiresAt = expiresAt;
     const records = [
@@ -1307,14 +1733,18 @@ export class RapierDocument {
     ].filter(row => row.text !== undefined).map(row => ({...row, previous: head[row.field] || 0}));
     for (const row of records) head[row.field] = Math.ceil(row.text.length / CHUNK_CHARS);
     const retainedBytes = (head.stateBytes || 0) + (head.contextBytes || 0) + (head.journalBytes || 0) +
-      head.exportBytes + (head.returnBytes || 0) + (head.materialBytes || 0) + contentBytes(JSON.stringify(head));
+      head.exportBytes + (head.returnBytes || 0) + (head.materialBytes || 0) + (head.taskBytes || 0) + contentBytes(JSON.stringify(head));
     if (retainedBytes > this.maxStateBytes) throw failure('WORKSPACE_STATE_LIMIT', 'This would exceed the workspace size. Let pending work or temporary exports finish before adding more.', {limitBytes: this.maxStateBytes});
     // SQLite limits a key and value together to 2 MB; leave room for the key and serialization.
     if (contentBytes(JSON.stringify(head)) > 2_000_000 - 1024) throw failure('WORKSPACE_STATE_LIMIT', 'The workspace metadata is full. Let temporary exports expire before creating another.', {limitBytes: this.maxStateBytes});
     await this.ctx.storage.transaction(async () => {
       if (authority) await this.assertAuthority(authority);
+      assertRequestActive(authority);
       assertUnexpired();
       for (const row of expired) for (let index = 0; index < row.parts; index++) this.ctx.storage.kv.delete('export:' + row.id + ':' + index);
+      for (const row of expiredTasks) for (let index = 0; index < row.parts; index++) this.ctx.storage.kv.delete('task-result:' + row.key + ':' + index);
+      if (retainedTask) for (let index = 0; index < retainedTask.row.parts; index++)
+        this.ctx.storage.kv.put('task-result:' + retainedTask.row.key + ':' + index, retainedTask.text.slice(index * CHUNK_CHARS, (index + 1) * CHUNK_CHARS));
       if (exported) for (let index = 0; index < exported.grant.parts; index++) {
         this.ctx.storage.kv.put('export:' + exported.grant.id + ':' + index, exported.bytes.slice(index * CHUNK_CHARS, (index + 1) * CHUNK_CHARS));
       }
@@ -1326,7 +1756,10 @@ export class RapierDocument {
         for (let index = head[row.field]; index < row.previous; index++) this.ctx.storage.kv.delete(row.prefix + index);
       }
       this.ctx.storage.kv.put('head', head);
-      await this.ctx.storage.setAlarm(Math.min(head.expiresAt, head.materialIntent?.expiresAt || Infinity));
+      const stops = this.ctx.storage.kv.get('requestStops') || [];
+      await this.ctx.storage.setAlarm(Math.min(head.expiresAt, head.materialIntent?.expiresAt || Infinity,
+        ...(head.taskResults || []).map(row => row.expiresAt), ...stops.map(row => row.expiresAt)));
+      assertRequestActive(authority);
     });
     await this.ctx.storage.sync();
     if (state) this.cachedState = state;
@@ -1340,6 +1773,35 @@ export class RapierDocument {
 
   async fetch(request) {
     const path = new URL(request.url).pathname;
+    if (['/task/authority', '/task/recover'].includes(path) && request.method === 'POST') return this.exclusive(async () => {
+      const input = await request.json();
+      try { await this.assertAuthority(input); } catch { return json({admitted: false}); }
+      const head = this.ctx.storage.kv.get('head');
+      const admitted = !!head && head.expiresAt > Date.now() && head.agentAccess !== false &&
+        head.ownerKey === input.ownerKey && head.capabilityHash === input.capabilityHash;
+      if (!admitted) return json({admitted: false});
+      if (path === '/task/recover' && /^[a-f0-9]{64}$/.test(input.taskKey || '') && Number.isSafeInteger(input.deadline)) {
+        const held = head.taskResults?.find(row => row.key === input.taskKey && row.owner === input.capabilityHash &&
+          row.expiresAt > Date.now() && Number.isSafeInteger(row.completedAt) && row.completedAt <= input.deadline);
+        if (held) return json({admitted: true, result: this.readTaskResult({...input, task: {key: input.taskKey}}, head)});
+      }
+      return json({admitted: true});
+    });
+    if (['/task/create', '/task/get', '/task/update', '/task/cancel'].includes(path) && request.method === 'POST') {
+      const body = await request.json();
+      try {
+        const tasks = this.tasks();
+        const result = path === '/task/create' ? await tasks.create(body.taskId, body.input, body.authority)
+          : path === '/task/get' ? await tasks.get(body.taskId, body.authority)
+          : path === '/task/update' ? await tasks.update(body.taskId, body.input, body.authority)
+          : await tasks.cancel(body.taskId, body.authority);
+        return json({result});
+      } catch (error) { return json({error: {code: Number.isSafeInteger(error?.code) ? error.code : -32603,
+        message: Number.isSafeInteger(error?.code) ? error.message : 'Task unavailable.'}}); }
+    }
+    if (path === '/request/call' && request.method === 'POST') return this.runRequestCall(request).catch(() => new Response(null, {status: 503}));
+    if (path === '/request/cancel' && request.method === 'POST') return this.cancelRequestCall(request).catch(() => new Response(null, {status: 503}));
+    if (path === '/operation/cancel' && request.method === 'POST') return this.cancelRequestOperation(request).catch(() => new Response(null, {status: 503}));
     if (path === '/return' && ['GET', 'POST'].includes(request.method)) return this.exclusive(() => this.acceptReturn(request));
     if (path === '/export' && ['GET', 'HEAD'].includes(request.method)) return this.exclusive(() => this.readExport(request));
     if (path === '/pair' && request.method === 'POST') return this.exclusive(() => this.pairing(request));
@@ -1364,22 +1826,58 @@ export class RapierDocument {
       }
       if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || (input.connectionKey !== undefined && (!/^[a-f0-9]{64}$/.test(input.connectionKey) || !validGrantReference(input.oauthGrant))) || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean')) return new Response(null, { status: 400 });
+      if (input.waitBound !== undefined && (input.operation !== 'document.wait_for_user' || ![MUSE_WAIT_MS, 120000].includes(input.waitBound))) return new Response(null, {status: 400});
       // Mint once per incoming call, before any observation continuation can re-enter operate().
       input.operationId ??= crypto.randomUUID();
+      if (input.task !== undefined && (!plain(input.task) || !/^[a-f0-9]{64}$/.test(input.task.key || '') ||
+          !Number.isSafeInteger(input.task.expiresAt) || input.task.expiresAt <= Date.now() || input.task.expiresAt > Date.now() + TASK_TTL_MS ||
+          !Number.isSafeInteger(input.task.deadline) || input.task.deadline > input.task.expiresAt || !taskTool(input.operation, input.args)))
+        return new Response(null, {status: 400});
+      const lifetime = createRequestLifetime(request.signal);
+      const key = input.requestKey;
+      const expiresAt = input.requestExpiresAt;
+      if (key !== undefined && (!/^request_[a-f0-9]{32}$/.test(key) || !Number.isSafeInteger(expiresAt) || expiresAt > Date.now() + REQUEST_LEASE_MS))
+        return new Response(null, {status: 400});
+      const heldTask = input.task && this.taskCalls.get(input.task.key);
+      if (heldTask) {
+        lifetime.release();
+        if (key) this.activeRequests.set(key, heldTask);
+        const abort = () => heldTask.lifetime.cancel();
+        request.signal.addEventListener('abort', abort, {once: true});
+        if (request.signal.aborted || this.stoppingRequests.has(key) ||
+            (this.ctx.storage.kv.get('requestStops') || []).some(row => row.key === key && row.expiresAt > Date.now())) abort();
+        try {
+          const reply = await heldTask.done;
+          return new Response(reply.body, {status: reply.status, headers: reply.headers});
+        } finally {
+          request.signal.removeEventListener('abort', abort);
+          if (key && this.activeRequests.get(key) === heldTask) this.activeRequests.delete(key);
+          this.stoppingRequests.delete(key);
+        }
+      }
+      Object.defineProperty(input, 'signal', {value: lifetime.signal});
+      const record = {input, lifetime, done: null};
+      if (key && this.activeRequests.has(key)) return new Response(null, {status: 409});
+      if (key) this.activeRequests.set(key, record);
+      if (input.task) this.taskCalls.set(input.task.key, record);
+      const stopped = this.stoppingRequests.has(key) || (this.ctx.storage.kv.get('requestStops') || []).some(row => row.key === key && row.expiresAt > Date.now());
+      if (stopped || Number.isSafeInteger(expiresAt) && expiresAt <= Date.now()) lifetime.cancel();
+      const timer = Number.isSafeInteger(expiresAt) ? setTimeout(() => lifetime.cancel(), Math.max(0, expiresAt - Date.now())) : null;
+      const run = async () => {
       if (input.operation === 'document.material_ack') {
         const result = await this.exclusive(() => this.operate(input));
         await this.resumeMaterial();
         return json(result);
       }
       if (input.operation === 'document.sync') await this.resumeMaterial();
-      if (input.operation === 'document.wait_for_user') return await this.waitForReturn(input, request.signal);
-      if (input.operation === 'document.inspect_visual') return await this.inspectVisual(input, request.signal);
-      if (input.operation === 'document.export' && ['docx', 'pdf'].includes(input.args.format)) return await this.exportDocument(input, request.signal);
-      if (EDITOR_REQUEST_TOOLS.has(input.operation)) return await this.requestEditor(input, request.signal);
-      if (['document.draw', 'document.undo_agent_change'].includes(input.operation) ||
-          input.operation === 'document.read_context' && input.args.paintSample) return await this.requestMaterials(input, request.signal);
+      if (input.operation === 'document.wait_for_user') return await this.waitForReturn(input, lifetime.signal);
+      if (input.operation === 'document.inspect_visual') return await this.inspectVisual(input, lifetime.signal);
+      if (input.operation === 'document.export' && ['docx', 'pdf'].includes(input.args.format)) return await this.exportDocument(input, lifetime.signal);
+      if (EDITOR_REQUEST_TOOLS.has(input.operation)) return await this.requestEditor(input, lifetime.signal);
+      if (['document.draw', 'document.undo'].includes(input.operation) ||
+          input.operation === 'document.read' && input.args.paintSample) return await this.requestMaterials(input, lifetime.signal);
       return await this.exclusive(async () => {
-        const result = await this.operate(input, undefined, undefined, undefined, request.signal);
+        const result = await this.operate(input, undefined, undefined, undefined, lifetime.signal);
         if (input.editorAuthorized === true && input.editorActivity === true && !result.isError && ['document.commit', 'document.human_context'].includes(input.operation)) {
           const head = this.ctx.storage.kv.get('head');
           if (head && head.expiresAt > Date.now()) {
@@ -1391,6 +1889,26 @@ export class RapierDocument {
         }
         return json(result);
       });
+      };
+      record.done = (async () => {
+        let response;
+        try { response = await run(); }
+        catch (error) { if (!lifetime.signal.aborted && error?.name !== 'AbortError') throw error; }
+        if (lifetime.signal.aborted) {
+          try { await this.exclusive(() => this.cancelOperation(input)); }
+          catch (error) { record.cleanupFailed = true; throw error; }
+          return new Response(null, {status: 499});
+        }
+        return response;
+      })().then(async response => input.task ? {body: await response.arrayBuffer(), status: response.status,
+        headers: [...response.headers]} : response).finally(() => {
+        clearTimeout(timer); lifetime.release();
+        this.stoppingRequests.delete(key);
+        if (key && !record.cleanupFailed && this.activeRequests.get(key) === record) this.activeRequests.delete(key);
+        if (input.task && this.taskCalls.get(input.task.key) === record) this.taskCalls.delete(input.task.key);
+      });
+      const reply = await record.done;
+      return input.task ? new Response(reply.body, {status: reply.status, headers: reply.headers}) : reply;
     } catch (error) {
       this.cachedState = null;
       this.cachedJournal = null;
@@ -1473,6 +1991,8 @@ export class RapierDocument {
       const row = head.exports?.find(row => byHash ? row.hash === byHash : row.id === request.headers.get('X-Rapier-Export-ID'));
       if (!row) return new Response(null, {status: 404, headers});
       if (row.expiresAt <= Date.now() || row.owner !== head.capabilityHash) return new Response(null, {status: 410, headers});
+      if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || row.bytes > MAX_EXPORT_BYTES ||
+          row.parts !== Math.ceil(row.bytes / CHUNK_CHARS)) throw new Error('export byte limit');
       const bytes = new Uint8Array(row.bytes);
       for (let index = 0; index < row.parts; index++) {
         const part = this.ctx.storage.kv.get('export:' + row.id + ':' + index);
@@ -1570,7 +2090,8 @@ export class RapierDocument {
       if (after && !received.some(row => row.id === after)) return refused('return_unavailable');
       const latest = received.at(-1);
       if (mode === 'message' && latest && latest.id !== after) return { value: { outcome: 'ok', returned: returnMetadata(latest) } };
-      const waiter = createRequestWait({signal, timeoutMs: waitTimeout(input.args.timeout_ms),
+      // Keep the door's bound outside raw arguments so retries still distinguish omitted and explicit timeouts.
+      const waiter = createRequestWait({signal, timeoutMs: input.task ? Math.max(0, input.task.deadline - Date.now()) : waitTimeout(input.args.timeout_ms, input.waitBound),
         onFinish: settled => { if (this.returnWaiter === settled) this.returnWaiter = null; }});
       waiter.mode = mode;
       waiter.capabilityHash = input.capabilityHash;
@@ -1584,8 +2105,8 @@ export class RapierDocument {
     const result = prepared.promise ? await prepared.promise : {kind: 'value', value: prepared.value};
     if (prepared.aborted || signal?.aborted || result.kind === 'aborted') return abandoned();
     const value = result.kind === 'timeout' ? {outcome: 'timeout', reason: 'wait_timed_out'} : result.value;
-    // Check again after re-entering the serial owner. An abandoned observation has
-    // no receipt and never advances the document or the durable invocation journal.
+    // Check again after re-entering the serial owner. An abandoned observation
+    // publishes no value; outer cancellation cleanup owns its terminal receipt.
     return this.exclusive(async () => signal?.aborted ? abandoned() : json(await this.operate(input, value)));
   }
 
@@ -1608,6 +2129,10 @@ export class RapierDocument {
 
   async advanceMaterial(input, stored = this.readMaterial()) {
     const caller = this.materialCaller(input), key = caller.invocationKey;
+    if (stored?.key === key && this.requestStopped(stored.input)) {
+      await this.retireMaterial(stored, 'cancelled');
+      return this.operate(input);
+    }
     const argumentsHash = await digest(canonicalJson({operation: input.operation, args: input.args}));
     if (stored && stored.key === key && stored.argumentsHash !== argumentsHash) return this.operate(input);
     if (stored && stored.key === key) {
@@ -1618,7 +2143,7 @@ export class RapierDocument {
     const own = stored?.key === key ? stored : null;
     const work = {key, argumentsHash, caller, input: own?.input || Object.fromEntries([
       'operation', 'args', 'ownerKey', 'capabilityHash', 'connectionKey', 'oauthGrant', 'operationId', 'hostAgent',
-      'humanTool', 'editorAuthorized', 'page'].filter(field => input[field] !== undefined).map(field => [field,
+      'humanTool', 'editorAuthorized', 'page', 'requestKey', 'requestExpiresAt'].filter(field => input[field] !== undefined).map(field => [field,
         input[field]])),
       record: own, results: new Map(own?.results || []), acks: own?.acks || [], request: null,
       binding: own?.binding || null, presentationBinding: own ? own.presentationBinding : undefined, resumeId: own?.id || null,
@@ -1629,7 +2154,9 @@ export class RapierDocument {
       else if (intent.expiresAt <= Date.now() && !work.results.has(own.request.job)) work.failure = 'material_request_expired';
     }
     try {
-      const result = await this.operate(work.input, undefined, undefined, undefined, undefined, work);
+      const execution = {...work.input};
+      if (input.signal) Object.defineProperty(execution, 'signal', {value: input.signal});
+      const result = await this.operate(execution, undefined, undefined, undefined, input.signal, work);
       if (own && result.structuredContent?.pending?.requirements?.kind !== 'material' && this.readMaterial()?.key === key) {
         const head = this.ctx.storage.kv.get('head');
         if (head) await this.retireMaterial(stored, head.agentAccess === false ? 'agent_access_disconnected'
@@ -1675,7 +2202,8 @@ export class RapierDocument {
   }
 
   // A request the editor answers waits outside the document's commit queue so the editor can acknowledge it. Only the small
-  // request is durable until the checked answer is published with its receipt; observation pixels and file bytes exist for this response alone.
+  // request is durable until the checked answer is published with its receipt. A task retains
+  // that complete result with the same receipt so a restarted task owner can collect it exactly.
   async requestSurface(input, signal, kind) {
     const exporting = kind === 'export', slot = exporting ? 'exportWaiter' : 'visualWaiter', intentKey = kind + 'Intent';
     const expired = exporting ? 'export_expired' : 'visual_capture_expired';
@@ -1684,7 +2212,7 @@ export class RapierDocument {
       if (signal?.aborted) return {abandoned: true};
       const result = await this.operate(input);
       const pending = result.structuredContent?.pending;
-      if (!exporting && result.structuredContent?.outcome === 'ok' && result.structuredContent?.representation === 'visual') return {result: envelope({outcome: 'refused', reason: expired, representation: 'visual'})};
+      if (!input.task && !exporting && result.structuredContent?.outcome === 'ok' && result.structuredContent?.representation === 'visual') return {result: envelope({outcome: 'refused', reason: expired, representation: 'visual'})};
       if (result.structuredContent?.outcome !== 'pending' || pending?.kind !== 'surface-fact' || pending.requirements?.kind !== kind) return {result};
       // A retry observes its original request, including the interval after the
       // answer arrives and before its terminal journal write. It cannot replace it.
@@ -1692,11 +2220,12 @@ export class RapierDocument {
       const request = pending.requirements;
       const refuse = reason => ({...request, outcome: 'refused', reason});
       const resume = fact => this.operate(input, undefined, {requestId: pending.requestId, fact});
-      if (result.structuredContent.replayed) return {result: await resume(refuse(expired))};
+      if (result.structuredContent.replayed && !input.task) return {result: await resume(refuse(expired))};
       if (signal?.aborted) return {result: await resume(refuse('cancelled'))};
       if (this[slot]) return {result: await resume(refuse(exporting ? 'export_busy' : 'visual_capture_busy'))};
       if (!result.structuredContent.collaboration?.presence?.active) return {result: await resume(refuse(exporting ? 'editor_unavailable' : 'editor_not_present'))};
-      const timeoutMs = exporting ? EXPORT_LEASE_MS : VIEW_LEASE_MS;
+      const timeoutMs = input.task ? Math.max(0, input.task.deadline - Date.now()) : exporting ? EXPORT_LEASE_MS : VIEW_LEASE_MS;
+      if (!timeoutMs) return {result: await resume(refuse(expired))};
       const wait = createRequestWait({signal, timeoutMs});
       const capture = {wait, input, id: pending.requestId, request, capabilityHash: input.capabilityHash,
         operationId: input.operationId,
@@ -1705,7 +2234,9 @@ export class RapierDocument {
       this[slot] = capture;
       try {
         const head = structuredClone(this.ctx.storage.kv.get('head'));
-        head[intentKey] = {id: capture.id, ...request, status: 'pending', expiresAt: Date.now() + timeoutMs};
+        head[intentKey] = {id: capture.id, ...request, status: 'pending', expiresAt: Date.now() + timeoutMs,
+          ...(input.task ? {task: input.task.key} : {})};
+        if (input.task) head[kind + 'TaskInput'] = {...input};
         head.version++;
         await this.persist(head, this.readState(head), this.readJournal(), true, null, undefined, input);
       } catch (error) {
@@ -1738,10 +2269,18 @@ export class RapierDocument {
   async retireSurfaceIntent(kind, id, head = this.ctx.storage.kv.get('head')) {
     const key = kind + 'Intent';
     if (!head?.[key] || head[key].id !== id) return head;
-    const next = {...head, [key]: null, version: head.version + 1};
+    const next = {...head, [key]: null, ...(head[kind + 'TaskInput'] ? {[kind + 'TaskInput']: null} : {}), version: head.version + 1};
     this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', next));
     await this.ctx.storage.sync();
     return next;
+  }
+
+  recoverSurfaceCapture(head, kind) {
+    const intent = head[kind + 'Intent'], input = head[kind + 'TaskInput'];
+    if (!intent?.task || !input?.task || intent.task !== input.task.key || intent.expiresAt <= Date.now() ||
+        intent.revision !== head.revision || input.capabilityHash !== head.capabilityHash) return null;
+    const {id, status, expiresAt, task, ...request} = intent;
+    return {id, request, input, capabilityHash: input.capabilityHash, wait: {finish: () => true}};
   }
 
   // Wait only for the first editor receipt. A gesture card remains durable until
@@ -1809,7 +2348,7 @@ export class RapierDocument {
     return next;
   }
 
-  async operate(input, waitResult, observation, editor, signal, material) {
+  async operate(input, waitResult, observation, editor, signal = input.signal, material) {
     await this.assertAuthority(input);
     await prepareDoorLetters();
     const { operation, args, capabilityHash, ownerKey } = input;
@@ -1834,13 +2373,16 @@ export class RapierDocument {
       if (head) {
         // Same capability as a committed create: reopen; no second workspace, no budget. A different capability at this address is WORKSPACE_EXISTS.
         if (head.capabilityHash !== capabilityHash) return toolError(failure('WORKSPACE_EXISTS', 'A workspace cannot be created at this capability.'));
+        if (input.hostFileBinding && head.fileHydration?.binding !== input.hostFileBinding)
+          return toolError(failure('HOST_FILE_CHANGED', 'This creation token belongs to a different source. Resume its workspace or use a new creation token.'));
         if (head.agentAccess === false) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
         const state = this.readState(head);
         const kernel = createKernel({ state, clock: Date.now, mintId, invocationJournal: this.readJournal() });
+        const observation = await initialObservation(kernel, input);
         const collaboration = kernel.collaboration();
         head = this.describe(state, head, head.version, collaboration);
-        await this.persist(head, null, null, false, null, undefined, input);
-        return envelope({ outcome: 'created', created: true, replayed: true, message: 'Reopened the existing workspace; no new document was created.' }, head, { snapshot: snapshot(state, collaboration) });
+        await this.persist(head, kernel.snapshot(), kernel.invocationJournal(), false, null, undefined, input);
+        return envelope({outcome: 'resumed', created: false, resumed: true, replayed: true, observation}, head, { snapshot: snapshot(state, collaboration) });
       }
       // Admission shares the document's serialized operation owner. Concurrent token retries
       // therefore authorize the committed head before considering any new address/window spend.
@@ -1852,10 +2394,12 @@ export class RapierDocument {
       const invalid = admissibleText(args.text ?? '');
       if (invalid) throw failure('INVALID_DOCUMENT_INPUT', invalid);
       const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: args.text ?? '', docKind: args.docKind }), clock: Date.now, mintId });
+      const observation = await initialObservation(kernel, input);
       const collaboration = kernel.collaboration(), state = kernel.snapshot();
-      head = this.describe(state, { ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null }, 1, collaboration);
+      head = this.describe(state, { stateFormat: WORKSPACE_STATE_FORMAT, ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null,
+        ...(input.hostFileBinding ? {fileHydration: {id: mintId('hydrate_'), binding: input.hostFileBinding, status: 'pending', baseRevision: state.revision}} : {}) }, 1, collaboration);
       await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
-      return envelope({ outcome: 'created', created: true }, head, { snapshot: snapshot(state, collaboration) });
+      return envelope({outcome: 'created', created: true, resumed: false, observation}, head, { snapshot: snapshot(state, collaboration) });
     }
     if (!head || head.capabilityHash !== capabilityHash) {
       if (operation === 'document.delete' && !head) return envelope({ outcome: 'deleted', deleted: true });
@@ -1866,12 +2410,14 @@ export class RapierDocument {
       return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document capability is unknown, deleted or expired. Open a new workspace from an exported copy.'));
     }
     // A connected workspace's Disconnect is a stored decision: no agent call passes it, whatever reference it holds,
-    // until the person's editor shares the workspace again (document.set_policy with agentAccess).
+    // until the person's editor shares the workspace again (document.connect_agents).
     if (head.agentAccess === false && input.editorAuthorized !== true) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
+    const retainedTask = this.readTaskResult(input, head);
+    if (retainedTask) return retainedTask;
     // Pending observations are live requests owned by their existing waiters. A fresh kernel
     // receives those callers as transient facts; none survives request settlement or a restart.
     const principal = 'remote:' + capabilityHash;
-    const actor = ['document.comment', 'document.read_context'].includes(operation) && input.humanTool === true ? 'human' : 'agent';
+    const actor = (['comments.write', 'document.read'].includes(operation) || operation === 'comparison.present' && args.action === 'close') && input.humanTool === true ? 'human' : 'agent';
     const agentCaller = () => ({...resolveCaller({ actor, principal: actor === 'human' ? principal : remotePrincipal(input), ...(actor === 'human' ? {session: 'editor'} : {}), requestId: input.operationId }, { transport: 'mcp' }), ...(actor === 'agent' && input.hostAgent ? {hostAgent: input.hostAgent} : {})});
     const invocationKey = agentCaller().invocationKey;
     const inFlight = [this.returnWaiter, this.visualWaiter, this.exportWaiter, this.editorWaiter, head.materialOwner].filter(row => row &&
@@ -1887,7 +2433,7 @@ export class RapierDocument {
     }
     for (const kind of ['visual', 'export']) {
       const intent = head[kind + 'Intent'], capture = this[kind + 'Waiter'];
-      if (intent && (!capture || capture.id !== intent.id || capture.capabilityHash !== capabilityHash ||
+      if (intent && ((!capture && !intent.task) || capture && (capture.id !== intent.id || capture.capabilityHash !== capabilityHash) ||
           intent.expiresAt <= Date.now() || intent.revision !== head.revision)) {
         if (capture?.id === intent.id) capture.wait.finish({...capture.request, outcome: 'refused',
           reason: intent.expiresAt <= Date.now() ? kind === 'export' ? 'export_expired' : 'visual_capture_expired' : 'document_changed'});
@@ -1915,7 +2461,7 @@ export class RapierDocument {
       return envelope({ outcome: 'deleted', deleted: true, documentId: head.documentId });
     }
     if (operation === ROTATE) {
-      // The bearer digest changes; nothing else does. Content, journal, controls, pending review
+      // The bearer digest changes; nothing else does. Content, journal and controls
       // and leases are the same workspace -- only who can reach it is decided again.
       if (!input.rotateToHash) return toolError(failure('INVALID_DOCUMENT_INPUT', 'Rotation needs a successor.'));
       if (head.editorIntent) head = await this.retireEditorIntent(head.editorIntent.id, head, 'document_changed');
@@ -1960,6 +2506,7 @@ export class RapierDocument {
         return head.pairingAttempts.misses >= DOOR_LIMITS.pairingMissesPerWindow ? locked()
           : envelope({outcome: 'refused', reason: 'pairing_code_unknown', message: 'No browser is waiting with that code. A code works once, for one minute: ask for the code the page shows now.'}, head);
       }
+      await this.assertAuthority(input);
       row.confirmedAt = now;
       this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
       await this.ctx.storage.sync();
@@ -1990,7 +2537,7 @@ export class RapierDocument {
           kind !== 'mode' && !(pointer && prior.pointer)) return { ok: false, reason: 'presentation_already_pending' };
       head.viewIntent = { id: crypto.randomUUID(), kind, revision: request.revision, status: 'pending', expiresAt: pointer?.expiresAt ?? Date.now() + VIEW_LEASE_MS,
         ...(pointer ? {pointer} : {}),
-        ...(kind === 'mode' ? {view: request.view, fromView: presence.view} : kind === 'document' ? { start: request.start, end: request.end, ...(request.reviewId ? {reviewId: request.reviewId, changeId: request.changeId} : {}) } : { compareId: request.compareId, changeId: request.changeId }) };
+        ...(kind === 'mode' ? {view: request.view, fromView: presence.view} : kind === 'document' ? { start: request.start, end: request.end } : { compareId: request.compareId, changeId: request.changeId }) };
       return { pending: true, viewId: head.viewIntent.id, ...(!presence?.active ? {reason: 'editor_not_present'} : presence.editing ? {reason: 'human_edit_in_progress'} : {}) };
     };
     // Seed from the persisted journal, or a DO retry finds an empty one and acts twice.
@@ -2042,9 +2589,11 @@ export class RapierDocument {
         return 'paint_target_changed';
       return '';
     };
-    const kernel = createKernel({ state, inFlight, host: { proposalPage: UI_RESOURCE, exportFile: async request => {
+    const kernel = createKernel({ state, inFlight, host: { exportFile: async request => {
       if (!editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
-      const file = request.file || await exportFile(this.env, request);
+      if (request.guard?.() === false) return {reason: 'document_changed'};
+      const file = request.file || await exportFile(this.env, {...request, signal});
+      if (request.guard?.() === false) return {reason: 'document_changed'};
       exported = file.bytes && file.bytes.byteLength <= MAX_EXPORT_BYTES ? {...file, id: mintId('export_')} : file;
       return exported;
     }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, commitFence, drawingPresentationBinding: presentationBinding,
@@ -2075,7 +2624,8 @@ export class RapierDocument {
         return { outcome: 'ok', return_url: configuredOrigin(this.env.RETURN_ORIGIN || oauthOrigin(this.env), 'RETURN_ORIGIN', true) + '/return/' + token, return_id: grant.id, return_expires_at: new Date(grant.expiresAt).toISOString(), max_bytes: MAX_TEXT_BYTES };
       },
       wait: async () => waitResult || { outcome: 'refused', reason: 'wait_unavailable' },
-      save: async () => ({ ok: true }), reveal: request => queueView('document', request), revealChange: request => queueView('compare', request) }, clock: Date.now, mintId,
+      save: async request => ({ok: true, saved: true, verified: true, confirmed: true, destination: 'workspace',
+        savedDocumentId: request.documentId, savedDocumentRevision: request.revision}), reveal: request => queueView('document', request), revealChange: request => queueView('compare', request) }, clock: Date.now, mintId,
       // A fresh kernel consumes the returned surface observation as a checked world fact. Its ephemeral
       // continuation map belongs to one instance; retire only this read's pending receipt.
       invocationJournal: observation || editor || material?.resumeId ? this.readJournal().filter(row =>
@@ -2125,7 +2675,7 @@ export class RapierDocument {
     const initialVersion = head.version, initialExpiry = head.nextExpiryAt;
     // Without collaboration or a view to expire, the initial refresh only advances the
     // kernel's clock. Its final snapshot owns that clock; do not clone the whole source twice.
-    refresh(elapsed || !!state.review || Object.keys(state.humanContexts).length > 0 || !!head.viewIntent);
+    refresh(elapsed || Object.keys(state.humanContexts).length > 0 || !!head.viewIntent);
     if (elapsed || head.version !== initialVersion || (initialExpiry !== null && initialExpiry <= Date.now())) {
       // A continuation omits its pending receipt only inside this fresh kernel. Keep
       // the durable original until the terminal result and source publish together.
@@ -2144,6 +2694,10 @@ export class RapierDocument {
         ? {outcome: 'ok', materialId: args.materialId, replayed: true} : {outcome: 'refused', reason: 'material_result_mismatch'}, head);
       if (!record || record.id !== args.materialId || record.input.capabilityHash !== capabilityHash)
         return envelope({outcome: 'refused', reason: 'material_request_expired'}, head);
+      if (this.requestStopped(record.input)) {
+        await this.retireMaterial(record, 'cancelled');
+        return envelope({outcome: 'refused', reason: 'cancelled'}, this.ctx.storage.kv.get('head'));
+      }
       try { await this.assertAuthority(record.input); }
       catch (error) {
         if (error?.code !== 'OAUTH_AUTHORITY_REVOKED') throw error;
@@ -2167,7 +2721,7 @@ export class RapierDocument {
       return envelope({outcome: 'ok', materialId: args.materialId}, head);
     }
     if (operation === 'document.export_ack') {
-      const capture = this.exportWaiter;
+      const capture = this.exportWaiter || this.recoverSurfaceCapture(head, 'export');
       if (!capture || capture.id !== args.exportId || capture.capabilityHash !== capabilityHash) return toolError(failure('EXPORT_UNAVAILABLE', 'This export is no longer pending.'), head);
       await this.assertAuthority(input);
       try { await this.assertAuthority(capture.input); }
@@ -2184,6 +2738,11 @@ export class RapierDocument {
       const file = admitExportArtifact(capture.request, args.fact);
       if (args.fact.outcome === 'ok' && !file.bytes) return envelope({outcome: 'refused', reason: file.reason,
         ...(file.limitBytes ? {limitBytes: file.limitBytes} : {}), ...(file.byteLength ? {bytes: file.byteLength} : {})}, head);
+      if (capture.input.task) {
+        const result = await this.operate(capture.input, undefined, {requestId: capture.id, fact: args.fact});
+        if (result.isError) { capture.wait.finish(args.fact); return result; }
+        await this.retireSurfaceIntent('export', capture.id);
+      }
       if (!capture.wait.finish(args.fact)) return toolError(failure('EXPORT_UNAVAILABLE', 'This export is no longer pending.'), head);
       return envelope({outcome: 'ok', exportId: args.exportId}, head);
     }
@@ -2237,7 +2796,7 @@ export class RapierDocument {
       return acknowledge(head.editorReceipts.find(row => row.receipt.id === args.editorId));
     }
     if (operation === 'document.visual_ack') {
-      const capture = this.visualWaiter;
+      const capture = this.visualWaiter || this.recoverSurfaceCapture(head, 'visual');
       if (!capture || capture.id !== args.visualId || capture.capabilityHash !== capabilityHash) return toolError(failure('VISUAL_UNAVAILABLE', 'This visual observation is no longer pending.'), head);
       await this.assertAuthority(input);
       try { await this.assertAuthority(capture.input); }
@@ -2255,13 +2814,23 @@ export class RapierDocument {
       }
       const verdict = visualResult(capture.request, args.fact);
       if (args.fact.outcome === 'ok' && verdict.outcome !== 'ok') return envelope(verdict, head);
+      if (capture.input.task) {
+        const result = await this.operate(capture.input, undefined, {requestId: capture.id, fact: args.fact});
+        if (result.isError) { capture.wait.finish(args.fact); return result; }
+        await this.retireSurfaceIntent('visual', capture.id);
+      }
       if (!capture.wait.finish(args.fact)) return toolError(failure('VISUAL_UNAVAILABLE', 'This visual observation is no longer pending.'), head);
       return envelope({outcome: 'ok', visualId: args.visualId}, head);
     }
     if (operation === 'rapier.open' || operation === 'document.sync') {
       // A read-only sync does not slide expiry.
-      if (operation === 'rapier.open') await this.persist(head, null, null, false, null, undefined, input);
-      return envelope({ outcome: 'current', unchanged: false, ...(operation === 'document.sync' ? agentReport(head) : {}) }, head, { snapshot: current() });
+      if (operation === 'rapier.open') {
+        const observation = await initialObservation(kernel, input);
+        refresh();
+        await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
+        return envelope({outcome: 'resumed', created: false, resumed: true, observation}, head, {snapshot: current()});
+      }
+      return envelope({outcome: 'current', unchanged: false, ...agentReport(head)}, head, {snapshot: current()});
     }
     if (operation === 'document.human_context') {
       const priorVersion = head.version;
@@ -2306,108 +2875,213 @@ export class RapierDocument {
       await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
       return envelope({ outcome: 'ok', viewId: view.id, presented: args.status === 'presented' }, head);
     }
-    if (['document.compare_decide', 'document.set_policy', 'document.review_decide'].includes(operation)) {
-      if (!args.decisionId) return toolError(failure('INVALID_DECISION_ID', 'decisionId must identify this exact human decision.'));
-      if (operation === 'document.compare_decide' && args.action === 'close' && args.changeIds !== undefined) return toolError(failure('INVALID_DECISION', 'Closing a comparison does not accept changeIds.'));
-      const hash = await digest(JSON.stringify({ operation, arguments: Object.fromEntries(Object.keys(args).filter(key => key !== 'decisionId').sort().map(key => [key, args[key]])) }));
-      const receipt = head.receipts.find(entry => entry.id === args.decisionId);
+    if (operation === 'document.connect_agents') {
+      const id = input.operationId;
+      const hash = await digest(JSON.stringify({operation, expectedRevision: args.expectedRevision, expectedVersion: args.expectedVersion}));
+      const receipt = head.receipts.find(entry => entry.id === id);
       if (receipt) {
-        if (receipt.hash !== hash) return toolError(failure('DECISION_ID_REUSED', 'This decisionId already identifies a different operation.'), head, { snapshot: current() });
-        await this.persist(head, null, null, false, null, undefined, input);
-        return envelope({ ...receipt.result, replayed: true, decisionId: receipt.id, acceptedRevision: receipt.revision, acceptedVersion: receipt.version }, head, { snapshot: current() });
+        if (receipt.hash !== hash) return toolError(failure('OPERATION_ID_REUSED', 'This operation_id already identifies another operation.'), head, {snapshot: current()});
+        return envelope({...receipt.result, replayed: true}, head, {snapshot: current()});
       }
-      if (args.expectedRevision !== state.revision || args.expectedVersion !== head.version) return toolError(failure('REVISION_CONFLICT', 'The document or decision changed. Inspect the current state before deciding again.'), head, { snapshot: current() });
-      let value;
-      if (operation === 'document.set_policy') {
-        if (args.agentAccess !== undefined && head.bearer) return toolError(failure('INVALID_DECISION', 'An anonymous workspace is shared by its document value, not by a stored decision.'), head, { snapshot: current() });
-        value = args.agentAccess !== undefined && args.posture === undefined && args.readOnly === undefined ? {outcome: 'ok'}
-          : kernel.setPolicy({ expectedRevision: args.expectedRevision, ...(args.posture !== undefined ? { posture: args.posture } : {}), ...(args.readOnly !== undefined ? { readOnly: args.readOnly } : {}) }, human(args.decisionId));
-        if (value.outcome === 'ok' && args.agentAccess !== undefined && (head.agentAccess !== false) !== args.agentAccess) { head.agentAccess = args.agentAccess; head.version++; }
-      }
-      else if (operation === 'document.review_decide') value = await kernel.decideReview({ expectedRevision: args.expectedRevision, reviewId: args.reviewId, action: args.action, ...(Array.isArray(args.changeIds) ? { changeIds: args.changeIds } : {}) }, human(args.decisionId));
-      else {
-        if (args.compareId !== state.compare?.id) return toolError(failure('REVISION_CONFLICT', 'The comparison changed before this decision arrived.'), head, { snapshot: current() });
-        if (!['accept', 'reject', 'close'].includes(args.action)) return toolError(failure('INVALID_DECISION', 'Use accept, reject, or close.'));
-        value = await kernel.invoke('document.compare', { action: args.action, ...(args.changeIds ? { change_ids: args.changeIds } : {}) }, human(args.decisionId));
-      }
-      refresh();
-      const accepted = ['ok', 'applied', 'rebased', 'unchanged'].includes(value.outcome);
-      if (accepted) head.receipts = [...head.receipts, { id: args.decisionId, hash, revision: state.revision, version: head.version,
-        result: { outcome: value.outcome, ...(value.decided !== undefined ? { decided: value.decided } : {}), ...(value.closed !== undefined ? { closed: value.closed } : {}), ...(value.changeId ? { changeId: value.changeId } : {}), ...(value.review ? { review: value.review } : {}) } }].slice(-MAX_RECEIPTS);
+      if (args.expectedRevision !== state.revision || args.expectedVersion !== head.version)
+        return toolError(failure('REVISION_CONFLICT', 'The workspace changed. Inspect its current state before reconnecting.'), head, {snapshot: current()});
+      if (head.bearer) return toolError(failure('INVALID_ACCESS_OPERATION', 'An anonymous workspace is shared by its document capability.'), head);
+      const changed = head.agentAccess === false;
+      if (changed) {head.agentAccess = true; head.version++;}
+      const value = {outcome: 'ok', connected: true, changed};
+      head.receipts = [...head.receipts, {id, hash, revision: state.revision, version: head.version, result: value}].slice(-MAX_RECEIPTS);
       await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
-      return envelope({ ...value, decisionId: args.decisionId, ...(accepted ? { acceptedRevision: state.revision, acceptedVersion: head.version } : {}) }, head, { snapshot: current() });
+      return envelope(value, head, {snapshot: current()});
     }
     if (operation === 'document.commit') {
       // reconcile adopts authoritative snapshots; this wire draft has not been admitted yet.
       const invalid = admissibleText(args.text);
       if (invalid) throw failure('INVALID_DOCUMENT_INPUT', invalid);
       if (!args.commitId) return toolError(failure('INVALID_COMMIT_ID', 'commitId must be a nonempty identifier for this exact draft.'));
-      const who = human(args.commitId), client = row => row.actor + ':' + row.principal + ':' + row.requestId;
-      const hash = await digest(JSON.stringify({ expectedRevision: args.expectedRevision, text: args.text, splices: args.splices ?? null, filename: args.filename ?? null, docKind: args.docKind ?? null }));
+      const who = human(args.commitId), client = row => row.id ? 'act:' + row.id : row.actor + ':' + row.principal + ':' + row.requestId;
+      const hash = await digest(canonicalJson({ expectedRevision: args.expectedRevision, text: args.text,
+        splices: args.splices ?? null, acts: args.acts ?? null, filename: args.filename ?? null,
+        docKind: args.docKind ?? null, turnId: args.turn_id ?? null, label: args.label ?? null, hydrationId: args.hydration_id ?? null }));
       const receipt = head.receipts.find(entry => entry.id === args.commitId);
       if (receipt) {
         if (receipt.hash !== hash) return toolError(failure('COMMIT_ID_REUSED', 'This commitId already identifies different content. Keep an identifier stable only for an identical retry.'), head, { snapshot: current() });
         await this.persist(head, null, null, false, null, undefined, input);
         const draftEdits = state.commitResults?.find(row => row.id === receipt.id)?.edits || [];
         const text = replay(args.text, draftEdits);
-        const accepted = {...(head.version === receipt.version ? current() : { documentId: head.documentId, revision: receipt.revision, text, filename: receipt.filename, docKind: receipt.docKind }), draftEdits, draftClient: client(who)};
+        const accepted = {...(head.version === receipt.version ? current() : { documentId: head.documentId,
+          revision: receipt.revision, text, filename: receipt.filename, docKind: receipt.docKind,
+          journal: state.journal.filter(row => row.revision <= receipt.revision) }), historyComplete: receipt.historyComplete === true, draftEdits, draftClient: receipt.draftClient};
         const acceptedHead = { ...head, revision: receipt.revision, version: receipt.version, filename: receipt.filename, docKind: receipt.docKind, chars: text.length };
         return envelope({ outcome: 'committed', replayed: true, commitId: receipt.id, acceptedRevision: receipt.revision, acceptedVersion: receipt.version, currentRevision: head.revision, currentVersion: head.version }, acceptedHead, { snapshot: accepted, ...(head.version !== receipt.version ? { currentSnapshot: current() } : {}) });
       }
-      if (state.journal.some(row => row.actor === 'human' && row.requestId === args.commitId))
+      if (args.hydration_id !== undefined && (!head.fileHydration || args.hydration_id !== head.fileHydration.id ||
+          head.fileHydration.status !== 'pending' || args.expectedRevision !== head.fileHydration.baseRevision || state.revision !== head.fileHydration.baseRevision))
+        return toolError(failure('HOST_FILE_HYDRATION_CHANGED', 'This workspace was hydrated or edited already. Its current source was retained.'), head, {snapshot: current()});
+      if (state.journal.some(row => row.principal === who.principal && row.requestId === args.commitId))
         return toolError(failure('COMMIT_RECEIPT_EXPIRED', 'This draft was already committed, but its exact receipt is no longer retained.'), head, { snapshot: current() });
-      if (state.readOnly) return toolError(failure('DOCUMENT_READ_ONLY', 'The current workspace policy is read-only. Your draft was not applied.'), head, { snapshot: current() });
-      const filename = args.filename ?? state.filename, docKind = args.docKind ?? state.docKind;
-      if ((filename !== state.filename || docKind !== state.docKind) && (head.metadataRevision || 0) > args.expectedRevision)
-        return toolError(failure('DOCUMENT_METADATA_CHANGED', 'The document name or kind changed while this draft was being edited.'), head, { snapshot: current() });
-      let original = state.text, revision = state.revision, splices, text, draftEdits;
-      const log = [];
+      let original = state.text, originalMetadata = {filename: state.filename, docKind: state.docKind};
+      let revision = state.revision, text, draftEdits, committedMetadata, draftClient = client(who);
+      const log = [], remoteFields = new Set(), entries = [];
+      const canonical = row => ({splices: row.splices, ...(Object.hasOwn(row, 'authored') ? {authored: row.authored} : {}), ...(row.metadata ? {metadata: row.metadata} : {}), transaction: row});
       try {
         // The exact journal owns the old source. Missing history or replacement cannot
         // authorize guessing a base; concurrent source edits use the existing merge core.
         for (let index = state.journal.length - 1; revision > args.expectedRevision && index >= 0; index--) {
           const row = state.journal[index];
-          if (row.revision !== revision || row.baseRevision !== revision - 1 || row.operation === 'document.open_text') throw new Error('draft_base_unavailable');
+          if (row.revision !== revision || row.baseRevision !== revision - 1 || row.operation === 'document.replace') throw new Error('draft_base_unavailable');
           const before = transformSplices(original, row.splices, true);
-          if (before === null) throw new Error('draft_base_unavailable');
+          const beforeMetadata = _rapierTransformMetadata(originalMetadata, row.metadata, true);
+          if (before === null || !beforeMetadata) throw new Error('draft_base_unavailable');
+          for (const field of Object.keys(row.metadata || {})) remoteFields.add(field);
           log.unshift(...row.splices.map(splice => ({client: client(row),
             splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})));
-          original = before; revision = row.baseRevision;
+          original = before; originalMetadata = beforeMetadata; revision = row.baseRevision;
         }
         if (revision !== args.expectedRevision) throw new Error('draft_base_unavailable');
-        let authored = args.splices;
-        try { if (authored === undefined) authored = sourceEdits(original, args.text); }
-        catch (error) {
-          if (log.length || error.message !== 'source_diff_limit') throw error;
-          authored = [minimalSplice(original, args.text)];
+        if (args.acts !== undefined) {
+          const boundedText = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit &&
+            value.isWellFormed() && !/[\u0000-\u001f\u007f]/.test(value);
+          if (!Array.isArray(args.acts) || !args.acts.length || args.acts.length > 1024) throw new Error('canonical_act_invalid');
+          let sourceStart = state.text;
+          for (let index = state.journal.length - 1; index >= 0; index--) sourceStart = transformSplices(sourceStart, state.journal[index].splices, true);
+          const retained = state.journal.map(canonical), ids = new Set(state.journal.map(row => row.id));
+          let localText = original, localMetadata = {...originalMetadata}, localRevision = args.acts[0]?.baseRevision;
+          text = state.text; committedMetadata = {filename: state.filename, docKind: state.docKind}; draftEdits = log;
+          const authoredPrior = state.journal.filter(row => row.revision <= args.expectedRevision).map(canonical);
+          for (const row of args.acts) {
+            if (!plain(row) || !boundedText(row.id, 256) || ids.has(row.id) ||
+                !Number.isSafeInteger(row.baseRevision) || row.baseRevision < 0 || row.baseRevision !== localRevision ||
+                row.revision !== row.baseRevision + 1 || !Array.isArray(row.splices) || row.splices.length > 64 ||
+                !plain(row.author) || !['human', 'agent', 'system'].includes(row.author.kind) || !boundedText(row.author.id, 160) ||
+                row.author.name !== undefined && !boundedText(row.author.name, 120) || !boundedText(row.operation, 96) ||
+                !(row.createdAt === null || Number.isSafeInteger(row.createdAt) && row.createdAt >= 0) ||
+                row.label != null && (typeof row.label !== 'string' || row.label.length > 120) ||
+                row.turnId !== undefined && !boundedText(row.turnId, 160) ||
+                row.affectedBlockIds !== undefined && (!Array.isArray(row.affectedBlockIds) ||
+                  row.affectedBlockIds.some(id => !Number.isSafeInteger(id) || id < 0)) ||
+                row.metadata !== undefined && !_rapierValidMetadataEffect(row.metadata) ||
+                Object.hasOwn(row, 'authored') && !_rapierValidAuthored(row.authored)) throw new Error('canonical_act_invalid');
+            if (Object.keys(row.metadata || {}).some(field => remoteFields.has(field))) throw new Error('metadata_changed');
+            const authored = row.authored ?? authoredPlacement(localText, row.splices, authoredBasis(authoredPrior));
+            const nextLocalText = transformSplices(localText, row.splices);
+            const nextLocalMetadata = _rapierTransformMetadata(localMetadata, row.metadata);
+            const nextMetadata = _rapierTransformMetadata(committedMetadata, row.metadata);
+            if (nextLocalText === null || !nextLocalMetadata || !nextMetadata) throw new Error('canonical_act_invalid');
+            const submittedIds = authoredPrior.map(row => row.transaction.id), transported = retained.some(record => !submittedIds.includes(record.transaction.id));
+            const proved = row.authored || transported ? transposeAuthored(sourceStart, retained, {...canonical(row), authored}, submittedIds)
+              : {text: nextLocalText, splices: row.splices, against: [], submittedBefore: localText, submitted: nextLocalText};
+            if (proved.submittedBefore !== localText || proved.submitted !== nextLocalText) throw new Error('canonical_act_rebase_conflict');
+            const merged = {...proved, remote: proved.against.flatMap(record => record.splices.map(splice => ({client: client(record.transaction),
+              splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})))};
+            const baseRevision = state.revision + entries.length;
+            const turnBaseRevision = row.turnId ? [...state.journal, ...entries].find(entry => entry.turnId === row.turnId &&
+              entry.author?.kind === row.author.kind && entry.author?.id === row.author.id)?.turnBaseRevision ?? baseRevision : null;
+            const entry = {...who, id: row.id, actor: row.author.kind, author: {...row.author},
+              baseRevision, revision: baseRevision + 1, operation: row.operation, createdAt: row.createdAt,
+              label: row.label ?? null, affectedBlockIds: (row.affectedBlockIds || []).slice(), splices: merged.splices, ...((row.authored || transported) ? {authored: structuredClone(authored)} : {}),
+              ...(row.metadata ? {metadata: structuredClone(row.metadata)} : {}),
+              ...(row.turnId ? {turnId: row.turnId, turnBaseRevision} : {}),
+              ...(row.sourceTransactionId ? {sourceTransactionId: row.sourceTransactionId} : {}),
+              ...(row.sourceTransactionIds?.length ? {sourceTransactionIds: row.sourceTransactionIds.slice()} : {}),
+              ...(row.reverts ? {reverts: row.reverts} : {}), ...(row.reapplies ? {reapplies: row.reapplies} : {})};
+            if (!entry.splices.length && !Object.values(entry.metadata || {}).some(pair => pair.before !== pair.after) &&
+                !_rapierHasHistoryEffect(canonical(entry), retained)) throw new Error('canonical_act_invalid');
+            retained.push(canonical(entry)); ids.add(row.id); entries.push(entry); authoredPrior.push(canonical(row));
+            localText = nextLocalText; localMetadata = nextLocalMetadata; localRevision = row.revision;
+            text = merged.text; committedMetadata = nextMetadata; draftEdits = merged.remote;
+          }
+          if (localText !== args.text || (args.filename ?? originalMetadata.filename) !== localMetadata.filename ||
+              (args.docKind ?? originalMetadata.docKind) !== localMetadata.docKind || args.splices !== undefined &&
+              canonicalJson(args.splices) !== canonicalJson(args.acts.flatMap(row => row.splices))) throw new Error('canonical_act_invalid');
+          try { if (retained.some(record => Object.hasOwn(record, 'authored'))) authoredHistory(sourceStart, retained); } catch (_) { throw new Error('canonical_act_invalid'); }
+          let baseline = {filename: state.filename, docKind: state.docKind};
+          for (let index = state.journal.length - 1; baseline && index >= 0; index--)
+            baseline = _rapierTransformMetadata(baseline, state.journal[index].metadata, true);
+          const replayedMetadata = baseline && _rapierReplayMetadata(baseline, retained);
+          if (!replayedMetadata || canonicalJson(replayedMetadata) !== canonicalJson(committedMetadata)) throw new Error('canonical_act_invalid');
+        } else {
+          const filename = args.filename ?? state.filename, docKind = args.docKind ?? state.docKind;
+          const assigned = ['filename', 'docKind'].filter(field => Object.hasOwn(args, field));
+          if (assigned.some(field => remoteFields.has(field))) throw new Error('metadata_changed');
+          committedMetadata = {filename, docKind};
+          if (!_rapierValidMetadata(committedMetadata)) throw new Error('canonical_act_invalid');
+          let authored = args.splices;
+          try { if (authored === undefined) authored = sourceEdits(original, args.text); }
+          catch (error) {
+            if (log.length || error.message !== 'source_diff_limit') throw error;
+            authored = [minimalSplice(original, args.text)];
+          }
+          // A raw whole-source draft has no pre-existing act boundaries. Keep its
+          // initial representation within the canonical row budget before transport.
+          if (args.splices === undefined && !log.length && authored.length > 64) authored = [minimalSplice(original, args.text)];
+          if (transformSplices(original, authored) !== args.text)
+            return toolError(failure('INVALID_DOCUMENT_EDITS', 'The local journal does not produce this exact draft from its acknowledged source.'), head, {snapshot: current()});
+          const rawActId = mintId('change_'); draftClient = client({id: rawActId});
+          const submitted = state.journal.filter(row => row.revision <= args.expectedRevision).map(canonical), retained = state.journal.map(canonical);
+          let merged, placement = null, sourceStart = state.text;
+          for (let index = state.journal.length - 1; index >= 0; index--) sourceStart = transformSplices(sourceStart, state.journal[index].splices, true);
+          // A raw draft has no pre-existing canonical act. Conserved source uses
+          // authored placement; derived discussion regeneration is authored at
+          // the accepted source instead of claiming an unproved earlier view.
+          try {
+            if (retained.length === submitted.length) { merged = mergeSource(original, authored, draftClient, log); }
+            else {
+            const originalPlacement = authoredPlacement(original, authored, authoredBasis(submitted));
+            const proved = transposeAuthored(sourceStart, retained, {transaction: {id: rawActId}, splices: authored, authored: originalPlacement}, submitted.map(row => row.transaction.id));
+            if (proved.submittedBefore !== original || proved.submitted !== args.text) throw new Error('canonical_act_invalid');
+            merged = {...proved, remote: proved.against.flatMap(record => record.splices.map(splice => ({client: client(record.transaction),
+              splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})))};
+            placement = originalPlacement;
+            }
+          } catch (_) { merged = mergeSource(original, authored, draftClient, log); }
+          if (merged.splices.length > 64) throw new Error('canonical_act_rebase_conflict');
+          text = merged.text; draftEdits = merged.remote;
+          const changed = text !== state.text || filename !== state.filename || docKind !== state.docKind;
+          const effect = _rapierMetadataDelta({filename: state.filename, docKind: state.docKind}, committedMetadata, {assign: assigned});
+          if (changed) entries.push({id: rawActId, ...who, author: {kind: 'human', id: 'local'},
+            baseRevision: state.revision, revision: state.revision + 1, operation: 'document.human_edit', createdAt: Date.now(),
+            ...(args.turn_id ? {turnId: args.turn_id, turnBaseRevision: state.journal.find(row => row.turnId === args.turn_id &&
+              row.author?.kind === 'human' && row.author?.id === 'local')?.turnBaseRevision ?? state.revision} : {}),
+            ...(args.label !== undefined ? {label: args.label} : {}), splices: merged.splices,
+            ...(placement ? {authored: placement} : {}), ...(effect ? {metadata: effect} : {})});
         }
-        if (transformSplices(original, authored) !== args.text)
-          return toolError(failure('INVALID_DOCUMENT_EDITS', 'The local journal does not produce this exact draft from its acknowledged source.'), head, {snapshot: current()});
-        ({text, splices, remote: draftEdits} = mergeSource(original, authored, client(who), log));
-      } catch (_) {
-        return toolError(failure('DRAFT_BASE_UNAVAILABLE', 'The retained history cannot rebase this draft. Its source remains in the editor.'), head, { snapshot: current() });
+      } catch (error) {
+        const code = error.message === 'metadata_changed' ? 'DOCUMENT_METADATA_CHANGED' : error.message === 'canonical_act_invalid'
+          ? 'INVALID_CANONICAL_ACTS' : error.message === 'canonical_act_rebase_conflict' ? 'CANONICAL_ACT_REBASE_CONFLICT' : 'DRAFT_BASE_UNAVAILABLE';
+        const message = code === 'DOCUMENT_METADATA_CHANGED' ? 'The same document metadata changed while this draft was being edited.'
+          : code === 'INVALID_CANONICAL_ACTS' ? 'The canonical acts do not replay this exact draft and its metadata.'
+            : code === 'CANONICAL_ACT_REBASE_CONFLICT' ? 'Concurrent edits prevent preserving this exact act. Its draft remains in the editor.'
+              : 'The retained history cannot rebase this draft. Its source remains in the editor.';
+        return toolError(failure(code, message), head, {snapshot: current()});
       }
       const mergedInvalid = admissibleText(text);
       if (mergedInvalid) return toolError(failure('INVALID_DOCUMENT_INPUT', mergedInvalid), head, { snapshot: current() });
-      const changed = text !== state.text || filename !== state.filename || docKind !== state.docKind;
-      const nextRevision = state.revision + (changed ? 1 : 0);
-      const entry = {id: mintId('change_'), ...who, baseRevision: state.revision, revision: nextRevision,
-        operation: 'document.human_edit', splices};
-      kernel.reconcile({ documentId: state.documentId, revision: nextRevision, text, filename, docKind,
-        ...(changed ? {journal: [entry]} : {}) }, who);
+      const nextRevision = state.revision + entries.length;
+      kernel.reconcile({ documentId: state.documentId, revision: nextRevision, text, ...committedMetadata,
+        ...(entries.length ? {journal: [...state.journal, ...entries]} : {}) }, who);
+      const admitted = kernel.snapshot();
+      if (admitted.revision !== nextRevision || admitted.text !== text || admitted.filename !== committedMetadata.filename ||
+          admitted.docKind !== committedMetadata.docKind || entries.some(entry => {
+            const retained = admitted.journal.find(row => row.id === entry.id);
+            return !retained || retained.createdAt !== entry.createdAt ||
+              canonicalJson(retained.splices) !== canonicalJson(entry.splices) ||
+              canonicalJson(retained.metadata ?? null) !== canonicalJson(entry.metadata ?? null) ||
+              canonicalJson(retained.author) !== canonicalJson(entry.author);
+          })) throw failure('INVALID_CANONICAL_ACTS', 'The canonical commit did not preserve this draft history.');
       refresh();
-      head.receipts = [...head.receipts, { id: args.commitId, hash, revision: state.revision, version: head.version, filename: state.filename, docKind: state.docKind }].slice(-MAX_RECEIPTS);
+      head.receipts = [...head.receipts, { id: args.commitId, hash, draftClient, revision: state.revision, version: head.version, filename: state.filename, docKind: state.docKind, historyComplete: state.history.complete === true }].slice(-MAX_RECEIPTS);
+      if (args.hydration_id) head.fileHydration = {...head.fileHydration, status: 'complete', revision: state.revision};
       // The accepted result can differ from the submitted draft. Keep that difference
       // with the chunked, size-bounded source, never in the single-key receipt index.
       if (draftEdits.length) state.commitResults = [...(state.commitResults || []), {id: args.commitId, edits: draftEdits}];
       await this.persist(head, state, kernel.invocationJournal(), false, null, undefined, input);
-      return envelope({ outcome: 'committed', commitId: args.commitId, acceptedRevision: state.revision, acceptedVersion: head.version }, head, { snapshot: {...current(), draftEdits, draftClient: client(who)} });
+      return envelope({ outcome: 'committed', commitId: args.commitId, acceptedRevision: state.revision, acceptedVersion: head.version }, head, { snapshot: {...current(), draftEdits, draftClient} });
     }
     if (!getTool(operation)) return toolError(failure('UNKNOWN_TOOL', 'Unknown operation.'));
     const documentId = head.documentId;
     // WORKER_PRESENCE: unknown is not absent. Surface-fact continuations keep the incoming call's key.
     // The verified editor mode is part of the invocation identity. The same
-    // operation_id cannot replay an agent's handles or review as a human call.
+    // operation_id cannot replay an agent's handles as a human call.
     let value = await kernel.invoke(operation, args, { ...agentCaller(), signal, ...(material?.binding ? {materialBinding: material.binding} : {}), world: { presence: WORKER_PRESENCE, ...(observation ? {[operation === 'document.export' ? 'export' : 'visual']: observation.fact} : {}), ...(editor ? {editor: editor.fact} : {}) } });
     // pending is a complete outcome: each pass invokes again with continues set, never a wait inside the kernel.
     for (let guard = 0; guard < 4 && value.outcome === 'pending' && value.pending?.kind === 'surface-fact'; guard++) {
@@ -2420,7 +3094,7 @@ export class RapierDocument {
     if (actor === 'agent' && !value.replayed) head.agentCall = { id: input.operationId, at: Date.now(), operation, ...(operation === 'document.find' && typeof args.kind === 'string' ? { kind: args.kind.slice(0, 24) } : {}) };
     let download = null, publication = null;
     const exportId = value.exportId;
-    if (['document.export', 'document.propose'].includes(operation) && value.outcome === 'ok') {
+    if (operation === 'document.export' && value.exportId) {
       let grant = head.exports?.find(row => row.id === value.exportId);
       if (exported?.id) {
         grant = await createExportGrant(exported, capabilityHash, input.exportAddress, this.env, head.bearer);
@@ -2435,12 +3109,14 @@ export class RapierDocument {
         if (!token || head.bearer && await digest(token) !== grant.hash) value = {...value, outcome: 'refused', reason: 'export_unavailable'};
         else {
           download = {type: 'resource_link', uri: input.exportOrigin + '/export/' + token, name: grant.name, mimeType: grant.mimeType, size: grant.bytes};
-          value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, exportExpiresAt: new Date(grant.expiresAt).toISOString(),
-            ...(operation === 'document.propose' ? {page: download.uri} : {})};
+          value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, downloadUrl: download.uri,
+            artifact: {...value.artifact, status: 'created', destination: 'hosted_export', access: 'expiring_http_link', expiresAt: new Date(grant.expiresAt).toISOString()},
+            exportExpiresAt: new Date(grant.expiresAt).toISOString()};
         }
       }
     }
     if (download) value = {...value, hostedDownload: download};
+    let retainedResult;
     if (!value.replayed) {
       const journal = kernel.invocationJournal();
       if (exportId) {
@@ -2473,18 +3149,35 @@ export class RapierDocument {
         head.materialReceipts = material.acks;
         head.materialIntent = null; head.materialOwner = null; head.version++;
       }
-      await this.persist(head, state, journal, false, publication, retainedMaterial, input);
+      const taskResult = input.task && value.outcome !== 'pending' ? operationEnvelope(operation, value, head) : null;
+      if (taskResult && operation === 'document.inspect_visual' && value.outcome === 'ok' && observation?.fact?.image)
+        taskResult.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
+      await this.persist(head, state, journal, false, publication, retainedMaterial, input,
+        taskResult ? {task: input.task, result: taskResult} : null);
+      retainedResult = taskResult;
     }
     await this.assertAuthority(input);
+    if (retainedResult) return retainedResult;
     const result = operationEnvelope(operation, value, head);
     if (operation === 'document.inspect_visual' && value.outcome === 'ok' && observation?.fact?.image) result.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
     return result;
   }
 
   alarm() {
+    if (this.ctx.storage.kv.get('task')) return this.tasks().alarm();
     return this.exclusive(async () => {
       try { if (this.ctx.storage) this.ctx.storage.operation = 'alarm'; } catch {}
+      const stops = (this.ctx.storage.kv.get('requestStops') || []).filter(row => row.expiresAt > Date.now());
+      this.stoppingRequests = new Set(stops.map(row => row.key));
+      this.ctx.storage.transactionSync(() => {
+        if (stops.length) this.ctx.storage.kv.put('requestStops', stops);
+        else this.ctx.storage.kv.delete('requestStops');
+      });
       const head = this.ctx.storage.kv.get('head');
+      if (!head && stops.length) {
+        await this.ctx.storage.setAlarm(Math.min(...stops.map(row => row.expiresAt)));
+        return;
+      }
       if (!head || head.expiresAt <= Date.now()) {
         this.cachedState = null;
         this.cachedJournal = null;
@@ -2498,7 +3191,21 @@ export class RapierDocument {
           catch (error) { if (error?.code !== 'OAUTH_AUTHORITY_REVOKED') throw error; }
         }
         const current = this.ctx.storage.kv.get('head');
-        if (current) await this.ctx.storage.setAlarm(Math.min(current.expiresAt, current.materialIntent?.expiresAt || Infinity));
+        if (current) {
+          const expired = (current.taskResults || []).filter(row => row.expiresAt <= Date.now() || row.owner !== current.capabilityHash);
+          if (expired.length) {
+            current.taskResults = current.taskResults.filter(row => !expired.includes(row));
+            current.taskBytes = current.taskResults.reduce((sum, row) => sum + row.bytes, 0);
+            this.ctx.storage.transactionSync(() => {
+              for (const row of expired) for (let index = 0; index < row.parts; index++)
+                this.ctx.storage.kv.delete('task-result:' + row.key + ':' + index);
+              this.ctx.storage.kv.put('head', current);
+            });
+            await this.ctx.storage.sync();
+          }
+          await this.ctx.storage.setAlarm(Math.min(current.expiresAt, current.materialIntent?.expiresAt || Infinity,
+            ...(current.taskResults || []).map(row => row.expiresAt), ...stops.map(row => row.expiresAt)));
+        }
       }
     });
   }

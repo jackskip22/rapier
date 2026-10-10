@@ -1,9 +1,9 @@
 // Notes library: search field and chips, the rename's link rewrite, Connections, the [[ picker, selection's top bar. Spliced into the
 // editor's one script scope beside notes.js and todo.js (bare _rapierNotes, _rapierNotesStore, rapierLoad); dropped from the document
 // profile. createElement/textContent only, never innerHTML.
-const RAPIER_NOTES_LIB_LIMIT = 400, RAPIER_NOTES_LIB_RECENT = 8, RAPIER_NOTES_LIB_MENTION_MIN = 4;
+const RAPIER_NOTES_LIB_RECENT = 8, RAPIER_NOTES_LIB_MENTION_MIN = 4;
 const _rapierNotesLib = {
-	sidx: null, lidx: null, from: null, generation: null, query: null, results: null, build: null, slice: null, runner: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
+	sidx: null, lidx: null, from: null, generation: null, sidecar: null, query: null, results: null, build: null, slice: null, runner: null, hydrate: null, partial: null, painted: 0, job: null, snips: null,
 	chips: null, bar: null, picker: null, renamed: null, connections: null, secs: null, trustedPaint: false,
 	// This question's run, whether its first exact hit happened, and the run count. The run id changes with the question.
 	run: null, runs: 0, hit: false, said: null,
@@ -120,7 +120,7 @@ function _rapierNotesLibraryFresh() {
 	const state = _rapierNotes, lib = _rapierNotesLib;
 	if (lib.from === state.texts && lib.generation === state.loadGen) return true;
 	lib.slice?.cancel?.(); lib.runner?.cancel(); lib.hydrate?.stop();
-	lib.from = state.texts; lib.generation = state.loadGen; lib.linksPending = null; lib.slice = null; lib.runner = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
+	lib.from = state.texts; lib.generation = state.loadGen; lib.sidecar = null; lib.linksPending = null; lib.slice = null; lib.runner = null; lib.sidx = null; lib.lidx = null; lib.build = null; lib.partial = null; lib.results = null; lib.query = null; lib.job = null; lib.snips = null; lib.secs = null;
 	return false;
 }
 function _rapierNotesLibraryIdle(run) {
@@ -363,6 +363,8 @@ function _rapierNotesLibraryRun() {
 	_rapierNotesLibraryFresh();
 	const state = _rapierNotes, S = _rapierNotesSearchModule(), lib = _rapierNotesLib;
 	const query = String(state.query || '').trim();
+	// Metadata changes keep the word index, but retire answers and confirmations from the old sidecar.
+	if (lib.sidecar !== state.index) { lib.sidecar = state.index; lib.results = null; lib.job = null; lib.snips = null; }
 	if (lib.results && lib.query === query) return lib.results;
 	// A question a read-back is still confirming answers with what is established so far.
 	if (lib.job && lib.job.query === query) return lib.job.found;
@@ -375,13 +377,13 @@ function _rapierNotesLibraryRun() {
 	// The index holds no body; phrases and punctuated exclusions are confirmed by exact reads in bounded batches once the build is done.
 	// The words read in pictures are asked only while the toggle row is on (off by default): the search's own `pictures:off`.
 	const asked = state.searchPictures ? query : query + ' pictures:off';
-	const answers = [S.search(sidx, asked, {limit: RAPIER_NOTES_LIB_LIMIT, candidateOrder: true})];
+	const total = Object.keys(state.index.notes).length;
+	const answers = [S.search(sidx, asked, {limit: total, candidateOrder: true})];
 	// Only a positive facet chooses these sections. A literal or -is:trash is not is:trash.
-	if (!S.parseQuery(query).filters.is.some(is => is === 'archived' || is === 'trash' || is === 'trashed')) for (const also of ['is:archived', 'is:trash']) answers.push(S.search(sidx, asked + ' ' + also, {limit: RAPIER_NOTES_LIB_LIMIT, candidateOrder: true}));
+	if (!S.parseQuery(query).filters.is.some(is => is === 'archived' || is === 'trash' || is === 'trashed')) for (const also of ['is:archived', 'is:trash']) answers.push(S.search(sidx, asked + ' ' + also, {limit: total, candidateOrder: true}));
 	const found = _rapierNotesLibraryCompose(answers);
 	const confirm = new Set(answers.flatMap(a => a.confirm));
 	// Coverage belongs to the folder, not just the texts that have arrived in the current slice.
-	const total = Object.keys(state.index.notes).length;
 	lib.partial = state.reading && (!state.reading.complete || sidx.notes.size < total) ? {done: sidx.notes.size, total, ...(state.reading.complete && (lib.build.done || sidx.progress?.unread) ? {unread: true} : {})} : answers[0].partial ? answers[0].progress : null;
 	lib.hit = found.size > 0;
 	if (confirm.size && (!lib.partial || lib.partial.unread)) {
@@ -423,7 +425,7 @@ function _rapierNotesLibraryBatch(job) {
 // The confirmation job: sixteen exact reads a turn, strings released after; stops when the question, folder or index changes.
 async function _rapierNotesLibraryConfirm(job) {
 	const state = _rapierNotes, S = _rapierNotesSearchModule(), lib = _rapierNotesLib;
-	const live = () => lib.job === job && String(state.query || '').trim() === job.query && lib.from === state.texts && state.loadGen === job.gen;
+	const live = () => lib.job === job && lib.sidecar === state.index && String(state.query || '').trim() === job.query && lib.from === state.texts && state.loadGen === job.gen;
 	while (job.confirm.size && live()) {
 		// Which sixteen: notes/library-reads.mjs plan orders visible cards, then ranked candidates, then what the rest-pass reached. Ordering only.
 		const batch = _rapierNotesLibraryBatch(job);
@@ -599,7 +601,7 @@ function _rapierNotesLibraryChips() {
 }
 
 // ---- Search text in images (the one toggle row; off by default) ----
-// The row is the editor's own (notes/ocr.js builds it): a word and a flat switch. On, a question also asks the words the reader
+// Notes' row (notes/ocr.js): a word and a flat switch. On, a question also asks the words the reader
 // read in the notes' pictures; off, it asks the notes' own words alone. Turned on with the reader not installed, it offers the
 // install through the reader's existing prompt (notes/ocr.js `_rapierOcrRequest`) and turns itself on when the install lands.
 function _rapierNotesLibraryPicturesRow() {

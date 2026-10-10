@@ -30,6 +30,8 @@ class Pipe {
         chunks=[];size=0;from=end+1;
       }
     });
+    // A failed browser can reset either DevTools pipe before its exit event arrives.
+    for(const stream of [process.stdio[3],process.stdio[4]])stream.on('error',error=>this.fail(error));
     process.on('error',error=>this.fail(error));
     process.on('exit',()=>this.fail(refusal('BROWSER_EXITED','The render browser exited; retry after checking its sandbox and resource limits.',503)));
   }
@@ -75,6 +77,21 @@ export class Renderer {
     // The bridge is inside the compressed authored runtime; the generated profile/version
     // is additionally recorded by staging, not guessed from an arbitrary HTML document.
     if(!this.runtime.includes('name="rapier-version" content="'+VERSION+'"'))throw refusal('RENDER_RUNTIME_MISSING','Build the document profile before starting the server.',503);
+    const bundled=await readFile(new URL('../dist/chatgpt/rapier-app.html',import.meta.url),'utf8');
+    if(!bundled.includes('name="rapier-version" content="'+VERSION+'"'))throw refusal('RENDER_RUNTIME_MISSING','Build the matching full profile before starting the server.',503);
+    const script=id=>{
+      const found=[...bundled.matchAll(new RegExp('<script\\b[^>]*id="'+id+'"[^>]*>([^<]*)<\\/script>','g'))];
+      if(found.length!==1)throw refusal('RENDER_RUNTIME_MISSING','The retained render resource is missing: '+id,503);
+      return found[0];
+    };
+    const groups=JSON.parse(script('rapier-builtin-plugins')[1]).filter(group=>['math','mermaid','font-subset'].includes(group.id));
+    if(groups.length!==3)throw refusal('RENDER_RUNTIME_MISSING','The retained render resources are incomplete.',503);
+    const inventory='<script type="application/json" id="rapier-server-plugins">'+JSON.stringify(groups)+'</script>';
+    const payload=groups.map(group=>script(group.element)[0]).join('');
+    // The page's own scripts name the tag inside a string; the document ends at the last one.
+    const end=this.runtime.lastIndexOf('</body>');
+    if(end<0)throw refusal('RENDER_RUNTIME_MISSING','The render runtime has no document end.',503);
+    this.runtime=this.runtime.slice(0,end)+inventory+payload+this.runtime.slice(end);
     this.runtimeHash=sha256(this.runtime);return this;
   }
   async start() {
@@ -139,7 +156,7 @@ export class Renderer {
           let request;
           try {
             request=JSON.parse(message.params.payload);
-            if(!Number.isSafeInteger(request.id) || !['SHA-256','SHA-512'].includes(request.algorithm) ||
+            if(!Number.isSafeInteger(request.id) || !['SHA-256','SHA-384','SHA-512'].includes(request.algorithm) ||
                typeof request.base64!=='string' || request.base64.length>32*1024*1024)throw new Error('Invalid digest request');
             const digest=createHash(request.algorithm.replace('-','').toLowerCase()).update(Buffer.from(request.base64,'base64')).digest('base64');
             pipe.call('Runtime.evaluate',{expression:'globalThis.__rapierDigestDone('+request.id+','+JSON.stringify(digest)+')',contextId:message.params.executionContextId},sessionId,combined).catch(()=>{});

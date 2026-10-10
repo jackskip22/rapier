@@ -174,6 +174,24 @@ export async function verifyImportHistory(receipt, rows) {
 	return out;
 }
 
+// Like prepareImportWrite, this is a target for the existing folder journal, not a
+// claim that bytes landed. Only its verified terminal publication earns these proofs.
+export async function prepareImportHistory(receipt, rows) {
+	const out = copy(receipt), seen = new Set();
+	for (const row of rows) {
+		if (seen.has(row.file)) throw new Error('duplicate import history target');
+		seen.add(row.file);
+		const at = out.createdHistory.findIndex(proof => proof.file === row.file);
+		// An existing unowned file stays unowned. An imported backup manifest may
+		// advance its own proof only from the exact digest this receipt already owns.
+		if (row.expectedDigest !== null && at < 0) continue;
+		if (at >= 0 && out.createdHistory[at].digest !== row.expectedDigest) throw new Error('import history target differs from its owned predecessor');
+		const [proof] = await historyProofs(out, [{...row, actual: row.bytes}], new Set());
+		if (at < 0) out.createdHistory.push(proof); else out.createdHistory[at] = proof;
+	}
+	return out;
+}
+
 export function recordImportSections(receipt, sections) {
 	const found = new Map(receipt.createdSections.map(row => [row.name, row]));
 	for (const section of sections) if (!found.has(section.name)) found.set(section.name, copy(section));
@@ -218,6 +236,12 @@ export function createImportReceiptWriter(receipt) {
 		try { return await action(); } finally { busy = false; }
 	};
 	return {
+		recheckWrite(note, observed, {digest = digestBytes} = {}) { return run(async () => {
+			const held = out.written.find(row => row.file === note.file);
+			if (!held) throw new Error('the import has no committed proof to recheck');
+			const proof = await writeProof(out, note, observed, {digest, pending, recorded: new Set()});
+			if (canonicalJSON(held) !== canonicalJSON(proof)) throw new Error('import read-back differs from its committed proof: ' + note.file);
+		}); },
 		verifyWrite(note, observed, {digest = digestBytes} = {}) { return run(async () => {
 			const proof = await writeProof(out, note, observed, {digest, pending, recorded});
 			out.status = 'writing'; out.written.push(proof); recorded.add(proof.file);

@@ -6,7 +6,8 @@ import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from
 // caught by the digest at the narrowest window storage gives, which only the storage's own
 // conditional removal could close entirely.
 import {NOTES_INDEX_FILE, emptyIndex, isNoteFile, validNoteId, noteFileName, attachmentFileName, parseIndex, reconcile, serializeIndex} from './model.mjs';
-import {exactBytes, sha256, storedFileDigest} from './integrity.mjs';
+import {exactBytes, sha256, sha256State, storedFileDigest} from './integrity.mjs';
+import {manifestName, parseCanonical} from './history.mjs';
 
 // The sidecar only. A note's own bytes never pass through here -- the folder keeps a body's
 // leading byte order mark exactly as it found it (notes-bom-through-the-platform). This index is
@@ -27,6 +28,10 @@ const equal = (a, b) => {
 	return true;
 };
 const digestOf = async bytes => bytes == null ? null : sha256(bytes);
+const ownedDigest = bytes => {
+	if (bytes == null) return null;
+	const hash = sha256State(); hash.update(bytes); return hash.finish();
+};
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 function pack(bytes) {
 	let out = '';
@@ -270,6 +275,26 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		catch (error) { unlock(); await settled; throw error; }
 		const active = () => { if (!granted || released) throw fail('released', 'This notes transaction no longer owns the folder.'); };
 		let dirty = null, lastDropped = [], lastKept = [];
+		const canonicalRows = journal => {
+			if (journal.canonical === undefined) return [];
+			if (!Array.isArray(journal.canonical) || !journal.canonical.length) throw fail('corrupt', 'The canonical publication is unreadable.');
+			const seen = new Set();
+			for (const row of journal.canonical) {
+				if (!row || !isNoteFile(row.file) || !validNoteId(row.id) || seen.has(row.id) ||
+					row.history !== 'history/' + manifestName(row.id) || !/^[a-f0-9]{64}$/.test(row.ledger)) throw fail('corrupt', 'The canonical publication has no exact identity.');
+				seen.add(row.id);
+			}
+			return journal.canonical;
+		};
+		const verifyCanonical = async (journal, index) => {
+			for (const row of canonicalRows(journal)) {
+				if (index.notes[row.file]?.id !== row.id || index.notes[row.file]?.canonicalHistory !== row.ledger) throw fail('changed', 'The note identity changed during canonical publication. Its pending save was kept.');
+				const body = await readBytes(row.file), history = await readBytes(row.history);
+				if (!body || !history) throw fail('changed', 'The note and its history have not both landed. The pending save was kept.');
+				const proved = parseCanonical(history, {noteId: row.id, now: clock(), text: new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(body)});
+				if (proved.ledger.sha256 !== row.ledger) throw fail('changed', 'The canonical history changed during publication. Its pending save was kept.');
+			}
+		};
 		const flushNotice = async index => {
 			const pending = index.ownerNotice;
 			if (!pending) return {index, notice: null};
@@ -308,7 +333,9 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					journal.publicationDigest = await sha256(bytes); await writeJournal(journal);
 					if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== journal.baseDigest) throw fail('changed', 'The folder metadata changed before publication. Its bytes and the pending save were kept.');
 				}
+				if (journal) await verifyCanonical(journal, index);
 				await writeVerified(NOTES_INDEX_FILE, bytes, journal?.publicationDigest);
+				if (journal) await verifyCanonical(journal, index);
 				if (journal) await clearJournal();
 			};
 			const pending = {generation: folderGeneration(index), changed: [...new Set(changed)].sort(), kind};
@@ -348,11 +375,13 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (journal.version !== 2 || !Number.isSafeInteger(journal.baseGeneration) || journal.baseGeneration < 0 || journal.generation !== journal.baseGeneration + 1 || !Number.isSafeInteger(journal.generation) ||
 					!(journal.baseDigest === null || /^[0-9a-f]{64}$/.test(journal.baseDigest)) || !Array.isArray(journal.writes) || !Array.isArray(journal.removes) ||
 					journal.publicationDigest !== undefined && !/^[0-9a-f]{64}$/.test(journal.publicationDigest)) throw fail('corrupt', 'The pending notes transaction is not readable; its files have been kept.');
+				canonicalRows(journal); // Malformed proof lists must fail before replaying any write.
 				const current = ours ? journal.baseDigest : await digestOf(indexReceipt);
 				if (journal.publicationDigest && current === journal.publicationDigest) {
 					if (journal.exactIndex ? current !== journal.exactIndex.digest : folderGeneration(index) !== journal.generation) throw fail('corrupt', 'The completed notes journal names a different generation.');
 					// The final sidecar landed before journal retirement. Do not replay any body:
 					// a later filesystem edit belongs to the person, even at the same generation.
+					await verifyCanonical(journal, index);
 					await clearJournal(); journal = null;
 				} else if (journal.baseGeneration !== folderGeneration(index) || current !== journal.baseDigest) throw fail('changed', 'The folder metadata changed during its pending transaction. Both copies were kept.');
 			}
@@ -470,6 +499,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				// file that changed under the pending work is the person's: its bytes stay, that write or
 				// removal is dropped, its entry says what is there, and the read reports it.
 				const drop = (file, digest) => {
+					if (journal.canonical?.some(row => row.file === file || row.history === file)) throw fail('changed', 'The note changed during canonical publication. Both originals and the pending save were kept.');
 					if (isImportReceiptFile(file)) throw fail('changed', 'Import receipt ' + file + ' changed during publication. Its bytes and the pending transaction were kept.');
 					if (file.startsWith('history/')) throw fail('changed', 'The note history changed before replacement. Its words and pending history were kept.');
 					if (exact) throw fail('changed', 'The file ' + file + ' changed during exact restore. Its newer bytes and the pending restore were kept; keep the source backup.');
@@ -680,7 +710,31 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			// reconcile metadata. Exact restore may replace only an unused sidecar.
 			const restoring = options?.exactRestore === true, replacing = restoring && options?.replace === true;
 			if (restoring && !replacing) await emptyDestination();
-			const before = await read(options), baseBytes = indexReceipt, baseDigest = await digestOf(baseBytes), observed = new Map(before.bodies);
+			// An ordinary save can admit the existing journal before folder maintenance. These
+			// three fresh byte receipts are preparation only: the byte store must compare all
+			// three again atomically with the journal put. Other plans retain the ordinary read.
+			const ordinary = options?.ordinarySave;
+			let direct = null;
+			if (!restoring && typeof planner === 'function' && typeof store.compareWrite === 'function' &&
+					isNoteFile(ordinary?.file) && validNoteId(ordinary?.id) && Array.isArray(ordinary?.expectedDigest)) {
+				const [base, body, pending] = await Promise.all([readBytes(NOTES_INDEX_FILE), readBytes(ordinary.file), readBytes(OWNER_JOURNAL_FILE)]);
+				if (base != null && body != null && pending == null) {
+					let text;
+					try { text = decode(base); } catch (_) { throw fail('corrupt', 'The notes index is not UTF-8 text.'); }
+					const index = parseIndex(text), entries = Object.values(index.notes), ids = entries.map(entry => entry.id);
+					if (!index.transaction && !index.ownerNotice && !Object.keys(index.deletions || {}).length && index.folderDeviceId &&
+							index.notes[ordinary.file]?.id === ordinary.id && !index.notes[ordinary.file].trashed &&
+							ids.every(validNoteId) && new Set(ids).size === ids.length && ordinary.expectedDigest.includes(ownedDigest(body))) {
+						direct = {file: ordinary.file, base, body, index, expected: new Map([[NOTES_INDEX_FILE, base], [ordinary.file, body], [OWNER_JOURNAL_FILE, null]])};
+					}
+				}
+			}
+			const before = direct ? {index: direct.index, files: Object.keys(direct.index.notes).sort(), bodies: new Map(), generation: folderGeneration(direct.index), readOnly: false}
+				: await read(options);
+			const baseBytes = direct ? direct.base : indexReceipt, digestBytes = direct ? ownedDigest : digestOf;
+			const baseDigest = await digestBytes(baseBytes), observed = new Map(before.bodies);
+			const ordinaryAgain = () => transact(planner, {...options, ordinarySave: null});
+			const admit = () => { active(); options?.admit?.(); };
 			const original = [];
 			if (replacing) for (const file of await snapshotFiles()) if (file !== NOTES_INDEX_FILE) {
 				fileName(file, true);
@@ -692,15 +746,24 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			// index (the widget's tick: by stable id, and only once it is known not to be protected).
 			// Same lease, same listing, same exact copies as `{bodies}`; nothing is read unasked.
 			const plan = typeof planner === 'function' ? await planner({index: copy(before.index), files: before.files.slice(), bodies: new Map([...before.bodies].map(([file, bytes]) => [file, bytes.slice()])),
-				readImportReceipt: id => receiptFrom(before.index, id),
+				readImportReceipt: id => receiptFrom(before.index, id), digestBytes,
 				readBodies: async names => {
-					const bodies = await readBodies(before.files, requestedBodies({bodies: names}));
+					const requested = requestedBodies({bodies: names});
+					if (direct && requested.some(file => file !== direct.file)) throw fail('plan', 'An ordinary save may prepare only its admitted note.');
+					const bodies = direct ? new Map(requested.map(file => [file, direct.body.slice()])) : await readBodies(before.files, requested);
 					for (const [file, bytes] of bodies) observed.set(file, bytes.slice());
 					return bodies;
 				}}) : planner;
 			if (!plan?.index || plan.index.transaction) throw fail('plan', 'A notes transaction needs its complete resulting sidecar.');
 			if (!restoring && folderGeneration(plan.index) !== before.generation) throw fail('stale', 'The notes folder changed; reload it before saving.');
 			if (restoring && (plan.kind !== 'restore' || !plan.exactIndex || plan.removes?.length)) throw fail('plan', 'Exact restore needs the complete original sidecar and only new files.');
+			const directDelta = direct && indexDelta(before.index, plan.index);
+			// A canonical save writes the note first, then its history objects; only those may follow the admitted note.
+			const historyRow = row => typeof row.file === 'string' && row.file.startsWith('history/');
+			if (direct && (!['save', 'canonical-save'].includes(plan.kind) || plan.writes?.[0]?.file !== direct.file || plan.removes?.length || directDelta.root.length ||
+					directDelta.notes.some(row => row.file !== direct.file || row.id !== ordinary.id || row.beforeId !== ordinary.id) ||
+					(plan.writes || []).some(row => row.createOnly || row.requires !== undefined || row.caseSource !== undefined || row.file !== direct.file && !historyRow(row)) ||
+					(plan.kind === 'save') !== (plan.writes.length === 1))) return ordinaryAgain();
 			const after = copy(plan.index), writes = [], removes = [], seen = new Set(), sources = new Map(), present = new Set(before.files);
 			for (const row of plan.writes || []) {
 				fileName(row.file, restoring); if (seen.has(row.file)) throw fail('plan', 'A transaction names one file twice.'); seen.add(row.file);
@@ -711,11 +774,11 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					caseSource.normalize('NFC').toLowerCase() !== row.file.normalize('NFC').toLowerCase() || !present.has(caseSource) || present.has(row.file)))
 					throw fail('plan', 'A case-only rename needs the exact original spelling and a free destination.');
 				if (createOnly && present.has(row.file)) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
-				const bytes = restoring ? null : exactBytes(row.bytes ?? row.text), previous = await readBytes(row.file);
+				const bytes = restoring ? null : exactBytes(row.bytes ?? row.text), previous = direct && row.file === direct.file ? direct.body : await readBytes(row.file);
 				// The listing rules out existing notes without reading them. A fresh read also
 				// catches an unlisted arrival or media collision, and supplies the journal proof.
 				if (createOnly && previous != null && !caseMove) throw fail('collision', 'The import name ' + row.file + ' is occupied. Allocate a new name while holding the folder owner.');
-				const previousDigest = await digestOf(previous);
+				const previousDigest = await digestBytes(previous);
 				if (row.expectedDigest !== undefined && row.expectedDigest !== previousDigest) throw fail('changed', 'The note changed since this edit was prepared.');
 				if (restoring) {
 					if (!Number.isSafeInteger(row.size) || row.size < 0 || !/^[0-9a-f]{64}$/.test(row.digest) || typeof row.read !== 'function' || row.requires !== undefined) throw fail('plan', 'Exact restore needs a verified source for each whole file.');
@@ -742,7 +805,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					const priorStage = previous == null ? null : '.rapier-sync-stage-' + previousDigest + '.tmp';
 					if (priorStage) await writeVerified(priorStage, previous);
 					writes.push({file: row.file, stage, size: bytes.length, digest, before: previousDigest, priorStage});
-				} else writes.push({file: row.file, data: pack(bytes), digest: await sha256(bytes), before: previousDigest, ...(row.requires === undefined ? {} : {requires: row.requires})});
+				} else writes.push({file: row.file, data: pack(bytes), digest: await digestBytes(bytes), before: previousDigest, ...(row.requires === undefined ? {} : {requires: row.requires})});
 				if (isNoteFile(row.file)) present.add(row.file);
 			}
 			if (replacing) for (const row of original) if (!seen.has(row.file)) {
@@ -758,6 +821,23 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			for (const row of [...writes, ...removes]) if (row.requires !== undefined &&
 				(!byFile.has(row.requires) || byFile.get(row.requires).requires !== undefined || row.requires === row.file ||
 				 writes.includes(row) && writes.indexOf(byFile.get(row.requires)) >= writes.indexOf(row))) throw fail('plan', 'A file operation must follow its independent prerequisite write.');
+			if (!restoring) {
+				if (plan.canonical !== undefined && (!Array.isArray(plan.canonical) || !plan.canonical.length)) throw fail('plan', 'Canonical publication needs exact note proofs.');
+				const byId = new Map(Object.entries(before.index.notes).map(([file, entry]) => [entry.id, {file, entry}]));
+				const proofs = new Map();
+				for (const proof of plan.canonical || []) {
+					if (!proof || !isNoteFile(proof.file) || !validNoteId(proof.id) || proofs.has(proof.id) || proof.history !== 'history/' + manifestName(proof.id) ||
+						!/^[a-f0-9]{64}$/.test(proof.ledger) || after.notes[proof.file]?.id !== proof.id || after.notes[proof.file]?.canonicalHistory !== proof.ledger)
+						throw fail('plan', 'The canonical publication does not describe its exact note.');
+					proofs.set(proof.id, proof);
+				}
+				for (const [file, entry] of Object.entries(after.notes)) {
+					const previous = byId.get(entry.id), written = byFile.get(file);
+					if (previous?.entry.canonicalHistory && !entry.canonicalHistory) throw fail('notes_history_unavailable', 'A transaction cannot detach canonical note history.');
+					if (entry.canonicalHistory && (written || previous?.file !== file || previous?.entry.canonicalHistory !== entry.canonicalHistory) && !proofs.has(entry.id))
+						throw fail('notes_history_unavailable', 'A note body and its canonical history must be published together.');
+				}
+			}
 			if (Object.keys(after.notes).length !== present.size || [...present].some(file => !own(after.notes, file))) throw fail('plan', 'The resulting sidecar must describe every resulting note exactly once.');
 			if (!restoring && !writes.length && !removes.length && jsonSame(before.index, after)) {
 				// Redelivery earned no new transaction. Still check the admitted sidecar:
@@ -767,12 +847,13 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				// so an intervening file edit cannot be acknowledged as an unchanged save.
 				for (const [file, bytes] of observed) if (!equal(bytes, await readBytes(file))) throw fail('changed', 'The note changed before the transaction was admitted.');
 				if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
+				await options?.admissionGuard?.();
 				return {...before, bodies: new Map()};
 			}
 			delete after.ownerNotice;
 			after.folderGeneration = before.generation + 1;
 			if (!Number.isSafeInteger(after.folderGeneration)) throw fail('generation', 'The notes folder generation is exhausted.');
-			const journal = {version: 2, kind: plan.kind || 'write', baseGeneration: before.generation, generation: after.folderGeneration, baseDigest, delta: indexDelta(before.index, after), writes, removes};
+			const journal = {version: 2, kind: plan.kind || 'write', baseGeneration: before.generation, generation: after.folderGeneration, baseDigest, delta: indexDelta(before.index, after), writes, removes, ...(plan.canonical ? {canonical: copy(plan.canonical)} : {})};
 			if (restoring) {
 				const aliases = new Set();
 				for (const file of [...writes.map(row => row.file), NOTES_INDEX_FILE]) {
@@ -808,9 +889,20 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			// The journal's read-back licenses body changes. The admitted after object is private
 			// already: same-call replay uses it without serializing or parsing the full index again.
 			// A fresh owner instead reconstructs it from the exact digest-proven base and delta.
-			if (await readJournal()) throw fail('pending', 'A pending notes journal must finish before another starts.');
-			if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
-			await writeJournal(journal);
+			if (direct) {
+				const bytes = journalBytes(journal);
+				admit();
+				await options?.admissionGuard?.();
+				if (!await store.compareWrite(direct.expected, new Map([[OWNER_JOURNAL_FILE, bytes]]), {guard: admit})) return ordinaryAgain();
+				if (!equal(await readBytes(OWNER_JOURNAL_FILE), bytes)) throw fail('verify', 'The notes folder did not keep its admitted journal.');
+				indexReceipt = baseBytes;
+			} else {
+				if (await readJournal()) throw fail('pending', 'A pending notes journal must finish before another starts.');
+				if (await digestOf(await readBytes(NOTES_INDEX_FILE)) !== baseDigest) throw fail('changed', 'The folder sidecar changed before the transaction was admitted.');
+				// Last asynchronous custody check before durable admission. After this wins, recovery owns completion.
+				await options?.admissionGuard?.();
+				admit(); await writeJournal(journal);
+			}
 			if (restoring) {
 				for (const row of writes) {
 					const bytes = exactBytes(await sources.get(row.file)());

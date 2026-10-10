@@ -8,14 +8,14 @@ Use the document's style and Rapier's defaults, short labels and prose explainin
 
 A native SVG diagram is made with `document.draw`: named figures the person can move, restyle, connect and
 extend on Rapier's canvas, saved as SVG in the document. A Mermaid flowchart is a `mermaid` fence in the
-Markdown source, inserted with `document.apply_edits`; Rapier renders the supported grammar offline and the
+Markdown source, inserted with `document.edit`; Rapier renders the supported grammar offline and the
 file keeps the text. A drawing is not Mermaid and a fence is not a drawing. Choose the drawing when shapes
 should be moved and edited by hand; choose the fence when the flowchart must stay plain text in any
 Markdown editor.
 
 ## Put the diagram in the working document
 
-For an open Rapier document, read the intended passage and insert Markdown through `document.apply_edits`,
+For an open Rapier document, read the intended passage and insert Markdown through `document.edit`,
 or use `document.draw` for native figures. A request to make a diagram is a request to make it there;
 do not ask the person to paste source that the available tools can insert.
 
@@ -59,10 +59,11 @@ Do not silently discard connections or claim that the result rendered without ob
 ## Native figures
 
 `document.draw` can create this diagram with no coordinates. Supply the MCP workspace handle and a
-fresh operation ID as usual; examples here show only the operation payload.
+fresh operation ID as usual; examples here show only the operation payload. Creation requires target kind
+`create`; add `context_handle` inside that target to insert after an inspected passage. Otherwise it appends.
 
 ```json
-{"alt":"An order with an availability decision","figures":[
+{"target":{"kind":"create"},"alt":"An order with an availability decision","figures":[
   {"kind":"rect","id":"order","label":"Choose a meal"},
   {"kind":"diamond","id":"available","label":"Available?"},
   {"kind":"rect","id":"kitchen","label":"Prepare meal"},
@@ -83,7 +84,7 @@ and routes bound connectors. A drawing is an SVG image carrying its semantic rec
 For a spatial sketch, coordinates are meaningful. This creates a garden arrangement:
 
 ```json
-{"alt":"Two garden beds beside a path","figures":[
+{"target":{"kind":"create"},"alt":"Two garden beds beside a path","figures":[
   {"kind":"rect","id":"herbs","label":"Herbs","x":0,"y":0,"w":180,"h":110},
   {"kind":"rect","id":"greens","label":"Greens","x":240,"y":0,"w":180,"h":110},
   {"kind":"rect","id":"path","label":"Path","x":0,"y":160,"w":420,"h":70}
@@ -95,15 +96,14 @@ shapes, relabel, recolour, draw and paint on the canvas. Agents can also paint w
 when this host carries Paint. Send a paint figure with a stable id and ordered strokes (`figures` creates a drawing; to paint on a drawing that already exists, or that the person has open, put `{"kind":"paint","strokes":[...]}` in `shapes.add` or `shapes.replace`):
 
 ```json
-{"alt":"A blue brush stroke","figures":[{"kind":"paint","id":"wash","strokes":[
+{"target":{"kind":"create"},"alt":"A blue brush stroke","figures":[{"kind":"paint","id":"wash","strokes":[
   {"brush":"rapier/oil","colour":"#2255cc","size":30,"load":0.6,"water":0.2,
    "points":[[20,50,0.7],[60,55,0.7],[100,45,0.7],[140,50,0.7]]}
 ]}]}
 ```
 
 `points` are drawing coordinates with optional pressure from 0 to 1. `size` is 0 to 100; omitted, it is the
-brush's own first-use size, the width the Paint tool opens that brush at. `get_context` lists every brush under
-`paint.brushes` (its id, name, kind and that size) and each control's range and default under `paint.controls`.
+brush's own first-use size. `rapier.guide({topic: "paint"})` returns the current brush registry and control ranges/defaults.
 `load` and `water` are 0 to 1. `angle` is 0 to 179 degrees (45 when omitted), the angle a brush whose head is
 not round is held at; `follow: true` turns the head with the stroke instead, and `erase: true` makes a brush
 take paint off with its own head (a brush that works the paint already on the layer, such as smudge or blend,
@@ -113,32 +113,36 @@ so the same strokes paint the same marks. Brush ids come from the shipped regist
 32 strokes, 1,024 points per stroke and 4,096 points in total, counting one stationary starting sample
 added to each new stroke, within a 2,048-pixel sheet. An eraser or
 blender needs existing pigment in that same layer; an empty resulting picture is refused. Painting
-is not available in a build without Paint. Do not claim a refused call created marks.
+is not available in a build without Paint. Do not claim a refused or accepted-but-pending call created marks. Read `receipt.state` and
+`receipt.presentation` separately; retry retained material work with the same operation ID and arguments.
 
 A paint figure with `mode: "water"` paints pigment into wet paper instead. It takes `actions` in place of `strokes`
 (`stroke`, `water`, `lift`, `fill`, `dry`, `advance`, `paper`, `tip`, `text` and `trace`; stroke points are
-`[x, y, pressure, tick]` with 60 ticks a second), and `get_context.paint` lists the Water brushes, pigments, papers and
+`[x, y, pressure, tick]` with integer ticks at 60 a second), and the paint guide lists Water brushes, pigments, papers and
 tools with an example of every action. A paper changes only how the paint behaves; the layer stays transparent over the
-drawing's own canvas and background. `document.read_context` with `paintSample: {objectId, point}` reads the pigment at
-a point of an inspected Water layer. A figure that mixes strokes and actions is refused as `paint_mode_mismatch`.
+drawing's own canvas and background. `document.read` with target kind `drawing` and `paintSample: {objectId, point}` samples pigment at
+a point of an inspected Water layer. The result reports renderer availability/pending/sample facts, not pixels or a source change. A figure that mixes strokes and actions is refused as `paint_mode_mismatch`.
 
 ## Edit an imported SVG
 
-Read the picture occurrence with `document.read_context`. When every node-tree page has been read,
-pass its handle as `svg_handle` with `node_edits`. Each entry names a disclosed `id` and the changed
+Read the picture occurrence with `document.read({target: {kind: "svg", context_handle: imageHandle}})`.
+Follow cursor-only continuations until the tree is complete. Pass the returned `svg_handle` to `svg.edit` with `node_edits`. Each entry names a disclosed `id` and the changed
 `text`, `attributes`, `style` or `geometry`; `null` removes an optional attribute or style property.
-Untouched SVG bytes stay intact. Unsafe values are refused with the field named.
+Optional `alt` changes the picture caption alongside the node edits. Untouched SVG bytes stay intact.
+Unsafe values are refused with the field named.
 
 ## Change one object
 
-Read the image occurrence through `document.read_context` for its recipe and a current handle.
-Do not use a source-text handle as a recipe handle or guess IDs from the rendered picture.
+Read the image occurrence with `document.read({target: {kind: "drawing", context_handle: imageHandle}})`
+and follow every cursor-only continuation. Use the returned `recipe_handle` in
+`document.draw({target: {kind: "edit", recipe_handle}, ...patch})`. An optional `objectId` narrows authority
+to that object. Source reads do not automatically inspect drawings; never use a source handle as a recipe handle.
 
 - Move an inspected object with `operations: [{"type":"move","ids":["herbs"],"dx":40,"dy":0}]` and the read
-  handle as `recipe_handle`. The batch (up to 64 operations, applied in order) takes every edit the person's
+  handle in `target: {kind: "edit", recipe_handle}`. The batch (up to 64 operations, applied in order) takes every edit the person's
   controls make and lands whole or not at all; a refusal names the operation and field.
 - Change a label by copying the exact shape from the read recipe, changing its `label`, then sending
-  `shapes: {replace: [updatedShape]}` with the read handle as `recipe_handle`. A replacement is a complete
+  `shapes: {replace: [updatedShape]}` with the read handle in `target: {kind: "edit", recipe_handle}`. A replacement is a complete
   shape, not just `id` and `label`. Preserve geometry, style and bindings.
 - Add or remove with `shapes.add` or `shapes.remove`. Connectors may name existing IDs or later additions in the same patch; replacements may also name
   additions. New groups may contain the new automatically laid-out figures. Use `direction` (`down`,
@@ -152,8 +156,8 @@ Do not use a source-text handle as a recipe handle or guess IDs from the rendere
   pixels a side, to take a stroke that leaves it. A missing id answers `paint_target_invalid`, a locked layer
   `paint_target_locked` and a layer the person changed meanwhile `paint_target_changed` (read it again, then
   resend). To start a layer over, remove it and add a new paint figure.
-- Change only the caption with `recipe_handle` and `alt`; no dummy shape operation is needed.
-- Move the drawing's own dials with `shapes: {set: {...}}` and the read handle as `recipe_handle`: `background`,
+- Change only the caption with the edit target and `alt`; no dummy shape operation is needed.
+- Move the drawing's own dials with `shapes: {set: {...}}` and `target: {kind: "edit", recipe_handle}`: `background`,
   `paper` (`white` or `black`), `effect`, `canvas` (`{w, h}`), `frame` (`{x, y, w, h}`), `light` (radians), `smooth`
   (0 to 100) and `nib` (2 to 24). Each member replaces the one it names, whole. `null` removes a background,
   effect, frame or paper (the paper then follows the reader's light or dark page, the frame the ink). A background or effect that
@@ -162,17 +166,16 @@ Do not use a source-text handle as a recipe handle or guess IDs from the rendere
   `effect.copies`, `canvas`). A `set` lands on the person's open canvas as one Undo step, beside any `add`,
   `replace` or `remove` in the same patch.
 - For strokes, fonts or other drawing-wide fields, send the complete inspected `recipe` with
-  `recipe_handle`. Keep every unrelated field and paint marker. Do not combine
+  `target: {kind: "edit", recipe_handle}`. Keep every unrelated field and paint marker. Do not combine
   `recipe` with `shapes` or `figures`; an `operations` batch may follow the recipe change.
 
 While a person has the drawing open, a `shapes` patch (its `set` included), an `operations` batch and a
 complete inspected `recipe` use the same canvas hand-off. An admitted change commits to the document and
 lands on their canvas as one Undo step; while a gesture is active, presentation waits for their hand to lift.
-A caption waits until they close the drawing (`draw_session_open`). The Notes fence still applies.
 A shape or dial the person has changed on the canvas and not yet saved stays theirs: the agent's change is in
 the document and one Undo away. A refused recipe names the first field that stopped it (`field`).
 
-Keep the change ID for inspection and Undo. Where the person has painted on a layer since, `undo_agent_change`
+Keep the returned act ID for inspection and Undo. Where the person has painted on a layer since, `document.undo` with that act
 takes back the agent's strokes by replaying the layer's history without them, so the person's strokes stay. A
 new agent contribution whose replay would exceed 8 MiB is refused as `paint_history_full`; the painting
 and its existing replay stay intact. Use `shapes.add` to paint on a new layer. If the person changed the

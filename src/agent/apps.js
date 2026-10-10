@@ -11,10 +11,10 @@
   let nextId = 0, origin = null, initialized = false, closed = false, closing = false;
   let host, capabilities = {}, context = {}, token = '', base = null, incoming = null;
   let version = 0, incomingVersion = 0, presentationBlocked = false;
-  let dirty = false, flight = null, continuation = null, decisionFlight = null, switching = false;
+  let dirty = false, flight = null, switching = false;
   let editEpoch = 0, lastEdit = 0, composing = false, contextEditing = false, contextEditingAt = 0;
   let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton;
-  let unsubscribe, observer, compareObserver, compareButtons = [], locked = [], status = 'opening';
+  let unsubscribe, observer, locked = [], status = 'opening';
   let importRunning = false, uploadRunning = false, homeDialog, fileDialog, homeRequested = false;
   let boundFile = null, fileOpenEpoch = 0, pendingFileResult = null;
   let receiveSequence = 0, latestOpenSequence = 0, deferredOpen = null;
@@ -25,7 +25,7 @@
   let contextQueued = false, contextAck = null, contextIssue = '', unsubscribeContext;
   const pendingDrawingReceipts = new Map();
   let modelFlight = null, modelQueued = false, modelAvailable = true, modelFailures = 0, modelSent = '';
-  let policyQueued = null, reviewQueued = null, presentedReview = null, viewFlight = null, visualFlight = null, exportFlight = null, materialFlight = null;
+  let viewFlight = null, visualFlight = null, exportFlight = null, materialFlight = null;
   const editorRequests = new Map();
   let editorFlight = null, editorResolving = false;
   let openingSwitch = false;
@@ -46,6 +46,54 @@
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const same = (a, b) => !!a && !!b && a.documentId === b.documentId && a.text === b.text &&
     a.filename === b.filename && a.docKind === b.docKind;
+  const actId = row => row.remoteTransactionId || row.id;
+  const documentMetadata = value => ({filename: value.filename, docKind: value.docKind});
+  function canonicalActs(value) {
+    if (!Array.isArray(value?.journal)) throw new Error('CANONICAL_HISTORY_UNAVAILABLE');
+    const ids = new Map(value.journal.map(row => [row.id, actId(row)]));
+    const reference = id => ids.get(id) || id;
+    return value.journal.map(row => ({id: actId(row), baseRevision: row.baseRevision, revision: row.revision,
+      author: {...row.author}, operation: row.operation, createdAt: row.createdAt ?? null,
+      ...(row.label !== undefined ? {label: row.label} : {}),
+      ...(row.affectedBlockIds ? {affectedBlockIds: row.affectedBlockIds.slice()} : {}),
+      ...(row.turnId ? {turnId: row.turnId} : {}),
+      ...(row.sourceTransactionId ? {sourceTransactionId: reference(row.sourceTransactionId)} : {}),
+      ...(row.sourceTransactionIds?.length ? {sourceTransactionIds: row.sourceTransactionIds.map(reference)} : {}),
+      ...(row.reverts ? {reverts: reference(row.reverts)} : {}), ...(row.reapplies ? {reapplies: reference(row.reapplies)} : {}),
+      splices: row.splices.map(splice => ({pos: splice.pos, removed: splice.removed, inserted: splice.inserted})),
+      ...(row.metadata ? {metadata: structuredClone(row.metadata)} : {}),
+      ...(Object.hasOwn(row, 'authored') ? {authored: structuredClone(row.authored)} : {})}));
+  }
+  function localSuffix(local, acknowledged) {
+    const rows = canonicalActs(local), known = new Set((acknowledged.journal || []).map(actId));
+    const first = rows.findIndex(row => !known.has(row.id));
+    if (first < 0) return [];
+    const suffix = rows.slice(first);
+    if (suffix.some(row => known.has(row.id))) throw new Error('CANONICAL_HISTORY_DIVERGED');
+    return suffix;
+  }
+  // Source equality cannot acknowledge a later rename, inverse or A-to-B-to-A choice.
+  function acknowledged(local, value = base) {
+    if (!same(local, value)) return false;
+    try {
+      const ids = new Set(local.journal.map(actId));
+      return localSuffix(local, value).length === 0 && (value.journal || []).every(row => ids.has(actId(row)));
+    }
+    catch (_) { return false; }
+  }
+  function replayLocalActs(before, rows, expected) {
+    let text = before.text, metadata = documentMetadata(before), revision = rows[0]?.baseRevision;
+    for (const row of rows) {
+      if (row.baseRevision !== revision || row.revision !== revision + 1) throw new Error('CANONICAL_HISTORY_DIVERGED');
+      text = RapierLedger._rapierTransformSplices(text, row.splices);
+      metadata = RapierLedger._rapierTransformMetadata(metadata, row.metadata);
+      if (text === null || !metadata) throw new Error('CANONICAL_HISTORY_DIVERGED');
+      revision = row.revision;
+    }
+    if (expected && (text !== expected.text || metadata.filename !== expected.filename || metadata.docKind !== expected.docKind))
+      throw new Error('CANONICAL_HISTORY_DIVERGED');
+    return {text, ...metadata};
+  }
   const validToken = value => typeof value === 'string' && (/^rpr_[A-Za-z0-9_-]{43}$/.test(value) || value === pairedId);
   const snapshot = value => object(value) && typeof value.documentId === 'string' &&
     value.documentId.length > 0 && value.documentId.length <= 256 && Number.isSafeInteger(value.revision) &&
@@ -57,8 +105,6 @@
   const editing = () => composing || contextBusy() || Date.now() - lastEdit < 900;
   const metadata = result => object(result?._meta?.rapier) ? result._meta.rapier : {};
   const viewVersion = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
-  const reviewSignature = review => JSON.stringify(review && {id: review.id, kind: review.kind, status: review.status,
-    revision: review.revision, contribution: review.contribution, changes: review.changes, splices: review.splices});
   const canImport = () => typeof window.openai?.selectFiles === 'function' &&
     typeof window.openai?.getFileDownloadUrl === 'function';
   const canUpload = () => typeof window.openai?.uploadFile === 'function';
@@ -128,7 +174,7 @@
     if (!initialized || !object(capabilities.serverTools)) return Promise.reject(new Error('HOST_UNAVAILABLE'));
     // Widget-only proof travels outside model arguments. The paired page already has its cookie route's page authority.
     const own = globalThis.RapierAgentCatalog?.getTool?.(name)?.visibility?.includes('app') ||
-      (human && ['document.comment', 'document.read_context'].includes(name));
+      (human && (['comments.write', 'document.read'].includes(name) || name === 'comparison.present' && args?.action === 'close'));
     const editorKey = own ? editorKeyFor(args?.document) : '';
     const run = async () => {
       const params = {name, arguments: editorKey ? {...args, editorKey} : args};
@@ -194,16 +240,15 @@
       unavailable: 'Document unavailable', expired: 'This editor session has expired. Open the document again from your assistant’s link',
       unsupported: 'This host cannot connect to Rapier', detached: 'This document is open elsewhere',
       blocked: 'This update needs attention',
-      review_waiting: 'A change is ready for review',
       comparison_changed: 'The comparison changed. Review it again.', comparison_refused: 'This comparison needs another look.'
     }[value] || strandedText || fileText;
     notice.hidden = !text;
     notice.firstElementChild.textContent = text || '';
     notice.children[1].hidden = !['reconnecting', 'offline', 'opening', 'blocked', 'unpaired'].includes(value);
-    notice.children[2].hidden = value !== 'review_waiting' && !fileIssue;
+    notice.children[2].hidden = !fileIssue;
     notice.children[3].hidden = !base || !(['offline', 'unavailable', 'unsupported', 'detached', 'blocked', 'expired', 'unpaired'].includes(value) || strandedDrafts.length > 0 || fileIssue);
     document.documentElement.dataset.rapierSync = value;
-    updateCompareControls();
+    publishModelContext();
   }
 
   // Temporary rollout notice, only in the hosted plugin. Reuse the editor's real decode probe;
@@ -237,28 +282,14 @@
       .rapier-app-image-notice{pointer-events:auto;width:min(440px,calc(100vw - 32px));box-sizing:border-box;padding:20px;background:var(--color-bg);color:var(--color-text);font:inherit}
       .rapier-app-image-notice strong{font-size:1.05em}.rapier-app-image-notice p{margin:12px 0;line-height:1.5}
       .rapier-app-image-notice button{font:inherit;text-transform:uppercase;color:var(--color-accent-foreground,#fff);background:var(--color-accent);border:0;border-radius:0;padding:12px 16px;cursor:pointer}
-      .rapier-app-decision{font:inherit;font-size:12px;width:auto;padding:0 9px;min-height:36px}
       .rapier-app-pop{z-index:300}.rapier-app-pop p{margin:0 0 var(--space-4);line-height:1.5}.rapier-app-pop input{flex:0 0 auto;width:100%;height:48px;box-sizing:border-box;margin:0 0 var(--space-4);background:var(--color-surface-2);font-family:var(--font-mono)}
       .rapier-app-pair-code{font:var(--fw-medium) 3.5rem/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase}
-      .rapier-app-decision:disabled{opacity:.4;cursor:default}
       #top-actions{position:relative}
       .rapier-app-fullscreen{position:absolute;inset-block-start:100%;inset-inline-end:0;background:color-mix(in srgb,var(--color-bg) 50%,transparent);border-radius:0}
       html{height:var(--rapier-app-height,560px);overflow:hidden;scroll-behavior:auto}
       body{height:100%;min-height:0;overflow:hidden}
       .editor-area,.compare-mode{min-height:0;overscroll-behavior-y:auto;margin-block-end:max(var(--native-inset-bottom,0px),var(--rapier-keyboard-occlusion,0px))}
-      /* The thumb rule on the one row dense enough to need it: Reject and the close (✕) both
-         discard -- a proposal, or the whole comparison -- so a phone-width finger gets real
-         separation before either, not just enough gap to avoid overlap. */
-      @media (max-width:480px){
-        /* The bar is a fixed --top-bar-h (52px, rapier-app.css) with 48px controls already close
-           to filling it -- a second row has nowhere to go without growing the bar itself, well
-           outside what this fix needs. One row, real gaps instead: Reject (discard the proposal)
-           and the close (discard the comparison) are the two ways this row loses work, so both
-           get real clearance rather than the row's ordinary 2px rhythm; that leaves ~40px of the
-           390px budget spare in the phone harness's own build, comfortably inside it. */
-        #compare-actions .rapier-app-decision + .rapier-app-decision{margin-left:14px}
-        #compare-actions [data-action="compare-close"]{margin-left:28px}
-      }
+
     `;
     document.head.append(style);
     notice = document.createElement('div');
@@ -268,7 +299,7 @@
     const label = document.createElement('span');
     label.setAttribute('role', 'status');
     label.setAttribute('aria-live', 'polite');
-    notice.append(label, button('Retry', retry), button('Review', () => activeFile()?.issue ? reviewHostFile() : resumeReview()), button('Copy draft', downloadDraft));
+    notice.append(label, button('Retry', retry), button('Review', reviewHostFile), button('Copy draft', downloadDraft));
     (document.getElementById('toast-root') || document.body).append(notice);
 
     modeButton = button('', () => requestDisplayMode(context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen'), 'icon-btn rapier-app-fullscreen');
@@ -289,18 +320,6 @@
     homeButton.append(homeSvg);
     // Your documents opens and saves host files; a paired page has one workspace and no host.
     if (!pairedId) document.getElementById('top-actions')?.append(homeButton);
-    const bar = document.getElementById('compare-actions');
-    if (bar) {
-      compareButtons = ['accept', 'reject'].map(action => {
-        const control = button(action === 'accept' ? 'Accept' : 'Reject', event => decideComparison(action, event), 'icon-btn rapier-app-decision');
-        control.hidden = true;
-        bar.insertBefore(control, bar.querySelector('[data-action="compare-close"]'));
-        return control;
-      });
-      compareObserver = new MutationObserver(updateCompareControls);
-      const content = document.getElementById('compare-content');
-      if (content) compareObserver.observe(content, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-current']});
-    }
     lock();
     setStatus(status);
   }
@@ -418,7 +437,6 @@
     if (event?.editing === true) cancelMaterial('human_edit_in_progress');
     contextQueued = true;
     contextFailures = 0;
-    if (event?.trusted === true && object(event.policy)) queuePolicy(event.policy);
     clearTimeout(contextTimer);
     if (!closed && !switching && initialized && base) contextTimer = setTimeout(() => void publishHumanContext(), 80);
     void publishModelContext();
@@ -445,8 +463,7 @@
       if (epoch === contextEpoch && typeof captured?.context?.editing === 'boolean') { contextEditing = captured.context.editing; contextEditingAt = Date.now(); }
       const active = !release && !closing && visible();
       const exact = captured?.ok === true && same(captured, source) && !dirty && !flight && !composing;
-      const busy = active && (!exact || editing() || captured?.context?.editing === true ||
-        (!!decisionFlight && decisionFlight.kind !== 'review') || !!policyQueued);
+      const busy = active && (!exact || editing() || captured?.context?.editing === true);
       const args = {document: documentToken, expectedRevision: source.revision, contextId: nonce,
         sequence: ++contextSequence, visible: active, editing: busy};
       if (active && captured?.documentId === source.documentId && ['formatted', 'source', 'notes'].includes(captured?.context?.view)) args.view = captured.context.view;
@@ -529,17 +546,11 @@
     const current = !withheld && !unsent && visible() && contextAck?.visible && contextAck.revision === base.revision &&
       contextAck.epoch === contextEpoch;
     const selection = current ? contextAck.selection : null, focus = current ? contextAck.focus : null;
-    const selected = !unsent && base.compare ? selectedChanges() : null;
     return {document: withheld ? null : token, agentsDisconnected: withheld, documentId: base.documentId, revision: base.revision, filename: base.filename,
       docKind: base.docKind, visible: visible(), dirty: unsent, selection, focus,
       file: activeFile() ? {name: activeFile().file.name, writable: activeFile().resource.writable,
         saved: !fileDirty(), conflict: activeFile().issue === 'conflict'} : null,
-      pendingDecision: decisionFlight?.kind || (reviewQueued ? 'review' : policyQueued ? 'policy' : null),
-      posture: base.collaboration?.posture || 'free', readOnly: base.collaboration?.readOnly === true,
-      comparison: base.compare ? {id: base.compare.id, changeIds: selected?.ok ? selected.changeIds.slice(0, 16) : [],
-        more: selected?.ok && selected.changeIds.length > 16} : null,
-      review: base.collaboration?.review ? {id: base.collaboration.review.id, kind: base.collaboration.review.kind,
-        status: base.collaboration.review.status} : null};
+      comparison: base.compare ? {id: base.compare.id, changes: base.compare.changes.length} : null};
   }
 
   async function publishModelContext() {
@@ -551,77 +562,12 @@
     // The host shows this block as an attachment the person can remove; the title names it (block _meta never reaches the model).
     modelFlight = request('ui/update-model-context', {structuredContent: {rapier: value}, content: [{type: 'text',
       text: value.dirty ? 'The person has unsaved edits; edit after they sync.' :
-        'The person\'s view of the Rapier document; selection is a source range. Read with document.get_context and document.read_context before editing.',
+        'The person\'s view of the Rapier document; selection is a source range. Read with document.observe and document.read before editing.',
       _meta: {'openai/title': value.filename ? 'Rapier: ' + value.filename : 'Rapier document'}}]}, 5000)
       .then(() => { modelSent = signature; modelFailures = 0; })
       .catch(error => { if (error?.code === -32601 || ++modelFailures >= 3) modelAvailable = false; })
       .finally(() => { modelFlight = null; if (modelQueued) void publishModelContext(); });
     return modelFlight;
-  }
-
-  function queuePolicy(value) {
-    if (!base || switching || closed) return;
-    const policy = {};
-    if (['free', 'check', 'ask'].includes(value.posture)) policy.posture = value.posture;
-    if (typeof value.readOnly === 'boolean') policy.readOnly = value.readOnly;
-    if (!Object.keys(policy).length) return;
-    policyQueued = {...policyQueued, ...policy, document: token};
-    updateCompareControls();
-    schedule(0);
-  }
-
-  async function commitPolicy() {
-    const desired = policyQueued;
-    if (!desired || desired.document !== token) { policyQueued = null; return; }
-    policyQueued = null;
-    decisionFlight = {tool: 'document.set_policy', kind: 'policy', args: {...desired,
-      expectedRevision: base.revision, expectedVersion: version, decisionId: crypto.randomUUID()}};
-    await performDecision();
-  }
-
-  function reviewDecision(value, shown) {
-    if (presentedReview !== shown) return;
-    if (value?.trusted !== true || !['approve', 'decline', 'apply', 'drop'].includes(value.action) ||
-        value.reviewId !== shown.id || value.documentId !== shown.documentId || value.serverRevision !== shown.serverRevision ||
-        value.beforeText !== shown.text || value.revision !== shown.localRevision || value.generation !== shown.generation) {
-      shown.dismissed = true;
-      if (!closing && !switching) setStatus('review_waiting');
-      return;
-    }
-    if (dirty || flight || decisionFlight || switching ||
-        reviewSignature(base?.collaboration?.review) !== shown.signature || base.revision !== shown.serverRevision || base.text !== shown.text) {
-      shown.dismissed = true;
-      if (!switching) setStatus('review_waiting');
-      host.notify('That review changed. Inspect the current proposal before deciding.', 'info');
-      return;
-    }
-    reviewQueued = {document: token, reviewId: shown.id, action: value.action,
-      ...((value.action === 'approve' || value.action === 'apply' || value.action === 'drop') && Array.isArray(value.changeIds) ? {changeIds: value.changeIds} : {}),
-      expectedRevision: shown.serverRevision, text: shown.text};
-    if (!['apply', 'drop'].includes(value.action)) presentedReview = null;
-    updateCompareControls();
-    schedule(0);
-  }
-
-  function resumeReview() {
-    if (presentedReview?.failed || presentedReview?.dismissed) presentedReview = null;
-    setStatus('ready');
-    schedule(0);
-  }
-
-  async function commitReview() {
-    const desired = reviewQueued;
-    reviewQueued = null;
-    if (!desired || desired.document !== token || dirty || composing || desired.expectedRevision !== base.revision ||
-        desired.text !== base.text || base.collaboration?.review?.id !== desired.reviewId ||
-        base.collaboration.review.status !== 'pending') {
-      host.notify('That review changed. Inspect the current proposal before deciding.', 'info');
-      return;
-    }
-    const {text, ...args} = desired;
-    decisionFlight = {tool: 'document.review_decide', kind: 'review', args: {...args,
-      expectedVersion: version, decisionId: crypto.randomUUID()}};
-    await performDecision();
   }
 
   async function acknowledgeView() {
@@ -973,18 +919,12 @@
   async function presentCollaboration() {
     reconcileEditorRequests();
     reconcileMaterial();
-    const review = base?.collaboration?.review;
-    if (presentedReview && (reviewSignature(review) !== presentedReview.signature || review.status !== 'pending' ||
-        base.revision !== presentedReview.serverRevision || base.text !== presentedReview.text)) {
-      await host.dismissReview(presentedReview.id, 'review_changed');
-      presentedReview = null;
-    }
-    if (!base || closed || closing || switching || !visible() || dirty || flight || decisionFlight ||
-        policyQueued || reviewQueued || incoming || editing()) return;
+    if (!base || closed || closing || switching || !visible() || dirty || flight ||
+        incoming || editing()) return;
     if (editorContextBusy()) { await acknowledgeEditor(); return; }
     if (viewFlight) { await acknowledgeView(); return; }
     const local = await host.snapshot();
-    if (!same(local, base)) { dirty = true; contextChanged(); return; }
+    if (!acknowledged(local)) { dirty = true; contextChanged(); return; }
     const expected = {expectedDocumentId: local.documentId, expectedRevision: local.revision,
       expectedText: local.text, expectedGeneration: local.generation};
     if (base.materialIntent?.status === 'pending') { presentMaterial(local, expected); return; }
@@ -992,37 +932,6 @@
     if (base.editorIntent) { await presentEditor(expected); return; }
     if (base.visualIntent?.status === 'pending') { await presentVisual(local, expected); return; }
     if (['pending', 'replaying'].includes(base.collaboration?.drawingIntent?.status)) { await presentDrawing(expected); return; }
-    const reviewPointer = base.viewIntent?.status === 'pending' && base.viewIntent.reviewId === review?.id &&
-      review?.changes?.some(row => row.id === base.viewIntent.changeId && row.status === 'pending');
-    if (review?.status === 'pending' && review.revision === base.revision && !(reviewPointer && presentedReview?.visible)) {
-      if (presentedReview?.id === review.id) {
-        if (presentedReview.failed || presentedReview.dismissed) setStatus('review_waiting');
-        return;
-      }
-      const shown = {id: review.id, signature: reviewSignature(review), documentId: base.documentId, serverRevision: base.revision,
-        text: base.text, localRevision: local.revision, generation: local.generation};
-      presentedReview = shown;
-      const result = await host.presentReview(review, base, expected, {
-        onDecision: value => reviewDecision(value, shown),
-        onPresentation: value => {
-          if (presentedReview !== shown) return;
-          shown.visible = value?.ok === true;
-          if (!shown.visible) { shown.failed = true; setStatus('review_waiting'); }
-          updateCompareControls();
-        }
-      });
-      if (!result?.ok) {
-        presentedReview = null;
-        if (result?.outcome !== 'yielded' && !['document_not_settled', 'foreground_hand_wins', 'review_busy', 'human_edit_in_progress', 'human_review_in_progress'].includes(result?.reason)) {
-          shown.failed = true;
-          presentedReview = shown;
-          setStatus('review_waiting');
-          host.notify('That proposal could not be shown. Try changing the document view, then retry.', 'info');
-        }
-      }
-      updateCompareControls();
-      return;
-    }
     const intent = base.viewIntent;
     if (!intent || intent.status !== 'pending' || intent.revision !== base.revision || viewed.has(intent.id)) return;
     const documentToken = token;
@@ -1035,7 +944,7 @@
         status: 'expired', reason: receipt.reason || 'pointer_expired'};
       schedule(0);
     }});
-    if (dirty || composing || !same(await host.snapshot(), base)) return;
+    if (dirty || composing || !acknowledged(await host.snapshot())) return;
     if (!result?.ok && (result?.outcome === 'yielded' || ['document_not_settled', 'foreground_hand_wins', 'human_edit_in_progress'].includes(result?.reason))) return;
     viewed.add(intent.id);
     if (viewed.size > 64) viewed.delete(viewed.values().next().value);
@@ -1059,7 +968,7 @@
     if (base) dirty = true;
     cancelEditorRequests('document_changed', {waitingOnly: true});
     cancelMaterial('document_changed');
-    updateCompareControls();
+    publishModelContext();
     contextChanged();
     schedule(500);
   }
@@ -1069,6 +978,12 @@
     failures++;
     if (error?.message === 'HOST_UNAVAILABLE' || error?.message === 'PROTOCOL_VERSION') {
       setStatus('unsupported');
+      return;
+    }
+    if (['CANONICAL_HISTORY_UNAVAILABLE', 'CANONICAL_HISTORY_DIVERGED', 'CANONICAL_ACT_REBASE_CONFLICT',
+      'DOCUMENT_METADATA_CHANGED'].includes(error?.message)) {
+      failures = 5;
+      setStatus('blocked');
       return;
     }
     setStatus(failures >= 5 ? 'offline' : 'reconnecting');
@@ -1086,6 +1001,12 @@
     }
     if (code === 'REVISION_CONFLICT') {
       setStatus('comparison_changed');
+      return false;
+    }
+    if (['CANONICAL_ACT_REBASE_CONFLICT', 'INVALID_CANONICAL_ACTS', 'DOCUMENT_METADATA_CHANGED',
+      'DRAFT_BASE_UNAVAILABLE', 'COMMIT_RECEIPT_EXPIRED'].includes(code)) {
+      failures = 5;
+      setStatus('blocked');
       return false;
     }
     if (code === 'DOCUMENT_UNAVAILABLE') {
@@ -1109,34 +1030,37 @@
   }
 
   async function hydrateHostFile(result, file) {
-    const data = result.structuredContent, initial = metadata(result).snapshot;
-    if (!object(capabilities.experimental?.['openai/resource']) || !snapshot(initial) ||
-        !validToken(data.document) || data.created !== true) throw new Error('FILE_HOST_UNAVAILABLE');
+    const data = result.structuredContent, initial = metadata(result).snapshot, hydration = metadata(result).fileHydration;
+    if (!object(capabilities.experimental?.['openai/resource']) || !snapshot(initial) || !validToken(data.document) ||
+        !hydration?.id || !['pending', 'complete', 'superseded'].includes(hydration.status)) throw new Error('FILE_HOST_UNAVAILABLE');
     const epoch = ++fileOpenEpoch;
     pendingFileResult = result;
     const work = (async () => {
       let attempt = fileAttempts.get(data.document);
       if (!attempt) {
         const resource = await globalThis.RapierHostFiles.readHostFile(request, file, globalThis.RapierAgentCatalog.MAX_TEXT_BYTES);
-        attempt = {resource, args: {document: data.document, expectedRevision: initial.revision,
+        attempt = {resource, args: {document: data.document, expectedRevision: hydration.baseRevision,
           text: resource.text, filename: file.name, docKind: /\.(?:md|markdown)$/i.test(file.name) ? 'markdown' : 'text',
-          commitId: crypto.randomUUID()}};
+          hydration_id: hydration.id, commitId: hydration.id}};
         fileAttempts.set(data.document, attempt);
       }
       const {resource} = attempt;
       if (closed || closing || epoch !== fileOpenEpoch) return null;
-      const committed = await call('document.commit', attempt.args);
-      const value = metadata(committed).snapshot;
-      if (committed.isError || !snapshot(value) ||
-          value.documentId !== initial.documentId) throw new Error('FILE_OPEN_CONFLICT');
+      // A remounted editor binds the existing workspace; it never reapplies the original host file.
+      const committed = hydration.status === 'pending' ? await call('document.commit', attempt.args) : result;
+      const value = metadata(committed).currentSnapshot || metadata(committed).snapshot;
+      if (committed.isError || !snapshot(value) || value.documentId !== initial.documentId) throw new Error('FILE_OPEN_CONFLICT');
       if (closed || closing || epoch !== fileOpenEpoch) return null;
       const store = globalThis.RapierHostFiles.createHostFileBinding({request, file, resource,
+        baselineVerified: value.text === resource.text,
         maxBytes: globalThis.RapierAgentCatalog.MAX_TEXT_BYTES, changed: () => { setStatus(status); void publishModelContext(); }});
       fileBindings.set(data.document, {document: data.document, documentId: value.documentId, store});
       hydratedFiles.add(data.document);
       fileAttempts.delete(data.document);
       pendingFileResult = null;
-      return {...committed, structuredContent: {...committed.structuredContent, document: data.document, created: true, outcome: 'created'}};
+      return {...committed, structuredContent: {...committed.structuredContent, document: data.document,
+        created: data.created === true, resumed: data.resumed === true, outcome: data.outcome,
+        hydration: {status: hydration.status === 'pending' ? 'complete' : hydration.status, destination: 'host_file'}}};
     })();
     fileHydrations.set(data.document, work);
     try { return await work; }
@@ -1168,7 +1092,7 @@
     const store = activeFile();
     if (!store) return true;
     const documentToken = token, local = await host.snapshot();
-    if (activeFile() !== store || token !== documentToken || !same(local, base) || dirty || flight || composing) return false;
+    if (activeFile() !== store || token !== documentToken || !acknowledged(local) || dirty || flight || composing) return false;
     try { await store.save(local.text); }
     catch (_) { setStatus(status); return false; }
     const current = await host.snapshot();
@@ -1277,8 +1201,8 @@
     let data = result?.structuredContent;
     if (!object(data)) return;
     rememberEditorKey(result);
-    const created = !result.isError && data.created === true && data.outcome === 'created' && validToken(data.document);
-    if (created) {
+    const opened = !result.isError && (data.created === true && data.outcome === 'created' || data.resumed === true && data.outcome === 'resumed') && validToken(data.document);
+    if (opened) {
       if (sequence > latestOpenSequence && pendingFileResult && pendingFileResult.structuredContent?.document !== data.document) {
         pendingFileResult = null;
         fileOpenEpoch++;
@@ -1286,10 +1210,10 @@
       latestOpenSequence = Math.max(latestOpenSequence, sequence);
     }
     if (switching || openingSwitch || closing) {
-      if (created && (!deferredOpen || sequence >= deferredOpen.sequence)) deferredOpen = {result, sequence};
+      if (opened && (!deferredOpen || sequence >= deferredOpen.sequence)) deferredOpen = {result, sequence};
       return;
     }
-    if (created && sequence < latestOpenSequence) return;
+    if (opened && sequence < latestOpenSequence) return;
     // A commit used to hydrate an entrypoint can also arrive as a tool-result notification.
     // Its owning open operation must finish attaching file persistence before it is presented.
     if (fileHydrations.has(data.document)) return;
@@ -1308,8 +1232,8 @@
     if (metadata(result).home === true && !base) homeRequested = true;
     if (!token && validToken(data.document)) token = data.document;
     if (data.document && data.document !== token) {
-      // A stray result is dropped unless it is a fresh rapier.open: outcome:'created' is set only in mcp/worker.mjs's create branch.
-      if (base && !result.isError && data.created === true && data.outcome === 'created' && validToken(data.document)) {
+      // Only an explicit create or resume may switch the workspace; ordinary tool results never navigate.
+      if (base && opened) {
         await switchDocument(data, result);
       }
       return;
@@ -1351,35 +1275,32 @@
   async function loadIncoming(force = false, expected = null, immediate = false) {
     const value = incoming, nextVersion = incomingVersion;
     if (!value || (base && (value.revision < base.revision || nextVersion < version))) { incoming = null; return; }
-    if (!force && base && (dirty || flight || decisionFlight || composing || contextBusy() || (!immediate && editing()))) return;
+    if (!force && base && (dirty || flight || composing || contextBusy() || (!immediate && editing()))) return;
     const epoch = editEpoch;
     const local = expected || await host.snapshot();
     if (!snapshot(local)) throw new Error('INVALID_EDITOR_STATE');
-    if (!force && base && !same(local, base)) { dirty = true; return; }
+    if (!force && base && !acknowledged(local)) { dirty = true; return; }
     if (epoch !== editEpoch) return;
     if (base && local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
     const result = await host.replaceDocument(value, {
-      expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text
+      expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text, expectedMetadata: documentMetadata(local)
     });
     if (result?.outcome !== 'applied') {
-      if (result?.sourceApplied === true) {
+      if (result?.sourceApplied === true && acknowledged(await host.snapshot(), value)) {
         base = value;
         version = nextVersion;
-        continuation = {documentId: value.documentId, revision: value.revision, text: value.text, splices: [],
-          metadata: {filename: local.filename, docKind: local.docKind}};
       }
-      dirty = !!base && !same(await host.snapshot(), base);
+      dirty = !!base && !acknowledged(await host.snapshot());
       if (['conflict', 'yielded'].includes(result?.outcome) || result?.reason === 'draw_session_open' || result?.reason === 'drawing_busy') return;
       failures = 5;
       setStatus('blocked');
       return;
     }
     base = value;
-    continuation = null;
     version = nextVersion;
     adoptHostFile();
     if (incoming === value) incoming = null;
-    dirty = !same(await host.snapshot(), base);
+    dirty = !acknowledged(await host.snapshot());
     if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
     presentationBlocked = result.comparison?.ok === false;
     unlock();
@@ -1409,18 +1330,14 @@
     if (!flight) {
       const local = await host.snapshot();
       if (!snapshot(local) || local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
-      if (same(local, base)) { dirty = false; continuation = null; return; }
-      const kept = continuation?.documentId === base.documentId && continuation.revision === base.revision ? continuation : null;
-      const splices = [...(kept?.splices || []), ...RapierLiveMerge.sourceEdits(kept?.text ?? base.text, local.text, local.journal)];
-      const filename = local.filename === kept?.metadata?.filename ? base.filename : local.filename;
-      const docKind = local.docKind === kept?.metadata?.docKind ? base.docKind : local.docKind;
-      flight = {
-        document: token, expectedRevision: base.revision, text: local.text, splices,
-        ...(filename !== base.filename ? {filename} : {}),
-        ...(docKind !== base.docKind ? {docKind} : {}), commitId: crypto.randomUUID()
-      };
+      const suffix = localSuffix(local, base);
+      replayLocalActs(base, suffix, local);
+      if (!suffix.length) { dirty = false; return; }
+      const acts = suffix.slice(0, 1024), submitted = replayLocalActs(base, acts);
+      flight = {args: {document: token, expectedRevision: base.revision, ...submitted, acts, commitId: crypto.randomUUID()},
+        submitted, journal: [...(base.journal || []), ...acts]};
     }
-    const sent = flight;
+    const sent = flight.args;
     const result = await call('document.commit', sent);
     if (!ensureResult(result)) return;
     const meta = metadata(result), value = meta.snapshot;
@@ -1428,41 +1345,54 @@
     if (!snapshot(value) || nextVersion === null || value.documentId !== base.documentId || value.revision < sent.expectedRevision) throw new Error('MISSING_SNAPSHOT');
     const local = await host.snapshot();
     if (!snapshot(local) || local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
-    // The acknowledgement includes concurrent edits. Rebase any further typing from
-    // the submitted draft before moving the base; a failed CAS keeps this receipt live.
-    const {sourceEdits, mergeSource, replay} = RapierLiveMerge;
+    // Acknowledgement rebases complete canonical acts, including later equal-valued
+    // metadata choices. A failed CAS keeps this exact receipt and submitted checkpoint.
+    const {mergeSource, replay} = RapierLiveMerge;
     const remote = value.draftEdits, client = value.draftClient;
     if (!Array.isArray(remote) || remote.some(row => typeof row.client !== 'string' || !Array.isArray(row.splices)) ||
-        typeof client !== 'string' || !client ||
+        typeof client !== 'string' || !client || !Array.isArray(value.journal) ||
         replay(sent.text, remote) !== value.text) throw new Error('MISSING_COMMIT_EDITS');
-    const kept = continuation?.commitId === sent.commitId ? continuation : null;
-    let continued;
-    try {
-      continued = kept
-        ? mergeSource(value.text, [...kept.splices, ...sourceEdits(kept.text, local.text, local.journal)], client, [])
-        : mergeSource(sent.text, sourceEdits(sent.text, local.text, local.journal), client, remote);
-    } catch (_) { throw new Error('DRAFT_BASE_UNAVAILABLE'); }
-    const {text} = continued;
-    const adopted = {...value, text,
-      filename: local.filename === (sent.filename ?? continuation?.metadata?.filename ?? base.filename) ? value.filename : local.filename,
-      docKind: local.docKind === (sent.docKind ?? continuation?.metadata?.docKind ?? base.docKind) ? value.docKind : local.docKind};
-    // This local continuation is not a server journal suffix. Its exact source change
-    // is recorded by the editor, while the original authors remain in the server journal.
-    if (text !== value.text) delete adopted.journal;
-    if (!same(local, adopted)) {
+    const later = localSuffix(local, flight);
+    replayLocalActs(flight.submitted, later, local);
+    let beforeText = sent.text, text = value.text, nextRemote = remote, nextMetadata = documentMetadata(value), revision = value.revision;
+    const journal = value.journal.slice(), canonical = row => ({transaction: row, splices: row.splices,
+      ...(Object.hasOwn(row, 'authored') ? {authored: row.authored} : {})});
+    let initialSource = value.text;
+    for (let index = journal.length - 1; index >= 0; index--) initialSource = RapierLedger._rapierTransformSplices(initialSource, journal[index].splices, true);
+    for (const row of later) {
+      const authored = row.authored ?? RapierLedger.authoredPlacement(beforeText, row.splices,
+        RapierLedger.authoredBasis(local.journal.slice(0, local.journal.findIndex(entry => actId(entry) === row.id)).map(entry => ({...entry, transaction: {id: actId(entry)}}))));
+      const submittedIds = local.journal.slice(0, local.journal.findIndex(entry => actId(entry) === row.id)).map(actId),
+        transported = journal.some(entry => !submittedIds.includes(actId(entry)));
+      const proved = RapierLedger.transposeAuthored(initialSource, journal.map(canonical), {...canonical(row), authored}, submittedIds);
+      if (proved.submittedBefore !== beforeText || proved.submitted !== RapierLedger._rapierTransformSplices(beforeText, row.splices))
+        throw new Error('CANONICAL_ACT_REBASE_CONFLICT');
+      const merged = {...proved, remote: proved.against.flatMap(record => record.splices.map(splice => ({client: 'act:' + record.transaction.id,
+        splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})))};
+      nextMetadata = RapierLedger._rapierTransformMetadata(nextMetadata, row.metadata);
+      if (!nextMetadata) throw new Error('DOCUMENT_METADATA_CHANGED');
+      beforeText = RapierLedger._rapierTransformSplices(beforeText, row.splices);
+      text = merged.text; nextRemote = merged.remote;
+      const turnBaseRevision = row.turnId ? journal.find(entry => entry.turnId === row.turnId &&
+        entry.author?.kind === row.author.kind && entry.author?.id === row.author.id)?.turnBaseRevision ?? revision : null;
+      journal.push({...row, actor: row.author.kind, principal: row.author.id, transport: 'platform',
+        baseRevision: revision, revision: ++revision, splices: merged.splices, ...((row.authored || transported) ? {authored} : {}),
+        ...(row.turnId ? {turnBaseRevision} : {})});
+    }
+    // This is the accepted history plus proven local acts, never a server journal
+    // attached to a different local metadata head.
+    const adopted = {...value, text, ...nextMetadata, revision, journal};
+    const sameHistory = JSON.stringify(canonicalActs(local)) === JSON.stringify(canonicalActs(adopted));
+    if (!same(local, adopted) || !sameHistory) {
       const applied = await host.replaceDocument(adopted, {expectedDocumentId: local.documentId,
-        expectedRevision: local.revision, expectedText: local.text});
+        expectedRevision: local.revision, expectedText: local.text, expectedMetadata: documentMetadata(local)});
       if (applied?.outcome !== 'applied') {
-        if (applied?.sourceApplied === true)
-          continuation = {documentId: value.documentId, revision: value.revision, commitId: sent.commitId, text, splices: continued.splices,
-            ...(continuation?.metadata ? {metadata: continuation.metadata} : {})};
         dirty = true;
         if (!['conflict', 'yielded'].includes(applied?.outcome) && applied?.reason !== 'draw_session_open' && applied?.reason !== 'drawing_busy') { failures = 5; setStatus('blocked'); }
         return;
       }
     }
     base = value;
-    continuation = {documentId: value.documentId, revision: value.revision, text, splices: continued.splices};
     version = nextVersion;
     flight = null;
     if (incoming && incomingVersion <= version) incoming = null;
@@ -1472,8 +1402,7 @@
       incoming = meta.currentSnapshot;
       incomingVersion = result.structuredContent.currentVersion;
     }
-    dirty = !same(await host.snapshot(), base);
-    if (!dirty) continuation = null;
+    dirty = !acknowledged(await host.snapshot());
     if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
     failures = 0;
     setStatus('ready');
@@ -1494,26 +1423,23 @@
       } else {
         const local = await host.snapshot();
         if (local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return false; }
-        dirty = !same(local, base);
-        if (decisionFlight) await performDecision();
-        else if (reviewQueued) await commitReview();
-        else if (flight || dirty) {
+        dirty = !acknowledged(local);
+        if (flight || dirty) {
           if (composing) return false;
           await commit();
           if (!dirty && incoming) await loadIncoming(false, null, force);
-        } else if (policyQueued) await commitPolicy();
-        else if (!editing() || force) {
+        } else if (!editing() || force) {
           if (!await sync()) return false;
           await loadIncoming(false, null, force);
         }
       }
       await presentCollaboration();
       if (base && !dirty && !flight) await saveHostFile();
-      return !!base && !dirty && !flight && !decisionFlight && !policyQueued && !reviewQueued && !incoming;
+      return !!base && !dirty && !flight && !incoming;
     })().catch(error => { failed(error); return false; }).finally(() => {
       running = null;
-      updateCompareControls();
-      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : policyQueued || reviewQueued || editorContextBusy() ? 0 : dirty ? 500 : 1500);
+      publishModelContext();
+      schedule(failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : editorContextBusy() ? 0 : dirty ? 500 : 1500);
     });
     return running;
   }
@@ -1528,7 +1454,6 @@
     if (pairedId && status === 'unpaired') { location.reload(); return; }
     failures = 0;
     contextFailures = 0;
-    if (presentedReview?.failed) presentedReview = null;
     if (!initialized) await connect();
     if (pendingFileResult && !fileHydrations.size) await receive(pendingFileResult);
     contextChanged();
@@ -1545,7 +1470,7 @@
     if (!await flush()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'unsent_draft'}};
     if (!current()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
     const local = await host.snapshot();
-    if (!current() || !same(local, base) || dirty || flight || composing) {
+    if (!current() || !acknowledged(local) || dirty || flight || composing) {
       return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
     }
     clearTimeout(timer);
@@ -1564,7 +1489,7 @@
   function invoke(name, args = {}) { return invokeOperation(name, args); }
 
   async function invokeComment(name, args, event) {
-    if (!(event instanceof Event) || event.isTrusted !== true || !['document.comment', 'document.list_comments', 'document.read_context'].includes(name)) {
+    if (!(event instanceof Event) || event.isTrusted !== true || !['comments.write', 'comments.read', 'document.read'].includes(name)) {
       return {isError: true, structuredContent: {outcome: 'refused', reason: 'human_authority_required'}};
     }
     return invokeOperation(name, args, true);
@@ -1582,40 +1507,35 @@
     if (base) await saveHostFile();
     if (!base && token) return false;
     const local = await host.snapshot();
-    if (!admission() || (base && !same(local, base)) || !filePreserved(local) || dirty || flight || decisionFlight) return false;
+    if (!admission() || (base && !acknowledged(local)) || !filePreserved(local) || dirty || flight) return false;
     clearTimeout(timer);
     switching = true;
     lock();
     setStatus('opening');
     running = (async () => {
       await publishHumanContext(true);
-      if (presentedReview) await host.dismissReview(presentedReview.id, 'document_changed');
       const result = await call('rapier.open', args);
       const value = metadata(result).snapshot, nextVersion = viewVersion(result.structuredContent?.version);
       const nextToken = result.structuredContent?.document;
       if (result.isError || !snapshot(value) || nextVersion === null || !validToken(nextToken)) throw new Error('OPEN_FAILED');
       const replaced = await host.replaceDocument(value, {
-        expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text
+        expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text, expectedMetadata: documentMetadata(local)
       });
       if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
       cancelEditorRequests('document_changed', {forget: true});
       cancelMaterial('document_changed', {forget: true});
       token = nextToken;
       base = value;
-      continuation = null;
       version = nextVersion;
       adoptHostFile();
       incoming = null;
       contextAck = null;
-      presentedReview = null;
-      policyQueued = null;
-      reviewQueued = null;
       viewFlight = null;
       visualFlight = null;
       exportFlight = null;
       viewed.clear();
       presentationBlocked = replaced.comparison?.ok === false;
-      dirty = !same(await host.snapshot(), base);
+      dirty = !acknowledged(await host.snapshot());
       if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
       failures = 0;
       setStatus(presentationBlocked ? 'comparison_refused' : 'ready');
@@ -1625,7 +1545,7 @@
       switching = false;
       running = null;
       unlock();
-      updateCompareControls();
+      publishModelContext();
       contextChanged();
       schedule();
       resumeOpen();
@@ -1646,9 +1566,8 @@
     try {
       let notice = '';
       cancelEditorRequests('document_changed', {waitingOnly: true});
-      if (presentedReview) await host.dismissReview(presentedReview.id, 'document_changed');
       const before = await host.snapshot();
-      if (dirty || flight || !same(before, base)) {
+      if (dirty || flight || !acknowledged(before)) {
         dirty = true;
         await flush();
       }
@@ -1656,7 +1575,7 @@
       // Read the outgoing identity and text once, after flush() and before lock(): the retry may only overwrite this snapshot, never a fresh read.
       const settled = await host.snapshot();
       const outgoing = settled;
-      if (dirty || flight || !same(settled, base) || (!fileSaved && !filePreserved(settled))) {
+      if (dirty || flight || !acknowledged(settled) || (!fileSaved && !filePreserved(settled))) {
         // Record before the download attempt: if the download throws, the draft must already be listed.
         const record = {text: settled.text, filename: settled.filename, docKind: settled.docKind, delivered: false};
         strandedDrafts.push(record);
@@ -1682,7 +1601,7 @@
       let replaced = null;
       for (let attempt = 0; attempt < 10; attempt++) {
         replaced = await host.replaceDocument(value, {
-          expectedDocumentId: outgoing.documentId, expectedRevision: outgoing.revision, expectedText: outgoing.text
+          expectedDocumentId: outgoing.documentId, expectedRevision: outgoing.revision, expectedText: outgoing.text, expectedMetadata: documentMetadata(outgoing)
         });
         if (replaced?.outcome === 'applied' || !['yielded', 'conflict'].includes(replaced?.outcome)) break;
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -1692,20 +1611,16 @@
       cancelMaterial('document_changed', {forget: true});
       token = nextToken;
       base = value;
-      continuation = null;
       version = nextVersion;
       adoptHostFile();
       incoming = null;
       contextAck = null;
-      presentedReview = null;
-      policyQueued = null;
-      reviewQueued = null;
       viewFlight = null;
       visualFlight = null;
       exportFlight = null;
       viewed.clear();
       presentationBlocked = replaced.comparison?.ok === false;
-      dirty = !same(await host.snapshot(), base);
+      dirty = !acknowledged(await host.snapshot());
       if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
       failures = 0;
       setStatus(presentationBlocked ? 'comparison_refused' : 'ready');
@@ -1719,7 +1634,7 @@
       openingSwitch = false;
       switching = false;
       unlock();
-      updateCompareControls();
+      publishModelContext();
       contextChanged();
       schedule();
       resumeOpen();
@@ -1738,7 +1653,7 @@
     } else if (base) {
       saved = await flush();
       saved = await saveHostFile() && saved;
-      saved = saved && !dirty && !flight && !decisionFlight && same(await host.snapshot(), base);
+      saved = saved && !dirty && !flight && acknowledged(await host.snapshot());
       outcome = saved ? 'confirmed' : 'pending';
     }
     const local = host && base ? await host.snapshot() : null;
@@ -1748,118 +1663,16 @@
     return options.returnReceipt === true ? receipt : saved;
   }
 
-  function selectedChanges(options) {
-    const selection = host?.compareSelection?.(base?.compare, options);
-    if (!selection?.ok) return selection || {ok: false, reason: 'comparison_unavailable'};
-    if (selection.changeIds.length > 128) return {ok: false, reason: 'comparison_too_large'};
-    return selection;
-  }
-
-  function updateCompareControls() {
-    const comparison = base?.compare;
-    const selection = comparison ? selectedChanges() : null;
-    const ready = !!selection?.ok && failures < 5 && !presentationBlocked && !dirty && !flight && !decisionFlight &&
-      !policyQueued && !reviewQueued && !presentedReview && !switching;
-    for (const [index, control] of compareButtons.entries()) {
-      control.hidden = !comparison;
-      control.disabled = !ready;
-      const action = index ? 'Reject' : 'Accept';
-      const meaning = comparison?.reviewOnly ? (index ? 'Undo this change' : 'Keep this change') : `${action} this proposal`;
-      control.title = selection?.reason === 'comparison_too_large' ? 'This difference has too many changes for one decision.' :
-        selection && !selection.ok ? 'This difference cannot be decided exactly in this view.' : meaning;
-      control.setAttribute('aria-label', `${meaning} in the current difference`);
-    }
-    void publishModelContext();
-  }
-
-  async function performDecision() {
-    const task = decisionFlight;
-    if (!task) return false;
-    if (!task.sent && task.kind === 'review' && (task.args.action === 'approve' || task.args.action === 'apply') && base.collaboration?.review?.kind === 'proposal') {
-      if (contextFlight) await contextFlight;
-      if (!await publishHumanContext()) {
-        if (contextIssue !== 'stale') throw new Error('CONTEXT_UNAVAILABLE');
-        decisionFlight = null;
-        await sync(true);
-        await loadIncoming(false, null, true);
-        host.notify('That proposal changed. Review the current document before deciding.', 'info');
-        return false;
-      }
-      if (dirty || flight || composing || contextBusy() || contextAck?.editing) {
-        decisionFlight = null;
-        host.notify('Finish the current edit, then review that proposal again.', 'info');
-        return false;
-      }
-    }
-    task.sent = true;
-    const result = await call(task.tool, task.args);
-    const value = metadata(result).snapshot, nextVersion = viewVersion(result.structuredContent?.version);
-    if (!snapshot(value) || value.documentId !== base.documentId || nextVersion === null) {
-      if (result.structuredContent?.code === 'DOCUMENT_UNAVAILABLE') {
-        decisionFlight = null;
-        return ensureResult(result);
-      }
-      if (result.isError) {
-        decisionFlight = null;
-        host.notify('That decision could not be applied. Review the current document and try again.', 'info');
-        return false;
-      }
-      throw new Error('MISSING_SNAPSHOT');
-    }
-    decisionFlight = null;
-    incoming = value;
-    incomingVersion = nextVersion;
-    dirty = !same(await host.snapshot(), base);
-    if (result.isError && result.structuredContent?.code === 'REVISION_CONFLICT' && dirty) {
-      return false;
-    }
-    failures = 0;
+  async function closeComparison(event) {
+    if (event?.isTrusted !== true || !base?.compare || switching || dirty || flight) return false;
+    const target = {document: token, documentId: base.documentId, compareId: base.compare.id};
+    if (!await flush() || target.document !== token || target.documentId !== base.documentId || target.compareId !== base.compare?.id) return false;
+    const result = await call('comparison.present', {document: token, action: 'close', compare_id: target.compareId, operation_id: crypto.randomUUID()}, undefined, true);
+    if (target.document !== token || !ensureResult(result)) return false;
+    if (!await sync(true)) return false;
     await loadIncoming(false, null, true);
-    if (task.kind === 'review' && ['apply', 'drop'].includes(task.args.action) && presentedReview && base) {
-      const live = base.collaboration?.review;
-      if (live?.status === 'pending' && live.id === presentedReview.id) {
-        presentedReview.signature = reviewSignature(live);
-        presentedReview.serverRevision = base.revision;
-        presentedReview.text = base.text;
-        presentedReview.localRevision = base.revision;
-      } else presentedReview = null;
-    }
-    if (result.isError) {
-      if (task.kind === 'compare') setStatus(result.structuredContent?.code === 'REVISION_CONFLICT' ? 'comparison_changed' : 'comparison_refused');
-      else host.notify('The document changed before that decision arrived. Review it and try again.', 'info');
-    }
-    // Publish the saved decision as document context. Accept/Reject is not a request to send a chat prompt.
     contextChanged();
-    return !result.isError;
-  }
-
-  async function decideComparison(action, event) {
-    if (!(event instanceof Event) || !event.isTrusted || !['accept', 'reject', 'close'].includes(action)) return false;
-    if (action === 'close' && presentedReview && !presentedReview.failed && !presentedReview.dismissed) {
-      await host.dismissReview(presentedReview.id, 'review_dismissed');
-      return true;
-    }
-    if (!base?.compare ||
-        switching || dirty || flight || decisionFlight) return false;
-    // advance:true only here: if the pointed hunk is settled, move the shared pointer to the next decidable hunk before deciding.
-    const selection = action === 'close' ? {ok: true} : selectedChanges({advance: true});
-    if (!selection?.ok) { setStatus('comparison_refused'); return false; }
-    const expectedRevision = base.revision, expectedVersion = version, compareId = base.compare.id;
-    if (!await flush() || expectedRevision !== base.revision || expectedVersion !== version || compareId !== base.compare?.id) {
-      setStatus('comparison_changed');
-      return false;
-    }
-    clearTimeout(timer);
-    decisionFlight = {tool: 'document.compare_decide', kind: 'compare', args: {document: token, expectedRevision, expectedVersion, compareId, action,
-      ...(action === 'close' ? {} : {changeIds: selection.changeIds}), decisionId: crypto.randomUUID()}};
-    contextChanged();
-    updateCompareControls();
-    running = performDecision().catch(error => { failed(error); return false; }).finally(() => {
-      running = null;
-      updateCompareControls();
-      schedule();
-    });
-    return running;
+    return result.structuredContent?.closed === true;
   }
 
   async function exportFile(blob, filename) {
@@ -2082,7 +1895,7 @@
   // "Disconnect agents": rotate the capability; the successor returns sealed to the editor key, is unsealed here and withheld from the model
   // until shared. Needs a trusted event, as setPolicy.
   async function disconnectAgents(event) {
-    if (event?.isTrusted !== true || !base || switching || closed || decisionFlight) return false;
+    if (event?.isTrusted !== true || !base || switching || closed) return false;
     const target = {document: token, documentId: base.documentId};
     const unseal = globalThis.RapierDoorIdentity?.unsealForEditor;
     if (!editorKeyFor(target.document) || typeof unseal !== 'function') { host.notify('This editor cannot disconnect agents here.', 'info'); return false; }
@@ -2143,8 +1956,8 @@
     if (agentAccess !== false) return true;
     const current = () => !closed && !closing && !switching && !openingSwitch && !!base && token === target.document && base.documentId === target.documentId;
     if (event?.isTrusted !== true || !current() || !await flush() || !current()) return false;
-    const result = await call('document.set_policy', {document: target.document, agentAccess: true,
-      expectedRevision: base.revision, expectedVersion: version, decisionId: crypto.randomUUID()});
+    const result = await call('document.connect_agents', {document: target.document,
+      expectedRevision: base.revision, expectedVersion: version, operation_id: crypto.randomUUID()});
     if (!current() || !ensureResult(result)) return false;
     captureIncoming(result);
     return agentAccess === true;
@@ -2159,7 +1972,7 @@
       // A connected workspace answers only the person's own connections; an anonymous one answers whoever holds the ID.
       text.textContent = (agentAccess === null ? 'An agent that receives this workspace ID'
         : 'An agent on one of your approved connections that receives this workspace ID')
-        + ' can read and edit the document under your FREE, CHECK or ASK control until you disconnect agents again.';
+        + ' can read and edit the document until you disconnect agents again.';
       const field = document.createElement('input');
       field.type = 'text';
       field.readOnly = true;
@@ -2260,7 +2073,7 @@
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
     const local = await host.snapshot();
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
-    if (!same(local, base) || dirty || flight || composing) throw new Error('REQUEST_NOT_SYNCED');
+    if (!acknowledged(local) || dirty || flight || composing) throw new Error('REQUEST_NOT_SYNCED');
     // A comment thread's question names the thread, not a selection: there is no passage to inspect and no handle.
     if (!target.selection) {
       const asked = {document: token, documentId: base.documentId, revision: base.revision, filename: base.filename, selection: null,
@@ -2286,9 +2099,9 @@
       throw new Error('REQUEST_SELECTION_CHANGED');
     }
     const pages = [];
-    let args = {...selection, ...(target.objectId ? {objectId: target.objectId} : {})}, inspection;
+    let args = {target: {kind: target.objectId ? 'drawing' : 'source', ...selection, ...(target.objectId ? {objectId: target.objectId} : {})}}, inspection;
     do {
-      const result = await call('document.read_context', {document: target.document, ...args, limit: 4096,
+      const result = await call('document.read', {document: target.document, ...args, limit: 4096,
         operation_id: crypto.randomUUID()});
       if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
       inspection = result.structuredContent;
@@ -2302,7 +2115,7 @@
     const contextHandle = inspection.coverage?.complete && (inspection.complete_handle || inspection.handle);
     if (!contextHandle) throw new Error('REQUEST_SELECTION_UNAVAILABLE');
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
-    if (base.revision !== inspectedRevision || base.text !== inspectedSource || !same(await host.snapshot(), base) || dirty || flight || composing) {
+    if (base.revision !== inspectedRevision || base.text !== inspectedSource || !acknowledged(await host.snapshot()) || dirty || flight || composing) {
       throw new Error('REQUEST_NOT_SYNCED');
     }
     if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
@@ -2396,7 +2209,7 @@
     await saveHostFile();
     const local = base ? await host.snapshot() : null;
     // strandedDrafts are other documents; checked on their own, not in the current document's !saved case.
-    if ((!saved && (dirty || flight || decisionFlight || policyQueued || reviewQueued)) || strandedDrafts.length > 0 ||
+    if ((!saved && (dirty || flight)) || strandedDrafts.length > 0 ||
         (local && !filePreserved(local)) || switching || uploadRunning || importRunning || fileHydrations.size) {
       closing = false;
       contextChanged();
@@ -2407,15 +2220,14 @@
     await publishHumanContext(true);
     clearTimeout(contextTimer);
     clearTimeout(contextExpiryTimer);
-    if (presentedReview) await host.dismissReview(presentedReview.id, 'host_closed');
     if (boundFile) {
       await request('resources/unsubscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
     }
     // Context release and resource cleanup yield. A person can type during either, and a
     // comment composer can outlive its failed device save: recheck at the actual close boundary.
     const latest = base ? await host.snapshot() : null;
-    if ((latest && (!same(latest, base) || !filePreserved(latest))) || dirty || flight || decisionFlight ||
-        policyQueued || reviewQueued || globalThis.RapierCommentsUI?.keepDraft() === false) {
+    if ((latest && (!acknowledged(latest) || !filePreserved(latest))) || dirty || flight ||
+        globalThis.RapierCommentsUI?.keepDraft() === false) {
       closing = false;
       if (boundFile) void request('resources/subscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
       contextChanged();
@@ -2432,7 +2244,6 @@
     exportFlight = null;
     listeners.abort();
     observer?.disconnect();
-    compareObserver?.disconnect();
     unsubscribe?.();
     unsubscribeContext?.();
     for (const value of pending.values()) { clearTimeout(value.timeoutId); value.reject(new Error('CLOSED')); }
@@ -2659,7 +2470,7 @@
       cancelEditorRequests('editor_unavailable', {forget: true});
       cancelMaterial('editor_unavailable', {forget: true});
     }, {signal: listeners.signal});
-    window.addEventListener('beforeunload', event => { if (dirty || flight || decisionFlight || policyQueued || reviewQueued || strandedDrafts.length > 0 || fileDirty() || uploadRunning || fileHydrations.size) { event.preventDefault(); event.returnValue = ''; } }, {signal: listeners.signal});
+    window.addEventListener('beforeunload', event => { if (dirty || flight || strandedDrafts.length > 0 || fileDirty() || uploadRunning || fileHydrations.size) { event.preventDefault(); event.returnValue = ''; } }, {signal: listeners.signal});
     unsubscribe = host.subscribe(event => { if (event?.actor === 'human') humanEdit(); });
     unsubscribeContext = host.subscribeContext(contextChanged);
     observer = new ResizeObserver(notifySize);
@@ -2669,11 +2480,11 @@
   }
 
   window.RapierMcpApp = Object.freeze({
-    flush, retry, invoke, invokeComment, openDocument, saveCurrent, decideComparison, requestDisplayMode, exportFile, importFile, uploadCurrent, showHome, askAboutSelection, openExternalLink, disconnectAgents, shareDocument,
+    flush, retry, invoke, invokeComment, openDocument, saveCurrent, closeComparison, requestDisplayMode, exportFile, importFile, uploadCurrent, showHome, askAboutSelection, openExternalLink, disconnectAgents, shareDocument,
     hostLocale: () => (typeof context.locale === 'string' || typeof context.timeZone === 'string') ?
       Object.freeze({locale: context.locale || null, timeZone: context.timeZone || null}) : null,
     get status() { return Object.freeze({state: status, documentId: base?.documentId || null, revision: base?.revision ?? null, version,
-      dirty: dirty || !!flight || !!decisionFlight || !!policyQueued || !!reviewQueued || fileDirty(),
+      dirty: dirty || !!flight || fileDirty(),
       file: activeFile() ? Object.freeze({name: activeFile().file.name, writable: activeFile().resource.writable,
         saved: !fileDirty(), issue: activeFile().issue}) : null,
       agentsDisconnected: withheld, switching, canDownload: object(capabilities.downloadFile), canImport: canImport(), canUpload: canUpload()}); }

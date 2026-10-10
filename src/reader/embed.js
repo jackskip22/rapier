@@ -11,12 +11,30 @@ const _rapierEmbed = {
 	port: null, portGeneration: 0, hostOrigin: '', sessionId: '', documentId: '', baseRevision: null,
 	capabilities: null, settings: null, readyTimer: null, stateSignature: '', requestLedger: new Map(),
 };
+_rapierEmbed.fileOpen = globalThis.RapierEmbedContract.createFilePicker({
+	document,
+	refusal() {
+		if (!_rapierEmbed.connected || !_rapierEmbed.loaded) return 'open_disconnected';
+		if (!_rapierEmbed.capabilities?.includes('open')) return 'open_not_granted';
+		return _rapierEmbed.loading ? 'open_busy' : '';
+	},
+	snapshot: () => ({port: _rapierEmbed.port, portGeneration: _rapierEmbed.portGeneration,
+		baseRevision: _rapierEmbed.baseRevision, generation: reader.generation}),
+	current: row => row.port === _rapierEmbed.port && row.portGeneration === _rapierEmbed.portGeneration &&
+		row.baseRevision === _rapierEmbed.baseRevision && row.generation === reader.generation,
+	settle: () => true,
+	post: (...args) => _rapierEmbedPost(...args),
+	open: (file, ticket) => readerOpenFile(file, {ticket, generation: ticket.generation}),
+	notify: code => readerToast(code === 'open_stale' ? 'The document changed; open the file again' : 'Could not open a file here', 'info'),
+	error: error => { if (error?.name !== 'AbortError') readerToast(String(error?.message || error), 'error'); },
+});
 // The reader grants nothing beyond these two.
 const READER_GRANTS = ['open', 'changes'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];
 const READER_STYLE_LIMIT = 4 * 1024 * 1024;
 
 function readerPublishState() {
+	_rapierEmbed.fileOpen.check();
 	if (!_rapierEmbed.connected || !_rapierEmbed.capabilities?.includes('changes')) { _rapierEmbed.stateSignature = ''; return; }
 	const state = {loaded: _rapierEmbed.loaded, dirty: false, saving: false, closing: false, readOnly: true, filename: reader.filename, docKind: reader.docKind};
 	const signature = JSON.stringify(state);
@@ -71,6 +89,7 @@ function readerEmbedConnect(event) {
 	const previous = _rapierEmbed.port;
 	if (previous && previous !== port) {
 		if (_rapierEmbed.loading) { try { port.close(); } catch (_) {} return; }
+		_rapierEmbed.fileOpen.cancel('open_disconnected');
 		try { previous.close(); } catch (_) {}
 	}
 	const generation = ++_rapierEmbed.portGeneration;
@@ -88,6 +107,7 @@ function readerEmbedConnect(event) {
 	port.addEventListener('message', message => readerEmbedMessage(message, port, generation));
 	port.addEventListener('messageerror', () => {
 		if (port !== _rapierEmbed.port || generation !== _rapierEmbed.portGeneration) return;
+		_rapierEmbed.fileOpen.cancel('open_disconnected', false);
 		try { port.close(); } catch (_) {}
 		_rapierEmbed.connected = false;
 		_rapierEmbed.port = null;
@@ -103,13 +123,18 @@ function readerEmbedMessage(event, port, generation) {
 	const data = event && event.data;
 	if (!_rapierEmbedValidEnvelope(data)) return;
 	if (data.type === 'style') { readerHostStyle(data); return; }
-	if (!RAPIER_EMBED_KNOWN_TYPES.has(data.type) && !['asset-ack', 'asset-nack'].includes(data.type)) {
+	if (!RAPIER_EMBED_KNOWN_TYPES.has(data.type) && !['asset-ack', 'asset-nack', 'open-ack', 'open-result', 'open-nack'].includes(data.type)) {
 		_rapierEmbedPost('protocol-error', {reason: 'unrecognized message type'}, data.requestId);
 		return;
 	}
-	const required = {load: 'open', compare: 'compare', save: 'read', 'save-ack': 'read', 'save-nack': 'read', close: 'close', 'close-decision': 'close', 'asset-ack': 'assets', 'asset-nack': 'assets'}[data.type];
+	const required = {load: 'open', compare: 'compare', save: 'read', 'save-ack': 'read', 'save-nack': 'read', close: 'close', 'close-decision': 'close', 'asset-ack': 'assets', 'asset-nack': 'assets', 'open-ack': 'open', 'open-result': 'open', 'open-nack': 'open'}[data.type];
 	if (required && !_rapierEmbed.capabilities?.includes(required)) {
 		_rapierEmbedPost('protocol-error', {code: 'capability_denied', capability: required}, data.requestId);
+		return;
+	}
+	if (['open-ack', 'open-result', 'open-nack'].includes(data.type)) {
+		const code = _rapierEmbed.fileOpen.answer(data);
+		if (code) _rapierEmbedPost('protocol-error', {code}, data.requestId);
 		return;
 	}
 	const payload = data.payload || {};
@@ -126,6 +151,7 @@ function readerEmbedMessage(event, port, generation) {
 	if (data.type === 'theme') { reader.hostTheme = payload.theme; readerApplyView(); readerRenderSettings(); return; }
 	if (data.type === 'load') { void readerEmbedLoad(data); return; }
 	if (data.type === 'disconnect') {
+		_rapierEmbed.fileOpen.cancel('open_disconnected', false);
 		try { port.close(); } catch (_) {}
 		_rapierEmbed.connected = false;
 		if (_rapierEmbed.port === port) _rapierEmbed.port = null;
@@ -162,6 +188,7 @@ async function readerEmbedLoadRun(data, respond) {
 	if (filename.length > RAPIER_EMBED_FILENAME_MAX_CHARS || !_rapierDocumentNameIsAdmissible(filename)) { respond('load-nack', {reason: 'invalid document filename'}); return; }
 	const operation = ++_rapierEmbed.loadToken;
 	_rapierEmbed.loading = true;
+	_rapierEmbed.fileOpen.cancel('open_stale');
 	try {
 		const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 240) : '';
 		const shown = await readerLoad(content, filename, title);

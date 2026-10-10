@@ -38,11 +38,12 @@ const KIT = {
 };
 // The editor's published modules the reader keeps, by the global they are read through; null reads every export.
 const MODULES = {
-	RapierMarkdownSpec: 'agent/markdown-spec.mjs', RapierMarkdownLayout: 'layout/markdown.mjs', RapierImageAssets: 'spec/md-assets.mjs',
+	RapierMarkdownSpec: 'agent/markdown-spec.mjs', RapierMarkdownLayout: 'layout/markdown.mjs', RapierImageAssets: 'images/assets.mjs',
+	RapierOcr: 'images/ocr.mjs', RapierPictureMarks: 'images/picture-marks.mjs',
 	RapierPreferenceDefinitions: 'shell/preferences.mjs', RapierEmbedContract: 'packages/rapier-embed/contract.mjs',
 	RapierImageLayout: 'layout/model.mjs', RapierMdLayoutSpec: 'spec/md-layout.mjs', RapierPretext: 'agent/vendor/pretext/rich-inline.js',
 };
-const READ_ALL = new Set(['RapierImageLayout', 'RapierMdLayoutSpec', 'RapierPretext']);
+const READ_ALL = new Set(['RapierImageLayout', 'RapierMdLayoutSpec', 'RapierPretext', 'RapierOcr']);
 // The globals the reader page publishes from its module table; tools/check-shipped-capabilities.mjs requires every one in the built page.
 export const READER_CAPABILITIES = Object.freeze(Object.keys(MODULES));
 // The native flowchart is a plug-in file: Draw's SVG builder with the flowchart reader, fetched the first time a document holds a flowchart
@@ -56,7 +57,7 @@ const DOCX_MODULES = {RapierDocxImport: 'interchange/docx.mjs'};
 const DOCX_READS = new Set(['readDocx', 'finishDocxMarkdown']);
 // What the linked text may read that no source gives it: the browser's own names and the optional plug-ins' publications.
 const BROWSER = new Set(('window document globalThis self location navigator history localStorage sessionStorage console performance crypto Node Element HTMLElement HTMLInputElement ' +
-	'Range Highlight CSS CSSStyleSheet DOMParser URL URLSearchParams TextEncoder TextDecoder Blob Response FontFace Image Event CustomEvent MessageChannel DecompressionStream ' +
+	'Range Highlight CSS CSSStyleSheet DOMParser URL URLSearchParams TextEncoder TextDecoder Blob Response FontFace Image Event CustomEvent MessageChannel DecompressionStream CompressionStream AbortSignal requestIdleCallback ' +
 	'NodeFilter ResizeObserver IntersectionObserver MutationObserver matchMedia getComputedStyle requestAnimationFrame cancelAnimationFrame setTimeout clearTimeout setInterval clearInterval ' +
 	'queueMicrotask addEventListener removeEventListener postMessage fetch atob btoa structuredClone indexedDB caches isSecureContext DOMException AbortController Promise Math JSON Object ' +
 	'Array String Number Boolean Symbol Map Set WeakMap WeakSet WeakRef Error TypeError RangeError SyntaxError Date RegExp Intl Uint8Array Uint16Array Uint32Array Int8Array Float32Array ' +
@@ -87,6 +88,31 @@ async function platformUnits() { return scriptUnits(await read('shell/platform.j
 // The pop-ups' one layout (editor/pop.js): the editor's own file, whose arrangement a reader's prompts share.
 async function popUnits() { return scriptUnits(await read('editor/pop.js'), {iife: false, file: 'editor/pop.js'}); }
 
+// The synchronous and cooperative renderers share these transformations. Link the source owner
+// once alongside the other pools; slicing a factory leaves its imported helper names as edges.
+async function renderWorkUnits() {
+	const file = 'kit/render-work.mjs', source = await read(file);
+	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module'});
+	const text = ast.body.map(node => {
+		if (node.type === 'ExportNamedDeclaration' && node.declaration) return source.slice(node.declaration.start, node.declaration.end);
+		if (/^Import|^Export/.test(node.type)) throw new Error(file + ': unexpected module dependency');
+		return source.slice(node.start, node.end);
+	}).join('\n');
+	return scriptUnits(text, {file});
+}
+
+async function renderFactorySource(file) {
+	let source = await read(file);
+	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module'});
+	for (const node of ast.body.filter(node => node.type === 'ImportDeclaration').reverse()) {
+		if (node.source.value !== './render-work.mjs' || node.specifiers.some(row => row.type !== 'ImportSpecifier' || row.imported.name !== row.local.name)) {
+			throw new Error(file + ': a factory import has no reader source pool');
+		}
+		source = source.slice(0, node.start) + source.slice(node.start, node.end).replace(/[^\n]/g, ' ') + source.slice(node.end);
+	}
+	return source;
+}
+
 // RapierStorage as the plug-in loader reads it: the names of the stores the editor and the reader share for plug-ins (a person who
 // installed one in the editor has it here). Read from shell/platform.js, never typed again.
 async function storageSource() {
@@ -99,7 +125,7 @@ async function storageSource() {
 	};
 	find(ast);
 	if (optional?.type !== 'ObjectExpression') throw new Error('shell/platform.js no longer declares RapierStorage.optional');
-	const rows = optional.properties.filter(row => row.value.type === 'Literal' && /^(?:math|mermaid)/.test(row.key.name)).map(row => row.key.name + ': ' + JSON.stringify(row.value.value));
+	const rows = optional.properties.filter(row => row.value.type === 'Literal' && /^(?:math|mermaid|ocr)/.test(row.key.name)).map(row => row.key.name + ': ' + JSON.stringify(row.value.value));
 	if (rows.length < 4) throw new Error('shell/platform.js RapierStorage.optional lost the math or diagram stores');
 	rows.push(...Object.entries(BUILT_STORES).map(([name, value]) => name + ': ' + JSON.stringify(value)));
 	return 'const RapierStorage = Object.freeze({optional: Object.freeze({' + rows.join(', ') + '})});';
@@ -159,7 +185,7 @@ export async function buildReader({root = here, unchecked = []} = {}) {
 
 	// 1. Fragments the reader writes, and the optional plug-in loader as the editor ships it.
 	const fragment = async path => '/* ' + path + ' */\n' + await read(path);
-	const hostText = await fragment('reader/host.js'), ownText = hostText + '\n' + await fragment('reader/embed.js') + '\n' + await fragment('reader/app.js');
+	const hostText = await fragment('reader/host.js'), ownText = hostText + '\n' + await fragment('reader/embed.js') + '\n' + await fragment('images/ocr.js') + '\n' + await fragment('reader/picture-find.js') + '\n' + await fragment('reader/app.js');
 	// The plug-in files this build makes (tools/reader-plugins.mjs): each is minified, then pinned by its bytes.
 	const squeeze = async text => process.env.RAPIER_READER_NOMINIFY === '1' ? text : (await minify(text, {compress: {passes: 2, ecma: 2022}, mangle: true, ecma: 2022, format: {comments: (_, row) => /@license|@preserve|SPDX-License-Identifier|^!/.test(row.value), ascii_only: false}})).code;
 	const flowRegistry = await bundleModules({root, entries: FLOWCHART_MODULES, used: new Map([['RapierFlowchart', FLOWCHART_READS]])});
@@ -187,7 +213,7 @@ export async function buildReader({root = here, unchecked = []} = {}) {
 	// 2. Link: the pools, the cut factories and `_rapierRenderModule` settle together (what a factory is asked for may be asked by the
 	// editor code its ports pull in).
 	// Emitted in this order: the platform stage first, as the page runs it before the engine.
-	const pools = [await platformUnits(), await popUnits(), await engineUnits()];
+	const pools = [await platformUnits(), await popUnits(), await renderWorkUnits(), await engineUnits()];
 	const kit = {};
 	let keep = Object.fromEntries(Object.keys(KIT).map(kind => [kind, new Set()])), linked = null, slices = null, ownScript = '';
 	const forbid = ['rapier', '_rapierUi', 'showToast', 'rapierConfirm', 'renderBlock', '_rapierEmbedPublishState'];
@@ -196,7 +222,7 @@ export async function buildReader({root = here, unchecked = []} = {}) {
 		for (const [kind, [file, factory]] of Object.entries(KIT)) {
 			const names = [...keep[kind]].sort();
 			if (!names.length) continue;
-			const cut = sliceFactory(await read(file), factory, names, {file});
+			const cut = sliceFactory(await renderFactorySource(file), factory, names, {file});
 			const ports = [...cut.text.matchAll(/\{([^{}]*)\} = runtime;/g)].flatMap(match => match[1].split(',').map(part => part.trim().split(':').pop().trim()).filter(Boolean));
 			slices[kind] = {factory, ports, text: wrapModule(factory, cut.text)};
 			kit[kind] = cut;
@@ -310,7 +336,7 @@ export async function buildReader({root = here, unchecked = []} = {}) {
 // The licences the file carries, as a markup part: the editor's own sheet, cut to the parts this file carries, with the notices of
 // what only the reader brings (the layout reflow's Pretext).
 function licensesSheet(sheet, pretextLicense, notice) {
-	const drop = /Turndown|gpu-lexer|acorn 8|jsdiff|Geist|ONNX|PP-OCR|libjxl|AndroidX|Google Play/;
+	const drop = /Turndown|gpu-lexer|acorn 8|jsdiff|Geist|AndroidX|Google Play/;
 	let text = dropElements(sheet, (row, markup) => /\blicense-(?:entry|row)\b/.test(row.cls) && drop.test(markup.slice(0, 400)));
 	const pretext = '<details class="license-entry"><summary><span class="license-name">Pretext 0.0.9</span><span class="license-id">MIT</span></summary><pre class="license-text">' + escapeHtml(pretextLicense.trim()) + '</pre></details>\n';
 	text = text.replaceAll('<pre class="license-text" data-license="rapier-mit"></pre>', () => '<pre class="license-text">' + escapeHtml(notice) + '</pre>');

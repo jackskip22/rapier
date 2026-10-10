@@ -154,3 +154,34 @@ function _rapierPluginProgress(key, noun) {
 	window.addEventListener('rapier:' + key + 'plugin', follow);
 	return end;
 }
+
+// A wait owns its cancellation and checks document custody after every yield.
+function _rapierProgressTask({label = '', current = null, after = 500, size = 0, signal: callerSignal = null} = {}) {
+	const controller = new AbortController();
+	const signal = controller.signal;
+	const cancel = () => controller.abort();
+	const ahead = size > RAPIER_PROGRESS_AHEAD;
+	const progress = _rapierProgressOpen({label, after: ahead ? 0 : after, cancel});
+	if (callerSignal?.aborted) cancel();
+	else callerSignal?.addEventListener('abort', cancel, {once: true});
+	let ended = false, reported = null, needsPaint = ahead;
+	const check = () => {
+		if (!signal.aborted && current && !current()) cancel();
+		if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+	};
+	const set = (fraction, words) => {
+		if (ended) return;
+		if (typeof fraction === 'number' && Number.isFinite(fraction)) reported = Math.max(reported ?? 0, fraction);
+		else if (fraction === null) reported = null;
+		progress.set(reported, words);
+	};
+	const end = () => { if (ended) return; ended = true; callerSignal?.removeEventListener('abort', cancel); progress.end(); };
+	const yieldWork = async (fraction, words) => {
+		check();
+		if (fraction !== undefined || words !== undefined) set(fraction, words);
+		if (needsPaint) { needsPaint = false; await _rapierProgressPainted(); }
+		else await _rapierYieldUserVisibleWork();
+		check();
+	};
+	return Object.freeze({signal, cancel, check, set, onProgress: set, yield: yieldWork, end});
+}

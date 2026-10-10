@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
+import {finish, finishAsync, cloneTree, cleanTree, serializeTree, encodeUtf8Steps, pause} from './render-work.mjs';
 // The document's renderer. DOM, codecs and host state are explicit inputs.
 function createRenderer(runtime) {
-  const {RAPIER_COLOR_CLOSE, RapierLedgerCarried, RapierPageReturnAddress, RapierTextCodec, _rapierArtifactHighlight, _rapierArtifactLexerScript, _rapierArtifactMarkLexed, _rapierArtifactPreference, _rapierArtifactStyles, _rapierBlobDataUrl, _rapierBuildInterchangeContext, _rapierDocumentNameIsAdmissible, _rapierLedgerParts, _rapierDrawReadSVGRecipe, _rapierDrawShapeProfileFor, _rapierFillDiagram, _rapierFormatColorOpen, _rapierLanguageClass, _rapierLineStartOffsets, _rapierMarkdownEnvironment, _rapierPortableHtml, _rapierPrepareInterchangeContext, _rapierProjectPortableRoot, _rapierProviders, _rapierSourceCharEscaped, _rapierSourceLineSpan, crypto, document, escapeRapierHtmlText, globalThis, rapierConfirm, sanitizeRapierHtml} = runtime;
+  const {RAPIER_COLOR_CLOSE, RapierLedgerCarried, RapierPageReturnAddress, RapierTextCodec, _rapierArtifactHighlight, _rapierArtifactPreference, _rapierArtifactStyles, _rapierBlobDataUrl, _rapierBuildInterchangeContext, _rapierDocumentNameIsAdmissible, _rapierLedgerParts, _rapierDrawReadSVGRecipe, _rapierDrawShapeProfileFor, _rapierExportFontCss, _rapierFillDiagram, _rapierFinalizeExportCode, _rapierFormatColorOpen, _rapierLanguageClass, _rapierLineStartOffsets, _rapierMarkdownEnvironment, _rapierPortableHtml, _rapierPrepareInterchangeContext, _rapierProjectPortableRoot, _rapierProviders, _rapierSourceCharEscaped, _rapierSourceLineSpan, crypto, document, escapeRapierHtmlText, globalThis, rapierConfirm, sanitizeRapierHtml} = runtime;
   let md = runtime.md;
   async function render(source, options = {}) {
     if (typeof source !== 'string') throw new TypeError('Document source must be a string');
@@ -18,13 +19,15 @@ async function _rapierBuildArtifact(options, providedContext) {
 	const context = providedContext || _rapierBuildInterchangeContext(opts);
 	const metadata = context.metadata;
 	const base = context.baseName;
+	const work = context.work || opts.work;
 
 	if (opts.kind === 'publishing' || opts.kind === 'fragment') {
 		for (const diagram of context.semanticRoot.querySelectorAll('.diagram-block[data-diagram-native]'))
 			await _rapierFillDiagram(diagram, true);
-		const portableRoot = _rapierProjectPortableRoot(context.semanticRoot, { baseName: base, keepDiagrams: true });
+		const portableRoot = work ? await runtime._rapierProjectPortableRootAsync(context.semanticRoot, {baseName: base, keepDiagrams: true, work})
+			: _rapierProjectPortableRoot(context.semanticRoot, { baseName: base, keepDiagrams: true });
 		return {
-			html: _rapierPortableHtml(portableRoot),
+			html: work ? await runtime._rapierPortableHtmlAsync(portableRoot, work) : _rapierPortableHtml(portableRoot),
 			filename: base + '-publishing.html',
 			metadata,
 		};
@@ -34,25 +37,39 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// Await the same materialization owner before any projection clones or serializes it.
 	for (const diagram of opts.kind === 'page' ? [] : context.semanticRoot.querySelectorAll('.diagram-block[data-diagram-src]')) {
 		await _rapierFillDiagram(diagram, true);
+		if (opts.kind !== 'standalone' || diagram.hasAttribute('data-diagram-unclosed')) continue;
+		const state = diagram.getAttribute('data-diagram-state');
+		// A completed diagram must have its drawing. Syntax and renderer failures both refuse
+		// the file; an unclosed fence above is still authored source, not a completed diagram.
+		if (state !== 'ready' || !diagram.querySelector('.diagram-cache svg'))
+			throw Object.assign(new Error('Web page not written; a required diagram could not be rendered'), {code: 'EXPORT_DIAGRAM_UNAVAILABLE'});
 	}
 
-	if (opts.kind === 'standalone') await _rapierRequireOfflinePageImages(context.semanticRoot);
+	if (opts.kind === 'standalone') {
+		if (context.semanticRoot.querySelector('.math-placeholder'))
+			throw new Error('Web page not written; the math plug-in is required to include its equations');
+		// MathJax represents invalid TeX as a static error SVG. A source-only span means
+		// rendering itself failed, so publishing it would silently omit the equation.
+		if (context.semanticRoot.querySelector('span[data-rapier-math-source]'))
+			throw new Error('Web page not written; a required equation could not be rendered');
+	}
+	if (opts.kind === 'standalone' || opts.kind === 'page') await _rapierRequireOfflinePageImages(context.semanticRoot);
 
-	const styledRoot = _rapierProjectStyledRoot(context.semanticRoot, {
-		metadata,
-		print: !!opts.print,
-		sourceCode: opts.kind === 'page',
-		baseName: base,
-	});
+	const styledOptions = {metadata, print: !!opts.print, sourceCode: opts.kind === 'page', baseName: base, work};
+	const styledRoot = work ? await _rapierProjectStyledRootAsync(context.semanticRoot, styledOptions)
+		: _rapierProjectStyledRoot(context.semanticRoot, styledOptions);
+	if (opts.kind === 'standalone' && typeof _rapierFinalizeExportCode === 'function') await _rapierFinalizeExportCode(styledRoot);
 	// _rapierProjectStyledRoot already returns the sanitized projection.
 	// Print never emits the layout reflow script (see below), so a print artifact has no use for
 	// this annotation -- skip it there rather than pay the cost for numbers nothing will read.
 	if (!opts.print && opts.kind !== 'page') _rapierAnnotateExportBoxPolygons(styledRoot);
 	// Share adds its nearest-side no-script float and long-code cap here. Offline-image
 	// admission above and the page policy below belong to this common writer, not its callers.
-	if (typeof opts.afterRoot === 'function') opts.afterRoot(styledRoot);
+	if (typeof opts.afterRoot === 'function') await opts.afterRoot(styledRoot);
 	const carrier = opts.kind === 'standalone' ? await _rapierSharedSourceCarrier(context, styledRoot) : '';
-	const bodyHtml = opts.kind === 'page' ? _rapierPageHtml(styledRoot) : styledRoot.innerHTML;
+	const bodyHtml = opts.kind === 'page' ? _rapierPageHtml(styledRoot) : work
+		? await finishAsync(serializeTree(styledRoot), work) : styledRoot.innerHTML;
+	if (work) await pause(work, .95);
 	const theme = opts.print
 		? 'light'
 		: opts.kind === 'page' ? 'system'
@@ -68,21 +85,23 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// .md-render set and the highlight rules, so a numbered list, a checkbox, a callout and a
 	// table are drawn in an exported page exactly as they are drawn here. The one caller with
 	// rules of its own -- Share, for the no-script float it alone writes -- appends them.
-	// Diagram geometry was measured with these exact fonts. Carry the same data fonts into
-	// offline pages; a fallback face would change labels inside fixed renderer geometry.
-	const diagramFonts = !!styledRoot.querySelector('svg.rapier-diagram,svg.rapier-native-flowchart');
-	const includeFonts = !!opts.print || diagramFonts;
-	const zenFontCss = styledRoot.querySelector('svg[aria-roledescription="zenuml"]')
+	const includeFonts = !!opts.print || opts.kind === 'standalone';
+	const zenFontCss = opts.print && styledRoot.querySelector('svg[aria-roledescription="zenuml"]')
 		? (_rapierProviders?.mermaid?.exportFontCss?.() || '') : '';
 	const willFont = opts.print && opts.willFont ? opts.willFont : null;
 	const settings = _rapierDocumentSettingsOf(context.canonical);
 	const settingsCss = _rapierDocumentSettingsCss(settings);
 	const pageTitle = settings && settings.title ? globalThis.RapierMarkdownSpec.documentTitle(settings) : metadata.filename;
-	const css = _rapierArtifactStyles(theme, includeFonts, !!opts.print || opts.kind === 'standalone', opts.kind === 'page')
+	let css = _rapierArtifactStyles(theme, includeFonts, !!opts.print || opts.kind === 'standalone', opts.kind === 'page', opts.kind === 'standalone' ? '' : null)
 		+ (zenFontCss ? '\n\n' + zenFontCss : '')
 		+ (opts.extraCss ? '\n\n' + opts.extraCss : '')
 		+ (willFont ? '\n\n@font-face{font-family:' + willFont.family + ';src:url(' + await _rapierBlobDataUrl(new Blob([willFont.bytes], { type: 'font/ttf' })) + ') format("truetype")}' : '')
 		+ (settingsCss ? '\n' + settingsCss : '');
+	// Match the document's measured faces with only the glyphs this immutable page uses.
+	if (opts.kind === 'standalone') {
+		const fonts = await _rapierExportFontCss(styledRoot, {settings, css, theme});
+		if (fonts) css += '\n' + fonts;
+	}
 	// Every written page is offline. Only the writer's nonce script may run; it, pictures,
 	// styles and other page resources get no network authority. Following an ordinary link
 	// is the reader's navigation, with no Referer, not a background resource request.
@@ -91,9 +110,6 @@ async function _rapierBuildArtifact(options, providedContext) {
 	// script outright. Declaring a nonce a page has no use for is a widening, small but real -- anything that could inject markup into the file could read the
 	// nonce out of it and be admitted.
 	const layoutScript = !opts.print && opts.kind !== 'page' ? _rapierArtifactLayoutScript(styledRoot, nonce) : '';
-	// The lexer for the page's code, under the same nonce, only when a block earned it: the CPU
-	// spans are the first paint, and where the reader's browser has WebGPU the lexer repaints them.
-	const lexerScript = !opts.print && opts.kind !== 'page' ? _rapierArtifactLexerScript(styledRoot, nonce) : '';
 	const inkScript = !opts.print && opts.kind !== 'page' ? _rapierArtifactInkScript(styledRoot, nonce) : '';
 	const page = '<!DOCTYPE html>\n'
 		+ '<html lang="en" data-rapier-theme="' + theme + '" data-highlights="' + highlights + '">\n'
@@ -104,13 +120,14 @@ async function _rapierBuildArtifact(options, providedContext) {
 		// someone's page shows whole, with no inner scroll. Any origin may read the height: the page is the
 		// document, published by the person who exported it.
 		+ '<meta name="responsive-embedded-sizing" content="allow-origins=*">\n'
-		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || lexerScript || inkScript ? nonce : '', includeFonts) + '">\n'
+		+ '<meta http-equiv="Content-Security-Policy" content="' + _rapierExportedPageCsp(layoutScript || inkScript ? nonce : '', includeFonts) + '">\n'
 		+ '<meta name="referrer" content="no-referrer">\n'
+		+ '<link rel="icon" href="data:,">\n'
 		+ '<meta name="generator" content="Rapier ' + escapeRapierHtmlText(version) + '">\n'
 		+ '<title>' + escapeRapierHtmlText(pageTitle) + '</title>\n'
 		+ '<style>' + css + '</style>\n</head>\n'
 		+ '<body class="' + bodyClass + '"><main class="' + docClass + '" data-md-theme="' + theme + '">'
-		+ bodyHtml + '</main>' + carrier + layoutScript + lexerScript + inkScript + '</body>\n</html>';
+		+ bodyHtml + '</main>' + carrier + layoutScript + inkScript + '</body>\n</html>';
 
 	return {
 		html: page,
@@ -141,9 +158,12 @@ function _rapierPageHtml(root) {
 	return children(root);
 }
 
-function _rapierProjectStyledRoot(semanticRoot, options) {
+function _rapierProjectStyledRoot(semanticRoot, options) { return finish(_rapierProjectStyledRootSteps(semanticRoot, options)); }
+async function _rapierProjectStyledRootAsync(semanticRoot, options = {}) { return finishAsync(_rapierProjectStyledRootSteps(semanticRoot, options), options.work); }
+
+function* _rapierProjectStyledRootSteps(semanticRoot, options) {
 	const opts = options || {};
-	const root = semanticRoot.cloneNode(true);
+	const root = yield* cloneTree(semanticRoot);
 	const metadata = opts.metadata || {};
 
 	if (metadata.docKind !== 'markdown') {
@@ -157,55 +177,53 @@ function _rapierProjectStyledRoot(semanticRoot, options) {
 		if (code) {
 			const lang = _rapierLanguageClass(code) || String(metadata.codeLang || '');
 			code.classList.add('artifact-code');
-			if (metadata.docKind === 'code' && !opts.sourceCode) { _rapierPaintCode(code, _rapierArtifactHighlight(code.textContent || '', lang)); _rapierArtifactMarkLexed(code, lang); }
+			if (metadata.docKind === 'code' && !opts.sourceCode) _rapierPaintCode(code, _rapierArtifactHighlight(code.textContent || '', lang));
 			if (lang) code.classList.add('language-' + String(lang).replace(/[^a-z0-9_-]/gi, ''));
 		}
 	} else {
-		root.querySelectorAll('pre > code').forEach(code => {
-			if (opts.sourceCode) return;
+		for (const code of root.querySelectorAll('pre > code')) { yield;
+			if (opts.sourceCode || code.parentElement?.classList.contains('diagram-source') &&
+					code.closest('.diagram-block')?.getAttribute('data-diagram-state') === 'ready') continue;
 			const lang = _rapierLanguageClass(code) || 'text';
 			_rapierPaintCode(code, _rapierArtifactHighlight(code.textContent || '', lang));
-			_rapierArtifactMarkLexed(code, lang);
-		});
+		}
 
-		root.querySelectorAll('table').forEach(table => {
-			if (table.parentElement && table.parentElement.classList.contains('table-scroll-wrap')) return;
+		for (const table of root.querySelectorAll('table')) { yield;
+			if (table.parentElement && table.parentElement.classList.contains('table-scroll-wrap')) continue;
 			const wrap = document.createElement('div');
 			wrap.className = 'table-scroll-wrap';
 			table.parentNode.insertBefore(wrap, table);
 			wrap.appendChild(table);
-		});
+		}
 
-		root.querySelectorAll('math[display="block"]').forEach(math => {
-			if (math.closest('svg') || math.closest('.math-display-wrap')) return;
+		for (const math of root.querySelectorAll('math[display="block"]')) { yield;
+			if (math.closest('svg') || math.closest('.math-display-wrap')) continue;
 			const wrap = document.createElement('span');
 			wrap.className = 'math-display-wrap';
 			math.parentNode.insertBefore(wrap, math);
 			wrap.appendChild(math);
-		});
+		}
 
-		root.querySelectorAll('input[type="checkbox"]').forEach(input => {
+		for (const input of root.querySelectorAll('input[type="checkbox"]')) { yield;
 			const item = input.closest('.task-list-item');
 			input.disabled = !!opts.print || !item;
-			if (input.disabled) { input.setAttribute('aria-disabled', 'true'); return; }
+			if (input.disabled) { input.setAttribute('aria-disabled', 'true'); continue; }
 			// Native checked state changes this reader's view, never the carried source or disk.
 			input.removeAttribute('aria-disabled');
 			input.removeAttribute('aria-checked');
 			input.setAttribute('autocomplete', 'off');
 			input.setAttribute('title', 'Ticks change this view, not the saved file.');
 			const label = item.cloneNode(true);
-			label.querySelectorAll('input,ul,ol').forEach(node => node.remove());
+			for (const node of label.querySelectorAll('input,ul,ol')) { yield;node.remove();}
 			input.setAttribute('aria-label', String(label.textContent || '').replace(/\s+/g, ' ').trim() || 'Task');
-		});
+		}
 
-		if (opts.print) root.querySelectorAll('details').forEach(details => { details.open = true; });
+		if (opts.print) for (const details of root.querySelectorAll('details')) { yield; details.open = true; }
 	}
 
-	_rapierPrefixPortableAnchors(root, opts.baseName || metadata.filename || 'document');
+	yield* _rapierPrefixPortableAnchorsSteps(root, opts.baseName || metadata.filename || 'document');
 
-	const clean = document.createElement('div');
-	clean.innerHTML = sanitizeRapierHtml(root.innerHTML, opts.sourceCode ? 'source' : 'export');
-	return clean;
+	return yield* cleanTree(root, sanitizeRapierHtml, opts.sourceCode ? 'source' : 'export');
 }
 
 function _rapierPaintCode(el, html) {
@@ -213,7 +231,9 @@ function _rapierPaintCode(el, html) {
 	el.classList.add('tok');
 }
 
-function _rapierPrefixPortableAnchors(root, baseName) {
+function _rapierPrefixPortableAnchors(root, baseName) { return finish(_rapierPrefixPortableAnchorsSteps(root, baseName)); }
+
+function* _rapierPrefixPortableAnchorsSteps(root, baseName) {
 	const slug = String(baseName || 'document').toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '') || 'document';
@@ -231,9 +251,9 @@ function _rapierPrefixPortableAnchors(root, baseName) {
 		return svg;
 	};
 
-	root.querySelectorAll('[id]').forEach(element => {
+	for (const element of root.querySelectorAll('[id]')) { yield;
 		const oldId = element.id;
-		if (!oldId) return;
+		if (!oldId) continue;
 		const base = oldId.replace(/[^a-z0-9_-]+/gi, '-')
 			.replace(/^-+|-+$/g, '') || 'anchor';
 		let nextId = prefix + base;
@@ -250,9 +270,9 @@ function _rapierPrefixPortableAnchors(root, baseName) {
 			if (!local.has(oldId)) local.set(oldId, nextId);
 		}
 		element.id = nextId;
-	});
+	}
 
-	root.querySelectorAll('*').forEach(element => {
+	for (const element of root.querySelectorAll('*')) { yield;
 		const svg = scopeOf(element), local = svgIds.get(svg);
 		const rewriteId = value => (svg ? local?.get(value) : ids.get(value)) || '';
 		// URL fragments percent-decode once; ARIA/for/headers are literal IDREFs.
@@ -296,7 +316,7 @@ function _rapierPrefixPortableAnchors(root, baseName) {
 				if (next !== value) element.setAttribute(name, next);
 			}
 		}
-	});
+	}
 }
 
 function _rapierDocumentSettingsOf(canonical) {
@@ -315,7 +335,7 @@ function _rapierDocumentSettingsCss(settings) {
 }
 
 function _rapierExportedPageCsp(nonce, fonts) {
-	return "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; "
+	return "default-src 'none'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; "
 		+ (fonts ? "font-src data:; " : '')
 		+ "script-src " + (nonce ? "'nonce-" + nonce + "'" : "'none'") + "; base-uri 'none'; form-action 'none'";
 }
@@ -368,15 +388,20 @@ function _rapierAnnotateExportBoxPolygons(root) {
 	}
 }
 
-async function _rapierSharedSourceHash(source) {
-	const bytes = new TextEncoder().encode(source);
+async function _rapierSharedSourceHash(source, work = null) {
+	const bytes = work ? await finishAsync(encodeUtf8Steps(source), work) : new TextEncoder().encode(source);
 	const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
 	return Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function _rapierSharedSourceForms(source, root, substitutions) {
+function _rapierSharedSourceForms(source, root, substitutions) { return finish(_rapierSharedSourceFormsSteps(source, root, substitutions)); }
+async function _rapierSharedSourceFormsAsync(source, root, substitutions, work) {
+	const destinations = await _rapierDataImageDestinationsAsync(source, work);
+	return finishAsync(_rapierSharedSourceFormsSteps(source, root, substitutions, destinations), work);
+}
+function* _rapierSharedSourceFormsSteps(source, root, substitutions, preparedDestinations = null) {
 	const assets = globalThis.RapierImageAssets;
-	const destinations = _rapierImageDestinations(source, url => !!assets.dataImage(url)).sort((a, b) => b.start - a.start);
+	const destinations = (preparedDestinations || _rapierImageDestinations(source, url => !!assets.dataImage(url))).sort((a, b) => b.start - a.start);
 	const byUrl = new Map(), ids = new Map(), labels = new Map();
 	for (const node of root.querySelectorAll('[id]')) ids.set(node.id, (ids.get(node.id) || 0) + 1);
 	for (const match of source.matchAll(/^ {0,3}\[([^\]\r\n]+)\]:[ \t]*(data:image\/\S+)/gim)) if (!labels.has(match[2])) labels.set(match[2], match[1]);
@@ -389,6 +414,7 @@ function _rapierSharedSourceForms(source, root, substitutions) {
 	const carrierEdits = [];
 	const used = [], definitions = [];
 	for (const row of destinations) {
+		yield;
 		const shownUrl = substitutions?.get(row.destination) || row.destination;
 		const image = byUrl.get(shownUrl);
 		if (!image) { if (shownUrl !== row.destination) { resolved = resolved.slice(0, row.start) + shownUrl + resolved.slice(row.end); carrierEdits.push({start: row.start, end: row.end, text: _rapierSharedEncode(shownUrl)}); } continue; }
@@ -407,25 +433,27 @@ function _rapierSharedSourceForms(source, root, substitutions) {
 	}
 	let carried = '', cursor = source.length;
 	for (const edit of carrierEdits) {
-		carried = edit.text + _rapierSharedEncode(source.slice(edit.end, cursor)) + carried;
+		yield;
+		carried = edit.text + (yield* _rapierSharedEncodeSteps(source.slice(edit.end, cursor))) + carried;
 		cursor = edit.start;
 	}
-	carried = _rapierSharedEncode(source.slice(0, cursor)) + carried;
+	carried = (yield* _rapierSharedEncodeSteps(source.slice(0, cursor))) + carried;
 	return { resolved, carried, ids: used, definitions };
 }
 
 async function _rapierSharedSourceCarrier(context, root) {
 	const source = (context.metadata.bom ? '\uFEFF' : '') + context.canonical;
-	const forms = _rapierSharedSourceForms(source, root, context.imageSubstitutions);
+	const forms = context.work ? await _rapierSharedSourceFormsAsync(source, root, context.imageSubstitutions, context.work)
+		: _rapierSharedSourceForms(source, root, context.imageSubstitutions);
 	const esc = escapeRapierHtmlText;
 	return '<script type="' + _RAPIER_SHARED_SOURCE_TYPE + '" data-filename="' + esc(context.metadata.filename) +
-		'" data-kind="' + esc(context.metadata.docKind) + '" data-sha256="' + await _rapierSharedSourceHash(forms.resolved) +
+		'" data-kind="' + esc(context.metadata.docKind) + '" data-sha256="' + await _rapierSharedSourceHash(forms.resolved, context.work) +
 		'"' + (forms.ids.length ? ' data-images="' + forms.ids.join(' ') + '"' : '') +
 		(forms.definitions.length ? ' data-image-definitions="' + forms.definitions.map(encodeURIComponent).join(' ') + '"' : '') + '>\n' +
 		forms.carried + '\n</script>\n' +
 		// The optional edit ledger: carried only when the host binds its owner; a host without one writes none.
 		(RapierLedgerCarried ? RapierLedgerCarried.writeParts(forms.resolved, _rapierLedgerParts(forms.resolved, context.ledger, context.carried)) +
-			RapierLedgerCarried.writeBase(forms.resolved, context.proposalBase) : '');
+			RapierLedgerCarried.writeBase(forms.resolved, context.comparisonBase) : '');
 }
 
 function _rapierSharedResolve(text, ids, images, definitions) {
@@ -482,8 +510,8 @@ async function _rapierReadSharedDocument(text, filename) {
 	const bom = source.charCodeAt(0) === 0xFEFF;
 	if (RapierTextCodec.normalizeDocument(source) !== (bom ? source.slice(1) : source)) return invalid();
 	const parts = RapierLedgerCarried ? RapierLedgerCarried.readParts(source, Array.from(template.content.querySelectorAll('#rapier-ledger, #rapier-authorship'))) : {};
-	const proposalBase = RapierLedgerCarried?.readBaseElements(Array.from(template.content.querySelectorAll('#rapier-base'))) || null;
-	return {source, filename: name, kind, bom, ...parts, proposalBase};
+	const comparisonBase = RapierLedgerCarried?.readBaseElements(Array.from(template.content.querySelectorAll('#rapier-base'))) || null;
+	return {source, filename: name, kind, bom, ...parts, comparisonBase};
 }
 
 function _rapierSharedPageFallbackCss() {
@@ -512,7 +540,8 @@ function _rapierSharePictureParagraph(image) {
 	return paragraph;
 }
 
-function _rapierSharedPageLayout(root) {
+function _rapierSharedPageLayout(root) { return finish(_rapierSharedPageLayoutSteps(root)); }
+function* _rapierSharedPageLayoutSteps(root) {
 	// Owner search (wrapNeighbour) reads the sibling chain live, and applying one assignment
 	// splices the tree -- moving the owner into a new container moves it out of the very chain
 	// a later picture's own search would walk, and a barrier-free skip past an earlier picture
@@ -523,6 +552,7 @@ function _rapierSharedPageLayout(root) {
 	// from one upfront `[...root.children]` before it changes anything about any of them.
 	const assignments = [];
 	for (const image of root.querySelectorAll('img[data-rapier-image-layout]')) {
+		yield;
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'));
 		if (layout?.wrap !== 'around' && layout?.wrap !== 'box') continue;
 		const paragraph = _rapierSharePictureParagraph(image);
@@ -541,6 +571,7 @@ function _rapierSharedPageLayout(root) {
 	// still gets a sensible nearest-side float; the inlined planner (same owner as standalone)
 	// replaces it when scripts run.
 	for (const {image, paragraph, layout, owner} of assignments) {
+		yield;
 		const side = (layout.x ?? 0) < 50 ? 'left' : 'right';
 		paragraph.style.cssText = 'float:' + side + ';max-width:100%;margin:0 ' + (side === 'left' ? '1rem 1rem 0' : '0 1rem 1rem');
 		if (layout.y > 0) {
@@ -634,12 +665,14 @@ function _rapierSharedPageLayout(root) {
 	// removing the picture from flow costs the surrounding text nothing.
 	const positionedAssignments = [];
 	for (const image of root.querySelectorAll('img[data-rapier-image-layout]')) {
+		yield;
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'));
 		if (layout?.wrap !== 'behind' && layout?.wrap !== 'front') continue;
 		const paragraph = _rapierSharePictureParagraph(image);
 		if (paragraph) positionedAssignments.push({image, paragraph, layout});
 	}
 	for (const {image, paragraph, layout} of positionedAssignments) {
+		yield;
 		paragraph.style.cssText = 'position:relative;height:0;margin:0;padding:0;line-height:0';
 		const x = layout.x ?? 50, naturalWidth = Number(image.getAttribute('width')) || 0;
 		if (layout.width != null) {
@@ -665,6 +698,7 @@ function _rapierSharedPageLayout(root) {
 	// Share's own float model has nothing else to say about it.
 	const positioned = new Set([...assignments, ...positionedAssignments].map(row => row.image));
 	for (const image of root.querySelectorAll('img[data-rapier-image-layout]')) {
+		yield;
 		if (positioned.has(image)) continue;
 		const layout = globalThis.RapierMarkdownLayout.parseLayoutAttribute(image.getAttribute('data-rapier-image-layout'));
 		if (!layout?.rotate) continue;
@@ -682,50 +716,175 @@ function _rapierSharedPageLayout(root) {
 	}
 }
 
-function _rapierShareCapLongCodeBlocks(root) {
-	root.querySelectorAll('pre').forEach(pre => {
+function _rapierShareCapLongCodeBlocks(root) { return finish(_rapierShareCapLongCodeBlocksSteps(root)); }
+function* _rapierShareCapLongCodeBlocksSteps(root) {
+	for (const pre of root.querySelectorAll('pre')) { yield;
 		const code = pre.querySelector(':scope > code') || pre;
 		const text = String(code.textContent || '').replace(/\n$/, '');
 		const lineCount = text === '' ? 0 : text.split('\n').length;
-		if (lineCount <= RAPIER_SHARE_LONG_CODE_LINES) return;
+		if (lineCount <= RAPIER_SHARE_LONG_CODE_LINES) continue;
 		pre.setAttribute('data-rapier-code-lines', String(lineCount));
 		const note = document.createElement('span');
 		note.className = 'rapier-code-lines-note';
 		note.setAttribute('contenteditable', 'false');
 		note.textContent = lineCount + ' lines';
 		pre.appendChild(note);
-	});
+	}
 }
 
 async function _rapierRequireOfflinePageImages(root) {
 	const missing = [];
+	const embedded = value => globalThis.RapierImageAssets.dataImage(String(value || '').trim());
+	const requireResource = (value, label) => {
+		const source = String(value || '').trim();
+		if (!source || source.startsWith('#') || embedded(source)) return;
+		missing.push(label + ': ' + (source.startsWith('data:') ? '(unsupported embedded resource)' : source));
+	};
 	for (const [index, image] of [...root.querySelectorAll('img,[data-rapier-remote-src]')].entries()) {
 		const src = image.getAttribute('data-rapier-remote-src') ?? image.getAttribute('src') ?? '';
-		if (globalThis.RapierImageAssets.dataImage(src)) continue;
+		if (embedded(src)) continue;
 		const alt = image.getAttribute('data-rapier-remote-alt') ?? image.getAttribute('alt') ?? '';
 		const destination = /^data:/i.test(src) ? '(unsupported embedded image)' : src || '(missing image source)';
 		missing.push('Picture ' + (index + 1) + (alt ? ' — ' + alt : '') + ': ' + destination);
 	}
+	// A source candidate or an SVG/CSS picture is still an automatic resource. Inspect
+	// the retained data; ordinary links remain navigation and local fragment references stay local.
+	const sourceTags = new Set(['audio', 'video', 'source', 'track', 'input', 'iframe', 'embed', 'script']);
+	const cssAttributes = new Set(['style', 'fill', 'stroke', 'filter', 'clip-path', 'mask', 'marker-start', 'marker-mid', 'marker-end', 'cursor', 'color-profile']);
+	for (const element of root.querySelectorAll('*')) {
+		const tag = String(element.localName || element.tagName || '').toLowerCase();
+		if (sourceTags.has(tag)) requireResource(element.getAttribute('src'), tag + ' source');
+		for (const attribute of ['poster', 'background']) requireResource(element.getAttribute(attribute), tag + ' ' + attribute);
+		if (tag === 'object') requireResource(element.getAttribute('data'), 'object source');
+		if (tag === 'link' || element.namespaceURI === 'http://www.w3.org/2000/svg' && tag !== 'a')
+			for (const attribute of ['href', 'xlink:href']) requireResource(element.getAttribute(attribute), tag + ' ' + attribute);
+		if (tag === 'img' || tag === 'source') for (const source of _rapierSrcsetUrls(element.getAttribute('srcset') || ''))
+			requireResource(source, tag + ' source candidate');
+		for (const attribute of element.attributes || []) if (cssAttributes.has(attribute.name.toLowerCase())) {
+			const urls = _rapierCssValueUrls(attribute.value);
+			if (urls === null) missing.push(tag + ' ' + attribute.name + ': (unresolved CSS resource)');
+			else for (const url of urls) requireResource(url, tag + ' ' + attribute.name);
+		}
+	}
 	if (!missing.length) return;
 	// An acknowledged, scrollable sheet, not a disappearing toast or a partial-file opt-in.
 	// Both Close and Cancel below refuse; neither can authorize a page with missing pictures.
-	await rapierConfirm({
+	if (typeof rapierConfirm === 'function') await rapierConfirm({
 		title: 'pictures not included',
 		message: 'No web page was written. Embed these pictures before exporting or sharing an offline page. '
 			+ 'Your document is unchanged. ' + missing.join('; '),
 		confirmLabel: 'close',
 	});
-	throw new Error('Web page not written; embed the listed pictures and try again');
+	throw Object.assign(new Error('Web page not written; embed the listed pictures and try again'), {code: 'EXPORT_IMAGE_UNAVAILABLE'});
+}
+
+function _rapierSrcsetUrls(value) {
+	const urls = [];
+	let at = 0;
+	while (at < value.length) {
+		while (at < value.length && /[\t\n\f\r ,]/.test(value[at])) at++;
+		const start = at;
+		while (at < value.length && !/[\t\n\f\r ]/.test(value[at])) at++;
+		const source = value.slice(start, at);
+		if (!source) break;
+		// A data URL's comma belongs to its URL. Only trailing separators or the
+		// comma after a descriptor finish a candidate.
+		if (source.endsWith(',')) { urls.push(source.replace(/,+$/, '')); continue; }
+		urls.push(source);
+		let parentheses = 0;
+		while (at < value.length) {
+			const char = value[at++];
+			if (char === '(') parentheses++;
+			else if (char === ')' && parentheses) parentheses--;
+			else if (char === ',' && !parentheses) break;
+		}
+	}
+	return urls;
+}
+
+// Shared by live CSS admission and offline resource admission. Quoted strings are
+// resource URLs only inside url() or as an image-set option, never arbitrary CSS text.
+function _rapierCssValueUrls(value) {
+	const urls = [], functions = [];
+	let at = 0;
+	const space = char => char !== undefined && /[\t\n\f\r ]/.test(char);
+	const escape = () => {
+		at++;
+		if (value[at] === '\r' || value[at] === '\n' || value[at] === '\f') {
+			if (value[at++] === '\r' && value[at] === '\n') at++;
+			return '';
+		}
+		const hex = /^[\da-f]{1,6}/i.exec(value.slice(at));
+		if (!hex) return value[at++] || '';
+		at += hex[0].length;
+		if (space(value[at]) && value[at++] === '\r' && value[at] === '\n') at++;
+		const code = parseInt(hex[0], 16);
+		return String.fromCodePoint(!code || code > 0x10ffff || code >= 0xd800 && code <= 0xdfff ? 0xfffd : code);
+	};
+	const string = () => {
+		const quote = value[at++];
+		let text = '';
+		while (at < value.length) {
+			if (value[at] === quote) { at++; return text; }
+			if (/[\r\n\f]/.test(value[at])) return null;
+			text += value[at] === '\\' ? escape() : value[at++];
+		}
+		return null;
+	};
+	const whitespace = () => {
+		for (;;) {
+			while (space(value[at])) at++;
+			if (value.slice(at, at + 2) !== '/*') return;
+			const end = value.indexOf('*/', at + 2);
+			at = end < 0 ? value.length : end + 2;
+		}
+	};
+	while (at < value.length) {
+		whitespace();
+		if (at >= value.length) break;
+		const parent = functions.at(-1), char = value[at];
+		if (char === '"' || char === "'") {
+			const text = string();
+			if (parent?.imageSet && parent.option) {
+				if (text === null) return null;
+				urls.push(text);
+				parent.option = false;
+			}
+			continue;
+		}
+		if (char === ',') { if (parent?.imageSet) parent.option = true; at++; continue; }
+		if (char === ')') { functions.pop(); at++; continue; }
+		if (parent?.imageSet) parent.option = false;
+		if (/[-\w\u0080-\uffff\\]/.test(char)) {
+			let name = '';
+			while (at < value.length && /[-\w\u0080-\uffff\\]/.test(value[at]))
+				name += value[at] === '\\' ? escape() : value[at++];
+			if (value[at] !== '(') continue;
+			at++;
+			name = name.toLowerCase();
+			if (name !== 'url') { functions.push({imageSet: name === 'image-set' || name === '-webkit-image-set', option: true}); continue; }
+			while (space(value[at])) at++;
+			let url = '';
+			if (value[at] === '"' || value[at] === "'") { url = string(); whitespace(); }
+			else while (at < value.length && value[at] !== ')') url += value[at] === '\\' ? escape() : value[at++];
+			if (url === null || value[at++] !== ')') return null;
+			urls.push(url.trim());
+			continue;
+		}
+		if (char === '(') functions.push({imageSet: false});
+		at++;
+	}
+	return urls;
 }
 
 async function _rapierBuildSharedPage(captured) {
-	const context = await _rapierPrepareInterchangeContext({kind: 'share'}, captured?.proposalText == null ? captured : {...captured, canonical: captured.proposalText});
+	const context = await _rapierPrepareInterchangeContext({kind: 'share'}, captured);
 	// One owner for every HTML file Rapier writes, including offline-image admission and CSP.
 	// Share adds only the nearest-side no-script float and the long-code treatment.
 	const artifact = await _rapierBuildArtifact({
 		kind: 'standalone',
 		extraCss: _rapierSharedPageFallbackCss(),
-		afterRoot(root) {
+		async afterRoot(root) {
 			/* Unlike TXT/DOCX (which route through _rapierProjectPortableRoot and have no
 				 native disclosure widget to fall back on), the shared page is a real HTML
 				 document a real browser renders — the same styled root the standalone HTML
@@ -735,8 +894,10 @@ async function _rapierBuildSharedPage(captured) {
 				 only threw away a native, JS-free expand/collapse the architecture's own
 				 fidelity table promises ("Complete shared/styled HTML: Exact recoverable
 				 source"). Leave it as authored, exactly like standalone HTML export. */
-			_rapierSharedPageLayout(root);
-			_rapierShareCapLongCodeBlocks(root);
+			if (context.work) {
+				await finishAsync(_rapierSharedPageLayoutSteps(root), context.work);
+				await finishAsync(_rapierShareCapLongCodeBlocksSteps(root), context.work);
+			} else { _rapierSharedPageLayout(root); _rapierShareCapLongCodeBlocks(root); }
 		},
 	}, context);
 	// No cap and no warning: the page is as large as the document is. A page over the editor's own 25
@@ -753,6 +914,12 @@ const _RAPIER_SHARED_DEFINITION = /^(?:[A-Za-z0-9\-_.!~*'()]|%[0-9A-Fa-f]{2})+$/
 
 const _rapierSharedEncode = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/#/g, '&#35;').replace(/\r/g, '&#13;');
 
+function* _rapierSharedEncodeSteps(text) {
+	const parts = [];
+	for (let at = 0; at < text.length; at += 16384) { parts.push(_rapierSharedEncode(text.slice(at, at + 16384))); yield; }
+	return parts.join('');
+}
+
 const _rapierSharedDecode = text => text.replace(/&#35;/g, '#').replace(/&#13;/g, '\r').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
 
 const RAPIER_SHARE_LONG_CODE_LINES = 40;
@@ -767,6 +934,12 @@ function _rapierImageSources(tokens) {
   };
   visit(tokens);
   return sources;
+}
+
+async function _rapierDataImageDestinationsAsync(source, work) {
+	if (!source.includes('![')) return [];
+	return runtime.dataImageDestinationsAsync ? runtime.dataImageDestinationsAsync(source, work)
+		: _rapierImageDestinations(source, url => !!globalThis.RapierImageAssets.dataImage(url));
 }
 
 function _rapierImageDestinations(source, accepts) {
@@ -1495,6 +1668,6 @@ function _rapierArtifactInkScript(root, nonce = '') {
   return '<script' + (nonce ? ' nonce="' + nonce + '"' : '') + '>\n' + script.replace(/<\/script/gi, '<\\/script') + '\n</script>';
 }
 
-  return {_rapierBuildArtifact, _rapierProjectStyledRoot, _rapierPaintCode, _rapierPrefixPortableAnchors, _rapierDocumentSettingsOf, _rapierDocumentSettingsCss, _rapierExportedPageCsp, _rapierArtifactNonce, _rapierAnnotateExportBoxPolygons, _rapierSharedSourceHash, _rapierSharedSourceForms, _rapierSharedSourceCarrier, _rapierSharedResolve, _rapierReadSharedDocument, _rapierSharedPageFallbackCss, _rapierShareWrapKind, _rapierSharePictureParagraph, _rapierSharedPageLayout, _rapierShareCapLongCodeBlocks, _rapierRequireOfflinePageImages, _rapierBuildSharedPage, _rapierImageSources, _rapierImageDestinations, _rapierScanMarkdownImages, _rapierParseMarkdownImageDestination, _rapierImageOpenRunsList, _rapierArtifactFactoryModules, _rapierProjectArtifactLayout, _rapierArtifactLayoutScript, _rapierArtifactInkScript , render};
+  return {_rapierDataImageDestinationsAsync, _rapierSharedSourceFormsAsync, _rapierPrefixPortableAnchorsSteps, _rapierProjectStyledRootAsync, _rapierBuildArtifact, _rapierProjectStyledRoot, _rapierPaintCode, _rapierPrefixPortableAnchors, _rapierDocumentSettingsOf, _rapierDocumentSettingsCss, _rapierExportedPageCsp, _rapierArtifactNonce, _rapierAnnotateExportBoxPolygons, _rapierSharedSourceHash, _rapierSharedSourceForms, _rapierSharedSourceCarrier, _rapierSharedResolve, _rapierReadSharedDocument, _rapierSharedPageFallbackCss, _rapierShareWrapKind, _rapierSharePictureParagraph, _rapierSharedPageLayout, _rapierShareCapLongCodeBlocks, _rapierRequireOfflinePageImages, _rapierCssValueUrls, _rapierBuildSharedPage, _rapierImageSources, _rapierImageDestinations, _rapierScanMarkdownImages, _rapierParseMarkdownImageDestination, _rapierImageOpenRunsList, _rapierArtifactFactoryModules, _rapierProjectArtifactLayout, _rapierArtifactLayoutScript, _rapierArtifactInkScript , render};
 }
 export {createRenderer};

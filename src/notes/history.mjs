@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Objects hold bytes; events hold intent. Neither is note identity.
-import {canonicalNote, canonicalIndex} from './merge.mjs';
+import {canonicalNote, canonicalIndex, canonicalJSON} from './merge.mjs';
 import {projectCard, isNoteFile, validNoteId as validId} from './model.mjs';
 import {sha256State} from './integrity.mjs';
+import {exportLedger, readLedger, textRoot, rootAfter, replaceLedgerText} from '../kit/ledger/format.mjs';
+import {_rapierMetadataDelta, _rapierTransformMetadata, _rapierTransformSplices} from '../kit/ledger/journal-records.mjs';
+import {selectiveUndo} from '../kit/ledger/history.mjs';
 
-export const HISTORY_VERSION = 1;
+export const HISTORY_VERSION = 2;
+// Words typed since the last settled save reach the folder while the editor still holds them as one open typing group, with no act of
+// its own. They are kept as provisional records with this operation: the next input replaces them, and a save of the editor's own
+// ledger supersedes them, so the editor's history never has to contain a record it did not make.
+export const INPUT_OPERATION = 'notes.input';
 export const REASONS = Object.freeze(['save', 'import', 'import-undo', 'rename', 'restore', 'trash', 'untrash', 'merge', 'capture', 'edit-card']);
 export const DEFAULT_POLICY = Object.freeze({allDays: 7, dailyDays: 90, maxBytes: 268435456});
 export const DIFF_LIMITS = Object.freeze({characters: 1000000, lines: 12000, steps: 250000, traceCells: 1000000});
@@ -17,8 +24,8 @@ const record = o => !!o && typeof o === 'object' && !Array.isArray(o);
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 const fault = (code, message) => Object.assign(new Error(message), {code});
 const requireThat = (ok, message, code = 'corrupt') => { if (!ok) throw fault(code, message); };
-const clone = value => JSON.parse(canonicalIndex({version: 1, notes: {}, value})).value;
-const equal = (a, b) => canonicalIndex({version: 1, notes: {}, value: a}) === canonicalIndex({version: 1, notes: {}, value: b});
+const clone = value => JSON.parse(canonicalJSON(value));
+const equal = (a, b) => canonicalJSON(a) === canonicalJSON(b);
 const validFile = file => isNoteFile(file) && !/[\u0000-\u001f\u007f]/.test(file);
 function time(ms) { requireThat(integer(ms) && ms <= 253402300799999, 'Pass a time in milliseconds, from 1970 through 9999', 'time'); return ms; }
 function bytesOf(value) {
@@ -38,7 +45,7 @@ export function manifestName(noteId) {
 }
 export function emptyManifest(noteId) {
 	manifestName(noteId);
-	return {version: HISTORY_VERSION, noteId, file: null, next: 1, current: null, versions: [], objects: {}, protected: [], thinned: []};
+	return {version: HISTORY_VERSION, noteId, file: null, next: 1, current: null, versions: [], objects: {}, protected: [], thinned: [], canonical: null};
 }
 
 export function sha256Fallback(value) {
@@ -110,12 +117,18 @@ function validatePolicy(raw) {
 	requireThat(record(raw) && integer(raw.allDays) && integer(raw.dailyDays) && raw.dailyDays >= raw.allDays && integer(raw.maxBytes), 'Invalid retention policy', 'policy');
 	return clone(raw);
 }
-function validateManifest(raw) {
+function inspectManifest(raw) {
 	requireThat(record(raw), 'A history manifest must be an object');
 	if (Number.isInteger(raw.version) && raw.version > HISTORY_VERSION) throw Object.assign(fault('newer', 'This history was written by a newer reader'), {version: raw.version});
-	requireThat(raw.version === HISTORY_VERSION, 'No readable history version');
+	requireThat(raw.version === HISTORY_VERSION, 'Unsupported history version; keep its original bytes', 'unsupported');
 	const m = clone(raw);
 	requireThat(validId(m.noteId) && integer(m.next) && m.next > 0 && record(m.objects) && Array.isArray(m.versions) && Array.isArray(m.protected) && Array.isArray(m.thinned), 'Invalid history manifest shape');
+	requireThat(own(m, 'canonical'), 'No canonical history declaration');
+	const canonical = m.canonical === null ? null : readLedger(m.canonical);
+	if (canonical !== null) {
+		const proved = canonical;
+		requireThat(proved.complete && proved.ledger.documentAuthority.startsWith('notes:'), 'The complete Notes history is unavailable');
+	}
 	const ids = new Map(), referenced = new Set(), seen = new Set();
 	let previous = 0;
 	for (const v of m.versions) {
@@ -147,26 +160,33 @@ function validateManifest(raw) {
 	requireThat(seen.size === m.next - 1, 'An event disappeared without a thinning record');
 	if (m.versions.length) requireThat(m.current === m.versions.at(-1).id && m.file === m.versions.at(-1).file && m.current === m.next - 1, 'The current event must be the last certified save');
 	else requireThat(m.next === 1 && m.current === null && m.file === null && !m.protected.length && !m.thinned.length, 'An empty manifest cannot forget events');
-	return m;
+	return {manifest: m, canonical};
 }
+function validateManifest(raw) { return inspectManifest(raw).manifest; }
 function manifestWrite(m) { return {name: manifestName(m.noteId), bytes: ENC.encode(JSON.stringify(m) + '\n'), immutable: false}; }
 export function serializeManifest(manifest) { return JSON.stringify(validateManifest(manifest)) + '\n'; }
-export function parseManifest(value, {noteId, now} = {}) {
+function parseHistory(value, {noteId, now} = {}) {
 	manifestName(noteId); time(now);
-	if (value == null) return emptyManifest(noteId);
+	if (value == null) return {manifest: emptyManifest(noteId), canonical: null};
 	const bytes = typeof value === 'string' ? ENC.encode(canonicalNote(value)) : bytesOf(value).slice();
 	try {
-		const m = validateManifest(JSON.parse(decode(bytes)));
-		requireThat(m.noteId === noteId, 'The manifest belongs to another note');
-		return m;
+		const admitted = inspectManifest(JSON.parse(decode(bytes)));
+		requireThat(admitted.manifest.noteId === noteId, 'The manifest belongs to another note');
+		return admitted;
 	} catch (cause) {
-		const code = cause.code === 'newer' ? 'newer' : 'corrupt';
+		const code = ['newer', 'unsupported'].includes(cause.code) ? cause.code : 'corrupt';
 		const name = 'refused/' + noteId.replace(':', '!') + '.' + code + '.' + new Date(now).toISOString().replace(/:/g, '-') + '.' + sha256Fallback(bytes) + '.json';
 		throw Object.assign(fault(code, code === 'newer' ? 'Keep this history; open it with its newer reader' : 'Keep this unreadable history; never replace it with an empty one'), {
 			cause, ...(code === 'newer' ? {version: cause.version} : {}), original: bytes,
 			writes: [{name, bytes: bytes.slice(), immutable: true}], replaceOriginal: false
 		});
 	}
+}
+export function parseManifest(value, options) { return parseHistory(value, options).manifest; }
+// Joint byte/body admission returns the same proof as readCanonical without parsing it twice.
+export function parseCanonical(value, {text, ...options} = {}) {
+ const admitted = parseHistory(value, options);
+ return {...canonicalFrom(admitted, text), manifest: admitted.manifest};
 }
 // A restored note given a new identity carries its past: only the manifest keys move; every event and object stays byte-identical.
 export function rekeyManifest(value, {from, to, now} = {}) {
@@ -188,7 +208,7 @@ export async function recordVersion(manifest, {file, text, entry, reason, now, r
 		const source = m.versions.find(v => v.id === restoredFrom);
 		requireThat(source && source.hash === hash, 'A restore must use its named source bytes', 'restore');
 	} else requireThat(restoredFrom === undefined, 'Only restore may name a source', 'restore');
-	if (reason === 'save' && current && current.hash === hash && current.file === file && equal(current.entry, snapshot)) {
+	if ((reason === 'save' || reason === 'import' && current?.reason === 'import') && current && current.hash === hash && current.file === file && equal(current.entry, snapshot)) {
 		return {manifest: m, writes: [], version: clone(current), unchanged: true};
 	}
 	requireThat(m.next < Number.MAX_SAFE_INTEGER, 'History event counter exhausted', 'counter');
@@ -249,6 +269,11 @@ export async function materialize(manifest, id, readObject) {
 export async function rewriteHistoryReferences(manifest, rewrite, readObject) {
 	const m = validateManifest(manifest);
 	requireThat(typeof rewrite === 'function', 'Pass the backup root reference rewriter', 'rewrite');
+	// A renamed archive path must not retarget an old act to another person's file.
+	// Preserve exact historical source and refuse relocation when its original binding is lost.
+	if (m.canonical) for (const source of canonicalSources(m))
+		requireThat(canonicalNote(await rewrite(source.text)) === source.text,
+			'Canonical history references cannot be relocated without their original file bindings', 'notes_history_unavailable');
 	const hashes = new Map(), made = new Map(), versions = new Map(m.versions.map(v => [v.hash, v]));
 	for (const [hash, v] of versions) {
 		const before = await materialize(m, v.id, readObject), after = canonicalNote(await rewrite(before.text));
@@ -423,4 +448,124 @@ export function changePreview(before, after, {words = 6, limit = 48} = {}) {
 	if (came.trim()) return '+ ' + few(came);
 	if (went.trim()) return '− ' + few(went);
 	return 'spacing';
+}
+
+// The manifest owns the single canonical ledger. Snapshot event numbers are projections only.
+// Reuse only this synchronous admission's proof. Returned manifests remain mutable, so
+// no validation result survives into another call or a later owner/storage boundary.
+function canonicalFrom({canonical}, text) {
+ requireThat(canonical !== null, 'This note has no provable canonical history; its bytes were kept', 'notes_history_unavailable');
+ requireThat(text === undefined || text === canonical.text, 'The note and its canonical history do not agree', 'notes_history_unavailable');
+ return canonical;
+}
+export function readCanonical(manifest, text) { return canonicalFrom(inspectManifest(manifest), text); }
+// The canonical history without its provisional input records, which are removed from the end by reversing their splices.
+function withoutInput(read) {
+ const records = read.ledger.records;
+ let keep = records.length;
+ while (keep && records[keep - 1].transaction.operation === INPUT_OPERATION) keep--;
+ if (keep === records.length) return read;
+ let text = read.text, metadata = read.metadata;
+ for (let at = records.length - 1; at >= keep; at--) {
+  text = _rapierTransformSplices(text, records[at].splices, true);
+  metadata = text === null ? null : _rapierTransformMetadata(metadata, records[at].metadata, true);
+  requireThat(text !== null && metadata, 'The provisional input cannot be removed from this history', 'notes_history_unavailable');
+ }
+ const ledger = exportLedger({text, metadata, records: records.slice(0, keep), documentAuthority: read.ledger.documentAuthority, complete: read.complete});
+ return readLedger(ledger, text, metadata);
+}
+export function canonicalAct(record) {
+ if (!record) return null;
+ const tx = record.transaction;
+ return {id: tx.id, document_id: tx.documentAuthority, base_revision: tx.baseRevision, revision: tx.revision,
+  author: {kind: tx.actor.kind, ...(tx.actor.name ? {name: tx.actor.name} : {})},
+  at: Number.isSafeInteger(tx.createdAt) && tx.createdAt > 0 && Number.isFinite(new Date(tx.createdAt).getTime()) ? new Date(tx.createdAt).toISOString() : null,
+  operation: tx.operation, ...(tx.turnId ? {turn_id: tx.turnId} : {}),
+  ...(record.changeSet && Object.hasOwn(record.changeSet, 'label') ? {label: record.changeSet.label} : {}),
+  ...(tx.sourceTransactionIds?.length || tx.sourceTransactionId ? {reverses: tx.sourceTransactionIds || [tx.sourceTransactionId]} : {})};
+}
+export function freshCanonical(manifest, metadata, authority = 'notes:' + globalThis.crypto.randomUUID()) {
+ const m = validateManifest(manifest);
+ requireThat(m.canonical === null && !m.versions.length, 'Existing history cannot be reset', 'notes_history_unavailable');
+ m.canonical = exportLedger({text: '', metadata, records: [], documentAuthority: authority, revision: 0, root: textRoot(''), complete: true});
+ return m;
+}
+// A kept copy of a stale window's words continues the ledger that window holds: the copy starts from it, whole.
+export function adoptCanonical(manifest, ledger, text) {
+ const m = validateManifest(manifest), after = readLedger(ledger, text);
+ requireThat(m.canonical === null && !m.versions.length && after.complete, 'Existing history cannot be replaced', 'notes_history_unavailable');
+ m.canonical = after.ledger;
+ return {manifest: m, ledger: after.ledger, act: after.revision ? canonicalAct(after.ledger.records.at(-1)) : null, unchanged: false};
+}
+export function carryCanonical(manifest, ledger, text) {
+ const admitted = inspectManifest(manifest), m = admitted.manifest, held = canonicalFrom(admitted), before = withoutInput(held), after = readLedger(ledger, text);
+ requireThat(after.complete && after.ledger.documentAuthority === before.ledger.documentAuthority &&
+  after.ledger.start.revision === before.ledger.start.revision && equal(after.ledger.start, before.ledger.start) &&
+  after.ledger.records.length >= before.ledger.records.length && before.ledger.records.every((row, i) => equal(row, after.ledger.records[i])),
+  'The live ledger does not extend this note history', 'notes_history_unavailable');
+ m.canonical = after.ledger;
+ return {manifest: m, ledger: after.ledger, act: after.revision === before.revision ? null : canonicalAct(after.ledger.records.at(-1)), unchanged: after.ledger.sha256 === held.ledger.sha256};
+}
+export function appendCanonical(manifest, {text, metadata, author, transport = 'platform', requestId = null, requestScope = null,
+ requestDigest = null, turn_id, label, operation = 'notes.write', now, undo, input = false} = {}) {
+ const admitted = inspectManifest(manifest), m = admitted.manifest, held = canonicalFrom(admitted);
+ // Input replaces the provisional records it follows; every other write follows them as history.
+ const before = input ? withoutInput(held) : held;
+ if (input) operation = INPUT_OPERATION;
+ // Trust the admitted identity, never the display name or an external actor string.
+ requireThat(author && ['human', 'agent', 'system'].includes(author.kind) && typeof author.id === 'string' && author.id,
+  'The original author is unavailable', 'notes_author_unavailable');
+ if (requestScope) {
+  const prior = before.ledger.records.find(row => row.transaction.requestScope === requestScope);
+  if (prior) {
+   requireThat(prior.transaction.requestDigest === requestDigest, 'This request was already used for different bytes', 'notes_request_conflict');
+   return {manifest: m, ledger: before.ledger, act: canonicalAct(prior), unchanged: false, replayed: true, text: before.text};
+  }
+ }
+ let splices, effect, afterMetadata = metadata || before.metadata, inverse = [];
+ if (undo) {
+  const plan = selectiveUndo({source: before.text, metadata: before.metadata, records: before.ledger.records,
+   revision: before.revision, earliestRevision: before.ledger.start.revision}, undo);
+  requireThat(plan.ok, 'The selected act cannot be undone from this history', 'notes_history_unavailable');
+  text = plan.after; splices = plan.splices; effect = plan.metadata; afterMetadata = plan.afterMetadata;
+  inverse = plan.sourceTransactionIds;
+ } else {
+  text = canonicalNote(text);
+  // The canonical replacement writer already owns Unicode-safe exact source ranges.
+  const replacement = replaceLedgerText(before.ledger, text, {actor: author, operation, at: now});
+  splices = replacement === before.ledger || text === before.text ? [] : replacement.records.at(-1).splices;
+  effect = _rapierMetadataDelta(before.metadata, afterMetadata);
+ }
+ if (!splices.length && !effect && !inverse.length) {
+  // Typing back to the settled words leaves no provisional record, and the folder drops the old one.
+  if (before === held) return {manifest: m, ledger: before.ledger, act: null, unchanged: true, text};
+  m.canonical = before.ledger;
+  return {manifest: m, ledger: before.ledger, act: null, unchanged: false, text};
+ }
+ let root = before.root; for (const row of splices) root = rootAfter(root, row);
+ const tx = {id: 'act:' + globalThis.crypto.randomUUID(), documentAuthority: before.ledger.documentAuthority,
+  baseRevision: before.revision, revision: before.revision + 1, actor: clone(author), transport, operation,
+  requestId, sourceTransactionId: inverse.length === 1 ? inverse[0] : null,
+  ...(inverse.length > 1 ? {sourceTransactionIds: inverse} : {}),
+  affectedBlockIds: [], parent: before.ledger.records.at(-1)?.transaction.id || null, reverts: null, reapplies: null,
+  createdAt: now, ...(turn_id ? {turnId: turn_id} : {}),
+  ...(requestScope ? {requestScope, requestDigest} : {})};
+ const row = {transaction: tx, splices, beforeHash: before.root, afterHash: root, ...(effect ? {metadata: effect} : {}),
+  ...(label !== undefined ? {changeSet: {label}} : {})};
+ m.canonical = exportLedger({text, metadata: afterMetadata, records: [...before.ledger.records, row],
+  documentAuthority: tx.documentAuthority, revision: tx.revision, root, complete: true});
+ return {manifest: m, ledger: m.canonical, act: canonicalAct(row), unchanged: false, text};
+}
+
+// Retention may thin snapshot projections, but every canonical source remains a media custody root.
+export function *canonicalSources(manifest) {
+ const admitted = inspectManifest(manifest);
+ if (!admitted.canonical) return;
+ const proved = canonicalFrom(admitted); let text = proved.ledger.start.text;
+ yield {text, act: null, time: null};
+ for (const row of proved.ledger.records) {
+  text = _rapierTransformSplices(text, row.splices);
+  requireThat(text !== null, 'The retained canonical source cannot be proved', 'notes_history_unavailable');
+  yield {text, act: row.transaction.id, time: row.transaction.createdAt};
+ }
 }

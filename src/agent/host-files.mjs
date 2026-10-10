@@ -34,8 +34,8 @@ export async function readHostFile(request, file, maxBytes) {
 
 // One serialized persistence owner for the opened host file. The editor/agent kernel still
 // owns the document. A lost write receipt is reconciled by reading before another CAS write.
-export function createHostFileBinding({request, file, resource, maxBytes, changed = () => {}}) {
-  let saved = resource, latest = null, uncertain = null, issue = '', disposed = false, busy = 0;
+export function createHostFileBinding({request, file, resource, maxBytes, changed = () => {}, baselineVerified = true}) {
+  let saved = resource, latest = baselineVerified ? null : resource, uncertain = null, issue = baselineVerified ? '' : 'conflict', disposed = false, busy = 0;
   let queue = Promise.resolve();
   const current = () => { if (disposed) throw new Error('FILE_CLOSED'); };
   const serialized = work => {
@@ -51,7 +51,8 @@ export function createHostFileBinding({request, file, resource, maxBytes, change
   const read = async () => {
     const value = await readHostFile(request, file, maxBytes);
     current();
-    if (uncertain && value.text === uncertain.text) {
+    if (!baselineVerified) {latest = value; issue = 'conflict';}
+    else if (uncertain && value.text === uncertain.text) {
       saved = value;
       uncertain = null;
       latest = null;
@@ -68,7 +69,7 @@ export function createHostFileBinding({request, file, resource, maxBytes, change
     }
     return value;
   };
-  const isSaved = text => text === saved.text && !uncertain && (!latest || latest.text === text);
+  const isSaved = text => baselineVerified && text === saved.text && !uncertain && (!latest || latest.text === text);
   return Object.freeze({
     file,
     get resource() { return saved; },
@@ -113,7 +114,7 @@ export function createHostFileBinding({request, file, resource, maxBytes, change
     accept: value => {
       current();
       if (busy || uncertain || value !== latest) return false;
-      saved = value;
+      saved = value; baselineVerified = true;
       latest = null;
       issue = '';
       changed();

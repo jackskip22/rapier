@@ -53,7 +53,7 @@ function createdContribution(shape) {
   if (shape.recognized !== 'paint' || !replay?.entries?.length || replay.views?.length ||
       !same(nonMaterial(shape), {id: shape.id, stroke: null, recognized: 'paint', asDrawn: false,
         brush: 'ink', style: null, paint: {scale: shape.paint.scale, ...(shape.paint.mode === 'water' ? {mode: 'water'} : {})}}) ||
-      replay.entries.some(row => row.actor !== 'agent' || row.removed || typeof row.id !== 'string')) return null;
+      replay.entries.some(row => !['agent', 'human'].includes(row.actor) || row.removed || typeof row.id !== 'string')) return null;
   return {id: shape.id, replay, omitIds: replay.entries.map(row => row.id), requireEmptyBase: true};
 }
 
@@ -86,8 +86,8 @@ function contributions(before, after) {
         (next.mode ?? null) !== (was.paint?.mode ?? null) || !same(next.paper ?? null, was.paint?.paper ?? null)) return null;
     if (!same(next.entries.slice(0, prefix.length), prefix)) return null;
     const added = next.entries.slice(prefix.length);
-    if (!added.length || added.some(row => row.actor !== 'agent' || row.removed || typeof row.id !== 'string')) return null;
-    if (!growthHolds(was, now, added)) return null;
+    if (!added.length || added.some(row => !['agent', 'human'].includes(row.actor) || row.removed || typeof row.id !== 'string')) return null;
+    if (added.every(row => row.actor === 'agent') && !growthHolds(was, now, added)) return null;
     changes.push({id: now.id, replay: next, omitIds: added.map(row => row.id)});
   }
   return index === oldShapes.length && changes.length ? changes : null;
@@ -109,13 +109,39 @@ function carries(recipe, changes) {
     for (const entry of history.entries) {
       const known = expected.get(entry.id);
       if (!known) continue;
-      const retained = entry.actor === 'agent' && entry.removed === true && !known.entry.removed
+      const retained = entry.removed === true && !known.entry.removed
         ? {...known.entry, removed: true} : known.entry;
       if (known.index <= last || !same(entry, retained)) return false;
       last = known.index;
     }
     return true;
   });
+}
+
+// The selected source recipes prove exactly which replay identities were added. The live
+// recipe proves that their commands and order survive. Only the material owner runs them.
+export function paintUndoChanges(live, before, after) {
+  const changes = [];
+  for (const shape of after.shapes) {
+    if (shape.recognized !== 'paint') continue;
+    const prior = before.shapes.find(row => row.id === shape.id), next = shape.paint?.replay;
+    if (!prior) {
+      const created = createdContribution(shape);
+      if (created) changes.push(created);
+      continue;
+    }
+    if (prior.recognized !== 'paint' || same({raster: prior.raster, paint: prior.paint}, {raster: shape.raster, paint: shape.paint})) continue;
+    const previous = prior.paint?.replay, prefix = previous?.entries || [];
+    if (!next?.entries?.length || (previous ? !same(replayBase(previous), replayBase(next))
+      : next.baseRaster !== prior.raster || !same(next.px, prior.paint?.px) || next.scale !== prior.paint?.scale)) continue;
+    if (!same(next.entries.slice(0, prefix.length), prefix)) continue;
+    const added = next.entries.slice(prefix.length);
+    if (!added.length || added.some(row => !['agent', 'human'].includes(row.actor) || row.removed || typeof row.id !== 'string')) continue;
+    changes.push({id: shape.id, replay: next, omitIds: added.map(row => row.id)});
+  }
+  const unique = changes.every(change => live.shapes.filter(shape => change.omitIds.some(id =>
+    shape.paint?.replay?.entries?.some(entry => entry.id === id && !entry.removed))).length === 1);
+  return changes.length && unique && carries(live, changes) ? changes : null;
 }
 
 export function paintUndoPlan(text, entry, later, drawing = null) {

@@ -274,7 +274,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 			for (let at = 0; at < bytes.length; at += chunkBytes) { checkByteAbort(signal); yield bytes.subarray(at, Math.min(bytes.length, at + chunkBytes)); }
 		}
 	}
-	async function* readChunks(name, {signal, chunkBytes, onOpen} = {}) {
+	async function* readChunks(name, {signal, chunkBytes = BYTE_CHUNK_BYTES, onOpen} = {}) {
 		const value = await getRecord(name); checkByteAbort(signal);
 		const record = chunkRecord(value);
 		if (record) {
@@ -286,7 +286,17 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 			// copy. A database record that is not bytes is passed over, never guessed at.
 			const bytes = entry.db ? recordBytes(value) : value == null ? null : exactBytes(value);
 			onOpen?.(bytes == null ? null : {size: bytes.length, modified: null});
-			if (bytes != null) yield* blobByteChunks(new Blob([bytes]), {signal, chunkBytes});
+			checkByteAbort(signal);
+			if (bytes != null) {
+				if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 1 || chunkBytes > BYTE_CHUNK_BYTES) throw new RangeError('File chunks must be between 1 byte and 1 MiB.');
+				// These bytes are already owned. A second Blob read can be refused while the
+				// page departs, before the folder can reach its existing save journal.
+				for (let at = 0; at < bytes.length; at += chunkBytes) {
+					checkByteAbort(signal);
+					yield bytes.slice(at, Math.min(bytes.length, at + chunkBytes));
+					checkByteAbort(signal);
+				}
+			}
 		}
 	}
 	const read = async name => {
@@ -459,6 +469,40 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		else entry.memory.set(name, bytes);
 		await afterStep('write', name, bytes);
 	};
+	// Compare owned ordinary-byte receipts and publish their guarded writes in ONE strict
+	// transaction. The folder owns the plan; this port knows only exact bytes and absence.
+	// Descriptors are not absence or ordinary bytes, so their reader stays on its existing path.
+	const compareWrite = async (expected, writes, {signal, guard = () => {}} = {}) => {
+		if (!(expected instanceof Map) || !expected.size || !(writes instanceof Map)) throw new TypeError('A conditional write needs exact named byte receipts.');
+		const before = new Map(), next = new Map();
+		for (const [name, bytes] of expected) { parts(name); before.set(name, bytes === null ? null : exactBytes(bytes)); }
+		for (const [name, bytes] of writes) {
+			parts(name); if (!before.has(name)) throw fail('plan', 'A conditional write must guard every destination.');
+			next.set(name, exactBytes(bytes));
+		}
+		const active = () => { checkByteAbort(signal); guard(); };
+		active(); admitted();
+		for (const name of before.keys()) await beforeStep('read', name);
+		for (const [name, bytes] of next) await beforeStep('write', name, bytes);
+		await ready(); admitted(); active();
+		const matches = (value, bytes) => bytes === null ? value === undefined : value instanceof Uint8Array && same(value, bytes);
+		let committed;
+		if (entry.db) committed = await recordingTransaction(entry.db, table, 'readwrite', (os, take, done) => {
+			let left = before.size, matched = true;
+			for (const [name, bytes] of before) take(os.get(name), value => {
+				active(); matched = matches(value, bytes) && matched;
+				if (--left) return;
+				if (matched) { active(); for (const [name, bytes] of next) os.put(bytes, name); }
+				done(matched);
+			});
+		});
+		else {
+			committed = [...before].every(([name, bytes]) => matches(entry.memory.get(name), bytes));
+			if (committed) { active(); for (const [name, bytes] of next) entry.memory.set(name, bytes); }
+		}
+		if (committed) for (const [name, bytes] of next) await afterStep('write', name, bytes);
+		return committed;
+	};
 	const remove = async name => {
 		parts(name); admitted();
 		await beforeStep('remove', name);
@@ -515,7 +559,7 @@ export function createIndexedDbByteStore({database = 'rapier-notes-preview', tab
 		},
 	};
 
-	return {read, readChunks, write, writeBlob, remove, list, stat, statAll, prepare, recoverIntakes, recording,
+	return {read, readChunks, write, compareWrite, writeBlob, remove, list, stat, statAll, prepare, recoverIntakes, recording,
 		get streamingAttachments() { return !!entry.db && !entry.fault; },
 		// False the moment a storage fault is found, for every store over this library at once. The
 		// folder owner refuses to take the lock on a store that answers false and says the reason,

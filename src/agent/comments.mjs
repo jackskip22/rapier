@@ -316,7 +316,10 @@ export function writeComments(source, threads, parsed = parseComments(source), {
 }
 
 function transport(anchor, row) {
-  if (anchor.status !== 'attached' || anchor.kind === 'document') return anchor;
+  // A deleted drawing object retains its exact image occurrence. Move that locator
+  // without reviving the object, so later prose does not invalidate a proved Undo.
+  if (anchor.kind === 'document' || anchor.status !== 'attached' &&
+      !(anchor.kind === 'drawing' && anchor.reason === 'object_missing')) return anchor;
   const end = row.pos + row.removed.length, delta = row.inserted.length - row.removed.length;
   if (end <= anchor.start) return {...anchor, start: anchor.start + delta, end: anchor.end + delta};
   if (row.pos >= anchor.end) return anchor;
@@ -387,40 +390,168 @@ export function commentSummary(source) {
     stale: threads.filter(thread => thread.anchor.status === 'stale').length, ...(parsed.reason ? {reason: parsed.reason} : {})};
 }
 
-// Selective Undo of a comment is semantic only after the exact source inverse has conflicted.
-// Independent prose may have updated the footer's digest. A newer reply or resolution on this
-// thread is authored work, so it refuses instead of removing somebody else's discussion.
-export function commentUndoSplice(source, entry, later = []) {
-  if (entry.operation !== 'document.comment' || entry.splices.length !== 1) return null;
-  const row = entry.splices[0], before = parseComments(row.removed), after = parseComments(row.inserted), current = parseComments(source);
-  if (before.reason || after.reason || current.reason || !after.record || !current.record) return null;
-  const semantic = thread => thread ? JSON.stringify({id: thread.id, resolved: thread.resolved, messages: thread.messages}) : null;
-  const beforeById = new Map(before.threads.map(thread => [thread.id, thread]));
-  const changed = after.threads.filter(thread => semantic(thread) !== semantic(beforeById.get(thread.id)));
-  if (changed.length !== 1 || before.threads.some(thread => !after.threads.some(row => row.id === thread.id))) return null;
-  const authored = changed[0], live = current.threads.find(thread => thread.id === authored.id);
-  if (semantic(live) !== semantic(authored)) return null;
-  let expectedAnchor = authored.anchor, recordStart = row.pos + after.record.start, recordEnd = recordStart + after.record.raw.length;
-  for (const change of later) for (const splice of change.splices) {
-    const stop = splice.pos + splice.removed.length, delta = splice.inserted.length - splice.removed.length;
-    if (splice.pos >= recordStart && stop <= recordEnd && (splice.removed.length || splice.pos > recordStart && splice.pos < recordEnd)) {
-      recordEnd += delta; continue;
+const semanticThread = thread => thread ? JSON.stringify({id: thread.id, resolved: thread.resolved, messages: thread.messages}) : null;
+const anchorValue = anchor => JSON.stringify(['kind', 'status', 'start', 'end', 'exact', 'quote', 'objectId', 'reason'].map(key => anchor[key] ?? null));
+
+export function commentChanges(beforeSource, afterSource) {
+  const before = parseComments(beforeSource), after = parseComments(afterSource);
+  if (before.reason || after.reason) return null;
+  const ids = new Set([...before.threads, ...after.threads].map(thread => thread.id));
+  return [...ids].filter(id => semanticThread(before.threads.find(thread => thread.id === id)) !==
+    semanticThread(after.threads.find(thread => thread.id === id)));
+}
+
+function commentEnvelope(source, parsed) {
+  if (!parsed.record) return null;
+  let start = parsed.record.start, end = parsed.record.end;
+  while (start && /[\r\n]/.test(source[start - 1])) start--;
+  while (end < source.length && /[\r\n]/.test(source[end])) end++;
+  return {start, end, text: source.slice(start, end)};
+}
+
+function bodyDelta(before, after) {
+  let start = 0, a = before.length, b = after.length;
+  const boundary = (text, at) => !(at > 0 && at < text.length &&
+    (text.charCodeAt(at - 1) & 0xFC00) === 0xD800 && (text.charCodeAt(at) & 0xFC00) === 0xDC00);
+  while (start < a && start < b && before[start] === after[start]) start++;
+  if (!boundary(before, start) || !boundary(after, start)) start--;
+  while (a > start && b > start && before[a - 1] === after[b - 1]) {a--; b--;}
+  if (!boundary(before, a) || !boundary(after, b)) {a++; b++;}
+  return {pos: start, removed: before.slice(start, a), inserted: after.slice(start, b)};
+}
+
+// A coarse source replacement can contain prose and a whole discussion. Split its
+// exact forward bytes so the history owner can select prose independently of the footer.
+export function commentSpliceParts(source, splice) {
+  const next = transformSplices(source, [splice]);
+  if (next == null || !commentChanges(source, next)?.length) return [splice];
+  const before = commentEnvelope(source, parseComments(source)), after = commentEnvelope(next, parseComments(next));
+  const body = before ? source.slice(0, before.start) + source.slice(before.end) : source;
+  const target = after ? next.slice(0, after.start) + next.slice(after.end) : next;
+  const changed = bodyDelta(body, target);
+  return [...(before ? [{pos: before.start, removed: before.text, inserted: ''}] : []),
+    ...(changed.removed || changed.inserted ? [changed] : []),
+    ...(after ? [{pos: after.start, removed: '', inserted: after.text}] : [])];
+}
+
+// Project exact source rows onto the body without assigning serialized footer bytes to an
+// anchor. Whole-record insertion/removal may also carry authored separating newlines.
+function bodyTransport(source, anchor, splices) {
+  for (const row of splices) {
+    const parsed = parseComments(source), next = transformSplices(source, [row]);
+    if (next == null || parsed.reason) return null;
+    const following = parseComments(next);
+    if (following.reason) return null;
+    const record = parsed.record, end = row.pos + row.removed.length;
+    let bodyRow;
+    if (record && row.pos >= record.start && end <= record.end && following.record) {
+      if (parsed.body !== following.body) return null;
+    } else if ((!record || end <= record.start || row.pos >= record.end) &&
+        !!record === !!following.record) {
+      bodyRow = {...row, pos: row.pos - (record && row.pos >= record.end ? record.raw.length : 0)};
+    } else {
+      bodyRow = bodyDelta(parsed.body, following.body);
     }
-    if (splice.pos < recordEnd && stop > recordStart) return null;
-    expectedAnchor = transport(expectedAnchor, {...splice, pos: splice.pos >= recordEnd ? splice.pos - (recordEnd - recordStart) : splice.pos});
-    if (stop <= recordStart) { recordStart += delta; recordEnd += delta; }
+    if (bodyRow) anchor = transport(anchor, bodyRow);
+    source = next;
   }
-  if (expectedAnchor.status === 'attached' && !objectPresent(source, expectedAnchor, current)) expectedAnchor = {...expectedAnchor, status: 'stale', reason: 'object_missing'};
-  const anchorValue = anchor => JSON.stringify(['kind', 'status', 'start', 'end', 'exact', 'quote', 'objectId', 'reason'].map(key => anchor[key] ?? null));
-  if (anchorValue(live.anchor) !== anchorValue(expectedAnchor)) return null;
-  const prior = beforeById.get(authored.id), threads = commentThreads(source, current).flatMap(thread => thread.id !== authored.id ? [thread]
-    : prior ? [{...thread, resolved: prior.resolved, messages: prior.messages.slice()}] : []);
-  if (!before.record && !threads.length) {
-    const prefix = row.inserted.slice(0, after.record.start), suffix = row.inserted.slice(after.record.end);
+  return {source, anchor};
+}
+
+// Reverse semantic discussion ownership, including acts that restored an earlier inverse.
+// The current wrapper, other threads and later discussion always remain with their authors.
+export function commentUndoSplice(source, change, later = []) {
+  const {beforeSource, afterSource, entry} = change;
+  const before = parseComments(beforeSource), after = parseComments(afterSource), current = parseComments(source);
+  const changed = commentChanges(beforeSource, afterSource);
+  if (!changed?.length || current.reason) return null;
+  const threads = commentThreads(source, current);
+  for (const id of changed) {
+    const prior = before.threads.find(thread => thread.id === id), authored = after.threads.find(thread => thread.id === id);
+    const live = threads.find(thread => thread.id === id);
+    if (semanticThread(live) !== semanticThread(authored)) return null;
+    let positioned = authored ? {source: afterSource, anchor: authored.anchor} : bodyTransport(beforeSource, prior.anchor, entry.splices);
+    for (const row of later) {
+      const previousSource = positioned?.source;
+      positioned = positioned && bodyTransport(positioned.source, positioned.anchor, row.splices);
+      if (!positioned) return null;
+      if (row.id && !change.selectedIds.has(row.id)) {
+        if (commentChanges(previousSource, positioned.source)?.includes(id)) return null;
+        const parsed = parseComments(positioned.source), actual = parsed.threads.find(thread => thread.id === id)?.anchor;
+        if (positioned.anchor.status === 'attached' && !objectPresent(positioned.source, positioned.anchor, parsed))
+          positioned.anchor = {...positioned.anchor, status: 'stale', reason: 'object_missing'};
+        if (actual && anchorValue(actual) !== anchorValue(positioned.anchor)) return null;
+      }
+    }
+    if (!positioned || positioned.source !== source) return null;
+    let expectedAnchor = positioned.anchor;
+    if (expectedAnchor.status === 'attached' && !objectPresent(source, expectedAnchor, current))
+      expectedAnchor = {...expectedAnchor, status: 'stale', reason: 'object_missing'};
+    if (live && anchorValue(live.anchor) !== anchorValue(expectedAnchor)) return null;
+    const index = threads.findIndex(thread => thread.id === id);
+    if (!prior) threads.splice(index, 1);
+    else if (live) threads[index] = {...live, resolved: prior.resolved, messages: prior.messages.slice()};
+    else {
+      const following = before.threads.slice(before.threads.indexOf(prior) + 1).find(thread => threads.some(live => live.id === thread.id));
+      const index = following ? threads.findIndex(thread => thread.id === following.id) : threads.length;
+      threads.splice(index, 0, {...prior, anchor: expectedAnchor, messages: prior.messages.slice()});
+    }
+  }
+  if (!current.record && before.record) {
+    const envelope = commentEnvelope(beforeSource, before);
+    let position = bodyTransport(beforeSource, {kind: 'text', status: 'attached', start: envelope.start, end: envelope.start}, entry.splices);
+    for (const row of later) position = position && bodyTransport(position.source, position.anchor, row.splices);
+    if (!position || position.source !== source || position.anchor.status !== 'attached') return null;
+    const at = position.anchor.start, prefix = beforeSource.slice(envelope.start, before.record.start), suffix = beforeSource.slice(before.record.end, envelope.end);
+    const body = source.slice(0, at) + prefix + suffix + source.slice(at);
+    const eol = /\r\n|\n|\r/.exec(envelope.text)?.[0] || '\n';
+    const raw = body === before.body && JSON.stringify(threads) === JSON.stringify(before.threads)
+      ? before.record.raw : serializeComments(threads, body, {notes: before.notes, eol});
+    return {pos: at, removed: '', inserted: prefix + raw + suffix};
+  }
+  if (!before.record && !threads.length && current.record) {
+    const envelope = commentEnvelope(afterSource, after);
+    const prefix = afterSource.slice(envelope.start, after.record.start), suffix = afterSource.slice(after.record.end, envelope.end);
     const start = current.record.start - prefix.length, end = current.record.end + suffix.length;
     return start >= 0 && source.slice(start, current.record.start) === prefix && source.slice(current.record.end, end) === suffix
       ? {pos: start, removed: source.slice(start, end), inserted: ''}
       : {pos: current.record.start, removed: current.record.raw, inserted: ''};
   }
   return writeComments(source, threads, current);
+}
+
+// A canonical inverse can restore a removed drawing object. Prove its original derived
+// transition and every later anchor before restoring attachment; replies remain untouched.
+export function commentRestoreSplice(source, change, later, inverseSplices) {
+  const {beforeSource, afterSource, entry} = change, index = entry.derivedCommentIndex;
+  if (index == null || !later) return null;
+  const before = parseComments(beforeSource), after = parseComments(afterSource), current = parseComments(source);
+  if (!before.current || !after.current || !current.current || current.reason) return null;
+  const derived = commentSplices(beforeSource, entry.splices.slice(0, index))[0];
+  if (!derived || ['pos', 'removed', 'inserted'].some(key => derived[key] !== entry.splices[index][key])) return null;
+  const threads = commentThreads(source, current);
+  let changed = false;
+  for (const original of before.threads) {
+    const removed = after.threads.find(thread => thread.id === original.id), live = threads.find(thread => thread.id === original.id);
+    if (original.anchor.kind !== 'drawing' || original.anchor.status !== 'attached' ||
+        removed?.anchor.reason !== 'object_missing' || live?.anchor.status !== 'stale') continue;
+    let candidate = bodyTransport(beforeSource, original.anchor, entry.splices), observed = removed.anchor, valid = !!candidate;
+    for (const row of later) {
+      const next = candidate && bodyTransport(candidate.source, candidate.anchor, row.splices);
+      const expected = candidate && bodyTransport(candidate.source, observed, row.splices);
+      if (!next || !expected) {valid = false; break;}
+      const parsed = parseComments(next.source), actual = parsed.threads.find(thread => thread.id === original.id)?.anchor;
+      if (!actual || anchorValue(actual) !== anchorValue(expected.anchor) ||
+          next.anchor.status !== 'attached' || objectPresent(next.source, next.anchor, parsed)) {valid = false; break;}
+      candidate = next; observed = actual;
+    }
+    const expected = valid && bodyTransport(candidate.source, observed, inverseSplices);
+    candidate = valid && bodyTransport(candidate.source, candidate.anchor, inverseSplices);
+    if (!candidate || candidate.source !== source || candidate.anchor.status !== 'attached' ||
+        !expected || anchorValue(live.anchor) !== anchorValue(expected.anchor) ||
+        commentDigest(current.body.slice(candidate.anchor.start, candidate.anchor.end)) !== candidate.anchor.exact ||
+        !objectPresent(source, candidate.anchor, current)) continue;
+    live.anchor = candidate.anchor; changed = true;
+  }
+  return changed ? writeComments(source, threads, current) : null;
 }
