@@ -165,7 +165,7 @@ export class WaterGPU {
   const bytes=w*h*bytesPerPixel[format];this._reserve(bytes,keepScratch);
   const target=this._guard(()=>{
    const texture=this.device.createTexture({label:'Water '+format,size:[w,h],format,usage:usage??FULL()});
-   try{return {texture,view:texture.createView(),w,h,format,bytes,id:++this.targetSequence};}catch(error){texture.destroy();throw error;}
+   try{return {texture,view:texture.createView(),w,h,format,bytes,id:++this.targetSequence,written:null};}catch(error){texture.destroy();throw error;}
   });
   this.targets.add(target);this.bytes+=bytes;return target;
  }
@@ -210,7 +210,18 @@ export class WaterGPU {
    this.device.queue.submit([encoder.finish()]);
   });}finally{for(const t of this.pendingRetire)this._drop(t);this.pendingRetire=[];}
  }
- _writeTexture(destination,data,layout,size){this._guard(()=>this.device.queue.writeTexture(destination,data,layout,size));}
+ // Outside recorded writes, a new or cleared texture retains positive zero.
+ _markWritten(target,rect=null){
+  const r=rect??[0,0,target.w,target.h],R=[clamp(Math.floor(r[0]),0,target.w),clamp(Math.floor(r[1]),0,target.h),clamp(Math.ceil(r[2]),0,target.w),clamp(Math.ceil(r[3]),0,target.h)];
+  if(R[2]<=R[0]||R[3]<=R[1])return;
+  target.written=target.written===undefined?[0,0,target.w,target.h]:union(target.written,R);
+ }
+ _writeTexture(destination,data,layout,size){
+  this._guard(()=>this.device.queue.writeTexture(destination,data,layout,size));
+  for(const target of this.targets)if(target.texture===destination.texture){
+   const [x,y]=destination.origin??[0,0];this._markWritten(target,[x,y,x+size[0],y+size[1]]);break;
+  }
+ }
  _retire(target){if(this.encoder)this.pendingRetire.push(target);else this._drop(target);}
  // Sheet pixels per reference texel.
  get reach(){return this.texelScale??clamp(WATER_REFERENCE_TEXEL/this.paperScale,.5,4);}
@@ -236,6 +247,7 @@ export class WaterGPU {
   pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this.library.pipelines[name]);pass.setBindGroup(0,group,[slot*256]);
   if(rect){const x0=clamp(Math.floor(rect[0]),0,target.w),y0=clamp(Math.floor(rect[1]),0,target.h),x1=clamp(Math.ceil(rect[2]),x0,target.w),y1=clamp(Math.ceil(rect[3]),y0,target.h);if(x1===x0||y1===y0){pass.end();return;}pass.setScissorRect(x0,y0,x1-x0,y1-y0);}
   pass.draw(3);pass.end();
+  for(const t of targets){if(loadOp==='clear')t.written=null;this._markWritten(t,rect);}
  }
  _group(name,inputs){
   const resources=Array.from({length:8},(_,i)=>inputs[i]??this.dummy);
@@ -283,9 +295,12 @@ export class WaterGPU {
    for(const e of entries){e.data[60]=0;e.data[61]=0;this._draw(e.name,targets,e.inputs,e.data,e.rect??R);}
    return;
   }
+  // Keep the scratch plan. Only clear outside prior writes covered by a complete unblended draw.
+  const clear=!scratch&&!blended&&entries.some(e=>!e.rect)&&targets.every(t=>t.written===null||
+   t.written&&R[0]<=t.written[0]&&R[1]<=t.written[1]&&R[2]>=t.written[2]&&R[3]>=t.written[3]);
   const encoder=this._command();
   if(scratch&&blended)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:t.texture,origin:[R[0],R[1]]},{texture:scratch[i].texture,origin:[0,0]},[rw,rh]));
-  const origin=scratch?R:[0,0],loadOp=scratch?(blended?'load':'clear'):full&&!blended?'clear':'load';
+  const origin=scratch?R:[0,0],loadOp=scratch?(blended?'load':'clear'):(full||clear)&&!blended?'clear':'load';
   const pass=encoder.beginRenderPass({colorAttachments:(scratch??targets).map(t=>({view:t.view,loadOp,clearValue:[0,0,0,0],storeOp:'store'}))});
   for(const e of entries){
    const r=e.rect?[Math.max(R[0],Math.floor(e.rect[0])),Math.max(R[1],Math.floor(e.rect[1])),Math.min(R[2],Math.ceil(e.rect[2])),Math.min(R[3],Math.ceil(e.rect[3]))]:R;
@@ -296,7 +311,8 @@ export class WaterGPU {
    pass.setScissorRect(r[0]-origin[0],r[1]-origin[1],r[2]-r[0],r[3]-r[1]);pass.draw(3);
   }
   pass.end();
-  if(scratch)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:scratch[i].texture,origin:[0,0]},{texture:t.texture,origin:[R[0],R[1]]},[rw,rh]));
+  for(const t of scratch??targets){if(loadOp==='clear')t.written=null;this._markWritten(t,scratch?[0,0,rw,rh]:R);}
+  if(scratch)targets.forEach((t,i)=>{encoder.copyTextureToTexture({texture:scratch[i].texture,origin:[0,0]},{texture:t.texture,origin:[R[0],R[1]]},[rw,rh]);this._markWritten(t,R);});
  }
  _dropScratch(){for(const pool of this.scratch.values())for(const t of pool)this._retire(t);this.scratch.clear();}
  _region(name,destinations,inputs,data,rect){
@@ -322,9 +338,10 @@ export class WaterGPU {
  _copyRaw(source,destination,rect=null,offset=null){
   const r=rect??[0,0,source.w,source.h],to=offset??r;
   this._command().copyTextureToTexture({texture:source.texture,origin:[r[0],r[1]]},{texture:destination.texture,origin:[to[0],to[1]]},[r[2]-r[0],r[3]-r[1]]);
+  this._markWritten(destination,[to[0],to[1],to[0]+r[2]-r[0],to[1]+r[3]-r[1]]);
  }
  _swap(pair){[pair.read,pair.write]=[pair.write,pair.read];}
- _clear(target){this._flushStamps();const pass=this._command().beginRenderPass({colorAttachments:[{view:target.view,loadOp:'clear',clearValue:[0,0,0,0],storeOp:'store'}]});pass.end();}
+ _clear(target){this._flushStamps();const pass=this._command().beginRenderPass({colorAttachments:[{view:target.view,loadOp:'clear',clearValue:[0,0,0,0],storeOp:'store'}]});pass.end();target.written=null;}
  _material(){return [...this.ink.read,...this.fixed,...this.wet.read,this.base];}
  _meta(){return {active:this.active?.slice()??null,dirty:this.dirty?.slice()??null,painted:this.painted?.slice()??null,wetPeak:this.wetPeak,fixTimer:this.fixTimer,elapsed:this.elapsed,lastWet:this.lastWet,awakeUntil:this.awakeUntil,flowSpeed:this.flowSpeed,growCarry:this.growCarry,frame:this.frame,brushNow:this.brushNow.slice(),params:{...this.params},paperId:this.paperId,paperOrigin:this.paperOrigin.slice(),paperScale:this.paperScale,seed:this.seed};}
  beginTransaction(){

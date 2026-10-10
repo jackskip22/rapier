@@ -341,25 +341,33 @@ const RAPIER_PAINT_GLYPH_W = 96, RAPIER_PAINT_GLYPH_H = 60;
 const RAPIER_PAINT_GLYPH_RADIUS = -1.1;
 const RAPIER_PAINT_SETTING_AT = Object.fromEntries(globalThis.RapierDrawPaint.PAINT_SETTINGS.map((row, i) => [row[0], i]));
 
+function _rapierPaintStoredBrushes() {
+	const rows = JSON.parse(localStorage.getItem(RAPIER_PAINT_OWN_KEY) ?? '[]');
+	if (!Array.isArray(rows)) throw new Error('Saved brushes are not a readable collection.');
+	return rows;
+}
+function _rapierPaintOwnBrush(row) {
+	if (!row || typeof row.id !== 'string' || !row.id.startsWith('own/') || typeof row.name !== 'string' || !row.myb) return null;
+	try { parseBrush(row.myb); return { id: row.id, name: row.name.slice(0, 64), group: 'Own', notes: typeof row.notes === 'string' ? row.notes.slice(0, 160) : '', myb: row.myb, own: true }; } catch (_) { return null; }
+}
 function _rapierPaintOwnBrushes() {
 	const state = _rapierDrawState;
 	if (state.paintOwn) return state.paintOwn;
 	let rows = [];
-	try {
-		const raw = JSON.parse(localStorage.getItem(RAPIER_PAINT_OWN_KEY) || '[]');
-		if (Array.isArray(raw)) for (const row of raw) {
-			if (!row || typeof row.id !== 'string' || !row.id.startsWith('own/') || typeof row.name !== 'string' || !row.myb) continue;
-			try { parseBrush(row.myb); rows.push({ id: row.id, name: row.name.slice(0, 64), group: 'Own', notes: typeof row.notes === 'string' ? row.notes.slice(0, 160) : '', myb: row.myb, own: true }); } catch (_) {}
-		}
-	} catch (_) { rows = []; }
+	try { rows = _rapierPaintStoredBrushes().map(_rapierPaintOwnBrush).filter(Boolean); } catch (_) {}
 	state.paintOwn = rows;
 	return rows;
 }
 function _rapierPaintStoreOwn(rows) {
 	const before = _rapierPaintOwnBrushes();
-	try { localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(rows.map(row => ({ id: row.id, name: row.name, notes: row.notes, myb: row.myb })))); }
+	try {
+		const edited = new Set([...before, ...rows].map(row => row.id));
+		// A visible-brush edit leaves unreadable and unseen saved rows intact.
+		const kept = _rapierPaintStoredBrushes().filter(row => !edited.has(row?.id) || !_rapierPaintOwnBrush(row));
+		localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(kept.concat(rows.map(row => ({ id: row.id, name: row.name, notes: row.notes, myb: row.myb })))));
+	}
 	catch (_) { showToast('The brush changes could not be saved. Your saved brushes were kept.', 'error'); return false; }
-	_rapierDrawState.paintOwn = rows;
+	_rapierDrawState.paintOwn = null;
 	void _rapierPersonal.brushes(rows, before).catch(error => showToast(String(error.message || error), 'error'));
 	return true;
 }
@@ -1449,7 +1457,7 @@ async function _rapierPaintSetLayer({ auto = false, kib = 0 } = {}) {
 			// Encoding is asynchronous; a later stroke, Undo or another drawing owns its own pixels.
 			// The initial keep already committed this picture, so refusing a stale encoding loses nothing.
 			const same = state.open && state.session === session && state.paintLayer === currentLayer && _rapierDrawShapeById(shape.id) === shape;
-			if (!same || (layer.paintVersion || 0) !== version || state.gesture?.kind === 'paint' || layer.surface.wetState) {
+			if (!same || (layer.paintVersion || 0) !== version || state.gesture?.kind === 'paint' || (layer.mode !== 'water' && layer.surface.wetState)) {
 				// A stroke made while Set worked is kept in the picture: once the hand lifts the painting is kept again as it stands, and Set goes on
 				// with that (its JPEG XL is written behind as well). It is refused only where the drawing or the sheet is no longer this one.
 				if (behind && same) {
@@ -1721,9 +1729,9 @@ function _rapierPaintWorker(layer) {
 }
 // A lifted stroke's revision (or a cap's departing sheet). The painter is asked, in its order after every dab the sheet owns, for the painted box and its pixels; the
 // page keeps where the sheet stands at this instant; the picture is encoded when the pixels arrive -- by the PNG worker where the page has
-// one (an ordinary lift and a cap's sheet; a closing commit never waits for the compressor), here in the stored form where not -- and the revision publishes in order behind the others of its sheets. A later stroke
+// one, including a closing commit; here in the stored form where not -- and the revision publishes in order behind the others of its sheets. A later stroke
 // cannot change what was asked for: the painter answers in order, so the capture is atomic by construction.
-function _rapierPaintEncodeRevision(layer, keep = false, {retire = false, release = false, custody = false, compressor = !keep} = {}) {
+function _rapierPaintEncodeRevision(layer, keep = false, {retire = false, release = false, custody = false, compressor = true} = {}) {
 	const state = _rapierDrawState, owner = compressor ? _rapierPaintWorker(layer) : null;
 	let resolve, reject;
 	layer.pngSerial = (layer.pngSerial || 0) + 1;
@@ -1879,7 +1887,7 @@ function _rapierPaintFinishRevision(layer, raster, cancel = false) {
 		if (job.empty) { if (live) _rapierPaintPublishEmpty(layer); }
 		else if (live) _rapierPaintPublish(layer, job.keep, raster, job.custody, false, job.replay, job);
 		else _rapierPaintPublishFrozen(layer, job, raster);
-	} catch (error) { queue.unshift(job); layer.pendingCommit = job; layer.pendingOverflow = true; throw error; }
+	} catch (error) { job.failed = true; queue.unshift(job); layer.pendingCommit = job; layer.pendingOverflow = true; throw error; }
 	finally { if (!queue.includes(job)) job.resolve(); }
 	if (!queue.length && layer.nextFlip) {
 		const next = _rapierPaintRetireRevisionLayer(layer);
@@ -1946,7 +1954,7 @@ function _rapierPaintFollowGrowth(layer, grown) {
 	if (gesture?.kind === 'paint' && gesture.paint && !gesture.paint.pending) gesture.paint.geom = _rapierDrawPointerGeometry();
 }
 // Whatever a lifted stroke owes the recipe is published now, in order: its revision is asked for if it has not been, the painter's readout
-// awaited, and the pixels in hand encoded here in the stored form rather than waiting on the compressor. Null when nothing is owed.
+// awaited, and the pixels in hand encoded here in the stored form for an urgent flush. Normal closing waits keep the worker. Null when nothing is owed.
 function _rapierPaintFlushRevision(layer = _rapierPaintLayer(), keepWorker = false) {
 	const layers = _rapierPaintRevisionLayers(layer);
 	if (!layers.some(pending => pending.pendingLift || pending.pendingCommit)) return null;
@@ -1959,9 +1967,9 @@ async function _rapierPaintFlushLayers(layers, keepWorker = false) {
 		const lift = pending.pendingLift;
 		if (lift?.deciding) await lift.decided;
 		_rapierPaintFlushLift(pending);
-		// A new Water contact waits on the same ordered publication, while its healthy encoder
-		// keeps the immutable capture off the page. Urgent close and failure still flush below.
-		if (keepWorker && pending.pngWorker && !pending.pendingOverflow) {
+		// Normal closing and Water contact wait on the same ordered publication. A budget overflow
+		// still has a healthy encoder; urgent recovery and worker failure flush below.
+		if (keepWorker && pending.pngWorker && !pending.pendingCommit?.failed) {
 			while (pending.pendingCommit) await pending.pendingCommit.promise;
 			continue;
 		}
@@ -2183,7 +2191,7 @@ function _rapierPaintLayerValid(forMaterialTool = false, geom = null, mode = _ra
 // commit.
 function _rapierPaintCloseLayer(current = null) {
 	const layer = _rapierPaintLayer(), owns = current ? () => current() && _rapierPaintLayer() === layer : null;
-	return _rapierPaintAfter(_rapierPaintFlushRevision(layer), () => _rapierPaintCloseNow(false, owns));
+	return _rapierPaintAfter(_rapierPaintFlushRevision(layer, true), () => _rapierPaintCloseNow(false, owns));
 }
 function _rapierPaintCloseNow(synced = false, current = null) {
 	if (current && !current()) return null;
@@ -2195,7 +2203,7 @@ function _rapierPaintCloseNow(synced = false, current = null) {
 	if ((layer?.pendingOverflow || layer?.surface?.wetState || layer?.dryFinishing) && !state.paintClosing) {
 		if (current) {
 			// A lift can publish during the surface wait. Recheck ownership after that revision.
-			const pending = _rapierPaintFlushRevision(layer);
+			const pending = _rapierPaintFlushRevision(layer, true);
 			if (pending) return pending.then(() => _rapierPaintCloseNow(false, current));
 		}
 		state.paintClosing = true;
@@ -2458,6 +2466,7 @@ function _rapierPaintRecordLiveBox(layer, box) {
 function _rapierPaintReplaceDisplay(layer, meta) {
 	const surface = layer.surface;
 	if (surface.gone || layer.pendingDisplay?.generation === surface.displayGeneration) return;
+	layer.pendingDisplay?.canvas.remove();
 	const {canvas} = _rapierPaintBlankCanvas(meta.width, meta.height, null, 'water');
 	canvas.style.visibility = 'hidden';
 	layer.pendingDisplay = {canvas, generation: surface.displayGeneration + 1};
@@ -2482,7 +2491,11 @@ function _rapierPaintDisplay(layer, reply) {
 					pending.up = true;
 					pending.canvas.style.opacity = '0.01'; pending.canvas.style.visibility = '';
 					canvas.after(pending.canvas);
-					_rapierPaintAfterFrame(() => { if (layer.pendingDisplay === pending) { pending.ready = true; _rapierPaintDisplay(layer, reply); } });
+					const surface = layer.surface, generation = surface.displayGeneration;
+					_rapierPaintAfterFrame(() => {
+						if (layer.pendingDisplay !== pending || layer.canvas !== canvas || layer.surface !== surface || surface.gone || surface.displayGeneration !== generation) return;
+						pending.ready = true; _rapierPaintDisplay(layer, reply);
+					});
 				}
 				return;
 			}
@@ -2580,7 +2593,7 @@ function _rapierPaintWetWake(layer) {
 // Publish the accepted state before a live layer ends. Paint settles its deferred physics;
 // Water flushes queued contact without adding simulated time. Null when nothing is wet.
 function _rapierPaintFlushWet() {
-	return _rapierPaintAfter(_rapierPaintFlushRevision(), () => {
+	return _rapierPaintAfter(_rapierPaintFlushRevision(undefined, true), () => {
 		const layer = _rapierPaintLayer();
 		if (!layer?.surface) return null;
 		return _rapierPaintAfter(layer.surface.settled || layer.surface.failure ? null : layer.surface.sync(), () => {
@@ -2588,7 +2601,7 @@ function _rapierPaintFlushWet() {
 			if (layer.dryRaf) { cancelAnimationFrame(layer.dryRaf); layer.dryRaf = 0; }
 			layer.dryBox = null; layer.dryFinishing = false;
 			const committed = _rapierPaintCommit();
-			return Promise.resolve(committed).then(() => _rapierPaintFlushRevision()).then(() => true);
+			return Promise.resolve(committed).then(() => _rapierPaintFlushRevision(layer, true)).then(() => true);
 		});
 	});
 }
@@ -2877,7 +2890,7 @@ async function _rapierPaintStrokeCheckpoint(gesture, layer) {
 	surface.finishWetWork();
 	if (!surface.settled) await surface.sync();
 	if (layer.dryFinishing && !surface.wetState) { const flushed = _rapierPaintFlushWet(); if (flushed) await flushed; }
-	const flush = _rapierPaintFlushRevision(layer, layer.mode === 'water');
+	const flush = _rapierPaintFlushRevision(layer, layer.mode === 'water' || state.paintSetting?.layer === layer);
 	if (flush) await flush;
 	if (layer.mode === 'water' && layer.flipStroke?.entry && surface.revision !== layer.checkpoint?.revision) {
 		// Preserve the previous gesture at the wet state the next hand actually meets.
@@ -3255,6 +3268,9 @@ function _rapierPaintPendingStrokeOwed(finishWet = false, asked = false) {
 		// Everything asked of the painter for this sheet has run, and the held operation (if any) is at its boundary.
 		if (surface && !surface.settled && !surface.failure) return surface.sync().then(() => {}, () => {});
 		if (surface?._wetWork) return new Promise(ok => (layer.wetWaiters = layer.wetWaiters || []).push(ok));
+		// A failed publication keeps its immutable job, but its promise has already rejected. A later
+		// Done or recovery wait retries through the same flush owner before asking to close the layer.
+		if (layer.pendingCommit?.failed) return _rapierPaintFlushRevision(layer);
 		if (layer.pendingCommit) return layer.pendingCommit.promise;
 		if (layer.pendingLift) {
 			// Recovery also runs while the page is hidden, when animation frames can stop. Its
@@ -3986,7 +4002,7 @@ function _rapierPaintSnapshotOf(layer, surface, defer) {
 // The picture's pixels are the painter's: an ordinary lift asks for them at once (the revision, which the finger does not wait on) and
 // returns the promise of its publication; Undo, Close, Done and a commit that already holds its raster finish whatever is queued first, in order.
 function _rapierPaintCommit(keep = false, kept = null, custody = false) {
-	if (keep || custody) { const wait = _rapierPaintFlushRevision(); if (wait) return wait.then(() => _rapierPaintCommit(keep, kept, custody)); }
+	if (keep || custody) { const wait = _rapierPaintFlushRevision(undefined, true); if (wait) return wait.then(() => _rapierPaintCommit(keep, kept, custody)); }
 	const state = _rapierDrawState, layer = _rapierPaintLayer();
 	if (!layer) return null;
 	// A raster already encoded from this very version of the surface (the automatic settle's JPEG XL, a revision's PNG) is written as the layer's.
@@ -4115,10 +4131,11 @@ function _rapierPaintPublish(layer, keep, kept, custody, synced = false, record 
 	}
 	if (grown || made || retired) _rapierDrawRenderAll(); else { _rapierDrawRenderShapes([shape.id]); _rapierDrawUpdateMenu(); }
 	_rapierPaintSealRevision(layer, stroke, priorShift, grown);
-	// The committed <image> now holds the same pixels the overlay does; hand the picture back to the SVG once it can show them.
+	// Capture the image nodes after Water's final scene redraw.
+	if (layer.mode === 'water') _rapierPaintSyncPaper();
 	_rapierPaintHandBack(layer, made ? made.map(row => row.id) : [shape.id]);
 	_rapierPaintShowLive(false);
-	_rapierPaintSyncPaper();
+	if (layer.mode !== 'water') _rapierPaintSyncPaper();
 	return null;
 }
 // A new `href` on an SVG <image> decodes after it is set, and the image is blank until then: on a phone a painting's PNG

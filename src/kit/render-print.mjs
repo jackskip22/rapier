@@ -247,6 +247,7 @@ async function _rapierWritePrintPdf({root, css, canonical, filename, title, sett
 			'max-width': 'none', 'min-height': '0', padding: '0', margin: '0', overflow: 'visible',
 			'column-width': bodyWidth + 'px', 'column-gap': '0', 'column-count': 'auto', 'column-fill': 'auto'}))
 			main.style.setProperty(name, value, 'important');
+		globalThis.RapierMath?.fit(main);
 		const count = Math.max(1, Math.ceil((main.scrollWidth - 1) / bodyWidth));
 		if (!Number.isSafeInteger(count)) refuse('pdf_page_geometry_invalid');
 		const textPages = await _rapierPrintTextPages(main, bodyWidth, count, check);
@@ -310,18 +311,34 @@ async function _rapierWritePrintPdf({root, css, canonical, filename, title, sett
 // its line and page boundaries keeps a PDF search on the page that carries those words.
 async function _rapierPrintTextPages(main, pageWidth, count, check) {
 	const into = main.ownerDocument, origin = main.getBoundingClientRect();
-	const pages = Array.from({length: count}, () => []), walker = into.createTreeWalker(main, 4);
+	const pages = Array.from({length: count}, () => []);
+	// The renderer's outlines have no text ranges. Read each equation's exact TeX
+	// alternative at its SVG box, and reject its subtree so titles cannot duplicate it.
+	const walker = into.createTreeWalker(main, 5, {acceptNode(node) {
+		if (node.parentElement?.closest('.math-rendered svg[aria-label]')) return 2;
+		return node.nodeType === 3 || node.matches('.math-rendered svg[aria-label]') ? 1 : 3;
+	}});
 	const range = into.createRange();
+	const pageOf = x => Math.max(0, Math.min(count - 1, Math.floor((x - origin.left + .01) / pageWidth)));
 	let nodes = 0, operations = 0;
 	for (let node; (node = walker.nextNode());) {
 		if (++nodes % 128 === 0) { await new Promise(resolve => setTimeout(resolve, 0)); check(); }
-		const style = into.defaultView.getComputedStyle(node.parentElement);
+		const math = node.nodeType === 1;
+		const style = into.defaultView.getComputedStyle(math ? node : node.parentElement);
 		if (style.visibility === 'hidden' || style.visibility === 'collapse') continue;
+		if (math) {
+			const rect = node.getBoundingClientRect(), text = node.getAttribute('aria-label');
+			if (rect.width > 0 && rect.height > 0 && text) {
+				const page = pageOf(rect.left);
+				pages[page].push({text, x: rect.left - origin.left - page * pageWidth, y: rect.top - origin.top,
+					width: rect.width, height: rect.height, math: true});
+			}
+			continue;
+		}
 		const preserve = /pre|break-spaces/.test(style.whiteSpace);
 		const block = node.parentElement.closest('p,h1,h2,h3,h4,h5,h6,li,pre,td,th,figcaption,blockquote,.rapier-will-carrier') || node.parentElement;
 		const carrier = node.parentElement.closest('.rapier-will-carrier');
 		const value = node.data;
-		const pageOf = x => Math.max(0, Math.min(count - 1, Math.floor((x - origin.left + .01) / pageWidth)));
 		const visit = (start, end) => {
 			if (++operations % 128 === 0) check();
 			range.setStart(node, start); range.setEnd(node, end);
@@ -340,7 +357,7 @@ async function _rapierPrintTextPages(main, pageWidth, count, check) {
 			const right = Math.max(...rects.map(rect => rect.right)) - origin.left - page * pageWidth;
 			const bottom = Math.max(...rects.map(rect => rect.bottom)) - origin.top;
 			const last = pages[page].at(-1);
-			if (last && last.block === block && last.carrier === carrier && Math.abs(last.y - y) < Math.max(2, Math.min(last.height, bottom - y) * .2)) {
+			if (last && !last.math && last.block === block && last.carrier === carrier && Math.abs(last.y - y) < Math.max(2, Math.min(last.height, bottom - y) * .2)) {
 				last.text = preserve ? last.text + text : (last.text + text).replace(/[ \t\r\n\f]+/g, ' ');
 				last.width = Math.max(last.x + last.width, right) - Math.min(last.x, x);
 				last.height = Math.max(last.y + last.height, bottom) - Math.min(last.y, y);
@@ -404,7 +421,9 @@ async function writeRasterPdf({pages, textPages, canonical, filename, title, fon
 			const value = characters.map(character => codes.get(character.codePointAt(0)).toString(16).padStart(4, '0')).join('');
 			const size = Math.max(.1, run.height * .75);
 			const scale = run.width * .75 / (characters.length * size * .5) * 100;
+			if (run.math) commands += '/Span << /ActualText <feff' + hex(run.text) + '> >> BDC\n';
 			commands += `BT\n/F1 ${decimal(size)} Tf\n${decimal(scale)} Tz\n3 Tr\n1 0 0 1 ${decimal(margins.left + run.x * .75)} ${decimal(height - margins.top - (run.y + run.height * .8) * .75)} Tm\n<${value}> Tj\nET\n`;
+			if (run.math) commands += 'EMC\n';
 		}
 		if (numberFont) commands += `BT\n/F2 9 Tf\n0 Tr\n1 0 0 1 ${decimal(width / 2 - String(index + 1).length * 2.5)} ${decimal(margins.bottom / 2)} Tm\n(${index + 1}) Tj\nET\n`;
 		const content = stream('/Filter /FlateDecode', await compressed(encode(commands)));

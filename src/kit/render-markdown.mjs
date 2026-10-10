@@ -673,9 +673,9 @@ function _rapierAssignHeadingSlugs(root, selector, reserveExisting) { return fin
 function* _rapierAssignHeadingSlugsSteps(root, selector = RAPIER_RENDERED_HEADING_SELECTOR, reserveExisting = true) {
 	if (!root || !root.querySelectorAll) return;
 	const used = Object.create(null);
-	const headings = Array.from(root.querySelectorAll(selector)).concat(_rapierDormantHeadings(root, selector));
+	const headings = _rapierDormantHeadings(root, selector, true);
 	const headingSet = new Set(headings);
-	if (reserveExisting) for (const element of (root.isConnected ? document : root).querySelectorAll('[id]')) { yield;
+	if (reserveExisting) for (const element of _rapierDormantHeadings(root.isConnected ? document : root, '[id]', true)) { yield;
 		if (!headingSet.has(element) && element.id) used[element.id] = 0;
 	}
 	for (const heading of headings) { yield;
@@ -687,8 +687,8 @@ function _rapierDisambiguateRenderedAnchors(root) { return finish(_rapierDisambi
 
 function* _rapierDisambiguateRenderedAnchorsSteps(root) {
 	if (!root || !root.querySelectorAll) return;
-	const headings = new Set(root.querySelectorAll(RAPIER_RENDERED_HEADING_SELECTOR));
-	const candidates = Array.from(root.querySelectorAll('[id]'))
+	const headings = new Set(_rapierDormantHeadings(root, RAPIER_RENDERED_HEADING_SELECTOR, true));
+	const candidates = _rapierDormantHeadings(root, '[id]', true)
 		.filter(element => !headings.has(element));
 	for (const element of candidates) { yield;
 		const original = _rapierRenderedAnchorOriginalIds.get(element);
@@ -718,7 +718,7 @@ function* _rapierDisambiguateRenderedAnchorsSteps(root) {
 	const add = (map, key, link) => { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(link); };
 	for (const selector of ['.footnote-ref a[href^="#"]', '.footnote-backref[href^="#"]']) {
 		const index = {hash: new Map(), label: new Map(), order: new Map()};
-		for (const link of root.querySelectorAll(selector)) {
+		for (const link of _rapierDormantHeadings(root, selector, true)) {
 			index.order.set(link, index.order.size);
 			add(index.hash, _rapierDecodeHash(link.getAttribute('href')), link);
 			add(index.label, link.getAttribute('data-footnote-label'), link);
@@ -1022,6 +1022,11 @@ function* _rapierProjectPortableRootSteps(semanticRoot, options) {
 	const root = yield* cloneTree(semanticRoot), nativeElements = new Set();
 	// A source soft break is a reading space, never the editor's invisible token.
 	yield* _rapierResolveSoftBreakTokensSteps(root);
+	// Word consumes these source-bearing islands as pictures with TeX alternatives. Keep
+	// their SVG through this projection; the normal export sanitizer still owns admission.
+	if (opts.keepMath) for (const math of root.querySelectorAll('.math-rendered[data-math-src],.math-placeholder,[data-rapier-math-source]')) {
+		for (const element of [math, ...math.querySelectorAll('*')]) nativeElements.add(element);
+	}
 	if (opts.keepDiagrams) for (const figure of root.querySelectorAll('.diagram-block[data-diagram-native]')) {
 		const svg = figure.querySelector('.diagram-cache > svg.rapier-native-flowchart');
 		if (figure.getAttribute('data-diagram-state') === 'ready' && svg) {
@@ -1049,6 +1054,13 @@ function* _rapierProjectPortableRootSteps(semanticRoot, options) {
 	}
 
 	for (const wrapper of root.querySelectorAll('.math-display-wrap')) { yield;
+		if (opts.keepMath && wrapper.querySelector('.math-rendered,.math-placeholder,[data-rapier-math-source]')) {
+			const paragraph = document.createElement('p');
+			paragraph.setAttribute('data-md-align', 'center');
+			while (wrapper.firstChild) paragraph.appendChild(wrapper.firstChild);
+			wrapper.replaceWith(paragraph);
+			continue;
+		}
 		const source = _rapierMathSource(wrapper);
 		const p = document.createElement('p');
 		const code = document.createElement('code');
@@ -1057,6 +1069,7 @@ function* _rapierProjectPortableRootSteps(semanticRoot, options) {
 		wrapper.replaceWith(p);
 	}
 	for (const math of root.querySelectorAll('.math-rendered,.math-placeholder')) { yield;
+		if (nativeElements.has(math)) continue;
 		const code = document.createElement('code');
 		code.textContent = _rapierMathSource(math) || '[equation]';
 		math.replaceWith(code);

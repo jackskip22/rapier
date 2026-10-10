@@ -1,9 +1,50 @@
+Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.
+
+Rapier math font data, derived from Latin Modern Math 1.959.
+Changes: SVG outline conversion, character and MATH data extraction,
+optical-form closure, derived contour profiles and lossless path packing.
+Original outlines are unchanged. Hinting and text shaping tables are omitted.
+The font authors do not maintain this conversion.
+Complete original work: https://mirrors.ctan.org/fonts/lm-math.zip
+Conversion details: FONT-SOURCE.md.
+
+% This is a preliminary version (2006-09-30), barring acceptance from
+% the LaTeX Project Team and other feedback, of the GUST Font License.
+% (GUST is the Polish TeX Users Group, http://www.gust.org.pl)
+%
+% For the most recent version of this license see
+% http://www.gust.org.pl/fonts/licenses/GUST-FONT-LICENSE.txt
+% or
+% http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt
+%
+% This work may be distributed and/or modified under the conditions
+% of the LaTeX Project Public License, either version 1.3c of this
+% license or (at your option) any later version.
+% 
+% Please also observe the following clause:
+% 1) it is requested, but not legally required, that derived works be
+%    distributed only after changing the names of the fonts comprising this
+%    work and given in an accompanying "manifest", and that the
+%    files comprising the Work, as listed in the manifest, also be given
+%    new names. Any exceptions to this request are also given in the
+%    manifest.
+%    
+%    We recommend the manifest be given in a separate file named
+%    MANIFEST-<fontid>.txt, where <fontid> is some unique identification
+%    of the font family. If a separate "readme" file accompanies the Work, 
+%    we recommend a name of the form README-<fontid>.txt.
+%
+% The latest version of the LaTeX Project Public License is in
+% http://www.latex-project.org/lppl.txt and version 1.3c or later
+% is part of all distributions of LaTeX version 2006/05/20 or later.
+
+
 The LaTeX Project Public License
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-LPPL Version 1.3c  2006-05-20
+LPPL Version 1.3c  2008-05-04
 
-Copyright 1999 2002-2006 LaTeX3 Project
+Copyright 1999 2002-2008 LaTeX3 Project
     Everyone is allowed to distribute verbatim copies of this
     license document, but modification of it is not allowed.
 
@@ -12,7 +53,7 @@ PREAMBLE
 ========
 
 The LaTeX Project Public License (LPPL) is the primary license under
-which the the LaTeX kernel and the base LaTeX packages are distributed.
+which the LaTeX kernel and the base LaTeX packages are distributed.
 
 You may use this license for any work of which you hold the copyright
 and which you wish to distribute.  This license may be particularly
@@ -352,15 +393,15 @@ component is constrained by the conditions in this license.
 Here is an example of such a notice and statement:
 
   %% pig.dtx
-  %% Copyright 2005 M. Y. Name
+  %% Copyright 2008 M. Y. Name
   %
   % This work may be distributed and/or modified under the
   % conditions of the LaTeX Project Public License, either version 1.3
   % of this license or (at your option) any later version.
   % The latest version of this license is in
-  %   http://www.latex-project.org/lppl.txt
-  % and version 1.3 or later is part of all distributions of LaTeX
-  % version 2005/12/01 or later.
+  %   https://www.latex-project.org/lppl.txt
+  % and version 1.3c or later is part of all distributions of LaTeX
+  % version 2008 or later.
   %
   % This work has the LPPL maintenance status `maintained'.
   % 
@@ -413,6 +454,4 @@ Important Recommendations
    to comprise the Work and, in such a case, the licensee would be
    entitled to make reasonable conjectures as to which files comprise
    the Work.
-
-
 

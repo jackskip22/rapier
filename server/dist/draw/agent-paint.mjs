@@ -10,6 +10,7 @@ export {AGENT_PAINT_LIMITS};
 import {canonicalJSON} from '../kit/ledger/data.mjs';
 import {WaterSurface, waterReady} from './water.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
+import {sha256Yielding} from '../notes/integrity.mjs';
 import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
 import {encodeSteps as encodeJXLSteps} from '../images/jxl/index.mjs';
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
@@ -52,12 +53,25 @@ const waterPublicationKey = shape => rasterDigest(shape.raster) + ':' + waterJou
 // its key is kept, the same answer as hashing it at once.
 const waterHeld = new Map();
 const idle = typeof requestIdleCallback === 'function' ? run => requestIdleCallback(run, {timeout: 2000}) : run => setTimeout(run, 50);
-function settleHeld(session) {
-	const rows = waterPublications.get(session), held = waterHeld.get(session);
-	if (!held?.length) return;
-	const {raster, journal} = held.shift();
-	rows?.add(rasterDigest(raster) + ':' + journal);
-	if (held.length) idle(() => settleHeld(session));
+// The digest is taken in 64 KiB slices that yield every few milliseconds: a painting's raster is megabytes, and one whole
+// hash on a cheap phone is half a second in which the wash cannot move. A row leaves the held list only once its key is kept.
+async function settleHeld(session) {
+	const held = waterHeld.get(session);
+	if (!held?.length || held.settling) return;
+	held.settling = true;
+	try {
+		while (held.length && waterHeld.get(session) === held) {
+			const {raster, journal} = held[0];
+			let digest = rasterDigests.get(raster);
+			if (digest === undefined) {
+				digest = await sha256Yielding(new TextEncoder().encode(raster), {subtle: null});
+				rasterDigests.set(raster, digest); if (rasterDigests.size > 4) rasterDigests.delete(rasterDigests.keys().next().value);
+			}
+			if (waterHeld.get(session) !== held) return;
+			waterPublications.get(session)?.add(digest + ':' + journal);
+			held.shift();
+		}
+	} finally { held.settling = false; }
 }
 // Only material the current execution actually published can be selectively replayed. Saved
 // pixels open independently of these receipts; a file's auxiliary journal grants no authority.
@@ -69,7 +83,7 @@ export function rememberWaterPainting(shape, session = waterSession()) {
 	let held = waterHeld.get(session);
 	if (!held) waterHeld.set(session, held = []);
 	held.push({raster: shape.raster, journal: waterJournalKey(replay)});
-	if (held.length === 1) idle(() => settleHeld(session));
+	if (!held.settling) idle(() => void settleHeld(session));
 	return true;
 }
 export function waterPaintingIsLive(shape, session = waterSession()) {

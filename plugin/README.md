@@ -12,8 +12,8 @@ to see the before, and undo anything while keeping later edits. Your typing come
 deliberately show a diff with `comparison.present`. Diagrams are drawn from a recipe: the assistant names the boxes and arrows, Rapier places and routes them,
 and you move them by hand. The assistant also paints with brushes and watercolour.
 
-**An offline file.** `npx rapier-html@1.1.93 notes.md` writes one HTML file containing the editor and the
-document. Open it in any browser to edit, draw, paint and save. `npx rapier-html@1.1.93 revised.md --compare original.md`
+**An offline file.** `npx rapier-html@1.1.94 notes.md` writes one HTML file containing the editor and the
+document. Open it in any browser to edit, draw, paint and save. `npx rapier-html@1.1.94 revised.md --compare original.md`
 opens the edited document with its before for comparison. An optional one-use Send back address returns your
 edited copy to the assistant.
 

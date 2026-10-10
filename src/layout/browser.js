@@ -3140,9 +3140,20 @@ const _rapierImageFlow = (() => {
     for (const map of [floats, floatsRight]) for (const paragraph of map.keys()) if (wrapper.contains(paragraph)) return true;
     return false;
   }
+  // A block asleep is out of the flow (it stands at its ledger height, its nodes parked): what changes inside it, or on it, while it
+  // stays asleep moves nothing the flow lays out. A long document's background render fills each sleeping block and parks it again,
+  // batch after batch for seconds after it opens, and each batch here was a whole pass and a reading-point restore (a forced
+  // layout, twice). A block that wakes is awake by the time these records arrive, and its records still lay the flow out.
+  const asleep = record => {
+    const target = record.target;
+    if (!target.isConnected) return true;
+    return target.nodeType === 1 && Array.isArray(target._rapierDormant) && target.classList.contains('block-wrapper') &&
+      Array.prototype.every.call(record.addedNodes, node => !node.isConnected);
+  };
   observer = new MutationObserver(records => {
     if (restoring) return;
     if (records.every(record => record.type === 'characterData' && record.target.parentElement?.closest('.block-edit'))) return;
+    if (records.every(asleep)) return;
     const typed = typedBlock(records);
     if (typed && !typed.querySelector('img[data-rapier-image-layout]')) {
       if (wrappedBlock(typed)) { replanWrapper = typed; schedule(); return; }

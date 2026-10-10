@@ -6,7 +6,7 @@ import {formatLayout, parseLayout, decodeLayoutAttribute, indentLevel, textStyle
 import {parseInkBody} from '../spec/md-marks.mjs';
 import {readDocumentSettings} from '../spec/document-settings.mjs';
 import {willMarkerOf} from '../agent/will.mjs';
-import {inspectRaster, isJxl, dataImage} from '../images/assets.mjs';
+import {inspectRaster, isJxl, dataImage, sanitizeSvgText, validAssetDimensions} from '../images/assets.mjs';
 import {markdownParser, markdownBodyOffset, documentAssets} from '../spec/md-assets.mjs';
 import {parseComments, commentThreads, commentAnchor, writeComments, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
 
@@ -1200,10 +1200,11 @@ export function docxPortableHtml(html, imageUrls = new Map()) {
   return html.replace(/ data-(?:rapier|md)-[a-z-]+="[^"]*"/g, '');
 }
 
-// ── writeDocx: Markdown → OOXML. Drawings rasterise to PNG, not EMF. Math is TeX with delimiters.
+// ── writeDocx: Markdown → OOXML. Drawings rasterise to PNG, not EMF. Math keeps its SVG and a PNG fallback.
 export const DOCX_EXPORT = Object.freeze({drawingCodec: 'png', pictureCodec: 'png'});
 
 const CONTENT_WIDTH_EMU = (12240 - 1440 - 1440) * 635;
+const DOCX_HEADING_SCALE = Object.freeze([2.6, 1.9, 1.5, 1.25, 1.1, 1]);
 const PNG_SIG = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
 const HIGHLIGHT_TO_DOCX = Object.freeze({...Object.fromEntries(Object.keys(DOCX_HIGHLIGHT_HEX).map(name => [name,name])), purple:'magenta'});
 
@@ -1237,6 +1238,50 @@ function decodeDataUrl(url) {
 }
 // Walks the rendered export root, never a second Markdown grammar.
 const INLINE_TAGS = new Set(['STRONG', 'B', 'EM', 'I', 'U', 'INS', 'DEL', 'S', 'STRIKE', 'MARK', 'CODE', 'A', 'SPAN', 'SUB', 'SUP', 'ABBR', 'IMG', 'INPUT', 'BR', 'KBD', 'SMALL']);
+const mathSourceOf = value => typeof value.source === 'string' ? value.source : (value.display ? '$$' : '$') + value.tex + (value.display ? '$$' : '$');
+function mathSvgXml(node) {
+  if (node.nodeType === 3) return escape(node.nodeValue).replace(/\r/g, '&#13;');
+  if (node.nodeType !== 1) return '';
+  const attrs = Array.from(node.attributes, attribute => ' ' + attribute.name + '="' + escape(attribute.value)
+    .replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;') + '"').join('');
+  return '<' + node.localName + attrs + '>' + Array.from(node.childNodes, mathSvgXml).join('') + '</' + node.localName + '>';
+}
+function mathRunFromDom(node, style, pointSize) {
+  let source = node.textContent || '';
+  if (node.hasAttribute('data-math-src')) {
+    const encoded = node.getAttribute('data-math-src');
+    try { source = decodeURIComponent(encoded); } catch (_) { source = encoded; }
+  }
+  const display = source.startsWith('$$') && source.endsWith('$$');
+  const run = {...style, type: 'math', source, display};
+  const rendered = node.querySelector('svg');
+  if (!rendered) return run;
+  // The renderer's em dimensions are relative to this document's body size. The
+  // fallback gets two raster pixels per CSS pixel; Word's extent keeps the same size.
+  const em = name => {
+    const value = /^((?:\d+(?:\.\d*)?|\.\d+))em$/.exec(rendered.getAttribute(name) || '');
+    return value ? Number(value[1]) : NaN;
+  };
+  const width = em('width') * pointSize * 4 / 3, height = em('height') * pointSize * 4 / 3;
+  if (!validAssetDimensions(Math.ceil(width * 2), Math.ceil(height * 2)))
+    return fail('This equation is too large to embed in Word.', 'docx_math_dimensions');
+  const svg = rendered.cloneNode(true);
+  svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  svg.setAttribute('width', String(width * 2)); svg.setAttribute('height', String(height * 2));
+  svg.setAttribute('color', style.color || '#000000');
+  const depth = /^-((?:\d+(?:\.\d*)?|\.\d+))em$/.exec(svg.style?.verticalAlign || '');
+  svg.removeAttribute('style');
+  const alternative = svg.getAttribute('aria-label');
+  svg.removeAttribute('aria-label');
+  // HTML serialization writes literal whitespace in attributes. This file is XML,
+  // whose reader would normalize those characters and corrupt a multiline TeX alt.
+  // The alternative is plain text: a literal "url(...)" in TeX has no CSS authority.
+  const label = escape(alternative).replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
+  const text = sanitizeSvgText(mathSvgXml(svg)).replace(/^<svg(?=[\s>])/, '<svg aria-label="' + label + '"');
+  if (utf8.encode(text).length > 8 * 1024 * 1024) return fail('This equation produces too much SVG to embed in Word.', 'docx_math_size');
+  return {...run, svg: text, width, height, depth: depth ? Number(depth[1]) * pointSize : 0,
+    ...(svg.hasAttribute('data-tex-utf16') ? {alternative: (display ? '$$' : '$') + alternative + (display ? '$$' : '$')} : {})};
+}
 const HIGHLIGHT_RGB = Object.freeze({green: [53, 197, 122], red: [240, 90, 98], blue: [79, 145, 247], yellow: [230, 185, 30], purple: [155, 109, 234]});
 function cssColorHex(value) {
   const text = String(value || '').trim().toLowerCase();
@@ -1306,7 +1351,7 @@ function commentProjection(blocks) {
     for (const run of list || []) {
       if (run.type === 'text') leaf(run, run.text);
       else if (run.type === 'image') leaf(run, '\uFFFC');
-      else if (run.type === 'math') leaf(run, (run.display ? '$$' : '$') + run.tex + (run.display ? '$$' : '$'));
+      else if (run.type === 'math') leaf(run, mathSourceOf(run));
       else if (run.type === 'footnote') leaf(run, '\uFFFC');
     }
   };
@@ -1320,7 +1365,7 @@ function commentProjection(blocks) {
       }
       else if (block.type === 'image') { leaf(block, '\uFFFC'); text += '\u2029'; }
       else if (block.type === 'code') { leaf(block, block.text); text += '\u2029'; }
-      else if (block.type === 'math') { leaf(block, '$$' + block.tex + '$$'); text += '\u2029'; }
+      else if (block.type === 'math') { leaf(block, mathSourceOf({...block, display: true})); text += '\u2029'; }
       else if (block.type !== 'will') paragraph(block.runs);
     }
   };
@@ -1451,7 +1496,7 @@ function* docxBlocksFromDomSteps(root, {canonical, pointSize = referenceType(typ
     if (align) layout.align = align;
     return Object.keys(layout).length ? layout : null;
   };
-  const runsOf = function* (node, style = {}, out = []) {
+  const runsOf = function* (node, style = {}, out = [], mathPointSize = pointSize) {
     const anchor = node.getAttribute?.('id') || (node.tagName === 'A' && node.getAttribute('name'));
     const bookmark = anchor ? {anchor} : null;
     if (bookmark) out.push({type: 'bookmarkStart', bookmark});
@@ -1479,8 +1524,8 @@ function* docxBlocksFromDomSteps(root, {canonical, pointSize = referenceType(typ
         out.push({...style, type: 'footnote', id});
         continue;
       }
-      if (tag === 'SPAN' && child.classList.contains('math-rendered')) {
-        out.push({...style, type: 'math', tex: child.getAttribute('data-math-src') || child.textContent, display: false});
+      if (tag === 'SPAN' && (child.classList.contains('math-rendered') || child.classList.contains('math-placeholder') || child.hasAttribute('data-rapier-math-source'))) {
+        out.push(mathRunFromDom(child, style, mathPointSize));
         continue;
       }
       const next = {...style};
@@ -1503,8 +1548,8 @@ function* docxBlocksFromDomSteps(root, {canonical, pointSize = referenceType(typ
         const href = child.getAttribute('href') || '';
         if (/^(?:https?:\/\/|mailto:|tel:|#)/i.test(href)) next.href = href;
       }
-      if (INLINE_TAGS.has(tag)) yield* runsOf(child, next, out);
-      else yield* runsOf(child, style, out);
+      if (INLINE_TAGS.has(tag)) yield* runsOf(child, next, out, mathPointSize);
+      else yield* runsOf(child, style, out, mathPointSize);
     }
     if (bookmark) out.push({type: 'bookmarkEnd', bookmark});
     return out;
@@ -1610,7 +1655,10 @@ function* docxBlocksFromDomSteps(root, {canonical, pointSize = referenceType(typ
     }
     if (tag === 'HR' && element.classList.contains('footnotes-sep')) continue;
     if ((tag === 'DIV' || tag === 'P') && (element.getAttribute('data-md-break') === 'page' || /page-break-before\s*:\s*always/i.test(element.getAttribute('style') || '')) && !element.textContent.trim()) { blocks.push({type: 'break'}); continue; }
-    if (/^H[1-6]$/.test(tag)) { blocks.push({type: 'heading', level: Number(tag[1]), runs: yield* runsOf(element), layout: layoutOf(element)}); continue; }
+    if (/^H[1-6]$/.test(tag)) {
+      const level = Number(tag[1]), size = Math.round(pointSize * DOCX_HEADING_SCALE[level - 1] * 2) / 2;
+      blocks.push({type: 'heading', level, runs: yield* runsOf(element, {}, [], size), layout: layoutOf(element)}); continue;
+    }
     if (tag === 'HR') { blocks.push({type: 'paragraph', runs: [], layout: null, rule: true}); continue; }
     if (tag === 'PRE') { blocks.push({type: 'code', text: element.textContent.replace(/\n$/, '')}); continue; }
     if (tag === 'BLOCKQUOTE') {
@@ -1818,8 +1866,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     return id;
   };
 
-  const rasterise = async (src, alt, drawing) => {
-    const decoded = decodeDataUrl(src);
+  const rasterise = async (decoded, alt, drawing) => {
     if (!decoded) return fail('DOCX export needs embedded image bytes (a data URL).');
     let {bytes, type} = decoded, width, height;
     const foreign = type !== 'image/png' && type !== 'image/jpeg';
@@ -1843,25 +1890,53 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
 
   // One media part per exact bytes+type. The cache holds a promise set before any await, so racing occurrences share one registration.
   const assetCache = new Map(), mediaByBytes = new Map();
+  const registerImage = image => {
+    // Source spelling and conversion inputs can differ while the final picture bytes match.
+    // The checksum only narrows the bucket; exact equality owns media identity.
+    const key = image.type + ':' + image.bytes.length + ':' + crc32(image.bytes);
+    const bucket = mediaByBytes.get(key) || [];
+    let part = bucket.find(row => row.bytes.every((byte, at) => byte === image.bytes[at]));
+    if (!part) {
+      const extension = image.type === 'image/svg+xml' ? '.svg' : image.type === 'image/jpeg' ? '.jpeg' : '.png';
+      const id = nextRid(), name = 'image' + media.length + extension;
+      part = {id, name, bytes: image.bytes, type: image.type};
+      media.push(part); bucket.push(part); mediaByBytes.set(key, bucket);
+      rels.push({id, type: 'image', target: 'media/' + name});
+    }
+    return part;
+  };
   const assetFor = (src, alt, drawing) => {
     const key = src + '|' + (drawing ? '1' : '0');
     let promise = assetCache.get(key);
     if (!promise) {
-      promise = rasterise(src, alt, drawing).then(image => {
-        // Source spelling and conversion inputs can differ while the final picture bytes match.
-        // The checksum only narrows the bucket; exact equality owns media identity.
-        const key = image.type + ':' + image.bytes.length + ':' + crc32(image.bytes);
-        const bucket = mediaByBytes.get(key) || [];
-        let part = bucket.find(row => row.bytes.every((byte, at) => byte === image.bytes[at]));
-        if (!part) {
-          const id = nextRid(), name = 'image' + media.length + (image.type === 'image/jpeg' ? '.jpeg' : '.png');
-          part = {id, name, bytes: image.bytes, type: image.type};
-          media.push(part); bucket.push(part); mediaByBytes.set(key, bucket);
-          rels.push({id, type: 'image', target: 'media/' + name});
-        }
+      promise = rasterise(decodeDataUrl(src), alt, drawing).then(image => {
+        const part = registerImage(image);
         return {id: part.id, width: image.width, height: image.height};
       });
       assetCache.set(key, promise);
+    }
+    return promise;
+  };
+  const mathAssetCache = new Map();
+  const mathAssetFor = run => {
+    let promise = mathAssetCache.get(run.svg);
+    if (!promise) {
+      promise = (async () => {
+        if (typeof run.svg !== 'string' || run.svg.length > 8 * 1024 * 1024 ||
+            !validAssetDimensions(Math.ceil(run.width * 2), Math.ceil(run.height * 2)))
+          return fail('This equation cannot be embedded in Word safely.', 'docx_math_dimensions');
+        // Models supplied directly to this writer get the same resource boundary as
+        // DOM-prepared maths. A text alternative cannot be an active SVG resource.
+        const resources = run.svg.replace(/\saria-label="[^"]*"/g, '');
+        if (sanitizeSvgText(resources) !== resources)
+          return fail('This equation contains an unsafe SVG resource.', 'docx_math_svg_unsafe');
+        const bytes = utf8.encode(run.svg);
+        if (bytes.length > 8 * 1024 * 1024) return fail('This equation produces too much SVG to embed in Word.', 'docx_math_size');
+        const fallback = await rasterise({bytes, type: 'image/svg+xml'}, run.alternative || mathSourceOf(run), true);
+        const raster = registerImage(fallback), vector = registerImage({bytes, type: 'image/svg+xml'});
+        return {id: raster.id, svgId: vector.id, width: run.width, height: run.height};
+      })();
+      mathAssetCache.set(run.svg, promise);
     }
     return promise;
   };
@@ -1872,7 +1947,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     const {body, line} = referenceType(settings);
     return ((lines - 1) * line + body * .7) * 12700;
   };
-  const pictureXml = (asset, alt, layout) => {
+  const pictureXml = (asset, alt, layout, baseline = 0) => {
     const fraction = layout?.width > 0 ? Math.min(100, layout.width) / 100 : null;
     const tall = layout?.lines > 0 ? linesEmu(layout.lines) : null;
     const cx = Math.max(1, Math.round(tall ? Math.min(CONTENT_WIDTH_EMU, tall * (asset.width || 1) / (asset.height || 1))
@@ -1882,14 +1957,19 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
     const description = escape(alt || '').replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
     // rot in 60000ths of a degree, folded into [0, 21600000); cx/cy stay the unturned extents (Word rotates about the centre).
     const rot = layout?.rotate ? Math.round(((layout.rotate * 60000) % 21600000 + 21600000) % 21600000) : 0;
+    // Microsoft Office's SVG extension points at the original vector, while a:blip
+    // retains the ordinary raster image for readers without SVG support (MS-ODRAWXML).
+    const effects = (layout?.opacity < 100 ? '<a:alphaModFix amt="' + layout.opacity * 1000 + '"/>' : '') +
+      (asset.svgId ? '<a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">' +
+        '<asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="' + asset.svgId + '"/></a:ext></a:extLst>' : '');
     const graphic = '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
       '<pic:pic><pic:nvPicPr><pic:cNvPr id="' + pr + '" name="Picture ' + pr + '" descr="' + description + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
       // The fade is the blip's alphaModFix, in thousandths of a percent as OOXML writes it.
-      '<pic:blipFill><a:blip r:embed="' + asset.id + (layout?.opacity < 100 ? '"><a:alphaModFix amt="' + layout.opacity * 1000 + '"/></a:blip>' : '"/>') +
+      '<pic:blipFill><a:blip r:embed="' + asset.id + (effects ? '">' + effects + '</a:blip>' : '"/>') +
       '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
       '<pic:spPr><a:xfrm' + (rot ? ' rot="' + rot + '"' : '') + '><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>' +
       '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>';
-    return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    return '<w:r>' + (baseline ? '<w:rPr><w:position w:val="' + Math.round(baseline * 2) + '"/></w:rPr>' : '') + '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
       '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>' +
       '<wp:docPr id="' + pr + '" name="Picture ' + pr + '" descr="' + description + '"/><wp:cNvGraphicFramePr/>' +
       graphic + '</wp:inline></w:drawing></w:r>';
@@ -1936,8 +2016,14 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
         continue;
       }
       if (run.type === 'math') {
-        const marker = run.display ? '$$' : '$';
-        xml += link(commentedTextXml(marker + run.tex + marker, run));
+        const source = mathSourceOf(run);
+        if (run.svg) {
+          const picture = pictureXml(await mathAssetFor(run), run.alternative || source, null, run.display ? 0 : -(run.depth || 0));
+          // A math source is a single visual object. Source-owned comments that touch
+          // it enclose the whole picture; their text offsets do not cut an SVG apart.
+          const events = run.commentEvents || [];
+          xml += link(events.filter(event => event.start).map(commentEventXml).join('') + picture + events.filter(event => !event.start).map(commentEventXml).join(''));
+        } else xml += link(commentedTextXml(source, run));
         continue;
       }
       const text = run.text ?? '';
@@ -1975,7 +2061,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       continue;
     }
     if (block.type === 'math') {
-      bodyParts.push(pXml(commentedTextXml('$$' + block.tex + '$$', block), {ind: paragraphInd(null)}));
+      bodyParts.push(pXml(await emitRuns([{...block, display: true}], targets), {align: 'center', ind: paragraphInd(null)}));
       continue;
     }
     if (block.type === 'image') {
@@ -2158,7 +2244,7 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
   // body, on two, one and a half, one and a half, then one line.
   const type = settings ? referenceType(settings) : null;
   const headingStyles = [1, 2, 3, 4, 5, 6].map(level => {
-    const size = type ? Math.round(type.body * [2.6, 1.9, 1.5, 1.25, 1.1, 1][level - 1] * 2) : 0;
+    const size = type ? Math.round(type.body * DOCX_HEADING_SCALE[level - 1] * 2) : 0;
     const line = type ? Math.round(type.line * [2, 1.5, 1.5, 1, 1, 1][level - 1] * 20) : 0;
     return '<w:style w:type="paragraph" w:styleId="Heading' + level + '"><w:name w:val="heading ' + level + '"/>' +
       '<w:basedOn w:val="Normal"/><w:pPr>' + (type ? '<w:spacing w:line="' + line + '" w:lineRule="atLeast"/>' : '') +
@@ -2205,11 +2291,12 @@ export async function writeDocx(input, {convertImage, rewriteDocument, canonical
       {id: nextRid(), type: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended', target: 'commentsExtended.xml'}] : []),
     ...rels
   ];
-  const types = ['png', 'jpeg'].filter(ext => media.some(row => row.name.endsWith('.' + ext)));
+  const types = ['png', 'jpeg', 'svg'].filter(ext => media.some(row => row.name.endsWith('.' + ext)));
   const defaults = '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
     (types.includes('png') ? '<Default Extension="png" ContentType="image/png"/>' : '') +
-    (types.includes('jpeg') ? '<Default Extension="jpeg" ContentType="image/jpeg"/>' : '');
+    (types.includes('jpeg') ? '<Default Extension="jpeg" ContentType="image/jpeg"/>' : '') +
+    (types.includes('svg') ? '<Default Extension="svg" ContentType="image/svg+xml"/>' : '');
   const overrides = [
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>',

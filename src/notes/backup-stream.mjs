@@ -12,9 +12,10 @@ const MAX_INDEX_BYTES = BACKUP_INDEX_MAX_BYTES, MAX_METADATA_BYTES = ZIP_WRITE_M
 // is needed here; payload lengths come from the acquired File/native stat, not re-encoded text.
 // SHA-256 always occupies 64 ASCII characters. With those placeholders, this is the exact
 // stored-stream size (including descriptors, generated manifest, directory and comment).
-export function preflightBackup(inventory, {indexText, appVersion, stamp, comment = '', maxBytes = ZIP_READ_MAX_BYTES} = {}) {
+export function preflightBackup(inventory, {indexText, appVersion, stamp, comment = '', maxBytes = ZIP_READ_MAX_BYTES, manifestHeader, maxIndexBytes = MAX_INDEX_BYTES} = {}) {
 	const enc = new TextEncoder(), names = inventory.map(row => row.name), seen = new Set();
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 22 || maxBytes > ZIP_READ_MAX_BYTES) throw new Error('backup byte bound is outside the reader limit');
+	if (!Number.isSafeInteger(maxIndexBytes) || maxIndexBytes < 0) throw new Error('backup index byte bound is invalid');
 	if (inventory.length > 65533) throw backupLimitError(names, 'have too many files for the backup manifest');
 	let metadata = 0;
 	for (const row of inventory) {
@@ -23,14 +24,16 @@ export function preflightBackup(inventory, {indexText, appVersion, stamp, commen
 		const length = enc.encode(row.name).length;
 		if (length > 65535) throw backupLimitError(names, 'have a file name too long for ZIP: ' + row.name);
 		metadata += 2 * length + 256;
-		if (row.name === 'notes.json' && row.size > MAX_INDEX_BYTES) throw backupLimitError(names, 'have more than ' + attachmentSizeWords(MAX_INDEX_BYTES) + ' of library details, too much for one backup');
+		if (row.name === 'notes.json' && row.size > maxIndexBytes) throw backupLimitError(names, 'have more than ' + attachmentSizeWords(maxIndexBytes) + ' of library details, too much for one backup');
 	}
 	if (metadata > MAX_METADATA_BYTES) throw backupLimitError(names, 'have too many file details for this backup');
-	const header = backupManifestHeader(inventory.map(row => ({name: row.name, ...(row.name === 'notes.json' ? {bytes: enc.encode(indexText)} : {})})), {appVersion, stamp});
+	// A native recovery export may hold an unreadable original index. Its explicit recovery
+	// envelope still uses this ZIP budget owner without fabricating replacement folder metadata.
+	const header = manifestHeader || backupManifestHeader(inventory.map(row => ({name: row.name, ...(row.name === 'notes.json' ? {bytes: enc.encode(indexText)} : {})})), {appVersion, stamp});
 	const sidecar = inventory.find(row => row.name === 'notes.json'), omitted = [];
 	const order = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 	const declaration = row => ({name: row.name, bytes: row.size, sha256: '0'.repeat(64)});
-	const weight = row => row.size + 92 + 2 * enc.encode(row.name).length;
+	const weight = row => row ? row.size + 92 + 2 * enc.encode(row.name).length : 0;
 	const fixed = 22 + commentBytes(comment, enc).length + 76 + 2 * enc.encode(BACKUP_MANIFEST_FILE).length;
 	let kept = inventory.slice(), groups = [kept];
 	const manifestOf = (number = groups.length) => ({...header, files: kept.map(declaration).sort(order),
@@ -48,7 +51,7 @@ export function preflightBackup(inventory, {indexText, appVersion, stamp, commen
 	while (groups.some(rows => fixed + reserve + rows.reduce((n, row) => n + weight(row), 0) > maxBytes)) {
 		const room = maxBytes - fixed - reserve - weight(sidecar);
 		if (room < 0) throw backupLimitError(names, 'have library details that cannot fit in one readable archive');
-		const next = [], retained = [sidecar]; let rows = [sidecar], used = 0;
+		const next = [], retained = sidecar ? [sidecar] : []; let rows = retained.slice(), used = 0;
 		for (const row of kept) {
 			if (row === sidecar) continue;
 			const cost = weight(row);
@@ -56,7 +59,7 @@ export function preflightBackup(inventory, {indexText, appVersion, stamp, commen
 				omitted.push({name: row.name, bytes: row.size, reason: 'This file cannot fit whole with its backup details under the ' + maxBytes.toLocaleString('en') + '-byte archive bound.'});
 				continue;
 			}
-			if (used + cost > room) { next.push(rows); rows = [sidecar]; used = 0; }
+			if (used + cost > room) { next.push(rows); rows = sidecar ? [sidecar] : []; used = 0; }
 			rows.push(row); used += cost; retained.push(row);
 		}
 		next.push(rows); groups = next; kept = retained;

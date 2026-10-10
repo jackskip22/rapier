@@ -48,7 +48,7 @@ async function _rapierBuildArtifact(options, providedContext) {
 	if (opts.kind === 'standalone') {
 		if (context.semanticRoot.querySelector('.math-placeholder'))
 			throw new Error('Web page not written; the math plug-in is required to include its equations');
-		// MathJax represents invalid TeX as a static error SVG. A source-only span means
+		// Invalid TeX renders as a static error SVG. A source-only span means
 		// rendering itself failed, so publishing it would silently omit the equation.
 		if (context.semanticRoot.querySelector('span[data-rapier-math-source]'))
 			throw new Error('Web page not written; a required equation could not be rendered');

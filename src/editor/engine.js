@@ -972,17 +972,29 @@ function renderBlock(raw, referenceIndex = null) {
 }
 
 const _RAPIER_RENDER_BATCH = 16;
-function _rapierRenderBlocksBatched(blocks, referenceIndex = null) {
+// `prepared === true` returns each block's markup (or its finished special rendering) and sanitizes nothing; that array passed
+// back as `prepared` is not made again. A long document's background render takes the two halves as tasks of their own.
+// The tail can retain each finished tree for its first read surface; every ordinary caller still receives HTML strings.
+function _rapierRenderBlocksBatched(blocks, referenceIndex = null, prepared = null, retainNodes = false) {
+	const made = Array.isArray(prepared) ? prepared : blocks.map(block => {
+		const special = _rapierRenderBlockSpecial(block.raw);
+		return special != null ? { special } : _rapierRenderBlockMarkup(block.raw, referenceIndex);
+	});
+	if (prepared === true) return made;
 	const out = new Array(blocks.length);
 	const pending = [];
 	const markups = [];
 	for (let index = 0; index < blocks.length; index++) {
 		const raw = blocks[index].raw;
-		const special = _rapierRenderBlockSpecial(raw);
-		if (special != null) { out[index] = special; continue; }
-		const markup = _rapierRenderBlockMarkup(raw, referenceIndex);
+		const markup = made[index];
+		if (markup.special != null) {
+			out[index] = retainNodes ? { raw, html: markup.special, root: null } : markup.special;
+			continue;
+		}
 		if (!markup.batchable) {
-			out[index] = _rapierFinishSanitizedBlock(sanitizeRapierHtml(markup.html, 'render'), raw);
+			// Authored HTML keeps the string read path: inserted wrappers can change foreign-content parsing.
+			const html = _rapierFinishSanitizedBlock(sanitizeRapierHtml(markup.html, 'render'), raw);
+			out[index] = retainNodes ? { raw, html, root: null } : html;
 			continue;
 		}
 		pending.push(index);
@@ -991,7 +1003,7 @@ function _rapierRenderBlocksBatched(blocks, referenceIndex = null) {
 	if (pending.length) {
 		const sanitized = _rapierSanitizeBatch(markups);
 		for (let at = 0; at < pending.length; at++) {
-			out[pending[at]] = _rapierFinishSanitizedBlock(sanitized[at], blocks[pending[at]].raw);
+			out[pending[at]] = _rapierFinishSanitizedBlock(sanitized[at], blocks[pending[at]].raw, retainNodes);
 		}
 	}
 	return out;
@@ -1003,7 +1015,7 @@ function _rapierSanitizeBatch(htmls) {
 	_rapierSanitizeRuntime.context = 'render';
 	let fragment = null;
 	try {
-		fragment = DOMPurify.sanitize(joined, { ...RAPIER_SANITIZE_OPTIONS.render, RETURN_DOM_FRAGMENT: true });
+		fragment = DOMPurify.sanitize(joined, { ...RAPIER_SANITIZE_OPTIONS.render, RETURN_DOM: true });
 	} catch (_) {
 		fragment = null;
 	} finally {
@@ -1016,7 +1028,9 @@ function _rapierSanitizeBatch(htmls) {
 		if (!node || node.nodeType !== 1 || node.tagName !== 'DIV' ||
 				node.attributes.length !== 1 ||
 				node.getAttribute('data-rapier-batch') !== String(index)) { intact = false; break; }
-		out[index] = node.innerHTML;
+		// The block's own sanitized nodes, not their text: _rapierFinishSanitizedBlock works on them where they stand and
+		// writes their markup once (each block's markup was written here, read back there and written again).
+		out[index] = node;
 	}
 	if (!intact) {
 		for (let index = 0; index < htmls.length; index++) out[index] = sanitizeRapierHtml(htmls[index], 'render');
@@ -1108,9 +1122,13 @@ function _rapierApplyBlockDirection(...args) { return _rapierRenderModule('rende
 // splice would reopen the attribute into live markup on the next innerHTML parse -- a stored XSS
 // with no paste and no remote content. The wrap happens on parsed nodes, the same way the exports
 // already do it; the serialized result is exactly the sanitizer's tree plus wrappers.
-function _rapierFinishSanitizedBlock(sanitizedHtml, raw) {
-	const box = document.createElement('div');
-	box.innerHTML = sanitizedHtml;
+// `sanitizedHtml` is markup, or the element whose children are the sanitized block (_rapierSanitizeBatch).
+function _rapierFinishSanitizedBlock(sanitizedHtml, raw, retainNodes = false) {
+	let box = sanitizedHtml;
+	if (typeof box === 'string' || box == null || typeof box.querySelectorAll !== 'function') {
+		box = document.createElement('div');
+		box.innerHTML = sanitizedHtml;
+	}
 	for (const table of box.querySelectorAll('table')) {
 		if (table.parentElement?.classList.contains('table-scroll-wrap')) continue;
 		const wrap = document.createElement('div');
@@ -1126,16 +1144,20 @@ function _rapierFinishSanitizedBlock(sanitizedHtml, raw) {
 		wrap.appendChild(math);
 	}
 	_rapierApplyBlockDirection(box);
-	let sanitized = box.innerHTML;
-	if (raw != null) sanitized = _rapierRenderedHtmlWithTrailingSpace(raw, sanitized);
-	return sanitized;
+	if (retainNodes) {
+		if (raw != null) _rapierRenderedHtmlWithTrailingSpace(raw, box);
+		return { raw, html: box.innerHTML, root: box };
+	}
+	const html = box.innerHTML;
+	return raw == null ? html : _rapierRenderedHtmlWithTrailingSpace(raw, html);
 }
 
 function _rapierRenderedHtmlWithTrailingSpace(raw, html) {
 	const lastLine = String(raw == null ? '' : raw).split('\n').pop();
 	if (((lastLine.match(/ +$/) || [''])[0]).length !== 1) return html;
-	const container = document.createElement('div');
-	container.innerHTML = html;
+	const serialized = typeof html === 'string';
+	const container = serialized ? document.createElement('div') : html;
+	if (serialized) container.innerHTML = html;
 	const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
 		acceptNode: node => node.parentElement?.closest('pre, code') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
 	});
@@ -1144,7 +1166,7 @@ function _rapierRenderedHtmlWithTrailingSpace(raw, html) {
 	while ((node = walker.nextNode())) if (/\S/.test(node.nodeValue)) last = node;
 	if (!last || /\s$/.test(last.nodeValue)) return html;
 	last.nodeValue += ' ';
-	return container.innerHTML;
+	return serialized ? container.innerHTML : container;
 }
 
 const _rapierOverflowRuntime = Object.seal({ observer: null, observedWidth: 0 });
@@ -1281,6 +1303,7 @@ function _rapierEnhanceRenderedContent(root) {
 		if (surface.tagName === 'PRE' && surface.closest('.diagram-block')) return;
 		const isTable = surface.classList.contains('table-scroll-wrap');
 		const isMath = surface.classList.contains('math-display-wrap');
+		if (isMath && surface.querySelector('svg[data-rapier-math]')) return;
 		const isDiagram = surface.classList.contains('diagram-block');
 		const shell = document.createElement(isMath ? 'span' : 'div');
 		shell.className = 'rapier-hscroll rapier-hscroll--' + (isTable ? 'table' : isMath ? 'math' : isDiagram ? 'diagram' : 'code');
@@ -1290,6 +1313,7 @@ function _rapierEnhanceRenderedContent(root) {
 		_rapierRegisterOverflowShell(shell);
 	});
 	_rapierObserveDiagrams(root);
+	globalThis.RapierMath?.observe(root);
 	_rapierTrimProjectionEdgeWhitespace(root);
 }
 function _rapierRefreshOverflowAffordances(root) {
@@ -3052,7 +3076,12 @@ function _rapierDelimiterNeighbour(node, side) {
 	if (side < 0 ? node.flankingWhitespace?.leading : node.flankingWhitespace?.trailing) return ' ';
 	let beside = side < 0 ? node.previousSibling : node.nextSibling;
 	while (beside && beside.nodeType === Node.TEXT_NODE && !beside.data) beside = side < 0 ? beside.previousSibling : beside.nextSibling;
-	if (beside) return beside.nodeType !== Node.TEXT_NODE ? (beside.nodeName === 'BR' ? ' ' : '.') : side < 0 ? beside.data.slice(-1) : beside.data[0];
+	if (beside) {
+		if (beside.nodeType !== Node.TEXT_NODE) return beside.nodeName === 'BR' ? ' ' : '.';
+		const character = side < 0 ? beside.data.slice(-1) : beside.data[0];
+		// Protected edit spaces flank a delimiter as the ordinary spaces written to source.
+		return character === _RAPIER_SPACE_RUN_MARK ? ' ' : character;
+	}
 	return node.parentNode?.isBlock === false ? '.' : ' ';
 }
 // A mark Markdown cannot spell here is kept as the HTML it is, without the attributes Rapier's own
@@ -4402,6 +4431,13 @@ async function _rapierPrepareMarkdownProjection(blocks, sourceLength, loadToken,
 // loadToken and commit guard that own the projection own this.
 async function _rapierHydrateProjectionTail(blocks, from, loadToken, referenceIndex, loadCommitGuard = null) {
 	if (!Number.isSafeInteger(from) || from >= blocks.length) return;
+	const tailBatch = 8;
+	const yieldTail = () => {
+		if (typeof scheduler !== 'undefined' && typeof scheduler.postTask === 'function') {
+			return scheduler.postTask(() => {}, { priority: 'user-visible' }).catch(() => undefined);
+		}
+		return _rapierYieldUserVisibleWork();
+	};
 	let sliceStarted = _rapierNow();
 	// Still this document: the same load and the same block list (each block is checked again as its
 	// shell is reached, so an edit that replaced one block replaces only that block's fill). Not the
@@ -4411,21 +4447,56 @@ async function _rapierHydrateProjectionTail(blocks, from, loadToken, referenceIn
 	// stuttering the fast-scroll circle (scroll-circle-track).
 	const current = () => loadToken === rapier.identity.loadToken && rapier.document.blocks === blocks;
 	const awake = !_rapierWysiwygShouldVirtualize(blocks);
+	// Deleting before the cursor must not skip a surviving block in the same array.
+	const pending = blocks.slice(from).map(block => String(block.id));
+	const renderState = () => [rapier.semantic.references, _rapierPlainLayout(), _rapierRemoteContent.allowed, md,
+		_rapierProviders.math?.status, _rapierProviders.math?.renderToString,
+		_rapierProviders.mermaid?.status, _rapierProviders.mermaid?.renderToString, globalThis.RapierFlowchart];
 	await _rapierYieldToPaint();
-	for (let start = from; start < blocks.length; start += _RAPIER_RENDER_BATCH) {
+	for (let start = 0; start < pending.length; start += tailBatch) {
 		if (!current()) return;
-		const slice = blocks.slice(start, start + _RAPIER_RENDER_BATCH).filter(block =>
-			_rapierWysiwygLedger.entries.get(String(block.id))?.wrapper?._rapierUnrendered);
+		const slice = pending.slice(start, start + tailBatch).flatMap(id => {
+			const wrapper = _rapierWysiwygLedger.entries.get(id)?.wrapper;
+			const block = wrapper?._rapierUnrendered ? _rapierBoundBlock(wrapper) : null;
+			return block ? [{id, raw: block.raw, rendered: block.rendered, block, wrapper}] : [];
+		});
 		if (slice.length) {
-			const rendered = _rapierRenderBlocksBatched(slice, referenceIndex);
+			referenceIndex = rapier.semantic.references;
+			const state = renderState();
+			const prepared = _rapierRenderBlocksBatched(slice, referenceIndex, true);
+			// Yield only when the budget is spent: awaiting a no-op delivers mutation observers after every block.
+			if (_rapierNow() - sliceStarted >= 8) {
+				await yieldTail();
+				if (!current()) return;
+				sliceStarted = _rapierNow();
+			}
+			const rendered = _rapierRenderBlocksBatched(slice, referenceIndex, prepared, true);
+			if (_rapierNow() - sliceStarted >= 16) {
+				await yieldTail();
+				if (!current()) return;
+				sliceStarted = _rapierNow();
+			}
 			for (let at = 0; at < slice.length; at++) {
-				const block = slice[at], wrapper = _rapierWysiwygLedger.entries.get(String(block.id))?.wrapper;
-				block.rendered = rendered[at];
-				if (wrapper?._rapierUnrendered) _rapierHydrateBlockEl(wrapper, awake);
+				const held = slice[at], wrapper = _rapierWysiwygLedger.entries.get(held.id)?.wrapper;
+				// A foreground wake owns its cache. A changed sleeping block renders from its current bytes and policy.
+				if (wrapper?._rapierUnrendered) {
+					const block = _rapierBoundBlock(wrapper), latest = renderState();
+					if (block) {
+						const intact = wrapper === held.wrapper && block === held.block && block.raw === held.raw &&
+							block.rendered === held.rendered && state.every((value, index) => value === latest[index]);
+						block.rendered = intact ? rendered[at].html : renderBlock(block.raw);
+						_rapierHydrateBlockEl(wrapper, awake, intact ? rendered[at] : null);
+					}
+				}
+				if (at + 1 < slice.length && _rapierNow() - sliceStarted >= 8) {
+					await yieldTail();
+					if (!current()) return;
+					sliceStarted = _rapierNow();
+				}
 			}
 		}
-		if (_rapierNow() - sliceStarted >= 32) {
-			await _rapierYieldUserVisibleWork();
+		if (_rapierNow() - sliceStarted >= 16) {
+			await yieldTail();
 			sliceStarted = _rapierNow();
 		}
 	}
@@ -6042,11 +6113,16 @@ function _rapierMarkFigureCaptionCandidate(readDiv, raw) {
 	if (only && only.tagName === 'P') only.classList.add('rapier-figure-caption-candidate');
 }
 
-function _createBlockReadSurface(block) {
-	const readDiv = document.createElement('div');
+function _createBlockReadSurface(block, projection = null) {
+	const prepared = projection?.root && projection.raw === block.raw && projection.html === block.rendered;
+	const readDiv = prepared ? document.adoptNode(projection.root) : document.createElement('div');
 	readDiv.className = 'block-read md-render';
-	const html = block.rendered || renderBlock(block.raw);
-	readDiv.innerHTML = html;
+	const html = prepared ? projection.html : block.rendered || renderBlock(block.raw);
+	if (prepared) {
+		// The string cache stays independent of this once-consumed tree and its later enhancements.
+		projection.root = null;
+		readDiv.removeAttribute('data-rapier-batch');
+	} else readDiv.innerHTML = html;
 	readDiv._rapierProjectionHtml = String(html || '');
 	_rapierEnhanceRenderedContent(readDiv);
 	_rapierMarkTableCaptionCandidate(readDiv, block.raw);
@@ -7314,17 +7390,23 @@ function makeBlockEl(block, options = null) {
 	return wrapper;
 }
 
-function _rapierFillBlockEl(wrapper, block) {
+function _rapierFillBlockEl(wrapper, block, projection = null, parked = false) {
 	const toolbar = _createTableToolbar(block);
 	if (toolbar) wrapper.classList.add('block-wrapper--table');
-	const readDiv = _createBlockReadSurface(block);
+	const readDiv = _createBlockReadSurface(block, projection);
+	// Section decisions keep the real wrapper's ancestry; parked children never enter the live DOM.
+	const controlHost = parked ? document.createElement('div') : wrapper;
 
-	wrapper.appendChild(readDiv);
-	if (toolbar) wrapper.appendChild(toolbar);
-	_rapierSyncSectionFoldControl(wrapper, readDiv);
-	_rapierSyncFenceCopyControl(wrapper, readDiv);
-	_syncEmptyClass(wrapper, null);
+	controlHost.appendChild(readDiv);
+	if (toolbar) controlHost.appendChild(toolbar);
+	_rapierSyncSectionFoldControl(wrapper, readDiv, controlHost);
+	_rapierSyncFenceCopyControl(wrapper, readDiv, controlHost);
+	_syncEmptyClass(wrapper, null, readDiv);
 	_updateBlockInteractiveState(wrapper, readDiv);
+	if (parked) {
+		wrapper._rapierDormant = Array.from(controlHost.childNodes);
+		controlHost.replaceChildren();
+	}
 	return wrapper;
 }
 
@@ -7332,31 +7414,29 @@ function _rapierFillBlockEl(wrapper, block) {
 // otherwise they are parked as an ordinary dormant wrapper's nodes, so a heading picker, an id
 // target or a wrap owner can find them without paying for layout, and the render window wakes
 // the wrapper when the reader approaches it.
-function _rapierHydrateBlockEl(wrapper, awake) {
+function _rapierHydrateBlockEl(wrapper, awake, projection = null) {
 	if (!wrapper || !wrapper._rapierUnrendered) return wrapper;
 	const block = _rapierBoundBlock(wrapper);
 	if (!block) return wrapper;
 	wrapper._rapierUnrendered = false;
-	wrapper._rapierDormant = null;
-	wrapper.classList.remove('block-wrapper--dormant');
-	_rapierFillBlockEl(wrapper, block);
+	if (awake) {
+		wrapper._rapierDormant = null;
+		wrapper.classList.remove('block-wrapper--dormant');
+	}
+	_rapierFillBlockEl(wrapper, block, projection, !awake);
 	const observer = _rapierWysiwygLedgerObserver();
 	if (observer) observer.observe(wrapper);
-	if (!awake) {
-		wrapper._rapierDormant = Array.from(wrapper.childNodes);
-		wrapper.classList.add('block-wrapper--dormant');
-		wrapper.replaceChildren();
-	} else {
+	if (awake) {
 		_rapierShellRelease(wrapper);
 	}
 	return wrapper;
 }
 
-function _syncEmptyClass(wrapper, editDiv) {
+function _syncEmptyClass(wrapper, editDiv, readDiv = null) {
 	if (!wrapper) return;
 	const live = wrapper.classList.contains('block-wrapper--editing')
 		? editDiv
-		: wrapper.querySelector('.block-read');
+		: readDiv || wrapper.querySelector('.block-read');
 	const isEmpty = !live || live.textContent.trim() === '';
 	wrapper.classList.toggle('block-wrapper--empty', isEmpty);
 }
@@ -7648,9 +7728,9 @@ function _rapierLiveEditRaw(editDiv, wrapper) {
 		// Leading spaces a person typed into a paragraph stay a paragraph (four
 		// of them made an indented code block on commit, the words "disappeared into a malformed
 		// block which loses all line wrapping", and Undo did not bring them back). Written as the
-		// entity every Markdown reader shows as a space; typing never changes a block's kind.
+		// nonbreaking space every Markdown reader keeps in the paragraph; typing never changes its kind.
 		const leading = /^ +/.exec(edited);
-		if (leading && !/^(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>|`{3,}|~{3,}|\|)/.test(edited.trimStart())) edited = '&nbsp;'.repeat(leading[0].length) + edited.slice(leading[0].length);
+		if (leading && !/^(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>|`{3,}|~{3,}|\|)/.test(edited.trimStart())) edited = '\u00a0'.repeat(leading[0].length) + edited.slice(leading[0].length);
 
 		// A block carrying a trailing <!--md-layout:v1 ...--> marker (alignment, wrap, an embedded
 		// picture's placement) renders that marker as an attribute, not inline content, so the
@@ -7668,7 +7748,7 @@ function _rapierLiveEditRaw(editDiv, wrapper) {
 	// A blank line with no words on its surface is still the blank line (its entity), not nothing: nothing would take the
 	// paragraph away when it is left. That holds for words typed into it and taken out again, in the same visit.
 	if (!String(edited).trim() && (_rapierBlankLineRaw(before) || blankEntered)) return _rapierBlankLineRaw(before) ? before : _rapierEmptyParagraphRaw(rapier.document.blocks.length);
-	return _rapierReconcileMarkdownEditRaw(before, edited);
+	return rawSource ? _rapierFromLfProjection(before, edited, rapier.document.sourceNewline) : _rapierReconcileMarkdownEditRaw(before, edited);
 }
 
 function _rapierTidyNestedListLines(markdown) {
@@ -7681,14 +7761,30 @@ const _RAPIER_SPACE_RUN_MARK = '\uE0A0';
 function _rapierEditHtmlKeepingSpaceRuns(editDiv) {
 	if (!/\u00a0|  /.test(editDiv.textContent || '')) return editDiv.innerHTML;
 	const clone = editDiv.cloneNode(true);
+	// A mark's trailing space flanks its closing delimiter. Join it to the outside
+	// text before protecting runs, so the writer cannot collapse the two sides.
+	for (const mark of clone.querySelectorAll('strong, b, em, i')) {
+		if (mark.closest('pre, code')) continue;
+		const end = mark.lastChild, next = mark.nextSibling;
+		if (end?.nodeType !== Node.TEXT_NODE || next?.nodeType !== Node.TEXT_NODE) continue;
+		const gap = /[ \u00a0]+$/.exec(end.data);
+		if (!gap) continue;
+		end.data = end.data.slice(0, -gap[0].length);
+		next.data = gap[0] + next.data;
+	}
+	clone.normalize();
 	const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT, {
 		acceptNode: node => node.parentElement?.closest('pre, code') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
 	});
 	const texts = [];
 	let node;
 	while ((node = walker.nextNode())) if (/\u00a0|  /.test(node.data)) texts.push(node);
-	// A lone nbsp is a typed space; Turndown would write it raw as flanking whitespace.
-	for (const text of texts) text.data = text.data.replace(/[ \u00a0]{2,}|\u00a0/g, run => run[1] ? _RAPIER_SPACE_RUN_MARK.repeat(run.length) : ' ');
+	// Keep the paragraph's leading space through the writer's trim. A lone space inside an
+	// inline mark still flanks that mark, so the writer can place it outside the delimiters.
+	for (const text of texts) {
+		const leading = text.parentElement === clone.firstElementChild && text.parentElement?.tagName === 'P' && text === text.parentElement.firstChild;
+		text.data = text.data.replace(/[ \u00a0]{2,}|\u00a0/g, (run, at) => run[1] || leading && at === 0 ? _RAPIER_SPACE_RUN_MARK.repeat(run.length) : ' ');
+	}
 	return clone.innerHTML;
 }
 
@@ -8818,11 +8914,15 @@ function _rapierReopenAfterHistory(target, splices, caretBefore = null, redo = f
 	let location = null, caretAt = null;
 	if (row) {
 		const removed = String(row.removed || ''), inserted = String(row.inserted || '');
+		// Leading paragraph gaps use NBSP in source and ordinary spaces once typing makes
+		// them internal. They are the same characters for caret landing, while history
+		// continues to restore each spelling's exact bytes.
+		const sameCharacter = (left, right) => left === right || left === ' ' && right === '\u00a0' || left === '\u00a0' && right === ' ';
 		let same = 0;
-		while (same < removed.length && same < inserted.length && removed[same] === inserted[same]) same++;
+		while (same < removed.length && same < inserted.length && sameCharacter(removed[same], inserted[same])) same++;
 		let tail = 0;
 		while (tail < removed.length - same && tail < inserted.length - same &&
-			removed[removed.length - 1 - tail] === inserted[inserted.length - 1 - tail]) tail++;
+			sameCharacter(removed[removed.length - 1 - tail], inserted[inserted.length - 1 - tail])) tail++;
 		caretAt = Number(row.pos) + inserted.length - tail;
 		location = _rapierBlockAtSourceOffset(_rapierBodyOffsetOfCanonical(caretAt));
 	}
@@ -11610,16 +11710,51 @@ function _rapierJournalBlockRangeSplice(entry) {
 function _rapierCommitBlockEdit(blockId, before, after, options = null) {
 	const span = _rapierCurrentBodyBlockSpans().find(row => row.id === blockId);
 	if (!span) return null;
-	const committed = _rapierCommitSplices([{
+	const row = {
 		pos: _rapierCanonicalOffsetOfBody(span.start),
 		removed: String(before == null ? '' : before),
 		inserted: String(after == null ? '' : after),
-	}], {
+	};
+	const job = _rapierEditingRuntime.pasteJob, word = _editorHostEl()?._rapierHeldWord;
+	if (job?.typing && (options || job.typing.blockId !== blockId || job.typing.row.pos !== row.pos ||
+			job.typing.row.inserted !== row.removed || job.typing.splices.length >= 64)) job.flushTyping();
+	// A paste must read the word's latest source to prepare its place, but neither its retries nor
+	// the ordinary typing timer end the keyboard's word. Keep those real source splices together
+	// until the paste commits. Their order, including companion splices, is the source-root chain.
+	const keep = job && typeof job.flushTyping === 'function' && !job.committed && !options &&
+		(job.typing || word?.live === true && word.text);
+	const beforeSource = keep ? rapier.document.source.capture() : null;
+	const committed = _rapierCommitSplices([row], {
 		operation: 'document.edit-block',
 		affectedBlockIds: [blockId],
 		...(options || {}),
+		...(keep ? { deferLedger: true } : {}),
 	});
-	return committed && committed.transaction;
+	if (!committed || !keep) return committed && committed.transaction;
+	// A companion-heavy edit cannot extend a record beyond the ledger's existing row bound.
+	// Publish the earlier group at its exact source root, then restore this already-applied
+	// edit, synchronously; no source row or root is synthesized or omitted.
+	if (job.typing && job.typing.splices.length + committed.splices.length > 64) {
+		const applied = rapier.document.source.capture();
+		beforeSource.restore();
+		try { job.flushTyping(); } finally { applied.restore(); }
+	}
+	const pending = job.typing || {
+		blockId, row, splices: [], beforeHash: beforeSource.rootId,
+		source: rapier.document.source, ..._rapierMutationStamp(), caretBefore: word?.caretBefore || null,
+	};
+	pending.splices.push(...committed.splices);
+	pending.row = { ...pending.row, inserted: row.inserted };
+	pending.afterHash = rapier.document.source.rootId;
+	const edit = _activeBlockEditContext()?.editDiv, selection = window.getSelection();
+	const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+	if (edit && range && edit.contains(range.startContainer)) pending.caretAfter = {
+		blockId, offset: _charOffsetForRangePoint(edit, range.startContainer, range.startOffset),
+	};
+	job.typing = pending;
+	// Keep companion changes in the transaction that made them, before another word can begin.
+	if (committed.splices.length > 1) job.flushTyping();
+	return committed;
 }
 
 function _rapierCommitBlockLayoutInPlace(blockId, before, after, operation) {
@@ -15480,11 +15615,14 @@ function _rapierHasRenderedAnchor(root) {
 	return !!(root && root.querySelector && root.querySelector('[id]'));
 }
 
-function _rapierDormantHeadings(root, selector) {
+function _rapierDormantHeadings(root, selector, includeLive = false) {
 	if (!root || !root.querySelectorAll) return [];
 	const found = [];
-	root.querySelectorAll('.block-wrapper--dormant').forEach(wrapper => {
-		(wrapper._rapierDormant || []).forEach(node => {
+	// The parked shell's position keeps anchors in source order even when later blocks are awake.
+	root.querySelectorAll(includeLive ? selector + ', .block-wrapper--dormant' : '.block-wrapper--dormant').forEach(wrapper => {
+		if (includeLive && wrapper.matches?.(selector)) found.push(wrapper);
+		if (!Array.isArray(wrapper._rapierDormant)) return;
+		wrapper._rapierDormant.forEach(node => {
 			if (!node || node.nodeType !== 1) return;
 			if (node.matches?.(selector)) found.push(node);
 			if (node.querySelectorAll) found.push(...node.querySelectorAll(selector));
@@ -15506,8 +15644,10 @@ function _rapierHeadingHasSectionContent(wrapper, level) {
 	if (!wrapper || !wrapper.isConnected) return false;
 	let sibling = wrapper.nextElementSibling;
 	while (sibling && sibling.classList.contains('block-wrapper')) {
-		const siblingHeading = _rapierDirectRenderedHeading(
-			sibling.querySelector(':scope > .block-read'));
+		const siblingRead = Array.isArray(sibling._rapierDormant)
+			? sibling._rapierDormant.find(node => node.classList?.contains('block-read'))
+			: sibling.querySelector(':scope > .block-read');
+		const siblingHeading = _rapierDirectRenderedHeading(siblingRead);
 		const siblingLevel = Number(sibling.dataset.headingLevel) ||
 			Number(siblingHeading?.tagName?.slice(1)) || 0;
 		if (siblingLevel && siblingLevel <= level) return false;
@@ -15516,15 +15656,24 @@ function _rapierHeadingHasSectionContent(wrapper, level) {
 	return false;
 }
 
-function _rapierSyncSectionFoldControl(wrapper, readDiv) {
+function _rapierSyncSectionFoldControl(wrapper, readDiv, controlHost = wrapper) {
 	if (!wrapper) return;
-	const heading = _rapierDirectRenderedHeading(readDiv || wrapper.querySelector(':scope > .block-read'));
-	let button = wrapper.querySelector(':scope > .section-fold-btn');
+	const parked = controlHost === wrapper && Array.isArray(wrapper._rapierDormant) ? wrapper._rapierDormant : null;
+	const read = readDiv || (parked ? parked.find(node => node.classList?.contains('block-read'))
+		: wrapper.querySelector(':scope > .block-read'));
+	const heading = _rapierDirectRenderedHeading(read);
+	let button = parked ? parked.find(node => node.classList?.contains('section-fold-btn'))
+		: controlHost.querySelector(':scope > .section-fold-btn');
+	const removeButton = () => {
+		if (!button) return;
+		if (parked) parked.splice(parked.indexOf(button), 1);
+		button.remove();
+	};
 	if (!heading) {
 		wrapper.classList.remove('block-wrapper--heading');
 		delete wrapper.dataset.headingLevel;
 		delete wrapper.dataset.folded;
-		if (button) button.remove();
+		removeButton();
 		return;
 	}
 
@@ -15541,7 +15690,7 @@ function _rapierSyncSectionFoldControl(wrapper, readDiv) {
 		if (Number.isSafeInteger(blockId) && wrapper.parentElement === editor) {
 			rapier.view.foldedHeadingIds.delete(blockId);
 		}
-		if (button) button.remove();
+		removeButton();
 		return;
 	}
 	if (!button) {
@@ -15550,7 +15699,8 @@ function _rapierSyncSectionFoldControl(wrapper, readDiv) {
 		button.className = 'section-fold-btn';
 		button.setAttribute('contenteditable', 'false');
 		button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
-		wrapper.appendChild(button);
+		if (parked) parked.push(button);
+		else controlHost.appendChild(button);
 	}
 	button.dataset.blockId = String(blockId);
 	button.setAttribute('aria-expanded', folded ? 'false' : 'true');
@@ -15561,13 +15711,13 @@ function _rapierSyncSectionFoldControl(wrapper, readDiv) {
 
 // The copy control at a code block's top right corner: one tap puts the code, as shown, on the clipboard. A Markdown
 // document's fenced block alone; a code or text file is its own text.
-function _rapierSyncFenceCopyControl(wrapper, readDiv) {
+function _rapierSyncFenceCopyControl(wrapper, readDiv, controlHost = wrapper) {
 	if (!wrapper) return;
 	const read = readDiv || wrapper.querySelector(':scope > .block-read');
 	// The block's one child is the pre, or the horizontal scroller the shaper wraps it in.
 	const fence = rapier.document.docKind === 'markdown' && read && read.childElementCount === 1
 		&& read.querySelector(':scope > pre > code, :scope > .rapier-hscroll--code > pre > code');
-	const button = wrapper.querySelector(':scope > .fence-copy');
+	const button = controlHost.querySelector(':scope > .fence-copy');
 	if (!fence) { if (button) button.remove(); return; }
 	if (button) return;
 	const control = document.createElement('button');
@@ -15590,7 +15740,7 @@ function _rapierSyncFenceCopyControl(wrapper, readDiv) {
 	const check = document.createElementNS(svgNS, 'polyline');
 	check.setAttribute('points', /points="([^"]+)"/.exec(_RAPIER_COMMAND_ICONS.check)[1]);
 	control.append(glyph('copy', use), glyph('done', check));
-	wrapper.appendChild(control);
+	controlHost.appendChild(control);
 }
 
 async function _rapierCopyFenceCode(button) {
@@ -15736,7 +15886,7 @@ function assignHeadingSlugs() {
 		// A born-dormant shell has no read surface yet; its fill syncs the control (_rapierFillBlockEl),
 		// and the tail's own pass here runs once it has hydrated.
 		if (wrapper._rapierUnrendered) return;
-		_rapierSyncSectionFoldControl(wrapper, wrapper.querySelector(':scope > .block-read'));
+		_rapierSyncSectionFoldControl(wrapper, null);
 	});
 	_rapierSyncWillPlates(editor, protectionContext);
 	_rapierApplySectionFolds();
@@ -18217,6 +18367,7 @@ function _rapierTravelClear() {
 	_rapierTravelRuntime.forward.length = 0;
 	_rapierTravelRuntime.ticketSerial++;
 	_rapierTravelRuntime.restoring = false;
+	queueMicrotask(_rapierBackHold);
 }
 
 function _rapierTravelBlocked() {
@@ -18436,6 +18587,7 @@ function _rapierTravelCommit(ticket, destination = null) {
 			Math.abs(to.offset - ticket.origin.directOffset) <= 1) return false;
 	_rapierTravelPush(_rapierTravelRuntime.back, ticket.origin);
 	_rapierTravelRuntime.forward.length = 0;
+	queueMicrotask(_rapierBackHold);
 	return true;
 }
 
@@ -18622,6 +18774,7 @@ function _rapierTravelCompatibleIndex(stack) {
 
 function _rapierTravelGo(direction) {
 	if (!_rapierTravelCan(direction)) return false;
+	queueMicrotask(_rapierBackHold);
 	const from = _rapierCaptureTravelPosition();
 	if (!from) {
 		showToast('Could not remember this place in the document', 'info');
@@ -19366,6 +19519,7 @@ function _rapierIsDirty() {
 }
 function _notifyDirtyState() {
 	const dirty = _rapierIsDirty();
+	_rapierBackHold();
 	renderFilename();
 	_rapierWebMcpSync();
 	_rapierEmbedPublishState();
@@ -20948,6 +21102,8 @@ const _rapierLifecycleRuntime = Object.seal({
 	externalFileCheckAuthority: '',
 	externalFileCheckQueuedAuthority: '',
 	departing: false,
+	nativeBackObserver: null,
+	nativeBackConsumes: null,
 
 	reloadAfterBfcache: false,
 });
@@ -21119,7 +21275,11 @@ function _rapierReconcileMarkdownEditRaw(previousRaw, editedRaw, tildeSource = p
 		let tail = 0;
 		while (tail < limit - head && was.text[was.text.length - 1 - tail] === now.text[now.text.length - 1 - tail]) tail++;
 		const spelled = source.slice(0, was.at[head]) + edited.slice(now.at[head], now.at[now.text.length - tail]) + source.slice(was.at[was.text.length - tail]);
-		if (spelled !== edited && md.render(spelled, _rapierMarkdownEnvironment()) === md.render(edited, _rapierMarkdownEnvironment())) edited = spelled;
+		// An escape the writer adds (`C\+\+`) is drawn as its own source token, the character it escapes shown as it is: read as
+		// that character, the two spellings read alike.
+		const reads = raw => md.render(raw, _rapierMarkdownEnvironment())
+			.replace(/<span class="rapier-source-token rapier-source-token--escape" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">([^<]*)<\/span>/g, '$1');
+		if (spelled !== edited && reads(spelled) === reads(edited)) edited = spelled;
 	}
 	return _rapierFromLfProjection(previousRaw, edited, rapier.document.sourceNewline);
 }
@@ -22246,11 +22406,11 @@ function _rapierAnalyzePortability(context, profile) {
 			count: stats.unresolvedImages,
 			message: stats.unresolvedImages + ' linked picture' + (stats.unresolvedImages === 1 ? ' will' : 's will') + ' show as a description and link instead',
 		});
-		if (stats.mathNodes) issues.push({
+		if (stats.docxMathSources) issues.push({
 			code: 'math-source',
 			severity: 'info',
-			count: stats.mathNodes,
-			message: stats.mathNodes + ' equation' + (stats.mathNodes === 1 ? ' was' : 's were') + ' included as editable TeX source',
+			count: stats.docxMathSources,
+			message: stats.docxMathSources + ' equation' + (stats.docxMathSources === 1 ? ' was' : 's were') + ' included as editable TeX source',
 		});
 		if (stats.svgNodes) issues.push({
 			code: 'svg-text',
@@ -22369,10 +22529,12 @@ async function _rapierBuildDocxHtml(context) {
 			stats.docxDiagramSources++;
 		}
 	}
-	stats.svgNodes = Array.from(semanticRoot.querySelectorAll('svg')).filter(node => !node.closest('.callout__label')).length;
+	stats.svgNodes = Array.from(semanticRoot.querySelectorAll('svg')).filter(node => !node.closest('.callout__label,.math-rendered[data-math-src]')).length;
+	stats.docxMathSources = Array.from(semanticRoot.querySelectorAll('.math-rendered,.math-placeholder,[data-rapier-math-source]'))
+		.filter(node => !node.querySelector('svg')).length;
 	// DOCX reads admitted layout records and ordinary raw-HTML measurements (interchange/docx.mjs).
 	// Keep those facts on the root this writer actually consumes.
-	const portableOptions = {baseName: context.baseName, keepLayoutData: true, work};
+	const portableOptions = {baseName: context.baseName, keepLayoutData: true, keepMath: true, work};
 	const portableRoot = work ? await renderer._rapierProjectPortableRootAsync(semanticRoot, portableOptions) : _rapierProjectPortableRoot(semanticRoot, portableOptions);
 	portableRoot.querySelectorAll('img').forEach(_rapierDocxReplaceImage);
 	let imageBytes = 0;
@@ -24522,7 +24684,18 @@ function _rapierSuppressMutationEvent(event) {
 	// A word the keyboard begins composing meanwhile cannot be refused. What it holds is kept in sight, so that a paste folding it
 	// into the source (_rapierRunLargePaste) can tell the keyboard's late commit of that word, in the same composition, from new words.
 	const word = surface === host && host._rapierHeldWord;
-	if (surface === host && event.type === 'compositionstart') host._rapierHeldWord = { text: '', ..._rapierEditingRuntime.inputOwner() };
+	if (surface === host && event.type === 'compositionstart') {
+		const job = _rapierEditingRuntime.pasteJob;
+		if (job && typeof job.flushTyping === 'function' && !job.committed) { _rapierCheckpointPendingTyping(); job.flushTyping(); }
+		const open = _activeBlockEditContext(), selection = window.getSelection();
+		const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+		const caretBefore = open && range && open.editDiv.contains(range.startContainer)
+			? { blockId: open.block.id, offset: _charOffsetForRangePoint(open.editDiv, range.startContainer, range.startOffset) } : null;
+		if (caretBefore && !range.collapsed && open.editDiv.contains(range.endContainer)) caretBefore.end = {
+			blockId: open.block.id, offset: _charOffsetForRangePoint(open.editDiv, range.endContainer, range.endOffset),
+		};
+		host._rapierHeldWord = { text: '', caretBefore, ..._rapierEditingRuntime.inputOwner() };
+	}
 	else if (word && type === 'insertCompositionText') {
 		word.text = String(event.data || '');
 		word.at = _rapierNow();
@@ -29746,6 +29919,14 @@ async function _rapierMountPastePlan(plan, isCurrent) {
 
 async function _rapierCommitPastePlanAsync(plan, job) {
 	if (job && job.cancelled) return false;
+	if (job?.typing) {
+		// Validate the prepared source/window before publishing its composing word. Publishing
+		// advances only the settled revision: refresh that stamp in this same synchronous turn,
+		// then let the model commit verify the unchanged block identities and bytes again.
+		if (!_rapierPasteContextIsCurrent(plan.context)) return false;
+		job.flushTyping();
+		Object.assign(plan.context, _rapierMutationStamp());
+	}
 	const commit = _rapierCommitPasteModel(plan);
 	if (!commit) return false;
 	if (job) {
@@ -30265,14 +30446,20 @@ function _rapierWysiwygMeasuredHeight(wrapper) {
 function _rapierWysiwygLedgerObserver() {
 	if (_rapierWysiwygLedger.observer || typeof ResizeObserver === 'undefined') return _rapierWysiwygLedger.observer;
 	_rapierWysiwygLedger.observer = new ResizeObserver(records => {
+		// A sleeping block's box is its ledger height: it measures nothing (_rapierWysiwygMeasuredHeight) and moves nothing.
+		// A long document's background render observes each block it fills and parks, and every batch of those first
+		// notices was a flush that only restored the reading point, a forced layout each frame for the seconds it ran.
+		let notice = false;
 		records.forEach(record => {
+			if (record.target && record.target._rapierDormant) return;
+			notice = true;
 			const id = record.target && record.target.dataset ? record.target.dataset.blockId : null;
 			if (id != null && record.target.isConnected) {
 				const height = _rapierWysiwygMeasuredHeight(record.target);
 				if (height > 0) _rapierWysiwygLedger.pending.set(String(id), height);
 			}
 		});
-		if (!_rapierWysiwygLedger.raf) {
+		if (notice && !_rapierWysiwygLedger.raf) {
 			_rapierWysiwygLedger.raf = requestAnimationFrame(_rapierWysiwygLedgerFlushMeasurements);
 		}
 	});
@@ -30562,7 +30749,10 @@ function _rapierWysiwygRenderWindow(centerIndex) {
 	const revealing = !!rapier.view.editorViewport?.reveal;
 	const viewport = Number.isSafeInteger(centerIndex) || revealing ? null : _rapierEditorReadingPoint(null, false);
 	const view = Math.max(240, host.clientHeight);
-	const reach = view * _RAPIER_APPROACH_VIEWPORTS;
+	// While the circle is dragged, every frame can land the page anywhere: the blocks two screens either side of where it
+	// lands were woken and laid out each frame for a page the finger had already left. The drag wakes the screen it shows;
+	// the pass at its end (cancelInteraction) wakes the reach around where it stopped.
+	const reach = Number.isSafeInteger(centerIndex) && _rapierWysiwygLedger.dragging ? 0 : view * _RAPIER_APPROACH_VIEWPORTS;
 	const previous = _rapierWysiwygLedger.window;
 	const entryAt = index => _rapierWysiwygLedger.entries.get(_rapierWysiwygLedger.order[index]);
 	const bearing = previous ? entryAt(previous[0]) : null;
@@ -37329,13 +37519,19 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 	let prefixRaw = opts.prefixRaw != null ? opts.prefixRaw : halfRaw(prefixDiv);
 	// The half after the caret of an empty heading is the plain line below it, as it is at the end of a heading: the empty
 	// heading marker (`##`) does not carry over into it, or the words typed next would be a heading.
-	const suffixWords = halfRaw(suffixDiv), suffixRaw = /^#{1,6}[ \t]*$/.test(suffixWords) ? '' : suffixWords;
-	// The spaces where the block is split stay at the end of the words before the caret, where the first line ends on the page
-	// (the words after it begin the next line, as they are shown). Trimmed off both halves, Enter between two words then
-	// Backspace gave the words back joined, with no space between them.
-	const gap = !leaves && opts.prefixRaw == null && String(prefixRaw).trim() && !/[ \t]$/.test(prefixRaw) && !_blockUsesRawEditor(block.raw)
-		? (/ *$/.exec(String(prefixDiv.textContent || '').replace(/\u00a0/g, ' '))[0] + /^ */.exec(String(suffixDiv.textContent || '').replace(/\u00a0/g, ' '))[0]) : '';
-	if (gap) prefixRaw += gap;
+	const suffixWords = halfRaw(suffixDiv);
+	let suffixRaw = /^#{1,6}[ \t]*$/.test(suffixWords) ? '' : suffixWords;
+	// Each side keeps its own spaces. The next paragraph's leading gap uses the same nonbreaking
+	// characters as typed leading spaces: four ordinary spaces would make it an indented code block.
+	// Once words are typed before the gap or the halves join, the writer reads it as ordinary spaces.
+	const keepsSpaces = !leaves && opts.prefixRaw == null && !_blockUsesRawEditor(block.raw);
+	const paragraph = suffixDiv.firstElementChild?.tagName === 'P';
+	const afterGap = keepsSpaces ? /^ */.exec(String(suffixDiv.textContent || '').replace(/\u00a0/g, ' '))[0] : '';
+	const gap = keepsSpaces && String(prefixRaw).trim()
+		? / *$/.exec(String(prefixDiv.textContent || '').replace(/\u00a0/g, ' '))[0] + (paragraph ? '' : afterGap) : '';
+	if (gap) prefixRaw = prefixRaw.replace(/ *$/, '') + gap;
+	const nextGap = paragraph ? afterGap : '';
+	if (nextGap) suffixRaw = '\u00a0'.repeat(nextGap.length) + suffixRaw.trimStart();
 	if (!leaves && _rapierTableFromTypedRow(block, wrapper, editDiv, prefixRaw, suffixRaw)) return;
 	// The split rule (layout/browser.js splitPlan): a wrapped picture placed in this paragraph stays
 	// where it is on the page, with whichever half its top sits in. Read from the live layout before
@@ -37361,7 +37557,8 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 		const id      = preferredId != null ? preferredId : _nextBlockId();
 		const keepsIdentity = preferredId === block.id;
 		// The halves come off the editing surface in LF: laid back onto the file's own endings. The first keeps the spaces of the split (above).
-		const words = keepsIdentity && gap ? String(raw || '').replace(/^\s+/, '') : (raw || '').trim();
+		const words = keepsIdentity && gap ? String(raw || '').replace(/^\s+/, '')
+			: !keepsIdentity && nextGap ? String(raw || '').trimEnd() : (raw || '').trim();
 		const trimmed = _rapierReconcileMarkdownEditRaw(keepsIdentity ? block.raw : '', words, block.raw)
 			|| _rapierEmptyParagraphRaw(blocksAfterCount);
 		const order   = keepsIdentity ? block.order : undefined;
@@ -38088,14 +38285,30 @@ async function _rapierRunLargePaste(record, payload) {
 		busyTimer: 0,
 		busyVisible: false,
 		done,
+		typing: null,
+		flushTyping() {
+			const pending = job.typing;
+			if (!pending) return false;
+			if (pending.source !== rapier.document.source || !_rapierMutationStampSharesDocument(pending) ||
+					pending.documentRevision !== Number(rapier.revision.settled || 0) ||
+					pending.afterHash !== rapier.document.source.rootId) throw new Error('composing word source changed');
+			const committed = _rapierCommitSplices(pending.splices, {
+				operation: 'document.edit-block', affectedBlockIds: [pending.blockId],
+				sourceAlreadyApplied: true, beforeHash: pending.beforeHash,
+			});
+			if (!committed?.transaction) throw new Error('composing word history could not be committed');
+			job.typing = null;
+			if (pending.caretBefore) _rapierRememberHistoryCaret(pending.caretBefore, pending.caretAfter || null);
+			return true;
+		},
 	};
 
-	_rapierCheckpointPendingTyping();
 	try {
 		// Notes owns departure custody. The paste owns this packet's lifetime, so a
 		// completed or cancelled job cannot be replayed as unfinished keyboard input.
 		if (typeof _rapierNotesPending !== 'undefined') job.notes = _rapierNotesPending.job(payload);
 		_rapierSetPasteBusy(job, _rapierPastePayloadWeight(payload) >= _RAPIER_LARGE_PASTE_CHARS);
+		_rapierCheckpointPendingTyping();
 		await _rapierYieldUserVisibleWork();
 		if (job.cancelled) return false;
 
@@ -38125,7 +38338,8 @@ async function _rapierRunLargePaste(record, payload) {
 			// and the paste's redraw ends the browser's composition under it: where it ends is kept, so that the keyboard's late
 			// commit of it is settled as that word and not typed again (_rapierGuardBeforeInput, _rapierFinishMutationBarrier).
 			const word = _editorHostEl()?._rapierHeldWord, last = rapier.undo.branch[rapier.undo.cursor - 1];
-			const row = word && word.text && typing && last && (last.transaction?.affectedBlockIds || [])[0] === typing.block.id ? last.splices?.[0] : null;
+			const row = word && word.text && typing ? job.typing?.blockId === typing.block.id ? job.typing.row
+				: last && (last.transaction?.affectedBlockIds || [])[0] === typing.block.id ? last.splices?.[0] : null : null;
 			const folded = row && _rapierPrefixSuffixDiff(String(row.removed || ''), String(row.inserted || ''));
 			const ends = folded ? folded.pos + folded.inserted.length : -1;
 			if (folded && String(row.inserted).slice(ends - word.text.length, ends) === word.text) { word.folded = word.text; word.end = Number(row.pos) + ends; }
@@ -38166,8 +38380,14 @@ async function _rapierRunLargePaste(record, payload) {
 		}
 		return job.committed;
 	} finally {
-		try { _rapierClearPasteBusy(job); }
-		finally { finish(); }
+		try {
+			if (_rapierEditingRuntime.pasteJob === job && !job.committed) _rapierCheckpointPendingTyping();
+			job.flushTyping();
+		} finally {
+			// Unpublished source remains in this owner's custody if its integrity check refuses.
+			if (!job.typing) _rapierClearPasteBusy(job);
+			finish();
+		}
 		if (job.cancelled && !job.committed) showToast('Paste cancelled', 'info');
 	}
 }
@@ -38559,7 +38779,12 @@ function _rapierHandlePaste(event) {
 			const began = composing._rapierComposeStart, selection = window.getSelection(), host = _editorHostEl();
 			const end = began && selection && selection.rangeCount ? selection.getRangeAt(0) : null;
 			const caret = end && composing.contains(end.endContainer) ? _charOffsetForRangePoint(composing, end.endContainer, end.endOffset) : -1;
-			if (host) host._rapierHeldWord = { text: began && caret > began.start ? String(composing.textContent || '').slice(began.start, caret) : '', live: true, ..._rapierEditingRuntime.inputOwner() };
+			if (host) {
+				const blockId = _activeBlockEditContext()?.block.id;
+				const caretBefore = began && Number.isSafeInteger(blockId) ? { blockId, offset: began.start } : null;
+				if (caretBefore && began.end !== began.start) caretBefore.end = { blockId, offset: began.end };
+				host._rapierHeldWord = { text: began && caret > began.start ? String(composing.textContent || '').slice(began.start, caret) : '', live: true, caretBefore, ..._rapierEditingRuntime.inputOwner() };
+			}
 			_rapierHandleEditCompositionEnd(composing);
 			// Ending the word here emits no compositionend. Promote a new Notes title before the paste
 			// captures its heading boundary, as the Notes body tap does after ending the same word.
@@ -41421,6 +41646,11 @@ function _rapierResolveStableTargetRecord(record) {
 }
 
 function _rapierDialogsHandleBack() {
+	const native = document.activeElement?.closest('dialog:modal') || Array.from(document.querySelectorAll('dialog:modal')).at(-1);
+	if (native) {
+		if (native.dispatchEvent(new Event('cancel', {cancelable: true}))) native.close();
+		return true;
+	}
 	// The dialogs' Back, ahead of every surface's: the info overlay, the command palette, the active
 	// engine dialog, the shared confirmation (which can stand above Notes, for example Empty trash:
 	// its owner answers Back, never the cards closed under the question). The app's Back
@@ -41577,6 +41807,32 @@ function _rapierBackWant() {
 }
 function _rapierBackHold() {
 	if (typeof _rapierBackEntriesHold === 'function') _rapierBackEntriesHold(_rapierBackWant());
+	const publish = window.RapierPlatform?.host?.publishBackState;
+	if (typeof publish !== 'function' || !_rapierBootstrapRuntime.complete || _rapierBootstrapRuntime.failed || !_rapierUi.refs) return;
+	const state = _rapierLifecycleRuntime;
+	if (!state.nativeBackObserver) {
+		// A projection of the existing owners. No polling or history entries in the Android host.
+		let queued = false;
+		const refresh = () => {
+			if (queued) return;
+			queued = true;
+			queueMicrotask(() => { queued = false; _rapierBackHold(); });
+		};
+		state.nativeBackObserver = new MutationObserver(refresh);
+		state.nativeBackObserver.observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'open']});
+		for (const type of ['input', 'compositionstart', 'compositionend']) document.addEventListener(type, refresh, true);
+	}
+	const wrapper = rapier.view.activeWrapper;
+	const notes = typeof _rapierNotes === 'object' && _rapierNotes;
+	const consumes = !!(_rapierIsDirty() || !_rapierGuestQuiescent() || state.departing ||
+		_rapierCommandRuntime.palette || _rapierDialogRuntime.active || document.querySelector('dialog[open]') ||
+		_rapierDrawPresent() && _rapierDrawState.open || notes && (notes.mode || notes.open || notes.compose) ||
+		rapier.compare.active || _rapierUiSurfaces().some(surface => surface.open()) ||
+		wrapper?.classList && (wrapper.classList.contains('block-wrapper--source-edit') || wrapper.classList.contains('block-wrapper--math-source')) ||
+		_rapierTravelCan(-1));
+	if (state.nativeBackConsumes === consumes) return;
+	state.nativeBackConsumes = consumes;
+	publish(consumes);
 }
 
 function _rapierTargetInterval(resolved) {
@@ -48540,6 +48796,7 @@ function _rapierUiMount() {
 	window.addEventListener('rapier:mermaidplugin', event => _rapierUiDiagram.apply(event.detail || {}));
 	window.addEventListener('rapier:recent-files-changed', () => renderRecents());
 	window.addEventListener('rapier:platform-state', () => {
+        _rapierBackHold();
 		renderRecents();
 		_rapierUiPro.apply(_rapierUiPro.read());
 		renderSettings();

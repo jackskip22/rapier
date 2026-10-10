@@ -36,7 +36,8 @@ function _rapierWaterState() {
 function _rapierWaterReset() {
 	const state = _rapierDrawState; state.waterSettings = null; state.waterPanel = null; state.waterAction = null;
 	const latest = state.recipe?.shapes.slice().reverse().find(shape => shape.paint?.mode === 'water');
-	if (latest) _rapierWaterState().paper = latest.paint.paper;
+	const paper = state.recipe?.background?.kind === 'paper' ? state.recipe.background.paper : latest?.paint.paper;
+	if (paper) _rapierWaterState().paper = paper;
 }
 function _rapierWaterSave() {
 	const value = _rapierWaterState(), kept = {};
@@ -337,8 +338,8 @@ async function _rapierWaterAddBrush(file) {
 		}
 		if (tip) tip = _rapierWaterEngine().admitWaterTip(tip); if (!tip && !imported) throw new Error('The picture must contain a visible brush mark.');
 		if (!state.open || state.session !== session) return;
-		const settings=_rapierWaterState(); if (imported) { for (const key of ['brush','pigment','paper','size','water','load','angle','follow']) settings[key]=imported[key]; settings.strength=imported.firm ? 'firm' : 'light'; }
-		settings.tip=tip; settings.tipKey=tip ? _rapierPaintDigest(JSON.stringify(tip)) : null; settings.tipName=name; settings.tool='brush'; if (!imported) settings.brush='water/round';
+		const settings=_rapierWaterState(); if (imported) { for (const key of ['brush','pigment','paper','size','water','load','angle','follow','flow','bleed','edge','granulation','dry']) if (imported[key] != null) settings[key]=imported[key]; settings.strength=imported.firm ? 'firm' : 'light'; }
+		settings.tip=tip; settings.tipKey=tip ? _rapierPaintDigest(JSON.stringify(tip)) : null; settings.tipName=name; settings.tool=imported?.tool || 'brush'; if (!imported) settings.brush='water/round';
 		if (tip) {
 			settings.brush='water/own-' + settings.tipKey;
 			const water=_rapierWaterDefinition(settings).water, rows=_rapierWaterOwn().filter(row=>row.id!==settings.brush); rows.push({id:settings.brush,name,water}); state.waterBrushes=rows;

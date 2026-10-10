@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Shared native resources for Android's Play pack and Windows' executable: the plug-ins the page otherwise downloads from
-// jsDelivr (Mermaid and the text in pictures reader's ten files, fetched here at build time from their pins; MathJax and
+// jsDelivr (Mermaid and the text in pictures reader's ten files, fetched here at build time from their pins; maths and
 // Draw's letter sets, read from this tree), refused on any byte that is not the pinned one. The pins are the page's
 // own (shell/plugin-loader.js, images/ocr.mjs and draw/letters.mjs), so the page holds the pack's bytes to the same SHA-384 it
 // holds a download's. Each file is written under its resource id (the
@@ -37,7 +37,7 @@ function pdfFiles(pins) {
 // (where pinned) its length.
 export async function pluginPackFiles() {
 	const loader = await readFile(join(root, 'shell/plugin-loader.js'), 'utf8');
-	const math = bundlePin(loader, 'math', 'MATHJAX_VERSION');
+	const math = bundlePin(loader, 'math', 'MATH_VERSION');
 	math.path = join(root, 'shell/vendor', new URL(math.url).pathname.split('/').at(-1));
 	return [math, ...mermaidResourceFiles(root), ...fontSubsetResourceFiles(root),
 		...OCR_FILES.map(file => ({id: 'rapier-ocr-' + file.name, url: file.url, sri: file.sri, bytes: file.bytes})),

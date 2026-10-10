@@ -423,16 +423,32 @@ function _rapierCssPresentationIsRemote(property, value) {
 	return declaration.length ? _rapierDropRemoteDeclarations(declaration) : false;
 }
 
+// A reference with no scheme and no host of its own ("photo.png", "#top", each word of a class) resolves on the base's scheme and
+// host whatever its path, so its answer is the base's, found once for each base and page: a long document's render asked
+// this of every token of every attribute, a URL built each time.
+const relativeReference = {base: null, here: null, origin: ''};
 function _rapierRemoteSubresourceOrigin(value) {
 	const raw = String(value == null ? '' : value)
 		.replace(/[\u0009\u000a\u000d]+/g, '').replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '');
 	if (!raw) return '';
+	if (!/^[a-z][a-z0-9+.\-]*:/i.test(raw) && !/^[\\/]{2}/.test(raw)) {
+		const base = document.baseURI, here = location.protocol.toLowerCase() + '//' + location.host;
+		if (relativeReference.base !== base || relativeReference.here !== here) {
+			relativeReference.origin = _rapierRemoteSubresourceOriginOf('a', base, here);
+			relativeReference.base = base; relativeReference.here = here;
+		}
+		return relativeReference.origin;
+	}
+	return _rapierRemoteSubresourceOriginOf(raw, document.baseURI, location.protocol.toLowerCase() + '//' + location.host);
+}
+
+function _rapierRemoteSubresourceOriginOf(raw, base, here) {
 	let url;
-	try { url = new URL(raw, document.baseURI); } catch (_) { return ''; }
+	try { url = new URL(raw, base); } catch (_) { return ''; }
 	const host = String(url.host || '');
 	if (!host) return '';
 	const place = String(url.protocol || '').toLowerCase() + '//' + host;
-	return place === location.protocol.toLowerCase() + '//' + location.host ? '' : place;
+	return place === here ? '' : place;
 }
 
 function _rapierStyleWithoutRemoteUrls(value) {

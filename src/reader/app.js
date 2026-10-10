@@ -241,6 +241,7 @@ function readerShapeOverflow(host) {
 	for (const surface of host.querySelectorAll('.table-scroll-wrap, pre, .math-display-wrap, .diagram-block')) {
 		if (surface.closest('.rapier-hscroll') || surface.tagName === 'PRE' && surface.closest('.diagram-block')) continue;
 		const kind = surface.classList.contains('table-scroll-wrap') ? 'table' : surface.classList.contains('math-display-wrap') ? 'math' : surface.classList.contains('diagram-block') ? 'diagram' : 'code';
+		if (kind === 'math' && surface.querySelector('svg[data-rapier-math]')) continue;
 		const shell = document.createElement(kind === 'math' ? 'span' : 'div');
 		shell.className = 'rapier-hscroll rapier-hscroll--' + kind;
 		surface.parentNode.insertBefore(shell, surface);
@@ -251,6 +252,7 @@ function readerShapeOverflow(host) {
 		surface.addEventListener('scroll', () => requestAnimationFrame(() => readerUpdateOverflow(shell)), {passive: true});
 	}
 	for (const shell of host.querySelectorAll('.rapier-hscroll')) { readerOverflow.observe(shell); readerUpdateOverflow(shell); }
+	globalThis.RapierMath?.observe(host);
 }
 
 // ── Heading sections. A control at the heading's end folds the blocks up to the next heading of its level or above.
@@ -788,7 +790,7 @@ const _rapierUiDiagram = readerPlugin('mermaid', 'MERMAID', 'diagram');
 // A plug-in held on this device may be removed from its row, in the plug-in prompt's own shape.
 let readerDeleting = '';
 const READER_PLUGIN_WORDS = {
-	math: ['the MathJax renderer', 'Math shows as its TeX source until you install it again.'],
+	math: ['the maths renderer', 'Math shows as its TeX source until you install it again.'],
 	mermaid: ['the Mermaid renderer', 'Diagrams that need this plug-in show their source until you install it again.'],
 	pdf: ['the PDF reader', 'PDF files cannot be opened until you install it again.'],
 	ocr: ['the text reader and its cached words', 'Search stops reading pictures until you install it again.'],

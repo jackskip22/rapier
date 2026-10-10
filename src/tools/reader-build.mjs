@@ -23,6 +23,7 @@ import {minifyVendor, BROWSER_MINIFY} from './minify-vendor.mjs';
 import {entitiesVendor} from './entities-vendor.mjs';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {builtPlugin, readerPluginLoader, pluginManifest, BUILT_STORES} from './reader-plugins.mjs';
+import {fillMathLicense} from './build-math.mjs';
 import {SIZE_BUDGETS} from './profile-budgets.mjs';
 
 const {minify} = createRequire(import.meta.url)('./vendor/terser/bundle.min.js');
@@ -180,7 +181,7 @@ const wrapModule = (factory, text) => 'const ' + factory + ' = (() => {\n' + tex
 // ── The page.
 export async function buildReader({root = here, unchecked = []} = {}) {
 	const started = Date.now(), report = {};
-	const ui = await read('editor/ui.html');
+	const ui = await fillMathLicense(await read('editor/ui.html'), {root});
 	const {markup: blocks, licenses, sprite} = readerBlocks(ui);
 
 	// 1. Fragments the reader writes, and the optional plug-in loader as the editor ships it.

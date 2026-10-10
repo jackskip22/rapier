@@ -10,7 +10,7 @@ const _rapierProviders = Object.seal({math: null, mermaid: null, flowchart: null
 // No host stores pictures for the reader: a picture shows from the bytes the document carries.
 const _rapierEmbedAssetSource = () => false;
 // The reader shows no editing surface, so no block waits dormant and none is hidden from a heading search.
-const _rapierDormantHeadings = () => [];
+const _rapierDormantHeadings = (root, selector, includeLive) => includeLive ? Array.from(root.querySelectorAll(selector)) : [];
 
 const READER_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024;
 

@@ -467,6 +467,8 @@
 	-webkit-overflow-scrolling:touch;
 	text-align:center;
 }
+.md-render .math-display-wrap:has(svg[data-rapier-math]){overflow:visible}
+.md-render svg[data-rapier-math]{max-width:100%;height:auto}
 .md-render .math-display-wrap>math{
 	display:inline-block;
 	width:auto;

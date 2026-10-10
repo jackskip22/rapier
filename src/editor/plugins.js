@@ -9,7 +9,7 @@ const _rapierPluginDelete = {asking: null, busy: false, bound: false};
 // or diagram renderer an app keeps and cannot remove (RapierPlatform.resources without remove) is not offered; Android's one
 // Google Play pack is removed whole, and every plug-in in it goes together.
 const RAPIER_PLUGIN_DELETE = Object.freeze({
-	math: {name: 'math', what: 'the MathJax renderer', after: 'Math shows as its TeX source until you install it again.',
+	math: {name: 'math', what: 'the maths renderer', after: 'Math shows as its TeX source until you install it again.',
 		held: () => _rapierProviders.math?.status === 'ready' && _rapierProviders.math.deletable,
 		async forget() { await _rapierProviders.math.forget(); _rapierUiMath.dismissed = true; if (typeof rerenderMathBlocks === 'function') rerenderMathBlocks(); }},
 	mermaid: {name: 'mermaid', what: 'the Mermaid renderer', after: 'Diagrams that need this plug-in show their source until you install it again.',

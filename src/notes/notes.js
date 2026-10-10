@@ -366,6 +366,27 @@ const _rapierNotesStore = {
 	// a page does get, and only a page with neither keeps its notes in that store's own memory, said
 	// as such. `durable` is null until asked.
 	durable: null, probe: null, storageFault: null, native: false,
+	androidRestore: null,
+	async restoreAndroid() {
+		const call = globalThis.RapierPlatform?.host?.notesBackup;
+		if (!this.native || typeof call !== 'function') return;
+		if (!this.androidRestore) this.androidRestore = (async () => {
+			try {
+				const results = await globalThis.RapierNotesBackup.restoreAndroidBackups(this.folder, call);
+				_rapierNotes.androidRestoreError = null;
+				_rapierNotes.androidRestoreSessions = [];
+				if (results.length) {
+					const omitted = results.reduce((count, result) => count + result.omitted, 0);
+					showToast('Android restored your notes and history.' + (omitted ? ' ' + omitted + ' media files exceeded the cloud limit; keep your full backup.' : ''), omitted ? 'info' : 'success');
+				}
+			} catch (error) {
+				_rapierNotes.androidRestoreError = String(error?.message || error);
+				_rapierNotes.androidRestoreSessions = (error.held || []).map(row => ({id: row.session}));
+				showToast((error.restored?.length ? 'Other Android backups were restored. ' : '') + 'Android kept this backup: ' + _rapierNotes.androidRestoreError + ' Use Export restored backup in Notes settings.', 'error');
+			}
+		})().finally(() => { this.androidRestore = null; });
+		return this.androidRestore;
+	},
 	// ---- The folder's one owner
 	// ---------------------------------------------------------------------
 	// notes/folder.mjs on notes/owner.mjs: every write to the folder is a transaction under the
@@ -418,6 +439,7 @@ const _rapierNotesStore = {
 				try {
 					if (typeof globalThis.RapierPlatform.host.notesStore !== 'function') throw new Error('The native Notes folder is unavailable.');
 					this.native = true; this.attach(true); await this.bytes.prepare();
+					await this.restoreAndroid();
 					this.durable = true; this.storageFault = null; _rapierNotes.asciiNames = false;
 					return true;
 				} catch (error) { this.storageFault = error; this.probe = null; throw error; }
@@ -975,18 +997,31 @@ function _rapierNotesStorageKindSentence() {
 		: kind === 'unknown' ? 'Storage protection unconfirmed.'
 		: 'Open Notes to check storage.';
 }
-// The two places the storage answer is written: the settings panel's sentence (whole: space, backups), and the quiet
-// line under the cards' head, which says what the storage is until a backup exists and never for the app's own folder.
+// The storage information keeps the whole answer; Android also gives its system-backup status
+// beside Backup. The quiet cards line says where notes live until a backup exists, never for the app's own folder.
 function _rapierNotesStorageLines() {
 	const state = _rapierNotes, kind = state.storageKnown;
 	const note = document.getElementById('notes-storage-note');
 	if (note) { note.textContent = _rapierNotesStorageSentence(); note.dataset.notesStorage = kind; }
+	const android = document.getElementById('notes-android-backup-status');
+	if (android) android.textContent = _rapierNotesAndroidBackupSentence();
 	const line = document.getElementById('notes-storage-line');
 	if (!line) return;
 	const quiet = !kind || kind === 'native' || !!state.lastBackup;
 	line.hidden = quiet;
 	line.textContent = quiet ? '' : _rapierNotesStorageKindSentence();
 	line.dataset.notesStorage = kind || '';
+}
+function _rapierNotesAndroidBackupSentence() {
+	const android = _rapierNotes.androidBackup;
+	return _rapierNotes.androidRestoreError ? 'Restored backup kept: ' + _rapierNotes.androidRestoreError
+		: android?.unfinishedRestores ? 'Android kept an incomplete restored backup. Keep your original backup; the phone did not deliver a complete copy.'
+		: android?.state === 'too-large' || android?.lastAttempt === 'quota-exceeded' ? 'Android cloud limit: 25 MB. Use Backup for this library; device transfer keeps everything.'
+		: android?.state === 'limited' ? 'Android cloud: text and history first; ' + android.omittedCount + ' media files need your full backup. Device transfer keeps everything.'
+		: android?.lastAttempt === 'encryption-required' ? 'Android cloud backup needs a screen lock.'
+		: android?.state === 'pending-write' ? 'Android backup waits for your notes to finish saving.'
+		: android?.state === 'unreadable' ? 'Android could not prepare a complete cloud backup. Keep a full Backup of your original files.'
+		: 'Android backup follows your phone settings. Cloud limit: 25 MB; device transfer keeps everything.';
 }
 function _rapierNotesStorageSentence() {
 	const kind = _rapierNotes.storageKnown;
@@ -998,7 +1033,8 @@ function _rapierNotesStorageSentence() {
 	const space = [_rapierNotes.audioBytes == null ? '' : 'recordings ' + _rapierNotesBytesWords(_rapierNotes.audioBytes),
 		_rapierNotes.attachmentBytes == null ? '' : 'attachments ' + _rapierNotesBytesWords(_rapierNotes.attachmentBytes),
 		_rapierNotes.pastBytes == null ? '' : 'history ' + _rapierNotesBytesWords(_rapierNotes.pastBytes) + ' (' + _rapierNotes.pastVersions.toLocaleString('en') + (_rapierNotes.pastVersions === 1 ? ' version)' : ' versions)')].filter(Boolean);
-	return sentence + (kind === 'native' ? ' Clearing app data, uninstalling or losing this device can delete them.' : ['memory', 'fault'].includes(kind) || kind == null ? '' : ' Clearing browser data or losing this device can delete them.')
+	const systemBackup = kind === 'native' && globalThis.RapierPlatform?.host?.notesBackup ? ' ' + _rapierNotesAndroidBackupSentence() : '';
+	return sentence + systemBackup + (kind === 'native' ? '' : ['memory', 'fault'].includes(kind) || kind == null ? '' : ' Clearing browser data or losing this device can delete them.')
 		+ (space.length ? ' Space: ' + space.join(', ') + '.' : '') + pending
 		+ (backup ? ' Last backup: ' + action + (backup.parts ? ', ' + backup.parts + (backup.parts === 1 ? ' part' : ' parts') + ', ' + _rapierNotesBytesWords(backup.bytes) : '') + (backup.omitted?.length ? '; missing: ' + backup.omitted.map(row => row.name).join(', ') : '') + ', ' + new Date(backup.stamp).toLocaleString('en') + '. Check every file arrived.' : ' Keep a backup elsewhere.');
 }
@@ -1008,6 +1044,13 @@ async function _rapierNotesStorageAnswer(ask = false, {measure = true} = {}) {
 	let admissionFault = null;
 	try { await _rapierNotesStore.kind(); if (await _rapierNotesStore.bytes?.prepare() === false) throw new Error(_rapierNotesStore.bytes.reason || 'the notes store refused writes'); }
 	catch (error) { admissionFault = error; }
+	if (_rapierNotesStore.native && typeof globalThis.RapierPlatform?.host?.notesBackup === 'function') {
+		try {
+			_rapierNotes.androidBackup = await globalThis.RapierPlatform.host.notesBackup('notes.backup.status', {});
+			_rapierNotes.androidRestoreSessions = (await globalThis.RapierPlatform.host.notesBackup('notes.backup.pending', {})).sessions.map(row => ({id: row.id, createdAt: row.manifest.createdAt}));
+		}
+		catch (_) { _rapierNotes.androidBackup = null; }
+	}
 	// First-open copy needs admission alone; it must not walk an entire library to say where it lives.
 	if (measure) {
 		// What the recordings weigh is read from the files themselves, never remembered as a running
@@ -1806,6 +1849,10 @@ function _rapierNotesSettingsPaint() {
 	const bak = action('Backup', 'menu-backup'); bak.dataset.action = 'notes-backup';
 	body.appendChild(row(imp));
 	body.appendChild(row(bak));
+	if (_rapierNotesStore.native && globalThis.RapierPlatform?.host?.notesBackup) {
+		const status = _rapierNotesEl('p', 'rapier-notes-storage', _rapierNotesAndroidBackupSentence());
+		status.id = 'notes-android-backup-status'; body.appendChild(status);
+	}
 	body.appendChild(row(action('Saved files', 'menu-saved-files')));
 	if (globalThis.RapierNotesHistory) body.appendChild(row(action('Tidy history', 'menu-history-tidy')));
 	// What the folder is holding right now: a receipt to read, a backup half made. Each is a real
@@ -1815,6 +1862,7 @@ function _rapierNotesSettingsPaint() {
 	if (state.backupBusy && state.backupController) extra.push(action('Cancel preparation', 'backup-cancel'));
 	if (state.unfinishedBackup) extra.push(action('Discard unfinished backup', 'backup-discard-unfinished'));
 	if (state.preparedBackup) { if (!state.preparedBackup.sequence || state.preparedBackup.sent.length < state.preparedBackup.plan.parts.length) extra.push(action(state.preparedBackup.sequence ? 'Continue backup' : 'Export backup copy', 'backup-export')); extra.push(action('Discard backup copy', 'backup-discard')); }
+	for (const [i, restored] of (state.androidRestoreSessions || []).entries()) extra.push(action('Export restored backup' + (state.androidRestoreSessions.length > 1 ? ' ' + (i + 1) : ''), 'backup-export-android', {notesRestore: restored.id}));
 	for (const b of extra) body.appendChild(row(b));
 	// Skills: its own title, OFF on the left, in the toggle box this panel already uses.
 	body.appendChild(_rapierNotesSettingsTitle('skills'));
@@ -1867,6 +1915,8 @@ function _rapierNotesSettingsOpen(on) {
 	if (on) {
 		_rapierNotesPopup(null); _rapierNotesSnackHide();
 		_rapierNotesSettingsPaint();
+		const beforeRestores = JSON.stringify(state.androidRestoreSessions || []);
+		void _rapierNotesStorageAnswer(false, {measure: false}).then(() => { if (_rapierNotesSettingsIsOpen() && beforeRestores !== JSON.stringify(state.androidRestoreSessions || [])) _rapierNotesSettingsPaint(); });
 		openDialog(overlay, {panel: '.settings-panel', onEscape: () => _rapierNotesSettingsOpen(false)});
 		menuBtn?.setAttribute('aria-expanded', 'true');
 	} else {
@@ -5144,6 +5194,7 @@ async function _rapierNotesAct(act, arg) {
 	if (act === 'backup-discard-unfinished') { await _rapierNotesDiscardUnfinishedBackup(); return; }
 	if (act === 'backup-cancel') { _rapierNotes.backupController?.abort(new Error('cancelled by the person')); return; }
 	if (act === 'backup-export') { await _rapierNotesExportPreparedBackup(); return; }
+	if (act === 'backup-export-android') { await _rapierNotesExportAndroidBackup(arg); return; }
 	if (act === 'backup-discard') { await _rapierNotesDiscardPreparedBackup(); return; }
 	const state = _rapierNotes, M = _rapierNotesModel();
 	if (act === 'section-rename' || act === 'section-delete') { await _rapierNotesSectionEdit(act, arg); return; }
@@ -6830,6 +6881,36 @@ async function _rapierNotesExportPreparedBackup() {
 	catch (error) { showToast('The export did not complete. The backup copy was not discarded: ' + String(error?.message || error), 'error'); }
 	finally { await release?.(); state.backupBusy = false; }
 }
+async function _rapierNotesExportAndroidBackup(session) {
+	const state = _rapierNotes, B = globalThis.RapierNotesBackup, call = globalThis.RapierPlatform?.host?.notesBackup;
+	if (state.backupBusy || typeof call !== 'function') return;
+	state.backupBusy = true;
+	let release, progress;
+	const stages = [], outcomes = [], controller = new AbortController();
+	try {
+		state.backupController = controller; progress = _rapierNotesBackupProgress(controller);
+		release = await _rapierNotesBackupLease();
+		const stamp = new Date(), name = _rapierNotesBackupName(stamp).replace('rapier-notes-', 'rapier-android-restored-');
+		const result = await B.exportAndroidBackup(call, session, async partName => {
+			if (!progress) progress = _rapierNotesBackupProgress(controller);
+			const stage = await _rapierNotesCreateBackupStage(partName, []); stages.push(stage); return stage.sink;
+		}, {name, stamp: stamp.getTime(), appVersion: document.querySelector('meta[name="rapier-version"]')?.content || 'unknown', signal: controller.signal,
+			onProgress: value => progress?.update(value), onPart: async part => {
+				const file = await B.detachBackupFile(part.file, {name: part.name, bytes: part.bytes, digest: part.sink.digest}, {signal: controller.signal, onProgress: value => progress?.update(value)});
+				progress?.close(); progress = null;
+				const outcome = await _rapierNotesExportBackup(file, part.name);
+				if (outcome.status === 'cancelled') return false;
+				outcomes.push(outcome); await part.sink.discard(); return true;
+			}});
+		if (result.completed) showToast((outcomes.every(row => row.status === 'confirmed') ? 'Exported' : 'Sent') + ' the restored ' + (result.recovery ? 'recovery files' : 'backup') + '. The original Android snapshot is still kept.' + (result.recovery ? ' The ZIP contains the original files; this reader cannot merge their history.' : ''), 'info');
+	} catch (error) { showToast('The restored backup is still kept: ' + String(error?.message || error), 'error'); }
+	finally {
+		// These are reproducible export parts beside an immutable Android original. Export
+		// never retires that original or marks the different live library backed up.
+		for (const stage of stages) if (stage.sink.state === 'sealed') try { await stage.sink.discard(); } catch (_) {}
+		progress?.close(); await release?.(); state.backupBusy = false; state.backupController = null;
+	}
+}
 // ---- The backup worker --------------------------------------------------------------------------
 // The sync access handles live in a dedicated worker: it reads the sources, writes the archive and
 // certifies every staged byte off the main thread; the page keeps the lease, the snapshot check,
@@ -7867,7 +7948,7 @@ function _rapierNotesBind(surface, search) {
 			void _rapierNotesToggleSection(el.dataset.notesSection); return;
 		}
 		if (act === 'section-new' || act === 'section-rename' || act === 'remind-set') return; // the form's submit carries the field's value
-		void _rapierNotesAct(act, el.dataset.notesColour ?? el.dataset.notesSectionName ?? el.dataset.notesRemindAt ?? el.dataset.notesRepeat ?? el.dataset.notesVersion ?? el.dataset.notesTag ?? el.dataset.notesAdd ?? el.dataset.notesReceipt);
+		void _rapierNotesAct(act, el.dataset.notesColour ?? el.dataset.notesSectionName ?? el.dataset.notesRemindAt ?? el.dataset.notesRepeat ?? el.dataset.notesVersion ?? el.dataset.notesTag ?? el.dataset.notesAdd ?? el.dataset.notesReceipt ?? el.dataset.notesRestore);
 	});
 	// A new query is a new list: it is read from its top, so the first match sits right under the
 	// bar rather than behind it (the room the bar took above the cards is what makes that possible).

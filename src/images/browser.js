@@ -286,8 +286,8 @@ const _rapierEmbeddedImages = (() => {
       if (native) {
         if (native.width !== dimensions.width || native.height !== dimensions.height) throw new Error('Embedded image dimensions do not match its record');
       } else {
-        // A browser that cannot DISPLAY JPEG XL never stops embedding or working with a picture; the preview degrades to a notice at its own size. No
-        // decoder says "update"; a decoder that fails says "damaged". Saved bytes untouched.
+        // A browser without JPEG XL support shows a notice at the picture's own size.
+        // A supported decode that fails means damage. Saved bytes stay untouched.
         if (record.codec === 'image/jxl') {
           await jxlProbed; // never classified before the probe answers
           damaged = containerDamaged || jxlDisplayable();
@@ -319,11 +319,11 @@ const _rapierEmbeddedImages = (() => {
     pending.set(signature, request);
     return joinRaster(request, signal);
   }
-  // The notice: a flat box at the picture's own dimensions, with reason and remedy.
+  // The notice keeps the picture's dimensions.
   function noticeUrl(width, height, damaged = false) {
     const w = Math.max(1, width | 0), h = Math.max(1, height | 0);
     const size = Math.max(9, Math.min(w / 18, h / 7, 22)), pad = size * 0.9;
-    const lines = damaged ? ['THIS JPEG XL PICTURE IS', 'DAMAGED. ITS BYTES ARE', 'KEPT, UNCHANGED.'] : ['YOUR BROWSER CANNOT SHOW', 'THIS JPEG XL PICTURE.', 'UPDATE IT TO SEE IT.'];
+    const lines = damaged ? ['THIS JPEG XL PICTURE IS', 'DAMAGED. ITS BYTES ARE', 'KEPT, UNCHANGED.'] : ['THIS BROWSER CANNOT SHOW', 'THIS JPEG XL PICTURE.', 'PICTURE KEPT UNCHANGED.'];
     const fits = w >= size * 15 && h >= size * 5;
     const text = fits ? lines.map((line, i) =>
       '<text x="' + (w / 2) + '" y="' + (h / 2 + (i - 1) * size * 1.5) + '" fill="#8a8a8a" font-size="' + size +
@@ -337,7 +337,7 @@ const _rapierEmbeddedImages = (() => {
   function notifyStale() {
     if (warned) return;
     warned = true;
-    showToast('Your browser cannot show JPEG XL pictures. Update it and reopen this document. The pictures are unchanged.', 'info');
+    showToast('This browser cannot show JPEG XL pictures. Use a browser that supports JPEG XL. Your pictures are unchanged.', 'info');
   }
   function notifyDamaged() {
     if (damagedWarned) return;
@@ -357,7 +357,7 @@ const _rapierEmbeddedImages = (() => {
     const row = await rasterRecord(source, id, indexForSource(source));
     // The notice is never the picture: never handed to Share, an export or the clipboard.
     if (row.damaged) throw Object.assign(new Error('This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.'), {code: 'IMAGE_DAMAGED'});
-    if (row.undisplayable) throw Object.assign(new Error('This browser cannot read JPEG XL, so this picture cannot be converted. Update your browser and try again; the picture itself is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
+    if (row.undisplayable) throw Object.assign(new Error('This browser cannot read JPEG XL, so this picture cannot be converted. Use a browser that supports JPEG XL. The picture is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
     const nested = nestedJxl(row);
     if (nested) return portableSvg(row, nested);
     if (row.type === 'image/png' || !png && row.type !== 'image/jxl') return row;
@@ -377,7 +377,7 @@ const _rapierEmbeddedImages = (() => {
   }
   async function portableSvg(row, text) {
     await jxlProbed;
-    if (!jxlDisplayable()) throw Object.assign(new Error('This browser cannot read JPEG XL, so the paint inside this drawing cannot be converted. Update your browser and try again; the drawing itself is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
+    if (!jxlDisplayable()) throw Object.assign(new Error('This browser cannot read JPEG XL, so the paint inside this drawing cannot be converted. Use a browser that supports JPEG XL. The drawing is unchanged.'), {code: 'IMAGE_JXL_UNREADABLE'});
     const converted = new Map();
     for (const match of text.matchAll(NESTED_JXL_RE)) {
       const url = match[3];
@@ -719,7 +719,7 @@ const _rapierEmbeddedImages = (() => {
         // A row presenting the notice is never handed on. Without compat the page carries the JPEG XL bytes; compat refuses as Copy does.
         let shown;
         if (row.undisplayable || row.damaged) {
-          if (jxl) throw Object.assign(new Error(row.damaged ? 'This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.' : 'This browser cannot read JPEG XL, so this picture cannot be converted. Update your browser and try again; the picture itself is unchanged.'), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'});
+          if (jxl) throw Object.assign(new Error(row.damaged ? 'This JPEG XL picture is damaged and cannot be converted. Its bytes are kept unchanged.' : 'This browser cannot read JPEG XL, so this picture cannot be converted. Use a browser that supports JPEG XL. The picture is unchanged.'), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'});
           shown = {...row, url: row.signature};
         } else shown = jxl ? await smallestPortable(row) : row;
         resolved.set(id, shown);

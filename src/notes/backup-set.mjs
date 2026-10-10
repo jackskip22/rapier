@@ -30,7 +30,7 @@ export async function writeBackupSet(source, createSink, {plan, name, assertCurr
 		hashes.set(file.name, hash.finish()); pending.delete(file.name); if (index) indexBytes = index;
 	}
 	if (pending.size) throw new Error('a backup source disappeared: ' + [...pending.keys()].join(', '));
-	const header = backupManifestHeader([...manifest.files, ...(manifest.omitted || [])].map(row => ({name: row.name, ...(row.name === 'notes.json' ? {bytes: indexBytes} : {})})), options);
+	const header = options.manifestHeader || backupManifestHeader([...manifest.files, ...(manifest.omitted || [])].map(row => ({name: row.name, ...(row.name === 'notes.json' ? {bytes: indexBytes} : {})})), options);
 	for (const key of ['revision', 'folderGeneration']) if (JSON.stringify(header[key]) !== JSON.stringify(manifest[key])) throw new Error('the backup sidecar changed before writing');
 	for (const row of manifest.files) row.sha256 = hashes.get(row.name);
 	if (manifest.set) {

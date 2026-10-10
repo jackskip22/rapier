@@ -3,8 +3,7 @@
 /* Typing that makes its own blocks: the marker a person types at a line's start, read as the block
    they expect, and a mark they have just closed, read as that mark. Pure: the words before the
    caret in, a decision out. No DOM, no history, no second grammar. Every prefix returned is
-   CommonMark or GFM and is spelled as it was typed; the one exception is the task item, whose only
-   Markdown is `- [ ] `.
+   CommonMark or GFM and keeps its typed list marker. A bare task box gets a `- ` marker.
    
    `before` is the block's (or the item's) words from its start to the caret. `key` is 'space' (the
    space just typed is the last character of `before`) or 'enter' (the caret is at the end and Enter
@@ -24,8 +23,9 @@ function _rapierTypedBlock(before, key, where) {
 		// CommonMark's ordered marker is one to nine digits, including a non-1 start.
 		if (/^\d{1,9}[.)] $/.test(text)) return { kind: 'ol', prefix: text, literal: text.slice(0, -2) + '\\' + text.slice(-2) };
 		if (/^[-*+] $/.test(text)) return { kind: 'ul', prefix: text, literal: '\\' + text };
-		const task = /^\[([ xX]?)\] $/.exec(text);
-		if (task) return { kind: 'task', prefix: '- [' + (/x/i.test(task[1]) ? 'x' : ' ') + '] ', literal: '\\[' + task[1] + '\\] ' };
+		const task = /^([-*+] )?\[([ xX]?)\] $/.exec(text);
+		if (task) return { kind: 'task', prefix: (task[1] || '- ') + '[' + (/x/i.test(task[2]) ? 'x' : ' ') + '] ',
+			literal: (task[1] ? '\\' + task[1] : '') + '\\[' + task[2] + '\\] ' };
 		if (text === '> ') return { kind: 'quote', prefix: text, literal: '\\' + text };
 		if (/^#{1,6} $/.test(text)) return { kind: 'heading', prefix: text, literal: '\\' + text };
 		return null;

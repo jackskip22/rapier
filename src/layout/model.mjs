@@ -375,13 +375,13 @@ export function slotsForBand(width, obstacles, top, height, minWidth = 40) {
 
 // A picture moves a block's words only where its outline (with its standoff) meets them. The block is laid as it lies with no
 // picture beside it, balanced and aligned in the whole column; when no line of words there meets an obstacle, that is its
-// layout. Otherwise its lines flow around the outline. A block set from the side its lines start on, and not balanced, lies
-// the same both ways whenever the outline misses its words, so it is laid once.
+// layout. Otherwise its lines flow around the outline. A short heading can fit beside the outline in a slot narrower
+// than minWidth, so start-aligned, unbalanced words need the same contact check.
 export function flowLines(flow, width, top, obstacles, lineHeight, minWidth, direction = 'ltr', balance = 0, align = 'start') {
   const plan = linePlan(flow, width, top, obstacles, lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange);
   const side = align === 'center' ? 'center' : align === 'left' || align === 'right' ? align
     : (align === 'end') === (direction === 'rtl') ? 'left' : 'right';
-  if (!plan || !obstacles?.length || !balance && side === (direction === 'rtl' ? 'right' : 'left')) return plan;
+  if (!plan || !obstacles?.length) return plan;
   const free = linePlan(flow, width, top, [], lineHeight, minWidth, direction, balance, slotsForBand, layoutNextRichInlineLineRange, materializeRichInlineLineRange);
   if (!free) return plan;
   const meets = free.lines.some(line => {

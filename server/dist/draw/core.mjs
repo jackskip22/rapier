@@ -17,7 +17,19 @@ import {sha256} from '../kit/ledger/hash.mjs';
 import {inspectJPEGXL} from '../images/header.mjs';
 import {inspectRaster} from '../images/raster.mjs';
 
-export const _rapierDrawAssetGeneration = sha256;
+// A saved drawing's URL is immutable. Reading its occurrence again reuses only that exact URL's digest.
+const _rapierDrawAssetGenerations = [];
+export function _rapierDrawAssetGeneration(value) {
+	const at = _rapierDrawAssetGenerations.findIndex(row => row.value === value);
+	if (at >= 0) { const [row] = _rapierDrawAssetGenerations.splice(at, 1); _rapierDrawAssetGenerations.push(row); return row.digest; }
+	const digest = sha256(value);
+	if (typeof value === 'string' && value.length <= 32 * 1024 * 1024) {
+		_rapierDrawAssetGenerations.push({value, digest});
+		while (_rapierDrawAssetGenerations.length > 4 || _rapierDrawAssetGenerations.reduce((total, row) => total + row.value.length, 0) > 32 * 1024 * 1024)
+			_rapierDrawAssetGenerations.shift();
+	}
+	return digest;
+}
 
 function _rapierDrawNextAssetName(records) {
 	const used = new Set();

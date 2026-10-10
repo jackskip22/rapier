@@ -279,10 +279,27 @@ window.RapierWriterPromotion = RapierWriterPromotion;
 const RapierPreferences = (function () {
 var _preferenceListeners = Object.create(null);
 var _preferenceRevisions = Object.create(null);
+var _androidPreferenceRestore = false, _androidPreferenceLoaded = false, _androidPreferenceWrites = Promise.resolve();
 function _preferenceAdmits(spec, value) {
 	return value != null && typeof value === typeof spec.fallback &&
 		Array.isArray(value) === Array.isArray(spec.fallback) &&
 		(!spec.values || spec.values.indexOf(value) >= 0) && (!spec.pattern || new RegExp(spec.pattern).test(value));
+}
+function _androidPreferenceSnapshot() {
+	var values = {};
+	for (var spec of Object.values(globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS)) {
+		try { var raw = localStorage.getItem(spec.key), value = raw == null ? null : JSON.parse(raw); if (_preferenceAdmits(spec, value)) values[spec.key] = value; } catch (_) {}
+	}
+	return values;
+}
+function _androidPreferenceMirror() {
+	var backup = window.RapierPlatform?.host?.notesBackup;
+	// Startup can author a choice before native restore has returned. Keep it locally,
+	// then mirror the joined values, never replace unread restored choices with a partial set.
+	if (!_androidPreferenceLoaded || _androidPreferenceRestore || typeof backup !== 'function') return;
+	var values = _androidPreferenceSnapshot();
+	_androidPreferenceWrites = _androidPreferenceWrites.catch(function () {}).then(function () { return backup('notes.backup.settings', {values: values}); });
+	void _androidPreferenceWrites.catch(function (error) { console.warn('[rapier] Android settings backup', error); });
 }
 return Object.freeze({
 	read: function rapierReadPreference(field) {
@@ -324,6 +341,7 @@ return Object.freeze({
 		} else {
 			try { localStorage.setItem(spec.key, JSON.stringify(admitted)); } catch (_) {}
 		}
+		_androidPreferenceMirror();
 		// Request persistence before the visual callback. A refused store still permits
 		// the temporary choice, as ordinary writes do; its unchanged readback is the receipt.
 		var deferred = typeof schedule === 'function', stored = deferred ? RapierPreferences.read(field) : null, notified = false;
@@ -353,6 +371,19 @@ return Object.freeze({
 		return Object.fromEntries(Object.keys(globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS).map(function (field) {
 			return [field, RapierPreferences.read(field)];
 		}));
+	},
+	// A restored choice fills an absent field; a choice already made on this device wins.
+	restoreAndroid: function (values) {
+		if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('Android settings are unreadable.');
+		_androidPreferenceRestore = true;
+		try {
+			for (var field of Object.keys(globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS)) {
+				var spec = RapierStorage.preferences[field];
+				if (!Object.hasOwn(values, spec.key) || !_preferenceAdmits(spec, values[spec.key])) continue;
+				try { if (localStorage.getItem(spec.key) == null) RapierPreferences.write(field, values[spec.key]); } catch (_) {}
+			}
+		} finally { _androidPreferenceRestore = false; _androidPreferenceLoaded = true; }
+		_androidPreferenceMirror();
 	},
 });
 })();
@@ -2437,7 +2468,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			ready: function () { return _srReady; },
 			resourceInstallMessage: function (resource, phase) {
 				if (resource === 'math' && phase === 'prompt') {
-					return 'This document contains math. SpeedRacer can retrieve the exact verified MathJax renderer once and retain it as a shared Declared Resource for offline reuse.';
+					return 'This document contains math. SpeedRacer can retrieve the exact verified maths renderer once and retain it as a shared Declared Resource for offline reuse.';
 				}
 				return '';
 			},
@@ -2932,6 +2963,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get printCurrentDocument() { return method('printCurrentDocument'); },
 			get requestClose() { return method('requestClose'); },
 			get notesStore() { return method('notesStore'); },
+			get notesBackup() { return method('notesBackup'); },
 			get shareInbox() { return method('shareInbox'); },
 			get readShared() { return method('readShared'); },
 			get openAttachment() { return method('openAttachment'); },
@@ -2958,6 +2990,7 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get publishTitle() { return method('publishTitle'); },
 			get publishSelection() { return method('publishSelection'); },
 			get publishTheme() { return method('publishTheme'); },
+			get publishBackState() { return method('publishBackState'); },
 		});
 		var installation = Object.freeze({
 			get supported() { return raw.installationSupported === true; },
@@ -3034,10 +3067,18 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 	var _nativeReportedGenerations = new Map();
 
 	function _createNativePlatform() {
+		var preferencesReady;
 		return {
 			get id() { return _nativeHostRuntime.state.platformId; },
 			get recoveryAutoResume() { return _nativeHostRuntime.state.recoveryAutoResume === true; },
-			ready: function () { return _nativeHostRuntime.ready; },
+			ready: function () {
+				if (!preferencesReady) preferencesReady = _nativeHostRuntime.ready.then(async function () {
+					if (!_nativeCapability('notesBackup')) return;
+					try { var restored = await _nativeHostCall('notes.backup.settings.get', {}); RapierPreferences.restoreAndroid(restored.values); }
+					catch (error) { console.warn('[rapier] Android settings restore', error); }
+				});
+				return preferencesReady;
+			},
 			ownsPreferenceStore: false,
 			ownsRecoveryStore: false,
 			get ownsRecoveryWriterBoundary() { return _nativeCapability('ownsRecoveryWriterBoundary'); },
@@ -3172,6 +3213,11 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			get share() { return _nativeCapability('share') ? _nativeShare : null; },
 			publishTheme: function (dark) {
 				if (_nativeCapability('windowTheme')) _nativeHostNotify('window.theme', { dark: !!dark });
+			},
+			get publishBackState() {
+				return _nativeCapability('backState') ? function (consumes) {
+					_nativeHostNotify('window.backState', { consumes: consumes === true });
+				} : null;
 			},
 			takeBootDocument: async function () {
 				var payload = _rapierBootstrapRuntime.pendingIntake || _nativeIntakeRuntime.last;
@@ -3353,6 +3399,12 @@ function _rapierPwaFrameAdmission(isTopLevel) {
 			},
 			get notesStore() {
 				return _nativeCapability('notesStore') ? function (operation, args) { return _nativeHostCall(operation, args); } : null;
+			},
+			get notesBackup() {
+				return _nativeCapability('notesBackup') ? function (operation, args) {
+					if (!/^notes\.backup\.(?:pending|status|settings|settings\.get|complete|copy|read\.(?:begin|chunk|close))$/.test(operation)) throw new Error('Unknown Android backup operation');
+					return _nativeHostCall(operation, args || {}, 600000);
+				} : null;
 			},
 			get openAttachment() {
 				return _nativeCapability('notesAttachmentOpen') ? function (name) { return _nativeHostCall('notes.attachment.open', {name}); } : null;

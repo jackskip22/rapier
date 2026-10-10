@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Verified plug-ins: pinned by version, length and SHA-384, verified from the bytes held, published as _rapierProviders[key] with
-// status on `rapier:<key>plugin`. One loader for every plug-in the page downloads: a single bundle run as a script (MathJax,
+// status on `rapier:<key>plugin`. One loader for every plug-in the page downloads: a single bundle run as a script (maths,
 // below), or pinned files handed to their owner (RapierPluginLoader.files: diagrams, the text in pictures reader, Draw's
 // letter sets).
 // Packed after RapierBundleIO, which it uses.
@@ -318,19 +318,19 @@
 		})();
 	}
 
-	// ---- MathJax: TeX to SVG, rendered synchronously once installed. -------------------------------
-	var MATHJAX_VERSION = '4.1.3';
+	// ---- Rapier maths: TeX to SVG, rendered synchronously once installed. -------------------------
+	var MATH_VERSION = '1.0.0';
 	_rapierVerifiedPlugin({
-		key: 'math', noun: 'math', name: 'MathJax', dash: ' — ',
-		version: MATHJAX_VERSION,
-		cdn: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/math/mathjax-' + MATHJAX_VERSION + '.offline-svg.js',
-		file: 'mathjax-' + MATHJAX_VERSION + '.offline-svg.js',
+		key: 'math', noun: 'math', name: 'Rapier maths', dash: ' — ',
+		version: MATH_VERSION,
+		cdn: 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@main/math/rapier-math-' + MATH_VERSION + '.js',
+		file: 'rapier-math-' + MATH_VERSION + '.js',
 		// The exact length and SHA-384 of the pinned file: a download is bounded by the first as it streams (a longer body
 		// refused before it is held, a shorter one after) and held to the second before anything stores or runs it.
-		bytes: 11948066,
-		sri: 'wDGx1UhqWHiww1a2D8xGpGfoo5DNg2fGlytVMPYeyL2w9kz5HfO+i6h6IxNBnrB+',
-		cacheKey: 'mathjax-offline-svg-v' + MATHJAX_VERSION,
-		missing: 'MathJax loaded but its SVG renderer is missing — cache purged',
+		bytes: 806260,
+		sri: 'nvSdsuI3c2Vb+bio3Y/txLjXbKRbjOL5aYhzM6PLa67c3wFOXZhXsZCGws742vkB',
+		cacheKey: 'rapier-math-v' + MATH_VERSION,
+		missing: 'Rapier maths loaded but its SVG renderer is missing — cache purged',
 		usable: function () { return !!(window.RapierMath && typeof window.RapierMath.renderToString === 'function'); },
 		render: function (src, opts, ready) {
 			if (!ready) throw new Error('math plug-in is unavailable');

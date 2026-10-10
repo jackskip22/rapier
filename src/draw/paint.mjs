@@ -3887,13 +3887,23 @@ export class PaintSurface {
 			const next = new Uint8ClampedArray(w * h * 4);
 			const ax0 = Math.max(box.x0, cache.box.x0), ay0 = Math.max(box.y0, cache.box.y0);
 			const ax1 = Math.min(box.x1, cache.box.x1), ay1 = Math.min(box.y1, cache.box.y1);
+			const fill = (x0, y0, x1, y1) => {
+				if (x1 < x0 || y1 < y0) return;
+				const part = this.toRGBA8({x0, y0, x1, y1});
+				for (let y = 0; y < part.height; y++) next.set(part.data.subarray(y * part.width * 4, (y + 1) * part.width * 4), ((y0 - box.y0 + y) * w + x0 - box.x0) * 4);
+			};
 			if (ax1 >= ax0 && ay1 >= ay0) {
 				const cw = cache.width;
 				for (let y = ay0; y <= ay1; y++) {
 					const from = ((y - cache.box.y0) * cw + (ax0 - cache.box.x0)) * 4;
 					next.set(cache.data.subarray(from, from + (ax1 - ax0 + 1) * 4), ((y - box.y0) * w + (ax0 - box.x0)) * 4);
 				}
-			}
+				// Newly exposed pixels have no cached bytes, even when no stroke is dirty.
+				fill(box.x0, box.y0, box.x1, ay0 - 1);
+				fill(box.x0, ay1 + 1, box.x1, box.y1);
+				fill(box.x0, ay0, ax0 - 1, ay1);
+				fill(ax1 + 1, ay0, box.x1, ay1);
+			} else fill(box.x0, box.y0, box.x1, box.y1);
 			cache = this._readout = { box: { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 }, width: w, height: h, data: next };
 		}
 		const dirty = this.sinceRead;

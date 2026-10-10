@@ -54,13 +54,18 @@ const _rapierPersonal = (() => {
 	const drawKeys = () => ({...Object.fromEntries(Object.entries(RAPIER_DRAW_MEMORY).map(([key, value]) => [key, value[0]])),
 		recentInks: RAPIER_DRAW_RECENT_KEY, paintBrush: RAPIER_PAINT_BRUSH_KEY, paintStrength: RAPIER_PAINT_STRENGTH_KEY, paintHead: RAPIER_PAINT_HEAD_KEY,
 		paintSizes: RAPIER_PAINT_SIZES_KEY, paintDips: RAPIER_PAINT_DIP_KEY, exportDialect: 'rapier:export.pandocDialect'});
+	const dataOnly = (value, depth = 0) => {
+		if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+		if (typeof value === 'number') return Number.isFinite(value);
+		if (depth > 12 || typeof value !== 'object' || !Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
+		return Object.values(value).every(next => dataOnly(next, depth + 1));
+	};
 	function validateAsset(key, value) {
 		if (key.startsWith('font/')) {
 			const font = globalThis.RapierDrawFonts.admitFonts([value])[0];
 			if ('font/' + font.id !== key) throw new Error('The font identity changed.');
 		} else {
-			if (!value || 'brush/' + value.id !== key || typeof value.name !== 'string' || value.name.length > 64 || typeof value.notes !== 'string' || value.notes.length > 160 || JSON.stringify(value).length > 1048576) throw new Error('The brush is not a readable preset.');
-			globalThis.RapierDrawPaint.parseBrush(value.myb);
+			if (!value || typeof value.id !== 'string' || 'brush/' + value.id !== key || typeof value.name !== 'string' || value.name.length > 64 || typeof value.notes !== 'string' || value.notes.length > 160 || !dataOnly(value) || JSON.stringify(value).length > 1048576) throw new Error('The brush is not a readable preset.');
 		}
 	}
 	async function apply(profile) {
@@ -88,7 +93,12 @@ const _rapierPersonal = (() => {
 				} else if (key.startsWith('brush/') && value) { const brush = profile.blobs[value.content]; validateAsset(key, brush); brushes.push(brush); }
 			}
 			if (!pendingBrushes && Object.keys(profile.records).some(key => key.startsWith('brush/'))) {
-				localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(brushes)); _rapierDrawState.paintOwn = null;
+				let local; try { local = _rapierPaintStoredBrushes(); } catch (_) {}
+				if (local) {
+					// The profile owns only its recorded IDs, including explicit deletions.
+					const kept = local.filter(row => typeof row?.id !== 'string' || !Object.hasOwn(profile.records, 'brush/' + row.id));
+					localStorage.setItem(RAPIER_PAINT_OWN_KEY, JSON.stringify(kept.concat(brushes))); _rapierDrawState.paintOwn = null;
+				}
 			}
 			if (_rapierDrawState.open) {
 				if (!_rapierDrawState.gesture) { _rapierDrawState.paintBrush = _rapierPaintRememberedBrush(); _rapierDrawState.paintSize = _rapierPaintRememberedSize(); _rapierDrawState.paintStrength = _rapierPaintRememberedStrength(); _rapierDrawState.paintHead = null; }

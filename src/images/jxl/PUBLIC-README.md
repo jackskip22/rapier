@@ -91,6 +91,25 @@ The core and effort modules expose `encode(rgba, width, height, options)`. Quali
 including RGB under transparent pixels; 1–99 is lossy. Alpha stays exact. Core/effort default to quality 100,
 and the separate effort entry defaults to effort 1. [API and options](docs/reference/API.md).
 
+### Lossless efforts
+
+Each level retains the earlier candidates. Extra search costs depend on the picture; no level has a deadline.
+
+| Effort | What it adds and costs |
+| ---: | --- |
+| 1 | Channel prediction and zero runs; shortest search. |
+| 2 | Weighted prediction; another prediction family. |
+| 3 | Error contexts, screen palettes and repeated regions; additional image passes. |
+| 4 | Color transforms and local palettes; several candidates. |
+| 5 | Learned group trees and entropy-model selection; tree-learning work. |
+| 6 | The first-ranked color transform; another learned candidate. |
+| 7 | Broader predictor and context search; the complete worker default. |
+| 8 | Denser samples, wider trees and local screen transforms; more learned candidates. |
+| 9 | Another color transform and deeper trees; the longest search. |
+
+JPEG entry points also add order and entropy-model combinations at efforts 8 and 9, retaining the smaller complete
+stream without changing pixels. The complete worker's JPEG route remains at effort 7. [Effort details](docs/reference/API.md#lossless-effort).
+
 Native inputs include 8/10/12/16-bit integers, binary16/32 floats, PQ/HLG and Rec. 2020. `rapier-jxl/source` reads
 supported PNG16/OpenEXR files. Displaying encoded output requires JPEG XL support.
 

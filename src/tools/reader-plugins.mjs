@@ -63,9 +63,9 @@ export const BUILT_STORES = {flowchartDb: 'rapier:cache:flowchart', flowchartLoc
 // The pins the loader holds for maths, read from the loader itself.
 function mathPlugin(loader) {
 	const block = /key: 'math'[\s\S]*?cacheKey/.exec(loader)?.[0] || '', field = (name, pattern) => { const found = pattern.exec(block); if (!found) throw new Error('Reader plug-ins: the loader no longer pins the maths ' + name); return found[1]; };
-	const version = /var MATHJAX_VERSION = '([^']+)'/.exec(loader)?.[1];
-	if (!version) throw new Error('Reader plug-ins: the loader no longer names the MathJax version');
-	const file = 'mathjax-' + version + '.offline-svg.js', sri = field('SHA-384', /sri: '([A-Za-z0-9+/=]+)'/);
+	const version = /var MATH_VERSION = '([^']+)'/.exec(loader)?.[1];
+	if (!version) throw new Error('Reader plug-ins: the loader no longer names the maths version');
+	const file = 'rapier-math-' + version + '.js', sri = field('SHA-384', /sri: '([A-Za-z0-9+/=]+)'/);
 	return {file, bytes: Number(field('length', /bytes: (\d+)/)), sri, url: PLUGIN_ORIGIN + 'math/' + file};
 }
 

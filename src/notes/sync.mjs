@@ -32,8 +32,7 @@ import {attachmentsOf} from './attachments.mjs';
 import {runTrash} from './trash.mjs';
 import {manifestName, parseManifest, parseCanonical, recordVersion, serializeManifest, appendCanonical, canonicalSources} from './history.mjs';
 import {readLedger} from '../kit/ledger/format.mjs';
-import {merge as mergeLedgers} from '../kit/ledger/merge.mjs';
-import {authoredPlacements} from '../kit/ledger/transport.mjs';
+import {joinCanonical, preservesActs} from './canonical-merge.mjs';
 import {buildLinkIndex, resolveLinkIndex, renameLinks} from './links.mjs';
 import {planSyncMedia, rewriteSyncMedia} from './sync-media.mjs';
 import {storedFileDigest} from './integrity.mjs';
@@ -282,38 +281,6 @@ function verifyCanonicalBinding(proved, entry, content) {
 		entry?.canonicalHistory !== proved.ledger.sha256 || content !== undefined && content !== proved.ledger.head.sha256)
 		refuse('notes_history_unavailable', 'the note identity, source and canonical history do not agree');
 	return proved;
-}
-const canonicalPrefix = (a, b) => a.documentAuthority === b.documentAuthority && same(a.start, b.start) &&
-	a.records.length <= b.records.length && a.records.every((row, i) => same(row, b.records[i]));
-const inverseTargets = tx => [...new Set(tx.sourceTransactionIds || (tx.sourceTransactionId ? [tx.sourceTransactionId] : tx.reverts || tx.reapplies ? [tx.reverts || tx.reapplies] : []))].sort();
-function actProvenance(row, authored) {
-	const {baseRevision, revision, parent, reverts, reapplies, sourceTransactionId, sourceTransactionIds, remoteTransactionId, ...origin} = row.transaction;
-	const inverse = inverseTargets(row.transaction);
-	return {transaction: origin, inverse, authored,
-		metadata: inverse.length ? null : Object.fromEntries(Object.entries(row.metadata || {}).map(([key, pair]) => [key, pair.after])),
-		changeSet: row.changeSet ?? null, derivedCommentIndex: row.derivedCommentIndex ?? null};
-}
-function preservesActs(before, after) {
-	if (before.documentAuthority !== after.documentAuthority || !same(before.start, after.start)) return false;
-	const ids = new Map(after.records.map(row => [row.transaction.id, row]));
-	// readLedger already proved both replay paths. Compare the shared original
-	// placement, because a concurrent insertion can split a retained physical edit.
-	const origins = authoredPlacements(before.start.text, before.records), incoming = authoredPlacements(after.start.text, after.records);
-	return before.records.every(row => ids.has(row.transaction.id) && same(actProvenance(row, origins.get(row.transaction.id)),
-		actProvenance(ids.get(row.transaction.id), incoming.get(row.transaction.id))));
-}
-function joinCanonical(first, second) {
-	if (first.sha256 === second.sha256) return first;
-	if (canonicalPrefix(first, second)) return second;
-	if (canonicalPrefix(second, first)) return first;
-	let merged;
-	try { merged = mergeLedgers(first, second); }
-	catch (cause) { throw Object.assign(new Error('both source histories were kept; their common history cannot be proved'), {code: 'notes_history_conflict', cause}); }
-	const ids = new Set([...first.records, ...second.records].map(row => row.transaction.id));
-	if (!merged.clean || !preservesActs(first, merged.ledger) || !preservesActs(second, merged.ledger) ||
-		merged.ledger.records.some(row => !ids.has(row.transaction.id)))
-		refuse('notes_history_conflict', 'both source histories were kept; sync cannot replace an original act with a conflict or a copy');
-	return merged.ledger;
 }
 
 function canonicalMedia(ledger, id) {

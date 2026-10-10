@@ -9,7 +9,7 @@ import { diffLines } from './diff.mjs';
 import { outlineMarkdown, structureMarkdown } from './markdown.mjs';
 import { changedReferenceRegion } from './references.mjs';
 import { assetOmissions, retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
-import { RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawMergeAgentRecipe, _rapierDrawUndoRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
+import { RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawAssetGeneration, _rapierDrawMergeAgentRecipe, _rapierDrawUndoRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault, _rapierDrawLowerFigures } from '../draw/core.mjs';
 import { applyOperations } from '../draw/edit.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
 import { getTool, validateInput, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS } from './catalog.mjs';
@@ -265,7 +265,8 @@ export function documentKind(filename) {
 // journal transform, which permits untouched damage but never malformed splice fragments.
 function admissibleSnapshotText(value) {
   if (typeof value !== 'string') return 'text_required';
-  if (value.length > LIMITS.documentBytes || bytes(value) > LIMITS.documentBytes) return 'text_too_large';
+  // A UTF-16 code unit needs at most three UTF-8 bytes, including an unmatched surrogate.
+  if (value.length > LIMITS.documentBytes || value.length * 3 > LIMITS.documentBytes && bytes(value) > LIMITS.documentBytes) return 'text_too_large';
   if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) return 'text_control_characters';
   return '';
 }
@@ -868,23 +869,31 @@ export function disclosedRecipe(recipe) {
     ...(shape.paint ? {paint: inspectPaintRecord(shape.paint)} : {})})};
 }
 
-// The digest of a recipe object, hashed once. The page hands one recipe object to each of the door's listeners for a change, and the
-// kernel hands its own admitted copy back to itself on every read of the open drawing; each later look finds the first digest here.
-// A recipe object is never changed after it is handed over: the page builds a new one for every change.
-const recipeDigests = new WeakMap();
-function digestOfRecipe(source, admitted) {
-  let digest = recipeDigests.get(source);
-  if (digest === undefined) {
-    digest = sha256(canonicalJson(admitted));
-    recipeDigests.set(source, digest);
-    recipeDigests.set(admitted, digest);
+// Raster strings are immutable; metadata and replay commands are not. Compare their exact current
+// values before reusing the canonical recipe digest. The cache never retains mutable caller data.
+const drawingRecipeDigests = [];
+function admittedDrawingRecipeDigest(recipe) {
+  const rasters = [], keepRaster = value => { rasters.push(value); return null; };
+  const metadata = canonicalJson({...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
+    raster: keepRaster(shape.raster), ...(shape.paint?.replay ? {paint: {...shape.paint, replay: {...shape.paint.replay,
+      baseRaster: keepRaster(shape.paint.replay.baseRaster)}}} : {})})});
+  const at = drawingRecipeDigests.findIndex(row => row.metadata === metadata && row.rasters.length === rasters.length &&
+    row.rasters.every((value, index) => value === rasters[index]));
+  if (at >= 0) {
+    const [row] = drawingRecipeDigests.splice(at, 1); drawingRecipeDigests.push(row);
+    return row.digest;
+  }
+  const digest = sha256(canonicalJson(recipe)), chars = metadata.length + rasters.reduce((total, value) => total + (value?.length || 0), 0);
+  if (chars <= 32 * 1024 * 1024) {
+    drawingRecipeDigests.push({metadata, rasters, digest, chars});
+    while (drawingRecipeDigests.length > 4 || drawingRecipeDigests.reduce((total, row) => total + row.chars, 0) > 32 * 1024 * 1024)
+      drawingRecipeDigests.shift();
   }
   return digest;
 }
-
 export function drawingRecipeDigest(recipe) {
   const admitted = _rapierDrawAdmitRecipe(recipe);
-  return admitted ? digestOfRecipe(recipe, admitted) : null;
+  return admitted ? admittedDrawingRecipeDigest(admitted) : null;
 }
 
 export function createKernel({ state: supplied, host = {}, clock, mintId, invocationJournal: suppliedJournal, inFlight: suppliedInFlight = [] } = {}) {
@@ -1171,7 +1180,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       const match = DRAW_OCCURRENCE.exec(state.text.slice(row.start, row.end));
       const asset = documentAssets(state.text).assets.get(normalizeLabel(row.reference));
       if (!match || normalizeLabel(match[2]) !== normalizeLabel(row.reference) || !asset ||
-          value.assetGeneration !== sha256(asset.url)) return false;
+          value.assetGeneration !== _rapierDrawAssetGeneration(asset.url)) return false;
       occurrence = {reference: row.reference, position: row.start, start: row.start, end: row.end,
         ...(row.blockId != null ? {blockId: String(row.blockId)} : {}),
         ...(safeInt(row.imageIndex) ? {imageIndex: row.imageIndex} : {})};
@@ -1192,7 +1201,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       try { text = JSON.stringify(Array.isArray(value.recipe?.shapes) ? disclosedRecipe(value.recipe) : value.recipe); } catch (_) { return false; }
       const recipe = _rapierDrawAdmitRecipe(value.recipe);
       if (!recipe) return false;
-      const recipeDigest = digestOfRecipe(value.recipe, recipe);
+      const recipeDigest = admittedDrawingRecipeDigest(recipe);
       if (result.recipeDigest && result.recipeDigest !== recipeDigest) return false;
       result.recipeDigest = recipeDigest;
       if (bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
@@ -1252,14 +1261,14 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   function drawingBinding(value) {
     return value?.recipe || value?.recipeDigest ? {drawSession: value.session, surfaceGeneration: value.surfaceGeneration,
-      surfaceRecipeDigest: value.recipeDigest || digestOfRecipe(value.recipe, value.recipe)} : {};
+      surfaceRecipeDigest: value.recipeDigest || admittedDrawingRecipeDigest(value.recipe)} : {};
   }
 
   function drawBindingFailure(held, range, live) {
     if (!held.drawSession) return null;
     if (live === undefined) live = drawingFor(range.start, range.end, held.assetLabel);
     return !live || live.session !== held.drawSession || live.surfaceGeneration !== held.surfaceGeneration ||
-      (live.recipeDigest || (live.recipe && digestOfRecipe(live.recipe, live.recipe))) !== held.surfaceRecipeDigest
+      (live.recipeDigest || (live.recipe && admittedDrawingRecipeDigest(live.recipe))) !== held.surfaceRecipeDigest
       ? failure('draw_surface_changed', 'conflict') : null;
   }
 

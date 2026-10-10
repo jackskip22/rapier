@@ -56,7 +56,7 @@ function _rapierDocumentPrintCss(hostSelector) {
 	${list('.md-render pre','.artifact-flat')}{white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:break-word!important;overflow:visible!important;max-height:none!important}
 	${p('.artifact-flat')}{margin:0;font:400 12pt/1.55 var(--md-font-sans);tab-size:2}
 	${p('.artifact-flat--code')}{font:400 10pt/1.5 var(--md-font-mono)}
-	${p('.table-scroll-wrap')}{overflow:visible!important;padding:0!important}
+	${list('.table-scroll-wrap','.math-display-wrap')}{overflow:visible!important;padding:0!important}
 	${list('.table-scroll-wrap table','.md-render table')}{width:100%!important;min-width:0!important;max-width:100%!important;table-layout:auto}
 	${list('.md-render th','.md-render td')}{overflow-wrap:anywhere;word-break:normal}
 	${p('.md-render thead')}{display:table-header-group}

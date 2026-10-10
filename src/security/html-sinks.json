@@ -134,7 +134,7 @@
 			"_rapierRenderedHtmlWithTrailingSpace": {
 				"count": 1,
 				"kind": "sanitized-document",
-				"reason": "Only caller is _rapierFinishSanitizedBlock, which passes its already-sanitized `sanitized` string as the html argument."
+				"reason": "Only caller is _rapierFinishSanitizedBlock, which passes already-sanitized HTML to the string branch; a retained tree is never reparsed."
 			},
 			"_loadFlatDoc": {
 				"count": 1,

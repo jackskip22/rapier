@@ -290,6 +290,7 @@ function _rapierDrawPaintScribble() {
 }
 
 function _rapierDrawSnapEndpoint(px, py, excludeId) {
+	if (!_rapierDrawState.snap) return null;
 	const recipe = _rapierDrawState.recipe;
 	let best = null, bestD = RAPIER_DRAW_SNAP_EDGE_PX;
 	for (const shape of _rapierDrawState.recipe.shapes) {
@@ -319,6 +320,7 @@ function _rapierDrawSnapLineGeom(g, excludeId) {
 }
 
 function _rapierDrawFindEdgeBindTarget(px, py, excludeId, recipe = _rapierDrawState.recipe, slop = RAPIER_DRAW_SNAP_EDGE_PX) {
+	if (!_rapierDrawState.snap) return null;
 	let best = null, bestD = slop;
 	for (let i = recipe.shapes.length - 1; i >= 0; i--) {
 		const shape = recipe.shapes[i];
@@ -411,6 +413,7 @@ function _rapierDrawPolyRestDelta(shape, seg) {
 }
 
 function _rapierDrawRestGeom(kind, geom, excludeId) {
+	if (!_rapierDrawState.snap) return geom;
 	const isRound = kind === 'circle' || kind === 'ellipse';
 	const isPoly = !!_rapierDrawShapePolygon({ recognized: kind, geom }, _rapierDrawState.recipe);
 	if (!isRound && !isPoly) return geom;
@@ -953,6 +956,7 @@ function _rapierDrawUndoStep(redo, target) {
 	if (!prior) return false;
 	if (prior.delta) { to.push(prior); state.recipe = _rapierDrawApplyHistory(prior, redo ? 'after' : 'before'); }
 	else { to.push(_rapierDrawHistoryRecipe()); state.recipe = _rapierDrawRestoreRecipe(prior); }
+	if (state.recipe.background?.kind === 'paper' && typeof _rapierWaterFollowPaper === 'function') _rapierWaterFollowPaper(state.recipe.background.paper);
 	// The window follows the shapes, both ways: the same shift the growth added is taken off going
 	// back and put on again going forward, so the drawing never moves on the screen for either.
 	if (prior.shift) { const v = _rapierDrawView(), s = redo ? 1 : -1; v.x += s * prior.shift.dx; v.y += s * prior.shift.dy; }
@@ -4692,12 +4696,11 @@ function _rapierDrawStartTransform() {
 }
 function _rapierDrawRestoreTransformShapes() {
 	const state = _rapierDrawState, gesture = state.gesture;
-	for (const original of gesture.source.shapes) if (!gesture.ids.includes(original.id) && original.bind && Object.values(original.bind).some(anchor => gesture.ids.includes(anchor.to))) {
-		const shape = state.recipe.shapes.find(shape => shape.id === original.id);
-		shape.bind = JSON.parse(JSON.stringify(original.bind));
-	}
-	for (const original of gesture.source.shapes) if (gesture.ids.includes(original.id)) {
+	// Rerouting also transforms a connector's retained stroke. Start it from the held drawing each
+	// frame, so passing through zero length cannot flatten the handwriting used by the next frame.
+	for (const original of gesture.source.shapes) if (gesture.ids.includes(original.id) || original.bind && Object.values(original.bind).some(anchor => gesture.ids.includes(anchor.to))) {
 		const index = state.recipe.shapes.findIndex(shape => shape.id === original.id);
+		if (index < 0) continue;
 		state.recipe.shapes[index] = JSON.parse(JSON.stringify(original));
 		if (original.stroke != null) state.recipe.strokes[original.stroke] = { pts: gesture.source.strokes[original.stroke].pts.map(p => p.slice()) };
 	}
@@ -5201,6 +5204,7 @@ function _rapierDrawOnPointerUp(evt) {
 		else if (gesture.downId && !gesture.dragged) {
 			const shape = _rapierDrawShapeById(gesture.downId), label = _rapierDrawLabelBox(shape, state.recipe), p = gesture.origin;
 			if (label && p[0] >= label.minX && p[0] <= label.maxX && p[1] >= label.minY && p[1] <= label.maxY) { _rapierDrawEditLabelInPlace(shape, { at: p }); return; }
+			_rapierDrawSetSelection([gesture.downId]);
 		}
 		else _rapierDrawSetSelection([gesture.downId]);
 		_rapierDrawRenderAll(); return;
@@ -7558,7 +7562,7 @@ async function _rapierDrawDownload(session) {
 	try {
 		await _rapierDrawLoadFonts(state.recipe, session);
 		if (!state.open || state.session !== session) return;
-		const flushing = _rapierPaintFlushRevision();
+		const flushing = _rapierPaintFlushRevision(undefined, true);
 		if (flushing) { await flushing; if (!state.open || state.session !== session) return; }
 		const recipe = _rapierDrawRestoreRecipe(_rapierDrawHistoryRecipe());
 		const recovery = _rapierDrawBackupTicket(); // Exact exported work, before any encoding/save await.

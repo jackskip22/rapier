@@ -31,6 +31,8 @@ import {DOORS, doorPage} from '../door-worker.js';
 import {fillMermaidResources} from './mermaid-resources.mjs';
 import {fillFontSubsetResources} from './font-subset-resources.mjs';
 import {builtinPlugins, builtinExecution, builtinFilesReuse, fillBuiltinSlot} from './builtin-plugins.mjs';
+import {pluginPackFiles} from './stage-plugin-pack.mjs';
+import {fillMathLicense} from './build-math.mjs';
 import {buildExportAssets} from './build-export-assets.mjs';
 import {satelliteSlots} from './engine-slots.mjs';
 import {editorOnlyMarkup} from './reader-profile.mjs';
@@ -567,7 +569,7 @@ let html = await read('rapier.html');
 const policySlot = /<meta http-equiv="Content-Security-Policy" content="[^"]*">/g;
 if ([...html.matchAll(policySlot)].length !== 1) throw new Error('The page must have exactly one policy slot');
 html = html.replace(policySlot, () => '<meta http-equiv="Content-Security-Policy" content="' + csp('web') + '">');
-let ui = await read('editor/ui.html');
+let ui = await fillMathLicense(await read('editor/ui.html'), {root});
 // Notes' markup sits between RAPIER_NOTES
 // markers in editor/ui.html: dropped in the document profile; the full profile loses only the markers.
 const notesMarkup = /<!-- RAPIER_NOTES_BEGIN -->([\s\S]*?)<!-- RAPIER_NOTES_END -->/g, notesRegions = [...ui.matchAll(notesMarkup)];
@@ -732,10 +734,22 @@ else {
   const owned = [...html.matchAll(/<script data-rapier-owned>([\s\S]{0,60})/g)].map(match => match[1].replace(/\s+/g, ' ').trim());
   if (owned.length) throw new Error('The template carries ' + owned.length + ' inline script(s) this build does not author; residue is refused, never carried: ' + owned.join(' | '));
 }
+// The previous page is a template, but its math resource identity comes from the current pins.
+const mathDescriptorPin = (await pluginPackFiles()).find(file => file.id === 'rapier-math');
+const mathDescriptorResources = JSON.parse(await read('shell/math-resources.json'));
+if (!mathDescriptorPin || mathDescriptorPin.version !== mathDescriptorResources.version ||
+    mathDescriptorPin.bytes !== mathDescriptorResources.bytes || mathDescriptorPin.sri !== mathDescriptorResources.sha384)
+  throw new Error('The app descriptor math resource differs from its loader pin');
+const mathDescriptor = {id: mathDescriptorPin.id, version: mathDescriptorPin.version,
+  integrity: 'sha384-' + mathDescriptorPin.sri, mediaType: 'text/javascript', maxBytes: mathDescriptorPin.bytes,
+  license: mathDescriptorResources.license, provenance: {package: 'rapier-math', release: mathDescriptorPin.version}, sources: [mathDescriptorPin.url]};
 html = html.replace(/(<script[^>]*type="application\/speedracer-app\+json"[^>]*>)([\s\S]*?)(<\/script>)/, (_, open, source, close) => {
   const manifest = JSON.parse(source);
   const exportOperation = manifest.operations.find(row => row.name === 'document.export');
   manifest.factory.version = VERSION;
+  if (manifest.resources.filter(resource => resource.id === mathDescriptorPin.id).length !== 1)
+    throw new Error('The app descriptor must declare one math resource');
+  manifest.resources = manifest.resources.map(resource => resource.id === mathDescriptorPin.id ? mathDescriptor : resource);
   // The template's own document.export saves a file through the host; the agent's document.export is the page's WebMCP tool alone.
   manifest.operations = PAGE_TOOLS.filter(entry => entry.name !== 'document.export').map(entry => ({name: entry.name, label: entry.title, description: entry.description, authority: ['read', 'view'].includes(entry.effect) ? 'read' : 'write', input: entry.inputSchema, result: entry.outputSchema}));
   if (exportOperation) manifest.operations.push(exportOperation);
