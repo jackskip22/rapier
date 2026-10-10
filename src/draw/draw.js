@@ -1200,7 +1200,7 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 	if (typeof W?.workerSource !== 'function') return holder.ready = Promise.resolve(null);
 	const local = async () => {
 		const client = holder.client = water ? W.createLocalWaterClient() : W.createLocalPaintClient();
-		if (water) await client.request('configure', {preview: purpose === 'preview'});
+		if (water) await client.request('configure', {preview: purpose === 'preview', unfilteredTest: globalThis.__rapierWaterUnfilteredTest === true});
 		return client;
 	};
 	if (typeof Worker !== 'function') {
@@ -1216,7 +1216,7 @@ function _rapierDrawPaintClient(purpose = 'human', mode = 'paint') {
 			worker.onmessage = ({data}) => client.receive(data);
 			worker.onerror = event => { event.preventDefault?.(); client.fail(new Error(event.message || 'The painter stopped')); if (_rapierDrawPaintWorkers.get(role) === holder) _rapierDrawPaintWorkers.delete(role); };
 			const isolated = globalThis.crossOriginIsolated === true && typeof rows?.workerSource === 'function';
-			await client.request('configure', {preview: water && purpose === 'preview', helpers: !water && isolated ? 4 : 0, ...(!water && isolated ? {helperSource: rows.workerSource()} : {})});
+			await client.request('configure', {preview: water && purpose === 'preview', unfilteredTest: water && globalThis.__rapierWaterUnfilteredTest === true, helpers: !water && isolated ? 4 : 0, ...(!water && isolated ? {helperSource: rows.workerSource()} : {})});
 			return client;
 		} catch (error) { worker?.terminate(); if (water && error.code === 'water_webgpu_unavailable') throw error; return local(); }
 		finally { URL.revokeObjectURL(url); }

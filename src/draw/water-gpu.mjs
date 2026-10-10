@@ -39,6 +39,9 @@ const libraries=new WeakMap();
 const watchLoss=(device,reference)=>device.lost.then(info=>{const surface=reference.deref();if(surface)surface.lost=info;});
 const watchErrors=reference=>event=>{reference.deref()?._poison(event.error);};
 
+// A test switch: the witness runs a desktop adapter with the phone's unfiltered float path (`waterShaderSources`).
+let unfilteredTest=false;
+export function waterUnfilteredTest(on){if(on===unfilteredTest)return;unfilteredTest=on;deviceTask=null;}
 export async function waterReady(){
  const owner=globalThis.navigator?.gpu;
  if(!owner)throw failure('water_webgpu_unavailable','Water needs WebGPU. Open this document in a browser with WebGPU enabled.');
@@ -48,7 +51,7 @@ export async function waterReady(){
   if(!adapter)throw failure('water_webgpu_unavailable','Water could not obtain a WebGPU adapter. Enable GPU acceleration and reopen the document.');
   // Float filtering and blending are requested only when the adapter has them. Sampling in the
   // shaders does not depend on filtering; stamps still blend when the device can.
-  const features=['float32-filterable','float32-blendable'].filter(name=>adapter.features.has(name));
+  const features=['float32-filterable','float32-blendable'].filter(name=>adapter.features.has(name)&&!(unfilteredTest&&name==='float32-filterable'));
   const device=await adapter.requestDevice(features.length?{requiredFeatures:features}:{});
   device.lost.then(()=>{deviceTask=null;});return device;
  })().catch(error=>{deviceTask=null;throw error?.code?error:failure('water_webgpu_unavailable','Water could not start WebGPU: '+error.message);});

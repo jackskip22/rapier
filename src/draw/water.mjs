@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // WebGPU owns live water and pigment. A document owns its published straight RGBA bytes.
-import {WaterGPU,waterReady,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
+import {WaterGPU,waterReady,waterUnfilteredTest,waterHandSheetFits,WATER_GPU_MAX_BYTES} from './water-gpu.mjs';
 import {WaterContact} from './water-contact.mjs';
 import {getBrush,makeTip,CUSTOM_PARAMS} from './water-materials.mjs';
 import {WATER_PAPER_UNITS,WATER_PAPER_SEED,WATER_PAPER_PERIOD} from './paper-field.mjs';
@@ -9,7 +9,7 @@ import {buildWaterFill} from './water-fill.mjs';
 import {waterTimeFits} from './water-data.mjs';
 import {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState} from './water-data.mjs';
 export {WATER_TICK_HZ,WATER_BANDS,WATER_ACTION_MAX_POINTS,WATER_TIP_MAX_PIXELS,WATER_SOURCE_MAX_BYTES,WATER_PAPERS,WATER_PIGMENTS,WATER_BRUSHES,WATER_TOOLS,WATER_CONTROLS,waterBrushById,waterPigmentById,waterPaperById,waterError,waterRadius,admitWaterPigment,admitWaterTip,admitWaterControls,admitWaterBrush,waterBrushDefinition,admitWaterAction,admitWaterActions,admitWaterState};
-export {waterReady,waterHandSheetFits,WATER_PAPER_UNITS,WATER_PAPER_SEED};
+export {waterReady,waterUnfilteredTest,waterHandSheetFits,WATER_PAPER_UNITS,WATER_PAPER_SEED};
 const clone=value=>structuredClone(value);
 const clip=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
 const seconds=v=>clip(v,1/240,1/30);

@@ -2483,32 +2483,28 @@ function _rapierPaintDisplay(layer, reply) {
 		if (!display.submitted) return;
 		const pending = layer.pendingDisplay;
 		if (pending?.generation === display.canvasGeneration) {
-			// The replacement shows nothing until the GPU has drawn its first frame and the compositor has taken it. It is put up beside
-			// the canvas that shows the layer, barely visible, and takes over two animation frames later: swapped in the moment its
-			// first frame was submitted, it is blank, and the committed picture has already stepped aside for it.
-			if (!pending.ready) {
-				if (!pending.up) {
-					pending.up = true;
-					pending.canvas.style.opacity = '0.01'; pending.canvas.style.visibility = '';
-					canvas.after(pending.canvas);
-					const surface = layer.surface, generation = surface.displayGeneration;
-					_rapierPaintAfterFrame(() => {
-						if (layer.pendingDisplay !== pending || layer.canvas !== canvas || layer.surface !== surface || surface.gone || surface.displayGeneration !== generation) return;
-						pending.ready = true; _rapierPaintDisplay(layer, reply);
-					});
-				}
-				return;
-			}
+			// A replacement takes the screen only once its frame has reached the page (`_rapierPaintFrameUp`). Until then it stands beside the
+			// canvas that shows the layer, barely visible, and that canvas keeps the painting on screen.
+			pending.reply = reply;
+			if (!pending.ready) { _rapierPaintAwaitFrame(layer, pending, pending.canvas, true); return; }
 			pending.canvas.style.opacity = ''; pending.canvas.style.visibility = 'hidden';
 			canvas.remove(); layer.canvas = pending.canvas; layer.pendingDisplay = null;
 			_rapierPaintWatchOverlay(layer);
 		} else if (layer.canvasGeneration && layer.canvasGeneration !== display.canvasGeneration) return;
+		else if (!layer.canvasGeneration && layer.id != null) {
+			// A reopened layer's first canvas would put its committed picture aside: it waits for its frame the same way.
+			const first = layer.firstDisplay ??= {generation: display.canvasGeneration};
+			first.reply = reply;
+			if (!first.ready) { _rapierPaintAwaitFrame(layer, first, canvas, false); return; }
+			canvas.style.opacity = ''; layer.firstDisplay = null;
+		}
 		layer.canvasGeneration = display.canvasGeneration;
 		layer.displayMeta = {...meta}; layer.displayReady = true; layer.lost = false; layer.liveBox = null;
 		if (meta.bounds) _rapierPaintRecordLiveBox(layer,meta.bounds);
 		_rapierPaintPlaceLive(layer); _rapierPaintShowLive(layer.liveWanted,layer);
 		layer.surface.adoptDisplay(display.canvasGeneration);
 		if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
+		if (meta.bounds && _rapierPaintFrameReadable === null) _rapierPaintLearnReadback(layer, layer.canvas, meta.bounds);
 		return;
 	}
 	if (canvas.width !== meta.width || canvas.height !== meta.height) {
@@ -2525,6 +2521,58 @@ function _rapierPaintDisplay(layer, reply) {
 	if (layer.setPending) { layer.setPending = false; _rapierPaintAfterFrame(_rapierPaintSyncSet); }
 	const timing = _rapierDrawState.paintTiming;
 	if (timing && timing.seat && !timing.blit) timing.blit = performance.now();
+}
+// A worker canvas shows nothing until its first frame reaches the page, and a canvas swapped in before then is a blank frame. The frame is
+// proven by reading the canvas element back: what the page reads is what the compositor draws for it. A sheet with no paint is proven at
+// once, since an empty frame is its true picture. Null: this browser cannot read a worker canvas back (`_rapierPaintFrameReadable`).
+let _rapierPaintFrameReadable = null, _rapierPaintFrameProbe = null;
+const RAPIER_PAINT_FRAME_WAIT = 120;
+function _rapierPaintFrameUp(canvas, bounds) {
+	if (!bounds) return true;
+	if (!_rapierPaintFrameProbe) { const probe = document.createElement('canvas'); probe.width = probe.height = 64; _rapierPaintFrameProbe = probe.getContext('2d', {willReadFrequently: true}); _rapierPaintFrameProbe.imageSmoothingQuality = 'medium'; }
+	const ctx = _rapierPaintFrameProbe, w = bounds.x1 - bounds.x0 + 1, h = bounds.y1 - bounds.y0 + 1;
+	try {
+		ctx.clearRect(0, 0, 64, 64);
+		ctx.drawImage(canvas, bounds.x0, bounds.y0, w, h, 0, 0, Math.min(64, w), Math.min(64, h));
+		const data = ctx.getImageData(0, 0, 64, 64).data;
+		for (let i = 3; i < data.length; i += 4) if (data[i]) return true;
+		return false;
+	} catch (_) { return null; }
+}
+// Whether this browser reads worker canvases back is learned once, from a canvas that has been showing paint: it reads back within a few
+// frames, or never (a headless browser composites in software and reads nothing). Such a browser falls back to two animation frames.
+const RAPIER_PAINT_FRAME_LEARN = 60;
+function _rapierPaintLearnReadback(layer, canvas, bounds) {
+	let frames = 0;
+	const look = () => {
+		if (_rapierPaintFrameReadable !== null || layer.canvas !== canvas || _rapierDrawState.paintLayer !== layer) return;
+		const up = _rapierPaintFrameUp(canvas, bounds);
+		if (up !== false || ++frames >= RAPIER_PAINT_FRAME_LEARN) { _rapierPaintFrameReadable = up === true; return; }
+		requestAnimationFrame(look);
+	};
+	requestAnimationFrame(look);
+}
+// Puts an incoming canvas up beside the shown one at 1% opacity, then looks each animation frame until its frame is on the page. Only a
+// browser that cannot read the canvas back ends the wait by count; a frame that is late on a busy phone keeps the old canvas on screen.
+function _rapierPaintAwaitFrame(layer, entry, canvas, beside) {
+	if (entry.up) return;
+	entry.up = true;
+	canvas.style.opacity = '0.01'; canvas.style.visibility = '';
+	if (beside) layer.canvas.after(canvas);
+	let frames = 0;
+	// The wait ends unanswered if the canvas it stands beside, the surface or its display generation moved on meanwhile.
+	const shown = layer.canvas, surface = layer.surface, generation = surface?.displayGeneration;
+	const look = () => {
+		const current = beside ? layer.pendingDisplay : layer.firstDisplay;
+		if (current !== entry || layer.surface !== surface || !surface || surface.gone || surface.displayGeneration !== generation || beside && layer.canvas !== shown ||
+			_rapierDrawState.paintLayer !== layer && !_rapierPaintRevisionLayers().includes(layer)) return;
+		frames++;
+		const meta = entry.reply.meta, up = _rapierPaintFrameUp(canvas, meta.bounds);
+		const blind = up === null || _rapierPaintFrameReadable === false;
+		if (up === true || blind && frames >= 2 || frames >= RAPIER_PAINT_FRAME_WAIT) { entry.ready = true; _rapierPaintDisplay(layer, entry.reply); return; }
+		requestAnimationFrame(look);
+	};
+	requestAnimationFrame(look);
 }
 // The whole sheet, read back and laid again: after the browser took the overlay's pixels, or when a reply could not carry its own.
 function _rapierPaintRepaintAll(layer) {
@@ -2619,7 +2667,8 @@ function _rapierPaintShowLive(on, layer = _rapierDrawState.paintLayer) {
 	// A committed picture whose new pixels are still decoding is blank: the overlay keeps the layer on screen until they
 	// can paint (`_rapierPaintHandBack`), so a lift never shows the paper for the frames a decode takes.
 	if (!on && layer.decoding && (!layer.gpuDisplay || layer.displayReady) && !_rapierPaintOverlayLost(layer)) on = true;
-	const visibility = on ? '' : 'hidden';
+	// A reopened layer's first canvas stays up at 1% while its frame is awaited (`_rapierPaintAwaitFrame`).
+	const visibility = on || layer.firstDisplay?.up ? '' : 'hidden';
 	if (layer.canvas.style.visibility !== visibility) layer.canvas.style.visibility = visibility;
 	// An overlay whose pixels the browser took away shows nothing: the kept picture stays up under it.
 	const aside = on && !_rapierPaintOverlayLost(layer);

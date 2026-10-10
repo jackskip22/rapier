@@ -2,7 +2,7 @@
 
 Turn Markdown into one offline HTML file with the full Rapier editor. It opens in any browser on a phone or
 computer, with no account. People read, edit, draw and paint watercolor. Agents deliver documents, show what
-changed and receive the person's edited copy through the door. Start with `npx rapier-html@1.1.94 notes.md`.
+changed and receive the person's edited copy through the door. Start with `npx rapier-html@1.1.95 notes.md`.
 
 Use it for a plan to rearrange, an illustrated guide to annotate, a draft to continue writing, or a revision
 to review. Text and drawings stay editable, and the file remains usable independently of a hosted workspace.
@@ -18,14 +18,14 @@ to review. Text and drawings stay editable, and the file remains usable independ
 Node 22 or newer.
 
 ```sh
-npx -- rapier-html@1.1.94 notes.md                          # the editor, notes.md inside it, written beside the file
-npx -- rapier-html@1.1.94 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
-npx -- rapier-html@1.1.94 notes.md --view notes             # opens the Notes library
-npx -- rapier-html@1.1.94 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
-npx -- rapier-html@1.1.94 revised.md --compare original.md # opens showing what changed
-npx -- rapier-html@1.1.94 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
-npx -- rapier-html@1.1.94 notes.md out.html                 # a named output
-npm install rapier-html@1.1.94                              # as a library: wrap, unwrap
+npx -- rapier-html@1.1.95 notes.md                          # the editor, notes.md inside it, written beside the file
+npx -- rapier-html@1.1.95 notes.md --view draw              # opens on Draw: sketch and paint, the document behind it
+npx -- rapier-html@1.1.95 notes.md --view notes             # opens the Notes library
+npx -- rapier-html@1.1.95 notes.md --drawing sketch.svg     # carries a drawing, opened on Draw over the document
+npx -- rapier-html@1.1.95 revised.md --compare original.md # opens showing what changed
+npx -- rapier-html@1.1.95 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT" # Send back
+npx -- rapier-html@1.1.95 notes.md out.html                 # a named output
+npm install rapier-html@1.1.95                              # as a library: wrap, unwrap
 ```
 
 The first `--` is for npm, so `--help` reaches the command. It never overwrites a file.
@@ -47,7 +47,7 @@ editor and lightweight reader (about 190 kB gzipped). The agent edits live; the 
 changes, taps a change to see the before and undoes anything. Use `comparison.present` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `rapier.open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.1.94 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.1.95 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The worker transfers readout copies. Authoritative pigment and rollback buffers stay owned here.
-import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady} from './water.mjs';
+import {WaterSurface,WaterBrush,paintWaterBrushPreview,waterError,waterReady,waterUnfilteredTest} from './water.mjs';
 import {sha256Yielding} from '../notes/integrity.mjs';
 import {paintAgentStrokes,replayAgentPainting,sampleAgentPainting,agentPaintReplayRun,restoreWaterReplay} from './agent-paint.mjs';
 const hash=data=>sha256Yielding(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));
@@ -22,8 +22,9 @@ export function createWaterWorker({postMessage}={}){
   if(bound){
    if(!display)return {surfaceId:id,meta:metadata(s),patch:null};
    const changed=bound.material!==s||bound.width!==s.width||bound.height!==s.height||bound.toothOX!==s.toothOX||bound.toothOY!==s.toothOY;
-   // A submitted canvas keeps its pixels and placement until the page adopts its replacement.
-   if(bound.submitted&&(bound.invalid||!bound.adopted||changed))return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,canvasGeneration:bound.canvasGeneration,submitted:false,replace:!!bound.invalid||bound.adopted&&changed}};
+   // A submitted canvas keeps its size and placement until the page adopts it. Unchanged, it keeps taking frames, so any later reply can
+   // be adopted and a lost first reply never leaves the page without a canvas to show.
+   if(bound.submitted&&(bound.invalid||changed))return {surfaceId:id,meta:metadata(s),patch:null,display:{generation:bound.generation,canvasGeneration:bound.canvasGeneration,submitted:false,replace:!!bound.invalid||bound.adopted&&changed}};
   }
   let box=display?s.takeDirty():null;
   if(display&&full){
@@ -86,7 +87,7 @@ export function createWaterWorker({postMessage}={}){
  }
  async function execute(request){
   const op=request.operation;
-  if(op==='configure'){if(request.preview===true)return {helpers:0,backend:'contact'};watchDevice(await waterReady());return {helpers:0,backend:'webgpu'};}
+  if(op==='configure'){if(request.preview===true)return {helpers:0,backend:'contact'};waterUnfilteredTest(request.unfilteredTest===true);const ready=await waterReady();watchDevice(ready);return {helpers:0,backend:'webgpu',filterable:ready.features.has('float32-filterable')};}
   if(op==='preview'){
    if(!integer(request.width)||!integer(request.height))throw waterError('WATER_INPUT','The Water preview size is not valid');
    const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(request.width,request.height):globalThis.document?.createElement('canvas');
