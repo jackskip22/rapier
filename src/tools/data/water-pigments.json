@@ -1,0 +1,443 @@
+{
+  "about": "Rapier's Water palette: eighteen watercolours chosen from what working painters carry and love: a warm and a cool of each primary, a true warm red, a deep cool red and a magenta, a violet, the blues from sky to turquoise, the greens from emerald to forest, the earths, a grey, a true black and a white. Each is a single pigment named by Colour Index (Sap Green is the one named mixture, because that is how it is sold) and carries the properties paint makers and colour writers publish: how it looks at full strength (masstone) and in a thin wash, how opaque it is, how much it granulates and stains, and the wavelengths where it absorbs. tools/generate-water-color.py fits the absorbance spectrum to the two appearances through Rapier's own display model and writes draw/water-pigments.mjs. The numbers are Rapier's own, tuned against published swatch appearances; they are not measurements of any maker's paint.",
+  "wash": 0.25,
+  "pigments": [
+    {
+      "id": "hansa-yellow",
+      "name": "Hansa Yellow Light",
+      "ci": "PY3",
+      "family": "yellow",
+      "masstone": "#fbdc00",
+      "tint": "#fbee7a",
+      "opacity": 0,
+      "granulation": 0.05,
+      "staining": 0.3,
+      "note": "The cool lemon yellow: bright and transparent; with a blue that leans green it makes the cleanest greens.",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 492,
+          "width": 13,
+          "amp": 2.6
+        }
+      ]
+    },
+    {
+      "id": "new-gamboge",
+      "name": "New Gamboge",
+      "ci": "PY153",
+      "family": "yellow",
+      "masstone": "#e68608",
+      "tint": "#f9b43e",
+      "opacity": 0.0,
+      "granulation": 0.05,
+      "staining": 0.35,
+      "note": "The warm golden yellow, as one pigment (PY153): transparent and a little orange where the lemon is cool; clean oranges with a red, warm greens with a blue.",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 562,
+          "width": 18,
+          "amp": 3.0
+        },
+        {
+          "kind": "flat",
+          "amp": 0.15
+        }
+      ]
+    },
+    {
+      "id": "pyrrol-scarlet",
+      "name": "Pyrrol Scarlet",
+      "ci": "PR255",
+      "family": "red",
+      "masstone": "#bd1c1e",
+      "tint": "#f1705a",
+      "opacity": 0.01,
+      "granulation": 0.1,
+      "staining": 0.3,
+      "note": "The true warm red: bright, transparent and a little orange, where cadmium red goes dull.",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 598,
+          "width": 12,
+          "amp": 3.2
+        },
+        {
+          "kind": "flat",
+          "amp": 0.25
+        }
+      ]
+    },
+    {
+      "id": "alizarin-crimson",
+      "name": "Permanent Alizarin Crimson",
+      "ci": "PR177",
+      "family": "red",
+      "masstone": "#5e0a1e",
+      "tint": "#c8506c",
+      "opacity": 0.0,
+      "granulation": 0.05,
+      "staining": 0.6,
+      "note": "The deep cool red: a dark, transparent crimson for shadows and, with a green, rich neutrals.",
+      "spectrum": [
+        {
+          "kind": "window",
+          "centre": 455,
+          "upper": 598,
+          "width": 16,
+          "amp": 3.2
+        },
+        {
+          "kind": "band",
+          "centre": 520,
+          "width": 40,
+          "amp": 0.9
+        }
+      ]
+    },
+    {
+      "id": "quinacridone-magenta",
+      "name": "Quinacridone Magenta",
+      "ci": "PR122",
+      "family": "red",
+      "masstone": "#8a0a5a",
+      "tint": "#e05ca3",
+      "opacity": 0.0,
+      "granulation": 0.0,
+      "staining": 0.8,
+      "note": "The cool pink-purple red: transparent and staining; with ultramarine it makes the brightest violets.",
+      "spectrum": [
+        {
+          "kind": "band",
+          "centre": 545,
+          "width": 38,
+          "amp": 3.0
+        },
+        {
+          "kind": "band",
+          "centre": 600,
+          "width": 25,
+          "amp": 0.5
+        }
+      ]
+    },
+    {
+      "id": "dioxazine-violet",
+      "name": "Dioxazine Violet",
+      "ci": "PV23",
+      "family": "violet",
+      "masstone": "#14004a",
+      "tint": "#8b5fc4",
+      "opacity": 0,
+      "granulation": 0.0,
+      "staining": 0.9,
+      "note": "The violet: very strong and transparent; a touch tints a whole wash.",
+      "spectrum": [
+        {
+          "kind": "window",
+          "centre": 495,
+          "upper": 650,
+          "width": 18,
+          "amp": 4.5
+        },
+        {
+          "kind": "band",
+          "centre": 420,
+          "width": 30,
+          "amp": 1.0
+        }
+      ]
+    },
+    {
+      "id": "ultramarine",
+      "name": "French Ultramarine",
+      "ci": "PB29",
+      "family": "blue",
+      "masstone": "#1a2280",
+      "tint": "#6e9be2",
+      "opacity": 0,
+      "granulation": 0.8,
+      "staining": 0.1,
+      "note": "The warm blue: transparent and granulating; greys with burnt sienna, soft violets with a rose.",
+      "spectrum": [
+        {
+          "kind": "window",
+          "centre": 508,
+          "upper": 700,
+          "width": 16,
+          "amp": 3.4
+        },
+        {
+          "kind": "short",
+          "centre": 415,
+          "width": 14,
+          "amp": 0.5
+        }
+      ]
+    },
+    {
+      "id": "cerulean",
+      "name": "Cerulean Blue",
+      "ci": "PB35",
+      "family": "blue",
+      "masstone": "#1b78b5",
+      "tint": "#8ad0e8",
+      "opacity": 0.03,
+      "granulation": 0.6,
+      "staining": 0.0,
+      "note": "The sky blue: soft, granulating and a little opaque, with a chalky body.",
+      "spectrum": [
+        {
+          "kind": "long",
+          "centre": 585,
+          "width": 26,
+          "amp": 2.2
+        },
+        {
+          "kind": "band",
+          "centre": 540,
+          "width": 50,
+          "amp": 0.6
+        }
+      ]
+    },
+    {
+      "id": "phthalo-turquoise",
+      "name": "Phthalo Turquoise",
+      "ci": "PB16",
+      "family": "blue",
+      "masstone": "#06505e",
+      "tint": "#27b4b9",
+      "opacity": 0.0,
+      "granulation": 0.0,
+      "staining": 0.8,
+      "note": "The turquoise: a very strong, staining blue-green for water and cool greens; a touch goes a long way.",
+      "spectrum": [
+        {
+          "kind": "long",
+          "centre": 603,
+          "width": 22,
+          "amp": 4.5
+        },
+        {
+          "kind": "band",
+          "centre": 450,
+          "width": 40,
+          "amp": 0.7
+        }
+      ]
+    },
+    {
+      "id": "phthalo-green",
+      "name": "Phthalo Green",
+      "ci": "PG7",
+      "family": "green",
+      "masstone": "#02483a",
+      "tint": "#0fb494",
+      "opacity": 0,
+      "granulation": 0.0,
+      "staining": 1.0,
+      "note": "The cool emerald green: very strong and staining; with a yellow it makes every foliage green a landscape needs.",
+      "spectrum": [
+        {
+          "kind": "long",
+          "centre": 612,
+          "width": 20,
+          "amp": 5.0
+        },
+        {
+          "kind": "band",
+          "centre": 420,
+          "width": 36,
+          "amp": 1.8
+        }
+      ]
+    },
+    {
+      "id": "sap-green",
+      "name": "Sap Green",
+      "ci": "PG36 + PY110",
+      "family": "green",
+      "masstone": "#294400",
+      "tint": "#9bbb45",
+      "opacity": 0.0,
+      "granulation": 0.1,
+      "staining": 0.4,
+      "note": "The leaf green painters buy by name: a natural, warm, yellowish foliage green straight from the tube (a mixture of a phthalo green and a yellow).",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 515,
+          "width": 18,
+          "amp": 2.8
+        },
+        {
+          "kind": "long",
+          "centre": 615,
+          "width": 25,
+          "amp": 2.0
+        }
+      ]
+    },
+    {
+      "id": "perylene-green",
+      "name": "Perylene Green",
+      "ci": "PBk31",
+      "family": "green",
+      "masstone": "#0a2c0e",
+      "tint": "#6c9b6a",
+      "opacity": 0.0,
+      "granulation": 0.05,
+      "staining": 0.6,
+      "note": "The deep forest green: a dark, transparent green, nearly black at full strength, for the shadows in foliage; with a red it makes rich darks.",
+      "spectrum": [
+        {
+          "kind": "flat",
+          "amp": 2.2
+        },
+        {
+          "kind": "band",
+          "centre": 560,
+          "width": 30,
+          "amp": 1.2
+        },
+        {
+          "kind": "long",
+          "centre": 620,
+          "width": 30,
+          "amp": 1.0
+        }
+      ]
+    },
+    {
+      "id": "yellow-ochre",
+      "name": "Yellow Ochre",
+      "ci": "PY43",
+      "family": "earth",
+      "masstone": "#a66e12",
+      "tint": "#e8cf98",
+      "opacity": 0.015,
+      "granulation": 0.3,
+      "staining": 0.2,
+      "note": "The yellow earth: soft, semi-opaque and a little granular.",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 548,
+          "width": 42,
+          "amp": 2.4
+        },
+        {
+          "kind": "flat",
+          "amp": 0.6
+        }
+      ]
+    },
+    {
+      "id": "burnt-sienna",
+      "name": "Burnt Sienna",
+      "ci": "PR101",
+      "family": "earth",
+      "masstone": "#612400",
+      "tint": "#dd9770",
+      "opacity": 0,
+      "granulation": 0.45,
+      "staining": 0.2,
+      "note": "The warm red-brown earth: transparent and granulating; the partner of blue for greys.",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 610,
+          "width": 46,
+          "amp": 2.8
+        },
+        {
+          "kind": "flat",
+          "amp": 0.9
+        }
+      ]
+    },
+    {
+      "id": "burnt-umber",
+      "name": "Burnt Umber",
+      "ci": "PBr7",
+      "family": "earth",
+      "masstone": "#3f2a1c",
+      "tint": "#bea283",
+      "opacity": 0,
+      "granulation": 0.5,
+      "staining": 0.2,
+      "note": "The dark warm brown: falls away smoothly into the red, and deepens any mix.",
+      "spectrum": [
+        {
+          "kind": "short",
+          "centre": 660,
+          "width": 110,
+          "amp": 2.6
+        },
+        {
+          "kind": "flat",
+          "amp": 1.0
+        }
+      ]
+    },
+    {
+      "id": "davys-gray",
+      "name": "Davy's Gray",
+      "ci": "PBk19",
+      "family": "grey",
+      "masstone": "#3b3c37",
+      "tint": "#a6a79e",
+      "opacity": 0.015,
+      "granulation": 0.45,
+      "staining": 0.15,
+      "note": "The tube grey: powdered slate, a soft semi-opaque neutral grey with a faint olive cast that granulates a little; it greys a mix without the weight of black.",
+      "spectrum": [
+        {
+          "kind": "flat",
+          "amp": 3.3
+        },
+        {
+          "kind": "short",
+          "centre": 480,
+          "width": 50,
+          "amp": 0.4
+        }
+      ]
+    },
+    {
+      "id": "lamp-black",
+      "name": "Lamp Black",
+      "ci": "PBk6",
+      "family": "black",
+      "masstone": "#020203",
+      "tint": "#646466",
+      "opacity": 0,
+      "granulation": 0.2,
+      "staining": 0.4,
+      "note": "The true black: black at the default dose and in a wash a dark neutral grey.",
+      "spectrum": [
+        {
+          "kind": "flat",
+          "amp": 8.2
+        }
+      ],
+      "limit": 42
+    },
+    {
+      "id": "white-gouache",
+      "name": "White Gouache",
+      "ci": "PW6",
+      "family": "white",
+      "masstone": "#f7f5ef",
+      "tint": "#f7f5ef",
+      "opacity": 1,
+      "granulation": 0.0,
+      "staining": 0.0,
+      "note": "Opaque white for lights, highlights and lifting back.",
+      "white": true
+    }
+  ]
+}

@@ -21,27 +21,33 @@ const K = new Uint32Array([
   0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
   0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
 ]);
-const rotate = (x, n) => (x >>> n) | (x << (32 - n));
+// The rounds run on plain 32-bit locals: no array is made per block, so a megabyte (a painting's text) hashes about five times
+// faster than through destructured arrays, with the same digest.
+const W = new Int32Array(64);
 export function sha256(text) {
-  const bytes = new TextEncoder().encode(text);
-  const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
-  padded.set(bytes); padded[bytes.length] = 0x80;
-  const data = new DataView(padded.buffer), bits = bytes.length * 8;
-  data.setUint32(padded.length - 8, Math.floor(bits / 0x100000000)); data.setUint32(padded.length - 4, bits >>> 0);
-  const h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]), w = new Uint32Array(64);
-  for (let offset = 0; offset < padded.length; offset += 64) {
-    for (let i = 0; i < 16; i++) w[i] = data.getUint32(offset + i * 4);
+  const bytes = new TextEncoder().encode(text), length = bytes.length;
+  const padded = new Uint8Array(Math.ceil((length + 9) / 64) * 64), end = padded.length;
+  padded.set(bytes); padded[length] = 0x80;
+  const high = Math.floor(length * 8 / 0x100000000), low = (length * 8) >>> 0;
+  padded[end - 8] = high >>> 24; padded[end - 7] = high >>> 16; padded[end - 6] = high >>> 8; padded[end - 5] = high;
+  padded[end - 4] = low >>> 24; padded[end - 3] = low >>> 16; padded[end - 2] = low >>> 8; padded[end - 1] = low;
+  let h0 = 0x6a09e667 | 0, h1 = 0xbb67ae85 | 0, h2 = 0x3c6ef372 | 0, h3 = 0xa54ff53a | 0, h4 = 0x510e527f | 0, h5 = 0x9b05688c | 0, h6 = 0x1f83d9ab | 0, h7 = 0x5be0cd19 | 0;
+  const w = W;
+  for (let offset = 0; offset < end; offset += 64) {
+    for (let i = 0, j = offset; i < 16; i++, j += 4) w[i] = padded[j] << 24 | padded[j + 1] << 16 | padded[j + 2] << 8 | padded[j + 3];
     for (let i = 16; i < 64; i++) {
       const x = w[i - 15], y = w[i - 2];
-      w[i] = w[i - 16] + (rotate(x, 7) ^ rotate(x, 18) ^ (x >>> 3)) + w[i - 7] + (rotate(y, 17) ^ rotate(y, 19) ^ (y >>> 10));
+      w[i] = (w[i - 16] + ((x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ x >>> 3) + w[i - 7] + ((y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ y >>> 10)) | 0;
     }
-    let [a,b,c,d,e,f,g,k] = h;
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, k = h7;
     for (let i = 0; i < 64; i++) {
-      const t1 = (k + (rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
-      const t2 = ((rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
-      k = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      const t1 = (k + ((e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7)) + (e & f ^ ~e & g) + K[i] + w[i]) | 0;
+      const t2 = (((a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10)) + (a & b ^ a & c ^ b & c)) | 0;
+      k = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
     }
-    for (const [i, value] of [a,b,c,d,e,f,g,k].entries()) h[i] += value;
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + k) | 0;
   }
-  return [...h].map(x => x.toString(16).padStart(8, '0')).join('');
+  let out = '';
+  for (const x of [h0, h1, h2, h3, h4, h5, h6, h7]) out += (x >>> 0).toString(16).padStart(8, '0');
+  return out;
 }

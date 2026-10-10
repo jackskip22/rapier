@@ -187,9 +187,16 @@ function _rapierDrawRasterInfo(value, max = RAPIER_DRAW_RASTER_MAX) {
 	const encoded = value.slice(value.indexOf(',') + 1);
 	if (encoded.length % 4) return null;
 	try {
-		const binary = atob(encoded);
-		if (btoa(binary) !== encoded) return null;
-		const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+		// Only canonical base64 is admitted. The browser's strict decoder checks that in about a millisecond for a megabyte; the round
+		// trip through text takes a phone's main thread a few hundred, and a painting is admitted again after every stroke.
+		let bytes;
+		if (typeof Uint8Array.fromBase64 === 'function') bytes = Uint8Array.fromBase64(encoded, {lastChunkHandling: 'strict'});
+		else {
+			const binary = atob(encoded);
+			if (btoa(binary) !== encoded) return null;
+			bytes = new Uint8Array(binary.length);
+			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		}
 		// A live uncompressed painting keeps its existing byte policy; its dimensions still admit.
 		const info = value.startsWith('data:image/png;') ? inspectRaster(bytes, {maximumBytes: lifted ? Infinity : undefined}) : inspectJPEGXL(bytes);
 		if (info) { _rapierDrawRastersAdmitted.push({lifted, value, info}); if (_rapierDrawRastersAdmitted.length > RAPIER_DRAW_RASTERS_KEPT) _rapierDrawRastersAdmitted.shift(); }

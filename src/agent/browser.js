@@ -161,16 +161,32 @@
       const value = {sequence: contextSequence, visible: visible(), editing: editing(), reason};
       for (const notify of contextSubscribers) { try { notify(value); } catch (_) {} }
       if (pendingView?.status === 'pending') void drainView();
-      if (!apps && kernel && ['drawing', 'drawing_presentation', 'drawing_navigation', 'visibility'].includes(reason)) {
-        try {
-          const value = current();
-          kernel.reconcile(value, {actor: 'system', principal: 'bootstrap'});
-          kernel.humanContext({contextId: doorSession, sequence: contextSequence, expectedRevision: value.revision,
-            visible: visible(), editing: editing(), navigationSequence: drawingNavigationSequence,
-            drawing: value.drawing, drawingReceipts: value.drawingReceipts}, {actor: 'human', principal: 'local', transport: 'platform'});
-        } catch (_) {}
-      }
+      if (!apps && kernel && ['drawing', 'drawing_presentation', 'drawing_navigation', 'visibility'].includes(reason)) reconcileDrawingSoon();
     });
+  }
+  // Telling the kernel about a drawing reads and hashes the whole recipe, a painting's megabyte of pixels included: on a cheap phone
+  // most of a second, and a painter's strokes arrive a second apart. It waits until the drawing has been still for a moment and no
+  // hand is on it, then tells the latest state once; an agent's own request reads the current drawing for itself (humanContext), so
+  // nothing it acts on is late.
+  let drawingReconcile = 0, drawingChangedAt = 0;
+  const DRAWING_STILL_MS = 1500;
+  function reconcileDrawingSoon() {
+    drawingChangedAt = Date.now();
+    if (drawingReconcile) return;
+    const idle = () => { drawingReconcile = typeof requestIdleCallback === 'function' ? requestIdleCallback(run, {timeout: 3000}) : setTimeout(run, 250); };
+    const run = () => {
+      drawingReconcile = 0;
+      const still = Date.now() - drawingChangedAt, busy = typeof _rapierDrawBusy === 'function' && _rapierDrawBusy().human;
+      if (busy || still < DRAWING_STILL_MS) { drawingReconcile = setTimeout(idle, Math.max(250, DRAWING_STILL_MS - still)); return; }
+      try {
+        const value = current();
+        kernel.reconcile(value, {actor: 'system', principal: 'bootstrap'});
+        kernel.humanContext({contextId: doorSession, sequence: contextSequence, expectedRevision: value.revision,
+          visible: visible(), editing: editing(), navigationSequence: drawingNavigationSequence,
+          drawing: value.drawing, drawingReceipts: value.drawingReceipts}, {actor: 'human', principal: 'local', transport: 'platform'});
+      } catch (_) {}
+    };
+    idle();
   }
 
   function drawingNavigationChanged() {

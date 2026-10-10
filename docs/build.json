@@ -1,6 +1,6 @@
 {
-  "release": "1.1.92",
-  "builtAt": "2026-10-10T15:34:26.332Z",
+  "release": "1.1.93",
+  "builtAt": "2026-10-10T18:17:09.057Z",
   "node": "v22.23.3",
   "mode": "release",
   "packing": "zopfli",
@@ -58,8 +58,8 @@
   "profiles": {
     "document": {
       "path": "rapier-document.html",
-      "bytes": 1621825,
-      "sha256": "698075bd87987799471415a3f05b3521edfcdeb00cca72ab88b35900a784f7f5",
+      "bytes": 1623223,
+      "sha256": "4df472f5c5913768aedee8c24c278aebbbcd32fba3b3a3762deedc30fb6ddcc4",
       "budget": {
         "warn": 2079000,
         "refuse": 2100000
@@ -206,14 +206,14 @@
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 1746018,
-          "sha256": "a74dd54134495cfe1781d29a2bc6fdcdcf957a59ad065bfd46017ae25eaf9e4a"
+          "bytes": 1750009,
+          "sha256": "99157dbbf0bb6286750a7f43904e08d061b9dc3b5b526e7199d0123f4e268d48"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 1823955,
-          "sha256": "b3bac71093c4c6f938beeb121e60f08271e668aba2592d342a485f3a0c70fd5a"
+          "bytes": 1824291,
+          "sha256": "af20796d749ccc27d48b3cf357218303ccaab06b5670685ae24268a463fa46db"
         }
       ],
       "shakenExports": {
@@ -294,6 +294,10 @@
           "dataDescriptor",
           "commentBytes",
           "endRecord"
+        ],
+        "draw/water-color.mjs": [
+          "WHITE",
+          "encodeHex"
         ],
         "draw/water-gpu.mjs": [
           "WATER_REFERENCE_TEXEL"
@@ -400,7 +404,7 @@
         ]
       },
       "jxl": null,
-      "builtAt": "2026-10-10T15:26:15.368Z",
+      "builtAt": "2026-10-10T18:09:08.170Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -408,8 +412,8 @@
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2326527,
-      "sha256": "dd3032257b55d9fd0bd752490e45fc5c759849ddfd928be38f9c27c90aa7a51b",
+      "bytes": 2328188,
+      "sha256": "e4ae46d69c8b724026ff9cee44952049938b28b5f002e6b3eaa55e17e0dede34",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -556,14 +560,14 @@
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2700681,
-          "sha256": "f1826d16e82c0a4654c06e5e1dd3b249b790eb36755375b46a20cdcfc1b2a683"
+          "bytes": 2704711,
+          "sha256": "8ecc3619415e6e5eb39915bb32c987274fcdf3783fb793b872a3f07c43b86954"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2717186,
-          "sha256": "6c2d5ba238e0e4aa38acff9a9f4aaa456087fc17137f2f4d0bc038bc4014b250"
+          "bytes": 2717764,
+          "sha256": "1c7f0929d5e7de946588de384b3bbcedf9a1511eecea72eb64a6b7d84f86a449"
         }
       ],
       "shakenExports": {
@@ -629,6 +633,10 @@
           "MAX_XFER_QUANTITY",
           "EQUAL_PAINT_CUTOFF",
           "brushTotals"
+        ],
+        "draw/water-color.mjs": [
+          "WHITE",
+          "encodeHex"
         ],
         "draw/water-gpu.mjs": [
           "WATER_REFERENCE_TEXEL"
@@ -815,7 +823,7 @@
           "sha256": "beed8f9ee5c0d5f1e106594dd7aa2b5dfe147f26539bdf8eb2fd41e7188116fb"
         }
       },
-      "builtAt": "2026-10-10T15:34:26.332Z",
+      "builtAt": "2026-10-10T18:17:09.057Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -823,14 +831,14 @@
     },
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 252158,
-      "sha256": "0c082f6a8a52ae516d048fb5a1279148f8cdadacd498fae4db571c34b75deeab",
-      "gzip": 218103,
+      "bytes": 252162,
+      "sha256": "44e6c8493f9e52c28cbb028d81f9090267274e1aad5a6d81b690ecd1b85b013e",
+      "gzip": 218102,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-10T15:26:47.556Z",
+      "builtAt": "2026-10-10T18:09:39.252Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -838,8 +846,8 @@
       "parts": {
         "core": {
           "raw": 653184,
-          "gzip": 197300,
-          "base124": 227550
+          "gzip": 197301,
+          "base124": 227554
         },
         "licenses": {
           "raw": 55784,
@@ -851,13 +859,13 @@
   },
   "editor": {
     "path": "rapier.html",
-    "bytes": 2326527,
-    "sha256": "dd3032257b55d9fd0bd752490e45fc5c759849ddfd928be38f9c27c90aa7a51b"
+    "bytes": 2328188,
+    "sha256": "e4ae46d69c8b724026ff9cee44952049938b28b5f002e6b3eaa55e17e0dede34"
   },
   "apps": {
     "path": "dist/chatgpt/rapier-app.html",
-    "bytes": 9068028,
-    "sha256": "bf852961c2ed142591aac53c8b70960b2bcf3ea1eeb498d08c3f7684bd2d695d",
+    "bytes": 9069689,
+    "sha256": "83171d8b3720c275504f3c7c5be0175ba6b1dd4d27ba43147e1797bb2aaf2ff1",
     "spans": [
       {
         "element": "lib-dompurify",
@@ -970,14 +978,14 @@
       {
         "element": "rapier-shared-runtime",
         "name": "rapier-shared.js",
-        "bytes": 2700681,
-        "sha256": "f1826d16e82c0a4654c06e5e1dd3b249b790eb36755375b46a20cdcfc1b2a683"
+        "bytes": 2704711,
+        "sha256": "8ecc3619415e6e5eb39915bb32c987274fcdf3783fb793b872a3f07c43b86954"
       },
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-editor.js",
-        "bytes": 2717186,
-        "sha256": "6c2d5ba238e0e4aa38acff9a9f4aaa456087fc17137f2f4d0bc038bc4014b250"
+        "bytes": 2717764,
+        "sha256": "1c7f0929d5e7de946588de384b3bbcedf9a1511eecea72eb64a6b7d84f86a449"
       },
       {
         "element": "rapier-ui-runtime",
@@ -1170,7 +1178,7 @@
     ]
   },
   "shell": {
-    "sha256": "3278960c3bffa6b901e0035fa0bafe934bf0fa308847c437dacb3a0b702e07e5"
+    "sha256": "9f37cb0ea95540c0ad479b46a5ccfb18c8fd592956ddcb6737116676a25a6d15"
   },
   "htmlSinks": {
     "named": 131,

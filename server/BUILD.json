@@ -1,12 +1,12 @@
 {
-  "version": "1.1.92",
+  "version": "1.1.93",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "document": {
       "path": "rapier-document.html",
-      "bytes": 1621825,
-      "sha256": "698075bd87987799471415a3f05b3521edfcdeb00cca72ab88b35900a784f7f5",
+      "bytes": 1623223,
+      "sha256": "4df472f5c5913768aedee8c24c278aebbbcd32fba3b3a3762deedc30fb6ddcc4",
       "budget": {
         "warn": 2079000,
         "refuse": 2100000
@@ -153,14 +153,14 @@
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 1746018,
-          "sha256": "a74dd54134495cfe1781d29a2bc6fdcdcf957a59ad065bfd46017ae25eaf9e4a"
+          "bytes": 1750009,
+          "sha256": "99157dbbf0bb6286750a7f43904e08d061b9dc3b5b526e7199d0123f4e268d48"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 1823955,
-          "sha256": "b3bac71093c4c6f938beeb121e60f08271e668aba2592d342a485f3a0c70fd5a"
+          "bytes": 1824291,
+          "sha256": "af20796d749ccc27d48b3cf357218303ccaab06b5670685ae24268a463fa46db"
         }
       ],
       "shakenExports": {
@@ -241,6 +241,10 @@
           "dataDescriptor",
           "commentBytes",
           "endRecord"
+        ],
+        "draw/water-color.mjs": [
+          "WHITE",
+          "encodeHex"
         ],
         "draw/water-gpu.mjs": [
           "WATER_REFERENCE_TEXEL"
@@ -347,7 +351,7 @@
         ]
       },
       "jxl": null,
-      "builtAt": "2026-10-10T15:26:15.368Z",
+      "builtAt": "2026-10-10T18:09:08.170Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -355,8 +359,8 @@
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2326527,
-      "sha256": "dd3032257b55d9fd0bd752490e45fc5c759849ddfd928be38f9c27c90aa7a51b",
+      "bytes": 2328188,
+      "sha256": "e4ae46d69c8b724026ff9cee44952049938b28b5f002e6b3eaa55e17e0dede34",
       "budget": {
         "warn": 2980000,
         "refuse": 3000000
@@ -503,14 +507,14 @@
         {
           "element": "rapier-shared-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2700681,
-          "sha256": "f1826d16e82c0a4654c06e5e1dd3b249b790eb36755375b46a20cdcfc1b2a683"
+          "bytes": 2704711,
+          "sha256": "8ecc3619415e6e5eb39915bb32c987274fcdf3783fb793b872a3f07c43b86954"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2717186,
-          "sha256": "6c2d5ba238e0e4aa38acff9a9f4aaa456087fc17137f2f4d0bc038bc4014b250"
+          "bytes": 2717764,
+          "sha256": "1c7f0929d5e7de946588de384b3bbcedf9a1511eecea72eb64a6b7d84f86a449"
         }
       ],
       "shakenExports": {
@@ -576,6 +580,10 @@
           "MAX_XFER_QUANTITY",
           "EQUAL_PAINT_CUTOFF",
           "brushTotals"
+        ],
+        "draw/water-color.mjs": [
+          "WHITE",
+          "encodeHex"
         ],
         "draw/water-gpu.mjs": [
           "WATER_REFERENCE_TEXEL"
@@ -762,7 +770,7 @@
           "sha256": "beed8f9ee5c0d5f1e106594dd7aa2b5dfe147f26539bdf8eb2fd41e7188116fb"
         }
       },
-      "builtAt": "2026-10-10T15:34:26.332Z",
+      "builtAt": "2026-10-10T18:17:09.057Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -770,14 +778,14 @@
     },
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 252158,
-      "sha256": "0c082f6a8a52ae516d048fb5a1279148f8cdadacd498fae4db571c34b75deeab",
-      "gzip": 218103,
+      "bytes": 252162,
+      "sha256": "44e6c8493f9e52c28cbb028d81f9090267274e1aad5a6d81b690ecd1b85b013e",
+      "gzip": 218102,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-10T15:26:47.556Z",
+      "builtAt": "2026-10-10T18:09:39.252Z",
       "node": "v22.23.3",
       "mode": "release",
       "packing": "zopfli",
@@ -785,8 +793,8 @@
       "parts": {
         "core": {
           "raw": 653184,
-          "gzip": 197300,
-          "base124": 227550
+          "gzip": 197301,
+          "base124": 227554
         },
         "licenses": {
           "raw": 55784,
@@ -822,8 +830,8 @@
       "sha256": "22ebc7f6555b036dcb863243b2154e1a083d477778abf992fe0e8e1790a5e91e"
     },
     "dist/kit/ledger/hash.mjs": {
-      "bytes": 2852,
-      "sha256": "438df7e97f4545cb09971fad80d3cf71d9c3c9494edf4774412807a1ec7610ea"
+      "bytes": 3517,
+      "sha256": "7a5c6a943587d599b068178ca9048c6fadc586edc5ed809d99ebfac83a0591ea"
     },
     "dist/kit/ledger/data.mjs": {
       "bytes": 2669,
@@ -910,8 +918,8 @@
       "sha256": "8ab36a403b84a259efe54c0022cd4a31fd35a3e450a77efe332464d0f262b659"
     },
     "dist/draw/core.mjs": {
-      "bytes": 285448,
-      "sha256": "6873a0d687f9db921a9d7d039367edd0bed8b79de1f7999f8ce12c305a1d61c7"
+      "bytes": 285886,
+      "sha256": "bb036f98309471458db3f51a3f00c547b4079b60ba3eaf6676bc0c2bfba6e88a"
     },
     "dist/draw/freehand.mjs": {
       "bytes": 14325,
@@ -974,12 +982,12 @@
       "sha256": "17f842d7d420a87cc7f078e0d75acc19cccf3e1f39d231ecb2b425ca86b042db"
     },
     "dist/draw/water-data.mjs": {
-      "bytes": 16191,
-      "sha256": "f9e3103e8a408168e53999dd0fbad3f7697a9b78edee140064eeb1373b5e1b9b"
+      "bytes": 15625,
+      "sha256": "02f18229e7e222119f8e4e1a8bbd488a688011e00eb6f85047333de23b8db812"
     },
-    "dist/draw/water-color.mjs": {
-      "bytes": 11928,
-      "sha256": "a4ac8ceb9935f28f635cb2a20b43644187ce608fe5ccf19a32ed3cc8ea516154"
+    "dist/draw/water-pigments.mjs": {
+      "bytes": 3479,
+      "sha256": "28d7cbae71e9c0c74a198d40cd61d7ad2c0445630910863364c8d482c6f33709"
     },
     "dist/draw/water-materials.mjs": {
       "bytes": 18183,
@@ -1007,7 +1015,7 @@
     },
     "dist/version.mjs": {
       "bytes": 33,
-      "sha256": "c80ab92b3586af6a1aec05bdcbee67dee7f9ede942efbd88c83007924fa9a6af"
+      "sha256": "b76a063d6286f44263cd48abaa1480de01db4b4c9ee9028a3d50fb1864a432cb"
     },
     "dist/agent/visual.mjs": {
       "bytes": 7596,
@@ -1078,8 +1086,8 @@
       "sha256": "c1501c198e94da5f44bf94419b4bc0f891f0849f63fb88c6bffae7ba682e711b"
     },
     "dist/draw/agent-paint.mjs": {
-      "bytes": 52630,
-      "sha256": "12ab85f741d24d670049b06109dab319e16fa83ef73d70ab951797dd9558b768"
+      "bytes": 54296,
+      "sha256": "46cfd0eeb586f467a6f2b6a778b54cc696b433459e7042940734a948e5666765"
     },
     "dist/draw/paint.mjs": {
       "bytes": 277278,
@@ -1102,20 +1110,24 @@
       "sha256": "72889871e0ec76436230a4a95b58e0b0c1114002d8d133626a08a0441de45547"
     },
     "dist/draw/water.mjs": {
-      "bytes": 34353,
-      "sha256": "aa7bfe34c67a42707b99c5b707bf010bb28924ea7146bf8d877add50bd4900f1"
+      "bytes": 34661,
+      "sha256": "48969c6b5ab99148c5bf3088135806cc78faf4da64124de24421fabea3ab68a1"
     },
     "dist/draw/water-gpu.mjs": {
-      "bytes": 61113,
-      "sha256": "471d85066174be2938006aef25234bccb64105c5a628192099c6a1d7d79bcf41"
+      "bytes": 62646,
+      "sha256": "7909f437f51ed191cbbbd69a85cd5d7ba23c785161b185c4bd7e8c2041710a02"
     },
     "dist/draw/water-shaders.mjs": {
-      "bytes": 16328,
-      "sha256": "c55ac67b59b1b1cb8cffcf1470a19b5c8eef6835473e06b5fdddb3cf1a4063eb"
+      "bytes": 16605,
+      "sha256": "04a197990a4640e8aaf6e6c5aa8e7ef14260d18e3b8e1c490950a9060e1f8e12"
+    },
+    "dist/draw/water-color.mjs": {
+      "bytes": 11937,
+      "sha256": "7c75124ddf0e695d625f6869865f7a48c78e591d9341225d185226349359f34c"
     },
     "dist/draw/water-contact.mjs": {
-      "bytes": 8218,
-      "sha256": "6edb32d8ac4568cd066d9fd1f48cf88d75fe6db222749bc782b1e6516106b613"
+      "bytes": 8288,
+      "sha256": "43d97f8bdb7bad9325b82f4757ffb7397957734ced5cd402743434020b1331f1"
     },
     "dist/draw/water-fill.mjs": {
       "bytes": 4988,
@@ -1390,12 +1402,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/rapier-document.html": {
-      "bytes": 1621825,
-      "sha256": "698075bd87987799471415a3f05b3521edfcdeb00cca72ab88b35900a784f7f5"
+      "bytes": 1623223,
+      "sha256": "4df472f5c5913768aedee8c24c278aebbbcd32fba3b3a3762deedc30fb6ddcc4"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 9068028,
-      "sha256": "bf852961c2ed142591aac53c8b70960b2bcf3ea1eeb498d08c3f7684bd2d695d"
+      "bytes": 9069689,
+      "sha256": "83171d8b3720c275504f3c7c5be0175ba6b1dd4d27ba43147e1797bb2aaf2ff1"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -1434,8 +1446,8 @@
       "sha256": "659a850252b533a40f31d220550a3332d7c7055f2284c23786916b705246def2"
     },
     "dist/dist/chatgpt/rapier-skills.json": {
-      "bytes": 799597,
-      "sha256": "37bb91b19a86b10585a8d9db21993dcc4cff26669f9fd856e17896ee425d2949"
+      "bytes": 800268,
+      "sha256": "33de165b65aba242ebbba91246695d669e87a811995251b78877b218375b88cc"
     }
   }
 }

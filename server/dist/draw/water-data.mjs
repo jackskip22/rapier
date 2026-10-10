@@ -5,7 +5,7 @@ export const WATER_BANDS = 8;
 // Binary time keeps finer resolution than the 1/240-second transport interval.
 export const WATER_TIME_MAX_SECONDS = Number.MAX_SAFE_INTEGER / 256;
 export const waterTimeFits = seconds => Number.isFinite(seconds) && seconds >= 0 && seconds <= WATER_TIME_MAX_SECONDS;
-import {encodeHex,WHITE} from './water-color.mjs';
+import {WATER_PIGMENT_DATA} from './water-pigments.mjs';
 import {PAPER_KINDS,BRUSHES,CUSTOM_PARAMS} from './water-materials.mjs';
 import {WATER_PAPER_UNITS} from './paper-field.mjs';
 export const WATER_ACTION_MAX_POINTS = 131072;
@@ -15,18 +15,9 @@ export const WATER_SOURCE_MAX_BYTES = PAINT_REPLAY_MAX_BYTES;
 const freeze = rows => Object.freeze(rows.map(row => Object.freeze(row)));
 // The paper's field drives contact and granulation; retained pixels remain transparent.
 export const WATER_PAPERS = PAPER_KINDS;
-const palette = [
- ['hansa-yellow','Hansa Yellow','#f6d409'],['new-gamboge','New Gamboge','#f0a202'],
- ['pyrrol-scarlet','Pyrrol Scarlet','#e0301e'],['quinacridone-rose','Quinacridone Rose','#d0306a'],
- ['dioxazine-violet','Dioxazine Violet','#4b2c7a'],['ultramarine','French Ultramarine','#2338a8'],
- ['phthalo-blue','Phthalo Blue','#0e5a9c'],['phthalo-green','Phthalo Green','#0b6e5a'],
- ['sap-green','Sap Green','#4f7d2a'],['yellow-ochre','Yellow Ochre','#c8902e'],
- ['burnt-sienna','Burnt Sienna','#a0522d'],['burnt-umber','Burnt Umber','#5c3a21'],
- ['paynes-gray',"Payne's Gray",'#3b4552'],['lamp-black','Lamp Black','#1b1b1f'],
- ['white-gouache','White Gouache','#f7f5ef']
-];
-export const WATER_PIGMENTS = freeze(palette.map(([id,name,colour])=>({id,name,colour,
- coefficients:Array.from(id==='white-gouache'?WHITE:encodeHex(colour)),granulation:.45,staining:0})));
+// The palette is generated (tools/generate-water-color.py, from tools/data/water-pigments.json): single pigments, each fitted to
+// how it looks at full strength and in a thin wash.
+export const WATER_PIGMENTS = freeze(WATER_PIGMENT_DATA.map(row=>({...row,coefficients:row.coefficients.slice()})));
 export const WATER_BRUSHES = freeze(BRUSHES.map(b=>({id:b.id,name:b.name,size:50,water:.6,load:.5,
  aspect:b.params.aspect,spacing:b.params.spacing,capacity:b.params.capacity,angle:b.params.angle,follow:b.params.rotation==='follow',params:b.params,description:b.name+' contact with spectral pigment and paper response.'})));
 export const WATER_TOOLS = freeze([

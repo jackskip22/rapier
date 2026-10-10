@@ -106,7 +106,9 @@ fn fillWeight(p:vec4<f32>,cumulative:bool)->f32 {
 const body = {
  // The retained output is straight sRGB; a transparent canvas receives premultiplied sRGB.
  present: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { let color=textureLoad(t0,vec2<i32>(p.xy),0);return vec4<f32>(color.rgb*color.a,color.a); }`,
- stampInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=footprint(uv(p));return Pair(u.v[7]*f,u.v[8]*f); }`,
+ // A granulating pigment settles into the hollows of the paper and leaves its peaks: its deposit follows the tooth, by as much as
+ // the pigment granulates (u.v[6].w), so the same stroke of two pigments shows two textures.
+ stampInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=footprint(uv(p))*max(0.0,1.0+u.v[6].w*2.0*(0.5-sample(t1,uv(p)).g));return Pair(u.v[7]*f,u.v[8]*f); }`,
  stampWet: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return vec4<f32>(u.v[6].y*footprint(uv(p)),0,0,0); }`,
  splatInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=gaussian(uv(p));return Pair(u.v[7]*f,u.v[8]*f); }`,
  splat: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return u.v[7]*gaussian(uv(p)); }`,
@@ -215,7 +217,7 @@ const body = {
  return vec4<f32>(waterPaperTile(point,u.v[12].y,paperKind),1);
  }`,
  paperLight: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
- let pixel=vec2<i32>(p.xy)-vec2<i32>(u.v[14].xy);let last=vec2<i32>(textureDimensions(t0))-1;
+ let pixel=vec2<i32>(px(p))-vec2<i32>(u.v[14].xy);let last=vec2<i32>(textureDimensions(t0))-1;
  let field=textureLoad(t0,clamp(pixel,vec2<i32>(0),last),0);
  let dx=textureLoad(t0,clamp(pixel+vec2<i32>(-1,0),vec2<i32>(0),last),0).r-textureLoad(t0,clamp(pixel+vec2<i32>(1,0),vec2<i32>(0),last),0).r;
  let dy=textureLoad(t0,clamp(pixel+vec2<i32>(0,1),vec2<i32>(0),last),0).r-textureLoad(t0,clamp(pixel+vec2<i32>(0,-1),vec2<i32>(0),last),0).r;

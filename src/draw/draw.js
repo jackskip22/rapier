@@ -6458,22 +6458,23 @@ function _rapierDrawLeave(surface, under) {
 // successor closes before its predecessors are removed. A live session holds its own lock so another
 // window cannot mistake its checkpoint for abandoned work. No count or age evicts a drawing.
 const RAPIER_DRAW_BACKUP_MS = 4000;
-// A routine checkpoint waits this long for the painter to hand over what a lifted stroke still owes. Past it, and while a stroke is down,
-// it carries the painting as last published -- the complete picture the last lifted stroke made, which is already in the recipe -- and
-// leaves the live pixels owing. A person who keeps painting gets a checkpoint every interval, not one only when they stop.
-const RAPIER_DRAW_BACKUP_WAIT_MS = 300;
 // A live readout of a painting that has a published picture is waited for this long (the painter's answer and the compressor, which strokes
 // slow); past it the published picture is the checkpoint and the readout is dropped.
 const RAPIER_DRAW_BACKUP_CAPTURE_MS = 1500;
 // True when the live painting has a picture of its own in the recipe to carry (its first stroke has been published).
 function _rapierDrawBackupCarryable() {
 	const state = _rapierDrawState, layer = typeof _rapierPaintLayer === 'function' ? _rapierPaintLayer() : null;
-	return !!layer && layer.id != null && state.recipe.shapes.some(shape => shape.id === layer.id && shape.recognized === 'paint' && typeof shape.raster === 'string' && shape.raster.length > 0);
+	return !state.waterAction && !state.paintEraseFan && !state.gesture?.eraseInk && !!layer && layer.id != null && state.recipe.shapes.some(shape => shape.id === layer.id && shape.recognized === 'paint' && typeof shape.raster === 'string' && shape.raster.length > 0);
 }
-// Resolves true when `pending` settles within `ms`, false when the wait runs out first; a refusal of `pending` is the caller's, as awaiting it would be.
-function _rapierDrawBackupSettled(pending, ms) {
-	let timer;
-	return Promise.race([Promise.resolve(pending).then(() => true), new Promise(done => { timer = setTimeout(() => done(false), ms); })]).finally(() => clearTimeout(timer));
+// A sealed stroke already owns its complete picture. Send it to storage before another interval or live readout;
+// publications arriving during a write coalesce into the next whole record.
+function _rapierDrawBackupPublished() {
+	const state = _rapierDrawState;
+	if (!state.open || state.finishing || (typeof document !== 'undefined' && document.hidden) || !_rapierDrawBackupHere() || !_rapierDrawBackupCarryable()) return;
+	const owner = _rapierDrawBackupOwner();
+	owner.published = (owner.published || 0) + 1;
+	state.backupDirty = true;
+	void _rapierDrawBackupWrite(false, true);
 }
 // ---- Where the recoveries live
 // --------------------------------------------------------------------
@@ -6730,7 +6731,7 @@ async function _rapierDrawBackupRemove(store, files, owner, { quiet = false, bac
 	if (!ok && !quiet) _rapierDrawBackupProblem('An older drawing backup could not be removed.');
 	return ok;
 }
-async function _rapierDrawBackupWrite(closing = false) {
+async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 	const state = _rapierDrawState;
 	const urgent = closing || (typeof document !== 'undefined' && document.hidden);
 	const readoutEpoch = state.backupReadoutEpoch || 0;
@@ -6744,24 +6745,23 @@ async function _rapierDrawBackupWrite(closing = false) {
 	}
 	if (!state.open || !state.backupDirty) return;
 	const session = state.session, began = Date.now();
-	let record, editing, owner, encode, published = null;
-	let carried = false;
+	let record, editing, owner, encode, published = null, publication = 0;
+	let carried = sealed && !urgent && _rapierDrawBackupCarryable();
 	try {
-		// The revision is already off this thread. Wait for it; do not encode it here. A worker that
-		// never answers keeps the checkpoint dirty so the next write carries the stroke. A routine write
-		// does not wait without end: past a bound, a painting with a published picture is carried as published.
-		let pending = typeof _rapierPaintPendingStroke === 'function' ? _rapierPaintPendingStroke(closing) : null;
-		// A stroke that is down is not waited for: the painting is carried as published (below).
-		if (pending && !urgent && state.gesture?.kind === 'paint' && _rapierDrawBackupCarryable()) { carried = true; pending = null; }
+		// A busy painter cannot delay an already published picture. Waiting even 300 ms here can cost
+		// another whole stroke when the timer runs behind input. Urgent writes still finish all owed work.
+		let pending = !carried && typeof _rapierPaintPendingStroke === 'function' ? _rapierPaintPendingStroke(closing) : null;
+		if (pending && !urgent && _rapierDrawBackupCarryable()) { carried = true; pending = null; }
 		while (pending) {
-			if (urgent || !_rapierDrawBackupCarryable()) await pending;
-			else if (!await _rapierDrawBackupSettled(pending, RAPIER_DRAW_BACKUP_WAIT_MS)) { carried = true; break; }
+			await pending;
 			if (!state.open || state.session !== session) return;
 			pending = _rapierPaintPendingStroke(closing, true);
+			if (pending && !urgent && _rapierDrawBackupCarryable()) { carried = true; break; }
 		}
 		if (!_rapierDrawBackupHere()) { _rapierDrawBackupTouch(); return; }
 		owner = _rapierDrawBackupOwner();
 		if (owner.writing && !urgent) return;
+		publication = owner.published || 0;
 		// Cancelled transactions must not become the recovery. Flush has already settled the gesture.
 		// A running replay is the same category: the shapes on the paper mid-replay are a VIEW of a
 		// change that has already landed, and a recovery written from one would keep half an agent's
@@ -6779,6 +6779,12 @@ async function _rapierDrawBackupWrite(closing = false) {
 		// moment), and a promise when the painter has to be waited for.
 		let live = !carried && typeof _rapierPaintLayerSnapshot === 'function' ? _rapierPaintLayerSnapshot(!urgent) : null;
 		if (live?.then) live = await live;
+		// A Water read can answer after a newer stroke has already reached storage. Never give its older picture a later revision.
+		if (!state.open || state.session !== session || state.backupRecovery !== owner) return;
+		if ((owner.published || 0) !== publication) {
+			if (state.backupDirty) return _rapierDrawBackupWrite(closing, true);
+			return;
+		}
 		if (live) {
 			const id = live.id || ('s' + (state.seq + 1)), at = recipe.shapes.findIndex(existing => existing.id === id);
 			const previous = at >= 0 ? recipe.shapes[at] : null;
@@ -6886,8 +6892,12 @@ async function _rapierDrawBackupWrite(closing = false) {
 	owner.writing--;
 	// A refusal stays dirty but does not spin a failing timer. The next change or hide retries it.
 	// A write that took long is not followed by a full interval of waiting: the next one is an interval after this one began.
-	// A carried painting still awaits its worker; keep its bounded retry cadence.
-	if (ok && state.session === owner.session && state.open && state.backupDirty) _rapierDrawBackupTouch(!carried, Math.max(0, RAPIER_DRAW_BACKUP_MS - (Date.now() - began)));
+	if (ok && state.backupRecovery === owner && state.session === owner.session && state.open && state.backupDirty) {
+		// A publication that arrived during this write is the next whole record.
+		if ((owner.published || 0) !== publication) void _rapierDrawBackupWrite(false, true);
+		// A carried painting still awaits its worker; keep its bounded retry cadence.
+		else _rapierDrawBackupTouch(!carried, Math.max(0, RAPIER_DRAW_BACKUP_MS - (Date.now() - began)));
+	}
 	return ok;
 }
 // The page going away: start the write now, not on a timer that may never run. The browser's

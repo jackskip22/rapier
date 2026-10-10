@@ -13,7 +13,7 @@
         "name": "io.github.jackskip22/rapier",
         "title": "Rapier",
         "description": "Fast Markdown editor you share live with your AI agent: notes, diagrams, drawing and watercolor.",
-        "version": "1.1.92",
+        "version": "1.1.93",
         "websiteUrl": "https://rapier.website/agents",
         "repository": {
           "url": "https://github.com/jackskip22/rapier-plugins",

@@ -38,7 +38,27 @@ export const waterSession = (scope = '') => waterSessionId + (scope === '' ? '' 
 // Publication receipts bind the JSON representation retained by the drawing, including its
 // normalization of signed zero and optional fields.
 const waterJournalKey = replay => sha256(canonicalJSON(copy(replay)));
-const waterPublicationKey = shape => sha256(shape.raster) + ':' + waterJournalKey(shape.paint.replay);
+// A published raster is asked about several times a stroke (each check of whether the open painting is live): its digest is
+// kept by its own text, the last few, so a megabyte is hashed once.
+const rasterDigests = new Map();
+const rasterDigest = raster => {
+	let digest = rasterDigests.get(raster);
+	if (digest === undefined) { digest = sha256(raster); rasterDigests.set(raster, digest); if (rasterDigests.size > 4) rasterDigests.delete(rasterDigests.keys().next().value); }
+	return digest;
+};
+const waterPublicationKey = shape => rasterDigest(shape.raster) + ':' + waterJournalKey(shape.paint.replay);
+// A publication lands while the painter's next stroke is under way, so its raster is not hashed then: it is held by its own
+// text (an exact comparison, no digest) and joins the digests when the page is idle. A raster is live when it is held or
+// its key is kept, the same answer as hashing it at once.
+const waterHeld = new Map();
+const idle = typeof requestIdleCallback === 'function' ? run => requestIdleCallback(run, {timeout: 2000}) : run => setTimeout(run, 50);
+function settleHeld(session) {
+	const rows = waterPublications.get(session), held = waterHeld.get(session);
+	if (!held?.length) return;
+	const {raster, journal} = held.shift();
+	rows?.add(rasterDigest(raster) + ':' + journal);
+	if (held.length) idle(() => settleHeld(session));
+}
 // Only material the current execution actually published can be selectively replayed. Saved
 // pixels open independently of these receipts; a file's auxiliary journal grants no authority.
 export function rememberWaterPainting(shape, session = waterSession()) {
@@ -46,14 +66,23 @@ export function rememberWaterPainting(shape, session = waterSession()) {
 	if (shape?.paint?.mode !== 'water' || replay?.session !== session || typeof shape.raster !== 'string') return false;
 	let rows = waterPublications.get(session);
 	if (!rows) waterPublications.set(session, rows = new Set());
-	rows.add(waterPublicationKey(shape));
+	let held = waterHeld.get(session);
+	if (!held) waterHeld.set(session, held = []);
+	held.push({raster: shape.raster, journal: waterJournalKey(replay)});
+	if (held.length === 1) idle(() => settleHeld(session));
 	return true;
 }
 export function waterPaintingIsLive(shape, session = waterSession()) {
 	const replay = shape?.paint?.replay;
-	return typeof shape?.raster === 'string' && replay?.session === session && waterPublications.get(session)?.has(waterPublicationKey(shape)) === true;
+	if (typeof shape?.raster !== 'string' || replay?.session !== session) return false;
+	const held = waterHeld.get(session);
+	if (held?.length) {
+		const journal = waterJournalKey(replay);
+		if (held.some(row => row.raster === shape.raster && row.journal === journal)) return true;
+	}
+	return waterPublications.get(session)?.has(waterPublicationKey(shape)) === true;
 }
-export function forgetWaterSession(session) { waterPublications.delete(session); }
+export function forgetWaterSession(session) { waterPublications.delete(session); waterHeld.delete(session); }
 
 export function agentPaintBrushRegistry() {
 	// Each brush carries its own first-use size: the width the Paint tool opens it at and the width a stroke takes when it names none.

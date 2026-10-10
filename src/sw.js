@@ -26,10 +26,10 @@ const SHELL_URLS = [
   './icon-192.png',
   './icon-512.png',
 ];
-const SHELL_RELEASE_SHA256 = '3278960c3bffa6b901e0035fa0bafe934bf0fa308847c437dacb3a0b702e07e5';
-const SHELL_PAGE_SHA256 = 'dd3032257b55d9fd0bd752490e45fc5c759849ddfd928be38f9c27c90aa7a51b';
-const SHELL_BOOT_ID = '40667208043639e238035c7d7c21f027e4ad5405b3d054c53aa252695197cf2d';
-const SHELL_DOOR_SHA256 = {"/privacy":"c491a7e9a3e85bcf9aafca63d6be3e4d4e51342872aaba6560811e8949f4ba3e","/commercial":"5a4e14176091c4b8d355c4b49626cc5910bfd3eaaa5c31f0c9e478ca3a6c4b0c","/notes":"a5be016860ffb55235016f16e307f652bd7a872cfebcfa3ae5edfd4e186c7914","/draw":"62aee4760bbc9fbf71249245a8f220ba1efaeee5e3e1d2e87c41ecf20d975f6b","/watercolor":"e155069cd6048af3df10e01a79eba86c1c3695aed6512e08c40e160c83be09fa"};
+const SHELL_RELEASE_SHA256 = '9f37cb0ea95540c0ad479b46a5ccfb18c8fd592956ddcb6737116676a25a6d15';
+const SHELL_PAGE_SHA256 = 'e4ae46d69c8b724026ff9cee44952049938b28b5f002e6b3eaa55e17e0dede34';
+const SHELL_BOOT_ID = 'a6568a7f7eedff306e58c698246da5181aa0ecc7b8a3b21fee29ed85f1a957e2';
+const SHELL_DOOR_SHA256 = {"/privacy":"0b02e83e0bcdb134cc419e7c7c187dfb1eefcb748f05b84e5551b2296d4a4499","/commercial":"e38156c09c845c29952d73eaf20ec94c21ccdff88598127742989f8c7cb533a1","/notes":"52856c9d3c00d92dbc5737a7ca0c0c922b84c6ee512f0dfc1a2872aa77e718c0","/draw":"fba11722b07eb9711dd2f4ad0c864f9f62a6d883a834a060baae8b6ea103b293","/watercolor":"6e1c8b0f06ae1f8a50f70504fa7f013c774595eff86b7761dedee7a0a1a420f6"};
 /* Only this generation receives writes. Retirement names are captured during
    install, so a delayed success cannot erase a newer worker's cache. */
 const SHELL_GENERATION = SHELL_CACHE_PREFIX + SHELL_RELEASE_SHA256.slice(0, 32);

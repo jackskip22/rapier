@@ -1691,6 +1691,7 @@ function _rapierPaintSealRevision(layer, stroke, priorShift, grown) {
 		layer.geom = JSON.stringify(shape.geom);
 		if (layer.mode === 'water') globalThis.RapierDrawAgentPaint.rememberWaterPainting(shape, _rapierWaterSession());
 	}
+	if (typeof _rapierDrawBackupPublished === 'function') _rapierDrawBackupPublished();
 }
 function _rapierPaintWorker(layer) {
 	if (typeof Worker !== 'function') return null;

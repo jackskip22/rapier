@@ -10,7 +10,7 @@ export class WaterContact {
   this.profile=this.brush.params??CUSTOM_PARAMS;
   if(this.brush.tip)this.tipMean=this.brush.tip.mask.reduce((sum,value)=>sum+value,0)/(255*this.brush.tip.mask.length);
   else {if(!tipMeans.has(this.brush.id))tipMeans.set(this.brush.id,makeTip(this.brush).mean);this.tipMean=tipMeans.get(this.brush.id);}
-  this.tool=options.tool??'brush';this.coefficients=options.coefficients??new Float32Array(8);
+  this.tool=options.tool??'brush';this.coefficients=options.coefficients??new Float32Array(8);this.granulation=clip(options.granulation??0);
   this.params={size:.5,water:.6,load:.5,flow:.45,...options.params};this.radiusScale=options.radiusScale??1;
   this.fixedAngle=options.angle??null;this.follow=options.follow??null;this.script=options.script!==false;
   this.inputKind=options.inputKind??'script';
@@ -65,7 +65,7 @@ export class WaterContact {
   const dose=.15*Math.exp(2.8*P.load)*reservoir*(.6+.4*pressure)*p.load*Math.min(p.spacing,1)/1.8*clip(Math.sqrt(.5/this.tipMean),.7,2.2)*dwell;
   const coefficients=isWater?null:Float32Array.from(this.coefficients,(c,i)=>c*dose*(i===7?1.6:1));
   this._each(s,x,y,r,(dx,dy,dr,angle)=>{
-   if(coefficients)gpu.stamp({x:dx,y:dy,r:dr,angle,brush:this.brush,coefficients,grain,threshold});
+   if(coefficients)gpu.stamp({x:dx,y:dy,r:dr,angle,brush:this.brush,coefficients,grain,threshold,settle:this.granulation});
    gpu.stamp({x:dx,y:dy,r:dr*(isWater?1:1+.12*p.wetRound),angle,brush:this.brush,water:strength,round,grain,threshold});
   });
   if(isWater)gpu.brushNow=[x,y,r];

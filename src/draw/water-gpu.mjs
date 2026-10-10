@@ -149,13 +149,20 @@ export class WaterGPU {
   finally{while(scopes){const kind=scopes--===2?'validation':'out-of-memory';try{this._watchError(this.device.popErrorScope(),kind);}catch(error){this._poison(error);}}}
  }
  async _settleErrors(){while(this.pendingErrors.size)await Promise.all([...this.pendingErrors]);this._check();}
- _reserve(bytes){if(this.bytes+bytes>this.maxBytes)throw failure('WATER_BUDGET','Water cannot keep this whole edit in GPU memory. Use a new or smaller layer.');}
+ // Regional targets are disposable. Submit their encoded uses before reclaiming their storage.
+ _reclaimScratch(bytes,credit=0){
+  if(this.bytes+bytes-credit>this.maxBytes){this._dropScratch();this._submitEncoder();}
+ }
+ _reserve(bytes,keepScratch=false){
+  if(!keepScratch)this._reclaimScratch(bytes);
+  if(this.bytes+bytes>this.maxBytes)throw failure('WATER_BUDGET','Water cannot keep this whole edit in GPU memory. Use a new or smaller layer.');
+ }
  _dimensions(w,h){
   if(!Number.isSafeInteger(w)||!Number.isSafeInteger(h)||w<1||h<1||w>this.device.limits.maxTextureDimension2D||h>this.device.limits.maxTextureDimension2D)throw failure('WATER_BUDGET','This Water sheet exceeds the GPU texture dimensions. Use a smaller layer.');
  }
- _texture(w,h,format,usage){
+ _texture(w,h,format,usage,keepScratch=false){
   this._check();this._dimensions(w,h);
-  const bytes=w*h*bytesPerPixel[format];this._reserve(bytes);
+  const bytes=w*h*bytesPerPixel[format];this._reserve(bytes,keepScratch);
   const target=this._guard(()=>{
    const texture=this.device.createTexture({label:'Water '+format,size:[w,h],format,usage:usage??FULL()});
    try{return {texture,view:texture.createView(),w,h,format,bytes,id:++this.targetSequence};}catch(error){texture.destroy();throw error;}
@@ -223,7 +230,8 @@ export class WaterGPU {
   const slot=this.slots++;this.uniformData.set(data,slot*64);
   const group=this._group(name,inputs);
   // Full-screen unblended shaders overwrite every channel; clipped or blended draws keep the prior material.
-  const loadOp=rect?'load':this.library.loadOps[name];
+  const full=!rect||(Math.floor(rect[0])<=0&&Math.floor(rect[1])<=0&&Math.ceil(rect[2])>=target.w&&Math.ceil(rect[3])>=target.h);
+  const loadOp=full?this.library.loadOps[name]:'load';
   const pass=encoder.beginRenderPass({colorAttachments:targets.map(t=>({view:t.view,loadOp,storeOp:'store'}))});
   pass.setPipeline(name==='paperField'?this.library.pipelines[name][data[50]]:this.library.pipelines[name]);pass.setBindGroup(0,group,[slot*256]);
   if(rect){const x0=clamp(Math.floor(rect[0]),0,target.w),y0=clamp(Math.floor(rect[1]),0,target.h),x1=clamp(Math.ceil(rect[2]),x0,target.w),y1=clamp(Math.ceil(rect[3]),y0,target.h);if(x1===x0||y1===y0){pass.end();return;}pass.setScissorRect(x0,y0,x1-x0,y1-y0);}
@@ -240,17 +248,20 @@ export class WaterGPU {
   }
   return group;
  }
- // A tile-based GPU loads and stores a render pass's whole attachment. Sheet-sized material passes
- // therefore render their rectangle into scratch and copy it back, so a frame costs its active area.
+ // The attachment-cost model charges a pass's whole attachment. A small region uses scratch
+ // only when its attachment and copies transfer fewer bytes than drawing in place.
  // Dabs, the step and the display want different sizes: a few scratch sizes stay pooled per format.
- _scratchFor(format,w,h,index){
+ _scratchFor(format,w,h,index,maxArea){
   const key=format+':'+index,W=Math.ceil(w/64)*64,H=Math.ceil(h/64)*64;let pool=this.scratch.get(key);
   if(!pool)this.scratch.set(key,pool=[]);
   for(let i=pool.length-1;i>=0;i--)if(pool[i].dead)pool.splice(i,1);
   let best=null;for(const t of pool)if(t.w>=w&&t.h>=h&&t.w*t.h<=4*W*H&&(!best||t.w*t.h<best.w*best.h))best=t;
-  if(best){pool.splice(pool.indexOf(best),1);pool.push(best);return best;}
+  if(best&&best.w*best.h<maxArea){pool.splice(pool.indexOf(best),1);pool.push(best);return best;}
   // A growing rectangle takes a size with room to spare, never past the sheet.
-  const t=this._texture(Math.min(Math.max(W,Math.ceil(W*1.25/64)*64),Math.max(W,this.width)),Math.min(Math.max(H,Math.ceil(H*1.25/64)*64),Math.max(H,this.height)),format);
+  const width=Math.min(Math.max(W,Math.ceil(W*1.25/64)*64),Math.max(W,this.width)),height=Math.min(Math.max(H,Math.ceil(H*1.25/64)*64),Math.max(H,this.height));
+  if(width*height>=maxArea)return null;
+  // Sibling attachments already selected for this pass must survive the remaining allocations.
+  const t=this._texture(width,height,format,undefined,true);
   pool.push(t);while(pool.length>3)this._retire(pool.shift());return t;
  }
  _regionPass(entries,destinations,rect){
@@ -258,29 +269,34 @@ export class WaterGPU {
   const R=[clamp(Math.floor(rect[0]),0,target.w),clamp(Math.floor(rect[1]),0,target.h),clamp(Math.ceil(rect[2]),0,target.w),clamp(Math.ceil(rect[3]),0,target.h)];
   const rw=R[2]-R[0],rh=R[3]-R[1];if(rw<=0||rh<=0)return;
   if(this.slots+entries.length>UNIFORM_SLOTS)this._submitEncoder();
-  let scratch;
-  try{scratch=targets.map((t,i)=>this._scratchFor(t.format,rw,rh,i));}
+  const blended=entries.some(e=>this.library.loadOps[e.name]==='load');
+  const full=R[0]===0&&R[1]===0&&R[2]===target.w&&R[3]===target.h;
+  // Scratch stores its area and copies the rectangle back; blending also loads and copies in.
+  // Use it only when those transfers cost less than drawing into the complete attachment.
+  const directArea=target.w*target.h*(full&&!blended?1:2),maxArea=directArea/(blended?2:1)-2*rw*rh;
+  let scratch=null;
+  if(maxArea>rw*rh)try{scratch=targets.map((t,i)=>this._scratchFor(t.format,rw,rh,i,maxArea));if(scratch.some(t=>!t))scratch=null;}
   catch(error){
    if(error?.code!=='WATER_BUDGET')throw error;
-   // Without room for scratch the rectangle is drawn in place: the whole attachment's cost, the same pixels.
+   // When scratch does not fit, each entry keeps its own attachment store.
    this._dropScratch();
    for(const e of entries){e.data[60]=0;e.data[61]=0;this._draw(e.name,targets,e.inputs,e.data,e.rect??R);}
    return;
   }
-  const blended=entries.some(e=>this.library.loadOps[e.name]==='load');
   const encoder=this._command();
-  if(blended)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:t.texture,origin:[R[0],R[1]]},{texture:scratch[i].texture,origin:[0,0]},[rw,rh]));
-  const pass=encoder.beginRenderPass({colorAttachments:scratch.map(t=>({view:t.view,loadOp:blended?'load':'clear',clearValue:[0,0,0,0],storeOp:'store'}))});
+  if(scratch&&blended)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:t.texture,origin:[R[0],R[1]]},{texture:scratch[i].texture,origin:[0,0]},[rw,rh]));
+  const origin=scratch?R:[0,0],loadOp=scratch?(blended?'load':'clear'):full&&!blended?'clear':'load';
+  const pass=encoder.beginRenderPass({colorAttachments:(scratch??targets).map(t=>({view:t.view,loadOp,clearValue:[0,0,0,0],storeOp:'store'}))});
   for(const e of entries){
    const r=e.rect?[Math.max(R[0],Math.floor(e.rect[0])),Math.max(R[1],Math.floor(e.rect[1])),Math.min(R[2],Math.ceil(e.rect[2])),Math.min(R[3],Math.ceil(e.rect[3]))]:R;
    if(r[2]<=r[0]||r[3]<=r[1])continue;
-   const data=e.data;data[0]=target.w;data[1]=target.h;data[60]=R[0];data[61]=R[1];
+   const data=e.data;data[0]=target.w;data[1]=target.h;data[60]=origin[0];data[61]=origin[1];
    const slot=this.slots++;this.uniformData.set(data,slot*64);
    pass.setPipeline(this.library.pipelines[e.name]);pass.setBindGroup(0,this._group(e.name,e.inputs),[slot*256]);
-   pass.setScissorRect(r[0]-R[0],r[1]-R[1],r[2]-r[0],r[3]-r[1]);pass.draw(3);
+   pass.setScissorRect(r[0]-origin[0],r[1]-origin[1],r[2]-r[0],r[3]-r[1]);pass.draw(3);
   }
   pass.end();
-  targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:scratch[i].texture,origin:[0,0]},{texture:t.texture,origin:[R[0],R[1]]},[rw,rh]));
+  if(scratch)targets.forEach((t,i)=>encoder.copyTextureToTexture({texture:scratch[i].texture,origin:[0,0]},{texture:t.texture,origin:[R[0],R[1]]},[rw,rh]));
  }
  _dropScratch(){for(const pool of this.scratch.values())for(const t of pool)this._retire(t);this.scratch.clear();}
  _region(name,destinations,inputs,data,rect){
@@ -342,7 +358,8 @@ export class WaterGPU {
    this.submit();
    if(cancel){
     const retired=this._sheetTextures(this._sheet()),need=sheetLayout(tx.cpu.width,tx.cpu.height).bytes+tx.cpu.width*tx.cpu.height*8;
-    if(this.bytes-retired.reduce((sum,t)=>sum+t.bytes,0)+need>this.maxBytes)throw failure('WATER_GPU_MEMORY','Water cannot restore this sheet in GPU memory. The last published painting is safe; reopen Water to continue.');
+    const credit=retired.reduce((sum,t)=>sum+t.bytes,0);this._reclaimScratch(need,credit);
+    if(this.bytes-credit+need>this.maxBytes)throw failure('WATER_GPU_MEMORY','Water cannot restore this sheet in GPU memory. The last published painting is safe; reopen Water to continue.');
     try{await this.device.queue.onSubmittedWorkDone();}catch(error){this._poison(error);}await this._settleErrors();
     retired.forEach(t=>this._drop(t));await this._restoreCapture(tx.cpu);
    }
@@ -390,7 +407,7 @@ export class WaterGPU {
    if(this.pendingRetire.length||bands.length>1)this.submit();
    const field=this._texture(right-x,bottom-y,'rgba16float');
    data.set([x,y,w,h],56);
-   try{this._draw('paperField',field,[],data);this._draw('paperLight',target,[field],data,band);}finally{this._retire(field);}
+   try{this._draw('paperField',field,[],data);this._region('paperLight',target,[field],data,band);}finally{this._retire(field);}
   }
   if(bands.length>1)this.submit();
   settings.rect=needed;
@@ -444,11 +461,11 @@ export class WaterGPU {
   return [x0,y0,Math.max(x0,x1),Math.max(y0,y1)];
  }
  _touch(rect,indices){if(rect[0]>=rect[2]||rect[1]>=rect[3])return;this.trimEpoch++;this._ensurePaper(rect);this._protect(rect,indices);this.active=union(this.active,rect);this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);this.awakeUntil=Math.max(this.awakeUntil,this.elapsed+.25);}
- stamp({x,y,r,angle=0,brush='water/round',coefficients=null,water=0,round=0,grain=0,threshold=.5,velocity=null,lift=0,erase=false,circular=false,hardness=2}){
+ stamp({x,y,r,angle=0,brush='water/round',coefficients=null,water=0,round=0,grain=0,threshold=.5,velocity=null,lift=0,erase=false,circular=false,hardness=2,settle=0}){
   this._check();const profile=typeof brush==='string'?getBrush(brush):brush;
   const settings=profile.params??profile;
   const rect=this._rect(x,y,r,circular?3.2:1.5);this._touch(rect,lift?(erase?undefined:[0,1,4]):[...(coefficients?[0,1]:[]),...(water>0?[4]:[])]);
-  const data=this._parameters();data.set([x,y,r,settings.aspect??1],16);data.set([Math.cos(angle),Math.sin(angle),round,grain],20);data.set([threshold,water,hardness,0],24);
+  const data=this._parameters();data.set([x,y,r,settings.aspect??1],16);data.set([Math.cos(angle),Math.sin(angle),round,grain],20);data.set([threshold,water,hardness,settle],24);
   if(lift){data[25]=lift;data[26]=2;this._queue('liftInk',this.ink.read,[],data,rect);data[25]=lift*.8;this._queue('liftWet',this.wet.read,[],data,rect);
    if(erase){data[25]=lift;this._queue('eraseFixed',this.fixed,[],data,rect);this._queue('eraseBase',this.base,[],data,rect);}return;}
   const tip=circular?null:this._tip(profile),inputs=tip?[tip,this.paper]:[];
@@ -512,17 +529,21 @@ export class WaterGPU {
   const decay=Math.exp(-fixedAge/.25-(aged-fixedAge)/(2+16*(1-this.params.dry)));
   const damping=Math.exp(-aged*(3-2.4*this.params.flow)-7*fixedAge);data.set([decay,damping,settle,1-settle],8);
   const sim=this.simBox=union(this.simBox,this._simRect(rect));
-  this._draw('velocity',this.velocity.write,[this.velocity.read[0],this.wet.read[0]],data,sim);this._swap(this.velocity);
+  this._region('velocity',this.velocity.write,[this.velocity.read[0],this.wet.read[0]],data,sim);this._swap(this.velocity);
   // Vorticity reads curl one texel beyond the box, so curl covers that ring: stale curl from a cancelled or slept
   // stroke never reaches the flow.
-  this._draw('curl',this.curl,this.velocity.read,data,[Math.max(0,sim[0]-1),Math.max(0,sim[1]-1),Math.min(this.sw,sim[2]+1),Math.min(this.sh,sim[3]+1)]);
-  this._draw('vorticity',this.velocity.write,[this.velocity.read[0],this.curl],data,sim);this._swap(this.velocity);
-  this._draw('divergence',this.divergence,this.velocity.read,data,sim);
-  this._draw('pressureDecay',this.pressure.write,this.pressure.read,data,sim);this._swap(this.pressure);
-  for(let i=0;i<20;i++){this._draw('pressure',this.pressure.write,[this.pressure.read[0],this.divergence],data,sim);this._swap(this.pressure);}
-  this._draw('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data,sim);this._swap(this.velocity);
+  this._region('curl',this.curl,this.velocity.read,data,[Math.max(0,sim[0]-1),Math.max(0,sim[1]-1),Math.min(this.sw,sim[2]+1),Math.min(this.sh,sim[3]+1)]);
+  this._region('vorticity',this.velocity.write,[this.velocity.read[0],this.curl],data,sim);this._swap(this.velocity);
+  this._region('divergence',this.divergence,this.velocity.read,data,sim);
+  this._region('pressureDecay',this.pressure.write,this.pressure.read,data,sim);this._swap(this.pressure);
+  for(let i=0;i<20;i++){this._region('pressure',this.pressure.write,[this.pressure.read[0],this.divergence],data,sim);this._swap(this.pressure);}
+  this._region('project',this.velocity.write,[this.velocity.read[0],this.pressure.read[0]],data,sim);this._swap(this.velocity);
   this._region('wet',this.wet.write,[this.velocity.read[0],this.wet.read[0]],data,rect);this._swap(this.wet);
-  if(fixing){this._region('bleach',this.fixed,[this.ink.read[1]],data,rect);this._region('fix',this.fixed,this.ink.read,data,rect);}
+  // Both blends keep their order and 16-bit attachment representation inside one pass.
+  if(fixing)this._regionPass([
+   {name:'bleach',inputs:[this.ink.read[1]],data:Float32Array.from(data),rect:null},
+   {name:'fix',inputs:this.ink.read,data:Float32Array.from(data),rect:null}
+  ],this.fixed,rect);
   this._region('pigment',this.ink.write,[this.velocity.read[0],...this.ink.read,this.wet.read[0]],data,rect);this._swap(this.ink);
   this.brushNow=[0,0,0];
   this.dirty=union(this.dirty,rect);this.painted=union(this.painted,rect);
@@ -592,6 +613,7 @@ export class WaterGPU {
     while(index<transfers.length){
      const item=transfers[index];
      if(this.bytes+item.size>this.maxBytes&&this.pendingRetire.length)this.submit();
+     this._reclaimScratch(item.size);
      if(batch.length&&this.bytes+item.size>this.maxBytes)break;
      const available=Math.min(this.maxBytes-this.bytes,this.device.limits.maxBufferSize);
      if(!batch.length&&item.size>available){
@@ -703,9 +725,9 @@ export class WaterGPU {
   return this.reframe(this.width+left+right,this.height+top+bottom,left,top);
  }
  async _capturePlane(target){
-  const stride=target.w*bytesPerPixel[target.format],pitch=Math.ceil(stride/256)*256;
-  const rows=Math.min(target.h,Math.floor(Math.min(4*1024*1024,this.maxBytes-this.bytes)/pitch));
-  if(!rows)this._reserve(pitch);
+  const stride=target.w*bytesPerPixel[target.format],pitch=Math.ceil(stride/256)*256,band=Math.min(4*1024*1024,pitch*target.h,this.device.limits.maxBufferSize);
+  this._reclaimScratch(band);this._reserve(pitch);
+  const rows=Math.max(1,Math.floor(Math.min(band,this.maxBytes-this.bytes)/pitch));
   const bytes=new Uint8Array(stride*target.h);
   for(let y=0;y<target.h;y+=rows){const h=Math.min(rows,target.h-y),part=(await this._readMany([{target,box:[0,y,target.w,y+h],cacheOnly:true}]))[0];bytes.set(part,y*stride);}
   return bytes;

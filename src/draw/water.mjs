@@ -22,6 +22,8 @@ const rgbChannel=v=>clip(v<=.0031308?12.92*v:1.055*Math.max(0,v)**(1/2.4)-.055);
 function dimensions(w,h){if(!Number.isSafeInteger(w)||!Number.isSafeInteger(h)||w<1||h<1||w*h>12000000)throw waterError('WATER_BUDGET','This Water sheet is too large. Use a new or smaller layer.');}
 function randomStream(seed){let state=seed>>>0;const random=()=>{state=(state+0x6d2b79f5)>>>0;let n=Math.imul(state^state>>>15,1|state);n^=n+Math.imul(n^n>>>7,61|n);return ((n^n>>>14)>>>0)/4294967296;};random.get=()=>state;random.set=value=>{state=value>>>0;};return random;}
 function coefficients(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment).coefficients;}
+// A pigment settles into the paper as much as it granulates: a palette row says how much; a colour picked from a painting is a mixture and says none.
+function granulation(pigment){return (typeof pigment==='string'?waterPigmentById(pigment):pigment)?.granulation??0;}
 function halfValue(bits){const sign=bits&0x8000?-1:1,exponent=(bits>>>10)&31,mantissa=bits&1023;return sign*(exponent===0?mantissa*2**-24:exponent===31?mantissa?NaN:Infinity:(1+mantissa/1024)*2**(exponent-15));}
 function reframeContact(contact,oldWidth,oldHeight,width,height,x,y){if(!contact)return;const s=contact.state;if(s){s.x=(s.x*oldWidth+x)/width;s.cx=(s.cx*oldWidth+x)/width;s.y=1-((1-s.y)*oldHeight+y)/height;s.cy=1-((1-s.cy)*oldHeight+y)/height;s.carry*=oldHeight/height;s.distance*=oldHeight/height;}contact.radiusScale*=oldHeight/height;}
 // One period of a paper's lit sheet from the Water field itself, `density` pixels per paper unit, as straight sRGB bytes:
@@ -35,7 +37,7 @@ export async function paperTileFromGPU(id,density=1){
  }finally{gpu.dispose();}
 }
 export function waterPigmentRGB(value){const linear=toLinear(value),white=1-Math.exp(-2.2*Math.max(0,value[7]??0));return linear.map((v,i)=>rgbChannel(v*(1-white)+[.96,.955,.94][i]*white));}
-export function waterPigmentFromRGB(r,g,b){return {coefficients:Array.from(encodeRgb([r,g,b].map(v=>clip(v)))),granulation:.45,staining:0,source:'raster'};}
+export function waterPigmentFromRGB(r,g,b){return {coefficients:Array.from(encodeRgb([r,g,b].map(v=>clip(v)))),granulation:0,staining:0,source:'raster'};}
 
 export class WaterSurface {
  constructor(width,height,options={}){
@@ -227,7 +229,7 @@ export class WaterSurface {
   const region=[x,y,x+1,y+1],values=new Float32Array(8);for(const [n,t] of [...this.gpu.ink.read,...this.gpu.fixed].entries()){const bytes=await this.gpu._readTexture(t,region),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);for(let i=0;i<4;i++)values[(n%2)*4+i]+=halfValue(view.getUint16(i*2,true));}
   const pixels=await this.toRGBA8({x0:x,y0:y,x1:x,y1:y}),rgba=Array.from(pixels.data),hasMaterial=values.some(v=>Math.abs(v)>1e-8);
   if(!hasMaterial){if(!rgba[3])return null;const alpha=rgba[3]/255,pigment=waterPigmentFromRGB(...rgba.slice(0,3).map(v=>v/255*alpha+1-alpha));return {...pigment,rgba,colour:'#'+rgba.slice(0,3).map(v=>v.toString(16).padStart(2,'0')).join('')};}
-  return {coefficients:Array.from(values),granulation:.45,staining:0,source:'pigment',rgba,colour:'#'+waterPigmentRGB(values).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')};
+  return {coefficients:Array.from(values),granulation:0,staining:0,source:'pigment',rgba,colour:'#'+waterPigmentRGB(values).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')};
  }
  async snapshot(_box=null){await this.ready;await this._flushContact();return {kind:'water-gpu',frame:this._frame(),tick:this.tick,material:await this.gpu.snapshot(),tips:clone([...this._tips]),bounds:clone(this._bounds)};}
  async _restore(raw){const state=admitWaterState(raw);if(!state||state.frame.width!==this.width||state.frame.height!==this.height)throw waterError('WATER_INPUT','The Water material checkpoint does not fit this sheet.');await this.gpu.restore(state.material);this.scale=state.frame.scale/3;this.origin=state.frame.origin.slice();this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.seed=state.frame.seed;this.paperId=state.frame.paper;this.tick=state.tick;this._restoreTips(state.tips??[]);this._bounds=state.bounds??null;this._brush=null;this._actions=[];this._bytes=2;this._actionStart=0;this._dirty={x0:0,y0:0,x1:this.width-1,y1:this.height-1};this.revision++;this._sync();return this;}
@@ -251,7 +253,7 @@ export class WaterBrush {
  _contactFor(surface,inputKind='script'){
   for(const key of ['flow','bleed','edge','granulation','dry'])if(this.water[key]!=null)surface.gpu.params[key]=this.water[key];
   const brush=this.water.tip?{id:this.water.brush,tip:this.water.tip,params:CUSTOM_PARAMS}:getBrush(this.water.brush);
-  return new WaterContact(surface.gpu,{brush,tool:this.water.erase?'erase':this.water.tool,coefficients:Float32Array.from(coefficients(this.water.pigment),v=>v*this.water.light),
+  return new WaterContact(surface.gpu,{brush,tool:this.water.erase?'erase':this.water.tool,coefficients:Float32Array.from(coefficients(this.water.pigment),v=>v*this.water.light),granulation:granulation(this.water.pigment),
    params:{size:this.water.size/100,water:this.water.water,load:this.water.load,flow:surface.gpu.params.flow,firm:this.water.firm},radiusScale:1100/(surface.gpu.paperScale*surface.height)*this.radius/waterRadius(this.water.size),
    angle:this.held,follow:this.held===null,script:inputKind==='script',inputKind,random:this.random,lastDirection:this.lastDirection});
  }
