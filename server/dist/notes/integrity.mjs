@@ -75,6 +75,35 @@ export async function sha256(value, {subtle = globalThis.crypto?.subtle} = {}) {
 	return subtle ? hex(new Uint8Array(await subtle.digest('SHA-256', bytes))) : softwareSHA256(bytes);
 }
 
+// One worker per page hashes large views and texts with the native digest. Null when a page cannot start it or it fails; the caller then
+// hashes in place. Node and workers have no document and hash in place.
+const OFF_THREAD_BYTES = 256 * 1024;
+let digestWorker = null;
+function workerDigest(input) {
+	if (typeof Worker !== 'function' || typeof document === 'undefined' || typeof URL?.createObjectURL !== 'function') return null;
+	if (digestWorker === false) return null;
+	if (!digestWorker) {
+		try {
+			const source = "self.onmessage = async e => { let hex = null; try { const bytes = typeof e.data.text === 'string' ? new TextEncoder().encode(e.data.text) : e.data.bytes; hex = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join(''); } catch (_) {} self.postMessage({id: e.data.id, hex}); };";
+			const worker = new Worker(URL.createObjectURL(new Blob([source], {type: 'text/javascript'})));
+			const owner = digestWorker = {worker, serial: 0, pending: new Map()};
+			worker.onmessage = event => { const done = owner.pending.get(event.data?.id); owner.pending.delete(event.data?.id); done?.(typeof event.data?.hex === 'string' ? event.data.hex : null); };
+			worker.onerror = worker.onmessageerror = () => { digestWorker = false; for (const done of owner.pending.values()) done(null); owner.pending.clear(); try { worker.terminate(); } catch (_) {} };
+		} catch (_) { digestWorker = false; return null; }
+	}
+	const owner = digestWorker, id = ++owner.serial, copy = typeof input === 'string' ? null : input.slice();
+	return new Promise(done => {
+		owner.pending.set(id, done);
+		try { if (copy) owner.worker.postMessage({id, bytes: copy}, [copy.buffer]); else owner.worker.postMessage({id, text: input}); }
+		catch (_) { owner.pending.delete(id); done(null); }
+	});
+}
+// The SHA-256 of a text's TextEncoder bytes, encoded and hashed by the page's digest worker. Null where there is none.
+export async function sha256TextOffThread(text) {
+	if (typeof text !== 'string') throw new TypeError('A text digest needs a string.');
+	return workerDigest(text);
+}
+
 // Bounded file intake and read-back share this iterator. Never ask a large Blob for its
 // whole ArrayBuffer; a source that cannot return the exact requested slice is not published.
 // Hash a privately owned byte view without a whole-view clone or a long portable task. Native
@@ -83,6 +112,12 @@ export async function sha256(value, {subtle = globalThis.crypto?.subtle} = {}) {
 export async function sha256Yielding(bytes, {signal, subtle = globalThis.crypto?.subtle} = {}) {
 	if (!(bytes instanceof Uint8Array)) throw new TypeError('A digest needs a byte view.');
 	checkByteAbort(signal);
+	// A page's native digest runs on its main thread: megabytes at a slow phone's pace are a 100 ms task. A worker hashes a copy.
+	if (subtle?.digest && subtle === globalThis.crypto?.subtle && bytes.byteLength >= OFF_THREAD_BYTES) {
+		const hex = await workerDigest(bytes);
+		checkByteAbort(signal);
+		if (hex) return hex;
+	}
 	if (subtle?.digest) {
 		try {
 			const digest = await subtle.digest('SHA-256', bytes);

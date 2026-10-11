@@ -168,7 +168,9 @@
   // most of a second, and a painter's strokes arrive a second apart. It waits until the drawing has been still for a moment and no
   // hand is on it, then tells the latest state once; an agent's own request reads the current drawing for itself (humanContext), so
   // nothing it acts on is late.
-  let drawingReconcile = 0, drawingChangedAt = 0;
+  // The recipe's digest, the largest part, is first taken off the main thread (RapierKernel.primeRecipeDigest), once per still
+  // drawing; the kernel then finds it by the recipe's text.
+  let drawingReconcile = 0, drawingChangedAt = 0, drawingPrimedAt = -1;
   const DRAWING_STILL_MS = 1500;
   function reconcileDrawingSoon() {
     drawingChangedAt = Date.now();
@@ -178,6 +180,16 @@
       drawingReconcile = 0;
       const still = Date.now() - drawingChangedAt, busy = typeof _rapierDrawBusy === 'function' && _rapierDrawBusy().human;
       if (busy || still < DRAWING_STILL_MS) { drawingReconcile = setTimeout(idle, Math.max(250, DRAWING_STILL_MS - still)); return; }
+      const digestText = globalThis.RapierNotesIntegrity?.sha256TextOffThread;
+      if (drawingPrimedAt !== drawingChangedAt && typeof digestText === 'function') {
+        drawingPrimedAt = drawingChangedAt;
+        const recipe = typeof _rapierDrawSettledRecipe === 'function' ? _rapierDrawSettledRecipe() : null;
+        if (recipe) {
+          drawingReconcile = -1;
+          void globalThis.RapierKernel.primeRecipeDigest(recipe, digestText).catch(() => false).finally(() => { drawingReconcile = 0; idle(); });
+          return;
+        }
+      }
       try {
         const value = current();
         kernel.reconcile(value, {actor: 'system', principal: 'bootstrap'});

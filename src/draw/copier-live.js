@@ -33,7 +33,7 @@ async function _rapierDrawCopierRender(live, ticket) {
 			const view = [region.minX, region.minY, region.maxX - region.minX, region.maxY - region.minY].map(n => _rapierDrawFmt(n)).join(' ');
 			const defs = _rapierDrawState.svgRoot?.querySelector('defs')?.innerHTML || '';
 			const svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="' + width + '" height="' + height + '" viewBox="' + view +
-				'" preserveAspectRatio="none" color="' + _rapierDrawShapeInk() + '"><defs>' + defs + '</defs>' + markup + '</svg>';
+				'" preserveAspectRatio="none" color="' + _rapierDrawShapeInk() + '"><defs>' + defs + '</defs>' + _rapierDrawDisplayMarkup(markup) + '</svg>';
 			const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
 			try {
 				const img = new Image();

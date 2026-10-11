@@ -316,8 +316,8 @@ async function _rapierWaterPreflight(layer) {
 	if (!result.box) return;
 	const sheet = result.waterSheet, replay = _rapierPaintWaterReplay(layer,result.waterReplay,result.box,sheet);
 	// One coalesced drying advance and one explicit dry fit before the gesture releases its rollback.
-	const reserved = structuredClone(replay), entry = reserved.entries.find(row => row.id === sheet.id + '-water');
-	entry.actions.push({kind:'advance',ticks:Number.MAX_SAFE_INTEGER},{kind:'dry'});
+	// The same JSON as a deep copy with the two actions pushed: only the entry that grows is copied.
+	const id = sheet.id + '-water', reserved = {...replay, entries: replay.entries.map(row => row.id === id ? {...row, actions: [...row.actions, {kind:'advance',ticks:Number.MAX_SAFE_INTEGER}, {kind:'dry'}]} : row)};
 	if (!globalThis.RapierDrawAgentPaint.paintReplayFits(reserved)) throw Object.assign(new Error('This Water layer is full. Set it and paint on a new layer.'),{code:'paint_history_full',recoverable:true});
 }
 async function _rapierWaterAddBrush(file) {

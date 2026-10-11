@@ -869,6 +869,21 @@ export function disclosedRecipe(recipe) {
     ...(shape.paint ? {paint: inspectPaintRecord(shape.paint)} : {})})};
 }
 
+// The page hashes a still drawing's canonical text off its main thread before it tells the kernel (primeRecipeDigest); a miss
+// above then finds the digest by that text. The last two texts, so a painting's megabyte is held at most twice.
+const recipeTextDigests = new Map();
+// The caller's digestText(text) answers the SHA-256 of the text's UTF-8 as hex (the page's digest worker), or null; the kernel then
+// hashes when it is told.
+export async function primeRecipeDigest(recipe, digestText) {
+  if (!recipe || typeof recipe !== 'object' || typeof digestText !== 'function') return false;
+  const admitted = _rapierDrawAdmitRecipe(recipe);
+  if (!admitted) return false;
+  const text = canonicalJson(admitted), digest = await digestText(text);
+  if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) return false;
+  recipeTextDigests.delete(text); recipeTextDigests.set(text, digest);
+  while (recipeTextDigests.size > 2) recipeTextDigests.delete(recipeTextDigests.keys().next().value);
+  return true;
+}
 // Raster strings are immutable; metadata and replay commands are not. Compare their exact current
 // values before reusing the canonical recipe digest. The cache never retains mutable caller data.
 const drawingRecipeDigests = [];
@@ -883,7 +898,7 @@ function admittedDrawingRecipeDigest(recipe) {
     const [row] = drawingRecipeDigests.splice(at, 1); drawingRecipeDigests.push(row);
     return row.digest;
   }
-  const digest = sha256(canonicalJson(recipe)), chars = metadata.length + rasters.reduce((total, value) => total + (value?.length || 0), 0);
+  const text = canonicalJson(recipe), digest = recipeTextDigests.get(text) ?? sha256(text), chars = metadata.length + rasters.reduce((total, value) => total + (value?.length || 0), 0);
   if (chars <= 32 * 1024 * 1024) {
     drawingRecipeDigests.push({metadata, rasters, digest, chars});
     while (drawingRecipeDigests.length > 4 || drawingRecipeDigests.reduce((total, row) => total + row.chars, 0) > 32 * 1024 * 1024)

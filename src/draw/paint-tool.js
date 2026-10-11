@@ -1120,9 +1120,43 @@ function _rapierPaintJxlShowable() {
 // The PNG of a box of a live surface, for display, where this browser cannot show the JPEG XL made from the same box.
 async function _rapierPaintShownFor(source, box) { return (await _rapierPaintJxlShowable()) ? null : _rapierPaintPNG.compressed(await source.readRGBA8(box)); }
 function _rapierPaintKeepShown(pieces) { for (const piece of pieces || []) if (piece?.shown && piece.url) _rapierPaintShownAs.set(piece.url, piece.shown); }
+// The live canvas shows a painting from its bytes: one blob URL per raster, so a re-render compares, serialises and parses a
+// short link, never the megabyte data URL, and the browser decodes the PNG off the main thread. The recipe, the file, exports
+// and history keep the data URL. A link leaves only when no live image uses it; opening another drawing forgets them all.
+const _rapierPaintBlobs = new Map(), RAPIER_PAINT_BLOBS_KEPT = 6;
+function _rapierPaintBlobURL(raster) {
+	if (typeof raster !== 'string' || typeof URL?.createObjectURL !== 'function') return raster;
+	const known = _rapierPaintBlobs.get(raster);
+	if (known) return known;
+	const match = /^data:(image\/(?:png|jxl));base64,/.exec(raster);
+	if (!match) return raster;
+	let url;
+	try {
+		const encoded = raster.slice(match[0].length);
+		const bytes = typeof Uint8Array.fromBase64 === 'function' ? Uint8Array.fromBase64(encoded) : RapierBundleIO.fromBase64(encoded);
+		url = URL.createObjectURL(new Blob([bytes], {type: match[1]}));
+	} catch (_) { return raster; }
+	_rapierPaintBlobs.set(raster, url);
+	if (_rapierPaintBlobs.size > RAPIER_PAINT_BLOBS_KEPT) {
+		const svg = _rapierDrawState.svg;
+		for (const [key, old] of _rapierPaintBlobs) {
+			if (_rapierPaintBlobs.size <= RAPIER_PAINT_BLOBS_KEPT) break;
+			if (key === raster || svg?.querySelector('image[href="' + old + '"]')) continue;
+			_rapierPaintBlobs.delete(key); URL.revokeObjectURL(old);
+		}
+	}
+	return url;
+}
+function _rapierPaintForgetBlobs() { for (const url of _rapierPaintBlobs.values()) URL.revokeObjectURL(url); _rapierPaintBlobs.clear(); }
 function _rapierPaintShowable(html) {
 	if (!html || !_rapierPaintShownAs.size || !html.includes('data:image/')) return html;
 	return html.replace(/(href=")(data:image\/(?:jxl|png);base64,[A-Za-z0-9+/=]+)"/g, (whole, lead, url) => { const shown = _rapierPaintShownAs.get(url); return shown ? lead + shown + '"' : whole; });
+}
+// Markup read back from the live canvas names its pictures by blob URL, which a standalone SVG picture cannot load.
+function _rapierPaintBlobSources(html) {
+	if (!html || !_rapierPaintBlobs.size || !html.includes('href="blob:')) return html;
+	const sources = new Map([..._rapierPaintBlobs].map(([raster, url]) => [url, raster]));
+	return html.replace(/(href=")(blob:[^"]+)"/g, (whole, lead, url) => sources.has(url) ? lead + sources.get(url) + '"' : whole);
 }
 async function _rapierPaintEncodeJXL(source, box, options = {lossless: true}, work = null) {
 	if (Array.isArray(globalThis.__rapierPaintEncodeLog)) globalThis.__rapierPaintEncodeLog.push({...options}); // witness seam (paint-auto-set-lossless)

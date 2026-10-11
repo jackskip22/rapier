@@ -52,6 +52,15 @@ function _rapierBgRect() {
 	return recipe?.canvas ? (typeof _rapierDrawPaperView === 'function' ? _rapierDrawPaperView(recipe) : { x: 0, y: 0, w: recipe.canvas.w, h: recipe.canvas.h }) : null;
 }
 
+// The sheet a paper is drawn on: the one already drawn while it still holds the paper, else the paper with a quarter more
+// room right and below (a canvas grows there; growth left or up moves the shapes instead), on a 64-unit grid.
+function _rapierBgPaperSheet(rect, drawn) {
+	let sheet = null;
+	try { sheet = drawn ? JSON.parse(drawn) : null; } catch (_) {}
+	if (sheet && sheet.x <= rect.x && sheet.y <= rect.y && sheet.x + sheet.w >= rect.x + rect.w && sheet.y + sheet.h >= rect.y + rect.h) return sheet;
+	const x = Math.floor(rect.x / 64) * 64, y = Math.floor(rect.y / 64) * 64;
+	return {x, y, w: Math.ceil((rect.x + rect.w * 1.25 - x) / 64) * 64, h: Math.ceil((rect.y + rect.h * 1.25 - y) / 64) * 64};
+}
 // Live: the background sits right over the paper and under every shape. Drawn again only when what it depends on
 // changes (a wave's turbulence is costly to repaint every frame).
 function _rapierDrawBackgroundSync() {
@@ -65,22 +74,29 @@ function _rapierDrawBackgroundSync() {
 	if (bg?.kind === 'paper') _rapierBgPaperRequest(bg.paper);
 	// A Water sheet multiplies watercolour paper (rapier-draw.css).
 	if (bg?.kind === 'paper' && rect) svg.setAttribute('data-paper-ground', ''); else svg.removeAttribute?.('data-paper-ground');
-	const key = bg && rect ? JSON.stringify([bg, rect, dark, _rapierBgPaperReady]) : '';
+	// Watercolour paper is fixed to the drawing's origin, so a larger sheet clipped to the paper shows the same grain. It is
+	// drawn on a sheet with room to grow: a stroke that grows the canvas moves the clip, not a fresh picture of the paper.
+	const sheet = bg?.kind === 'paper' && rect ? _rapierBgPaperSheet(rect, layer.dataset.sheet) : rect;
+	const key = bg && rect ? JSON.stringify([bg, sheet, dark, _rapierBgPaperReady]) : '';
 	if (layer.dataset.key !== key) {
 		layer.dataset.key = key;
+		layer.dataset.sheet = sheet !== rect ? JSON.stringify(sheet) : '';
 		// One image, not inline markup: the browser rasterizes the background once and reuses it while the canvas pans
 		// and pinches, instead of re-running its blurs and noise every frame. The saved drawing keeps the procedural SVG
 		// (core.mjs); this is the live view only.
 		layer.replaceChildren();
 		if (key) {
 			const ns = 'http://www.w3.org/2000/svg', image = document.createElementNS(ns, 'image');
-			const doc = '<svg xmlns="' + ns + '" viewBox="' + [rect.x, rect.y, rect.w, rect.h].join(' ') + '" width="' + rect.w + '" height="' + rect.h + '">' + _rapierBg._rapierDrawBackgroundSVG(bg, rect, 'rapier-draw-live-bg', dark) + '</svg>';
-			for (const [name, value] of [['x', rect.x], ['y', rect.y], ['width', rect.w], ['height', rect.h], ['preserveAspectRatio', 'none']]) image.setAttribute(name, String(value));
+			const doc = '<svg xmlns="' + ns + '" viewBox="' + [sheet.x, sheet.y, sheet.w, sheet.h].join(' ') + '" width="' + sheet.w + '" height="' + sheet.h + '">' + _rapierBg._rapierDrawBackgroundSVG(bg, sheet, 'rapier-draw-live-bg', dark) + '</svg>';
+			for (const [name, value] of [['x', sheet.x], ['y', sheet.y], ['width', sheet.w], ['height', sheet.h], ['preserveAspectRatio', 'none']]) image.setAttribute(name, String(value));
 			image.setAttribute('href', 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(doc));
 			image.setAttribute('pointer-events', 'none');
-			layer.appendChild(image);
+			if (sheet === rect) layer.appendChild(image);
+			else { const clip = document.createElementNS(ns, 'svg'); clip.setAttribute('class', 'rapier-draw-background-clip'); clip.appendChild(image); layer.appendChild(clip); }
 		}
 	}
+	const clip = layer.firstElementChild?.matches?.('.rapier-draw-background-clip') ? layer.firstElementChild : null;
+	if (clip) for (const [name, value] of [['x', rect.x], ['y', rect.y], ['width', rect.w], ['height', rect.h], ['viewBox', [rect.x, rect.y, rect.w, rect.h].join(' ')]]) if (clip.getAttribute(name) !== String(value)) clip.setAttribute(name, String(value));
 	_rapierBgSyncHandles();
 }
 

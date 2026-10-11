@@ -12,6 +12,12 @@ export function storedPaintPointCount(points) {
 }
 
 export function paintReplayFits(history) {
-	try { return new TextEncoder().encode(JSON.stringify(history)).byteLength <= PAINT_REPLAY_MAX_BYTES; }
+	try {
+		const json = JSON.stringify(history);
+		// A UTF-16 unit is one to three UTF-8 bytes: only a text between those bounds is encoded to be measured.
+		if (typeof json === 'string' && json.length > PAINT_REPLAY_MAX_BYTES) return false;
+		if (typeof json === 'string' && json.length * 3 <= PAINT_REPLAY_MAX_BYTES) return true;
+		return new TextEncoder().encode(json).byteLength <= PAINT_REPLAY_MAX_BYTES;
+	}
 	catch (_) { return false; }
 }

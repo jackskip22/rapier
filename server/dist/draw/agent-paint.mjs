@@ -10,7 +10,7 @@ export {AGENT_PAINT_LIMITS};
 import {canonicalJSON} from '../kit/ledger/data.mjs';
 import {WaterSurface, waterReady} from './water.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
-import {sha256Yielding} from '../notes/integrity.mjs';
+import {sha256Yielding, sha256TextOffThread} from '../notes/integrity.mjs';
 import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
 import {encodeSteps as encodeJXLSteps} from '../images/jxl/index.mjs';
 import {waterTextPaths,waterTracePaths} from './water-paths.mjs';
@@ -48,27 +48,34 @@ const rasterDigest = raster => {
 	return digest;
 };
 const waterPublicationKey = shape => rasterDigest(shape.raster) + ':' + waterJournalKey(shape.paint.replay);
-// A publication lands while the painter's next stroke is under way, so its raster is not hashed then: it is held by its own
-// text (an exact comparison, no digest) and joins the digests when the page is idle. A raster is live when it is held or
-// its key is kept, the same answer as hashing it at once.
+// A publication lands while the painter's next stroke is under way, so neither its raster nor its journal is hashed then: both
+// are held by their own text (an exact comparison, no digest) and join the digests when the page is idle. A raster is live when
+// it is held or its key is kept, the same answer as hashing it at once.
 const waterHeld = new Map();
 const idle = typeof requestIdleCallback === 'function' ? run => requestIdleCallback(run, {timeout: 2000}) : run => setTimeout(run, 50);
-// The digest is taken in 64 KiB slices that yield every few milliseconds: a painting's raster is megabytes, and one whole
-// hash on a cheap phone is half a second in which the wash cannot move. A row leaves the held list only once its key is kept.
+const heldJournal = row => row.journal ??= sha256(canonicalJSON(JSON.parse(row.text)));
+// The digests are taken off the main thread where the page has a worker, else in 64 KiB slices that yield every few
+// milliseconds: a painting's raster is megabytes, and one whole hash on a cheap phone is half a second in which the wash
+// cannot move. A row leaves the held list only once its key is kept.
 async function settleHeld(session) {
 	const held = waterHeld.get(session);
 	if (!held?.length || held.settling) return;
 	held.settling = true;
 	try {
 		while (held.length && waterHeld.get(session) === held) {
-			const {raster, journal} = held[0];
+			const row = held[0], {raster} = row;
 			let digest = rasterDigests.get(raster);
 			if (digest === undefined) {
-				digest = await sha256Yielding(new TextEncoder().encode(raster), {subtle: null});
+				digest = await sha256TextOffThread(raster) ?? await sha256Yielding(new TextEncoder().encode(raster), {subtle: null});
 				rasterDigests.set(raster, digest); if (rasterDigests.size > 4) rasterDigests.delete(rasterDigests.keys().next().value);
 			}
 			if (waterHeld.get(session) !== held) return;
-			waterPublications.get(session)?.add(digest + ':' + journal);
+			if (row.journal === undefined) {
+				const canonical = canonicalJSON(JSON.parse(row.text));
+				row.journal = await sha256TextOffThread(canonical) ?? await sha256Yielding(new TextEncoder().encode(canonical), {subtle: null});
+				if (waterHeld.get(session) !== held) return;
+			}
+			waterPublications.get(session)?.add(digest + ':' + row.journal);
 			held.shift();
 		}
 	} finally { held.settling = false; }
@@ -82,17 +89,19 @@ export function rememberWaterPainting(shape, session = waterSession()) {
 	if (!rows) waterPublications.set(session, rows = new Set());
 	let held = waterHeld.get(session);
 	if (!held) waterHeld.set(session, held = []);
-	held.push({raster: shape.raster, journal: waterJournalKey(replay)});
+	held.push({raster: shape.raster, text: JSON.stringify(replay), journal: undefined});
 	if (!held.settling) idle(() => void settleHeld(session));
 	return true;
 }
 export function waterPaintingIsLive(shape, session = waterSession()) {
 	const replay = shape?.paint?.replay;
 	if (typeof shape?.raster !== 'string' || replay?.session !== session) return false;
-	const held = waterHeld.get(session);
-	if (held?.length) {
+	const rows = waterHeld.get(session)?.filter(row => row.raster === shape.raster);
+	if (rows?.length) {
+		const text = JSON.stringify(replay);
+		if (rows.some(row => row.text === text)) return true;
 		const journal = waterJournalKey(replay);
-		if (held.some(row => row.raster === shape.raster && row.journal === journal)) return true;
+		if (rows.some(row => heldJournal(row) === journal)) return true;
 	}
 	return waterPublications.get(session)?.has(waterPublicationKey(shape)) === true;
 }
@@ -634,7 +643,8 @@ export function waterReplayAt(prior,capture,box,{raster=null,px,scale=AGENT_PAIN
 	const actions=admitWaterActions(capture.actions);
 	if(!actions) throw Object.assign(new Error('Invalid Water actions'),{code:'paint_strokes_invalid'});
 	const session=sheet.options.waterSession || waterSession();
-	let replay=prior?.session===session?admitPaintReplay(prior):{mode:'water',paper:sheet.options.paper,session,baseRaster:raster,px:px.slice(),scale,entries:[]};
+	// The replay is admitted whole below, prior entries included; the prior one is only copied here, not admitted twice.
+	let replay=prior?.session===session?(Array.isArray(prior.entries)?{...prior,entries:prior.entries.slice()}:null):{mode:'water',paper:sheet.options.paper,session,baseRaster:raster,px:px.slice(),scale,entries:[]};
 	if(!replay)throw Object.assign(new Error('Invalid Water source'),{code:'paint_sheet_invalid'});
 	replay={...replay,mode:'water',paper:replay.paper || sheet.options.paper};
 	const id=sheet.id+'-water',entry={id,actor:'human',mode:'water',sheet:{...copy(sheet),...(capture.frame?{waterFrame:copy(capture.frame)}:{})},actions,crop:[box.x0,box.y0,box.x1,box.y1]};

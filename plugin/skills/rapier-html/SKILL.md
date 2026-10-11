@@ -1,6 +1,6 @@
 ---
 name: rapier-html
-description: Use when delivering a document, plan, guide, drawing, painting or edited version that a person can read, edit and keep offline. npx rapier-html@1.1.95 document.md puts the full Rapier editor and exact Markdown in one HTML file for any browser, phone or computer. Show a diff with --compare. An optional Send back address returns the person's edits to the agent.
+description: Use when delivering a document, plan, guide, drawing, painting or edited version that a person can read, edit and keep offline. npx rapier-html@1.1.96 document.md puts the full Rapier editor and exact Markdown in one HTML file for any browser, phone or computer. Show a diff with --compare. An optional Send back address returns the person's edits to the agent.
 ---
 
 # rapier-html
@@ -23,7 +23,7 @@ editor and lightweight reader (about 190 kB gzipped). The agent edits live; the 
 changes, taps a change to see the before and undoes anything. Use `comparison.present` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/mcp`, then call `rapier.open` to share one document with the person.
-2. **Deliver an offline editor.** Run `npx rapier-html@1.1.95 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
+2. **Deliver an offline editor.** Run `npx rapier-html@1.1.96 notes.md` to put the document and editor in one HTML file ([rapier-html](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-html)).
 3. **Embed in your app.** Install [rapier-embed](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-embed); mount the editor or reader, with your app's agent over WebMCP in the editor.
 4. **Keep portable Markdown.** Use [rapier-markdown-kit](https://github.com/jackskip22/rapier-plugins/tree/main/npm/rapier-markdown-kit) for pictures, editable SVG drawings and layout in one `.md` file. Respect [Will/1](https://github.com/jackskip22/will) `keep`, `append` and `edit` regions.
 5. **Encode JPEG XL.** Install [rapier-jxl](https://github.com/jackskip22/rapier-jxl) to encode pixels, photographs and existing JPEGs in JavaScript.
@@ -59,12 +59,12 @@ retained, and the person has a clear way to keep it and, when requested, return 
 With a shell, Node 22 or newer and the declared package release available on npm, `rapier-html` supplies the editor. If the pinned release is unavailable, use the installed page helper with the matching editor HTML when available; do not silently run a different release or claim a file was created:
 
 ```sh
-npx -- rapier-html@1.1.95 notes.md                          # writes notes.rapier.html: the editor on the document
-npx -- rapier-html@1.1.95 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
-npx -- rapier-html@1.1.95 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.1.95 revised.md --compare original.md --by "Editor" # opens showing what changed
-npx -- rapier-html@1.1.95 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.1.95 notes.md out.html                 # a named output
+npx -- rapier-html@1.1.96 notes.md                          # writes notes.rapier.html: the editor on the document
+npx -- rapier-html@1.1.96 notes.md --view draw              # opens on Draw, the document behind it (or --view notes)
+npx -- rapier-html@1.1.96 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.1.96 revised.md --compare original.md --by "Editor" # opens showing what changed
+npx -- rapier-html@1.1.96 notes.md --return "$RETURN_URL" --return-expires-at "$RETURN_EXPIRES_AT"   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.1.96 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an output that exists is refused, so name a new one. The first `--` keeps npm from taking
@@ -121,7 +121,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Hand the file as well when the viewer
   blocks downloads started inside it; apply the host's actual sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.95` and hand the page as a file; it opens
+- **A code sandbox with Node and npm access:** run `npx -- rapier-html@1.1.96` and hand the page as a file; it opens
   in any browser.
 - **A host that shows MCP apps (ChatGPT among them):** `rapier.open` requests the editor in the chat
   (`rapier-agent-door`).

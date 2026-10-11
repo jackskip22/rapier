@@ -1035,10 +1035,14 @@ function _rapierDrawClearAll() {
 function _rapierDrawCanvasBlank() {
 	const state = _rapierDrawState, surface = state.surface;
 	if (!surface || !state.open) return false;
-	return !surface.querySelector('.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""])') && !state.recipe?.shapes?.length && !state.paintLayer?.surface?.bounds();
+	// The recipe and the paint layer answer first: the selector walks the surface, and this runs on every mutation of a stroke.
+	if (state.recipe?.shapes?.length || state.paintLayer?.surface?.bounds()) return false;
+	return !surface.querySelector('.rapier-draw-shapes>*,.rapier-draw-preview>*,.rapier-draw-live[d]:not([d=""])');
 }
 function _rapierDrawSetClearWord() {
-	const button = _rapierDrawState.surface?.querySelector('[data-draw-act="clear"]');
+	const state = _rapierDrawState;
+	let button = state.clearButton;
+	if (!button?.isConnected || !state.surface?.contains(button)) button = state.clearButton = state.surface?.querySelector('[data-draw-act="clear"]') || null;
 	if (!button) return;
 	const word = _rapierDrawCanvasBlank() ? 'Exit' : 'Clear';
 	if (button.textContent !== word) button.textContent = word;
@@ -3826,11 +3830,13 @@ function _rapierDrawDisplayInk(hex) {
 // so this view takes one hop only; its raster must never replace the recipe's or history's bytes.
 function _rapierDrawDisplayShape(shape) {
 	if (shape.recognized !== 'paint' || typeof _rapierPaintShownAs === 'undefined') return shape;
-	const raster = _rapierPaintShownAs.get(shape.raster);
-	return raster ? { ...shape, raster } : shape;
+	const raster = _rapierPaintShownAs.get(shape.raster) || shape.raster;
+	const shown = typeof _rapierPaintBlobURL === 'function' ? _rapierPaintBlobURL(raster) : raster;
+	return shown !== shape.raster ? { ...shape, raster: shown } : shape;
 }
 function _rapierDrawDisplayMarkup(html) {
 	if (typeof _rapierPaintShowable === 'function') html = _rapierPaintShowable(html);
+	if (typeof _rapierPaintBlobSources === 'function') html = _rapierPaintBlobSources(html);
 	return html;
 }
 // ---- The live canvas on dark paper wears the file's own dark rules ----------------------------------------
@@ -4598,10 +4604,11 @@ function _rapierDrawHandleSpecs() {
 function _rapierDrawUpdateHandles() {
 	const state = _rapierDrawState, layer = state.handlesLayer;
 	if (!layer) return;
-	const svgRect = state.svgRoot.getBoundingClientRect(), vb = state.svgRoot.viewBox.baseVal, gesture = state.gesture;
 	const frame = state.open && _rapierDrawTool() === 'select' ? _rapierDrawSelectionFrame(state.recipe, _rapierDrawSelection()) : null;
 	const box = frame?.box, theta = frame?.theta || 0, pivot = frame?.pivot;
 	if (!box || !state.open || state.textEdit) { layer.innerHTML = ''; state.handles = []; return; }
+	// Measured only when there are handles to place: the measure forces a layout.
+	const svgRect = state.svgRoot.getBoundingClientRect(), vb = state.svgRoot.viewBox.baseVal, gesture = state.gesture;
 	// `mapLocal` treats a box-local point as if it were already a page point -- valid because local
 	// coordinates share the page's scale, only differing by the rotation about `pivot` that CSS
 	// applies afterward (see the outline's transform below); `toScreen` instead resolves a local
@@ -6201,7 +6208,7 @@ function _rapierDrawOpenSurface(options) {
 	_rapierDrawTextDefaults();
 	state.menuPane = null; state.menuColour = false;
 	_rapierWaterReset();
-	state.paintBrush = _rapierPaintRememberedBrush(); state.paintSize = _rapierPaintRememberedSize(); state.paintStrength = _rapierPaintRememberedStrength(); state.paper = false; state.paperBlack = false; if (typeof _rapierPaintShownAs !== 'undefined') _rapierPaintShownAs.clear(); _rapierPaintCloseLayer(); state.surface.classList.remove('rapier-draw-surface--paper', 'rapier-draw-surface--black');
+	state.paintBrush = _rapierPaintRememberedBrush(); state.paintSize = _rapierPaintRememberedSize(); state.paintStrength = _rapierPaintRememberedStrength(); state.paper = false; state.paperBlack = false; if (typeof _rapierPaintShownAs !== 'undefined') { _rapierPaintShownAs.clear(); if (typeof _rapierPaintForgetBlobs === 'function') _rapierPaintForgetBlobs(); } _rapierPaintCloseLayer(); state.surface.classList.remove('rapier-draw-surface--paper', 'rapier-draw-surface--black');
 	// A fresh document (a new drawing, or the same one reopened) is the one other boundary that
 	// forgets the chosen painting: a stale shape id from an earlier editing session must never be
 	// read as "chosen" against an unrelated recipe.
