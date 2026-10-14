@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Rapier Math: structured output</title>
+<link rel="stylesheet" href="../dist/accessible.css">
+<main>
+  <h1>Structured mathematical output</h1>
+  <form id="math-example">
+    <label for="source">TeX source</label>
+    <textarea id="source" rows="4" cols="48">\frac{-b\pm\sqrt{b^2-4ac}}{2a}</textarea>
+    <button type="submit">Render</button>
+  </form>
+  <p id="status" aria-live="polite"></p>
+  <div id="equation"></div>
+  <details><summary>Generated MathML</summary><pre id="mathml"></pre></details>
+  <h2>A link around the complete SVG formula</h2>
+  <p><a href="https://www.w3.org/TR/mathml-core/" id="outer-equation"></a></p>
+  <p>A host link can wrap the ordinary composition. Its focus target stays outside the hidden SVG.</p>
+  <h2>A link inside a formula</h2>
+  <p>The link below uses visible native MathML and one keyboard focus target.</p>
+  <div id="linked-equation"></div>
+  <p>Its source: <code id="linked-source"></code></p>
+</main>
+<script type="module" src="./accessible.mjs"></script>
+</html>

@@ -1,0 +1,458 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import {VISUAL_LIMITS, visualDimensions} from './visual.mjs';
+import {_rapierDrawBuildSVG} from '../draw/core.mjs';
+import {sanitizeSvgText, decodeDataImage, inspectRaster, inspectJPEGXL} from '../images/assets.mjs';
+
+const DOM_BYTES = 16 * 1024 * 1024;
+const SVG = 'http://www.w3.org/2000/svg', XHTML = 'http://www.w3.org/1999/xhtml';
+const error = code => Object.assign(new Error(code), {code});
+const intersects = (a, b) => a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
+
+async function loadImage(window, url, signal) {
+  const image = new window.Image();
+  await new Promise((resolve, reject) => {
+    const cleanup = () => { image.onload = null; image.onerror = null; signal.removeEventListener('abort', aborted); };
+    const aborted = () => { cleanup(); image.src = ''; reject(signal.reason || error('cancelled')); };
+    image.onload = () => { cleanup(); resolve(); };
+    image.onerror = () => { cleanup(); reject(error('visual_render_unavailable')); };
+    signal.addEventListener('abort', aborted, {once: true});
+    image.src = url;
+    if (signal.aborted) aborted();
+  });
+  return image;
+}
+
+function encodeCanvas(canvas, check, imageBudget) {
+  const originalWidth = canvas.width, originalHeight = canvas.height;
+  let width = originalWidth, height = originalHeight, surface = canvas, resized;
+  try {
+    for (;;) {
+      check();
+      const url = surface.toDataURL('image/png');
+      check();
+      if (!url.startsWith('data:image/png;base64,')) throw error('visual_render_unavailable');
+      const data = url.slice('data:image/png;base64,'.length), image = {mimeType: 'image/png', data, width, height};
+      const decodedBytes = data.length / 4 * 3 - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0);
+      const maxChars = Math.min(Math.floor(VISUAL_LIMITS.imageBytes / 3) * 4,
+        imageBudget ? imageBudget(image) : Infinity);
+      if (decodedBytes <= VISUAL_LIMITS.imageBytes && data.length <= maxChars) return image;
+      if (!(maxChars > 0) || width === 1 && height === 1) throw error('visual_too_large');
+      const scale = Math.min(0.85, Math.sqrt(maxChars / data.length) * 0.9);
+      width = Math.max(1, Math.floor(width * scale)); height = Math.max(1, Math.floor(height * scale));
+      resized ||= canvas.ownerDocument.createElement('canvas');
+      resized.width = width; resized.height = height;
+      const context = resized.getContext('2d');
+      if (!context) throw error('visual_render_unavailable');
+      context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
+      context.drawImage(canvas, 0, 0, originalWidth, originalHeight, 0, 0, width, height);
+      surface = resized;
+    }
+  } finally {
+    if (resized) { resized.width = 0; resized.height = 0; }
+  }
+}
+
+export async function captureDrawing({recipe, clip, signal, current, imageBudget}) {
+  const document = globalThis.document, window = document?.defaultView;
+  if (!document || !window) throw error('visual_render_unavailable');
+  if (!clip || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(clip[key])) ||
+      clip.width <= 0 || clip.height <= 0) throw error('visual_target_unavailable');
+  const outputWidth = clip.outputWidth ?? VISUAL_LIMITS.edge, outputHeight = clip.outputHeight ?? VISUAL_LIMITS.edge;
+  if (!Number.isFinite(outputWidth) || !Number.isFinite(outputHeight) || outputWidth <= 0 || outputHeight <= 0)
+    throw error('visual_target_unavailable');
+  let scale = Math.min(1, Math.min(outputWidth, VISUAL_LIMITS.edge) / clip.width,
+    Math.min(outputHeight, VISUAL_LIMITS.edge) / clip.height);
+  const area = clip.width * scale * (clip.height * scale);
+  if (area > VISUAL_LIMITS.pixels) scale *= Math.sqrt(VISUAL_LIMITS.pixels / area);
+  const width = Math.max(1, Math.floor(clip.width * scale)), height = Math.max(1, Math.floor(clip.height * scale));
+  if (!visualDimensions(width, height)) throw error('visual_too_large');
+  const controller = new AbortController(), cancelled = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', cancelled, {once: true});
+  if (signal?.aborted) cancelled();
+  const timeout = window.setTimeout(() => controller.abort(error('visual_capture_expired')), 15000);
+  const check = () => {
+    if (controller.signal.aborted) throw controller.signal.reason || error('cancelled');
+    if (current?.() === false) throw error('visual_target_changed');
+  };
+  let canvas;
+  try {
+    check();
+    const rendered = _rapierDrawBuildSVG(recipe, undefined, true);
+    if (!rendered) throw error('visual_target_unavailable');
+    if (new TextEncoder().encode(rendered).byteLength > DOM_BYTES) throw error('visual_too_large');
+    const parsed = new window.DOMParser().parseFromString(sanitizeSvgText(rendered), 'image/svg+xml');
+    const svg = parsed.documentElement;
+    if (parsed.querySelector('parsererror') || svg?.namespaceURI !== SVG || svg.localName !== 'svg')
+      throw error('visual_render_unavailable');
+    for (const metadata of [...svg.querySelectorAll('metadata')]) metadata.remove();
+    const resources = new Set();
+    let sourcePixels = 0;
+    for (const node of svg.querySelectorAll('image,feImage')) {
+      const url = node.getAttribute('href') || node.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      if (!url || resources.has(url)) continue;
+      resources.add(url);
+      if (!/^data:image\/(?:png|jxl);base64,/.test(url)) throw error('visual_resources_unavailable');
+      let header;
+      try {
+        const bytes = decodeDataImage(url);
+        header = url.startsWith('data:image/jxl;') ? inspectJPEGXL(bytes) : inspectRaster(bytes);
+      } catch (failure) {
+        throw error(['JXL_SIZE', 'JXL_DIMENSIONS', 'RASTER_SIZE', 'RASTER_DIMENSIONS'].includes(failure?.code)
+          ? 'visual_too_large' : 'visual_resources_unavailable');
+      }
+      sourcePixels += header.width * header.height;
+      if (sourcePixels > VISUAL_LIMITS.pixels * 4) throw error('visual_too_large');
+      let decoded;
+      try { decoded = await loadImage(window, url, controller.signal); }
+      catch { throw error('visual_resources_unavailable'); }
+      check();
+      if (decoded.naturalWidth * decoded.naturalHeight !== header.width * header.height)
+        throw error('visual_resources_unavailable');
+    }
+    svg.setAttribute('viewBox', `${clip.x} ${clip.y} ${clip.width} ${clip.height}`);
+    svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height));
+    const serialized = new window.XMLSerializer().serializeToString(svg);
+    if (new TextEncoder().encode(serialized).byteLength > DOM_BYTES) throw error('visual_too_large');
+    const image = await loadImage(window, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serialized), controller.signal);
+    check();
+    canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw error('visual_render_unavailable');
+    context.drawImage(image, 0, 0);
+    return encodeCanvas(canvas, check, imageBudget);
+  } catch (failure) {
+    if (signal?.aborted) throw error('cancelled');
+    if (controller.signal.aborted) throw error('visual_capture_expired');
+    if (failure?.code) throw failure;
+    throw error('visual_resources_unavailable');
+  } finally {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener('abort', cancelled);
+    if (canvas) { canvas.width = 0; canvas.height = 0; }
+  }
+}
+
+function fitVisual(clip, scale) {
+  const sourceWidth = Math.ceil(clip?.width), sourceHeight = Math.ceil(clip?.height);
+  if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1 ||
+      !Number.isFinite(clip?.x) || !Number.isFinite(clip?.y)) throw error('visual_target_unavailable');
+  if (!Number.isFinite(scale) || scale <= 0) throw error('visual_target_unavailable');
+  const captureScale = Math.min(scale, VISUAL_LIMITS.edge / sourceWidth, VISUAL_LIMITS.edge / sourceHeight,
+    Math.sqrt(VISUAL_LIMITS.pixels / (sourceWidth * sourceHeight)));
+  const width = Math.max(1, Math.floor(sourceWidth * captureScale)), height = Math.max(1, Math.floor(sourceHeight * captureScale));
+  if (!visualDimensions(width, height)) throw error('visual_too_large');
+  return {sourceWidth, sourceHeight, captureScale, width, height};
+}
+
+async function mountVisual(root, {clip, signal, current, frame, deferPixels = false, imageScale = 1}) {
+  const document = root?.ownerDocument, window = document?.defaultView;
+  if (!document || !window || !root.isConnected) throw error('visual_render_unavailable');
+  const sourceWidth = Math.ceil(clip?.width), sourceHeight = Math.ceil(clip?.height);
+  if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1 ||
+      !Number.isFinite(clip?.x) || !Number.isFinite(clip?.y)) throw error('visual_target_unavailable');
+  const controller = new AbortController(), cancelled = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', cancelled, {once: true});
+  if (signal?.aborted) cancelled();
+  let timer = 0;
+  const arm = () => { window.clearTimeout(timer); timer = window.setTimeout(() => controller.abort(error('visual_capture_expired')), 15000); };
+  const disarm = () => window.clearTimeout(timer);
+  const state = {imageScale};
+  const fonts = new Set(), pseudos = [], references = new Map(), deferred = [], deferredSvg = [];
+  let cloneSequence = 0, sourceBytes = 0, baseBytes = 0, sourcePixels = 0, clone = null, closed = false;
+  let contentWidth = 0, contentHeight = 0, staticXml = '';
+  const serializer = new window.XMLSerializer();
+  const check = () => {
+    if (controller.signal.aborted) throw controller.signal.reason || error('cancelled');
+    if (!root.isConnected || current?.() === false) throw error('document_changed');
+  };
+  const fail = failure => {
+    if (signal?.aborted) throw error('cancelled');
+    if (controller.signal.aborted) throw error('visual_capture_expired');
+    if (failure?.code) throw failure;
+    throw error('visual_resources_unavailable');
+  };
+  const screenBox = region => {
+    const screenRoot = root.getBoundingClientRect();
+    const left = screenRoot.left + region.x - root.scrollLeft, top = screenRoot.top + region.y - root.scrollTop;
+    return {left, top, right: left + Math.ceil(region.width), bottom: top + Math.ceil(region.height)};
+  };
+  const charge = text => {
+    sourceBytes += new TextEncoder().encode(text).byteLength;
+    if (sourceBytes > DOM_BYTES) throw error('visual_too_large');
+    return text;
+  };
+  const toData = async blob => {
+    check();
+    if (blob.size > DOM_BYTES) throw error('visual_too_large');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    check();
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 8192)
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+  };
+  const inlineUrl = async url => {
+    if (/^data:/i.test(url)) return url;
+    if (url.startsWith(document.URL.split('#')[0] + '#')) url = url.slice(url.indexOf('#'));
+    if (url.startsWith('#')) {
+      const target = document.getElementById(decodeURIComponent(url.slice(1)));
+      if (!target || target.namespaceURI !== SVG) throw error('visual_resources_unavailable');
+      references.set(url, target);
+      return url;
+    }
+    if (!url.startsWith('blob:')) throw error('visual_resources_unavailable');
+    const response = await window.fetch(url, {signal: controller.signal});
+    if (!response.ok) throw error('visual_resources_unavailable');
+    return toData(await response.blob());
+  };
+  const inlineCss = async value => {
+    const urls = [...value.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)];
+    for (const match of urls) {
+      const url = (match[1] ?? match[2] ?? match[3]).trim();
+      value = value.replace(match[0], `url("${(await inlineUrl(url)).replaceAll('"', '%22')}")`);
+    }
+    return value;
+  };
+  const copyStyle = async (source, destination, pseudo) => {
+    const style = window.getComputedStyle(source, pseudo);
+    if (!pseudo) for (const family of style.fontFamily.split(',')) fonts.add(family.trim().replace(/^['"]|['"]$/g, ''));
+    for (const property of style) {
+      let value = style.getPropertyValue(property);
+      if (value.includes('url(')) value = await inlineCss(value);
+      destination.setProperty(property, value, style.getPropertyPriority(property));
+    }
+    destination.setProperty('animation', 'none', 'important');
+    destination.setProperty('transition', 'none', 'important');
+    return style;
+  };
+  const raster = source => {
+    check();
+    const bounds = source.getBoundingClientRect();
+    const naturalWidth = source.naturalWidth || source.width, naturalHeight = source.naturalHeight || source.height;
+    if (!naturalWidth || !naturalHeight) throw error('visual_resources_unavailable');
+    const scale = Math.min(Math.max(bounds.width / naturalWidth, bounds.height / naturalHeight) * state.imageScale,
+      VISUAL_LIMITS.edge / naturalWidth, VISUAL_LIMITS.edge / naturalHeight,
+      Math.sqrt(VISUAL_LIMITS.pixels / (naturalWidth * naturalHeight)));
+    const w = Math.max(1, Math.floor(naturalWidth * scale)), h = Math.max(1, Math.floor(naturalHeight * scale));
+    if (!visualDimensions(w, h)) throw error('visual_too_large');
+    sourcePixels += w * h;
+    if (sourcePixels > VISUAL_LIMITS.pixels * 4) throw error('visual_too_large');
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    try {
+      const context = canvas.getContext('2d');
+      if (!context) throw error('visual_render_unavailable');
+      context.drawImage(source, 0, 0, w, h);
+      const data = canvas.toDataURL('image/png');
+      if (!data.startsWith('data:image/png;base64,')) throw error('visual_render_unavailable');
+      return charge(data);
+    } catch (failure) {
+      if (failure?.code) throw failure;
+      throw error('visual_resources_unavailable');
+    } finally { canvas.width = 0; canvas.height = 0; }
+  };
+  let screenClip;
+  const cloneNode = async (source, top = false) => {
+    check();
+    if (source.nodeType === 3) return document.createTextNode(charge(source.nodeValue || ''));
+    if (source.nodeType !== 1 || source.matches('script,style,link,template,metadata,input[type="hidden"],[data-rapier-asset-record]')) return null;
+    const computed = window.getComputedStyle(source);
+    const svgNode = source.namespaceURI === SVG;
+    const definition = svgNode && source.closest('defs,marker,clipPath,mask,linearGradient,radialGradient,filter,symbol,pattern');
+    const hiddenViewport = (svgNode && source.localName === 'svg' || source.localName === 'img') && computed.visibility === 'hidden' && !definition;
+    if (!definition && (computed.display === 'none' || computed.visibility === 'hidden' && !hiddenViewport)) return null;
+    const bounds = source.getBoundingClientRect();
+    if (!svgNode && source !== root && !bounds.width && !bounds.height && computed.display !== 'contents') return null;
+    const omitted = hiddenViewport || (top || source.matches('img,canvas,svg')) && !definition && source !== root && !intersects(bounds, screenClip);
+    if (!omitted && source._rapierUnrendered === true) throw error('visual_resources_unavailable');
+    if (!omitted && source.matches('.math-placeholder,.diagram-block:not([data-diagram-state="ready"]),[data-rapier-remote-src],[data-rapier-asset-state="waiting"],[data-rapier-asset-state="loading"],[data-rapier-asset-state="error"]'))
+      throw error('visual_resources_unavailable');
+    if (!omitted && source.matches('video,audio,iframe,object,embed')) throw error('visual_resources_unavailable');
+    const isCanvas = source.localName === 'canvas';
+    const hiddenImage = hiddenViewport && source.localName === 'img';
+    const copy = hiddenImage ? document.createElement('span') : isCanvas ? document.createElement('img') : source.cloneNode(false);
+    for (const attr of [...copy.attributes]) if (/^on/i.test(attr.name) ||
+      ['src', 'srcset', 'href', 'xlink:href', 'action', 'formaction', 'autofocus', 'contenteditable', 'tabindex',
+        'data-rapier-image-url', 'data-rapier-image-source', 'data-rapier-image-alt-source', 'data-diagram-src',
+        'data-math-src', 'data-rapier-source'].includes(attr.name)) copy.removeAttribute(attr.name);
+    await copyStyle(source, copy.style);
+    if (hiddenViewport) {
+      if (hiddenImage && computed.display === 'inline') copy.style.setProperty('display', 'inline-block', 'important');
+      return copy;
+    }
+    if (omitted) {
+      copy.style.setProperty('box-sizing', 'border-box', 'important');
+      copy.style.setProperty('height', `${bounds.height}px`, 'important');
+      copy.style.setProperty('width', `${bounds.width}px`, 'important');
+      copy.style.setProperty('visibility', 'hidden', 'important');
+      return copy;
+    }
+    if (source.localName === 'img' || isCanvas) {
+      if (source.localName === 'img' && (!source.complete || !source.naturalWidth || !source.naturalHeight)) throw error('visual_resources_unavailable');
+      if (deferPixels) deferred.push({clone: copy, source, bounds});
+      else copy.src = raster(source);
+    } else if (source.namespaceURI === SVG && ['image', 'use'].includes(source.localName)) {
+      const href = source.getAttribute('href') || source.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      if (href && deferPixels && !definition && /^(?:data:|blob:)/i.test(href)) deferredSvg.push({clone: copy, href, bounds});
+      else if (href) copy.setAttribute('href', charge(await inlineUrl(href)));
+    }
+    if (source.localName === 'textarea') copy.textContent = source.value;
+    else if (source.localName === 'input') {
+      copy.setAttribute('value', source.value);
+      if (source.checked) copy.setAttribute('checked', ''); else copy.removeAttribute('checked');
+    } else if (!isCanvas) {
+      for (const child of source.childNodes) {
+        const copied = await cloneNode(child, source === root);
+        if (copied) copy.append(copied);
+      }
+    }
+    if (source.scrollTop || source.scrollLeft) {
+      if (source !== root) throw error('visual_resources_unavailable');
+    }
+    const className = `rapier-visual-${++cloneSequence}`;
+    for (const pseudo of ['::before', '::after']) {
+      const content = window.getComputedStyle(source, pseudo).content;
+      if (!content || content === 'none' || content === 'normal') continue;
+      copy.classList.add(className);
+      const holder = document.createElement('span');
+      await copyStyle(source, holder.style, pseudo);
+      pseudos.push(charge(`.${className}${pseudo}{${holder.style.cssText}}`));
+    }
+    charge(copy.style.cssText);
+    return copy;
+  };
+  const fontCss = async () => {
+    const kept = [];
+    const visit = async rules => {
+      for (const rule of rules) {
+        if (rule.type === 5 && fonts.has(rule.style.getPropertyValue('font-family').replace(/^['"]|['"]$/g, ''))) {
+          kept.push(charge(await inlineCss(rule.cssText)));
+        } else if (rule.cssRules) await visit(rule.cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules; } catch { throw error('visual_resources_unavailable'); }
+      await visit(rules);
+    }
+    return kept.join('\n');
+  };
+  const releasePictures = () => {
+    for (const item of deferred) item.clone.removeAttribute('src');
+    for (const item of deferredSvg) item.clone.removeAttribute('href');
+  };
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    disarm();
+    signal?.removeEventListener('abort', cancelled);
+    releasePictures();
+    clone = null;
+    deferred.length = 0;
+    deferredSvg.length = 0;
+  };
+  const draw = async ({clip: region, transparent = false, scale = 1, pixels = false, imageBudget}) => {
+    let canvas, image;
+    arm();
+    try {
+      check();
+      const fitted = fitVisual(region, scale);
+      state.imageScale = fitted.captureScale;
+      const regionBox = screenBox(region);
+      sourceBytes = baseBytes;
+      sourcePixels = 0;
+      releasePictures();
+      for (const item of deferred) {
+        if (intersects(item.bounds, regionBox)) item.clone.src = raster(item.source);
+      }
+      for (const item of deferredSvg) {
+        if (!intersects(item.bounds, regionBox)) continue;
+        check();
+        item.clone.setAttribute('href', charge(await inlineUrl(item.href)));
+      }
+      const cloneXml = serializer.serializeToString(clone);
+      releasePictures();
+      const svgXml = `<svg xmlns="${SVG}" width="${fitted.width}" height="${fitted.height}" viewBox="0 0 ${fitted.sourceWidth} ${fitted.sourceHeight}">${staticXml}<foreignObject x="${-region.x}" y="${-region.y}" width="${contentWidth}" height="${contentHeight}">${cloneXml}</foreignObject></svg>`;
+      if (new TextEncoder().encode(svgXml).byteLength > DOM_BYTES) throw error('visual_too_large');
+      image = await loadImage(window, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgXml), controller.signal);
+      check();
+      canvas = document.createElement('canvas');
+      canvas.width = fitted.width; canvas.height = fitted.height;
+      const context = canvas.getContext('2d', {willReadFrequently: !!pixels});
+      if (!context) throw error('visual_render_unavailable');
+      if (!transparent) {
+        let background = root;
+        while (background && ['transparent', 'rgba(0, 0, 0, 0)'].includes(window.getComputedStyle(background).backgroundColor)) background = background.parentElement;
+        context.fillStyle = background ? window.getComputedStyle(background).backgroundColor : '#fff';
+        context.fillRect(0, 0, fitted.width, fitted.height);
+      }
+      context.drawImage(image, 0, 0);
+      if (!pixels) return encodeCanvas(canvas, check, imageBudget);
+      const data = context.getImageData(0, 0, fitted.width, fitted.height).data;
+      const count = fitted.width * fitted.height, rgb = new Uint8Array(count * 3);
+      const alpha = pixels === 'rgba' ? new Uint8Array(count) : null;
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        rgb[p * 3] = data[i]; rgb[p * 3 + 1] = data[i + 1]; rgb[p * 3 + 2] = data[i + 2];
+        if (alpha) alpha[p] = data[i + 3];
+      }
+      return alpha ? {rgb, alpha, width: fitted.width, height: fitted.height} : {rgb, width: fitted.width, height: fitted.height};
+    } catch (failure) {
+      fail(failure);
+    } finally {
+      releasePictures();
+      if (image) image.src = '';
+      if (canvas) { canvas.width = 0; canvas.height = 0; }
+      disarm();
+    }
+  };
+  try {
+    arm();
+    check();
+    if (document.fonts?.status === 'loading') throw error('visual_resources_unavailable');
+    screenClip = screenBox(clip);
+    clone = await cloneNode(root);
+    check();
+    if (!clone) throw error('visual_target_unavailable');
+    contentWidth = frame?.width ?? root.clientWidth;
+    contentHeight = frame?.height ?? root.scrollHeight;
+    for (const [name, value] of Object.entries({margin: '0', position: 'static', transform: 'none',
+      width: `${contentWidth}px`, height: `${contentHeight}px`, 'max-height': 'none', overflow: 'visible',
+      'box-sizing': 'border-box', 'content-visibility': 'visible'})) clone.style.setProperty(name, value, 'important');
+    clone.setAttribute('xmlns', XHTML);
+    const definitions = document.createElementNS(SVG, 'defs'), copied = new Set();
+    for (const [url, target] of references) {
+      if (copied.has(url)) continue;
+      copied.add(url);
+      const definition = await cloneNode(target);
+      if (!definition) throw error('visual_resources_unavailable');
+      definitions.append(definition);
+    }
+    const style = document.createElementNS(SVG, 'style');
+    style.textContent = await fontCss() + '\n' + pseudos.join('\n');
+    staticXml = (definitions.childNodes.length ? serializer.serializeToString(definitions) : '') + serializer.serializeToString(style);
+    baseBytes = sourceBytes;
+    disarm();
+    return {draw, close};
+  } catch (failure) {
+    close();
+    fail(failure);
+  }
+}
+
+export async function captureVisual({root, clip, signal, current, imageBudget, transparent = false, scale = 1, pixels = false}) {
+  if (!root?.ownerDocument?.defaultView || !root.isConnected) throw error('visual_render_unavailable');
+  const fitted = fitVisual(clip, scale);
+  const session = await mountVisual(root, {clip, signal, current, imageScale: fitted.captureScale});
+  try { return await session.draw({clip, transparent, scale, pixels: pixels ? 'rgba' : false, imageBudget}); }
+  finally { session.close(); }
+}
+
+export async function openVisualFilm({root, signal, current, frame}) {
+  if (!root?.ownerDocument?.defaultView || !root.isConnected) throw error('visual_render_unavailable');
+  const width = frame?.width, height = frame?.height;
+  if (!(width > 0) || !(height > 0) || !Number.isFinite(width) || !Number.isFinite(height)) throw error('visual_target_unavailable');
+  const session = await mountVisual(root, {
+    clip: {x: 0, y: 0, width, height}, signal, current, frame: {width, height}, deferPixels: true, imageScale: 1,
+  });
+  return {raster: region => session.draw({clip: region, transparent: false, scale: 1, pixels: 'rgb'}), close: () => session.close()};
+}

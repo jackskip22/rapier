@@ -1,0 +1,253 @@
+{
+  "package": "@chenglou/pretext",
+  "version": "0.0.9",
+  "release": "Unreleased",
+  "repository": "https://github.com/chenglou/pretext",
+  "commit": "bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b",
+  "commitDate": "2026-10-10T16:55:37-07:00",
+  "sourceTree": "85decd44b5dcef3d7c571c1f3be83cdd12cf71b3",
+  "packageSha256": "a88235b35877319260005e8a01b06f575f73a3b4f9f0cbf26209f8ae10ca0c9c",
+  "license": "MIT",
+  "thirdPartyLicenses": [
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "Unicode-3.0",
+    "ICU"
+  ],
+  "licenseSha256": "b0bc6870efb4e667f911d5f6b52fc9b321d634a0469a17464e35da244c28f128",
+  "noticeSha256": "fb31768b51f1ad699d0bf2fd9f72fd630ec9683e22f8f63aab34a4bde6569b3d",
+  "exports": {
+    ".": "./layout.js",
+    "./rich-inline": "./rich-inline.js"
+  },
+  "compiler": {
+    "runtime": "v24.19.0",
+    "amaro": "1.1.10",
+    "api": "node:module.stripTypeScriptTypes",
+    "mode": "strip",
+    "sourceMap": false,
+    "importParser": "Acorn 8.19.0",
+    "toolSha256": "9b974f2c80886088a0ff7e603d297298c9432090d864836ab09f9e6b90f64202"
+  },
+  "changes": "Node TypeScript erasure and attribution header; rich-inline.js and prepare.js additionally carry rapier-paragraph-segments-v2 (direct legal source facts and explicit projected hyphen-minus). This local runtime extension is not byte-exact upstream. Source hashes, unchanged-upstream output hash and patched output hash are recorded. Default wrapping and the single measurement graph are preserved.",
+  "generatedData": [
+    {
+      "source": "src/generated/engine-break-data.ts",
+      "generator": "scripts/generate-engine-break-data.ts",
+      "generatorGitBlob": "52b0d2eb117a25a0ae64d6eb2c8f43d11a855c90",
+      "generatorSha256": "7a19921a45f2f358a051a7b6f0528ee20636401ce8da647adfa29f36cd7f26a8",
+      "inputs": "scripts/engine-data",
+      "inputsGitTree": "571746bfeb5eb5df839b4ca7d8d6cf7ac498c445",
+      "notices": "LICENSE"
+    },
+    {
+      "source": "src/generated/webkit-generic-families.ts",
+      "generator": "scripts/generate-webkit-generic-families.ts",
+      "generatorGitBlob": "28a04c269032c4b50714b3166a9782b21b3f7d0a",
+      "generatorSha256": "f4f5602c7ab1c51dc48c254ff98ce722510b00fba930092ba12ae5a10e59ab3f",
+      "inputs": "scripts/engine-data/safari-27.0",
+      "inputsGitTree": "b2cf2911befffdb07ae0a92cd82e4a4194d568cd",
+      "notices": "LICENSE"
+    }
+  ],
+  "files": [
+    {
+      "source": "src/generated/engine-break-data.ts",
+      "sourceGitBlob": "da9403159228c2e4f6fbdb4951de7f874e14d32d",
+      "sourceBytes": 35140,
+      "sourceSha256": "b8782c423a8d192f1d5c69c8ed2422bc8d55526c9aa18010e70348252285455e",
+      "output": "generated/engine-break-data.js",
+      "outputBytes": 35262,
+      "outputSha256": "463e7f2edcbd315dffccf9e4c24d23c782f1cb2dfcee75342f1e1c8dc6aa5096",
+      "imports": []
+    },
+    {
+      "source": "src/line-breaks.ts",
+      "sourceGitBlob": "fcdbe41fd6728d2930a000a2279a97208781ec5d",
+      "sourceBytes": 38498,
+      "sourceSha256": "027473f31fbbb0408d8381ae5fe02b72d93680e29a721bc36d9893ed9a49eca1",
+      "output": "line-breaks.js",
+      "outputBytes": 38620,
+      "outputSha256": "b817c1a9b1e022dd0427ee9628a81edbc0dd18b44e910c284070ff625fb0cce7",
+      "imports": [
+        "./generated/engine-break-data.js"
+      ]
+    },
+    {
+      "source": "src/graphemes.ts",
+      "sourceGitBlob": "2b79cd6494d1c977874bbabfc887fa2865460a43",
+      "sourceBytes": 4663,
+      "sourceSha256": "2f99310f195889177675edd7e0fbd00ee1a59286f243a9a8b13085bcb12b89f3",
+      "output": "graphemes.js",
+      "outputBytes": 4785,
+      "outputSha256": "efa38ca88b2cf8a5557cd7b0fea0778de10f0df833bcef79015026c64ab8d71f",
+      "imports": [
+        "./line-breaks.js"
+      ]
+    },
+    {
+      "source": "src/gecko-line-breaks.ts",
+      "sourceGitBlob": "340d1340bd235df2a39f81ef8ccee58abb1123b5",
+      "sourceBytes": 33564,
+      "sourceSha256": "cf67f7eecaf6c9849acfa9958575070597cb5e6f3a1a17bb2027cef828340248",
+      "output": "gecko-line-breaks.js",
+      "outputBytes": 33686,
+      "outputSha256": "163a9aaafb492a83806b57a830b18d7d63051e9a15160c814c4518891835e9ff",
+      "imports": [
+        "./generated/engine-break-data.js",
+        "./graphemes.js",
+        "./line-breaks.js"
+      ]
+    },
+    {
+      "source": "src/analysis.ts",
+      "sourceGitBlob": "921a5908672b0d8dbe4fee9f76c86e598a68e4a0",
+      "sourceBytes": 39758,
+      "sourceSha256": "7aadf2f9a979f6af7ec8e3e668036dcddf72800342ad76fe778c5c5fd2f16aeb",
+      "output": "analysis.js",
+      "outputBytes": 39880,
+      "outputSha256": "15ce0e71704851b6f278ef97dc165d57a3160063d2a99783e7bccb4e3bb66042",
+      "imports": [
+        "./gecko-line-breaks.js",
+        "./graphemes.js",
+        "./line-breaks.js"
+      ]
+    },
+    {
+      "source": "src/generated/webkit-generic-families.ts",
+      "sourceGitBlob": "85bf3d1e65cd82de0ba46ece24f6482cf18ae338",
+      "sourceBytes": 5190,
+      "sourceSha256": "16ffba2832197e189a5ddf7e745304a3c5faacc82858a51808c3744991b11614",
+      "output": "generated/webkit-generic-families.js",
+      "outputBytes": 5312,
+      "outputSha256": "60255a17acf8cd9130ed048f9be1b409f439cd07939315f1c1ba6257c8b3fefd",
+      "imports": []
+    },
+    {
+      "source": "src/measurement.ts",
+      "sourceGitBlob": "1a0730fa4b706f37c2d18eb04a90487e1bae958b",
+      "sourceBytes": 70366,
+      "sourceSha256": "eb2469c67105a03e34fa2e066f51dcb552676d6ed29ce22a8f3ec5fef0801911",
+      "output": "measurement.js",
+      "outputBytes": 70488,
+      "outputSha256": "5e3e5f011c8589a925b83691e2f6941e7b17b107be26784421fbf7b390593767",
+      "imports": [
+        "./generated/webkit-generic-families.js",
+        "./graphemes.js",
+        "./line-breaks.js"
+      ]
+    },
+    {
+      "source": "src/entry-geometry.ts",
+      "sourceGitBlob": "c7f139c1f6234329fffa30678f5005c7b1468afb",
+      "sourceBytes": 9321,
+      "sourceSha256": "271d975afceb141c10406de5923decc61c9f45b9229dff421ff4355c46611899",
+      "output": "entry-geometry.js",
+      "outputBytes": 9443,
+      "outputSha256": "d526d143bd6eb4432295f2e6551090088fa72f4de36c6c2d32af0f8f46979065",
+      "imports": [
+        "./graphemes.js",
+        "./measurement.js"
+      ]
+    },
+    {
+      "source": "src/line-break.ts",
+      "sourceGitBlob": "d6ef1b570aa99b86c72f52e4179d317d2effc73f",
+      "sourceBytes": 67118,
+      "sourceSha256": "968d4d8ff740bdba58b802b8c7bc44f9808c5257887602638c260a806118b913",
+      "output": "line-break.js",
+      "outputBytes": 67240,
+      "outputSha256": "c2e66ac93d0a61d86f9a34d6f3de6344b939f7f091c3acfa436714d189cb6253",
+      "imports": [
+        "./analysis.js",
+        "./entry-geometry.js",
+        "./measurement.js"
+      ]
+    },
+    {
+      "source": "src/line-text.ts",
+      "sourceGitBlob": "03952388b0c018b46585d121f8c82f30676200ee",
+      "sourceBytes": 3735,
+      "sourceSha256": "b77b5f59fcd17c048e11a36a9a9ecad2953ec5a69e75c3d9b3b28db989f4f6da",
+      "output": "line-text.js",
+      "outputBytes": 3857,
+      "outputSha256": "7da3338966dc9772c845a32bb9f114a496885820de77ca1b9fe2ef86829494d1",
+      "imports": [
+        "./analysis.js",
+        "./graphemes.js",
+        "./line-break.js",
+        "./measurement.js"
+      ]
+    },
+    {
+      "source": "src/han-kerning.ts",
+      "sourceGitBlob": "e14d2ca310d0fe10db76e75dbcf033b0ff876e16",
+      "sourceBytes": 13202,
+      "sourceSha256": "0fd39a11777abf2a8af12c7a8450903140d336ae6cdc58b4fb4bb033cc46ff3b",
+      "output": "han-kerning.js",
+      "outputBytes": 13324,
+      "outputSha256": "860294fc69c4b549df112fa2898682deb0a4844f5f740e36adf1e9beae09c761",
+      "imports": [
+        "./analysis.js",
+        "./line-breaks.js",
+        "./measurement.js"
+      ]
+    },
+    {
+      "source": "src/prepare.ts",
+      "sourceGitBlob": "569d74c217fac407e01c712c73b4d4ec1ce1b744",
+      "sourceBytes": 47683,
+      "sourceSha256": "cab52e730c67c1f43977ef1e5b149a87422cfaca703275fe35582c500f358b9c",
+      "output": "prepare.js",
+      "outputBytes": 47852,
+      "outputSha256": "0ab0111a1bbb0857937ec7e08bb3aa567cc4f6d706e28986867b19d5efb68c0e",
+      "imports": [
+        "./analysis.js",
+        "./entry-geometry.js",
+        "./generated/engine-break-data.js",
+        "./graphemes.js",
+        "./han-kerning.js",
+        "./line-breaks.js",
+        "./measurement.js"
+      ],
+      "upstreamOutputSha256": "6b309c760af7e0c75b9f089a7030974a61688e9877314479dcdf999a6521f490",
+      "localPatch": "rapier-paragraph-segments-v2"
+    },
+    {
+      "source": "src/layout.ts",
+      "sourceGitBlob": "c6a22ab8666bfffecb4b76d3bb282d5bb8ad7e52",
+      "sourceBytes": 14212,
+      "sourceSha256": "c0c6de52c793fce9f2395dd2ffd96c6229875f9ef5754184d166250f7e40800d",
+      "output": "layout.js",
+      "outputBytes": 14334,
+      "outputSha256": "f5ddbd649f9a89e193b82839075dbc3690b2f3a1a894c1cb1ab35e8c7c875347",
+      "imports": [
+        "./analysis.js",
+        "./line-break.js",
+        "./line-breaks.js",
+        "./line-text.js",
+        "./measurement.js",
+        "./prepare.js"
+      ]
+    },
+    {
+      "source": "src/rich-inline.ts",
+      "sourceGitBlob": "9e0178ec08b867e14d1a9d970ddb32974b714842",
+      "sourceBytes": 73518,
+      "sourceSha256": "0b327743200338746b473ff7e788798381fe05d372283ee29ec6eaf685701713",
+      "output": "rich-inline.js",
+      "outputBytes": 74268,
+      "outputSha256": "f39d5d694c0a17262eda3d210e6ad7913c1db2d7167e2b600c8efbf1f3d2a571",
+      "imports": [
+        "./analysis.js",
+        "./entry-geometry.js",
+        "./line-break.js",
+        "./line-text.js",
+        "./measurement.js",
+        "./prepare.js"
+      ],
+      "upstreamOutputSha256": "22c0f38d56cb627243deb3bd8f7b8264e3a6969b4338c406b8e4d9357a9b1b5e",
+      "localPatch": "rapier-paragraph-segments-v2"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "package": "@gfx/zopfli",
+  "version": "1.0.15",
+  "license": "Apache-2.0",
+  "source": "https://registry.npmjs.org/@gfx/zopfli/-/zopfli-1.0.15.tgz",
+  "tarballIntegrity": "sha512-7mBgpi7UD82fsff5ThQKet0uBTl4BYerQuc+/qA1ELTwWEiIedRTcD3JgiUu9wwZ2kytW8JOb165rSdAt8PfcQ==",
+  "tarballBytes": 48230,
+  "note": "Build-time compressor only (tools/build.mjs, images/codec-build.mjs); never bundled. dist/index.js, dist/libzopfli.js and dist/libzopfli-wasm.json are the published files; the one `require(\"base64-js\")` in libzopfli.js is rewritten to ./base64-js.js, a Buffer-backed shim of the same two functions, so the build keeps needing no package install. Zopfli output is ordinary gzip: the shell decodes it with DecompressionStream(\"gzip\") unchanged.",
+  "files": {
+    "index.js": {
+      "bytes": 3874,
+      "sha256": "82bcf1f3bebda80b8e541ec4d3b9827e3b274d04a23beda01234596a30bc0ff0"
+    },
+    "libzopfli.js": {
+      "bytes": 19841,
+      "sha256": "904de337159c0e921a7a6de481e0e31795232278825bb68b17b9d55ed0131def"
+    },
+    "libzopfli-wasm.json": {
+      "bytes": 85447,
+      "sha256": "ee6aa579539f20646b83e711377fb8e785be60041579da2a939a06508cc161ea"
+    },
+    "LICENSE.md": {
+      "bytes": 10495,
+      "sha256": "ec640150e03774d1b5264fb268f3829dc36745551109131ebf6dd0a59d5ec3eb"
+    },
+    "base64-js.js": {
+      "bytes": 396,
+      "sha256": "43b1ecaca5488718f264e21dec39204fbc6c0c95967ac285c8d10053ac917f19"
+    }
+  }
+}

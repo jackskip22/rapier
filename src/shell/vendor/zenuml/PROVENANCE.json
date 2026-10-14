@@ -1,0 +1,20 @@
+{
+  "adapter": "4.5.0-1",
+  "npmLockSha256": "c219d8ab006c6bed7b8d99796b2a5973901b75f9555342a3efc79f025fac3f33",
+  "sourceSha256": "3f874b270143ce3a0ec4fcc36752c4745bea981c7ddc3a9ce4da802f1b7870cd",
+  "esbuild": "0.28.2",
+  "core": "4.5.0",
+  "coreGitHead": "54e25c74ecdd924f39bd02cd0e48d939705aca75",
+  "upstreamLockSha256": "19931ec9bc158dc6316b97a6d427c0f87f243dd59b04dc1dbc24d1b128684062",
+  "antlr4": "4.11.0",
+  "noticesSha256": "cdc81bece4f26e0320aa694841fd6c1f49f4a81aa59b4e556ec07480dcc757cf",
+  "bytes": 1890966,
+  "sha256": "8b9d7a1f627d3119a13743e23e4b2b6fbc0f508a05c3c7722d08dc5575982be8",
+  "sha384": "MVn/Or1nIHTDvy84lSSJAH2Fx1Y7AGoaMfd7hW7i3LJe7M/dau8VDFnF8Q+X0qOl",
+  "font": {
+    "family": "IBM Plex Sans",
+    "bytes": 20984,
+    "sha256": "b5ad7bd39f996144915f0ad9849a90183b27d8c28ad97ed98af5b1bebc51f6b1",
+    "sha384": "H+IpfP8bhurX6WRMGM1rrGptQ240FgQCjgxEqUcOsRO2AX9KpDrc0xelVZJdxTmT"
+  }
+}

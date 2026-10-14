@@ -1,0 +1,24 @@
+# Deploy the page, embeds, public guides, installation companions and discovery files.
+/*
+!/rapier.html
+!/rapier-bench.html
+!/sw.js
+!/manifest.json
+!/icon-192.png
+!/icon-512.png
+!/robots.txt
+!/sitemap.xml
+!/llms.txt
+!/llms-full.txt
+!/docs/
+!/docs/**
+!/.well-known/
+!/.well-known/ai-catalog.json
+!/AGENT-TOOLS.json
+!/og.png
+!/og-notes.png
+!/og-draw.png
+!/og-watercolor.png
+!/watercolor-painting.png
+!/embed/
+!/embed/**

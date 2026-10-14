@@ -1,0 +1,1876 @@
+{
+  "phoneBench": {
+    "path": "rapier-bench.html",
+    "bytes": 6591672,
+    "sha256": "6e0b5b88aecd36a942da6882fe3765acdc1959895963d92ea8fd37f7248eeaa8",
+    "editorPageSha256": "5cb4a4f88470d03afae8e6077b7f8a49214da4158b46dd4ac494fc543d603b45",
+    "spans": [
+      {
+        "element": "rapier-phone-bench-runtime",
+        "name": "rapier-phone-bench.js",
+        "bytes": 5687012,
+        "sha256": "0c2c9fc1ae0a6da56ab59cb3b2cc1ddeb5fb7ccd193c88420bdda4eb1c7ee3b5"
+      }
+    ]
+  },
+  "release": "1.2.3",
+  "builtAt": "2026-10-14T16:53:28.260Z",
+  "node": "v22.23.3",
+  "mode": "release",
+  "packing": "zopfli",
+  "codecs": [
+    "gzip",
+    "brotli"
+  ],
+  "brotli": {
+    "quality": 11,
+    "mode": "text",
+    "lgwin": 22
+  },
+  "validation": "JavaScript syntax and source assembly only; no runtime or host verification",
+  "profile": "full",
+  "jxl": {
+    "version": "3.5.2",
+    "modules": [
+      "images/jxl/kernel-hooks.mjs",
+      "images/jxl/weighted-policy.mjs",
+      "images/jxl/bits.mjs",
+      "images/jxl/admit.mjs",
+      "images/jxl/kernels-bytes.mjs",
+      "images/jxl/kernels.mjs",
+      "images/jxl/frame.mjs",
+      "images/jxl/prefix.mjs",
+      "images/jxl/modular.mjs",
+      "images/jxl/lossless-coding.mjs",
+      "images/jxl/lossless.mjs",
+      "images/jxl/squeeze.mjs",
+      "images/jxl/lossy.mjs",
+      "images/jxl/weighted.mjs",
+      "images/jxl/local.mjs",
+      "images/jxl/rct-search.mjs",
+      "images/jxl/screen-lz77.mjs",
+      "images/jxl/screen.mjs",
+      "images/jxl/screen-patches.mjs",
+      "images/jxl/entropy.mjs",
+      "images/jxl/ans.mjs",
+      "images/jxl/sampled.mjs",
+      "images/jxl/palette-search.mjs",
+      "images/jxl/screen-local.mjs",
+      "images/jxl/screen-search.mjs",
+      "images/jxl/painting.mjs",
+      "images/jxl/effort-job.mjs",
+      "images/jxl/effort.mjs",
+      "images/jxl/pool.mjs",
+      "images/jxl/jfif.mjs",
+      "images/jxl/effort-level.mjs",
+      "images/jxl/jpeg-job.mjs",
+      "images/jxl/vardct.mjs",
+      "images/jxl/coefficient-effort.mjs",
+      "images/jxl/coefficient-coding.mjs",
+      "images/jxl/jpeg-effort.mjs",
+      "images/jxl/jpeg.mjs",
+      "images/jxl/photo-dct.mjs",
+      "images/jxl/photo-job.mjs",
+      "images/jxl/coefficient-ans.mjs",
+      "images/jxl/photo.mjs",
+      "images/jxl/rapier-encoder.mjs",
+      "images/jxl/worker-input.mjs",
+      "images/jxl/worker.mjs",
+      "images/jxl/rapier.mjs"
+    ],
+    "worker": {
+      "bytes": 154365,
+      "sha256": "7b764eb63698e6017defa51bf4a0e7901863d9c0fec4cabc00f330783e341d71"
+    }
+  },
+  "profiles": {
+    "document": {
+      "path": "rapier-document.html",
+      "bytes": 1578004,
+      "sha256": "2ca35f504a71e0216a1f467d8d578224efe347014117877694f687921e7a016d",
+      "budget": {
+        "warn": 2079000,
+        "refuse": 2100000
+      },
+      "spans": [
+        {
+          "element": "lib-dompurify",
+          "name": "dompurify-3.4.16.dist.purify.min.js",
+          "bytes": 28885,
+          "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+        },
+        {
+          "element": "lib-turndown",
+          "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+          "bytes": 12864,
+          "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-15.0.2.umd.rapier.min.js",
+          "bytes": 96267,
+          "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-task-lists-2.1.1.min.js",
+          "bytes": 2702,
+          "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-footnote-4.0.0.min.js",
+          "bytes": 5624,
+          "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-mark-4.0.0.min.js",
+          "bytes": 1621,
+          "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sup-2.0.0.min.js",
+          "bytes": 965,
+          "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-emoji-3.1.0-light.min.js",
+          "bytes": 6394,
+          "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-abbr-2.0.0.min.js",
+          "bytes": 2419,
+          "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-ins-4.0.0.min.js",
+          "bytes": 1601,
+          "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-deflist-4.0.0.min.js",
+          "bytes": 2376,
+          "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+        },
+        {
+          "element": "lib-gpu-lexer",
+          "name": "gpu-lexer-0.0.1.js",
+          "bytes": 59967,
+          "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+        },
+        {
+          "element": "lib-acorn",
+          "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+          "bytes": 104387,
+          "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+        },
+        {
+          "element": "rapier-jxl-worker",
+          "name": "rapier-jxl-worker.js",
+          "bytes": 5062,
+          "sha256": "fd8d9a7e331df432f28e9494cbf4fc996e8f2fbb57efd8a8c453c7fc0899e8ae"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-preferences.js",
+          "bytes": 3595,
+          "sha256": "629d941e3ba4278a8a9b2833237e36b083a2f444cc2f46cfd1a0fc1968414242"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-platform.js",
+          "bytes": 91885,
+          "sha256": "c209d55bb358cb092d7f7c28e5e0e5079744564d8c7696d3a9fdd5aacfcd44b6"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundle-io.js",
+          "bytes": 5185,
+          "sha256": "9f9141229f04d4e647f553bc4067769377dc033988206131e63affe977299106"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundled-plugins.js",
+          "bytes": 2407,
+          "sha256": "b63b94add9de7fd3ab82caf7531b3bc5516338702af15eb47616ef8c99ae9249"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-plugin-loader.js",
+          "bytes": 29593,
+          "sha256": "111cfed53164c4dbfe7d2a0377cecf0b29f41e1c90d42ef7c9771931e262d85f"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-font-subset-plugin.js",
+          "bytes": 1566,
+          "sha256": "e2711e7d13382882a7b564083e0f0de74fb42edd3fb64e0f351113cfe781e096"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-parts.js",
+          "bytes": 4382,
+          "sha256": "b9ce24da477f77a1ed9b9dbcb14e676fa71bc3b58a4905607aaebcfa0d3b5514"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-factory-fonts.js",
+          "bytes": 97204,
+          "sha256": "6eda01fd28c7180b35594ca3296706aede5d0c1058d363e1f5ec433cc4d3c18e"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-styles.json",
+          "bytes": 110517,
+          "sha256": "bddb62afc3dc29c327140b2a0b00d428eb116e8acf8b3615854a57f4d44d69cd"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-first-screen.html",
+          "bytes": 38515,
+          "sha256": "0396bff02ab2654627684beb0abf25bd4073928e88c36763e9f37ca6b7864746"
+        },
+        {
+          "element": "rapier-style-rest-runtime",
+          "name": "rapier-styles-rest.json",
+          "bytes": 61814,
+          "sha256": "633609452e746d5d9bae39eccd446fcc19d4eee12924042fab60c158ab06f7cf"
+        },
+        {
+          "element": "rapier-codec-runtime",
+          "name": "rapier-codecs.js",
+          "bytes": 156478,
+          "sha256": "a52713ef9d62bbb61eca0ec79975df810d2a7ae5e1aff4e44b72f09f7d92582a"
+        },
+        {
+          "element": "rapier-ui-runtime",
+          "name": "rapier-ui.html",
+          "bytes": 134978,
+          "sha256": "a7134363aba2349a0fcf5d1341e8ef9a04fe41e76a1ee63bb6c257b37e13e4c2"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-shared.js",
+          "bytes": 2076007,
+          "sha256": "7a0c352e1b1e74c47216c59e0fe1a5fc7015731218eb1a5cced0ec3ead39f526"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-editor.js",
+          "bytes": 1992482,
+          "sha256": "df5cbd9ea29bfdeb93aee2862b5c4d407ebbf01da2c025940c20789d4220ee7c"
+        }
+      ],
+      "parts": [],
+      "coreHeldPartGlobals": [],
+      "shakenExports": {
+        "agent/page-result.mjs": [
+          "parseReply"
+        ],
+        "shell/preferences.mjs": [
+          "PREFERENCE_ACCENTS"
+        ],
+        "version.mjs": [
+          "RELEASE_TAG",
+          "cdnOrigin"
+        ],
+        "agent/operation-contracts.mjs": [
+          "UI_RESOURCE",
+          "RESULT_SCHEMA",
+          "validateInput"
+        ],
+        "spec/html-blocks.mjs": [
+          "HTML_ELEMENTS",
+          "htmlInfoEdit"
+        ],
+        "agent/json-value.mjs": [
+          "jsonStringParts"
+        ],
+        "kit/ledger/data.mjs": [
+          "documentBytes"
+        ],
+        "kit/ledger/transport.mjs": [
+          "transposeRecord"
+        ],
+        "kit/ledger/format.mjs": [
+          "prepareLedger"
+        ],
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "BitWriter",
+          "complete",
+          "scaled",
+          "packSigned",
+          "floorLog2",
+          "ceilLog2",
+          "float16Bits"
+        ],
+        "images/jxl/worker-input.mjs": [
+          "JPEG_XL_LIMITS"
+        ],
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
+        ],
+        "draw/font-format.mjs": [
+          "fontChecksum",
+          "fontCompression"
+        ],
+        "notes/zip-reader.mjs": [
+          "crc32",
+          "ZIP_READ_MAX_BYTES",
+          "ZIP_MAX_ENTRIES",
+          "ZIP_WRITE_METADATA_BYTES",
+          "ZIP_METADATA_BYTES",
+          "zipAdmissionError",
+          "readZip",
+          "ZIP_ENTRY_MEMORY_BYTES",
+          "ZIP_IO_BYTES",
+          "readZipEntries",
+          "zipOversizeSkip"
+        ],
+        "draw/liquid.mjs": [
+          "LIQUID_JACOBI",
+          "liquidPhysics",
+          "liquidNoise",
+          "liquidDecay",
+          "liquidWave",
+          "liquidFold",
+          "LIQUID_GRID",
+          "LIQUID_STILL_STEP",
+          "LIQUID_STILL_SIDE",
+          "liquidSource",
+          "LiquidReference"
+        ],
+        "draw/effects.mjs": [
+          "fillCopier",
+          "copierOffsets"
+        ],
+        "draw/paper-field.mjs": [
+          "WATER_PAPER_SEED",
+          "paperField",
+          "paperTiled",
+          "paperTile"
+        ],
+        "draw/backgrounds.mjs": [
+          "PAPERS",
+          "TEXTURES",
+          "GLYPH_STYLES",
+          "RAYS_FORMS",
+          "RAILS_FORMS",
+          "BACKGROUND_EASINGS",
+          "hexToOklab",
+          "oklabToRgb",
+          "invertColour"
+        ],
+        "draw/water-materials.mjs": [
+          "getPaper",
+          "getBrush",
+          "WATER_TIP_SIZE",
+          "makeTip",
+          "PAPER_WGSL"
+        ],
+        "draw/water-color.mjs": [
+          "WHITE",
+          "encodeRgb",
+          "toLinear",
+          "COLOR_WGSL"
+        ],
+        "draw/water-specialty.mjs": [
+          "waterFinishLight",
+          "WATER_FINISH_LIGHT"
+        ],
+        "draw/water-data.mjs": [
+          "WATER_TICK_HZ",
+          "WATER_BANDS",
+          "WATER_TIME_MAX_SECONDS",
+          "waterTimeFits",
+          "WATER_SPECIALTY_PIGMENTS",
+          "waterSpecialtyById",
+          "waterPigmentFinish",
+          "isWaterSpecialtyPigment",
+          "WATER_ACTION_MAX_POINTS",
+          "WATER_TIP_MAX_PIXELS",
+          "WATER_SOURCE_MAX_BYTES",
+          "WATER_PAPERS",
+          "WATER_PRO_PAPERS",
+          "WATER_PIGMENTS",
+          "WATER_BRUSHES",
+          "WATER_TOOLS",
+          "WATER_CONTROLS",
+          "waterBrushById",
+          "waterPigmentById",
+          "waterError",
+          "waterRadius",
+          "mixWaterPigments",
+          "admitWaterTip",
+          "admitWaterControls",
+          "admitWaterBrush",
+          "waterBrushDefinition",
+          "admitWaterAction",
+          "admitWaterState"
+        ],
+        "draw/paint-history.mjs": [
+          "PAINT_REPLAY_MAX_BYTES",
+          "paintReplayFits"
+        ],
+        "agent/text-surface.mjs": [
+          "textOutline"
+        ],
+        "agent/material.mjs": [
+          "MATERIAL_LIMITS"
+        ],
+        "notes/zip-records.mjs": [
+          "dosDateTime",
+          "localHeader",
+          "centralHeader",
+          "dataDescriptor",
+          "commentBytes",
+          "endRecord"
+        ],
+        "notes/frontmatter.mjs": [
+          "serializeFrontMatter",
+          "aliasesOf",
+          "propertiesOf",
+          "setProperty"
+        ],
+        "notes/model.mjs": [
+          "NOTES_INDEX_FILE",
+          "NOTES_INDEX_VERSION",
+          "graphemes",
+          "cutText",
+          "NOTES_ATTACHMENT_DIR",
+          "isAttachmentName",
+          "attachmentFileName",
+          "NOTE_COLOURS",
+          "orderMidpoint",
+          "orderFirst",
+          "orderBefore",
+          "orderAfter",
+          "emptyIndex",
+          "cleanAgent",
+          "parseIndex",
+          "serializeIndex",
+          "isMarkdownNote",
+          "codeFileName",
+          "reconcile",
+          "sectionOf",
+          "sortedSection",
+          "moveTo",
+          "trashEvidence",
+          "expiredTrash",
+          "admitSection",
+          "admitIdentities",
+          "addSection",
+          "renameSection",
+          "removeSection",
+          "moveSection",
+          "setCategory",
+          "noteControlValues",
+          "noteControlGroups",
+          "stampNoteControls",
+          "noteControlsSnapshot",
+          "setNoteControls",
+          "jumpOrder",
+          "setCollapsed",
+          "setRemind",
+          "remindChoices",
+          "remindWords",
+          "nativeReminderRows",
+          "nextOccurrence",
+          "dueReminders",
+          "acknowledgeRemind",
+          "nextReminderAt",
+          "reminderCardWords",
+          "changeReminders",
+          "applyReminderActions",
+          "cardHead",
+          "noteHead",
+          "cardSource",
+          "toggleCheck",
+          "noteTitle",
+          "noteFileName"
+        ],
+        "notes/merge.mjs": [
+          "inspectTextConflicts",
+          "mapTextConflictVariants",
+          "mergeText",
+          "resolveTextConflict",
+          "admitIndex",
+          "assignNoteFilenames",
+          "mergeIndex"
+        ],
+        "notes/integrity.mjs": [
+          "exactBytes",
+          "sha256",
+          "sha256TextOffThread",
+          "BYTE_CHUNK_BYTES",
+          "blobByteChunks",
+          "digestByteChunks",
+          "byteCopyError",
+          "storedFileDigest"
+        ],
+        "notes/history.mjs": [
+          "HISTORY_VERSION",
+          "INPUT_OPERATION",
+          "REASONS",
+          "DIFF_LIMITS",
+          "manifestName",
+          "emptyManifest",
+          "sha256Fallback",
+          "sha256",
+          "serializeManifest",
+          "parseManifest",
+          "parseCanonical",
+          "rekeyManifest",
+          "controlsAct",
+          "recordVersion",
+          "versionsOf",
+          "materialize",
+          "rewriteHistoryReferences",
+          "restorePlan",
+          "storage",
+          "thin",
+          "diffLines",
+          "changePreview",
+          "readCanonical",
+          "canonicalAct",
+          "freshCanonical",
+          "adoptCanonical",
+          "carryCanonical",
+          "appendCanonical",
+          "createHistoryPreparation",
+          "resolveHistoryPreparation",
+          "canonicalSources"
+        ],
+        "kit/print-capitals.mjs": [
+          "clearPrintCapitals"
+        ],
+        "images/jxl-native.mjs": [
+          "readNativeJXL",
+          "jxlNativeTraits"
+        ],
+        "images/paint-raster.mjs": [
+          "configurePaintRasterDecoder",
+          "decodeNativePaintJXL",
+          "paintRecompressionWorker"
+        ],
+        "notes/vault.mjs": [
+          "VAULT_VERSION",
+          "SEAL_VERSION",
+          "KDF_NAME",
+          "KDF_N",
+          "KDF_R",
+          "KDF_P",
+          "HEADER_MAX_BYTES",
+          "SALT_BYTES",
+          "VDK_BYTES",
+          "NONCE_BYTES",
+          "TAG_BYTES",
+          "HEADER_KEY",
+          "HEADER_PREFIX",
+          "VERIFIER_PLAIN",
+          "RECOVERY_ALPHABET",
+          "RECOVERY_LENGTH",
+          "RECOVERY_GROUP",
+          "validateCreationPassphrase",
+          "generateSalt",
+          "encodeRecovery",
+          "decodeRecovery",
+          "deriveWrappingKey",
+          "wrapVdk",
+          "unwrapVdk",
+          "encodeHeader",
+          "decodeHeader",
+          "createVault",
+          "unlockVault",
+          "unlockVaultWithRecovery",
+          "rewrapVault",
+          "headerDigest",
+          "vaultId",
+          "headerObject"
+        ],
+        "kernel/live-private-wire.mjs": [
+          "PRIVATE_LIVE_LIMITS",
+          "privateJsonBytes"
+        ],
+        "editor/live-private.mjs": [
+          "openPrivate",
+          "privateInitial"
+        ]
+      },
+      "jxl": null,
+      "builtAt": "2026-10-14T16:41:21.088Z",
+      "node": "v22.23.3",
+      "mode": "release",
+      "packing": "zopfli",
+      "codecs": [
+        "gzip",
+        "brotli"
+      ],
+      "brotli": {
+        "quality": 11,
+        "mode": "text",
+        "lgwin": 22
+      },
+      "canonical": true
+    },
+    "full": {
+      "path": "rapier.html",
+      "bytes": 1702891,
+      "sha256": "5cb4a4f88470d03afae8e6077b7f8a49214da4158b46dd4ac494fc543d603b45",
+      "budget": {
+        "warn": 2980000,
+        "refuse": 3000000
+      },
+      "spans": [
+        {
+          "element": "lib-dompurify",
+          "name": "dompurify-3.4.16.dist.purify.min.js",
+          "bytes": 28885,
+          "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+        },
+        {
+          "element": "lib-turndown",
+          "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+          "bytes": 12864,
+          "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-15.0.2.umd.rapier.min.js",
+          "bytes": 96267,
+          "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-task-lists-2.1.1.min.js",
+          "bytes": 2702,
+          "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-footnote-4.0.0.min.js",
+          "bytes": 5624,
+          "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-mark-4.0.0.min.js",
+          "bytes": 1621,
+          "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-sup-2.0.0.min.js",
+          "bytes": 965,
+          "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-emoji-3.1.0-light.min.js",
+          "bytes": 6394,
+          "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-abbr-2.0.0.min.js",
+          "bytes": 2419,
+          "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-ins-4.0.0.min.js",
+          "bytes": 1601,
+          "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+        },
+        {
+          "element": "lib-markdownit",
+          "name": "markdown-it-deflist-4.0.0.min.js",
+          "bytes": 2376,
+          "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+        },
+        {
+          "element": "lib-gpu-lexer",
+          "name": "gpu-lexer-0.0.1.js",
+          "bytes": 59967,
+          "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+        },
+        {
+          "element": "lib-acorn",
+          "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+          "bytes": 104387,
+          "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+        },
+        {
+          "element": "rapier-jxl-worker",
+          "name": "rapier-jxl-worker.js",
+          "bytes": 154365,
+          "sha256": "7b764eb63698e6017defa51bf4a0e7901863d9c0fec4cabc00f330783e341d71"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-preferences.js",
+          "bytes": 3595,
+          "sha256": "629d941e3ba4278a8a9b2833237e36b083a2f444cc2f46cfd1a0fc1968414242"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-platform.js",
+          "bytes": 91885,
+          "sha256": "c209d55bb358cb092d7f7c28e5e0e5079744564d8c7696d3a9fdd5aacfcd44b6"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundle-io.js",
+          "bytes": 5185,
+          "sha256": "9f9141229f04d4e647f553bc4067769377dc033988206131e63affe977299106"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-bundled-plugins.js",
+          "bytes": 2407,
+          "sha256": "b63b94add9de7fd3ab82caf7531b3bc5516338702af15eb47616ef8c99ae9249"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-plugin-loader.js",
+          "bytes": 29593,
+          "sha256": "111cfed53164c4dbfe7d2a0377cecf0b29f41e1c90d42ef7c9771931e262d85f"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-font-subset-plugin.js",
+          "bytes": 1566,
+          "sha256": "e2711e7d13382882a7b564083e0f0de74fb42edd3fb64e0f351113cfe781e096"
+        },
+        {
+          "element": "rapier-platform-runtime",
+          "name": "rapier-parts.js",
+          "bytes": 4691,
+          "sha256": "09dac4b79709b92841686dff2b52428c981f3673991637f30f9f051f2ff93074"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-factory-fonts.js",
+          "bytes": 97204,
+          "sha256": "6eda01fd28c7180b35594ca3296706aede5d0c1058d363e1f5ec433cc4d3c18e"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-styles.json",
+          "bytes": 110517,
+          "sha256": "bddb62afc3dc29c327140b2a0b00d428eb116e8acf8b3615854a57f4d44d69cd"
+        },
+        {
+          "element": "rapier-styles-runtime",
+          "name": "rapier-first-screen.html",
+          "bytes": 40563,
+          "sha256": "fc20f5a4c9b4fad75f07ebaf43117bfb437e5806eb334f5adff9c2b4c6499d18"
+        },
+        {
+          "element": "rapier-style-rest-runtime",
+          "name": "rapier-styles-rest.json",
+          "bytes": 61814,
+          "sha256": "633609452e746d5d9bae39eccd446fcc19d4eee12924042fab60c158ab06f7cf"
+        },
+        {
+          "element": "rapier-codec-runtime",
+          "name": "rapier-codecs.js",
+          "bytes": 156478,
+          "sha256": "a52713ef9d62bbb61eca0ec79975df810d2a7ae5e1aff4e44b72f09f7d92582a"
+        },
+        {
+          "element": "rapier-ui-runtime",
+          "name": "rapier-ui.html",
+          "bytes": 151421,
+          "sha256": "fa2eff057725ecabe88fed52663d39caad6cdd4933bd94a3148993143dcae0bd"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-shared.js",
+          "bytes": 2159276,
+          "sha256": "df685a72146adb50fc021562c8d14d9e2fca706a0b73ec81aa4160bf9a25ddb6"
+        },
+        {
+          "element": "rapier-editor-runtime",
+          "name": "rapier-editor.js",
+          "bytes": 1996342,
+          "sha256": "1f24f3318bd96f4e950777b0de44c76383743d541057698ec63a1a6b8623486e"
+        }
+      ],
+      "parts": [
+        {
+          "id": "drawing",
+          "file": "rapier-drawing-3ce2d724ec347173.txt",
+          "bytes": 297998,
+          "sri": "LAtyS/jDEIC1k8WWhy/mgpIoXOPsNTGKU/znT7xni/tRkCCv1ChGYNsQPaORKqJZ",
+          "scripts": [
+            "draw/draw.js",
+            "draw/effects-tool.js",
+            "draw/liquid-live.js",
+            "draw/copier-live.js",
+            "draw/background-tool.js",
+            "draw/paint-tool.js",
+            "draw/water-tool.js",
+            "draw/water-pro.js"
+          ],
+          "modules": [
+            "draw/fit.mjs",
+            "draw/water-video.mjs",
+            "draw/agent-paint.mjs",
+            "draw/paint.mjs",
+            "draw/paint-pigment.mjs",
+            "draw/paint-pigment-data.mjs",
+            "draw/paint-controls.mjs",
+            "draw/paper.mjs",
+            "draw/brushes.mjs",
+            "draw/water.mjs",
+            "draw/water-gpu.mjs",
+            "draw/water-shaders.mjs",
+            "draw/water-contact.mjs",
+            "draw/water-fill.mjs",
+            "images/jxl/painting.mjs",
+            "images/jxl/lossless.mjs",
+            "images/jxl/kernel-hooks.mjs",
+            "images/jxl/frame.mjs",
+            "images/jxl/admit.mjs",
+            "images/jxl/prefix.mjs",
+            "images/jxl/modular.mjs",
+            "images/jxl/lossless-coding.mjs",
+            "draw/water-paths.mjs",
+            "draw/stroke-letters.mjs",
+            "draw/water-mp4.mjs",
+            "draw/paint-worker.mjs",
+            "draw/paint-parallel.mjs",
+            "draw/paint-remote.mjs",
+            "draw/liquid-gpu.mjs",
+            "draw/liquid-worker.mjs",
+            "draw/copier-gpu.mjs",
+            "draw/water-worker.mjs"
+          ],
+          "globals": [
+            "RapierDrawFit",
+            "RapierDrawWaterVideo",
+            "RapierDrawPaint",
+            "RapierDrawBrushes",
+            "RapierDrawAgentPaint",
+            "RapierDrawPaintWorker",
+            "RapierDrawPaintRows",
+            "RapierDrawPaintRemote",
+            "RapierDrawLiquid",
+            "RapierDrawLiquidWorker",
+            "RapierDrawCopier",
+            "RapierDrawWater",
+            "RapierDrawWaterWorker",
+            "RapierDrawWaterPaths"
+          ]
+        },
+        {
+          "id": "notes",
+          "file": "rapier-notes-01f728a755a3f9fd.txt",
+          "bytes": 357700,
+          "sri": "FeAYKuMbnUkeH/Z8NVe9k0mH9tFo/kia8OncSvMW6hVPvcU+/cAcYsJTySuIoPLt",
+          "scripts": [
+            "notes/notes.js",
+            "notes/todo.js",
+            "notes/library.js",
+            "notes/ocr.js",
+            "notes/recorder.js",
+            "notes/sync-ui.js",
+            "notes/attachments.js"
+          ],
+          "modules": [
+            "notes/library-window.mjs",
+            "notes/library-reads.mjs",
+            "notes/takeout.mjs",
+            "notes/audio.mjs",
+            "notes/links.mjs",
+            "notes/sibling-links.mjs",
+            "notes/recording-container.mjs",
+            "notes/import.mjs",
+            "notes/zip.mjs",
+            "notes/zip-walk.mjs",
+            "notes/import-attachments.mjs",
+            "notes/attachments.mjs",
+            "notes/restore.mjs",
+            "notes/owner.mjs",
+            "notes/import-storage.mjs",
+            "notes/recording-files.mjs",
+            "notes/sync-state.mjs",
+            "notes/backup-format.mjs",
+            "notes/import-receipt.mjs",
+            "notes/import-characters.mjs",
+            "notes/html-md.mjs",
+            "notes/import-notion.mjs",
+            "notes/import-simplenote.mjs",
+            "notes/import-standardnotes.mjs",
+            "notes/import-joplin.mjs",
+            "notes/import-textbundle.mjs",
+            "notes/import-markdown.mjs",
+            "notes/import-dayone.mjs",
+            "notes/import-roam.mjs",
+            "notes/import-logseq.mjs",
+            "notes/import-pictures.mjs",
+            "notes/import-undo-face.mjs",
+            "notes/import-plan.mjs",
+            "notes/search.mjs",
+            "notes/search-cache.mjs",
+            "notes/search-store.mjs",
+            "notes/import-enex.mjs",
+            "notes/import-html.mjs",
+            "notes/trash.mjs",
+            "notes/backup.mjs",
+            "notes/backup-set.mjs",
+            "notes/backup-stream.mjs",
+            "notes/backup-folder.mjs",
+            "notes/backup-sink.mjs",
+            "notes/backup-lifecycle.mjs",
+            "notes/android-backup.mjs",
+            "notes/native-store.mjs",
+            "notes/opfs-paths.mjs",
+            "notes/canonical-merge.mjs",
+            "notes/backup-worker.mjs",
+            "notes/opfs-worker.mjs",
+            "notes/opfs.mjs",
+            "notes/idb-store.mjs",
+            "notes/folder.mjs",
+            "notes/recording.mjs",
+            "notes/todo.mjs",
+            "notes/sync.mjs",
+            "notes/sync-media.mjs",
+            "notes/sync-assets.mjs",
+            "notes/sync-session.mjs",
+            "notes/sync-config.mjs",
+            "notes/sync-providers.mjs",
+            "notes/transport-drive.mjs",
+            "notes/provider-http.mjs",
+            "notes/provider-objects.mjs",
+            "notes/transport-onedrive.mjs",
+            "notes/transport-dropbox.mjs",
+            "notes/drive-oauth.mjs",
+            "notes/provider-oauth.mjs",
+            "notes/onedrive-oauth.mjs",
+            "notes/dropbox-oauth.mjs",
+            "notes/cloud-providers.mjs",
+            "notes/transport-r2.mjs",
+            "notes/cloudflare-oauth.mjs",
+            "notes/transport-s3.mjs",
+            "notes/transport-webdav.mjs",
+            "notes/provider-setup.mjs",
+            "notes/cloudflare-setup.mjs",
+            "notes/transport-companion.mjs",
+            "notes/sync-device.mjs",
+            "notes/qr-code.mjs",
+            "notes/owned-adapter.mjs",
+            "notes/live-envelope.mjs",
+            "notes/owned-checkpoint.mjs"
+          ],
+          "globals": [
+            "RapierNotesLibraryWindow",
+            "RapierNotesLibraryReads",
+            "RapierNotesTakeout",
+            "RapierNotesImportNotion",
+            "RapierNotesImportSimplenote",
+            "RapierNotesImportStandardNotes",
+            "RapierNotesImportJoplin",
+            "RapierNotesImportTextBundle",
+            "RapierNotesImportDayOne",
+            "RapierNotesImportRoam",
+            "RapierNotesImportLogseq",
+            "RapierNotesImport",
+            "RapierNotesImportPictures",
+            "RapierNotesImportReceipt",
+            "RapierNotesImportUndoFace",
+            "RapierNotesImportPlan",
+            "RapierNotesLinks",
+            "RapierNotesSearch",
+            "RapierNotesSearchCache",
+            "RapierNotesImportMarkdown",
+            "RapierNotesImportEnex",
+            "RapierNotesImportHtml",
+            "RapierNotesRestore",
+            "RapierNotesTrash",
+            "RapierNotesZip",
+            "RapierNotesBackup",
+            "RapierNotesBackupWorker",
+            "RapierNotesOPFSWorker",
+            "RapierNotesOwner",
+            "RapierNotesOPFS",
+            "RapierNotesIdbStore",
+            "RapierNotesFolder",
+            "RapierNotesTodo",
+            "RapierNotesAudio",
+            "RapierNotesAttachments",
+            "RapierNotesSync",
+            "RapierNotesSyncSession",
+            "RapierCloudProviders",
+            "RapierWebDAVTransport",
+            "RapierOwnedNotesAdapter",
+            "RapierOwnedNotesCheckpoint"
+          ]
+        }
+      ],
+      "coreHeldPartGlobals": [
+        "RapierNotesModel",
+        "RapierNotesFrontMatter",
+        "RapierNotesHistory",
+        "RapierNotesIntegrity",
+        "RapierNotesVault",
+        "RapierNotesMerge"
+      ],
+      "shakenExports": {
+        "agent/page-result.mjs": [
+          "parseReply"
+        ],
+        "shell/preferences.mjs": [
+          "PREFERENCE_ACCENTS"
+        ],
+        "version.mjs": [
+          "RELEASE_TAG",
+          "cdnOrigin"
+        ],
+        "agent/operation-contracts.mjs": [
+          "UI_RESOURCE",
+          "RESULT_SCHEMA"
+        ],
+        "spec/html-blocks.mjs": [
+          "HTML_ELEMENTS",
+          "htmlInfoEdit"
+        ],
+        "agent/json-value.mjs": [
+          "jsonStringParts"
+        ],
+        "kit/ledger/data.mjs": [
+          "documentBytes"
+        ],
+        "kit/ledger/transport.mjs": [
+          "transposeRecord"
+        ],
+        "kit/ledger/format.mjs": [
+          "prepareLedger"
+        ],
+        "images/jxl/bits.mjs": [
+          "PHOTO_LIMITS",
+          "scaled"
+        ],
+        "images/jxl/worker-input.mjs": [
+          "JPEG_XL_LIMITS"
+        ],
+        "images/header.mjs": [
+          "codecError",
+          "byteView",
+          "boundedDimensions"
+        ],
+        "draw/font-format.mjs": [
+          "fontChecksum",
+          "fontCompression"
+        ],
+        "draw/liquid.mjs": [
+          "liquidNoise",
+          "liquidDecay",
+          "liquidWave",
+          "liquidFold",
+          "LIQUID_STILL_SIDE",
+          "liquidSource",
+          "LiquidReference"
+        ],
+        "draw/effects.mjs": [
+          "fillCopier"
+        ],
+        "draw/paper-field.mjs": [
+          "paperField",
+          "paperTiled",
+          "paperTile"
+        ],
+        "draw/backgrounds.mjs": [
+          "PAPERS",
+          "TEXTURES",
+          "GLYPH_STYLES",
+          "RAYS_FORMS",
+          "RAILS_FORMS",
+          "BACKGROUND_EASINGS",
+          "hexToOklab",
+          "oklabToRgb",
+          "invertColour"
+        ],
+        "draw/water-color.mjs": [
+          "WHITE"
+        ],
+        "draw/water-data.mjs": [
+          "WATER_TIME_MAX_SECONDS"
+        ],
+        "agent/text-surface.mjs": [
+          "textOutline"
+        ],
+        "agent/material.mjs": [
+          "MATERIAL_LIMITS"
+        ],
+        "draw/paint-pigment.mjs": [
+          "paintPigment"
+        ],
+        "draw/paper.mjs": [
+          "step",
+          "XFER_FRACTION",
+          "MAX_XFER_QUANTITY",
+          "EQUAL_PAINT_CUTOFF",
+          "brushTotals"
+        ],
+        "draw/water-gpu.mjs": [
+          "WATER_REFERENCE_TEXEL"
+        ],
+        "images/jxl/admit.mjs": [
+          "admitSize",
+          "answer",
+          "guard"
+        ],
+        "images/jxl/frame.mjs": [
+          "DC_GROUP_DIM",
+          "writeFrameHeaderEnd",
+          "writeTOC",
+          "finishSections"
+        ],
+        "images/jxl/prefix.mjs": [
+          "codeLengths",
+          "canonicalCodes",
+          "writeContextMap"
+        ],
+        "images/jxl/modular.mjs": [
+          "ZERO_PREDICTOR",
+          "PREDICTOR",
+          "LZ77",
+          "split",
+          "writeTransform",
+          "streamTree"
+        ],
+        "images/jxl/lossless.mjs": [
+          "paletteKey",
+          "inspectPixels",
+          "planeFill",
+          "planGroup",
+          "encodeLossless",
+          "nativeSteps"
+        ],
+        "images/jxl/painting.mjs": [
+          "admitPaintingProfile",
+          "paintingSteps"
+        ],
+        "images/jxl-native.mjs": [
+          "readNativeJXL",
+          "jxlNativeTraits"
+        ],
+        "notes/zip-walk.mjs": [
+          "ZIP_NESTING_LIMIT"
+        ],
+        "notes/import-storage.mjs": [
+          "importReceiptFile"
+        ],
+        "notes/recording-files.mjs": [
+          "RECORDING_STORAGE_NOTICE"
+        ],
+        "notes/search-store.mjs": [
+          "verifyOrder"
+        ],
+        "notes/android-backup.mjs": [
+          "androidBackupSource",
+          "restoreAndroidSnapshot"
+        ],
+        "notes/transport-drive.mjs": [
+          "DRIVE_API_ORIGIN",
+          "PUT_MAX_BYTES",
+          "UPLOAD_CHUNK_BYTES"
+        ],
+        "notes/transport-onedrive.mjs": [
+          "ONEDRIVE_API_ORIGIN",
+          "PUT_MAX_BYTES"
+        ],
+        "notes/transport-dropbox.mjs": [
+          "DROPBOX_API_ORIGIN",
+          "DROPBOX_CONTENT_ORIGIN",
+          "PUT_MAX_BYTES"
+        ],
+        "notes/provider-oauth.mjs": [
+          "verifierCheck",
+          "redirectCheck",
+          "clientCheck"
+        ],
+        "notes/drive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "SCOPES",
+          "SETUP_NOTICE"
+        ],
+        "notes/onedrive-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "LOGOUT_ENDPOINT",
+          "SCOPES"
+        ],
+        "notes/dropbox-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "SCOPES"
+        ],
+        "notes/sync-providers.mjs": [
+          "PROVIDER_ORIGINS",
+          "providerConnectOrigins"
+        ],
+        "notes/transport-r2.mjs": [
+          "PUT_MAX_BYTES",
+          "RETRY_CAP",
+          "RETRY_BASE_MS",
+          "RETRY_MAX_MS",
+          "encodeObjectKey",
+          "objectUrl"
+        ],
+        "notes/cloudflare-oauth.mjs": [
+          "AUTHORIZE_ENDPOINT",
+          "TOKEN_ENDPOINT",
+          "REVOKE_ENDPOINT",
+          "ISSUER",
+          "CODE_CHALLENGE_METHOD",
+          "isOAuthRefusal"
+        ],
+        "notes/transport-s3.mjs": [
+          "PUT_MAX_BYTES",
+          "LIST_MAX_BYTES",
+          "RETRY_CAP",
+          "EMPTY_SHA256",
+          "encodeObjectKey",
+          "canonicalQuery",
+          "signV4",
+          "readS3XML",
+          "s3XMLScalar"
+        ],
+        "notes/cloudflare-setup.mjs": [
+          "NOTES_BUCKET"
+        ],
+        "notes/transport-companion.mjs": [
+          "COMPANION_CHUNK",
+          "COMPANION_MAX_BYTES"
+        ],
+        "notes/live-envelope.mjs": [
+          "KINDS"
+        ],
+        "kit/print-capitals.mjs": [
+          "clearPrintCapitals"
+        ],
+        "kernel/live-private-wire.mjs": [
+          "PRIVATE_LIVE_LIMITS",
+          "privateJsonBytes"
+        ],
+        "editor/live-private.mjs": [
+          "openPrivate",
+          "privateInitial"
+        ]
+      },
+      "jxl": {
+        "version": "3.5.2",
+        "modules": [
+          "images/jxl/kernel-hooks.mjs",
+          "images/jxl/weighted-policy.mjs",
+          "images/jxl/bits.mjs",
+          "images/jxl/admit.mjs",
+          "images/jxl/kernels-bytes.mjs",
+          "images/jxl/kernels.mjs",
+          "images/jxl/frame.mjs",
+          "images/jxl/prefix.mjs",
+          "images/jxl/modular.mjs",
+          "images/jxl/lossless-coding.mjs",
+          "images/jxl/lossless.mjs",
+          "images/jxl/squeeze.mjs",
+          "images/jxl/lossy.mjs",
+          "images/jxl/weighted.mjs",
+          "images/jxl/local.mjs",
+          "images/jxl/rct-search.mjs",
+          "images/jxl/screen-lz77.mjs",
+          "images/jxl/screen.mjs",
+          "images/jxl/screen-patches.mjs",
+          "images/jxl/entropy.mjs",
+          "images/jxl/ans.mjs",
+          "images/jxl/sampled.mjs",
+          "images/jxl/palette-search.mjs",
+          "images/jxl/screen-local.mjs",
+          "images/jxl/screen-search.mjs",
+          "images/jxl/painting.mjs",
+          "images/jxl/effort-job.mjs",
+          "images/jxl/effort.mjs",
+          "images/jxl/pool.mjs",
+          "images/jxl/jfif.mjs",
+          "images/jxl/effort-level.mjs",
+          "images/jxl/jpeg-job.mjs",
+          "images/jxl/vardct.mjs",
+          "images/jxl/coefficient-effort.mjs",
+          "images/jxl/coefficient-coding.mjs",
+          "images/jxl/jpeg-effort.mjs",
+          "images/jxl/jpeg.mjs",
+          "images/jxl/photo-dct.mjs",
+          "images/jxl/photo-job.mjs",
+          "images/jxl/coefficient-ans.mjs",
+          "images/jxl/photo.mjs",
+          "images/jxl/rapier-encoder.mjs",
+          "images/jxl/worker-input.mjs",
+          "images/jxl/worker.mjs",
+          "images/jxl/rapier.mjs"
+        ],
+        "worker": {
+          "bytes": 154365,
+          "sha256": "7b764eb63698e6017defa51bf4a0e7901863d9c0fec4cabc00f330783e341d71"
+        }
+      },
+      "builtAt": "2026-10-14T16:53:28.260Z",
+      "node": "v22.23.3",
+      "mode": "release",
+      "packing": "zopfli",
+      "codecs": [
+        "gzip",
+        "brotli"
+      ],
+      "brotli": {
+        "quality": 11,
+        "mode": "text",
+        "lgwin": 22
+      },
+      "canonical": true
+    },
+    "reader": {
+      "path": "rapier-reader.html",
+      "bytes": 369176,
+      "sha256": "3b366788f3c00d474a5911df7f627a49ad26e82b2fc5c572717fd15137c1529d",
+      "gzip": 320088,
+      "budget": {
+        "warn": 1200000,
+        "refuse": 1250000
+      },
+      "builtAt": "2026-10-14T16:42:22.379Z",
+      "node": "v22.23.3",
+      "mode": "release",
+      "packing": "zopfli",
+      "canonical": true,
+      "parts": {
+        "core": {
+          "raw": 903009,
+          "gzip": 290371,
+          "base124": 334911
+        },
+        "licenses": {
+          "raw": 87481,
+          "gzip": 24702,
+          "base124": 28485
+        }
+      }
+    }
+  },
+  "editor": {
+    "path": "rapier.html",
+    "bytes": 1702891,
+    "sha256": "5cb4a4f88470d03afae8e6077b7f8a49214da4158b46dd4ac494fc543d603b45"
+  },
+  "apps": {
+    "path": "dist/chatgpt/rapier-app.html",
+    "bytes": 5071761,
+    "sha256": "b5a13447e1c99464c9d79033fdcce9c2707a043220f993c87d55f56bcc730f01",
+    "spans": [
+      {
+        "element": "lib-dompurify",
+        "name": "dompurify-3.4.16.dist.purify.min.js",
+        "bytes": 28885,
+        "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+      },
+      {
+        "element": "lib-turndown",
+        "name": "turndown-7.2.4.lib.turndown.browser.umd.rapier.min.js",
+        "bytes": 12864,
+        "sha256": "9f544a6f24be0e1884d9290a3e4ae2b81a8ed9526241e179effe0975079e6b7b"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-15.0.2.umd.rapier.min.js",
+        "bytes": 96267,
+        "sha256": "f6e4c99d60a915b85b1162945eaf26189dbbdfe65acbbb1459a78d1e012121f3"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-task-lists-2.1.1.min.js",
+        "bytes": 2702,
+        "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-footnote-4.0.0.min.js",
+        "bytes": 5624,
+        "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-mark-4.0.0.min.js",
+        "bytes": 1621,
+        "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-sup-2.0.0.min.js",
+        "bytes": 965,
+        "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-emoji-3.1.0-light.min.js",
+        "bytes": 6394,
+        "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-abbr-2.0.0.min.js",
+        "bytes": 2419,
+        "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-ins-4.0.0.min.js",
+        "bytes": 1601,
+        "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+      },
+      {
+        "element": "lib-markdownit",
+        "name": "markdown-it-deflist-4.0.0.min.js",
+        "bytes": 2376,
+        "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+      },
+      {
+        "element": "lib-gpu-lexer",
+        "name": "gpu-lexer-0.0.1.js",
+        "bytes": 59967,
+        "sha256": "75f260aa052a82d5204a82b5b9dd0cf4c3dbe28bb77e42a2732f4121918fcba0"
+      },
+      {
+        "element": "lib-acorn",
+        "name": "acorn-8.19.0.dist.acorn.rapier-engine.min.js",
+        "bytes": 104387,
+        "sha256": "48c17f0cb04dad63338ca89dbc976cde103c7f679441173591f88728d3ee7e20"
+      },
+      {
+        "element": "rapier-jxl-worker",
+        "name": "rapier-jxl-worker.js",
+        "bytes": 154365,
+        "sha256": "7b764eb63698e6017defa51bf4a0e7901863d9c0fec4cabc00f330783e341d71"
+      },
+      {
+        "element": "rapier-part-drawing",
+        "name": "rapier-part-drawing-shared.js",
+        "bytes": 509218,
+        "sha256": "8e83f802f1e3d2df6ed09b41db06a22654a01c1cddfd3d21023dccdbb0548f0a"
+      },
+      {
+        "element": "rapier-part-drawing",
+        "name": "rapier-part-drawing-styles.json",
+        "bytes": 52387,
+        "sha256": "770777eac1c81eec1de8a42b16ff734d55f6f2e2b7982403b21485c0298d711c"
+      },
+      {
+        "element": "rapier-part-drawing",
+        "name": "rapier-part-drawing.js",
+        "bytes": 509099,
+        "sha256": "103519c3258ec565e6c06eb2ee332e5d4b2f25846b4f94be9a6f3fedf15e78b8"
+      },
+      {
+        "element": "rapier-part-notes",
+        "name": "rapier-part-notes-shared.js",
+        "bytes": 790192,
+        "sha256": "0fb2b9059ba2f2df7953f118feb6f13b312012dd449cb9a94a4901666bbe02c3"
+      },
+      {
+        "element": "rapier-part-notes",
+        "name": "rapier-part-notes-styles.json",
+        "bytes": 61512,
+        "sha256": "4f31ef5a3fcfbdc06e7f80c921be781cf4872ba8f27b21b57e9b75d853014268"
+      },
+      {
+        "element": "rapier-part-notes",
+        "name": "rapier-part-notes.js",
+        "bytes": 471113,
+        "sha256": "38f1edb31ccead33b042838e616a845207f7a1c7682ca4ca5d04fa0311e0cb4a"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-preferences.js",
+        "bytes": 3595,
+        "sha256": "629d941e3ba4278a8a9b2833237e36b083a2f444cc2f46cfd1a0fc1968414242"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-platform.js",
+        "bytes": 91885,
+        "sha256": "c209d55bb358cb092d7f7c28e5e0e5079744564d8c7696d3a9fdd5aacfcd44b6"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-bundle-io.js",
+        "bytes": 5185,
+        "sha256": "9f9141229f04d4e647f553bc4067769377dc033988206131e63affe977299106"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-bundled-plugins.js",
+        "bytes": 2407,
+        "sha256": "b63b94add9de7fd3ab82caf7531b3bc5516338702af15eb47616ef8c99ae9249"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-plugin-loader.js",
+        "bytes": 29593,
+        "sha256": "111cfed53164c4dbfe7d2a0377cecf0b29f41e1c90d42ef7c9771931e262d85f"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-font-subset-plugin.js",
+        "bytes": 1566,
+        "sha256": "e2711e7d13382882a7b564083e0f0de74fb42edd3fb64e0f351113cfe781e096"
+      },
+      {
+        "element": "rapier-platform-runtime",
+        "name": "rapier-parts.js",
+        "bytes": 4691,
+        "sha256": "09dac4b79709b92841686dff2b52428c981f3673991637f30f9f051f2ff93074"
+      },
+      {
+        "element": "rapier-apps-runtime",
+        "name": "rapier-apps.js",
+        "bytes": 84804,
+        "sha256": "ac8e61b7892e89e59716873490318bf30edc22714980594530d77448f5f3d5f9"
+      },
+      {
+        "element": "rapier-styles-runtime",
+        "name": "rapier-factory-fonts.js",
+        "bytes": 97204,
+        "sha256": "6eda01fd28c7180b35594ca3296706aede5d0c1058d363e1f5ec433cc4d3c18e"
+      },
+      {
+        "element": "rapier-styles-runtime",
+        "name": "rapier-styles.json",
+        "bytes": 110517,
+        "sha256": "bddb62afc3dc29c327140b2a0b00d428eb116e8acf8b3615854a57f4d44d69cd"
+      },
+      {
+        "element": "rapier-styles-runtime",
+        "name": "rapier-first-screen.html",
+        "bytes": 40563,
+        "sha256": "fc20f5a4c9b4fad75f07ebaf43117bfb437e5806eb334f5adff9c2b4c6499d18"
+      },
+      {
+        "element": "rapier-style-rest-runtime",
+        "name": "rapier-styles-rest.json",
+        "bytes": 61814,
+        "sha256": "633609452e746d5d9bae39eccd446fcc19d4eee12924042fab60c158ab06f7cf"
+      },
+      {
+        "element": "rapier-codec-runtime",
+        "name": "rapier-codecs.js",
+        "bytes": 156478,
+        "sha256": "a52713ef9d62bbb61eca0ec79975df810d2a7ae5e1aff4e44b72f09f7d92582a"
+      },
+      {
+        "element": "rapier-editor-runtime",
+        "name": "rapier-shared.js",
+        "bytes": 2159276,
+        "sha256": "df685a72146adb50fc021562c8d14d9e2fca706a0b73ec81aa4160bf9a25ddb6"
+      },
+      {
+        "element": "rapier-editor-runtime",
+        "name": "rapier-editor.js",
+        "bytes": 1996342,
+        "sha256": "1f24f3318bd96f4e950777b0de44c76383743d541057698ec63a1a6b8623486e"
+      },
+      {
+        "element": "rapier-ui-runtime",
+        "name": "rapier-ui.html",
+        "bytes": 149870,
+        "sha256": "8763fc89e8e23bc2f64e8a5a045bb22a52c044e70185c2580810d66222eafcba"
+      },
+      {
+        "element": "rapier-plugin-math",
+        "name": "rapier-math-2.2.0.js",
+        "bytes": 749536,
+        "sha256": "2f4a4e405d0a7452d5ffbad2fae9da7ea2d3fcb18d6c662cd4d3823648b0e904"
+      },
+      {
+        "element": "rapier-plugin-mermaid",
+        "name": "mermaid.min.js",
+        "bytes": 5493176,
+        "sha256": "6484afc32872a3aa16cac9a76ba1816a1ed4cc870a6593cc2e17757750f518b2"
+      },
+      {
+        "element": "rapier-plugin-mermaid",
+        "name": "rapier-zenuml-4.5.0-1.js",
+        "bytes": 1890966,
+        "sha256": "8b9d7a1f627d3119a13743e23e4b2b6fbc0f508a05c3c7722d08dc5575982be8"
+      },
+      {
+        "element": "rapier-plugin-letters",
+        "name": "field.json",
+        "bytes": 96902,
+        "sha256": "8a9f81b863183dee9cf394a519ff195c811a20aa78986487123725ee96827dcf"
+      },
+      {
+        "element": "rapier-plugin-letters",
+        "name": "relief.json",
+        "bytes": 95172,
+        "sha256": "75059a482ea82755598c0733370e1e80f33d958f6d25998f207aba4684ca0e48"
+      },
+      {
+        "element": "rapier-plugin-letters",
+        "name": "leaf.json",
+        "bytes": 134918,
+        "sha256": "5cedc2c91a68ad50f7821809665d4eb678e173f1730335083cd87f3172bf3509"
+      },
+      {
+        "element": "rapier-plugin-letters",
+        "name": "arabesque.json",
+        "bytes": 136035,
+        "sha256": "62ac0465f9b07883624e8ea9811f3a9eadbfd9804b0162bbed5e6cfbc49a3bc2"
+      },
+      {
+        "element": "rapier-plugin-font-subset",
+        "name": "rapier-font-subset-2.js",
+        "bytes": 1214356,
+        "sha256": "0111ccc516aa5c2aad74bc561f3e0d853111a7932ab29c125a3d2b9c220b0f3d"
+      }
+    ],
+    "plugins": [
+      {
+        "id": "math",
+        "delivery": "built-in",
+        "kind": "script",
+        "element": "rapier-plugin-math",
+        "bytes": 749536,
+        "packedBytes": 504166,
+        "files": [
+          {
+            "id": "rapier-math",
+            "name": "rapier-math-2.2.0.js",
+            "version": "2.2.0",
+            "bytes": 749536,
+            "sri": "pzYte7azbAoS8XSwIKjFg7mxGOxAxBKo9/IUy07H4j0WoyguAS/zwkR1O6kDXq9S"
+          }
+        ]
+      },
+      {
+        "id": "mermaid",
+        "delivery": "built-in",
+        "kind": "files",
+        "element": "rapier-plugin-mermaid",
+        "bytes": 7384142,
+        "packedBytes": 1563922,
+        "files": [
+          {
+            "id": "rapier-mermaid-core",
+            "name": "mermaid.min.js",
+            "version": "12.1.0",
+            "bytes": 5493176,
+            "sri": "EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4"
+          },
+          {
+            "id": "rapier-mermaid-zenuml",
+            "name": "rapier-zenuml-4.5.0-1.js",
+            "version": "4.5.0-1",
+            "bytes": 1890966,
+            "sri": "MVn/Or1nIHTDvy84lSSJAH2Fx1Y7AGoaMfd7hW7i3LJe7M/dau8VDFnF8Q+X0qOl"
+          }
+        ]
+      },
+      {
+        "id": "letters",
+        "delivery": "built-in",
+        "kind": "files",
+        "element": "rapier-plugin-letters",
+        "bytes": 463027,
+        "packedBytes": 204178,
+        "files": [
+          {
+            "id": "rapier-letters-field",
+            "name": "field.json",
+            "version": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
+            "bytes": 96902,
+            "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0"
+          },
+          {
+            "id": "rapier-letters-relief",
+            "name": "relief.json",
+            "version": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
+            "bytes": 95172,
+            "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq"
+          },
+          {
+            "id": "rapier-letters-leaf",
+            "name": "leaf.json",
+            "version": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
+            "bytes": 134918,
+            "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g"
+          },
+          {
+            "id": "rapier-letters-arabesque",
+            "name": "arabesque.json",
+            "version": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
+            "bytes": 136035,
+            "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl"
+          }
+        ]
+      },
+      {
+        "id": "font-subset",
+        "delivery": "built-in",
+        "kind": "files",
+        "element": "rapier-plugin-font-subset",
+        "bytes": 1214356,
+        "packedBytes": 453061,
+        "files": [
+          {
+            "id": "rapier-font-subset",
+            "name": "rapier-font-subset-2.js",
+            "version": "2",
+            "bytes": 1214356,
+            "sri": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj"
+          }
+        ]
+      }
+    ]
+  },
+  "offline": {
+    "path": "dist/chatgpt/rapier.html",
+    "bytes": 5086203,
+    "sha256": "864fe7a94b5c3064653e2a7423449f439c0ab864062ec1644a88dee90c042af6",
+    "plugins": [
+      {
+        "id": "math",
+        "delivery": "built-in",
+        "kind": "script",
+        "element": "rapier-plugin-math",
+        "bytes": 749536,
+        "packedBytes": 504166,
+        "files": [
+          {
+            "id": "rapier-math",
+            "name": "rapier-math-2.2.0.js",
+            "version": "2.2.0",
+            "bytes": 749536,
+            "sri": "pzYte7azbAoS8XSwIKjFg7mxGOxAxBKo9/IUy07H4j0WoyguAS/zwkR1O6kDXq9S"
+          }
+        ]
+      },
+      {
+        "id": "mermaid",
+        "delivery": "built-in",
+        "kind": "files",
+        "element": "rapier-plugin-mermaid",
+        "bytes": 7384142,
+        "packedBytes": 1563922,
+        "files": [
+          {
+            "id": "rapier-mermaid-core",
+            "name": "mermaid.min.js",
+            "version": "12.1.0",
+            "bytes": 5493176,
+            "sri": "EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4"
+          },
+          {
+            "id": "rapier-mermaid-zenuml",
+            "name": "rapier-zenuml-4.5.0-1.js",
+            "version": "4.5.0-1",
+            "bytes": 1890966,
+            "sri": "MVn/Or1nIHTDvy84lSSJAH2Fx1Y7AGoaMfd7hW7i3LJe7M/dau8VDFnF8Q+X0qOl"
+          }
+        ]
+      },
+      {
+        "id": "letters",
+        "delivery": "built-in",
+        "kind": "files",
+        "element": "rapier-plugin-letters",
+        "bytes": 463027,
+        "packedBytes": 204178,
+        "files": [
+          {
+            "id": "rapier-letters-field",
+            "name": "field.json",
+            "version": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0",
+            "bytes": 96902,
+            "sri": "VFsCE/7zS6Kkq/EW1/7NfYHVGoVXNUm0pWHdtJmzXwhWgJWBSKhNHuU0ODuGCar0"
+          },
+          {
+            "id": "rapier-letters-relief",
+            "name": "relief.json",
+            "version": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq",
+            "bytes": 95172,
+            "sri": "tQctBake2gu7B/v5/1jC6XFt5smV5uVg7W7GdJXsJZBZ62Zc7crSP3zRkZPgQqgq"
+          },
+          {
+            "id": "rapier-letters-leaf",
+            "name": "leaf.json",
+            "version": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g",
+            "bytes": 134918,
+            "sri": "DtSKWtWhiitlNOfjx9o5Jf0FYcpWLw4nmWAjo1eAA3FOvs2OjB2hddHlRCnrtZ7g"
+          },
+          {
+            "id": "rapier-letters-arabesque",
+            "name": "arabesque.json",
+            "version": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl",
+            "bytes": 136035,
+            "sri": "Zx2z2bEpD4VNkIccLejcUY68eqAFraPEN7hqsqkcVqHOKGvsSMqbLLiXXklvZINl"
+          }
+        ]
+      },
+      {
+        "id": "font-subset",
+        "delivery": "built-in",
+        "kind": "files",
+        "element": "rapier-plugin-font-subset",
+        "bytes": 1214356,
+        "packedBytes": 453061,
+        "files": [
+          {
+            "id": "rapier-font-subset",
+            "name": "rapier-font-subset-2.js",
+            "version": "2",
+            "bytes": 1214356,
+            "sri": "q4mHA3+u3N3Yt8z1wisCEXQqWNo5UhHZ0nUESid8BGNZz6BtV8dSUlVOvyndc0Tj"
+          }
+        ]
+      }
+    ]
+  },
+  "shell": {
+    "sha256": "2821a951a3a84410e6547c9e749f60546cf8d98d621014a49d2df64838c846b6"
+  },
+  "htmlSinks": {
+    "named": 138,
+    "files": 24,
+    "inventory": "security/html-sinks.json"
+  },
+  "tools": [
+    "open",
+    "read",
+    "edit",
+    "undo",
+    "show",
+    "export"
+  ],
+  "toolchain": {
+    "canonical": true,
+    "node": {
+      "expected": "v22.23.3",
+      "actual": "v22.23.3"
+    }
+  },
+  "unchecked": []
+}

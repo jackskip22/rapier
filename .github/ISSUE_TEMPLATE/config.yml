@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask or show something
+    url: https://github.com/jackskip22/rapier/discussions
+    about: Questions, ideas and things you made with Rapier go in Discussions.
+  - name: Privacy and terms
+    url: https://rapier.website/privacy
+    about: What Rapier keeps (nothing) and the licences.

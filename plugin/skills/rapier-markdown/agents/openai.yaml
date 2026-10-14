@@ -1,0 +1,17 @@
+{
+  "interface": {
+    "display_name": "Rapier Markdown",
+    "short_description": "Write portable Markdown."
+  },
+  "dependencies": {
+    "tools": [
+      {
+        "type": "mcp",
+        "value": "rapier",
+        "description": "Read, edit and export a shared Rapier document.",
+        "transport": "streamable_http",
+        "url": "https://mcp.rapier.website/door/mcp"
+      }
+    ]
+  }
+}

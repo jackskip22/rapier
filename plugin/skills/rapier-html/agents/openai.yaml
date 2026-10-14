@@ -1,0 +1,17 @@
+{
+  "interface": {
+    "display_name": "Rapier HTML",
+    "short_description": "Make an editable offline page."
+  },
+  "dependencies": {
+    "tools": [
+      {
+        "type": "mcp",
+        "value": "rapier",
+        "description": "Read, edit and export a shared Rapier document.",
+        "transport": "streamable_http",
+        "url": "https://mcp.rapier.website/door/mcp"
+      }
+    ]
+  }
+}

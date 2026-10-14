@@ -1,0 +1,10 @@
+{
+  "name": "rapier-zenuml-build",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@zenuml/core": "4.5.0",
+    "antlr4": "4.11.0",
+    "esbuild": "0.28.2"
+  }
+}

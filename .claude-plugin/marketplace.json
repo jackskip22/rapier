@@ -1,0 +1,15 @@
+{
+  "name": "rapier",
+  "owner": {
+    "name": "Jack Skipworth",
+    "url": "https://rapier.website"
+  },
+  "description": "Paint, write and draw with Claude in Rapier. Keep editing by hand, review changes and take one offline file with you.",
+  "plugins": [
+    {
+      "name": "rapier",
+      "source": "./plugin",
+      "description": "Paint with Claude, then pick up the brush yourself. Write notes, draw diagrams and revise together in a fast Markdown editor. See exact changes and undo recorded work. Keep pictures and editable drawings in one Markdown file, or download the document with its editor for offline use. Live painting needs an open Rapier editor; Water (Testing) needs WebGPU. No Rapier account. Shared workspaces expire after 30 idle days."
+    }
+  ]
+}

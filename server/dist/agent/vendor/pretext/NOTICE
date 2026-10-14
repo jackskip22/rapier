@@ -1,0 +1,28 @@
+Pretext Unreleased at bac1774c0f8b7a92e44b9da43b6d5443d55d0d9b (2026-10-10T16:55:37-07:00)
+Package metadata version: 0.0.9; this snapshot is not the 0.0.9 release.
+Copyright (c) 2026 Pretext contributors
+https://github.com/chenglou/pretext
+
+LICENSE is the complete, unchanged upstream license and third-party notices:
+- Pretext: MIT.
+- Chromium code and tables: BSD-3-Clause.
+- WebKit code and tables: BSD-2-Clause and BSD-3-Clause.
+- ICU and ICU4X code and data: Unicode-3.0 and the ICU License.
+
+TypeScript is erased with Node's module.stripTypeScriptTypes in strip mode.
+Type erasure and the attribution header preserve the upstream comments. rich-inline.js
+and prepare.js carry Rapier's recorded paragraph-segments extension: legal-only measurement,
+direct source alignment without greedy wrapping/materialization, and the fitted projection's
+explicit hyphen-minus glyph. Default wrapping and its glyph selection are unchanged.
+Runtime imports retain their upstream .js suffixes. SOURCE.json records the exact commit,
+source and output hashes, complete runtime imports, compiler runtime and generator inputs.
+
+generated/engine-break-data.js retains upstream data generated from Chrome 153 (ICU 78.2),
+Apple libicucore 78.1 and Firefox 156 (ICU4X 2.1.2), including Chromium/WebKit pair tables,
+line/grapheme rules and Unicode properties. generated/webkit-generic-families.js retains
+upstream WebKit language/script lists and recorded macOS/iOS generic font-family results.
+The original generated-file notices remain in these modules. Data is not regenerated here.
+
+Pretext's source headers describe the Blink, WebKit and Gecko scans it follows and their
+deliberate differences. LICENSE contains the supplied upstream notices for this snapshot.
+Upstream credits Sebastian Markbage's text-layout research.
